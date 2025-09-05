@@ -53,3 +53,19 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# CMake build directories
+[Bb]uild/
+[Bb]in/
+[Oo]ut/
+[Ll]lib/
+build/
+**/build/
+cmake-build-*/
+
+# Visual Studio specific
+.vs/
+*.suo
+*.user
+*.vcxproj*
+*.sln
