@@ -1,0 +1,5 @@
+search_paths modules/ plugins/ project/
+
+core_modules core math input platform
+engine_modules renderer audio physics
+editor_modules scene_editor asset_pipeline inspector

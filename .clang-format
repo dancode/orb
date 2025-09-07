@@ -1,0 +1,103 @@
+##############################################
+# BasedOnStyle: Google
+
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 110
+SortIncludes: false
+MaxEmptyLinesToKeep: 2
+
+
+ReflowComments: true
+IndentCaseLabels: true
+
+BreakStringLiterals: false
+
+##############################################
+# MACROS
+
+IndentPPDirectives: AfterHash
+AlignEscapedNewlines: true
+AlignConsecutiveMacros: true
+
+
+##############################################
+# COMMENTS
+
+AlignTrailingComments: true
+SpacesBeforeTrailingComments: 4
+
+##############################################
+# FUNCTIONS
+
+AllowShortFunctionsOnASingleLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+
+AlignConsecutiveAssignments: AcrossEmptyLines 
+AlignConsecutiveBitFields: AcrossEmptyLines
+AlignConsecutiveDeclarations: true
+AlignOperands: true
+AlignAfterOpenBracket: Align 
+
+# AlignConsecutiveShortCaseStatements: true 	<-- not working
+# AlignTrailingConsecutiveDeclarations: true 	<-- not working
+# AlignArrayOfStructures: true 					<-- not working
+
+
+AllowShortIfStatementsOnASingleLine: false
+AllowShortEnumsOnASingleLine: true
+AllowShortBlocksOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+
+# CODE 
+
+PointerAlignment: Left
+DerivePointerAlignment: false
+ 
+# NEWLINES 
+
+AlwaysBreakAfterDefinitionReturnType: true
+AlwaysBreakAfterReturnType: TopLevelDefinitions
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# SPACING 
+
+BitFieldColonSpacing: Both
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterEnum: true
+  AfterStruct: true
+  SplitEmptyFunction: false
+  AfterUnion: true
+  AfterClass: true
+  IndentBraces: false
+  AfterCaseLabel: true
+  AfterFunction: true
+  AfterControlStatement: true
+  AfterExternBlock: true
+  BeforeElse: true
+  BeforeWhile : true
+
+BinPackArguments: true
+BinPackParameters: false
+
+# SPACES 
+
+SpacesInParentheses: true
+SpacesInSquareBrackets: true
+
+
+
+
+# SpaceAfterCStyleCast: false
+# SpaceBeforeAssignmentOperators: true
+# SpaceBeforeParens: ControlStatements
+# SpaceInEmptyParentheses: false
+# SpacesInCStyleCastParentheses: false
+# BreakBeforeBinaryOperators: None
+# # penalties
+# PenaltyExcessCharacter: 2
+# AlignConsecutiveShortCaseStatements: AcrossEmptyLines 	NEW
+# SeparateDefinitionBlocks: true							NEW
