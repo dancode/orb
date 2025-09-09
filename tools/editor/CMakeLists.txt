@@ -11,10 +11,10 @@ target_include_directories(editor PRIVATE
 # target_sources(editor PRIVATE $<TARGET_OBJECTS:loader>)
 
 # editor executable is minimal: links loader + base
-target_link_libraries(editor PRIVATE loader base)
+target_link_libraries(editor PRIVATE common loader base)
 
 # Put in a clear project folder
-set_target_properties(editor PROPERTIES FOLDER "Tools/Editor")
+set_target_properties(editor PROPERTIES FOLDER "Tools/")
 
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES

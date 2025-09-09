@@ -11,36 +11,51 @@
 	- We want flexibility to load different modules on the same platform (renderer).
 	- We want clarity and communication through well-defined APIs
 
-## Native loader (engine.exe)
+## Native loader (loader.obj)
 
-- A minimal runtime bootstrap loader (~50KB)
+	Executables embed the loader, such as engine.exe and editor.exe.
 
-	- A small native loader acts as the entry point.
-	- Modules are declared in external manifest files (module_name.mf).
-	- It loads only the modules necessary for the game to run.
-		- game_module.mf will list the dependencies and the modules it needs.
-		- engine.exe --game_module
-	
+- Composition
+
+	- A native minimal embedded bootstrap loader.
+	- It acts as the entry point to executables.
+	- It is a no-depdenency object library compiled into builds.
+	- It loads modules declared in external manifest files (module_name.mf).
+	- It loads only the modules necessary for the game to run.	
+		
 - Responsibilities:
 
-	- Parse manifest files
-	- Load and initialize modules in dependency order
-	- Provide module registry and communication layer.
-	- Handle module lifecycle (load/unload/reload)
-	- Manage memory allocators shared across modules
+	- Initializes the static linked "base.lib" foundation library.
+	- Parses the module manifest files
+	- Loads and initializes modules in dependency order.
+	- Provides a module registry and communication layer.
+	- Handles module lifecycle (load/unload/reload)
+	- Manages memory allocators shared across modules
 	
 	- The loader only handles module loading logic
 	- All actual engine functionality lives in modules
 	- The same loader works for both game and editor modes
 	- Platform differences are handled by modules, not the loader
+
+- Usage 
+
+	- game_module.mf will list the dependencies and the modules it needs.
+	- Executables can select their top-level module via command line.
+		- engine.exe --game_module or editor.exe --game_module
+
+
+
+## Engine loader (engine.exe)
 	
+- 
+
 ## Editor loader (editor.exe)
 
 - The minimal development bootstrap loader (a superset of engine.exe)
 
 	- It loads everything from engine.exe plus the editor modules and editor plugins.
 	- It loads the editor framework for UI with viewport, browsers, inspectors.
-	- It contains hot-reload functionality and more overhead for debugging.	
+	- It contains hot-reload functionality and allows more overhead for debugging.	
 	- The editor doens't just run game modules, it wraps it and injects tools.
 	- This is so you can click play in the editor and see your game running live.
 	- engine.exe ships to players and editor.exe never ships to players.
@@ -49,12 +64,13 @@
 	- If a module crashes it doesn't bring down the entire editor.
 	- You can hot-reload the fixed code.
 	
-## Custom loader (my_loader.exe)
+## Custom loader (loader.exe injected shim)
 
+	- The loader is staticly injected into an executable to modularize startup.
 	- The modularity of the loader allows for the creation of custom bootstrappers.
 	- For instance a dedicated server executable, or a VR experience launcher, etc.
 	- This is done as easy as creating a new .mf file that acts as a runtime.
-
+	
 ## Module System: 
 
 	- All functionality delivered via dynamic libraries (.dll/.so/.dylib)
@@ -100,11 +116,7 @@
 			- One allocator, one log system, one thread pool.
 			- Plugins can hot-reload safely.
 			- No duplicate state.
-
-		// TODO: explain further later.
-		- The code generator will generate the API shim and create wrappers.
-		- The generated wrappers will change if dynamic of monolithic build is chosen.
-		
+	
 		struct base_api {
 			void* (*alloc)(size_t size); 
 			void  (*free)(void* ptr);
@@ -308,13 +320,48 @@ my_game/
 # Directory map
 	
 modular_game_engine/
-├── bootstrap/         # Main executable
-├── core/              # Core systems and API registry (shared by all modules)
-├── modules/           # Engine modules
-│   ├── renderer/      # Vulkan renderer
-│   ├── input/         # Input system
-│   ├── entity/        # ECS (future)
-│   └── asset/         # Asset pipeline (future)
+
+engine_root/
+├── CMakeLists.txt		# solution builder
+├── bin					# executables and dll
+├── build				# build output and artifacts
+├── common				# shared header files (basic types, api, build config)
+├── docs
+├── editor 				# editor modules (one module per directory)
+│   ├── ui 				# user interface module
+│   └── ... 			# future developement editor modules
+│
+├── engine				# engine modules (one module per directory)
+│   ├── base 			# base systems (no dependencies)
+│   ├── core			# core systems (depends on base)
+│   ├── input
+│   ├── platform
+│   └── ...				# future engine modules
+│
+├── extern				# All 3rd party dependencies (out of main tree).
+│
+├── projects			# Engine end-user game projects.
+├── samples				# Example games
+│   └── minimal			# Example gamee that just loads base + core.
+│
+├── tools				# 
+│   ├── editor			# editor applicaiton (exe)
+│   ├── engine			# engine application (exe)
+│   ├── loader			# loader shim (compiled into exes)
+│   │
+│   ├── build			# Creates build structure for project from manifests.
+│   ├── reflect			# Scans for reflection annotation and generates source files.
+│   ├── reload			# Compiles and updates hot-reload scripts.
+│   ├── package			# Exports executable module into optimized release format.	 
+│   └── asset			# Used to compile assets into engine formats.
+│
+├── assets				# shared engine/editor/game assets (icons, shaders, etc.)
+├── scripts				# Build or generation scripts.
+│
+├── plugins 
+
+
+
 ├── plugins/           # Game plugins
 │   └── sample_plugin/ # Example game
 ├── projects/          # Game projects using engine.
@@ -342,3 +389,8 @@ modular_game_engine/
 	 asset tool			# Used to compile assets into engine formats.
 	 package tool		# Exports executable module into optimized release format.	 
 	 reload tool		# Compiles and updates hot-reload scripts.
+	 
+## Moudle Code Generation
+
+	- The code generator will generate the API shim and create wrappers.
+	- The generated wrappers will change if dynamic of monolithic build is chosen.

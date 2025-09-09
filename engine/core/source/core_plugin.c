@@ -1,7 +1,7 @@
 /*============================================================================================*/
 
-#include "plugin.h"
-#include "../../../tools/loader/include/api_registry.h"
+
+#include "api_registry.h"
 #include "base.h"
 
 #include <stdio.h>
@@ -10,9 +10,9 @@
 /*============================================================================================*/
 
 ORB_API void
-load_plugin( struct api_registry* registry )
+load_plugin( struct registry_api_t* registry )
 {
-    // Core expects foundation to be present
+    // Core expects foundation to be present.
     struct base_api_t* f = registry ? (struct base_api_t*)registry->get( "base_api" ) : NULL;
     if ( f && f->log )
     {
@@ -21,6 +21,7 @@ load_plugin( struct api_registry* registry )
 
     // Core could register its own APIs for others to use, e.g. reflection
     // For demo, core registers a tiny "core_marker"
+    // TODO: register actual core API.
 
     const char* marker = "core_v1_marker";
     if ( registry && registry->add )

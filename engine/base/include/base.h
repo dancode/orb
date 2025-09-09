@@ -1,7 +1,7 @@
 #pragma once
 #include <stddef.h>
 
-struct api_registry;
+struct registry_api_t;
 
 /*============================================================================================*/
 
@@ -20,7 +20,7 @@ struct base_api_t
 void base_init( void );
 
 // Register the foundation API into the provided registry
-void base_register_api( struct api_registry* reg );
+void base_register_api( struct registry_api_t* reg );
 
 // Convenience thin wrapper
 struct base_api_t* base_get_api( void );

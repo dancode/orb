@@ -8,7 +8,7 @@
 
 /*============================================================================================*/
 
-// extern struct api_registry global_registry;
+// extern struct registry_api_t global_registry;
 
 /*============================================================================================*/
 
@@ -18,7 +18,7 @@ main( int argc, char** argv )
     (void)argc;
     (void)argv;
 
-    struct api_registry* registry = loader_get_registry();
+    struct registry_api_t* registry = loader_get_registry();
 
     // register foundation into the global registry
     base_register_api( registry );

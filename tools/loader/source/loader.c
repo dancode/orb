@@ -76,57 +76,53 @@ get_sym( lib_handle_t h, const char* s )
 
 ==============================================================================================*/
 
-#define MAX_APIS 64
+#define MAX_APIS 32
 
-// struct api_registry_t
-// {
-//     void*       api_array[ MAX_APIS ];
-//     const char* name_array[ MAX_APIS ];
-//     int         api_count;
-// };
-
-static const char* s_names[ MAX_APIS ];
-static void*       s_apis[ MAX_APIS ];
-static int         s_count = 0;
+static const char* api_names[ MAX_APIS ];
+static void*       api_table[ MAX_APIS ];
+static int         api_count = 0;
 
 /*============================================================================================*/
 
 static void
 registry_add( const char* name, void* api )
 {
-    if ( s_count >= MAX_APIS )
+    if ( api_count >= MAX_APIS )
     {
         fprintf( stderr, "API registry overflow\n" );
         return;
     }
-    s_names[ s_count ] = _strdup( name );
-    s_apis[ s_count ]  = api;
-    s_count++;
+    api_names[ api_count ] = _strdup( name );
+    api_table[ api_count ] = api;
+    api_count++;
 }
 
 static void*
 registry_get( const char* name )
 {
-    for ( int i = 0; i < s_count; ++i )
-        if ( strcmp( s_names[ i ], name ) == 0 )
-            return s_apis[ i ];
+    for ( int i = 0; i < api_count; ++i )
+    {
+        if ( strcmp( api_names[ i ], name ) == 0 )
+        {
+            return api_table[ i ];
+        }
+    }
     return NULL;
 }
 
 /*============================================================================================*/
 
 // Public registry instance to be shared when calling plugin load functions.
-struct api_registry global_registry = {
+struct registry_api_t global_registry_api = {
     .add = registry_add,
     .get = registry_get,
 };
 
-struct api_registry*
-base_get_registry()
+struct registry_api_t*
+loader_get_registry()
 {
-    return &global_registry;
+    return &global_registry_api;
 }
-
 
 /*==============================================================================================
 
@@ -135,20 +131,18 @@ base_get_registry()
 ==============================================================================================*/
 
 static int
-load_and_call_plugin( const char* path, struct api_registry* reg )
+loader_load_plugin( const char* path, struct registry_api_t* reg )
 {
-    typedef void ( *load_plugin_func_t )( struct api_registry* );
-
     lib_handle_t handle = load_lib( path );
     if ( !handle )
     {
-        fprintf( stderr, "dlopen/LoadLibrary failed for %s\n", path );
+        fprintf( stderr, "failed to load: %s\n", path );
         return -1;
     }
     load_plugin_func_t load_func = (load_plugin_func_t)get_sym( handle, "load_plugin" );
     if ( !load_func )
     {
-        fprintf( stderr, "plugin %s missing tm_load_plugin\n", path );
+        fprintf( stderr, "plugin %s missing load_plugin function\n", path );
         return -2;
     }
 
@@ -176,19 +170,8 @@ load_and_call_plugin( const char* path, struct api_registry* reg )
 
 /*============================================================================================*/
 
-extern struct api_registry global_registry;
-
-struct api_registry*
-loader_get_registry()
-{
-    return &global_registry;
-}
-
-/*============================================================================================*/
-
 static char root_path[ 256 ];
 
-// Wrapper: get full path to current .exe
 const char*
 get_executable_path()
 {
@@ -218,11 +201,6 @@ get_executable_path()
         }
     }
 
-    // add the plugin extention
-    // root_path[ len ]     = '\\';
-    // root_path[ len + 1 ] = '\0';
-    // len++;
-
     return root_path;
 }
 
@@ -234,9 +212,10 @@ loader_get_plugin_dir()
     return get_executable_path();
 }
 
+/*============================================================================================*/
 
 void
-loader_load_runtime_modules( struct api_registry* reg, const char* plugin_dir )
+loader_load_runtime_modules( struct registry_api_t* reg, const char* plugin_dir )
 {
     // ensure registry is the global one (copy pointer) - we use global_registry internally
     // We expect reg to point to &global_registry in the executable; but allow passing same pointer.
@@ -244,13 +223,13 @@ loader_load_runtime_modules( struct api_registry* reg, const char* plugin_dir )
     // Call core
     char path[ 512 ];
     snprintf( path, sizeof( path ), "%s\\%s\\%s", plugin_dir ? plugin_dir : ".", "bin", CORE_NAME );
-    load_and_call_plugin( path, reg );
+    loader_load_plugin( path, reg );
 }
 
 /*============================================================================================*/
 
 void
-loader_load_editor_modules( struct api_registry* reg, const char* plugin_dir )
+loader_load_editor_modules( struct registry_api_t* reg, const char* plugin_dir )
 {
     loader_load_runtime_modules( reg, plugin_dir );
 
@@ -258,7 +237,7 @@ loader_load_editor_modules( struct api_registry* reg, const char* plugin_dir )
 
     char path[ 512 ];
     snprintf( path, sizeof( path ), "%s\\%s\\%s", plugin_dir ? plugin_dir : ".", "bin", EDITOR_PLUGIN_NAME );
-    int r = load_and_call_plugin( path, reg );
+    int r = loader_load_plugin( path, reg );
     if ( r != 0 )
     {
         fprintf( stderr, "failed loading editor plugin: %d\n", r );
@@ -267,9 +246,26 @@ loader_load_editor_modules( struct api_registry* reg, const char* plugin_dir )
     {
         // Editor plugin can register its own APIs and augment runtime behavior.
         // struct base_api* f = (struct base_api*)reg->get( "base_api" );
-        // if ( f && f->log )
+        // if  ( f && f->log )
         //     f->log( "Editor modules loaded" );
     }
+}
+
+/*==============================================================================================
+
+     API Registry
+
+==============================================================================================*/
+
+int
+main( int argc, char** argv )
+{
+    (void)argc;
+    (void)argv;
+
+    // struct api_registry global_registry = { 0 };
+
+    // struct registry_api_t* registry = loader_get_registry();
 }
 
 /*============================================================================================*/

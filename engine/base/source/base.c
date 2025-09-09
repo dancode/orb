@@ -48,7 +48,7 @@ base_init( void )
 }
 
 void
-base_register_api( struct api_registry* reg )
+base_register_api( struct registry_api_t* reg )
 {
     if ( !reg || !reg->add )
         return;

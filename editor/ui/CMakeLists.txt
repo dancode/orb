@@ -8,7 +8,9 @@ target_include_directories(editor_ui PUBLIC
 	${CMAKE_SOURCE_DIR}/engine/base/include
 )
 
-set_target_properties(editor_ui PROPERTIES FOLDER "Editor/UI")
+set_target_properties(editor_ui PROPERTIES FOLDER "Editor/")
+
+target_link_libraries(editor_ui PRIVATE common)
 
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES

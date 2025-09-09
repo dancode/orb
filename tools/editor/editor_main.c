@@ -3,7 +3,7 @@
 #include "base.h"
 #include <stdio.h>
 
-extern struct tm_api_registry global_registry;
+extern struct tm_registry_api_t global_registry;
 
 int
 main( int argc, char** argv )
@@ -11,7 +11,7 @@ main( int argc, char** argv )
     (void)argc;
     (void)argv;
 
-    struct api_registry* registry = loader_get_registry();
+    struct registry_api_t* registry = loader_get_registry();
 
     // register foundation into the global registry
     base_register_api( registry );

@@ -48,12 +48,30 @@ if(MSVC)
 endif()
 
 # ==========================================================
+# Create Shared Headers (Folder)
+# ==========================================================
+
+add_subdirectory(common)
+
+# file(GLOB_RECURSE COMMON_FILES "common/*.h")
+# add_custom_target( com SOURCES ${COMMON_FILES})
+# set_target_properties(com PROPERTIES  FOLDER "Common" PROJECT_LABEL "common")
+# source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES	
+#  	${COMMON_FILES}	
+# )
+
+# ==========================================================
 # Shared Headers
 # ==========================================================
 
-# add_library(common INTERFACE)
-# target_include_directories(common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_library(common INTERFACE)
+target_include_directories(common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/common)
+# set_target_properties(common PROPERTIES FOLDER "Common/")
 
+# Add headers as sources so Visual Studio shows them
+target_sources(common INTERFACE
+    ${COMMON_HEADERS}
+)
 
 # ==========================================================
 # Engine modules

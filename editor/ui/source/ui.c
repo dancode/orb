@@ -1,13 +1,16 @@
 /*============================================================================================*/
 
-#include "plugin.h"
-#include "../../loader/include/api_registry.h"
+#include <stdio.h>
+#include <string.h>
+
+#include "api_registry.h"
 #include "base.h"
 
 /*============================================================================================*/
 
-#include <stdio.h>
-#include <string.h>
+ORB_API void load_plugin( struct registry_api_t* registry );
+
+/*============================================================================================*/
 
 // small editor api struct
 struct editor_api_t
@@ -29,7 +32,7 @@ editor_open_scene( const char* path )
 
 
 ORB_API void
-load_plugin( struct api_registry* registry )
+load_plugin( struct registry_api_t* registry )
 {
     struct base_api_t* f = registry ? (struct base_api_t*)registry->get( "base_api" ) : NULL;
     if ( f && f->log )

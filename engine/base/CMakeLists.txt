@@ -9,7 +9,11 @@ target_include_directories(base PUBLIC include
 	${CMAKE_SOURCE_DIR}/tools/loader/include
 )
 
-set_target_properties(base PROPERTIES FOLDER "Engine/Base")
+#set_target_properties(base PROPERTIES FOLDER "Engine/Base")
+set_target_properties(base PROPERTIES FOLDER "Engine/")
+
+
+target_link_libraries(base PRIVATE common)
 
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES
