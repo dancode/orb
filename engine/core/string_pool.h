@@ -1,12 +1,23 @@
 #ifndef STRING_POOL_HEADER_H
 #define STRING_POOL_HEADER_H
 
+// clang-format off
 /*==============================================================================================
 
     string pool
 
 ==============================================================================================*/
-// clang-format off
+
+typedef struct string_pool_s
+{
+    char*   data;        // Linear heap for all strings
+    u32     used;        // Bytes currently used
+    u32     capacity;    // Bytes allocated
+    u32     maximum;     // Maximum bytes allowed (0xFFFE)
+
+} string_pool_t;
+
+/*============================================================================================*/
 
 #define STRING_POOL_MAX_BYTES       0xFFFEu    // Max pool size (fits in u16)
 #define STRING_POOL_ALIGN           4          // Alignment for pool allocations

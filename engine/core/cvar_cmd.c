@@ -18,6 +18,7 @@
 
 #include "orb.h"
 #include "cvar.h"
+#include "string_pool.h"
 
 /*============================================================================================*/
 /* Print cvar value with type info */

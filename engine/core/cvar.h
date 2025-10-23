@@ -24,21 +24,7 @@
 
 #pragma once
 #include "orb.h"
-
-/*==============================================================================================
-
-    String Pool - Compact String Storage
-
-==============================================================================================*/
-
-typedef struct string_pool_s
-{
-    char*   data;        // Linear heap for all strings
-    u32     used;        // Bytes currently used
-    u32     capacity;    // Bytes allocated
-    u32     maximum;     // Maximum bytes allowed (0xFFFE)
-
-} string_pool_t;
+#include "string_pool.h"
 
 /*==============================================================================================
  

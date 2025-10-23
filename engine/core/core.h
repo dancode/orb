@@ -5,6 +5,7 @@
 ==============================================================================================*/
 #pragma once
 #include "orb.h"
+#include "string_pool.h"
 #include "cvar.h"
 
 // clang-format off
