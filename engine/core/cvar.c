@@ -28,7 +28,11 @@ fnv1a_hash( const char* s )
     u32 h = 2166136261u;    // FNV offset basis
     while ( *s )
     {
-        h ^= ( unsigned char )( *s++ );
+        char c = *s++;
+        if ( c >= 'A' && c <= 'Z' )
+            c = c + ( 'a' - 'A' );
+
+        h ^= ( unsigned char )c;
         h *= 16777619u;    // FNV prime
     }
     return h;
@@ -250,7 +254,7 @@ cvar_hash_find( const char* name )
         {
             cvar_t*     cv      = &g_cvar_pool[ idx ];
             const char* cv_name = string_pool_get( &g_string_pool, cv->name );
-            if ( strcmp( cv_name, name ) == 0 )
+            if ( str_icmp_eq( cv_name, name ) )
             {
                 return cv;    // Found cvar!
             }
@@ -305,7 +309,7 @@ cvar_hash_insert( u32 cvar_index )
             /* If duplicate insertion we do nothing */
 
             cvar_t* other = &g_cvar_pool[ slot ];
-            if ( strcmp( string_pool_get( &g_string_pool, other->name ), name ) == 0 )
+            if ( str_icmp_eq( string_pool_get( &g_string_pool, other->name ), name ) )
             {
                 /* Duplicate found - shouldn't happen */
                 return;
@@ -867,16 +871,8 @@ _cvar_set_value_internal( cvar_t* cv, const char* value )
             }
             else
             {
-                // Normalize small strings (5 chars) to lowercase for fast compare.
-                char tmp[ 6 ]; size_t len = strlen( value );
-                if ( len <= 5 )
-                {
-                    for ( size_t i = 0; i < len; ++i ) { tmp[ i ] = ( char )tolower( ( unsigned char )value[ i ] ); }
-                    tmp[ len ] = '\0';
-
-                    if      ( !strcmp( tmp, "true" )  || !strcmp( tmp, "on" )  || !strcmp( tmp, "yes" ) ) { new_value = true;  parsed = true; }
-                    else if ( !strcmp( tmp, "false" ) || !strcmp( tmp, "off" ) || !strcmp( tmp, "no" ) )  { new_value = false; parsed = true; }
-                }
+                if      ( str_icmp_eq( value, "true" ) || str_icmp_eq( value, "on" ) || str_icmp_eq( value, "yes" ) ) { new_value = true; parsed = true; }
+                else if ( str_icmp_eq( value, "false" ) || str_icmp_eq( value, "off" ) || str_icmp_eq( value, "no" ) ) { new_value = false; parsed = true; }
             }
 
             if ( !parsed ) { break; } // Invalid bool string
@@ -1072,17 +1068,21 @@ cvar_get_value( const char* name )
     if ( !cv )
         return "";
 
-    static char buf[ 32 ];
+    // Use a round-robin buffer for thread-safe-ish string conversions.
+    // This allows multiple calls within a single printf, for example.
+    static char bufs[ 4 ][ 32 ];
+    static int  buf_idx = 0;
+    char*       buf     = bufs[ buf_idx++ & 3 ];
 
     switch ( cv->type & CVAR_TYPE_MASK )
     {
-        case CVAR_BOOL:     return ( cv->b.value ? "1" : "0" );
-        case CVAR_INT:      snprintf( buf, sizeof( buf ), "%d", cv->i.value ); return buf;
-        case CVAR_FLOAT:    snprintf( buf, sizeof( buf ), "%g", cv->f.value ); return buf;
-        case CVAR_STR:      return _cvar_stringset_get( cv, cv->s.value );
-        case CVAR_BUF:      return string_pool_get( &g_string_pool, cv->w.buf );
-        case CVAR_REF:      return string_pool_get( &g_string_pool, cv->r.value );
-        case CVAR_USR:      return user_string_pool_get( cv->u.value_offset );
+        case CVAR_BOOL: return ( cv->b.value ? "1" : "0" );
+        case CVAR_INT: snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
+        case CVAR_FLOAT: snprintf( buf, sizeof( bufs[ 0 ] ), "%g", cv->f.value ); return buf;
+        case CVAR_STR: return _cvar_stringset_get( cv, cv->s.value );
+        case CVAR_BUF: return string_pool_get( &g_string_pool, cv->w.buf );
+        case CVAR_REF: return string_pool_get( &g_string_pool, cv->r.value );
+        case CVAR_USR: return user_string_pool_get( cv->u.value_offset );
         default: return "";
     }
 }
