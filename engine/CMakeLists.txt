@@ -2,12 +2,8 @@
 # engine/CMakeLists.txt
 # ==========================================================
 
-# add_library(engine_core STATIC
-#     core/memory.c
-#     core/threading.c
-#     core/logging.c
-# )
-# 
+add_subdirectory(core)
+
 # add_library(engine_platform STATIC
 #     platform/fs.c
 #     platform/window.c
@@ -36,12 +32,17 @@
 
 # Collect source files in one place
 set(ENGINE_SOURCES
-    engine_main.c
-	engine.c
-	engine.h
+	orb.h
 	
-	core/reflection.c
-	core/reflection.h	
+    engine_main.c
+	engine.h
+	engine.c
+		
+	base/base.h	
+	base/base.c
+		
+	base/module.h
+	base/module.c
 )
 
 add_executable(engine
@@ -49,20 +50,20 @@ add_executable(engine
 )
 
 target_include_directories(engine PUBLIC
-	# ${CMAKE_SOURCE_DIR}/engine
+	${CMAKE_SOURCE_DIR}/engine
 )
 
 # Add loader object files to engine
 # target_sources(engine PRIVATE $<TARGET_OBJECTS:loader>)
 
 # engine executable is minimal: links loader + base
-# target_link_libraries(engine PRIVATE common loader base)
+target_link_libraries(engine PUBLIC core)
 
 # Put in a clear project folder
 set_target_properties(engine PROPERTIES FOLDER "Exec/")
 
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES  ${ENGINE_SOURCES} )
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ENGINE_SOURCES} )
 
 # ==========================================================
 
@@ -120,13 +121,4 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES  ${ENGINE_SOURCES} )
 # add_executable(shader_tool shader_tool/shader_main.c)
 # target_link_libraries(shader_tool PRIVATE tools_core engine_core engine_platform # engine_systems)
 
-# ==========================================================
-# projects/demo_game/CMakeLists.txt
-# ==========================================================
 
-# add_library(demo_game SHARED
-#     game/combat_system.c
-#     game/quest_system.c
-# )
-# 
-# target_link_libraries(demo_game PRIVATE game)

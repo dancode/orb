@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+	<Type Name="cvar_s">
+		<!-- Summary view in Locals/Watch -->
+		<DisplayString Condition="(type &amp; 1) != 0">
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (bool) = {b.value}
+		</DisplayString>
+		<DisplayString Condition="(type &amp; 2) != 0">
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (int) = {i.value}
+		</DisplayString>
+		<DisplayString Condition="(type &amp; 4) != 0">
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (float) = {f.value}
+		</DisplayString>
+		<DisplayString Condition="(type &amp; 8) != 0">
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (string) = {((char*)g_debug_api->string_pool->data) + s.base + (s.width * s.value),s}
+		</DisplayString>
+		<DisplayString Condition="(type &amp; 16) != 0">
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (buffer) = {((char*)g_debug_api->string_pool->data) + w.buf,s}
+		</DisplayString>
+		<DisplayString Condition="(type &amp; 32) != 0">
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (readonly) = {((char*)g_debug_api->string_pool->data) + r.value,s}
+		</DisplayString>
+		<DisplayString Condition="(type &amp; 64) != 0">
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (user) = {((char*)g_debug_api->user_string_pool->data) + u.value_offset,s}
+		</DisplayString>
+		<DisplayString>
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s}
+		</DisplayString>
+
+		<Expand>
+			<!-- Always visible -->
+			<Item Name="Name">((const char*) g_debug_api->string_pool->data) + name,s</Item>
+			<Item Name="Description">((const char*) g_debug_api->string_pool->data) + desc,s</Item>
+			
+			<!-- <Item Name="Flags">flag</Item> -->
+
+			<Synthetic Name="Flags">
+				<DisplayString Condition="(flag &amp; 1) != 0 &amp;&amp; (flag &amp; 2) != 0 &amp;&amp; (flag &amp; 4) != 0">CVAR_MODIFIED | CVAR_LATCHED | CVAR_CALLBACK</DisplayString>
+				<DisplayString Condition="(flag &amp; 1) != 0 &amp;&amp; (flag &amp; 2) != 0 &amp;&amp; (flag &amp; 4) == 0">CVAR_MODIFIED | CVAR_LATCHED</DisplayString>
+				<DisplayString Condition="(flag &amp; 1) != 0 &amp;&amp; (flag &amp; 2) == 0 &amp;&amp; (flag &amp; 4) != 0">CVAR_MODIFIED | CVAR_CALLBACK</DisplayString>
+				<DisplayString Condition="(flag &amp; 1) == 0 &amp;&amp; (flag &amp; 2) != 0 &amp;&amp; (flag &amp; 4) != 0">CVAR_LATCHED | CVAR_CALLBACK</DisplayString>
+				<DisplayString Condition="(flag &amp; 1) != 0 &amp;&amp; (flag &amp; 2) == 0 &amp;&amp; (flag &amp; 4) == 0">CVAR_MODIFIED</DisplayString>
+				<DisplayString Condition="(flag &amp; 1) == 0 &amp;&amp; (flag &amp; 2) != 0 &amp;&amp; (flag &amp; 4) == 0">CVAR_LATCHED</DisplayString>
+				<DisplayString Condition="(flag &amp; 1) == 0 &amp;&amp; (flag &amp; 2) == 0 &amp;&amp; (flag &amp; 4) != 0">CVAR_CALLBACK</DisplayString>
+				<DisplayString Condition="(flag &amp; 1) == 0 &amp;&amp; (flag &amp; 2) == 0 &amp;&amp; (flag &amp; 4) == 0">(none)</DisplayString>
+				<Expand>
+					<Item Name="[Value]">flag</Item>
+					<Item Name="CVAR_MODIFIED" Condition="(flag &amp; 1) != 0">true</Item>
+					<Item Name="CVAR_LATCHED" Condition="(flag &amp; 2) != 0">true</Item>
+					<Item Name="CVAR_CALLBACK" Condition="(flag &amp; 4) != 0">true</Item>
+				</Expand>
+			</Synthetic>
+			
+			<Item Name="Callback">callback_id</Item>
+			<Item Name="Type">type</Item>
+
+			<!-- Bool type -->
+			<Item Name="Value"	Condition="(type &amp; 1) != 0">b.value</Item>
+			<Item Name="Latch"	Condition="(type &amp; 1) != 0">b.latch</Item>
+			<Item Name="Reset"	Condition="(type &amp; 1) != 0">b.reset</Item>
+			
+			<!-- Integer type -->
+			<Item Name="Value"	Condition="(type &amp; 2) != 0">i.value</Item>
+			<Item Name="Min"	Condition="(type &amp; 2) != 0">i.min</Item>
+			<Item Name="Max"	Condition="(type &amp; 2) != 0">i.max</Item>
+			<Item Name="Latch"	Condition="(type &amp; 2) != 0">i.latch</Item>
+			<Item Name="Reset"	Condition="(type &amp; 2) != 0">i.reset</Item>
+
+			<!-- Float type -->
+			<Item Name="Value"	Condition="(type &amp; 4) != 0">f.value</Item>
+			<Item Name="Min"	Condition="(type &amp; 4) != 0">f.min</Item>
+			<Item Name="Max"	Condition="(type &amp; 4) != 0">f.max</Item>
+			<Item Name="Latch"	Condition="(type &amp; 4) != 0">f.latch</Item>
+			<Item Name="Reset"	Condition="(type &amp; 4) != 0">f.reset</Item>
+
+			<!-- String -->
+			<Item Name="Value"	Condition="(type &amp; 8) != 0">((const char*)g_debug_api->string_pool->data) + s.base + (s.width * s.value),s</Item>
+			<Item Name="Latch"	Condition="(type &amp; 8) != 0">((const char*)g_debug_api->string_pool->data) + s.base + (s.width * s.latch),s</Item>
+			<Item Name="Reset"	Condition="(type &amp; 8) != 0">((const char*)g_debug_api->string_pool->data) + s.base + (s.width * s.reset),s</Item>
+			<Item Name="Count"	Condition="(type &amp; 8) != 0">s.count</Item>
+			<Item Name="Width"	Condition="(type &amp; 8) != 0">s.width</Item>
+			
+			<!-- Read-only string type -->
+			<Item Name="Value"	Condition="(type &amp; 32) != 0">((const char*) g_debug_api->string_pool->data) + r.value,s</Item>
+
+			<!-- User string type -->
+			<Item Name="Value"	Condition="(type &amp; 64) != 0">((const char*) g_debug_api->user_string_pool->data) + u.value_offset,s</Item>
+
+		</Expand>
+	</Type>
+
+	
+</AutoVisualizer>

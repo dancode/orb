@@ -1,103 +1,155 @@
 ##############################################
-# BasedOnStyle: Google
+# BASE STYLE
+##############################################
 
-IndentWidth: 4
-UseTab: Never
-ColumnLimit: 110
-SortIncludes: false
-MaxEmptyLinesToKeep: 2
+BasedOnStyle: Google                        # Start from Google's conservative, consistent base
 
+Language: Cpp
+Standard: c++20
 
-ReflowComments: true
-IndentCaseLabels: true
+IndentWidth: 4                              # 4-space indentation
+UseTab: Never                               # Always use spaces
+ColumnLimit: 110                            # Max line width before wrapping
+SortIncludes: false                         # Keep include order as written
+MaxEmptyLinesToKeep: 2                      # Prevent excessive blank lines
 
-BreakStringLiterals: false
+ReflowComments: true                        # Re-wrap comment text to fit ColumnLimit
+IndentCaseLabels: true                      # Indent 'case' labels within switch
+BreakStringLiterals: false                  # Don't split long string literals automatically
+
 
 ##############################################
-# MACROS
+# PREPROCESSOR / MACROS
+##############################################
 
-IndentPPDirectives: AfterHash
-AlignEscapedNewlines: true
-AlignConsecutiveMacros: true
-
+IndentPPDirectives: AfterHash               # Indent directives after the hash symbol
+AlignEscapedNewlines: true                  # Visually align escaped newlines in macros
+AlignConsecutiveMacros: AcrossEmptyLines    # Align #define blocks even across empty lines
+SpaceAfterLogicalNot: false                 # Avoid spacing after '!' (newer option)
 
 ##############################################
 # COMMENTS
+##############################################
 
-AlignTrailingComments: true
-SpacesBeforeTrailingComments: 4
+AlignTrailingComments: true                 # Align end-of-line comments vertically
+SpacesBeforeTrailingComments: 4             # Minimum spaces before a trailing comment
+CommentPragmas: '^ IWYU pragma:'            # Keep special pragmas aligned if present
+SeparateDefinitionBlocks: Always            # Add vertical spacing between class/struct groups
 
 ##############################################
-# FUNCTIONS
+# ALIGNMENT & WRAPPING
+##############################################
 
-AllowShortFunctionsOnASingleLine: true
-AllowAllParametersOfDeclarationOnNextLine: true
-
-AlignConsecutiveAssignments: AcrossEmptyLines 
+AlignConsecutiveAssignments: AcrossEmptyLines               # Line up '=' for readability
 AlignConsecutiveBitFields: AcrossEmptyLines
-AlignConsecutiveDeclarations: true
-AlignOperands: true
-AlignAfterOpenBracket: Align 
+AlignConsecutiveDeclarations: AcrossEmptyLines
+AlignOperands: true                                         # Align multi-line binary expressions
+AlignAfterOpenBracket: Align                                # Align parameters after '(' vertically
 
-# AlignConsecutiveShortCaseStatements: true 	<-- not working
-# AlignTrailingConsecutiveDeclarations: true 	<-- not working
-# AlignArrayOfStructures: true 					<-- not working
+Cpp11BracedListStyle: true                      
+AlignArrayOfStructures: Left                                # Left | Right | None
 
+# AlignTrailingConsecutiveDeclarations: true                # Align consecutive declarations vertically (new)
+# AlignConsecutiveShortCaseStatements: AcrossEmptyLines     # Align short case statements (new)
 
-AllowShortIfStatementsOnASingleLine: false
+##############################################
+# FUNCTIONS & CONTROL FLOW
+##############################################
+
+AllowShortFunctionsOnASingleLine: All           # None | Empty | Inline | All
+AllowShortIfStatementsOnASingleLine: false      # Disallow single-line if statements (Never)
 AllowShortEnumsOnASingleLine: true
-AllowShortBlocksOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty            # Allow empty blocks on a single line (Empty)
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortLoopsOnASingleLine: true
+AllowAllParametersOfDeclarationOnNextLine: true # 
 
-# CODE 
+# C++
+# AllowShortLambdasOnASingleLine: InlineOnly      # New option (for concise inline lambdas)
 
 PointerAlignment: Left
 DerivePointerAlignment: false
  
-# NEWLINES 
+##############################################
+# NEWLINES & BRACES
+##############################################
 
 AlwaysBreakAfterDefinitionReturnType: true
 AlwaysBreakAfterReturnType: TopLevelDefinitions
 KeepEmptyLinesAtTheStartOfBlocks: false
 
-# SPACING 
-
-BitFieldColonSpacing: Both
-
 BreakBeforeBraces: Custom
 BraceWrapping:
   AfterEnum: true
   AfterStruct: true
-  SplitEmptyFunction: false
   AfterUnion: true
   AfterClass: true
-  IndentBraces: false
-  AfterCaseLabel: true
   AfterFunction: true
   AfterControlStatement: true
+  AfterCaseLabel: true
   AfterExternBlock: true
   BeforeElse: true
-  BeforeWhile : true
+  BeforeWhile: true
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+##############################################
+# SPACING
+##############################################
+
+BitFieldColonSpacing: Both                  # Spaces around ':' in bitfields
+SpaceBeforeAssignmentOperators: true
+SpacesInParentheses: true
+SpacesInSquareBrackets: true
+SpaceInEmptyParentheses: false
+SpaceBeforeParens: ControlStatements        # No space for function calls, yes for control flow
+
+SpaceAfterCStyleCast: false
+SpacesInCStyleCastParentheses: true
+
+# C++
+# SpaceBeforeRangeBasedForLoopColon: true   # Add space before ':' in range-for loops
+SpaceBeforeCtorInitializerColon: true       # Add space before ':' in ctor initializers
+SpaceBeforeInheritanceColon: true           # Add space before ':' in inheritance
+SpaceAfterTemplateKeyword: true             # Ensure space after 'template' keyword
+
+
+##############################################
+# BIN PACKING / PARAMETERS
+##############################################
 
 BinPackArguments: true
 BinPackParameters: false
-
-# SPACES 
-
-SpacesInParentheses: true
-SpacesInSquareBrackets: true
+PackConstructorInitializers: NextLine       # Break long initializer lists cleanly
+BreakConstructorInitializers: BeforeComma   # Put breaks before commas for better diffs
 
 
+##############################################
+# ADVANCED / EXPERIMENTAL OPTIONS
+##############################################
 
+# C++
+# SortUsingDeclarations: Lexical             # Sort 'using' statements consistently
+# RequiresExpressionIndentation: OuterScope  # For modern 'requires' clauses
+# BreakBeforeConceptDeclarations: Always     # Force concept declarations on new line
+# EmptyLineAfterAccessModifier: Leave         # Optionally enforce spacing in classes
+# NamespaceIndentation: All                  # Indent contents of namespaces
+# SpacesInAngles: false                      # No spaces inside '< >'
 
-# SpaceAfterCStyleCast: false
-# SpaceBeforeAssignmentOperators: true
-# SpaceBeforeParens: ControlStatements
-# SpaceInEmptyParentheses: false
-# SpacesInCStyleCastParentheses: false
-# BreakBeforeBinaryOperators: None
-# # penalties
-# PenaltyExcessCharacter: 2
-# AlignConsecutiveShortCaseStatements: AcrossEmptyLines 	NEW
-# SeparateDefinitionBlocks: true							NEW
+IndentExternBlock: false                    # Indent code inside extern "C" blocks (AfterExternBlock)
+# InsertTrailingCommas: Wrapped              # Add trailing commas on multi-line constructs
+# AllowShortEnumsOnASingleLine: true
+
+##############################################
+# PENALTIES & TUNING
+##############################################
+
+PenaltyBreakComment: 300
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 2
+PenaltyIndentedWhitespace: 0
+PenaltyBreakTemplateDeclaration: 10
+PenaltyBreakAssignment: 1                   # Light penalty for breaking assignment lines

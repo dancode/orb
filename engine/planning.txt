@@ -1,0 +1,28 @@
+base	: no state
+
+		base.c
+		logging.c
+		memory.c
+		math.c
+
+
+core	: stateful : depends on base
+	
+		container.c
+	
+		reflection_system.c
+		event_system.c
+		job_system.c
+		resource_system.c
+		serialization.c
+		
+subsystems : depend on core (which inclused base)
+
+		graphics renderer - vulkan
+		scene graph / ecs 
+		physics
+		audio
+		input		
+		scripting
+		
+		ai/gameplay systems

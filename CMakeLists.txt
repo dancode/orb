@@ -20,6 +20,8 @@ foreach(OUTPUTCONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${CMAKE_SOURCE_DIR}/bin")
 endforeach()
 
+# message(STATUS "Current Source Directory: ${CMAKE_SOURCE_DIR}")
+
 # ==========================================================
 # Configure different build types
 # ==========================================================
@@ -55,6 +57,9 @@ add_subdirectory(engine)
 
 # Tools
 # add_subdirectory(tools)
+
+# Projects
+add_subdirectory(projects/sample_game)
 
 # ==========================================================
 # Set default startup project
