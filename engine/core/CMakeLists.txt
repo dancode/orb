@@ -11,6 +11,8 @@ set(CORE_SOURCES
 	
 	module_system.c	
 	
+	bits.c
+	
 	string_pool.h
 	string_pool.c
 	

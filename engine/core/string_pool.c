@@ -34,6 +34,45 @@ string_pool_align_up( u32 value )
 }
 
 /*============================================================================================*/
+/* Initialize string pool */
+
+void
+string_pool_init( string_pool_t* pool )
+{
+    if ( pool->data )
+    {
+        free( pool->data );
+        pool->data = NULL;
+    }
+
+    pool->used     = 0;
+    pool->capacity = 0;
+    pool->maximum  = STRING_POOL_MAX_BYTES;
+
+    /* create empty string at offset 0 */
+    string_pool_ensure( pool, string_pool_align_up( STRING_POOL_ALIGN ) );
+    if ( pool->data )
+        pool->data[ pool->used ] = '\0';
+
+    pool->used += string_pool_align_up( STRING_POOL_ALIGN );
+}
+
+void
+string_pool_exit( string_pool_t* pool )
+{
+    // Free the fixed read only string pool data.
+    if ( pool->data )
+    {
+        free( pool->data );
+        pool->data = NULL;
+    }
+
+    pool->used = 0;
+    pool->capacity = 0;
+    pool->maximum  = 0;
+}
+
+/*============================================================================================*/
 /* Ensure pool has capacity for allocation, returns current used offset */
 
 u32
@@ -151,30 +190,6 @@ string_pool_get( const string_pool_t* pool, u16 offset )
     return pool->data + offset;
 }
 
-/*============================================================================================*/
-/* Initialize string pool */
-
-void
-string_pool_init( string_pool_t* pool, u32 maximum )
-{
-    if ( pool->data )
-    {
-        free( pool->data );
-        pool->data = NULL;
-    }
-
-    pool->used     = 0;
-    pool->capacity = 0;
-    pool->maximum  = maximum;
-
-    /* create empty string at offset 0 */
-    string_pool_ensure( pool, string_pool_align_up( STRING_POOL_ALIGN ) );
-    if ( pool->data )
-        pool->data[ pool->used ] = '\0';
-
-    pool->used += string_pool_align_up( STRING_POOL_ALIGN );
-}
-
 /*==============================================================================================
 
     cvar system : user string pool
@@ -195,21 +210,31 @@ string_pool_init( string_pool_t* pool, u32 maximum )
 /* Fixed-size buckets for user strings */
 static const u32 g_user_bucket_sizes[ USER_STRING_BUCKET_COUNT ] = { 8, 16, 32, 64, 128, 256 };
 
-/* Separate string pool for user cvars */
-string_pool_t g_user_string_pool;
-
-/* Free list head for each bucket size */
-static u16 g_user_free_list[ USER_STRING_BUCKET_COUNT ];
+user_string_pool_t g_user_string_pool;
 
 /*============================================================================================*/
 /* Initialize the user string pool */
 
 void
-user_string_pool_init()
+user_string_pool_init( user_string_pool_t* usp )
 {
     /* Initialize all free lists to empty (0xFFFF) */
-    memset( g_user_free_list, 0xFF, sizeof( g_user_free_list ) );
-    string_pool_init( &g_user_string_pool, STRING_POOL_MAX_BYTES );
+    for ( int i = 0; i < USER_STRING_BUCKET_COUNT; ++i )
+    {
+        usp->free_list[ i ] = USER_STRING_INVALID_LIST;
+    }
+    string_pool_init( &usp->pool );
+}
+
+void
+user_string_pool_exit( user_string_pool_t* usp )
+{
+    // Free the dynamic new user string pool data
+    if ( usp->pool.data )
+    {
+        free( usp->pool.data );
+        usp->pool.data = NULL;
+    }
 }
 
 /*============================================================================================*/
@@ -231,30 +256,29 @@ user_string_get_bucket( u32 size )
 /* Allocate a string from the user pool */
 
 u16
-user_string_pool_alloc( const char* str, u16* bucket_index )
+user_string_pool_alloc( user_string_pool_t* usp, const char* str, u16* bucket_index )
 {
-    u32 len = ( u32 )strlen( str ) + 1;
+    u32 len        = ( u32 )strlen( str ) + 1;
 
-    // TODO: infer bucket index from size.
     *bucket_index  = user_string_get_bucket( len );
 
     u32 alloc_size = g_user_bucket_sizes[ *bucket_index ];
-    u16 offset     = g_user_free_list[ *bucket_index ];
+    u16 offset     = usp->free_list[ *bucket_index ];
 
     if ( offset != USER_STRING_INVALID_LIST )
     {
         /* Found a free block. Pull it from the free list. */
         /* The offset of the *next* free block is stored in the block itself. */
-        g_user_free_list[ *bucket_index ] = *( u16* )( g_user_string_pool.data + offset );
+        usp->free_list[ *bucket_index ] = *( u16* )( usp->pool.data + offset );
     }
     else
     {
         /*  No free blocks ("allocate from top"). Reserve new space. */
-        offset = ( u16 )string_pool_reserve( &g_user_string_pool, alloc_size );
+        offset = ( u16 )string_pool_reserve( &usp->pool, alloc_size );
     }
 
     /* Write the string into the allocated block (with truncation) */
-    string_pool_write( &g_user_string_pool, offset, str, alloc_size );
+    string_pool_write( &usp->pool, offset, str, alloc_size );
     return offset;
 }
 
@@ -262,24 +286,24 @@ user_string_pool_alloc( const char* str, u16* bucket_index )
 /* Free a string, adding it to its bucket's free list */
 
 void
-user_string_pool_free( u16 offset, u16 bucket_index )
+user_string_pool_free( user_string_pool_t* usp, u16 offset, u16 bucket_index )
 {
     if ( offset == USER_STRING_INVALID_OFFSET || bucket_index >= USER_STRING_BUCKET_COUNT )
         return; /* Cannot free the invalid offset */
 
     /* Add to head of free list. Store the old head offset in our new block. */
-    *( u16* )( g_user_string_pool.data + offset ) = g_user_free_list[ bucket_index ];
-    g_user_free_list[ bucket_index ]              = offset;
+    *( u16* )( usp->pool.data + offset ) = usp->free_list[ bucket_index ];
+    usp->free_list[ bucket_index ]       = offset;
 }
 
 /*============================================================================================*/
 /* Get a string from the user pool */
 
 const char*
-user_string_pool_get( u16 offset )
+user_string_pool_get( const user_string_pool_t* usp, u16 offset )
 {
     /* Just a wrapper around the generic string_pool_get */
-    return string_pool_get( &g_user_string_pool, offset );
+    return string_pool_get( &usp->pool, offset );
 }
 
 /*============================================================================================*/

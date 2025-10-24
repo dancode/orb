@@ -200,6 +200,7 @@ cvar_t*     cvar_register_f         ( const char* name, const char* desc, f32 va
 cvar_t*     cvar_register_s         ( const char* name, const char* desc, const char** values, u32 count, u32 def_index, u32 type );
 cvar_t*     cvar_register_w         ( const char* name, const char* desc, const char* reset, u32 size, u32 type );
 cvar_t*     cvar_register_r         ( const char* name, const char* desc, const char* value, u32 type );
+cvar_t*     cvar_register_u         ( const char* name, const char* value );
 
 /*==============================================================================================
     Type Query Functions

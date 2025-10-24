@@ -46,12 +46,18 @@ test_cvar()
     cvar_t* wvar = cvar_register_w( "player_name", "online display name", "default name", 32, CVAR_USERINFO );
     cvar_t* rvar = cvar_register_r( "base_game", "game path", "base", CVAR_INIT );
 
+    cvar_t* uvar = cvar_register_u( "user_var", "10" );
+    cvar_t* uvar_fix = cvar_register_i( "user_var", "a build in variable", 20, 0, 100, 0 );
+
+
     UNUSED( bvar );
     UNUSED( ivar );
     UNUSED( fvar );
     UNUSED( svar );
     UNUSED( wvar );
     UNUSED( rvar );
+    UNUSED( uvar );
+    UNUSED( uvar_fix );
 
     const char* test_string = NULL;
     test_string = cvar_get_string( svar );
