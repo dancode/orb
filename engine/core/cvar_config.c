@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+
 #include "cvar.h"
 
 /*============================================================================================*/
@@ -50,30 +51,8 @@ cvar_write_config( const char* filename )
 }
 
 /*============================================================================================*/
-/* Case-insensitive string compare helper */
-static bool
-str_icmp_eq( const char* a, const char* b )
-{
-    while ( *a && *b )
-    {
-        char ca = *a;
-        if ( ca >= 'A' && ca <= 'Z' )
-            ca = ca + ( 'a' - 'A' );
-
-        char cb = *b;
-        if ( cb >= 'A' && cb <= 'Z' )
-            cb = cb + ( 'a' - 'A' );
-
-        if ( ca != cb )
-            return false;
-        ++a;
-        ++b;
-    }
-    return *a == *b;
-}
-
-/*============================================================================================*/
 /* Execute a config file (loads and runs commands) */
+
 #define MAX_ARGS 16
 #define MAX_LINE_LEN 1024
 
@@ -151,3 +130,5 @@ cvar_exec_config( const char* filename )
 
     fclose( f );
 }
+
+/*============================================================================================*/

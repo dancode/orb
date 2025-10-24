@@ -16,6 +16,30 @@
 #include "orb.h"
 #include "core.h"
 
+/* Case-insensitive string compare helper */
+
+bool
+str_icmp_eq( const char* a, const char* b )
+{
+    while ( *a && *b )
+    {
+        char ca = *a;
+        if ( ca >= 'A' && ca <= 'Z' )
+            ca = ca + ( 'a' - 'A' );
+
+        char cb = *b;
+        if ( cb >= 'A' && cb <= 'Z' )
+            cb = cb + ( 'a' - 'A' );
+
+        if ( ca != cb )
+            return false;
+        ++a;
+        ++b;
+    }
+    return *a == *b;
+}
+
+
 /*==============================================================================================
 
     Utility Functions
@@ -36,27 +60,6 @@ fnv1a_hash( const char* s )
         h *= 16777619u;    // FNV prime
     }
     return h;
-}
-
-static bool
-str_icmp_eq( const char* a, const char* b )
-{
-    while ( *a && *b )
-    {
-        char ca = *a;
-        if ( ca >= 'A' && ca <= 'Z' )
-            ca = ca + ( 'a' - 'A' );
-
-        char cb = *b;
-        if ( cb >= 'A' && cb <= 'Z' )
-            cb = cb + ( 'a' - 'A' );
-
-        if ( ca != cb )
-            return false;
-        ++a;
-        ++b;
-    }
-    return *a == *b;
 }
 
 string_pool_t g_string_pool;
@@ -333,7 +336,6 @@ cvar_hash_insert( u32 cvar_index )
 
 extern string_pool_t g_user_string_pool;
 
-
 void
 cvar_system_init( void )
 {
@@ -395,7 +397,7 @@ cvar_promote_user_value( cvar_t* cv )
 {
     if ( !( cv->type & CVAR_USR ) )
         return;
-    
+
     if ( g_user_off == USER_STRING_INVALID_OFFSET || g_user_buck == USER_STRING_INVALID_LIST )
     {
         fprintf( stderr, "we expected a user value to be cached\n" );
@@ -491,7 +493,7 @@ cvar_register_b( const char* name, const char* desc, bool value, u32 type )
 cvar_t*
 cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max, u32 type )
 {
-    cvar_t* cv  = cvar_register_base( name, desc, type | CVAR_INT );
+    cvar_t* cv = cvar_register_base( name, desc, type | CVAR_INT );
     cvar_cache_user_value( cv );
     cv->i.value = value;
     cv->i.min   = min;
@@ -507,7 +509,7 @@ cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max
 cvar_t*
 cvar_register_f( const char* name, const char* desc, f32 value, f32 min, f32 max, u32 type )
 {
-    cvar_t* cv  = cvar_register_base( name, desc, type | CVAR_FLOAT );
+    cvar_t* cv = cvar_register_base( name, desc, type | CVAR_FLOAT );
     cvar_cache_user_value( cv );
     cv->f.value = value;
     cv->f.min   = min;
@@ -575,9 +577,9 @@ cvar_register_w( const char* name, const char* desc, const char* reset, u32 size
 
     cvar_cache_user_value( cv );
 
-    cv->w.reset        = ( u16 )string_pool_push( &g_string_pool, reset );
-    cv->w.size         = ( u16 )align_size;
-    cv->w.buf          = ( u16 )string_pool_reserve( &g_string_pool, cv->w.size );
+    cv->w.reset = ( u16 )string_pool_push( &g_string_pool, reset );
+    cv->w.size  = ( u16 )align_size;
+    cv->w.buf   = ( u16 )string_pool_reserve( &g_string_pool, cv->w.size );
     string_pool_write( &g_string_pool, cv->w.buf, reset, cv->w.size );
 
     cvar_promote_user_value( cv );
@@ -590,7 +592,7 @@ cvar_register_w( const char* name, const char* desc, const char* reset, u32 size
 cvar_t*
 cvar_register_r( const char* name, const char* desc, const char* value, u32 type )
 {
-    cvar_t* cv  = cvar_register_base( name, desc, type | CVAR_REF );
+    cvar_t* cv = cvar_register_base( name, desc, type | CVAR_REF );
     cvar_cache_user_value( cv );
 
     cv->r.value = ( u16 )string_pool_push( &g_string_pool, value );
@@ -1076,13 +1078,13 @@ cvar_get_value( const char* name )
 
     switch ( cv->type & CVAR_TYPE_MASK )
     {
-        case CVAR_BOOL: return ( cv->b.value ? "1" : "0" );
-        case CVAR_INT: snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
-        case CVAR_FLOAT: snprintf( buf, sizeof( bufs[ 0 ] ), "%g", cv->f.value ); return buf;
-        case CVAR_STR: return _cvar_stringset_get( cv, cv->s.value );
-        case CVAR_BUF: return string_pool_get( &g_string_pool, cv->w.buf );
-        case CVAR_REF: return string_pool_get( &g_string_pool, cv->r.value );
-        case CVAR_USR: return user_string_pool_get( cv->u.value_offset );
+        case CVAR_BOOL:     return ( cv->b.value ? "1" : "0" );
+        case CVAR_INT:      snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
+        case CVAR_FLOAT:    snprintf( buf, sizeof( bufs[ 0 ] ), "%g", cv->f.value ); return buf;
+        case CVAR_STR:      return _cvar_stringset_get( cv, cv->s.value );
+        case CVAR_BUF:      return string_pool_get( &g_string_pool, cv->w.buf );
+        case CVAR_REF:      return string_pool_get( &g_string_pool, cv->r.value );
+        case CVAR_USR:      return user_string_pool_get( cv->u.value_offset );
         default: return "";
     }
 }

@@ -437,20 +437,13 @@ cmd_cvarlist( int argc, char** argv )
 
         /* Build flags string */
         char flags[ 64 ] = "";
-        if ( cv->type & CVAR_ROM )
-            strcat( flags, "R" );
-        if ( cv->type & CVAR_ARCHIVE )
-            strcat( flags, "A" );
-        if ( cv->type & CVAR_LATCH )
-            strcat( flags, "L" );
-        if ( cv->type & CVAR_CHEAT )
-            strcat( flags, "C" );
-        if ( cv->type & CVAR_USERINFO )
-            strcat( flags, "U" );
-        if ( cv->type & CVAR_SERVERINFO )
-            strcat( flags, "S" );
-        if ( cv->flag & CVAR_MODIFIED )
-            strcat( flags, "*" );
+        if ( cv->type & CVAR_ROM )          strcat( flags, "R" );
+        if ( cv->type & CVAR_ARCHIVE )      strcat( flags, "A" );
+        if ( cv->type & CVAR_LATCH )        strcat( flags, "L" );
+        if ( cv->type & CVAR_CHEAT )        strcat( flags, "C" );
+        if ( cv->type & CVAR_USERINFO )     strcat( flags, "U" );
+        if ( cv->type & CVAR_SERVERINFO )   strcat( flags, "S" );
+        if ( cv->flag & CVAR_MODIFIED )     strcat( flags, "*" );
 
         printf( "%-24s %-12s %-10s %s\n", name, value, type_str, flags );
         count++;

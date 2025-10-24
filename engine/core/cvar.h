@@ -266,6 +266,13 @@ void        cmd_cvarlist            ( int argc, char** argv );
 
 void        cvar_register_commands  ( void );
 
+/*==============================================================================================
+    Config
+==============================================================================================*/
+
+void        cvar_write_config       ( const char* filename );
+void        cvar_exec_config        ( const char* filename );
+
 /*============================================================================================== 
 
     Debug API - For module and natvis visualization
