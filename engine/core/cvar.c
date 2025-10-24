@@ -358,17 +358,27 @@ cvar_system_exit( void )
 void
 cvar_compact_string_pool()
 {
-    // create a new pool to hold compacted strings.
+    user_string_pool_t new_pool;
+    user_string_pool_init( &new_pool );
 
-    string_pool_t new_pool;
-    string_pool_init( &new_pool );
-    
-    // loop trhough all cvars, copying strings from old pool to new pool.
-
-    for ( u32 i = 0; i < cvar_get_count(); i++ )
+    for ( u32 i = 0; i < g_cvar_count; i++ )
     {
-        // TODO: 
+        cvar_t* cv = &g_cvar_pool[ i ];
+        if ( ( cv->type & CVAR_TYPE_MASK ) == CVAR_USR )
+        {
+            const char* str = user_string_pool_get( &g_user_string_pool, cv->u.value_offset );
+            if ( str )
+            {
+                u16 new_bucket;
+                u16 new_offset = user_string_pool_alloc( &new_pool, str, &new_bucket );
+                cv->u.value_offset = new_offset;
+                cv->u.bucket_index = new_bucket;
+            }
+        }
     }
+
+    user_string_pool_exit( &g_user_string_pool );
+    g_user_string_pool = new_pool;
 }
 
 /*==============================================================================================
