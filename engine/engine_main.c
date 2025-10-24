@@ -39,10 +39,10 @@ test_cvar()
     int         cvar_size = sizeof( cvar_t );
     UNUSED( cvar_size );
 
-    cvar_t* bvar = cvar_register_b( "engine_paused", "pause engine simulation", false, CVAR_ENGINE );
-    cvar_t* ivar = cvar_register_i( "max_fps", "frame cap", 60, 20, 500, CVAR_ENGINE );
-    cvar_t* fvar = cvar_register_f( "time_scale", "set execution speed", 1.0f, 0.1f, 5.0f, CVAR_ENGINE );
-    cvar_t* svar = cvar_register_s( "shadows", "shadow quality", values, 4, 3, CVAR_ENGINE );
+    cvar_t* bvar = cvar_register_b( "engine_paused", "pause engine simulation", false, CVAR_NONE );
+    cvar_t* ivar = cvar_register_i( "max_fps", "frame cap", 60, 20, 500, CVAR_NONE );
+    cvar_t* fvar = cvar_register_f( "time_scale", "set execution speed", 1.0f, 0.1f, 5.0f, CVAR_NONE );
+    cvar_t* svar = cvar_register_s( "shadows", "shadow quality", values, 4, 3, CVAR_NONE );
     cvar_t* wvar = cvar_register_w( "player_name", "online display name", "default name", 32, CVAR_USERINFO );
     cvar_t* rvar = cvar_register_r( "base_game", "game path", "base", CVAR_INIT );
 
@@ -75,8 +75,8 @@ test_cvar()
     cvar_set_value( "max_fps", "s120" );
 
     // test callbacks
-    cvar_t* gamma = cvar_register_f( "r_gamma", "set display gamma", 2.2f, 1.0f, 3.0f, CVAR_RENDER );
-    cvar_t* brightness = cvar_register_f( "r_brightness", "set display brightness", 1.0f, 0.5f, 2.0f, CVAR_RENDER );
+    cvar_t* gamma = cvar_register_f( "r_gamma", "set display gamma", 2.2f, 1.0f, 3.0f, CVAR_NONE );
+    cvar_t* brightness = cvar_register_f( "r_brightness", "set display brightness", 1.0f, 0.5f, 2.0f, CVAR_NONE );
 
     // TODO: implement get_module_id() to avoid hardcoding module id
     cvar_callback_register( gamma, on_gamma_change, 1 );
@@ -108,6 +108,9 @@ test_cvar()
 
     // core_cvar_set_int( "r_draw_debug", 99 );
     // cvar_set_string( "player_name", "dancode!" );
+
+    cvar_write_config( "test_config.cfg", CVAR_ALL );
+    cvar_exec_config( "test_config.cfg" );
 }
 
 /*============================================================================================*/

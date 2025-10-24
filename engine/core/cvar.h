@@ -35,6 +35,7 @@
 typedef enum cvar_type_e
 {
     /* Data Types - mutually exclusive base types */
+    CVAR_NONE           = 0,            // No type assigned  
 
     CVAR_BOOL           = BIT( 0 ),     // Boolean value (true or false)
     CVAR_INT            = BIT( 1 ),     // Integer value with optional min/max
@@ -51,41 +52,45 @@ typedef enum cvar_type_e
     CVAR_LATCH          = BIT( 9 ),     // Value is only applied after a specific event (e.g., restart).
     CVAR_CHEAT          = BIT( 10 ),    // Can only be changed if cheats are enabled.
 
+ // CVAR_SANDBOXED      = BIT( 11 ),    // Isolated from write access by untrusted modules/scripts
+ // CVAR_PROTECTED      = BIT( 12 ),    // Requires elevated permission / developer mode.
+
     /* Lifetime Flags */
 
-    CVAR_RUNTIME        = BIT( 11 ),    // Not persisted, cleared on restart
-    CVAR_NORESTART      = BIT( 12 ),    // Value is protected from being reset on a restart.
-
-    /* Config Flags */
-
-    CVAR_ARCHIVE        = BIT( 14 ),    // Saved to configuration files (e.g., config.cfg).
-
+    CVAR_RUNTIME        = BIT( 13 ),    // Not persisted, always cleared on restart (timescale, com_frametime)
+    CVAR_NORESTART      = BIT( 14 ),    // Value is protected from being reset on a restart.
+    CVAR_ARCHIVE        = BIT( 15 ),    // Saved to configuration files (e.g., config.cfg).
+    
     /* Visibility Flags */
 
-    CVAR_DEVONLY        = BIT( 15 ),    // Hidden from retail/release builds.
-    CVAR_HIDDEN         = BIT( 16 ),    // Hidden from console auto-completion and `cvarlist`.
+    CVAR_DEVONLY        = BIT( 16 ),    // Hidden from retail/release builds.
+    CVAR_HIDDEN         = BIT( 17 ),    // Hidden from console auto-completion and `cvarlist`.
 
     /* Network Flags - for multiplayer synchronization */
                         
-    CVAR_NETSYNC        = BIT( 17 ),    // This cvar needs to be synchronized between server and clients.
-    CVAR_USERINFO       = BIT( 18 ),    // Client info sent to the server on connect (e.g., name, skin).
-    CVAR_SERVERINFO     = BIT( 19 ),    // Server info sent to clients on connect (e.g., mapname, hostname).
-    CVAR_SYSTEMINFO     = BIT( 20 ),    // Server forces this value on all clients.
+    CVAR_NETSYNC        = BIT( 18 ),    // This cvar needs to be synchronized between server and clients.
+    CVAR_USERINFO       = BIT( 19 ),    // Client info sent to the server on connect (e.g., name, skin).
+    CVAR_SERVERINFO     = BIT( 20 ),    // Server info sent to clients on connect (e.g., mapname, hostname).
+    CVAR_SYSTEMINFO     = BIT( 21 ),    // Server forces this value on all clients.
 
     /* System/Module Flags - for organization */
 
-    CVAR_ENGINE         = BIT( 21 ),    // Engine subsystem
-    CVAR_INPUT          = BIT( 22 ),    // Input subsystem
-    CVAR_RENDER         = BIT( 23 ),    // Renderer subsystem
-    CVAR_SOUND          = BIT( 24 ),    // Sound subsystem
-    CVAR_GUI            = BIT( 25 ),    // GUI subsystem
-    CVAR_TOOL           = BIT( 26 ),    // Tool subsystem
-    CVAR_GAME           = BIT( 27 ),    // Game logic subsystem
+    // CVAR_ENGINE         = BIT( 22 ),    // Engine subsystem
+    // CVAR_INPUT          = BIT( 23 ),    // Input subsystem
+    // CVAR_RENDER         = BIT( 24 ),    // Renderer subsystem
+    // CVAR_SOUND          = BIT( 25 ),    // Sound subsystem
+    // CVAR_GUI            = BIT( 26 ),    // GUI subsystem
+    // CVAR_TOOL           = BIT( 27 ),    // Tool subsystem
+    // CVAR_GAME           = BIT( 28 ),    // Game logic subsystem
 
 } cvar_type_t;
 
 #define CVAR_TYPE_MASK ( CVAR_BOOL | CVAR_INT | CVAR_FLOAT | CVAR_STR | CVAR_BUF | CVAR_REF | CVAR_USR )
 #define CVAR_PROT_MASK ( CVAR_INIT | CVAR_ROM | CVAR_LATCH | CVAR_CHEAT )
+#define CVAR_LIFE_MASK ( CVAR_RUNTIME | CVAR_NORESTART | CVAR_ARCHIVE )
+#define CVAR_VIS_MASK  ( CVAR_DEVONLY | CVAR_HIDDEN )
+#define CVAR_NET_MASK  ( CVAR_NETSYNC | CVAR_USERINFO | CVAR_SERVERINFO | CVAR_SYSTEMINFO )
+#define CVAR_ALL       ( CVAR_TYPE_MASK | CVAR_PROT_MASK | CVAR_LIFE_MASK | CVAR_VIS_MASK | CVAR_NET_MASK )
 
 /*============================================================================================== 
 
@@ -271,7 +276,7 @@ void        cvar_register_commands  ( void );
     Config
 ==============================================================================================*/
 
-void        cvar_write_config       ( const char* filename );
+void        cvar_write_config       ( const char* filename, u32 type_filter );
 void        cvar_exec_config        ( const char* filename );
 
 /*============================================================================================== 

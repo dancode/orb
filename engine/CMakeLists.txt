@@ -40,7 +40,10 @@ set(ENGINE_SOURCES
 		
 	base/base.h	
 	base/base.c
-		
+	
+	base/standard.h
+	base/standard_string.c
+	
 	base/module.h
 	base/module.c
 )

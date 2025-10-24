@@ -350,7 +350,7 @@ cvar_system_init( void )
 void
 cvar_system_exit( void )
 {
-    string_pool_exit( &g_string_pool );    
+    string_pool_exit( &g_string_pool );
     user_string_pool_exit( &g_user_string_pool );
     g_cvar_count = 0;
 }
@@ -370,7 +370,7 @@ cvar_compact_string_pool()
             if ( str )
             {
                 u16 new_bucket;
-                u16 new_offset = user_string_pool_alloc( &new_pool, str, &new_bucket );
+                u16 new_offset     = user_string_pool_alloc( &new_pool, str, &new_bucket );
                 cv->u.value_offset = new_offset;
                 cv->u.bucket_index = new_bucket;
             }
@@ -424,7 +424,7 @@ cvar_promote_user_value( cvar_t* cv )
 
     const u16   off     = g_user_off;
     const u16   buck    = g_user_buck;
-    
+
     const char* val_str = user_string_pool_get( &g_user_string_pool, off );
     if ( val_str && val_str[ 0 ] )
     {
@@ -874,6 +874,7 @@ _cvar_set_value_internal( cvar_t* cv, const char* value )
 
     cu32 type    = cv->type & CVAR_TYPE_MASK;
     bool changed = false;
+    bool success = true;
 
     switch ( type )
     {
@@ -1058,7 +1059,7 @@ _cvar_set_value_internal( cvar_t* cv, const char* value )
         cvar_callback_invoke( cv );
     }
 
-    return changed;
+    return success;
 }
 
 /*============================================================================================*/

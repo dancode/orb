@@ -17,7 +17,7 @@
 /* Write all archived cvars to a config file */
 
 void
-cvar_write_config( const char* filename )
+cvar_write_config( const char* filename, u32 type_filter )
 {
     if ( !filename )
         return;
@@ -36,13 +36,13 @@ cvar_write_config( const char* filename )
     for ( u32 i = 0; i < count; ++i )
     {
         cvar_t* cv = cvar_get_by_index( i );
-        if ( !cv || !( cv->type & CVAR_ARCHIVE ) )
+
+        if ( !cv || !( cv->type & type_filter ) )
             continue;
 
-        const char* name = cvar_get_name( cv );
+        const char* name  = cvar_get_name( cv );
         const char* value = cvar_get_value( name );
 
-        // TODO: Proper string escaping for values with spaces/quotes
         fprintf( f, "seta \"%s\" \"%s\"\n", name, value );
     }
 
@@ -53,7 +53,7 @@ cvar_write_config( const char* filename )
 /*============================================================================================*/
 /* Execute a config file (loads and runs commands) */
 
-#define MAX_ARGS 16
+#define MAX_ARGS     16
 #define MAX_LINE_LEN 1024
 
 void
@@ -82,8 +82,7 @@ cvar_exec_config( const char* filename )
         line_buf[ strcspn( line_buf, "\r\n" ) ] = 0;
 
         // Skip leading whitespace
-        while ( *p && isspace( ( unsigned char )*p ) )
-            p++;
+        while ( *p && isspace( ( unsigned char )*p ) ) p++;
 
         // Skip comments and empty lines
         if ( *p == '\0' || ( *p == '/' && p[ 1 ] == '/' ) )
@@ -92,25 +91,22 @@ cvar_exec_config( const char* filename )
         // Tokenize line
         while ( *p && argc < MAX_ARGS )
         {
-            if ( *p == '"' ) // handle quoted string
+            if ( *p == '"' )    // handle quoted string
             {
                 p++;
                 argv[ argc++ ] = p;
-                while ( *p && *p != '"' )
-                    p++;
+                while ( *p && *p != '"' ) p++;
             }
-            else // handle unquoted token
+            else    // handle unquoted token
             {
                 argv[ argc++ ] = p;
-                while ( *p && !isspace( ( unsigned char )*p ) )
-                    p++;
+                while ( *p && !isspace( ( unsigned char )*p ) ) p++;
             }
             if ( *p )
-                *p++ = '\0'; // null-terminate token
+                *p++ = '\0';    // null-terminate token
 
             // skip whitespace to next token
-            while ( *p && isspace( ( unsigned char )*p ) )
-                p++;
+            while ( *p && isspace( ( unsigned char )*p ) ) p++;
         }
 
         if ( argc == 0 )
@@ -126,6 +122,7 @@ cvar_exec_config( const char* filename )
             cmd_set( argc, argv );
         }
         // else: other commands could be handled here by a real command system
+        // TODO: create command system to handle more commands
     }
 
     fclose( f );
