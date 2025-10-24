@@ -49,7 +49,6 @@ test_cvar()
     cvar_t* uvar = cvar_register_u( "user_var", "10" );
     cvar_t* uvar_fix = cvar_register_i( "user_var", "a build in variable", 20, 0, 100, 0 );
 
-
     UNUSED( bvar );
     UNUSED( ivar );
     UNUSED( fvar );
