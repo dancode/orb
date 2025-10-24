@@ -188,7 +188,7 @@ void        cvar_callback_invoke                ( cvar_t* cv );
 
 void        cvar_system_init        ( void );
 void        cvar_system_exit        ( void );
-
+void        cvar_compact_string_pool();
 /*==============================================================================================
     Registration Funcitons
 ==============================================================================================*/

@@ -36,7 +36,7 @@ test_cvar()
 {
     const char* values[]  = { "off", "low", "medium", "high" };
 
-    int cvar_size = sizeof( cvar_t );
+    int         cvar_size = sizeof( cvar_t );
     UNUSED( cvar_size );
 
     cvar_t* bvar = cvar_register_b( "engine_paused", "pause engine simulation", false, CVAR_ENGINE );
@@ -46,8 +46,13 @@ test_cvar()
     cvar_t* wvar = cvar_register_w( "player_name", "online display name", "default name", 32, CVAR_USERINFO );
     cvar_t* rvar = cvar_register_r( "base_game", "game path", "base", CVAR_INIT );
 
-    cvar_t* uvar = cvar_register_u( "user_var", "10" );
-    cvar_t* uvar_fix = cvar_register_i( "user_var", "a build in variable", 20, 0, 100, 0 );
+    cvar_t* uvar_1   = cvar_register_u( "user_var_1", "1" );
+    cvar_t* uvar_2   = cvar_register_u( "user_var_2", "2" );
+    cvar_t* uvar_3   = cvar_register_u( "user_var_3", "3" );
+
+    cvar_t* uvar_fix = cvar_register_i( "user_var_2", "a build in variable", 20, 0, 100, 0 );
+
+    cvar_compact_string_pool();
 
     UNUSED( bvar );
     UNUSED( ivar );
@@ -55,13 +60,16 @@ test_cvar()
     UNUSED( svar );
     UNUSED( wvar );
     UNUSED( rvar );
-    UNUSED( uvar );
+    UNUSED( uvar_1 );
+    UNUSED( uvar_2 );
+    UNUSED( uvar_3 );
+
     UNUSED( uvar_fix );
 
     const char* test_string = NULL;
-    test_string = cvar_get_string( svar );
-    test_string = cvar_get_string( wvar );
-    test_string = cvar_get_string( rvar );
+    test_string             = cvar_get_string( svar );
+    test_string             = cvar_get_string( wvar );
+    test_string             = cvar_get_string( rvar );
 
     cvar_set_value( "engine_paused", "1" );
     cvar_set_value( "max_fps", "s120" );
@@ -83,7 +91,7 @@ test_cvar()
     cvar_callback_invoke( gamma );    // Should now do nothing
 
     // cvar command test
-    char* info_args[] = { "cvarinfo", "shadows"  };
+    char* info_args[] = { "cvarinfo", "shadows" };
     cmd_cvarinfo( 2, info_args );
 
     // cvar_t* evar = g_api->cvar_find( "engine_paused" );

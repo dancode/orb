@@ -358,7 +358,7 @@ cvar_system_exit( void )
 void
 cvar_compact_string_pool()
 {
-    user_string_pool_t new_pool;
+    user_string_pool_t new_pool = { 0 };
     user_string_pool_init( &new_pool );
 
     for ( u32 i = 0; i < g_cvar_count; i++ )
