@@ -365,24 +365,10 @@ cvar_compact_string_pool()
     
     // loop trhough all cvars, copying strings from old pool to new pool.
 
-    // for ( u32 i = 0; i < cvar_get_count(); i++ )
-    // {
-    //     cvar_t* cv = cvar_get_by_index( i );
-    //     if ( cv->type & CVAR_USR )
-    //     {
-    //         const u16   off     = cv->u.value_offset;
-    //         const char* val_str = user_string_pool_get( off );
-    //         if ( val_str && val_str[ 0 ] )
-    //         {
-    //             // Reinsert string into main string pool
-    //             u16 new_off        = ( u16 )string_pool_push( &g_string_pool, val_str );
-    //             cv->u.value_offset = new_off;
-    //             // Free user-pool allocation
-    //             user_string_pool_free( off, cv->u.bucket_index );
-    //             cv->u.bucket_index = USER_STRING_INVALID_LIST;
-    //         }
-    //     }
-    // }
+    for ( u32 i = 0; i < cvar_get_count(); i++ )
+    {
+        // TODO: 
+    }
 }
 
 /*==============================================================================================
