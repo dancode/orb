@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    cvar.h
+    cvar.c
 
     System for managing console variables.
 
@@ -14,7 +14,7 @@
 #include <ctype.h>
 
 #include "orb.h"
-#include "core.h"
+#include "cvar.h"
 
 /* Case-insensitive string compare helper */
 
@@ -73,24 +73,28 @@ string_pool_t g_string_pool;
 
 ==============================================================================================*/
 
-#define MAX_CVAR_CALLBACKS      128       // Max callback entries
+#define MAX_CVAR_CALLBACKS      128       // Max global callbacks
 #define MAX_CVAR_FUNCS_PER_CVAR 3         // Max callbacks per cvar
 #define INVALID_ID              0xFFFF    // Invalid callback ID (no callback)
 
-/* Global function pointer array */
-cvar_callback_fn g_function_array[ MAX_CVAR_CALLBACKS ];
+// Callback table linking cvars to functions.
 
-/* Callback table linking cvars to functions */
-typedef struct
+typedef struct cvar_callback_s
 {
     u16 function_id[ MAX_CVAR_FUNCS_PER_CVAR ];    // Function indices (INVALID_ID = empty)
     u16 module_id;                                 // Owning module (INVALID_ID = unused)
 
 } cvar_callback_t;
 
-static cvar_callback_t g_callback_table[ MAX_CVAR_CALLBACKS ];
-static uint16_t        g_callback_count = 0;
+// The function pointer array stores a pointer-sized encoded "next free index",
+// instead of a function pointer when slot is free.
 
+static cvar_callback_fn g_function_array[ MAX_CVAR_CALLBACKS ];    // function pointer array.
+static cvar_callback_t  g_callback_table[ MAX_CVAR_CALLBACKS ];    // callback entry.
+static uint16_t         g_callback_count = 0;                      // number of used callback slots
+static uint16_t         g_free_head      = INVALID_ID;             // intrusive frreelist head
+
+/*============================================================================================*/
 /* Initialize callback system */
 
 void
@@ -98,9 +102,51 @@ cvar_callbacks_init()
 {
     g_callback_count = 0;
     memset( g_callback_table, INVALID_ID, sizeof( g_callback_table ) );
-    memset( g_function_array, 0, sizeof( g_function_array ) );
+
+    /* Initialize intrusive free list in g_function_array */
+    for ( uint16_t i = 0; i < MAX_CVAR_CALLBACKS - 1; i++ )
+    {
+        /* Encode next index as pointer value */
+        g_function_array[ i ] = ( cvar_callback_fn )( uintptr_t )( i + 1 );
+    }
+    g_function_array[ MAX_CVAR_CALLBACKS - 1 ] = ( cvar_callback_fn )( uintptr_t )INVALID_ID;
+    g_free_head                                = 0; /* Head points to first free slot */
 }
 
+/*============================================================================================*/
+/* Allocate a free function slot (O(1)) */
+
+static inline uint16_t
+alloc_function_slot( cvar_callback_fn fn )
+{
+    if ( g_free_head == INVALID_ID )
+        return INVALID_ID; /* No free slots */
+
+    uint16_t slot = g_free_head;
+
+    /* Pop from free list */
+    g_free_head = ( uint16_t )( uintptr_t )g_function_array[ slot ];
+
+    /* Assign actual function */
+    g_function_array[ slot ] = fn;
+
+    return slot;
+}
+
+/* Free a function slot (O(1)) */
+
+static inline void
+free_function_slot( uint16_t slot )
+{
+    if ( slot >= MAX_CVAR_CALLBACKS )
+        return;
+
+    /* Push this slot back into the free list */
+    g_function_array[ slot ] = ( cvar_callback_fn )( uintptr_t )g_free_head;
+    g_free_head              = slot;
+}
+
+/*============================================================================================*/
 /* Register callback for cvar */
 
 uint16_t
@@ -134,16 +180,15 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn, i32 module_id )
     {
         if ( cb->function_id[ i ] == INVALID_ID )
         {
-            /* Find free global function slot */
-            for ( int f = 0; f < MAX_CVAR_CALLBACKS; f++ )
+            uint16_t slot = alloc_function_slot( fn );
+            if ( slot == INVALID_ID )
             {
-                if ( g_function_array[ f ] == NULL )
-                {
-                    g_function_array[ f ] = fn;
-                    cb->function_id[ i ]  = ( u16 )f;
-                    return cv->callback_id;
-                }
+                fprintf( stderr, "cvar: no free callback slots available\n" );
+                return INVALID_ID;
             }
+
+            cb->function_id[ i ] = slot;
+            return cv->callback_id;
         }
     }
 
@@ -151,6 +196,33 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn, i32 module_id )
     return INVALID_ID;
 }
 
+/*============================================================================================*/
+/* Clear all callbacks associated with a single cvar */
+
+void
+cvar_callback_unregister( cvar_t* cv )
+{
+    if ( !cv || cv->callback_id == INVALID_ID )
+        return;
+
+    cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
+
+    for ( int i = 0; i < MAX_CVAR_FUNCS_PER_CVAR; i++ )
+    {
+        cu16 fid = cb->function_id[ i ];
+        if ( fid != INVALID_ID )
+        {
+            free_function_slot( fid );
+            cb->function_id[ i ] = INVALID_ID;
+        }
+    }
+
+    cb->module_id   = INVALID_ID;
+    cv->callback_id = INVALID_ID;
+    cv->flag &= ~CVAR_CALLBACK;
+}
+
+/*============================================================================================*/
 /* Invoke all callbacks for cvar */
 
 void
@@ -177,25 +249,20 @@ cvar_callback_invoke( cvar_t* cv )
 void
 cvar_callback_unregister_by_module( i32 module_id )
 {
-    for ( int i = 0; i < g_callback_count; i++ )
-    {
-        cvar_callback_t* cb = &g_callback_table[ i ];
+    int total_cvars = cvar_get_count(); /* You must provide this helper */
 
+    for ( int i = 0; i < total_cvars; i++ )
+    {
+        cvar_t* cv = cvar_get_by_index( i );
+        if ( !cv || cv->callback_id == INVALID_ID )
+            continue;
+
+        cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
+
+        /* If this cvar's callbacks belong to the module, clear it */
         if ( cb->module_id == ( u16 )module_id )
         {
-            // Remove all associated function pointers
-            for ( int j = 0; j < MAX_CVAR_FUNCS_PER_CVAR; j++ )
-            {
-                u16 fid = cb->function_id[ j ];
-                if ( fid != INVALID_ID && g_function_array[ fid ] )
-                {
-                    g_function_array[ fid ] = NULL;
-                    cb->function_id[ j ]    = INVALID_ID;
-                }
-                cb->module_id = INVALID_ID;
-            }
-
-            cb->module_id = INVALID_ID;
+            cvar_callback_unregister( cv );
         }
     }
 }
@@ -356,7 +423,7 @@ cvar_system_exit( void )
 }
 
 void
-cvar_compact_string_pool()
+cvar_compact_user_pool( void )
 {
     user_string_pool_t new_pool = { 0 };
     user_string_pool_init( &new_pool );
@@ -655,6 +722,7 @@ cvar_get_count( void )
 
 // clang-format off
 
+bool cvar_is_bool   ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_BOOL ));  }
 bool cvar_is_int    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_INT ));   }
 bool cvar_is_float  ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_FLOAT )); }
 bool cvar_is_str    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_STR ));   }
@@ -694,6 +762,13 @@ cvar_get_desc( const cvar_t* cv )
     return _cvar_pool_string( cv->desc );
 }
 
+bool
+cvar_get_bool( const cvar_t* cv )
+{
+    assert( cvar_is_bool( cv ) );
+    return cv->b.value;
+}
+
 i32
 cvar_get_int( const cvar_t* cv )
 {
@@ -709,7 +784,7 @@ cvar_get_float( const cvar_t* cv )
 }
 
 const char*
-_cvar_stringset_get( const cvar_t* cv, i32 value_id )
+cvar_get_string_from_id( const cvar_t* cv, i32 value_id )
 {
     if ( !cv || !( cv->type & CVAR_STR ) )
         return "";
@@ -729,7 +804,7 @@ cvar_get_string( const cvar_t* cv )
 
     switch ( cv->type & CVAR_TYPE_MASK )
     {
-        case CVAR_STR: return _cvar_stringset_get( cv, cv->s.value );
+        case CVAR_STR: return cvar_get_string_from_id( cv, cv->s.value );
         case CVAR_BUF: return string_pool_get( &g_string_pool, cv->w.buf );
         case CVAR_REF: return string_pool_get( &g_string_pool, cv->r.value );
         case CVAR_USR: return user_string_pool_get( &g_user_string_pool, cv->u.value_offset );
@@ -922,8 +997,7 @@ _cvar_set_value_internal( cvar_t* cv, const char* value )
                 break;
             }
 
-            // Apply bounds if max is set
-            if ( cv->i.max != 0 )
+            if ( cv->i.min != cv->i.max )
             {
                 if ( new_value < cv->i.min ) new_value = cv->i.min;
                 if ( new_value > cv->i.max ) new_value = cv->i.max;
@@ -950,8 +1024,7 @@ _cvar_set_value_internal( cvar_t* cv, const char* value )
                 break;
             }
 
-            // Apply bounds if max is set
-            if ( cv->f.max != 0 )
+            if ( cv->f.min != cv->f.max )
             {
                 if ( new_value < cv->f.min ) new_value = cv->f.min;
                 if ( new_value > cv->f.max ) new_value = cv->f.max;
@@ -1101,12 +1174,90 @@ cvar_get_value( const char* name )
         case CVAR_BOOL:     return ( cv->b.value ? "1" : "0" );
         case CVAR_INT:      snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
         case CVAR_FLOAT:    snprintf( buf, sizeof( bufs[ 0 ] ), "%g", cv->f.value ); return buf;
-        case CVAR_STR:      return _cvar_stringset_get( cv, cv->s.value );
+        case CVAR_STR:      return cvar_get_string_from_id( cv, cv->s.value );
         case CVAR_BUF:      return string_pool_get( &g_string_pool, cv->w.buf );
         case CVAR_REF:      return string_pool_get( &g_string_pool, cv->r.value );
         case CVAR_USR:      return user_string_pool_get( &g_user_string_pool, cv->u.value_offset );
         default: return "";
     }
+}
+
+// clang-format off
+/*============================================================================================*/
+/* Print cvar value with type info */
+
+void
+cvar_print_value( const cvar_t* cv )
+{
+    if ( !cv )
+        return;
+
+    const char* name  = cvar_get_name( cv );
+    const char* value = cvar_get_value( name );
+
+    printf( "  \"%s\" is: \"%s\"", name, value );
+
+    /* Show latched value if present */
+    if ( cv->flag & CVAR_LATCHED )
+    {
+        printf( " (latched)" );
+    }
+
+    /* Show type info */
+    switch ( cv->type & CVAR_TYPE_MASK )
+    {
+        case CVAR_BOOL: printf( " [bool]" ); break;
+        case CVAR_INT:
+            if ( cv->i.min != cv->i.max ) 
+                    printf( " [int: %d..%d]", cv->i.min, cv->i.max );
+            else    printf( " [int]" );
+            break;
+
+        case CVAR_FLOAT:
+            if ( cv->f.min != cv->f.max) 
+                    printf( " [float: %.2f..%.2f]", cv->f.min, cv->f.max );
+            else    printf( " [float]" );
+            break;
+
+        case CVAR_STR: printf( " [choice: %u of %u]", cv->s.value, cv->s.count ); break;
+        case CVAR_BUF: printf( " [string]" ); break;
+        case CVAR_REF: printf( " [readonly]" ); break;
+        case CVAR_USR: printf( " [user]" ); break;
+    }
+
+    printf( "\n" );
+}
+
+/*============================================================================================*/
+/* Print cvar flags */
+
+void
+cvar_print_flags( const cvar_t* cv )
+{
+    if ( !cv )
+        return;
+
+    printf( "  Type:" );
+
+    if ( cv->type & CVAR_ROM )        printf( " ROM" );
+    if ( cv->type & CVAR_INIT )       printf( " INIT" );
+    if ( cv->type & CVAR_LATCH )      printf( " LATCH" );
+    if ( cv->type & CVAR_CHEAT )      printf( " CHEAT" );
+
+    if ( cv->type & CVAR_RUNTIME )    printf( " RUNTIME" );
+    if ( cv->type & CVAR_NORESTART )  printf( " NORESTART" );
+
+    if ( cv->type & CVAR_ARCHIVE )    printf( " ARCHIVE" );
+
+    if ( cv->type & CVAR_DEVONLY )    printf( " DEVONLY" );
+    if ( cv->type & CVAR_HIDDEN )     printf( " HIDDEN" );
+
+    if ( cv->type & CVAR_NETSYNC )    printf( " NETSYNC" );
+    if ( cv->type & CVAR_USERINFO )   printf( " USERINFO" );
+    if ( cv->type & CVAR_SERVERINFO ) printf( " SERVERINFO" );
+    if ( cv->type & CVAR_SYSTEMINFO ) printf( " SYSTEMINFO" );
+    
+    printf( "\n" );
 }
 
 /*============================================================================================*/

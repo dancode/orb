@@ -33,7 +33,7 @@ engine/
     fs.h/.c             # Filesystem abstraction
     net.h/.c            # Socket layer, transport
 
-  systems/
+  system/
     render/
       renderer.h/.c     # Render API abstraction (Vulkan/GL/DX)
       mesh.h/.c         # Vertex/index buffer handling
@@ -48,6 +48,12 @@ engine/
     animation/
       anim_runtime.h/.c # Skeleton, blend trees, IK solvers
 
+  test/
+	test_core.c
+	test_platform.c
+	test_system_render.c
+	test_system_mesh.c	
+	
   runtime/
     module.h/.c         # Module/plugin loader
     resource.h/.c       # Resource manager (engine-level)

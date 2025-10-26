@@ -5,8 +5,8 @@
 ==============================================================================================*/
 #pragma once
 #include "orb.h"
-#include "string_pool.h"
-#include "cvar.h"
+#include "cvar/string_pool.h"
+#include "cvar/cvar.h"
 
 // clang-format off
 
@@ -97,6 +97,13 @@ typedef struct core_api_t
 
 } core_api_t;
 
-extern core_api_t* core_get_api( void );
+void            core_api_init       ( void );
+void            core_api_exit       ( void );
+core_api_t*     core_get_api        ( void );
+
+/*============================================================================================*/
+
+                                    /* Test core cvar system */
+void            test_core_cvar      ( int argc, char** argv );
 
 /*============================================================================================*/

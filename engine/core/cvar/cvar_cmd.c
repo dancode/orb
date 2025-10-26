@@ -20,97 +20,46 @@
 #include "cvar.h"
 #include "string_pool.h"
 
-/*============================================================================================*/
-/* Print cvar value with type info */
-
-void
-cmd_print_cvar_value( const cvar_t* cv )
-{
-    if ( !cv )
-        return;
-
-    const char* name  = cvar_get_name( cv );
-    const char* value = cvar_get_value( name );
-
-    printf( "  \"%s\" is: \"%s\"", name, value );
-
-    /* Show latched value if present */
-    if ( cv->flag & CVAR_LATCHED )
-    {
-        printf( " (latched)" );
-    }
-
-    /* Show type info */
-    switch ( cv->type & CVAR_TYPE_MASK )
-    {
-        case CVAR_BOOL: printf( " [bool]" ); break;
-        case CVAR_INT:
-            if ( cv->i.max != 0 )
-                printf( " [int: %d..%d]", cv->i.min, cv->i.max );
-            else
-                printf( " [int]" );
-            break;
-        case CVAR_FLOAT:
-            if ( cv->f.max != 0.0f )
-                printf( " [float: %.2f..%.2f]", cv->f.min, cv->f.max );
-            else
-                printf( " [float]" );
-            break;
-        case CVAR_STR: printf( " [choice: %u of %u]", cv->s.value, cv->s.count ); break;
-        case CVAR_BUF: printf( " [string]" ); break;
-        case CVAR_REF: printf( " [readonly]" ); break;
-        case CVAR_USR: printf( " [user]" ); break;
-    }
-
-    printf( "\n" );
-}
-
-// clang-format off
-
-/*============================================================================================*/
-/* Print cvar flags */
-
-void
-cmd_print_cvar_flags( const cvar_t* cv )
-{
-    if ( !cv )
-        return;
-
-    printf( "  Type:" );
-
-    if ( cv->type & CVAR_ROM )        printf( " ROM" );
-    if ( cv->type & CVAR_INIT )       printf( " INIT" );
-    if ( cv->type & CVAR_LATCH )      printf( " LATCH" );
-    if ( cv->type & CVAR_CHEAT )      printf( " CHEAT" );
-
-    if ( cv->type & CVAR_RUNTIME )    printf( " RUNTIME" );
-    if ( cv->type & CVAR_NORESTART )  printf( " NORESTART" );
-
-    if ( cv->type & CVAR_ARCHIVE )    printf( " ARCHIVE" );
-
-    if ( cv->type & CVAR_DEVONLY )    printf( " DEVONLY" );
-    if ( cv->type & CVAR_HIDDEN )     printf( " HIDDEN" );
-
-    if ( cv->type & CVAR_NETSYNC )    printf( " NETSYNC" );
-    if ( cv->type & CVAR_USERINFO )   printf( " USERINFO" );
-    if ( cv->type & CVAR_SERVERINFO ) printf( " SERVERINFO" );
-    if ( cv->type & CVAR_SYSTEMINFO ) printf( " SYSTEMINFO" );
-    
-    // if ( cv->flag & CVAR_CALLBACK )   printf( " CALLBACK" );
-
-    printf( "\n" );
-}
-
 // clang-format on
 
-/*============================================================================================*/
-/*
-            var value   : only if var exists
-    set     var value   : normal user var
+/*==============================================================================================
+
+    Command Registration
+
+==============================================================================================*/
+
+void
+cvar_register_commands( void )
+{
+    // NOTE: must init your command system before registering commands
+
+    /* Note: These are example function signatures.
+     * Replace with your actual command registration API */
+
+    // cmd_register( "set", cmd_set, "Set a console variable value" );
+    // cmd_register( "seta", cmd_seta, "Set and archive a console variable" );
+    // cmd_register( "toggle", cmd_toggle, "Toggle a boolean variable" );
+    // cmd_register( "reset", cmd_reset, "Reset a variable to default" );
+    // cmd_register( "reset_all", cmd_reset_all, "Reset all variables to defaults" );
+    // cmd_register( "cvarlist", cmd_cvarlist, "List all console variables" );
+    // cmd_register( "cvarinfo", cmd_cvarinfo, "Show detailed cvar information" );
+    // cmd_register( "apply_latched", cmd_apply_latched, "Apply latched cvar changes" );
+    // cmd_register( "cvar_modified", cmd_cvar_modified, "List modified cvars" );
+
+    /* Note: Replace with your actual command registration API */
+    // cmd_register( "exec", cmd_exec, "Execute a config file" );
+    // cmd_register( "writeconfig", cmd_writeconfig, "Write config file" );
+}
+
+/*==============================================================================================
+    Internal 'set' command logic
+    Usage: 
+            var value   : set only if var exists
+    set     var value   : set or create a user var if not found
     seta    var value   : CVAR_ARCHIVE saved to config
     setu    var vlaue   : CVAR_USERINFO	sent to server in userinfo
     sets    var value   : CVAR_SERVERINFO advertised to clients by server
-*/
+==============================================================================================*/
 
 void
 cmd_set_internal( const char* name, const char* value, u32 internal_flags )
@@ -136,7 +85,7 @@ cmd_set_internal( const char* name, const char* value, u32 internal_flags )
     /* Set the value */
     if ( cvar_set_value( name, value ) )
     {
-        cmd_print_cvar_value( cv );
+        cvar_print_value( cv );
     }
     else
     {
@@ -145,7 +94,7 @@ cmd_set_internal( const char* name, const char* value, u32 internal_flags )
 }
 
 /*============================================================================================*/
-/* Set value or create user var if not found */
+/* Set a cvar value or create a user cvar if not found */
 /* Usage: seta <name> <value> */
 
 void
@@ -164,7 +113,7 @@ cmd_set( int argc, char** argv )
     cmd_set_internal( name, value, 0 );
 }
 
-/* Archive version of 'set' command */
+/* Set a cvar value and mark for archiving */
 /* Usage: seta <name> <value> */
 
 void
@@ -215,13 +164,12 @@ cmd_toggle( int argc, char** argv )
     /* Toggle the value */
     const char* new_value = ( cv->b.value ) ? "0" : "1";
     cvar_set_value( name, new_value );
-
-    cmd_print_cvar_value( cv );
+    cvar_print_value( cv );
 }
 
 /*============================================================================================*/
 /* cmd_reset - Reset cvar to default value */
-/* Usage : reset<name> */
+/* Usage : reset <name> */
 
 void
 cmd_reset( int argc, char** argv )
@@ -245,7 +193,7 @@ cmd_reset( int argc, char** argv )
     cvar_reset( cv );
 
     printf( "Reset '%s' to default value\n", name );
-    cmd_print_cvar_value( cv );
+    cvar_print_value( cv );
 }
 
 /*============================================================================================*/
@@ -265,7 +213,7 @@ cmd_reset_all( int argc, char** argv )
 
 /*============================================================================================*/
 /* cmd_apply_latched - Apply all latched cvar changes */
-/* Usage: apply_latched */
+/* Usage : apply_latched */
 
 void
 cmd_apply_latched( int argc, char** argv )
@@ -333,8 +281,6 @@ cmd_cvar_modified( int argc, char** argv )
 
 // clang-format off
 
-const char* _cvar_stringset_get( const cvar_t* cv, i32 value_id ); 
-
 void
 cmd_cvarinfo( int argc, char** argv )
 {
@@ -357,8 +303,8 @@ cmd_cvarinfo( int argc, char** argv )
     printf( "\nVariable: %s\n", cvar_get_name( cv ) );
     printf( "Description: %s\n", cvar_get_desc( cv ) );
 
-    cmd_print_cvar_value( cv );
-    cmd_print_cvar_flags( cv );
+    cvar_print_value( cv );
+    cvar_print_flags( cv );
 
     /* Show default value */
     switch ( cv->type & CVAR_TYPE_MASK )
@@ -376,7 +322,7 @@ cmd_cvarinfo( int argc, char** argv )
         printf( "  Options:\n" );
         for ( u32 i = 0; i < cv->s.count; ++i )
         {
-            const char* str = _cvar_stringset_get( cv, i );
+            const char* str = cvar_get_string_from_id( cv, i );
             printf( "    [%u] %s%s\n", i, str, ( i == cv->s.value ) ? " (current)" : "" );
         }
     }
@@ -461,32 +407,23 @@ cmd_cvarlist( int argc, char** argv )
     printf( "\n" );
 }
 
-/*==============================================================================================
-    Command Registration
-
-    These functions should be called to register commands with your console system.
-==============================================================================================*/
-
-/*
- * Register all cvar console commands
- * Call this after initializing your console/command system
- */
+/*============================================================================================*/
+/* cmd_writeconfig - Write current config to file */
+/* Usage: writeconfig [filename] */
 
 void
-cvar_register_commands( void )
+cmd_writeconfig( int argc, char** argv )
 {
-    /* Note: These are example function signatures.
-     * Replace with your actual command registration API */
+    const char* filename = ( argc > 1 ) ? argv[ 1 ] : "config.cfg";
 
-    // cmd_register( "set", cmd_set, "Set a console variable value" );
-    // cmd_register( "seta", cmd_seta, "Set and archive a console variable" );
-    // cmd_register( "toggle", cmd_toggle, "Toggle a boolean variable" );
-    // cmd_register( "reset", cmd_reset, "Reset a variable to default" );
-    // cmd_register( "reset_all", cmd_reset_all, "Reset all variables to defaults" );
-    // cmd_register( "cvarlist", cmd_cvarlist, "List all console variables" );
-    // cmd_register( "cvarinfo", cmd_cvarinfo, "Show detailed cvar information" );
-    // cmd_register( "apply_latched", cmd_apply_latched, "Apply latched cvar changes" );
-    // cmd_register( "cvar_modified", cmd_cvar_modified, "List modified cvars" );
+    if ( cvar_write_config( filename, CVAR_ARCHIVE ) )
+    {
+        printf( "Configuration saved to '%s'\n", filename );
+    }
+    else
+    {
+        printf( "Failed to write configuration to '%s'\n", filename );
+    }
 }
 
 /*============================================================================================*/

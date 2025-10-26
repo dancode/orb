@@ -56,6 +56,25 @@ static core_api_t       g_core_api = {
           .debug_api = &g_core_debug_api,
 };
 
+core_api_t*       g_api;
+core_debug_api_t* g_debug_api;
+
+/*============================================================================================*/
+
+void
+core_api_init( void ) 
+{
+    g_api       = core_get_api();
+    g_debug_api = core_debug_get_api();
+}
+
+void
+core_api_exit( void ) 
+{
+    g_api       = NULL;
+    g_debug_api = NULL;        
+}
+
 core_api_t*
 core_get_api( void )
 {

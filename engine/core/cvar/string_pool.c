@@ -20,7 +20,7 @@
 #include <assert.h>
 
 #include "orb.h"
-#include "core.h"
+#include "../core.h"
 #include "string_pool.h"
 
 /*============================================================================================*/

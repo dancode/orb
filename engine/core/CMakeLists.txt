@@ -13,20 +13,24 @@ set(CORE_SOURCES
 	
 	bits.c
 	
-	string_pool.h
-	string_pool.c
+	# cvar / command system
 	
-	cvar.h
-	cvar.c
-	cvar_cmd.c
-	cvar_config.c
-	cvar.natvis
+	cvar/cmd_buffer.c
+	cvar/string_pool.h
+	cvar/string_pool.c	
+	cvar/cvar.h
+	cvar/cvar.c
+	cvar/cvar_cmd.c
+	cvar/cvar_config.c
+	cvar/cvar.natvis
+	cvar/cmd.c
+	cvar/cmd.h
 	
 	debug.c 
 		
 	core_api.c
 	
-	
+	test/test_core_cvar.c
 )
 
 add_library(core STATIC ${CORE_SOURCES} )
