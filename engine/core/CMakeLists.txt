@@ -16,6 +16,7 @@ set(CORE_SOURCES
 	# cvar / command system
 	
 	cvar/cmd_buffer.c
+	cvar/cmd_parse.c
 	cvar/string_pool.h
 	cvar/string_pool.c	
 	cvar/cvar.h

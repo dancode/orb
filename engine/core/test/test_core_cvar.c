@@ -313,6 +313,165 @@ example_config_files( void )
     cvar_system_exit();
 }
 
+/*==============================================================================================
+    Example 6: Command-line Arguments
+==============================================================================================*/
+
+void
+example_command_line( int argc, char** argv )
+{
+    UNUSED( argc );
+    UNUSED( argv );
+
+    printf( "\n=== Example 6: Command-line Arguments ===\n\n" );
+
+    cvar_system_init();
+
+    /* Register default cvars */
+    cvar_register_b( "dedicated", "Dedicated server mode", false, CVAR_INIT );
+    cvar_register_i( "port", "Network port", 27015, 1024, 65535, CVAR_INIT );
+
+    /* Process command-line arguments */
+    printf( "Processing command-line: ./game +set dedicated 1 +set port 27016\n" );
+
+    /* Simulate command-line args */
+    char* test_argv[] = { "game", "+set", "dedicated", "1", "+set", "port", "27016" };
+    int   test_argc   = 7;
+
+    cvar_process_args( test_argc, test_argv, 1 );
+
+    printf( "dedicated: %s\n", cvar_get_value( "dedicated" ) );
+    printf( "port: %s\n", cvar_get_value( "port" ) );
+
+    cvar_system_exit();
+}
+
+/*==============================================================================================
+    Example 7: Iterating Over CVars
+==============================================================================================*/
+
+void
+example_iteration( void )
+{
+    printf( "\n=== Example 7: CVar Iteration ===\n\n" );
+
+    cvar_system_init();
+
+    /* Register multiple cvars */
+    cvar_register_b( "debug", "Debug mode", false, CVAR_NONE );
+    cvar_register_i( "maxfps", "Max FPS", 60, 30, 300, CVAR_NONE );
+    cvar_register_f( "volume", "Volume", 1.0f, 0.0f, 1.0f, CVAR_NONE );
+    cvar_register_r( "version", "Version", "1.0.0", CVAR_ROM );
+
+    /* Iterate over all cvars */
+    u32 count = cvar_get_count();
+    printf( "Total cvars: %u\n\n", count );
+
+    for ( u32 i = 0; i < count; ++i )
+    {
+        cvar_t* cv = cvar_get_by_index( i );
+        if ( !cv )
+            continue;
+
+        const char* name  = cvar_get_name( cv );
+        const char* desc  = cvar_get_desc( cv );
+        const char* value = cvar_get_value( name );
+
+        printf( "  %-12s = %-8s // %s\n", name, value, desc );
+    }
+
+    cvar_system_exit();
+}
+
+/*==============================================================================================
+    Example 8: Hot Reload Support
+==============================================================================================*/
+
+void
+example_hot_reload( void )
+{
+    printf( "\n=== Example 8: Hot Reload Support ===\n\n" );
+
+    /* First initialization */
+    printf( "Initial module load:\n" );
+    cvar_system_init();
+
+    cvar_t* cv1 = cvar_register_i( "test_var", "Test variable", 100, 0, 1000, CVAR_ARCHIVE );
+    printf( "  Registered 'test_var' at address: %p\n", ( void* )cv1 );
+    printf( "  Value: %s\n", cvar_get_value( "test_var" ) );
+
+    /* Change value */
+    cvar_set_value( "test_var", "250" );
+    printf( "  Changed to: %s\n", cvar_get_value( "test_var" ) );
+
+    /* Simulate hot reload - DON'T call cvar_system_exit() */
+    printf( "\nSimulating hot reload (re-registering same cvar):\n" );
+
+    /* Re-register same cvar (returns existing) */
+    cvar_t* cv2 = cvar_register_i( "test_var", "Test variable", 100, 0, 1000, CVAR_ARCHIVE );
+    printf( "  Re-registered 'test_var' at address: %p\n", ( void* )cv2 );
+    printf( "  Value preserved: %s\n", cvar_get_value( "test_var" ) );
+    printf( "  Same cvar? %s\n", ( cv1 == cv2 ) ? "yes" : "no" );
+
+    cvar_system_exit();
+}
+
+/*==============================================================================================
+    Example 9: Full Application Integration
+==============================================================================================*/
+
+void
+example_full_application( void )
+{
+    printf( "\n=== Example 9: Full Application Integration ===\n" );
+
+    /* 1. Initialize cvar system */
+    cvar_system_init();
+
+    /* 2. Register engine cvars */
+    cvar_register_b( "com_dedicated", "Dedicated server", false, CVAR_INIT );
+    cvar_register_i( "com_maxfps", "Max FPS", 60, 30, 300, CVAR_ARCHIVE );
+    cvar_register_f( "com_timescale", "Time scale", 1.0f, 0.1f, 10.0f, CVAR_CHEAT );
+
+    /* 3. Register renderer cvars */
+    cvar_register_i( "r_width", "Screen width", 1920, 640, 3840, CVAR_ARCHIVE | CVAR_LATCH );
+    cvar_register_i( "r_height", "Screen height", 1080, 480, 2160, CVAR_ARCHIVE | CVAR_LATCH );
+    const char* modes[] = { "windowed", "fullscreen", "borderless" };
+    cvar_register_s( "r_mode", "Window mode", modes, 3, 0, CVAR_ARCHIVE | CVAR_LATCH );
+
+    /* 4. Register sound cvars */
+    cvar_register_f( "s_volume", "Master volume", 0.8f, 0.0f, 1.0f, CVAR_ARCHIVE );
+    cvar_register_f( "s_musicvolume", "Music volume", 0.6f, 0.0f, 1.0f, CVAR_ARCHIVE );
+
+    /* 5. Process command-line arguments */
+    char* test_argv[] = { "game",    "+set", "com_maxfps", "144",      "+set",
+                          "r_width", "2560", "+set",       "r_height", "1440" };
+    cvar_process_args( 7, test_argv, 1 );
+
+    /* 6. Load config files */
+    printf( "\nLoading default configs...\n" );
+    // cvar_load_defaults();  // Would load default.cfg, config.cfg, autoexec.cfg
+
+    /* 7. Apply latched changes (video mode, etc.) */
+    printf( "\nApplying latched changes...\n" );
+    cvar_apply_latched();
+
+    /* 8. Game loop would use cvars like this: */
+    printf( "\nGame loop would access cvars:\n" );
+    cvar_t* cv_maxfps  = cvar_find( "com_maxfps" );
+    i32     max_fps    = cvar_get_int( cv_maxfps );
+    f32     frame_time = 1.0f / ( f32 )max_fps;
+    printf( "  Target frame time: %.4f ms (from com_maxfps=%d)\n", frame_time * 1000.0f, max_fps );
+
+    /* 9. On shutdown, save config */
+    printf( "\nShutting down, saving config...\n" );
+    // cvar_save_config();  // Would write config.cfg
+
+    /* 10. Cleanup */
+    cvar_system_exit();
+}
+
+
 /*============================================================================================*/
 
 void
@@ -330,10 +489,10 @@ test_core_cvar( int argc, char** argv )
     example_callbacks();
     example_latched_cvars();
     example_config_files();
-    // example_command_line( argc, argv );
-    // example_iteration();
-    // example_hot_reload();
-    // example_full_application();
+    example_command_line( argc, argv );
+    example_iteration();
+    example_hot_reload();
+    example_full_application();
 
     printf( "\n========================================\n" );
     printf( "\tAll examples completed!\n" );

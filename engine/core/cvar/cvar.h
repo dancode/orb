@@ -33,11 +33,11 @@
 ==============================================================================================*/
 
 #pragma once
-#include "orb.h"
+#include "../../orb.h"
 #include "string_pool.h"
 
 /*==============================================================================================
- 
+
     Cvar Type Flags - Define its type and behavior
 
 ==============================================================================================*/
@@ -45,7 +45,7 @@
 typedef enum cvar_type_e
 {
     /* Data Types - mutually exclusive base types */
-    CVAR_NONE           = 0,            // No type assigned  
+    CVAR_NONE           = 0,            // No type assigned
 
     CVAR_BOOL           = BIT( 0 ),     // Boolean value (true or false)
     CVAR_INT            = BIT( 1 ),     // Integer value with optional min/max
@@ -58,7 +58,7 @@ typedef enum cvar_type_e
     /* Protection / Safety Flags */
 
     CVAR_ROM            = BIT( 7 ),     // Read-Only Memory. Cannot be changed by the user.
-    CVAR_INIT           = BIT( 8 ),     // Can only be set from the command-line or startup .cfg.    
+    CVAR_INIT           = BIT( 8 ),     // Can only be set from the command-line or startup .cfg.
     CVAR_LATCH          = BIT( 9 ),     // Value is only applied after a specific event (e.g., restart).
     CVAR_CHEAT          = BIT( 10 ),    // Can only be changed if cheats are enabled.
 
@@ -70,14 +70,14 @@ typedef enum cvar_type_e
     CVAR_RUNTIME        = BIT( 13 ),    // Not persisted, always cleared on restart (timescale, com_frametime)
     CVAR_NORESTART      = BIT( 14 ),    // Value is protected from being reset on a restart.
     CVAR_ARCHIVE        = BIT( 15 ),    // Saved to configuration files (e.g., config.cfg).
-    
+
     /* Visibility Flags */
 
     CVAR_DEVONLY        = BIT( 16 ),    // Hidden from retail/release builds.
     CVAR_HIDDEN         = BIT( 17 ),    // Hidden from console auto-completion and `cvarlist`.
 
     /* Network Flags - for multiplayer synchronization */
-                        
+
     CVAR_NETSYNC        = BIT( 18 ),    // This cvar needs to be synchronized between server and clients.
     CVAR_USERINFO       = BIT( 19 ),    // Client info sent to the server on connect (e.g., name, skin).
     CVAR_SERVERINFO     = BIT( 20 ),    // Server info sent to clients on connect (e.g., mapname, hostname).
@@ -102,7 +102,7 @@ typedef enum cvar_type_e
 #define CVAR_NET_MASK  ( CVAR_NETSYNC | CVAR_USERINFO | CVAR_SERVERINFO | CVAR_SYSTEMINFO )
 #define CVAR_ALL       ( CVAR_TYPE_MASK | CVAR_PROT_MASK | CVAR_LIFE_MASK | CVAR_VIS_MASK | CVAR_NET_MASK )
 
-/*============================================================================================== 
+/*==============================================================================================
 
     Cvar State Flags (modified at runtime)
 
@@ -127,10 +127,10 @@ typedef enum cvar_apply_e
 
 } cvar_apply_t;
 
-/*============================================================================================== 
+/*==============================================================================================
 
     CVar Structure - 32-byte aligned structure
-    
+
     All strings stored as u16 offsets into string pool for hot-reload safety.
     Uses tagged union for different data types.
 
@@ -145,9 +145,9 @@ typedef struct cvar_s
     u16         callback_id;    // Callback index; 0xFFFF = none.
 
     cvar_type_t type;           // Bitmask of flags from `cvar_type_t`.
-    
+
     union
-    {   
+    {
         /* CVAR_BOOL */
         struct { bool value, latch, reset; } b;
 
@@ -158,7 +158,7 @@ typedef struct cvar_s
         struct { f32 value, latch, reset, min, max; } f;
 
         /* CVAR_STR - fixed string table with indexed selection */
-        struct { 
+        struct {
             u16 base;           // String pool offset to start of list
             u16 count;          // Number of strings in list
             u16 width;          // Bytes per string slot (aligned)
@@ -168,7 +168,7 @@ typedef struct cvar_s
         } s;
 
         /* CVAR_BUF - writable string buffer of fixed size */
-        struct { 
+        struct {
             u16 buf;            // String pool offset to buffer
             u16 reset;          // String pool offset to default value
             u16 size;           // Buffer capacity in bytes
@@ -178,7 +178,7 @@ typedef struct cvar_s
         struct { u16 value; } r;
 
         /* CVAR_USR - user-defined string with string value */
-        struct { 
+        struct {
             u16 value_offset;   // User cvar stores an offset to the user string pool
             u16 bucket_index;   // Bucket index for its allocation, enabling it to be freed
         } u;
@@ -189,9 +189,9 @@ typedef struct cvar_s
 /* ensure the struct size is maintained.*/
 static_assert( sizeof( cvar_t ) == 32, "cvar_t must be 32 bytes" );
 
-/*============================================================================================== 
+/*==============================================================================================
 
-    Cvar Functions 
+    Cvar Functions
 
 ==============================================================================================*/
 
@@ -204,9 +204,9 @@ typedef void (*cvar_callback_fn)( cvar_t* cv );
 // TODO:    make module id use a module specific function call.
 //          e.g. a get current module id from module system.
 
-uint16_t    cvar_callback_register              ( cvar_t* cv, cvar_callback_fn fn, i32 module_id );    
+uint16_t    cvar_callback_register              ( cvar_t* cv, cvar_callback_fn fn, i32 module_id );
 void        cvar_callback_unregister            ( cvar_t* cv );
-void        cvar_callback_unregister_by_module  ( i32 module_id );    
+void        cvar_callback_unregister_by_module  ( i32 module_id );
 void        cvar_callback_invoke                ( cvar_t* cv );
 
 /*==============================================================================================
@@ -318,7 +318,7 @@ void        cvar_register_commands  ( void );
 void        cmd_set                 ( int argc, char** argv );
 
                                     /* Same as "set" nit mark for archiving to config file */
-void        cmd_seta                ( int argc, char** argv );  
+void        cmd_seta                ( int argc, char** argv );
 
                                     /* Toggle a boolean cvar */
 void        cmd_toggle              ( int argc, char** argv );
@@ -352,9 +352,6 @@ void        cmd_writeconfig         ( int argc, char** argv );
 bool        cvar_write_config       ( const char* filename, u32 type_filter );
 
                                     /* Load and execute cvar commands from a config file */
-void        cvar_exec_config_old    ( const char* filename );
-
-                                    /* Load and execute cvar commands from a config file */
 bool        cvar_exec_config        ( const char* filename );
 
                                     /* Load default config sequence (default.cfg, config.cfg, autoexec.cfg) */
@@ -377,7 +374,7 @@ void        cvar_register_commands  ( void );
 ==============================================================================================*/
 
 
-/*============================================================================================== 
+/*==============================================================================================
 
     Debug API - For module and natvis visualization
 

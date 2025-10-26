@@ -11,7 +11,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "orb.h"
+#include "../../orb.h"
 #include "cvar.h"
 
 // clang-format off
@@ -50,7 +50,7 @@ cvar_write_config( const char* filename, u32 type_filter )
         {
             const char* name  = cvar_get_name( cv );
             const char* value = cvar_get_value( name );
-            fprintf( f, "seta %s \"%s\"\n", name, value );            
+            fprintf( f, "seta %s \"%s\"\n", name, value );
             written++;
         }
     }
@@ -69,16 +69,16 @@ cvar_write_config( const char* filename, u32 type_filter )
 #define MAX_ARGS     16
 #define MAX_LINE_LEN 1024
 
-void
-cvar_exec_config_old( const char* filename )
+bool
+cvar_exec_config( const char* filename )
 {
     if ( !filename )
-        return;
+        return false;
 
     FILE* f = fopen( filename, "r" );
     if ( !f )
     {
-        return;    // Not an error, may not exist on first run.
+        return false;   // Not an error, may not exist on first run.
     }
 
     /**************************************************************/
@@ -140,6 +140,64 @@ cvar_exec_config_old( const char* filename )
     }
 
     fclose( f );
+    return true;
 }
+
+
+/*============================================================================================*/
+/* Load default config sequence -- Loads: default.cfg -> config.cfg -> autoexec.cfg */
+
+void
+cvar_load_defaults( void )
+{
+    printf( "\n" );
+    printf( "====================================================================\n" );
+    printf( "Loading configuration files\n" );
+    printf( "====================================================================\n" );
+
+    /* Load default.cfg - engine defaults */
+    if ( cvar_exec_config( "default.cfg" ) )
+    {
+        printf( "Loaded default configuration\n" );
+    }
+    else
+    {
+        printf( "Warning: default.cfg not found\n" );
+    }
+
+    /* Load config.cfg - user settings */
+    if ( cvar_exec_config( "config.cfg" ) )
+    {
+        printf( "Loaded user configuration\n" );
+    }
+    else
+    {
+        printf( "Warning: config.cfg not found (will be created on exit)\n" );
+    }
+
+    /* Load autoexec.cfg - user startup commands */
+    if ( cvar_exec_config( "autoexec.cfg" ) )
+    {
+        printf( "Loaded autoexec configuration\n" );
+    }
+    else
+    {
+        printf( "Info: autoexec.cfg not found (optional)\n" );
+    }
+
+    printf( "====================================================================\n" );
+    printf( "\n" );
+}
+
+/*============================================================================================*/
+/* Save user config -- Writes all archived cvars to config.cfg */
+
+void
+cvar_save_config( void )
+{
+    printf( "Saving configuration...\n" );
+    cvar_write_config( "config.cfg", CVAR_ARCHIVE );
+}
+
 
 /*============================================================================================*/

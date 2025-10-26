@@ -12,9 +12,7 @@
 ==============================================================================================*/
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
 #include "orb.h"
 #include "cvar.h"
@@ -53,7 +51,7 @@ cvar_register_commands( void )
 
 /*==============================================================================================
     Internal 'set' command logic
-    Usage: 
+    Usage:
             var value   : set only if var exists
     set     var value   : set or create a user var if not found
     seta    var value   : CVAR_ARCHIVE saved to config
