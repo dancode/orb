@@ -355,15 +355,11 @@ cmd_cvarlist( int argc, char** argv )
         if ( filter && strstr( name, filter ) == NULL )
             continue;
 
-
-#ifdef DEBUG
-
         /* Skip hidden variables in release builds */
         if ( cv->type & CVAR_HIDDEN )
             continue;
         if ( cv->type & CVAR_DEVONLY )
             continue;
-#endif
 
         const char* value    = cvar_get_value( name );
         const char* type_str = "unknown";
