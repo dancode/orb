@@ -45,6 +45,7 @@
 typedef enum cvar_type_e
 {
     /* Data Types - mutually exclusive base types */
+
     CVAR_NONE           = 0,            // No type assigned
 
     CVAR_BOOL           = BIT( 0 ),     // Boolean value (true or false)
@@ -360,12 +361,12 @@ void        cvar_load_defaults      ( void );
                                     /* Save current config to config.cfg */
 void        cvar_save_config        ( void );
 
-                                    /* Process command-line arguments for cvar settings (+set, +seta) */
-int         cvar_process_args       ( int argc, char** argv, int start_index );
+//                                  /* Process command-line arguments for cvar settings (+set, +seta) */
+// int         cvar_process_args       ( int argc, char** argv, int start_index );
 
                                     /* Console command: exec <filename> */
-void        cmd_exec                ( int argc, char** argv );
-
+// void        cmd_exec                ( int argc, char** argv );
+// 
                                     /* Register config system console commands */
 void        cvar_register_commands  ( void );
 

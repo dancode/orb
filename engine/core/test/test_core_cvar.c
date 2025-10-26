@@ -338,7 +338,10 @@ example_command_line( int argc, char** argv )
     char* test_argv[] = { "game", "+set", "dedicated", "1", "+set", "port", "27016" };
     int   test_argc   = 7;
 
-    cvar_process_args( test_argc, test_argv, 1 );
+    UNUSED( test_argv );
+    UNUSED( test_argc );
+
+    // cvar_process_args( test_argc, test_argv, 1 );
 
     printf( "dedicated: %s\n", cvar_get_value( "dedicated" ) );
     printf( "port: %s\n", cvar_get_value( "port" ) );
@@ -446,8 +449,9 @@ example_full_application( void )
     /* 5. Process command-line arguments */
     char* test_argv[] = { "game",    "+set", "com_maxfps", "144",      "+set",
                           "r_width", "2560", "+set",       "r_height", "1440" };
-    cvar_process_args( 7, test_argv, 1 );
+    // cvar_process_args( 7, test_argv, 1 );
 
+    UNUSED( test_argv );
     /* 6. Load config files */
     printf( "\nLoading default configs...\n" );
     // cvar_load_defaults();  // Would load default.cfg, config.cfg, autoexec.cfg

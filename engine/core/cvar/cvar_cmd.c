@@ -59,7 +59,7 @@ cvar_register_commands( void )
     sets    var value   : CVAR_SERVERINFO advertised to clients by server
 ==============================================================================================*/
 
-void
+static void
 cmd_set_internal( const char* name, const char* value, u32 internal_flags )
 {
     /* Create user variable if doesn't exist */

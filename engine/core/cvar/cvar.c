@@ -39,6 +39,7 @@ str_icmp_eq( const char* a, const char* b )
     return *a == *b;
 }
 
+// clang-format off
 /*==============================================================================================
 
     Utility Functions
@@ -450,16 +451,13 @@ cvar_compact_user_pool( void )
 
 /*==============================================================================================
 
-    Register Functions
+    User value promotion
+
+    If a cvar was created as a user variable (CVAR_USR) but is now being registered
+    as a built-in variable, we need to promote its value from the user string pool 
+    to the main cvar system. Value promotion occurs during registration of built-in cvars.
 
 ==============================================================================================*/
-
-/*  Value promotion helper
-    Called at the END of each cvar_register_* after type-specific setup.
-    If this cvar was previously a CVAR_USR (user-created), this
-    applies its string value via cvar_set_value() and frees the
-    user-string memory.
-*/
 
 static u16 g_user_off  = USER_STRING_INVALID_OFFSET;
 static u16 g_user_buck = USER_STRING_INVALID_LIST;
@@ -467,6 +465,9 @@ static u16 g_user_buck = USER_STRING_INVALID_LIST;
 static void
 cvar_cache_user_value( cvar_t* cv )
 {
+    // Cache user value info for later promotion since it is about to be removed
+    // and we need to preserve the string value whos offset as stored in the cvar data.
+
     if ( cv->type & CVAR_USR )
     {
         g_user_off  = cv->u.value_offset;
@@ -506,6 +507,11 @@ cvar_promote_user_value( cvar_t* cv )
     g_user_buck = USER_STRING_INVALID_LIST;
 }
 
+/*==============================================================================================
+
+    Register Functions
+
+==============================================================================================*/
 /* Create the cvar entry and place in hash lookup */
 
 cvar_t*
@@ -720,8 +726,6 @@ cvar_get_count( void )
 
 ==============================================================================================*/
 
-// clang-format off
-
 bool cvar_is_bool   ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_BOOL ));  }
 bool cvar_is_int    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_INT ));   }
 bool cvar_is_float  ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_FLOAT )); }
@@ -729,8 +733,6 @@ bool cvar_is_str    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_STR 
 bool cvar_is_buf    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_BUF ));   }
 bool cvar_is_ref    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_REF ));   }
 bool cvar_is_user   ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_USR ));   }
-
-// clang-format on
 
 /*==============================================================================================
 
@@ -891,8 +893,6 @@ cvar_reset_all( void )
 
 /* Apply all latched cvar values */
 
-// clang-format off
-
 void
 cvar_apply_latched( void )
 {
@@ -936,7 +936,7 @@ cvar_clear_modified( void )
 /* Internal function that contains all the 'set' logic. */
 
 static bool
-_cvar_set_value_internal( cvar_t* cv, const char* value )
+cvar_set_value_internal( cvar_t* cv, const char* value )
 {
     /* Check protection flags */
     if ( cv->type & CVAR_ROM )
@@ -968,8 +968,8 @@ _cvar_set_value_internal( cvar_t* cv, const char* value )
             }
             else
             {
-                if      ( str_icmp_eq( value, "true" ) || str_icmp_eq( value, "on" ) || str_icmp_eq( value, "yes" ) ) { new_value = true; parsed = true; }
-                else if ( str_icmp_eq( value, "false" ) || str_icmp_eq( value, "off" ) || str_icmp_eq( value, "no" ) ) { new_value = false; parsed = true; }
+                if      ( str_icmp_eq( value, "true" )  || str_icmp_eq( value, "on" )  || str_icmp_eq( value, "yes" ) ) { new_value = true;  parsed = true; }
+                else if ( str_icmp_eq( value, "false" ) || str_icmp_eq( value, "off" ) || str_icmp_eq( value, "no" ) )  { new_value = false; parsed = true; }
             }
 
             if ( !parsed ) { break; } // Invalid bool string
@@ -1150,7 +1150,7 @@ cvar_set_value( const char* name, const char* value )
     if ( !cv )
         return false; /* Does not create, just returns false */
 
-    return _cvar_set_value_internal( cv, value );
+    return cvar_set_value_internal( cv, value );
 }
 
 /*============================================================================================*/
@@ -1182,7 +1182,6 @@ cvar_get_value( const char* name )
     }
 }
 
-// clang-format off
 /*============================================================================================*/
 /* Print cvar value with type info */
 
@@ -1275,3 +1274,4 @@ core_debug_get_api( void )
 }
 
 /*============================================================================================*/
+// clang-format on
