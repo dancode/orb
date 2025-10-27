@@ -6,8 +6,11 @@ set(CORE_SOURCES
 	core.h
 	core.c
 	
-	reflection.h		
-	reflection.c
+	reflect/str_intern.h
+	reflect/str_intern.c
+	reflect/reflection.h	
+	reflect/registry.c
+	reflect/reflection.c
 	
 	module_system.c	
 	
