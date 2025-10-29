@@ -8,6 +8,8 @@
     - Key Feature: Case-insensitive lookups, but case-preserving storage
     - Dynamic resizing, load factor management, debug metrics
 
+    NOTE: Strings >255 are rejected -- all strings must be less than 256 characters.
+
 ==============================================================================================*/
 
 #include <string.h>
@@ -20,16 +22,24 @@
 #include "str_intern.h"
 #include "base/standard.h"
 
-/*============================================================================================*/
-/* HASHING */
-/*============================================================================================*/
+/*==============================================================================================
+
+    Hashing
+
+==============================================================================================*/
+
+static inline unsigned char
+ascii_tolower( unsigned char c )
+{
+    return ( c >= 'A' && c <= 'Z' ) ? ( c + 32 ) : c;
+}
 
 uint32_t
 sid_hash( const char* s )
 {
     /* case-insensitive hash (FNV-1a) function */
     uint32_t h = 2166136261u;
-    while ( *s ) h = ( h ^ ( uint8_t )tolower( ( unsigned char )*s++ ) ) * 16777619u;
+    while ( *s ) h = ( h ^ ( uint8_t )ascii_tolower( ( unsigned char )*s++ ) ) * 16777619u;
     return h;
 }
 
@@ -40,14 +50,17 @@ sid_hash_len( const char* str, size_t len )
     uint32_t hash = 2166136261u;
     for ( size_t i = 0; i < len; i++ )
     {
-        hash ^= ( uint8_t )tolower( ( unsigned char )str[ i ] );
+        hash ^= ( uint8_t )ascii_tolower( ( unsigned char )str[ i ] );
         hash *= 16777619u;
     }
     return hash;
 }
 
-/*============================================================================================*/
-/* configuration */
+/*==============================================================================================
+
+    Configuration
+
+==============================================================================================*/
 
 #define DEFAULT_TABLE_SIZE ( 512 )                 // initial hash table size (power of 2) 16384
 #define DEFAULT_ARENA_SIZE ( 4096 )                // initial size of string pool
@@ -55,9 +68,11 @@ sid_hash_len( const char* str, size_t len )
 #define MAX_STRING_LENGTH  255                     // 8-bit length limit
 #define DEFAULT_MAX_LOAD   0.70f                   // rehash when 70% full
 
-/*============================================================================================*/
-/* Intern Table */
-/*============================================================================================*/
+/*==============================================================================================
+
+    Data Types
+
+==============================================================================================*/
 
 typedef struct intern_slot_s    // Hash table entry: hash + sid (offset)
 {
@@ -93,31 +108,27 @@ static intern_state_t g_intern;
 
 /*==============================================================================================
 
-    Public : Accessors
+    Accessors + Utilities
 
 ==============================================================================================*/
 
 const char*
 sid_cstr( sid_t sid )
 {
-    assert( sid != SID_INVALID );
-    assert( sid > 0 && sid < g_intern.arena.used );
-
     if ( sid == SID_INVALID )
         return "";    // canonical empty string for invalid IDs
 
+    assert( sid > 0 && sid < g_intern.arena.used );
     return &g_intern.arena.base[ sid ];
 }
 
 uint8_t
 sid_length( sid_t sid )
 {
-    assert( sid != SID_INVALID );
-    assert( sid > 0 && sid < g_intern.arena.used );
-
     if ( sid == SID_INVALID )
         return 0;
 
+    assert( sid > 0 && sid < g_intern.arena.used );
     return ( uint8_t )g_intern.arena.base[ sid - 1 ];
 }
 
@@ -138,6 +149,7 @@ sid_is_canonical( sid_t sid, const char* str, size_t len )
 
     /* check if provided string matches canonical case */
     /* exact byte match that to internal representation */
+
     if ( sid_length( sid ) != len )
         return false;
     return memcmp( sid_cstr( sid ), str, len ) == 0;
@@ -179,13 +191,11 @@ static bool
 arena_grow( string_arena_t* arena, uint32_t needed )
 {
     /* Grow arena to ensure at least 'needed' bytes free */
-
     if ( arena->used + needed <= arena->capacity )
-    {
-        return true;    // <-- already enough space
-    }
+        return true; /* already enough space */
 
-    // Calculate new capacity (double until fits, capped at MAX_ARENA_SIZE)
+    /* Calculate new capacity (double until fits, capped at MAX_ARENA_SIZE) */
+
     uint32_t new_capacity = arena->capacity ? arena->capacity * 2 : DEFAULT_ARENA_SIZE;
     while ( arena->used + needed > new_capacity )
     {
@@ -197,11 +207,11 @@ arena_grow( string_arena_t* arena, uint32_t needed )
         }
     }
 
-    // Overflowed the maximum arena size
+    /* Overflowed the maximum arena size */
     if ( arena->used + needed > new_capacity )
         return false;
 
-    // Reallocate memory (or fail)
+    /* Reallocate memory (or fail) */
     char* new_base = ( char* )realloc( arena->base, new_capacity );
     if ( !new_base )
         return false;
@@ -305,7 +315,7 @@ table_ensure_capacity( intern_state_t* state )
 {
     /* Ensure table has capacity under load factor, rehash if needed */
 
-    float load = ( float )state->entry_count / ( float )state->table_size;
+    float load = ( float )( state->entry_count + 1 ) / ( float )state->table_size;
     if ( load <= state->max_load )
     {
         return true;    // <-- don't need new size
@@ -319,7 +329,59 @@ table_ensure_capacity( intern_state_t* state )
 
 /*==============================================================================================
 
-    Internal : Interning
+    Public : Initialization + Shutdown
+
+==============================================================================================*/
+
+void
+sid_init( void )
+{
+    memset( &g_intern, 0, sizeof( g_intern ) );
+
+    /* Sanity: table size must be power-of-two */
+    assert( ( DEFAULT_TABLE_SIZE & ( DEFAULT_TABLE_SIZE - 1 ) ) == 0 );
+
+    /* initialize table and arena */
+
+    if ( !table_init( &g_intern.table, DEFAULT_TABLE_SIZE ) )
+    {
+        assert( 0 && "Failed to initialize intern table" );
+        return;
+    }
+    if ( !arena_init( &g_intern.arena, DEFAULT_ARENA_SIZE ) )
+    {
+        free( g_intern.table );
+        assert( 0 && "Failed to initialize string arena" );
+        return;
+    }
+
+    /* set initial parameters */
+
+    g_intern.table_size  = DEFAULT_TABLE_SIZE;
+    g_intern.entry_count = 0;
+    g_intern.max_load    = DEFAULT_MAX_LOAD;
+
+    /* clear statistics */
+
+    g_intern.total_lookups    = 0;
+    g_intern.total_probes     = 0;
+    g_intern.max_probe_length = 0;
+    g_intern.rehash_count     = 0;
+}
+
+void
+sid_shutdown( void )
+{
+    /* free resources */
+
+    table_free( g_intern.table );
+    arena_free( &g_intern.arena );
+    memset( &g_intern, 0, sizeof( g_intern ) );
+}
+
+/*==============================================================================================
+
+    Public : String Interning
 
 ==============================================================================================*/
 
@@ -328,6 +390,7 @@ str_equal_insensitive( const char* a, const char* b, size_t len )
 {
     /* case-insensitive string comparison with length */
     /* note: stirng a and b must have the same length */
+
     for ( size_t i = 0; i < len; i++ )
     {
         if ( tolower( ( unsigned char )a[ i ] ) != tolower( ( unsigned char )b[ i ] ) )
@@ -441,54 +504,6 @@ sid_intern_cstr( const char* str )
     return sid_intern( str, ( int32_t )strlen( str ) );
 }
 
-/*============================================================================================*/
-
-void
-sid_init( void )
-{
-    memset( &g_intern, 0, sizeof( g_intern ) );
-
-    /* Sanity: table size must be power-of-two */
-    assert( ( DEFAULT_TABLE_SIZE & ( DEFAULT_TABLE_SIZE - 1 ) ) == 0 );
-
-    /* initialize table and arena */
-
-    if ( !table_init( &g_intern.table, DEFAULT_TABLE_SIZE ) )
-    {
-        assert( 0 && "Failed to initialize intern table" );
-        return;
-    }
-    if ( !arena_init( &g_intern.arena, DEFAULT_ARENA_SIZE ) )
-    {
-        free( g_intern.table );
-        assert( 0 && "Failed to initialize string arena" );
-        return;
-    }
-
-    /* set initial parameters */
-
-    g_intern.table_size  = DEFAULT_TABLE_SIZE;
-    g_intern.entry_count = 0;
-    g_intern.max_load    = DEFAULT_MAX_LOAD;
-    
-    /* clear statistics */
-
-    g_intern.total_lookups    = 0;
-    g_intern.total_probes     = 0;
-    g_intern.max_probe_length = 0;
-    g_intern.rehash_count     = 0;
-}
-
-void
-sid_shutdown( void )
-{
-    /* free resources */
-
-    table_free( g_intern.table );
-    arena_free( &g_intern.arena );
-    memset( &g_intern, 0, sizeof( g_intern ) );
-}
-
 /*==============================================================================================
 
     Public : Debug Statistics
@@ -580,9 +595,11 @@ sid_reset_stats( void )
     // note: Don't reset rehash_count as it's cumulative
 }
 
-/*============================================================================================*/
-/* Usage example */
+/*==============================================================================================
 
+    Public : Usage Example
+
+==============================================================================================*/
 int
 intern_test( void )
 {
