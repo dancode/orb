@@ -30,8 +30,7 @@ set(CORE_SOURCES
 	cvar/cmd.c
 	cvar/cmd.h
 	
-	debug.c 
-		
+	debug.c 		
 	core_api.c
 	
 	test/test_core_cvar.c

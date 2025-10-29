@@ -42,10 +42,14 @@ set(ENGINE_SOURCES
 	base/base.c
 	
 	base/standard.h
+	base/standard.c
 	base/standard_string.c
 	
 	base/module.h
 	base/module.c
+	
+	platform/platform.h
+	platform/platform_virtual.c
 )
 
 add_executable(engine
