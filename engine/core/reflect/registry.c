@@ -12,7 +12,7 @@ registry_t g_registry;
 void
 registry_init( void )
 {
-    str_intern_init();
+    sid_init();
     memset( &g_registry, 0, sizeof( g_registry ) );
 }
 
@@ -39,11 +39,12 @@ registry_register_types( uint8_t         module_id,
             assert( 0 );
             break;
         }
-        sid_t nameid = str_intern( type_names[ i ] );
+        sid_t nameid = 0;
+        ///// sid_t nameid = old_str_intern( type_names[ i ] );
 
         // Copy the type into type pool
         type_t* t      = &g_registry.type_array[ g_registry.type_count ];
-        t->name_sid    = nameid.off;
+        t->name_sid    = nameid;
         t->size        = type_sizes[ i ];
         t->field_index = field_index;
         t->field_count = field_counts[ i ];
@@ -73,15 +74,16 @@ registry_register_types( uint8_t         module_id,
 int
 registry_find_type_by_hash( uint32_t hash )
 {
+    UNUSED( hash );
     for ( uint32_t id = 0; id < g_registry.type_count; ++id )
     {
-        // test every name against the hash -- one by one.
-        const type_t* type = &g_registry.type_array[ id ];
-        // const char*   name = str_from_sid( ( sid_t ){ 0, type->name_sid } );
-        const char* name = str_from_off( type->name_sid );
-        uint32_t    name_hash = sid_hash( name );
-        if ( name_hash == hash )
-            return ( int )id; // <-- found it!
+    //     // test every name against the hash -- one by one.
+    //     const type_t* type = &g_registry.type_array[ id ];
+    //     // const char*   name = str_from_sid( ( sid_t ){ 0, type->name_sid } );
+    //     const char* name = old_str_from_off( type->name_sid );
+    //     uint32_t    name_hash = sid_hash( name );
+    //     if ( name_hash == hash )
+    //         return ( int )id; // <-- found it!
     }
     return -1;    // type not found
 }

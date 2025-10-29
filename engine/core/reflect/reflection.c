@@ -49,7 +49,8 @@ reflection_test( void )
 
     // Intern names for fields
     const char* names[] = { "x", "y", "z", "pos", "health" };
-    for ( int i = 0; i < 5; i++ ) fields[ i ].name_sid = str_intern( names[ i ] ).off;
+    // for ( int i = 0; i < 5; i++ ) fields[ i ].name_sid = old_str_intern( names[ i ] ).off;
+    UNUSED( names );
 
     registry_register_types( 1, type_names, type_sizes, field_counts, fields, 2 );
     registry_resolve_dependencies();    // <-- slow but called infrequently
@@ -58,9 +59,9 @@ reflection_test( void )
     printf( "Found type Player, %u fields\n", t->field_count );
     for ( uint32_t f = 0; f < t->field_count; ++f )
     {
-        field_t* fld = &g_registry.field_array[ t->field_index + f ];
-        printf( "  Field %s offset=%u subtype_id=%u\n", str_from_sid( ( sid_t ){ 0, fld->name_sid } ),
-                fld->offset, fld->sub_type_id );
+        // field_t* fld = &g_registry.field_array[ t->field_index + f ];
+        // printf( "  Field %s offset=%u subtype_id=%u\n", old_str_from_sid( ( old_sid_t ){ 0, fld->name_sid } ),
+        //         fld->offset, fld->sub_type_id );
     }
 }
 

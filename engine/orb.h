@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 /*==============================================================================================
 
@@ -56,12 +57,6 @@
 
 ==============================================================================================*/
 
-#ifndef bool
-#    define bool  _Bool
-#    define false 0
-#    define true  1
-#endif
-
 typedef int8_t     i8;
 typedef int16_t    i16;
 typedef int32_t    i32;
@@ -83,11 +78,6 @@ typedef const uint32_t   cu32;
 typedef const uint64_t   cu64;
 typedef const float      cf32;
 typedef const double     cf64;
-
-#ifndef TRUE
-#    define TRUE  1
-#    define FALSE 0
-#endif
 
 #ifndef NULL
 #    ifdef __cplusplus

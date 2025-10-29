@@ -60,10 +60,9 @@ typedef struct field_t
 
 typedef struct type_s
 {
-    uint32_t name_sid;    // id: interned name string ID
-
-    uint16_t size;    // layout: sizeof()
-                      // uint16_t alignment;    // layout: alignof()
+    sid_t    name_sid;    // id: interned name string ID
+    uint16_t size;        // layout: sizeof()
+                          // uint16_t alignment;    // layout: alignof()
 
     uint16_t field_index;    // field: index into array of fields
     uint16_t field_count;    // field: Number of fields

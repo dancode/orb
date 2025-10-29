@@ -4,23 +4,21 @@
 
     str_intern.h
 
-
 ==============================================================================================*/
+
 #include "orb.h"
 
-typedef struct sid_s    // String interning handle (32-bit offset into global pool)
-{
-    uint32_t hash;    // Precomputed hash of the string
-    uint32_t off;     // Offset into the arena where the string is stored
+/* Interned string entry (a compact representation for quick comparison) */
+/* Think of it like an “opaque ID” for a string */
 
-} sid_t;
+typedef uint32_t sid_t;
+#define SID_INVALID 0
 
-uint32_t    sid_hash( const char* s );
+uint32_t sid_hash( const char* s );
 
-void        str_intern_init();
-sid_t       str_intern( const char* s );
-const char* str_from_sid( sid_t sid );
-const char* str_from_off( uint32_t off );
+void  sid_init( void );
+sid_t sid_intern( const char* str, int32_t len );
+sid_t sid_intern_cstr( const char* str );
 
 /*============================================================================================*/
 #endif
