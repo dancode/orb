@@ -7,113 +7,177 @@
 
 /*============================================================================================*/
 
-registry_t g_registry;
+static registry_t g_registry;
+
+/*============================================================================================*/
 
 void
 registry_init( void )
 {
     sid_init();
     memset( &g_registry, 0, sizeof( g_registry ) );
-}
 
-uint32_t
-registry_register_types( uint8_t         module_id,
-                         const char**    type_names,
-                         const uint16_t* type_sizes,
-                         const uint16_t* field_counts,
-                         const field_t*  fields,
-                         uint16_t        type_count )
-{
-    UNUSED( module_id );
-    UNUSED( type_names );
-    UNUSED( type_sizes );
-    UNUSED( field_counts );
-    UNUSED( fields );
+    for ( int i = 0; i < TYPE_HASH_SIZE; i++ ) g_registry.type_hash[ i ] = TYPE_INVALID;
 
-    // add all the fields for each type.
-    uint16_t field_index = g_registry.field_count;
-    for ( uint32_t i = 0; i < type_count; ++i )
+    static const char* builtin_names[] = {
+        "NULL", "bool", "int", "float", "double",
+    };
+    u16 builtin_sizes[] = {
+        0, 1, 4, 4, 8,
+    };
+
+    for ( uint16_t i = 0; i < RF_TYPE_BUILT_IN; ++i )
     {
-        if ( g_registry.type_count >= MAX_TYPES )
-        {
-            assert( 0 );
-            break;
-        }
-        sid_t nameid = 0;
-        ///// sid_t nameid = old_str_intern( type_names[ i ] );
+        type_t t    = { 0 };
+        t.name_sid  = sid_intern_cstr( builtin_names[ i ] );
+        t.hash      = sid_hash( builtin_names[ i ] );
+        t.size      = builtin_sizes[ i ];
+        t.valid     = 1;
+        t.module_id = 0;
 
-        // Copy the type into type pool
-        type_t* t      = &g_registry.type_array[ g_registry.type_count ];
-        t->name_sid    = nameid;
-        t->size        = type_sizes[ i ];
-        t->field_index = field_index;
-        t->field_count = field_counts[ i ];
-        t->module_id   = module_id;
-        t->valid       = 1;
+        // add to type array
+        g_registry.type_array[ i ] = t;
 
-        UNUSED( t );
-        UNUSED( nameid );
-
-        // Copy the fields into field pool
-        for ( uint32_t f = 0; f < field_counts[ i ]; ++f )
-        {
-            g_registry.field_array[ field_index + f ] = fields[ field_index + f ];
-        }
-
-        g_registry.type_count++;
-        field_index += field_counts[ i ];    // incremenet n
-        g_registry.field_count = field_index;
+        // add to hash table
+        uint32_t slot                = t.hash % TYPE_HASH_SIZE;
+        t.next                       = g_registry.type_hash[ slot ];
+        g_registry.type_hash[ slot ] = i;
     }
-    return g_registry.type_count;
-}
 
-/*============================================================================================*/
-
-// TDOD: optimize this with a hash map?
-
-int
-registry_find_type_by_hash( uint32_t hash )
-{
-    UNUSED( hash );
-    for ( uint32_t id = 0; id < g_registry.type_count; ++id )
-    {
-    //     // test every name against the hash -- one by one.
-    //     const type_t* type = &g_registry.type_array[ id ];
-    //     // const char*   name = str_from_sid( ( sid_t ){ 0, type->name_sid } );
-    //     const char* name = old_str_from_off( type->name_sid );
-    //     uint32_t    name_hash = sid_hash( name );
-    //     if ( name_hash == hash )
-    //         return ( int )id; // <-- found it!
-    }
-    return -1;    // type not found
-}
-
-const type_t*
-registry_find_type( const char* type_name )
-{
-    uint32_t hash = sid_hash( type_name );
-    int      id   = registry_find_type_by_hash( hash );
-    return id >= 0 ? &g_registry.type_array[ id ] : NULL;
+    g_registry.type_count = RF_TYPE_BUILT_IN;
 }
 
 /*============================================================================================*/
 
 void
-registry_resolve_dependencies( void )
+registry_exit( void )
 {
-    for ( uint32_t i = 0; i < g_registry.type_count; ++i )
+    memset( &g_registry, 0, sizeof( g_registry ) );
+    sid_shutdown();
+}
+
+/*============================================================================================*/
+// Get type by id
+
+const type_t*
+reflect_get_type( uint32_t id )
+{
+    if ( id == TYPE_INVALID || id >= g_registry.type_count )
+        return &g_registry.type_array[ 0 ];    // safe invalid
+
+    return &g_registry.type_array[ id ];
+}
+
+/*============================================================================================*/
+// Lookup by hash (fast path)
+
+uint16_t
+reflect_get_type_id_hash( uint32_t hash )
+{
+    registry_t* reg = &g_registry;
+    uint16_t    i   = reg->type_hash[ hash % TYPE_HASH_SIZE ];
+    while ( i != TYPE_INVALID )
     {
-        type_t* t = &g_registry.type_array[ i ];
-        for ( uint32_t f = 0; f < t->field_count; ++f )
+        if ( reg->type_array[ i ].hash == hash )
+            return i;
+
+        i = reg->type_array[ i ].next;
+    }
+    return TYPE_INVALID;
+}
+
+/*============================================================================================*/
+// Lookup by string (for first time resolve)
+
+uint16_t
+reflect_get_type_id( const char* name )
+{
+    return reflect_get_type_id_hash( sid_hash( name ) );
+}
+
+/*============================================================================================*/
+// Find type by name.
+
+const type_t*
+registry_find_type( const char* type_name )
+{
+    const uint32_t hash    = sid_hash( type_name );
+    const uint16_t type_id = reflect_get_type_id_hash( hash );
+    return reflect_get_type( type_id );
+}
+
+/*============================================================================================*/
+// Add new type (returns id)
+
+uint16_t
+reflect_register_type( const type_t* new_type )
+{
+    // check for space
+    registry_t* reg = &g_registry;
+    if ( reg->type_count >= MAX_TYPES )
+    {
+        assert( 0 && "Type registry full!" );
+        return TYPE_INVALID;
+    }
+
+    // copy new type into type array
+    uint16_t type_id = reg->type_count++;              // new type id
+    type_t*  type    = &reg->type_array[ type_id ];    // new type entry
+    *type            = *new_type;                      // copy type data
+
+    // insert into hash table
+    uint32_t slot          = new_type->hash % TYPE_HASH_SIZE;    // hash slot
+    type->next             = reg->type_hash[ slot ];             // chain to previous
+    reg->type_hash[ slot ] = type_id;                            // insert into hash table
+
+    return type_id;    // new registered type id
+}
+
+/*============================================================================================*/
+// Register fields (copy from static table)
+
+uint16_t
+reflect_register_fields( const field_t* src, uint16_t count )
+{
+    registry_t* reg = &g_registry;
+
+    if ( reg->field_count + count > MAX_FIELDS )
+    {
+        assert( 0 && "Field registry full!" );
+        return TYPE_INVALID;
+    }
+
+    uint16_t index = reg->field_count;
+    memcpy( &reg->field_array[ index ], src, count * sizeof( field_t ) );
+    reg->field_count += count;
+    return index;    // first field offset
+}
+
+/*============================================================================================*/
+// Resolve all field subtype hashes to type ids
+
+void
+reflect_resolve_field_types( void )
+{
+    for ( uint16_t i = 0; i < g_registry.field_count; i++ )
+    {
+        field_t* f = &g_registry.field_array[ i ];
+        if ( f->type_id == RF_TYPE_INVALID && f->type_hash )
         {
-            field_t* fld = &g_registry.field_array[ t->field_index + f ];
-            if ( fld->sub_type_hash )
-            {
-                int tid          = registry_find_type_by_hash( fld->sub_type_hash );
-                fld->sub_type_id = tid >= 0 ? ( uint16_t )tid : 0;
-            }
+            // resolve hash to existing type id.
+            f->type_id = reflect_get_type_id_hash( f->type_hash );
         }
     }
+}
+
+/*============================================================================================*/
+field_t*
+reflect_get_field_by_id( uint32_t type_id )
+{
+    const type_t* t = reflect_get_type( type_id );
+    if ( t == NULL || t->field_count == 0 )
+        return NULL;
+    return &g_registry.field_array[ t->field_index ];
 }
 
 /*============================================================================================*/

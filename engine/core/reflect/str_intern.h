@@ -17,62 +17,67 @@
 typedef uint32_t sid_t;
 #define SID_INVALID 0u
 
+#define SID( str )  sid_intern( str, strlen( str ));
+
 /*============================================================================================*/
-/* HASHING */ 
+/* SID : HASHING */ 
 /*============================================================================================*/
 
 // TODO: make internal static functions?
 
-                                // Case-insensitive FNV-1a hash
+                                // case-insensitive FNV-1a hash
 uint32_t    sid_hash            ( const char* s );
 
-                                // Case-insensitive FNV-1a hash with length
+                                // case-insensitive FNV-1a hash with length
 uint32_t    sid_hash_len        ( const char* str, size_t len );
 
 /*============================================================================================*/
-/* INITIALIZATION */
+/* SID : USAGE */
+/*============================================================================================*/
+
+                                // get C string from sid
+const char* sid_cstr            ( sid_t sid );
+
+                                // get length of interned string
+uint8_t     sid_length          ( sid_t sid );
+
+                                // compare two sids for equality
+bool        sid_equals          ( sid_t a, sid_t b );
+
+                                // check if string matches canonical case for given sid
+bool        sid_is_canonical    ( sid_t sid, const char* str, size_t len );
+
+                                // get hash of string entry
+uint32_t    sid_get_hash        ( sid_t sid );
+
+/*============================================================================================*/
+/* SID : INITIALIZATION */
 /*============================================================================================*/
                     
-                                // Initialize string interning system
+                                // initialize string interning system
 void        sid_init            ( void );
 
-                                // Shutdown string interning system
+                                // shutdown string interning system
 void        sid_shutdown        ( void );
 
 /*============================================================================================*/
 /* INTERNING */
 /*============================================================================================*/
 
-                                // Intern string with given length
+                                // intern string with given length
 sid_t       sid_intern          ( const char* str, int32_t len );
 
-                                // Intern C string (null-terminated)
+                                // intern C string (null-terminated)
 sid_t       sid_intern_cstr     ( const char* str );
-
-/*============================================================================================*/
-/* ACCESSORS + UTILITIES */
-/*============================================================================================*/
-
-                                // Get C string from sid
-const char* sid_cstr            ( sid_t sid );
-
-                                // Get length of interned string
-uint8_t     sid_length          ( sid_t sid );
-
-                                // Compare two sids for equality
-bool        sid_equals          ( sid_t a, sid_t b );
-
-                                // Check if provided string matches canonical case for given sid
-bool        sid_is_canonical    ( sid_t sid, const char* str, size_t len );
 
 /*============================================================================================*/
 /* DEBUG UTILITY */
 /*============================================================================================*/
 
-                                // Print statistics to given file (e.g., stdout)
+                                // print statistics to given file (e.g., stdout)
 void        sid_print_stats     ( void* fp );
 
-                                // Reset period statistics counters (usually never).
+                                // reset period statistics counters (usually never).
 void        sid_reset_stats     ( void );
 
 /*============================================================================================*/

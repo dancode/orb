@@ -1,9 +1,22 @@
 #ifndef REFLECTION_H
 #define REFLECTION_H
-
 /*==============================================================================================
 
     reflection.h
+
+    -- Reflection system for runtime type information (RTTI)
+    -- Allows registration and lookup of types and their fields.
+    -- Designed for use in tools, serialization, and editors.
+    -- Fixed-size arrays for simplicity, can be extended to dynamic if needed.
+    -- Safe for hot-reload: copied data and interned strings live in engine memory.
+
+    -- built-in types integrated as real entries in the same table
+    -- single-array open-addressing hash table for named type lookups
+    -- interned global string pool (one copy of each name) for names.
+    -- internal types use indexes and no pointers for hot-reloiad.
+    -- registration API copies generated/static data into the registry and interns strings.
+    -- reflect_type_id() helper and example of caching the returned id for fast runtime access
+
 
 ==============================================================================================*/
 
@@ -14,127 +27,114 @@
 #include "orb.h"
 #include "str_intern.h"
 
+// clang-format off
 /*==============================================================================================
 
-    A global string interner stores one copy of each name:
+    Reflection : Constants
 
 ==============================================================================================*/
 
+#define MAX_TYPES           512                 // Fixed limit - but 1024 types
+#define MAX_FIELDS          4096                // Fixed limit - but 2048 fields
+#define MAX_MODULES         16                  // Maximum reflected modules.
+
+#define TYPE_HASH_SIZE      1048                // must be power of two
+#define TYPE_INVALID        ((uint16_t)0xFFFF)  // invalid type ID
 
 /*==============================================================================================
 
-    uses fixed size array but dynamically populated
+    Reflection : Types
 
 ==============================================================================================*/
 
-typedef enum rf_prim_e
+/* Built-in primitive types. 0 is invalid sentinel. */
+
+enum
 {
-    RF_PRIM_BOOL  = BIT( 0 ),    // Primitive boolean type
-    RF_PRIM_INT   = BIT( 1 ),    // Primitive integer type
-    RF_PRIM_FLOAT = BIT( 2 ),    // Primitive float type
-} rf_prim_t;
+    RF_TYPE_INVALID = 0,
+    RF_TYPE_BOOL,
+    RF_TYPE_INT,
+    RF_TYPE_FLOAT,
+    RF_TYPE_DOUBLE,
+    RF_TYPE_BUILT_IN,       // count
+};
 
-#define MAX_TYPES   1024    // Fixed limit - but 1024 types
-#define MAX_FIELDS  2048    // Fixed limit - but 2048 fields
-#define MAX_MODULES 16
+// TODO: add uint16_t meta;     // todo: serializable, editable, etc.
+/*============================================================================================*/
 
-// Field descriptor - minimal but enough for editors
-
-typedef uint16_t type_id;    // Index into type array
-typedef uint32_t hash_id;    // Simple hash for lookup
+// note: the first type index is reserved as invalid (but resolves to a non-crashing index).
 
 typedef struct field_t
 {
-    uint32_t name_sid;         // Interned string ID for name
-    uint16_t offset;           // Byte offset in struct
-    uint16_t size;             // Size in bytes
-    uint16_t kind;             // Basic/Struct/Array
-    uint16_t sub_type_id;      // resolved type index (0 = none)
-    uint32_t sub_type_hash;    // unresolved type hash
+    sid_t       name_sid;       // interned name offset (set at runtime)
 
-    // int16_t  flag;    // Serializable, editable, etc.
+    uint16_t    offset;         // byte offset within parent struct (offsetof)
+    uint16_t    size;           // element size in bytes
 
-} field_t;
+    uint16_t    kind;           // type flags (primitive/struct/array/pointer)
+    uint16_t    type_id;        // resolved type id; TYPE_INVALID = unresolved/none
 
-// Type descriptor - everything needed for tooling
+    uint32_t    type_hash;      // hash of type name.
+
+ } field_t;
 
 typedef struct type_s
 {
-    sid_t    name_sid;    // id: interned name string ID
-    uint16_t size;        // layout: sizeof()
-                          // uint16_t alignment;    // layout: alignof()
+    sid_t       name_sid;       // interned type name (set at runtime
+    uint32_t    hash;           // cached name hash (from generator or sid_hash)
 
-    uint16_t field_index;    // field: index into array of fields
-    uint16_t field_count;    // field: Number of fields
+    uint16_t    size;           // sizeof()
+    uint16_t    field_index;    // field: first index in global field array
+    uint16_t    field_count;    // field: number of fields after first index
+    uint16_t    next;           // next hash index (TYPE_INVALID = end of chain)
 
-    uint8_t  module_id;    // module: Which DLL owns this type
-    uint8_t  valid;        // module: Type version for hot reload
-
-    uint8_t  padding[ 2 ];
+    uint8_t     module_id;      // module: which DLL id created this type.
+    uint8_t     valid;          // 1 = valid, 0 = invalid (after unload)
+    uint8_t     reserved_a;     // reserved for alignment/padding
+    uint8_t     reserved_b;     // reserved for alignment/padding
 
 } type_t;
 
-// The global type registry.
-
 typedef struct registry_s
 {
-    type_t   type_array[ MAX_TYPES ];
-    field_t  field_array[ MAX_FIELDS ];
-    uint16_t type_count;
-    uint16_t field_count;
+    uint16_t    type_count;                     // how many registered
+    uint16_t    field_count;                    // how many registered fields
+
+    type_t      type_array  [ MAX_TYPES ];      // all registered types    
+    field_t     field_array [ MAX_FIELDS ];     // all registered fields
+    uint16_t    type_hash   [ TYPE_HASH_SIZE ]; // index hash into type array (next chained)
 
 } registry_t;
 
-/*============================================================================================*/
-
-// extern registry_t g_registry;
+// clang-format on
 
 /*============================================================================================*/
+
+// Make it easy to know which hash function to use for type names.
+inline uint32_t
+reflect_hash_str( const char* str )
+{
+    return sid_hash( str );
+}
 
 // Initialize registry and string pool
 void registry_init( void );
 
-// Register types and fields from static data
-uint32_t registry_register_types( uint8_t         module_id,
-                                  const char**    type_names,
-                                  const uint16_t* type_sizes,
-                                  const uint16_t* field_counts,
-                                  const field_t*  fields,
-                                  uint16_t        type_count );
+// Shutdown registry and string pool
+void registry_exit( void );
 
-// Resolve cross-type dependencies (sub_type_hash -> sub_type_id)
-void          registry_resolve_dependencies( void );
-int           registry_find_type_by_hash( uint32_t hash );    // Lookup
-const type_t* registry_find_type( const char* name );
+// Add new type (returns id)
+uint16_t      reflect_register_type( const type_t* src );
+const type_t* reflect_get_type( uint32_t id );
+uint16_t      reflect_get_type_id_hash( uint32_t hash );
+uint16_t      reflect_get_type_id( const char* name );
+const type_t* registry_find_type( const char* type_name );
 
-/*============================================================================================*/
+uint16_t      reflect_register_type( const type_t* new_type );
+uint16_t      reflect_register_fields( const field_t* src, uint16_t count );
+void          reflect_resolve_field_types( void );
 
-// typedef struct registry_s
-// {
-//     type_t   type_array[ MAX_TYPES ];    // All types
-//     uint16_t type_count;                 // How many registered
-//
-//     // Fast lookup table (single global registry)
-//     struct
-//     {
-//         hash_id hash;
-//         type_id id;
-//
-//     } hash_map[ MAX_TYPES * 2 ];    // 2x size for good distribution
-//
-//     // Module tracking for hot reload
-//     struct
-//     {
-//         void*       handle;        // DLL handle
-//         const char* path;          // DLL path
-//         type_id     type_start;    // First type ID for this module
-//         uint16_t    type_count;    // Number of types in module
-//
-//     } modules[ MAX_MODULES ];
-//
-//     uint8_t module_count;
-//
-// } registry_t;
+field_t*      reflect_get_field_by_id( uint32_t type_id );
 
 /*============================================================================================*/
 #endif    // REFLECTION_H
