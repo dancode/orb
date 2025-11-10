@@ -338,7 +338,7 @@ sid_is_canonical( sid_t sid, const char* str, size_t len )
     return memcmp( sid_cstr( sid ), str, len ) == 0;
 }
 
-uint32_t 
+uint32_t
 sid_get_hash( sid_t sid )
 {
     assert( sid != SID_INVALID );
@@ -508,10 +508,8 @@ sid_intern( const char* str, int32_t len )
     /* recalculate slot after potential rehash */
     mask = g_intern.table_size - 1;
     slot = hash & mask;
-
-    /* Robin Hood insertion: find slot and maintain invariant */
-        
-    /* Linear probe to find insertion slot */
+       
+    /* linear probe to find insertion slot */
     while ( g_intern.table[ slot ].sid != SID_INVALID )
     {
         slot = ( slot + 1 ) & mask;
@@ -634,7 +632,7 @@ sid_reset_stats( void )
 
 /*==============================================================================================
 
-    SID : Test Robin Hood vs Linear Probing Performance
+    SID : Test linear probing performance.
 
 ==============================================================================================*/
 void
@@ -688,7 +686,7 @@ hash_perf_test()
         printf( "Statistics after insertion:\n" );
         sid_print_stats( stdout );
 
-        // Phase 2: Perform many lookups (this is where Robin Hood shines)
+        // Phase 2: Perform many lookups
         printf( "\nPhase 2: Performing 10,000 lookups (re-interning existing strings)...\n" );
 
         sid_reset_stats();    // Reset to measure lookup-only performance

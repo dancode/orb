@@ -33,12 +33,13 @@
 
 ==============================================================================================*/
 
-#define MAX_TYPES           512                 // Fixed limit - but 1024 types
-#define MAX_FIELDS          4096                // Fixed limit - but 2048 fields
-#define MAX_MODULES         16                  // Maximum reflected modules.
+#define MAX_TYPES           512                     // Fixed limit - but 1024 types
+#define MAX_FIELDS          4096                    // Fixed limit - but 2048 fields
+#define MAX_MODULES         16                      // Maximum reflected modules.
 
-#define TYPE_HASH_SIZE      1048                // must be power of two
-#define TYPE_INVALID        ((uint16_t)0xFFFF)  // invalid type ID
+#define TYPE_HASH_SIZE      1048                    // must be power of two
+#define TYPE_HASH_MASK      ( TYPE_HASH_SIZE - 1 )  // mask for hash table
+#define TYPE_INVALID        ((uint16_t)0xFFFF)      // invalid type ID
 
 /*==============================================================================================
 
@@ -48,7 +49,7 @@
 
 /* Built-in primitive types. 0 is invalid sentinel. */
 
-enum
+typedef enum rf_prim_e
 {
     RF_TYPE_INVALID = 0,
     RF_TYPE_BOOL,
@@ -56,7 +57,18 @@ enum
     RF_TYPE_FLOAT,
     RF_TYPE_DOUBLE,
     RF_TYPE_BUILT_IN,       // count
-};
+
+} rf_prim_t;
+
+typedef enum rf_kind_e
+{
+    RF_KIND_PRIMITIVE   = BIT( 1 ),
+    RF_KIND_STRUCT      = BIT( 2 ),
+    RF_KIND_POINTER     = BIT( 4 ),
+    RF_TYPE_ARRAY       = BIT( 8 ),
+    RF_TYPE_ENUM        = BIT( 16 ),
+
+} rf_kind_t;
 
 typedef struct field_t
 {
@@ -65,7 +77,7 @@ typedef struct field_t
     uint16_t    offset;         // byte offset within parent struct (offsetof)
     uint16_t    size;           // element size in bytes
 
-    uint16_t    kind;           // type flags (primitive/struct/array/pointer)
+    uint16_t    kind;           // a value of rf_kint_t 
     uint16_t    type_id;        // resolved type id; TYPE_INVALID = unresolved/none
 
     uint32_t    type_hash;      // hash of type name.
@@ -112,23 +124,14 @@ void            rf_init                 ( void );
                                         // Shutdown registry and string pool
 void            rf_exit                 ( void );
 
-                                        // Register fields (copy from static table)
-uint16_t        rf_add_fields           ( const field_t* src, uint16_t count );
-
-                                        // Register fields (copy from static table)
-uint16_t        rf_add_type             ( const type_t* new_type );
-
                                         // Convenience function to register type with fields (returns id)
-uint16_t        rf_add_type_with_fields ( type_t* type, const field_t* fields, uint16_t field_count );
+uint16_t        rf_register_type        ( type_t* type, const field_t* fields, uint16_t field_count );
 
                                         // Resolve all field subtype hashes to type ids
 void            rf_resolve_fields       ( void );
 
-                                        // Resolve a single field type on demand.
-uint16_t        rf_resolve_field        ( field_t* f );
-
                                         // Ensure all field types are resolved.
-void            rf_ensure_resolve       ( void );
+bool            rf_ensure_resolve       ( void );
 
                                         // Unregister all types with module_id.
 void            rf_unregister_module    ( uint8_t module_id );

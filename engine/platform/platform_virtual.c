@@ -75,7 +75,8 @@ vm_decommit( void* ptr, size_t size )
     if ( rounded_size == 0 )
         return;
 
-    VirtualFree( ptr, rounded_size, MEM_DECOMMIT );
+    UNUSED( ptr );
+    // VirtualFree( ptr, rounded_size, MEM_DECOMMIT );
 }
 
 void
