@@ -22,8 +22,7 @@
 
 #pragma once
 #include <stdint.h>
-#include <stddef.h>
-#include <string.h>
+
 #include "orb.h"
 #include "str_intern.h"
 
@@ -58,11 +57,6 @@ enum
     RF_TYPE_DOUBLE,
     RF_TYPE_BUILT_IN,       // count
 };
-
-// TODO: add uint16_t meta;     // todo: serializable, editable, etc.
-/*============================================================================================*/
-
-// note: the first type index is reserved as invalid (but resolves to a non-crashing index).
 
 typedef struct field_t
 {
@@ -106,35 +100,68 @@ typedef struct registry_s
 
 } registry_t;
 
-// clang-format on
+/*==============================================================================================
 
-/*============================================================================================*/
+    Reflection : Registration API
 
-// Make it easy to know which hash function to use for type names.
-inline uint32_t
-reflect_hash_str( const char* str )
-{
-    return sid_hash( str );
-}
+==============================================================================================*/
 
-// Initialize registry and string pool
-void registry_init( void );
+                                        // Initialize registry and string pool
+void            rf_init                 ( void );
 
-// Shutdown registry and string pool
-void registry_exit( void );
+                                        // Shutdown registry and string pool
+void            rf_exit                 ( void );
 
-// Add new type (returns id)
-uint16_t      reflect_register_type( const type_t* src );
-const type_t* reflect_get_type( uint32_t id );
-uint16_t      reflect_get_type_id_hash( uint32_t hash );
-uint16_t      reflect_get_type_id( const char* name );
-const type_t* registry_find_type( const char* type_name );
+                                        // Register fields (copy from static table)
+uint16_t        rf_add_fields           ( const field_t* src, uint16_t count );
 
-uint16_t      reflect_register_type( const type_t* new_type );
-uint16_t      reflect_register_fields( const field_t* src, uint16_t count );
-void          reflect_resolve_field_types( void );
+                                        // Register fields (copy from static table)
+uint16_t        rf_add_type             ( const type_t* new_type );
 
-field_t*      reflect_get_field_by_id( uint32_t type_id );
+                                        // Convenience function to register type with fields (returns id)
+uint16_t        rf_add_type_with_fields ( type_t* type, const field_t* fields, uint16_t field_count );
+
+                                        // Resolve all field subtype hashes to type ids
+void            rf_resolve_fields       ( void );
+
+                                        // Resolve a single field type on demand.
+uint16_t        rf_resolve_field        ( field_t* f );
+
+                                        // Ensure all field types are resolved.
+void            rf_ensure_resolve       ( void );
+
+                                        // Unregister all types with module_id.
+void            rf_unregister_module    ( uint8_t module_id );
+
+/*==============================================================================================
+
+    Reflection : Lookup API
+
+==============================================================================================*/
+
+typedef void ( *rf_field_cb )( uint16_t field_index, const field_t* f, void* user );
+
+                                        // Lookup type by id
+const type_t*   rf_get_type_from_id    ( uint32_t id );
+
+                                        // Lookup type by name
+const type_t*   rf_get_type_from_name   ( const char* type_name );
+
+                                        // Lookup type id by hash
+uint16_t        rf_get_tid_from_hash    ( uint32_t hash );
+
+                                        // Lookup type id by name
+uint16_t        rf_get_tid_from_name    ( const char* name );
+
+                                        // Lookup first field from type id
+const field_t*  rf_get_first_field      ( uint32_t type_id );
+
+                                        // Lookup field by field id
+const field_t*  rf_get_field            ( uint32_t field_id );
+
+                                        // Call callback for each field of a type_id.
+uint16_t        rf_each_field           ( u32 type_id, rf_field_cb cb, void* user );
+
 
 /*============================================================================================*/
 #endif    // REFLECTION_H

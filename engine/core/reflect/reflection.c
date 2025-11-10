@@ -4,6 +4,7 @@
 
 ==============================================================================================*/
 #include <stdio.h>
+#include <string.h>
 
 #include "orb.h"
 #include "str_intern.h"
@@ -20,8 +21,9 @@ typedef struct vec3_s    // sample vector type
 
 typedef struct player_s
 {
-    vec3_t pos;
+    int    id;
     float  health;
+    vec3_t pos;
 } player_t;
 
 /*============================================================================================*/
@@ -30,121 +32,99 @@ extern registry_t g_registry;    // registry.c
 
 /*============================================================================================*/
 
-// -----------------------------------------------------------------------------
-// Example generated registration function
-// -----------------------------------------------------------------------------
+void
+rf_register_game_module_for_test( void )
+{
+    /* Precompute hashes (generator would have emitted these constants) */
+    uint32_t hash_player = sid_hash( "player_t" );
+    uint32_t hash_float  = sid_hash( "float" );
+    uint32_t hash_vec3   = sid_hash( "vec3_t" );
+
+    /* Create field array locally (we must call sid_intern_cstr at runtime) */
+    field_t fields[ 2 ];
+    memset( fields, 0, sizeof( fields ) );
+
+    fields[ 0 ].name_sid  = sid_intern_cstr( "health" );
+    fields[ 0 ].offset    = ( uint32_t )offsetof( player_t, health );
+    fields[ 0 ].size      = ( uint32_t )sizeof( float );
+    fields[ 0 ].kind      = 0;
+    fields[ 0 ].type_id   = TYPE_INVALID;
+    fields[ 0 ].type_hash = hash_float;
+
+    fields[ 1 ].name_sid  = sid_intern_cstr( "pos" );
+    fields[ 1 ].offset    = ( uint32_t )offsetof( player_t, pos );
+    fields[ 1 ].size      = ( uint32_t )sizeof( vec3_t );
+    fields[ 1 ].kind      = 0;
+    fields[ 1 ].type_id   = TYPE_INVALID;
+    fields[ 1 ].type_hash = hash_vec3;
+
+    /* Prepare type struct (note: we do not set field_index here; reflect_register_type_with_fields does) */
+    type_t player_type;
+    memset( &player_type, 0, sizeof( player_type ) );
+    player_type.name_sid  = sid_intern_cstr( "player_t" );
+    player_type.hash      = hash_player;
+    player_type.size      = ( uint16_t )sizeof( player_t );
+    player_type.module_id = 1;
+    player_type.valid     = 1;
+
+    /* Register together (safe) */
+    uint16_t tid = rf_add_type_with_fields( &player_type, fields, 2 );
+    ( void )tid;
+}
 
 
 void
-reflect_register_game_module( void )
+test_iterate( uint16_t idx, const field_t* f, void* data )
 {
-    // Hashes (precomputed by generator normally)
-    // const uint32_t hash_player = sid_hash( "player_t" );
-    // const uint32_t hash_float  = sid_hash( "float" );
-    // const uint32_t hash_vec3   = sid_hash( "vec3_t" );
+    UNUSED( data );
+    const char* fname = sid_cstr( f->name_sid );
+    printf( " field[%u] %s offset=%u size=%u type_id=%u\n", ( unsigned )idx, fname, ( unsigned )f->offset,
+            ( unsigned )f->size, ( unsigned )f->type_id );
+};
 
-    // Build fields in code
-    field_t player_fields[ 2 ];
-    memset( player_fields, 0, sizeof( player_fields ) );
-
-    player_fields[ 0 ].name_sid  = sid_intern_cstr( "health" );
-    player_fields[ 0 ].offset    = offsetof( player_t, health );
-    player_fields[ 0 ].size      = 4;
-    player_fields[ 0 ].type_hash = sid_hash( "float" );
-    player_fields[ 0 ].type_id   = RF_TYPE_INVALID;
-
-    player_fields[ 1 ].name_sid  = sid_intern_cstr( "pos" );
-    player_fields[ 1 ].offset    = offsetof( player_t, pos );
-    player_fields[ 1 ].size      = sizeof( vec3_t );
-    player_fields[ 1 ].type_hash = sid_hash( "vec3_t" );
-    player_fields[ 1 ].type_id   = RF_TYPE_INVALID;
-
-    uint16_t field_index         = reflect_register_fields( player_fields, 2 );
-
-    // Build type record
-    type_t player_type      = { 0 };
-    player_type.name_sid    = sid_intern_cstr( "Player" );
-    player_type.hash        = sid_hash( "player_t" );
-    player_type.size        = sizeof( player_t );
-    player_type.field_index = field_index;
-    player_type.field_count = 2;
-    player_type.module_id   = 1;
-    player_type.valid       = 1;
-
-    reflect_register_type( &player_type );
-}
+    /*============================================================================================*/
 
 void
 reflection_test( void )
 {
-    registry_init();
+    /**************************************************************/
 
-    reflect_register_game_module();
-    reflect_resolve_field_types();
+    rf_init();    
+    rf_register_game_module_for_test();
+    rf_resolve_fields();
+    rf_ensure_resolve();
 
+    /**************************************************************/
 
-    // printf( "\n========================================\n" );
-    // printf( "\tReflection System Examples\n" );
-    // printf( "========================================\n" );
-    //
-    // int rsize = sizeof( type_t );
-    // int fsize = sizeof( field_t );
-    //
-    // UNUSED( rsize );
-    // UNUSED( fsize );
-    //
-    // registry_init();
-    //
-    // // Sample types to register.
-    // static const char*    type_names[]   = { "Vec3", "Player" };
-    // static const uint16_t type_sizes[]   = { sizeof( float ) * 3, 32 };
-    // static const uint16_t field_counts[] = { 3, 2 };
-    //
-    // // Sample fields to register.
-    // field_t fields[] = {
-    //     // Vec3
-    //     { 0 /* SID */, offsetof( vec3_t, x ), /* size */ 4, RF_TYPE_FLOAT, 0, 0 }, // x float
-    //     { 0 /* SID */, offsetof( vec3_t, y ), /* size */ 4, RF_TYPE_FLOAT, 0, 0 }, // y float
-    //     { 0 /* SID */, offsetof( vec3_t, z ), /* size */ 4, RF_TYPE_FLOAT, 0, 0 }, // z float
-    //
-    //     // Player
-    //     { 0 /* SID */, /* off */ 0, /* size */ 4, RF_TYPE_FLOAT, 0, sid_hash( "Vec3" ) }, // depends on
-    //     Vec3 { 0 /* SID */, /* off */ 4, /* size */ 4, RF_TYPE_FLOAT, 0, 0 }  // health float
-    // };
-    //
-    // // Assign field names (interned SIDs)
-    // const char* names[] = { "x", "y", "z", "pos", "health" };
-    //
-    // for ( int i = 0; i < 5; i++ )
-    // {
-    //     fields[ i ].name_sid = sid_intern_cstr( names[ i ] );
-    // }
-    //
-    // registry_register_types( 1, type_names, type_sizes, field_counts, fields, 2 );
-    // registry_resolve_dependencies();    // <-- slow but called infrequently
-    //
-    // Lookup vector
+    /* lookup player type id by name */
+    u32 pid = rf_get_tid_from_name( "player_t" );
+    printf( "Player type id = %u\n", ( unsigned )pid );
+
+    /* iterate fields */
+    rf_each_field( pid, test_iterate, NULL );
+
+    /* lookup vector */
     {
-        const type_t* t = registry_find_type( "Vec3" );
+        const type_t* t = rf_get_type_from_name( "vec3_t" );
         printf( "Found type Vec3, %u fields\n", t->field_count );
         for ( uint32_t f = 0; f < t->field_count; ++f )
         {
-            field_t* fld = reflect_get_field_by_id( t->field_index + f );
+            const field_t* fld = rf_get_field( t->field_index + f );
             printf( "  Field %s offset=%u subtype_id=%u\n", sid_cstr( fld->name_sid ), fld->offset, fld->type_id );
         }
     }
-    // Lookup player after adding
+    /* lookup player */
     {
-        const type_t* t = registry_find_type( "Player" );
+        const type_t* t = rf_get_type_from_name( "player_t" );
         printf( "Found type Player, %u fields\n", t->field_count );
         for ( uint32_t f = 0; f < t->field_count; ++f )
         {
-            field_t* fld = reflect_get_field_by_id( t->field_index + f );
+            const field_t* fld = rf_get_field( t->field_index + f );
             printf( "  Field %s offset=%u subtype_id=%u\n", sid_cstr( fld->name_sid ), fld->offset, fld->type_id );
         }
     }
 
-    registry_exit();
+    rf_exit();
 }
 
 /*============================================================================================*/
