@@ -10,16 +10,6 @@
     - cvarinfo   : Show detailed info about a cvar
 
 ==============================================================================================*/
-
-#include <stdio.h>
-#include <string.h>
-
-#include "orb.h"
-#include "cvar.h"
-#include "string_pool.h"
-
-// clang-format on
-
 /*==============================================================================================
 
     Command Registration

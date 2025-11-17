@@ -15,6 +15,8 @@
 #include "cvar/string_pool.h"
 #include "cvar/string_pool.c"
 
+#include "cvar/cvar.h"
+
 #include "cvar/cmd.c"
 #include "cvar/cmd_buffer.c"
 #include "cvar/cmd_parse.c"

@@ -214,7 +214,6 @@ rf_type_get_attr( uint16_t type_id, const char* name )
             return a;
         }
     }
-
     return NULL;
 }
 
@@ -223,7 +222,10 @@ rf_field_get_attr( uint16_t field_id, const char* name )
 {
     const rf_field_t* f = rf_get_field( field_id );
     if ( !f || !name || f->attr_count == 0 )
+    {
+        assert( 0 && "Invalid field or name for attribute lookup" );
         return NULL;
+    }
 
     sid_t name_sid = sid_intern_cstr( name );
 

@@ -14,16 +14,6 @@
     * Supports hot reload — since the offsets will stay valid.
 
 ==============================================================================================*/
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
-
-#include "orb.h"
-#include "../core.h"
-#include "string_pool.h"
-
-/*============================================================================================*/
 /* Align value up to STRING_POOL_ALIGN boundary */
 
 u32

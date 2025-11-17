@@ -1,8 +1,6 @@
 #ifndef STRING_POOL_HEADER_H
 #define STRING_POOL_HEADER_H
 
-#include "../../orb.h"
-
 // clang-format off
 /*==============================================================================================
 

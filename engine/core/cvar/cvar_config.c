@@ -1,3 +1,4 @@
+// clang-format off
 /*==============================================================================================
 
     cvar_config.c - Cvar Configuration File Management
@@ -6,15 +7,6 @@
     - cvar_exec_config    : Executes a configuration file.
 
 ==============================================================================================*/
-
-#include <stdio.h>
-#include <string.h>
-#include <ctype.h>
-
-#include "../../orb.h"
-#include "cvar.h"
-
-// clang-format off
 
 /*============================================================================================*/
 /* Write all archived cvars to a config file */

@@ -6,15 +6,6 @@
 
 ==============================================================================================*/
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
-#include <ctype.h>
-
-#include "orb.h"
-#include "cvar.h"
-
 /* Case-insensitive string compare helper */
 
 bool
@@ -46,7 +37,7 @@ str_icmp_eq( const char* a, const char* b )
 ==============================================================================================*/
 
 static u32
-fnv1a_hash( const char* s )
+cvar_hash( const char* s )
 {
     u32 h = 2166136261u;    // FNV offset basis
     while ( *s )
@@ -308,7 +299,7 @@ cvar_hash_find( const char* name )
     if ( !name )
         return NULL;
 
-    u32  hash  = fnv1a_hash( name ) & HASH_MASK;
+    u32  hash  = cvar_hash( name ) & HASH_MASK;
     cu32 start = hash;
 
     while ( true )
@@ -346,7 +337,7 @@ cvar_hash_insert( u32 cvar_index )
     cvar_t*     cv         = &g_cvar_pool[ cvar_index ];
     const char* name       = string_pool_get( &g_old_string_pool, cv->name );
 
-    u32         hash       = fnv1a_hash( name ) & HASH_MASK;
+    u32         hash       = cvar_hash( name ) & HASH_MASK;
     u32         start      = hash;
     u32         first_tomb = ( u32 )-1;    // first free found if adding after not found.
 

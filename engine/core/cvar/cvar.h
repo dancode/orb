@@ -31,11 +31,6 @@
     - Type-safety & validation: add validators for ints/floats (min/max) and enum lists.
 
 ==============================================================================================*/
-
-#pragma once
-#include "../../orb.h"
-#include "string_pool.h"
-
 /*==============================================================================================
 
     Cvar Type Flags - Define its type and behavior
