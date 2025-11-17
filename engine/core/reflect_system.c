@@ -53,8 +53,6 @@ typedef struct registry_s
 
     rf_module_t module_array    [ MAX_MODULES ];        // module info
     uint8_t     module_count;                           // number of registered modules
-    uint8_t     transaction_active;                     // 1 = in transaction
-    uint16_t    transaction_checkpoint;                 // Rollback point
 
 } registry_t;
 
@@ -63,7 +61,6 @@ typedef struct registry_s
 #include "reflect/reflect_registry.c"
 #include "reflect/reflect_module.c"
 #include "reflect/reflect_access.c"
-#include "reflect/reflect_transact.c"
 #include "reflect/reflect_print.c"
 #include "reflect/reflect_test.c"
 

@@ -67,7 +67,6 @@ rf_module_begin_unload( uint8_t module_id )
         if ( t->module_id == module_id && t->valid )
         {
             t->valid      = 0;
-            t->deprecated = 1;
         }
     }
 }
@@ -84,9 +83,6 @@ rf_module_end_unload( uint8_t module_id )
     mod->state         = RF_MODULE_UNLOADED;
     mod->type_count    = 0;
     mod->first_type_id = TYPE_INVALID;
-
-    // Note: We keep deprecated types for hot-reload matching
-    // They can be revalidated when module reloads
 }
 
 /*============================================================================================*/

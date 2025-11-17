@@ -18,12 +18,14 @@
 
 #if defined( _WIN32 ) || defined( _WIN64 )
 #    define PLATFORM_WINDOWS 1
-#    define PLATFORM_LINUX   0
-#elif defined( __linux__ )
-#    define PLATFORM_WINDOWS 0
-#    define PLATFORM_LINUX   1
 #else
-#    error "Unsupported platform"
+#    define PLATFORM_WINDOWS 0
+#endif
+
+#if defined( __linux__ )
+#    define PLATFORM_LINUX 1
+#else
+#    define PLATFORM_LINUX 0
 #endif
 
 // Debug / release macros
@@ -111,7 +113,11 @@ typedef uint32_t hash_id;    // A fnv1a hash result from a string.
 
 ==============================================================================================*/
 
-#define noinline __declspec( noinline )
+#if defined(_MSC_VER)
+#    define noinline __declspec(noinline)
+#else
+#    define noinline __attribute__((noinline))
+#endif
 
 /*============================================================================================*/
 #endif    // ORB_HEADER_H

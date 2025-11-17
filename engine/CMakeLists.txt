@@ -36,10 +36,8 @@ set(ENGINE_SOURCES
 	
     engine_main.c
 	engine.h
-	engine.c
 		
 	base/base.h	
-	base/base.c
 	
 	base/standard.h
 	base/standard.c
@@ -49,12 +47,15 @@ set(ENGINE_SOURCES
 	base/module.c
 	
 	platform/platform.h
-	platform/platform_virtual.c
 )
 
 add_executable(engine
     ${ENGINE_SOURCES}
 )
+
+if(NOT WIN32)
+    target_compile_definitions(engine PRIVATE PLATFORM_LINUX=1)
+endif()
 
 target_include_directories(engine PUBLIC
 	${CMAKE_SOURCE_DIR}/engine
@@ -65,6 +66,10 @@ target_include_directories(engine PUBLIC
 
 # engine executable is minimal: links loader + base
 target_link_libraries(engine PUBLIC core)
+
+if(NOT WIN32)
+    target_link_libraries(engine PRIVATE dl)
+endif()
 
 # Put in a clear project folder
 set_target_properties(engine PROPERTIES FOLDER "Exec/")

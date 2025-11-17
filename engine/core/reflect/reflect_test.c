@@ -415,53 +415,6 @@ test_hot_reload( void )
     rf_exit();
 }
 
-/*==============================================================================================
-    Test: Transactions
-==============================================================================================*/
-
-static void
-test_transactions( void )
-{
-    printf( "\n=== Test: Transaction System ===\n" );
-
-    rf_init();
-    uint8_t module_id = rf_module_register( "game", 1 );
-
-    // Successful transaction
-    printf( "\n--- Successful Transaction ---\n" );
-    rf_begin_transaction();
-
-    register_vec3_type( module_id );
-    register_transform_type( module_id );
-
-    if ( rf_commit_transaction() )
-    {
-        printf( "Transaction committed successfully\n" );
-        uint16_t type_count, field_count;
-        rf_get_stats( &type_count, &field_count );
-        printf( "Types: %u, Fields: %u\n", type_count, field_count );
-    }
-
-    // Failed transaction (rollback)
-    printf( "\n--- Failed Transaction (Rollback) ---\n" );
-    uint16_t checkpoint_types, checkpoint_fields;
-    rf_get_stats( &checkpoint_types, &checkpoint_fields );
-
-    rf_begin_transaction();
-
-    // Register some types
-    register_entity_type( module_id );
-
-    // Rollback
-    rf_rollback_transaction();
-    printf( "Transaction rolled back\n" );
-
-    uint16_t after_types, after_fields;
-    rf_get_stats( &after_types, &after_fields );
-    printf( "Types restored: %u -> %u\n", checkpoint_types, after_types );
-
-    rf_exit();
-}
 
 /*==============================================================================================
     Test: Attributes
@@ -546,7 +499,6 @@ reflection_test( void )
     test_type_lookup();
     test_field_iteration();
     test_hot_reload();
-    test_transactions();
     test_attributes();
     test_diagnostics();
 

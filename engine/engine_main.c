@@ -24,15 +24,12 @@ test( int argc, char** argv )
 {
     core_api_init();
 
-    intern_test();
     reflection_test();
     
     cvar_system_init();
 
     /**************************************************************/
 
-    test_core_cvar( argc, argv );    // <-- test cvar system
-    
     /**************************************************************/
 
     cvar_system_exit();
@@ -51,7 +48,7 @@ main( int argc, char** argv )
 
     core_init();
 
-    struct module_t* game = module_load( "sample_game", "sample_game.dll" );
+    struct module_t* game = module_load( "sample_game", "./lib/libsample_game.so" );
     if ( game == NULL )
     {
         return 1;

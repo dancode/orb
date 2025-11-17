@@ -38,7 +38,6 @@ rf_init_builtin_types( void )
         t.module_id                = 0;                     // engine/system module .exe
         t.valid                    = 1;
         t.version                  = 1;
-        t.deprecated               = 0;
 
         g_registry.type_array[ i ] = t;
 
@@ -275,7 +274,6 @@ rf_update_type( uint16_t type_id, const rf_type_t* type, const rf_field_t* field
     target->align      = type->align;
     target->kind       = type->kind;
     target->valid      = 1;
-    target->deprecated = 0;
 
     // Always update fields on hot-reload
     uint16_t field_idx = 0;
@@ -331,7 +329,6 @@ rf_register_type( rf_type_t* type, const rf_field_t* fields, uint16_t field_coun
     target->module_id  = type->module_id;
     target->valid      = 1;
     target->version    = type->version;
-    target->deprecated = 0;
 
     // Update fields if count changed
     // First call will have 0 count and pass.

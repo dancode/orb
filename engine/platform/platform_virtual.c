@@ -6,6 +6,7 @@
 
 ==============================================================================================*/
 
+#include "orb.h"
 #include "platform.h"
 
 #ifdef PLATFORM_WINDOWS
@@ -92,3 +93,79 @@ vm_release( void* ptr, size_t size )
 }
 
 #endif    // PLATFORM_WINDOWS
+
+#ifdef PLATFORM_LINUX
+
+#include <sys/mman.h>
+#include <unistd.h>
+
+static size_t g_page_size = 0;
+
+static size_t
+linux_get_page_size(void)
+{
+    if (g_page_size == 0)
+    {
+        g_page_size = sysconf(_SC_PAGESIZE);
+    }
+    return g_page_size;
+}
+
+static size_t
+linux_round_up_to_page_size(size_t size)
+{
+    size_t page_size = linux_get_page_size();
+    return ((size + page_size - 1) / page_size) * page_size;
+}
+
+size_t
+vm_get_page_size(void)
+{
+    return linux_get_page_size();
+}
+
+void*
+vm_reserve(size_t size)
+{
+    size_t rounded_size = linux_round_up_to_page_size(size);
+    if (rounded_size == 0)
+        return NULL;
+
+    void* ptr = mmap(NULL, rounded_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr == MAP_FAILED)
+        return NULL;
+
+    return ptr;
+}
+
+bool
+vm_commit(void* ptr, size_t size)
+{
+    size_t rounded_size = linux_round_up_to_page_size(size);
+    if (rounded_size == 0)
+        return true;
+
+    return mprotect(ptr, rounded_size, PROT_READ | PROT_WRITE) == 0;
+}
+
+void
+vm_decommit(void* ptr, size_t size)
+{
+    size_t rounded_size = linux_round_up_to_page_size(size);
+    if (rounded_size == 0)
+        return;
+
+    madvise(ptr, rounded_size, MADV_DONTNEED);
+    mprotect(ptr, rounded_size, PROT_NONE);
+}
+
+void
+vm_release(void* ptr, size_t size)
+{
+    size_t rounded_size = linux_round_up_to_page_size(size);
+    if (rounded_size == 0)
+        return;
+    munmap(ptr, rounded_size);
+}
+
+#endif // PLATFORM_LINUX
