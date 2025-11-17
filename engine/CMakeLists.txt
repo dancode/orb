@@ -49,7 +49,7 @@ set(ENGINE_SOURCES
 	base/module.c
 	
 	platform/platform.h
-	platform/platform_virtual.c
+	# platform/platform_virtual.c
 )
 
 add_executable(engine
