@@ -63,7 +63,6 @@ typedef struct registry_s
 #include "reflect/reflect_registry.c"
 #include "reflect/reflect_module.c"
 #include "reflect/reflect_access.c"
-#include "reflect/reflect_transact.c"
 #include "reflect/reflect_print.c"
 #include "reflect/reflect_test.c"
 

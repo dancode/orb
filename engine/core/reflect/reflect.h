@@ -157,9 +157,7 @@ typedef struct rf_type_s                // A type definition
     uint8_t     align;                  // alignof()
     uint8_t     module_id;              // Module that defined this type
     uint8_t     valid;                  // 1 = valid, 0 = invalidated
-    uint8_t     version;                // Version number for hot-reload tracking.
-
-    uint8_t     deprecated;             // 1 = marked for removal
+    uint8_t     version;                // Version number for hot-reload tracking.    
 
 } rf_type_t;
 
@@ -226,21 +224,6 @@ void                rf_module_begin_unload  ( uint8_t module_id) ;
 
                                             // Complete module unload (cleanup)
 void                rf_module_end_unload    ( uint8_t module_id );
-
-/*==============================================================================================
-
-    Reflection : Transational Support
-
-==============================================================================================*/
-
-                                            // Begin transaction for atomic updates
-void                rf_begin_transaction    ( void );
-
-                                            // Commit transaction
-bool                rf_commit_transaction   ( void );
-
-                                            // Rollback transaction
-void                rf_rollback_transaction ( void );
 
 /*==============================================================================================
     Reflection : Type Access

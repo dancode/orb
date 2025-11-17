@@ -67,7 +67,6 @@ rf_module_begin_unload( uint8_t module_id )
         if ( t->module_id == module_id && t->valid )
         {
             t->valid      = 0;
-            t->deprecated = 1;
         }
     }
 }
