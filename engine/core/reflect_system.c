@@ -12,11 +12,9 @@
 
 #include "orb.h"
 
-#include "reflect/str_intern.h"     // TODO: externalize our string interning to be a system wide feature.
-#include "reflect/str_intern.c"
-
 /*============================================================================================*/
 
+#include "sid/sid.h"
 #include "reflect/reflect.h"
 
 /*============================================================================================*/

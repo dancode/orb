@@ -11,7 +11,7 @@
 
 /*==============================================================================================
 
-    API Functions
+    API Functions (simplified version for now)
 
 ==============================================================================================*/
 
@@ -38,6 +38,7 @@ core_free( void* ptr )
 }
 
 /*============================================================================================*/
+/* required to debug natvis data from dll's (we must import reference to global data ) */
 
 extern string_pool_t      g_old_string_pool;
 extern user_string_pool_t g_user_string_pool;
@@ -49,27 +50,25 @@ core_debug_api_t          g_core_debug_api = {
              .intern_arena     = &g_intern.arena,
 };
 
-core_debug_api_t*
-core_debug_get_api( void )
-{
-    return &g_core_debug_api;
-}
+/*============================================================================================*/
 
 extern core_debug_api_t g_core_debug_api;
 static core_api_t       g_core_api = {
+
+          .debug_api = &g_core_debug_api,
+
           .log       = core_log,
           .alloc     = core_alloc,
           .free      = core_free,
 
           .cvar_find = cvar_find,
-
     // .cvar_register = cvar_register,
     // .cvar_get_int  = cvar_get_int,
     // .cvar_set_int  = cvar_set_int,
     // .cvar_set_string = cvar_set_string,
     // .cvar_get_string = cvar_get_string,
 
-          .debug_api = &g_core_debug_api,
+
 };
 
 core_api_t*       g_api;
@@ -91,10 +90,19 @@ core_api_exit( void )
     g_debug_api = NULL;
 }
 
+/*============================================================================================*/
+/* exported api */
+
 core_api_t*
 core_get_api( void )
 {
     return &g_core_api;
+}
+
+core_debug_api_t*
+core_debug_get_api( void )
+{
+    return &g_core_debug_api;
 }
 
 /*============================================================================================*/

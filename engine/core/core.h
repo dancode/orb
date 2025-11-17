@@ -7,7 +7,7 @@
 #include "orb.h"
 #include "cvar/string_pool.h"
 #include "cvar/cvar.h"
-#include "reflect/str_intern.h"
+#include "sid/sid.h"
 
 // clang-format off
 
@@ -92,38 +92,36 @@ typedef void ( *cvar_set_int_fn )( const char* name, int32_t value );
 typedef void ( *cvar_set_string_fn )( const char* name, const char* value );
 typedef const char* ( *cvar_get_string_fn )( const char* name );
 
-// new
 typedef cvar_t* ( *cvar_find_fn )( const char* name );
+
+/*============================================================================================*/
 
 // The struct passed to every module
 typedef struct core_api_t
 {
+    /* debug api */
+    core_debug_api_t* debug_api;    // for natvis and debugging
+
+    /* simple api */
     core_log_fn   log;
     core_alloc_fn alloc;
     core_free_fn  free;
 
+    /* cvar system */
     cvar_find_fn cvar_find;
-
     // cvar_register_fn   cvar_register;
     // cvar_get_int_fn    cvar_get_int;
     // cvar_set_int_fn    cvar_set_int;
     // cvar_set_string_fn cvar_set_string;
     // cvar_get_string_fn cvar_get_string;
-
-    core_debug_api_t* debug_api;
-
+    
 } core_api_t;
+
+/*============================================================================================*/
+/* public core api functions */
 
 void            core_api_init       ( void );
 void            core_api_exit       ( void );
 core_api_t*     core_get_api        ( void );
-
-/*============================================================================================*/
-
-                                    /* Test core cvar system */
-void            test_core_cvar      ( int argc, char** argv );
-
-
-
 
 /*============================================================================================*/

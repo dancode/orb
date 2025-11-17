@@ -14,6 +14,7 @@ file(GLOB_RECURSE ALL_FILES
 set(COMPILED_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/core.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/core_api.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sid_system.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/module_system.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/cvar_system.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/reflect_system.c"    

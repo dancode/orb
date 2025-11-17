@@ -14,28 +14,29 @@
 
 /*============================================================================================*/
 
-int  intern_test( void );
-void reflection_test( void );
+int  intern_test( void );                        // ... temporary code ....
+void reflection_test( void );                    // ... temporary code ...
+void test_core_cvar( int argc, char** argv );    // ... temporary code ...
 
 /*============================================================================================*/
 
-void 
+static void
 test( int argc, char** argv )
 {
-    core_api_init();
+    core_api_init();    // <-- required to debug natvis and must go first
 
-    intern_test();
-    reflection_test();
-    
+    intern_test();        // <-- test string interning system
+    reflection_test();    // <-- test reflection system
+
+
+    /**************************************************************/
+
     cvar_system_init();
-
-    /**************************************************************/
-
     test_core_cvar( argc, argv );    // <-- test cvar system
-    
+    cvar_system_exit();
+
     /**************************************************************/
 
-    cvar_system_exit();
     core_api_exit();
 }
 
@@ -45,9 +46,6 @@ int
 main( int argc, char** argv )
 {
     test( argc, argv );
-
-    ( void )argc;
-    ( void )argv;
 
     core_init();
 

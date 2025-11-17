@@ -1,5 +1,5 @@
-#ifndef STR_INTERN_H
-#define STR_INTERN_H
+#ifndef SID_H
+#define SID_H
 // clang-format off
 /*==============================================================================================
 
@@ -14,13 +14,16 @@
 
 /*============================================================================================*/
 
-// typedef uint32_t sid_t;
-typedef struct sid_s { uint32_t off; } sid_t;
-#define SID_INVALID ((sid_t){ 0u })
+#define SID_INVALID     ((sid_t){ 0u })
+#define SID( str )      sid_intern( str, strlen( str ));
 
-// #define SID_INVALID 0u
+/*============================================================================================*/
 
-#define SID( str )  sid_intern( str, strlen( str ));
+typedef struct sid_s                    // string ID: offset into string arena
+{ 
+    uint32_t off; 
+
+} sid_t;
 
 typedef struct intern_slot_s            // hash table entry: hash + sid (offset)
 {
@@ -114,4 +117,4 @@ void        sid_print_stats     ( void* fp );
 void        sid_reset_stats     ( void );
 
 /*============================================================================================*/
-#endif
+#endif // SID_H
