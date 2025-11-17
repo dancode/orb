@@ -21,6 +21,7 @@
 typedef struct module_t
 {
     char           name[ MAX_MODULE_NAME ];
+    char           path[128];
     lib_handle_t   handle;
     module_init_fn init;    // called when dll loads
     module_tick_fn tick;    // called during frame
@@ -79,6 +80,13 @@ module_load( const char* name, const char* path )
         return NULL;
     }
 
+    size_t path_len = strlen( path );
+    if ( path_len > 128 )
+    {
+        printf( "[core] Module path exceeds maximum length: %s\n", path );
+        return NULL;
+    }
+
     lib_handle_t h = library_load( path );
     if ( !h )
     {
@@ -89,6 +97,7 @@ module_load( const char* name, const char* path )
     module_t* m = &g_modules[ g_module_count++ ];
     {
         strncpy( m->name, name, MAX_MODULE_NAME );
+        strncpy( m->path, path, 128 );
         m->handle = h;
 
         if ( module_get_interface( m ) == false )
@@ -137,7 +146,7 @@ module_reload( module_t* m )
 
     module_unload( m );
 
-    m->handle = library_load( m->name );
+    m->handle = library_load( m->path );
 
     module_get_interface( m );
 
