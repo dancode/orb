@@ -36,6 +36,8 @@
 #include "../../orb.h"
 #include "string_pool.h"
 
+typedef struct cvar_s cvar_t;
+
 /*==============================================================================================
 
     Cvar Type Flags - Define its type and behavior
@@ -137,7 +139,14 @@ typedef enum cvar_apply_e
 
 ==============================================================================================*/
 
-typedef struct cvar_s
+#if PLATFORM_WINDOWS
+#define STRUCT_ALIGN_8 __declspec(align(8))
+#else
+#define STRUCT_ALIGN_8 __attribute__((aligned(8)))
+#endif
+
+STRUCT_ALIGN_8
+struct cvar_s
 {
     u16         name;           // String pool offset to variable name
     u16         desc;           // String pool offset to description
@@ -184,7 +193,7 @@ typedef struct cvar_s
         } u;
     };
 
-} cvar_t __attribute__((aligned(8)));
+};
 
 /* ensure the struct size is maintained.*/
 // static_assert( sizeof( cvar_t ) == 32, "cvar_t must be 32 bytes" );

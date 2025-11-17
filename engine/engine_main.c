@@ -51,11 +51,11 @@ main( int argc, char** argv )
 
     core_init();
 
-    struct module_t* game = module_load("sample_game", "build/lib/libsample_game"
+    struct module_t* game = module_load("sample_game",
 #if PLATFORM_WINDOWS
-        ".dll"
+        "sample_game.dll"
 #else
-        ".so"
+        "build/lib/libsample_game.so"
 #endif
     );
     if ( game == NULL )
