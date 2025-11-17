@@ -21,6 +21,9 @@ set_target_properties(sample_game PROPERTIES FOLDER "Proj/Sample_Game")
 # IMPORTANT: Explicitly mark as C language for Clang-CL
 set_target_properties(sample_game PROPERTIES LINKER_LANGUAGE C )
 
+# Set the output name to avoid prefix 'lib' on Unix-like systems
+set_target_properties(sample_game PROPERTIES OUTPUT_NAME "sample_game")
+
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SAMPLE_GAME_SOURCES} )
 
