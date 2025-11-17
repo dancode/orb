@@ -20,14 +20,14 @@ intern_test( void )
     {
         sid_init();
 
-        const char*       s          = "Transform";
-        const char*       sl         = "transform";
-        const char*       su         = "TRANSFORM";
-        const int         len        = 9;
+        const char* s    = "Transform";
+        const char* sl   = "transform";
+        const char* su   = "TRANSFORM";
+        const int   len  = 9;
 
-        sid_t             sid1       = sid_intern_cstr( s );
-        sid_t             sid2       = sid_intern_cstr( sl );
-        sid_t             sid3       = sid_intern( su, len );
+        sid_t       sid1 = sid_intern_cstr( s );
+        sid_t       sid2 = sid_intern_cstr( sl );
+        sid_t       sid3 = sid_intern( su, len );
 
         assert( !sid_equals( sid1, SID_INVALID ) );
         assert( sid_equals( sid1, sid2 ) );
@@ -162,8 +162,8 @@ intern_test( void )
 
         enum
         {
-            COUNT = 600
-        };    // > 0.7 * 512 to trigger at least one rehash
+            COUNT = 600    // > 0.7 * 512 to trigger at least one rehash
+        };
 
         char  key[ 32 ];
         sid_t samples[ 5 ]    = { 0 };

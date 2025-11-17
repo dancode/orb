@@ -21,7 +21,7 @@
 
 typedef struct sid_s                    // string ID: offset into string arena
 { 
-    uint32_t off; 
+    uint32_t        off; 
 
 } sid_t;
 
@@ -58,8 +58,6 @@ typedef struct intern_state_s
 /*============================================================================================*/
 /* SID : HASHING */ 
 /*============================================================================================*/
-
-// TODO: make internal static functions?
 
                                 // case-insensitive FNV-1a hash
 uint32_t    sid_hash            ( const char* s );
