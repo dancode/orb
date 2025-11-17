@@ -267,7 +267,7 @@ test_basic_registration( void )
 
     rf_resolve_fields();
 
-    if ( rf_ensure_resolve() )
+    if ( rf_validate_fields() )
     {
         printf( "All types resolved successfully!\n" );
     }
@@ -525,7 +525,6 @@ test_diagnostics( void )
     rf_exit();
 }
 
-
 /*============================================================================================*/
 
 void
@@ -559,7 +558,7 @@ reflection_test( void )
 
     rf_init();
     rf_test_register_game_module();
-    rf_ensure_resolve();
+    rf_validate_fields();
 
     /**************************************************************/
 

@@ -10,7 +10,7 @@ extern const bool rf_debug;
 
 /*==============================================================================================
 
-    reflection.c : type accessors
+    reflection_access.c : type accessors
 
 ==============================================================================================*/
 
@@ -106,7 +106,7 @@ rf_get_type_id_by_name( const char* type_name )
 
 /*==============================================================================================
 
-    reflection.c : field accessors
+    reflection_access.c : field accessors
 
 ==============================================================================================*/
 
@@ -195,5 +195,66 @@ rf_each_field( u32 type_id, rf_field_cb_t callback, void* userdata )
 
     return t->field_count;
 }
+
+/*==============================================================================================
+
+    reflection_access.c : attribute accessors
+
+==============================================================================================*/
+
+const rf_attrib_t*
+rf_type_get_attr( uint16_t type_id, const char* name )
+{
+    const rf_type_t* t = rf_get_type( type_id );
+    if ( !t || !name || t->attr_count == 0 )
+        return NULL;
+
+    sid_t name_sid = sid_intern_cstr( name );
+
+    for ( uint16_t i = 0; i < t->attr_count; i++ )
+    {
+        const rf_attrib_t* a = &g_registry.attrib_array[ t->attr_index + i ];
+        if ( sid_equals( a->name_sid, name_sid ) )
+        {
+            return a;
+        }
+    }
+
+    return NULL;
+}
+
+const rf_attrib_t*
+rf_field_get_attr( uint16_t field_id, const char* name )
+{
+    const rf_field_t* f = rf_get_field( field_id );
+    if ( !f || !name || f->attr_count == 0 )
+        return NULL;
+
+    sid_t name_sid = sid_intern_cstr( name );
+
+    for ( uint16_t i = 0; i < f->attr_count; i++ )
+    {
+        const rf_attrib_t* a = &g_registry.attrib_array[ f->attr_index + i ];
+        if ( sid_equals( a->name_sid, name_sid ) )
+        {
+            return a;
+        }
+    }
+
+    return NULL;
+}
+
+bool
+rf_type_has_attr( uint16_t type_id, const char* name )
+{
+    return rf_type_get_attr( type_id, name ) != NULL;
+}
+
+bool
+rf_field_has_attr( uint16_t field_id, const char* name )
+{
+    return rf_field_get_attr( field_id, name ) != NULL;
+}
+
 
 /*============================================================================================*/

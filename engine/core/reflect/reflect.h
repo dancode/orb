@@ -205,11 +205,14 @@ uint16_t            rf_register_type        ( rf_type_t* type, const rf_field_t*
                                             // Resolve all field subtype hashes to type ids
 void                rf_resolve_fields       ( void );
 
-                                            // Ensure all field types are resolved
-bool                rf_ensure_resolve       ( void );
+                                            // Ensure all field types are resolved - report errors
+bool                rf_validate_fields        ( void );
 
-                                            // Validate all types -- ensure all field types are resolved
+                                            // Ensure all types are valid - report errors
 bool                rf_validate_types       ( void );
+
+                                            // Validate entire registry integrity (hash lookups)
+bool                rf_validate_registry    ( void );
 
 /*==============================================================================================
     Reflection : Module Management
@@ -274,18 +277,9 @@ bool                rf_field_has_attr       ( uint16_t field_id, const char* nam
     Reflection : Diagnostics
 ==============================================================================================*/
 
-                                            // Print all types
 void                rf_print_types          ( void );
-
-                                            // Print type info
 void                rf_print_type           ( uint16_t type_id );
-
-                                            // Print module info
 void                rf_print_module         ( uint8_t module_id );
-
-                                            // Validate registry integrity
-bool                rf_validate_registry    ( void );
-
 
 /*==============================================================================================
     Reflect : Helper Macros (for generated code)

@@ -414,9 +414,10 @@ rf_resolve_fields( void )
 /*============================================================================================*/
 
 bool
-rf_ensure_resolve( void )    // TODO: rename to rf_verify_fields and rf_verify_types
+rf_validate_fields( void )
 {
     /* Ensure all field types are resolved -- Called after all modules are loaded to verify. */
+    /* success means all fields are resolved and reflection system cannot fail */
 
     bool failed = false;
     for ( uint16_t i = 0; i < g_registry.field_count; i++ )
@@ -430,9 +431,8 @@ rf_ensure_resolve( void )    // TODO: rename to rf_verify_fields and rf_verify_t
     }
     if ( failed )
     {
-        printf( "====================================\n" );
+        // ERROR: this should not happen
         printf( "Field resolution failed!\n" );
-        printf( "====================================\n" );
         return false;
     }
     return true;
@@ -443,7 +443,9 @@ rf_ensure_resolve( void )    // TODO: rename to rf_verify_fields and rf_verify_t
 bool
 rf_validate_types( void )
 {
-    /* validate all types -- ensure all fields declared in type are resolved */
+    /* this is the same as validate fields, but reports per-type */
+    /* validate all types to ensure all fields declared in type are resolved */
+    /* success means the type can be used */
 
     bool all_valid = true;
     for ( uint16_t i = 0; i < g_registry.type_count; i++ )
@@ -469,69 +471,13 @@ rf_validate_types( void )
     return all_valid;
 }
 
-/*==============================================================================================
-
-    Reflection : Attribute Accessors
-
-==============================================================================================*/
-
-const rf_attrib_t*
-rf_type_get_attr( uint16_t type_id, const char* name )
-{
-    const rf_type_t* t = rf_get_type( type_id );
-    if ( !t || !name || t->attr_count == 0 )
-        return NULL;
-
-    sid_t name_sid = sid_intern_cstr( name );
-
-    for ( uint16_t i = 0; i < t->attr_count; i++ )
-    {
-        const rf_attrib_t* a = &g_registry.attrib_array[ t->attr_index + i ];
-        if ( sid_equals( a->name_sid, name_sid ) )
-        {
-            return a;
-        }
-    }
-
-    return NULL;
-}
-
-const rf_attrib_t*
-rf_field_get_attr( uint16_t field_id, const char* name )
-{
-    const rf_field_t* f = rf_get_field( field_id );
-    if ( !f || !name || f->attr_count == 0 )
-        return NULL;
-
-    sid_t name_sid = sid_intern_cstr( name );
-
-    for ( uint16_t i = 0; i < f->attr_count; i++ )
-    {
-        const rf_attrib_t* a = &g_registry.attrib_array[ f->attr_index + i ];
-        if ( sid_equals( a->name_sid, name_sid ) )
-        {
-            return a;
-        }
-    }
-
-    return NULL;
-}
-
-bool
-rf_type_has_attr( uint16_t type_id, const char* name )
-{
-    return rf_type_get_attr( type_id, name ) != NULL;
-}
-
-bool
-rf_field_has_attr( uint16_t field_id, const char* name )
-{
-    return rf_field_get_attr( field_id, name ) != NULL;
-}
+/*============================================================================================*/
 
 bool
 rf_validate_registry( void )
 {
+    /* validate the entire registry -- type hash collisions, etc. */
+
     bool valid = true;
 
     // Check for type hash collisions
