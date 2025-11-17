@@ -6,7 +6,6 @@
 
 ==============================================================================================*/
 
-#pragma once
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -357,7 +356,7 @@ cvar_hash_insert( u32 cvar_index )
 
         if ( slot == HASH_EMPTY )
         {
-            if ( first_tomb != -1 )
+            if ( first_tomb != ( u32 )-1 )
             {
                 // new entry goes into first tombstone found.
                 global_cvar_hash[ first_tomb ] = ( u16 )cvar_index;
@@ -371,7 +370,7 @@ cvar_hash_insert( u32 cvar_index )
         }
         else if ( slot == HASH_TOMBSTONE )
         {
-            if ( first_tomb == -1 )
+            if ( first_tomb == ( u32 ) -1 )
                 first_tomb = ( int )hash;
         }
         else
@@ -1257,20 +1256,6 @@ cvar_print_flags( const cvar_t* cv )
     if ( cv->type & CVAR_SYSTEMINFO ) printf( " SYSTEMINFO" );
     
     printf( "\n" );
-}
-
-/*============================================================================================*/
-// export internal data for debug api for NatVis
-
-core_debug_api_t g_core_debug_api = {
-    .string_pool      = &g_old_string_pool,
-    .user_string_pool = &g_user_string_pool.pool,
-};
-
-core_debug_api_t*
-core_debug_get_api( void )
-{
-    return &g_core_debug_api;
 }
 
 /*============================================================================================*/

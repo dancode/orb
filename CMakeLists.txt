@@ -1,44 +1,81 @@
 cmake_minimum_required(VERSION 3.12)
-project(hybrid C)
+project(hybrid LANGUAGES C)
 
-# Set C standard to C11
+# ==========================================================
+# LANGUAGE STANDARD
+# ==========================================================
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 # ==========================================================
-# Set output directories
+# Solution Folders
 # ==========================================================
 
-# Options
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# ==========================================================
+# Output Directories
+# ==========================================================
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Handle multi-config generators (Visual Studio, Xcode)
-foreach(OUTPUTCONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
-    string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG_UPPER)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${CMAKE_SOURCE_DIR}/bin")
-endforeach()
+# foreach(OUTPUTCONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
+#     string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG_UPPER)
+#     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${CMAKE_SOURCE_DIR}/bin")
+# endforeach()
+
+# ==========================================================
+# Build Type (for single-config generators)
+# ==========================================================
+
+if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build" FORCE)
+endif()
 
 # message(STATUS "Current Source Directory: ${CMAKE_SOURCE_DIR}")
 
 # ==========================================================
-# Configure different build types
+# Compiler-specific settings (Recommended Revision)
 # ==========================================================
 
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build" FORCE)
-endif()
+# Check if using the Clang compiler (pure Clang or Clang-CL)
+if (CMAKE_C_COMPILER_ID MATCHES "Clang")
+    
+    # Check if Clang is running in MSVC compatibility mode (Clang-CL)
+    if (CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+        message(STATUS "Compiler: Clang-CL (MSVC Frontend)")
+        
+        # Apply MSVC-style flags, which Clang-CL understands
+        add_compile_options(/W4 /WX /wd4100 /wd4189)
+        add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
-# ==========================================================
-# Compile flags
-# ==========================================================
+        # Apply Clang-specific suppressions (still use -W for these)
+        add_compile_options(-Wno-unused-function -Wno-unused-variable)
+    
+    else()
+        message(STATUS "Compiler: Pure Clang (Unix/macOS)")
+        
+        # Apply standard Unix-style Clang flags
+        add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-function)
+    endif()
 
-if(MSVC)
+# Check if using native MSVC (Not Clang)
+elseif (MSVC)
+    message(STATUS "Compiler: Native MSVC")
+    
+    # Apply standard MSVC flags
+    add_compile_options(/W4 /WX /wd4100 /wd4189)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
-    # Common flags for all build types	
-    add_compile_options(/W4 /WX)  # Enable all warnings and treat them as errors
-	add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+else()
+    # Catch-all for GCC, etc.
+    message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}")
+    
+    add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-function)
 
 endif()
 
@@ -75,5 +112,4 @@ if(CMAKE_GENERATOR MATCHES "Visual Studio" OR CMAKE_GENERATOR MATCHES "Xcode")
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
     set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "Auto")  
 endif()
-
 

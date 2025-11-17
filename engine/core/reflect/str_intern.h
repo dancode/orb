@@ -14,10 +14,43 @@
 
 /*============================================================================================*/
 
-typedef uint32_t sid_t;
-#define SID_INVALID 0u
+// typedef uint32_t sid_t;
+typedef struct sid_s { uint32_t off; } sid_t;
+#define SID_INVALID ((sid_t){ 0u })
+
+// #define SID_INVALID 0u
 
 #define SID( str )  sid_intern( str, strlen( str ));
+
+typedef struct intern_slot_s            // hash table entry: hash + sid (offset)
+{
+    uint32_t        hash;               // full 32-bit hash
+    sid_t           sid;                // offset into string pool (or SID_INVALID if empty)
+
+} intern_slot_t;
+
+typedef struct string_arena_s
+{
+    char*           base;               // string storage arena
+    uint32_t        used;               // bytes used
+    uint32_t        capacity;           // total capacity
+
+} string_arena_t;
+
+typedef struct intern_state_s
+{
+    intern_slot_t*  table;              // hash table (dynamically sized)
+    string_arena_t  arena;              // string storage (dynamically sized)
+    uint32_t        table_size;         // entry table capacity (power of 2)
+    uint32_t        entry_count;        // number of entires (interned strings) used.
+    float           max_load;           // Load factor threshold (e.g., 0.7 for 70%)
+
+    uint32_t        total_lookups;      // statistics: total lookups (number of sid_intern calls)
+    uint32_t        total_probes;       // statistics: total probes (sum of all probe lengths)
+    uint32_t        max_probe_length;   // statistics: max probe length (longest probe sequence)
+    uint32_t        rehash_count;       // statistics: number of rehashes (resizes)
+
+} intern_state_t;
 
 /*============================================================================================*/
 /* SID : HASHING */ 

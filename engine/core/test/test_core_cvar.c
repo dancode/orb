@@ -71,6 +71,7 @@ test_core_cvar_old( void )
     test_string             = cvar_get_string( wvar );
     test_string             = cvar_get_string( rvar );
 
+    UNUSED( test_string );
     cvar_set_value( "engine_paused", "1" );
     cvar_set_value( "max_fps", "s120" );
 

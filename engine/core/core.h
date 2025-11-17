@@ -7,6 +7,7 @@
 #include "orb.h"
 #include "cvar/string_pool.h"
 #include "cvar/cvar.h"
+#include "reflect/str_intern.h"
 
 // clang-format off
 
@@ -48,6 +49,22 @@ struct module_t* module_load( const char* name, const char* path );
 void             module_unload( struct module_t* mod );
 void             module_reload( struct module_t* mod );
 void             module_call_tick( struct module_t* m );
+
+/*==============================================================================================
+
+    Debug API - For module and natvis visualization
+
+==============================================================================================*/
+
+typedef struct core_debug_api_t
+{
+    string_pool_t*  string_pool;
+    string_pool_t*  user_string_pool;
+    string_arena_t* intern_arena;
+
+} core_debug_api_t;
+
+extern core_debug_api_t* core_debug_get_api( void );
 
 /*==============================================================================================
 
@@ -105,5 +122,8 @@ core_api_t*     core_get_api        ( void );
 
                                     /* Test core cvar system */
 void            test_core_cvar      ( int argc, char** argv );
+
+
+
 
 /*============================================================================================*/

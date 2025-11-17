@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+  <Type Name="sid_s">
+    <DisplayString>
+		{((const char*)g_debug_api->intern_arena->base) + off,s}, offset={off}
+	</DisplayString>
+	<Expand>
+		<Item Name="Offset">off</Item>
+		<Item Name="String">((const char*) g_debug_api->intern_arena->base) + off,s</Item>
+	</Expand>
+  </Type>
+
+</AutoVisualizer>

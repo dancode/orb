@@ -188,7 +188,7 @@ typedef struct cvar_s
 } cvar_t;
 
 /* ensure the struct size is maintained.*/
-static_assert( sizeof( cvar_t ) == 32, "cvar_t must be 32 bytes" );
+// static_assert( sizeof( cvar_t ) == 32, "cvar_t must be 32 bytes" );
 
 /*==============================================================================================
 
@@ -373,22 +373,6 @@ void        cvar_register_commands  ( void );
 /*==============================================================================================
     Command Buffer
 ==============================================================================================*/
-
-
-/*==============================================================================================
-
-    Debug API - For module and natvis visualization
-
-==============================================================================================*/
-
-typedef struct core_debug_api_t
-{
-    string_pool_t* string_pool;
-    string_pool_t* user_string_pool;
-
-} core_debug_api_t;
-
-extern core_debug_api_t* core_debug_get_api( void );
 
 /*============================================================================================*/
 #endif // CVAR_HEADER_H

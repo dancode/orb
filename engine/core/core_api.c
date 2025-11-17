@@ -39,6 +39,22 @@ core_free( void* ptr )
 
 /*============================================================================================*/
 
+extern string_pool_t      g_old_string_pool;
+extern user_string_pool_t g_user_string_pool;
+extern intern_state_t     g_intern;
+
+core_debug_api_t          g_core_debug_api = {
+             .string_pool      = &g_old_string_pool,
+             .user_string_pool = &g_user_string_pool.pool,
+             .intern_arena     = &g_intern.arena,
+};
+
+core_debug_api_t*
+core_debug_get_api( void )
+{
+    return &g_core_debug_api;
+}
+
 extern core_debug_api_t g_core_debug_api;
 static core_api_t       g_core_api = {
           .log       = core_log,
@@ -62,17 +78,17 @@ core_debug_api_t* g_debug_api;
 /*============================================================================================*/
 
 void
-core_api_init( void ) 
+core_api_init( void )
 {
     g_api       = core_get_api();
     g_debug_api = core_debug_get_api();
 }
 
 void
-core_api_exit( void ) 
+core_api_exit( void )
 {
     g_api       = NULL;
-    g_debug_api = NULL;        
+    g_debug_api = NULL;
 }
 
 core_api_t*

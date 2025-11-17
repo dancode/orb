@@ -22,6 +22,7 @@
 
 #include "orb.h"
 #include "str_intern.h"
+#include "../core.h"
 
 // clang-format off
 /*==============================================================================================
@@ -76,7 +77,7 @@ sid_hash_len( const char* str, size_t len )
     Intern : Data Types
 
 ==============================================================================================*/
-
+/*
 typedef struct intern_slot_s            // hash table entry: hash + sid (offset)
 {
     uint32_t        hash;               // full 32-bit hash
@@ -106,8 +107,10 @@ typedef struct intern_state_s
     uint32_t        rehash_count;       // statistics: number of rehashes (resizes)
 
 } intern_state_t;
+*/
 
-static intern_state_t g_intern;
+intern_state_t g_intern;
+
 
 /*==============================================================================================
 
@@ -200,7 +203,7 @@ arena_add_string( string_arena_t* arena, const char* str, uint8_t len )
     arena->base[ string_offset + len ] = '\0';
     arena->used += needed;
 
-    return string_offset;    // return offset to string data
+    return ( sid_t ){ string_offset };    // return offset to string data
 }
 
 /*==============================================================================================
@@ -243,14 +246,14 @@ table_rehash( intern_state_t* state, uint32_t new_size )
     /* reinsert all existing entries */
     for ( uint32_t i = 0; i < old_size; i++ )
     {
-        if ( old_table[ i ].sid == SID_INVALID )
+        if ( sid_equals( old_table[ i ].sid, SID_INVALID ))
             continue;
 
         uint32_t hash = old_table[ i ].hash;
         uint32_t slot = hash & mask;
 
         /* Linear probe insertion during rehash */
-        while ( new_table[ slot ].sid != SID_INVALID )
+        while ( !sid_equals( new_table[ slot ].sid, SID_INVALID ))
         {
             slot = ( slot + 1 ) & mask;
         }
@@ -294,39 +297,39 @@ const char*
 sid_cstr( sid_t sid )
 {
     // canonical empty string for invalid IDs
-    if ( sid == SID_INVALID )
+    if ( sid_equals( sid, SID_INVALID ))
         return "";
 
-    assert( sid > 0 && sid < g_intern.arena.used );
-    return &g_intern.arena.base[ sid ];
+    assert( sid.off > 0 && sid.off < g_intern.arena.used );
+    return &g_intern.arena.base[ sid.off ];
 }
 
 uint8_t
 sid_length( sid_t sid )
 {
     // canonical zero legnth for invalid IDs
-    if ( sid == SID_INVALID )
+    if ( sid_equals( sid, SID_INVALID ))
         return 0;
 
-    assert( sid > 0 && sid < g_intern.arena.used );
-    return ( uint8_t )g_intern.arena.base[ sid - 1 ];
+    assert( sid.off > 0 && sid.off < g_intern.arena.used );
+    return ( uint8_t )g_intern.arena.base[ sid.off - 1 ];
 }
 
 bool inline 
 sid_equals( sid_t a, sid_t b )
 {
     // super faster comparison by sid value (offset)
-    return a == b;
+    return a.off == b.off;
 }
 
 bool
 sid_is_canonical( sid_t sid, const char* str, size_t len )
 {
-    assert( sid != SID_INVALID );
-    assert( sid > 0 && sid < g_intern.arena.used );
+    assert( !sid_equals( sid, SID_INVALID ));
+    assert( sid.off > 0 && sid.off < g_intern.arena.used );
 
     // we expect valid inputs
-    if ( sid == SID_INVALID || str == NULL )
+    if ( sid_equals( sid, SID_INVALID ) || str == NULL )
         return false;
 
     // check if provided string matches the canonical case
@@ -341,11 +344,11 @@ sid_is_canonical( sid_t sid, const char* str, size_t len )
 uint32_t
 sid_get_hash( sid_t sid )
 {
-    assert( sid != SID_INVALID );
-    assert( sid > 0 && sid < g_intern.arena.used );
+    assert( !sid_equals( sid, SID_INVALID ) );
+    assert( sid.off > 0 && sid.off < g_intern.arena.used );
 
     // we expect valid inputs
-    if ( sid == SID_INVALID )
+    if ( sid_equals( sid, SID_INVALID ))
         return 0;
 
     // retrieve hash from intern table entry
@@ -447,7 +450,7 @@ sid_intern( const char* str, int32_t len )
     }
     if ( len == 0 )
     {
-        // handle empty string with generic singleton       
+        // handle empty string with generic singleton
         return sid_intern_cstr("");
     }
 
@@ -459,10 +462,10 @@ sid_intern( const char* str, int32_t len )
     g_intern.total_lookups++;    // track total lookups
 
     /* linear probing - search for existing or empty slot */
-    while ( g_intern.table[ slot ].sid != SID_INVALID )
+    while ( !sid_equals( g_intern.table[ slot ].sid, SID_INVALID ))
     {
         probe_count++;
-        intern_slot_t* entry = &g_intern.table[ slot ];
+        intern_slot_t* entry = &g_intern.table[ slot ]; 
 
         if ( entry->hash == hash )
         {
@@ -499,7 +502,7 @@ sid_intern( const char* str, int32_t len )
 
     /* add string to arena first */
     sid_t new_sid = arena_add_string( &g_intern.arena, str, ( uint8_t )len );
-    if ( new_sid == SID_INVALID )
+    if ( sid_equals( new_sid, SID_INVALID ))
     {
         assert( 0 && "string arena allocation failed" );
         return SID_INVALID;
@@ -510,7 +513,7 @@ sid_intern( const char* str, int32_t len )
     slot = hash & mask;
        
     /* linear probe to find insertion slot */
-    while ( g_intern.table[ slot ].sid != SID_INVALID )
+    while ( !sid_equals( g_intern.table[ slot ].sid, SID_INVALID ))
     {
         slot = ( slot + 1 ) & mask;
     }    
@@ -578,7 +581,7 @@ sid_get_stats( void )
     // Calculate collisions (entries that didn't land in ideal slot)
     for ( uint32_t i = 0; i < g_intern.table_size; i++ )
     {
-        if ( g_intern.table[ i ].sid == SID_INVALID )
+        if ( sid_equals( g_intern.table[ i ].sid, SID_INVALID ))
             continue;
 
         uint32_t ideal_slot = g_intern.table[ i ].hash & ( g_intern.table_size - 1 );
@@ -679,7 +682,7 @@ hash_perf_test()
             }
 
             test_sids[ i ] = sid_intern_cstr( key );
-            assert( test_sids[ i ] != SID_INVALID );
+            assert( !sid_equals( test_sids[ i ], SID_INVALID ));
         }
 
         printf( "Phase 1 complete.\n\n" );
@@ -699,7 +702,7 @@ hash_perf_test()
             {
                 snprintf( key, sizeof( key ), "key_%04d", i );
                 sid_t s = sid_intern_cstr( key );
-                assert( s == test_sids[ i ] );
+                assert( sid_equals( s, test_sids[ i ] ));
             }
 
             // Random-ish access (worst case - jumps around memory)
@@ -708,7 +711,7 @@ hash_perf_test()
                 int idx = 300 + ( ( i * 37 ) % 300 );    // pseudo-random
                 snprintf( key, sizeof( key ), "transform_component_%d", idx );
                 sid_t s = sid_intern_cstr( key );
-                assert( s != SID_INVALID );
+                assert( !sid_equals( s, SID_INVALID ));
             }
 
             // Repeated hot strings (cache-friendly)
@@ -716,7 +719,7 @@ hash_perf_test()
             {
                 snprintf( key, sizeof( key ), "player_%d", 600 + ( i % 10 ) );
                 sid_t s = sid_intern_cstr( key );
-                assert( s != SID_INVALID );
+                assert( !sid_equals( s, SID_INVALID ));
             }
 
             // Different case variations (tests case-insensitive lookup)
@@ -724,7 +727,7 @@ hash_perf_test()
             {
                 snprintf( key, sizeof( key ), "KEY_%04d", i );    // uppercase
                 sid_t s = sid_intern_cstr( key );
-                assert( s == test_sids[ i ] );    // should match lowercase version
+                assert( sid_equals( s, test_sids[ i ] ));    // should match lowercase version
             }
         }
 
@@ -742,7 +745,7 @@ hash_perf_test()
         {
             snprintf( key, sizeof( key ), "stress_test_key_%d", 1000 + additional );
             sid_t s = sid_intern_cstr( key );
-            if ( s == SID_INVALID )
+            if ( sid_equals( s, SID_INVALID ))
                 break;
             additional++;
         }
@@ -752,6 +755,10 @@ hash_perf_test()
         sid_print_stats( stdout );
     }
 }
+
+// extern core_api_t*       g_api;
+// extern core_debug_api_t* g_debug_api;
+
 
 /*==============================================================================================
 
@@ -779,13 +786,19 @@ intern_test( void )
         const char* su   = "TRANSFORM";
         const int   len  = 9;
 
+
         sid_t       sid1 = sid_intern_cstr( s );
         sid_t       sid2 = sid_intern_cstr( sl );
         sid_t       sid3 = sid_intern( su, len );
 
-        assert( sid1 != SID_INVALID );
-        assert( sid1 == sid2 );
-        assert( sid2 == sid3 );
+        core_debug_api_t* d = core_debug_get_api();
+        const char*       teststirng = ( char* )( d->intern_arena->base + sid1.off ); 
+
+        UNUSED( teststirng );
+
+        assert( !sid_equals( sid1, SID_INVALID ));
+        assert(  sid_equals( sid1, sid2 ));
+        assert(  sid_equals( sid2, sid3 ));
 
         assert( strcmp( sid_cstr( sid1 ), s ) == 0 );
         assert( sid_is_canonical( sid1, s, ( size_t )len ) );
@@ -804,7 +817,7 @@ intern_test( void )
         sid_t s2 = sid_intern_cstr( "mixedcasestring" );
         sid_t s3 = sid_intern_cstr( "MIXEDCASESTRING" );
 
-        assert( s1 == s2 && s2 == s3 );
+        assert( sid_equals( s1, s2 ) && sid_equals( s2, s3 ));
         assert( strcmp( sid_cstr( s1 ), "MixedCaseString" ) == 0 );
 
         sid_shutdown();
@@ -821,7 +834,7 @@ intern_test( void )
         for ( size_t i = 0; i < sizeof( specials ) / sizeof( specials[ 0 ] ); i++ )
         {
             sid_t s = sid_intern_cstr( specials[ i ] );
-            assert( s != SID_INVALID );
+            assert( !sid_equals( s, SID_INVALID ));
             assert( strcmp( sid_cstr( s ), specials[ i ] ) == 0 );
         }
 
@@ -836,7 +849,7 @@ intern_test( void )
         sid_t s1 = sid_intern_cstr( "A" );
         sid_t s2 = sid_intern_cstr( "a" );
 
-        assert( s1 == s2 );
+        assert( sid_equals( s1, s2 ));
         assert( strcmp( sid_cstr( s1 ), "A" ) == 0 );
         assert( sid_length( s1 ) == 1 );
 
@@ -874,7 +887,7 @@ intern_test( void )
         buf[ 255 ] = '\0';
 
         sid_t s    = sid_intern( buf, 255 );
-        assert( s != SID_INVALID );
+        assert( !sid_equals( s, SID_INVALID ));
         assert( sid_length( s ) == 255 );
 
         const char* stored = sid_cstr( s );
@@ -927,7 +940,7 @@ intern_test( void )
         {
             snprintf( key, sizeof( key ), "key_%04d", i );
             sid_t s = sid_intern_cstr( key );
-            assert( s != SID_INVALID );
+            assert( !sid_equals( s, SID_INVALID ));
 
             // capture a few sample SIDs to validate stability across growth
             for ( size_t k = 0; k < sizeof( sample_idx ) / sizeof( sample_idx[ 0 ] ); ++k )
@@ -943,7 +956,7 @@ intern_test( void )
             int idx = sample_idx[ k ];
             snprintf( key, sizeof( key ), "KEY_%04d", idx );    // different case
             sid_t again = sid_intern_cstr( key );
-            assert( again == samples[ k ] );
+            assert( sid_equals( again, samples[ k ] ));
 
             // verify canonical matches first-inserted lowercase "key_xxxx"
             char canonical[ 32 ];
@@ -972,7 +985,7 @@ intern_test( void )
         {
             snprintf( key, sizeof( key ), "test_%d", i );
             sids[ i ] = sid_intern_cstr( key );
-            assert( sids[ i ] != SID_INVALID );
+            assert( !sid_equals( sids[ i ], SID_INVALID ));
         }
 
         // Verify all are unique and retrievable
@@ -980,7 +993,7 @@ intern_test( void )
         {
             snprintf( key, sizeof( key ), "test_%d", i );
             sid_t lookup = sid_intern_cstr( key );
-            assert( lookup == sids[ i ] );
+            assert( sid_equals( lookup, sids[ i ] ));
         }
 
         sid_print_stats( stdout );

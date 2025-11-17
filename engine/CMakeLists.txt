@@ -69,6 +69,9 @@ target_link_libraries(engine PUBLIC core)
 # Put in a clear project folder
 set_target_properties(engine PROPERTIES FOLDER "Exec/")
 
+# IMPORTANT: Explicitly mark as C language for Clang-CL
+set_target_properties(engine PROPERTIES LINKER_LANGUAGE C )
+
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ENGINE_SOURCES} )
 

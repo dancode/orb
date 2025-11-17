@@ -22,10 +22,11 @@ void reflection_test( void );
 void 
 test( int argc, char** argv )
 {
+    core_api_init();
+
     intern_test();
     reflection_test();
-
-    core_api_init();
+    
     cvar_system_init();
 
     /**************************************************************/

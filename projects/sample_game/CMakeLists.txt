@@ -18,6 +18,9 @@ target_include_directories(sample_game PUBLIC
 # Put in a clear project folder
 set_target_properties(sample_game PROPERTIES FOLDER "Proj/Sample_Game")
 
+# IMPORTANT: Explicitly mark as C language for Clang-CL
+set_target_properties(sample_game PROPERTIES LINKER_LANGUAGE C )
+
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SAMPLE_GAME_SOURCES} )
 
