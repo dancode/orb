@@ -52,8 +52,6 @@ cvar_hash( const char* s )
     return h;
 }
 
-string_pool_t g_old_string_pool;
-
 /*==============================================================================================
 
     Cvar System : Callbacks
@@ -281,6 +279,8 @@ static u32    g_cvar_count = 0;                 // Number of registered cvars
 static cvar_t g_cvar_pool[ MAX_CVARS ];         // Fixed cvar array
 static u16    global_cvar_hash[ HASH_SIZE ];    // Hash table of cvar indices
 
+string_pool_t g_cvar_string_pool;               // String pool for cvar names and descriptions
+
 /*============================================================================================*/
 /* Initialize hash table */
 
@@ -313,7 +313,7 @@ cvar_hash_find( const char* name )
         if ( idx != HASH_TOMBSTONE )
         {
             cvar_t*     cv      = &g_cvar_pool[ idx ];
-            const char* cv_name = string_pool_get( &g_old_string_pool, cv->name );
+            const char* cv_name = string_pool_get( &g_cvar_string_pool, cv->name );
             if ( str_icmp_eq( cv_name, name ) )
             {
                 return cv;    // Found cvar!
@@ -335,7 +335,7 @@ static void
 cvar_hash_insert( u32 cvar_index )
 {
     cvar_t*     cv         = &g_cvar_pool[ cvar_index ];
-    const char* name       = string_pool_get( &g_old_string_pool, cv->name );
+    const char* name       = string_pool_get( &g_cvar_string_pool, cv->name );
 
     u32         hash       = cvar_hash( name ) & HASH_MASK;
     u32         start      = hash;
@@ -369,7 +369,7 @@ cvar_hash_insert( u32 cvar_index )
             /* If duplicate insertion we do nothing */
 
             cvar_t* other = &g_cvar_pool[ slot ];
-            if ( str_icmp_eq( string_pool_get( &g_old_string_pool, other->name ), name ) )
+            if ( str_icmp_eq( string_pool_get( &g_cvar_string_pool, other->name ), name ) )
             {
                 /* Duplicate found - shouldn't happen */
                 return;
@@ -397,7 +397,7 @@ extern user_string_pool_t g_user_string_pool;
 void
 cvar_system_init( void )
 {
-    string_pool_init( &g_old_string_pool );
+    string_pool_init( &g_cvar_string_pool );
     user_string_pool_init( &g_user_string_pool );
 
     cvar_hash_init();
@@ -408,7 +408,7 @@ cvar_system_init( void )
 void
 cvar_system_exit( void )
 {
-    string_pool_exit( &g_old_string_pool );
+    string_pool_exit( &g_cvar_string_pool );
     user_string_pool_exit( &g_user_string_pool );
     g_cvar_count = 0;
 }
@@ -487,7 +487,7 @@ cvar_promote_user_value( cvar_t* cv )
     if ( val_str && val_str[ 0 ] )
     {
         // Use central value parser to assign correctly
-        cvar_set_value( string_pool_get( &g_old_string_pool, cv->name ), val_str );
+        cvar_set_value( string_pool_get( &g_cvar_string_pool, cv->name ), val_str );
     }
 
     // Free user-pool allocation
@@ -515,7 +515,7 @@ cvar_register_base( const char* name, const char* desc, u32 type )
         if ( existing->type & CVAR_USR )
         {
             // Update metadata
-            existing->desc = ( u16 )string_pool_push( &g_old_string_pool, desc ? desc : "" );
+            existing->desc = ( u16 )string_pool_push( &g_cvar_string_pool, desc ? desc : "" );
             existing->type = ( existing->type | type );
             existing->flag &= ~( CVAR_MODIFIED | CVAR_LATCHED );
             cvar_cache_user_value( existing );
@@ -532,8 +532,8 @@ cvar_register_base( const char* name, const char* desc, u32 type )
     cvar_t* cv = &g_cvar_pool[ g_cvar_count ];
     memset( cv, 0, sizeof( cvar_t ) );
 
-    cv->name        = ( u16 )string_pool_push( &g_old_string_pool, name );
-    cv->desc        = ( u16 )string_pool_push( &g_old_string_pool, desc );
+    cv->name        = ( u16 )string_pool_push( &g_cvar_string_pool, name );
+    cv->desc        = ( u16 )string_pool_push( &g_cvar_string_pool, desc );
     cv->type        = type;
     cv->flag        = 0;
     cv->callback_id = INVALID_ID;
@@ -621,12 +621,12 @@ cvar_register_s( const char* name, const char* desc, const char** values, u32 co
 
     /* Reserve contiguous space for all strings */
     u32 total_bytes = maxlen * count;
-    u32 base_off    = string_pool_reserve( &g_old_string_pool, total_bytes );
+    u32 base_off    = string_pool_reserve( &g_cvar_string_pool, total_bytes );
 
     /* Copy strings into fixed-width slots */
     for ( u32 i = 0; i < count; ++i )
     {
-        char* dst = g_old_string_pool.data + base_off + ( i * maxlen );
+        char* dst = g_cvar_string_pool.data + base_off + ( i * maxlen );
         strncpy( dst, values[ i ], maxlen - 1 );
         dst[ maxlen - 1 ] = '\0';
     }
@@ -650,10 +650,10 @@ cvar_register_w( const char* name, const char* desc, const char* reset, u32 size
     ci32    align_size = string_pool_align_up( size );
     cvar_t* cv         = cvar_register_base( name, desc, type | CVAR_BUF );
 
-    cv->w.reset        = ( u16 )string_pool_push( &g_old_string_pool, reset );
+    cv->w.reset        = ( u16 )string_pool_push( &g_cvar_string_pool, reset );
     cv->w.size         = ( u16 )align_size;
-    cv->w.buf          = ( u16 )string_pool_reserve( &g_old_string_pool, cv->w.size );
-    string_pool_write( &g_old_string_pool, cv->w.buf, reset, cv->w.size );
+    cv->w.buf          = ( u16 )string_pool_reserve( &g_cvar_string_pool, cv->w.size );
+    string_pool_write( &g_cvar_string_pool, cv->w.buf, reset, cv->w.size );
 
     cvar_promote_user_value( cv );
 
@@ -667,7 +667,7 @@ cvar_register_r( const char* name, const char* desc, const char* value, u32 type
 {
     cvar_t* cv  = cvar_register_base( name, desc, type | CVAR_REF );
 
-    cv->r.value = ( u16 )string_pool_push( &g_old_string_pool, value );
+    cv->r.value = ( u16 )string_pool_push( &g_cvar_string_pool, value );
 
     cvar_promote_user_value( cv );
     return cv;
@@ -733,9 +733,9 @@ bool cvar_is_user   ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_USR 
 static const char*
 _cvar_pool_string( u16 offset )
 {
-    if ( offset >= g_old_string_pool.used )
+    if ( offset >= g_cvar_string_pool.used )
         return "<bad offset>";
-    return g_old_string_pool.data + offset;
+    return g_cvar_string_pool.data + offset;
 }
 
 const char*
@@ -785,7 +785,7 @@ cvar_get_string_from_id( const cvar_t* cv, i32 value_id )
         return "";
 
     // String set strings are in the main pool
-    return g_old_string_pool.data + cv->s.base + ( value_id * cv->s.width );
+    return g_cvar_string_pool.data + cv->s.base + ( value_id * cv->s.width );
 }
 
 const char*
@@ -797,8 +797,8 @@ cvar_get_string( const cvar_t* cv )
     switch ( cv->type & CVAR_TYPE_MASK )
     {
         case CVAR_STR: return cvar_get_string_from_id( cv, cv->s.value );
-        case CVAR_BUF: return string_pool_get( &g_old_string_pool, cv->w.buf );
-        case CVAR_REF: return string_pool_get( &g_old_string_pool, cv->r.value );
+        case CVAR_BUF: return string_pool_get( &g_cvar_string_pool, cv->w.buf );
+        case CVAR_REF: return string_pool_get( &g_cvar_string_pool, cv->r.value );
         case CVAR_USR: return user_string_pool_get( &g_user_string_pool, cv->u.value_offset );
         default: return "";
     }
@@ -841,7 +841,7 @@ cvar_reset( cvar_t* cv )
             break;
 
         case CVAR_BUF:
-            string_pool_write( &g_old_string_pool, cv->w.buf, g_old_string_pool.data + cv->w.reset, cv->w.size );
+            string_pool_write( &g_cvar_string_pool, cv->w.buf, g_cvar_string_pool.data + cv->w.reset, cv->w.size );
             break;
 
             // CVAR_USR has no "reset" value. Freeing its current value is
@@ -1047,7 +1047,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 /* Find matching string (case-insensitive) */
                 for ( u32 i = 0; i < cv->s.count; ++i )
                 {
-                    const char* s = g_old_string_pool.data + cv->s.base + i * cv->s.width;
+                    const char* s = g_cvar_string_pool.data + cv->s.base + i * cv->s.width;
                     if ( str_icmp_eq( s, value ) )
                     {
                         new_value = ( u16 )i;
@@ -1070,7 +1070,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
         }
         case CVAR_BUF:
         {
-            string_pool_write( &g_old_string_pool, cv->w.buf, value, cv->w.size );
+            string_pool_write( &g_cvar_string_pool, cv->w.buf, value, cv->w.size );
             cv->flag |= CVAR_MODIFIED;
             changed = true;
             break;
@@ -1165,8 +1165,8 @@ cvar_get_value( const char* name )
         case CVAR_INT:      snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
         case CVAR_FLOAT:    snprintf( buf, sizeof( bufs[ 0 ] ), "%g", cv->f.value ); return buf;
         case CVAR_STR:      return cvar_get_string_from_id( cv, cv->s.value );
-        case CVAR_BUF:      return string_pool_get( &g_old_string_pool, cv->w.buf );
-        case CVAR_REF:      return string_pool_get( &g_old_string_pool, cv->r.value );
+        case CVAR_BUF:      return string_pool_get( &g_cvar_string_pool, cv->w.buf );
+        case CVAR_REF:      return string_pool_get( &g_cvar_string_pool, cv->r.value );
         case CVAR_USR:      return user_string_pool_get( &g_user_string_pool, cv->u.value_offset );
         default: return "";
     }

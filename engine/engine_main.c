@@ -69,7 +69,7 @@ main( int argc, char** argv )
 
     module_unload( game );
 
-    cvar_system_exit();
+    core_exit();
     return 0;
 }
 

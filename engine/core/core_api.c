@@ -40,12 +40,12 @@ core_free( void* ptr )
 /*============================================================================================*/
 /* required to debug natvis data from dll's (we must import reference to global data ) */
 
-extern string_pool_t      g_old_string_pool;
+extern string_pool_t      g_cvar_string_pool;
 extern user_string_pool_t g_user_string_pool;
 extern intern_state_t     g_intern;
 
 core_debug_api_t          g_core_debug_api = {
-             .string_pool      = &g_old_string_pool,
+             .string_pool      = &g_cvar_string_pool,
              .user_string_pool = &g_user_string_pool.pool,
              .intern_arena     = &g_intern.arena,
 };

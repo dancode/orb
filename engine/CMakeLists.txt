@@ -3,13 +3,8 @@
 # ==========================================================
 
 add_subdirectory(core)
+add_subdirectory(platform)
 
-# add_library(engine_platform STATIC
-#     platform/fs.c
-#     platform/window.c
-#     platform/net.c
-# )
-# 
 # add_library(engine_systems STATIC
 #     systems/render/renderer.c
 #     systems/audio/mixer.c
@@ -47,9 +42,6 @@ set(ENGINE_SOURCES
 	
 	base/module.h
 	base/module.c
-	
-	platform/platform.h
-	# platform/platform_virtual.c
 )
 
 add_executable(engine
@@ -68,8 +60,6 @@ target_link_libraries(engine PUBLIC core)
 
 # Put in a clear project folder
 set_target_properties(engine PROPERTIES FOLDER "Exec/")
-
-# IMPORTANT: Explicitly mark as C language for Clang-CL
 set_target_properties(engine PROPERTIES LINKER_LANGUAGE C )
 
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio

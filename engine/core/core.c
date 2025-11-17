@@ -13,4 +13,11 @@ core_init( void )
     cvar_system_init();
 }
 
+void
+core_exit( void )
+{    
+    cvar_system_exit();
+    core_api_exit();
+}
+
 /*============================================================================================*/
