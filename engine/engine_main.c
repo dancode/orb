@@ -6,14 +6,16 @@
 
 #include <stdio.h>
 #include <string.h>
-#if PLATFORM_WINDOWS
-#include <windows.h>
-#else
-#include <unistd.h>
-#include <libgen.h>
-#endif
 
 #include "orb.h"
+
+#if PLATFORM_WINDOWS
+#    include <windows.h>
+#else
+#    include <unistd.h>
+#    include <libgen.h>
+#endif
+
 #include "core/core.h"
 #include "core/module_system.h"
 
@@ -47,6 +49,32 @@ test( int argc, char** argv )
 
 /*============================================================================================*/
 
+static void
+main_set_module_base_path()
+{
+#if PLATFORM_WINDOWS
+
+    set_module_base_path( "" );
+
+#else    // PLATFORM_LINUX
+
+    char exe_path[ 256 ];
+    readlink( "/proc/self/exe", exe_path, sizeof( exe_path ) );
+    char* last_slash = strrchr( exe_path, '/' );
+    if ( last_slash )
+    {
+        *last_slash = '\0';
+    }
+    char base_path[ 256 ];
+    snprintf( base_path, sizeof( base_path ), "%s/../lib/", exe_path );
+    set_module_base_path( base_path );
+
+#endif
+}
+
+/*============================================================================================*/
+
+
 int
 main( int argc, char** argv )
 {
@@ -54,26 +82,19 @@ main( int argc, char** argv )
 
     core_init();
 
+    /**************************************************************/
+    /* setup module base path -- different per platform */
+    
+    main_set_module_base_path();
+
     const char* mod_name = "sample_game";
-    char path[256];
+    char        path[ 256 ];
+    
+    snprintf( path, sizeof( path ), "%s%s%s%s", get_module_base_path(), LIB_PREFIX, mod_name, LIB_EXT );
 
-#if PLATFORM_WINDOWS
-    set_module_base_path("");
-#else
-    char exe_path[256];
-    readlink("/proc/self/exe", exe_path, sizeof(exe_path));
-    char* last_slash = strrchr(exe_path, '/');
-    if (last_slash) {
-        *last_slash = '\0';
-    }
-    char base_path[256];
-    snprintf(base_path, sizeof(base_path), "%s/../lib/", exe_path);
-    set_module_base_path(base_path);
-#endif
+    /**************************************************************/
 
-    snprintf(path, sizeof(path), "%s%s%s%s", get_module_base_path(), LIB_PREFIX, mod_name, LIB_EXT);
-
-    struct module_t* game = module_load(mod_name, path);
+    struct module_t* game = module_load( mod_name, path );
     if ( game == NULL )
     {
         return 1;
