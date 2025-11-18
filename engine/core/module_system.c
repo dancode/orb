@@ -39,6 +39,16 @@ typedef struct module_t
 
 static module_t g_modules[ MAX_MODULES ];
 static int      g_module_count = 0;
+static char g_module_base_path[256] = {0};
+
+void set_module_base_path(const char* path) {
+    strncpy(g_module_base_path, path, sizeof(g_module_base_path));
+    g_module_base_path[sizeof(g_module_base_path) - 1] = '\0';
+}
+
+const char* get_module_base_path(void) {
+    return g_module_base_path;
+}
 
 /*==============================================================================================
     internal helper for load and reload
@@ -147,7 +157,7 @@ module_reload( module_t* m )
 
     /* Reconstruct path using macros for portability */
     char path[ 256 ];
-    snprintf( path, sizeof( path ), "%s%s%s%s", LIB_DIR, LIB_PREFIX, m->name, LIB_EXT );
+    snprintf( path, sizeof( path ), "%s%s%s%s", get_module_base_path(), LIB_PREFIX, m->name, LIB_EXT );
 
     module_unload( m );
 

@@ -35,6 +35,9 @@ typedef void ( *module_exit_fn )( void );
 
 #define MAX_MODULE_NAME 16
 
+void set_module_base_path(const char* path);
+const char* get_module_base_path(void);
+
 struct module_t* module_load( const char* name, const char* path );
 void             module_unload( struct module_t* mod );
 void             module_reload( struct module_t* mod );
