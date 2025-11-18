@@ -38,15 +38,23 @@ typedef struct module_t
 } module_t;
 
 static module_t g_modules[ MAX_MODULES ];
-static int      g_module_count = 0;
-static char g_module_base_path[256] = {0};
+static int      g_module_count            = 0;
+static char     g_module_base_path[ 256 ] = { 0 };
 
-void set_module_base_path(const char* path) {
-    strncpy(g_module_base_path, path, sizeof(g_module_base_path));
-    g_module_base_path[sizeof(g_module_base_path) - 1] = '\0';
+/*==============================================================================================
+    set platform specific global base path for module loading
+==============================================================================================*/
+
+void
+module_set_base_path( const char* path )
+{
+    strncpy( g_module_base_path, path, sizeof( g_module_base_path ) );
+    g_module_base_path[ sizeof( g_module_base_path ) - 1 ] = '\0';
 }
 
-const char* get_module_base_path(void) {
+const char*
+module_get_base_path( void )
+{
     return g_module_base_path;
 }
 
@@ -109,7 +117,7 @@ module_load( const char* name, const char* path )
     {
         strncpy( m->name, name, MAX_MODULE_NAME );
         m->name[ MAX_MODULE_NAME - 1 ] = '\0';
-        m->handle = h;
+        m->handle                      = h;
 
         if ( module_get_interface( m ) == false )
         {
@@ -157,7 +165,7 @@ module_reload( module_t* m )
 
     /* Reconstruct path using macros for portability */
     char path[ 256 ];
-    snprintf( path, sizeof( path ), "%s%s%s%s", get_module_base_path(), LIB_PREFIX, m->name, LIB_EXT );
+    snprintf( path, sizeof( path ), "%s%s%s%s", module_get_base_path(), LIB_PREFIX, m->name, LIB_EXT );
 
     module_unload( m );
 

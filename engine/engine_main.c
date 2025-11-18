@@ -54,7 +54,7 @@ main_set_module_base_path()
 {
 #if PLATFORM_WINDOWS
 
-    set_module_base_path( "" );
+    module_set_base_path( "" );
 
 #else    // PLATFORM_LINUX
 
@@ -67,7 +67,7 @@ main_set_module_base_path()
     }
     char base_path[ 256 ];
     snprintf( base_path, sizeof( base_path ), "%s/../lib/", exe_path );
-    set_module_base_path( base_path );
+    module_set_base_path( base_path );
 
 #endif
 }
@@ -90,7 +90,7 @@ main( int argc, char** argv )
     const char* mod_name = "sample_game";
     char        path[ 256 ];
     
-    snprintf( path, sizeof( path ), "%s%s%s%s", get_module_base_path(), LIB_PREFIX, mod_name, LIB_EXT );
+    snprintf( path, sizeof( path ), "%s%s%s%s", module_get_base_path(), LIB_PREFIX, mod_name, LIB_EXT );
 
     /**************************************************************/
 
