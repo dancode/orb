@@ -6,6 +6,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#if PLATFORM_WINDOWS
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <libgen.h>
+#endif
 
 #include "orb.h"
 #include "core/core.h"
@@ -49,11 +55,26 @@ main( int argc, char** argv )
     core_init();
 
     const char* mod_name = "sample_game";
-    char        path[ 256 ];
-    /* Build platform-correct shared library file name */
-    snprintf( path, sizeof( path ), "%s%s%s%s", LIB_DIR, LIB_PREFIX, mod_name, LIB_EXT );
+    char path[256];
+    char exe_path[256];
 
-    struct module_t* game = module_load( mod_name, path );
+#if PLATFORM_WINDOWS
+    GetModuleFileName(NULL, exe_path, sizeof(exe_path));
+    char* last_slash = strrchr(exe_path, '\\');
+    if (last_slash) {
+        *last_slash = '\0';
+    }
+#else
+    readlink("/proc/self/exe", exe_path, sizeof(exe_path));
+    char* last_slash = strrchr(exe_path, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+    }
+#endif
+
+    snprintf(path, sizeof(path), "%s/../lib/%s%s%s", exe_path, LIB_PREFIX, mod_name, LIB_EXT);
+
+    struct module_t* game = module_load(mod_name, path);
     if ( game == NULL )
     {
         return 1;

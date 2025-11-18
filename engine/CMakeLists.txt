@@ -62,6 +62,12 @@ target_link_libraries(engine PUBLIC core)
 set_target_properties(engine PROPERTIES FOLDER "Exec/")
 set_target_properties(engine PROPERTIES LINKER_LANGUAGE C )
 
+if(UNIX)
+    set_target_properties(engine PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib"
+    )
+endif()
+
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ENGINE_SOURCES} )
 

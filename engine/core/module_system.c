@@ -21,6 +21,7 @@
 typedef struct module_t
 {
     char         name[ MAX_MODULE_NAME ];
+    char         path[ 256 ];
     lib_handle_t handle;    // library handle
 
     // START NEW
@@ -99,6 +100,8 @@ module_load( const char* name, const char* path )
     {
         strncpy( m->name, name, MAX_MODULE_NAME );
         m->name[ MAX_MODULE_NAME - 1 ] = '\0';
+        strncpy( m->path, path, sizeof(m->path) );
+        m->path[ sizeof(m->path) - 1 ] = '\0';
         m->handle = h;
 
         if ( module_get_interface( m ) == false )
@@ -145,13 +148,9 @@ module_reload( module_t* m )
     if ( !m )
         return;
 
-    /* Reconstruct path using macros for portability */
-    char path[ 256 ];
-    snprintf( path, sizeof( path ), "%s%s%s%s", LIB_DIR, LIB_PREFIX, m->name, LIB_EXT );
-
     module_unload( m );
 
-    m->handle = library_load( path );
+    m->handle = library_load( m->path );
 
     module_get_interface( m );
 

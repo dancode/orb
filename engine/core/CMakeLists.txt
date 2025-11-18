@@ -53,4 +53,5 @@ source_group(
 
 target_include_directories(core PUBLIC
     ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
