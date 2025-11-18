@@ -98,6 +98,7 @@ module_load( const char* name, const char* path )
     module_t* m = &g_modules[ g_module_count++ ];
     {
         strncpy( m->name, name, MAX_MODULE_NAME );
+        m->name[ MAX_MODULE_NAME - 1 ] = '\0';
         m->handle = h;
 
         if ( module_get_interface( m ) == false )
@@ -144,9 +145,13 @@ module_reload( module_t* m )
     if ( !m )
         return;
 
+    /* Reconstruct path using macros for portability */
+    char path[ 256 ];
+    snprintf( path, sizeof( path ), "%s%s%s%s", LIB_DIR, LIB_PREFIX, m->name, LIB_EXT );
+
     module_unload( m );
 
-    m->handle = library_load( m->name );
+    m->handle = library_load( path );
 
     module_get_interface( m );
 

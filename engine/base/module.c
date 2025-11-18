@@ -8,7 +8,7 @@
 #include "base.h"
 
 /*============================================================================================*/
-#ifdef PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS
 
 // #include <windows.h>
 
@@ -34,7 +34,7 @@ typedef void* FARPROC;
 
 /*============================================================================================*/
 
-#ifdef PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS
 
 lib_handle_t
 library_load( const char* path )
@@ -65,9 +65,9 @@ library_get_symbol( lib_handle_t h, const char* s )
     return dlsym( h, s );
 }
 int
-library_free( lib_handle_t module )
+library_unload( lib_handle_t module )
 {
-    return dylib_close( lib_handle_t );
+    return dlclose( module );
 }
 
 #endif

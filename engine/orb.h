@@ -45,7 +45,7 @@
 #endif
 
 // plugin entry signature used by all modules
-#ifdef PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS
 #    define API_EXPORT DLL_EXPORT
 #else
 #    define API_EXPORT
@@ -96,13 +96,28 @@ typedef const double     cf64;
 #define UNUSED( x ) ( void )x
 #define BIT( x )    ( 1ULL << ( x ) )    // returns value of the set bit.
 
+/* portable alignment + attributes */
+#if PLATFORM_WINDOWS
+#    define ORB_ALIGN( n ) __declspec( align( n ) )
+#    define ORB_NOINLINE   __declspec( noinline )
+#    define LIB_PREFIX     ""
+#    define LIB_EXT        ".dll"
+#    define LIB_DIR        ""
+#else
+#    define ORB_ALIGN( n ) __attribute__( ( aligned( n ) ) )
+#    define ORB_NOINLINE   __attribute__( ( noinline ) )
+#    define LIB_PREFIX     "lib"
+#    define LIB_EXT        ".so"
+#    define LIB_DIR        "../lib/"
+#endif
+
 /*==============================================================================================
 
     utilty
 
 ==============================================================================================*/
 
-#define noinline __declspec( noinline )
+#define noinline ORB_NOINLINE
 
 /*============================================================================================*/
 #endif    // ORB_HEADER_H

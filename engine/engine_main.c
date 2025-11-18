@@ -4,9 +4,8 @@
 
 ==============================================================================================*/
 
-// #include <stdlib.h>
-// #include <string.h>
-// #include <stdio.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "orb.h"
 #include "core/core.h"
@@ -49,7 +48,12 @@ main( int argc, char** argv )
 
     core_init();
 
-    struct module_t* game = module_load( "sample_game", "sample_game.dll" );
+    const char* mod_name = "sample_game";
+    char        path[ 256 ];
+    /* Build platform-correct shared library file name */
+    snprintf( path, sizeof( path ), "%s%s%s%s", LIB_DIR, LIB_PREFIX, mod_name, LIB_EXT );
+
+    struct module_t* game = module_load( mod_name, path );
     if ( game == NULL )
     {
         return 1;

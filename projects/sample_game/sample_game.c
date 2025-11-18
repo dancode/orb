@@ -144,38 +144,6 @@ module_tick( float dt )
     {
         g_core_api->log( "[game] drawing debug stuff" );
     }
-
-    // cvar_t* evar = g_api->cvar_find( "engine_paused" );
-    // g_api->log( "%s",  )
-
-    // if ( evar )
-    // {
-    //     // printf( "Cvar: %s : %s\n", g_debug_api->get_cvar_name( evar ), g_debug_api->get_cvar_desc( evar ) );
-    // }
-    //
-    // if ( evar )
-    // {
-    //     // printf( "Cvar: %s\n", (const char*)( g_debug_api->string_pool->data + evar->name ) );
-    // }
-
-    // Slow path — registry by name
-    // int dd = g_api->cvar_get_int( "r_draw_debug" );
-    // if ( dd )
-    // {
-    //     g_api->log( "[game] registry also sees r_draw_debug = %d", dd );
-    // }
-
-    // const char* var_string = g_api->cvar_get_string( "player_name" );
-    // if ( var_string )
-    // {
-    //     g_api->log( "[game] registry also sees debug_string = %s", var_string );
-    // }
-
-    // cvar_value_t val = g_api->cvar_get( "r_draw_debug" );
-    // if ( val )
-    // {
-    //     g_api->log( "[game] registry also sees r_draw_debug = %d", val );
-    // }
 }
 
 API_EXPORT void
@@ -188,18 +156,17 @@ module_exit( void )
 
 /*==============================================================================================
 
-    main
+    main (only for Windows DLL projects; ignore on Linux/macOS)
 
 ==============================================================================================*/
 
+#if defined(_WIN32) || defined(_WIN64)
 int
 main( int argc, char** argv )
 {
-    ( void )argc;
-    ( void )argv;
-
-
+    (void)argc; (void)argv;
     return 1;
 }
+#endif
 
 /*============================================================================================*/

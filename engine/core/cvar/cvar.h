@@ -132,7 +132,7 @@ typedef enum cvar_apply_e
 
 ==============================================================================================*/
 
-__declspec(align(8))            // Ensure 8-byte alignment for performance
+ORB_ALIGN(8)                 // Ensure 8-byte alignment for performance
 typedef struct cvar_s
 {
     u16         name;           // String pool offset to variable name
