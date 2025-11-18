@@ -41,7 +41,7 @@ void                string_pool_init        ( string_pool_t* pool );
 #define             USER_STRING_INVALID_OFFSET 0u         // Offset 0 is reserved for ""
 #define             USER_STRING_INVALID_LIST   0xFFFFu    // Invalid free list index
 
-typedef struct
+typedef struct user_string_pool_s
 {
     string_pool_t   pool;
     u16             free_list[ USER_STRING_BUCKET_COUNT ];

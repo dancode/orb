@@ -22,7 +22,7 @@
 			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (readonly) = {((char*)g_debug_api->string_pool->data) + r.value,s}
 		</DisplayString>
 		<DisplayString Condition="(type &amp; 64) != 0">
-			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (user) = {((char*)g_debug_api->user_string_pool->data) + u.value_offset,s}
+			cvar = {((char*)g_debug_api->string_pool->data) + name,s} (user) = {((char*)g_debug_api->user_string_pool->pool.data) + u.value_offset,s}
 		</DisplayString>
 		<DisplayString>
 			cvar = {((char*)g_debug_api->string_pool->data) + name,s}
@@ -85,7 +85,7 @@
 			<Item Name="Value"	Condition="(type &amp; 32) != 0">((const char*) g_debug_api->string_pool->data) + r.value,s</Item>
 
 			<!-- User string type -->
-			<Item Name="Value"	Condition="(type &amp; 64) != 0">((const char*) g_debug_api->user_string_pool->data) + u.value_offset,s</Item>
+			<Item Name="Value"	Condition="(type &amp; 64) != 0">((const char*) g_debug_api->user_string_pool->pool.data) + u.value_offset,s</Item>
 
 		</Expand>
 	</Type>

@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+
+#include "orb.h"
 #include "core.h"
 
 /*==============================================================================================
@@ -40,55 +42,34 @@ core_free( void* ptr )
 /*============================================================================================*/
 /* required to debug natvis data from dll's (we must import reference to global data ) */
 
-extern string_pool_t      g_cvar_string_pool;
-extern user_string_pool_t g_user_string_pool;
-extern intern_state_t     g_intern;
+extern string_pool_t      g_cvar_string_pool;   // cvar data for strings
+extern user_string_pool_t g_user_string_pool;   // cvar data for user strings
+extern intern_state_t     g_intern;             // sid string data
 
-core_debug_api_t          g_core_debug_api = {
+static core_debug_api_t          g_core_debug_api_internal = {
              .string_pool      = &g_cvar_string_pool,
-             .user_string_pool = &g_user_string_pool.pool,
+             .user_string_pool = &g_user_string_pool,
              .intern_arena     = &g_intern.arena,
 };
 
 /*============================================================================================*/
 
-extern core_debug_api_t g_core_debug_api;
-static core_api_t       g_core_api = {
+static core_api_t       g_core_api_internal = {
 
-          .debug_api = &g_core_debug_api,
+          .debug_api = &g_core_debug_api_internal,
 
           .log       = core_log,
           .alloc     = core_alloc,
           .free      = core_free,
 
-          .cvar_find = cvar_find,
+    // .cvar_find = cvar_find,
     // .cvar_register = cvar_register,
     // .cvar_get_int  = cvar_get_int,
     // .cvar_set_int  = cvar_set_int,
     // .cvar_set_string = cvar_set_string,
     // .cvar_get_string = cvar_get_string,
 
-
 };
-
-core_api_t*       g_api;
-core_debug_api_t* g_debug_api;
-
-/*============================================================================================*/
-
-void
-core_api_init( void )
-{
-    g_api       = core_get_api();
-    g_debug_api = core_debug_get_api();
-}
-
-void
-core_api_exit( void )
-{
-    g_api       = NULL;
-    g_debug_api = NULL;
-}
 
 /*============================================================================================*/
 /* exported api */
@@ -96,13 +77,32 @@ core_api_exit( void )
 core_api_t*
 core_get_api( void )
 {
-    return &g_core_api;
+    return &g_core_api_internal;
 }
 
 core_debug_api_t*
 core_debug_get_api( void )
 {
-    return &g_core_debug_api;
+    return &g_core_debug_api_internal;
+}
+
+/*============================================================================================*/
+
+core_api_t*       g_core_api;
+core_debug_api_t* g_debug_api;
+
+void
+core_api_init( void )
+{
+    g_core_api  = core_get_api();
+    g_debug_api = core_debug_get_api();
+}
+
+void
+core_api_exit( void )
+{
+    g_core_api  = NULL;
+    g_debug_api = NULL;
 }
 
 /*============================================================================================*/

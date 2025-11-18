@@ -349,6 +349,86 @@ example_full_application( void )
     cvar_system_exit();
 }
 
+/*==============================================================================================
+    Example 10: User CVars
+==============================================================================================*/
+
+void
+example_user_cvars( void )
+{
+    printf( "\n=== Example 10: User CVars ===\n\n" );
+
+    cvar_system_init();
+
+    /* 1) Create user variables (CVAR_USR) */
+    cvar_register_u( "ui_name", "PlayerOne" );
+    cvar_register_u( "fullscreen", "1" );
+    cvar_register_u( "gfx_quality", "Ultra" ); /* case-insensitive promotion test */
+    cvar_register_u( "g_maxenemies", "128" );
+    cvar_register_u( "build", "abc" ); /* will be promoted to read-only ref */
+
+    cvar_t* cv_name_test = cvar_find( "ui_name" );
+    UNUSED( cv_name_test );
+
+    printf( "Initial:\n" );
+    printf( "  ui_name       = \"%s\"\n", cvar_get_value( "ui_name" ) );
+    printf( "  fullscreen    = \"%s\"\n", cvar_get_value( "fullscreen" ) );
+    printf( "  gfx_quality   = \"%s\"\n", cvar_get_value( "gfx_quality" ) );
+    printf( "  g_maxenemies  = \"%s\"\n", cvar_get_value( "g_maxenemies" ) );
+    printf( "  build         = \"%s\"\n", cvar_get_value( "build" ) );
+
+    /* 2) Modify a couple of user vars */
+    cvar_set_value( "ui_name", "Ranger" );
+    cvar_set_value( "g_maxenemies", "512" );
+
+    printf( "\nAfter user changes:\n" );
+    printf( "  ui_name       = \"%s\"\n", cvar_get_value( "ui_name" ) );
+    printf( "  g_maxenemies  = \"%s\"\n", cvar_get_value( "g_maxenemies" ) );
+
+    /* 3) Reset a user var (becomes empty) */
+    cvar_t* cv_name = cvar_find( "ui_name" );
+    cvar_reset( cv_name );
+    printf( "\nAfter reset ui_name:\n" );
+    printf( "  ui_name       = \"%s\" (expected empty)\n", cvar_get_value( "ui_name" ) );
+
+    /* 4) Compact the user string pool (values preserved) */
+    printf( "\nCompacting user string pool...\n" );
+    cvar_compact_user_pool();
+    printf( "  fullscreen    = \"%s\"\n", cvar_get_value( "fullscreen" ) );
+    printf( "  gfx_quality   = \"%s\"\n", cvar_get_value( "gfx_quality" ) );
+    printf( "  g_maxenemies  = \"%s\"\n", cvar_get_value( "g_maxenemies" ) );
+    printf( "  ui_name       = \"%s\"\n", cvar_get_value( "ui_name" ) );
+
+    /* 5) Promote user vars to built-in types and verify value carry-over */
+
+    /* 5a) User -> bool */
+    cvar_t* cv_fullscreen = cvar_register_b( "fullscreen", "Fullscreen mode", false, CVAR_ARCHIVE );
+    printf( "\nPromote 'fullscreen' to bool:\n" );
+    printf( "  value(str)    = \"%s\"\n", cvar_get_value( "fullscreen" ) );
+    printf( "  value(typed)  = %d\n", cvar_get_bool( cv_fullscreen ) );
+
+    /* 5b) User -> int (with bounds) */
+    cvar_t* cv_max = cvar_register_i( "g_maxenemies", "Max enemies", 32, 1, 4096, CVAR_ARCHIVE );
+    printf( "\nPromote 'g_maxenemies' to int:\n" );
+    printf( "  value(str)    = \"%s\"\n", cvar_get_value( "g_maxenemies" ) );
+    printf( "  value(typed)  = %d\n", cvar_get_int( cv_max ) );
+
+    /* 5c) User -> choice (string set), case-insensitive match expected ("Ultra") */
+    const char* quality_opts[] = { "low", "medium", "high", "ultra" };
+    cvar_t* cv_quality = cvar_register_s( "gfx_quality", "Rendering quality", quality_opts, 4, 1, CVAR_ARCHIVE );
+    printf( "\nPromote 'gfx_quality' to choice:\n" );
+    printf( "  value(str)    = \"%s\"\n", cvar_get_string( cv_quality ) );
+
+    /* 5d) User -> read-only ref (user value is discarded, keeps registered constant) */
+    cvar_t* cv_build = cvar_register_r( "build", "Build version", "1.2.3", CVAR_ROM );
+    printf( "\nPromote 'build' to readonly ref:\n" );
+    printf( "  value(str)    = \"%s\"\n", cvar_get_string( cv_build ) );
+    cvar_set_value( "build", "2.0.0" ); /* should have no effect */
+    printf( "  after set     = \"%s\" (unchanged)\n", cvar_get_string( cv_build ) );
+
+    cvar_system_exit();
+}
+
 
 /*============================================================================================*/
 
@@ -371,6 +451,7 @@ test_core_cvar( int argc, char** argv )
     example_iteration();
     example_hot_reload();
     example_full_application();
+    example_user_cvars();
 
     printf( "\n========================================\n" );
     printf( "\tAll examples completed!\n" );

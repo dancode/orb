@@ -199,7 +199,6 @@ string_pool_get( const string_pool_t* pool, u16 offset )
 
 /* Fixed-size buckets for user strings */
 static const u32 g_user_bucket_sizes[ USER_STRING_BUCKET_COUNT ] = { 8, 16, 32, 64, 128, 256 };
-
 user_string_pool_t g_user_string_pool;
 
 /*============================================================================================*/

@@ -20,8 +20,17 @@
 
 typedef struct module_t
 {
-    char           name[ MAX_MODULE_NAME ];
-    lib_handle_t   handle;
+    char         name[ MAX_MODULE_NAME ];
+    lib_handle_t handle;    // library handle
+
+    // START NEW
+    uint32_t           module_version;      // e.g. MODULE_VERSION_1
+    uint32_t           flags;               // e.g. MODULE_FLAGS
+    const char* const* required_modules;    // null terminated string name list.
+    uint32_t           api_version;         // e.g. SAMPLE_GAME_API_VERSION
+    void*              api_struct;          // pointer to module api struct
+    // END NEW
+
     module_init_fn init;    // called when dll loads
     module_tick_fn tick;    // called during frame
     module_exit_fn exit;    // called on dll unload
@@ -42,9 +51,9 @@ module_get_interface( module_t* m )
     const char* tick_name  = "module_tick";
     const char* exit_name  = "module_exit";
 
-    m->init                = (module_init_fn)library_get_symbol( m->handle, init_name );
-    m->tick                = (module_tick_fn)library_get_symbol( m->handle, tick_name );
-    m->exit                = (module_exit_fn)library_get_symbol( m->handle, exit_name );
+    m->init                = ( module_init_fn )library_get_symbol( m->handle, init_name );
+    m->tick                = ( module_tick_fn )library_get_symbol( m->handle, tick_name );
+    m->exit                = ( module_exit_fn )library_get_symbol( m->handle, exit_name );
 
     bool all_symbols_found = ( m->init && m->tick && m->exit );
     if ( all_symbols_found )
@@ -153,9 +162,8 @@ module_call_tick( struct module_t* m )
 {
     if ( m && m->tick )
     {
-        m->tick();
+        m->tick( 0.0f );
     }
 }
-
 
 /*============================================================================================*/

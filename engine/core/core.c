@@ -6,6 +6,7 @@
 
 #include "core/core.h"
 
+
 void
 core_init( void )
 {
