@@ -21,7 +21,7 @@
 typedef struct module_t
 {
     char         name[ MAX_MODULE_NAME ];
-    lib_handle_t handle;    // library handle
+    lib_handle_t handle;
 
     // START NEW
     uint32_t           module_version;      // e.g. MODULE_VERSION_1
