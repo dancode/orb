@@ -9,34 +9,26 @@
 #include "core/core.h"
 #include "sample_game.h"
 
+// clang-format off
 /*==============================================================================================
     Forward declarations of public API implementations.
 ==============================================================================================*/
 
 typedef struct player_desc_s player_desc_t;
 
-static void
-sg_spawn_player( const player_desc_t* desc )
-{
-    //
-}
-
-static int
-sg_get_player_count( void )
-{
-    return 0;
-}
+static void game_func_1( void ) {}
+static void game_func_2( void ) {}
 
 // TODO: add module registry api to query and obtain module api structs
 
 /*==============================================================================================
-    Public API struct (generated ideally)
+    public api struct (sample_game_api.h)
 ==============================================================================================*/
 
 typedef struct module_api_header_s
 {
-    uint32_t api_version;    // e.g. SAMPLE_GAME_API_VERSION
-    uint32_t struct_size;    // sizeof( sample_game_api_t )
+    uint32_t api_version;    // incremented every successful api load/reload
+    uint32_t struct_size;    // sizeof( sample_game_api_t ) to hadnle changes
 
 } module_api_header_t;
 
@@ -44,49 +36,25 @@ typedef struct sample_game_api_s
 {
     // This should be a generated header we expect modules to implement.
     // For now we define it here manually.
-    // We should have a versioned api struct for each module type.
+        // We should have a versioned api struct for each module type.
         // Each module needs to export a header defining its api struct.
-        // All the types and function pointers required to use the module api should be defined there.
-        // so that modules can be compiled against the correct version of the api struct.
-        // and types are known at compile time.
+            // All the types and function pointers required to use the module api should be defined there.
+            // so that modules can be compiled against the correct version of the api struct.
+            // and types are known at compile time.
 
     module_api_header_t header;
-    
-    void ( *spawn_player )( const player_desc_t* desc );    // function pointer
-    int ( *get_player_count )( void );                      // function pointer
+
+    void    ( *game_func_1 )    ( void );
+    void    ( *game_func_2 )    ( void );
 
 } sample_game_api_t;
 
-static sample_game_api_t g_sample_game_api = { .header.api_version      = 1,
-                                               .header.struct_size      = sizeof( sample_game_api_t ),
-                                               .spawn_player     = sg_spawn_player,
-                                               .get_player_count = sg_get_player_count };
-
-/*==============================================================================================
-    Exported descriptor accessor
-
-    This creates a struct to implementt the module info and update callbacks in one go.
-    Rather than grabbing each symbol individually.
-    This is called by the module system when loading the module.
-    This way we can set the names without having to rely on fixed symbol names.
-    (except for this one function).
-==============================================================================================*/
-
-// API_EXPORT module_t*
-// module_get_descriptor( void )
-// {
-//     static const char* required[] = { /* "physics", */ NULL };
-//     static module_t    desc       = { .name             = "sample_game",
-//                                       .module_version   = 1,
-//                                       .flags            = 0,
-//                                       .required_modules = required,
-//                                       .api_version      = g_sample_game_api.api_version,
-//                                       .api              = &g_sample_game_api,
-//                                       .init             = sample_game_init,
-//                                       .tick             = sample_game_tick,
-//                                       .shutdown         = sample_game_shutdown };
-//     return &desc;
-// }
+static sample_game_api_t g_sample_game_api = { 
+    .header.api_version = 1,
+    .header.struct_size = sizeof( sample_game_api_t ),
+    .game_func_1    = game_func_1,
+    .game_func_2    = game_func_2 
+};
 
 /*==============================================================================================
 
@@ -99,8 +67,8 @@ core_debug_api_t* g_debug_api = NULL;    // Core Debug API pointer
 
 /*============================================================================================*/
 
-static int32_t g_draw_debug  = 10;
-static char*   g_player_name = "my_name";
+// static int32_t g_draw_debug  = 10;
+// static char*   g_player_name = "my_name";
 
 /*============================================================================================*/
 
@@ -140,10 +108,10 @@ module_tick( float dt )
 {
     // printf( "[game] tick\n" );
 
-    if ( g_draw_debug )
-    {
-        g_core_api->log( "[game] drawing debug stuff" );
-    }
+    // if ( g_draw_debug )
+    // {
+    //     g_core_api->log( "[game] drawing debug stuff" );
+    // }
 }
 
 API_EXPORT void
@@ -155,16 +123,44 @@ module_exit( void )
 }
 
 /*==============================================================================================
+    Exported descriptor accessor
+
+    This creates a struct to implementt the module info and update callbacks in one go.
+    Rather than grabbing each symbol individually.
+    This is called by the module system when loading the module.
+    This way we can set the names without having to rely on fixed symbol names.
+    (except for this one function).
+==============================================================================================*/
+
+API_EXPORT module_t*
+module_get_descriptor( void )
+{
+    /* list of dll names we must also load */
+    static const char* required[] = { /* "physics", */ NULL };
+    static module_t desc = 
+    {
+        .name               = "sample_game",        // name of our module
+        .required           = required,             // list of required module names
+        .api_struct         = &g_sample_game_api,   // pointer to our public api struct
+        .init               = module_init,          // init function
+        .tick               = module_tick,          // tick function
+        .exit               = module_exit           // exit function
+    };
+    return &desc;
+}
+
+/*==============================================================================================
 
     main (only for Windows DLL projects; ignore on Linux/macOS)
 
 ==============================================================================================*/
 
-#if defined(_WIN32) || defined(_WIN64)
+#if defined( _WIN32 ) || defined( _WIN64 )
 int
 main( int argc, char** argv )
 {
-    (void)argc; (void)argv;
+    ( void )argc;
+    ( void )argv;
     return 1;
 }
 #endif

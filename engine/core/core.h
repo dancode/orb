@@ -5,12 +5,11 @@
 ==============================================================================================*/
 #pragma once
 #include "orb.h"
-// #include "cvar/string_pool.h"
 #include "cvar/cvar.h"
 #include "sid/sid.h"
+#include "module_system.h"
 
 // clang-format off
-
 /*==============================================================================================
 
     core.c
@@ -22,46 +21,22 @@ void core_exit( void );
 
 /*==============================================================================================
 
-    module_system.c
+    core_api.c 
 
 ==============================================================================================*/
 
-struct module_t;
-struct core_api_t;
-
-typedef void ( *module_init_fn )( struct core_api_t* api );
-typedef void ( *module_tick_fn )( float dt );
-typedef void ( *module_exit_fn )( void );
-
-#define MAX_MODULE_NAME 16
-
-void module_set_base_path(const char* path);
-const char* module_get_base_path(void);
-
-struct module_t* module_load( const char* name, const char* path );
-void             module_unload( struct module_t* mod );
-void             module_reload( struct module_t* mod );
-void             module_call_tick( struct module_t* m );
-
-/*==============================================================================================
-
-    core_api.c
-
-==============================================================================================*/
-
-typedef struct string_pool_s string_pool_t;
-typedef struct string_arena_s string_arena_t;
-typedef struct user_string_pool_s user_string_pool_t;
+typedef struct string_pool_s        string_pool_t;
+typedef struct string_arena_s       string_arena_t;
+typedef struct user_string_pool_s   user_string_pool_t;
 
 typedef struct core_debug_api_t
 {
-    string_pool_t*  string_pool;
-    user_string_pool_t*  user_string_pool;
-    string_arena_t* intern_arena;
+    string_arena_t*         intern_arena;       // sid interned strings
 
+    string_pool_t*          string_pool;        // cvar strings
+    user_string_pool_t*     user_string_pool;   // cvar user strings
+    
 } core_debug_api_t;
-
-extern core_debug_api_t* core_debug_get_api( void );
 
 /*============================================================================================*/
 

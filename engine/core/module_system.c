@@ -18,25 +18,6 @@
 
 #define MAX_MODULES 16
 
-typedef struct module_t
-{
-    char         name[ MAX_MODULE_NAME ];
-    lib_handle_t handle;
-
-    // START NEW
-    uint32_t           module_version;      // e.g. MODULE_VERSION_1
-    uint32_t           flags;               // e.g. MODULE_FLAGS
-    const char* const* required_modules;    // null terminated string name list.
-    uint32_t           api_version;         // e.g. SAMPLE_GAME_API_VERSION
-    void*              api_struct;          // pointer to module api struct
-    // END NEW
-
-    module_init_fn init;    // called when dll loads
-    module_tick_fn tick;    // called during frame
-    module_exit_fn exit;    // called on dll unload
-
-} module_t;
-
 static module_t g_modules[ MAX_MODULES ];
 static int      g_module_count            = 0;
 static char     g_module_base_path[ 256 ] = { 0 };

@@ -74,7 +74,6 @@ main_set_module_base_path()
 
 /*============================================================================================*/
 
-
 int
 main( int argc, char** argv )
 {
@@ -84,6 +83,7 @@ main( int argc, char** argv )
 
     /**************************************************************/
     /* setup module base path -- different per platform */
+    /* this setup code is designed to allow Google jules to find library files */
     
     main_set_module_base_path();
 

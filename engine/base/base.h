@@ -14,9 +14,8 @@
 
 typedef void* lib_handle_t;
 
-lib_handle_t library_load( const char* path );
-void*        library_get_symbol( lib_handle_t h, const char* s );
-int          library_unload( lib_handle_t module );
-
+lib_handle_t  library_load( const char* path );
+void*         library_get_symbol( lib_handle_t h, const char* s );
+int           library_unload( lib_handle_t module );
 
 /*============================================================================================*/
