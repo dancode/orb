@@ -73,7 +73,7 @@ core_debug_api_t* g_debug_api = NULL;    // Core Debug API pointer
 /*============================================================================================*/
 
 API_EXPORT void
-module_init( core_api_t* core_api /* add module (registry) api field */ )
+module_init( struct core_api_s* core_api /* add module (registry) api field */ )
 {
     // printf( "[game] init\n" );
 

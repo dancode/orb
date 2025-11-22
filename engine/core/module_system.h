@@ -4,7 +4,7 @@
 
 #include "orb.h"
 #include "../base/base.h"
-struct core_api_t;
+struct core_api_s;
 
 /*==============================================================================================
 
@@ -21,7 +21,7 @@ struct core_api_t;
 
 #define MAX_MODULE_NAME 16
 
-typedef void ( *module_init_fn )( struct core_api_t* api );
+typedef void ( *module_init_fn )( struct core_api_s* api );
 typedef void ( *module_tick_fn )( float dt );
 typedef void ( *module_exit_fn )( void );
 
@@ -33,10 +33,10 @@ typedef struct module_t
  // uint32_t        module_version;             // e.g. MODULE_VERSION_1
  // uint32_t        flags;                      // e.g. MODULE_FLAGS (optional)
 
-    const char* const* required;                // null terminated string name list.
+    // const char* const* required;                // null terminated string name list.
     
-    uint32_t        api_version;                // counter for hot reload
-    void*           api_struct;                 // pointer to module api struct    
+    // uint32_t        api_version;                // counter for hot reload
+    // void*           api_struct;                 // pointer to module api struct    
 
     /* required function pointers */
 
@@ -55,6 +55,8 @@ struct module_t* module_load( const char* name, const char* path );
 void             module_unload( struct module_t* mod );
 void             module_reload( struct module_t* mod );
 void             module_call_tick( struct module_t* m );
+
+// void*            module_get_api( const char* name, uint32_t min_version );
 
 /*============================================================================================*/
 #endif    // MODULE_SYSTEM_H

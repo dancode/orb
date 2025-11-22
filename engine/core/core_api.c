@@ -42,25 +42,25 @@ core_free( void* ptr )
 /*============================================================================================*/
 /* required to debug natvis data from dll's (we must import reference to global data ) */
 
-extern string_pool_t      g_cvar_string_pool;   // cvar data for strings
-extern user_string_pool_t g_user_string_pool;   // cvar data for user strings
-extern intern_state_t     g_intern;             // sid string data
+extern string_pool_t      g_cvar_string_pool;    // cvar data for strings
+extern user_string_pool_t g_user_string_pool;    // cvar data for user strings
+extern intern_state_t     g_intern;              // sid string data
 
-static core_debug_api_t          g_core_debug_api_internal = {
-             .string_pool      = &g_cvar_string_pool,
-             .user_string_pool = &g_user_string_pool,
-             .intern_arena     = &g_intern.arena,
+static core_debug_api_t   g_core_debug_api_internal = {
+      .string_pool      = &g_cvar_string_pool,
+      .user_string_pool = &g_user_string_pool,
+      .intern_arena     = &g_intern.arena,
 };
 
 /*============================================================================================*/
 
-static core_api_t       g_core_api_internal = {
+static core_api_t g_core_api_internal = {
 
-          .debug_api = &g_core_debug_api_internal,
+    .debug_api = &g_core_debug_api_internal,
 
-          .log       = core_log,
-          .alloc     = core_alloc,
-          .free      = core_free,
+    .log       = core_log,
+    .alloc     = core_alloc,
+    .free      = core_free,
 
     // .cvar_find = cvar_find,
     // .cvar_register = cvar_register,

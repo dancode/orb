@@ -12,7 +12,7 @@ intern_test( void )
     /**************************************************************/
     {
         sid_init();
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Case Inensitive and Canonical
@@ -38,7 +38,7 @@ intern_test( void )
         assert( !sid_is_canonical( sid1, sl, ( size_t )len ) );
         assert( !sid_is_canonical( sid1, su, ( size_t )len ) );
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Mixed Case In Middle of String
@@ -53,7 +53,7 @@ intern_test( void )
         assert( sid_equals( s1, s2 ) && sid_equals( s2, s3 ) );
         assert( strcmp( sid_cstr( s1 ), "MixedCaseString" ) == 0 );
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Special Characters
@@ -71,7 +71,7 @@ intern_test( void )
             assert( strcmp( sid_cstr( s ), specials[ i ] ) == 0 );
         }
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Single Character Strings
@@ -86,7 +86,7 @@ intern_test( void )
         assert( strcmp( sid_cstr( s1 ), "A" ) == 0 );
         assert( sid_length( s1 ) == 1 );
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Accessors and Equals
@@ -107,7 +107,7 @@ intern_test( void )
         assert( invalid != NULL );
         assert( invalid[ 0 ] == '\0' );
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: String Boundary Length
@@ -129,7 +129,7 @@ intern_test( void )
 
         // Note: Do NOT test len 0 or >255 here, as implementation asserts on invalid lengths.
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Hash Functions
@@ -152,7 +152,7 @@ intern_test( void )
             assert( hA == hB );
         }
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Rehashing and Arena Grow
@@ -202,7 +202,7 @@ intern_test( void )
         sid_print_stats( stdout );
         sid_reset_stats();
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Verify hash collision handling
@@ -232,7 +232,7 @@ intern_test( void )
         sid_print_stats( stdout );
         sid_reset_stats();
 
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Print statistics
@@ -240,7 +240,7 @@ intern_test( void )
     {
         sid_init();
         sid_print_stats( stdout );
-        sid_shutdown();
+        sid_exit();
     }
     /**************************************************************/
     // Test: Test usage example
@@ -248,7 +248,7 @@ intern_test( void )
     {
         sid_init();
         hash_perf_test();
-        sid_shutdown();
+        sid_exit();
     }
 
     return true;

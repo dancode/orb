@@ -92,7 +92,7 @@ uint32_t    sid_get_hash        ( sid_t sid );
 void        sid_init            ( void );
 
                                 // shutdown string interning system
-void        sid_shutdown        ( void );
+void        sid_exit        ( void );
 
 /*============================================================================================*/
 /* INTERNING */

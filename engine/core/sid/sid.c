@@ -303,9 +303,13 @@ sid_get_hash( sid_t sid )
 
 ==============================================================================================*/
 
+static bool sid_is_init = false;
+
 void
 sid_init( void )
 {
+    sid_is_init = true;
+
     /* Initialize global intern state */
     memset( &g_intern, 0, sizeof( g_intern ) );
 
@@ -338,8 +342,11 @@ sid_init( void )
 }
 
 void
-sid_shutdown( void )
+sid_exit( void )
 {
+    assert( sid_is_init == true );
+    sid_is_init = false;
+
     /* free resources */
     table_free( g_intern.table );
     arena_free( &g_intern.arena );

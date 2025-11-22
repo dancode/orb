@@ -45,27 +45,24 @@ typedef void ( *core_log_fn )( const char* fmt, ... );
 
 // Memory
 typedef void* ( *core_alloc_fn )( size_t size );
-typedef void ( *core_free_fn )( void* ptr );
+typedef void  ( *core_free_fn )( void* ptr );
+typedef void* ( *core_realloc_fn )( void* ptr, size_t size );
 
 // Cvars (just int for now)
 
-// typedef void ( *cvar_register_fn )( const char* name, cvar_type_t type, void* storage );
-// 
-// typedef int32_t ( *cvar_get_fn )( const char* name );
-// typedef void ( *cvar_set_fn )( const char* name, int32_t value );
-// 
-// typedef int ( *cvar_get_int_fn )( const char* name );
-// typedef void ( *cvar_set_int_fn )( const char* name, int32_t value );
-// 
-// typedef void ( *cvar_set_string_fn )( const char* name, const char* value );
-// typedef const char* ( *cvar_get_string_fn )( const char* name );
-// 
-// typedef cvar_t* ( *cvar_find_fn )( const char* name );
+// typedef void         ( *cvar_register_fn )( const char* name, cvar_type_t type, void* storage );
+// typedef int32_t      ( *cvar_get_fn )( const char* name );
+// typedef void         ( *cvar_set_fn )( const char* name, int32_t value );
+// typedef int          ( *cvar_get_int_fn )( const char* name );
+// typedef void         ( *cvar_set_int_fn )( const char* name, int32_t value );
+// typedef void         ( *cvar_set_string_fn )( const char* name, const char* value );
+// typedef const char*  ( *cvar_get_string_fn )( const char* name );
+// typedef cvar_t*      ( *cvar_find_fn )( const char* name );
 
 /*============================================================================================*/
 
 // The struct passed to every module
-typedef struct core_api_t
+typedef struct core_api_s
 {
     /* debug api */
     core_debug_api_t* debug_api;    // for natvis and debugging

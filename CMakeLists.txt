@@ -93,7 +93,7 @@ add_subdirectory(engine)
 # add_subdirectory(editor)
 
 # Tools
-# add_subdirectory(tools)
+add_subdirectory(tools/build_tool)
 
 # Projects
 add_subdirectory(projects/sample_game)

@@ -1,26 +1,16 @@
 /*==============================================================================================
 
-    core.c
+    build_tool.c
 
 ==============================================================================================*/
 
-#include "core/core.h"
-#include "core/module.h"
+#include <stdio.h>
 
-void
-core_init( void )
+int
+main( int argc, char** argv )
 {
-    core_api_init();
-    sid_init();
-    cvar_system_init();
-}
-
-void
-core_exit( void )
-{    
-    cvar_system_exit();
-    sid_exit();
-    core_api_exit();
+    printf( "Build tool executed\n" );
+    return 0;
 }
 
 /*============================================================================================*/

@@ -1,26 +1,11 @@
 /*==============================================================================================
 
-    core.c
+    build_vs.c
 
 ==============================================================================================*/
 
-#include "core/core.h"
-#include "core/module.h"
+#include <stdio.h>
 
-void
-core_init( void )
-{
-    core_api_init();
-    sid_init();
-    cvar_system_init();
-}
-
-void
-core_exit( void )
-{    
-    cvar_system_exit();
-    sid_exit();
-    core_api_exit();
-}
+static int temp = 0;
 
 /*============================================================================================*/

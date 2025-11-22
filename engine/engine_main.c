@@ -10,6 +10,7 @@
 #include "orb.h"
 
 #if PLATFORM_WINDOWS
+#    define WIN32_LEAN_AND_MEAN
 #    include <windows.h>
 #else
 #    include <unistd.h>
@@ -31,6 +32,8 @@ static void
 test( int argc, char** argv )
 {
     core_api_init();    // <-- required to debug natvis and must go first
+
+    mem_test();    // <-- test memory system
 
     intern_test();        // <-- test string interning system
     reflection_test();    // <-- test reflection system
@@ -87,10 +90,18 @@ main( int argc, char** argv )
     
     main_set_module_base_path();
 
+    // sid_t game_module_name = sid_intern_cstr( "sample_game" );
+    // ( void )game_module_name;
+
     const char* mod_name = "sample_game";
     char        path[ 256 ];
     
     snprintf( path, sizeof( path ), "%s%s%s%s", module_get_base_path(), LIB_PREFIX, mod_name, LIB_EXT );
+
+    /**************************************************************/
+    /* new module laoding code path */
+
+
 
     /**************************************************************/
 

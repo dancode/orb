@@ -40,6 +40,8 @@ set(ENGINE_SOURCES
 	base/standard.c
 	base/standard_string.c
 	
+	base/memory.c
+
 	base/module.h
 	base/module.c
 )
@@ -113,11 +115,12 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ENGINE_SOURCES} )
 # # Build tool
 # add_executable(build_tool build_tool/build_tool_main.c)
 # target_link_libraries(build_tool PRIVATE tools_core engine_core engine_platform)
-# set_target_properties(reflect_tool PROPERTIES FOLDER "Tools/Reflect")
+# set_target_properties(build_tool PROPERTIES FOLDER "Tools/Build")
 #
 # # Reflect tool
 # add_executable(reflect_tool reflect_tool/reflect_main.c)
 # target_link_libraries(reflect_tool PRIVATE tools_core engine_core engine_platform)
+# set_target_properties(reflect_tool PROPERTIES FOLDER "Tools/Reflect")
 # 
 # # Asset tool
 # add_executable(asset_tool asset_tool/asset_main.c)
