@@ -542,9 +542,10 @@ rf_test_register_game_module( void )
     uint32_t hash_player = sid_hash( "player_t" );
     uint32_t hash_float  = sid_hash( "float" );
     uint32_t hash_vec3   = sid_hash( "vec3_t" );
-
-    // --- 1. Define the type_t struct ---
+    
     {
+        // --- 1. Define the type_t struct ---
+        
         // This local struct is passed to the registry, which copies and maintains the data.
         rf_type_t type_vec3 = { 0 };
         type_vec3.name_sid  = sid_intern_cstr( "vec3_t" );

@@ -8,69 +8,75 @@
 #include <string.h>
 
 #include "orb.h"
-#include "../base/base.h"
-#include "../core/core.h"
-#include "../core/module_system.h"
+
+#include "core/core.h"
+
+#include "core/module/core_module.c"
+#include "core/module/engine_module.c"
+ 
+#include "core/module/module_sys.h"
+#include "core/module/module_sys.c"
 
 /*==============================================================================================
     modules
 ==============================================================================================*/
 
-#define MAX_MODULES 16
+// #define MAX_MODULES 16
+// 
+// static module_t g_modules[ MAX_MODULES ];
+// static int      g_module_count            = 0;
 
-static module_t g_modules[ MAX_MODULES ];
-static int      g_module_count            = 0;
-static char     g_module_base_path[ 256 ] = { 0 };
+// static char     g_module_base_path[ 256 ] = { 0 };
 
 /*==============================================================================================
     set platform specific global base path for module loading
 ==============================================================================================*/
 
-void
-module_set_base_path( const char* path )
-{
-    strncpy( g_module_base_path, path, sizeof( g_module_base_path ) );
-    g_module_base_path[ sizeof( g_module_base_path ) - 1 ] = '\0';
-}
-
-const char*
-module_get_base_path( void )
-{
-    return g_module_base_path;
-}
+// void
+// module_set_base_path( const char* path )
+// {
+//     strncpy( g_module_base_path, path, sizeof( g_module_base_path ) );
+//     g_module_base_path[ sizeof( g_module_base_path ) - 1 ] = '\0';
+// }
+// 
+// const char*
+// module_get_base_path( void )
+// {
+//     return g_module_base_path;
+// }
 
 /*==============================================================================================
     internal helper for load and reload
 ==============================================================================================*/
 
-static bool
-module_get_interface( module_t* m )
-{
-    const char* init_name  = "module_init";
-    const char* tick_name  = "module_tick";
-    const char* exit_name  = "module_exit";
-
-    m->init                = ( module_init_fn )library_get_symbol( m->handle, init_name );
-    m->tick                = ( module_tick_fn )library_get_symbol( m->handle, tick_name );
-    m->exit                = ( module_exit_fn )library_get_symbol( m->handle, exit_name );
-
-    bool all_symbols_found = ( m->init && m->tick && m->exit );
-    if ( all_symbols_found )
-    {
-        m->init( core_get_api() );
-        return true;
-    }
-
-    printf( "[core] Module symbol not found: %s %s %s ", m->init ? "" : init_name, m->tick ? "" : tick_name,
-            m->exit ? "" : exit_name );
-
-    return false;
-}
+// static bool
+// module_get_interface( module_t* m )
+// {
+//     const char* init_name  = "module_init";
+//     const char* tick_name  = "module_tick";
+//     const char* exit_name  = "module_exit";
+// 
+//     m->init                = ( module_init_fn )library_get_symbol( m->handle, init_name );
+//     m->tick                = ( module_tick_fn )library_get_symbol( m->handle, tick_name );
+//     m->exit                = ( module_exit_fn )library_get_symbol( m->handle, exit_name );
+// 
+//     bool all_symbols_found = ( m->init && m->tick && m->exit );
+//     if ( all_symbols_found )
+//     {
+//         m->init( core_get_api() );
+//         return true;
+//     }
+// 
+//     printf( "[core] Module symbol not found: %s %s %s ", m->init ? "" : init_name, m->tick ? "" : tick_name,
+//             m->exit ? "" : exit_name );
+// 
+//     return false;
+// }
 
 /*==============================================================================================
     ...
 ==============================================================================================*/
-
+/*
 module_t*
 module_load( const char* name, const char* path )
 {
@@ -109,11 +115,11 @@ module_load( const char* name, const char* path )
     printf( "[core] Module %s loaded\n", name );
     return m;
 }
-
+*/
 /*==============================================================================================
     ...
 ==============================================================================================*/
-
+/*
 void
 module_unload( module_t* m )
 {
@@ -133,18 +139,18 @@ module_unload( module_t* m )
 
     printf( "[core] Module %s unloaded\n", m->name );
 }
-
+*/
 /*==============================================================================================
     ...
 ==============================================================================================*/
-
+/*
 void
 module_reload( module_t* m )
 {
     if ( !m )
         return;
 
-    /* Reconstruct path using macros for portability */
+    // Reconstruct path using macros for portability 
     char path[ 256 ];
     snprintf( path, sizeof( path ), "%s%s%s%s", module_get_base_path(), LIB_PREFIX, m->name, LIB_EXT );
 
@@ -156,11 +162,11 @@ module_reload( module_t* m )
 
     printf( "[core] Module %s reloaded\n", m->name );
 }
-
+*/
 /*==============================================================================================
     ...
 ==============================================================================================*/
-
+/*
 void
 module_call_tick( struct module_t* m )
 {
@@ -169,7 +175,7 @@ module_call_tick( struct module_t* m )
         m->tick( 0.0f );
     }
 }
-
+*/
 /*==============================================================================================
     ...
 ==============================================================================================*/

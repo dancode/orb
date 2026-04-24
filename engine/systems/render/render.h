@@ -1,13 +1,19 @@
-#ifndef MODULE_H
-#define MODULE_H
-// clang-format off
+#ifndef RENDER_H
+#define RENDER_H
+
 /*==============================================================================================
 
-    module.h : shared header (engine + module authors include this)
+    engine_api.h
 
 ==============================================================================================*/
 
-#include "orb.h"
+typedef struct render_api_s
+{
+    int ( *get_framecount )( void );
+    void ( *render_print )( const char* );
+    float ( *add )( float, float );
+
+} render_api_t;
 
 /*============================================================================================*/
-#endif    // MODULE_H
+#endif    // RENDER_H

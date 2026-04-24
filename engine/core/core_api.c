@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    Core API
+    core_api.c
 
 ==============================================================================================*/
 #include <stdio.h>
@@ -10,6 +10,7 @@
 
 #include "orb.h"
 #include "core.h"
+#include "core_api.h"
 
 /*==============================================================================================
 
@@ -72,7 +73,7 @@ static core_api_t g_core_api_internal = {
 };
 
 /*============================================================================================*/
-/* exported api */
+/* public API pointer — this is what modules actually get when they ask for "core" */
 
 core_api_t*
 core_get_api( void )
@@ -80,22 +81,17 @@ core_get_api( void )
     return &g_core_api_internal;
 }
 
-core_debug_api_t*
-core_debug_get_api( void )
-{
-    return &g_core_debug_api_internal;
-}
-
 /*============================================================================================*/
+/* global pointers for modules to use — set in core_api_init() and cleared in core_api_exit() */
 
-core_api_t*       g_core_api;
-core_debug_api_t* g_debug_api;
+static core_api_t*       g_core_api  = NULL;
+static core_debug_api_t* g_debug_api = NULL;
 
 void
 core_api_init( void )
 {
-    g_core_api  = core_get_api();
-    g_debug_api = core_debug_get_api();
+    g_core_api  = &g_core_api_internal;
+    g_debug_api = &g_core_debug_api_internal;
 }
 
 void

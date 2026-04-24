@@ -1,5 +1,5 @@
 # ==========================================================
-# Engine : Core Library
+# Engine : Render Library
 # ==========================================================
 
 # Collect all .c/.h/.natvis etc for IDE visibility
@@ -12,13 +12,7 @@ file(GLOB_RECURSE ALL_FILES
 # Select which .c files should ACTUALLY compile
 # Everything else is HEADER_FILE_ONLY and treated as "unity fragments"
 set(COMPILED_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/core.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/core_api.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sid_system.c"
-	"${CMAKE_CURRENT_SOURCE_DIR}/memory_system.c"	
-    "${CMAKE_CURRENT_SOURCE_DIR}/module_system.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/cvar_system.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/reflect_system.c"    
+    "${CMAKE_CURRENT_SOURCE_DIR}/render.c"
 )
 
 # ----------------------------------------------------------
@@ -38,13 +32,13 @@ set_source_files_properties( ${COMPILED_SOURCES} PROPERTIES HEADER_FILE_ONLY OFF
 # Build target
 # ----------------------------------------------------------
 
-add_library(core STATIC
+add_library(render SHARED
     ${ALL_FILES}          # everything shows in IDE
     ${COMPILED_SOURCES}   # these actually compile
 )
 
-set_target_properties(core PROPERTIES FOLDER "Engine")
-set_target_properties(core PROPERTIES LINKER_LANGUAGE C )
+set_target_properties(render PROPERTIES FOLDER "Engine/Systems")
+set_target_properties(render PROPERTIES LINKER_LANGUAGE C )
 
 # Mirror physical directory structure inside Visual Studio
 source_group(
@@ -52,7 +46,7 @@ source_group(
     FILES ${ALL_FILES}
 )
 
-target_include_directories(core PUBLIC
+target_include_directories(render PUBLIC
     ${CMAKE_SOURCE_DIR}/engine
     ${CMAKE_CURRENT_SOURCE_DIR}
 )

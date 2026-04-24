@@ -384,6 +384,8 @@ probe_distance( uint32_t hash, uint32_t slot, uint32_t mask )
 sid_t
 sid_intern( const char* str, int32_t len )
 {
+    assert( sid_is_init == true );
+
     /* intern string with given length */
     /* Note: we always return the CANONICAL version (the first interned) */
 
@@ -477,10 +479,52 @@ sid_intern( const char* str, int32_t len )
 sid_t
 sid_intern_cstr( const char* str )
 {
+    assert( sid_is_init == true );
+
     if ( str == NULL ) return SID_INVALID;
 
     /* convenience function for C strings */
     return sid_intern( str, ( int32_t )strlen( str ) );
+}
+
+sid_t 
+sid_find_cstr( const char* str )
+{
+    assert( sid_is_init == true );
+
+    /* find existing interned string, or return SID_INVALID */
+    if ( str == NULL )
+        return SID_INVALID;
+
+    uint32_t hash = sid_hash( str );
+    uint32_t mask = g_intern.table_size - 1;
+    uint32_t slot = hash & mask;
+    uint32_t probe_length = 0;
+    while ( true )
+    {
+        g_intern.total_lookups++;
+        
+        // update total probes
+        intern_slot_t* entry = &g_intern.table[ slot ];
+        if ( sid_equals( entry->sid, SID_INVALID ))
+        {
+            // empty slot, string not found
+            return SID_INVALID;
+        }
+
+        // check for match (case-insensitive)
+        const char* entry_str = sid_cstr( entry->sid );
+        if ( str_equal_insensitive( entry_str, str, sid_length( entry->sid ) ))
+        {            
+            return entry->sid; // found it
+        }
+        
+        // continue probing
+        probe_length++;
+        slot = ( slot + 1 ) & mask;
+    }
+    
+    return SID_INVALID; // not found
 }
 
 /*==============================================================================================

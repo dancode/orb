@@ -92,7 +92,7 @@ uint32_t    sid_get_hash        ( sid_t sid );
 void        sid_init            ( void );
 
                                 // shutdown string interning system
-void        sid_exit        ( void );
+void        sid_exit            ( void );
 
 /*============================================================================================*/
 /* INTERNING */
@@ -103,6 +103,9 @@ sid_t       sid_intern          ( const char* str, int32_t len );
 
                                 // intern C string (null-terminated)
 sid_t       sid_intern_cstr     ( const char* str );
+
+                                // intern C string (null-terminated)
+sid_t       sid_find_cstr       ( const char* str );   
 
 /*============================================================================================*/
 /* DEBUG UTILITY */

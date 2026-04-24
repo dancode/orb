@@ -5,12 +5,15 @@
 add_subdirectory(core)
 add_subdirectory(platform)
 
+add_subdirectory(systems/render)
+
+# add_library( render )
 # add_library(engine_systems STATIC
 #     systems/render/renderer.c
 #     systems/audio/mixer.c
 #     systems/physics/physics.c
 # )
-# 
+
 # add_executable(engine_runtime runtime/engine_main.c)
 # target_link_libraries(engine_runtime
 #     PRIVATE engine_core engine_platform engine_systems
@@ -26,28 +29,63 @@ add_subdirectory(platform)
 # ==========================================================
 
 # Collect source files in one place
-set(ENGINE_SOURCES
-	orb.h
-	
-    engine_main.c
-	engine.h
-	engine.c
-		
-	base/base.h	
-	base/base.c
-	
-	base/standard.h
-	base/standard.c
-	base/standard_string.c
-	
-	base/memory.c
+# set(ENGINE_SOURCES
+# 	orb.h
+# 	
+#   engine_main.c
+# 	engine.h
+# 	engine.c
+# 		
+# 	engine_api.h
+# 	engine_api.c
+# )
 
-	base/module.h
-	base/module.c
+# ==========================================================
+# Engine : Core Library
+# ==========================================================
+
+# Collect all .c/.h/.natvis etc for IDE visibility
+file(GLOB ALL_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.natvis"
+	"${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.h"
 )
 
+# Select which .c files should ACTUALLY compile
+# Everything else is HEADER_FILE_ONLY and treated as "unity fragments"
+set(COMPILED_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine_main.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine_api.c"
+	"${CMAKE_CURRENT_SOURCE_DIR}/runtime/runtime.c"
+)
+
+
+# ----------------------------------------------------------
+# Unity Module
+# ----------------------------------------------------------
+
+# Compute list of all other .c files (excluding compiled sources)
+set(HEADER_SOURCES ${ALL_FILES})
+list(REMOVE_ITEM HEADER_SOURCES ${COMPILED_SOURCES})
+
+# Mark all other .c files as header-only (not compiled)
+# Explicitly allow compiled files to compile normally
+set_source_files_properties( ${HEADER_SOURCES} PROPERTIES HEADER_FILE_ONLY ON )
+set_source_files_properties( ${COMPILED_SOURCES} PROPERTIES HEADER_FILE_ONLY OFF )
+
+# ----------------------------------------------------------
+# Executbale
+# ----------------------------------------------------------
+
+#add_executable(engine
+#    ${ENGINE_SOURCES}
+#)
+
 add_executable(engine
-    ${ENGINE_SOURCES}
+    ${ALL_FILES}
 )
 
 target_include_directories(engine PUBLIC
@@ -59,6 +97,7 @@ target_include_directories(engine PUBLIC
 
 # engine executable is minimal: links loader + base
 target_link_libraries(engine PUBLIC core)
+target_link_libraries(engine PUBLIC platform)
 
 # Put in a clear project folder
 set_target_properties(engine PROPERTIES FOLDER "Exec/")
@@ -71,7 +110,33 @@ if(UNIX)
 endif()
 
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ENGINE_SOURCES} )
+# source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ENGINE_SOURCES} )
+
+# Mirror physical directory structure inside Visual Studio
+source_group(
+    TREE ${CMAKE_CURRENT_SOURCE_DIR}
+    FILES ${ALL_FILES}
+)
+
+
+# ==========================================================
+# Create Base folder for Unity include standard library
+# ==========================================================
+
+# 1. Define the directory and files
+set(VISUAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/base")
+file(GLOB_RECURSE VISUAL_FILES "${VISUAL_DIR}/*")
+
+# 2. Create the visual hierarchy in Visual Studio Solution Explorer
+source_group(TREE "${VISUAL_DIR}" PREFIX "Base" FILES ${VISUAL_FILES})
+
+# 3. Add to your target and mark as non-compiling
+# Note: 'my_project' is your existing add_executable or add_library target
+target_sources(engine PRIVATE ${VISUAL_FILES})
+
+# 4. Force Visual Studio to treat these as non-buildable items
+set_source_files_properties(${VISUAL_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+
 
 # ==========================================================
 

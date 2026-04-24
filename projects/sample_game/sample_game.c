@@ -1,112 +1,112 @@
 /*==============================================================================================
 
-    sample_game.c
+    sample_game.c  (compiled as sample_game.dll)
+
+    Example dynamic module.  Demonstrates:
+      - pulling core / engine / render APIs through module_sys_api_t
+      - persistent state that survives hot-reloads
+      - first-load vs reload detection via a sentinel value
+      - both required DLL exports: get_module_api() and get_api()
+
+    The module system owns all memory for game_state_t.  Never free it inside
+    exit() — the system will reuse the same block on the next reload.
 
 ==============================================================================================*/
 
-#include <stdio.h>
 #include "orb.h"
-#include "core/core.h"
+#include "core/module_get_api.h"    /* module_sys_api_t                  */
+#include "core/module/module_api.h" /* module_api_t, mod_init_fn, etc.  */
+#include "core/core_api.h"          /* core_api_t                        */
+#include "engine_api.h"             /* engine_api_t                      */
+#include "systems/render/render.h"  /* render_api_t  (example)           */
+
 #include "sample_game.h"
-
-// clang-format off
-/*==============================================================================================
-    Forward declarations of public API implementations.
-==============================================================================================*/
-
-typedef struct player_desc_s player_desc_t;
-
-static void game_func_1( void ) {}
-static void game_func_2( void ) {}
-
-// TODO: add module registry api to query and obtain module api structs
+// #include "game_api.h"         /* game_api_t    (this module's API) */
 
 /*==============================================================================================
-    public api struct (sample_game_api.h)
+    Persistent state  (zeroed on first load; preserved across hot-reloads)
 ==============================================================================================*/
 
-typedef struct module_api_header_s
+#define STATE_SENTINEL 0xC0FFEE /* written on first init; lets us detect reloads */
+
+typedef struct
 {
-    uint32_t api_version;    // incremented every successful api load/reload
-    uint32_t struct_size;    // sizeof( sample_game_api_t ) to hadnle changes
+    uint32_t sentinel; /* first-load detection                           */
 
-} module_api_header_t;
+    /* refreshed in init() — may differ after reload  */
 
-typedef struct sample_game_api_s
-{
-    // This should be a generated header we expect modules to implement.
-    // For now we define it here manually.
-        // We should have a versioned api struct for each module type.
-        // Each module needs to export a header defining its api struct.
-            // All the types and function pointers required to use the module api should be defined there.
-            // so that modules can be compiled against the correct version of the api struct.
-            // and types are known at compile time.
+    core_api_t*   core;
+    engine_api_t* engine;
+    render_api_t* render;
 
-    module_api_header_t header;
+    /* gameplay data — survives hot-reloads */
 
-    void    ( *game_func_1 )    ( void );
-    void    ( *game_func_2 )    ( void );
+    int   score;
+    float timer;
 
-} sample_game_api_t;
+} game_state_t;
 
-static sample_game_api_t g_sample_game_api = { 
-    .header.api_version = 1,
-    .header.struct_size = sizeof( sample_game_api_t ),
-    .game_func_1    = game_func_1,
-    .game_func_2    = game_func_2 
-};
-
-/*==============================================================================================
-
-    dll api
-
-==============================================================================================*/
-
-core_api_t*       g_core_api  = NULL;    // Core API pointer
-core_debug_api_t* g_debug_api = NULL;    // Core Debug API pointer
-
-/*============================================================================================*/
+// core_api_t*       g_core_api  = NULL;    // Core API pointer
+// core_debug_api_t* g_debug_api = NULL;    // Core Debug API pointer
 
 // static int32_t g_draw_debug  = 10;
 // static char*   g_player_name = "my_name";
 
-/*============================================================================================*/
+/*==============================================================================================
+    Lifecycle
+==============================================================================================*/
 
-API_EXPORT void
-module_init( struct core_api_s* core_api /* add module (registry) api field */ )
+bool
+game_init( void* raw_state, module_sys_api_t* sys )
 {
     // printf( "[game] init\n" );
 
-    /**************************************************************/
-    /* Store core api pointer for later use */
+    game_state_t* s = raw_state;
 
-    g_core_api  = core_api;
-    g_debug_api = core_api->debug_api;
+    /* Pull APIs from the registry every init() — pointers may have changed
+       if a dependency was also reloaded. */
+    s->core   = sys->get_api( "core" );
+    s->engine = sys->get_api( "engine" );
+    s->render = sys->get_api( "render" );
 
-    g_core_api->log( "[sample_game] init" );
+    if ( !s->core || !s->engine || !s->render )
+    {
+        /* Can't log without core — fall back to printf. */
+        // printf( "[game] init failed: missing dependency\n" );
+        return false;
+    }
 
-    // Example: validate required dependency (if any)
-    // auto other_api = reg->get_module_api( "physics", 1 );
-    // if ( !other_api ) { core->log("[sample_game] missing dependency physics"); return false; }
+    if ( s->sentinel != STATE_SENTINEL )
+    {
+        /* First load — state was zero-filled by the module system. */
+        s->sentinel = STATE_SENTINEL;
+        s->score    = 0;
+        s->timer    = 0.0f;
+        s->core->log( "[game] first load - fresh state" );
+    }
+    else
+    {
+        /* Hot-reload — gameplay data is intact. */
+        s->core->log( "[game] reloaded — score %d, timer %.2fs preserved", s->score, s->timer );
+    }
+    
+    return true;
 
     // Optionally register cvars
     // core->cvar_register( "r_draw_debug", CVAR_INT, &g_draw_debug );
-    // core->cvar_register( "player_name", CVAR_STRING, &g_player_name );
-
-    /**************************************************************/
-
-
-    // Register our cvar, binding registry to &g_draw_debug
-    // g_api->cvar_register( "r_draw_debug", CVAR_INT, &g_draw_debug );
-    // g_api->cvar_register( "player_name", CVAR_STRING, &g_player_name );
-
-    // g_api->log( "[game] init: r_draw_debug = %d", g_draw_debug );
+    // core->cvar_register( "player_name", CVAR_STRING, &g_player_name );s
+    // g_api->lsbzog( "[game] binit: r_draw_debug = %d", g_draw_debug );
 }
 
-API_EXPORT void
-module_tick( float dt )
+void
+game_tick( void* raw_state, float dt )
 {
     // printf( "[game] tick\n" );
+
+    game_state_t* s = raw_state;
+    s->timer += dt;
+ // s->render->draw_frame( dt );
+    s->render->render_print( "sent to render from sample_game" );
 
     // if ( g_draw_debug )
     // {
@@ -114,55 +114,95 @@ module_tick( float dt )
     // }
 }
 
-API_EXPORT void
-module_exit( void )
+void
+game_exit( void* raw_state )
 {
     // printf( "[game] shutdown\n" );
 
-    g_core_api->log( "[game] shutdown" );
+    game_state_t* s = raw_state;
+    /* State is NOT freed here — the system owns it.
+       Just flush anything that needs flushing. */
+    s->core->log( "[game] exit — score: %d  timer: %.2fs\n", s->score, s->timer );
+
+    // g_core_api->log( "[game] exit — final score: %d\n", s->score );
+
+    // g_core_api->log( "[game] shutdown" );
+}
+
+static void
+game_on_reload( void* raw_state, module_sys_api_t* sys )
+{
+    /* init() already re-cached all API pointers.
+       Use on_reload for anything that only makes sense after a code swap —
+       e.g. re-registering callbacks, resetting renderer state, etc. */
+    game_state_t* s = raw_state;
+    ( void )sys;
+    s->core->log( "[game] on_reload — ready\n" );
+}
+
+/*============================================================================================*/
+
+void
+game_function( void )
+{
+    // printf( "[game] shutdown\n" );
+
+    // g_core_api->log( "game function!!!" );
 }
 
 /*==============================================================================================
-    Exported descriptor accessor
-
-    This creates a struct to implementt the module info and update callbacks in one go.
-    Rather than grabbing each symbol individually.
-    This is called by the module system when loading the module.
-    This way we can set the names without having to rely on fixed symbol names.
-    (except for this one function).
+    This module's own exported API
 ==============================================================================================*/
 
-API_EXPORT module_t*
-module_get_descriptor( void )
+static int
+game_get_score( void )
 {
-    /* list of dll names we must also load */
-    static const char* required[] = { /* "physics", */ NULL };
-    static module_t desc = 
-    {
-        .name               = "sample_game",        // name of our module
-        .required           = required,             // list of required module names
-        .api_struct         = &g_sample_game_api,   // pointer to our public api struct
-        .init               = module_init,          // init function
-        .tick               = module_tick,          // tick function
-        .exit               = module_exit           // exit function
-    };
-    return &desc;
+    /* In a real module this would reach into the state via a module-level pointer.
+       Keeping it simple for the example. */
+    return 0;
 }
+
+typedef struct game_api_s
+{
+    int ( *get_score)( void );
+
+} game_api_t;
+
+static game_api_t g_game_api = {
+    .get_score = game_get_score,
+};
 
 /*==============================================================================================
-
-    main (only for Windows DLL projects; ignore on Linux/macOS)
-
+    Module descriptor
 ==============================================================================================*/
 
-#if defined( _WIN32 ) || defined( _WIN64 )
-int
-main( int argc, char** argv )
+static module_api_t g_module_api = {
+    .version    = 1,
+    .state_size = sizeof( game_state_t ),
+
+    .deps       = { "core", "engine", "render" },
+    .dep_count  = 3,
+
+    .init       = game_init,
+    .tick       = game_tick,
+    .exit       = game_exit,
+    .on_reload  = game_on_reload,
+};
+
+/*==============================================================================================
+    Required DLL exports (C linkage)
+==============================================================================================*/
+
+API_EXPORT module_api_t*
+get_module_api( void )
 {
-    ( void )argc;
-    ( void )argv;
-    return 1;
+    return &g_module_api;
 }
-#endif
+
+API_EXPORT void*
+get_api( void )
+{
+    return &g_game_api;
+}
 
 /*============================================================================================*/

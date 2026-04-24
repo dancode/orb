@@ -7,6 +7,8 @@
 #include "orb.h"
 #include "base.h"
 
+// TODO: move to platform module
+
 /*============================================================================================*/
 #if PLATFORM_WINDOWS
 
@@ -41,11 +43,13 @@ library_load( const char* path )
 {
     return LoadLibraryA( path );
 }
+
 void*
 library_get_symbol( lib_handle_t h, const char* s )
 {
     return (void*)GetProcAddress( h, s );
 }
+
 int
 library_unload( lib_handle_t module )
 {
@@ -59,11 +63,13 @@ library_load( const char* path )
 {
     return dlopen( path, RTLD_NOW );
 }
+
 void*
 library_get_symbol( lib_handle_t h, const char* s )
 {
     return dlsym( h, s );
 }
+
 int
 library_unload( lib_handle_t module )
 {

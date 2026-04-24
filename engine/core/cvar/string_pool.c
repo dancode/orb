@@ -84,7 +84,7 @@ string_pool_ensure( string_pool_t* pool, u32 alloc_size )
     }
 
     /* Calculate new capacity (add 1024 until it fits) */
-    u32 need = pool->used + alloc_size;
+    cu32 need = pool->used + alloc_size;
     u32 cap  = pool->capacity ? pool->capacity : 1024u;
     while ( cap < need ) cap += 1024u;
 
@@ -188,20 +188,20 @@ string_pool_get( const string_pool_t* pool, u16 offset )
 
     cvar : user variable value string pool
 
-    A destructive, pooled allocator for CVAR_USR strings.
+    A destructive pooled allocator for CVAR_USR strings. A user string value can change
+    in length and content, so we need to be able to re-use memory.
 
-    - Uses fixed-size buckets.
-    - Maintains a free list for each bucket.
+    - Uses fixed-size buckets carved out of a single linear pool.
+    - Maintains a offset based free list for each bucket based on the string length.
     - Allocates from the top if a free list is empty.
-    - "Destructive" means strings can be freed and their memory reused.
+    - Strings can be freed and their memory reused.
 
 ==============================================================================================*/
 
-/* Fixed-size buckets for user strings */
+/* Fixed-size re-useable buckets for user strings */
 static const u32 g_user_bucket_sizes[ USER_STRING_BUCKET_COUNT ] = { 8, 16, 32, 64, 128, 256 };
 user_string_pool_t g_user_string_pool;
 
-/*============================================================================================*/
 /* Initialize the user string pool */
 
 void
@@ -215,10 +215,13 @@ user_string_pool_init( user_string_pool_t* usp )
     string_pool_init( &usp->pool );
 }
 
+/*============================================================================================*/
+/* Free all memory used by the user string pool */
+
 void
 user_string_pool_exit( user_string_pool_t* usp )
 {
-    // Free the dynamic new user string pool data
+    /* free the dynamic new user string pool data */
     if ( usp->pool.data )
     {
         free( usp->pool.data );

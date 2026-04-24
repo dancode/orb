@@ -13,7 +13,6 @@ file(GLOB_RECURSE ALL_FILES
 # Everything else is HEADER_FILE_ONLY and treated as "unity fragments"
 set(COMPILED_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/platform.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/platform_api.c"
 )
 
 # ----------------------------------------------------------

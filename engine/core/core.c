@@ -5,6 +5,7 @@
 ==============================================================================================*/
 
 #include "core/core.h"
+#include "core/core_api.h"
 #include "core/module.h"
 
 void
@@ -17,7 +18,7 @@ core_init( void )
 
 void
 core_exit( void )
-{    
+{
     cvar_system_exit();
     sid_exit();
     core_api_exit();
