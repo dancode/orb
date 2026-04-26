@@ -14,11 +14,10 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "core/module_get_api.h"    /* module_sys_api_t                  */
-#include "core/module/module_api.h" /* module_api_t, mod_init_fn, etc.  */
-#include "core/core_api.h"          /* core_api_t                        */
-#include "engine_api.h"             /* engine_api_t                      */
-#include "systems/render/render.h"  /* render_api_t  (example)           */
+#include "module/module_api.h"     /* module_api_t, mod_init_fn, etc.  */
+#include "core/core_api.h"         /* core_api_t                        */
+#include "engine_api.h"            /* engine_api_t                      */
+#include "systems/render/render.h" /* render_api_t  (example)           */
 
 #include "sample_game.h"
 // #include "game_api.h"         /* game_api_t    (this module's API) */
@@ -89,7 +88,7 @@ game_init( void* raw_state, module_sys_api_t* sys )
         /* Hot-reload — gameplay data is intact. */
         s->core->log( "[game] reloaded — score %d, timer %.2fs preserved", s->score, s->timer );
     }
-    
+
     return true;
 
     // Optionally register cvars
@@ -105,8 +104,8 @@ game_tick( void* raw_state, float dt )
 
     game_state_t* s = raw_state;
     s->timer += dt;
- // s->render->draw_frame( dt );
-    s->render->render_print( "sent to render from sample_game" );
+    // s->render->draw_frame( dt );
+    s->render->draw_frame( 99.0f );
 
     // if ( g_draw_debug )
     // {
@@ -164,7 +163,7 @@ game_get_score( void )
 
 typedef struct game_api_s
 {
-    int ( *get_score)( void );
+    int ( *get_score )( void );
 
 } game_api_t;
 

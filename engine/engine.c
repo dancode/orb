@@ -1,6 +1,9 @@
 /*==============================================================================================
 
-    engine.c : (loader, api registry, simple memory/log implementation, main)
+    engine.c 
+
+    This is the main compilation unit for the engine. 
+    It compiles the standard library and runtime
 
 ==============================================================================================*/
 
@@ -8,15 +11,17 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+/* include dependency headers */
 #include "orb.h"
 #include "core.h"
 
-#include "base/library.h"
-#include "base/library.c"
+/* compile standard library */
 #include "base/standard.c"
+#include "platform_sys/platform_sys.h"
 
 
-// #include "runtime/runtime.c"
+/* compile runtime */
+#include "runtime/runtime.c"
 
 /*==============================================================================================
 
@@ -31,26 +36,8 @@
 
 ==============================================================================================*/
 
-#include "engine_api.h"
-#include "core/module/module_api.h"
-#include "core/module/module_sys.h"
+static int engine_value = 0;
 
-static module_api_t g_engine_module_api = {
-    .version    = 1,
-    .state_size = 0,
-    .deps       = { "core" },
-    .dep_count  = 1,
 
-    .init       = NULL,
-    .tick       = NULL,
-    .exit       = NULL,
-    .on_reload  = NULL,
-};
-
-void
-engine_module_register( void )
-{
-    module_register_static( "engine", &g_engine_module_api, engine_get_api() );
-}
 
 /*============================================================================================*/

@@ -1,0 +1,1 @@
+static int job_varialbe = 0;

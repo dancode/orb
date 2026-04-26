@@ -1,41 +1,12 @@
 /*==============================================================================================
 
-    Module
+    win library.c : dynamic library loading
 
 ==============================================================================================*/
 
 #include "orb.h"
-#include "base.h"
-
-// TODO: move to platform module
 
 /*============================================================================================*/
-#if PLATFORM_WINDOWS
-
-// #include <windows.h>
-
-typedef void*         HMODULE;
-typedef const char*   LPCSTR;
-typedef void*         FARPROC;
-typedef unsigned long DWORD;
-typedef int           BOOL;
-
-__declspec( dllimport ) HMODULE __stdcall LoadLibraryA( LPCSTR lpLibFileName );
-__declspec( dllimport ) FARPROC __stdcall GetProcAddress( HMODULE hModule, LPCSTR lpProcName );
-__declspec( dllimport ) DWORD __stdcall GetModuleFileNameA( HMODULE hModule, char* lpFilename, DWORD nSize );
-__declspec( dllimport ) BOOL __stdcall FreeLibrary( HMODULE hModule );
-
-#else
-
-#    include <dlfcn.h>
-#    include <unistd.h>
-typedef void* HMODULE;
-typedef void* FARPROC;
-
-#endif
-
-/*============================================================================================*/
-
 #if PLATFORM_WINDOWS
 
 lib_handle_t
@@ -57,6 +28,11 @@ library_unload( lib_handle_t module )
 }
 
 #else
+
+#    include <dlfcn.h>
+#    include <unistd.h>
+typedef void* HMODULE;
+typedef void* FARPROC;
 
 lib_handle_t
 library_load( const char* path )

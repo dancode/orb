@@ -17,6 +17,8 @@
 
 ==============================================================================================*/
 
+// typedef void* ( *get_api_fn )( const char* name );
+
 typedef struct module_sys_api_s
 {
     /* Returns the exported API pointer for a named, initialized module.

@@ -1,13 +1,12 @@
-#ifndef MODULE_H
-#define MODULE_H
-// clang-format off
+#ifndef PLATFORM_APP_H
+#define PLATFORM_APP_H
 /*==============================================================================================
 
-    module.h : shared header (engine + module authors include this)
+    platform_app.h
 
 ==============================================================================================*/
 
 #include "orb.h"
 
 /*============================================================================================*/
-#endif    // MODULE_H
+#endif    // PLATFORM_APP_H

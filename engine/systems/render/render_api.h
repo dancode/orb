@@ -1,9 +1,9 @@
-#ifndef RENDER_H
-#define RENDER_H
+#ifndef RENDER_API_H
+#define RENDER_API_H
 
 /*==============================================================================================
 
-    render.h
+    render_api.h
 
 ==============================================================================================*/
 
@@ -18,4 +18,4 @@ typedef struct render_api_s
 const render_api_t* get_render_api( void );
 
 /*============================================================================================*/
-#endif    // RENDER_H
+#endif    // RENDER_API_H

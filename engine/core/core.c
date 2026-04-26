@@ -2,11 +2,16 @@
 
     core.c
 
+    This is the main compilation unit for the core module. It compiles the core API and
+    initializes the core systems that other modules depend on, such as the string interning
+    system (sid) and cvar system.
+
 ==============================================================================================*/
 
 #include "core/core.h"
 #include "core/core_api.h"
-#include "core/module.h"
+
+/*============================================================================================*/
 
 void
 core_init( void )

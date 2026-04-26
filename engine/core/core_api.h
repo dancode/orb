@@ -54,9 +54,13 @@ typedef struct core_api_s
 /*============================================================================================*/
 /* public core api functions */
 
-void        core_api_init( void );
-void        core_api_exit( void );
-core_api_t* core_get_api( void );
+void          core_api_init( void );
+void          core_api_exit( void );
+
+typedef struct module_api_s module_api_t;
+
+module_api_t* core_get_module_api( void );
+core_api_t*   core_get_api( void );
 
 /*============================================================================================*/
 #endif    // CORE_API_H

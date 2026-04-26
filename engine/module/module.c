@@ -4,6 +4,12 @@
 
     Hot-reload module system implementation.
 
+    Bootstrap
+    --------------------
+    The module system starts on its own bootstrap log/alloc so it can function
+    before core exists.  Once module_init_all() runs core's init(), the system
+    promotes itself to core's real implementations silently.
+
     Shadow-copy strategy
     --------------------
     The original DLL is never loaded directly — the build tool would lock it and
@@ -22,6 +28,13 @@
     across a hot-reload, so modules keep their runtime data through code changes.
     On first load the block is zeroed; on reload it arrives with its previous values.
 
+    File watching
+    -------------
+    module_check_reloads() delegates all platform I/O to the file_watch interface.
+    A debounce window (DEBOUNCE_MS) prevents reloading while the linker is still
+    writing — the module is flagged on the first notification and reloaded only
+    after DEBOUNCE_MS milliseconds have elapsed with no further notifications.
+
     Example usage (remove in production)
 
     module system
@@ -29,141 +42,127 @@
     Startup sequence:
         1. module_system_init()       — boot (no modules yet)
         2. module_register_static()   — core + engine (already running in the exe)
-        3. module_load()              — dynamic DLLs
+        3. module_dynamic_load()      — dynamic DLLs
         4. module_init_all()          — topo-sort deps → call every init()
         5. main loop                  — tick + hot-reload polling
         6. module_system_exit()       — reverse-order exit + DLL unload + shadow cleanup
 
+     Depends on platform_sys (dll load, file watch, clock)
+
 ==============================================================================================*/
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <stdio.h>     // snprintf
+#include <stdlib.h>    // malloc, free
+#include <stdarg.h>    // va_list, va_start, etc.
+#include <assert.h>    // assert
 #include <string.h>
-#include <stdarg.h>
-#include <assert.h>
 
-#include "core/core.h"
+#include "orb.h"
+#include "base/base.h" /* types, arena, str — zero deps  */
+#include "platform_sys/platform_sys.h"
+
 #include "core/core_api.h"
-#include "platform/platform.h"
-#include "engine_api.h"
-#include "module_api.h"
-#include "module_sys.h"
 
-// #include "platform/platform.h"
+#include "module_api.h"
+#include "module.h"
 
 /*==============================================================================================
     Platform layer
 ==============================================================================================*/
 
-#ifdef PLATFORM_WINDOWS
+#define MAX_PATH 260
 
-#    define WIN32_LEAN_AND_MEAN
-#    include <windows.h>
+/*==============================================================================================
+    Bootstrap implementations: Used only from module_system_init() until core's init() runs.
+    After that g_fn.log / g_fn.alloc / g_fn.free point at core's real versions.
+==============================================================================================*/
 
-static HANDLE     g_dir_watch  = NULL;     // directory handle
-static OVERLAPPED g_overlapped = { 0 };    // overlapped io structure
-
-#else
-
-#    define MAX_PATH 260
-#    error "module_sys: platform not implemented"
-
-#endif
-
-/*============================================================================================*/
-
-#ifdef PLATFORM_WINDOWS
-
-static uint64_t
-platform_file_time( const char* path )
+/* internal allocation — module_sys.c only */
+static void
+ms_log( const char* fmt, ... )
 {
-    /* Returns 0 on error or if the file does not exist. */
-
-    WIN32_FILE_ATTRIBUTE_DATA data;
-    if ( !GetFileAttributesExA( path, GetFileExInfoStandard, &data ) )
-        return 0;
-
-    ULARGE_INTEGER uli;
-    uli.LowPart  = data.ftLastWriteTime.dwLowDateTime;
-    uli.HighPart = data.ftLastWriteTime.dwHighDateTime;
-    return uli.QuadPart;
+    va_list ap;
+    va_start( ap, fmt );
+    vprintf( fmt, ap );
+    printf( "\n" );
+    va_end( ap );
 }
 
-static bool
-platform_copy_file( const char* src, const char* dst )
+static void*
+ms_alloc( size_t size )
 {
-    return CopyFileA( src, dst, FALSE ) != FALSE;
-}
-
-static bool
-platform_delete_file( const char* path )
-{
-    return DeleteFileA( path ) != 0;
+    return malloc( size );
 }
 
 static void
-platform_exe_dir( char* out, int size )
+ms_free( void* ptr )
 {
-    assert( size >= MAX_PATH );
-    DWORD len = GetModuleFileNameA( NULL, out, ( DWORD )size );
-    if ( len == 0 || len == ( DWORD )size )
-    {
-        assert( 0 && "GetModuleFileNameA failed" );
-        return;
-    }
-    /* strip the filename, keep the trailing slash */
-    for ( DWORD i = len; i > 0; --i )
-    {
-        if ( out[ i ] == '\\' || out[ i ] == '/' )
-        {
-            out[ i ] = '\0';
-            break;
-        }
-    }
+    free( ptr );
 }
-
-#endif
 
 /*==============================================================================================
     Internal state
 ==============================================================================================*/
 
-#define MAX_MODULES 32
+#define MAX_MODULES 16
 
-static core_api_t*   g_core   = NULL;
-static engine_api_t* g_engine = NULL;
+static module_info_t    g_modules[ MAX_MODULES ];
+static int32_t          g_module_count = 0;
 
-static module_info_t g_modules[ MAX_MODULES ];
-static int32_t       g_module_count = 0;
+static int32_t          g_init_order[ MAX_MODULES ];
+static int32_t          g_init_count        = 0;
 
-/* Dependency-resolved initialization order (indices into g_modules). */
-static int32_t  g_init_order[ MAX_MODULES ];
-static int32_t  g_init_count;
+static char             g_root[ MAX_PATH ]  = { 0 };
+static char             g_last_error[ 256 ] = { 0 };
 
-static char     g_root[ MAX_PATH ]  = { 0 }; /* directory containing the exe + DLLs */
-static char     g_last_error[ 256 ] = { 0 }; /* save error messages if needed */
+static uint32_t         g_shadow_counter    = 0; /* global incremented per shadow copy created */
 
-static uint32_t g_shadow_counter    = 0; /* global; incremented per shadow copy created */
+static module_sys_api_t g_sys_api;
 
 /* Passed into every init() / on_reload() call so DLLs can resolve APIs
    without linking against the exe. Defined after module_get_api(). */
 
-static module_sys_api_t g_sys_api;
+#define DEBOUNCE_MS 150
+#define MAX_PENDING 16
+
+/* Debounce table for hot-reload */
+typedef struct
+{
+    char     name[ MODULE_NAME_MAX ];
+    uint64_t flagged_at_ms;
+
+    /* time of first notification; if current time - flagged_at_ms > DEBOUNCE_MS,
+       we reload and clear the flag */
+
+} pending_reload_t;
+
+static pending_reload_t g_pending[ MAX_PENDING ];
+static int32_t          g_pending_count = 0;
+
+/*==============================================================================================
+    Error reporting (uses g_fn.log so it works in both bootstrap and promoted state)
+==============================================================================================*/
+
+static void
+set_error( const char* fmt, ... )
+{
+    va_list args;
+    va_start( args, fmt );
+    vsnprintf( g_last_error, sizeof( g_last_error ), fmt, args );
+    va_end( args );
+
+    ms_log( "[module] ERROR: %s", g_last_error );
+}
+
+const char* /* public */
+module_last_error( void )
+{
+    return g_last_error;
+}
 
 /*==============================================================================================
     Path helpers
 ==============================================================================================*/
-
-static void
-ensure_root_path( void )
-{
-    /* set platform specific global base path for module loading */
-
-    if ( g_root[ 0 ] != '\0' )
-        return; /* already set */
-
-    platform_exe_dir( g_root, sizeof( g_root ) );
-}
 
 static void
 path_dll( const char* name, char* out, size_t size )
@@ -180,51 +179,21 @@ path_shadow( const char* name, uint32_t counter, char* out, size_t size )
 }
 
 /*==============================================================================================
-    Error reporting
-==============================================================================================*/
-
-static void
-set_error( const char* fmt, ... )
-{
-    va_list args;
-    va_start( args, fmt );
-    vsnprintf( g_last_error, sizeof( g_last_error ), fmt, args );
-    va_end( args );
-
-    if ( g_core )
-        g_core->log( "[module] ERROR: %s", g_last_error );
-}
-
-const char* /* public */
-module_last_error( void )
-{
-    return g_last_error;
-}
-
-/*==============================================================================================
     Slot management
 ==============================================================================================*/
 
 static int
 slot_find( const char* name )
 {
-    /* find module name id */
-    sid_t name_sid = sid_find_cstr( name );
-    if ( sid_equals( name_sid, SID_INVALID ) )
-    {
-        return -1; /* name not registered */
-    }
-
     /* find id of module if registered */
     for ( int i = 0; i < MAX_MODULES; ++i )
     {
-        if ( sid_equals( g_modules[ i ].name, name_sid ) )
-            return i; /* found module */
+        bool is_empty = g_modules[ i ].status == MODULE_STATUS_EMPTY;
+        bool is_equal = strcmp( g_modules[ i ].name, name ) == 0;
+        if ( is_empty == false && is_equal == true )
+            return i;
     }
-
-    /* this should never happen */
-    assert( 0 && "module not found" );
-    return -1;
+    return -1; /* not found */
 }
 
 static int
@@ -264,13 +233,9 @@ shadow_copy( const char* name, uint32_t counter )
     path_dll( name, src, sizeof( src ) );
     path_shadow( name, counter, dst, sizeof( dst ) );
 
-    if ( !platform_copy_file( src, dst ) )
+    if ( platform_copy_file( src, dst ) == false )
     {
-#ifdef PLATFORM_WINDOWS
-        set_error( "copy failed (0x%lx): %s > %s", GetLastError(), src, dst );
-#else
         set_error( "copy failed: %s > %s", src, dst );
-#endif
         return false;
     }
     return true;
@@ -305,11 +270,11 @@ state_ensure( module_info_t* m )
     if ( m->state == NULL )
     {
         /* first load — allocate and zero */
-        m->state      = g_core->alloc( ( size_t )required );
+        m->state      = ms_alloc( ( size_t )required );
         m->state_size = required;
         if ( !m->state )
         {
-            set_error( "'%s': state alloc failed (%d bytes)", sid_cstr( m->name ), required );
+            set_error( "'%s': state alloc failed (%d bytes)", m->name, required );
             return false;
         }
         memset( m->state, 0, ( size_t )required );
@@ -317,15 +282,15 @@ state_ensure( module_info_t* m )
     else if ( required > m->state_size )
     {
         /* state grew across a reload — realloc and zero the new region */
-        void* new_state = g_core->alloc( ( size_t )required );
+        void* new_state = ms_alloc( ( size_t )required );
         if ( !new_state )
         {
-            set_error( "'%s': state realloc failed (%d bytes)", sid_cstr( m->name ), required );
+            set_error( "'%s': state realloc failed (%d bytes)", m->name, required );
             return false;
         }
         memcpy( new_state, m->state, ( size_t )m->state_size );
         memset( ( char* )new_state + m->state_size, 0, ( size_t )( required - m->state_size ) );
-        g_core->free( m->state );
+        ms_free( m->state );
         m->state      = new_state;
         m->state_size = required;
     }
@@ -343,7 +308,7 @@ slot_load_dll( module_info_t* m )
 {
     /* Load the DLL for slot, resolve API.  State must already be allocated (or NULL). */
 
-    const char* name = sid_cstr( m->name );
+    const char* name = m->name;
 
     /* --- shadow copy --- */
     m->shadow_count = g_shadow_counter++;
@@ -352,13 +317,13 @@ slot_load_dll( module_info_t* m )
 
     /* --- load shadow --- */
     char shadow[ MAX_PATH ];
-    path_shadow( name, m->shadow_count, shadow, sizeof( shadow ) );
+    path_shadow( m->name, m->shadow_count, shadow, sizeof( shadow ) );
 
     m->dll = library_load( shadow ); /* platform: LoadLibraryA(full_path) */
     if ( !m->dll )
     {
-        set_error( "LoadLibrary failed (0x%lx): %s", GetLastError(), shadow );
-        shadow_delete( name, m->shadow_count );
+        set_error( "LoadLibrary failed: %s", shadow );
+        shadow_delete( m->name, m->shadow_count );
         return false;
     }
 
@@ -416,7 +381,7 @@ slot_unload_dll( module_info_t* m )
         return;
 
     library_unload( m->dll );
-    shadow_delete( sid_cstr( m->name ), m->shadow_count );
+    shadow_delete( m->name, m->shadow_count );
 
     m->dll          = NULL;
     m->module_api   = NULL;
@@ -491,14 +456,14 @@ module_get_api( const char* name )
 ==============================================================================================*/
 
 bool
-module_load( const char* name )
+module_dynamic_load( const char* name )
 {
     /* Register and load a module by name.  Returns true on success.  On failure the module is not
        registered and an error message is available via module_last_error(). */
 
     if ( slot_find( name ) >= 0 )
     {
-        g_core->log( "[module] '%s' already loaded.", name );
+        ms_log( "[module] '%s' already loaded.", name );
         return true;
     }
 
@@ -511,8 +476,10 @@ module_load( const char* name )
 
     module_info_t* m = &g_modules[ slot ];
     memset( m, 0, sizeof( *m ) );
-    m->name   = sid_intern_cstr( name );
-    m->status = MODULE_STATUS_ERROR; /* provisional until success */
+
+    strncpy( m->name, name, MODULE_NAME_MAX - 1 );
+    m->name[ MODULE_NAME_MAX - 1 ] = '\0';
+    m->status                      = MODULE_STATUS_ERROR; /* provisional until success */
 
     if ( slot_load_dll( m ) == false )
     {
@@ -529,8 +496,7 @@ module_load( const char* name )
 
     m->status  = MODULE_STATUS_LOADED;
     m->version = 0;
-    g_core->log( "[module] loaded '%s' (api v%d, state %d B)", name, m->module_api->version,
-                 m->module_api->state_size );
+    ms_log( "[module] loaded '%s' (api v%d, state %d B)", name, m->module_api->version, m->module_api->state_size );
     return true;
 }
 
@@ -544,7 +510,7 @@ module_register_static( const char* name, module_api_t* module_api, void* export
 
     if ( slot_find( name ) >= 0 )
     {
-        g_core->log( "[module] static '%s' already registered.\n", name );
+        ms_log( "[module] static '%s' already registered.\n", name );
         return true;
     }
 
@@ -557,12 +523,13 @@ module_register_static( const char* name, module_api_t* module_api, void* export
 
     module_info_t* m = &g_modules[ slot ];
     memset( m, 0, sizeof( *m ) );
-    m->name         = sid_intern_cstr( name );
-    m->is_static    = true;
-    m->dll          = NULL;
-    m->module_api   = module_api;
-    m->exported_api = exported_api;
-    m->status       = MODULE_STATUS_LOADED;
+    strncpy( m->name, name, MODULE_NAME_MAX - 1 );
+    m->name[ MODULE_NAME_MAX - 1 ] = '\0';
+    m->is_static                   = true;
+    m->dll                         = NULL;
+    m->module_api                  = module_api;
+    m->exported_api                = exported_api;
+    m->status                      = MODULE_STATUS_LOADED;
 
     if ( state_ensure( m ) == false )
     {
@@ -570,7 +537,7 @@ module_register_static( const char* name, module_api_t* module_api, void* export
         return false;
     }
 
-    g_core->log( "[module] registered static '%s'", name );
+    ms_log( "[module] registered static '%s'", name );
     return true;
 }
 
@@ -593,14 +560,14 @@ module_unload( const char* name )
 
     if ( m->state != NULL )
     {
-        g_core->free( m->state );
+        ms_free( m->state );
         m->state = NULL;
     }
 
     if ( m->is_static == false )
         slot_unload_dll( m );
 
-    g_core->log( "[module] unloaded '%s'", name );
+    ms_log( "[module] unloaded '%s'", name );
     slot_free( slot );
     return true;
 }
@@ -618,7 +585,7 @@ module_reload( const char* name )
     module_info_t* m = &g_modules[ slot ];
     if ( m->is_static == true )
     {
-        g_core->log( "[module] '%s' is static, skipping reload.\n", name );
+        ms_log( "[module] '%s' is static, skipping reload.\n", name );
         return true;
     }
 
@@ -657,7 +624,7 @@ module_reload( const char* name )
     call_on_reload( m );
 
     m->status = MODULE_STATUS_INITIALIZED;
-    g_core->log( "[module] reloaded '%s' (reload #%d)\n", name, m->version );
+    ms_log( "[module] reloaded '%s' (reload #%d)\n", name, m->version );
     return true;
 }
 
@@ -720,15 +687,14 @@ build_init_order( void )
                 if ( !dep_name )
                     continue;
 
-                sid_t dep_sid = sid_find_cstr( dep_name );
-                bool  found   = false;
+                bool found = false;
 
                 /* search only the modules already added to g_init_order[0 .. g_init_count-1].
                    If the dependency is already there, then this dependency is satisfied. */
 
                 for ( int k = 0; k < g_init_count; ++k )
                 {
-                    if ( sid_equals( g_modules[ g_init_order[ k ] ].name, dep_sid ) )
+                    if ( strcmp( g_modules[ g_init_order[ k ] ].name, dep_name ) == 0 )
                     {
                         found = true;
                         break;
@@ -742,7 +708,7 @@ build_init_order( void )
                     /* First ensure check if module was even added all. */
                     if ( slot_find( dep_name ) < 0 )
                     {
-                        set_error( "'%s' depends on '%s' which is not registered", sid_cstr( m->name ), dep_name );
+                        set_error( "'%s' depends on '%s' which is not registered", m->name, dep_name );
                         return false;
                     }
 
@@ -778,17 +744,17 @@ build_init_order( void )
     {
         if ( placed[ i ] == false )
         {
-            set_error( "dependency cycle detected involving '%s'", sid_cstr( g_modules[ i ].name ) );
+            set_error( "dependency cycle detected involving '%s'", g_modules[ i ].name );
             return false;
         }
     }
 
     /* debug: print resolved initialization order */
-    g_core->log( "[module] init order (%d):", g_init_count );
+    ms_log( "[module] init order (%d):", g_init_count );
     for ( int i = 0; i < g_init_count; ++i )
     {
         int slot = g_init_order[ i ];
-        g_core->log( "  %d: %s", i, sid_cstr( g_modules[ slot ].name ) );
+        ms_log( "  %d: %s", i, g_modules[ slot ].name );
     }
 
     return true;
@@ -801,6 +767,8 @@ build_init_order( void )
 bool
 module_init_all( void )
 {
+    /* Call init() on all loaded modules in dependency order. Returns true on success. */
+
     if ( build_init_order() == false )
         return false;
 
@@ -812,13 +780,13 @@ module_init_all( void )
 
         if ( call_init( m ) == false )
         {
-            set_error( "'%s' init() returned false", sid_cstr( m->name ) );
+            set_error( "'%s' init() returned false", m->name );
             m->status = MODULE_STATUS_ERROR;
             return false;
         }
 
         m->status = MODULE_STATUS_INITIALIZED;
-        g_core->log( "[module] initialized '%s'", sid_cstr( m->name ) );
+        ms_log( "[module] initialized '%s'\n", m->name );
     }
 
     return true;
@@ -848,13 +816,13 @@ module_check_reloads( void )
             continue;
 
         char dll_path[ MAX_PATH ];
-        path_dll( sid_cstr( m->name ), dll_path, sizeof( dll_path ) );
+        path_dll( m->name, dll_path, sizeof( dll_path ) );
 
         uint64_t time = platform_file_time( dll_path );
         if ( time != 0 && time != m->last_write )
         {
-            g_core->log( "[module] '%s' changed — reloading...", sid_cstr( m->name ) );
-            module_reload( sid_cstr( m->name ) );
+            ms_log( "[module] '%s' changed — reloading...", m->name );
+            module_reload( m->name );
         }
     }
 }
@@ -864,34 +832,37 @@ module_check_reloads( void )
 ==============================================================================================*/
 
 void
-module_system_init( core_api_t* core, engine_api_t* engine )
+module_system_init()
 {
-    assert( core != NULL );
-    assert( engine != NULL );
-
     /* zero module slots (status = EMPTY) */
     memset( g_modules, 0, sizeof( g_modules ) );
+    memset( g_pending, 0, sizeof( g_pending ) );
+    memset( g_last_error, 0, sizeof( g_last_error ) );
+
     g_module_count    = 0;
     g_init_count      = 0;
-    g_last_error[ 0 ] = '\0';
     g_shadow_counter  = 0;
+    g_pending_count   = 0;
 
-    /* save core and engine API pointers for modules to use during init and tick */
-    g_core   = core;
-    g_engine = engine;
+    g_last_error[ 0 ] = '\0';
 
     /* wire up the get_api passed into every module init() */
     g_sys_api.get_api = module_get_api;
 
     /* set root path for module DLLs */
-    ensure_root_path();
+    platform_exe_dir( g_root, sizeof( g_root ) );
+    ms_log( "[module] system init (root: %s)", g_root );
 
-    g_core->log( "[module] system init (root: %s)", g_root );
+    /* start file watcher via platform_sys (no core needed) */
+    if ( file_watch_init( g_root ) == false )
+        ms_log( "[module] WARNING: file watch unavailable\n" );        
 }
 
 void
 module_system_exit( void )
 {
+    file_watch_shutdown();
+
     /* exit in reverse init order so dependencies outlive their dependents */
     for ( int k = g_init_count - 1; k >= 0; --k )
     {
@@ -903,7 +874,7 @@ module_system_exit( void )
 
         /* LOADED but not INITIALIZED anymore since we called exit() */
         m->status = MODULE_STATUS_LOADED;
-        g_core->log( "[module] exited '%s'", sid_cstr( m->name ) );
+        ms_log( "[module] exited '%s'", m->name );
     }
 
     /* unload DLLs and free state */
@@ -915,7 +886,7 @@ module_system_exit( void )
 
         if ( m->state )
         {
-            g_core->free( m->state );
+            ms_free( m->state );
             m->state = NULL;
         }
 
@@ -924,9 +895,11 @@ module_system_exit( void )
     }
 
     memset( g_modules, 0, sizeof( g_modules ) );
-    g_module_count = 0;
-    g_init_count   = 0;
-    g_core->log( "[module] system shutdown complete" );
+    g_module_count  = 0;
+    g_init_count    = 0;
+    g_pending_count = 0;
+
+    ms_log( "[module] system shutdown complete" );
 }
 
 /*==============================================================================================
@@ -938,16 +911,16 @@ module_list_all( void )
 {
     static const char* status_str[] = { "EMPTY", "LOADED", "INITIALIZED", "ERROR" };
 
-    g_core->log( "---- modules (%d / %d) ----\n", g_module_count, MAX_MODULES );
+    ms_log( "---- modules (%d / %d) ----\n", g_module_count, MAX_MODULES );
     for ( int i = 0; i < MAX_MODULES; ++i )
     {
         module_info_t* m = &g_modules[ i ];
         if ( m->status == MODULE_STATUS_EMPTY )
             continue;
 
-        g_core->log( "  [%2d]  %-24s  %-13s  api_v%-3d  reload#%-3d  state:%dB  %s", i, sid_cstr( m->name ),
-                     status_str[ m->status ], m->module_api ? m->module_api->version : 0, m->version,
-                     m->state_size, m->is_static ? "(static)" : "" );
+        ms_log( "  [%2d]  %-24s  %-13s  api_v%-3d  reload#%-3d  state:%dB  %s", i, m->name,
+                status_str[ m->status ], m->module_api ? m->module_api->version : 0, m->version,
+                m->state_size, m->is_static ? "(static)" : "" );
     }
 }
 

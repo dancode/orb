@@ -92,10 +92,14 @@ add_subdirectory(engine)
 # Editor
 # add_subdirectory(editor)
 
+# Game Framework
+add_subdirectory(game)
+
 # Tools
 add_subdirectory(tools/build_tool)
+add_subdirectory(tools/asset_tool)
 
-# Projects
+# Game Projects
 add_subdirectory(projects/sample_game)
 
 # ==========================================================

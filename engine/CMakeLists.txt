@@ -1,47 +1,24 @@
 # ==========================================================
-# engine/CMakeLists.txt
+# ORB Engine
 # ==========================================================
 
-add_subdirectory(core)
-add_subdirectory(platform)
+# ----------------------------------------------------------
+# 1. COMPILE OPTION AT THE VERY TOP
+# ----------------------------------------------------------
 
+option(ENGINE_MONOLITHIC "Build engine with static linked modules instead of dynamic DLLs" OFF)
+
+# ==========================================================
+
+add_subdirectory(base)
+add_subdirectory(platform_sys)
+add_subdirectory(module)
+add_subdirectory(core)
+add_subdirectory(platform_app)
 add_subdirectory(systems/render)
 
-# add_library( render )
-# add_library(engine_systems STATIC
-#     systems/render/renderer.c
-#     systems/audio/mixer.c
-#     systems/physics/physics.c
-# )
-
-# add_executable(engine_runtime runtime/engine_main.c)
-# target_link_libraries(engine_runtime
-#     PRIVATE engine_core engine_platform engine_systems
-# )
-
-# add_executable(engine_runtime runtime/engine_main.c)
-# target_link_libraries(engine_runtime
-#     PRIVATE engine_core engine_platform engine_systems
-# )
-
 # ==========================================================
-# engine/CMakeLists.txt
-# ==========================================================
-
-# Collect source files in one place
-# set(ENGINE_SOURCES
-# 	orb.h
-# 	
-#   engine_main.c
-# 	engine.h
-# 	engine.c
-# 		
-# 	engine_api.h
-# 	engine_api.c
-# )
-
-# ==========================================================
-# Engine : Core Library
+# Engine : Host Files
 # ==========================================================
 
 # Collect all .c/.h/.natvis etc for IDE visibility
@@ -51,6 +28,8 @@ file(GLOB ALL_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.natvis"
 	"${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.h"
+	"${CMAKE_CURRENT_SOURCE_DIR}/services/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/services/*.h"
 )
 
 # Select which .c files should ACTUALLY compile
@@ -59,9 +38,8 @@ set(COMPILED_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/engine_main.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine_api.c"
-	"${CMAKE_CURRENT_SOURCE_DIR}/runtime/runtime.c"
+	"${CMAKE_CURRENT_SOURCE_DIR}/services/jobs/job_system.c"
 )
-
 
 # ----------------------------------------------------------
 # Unity Module
@@ -77,12 +55,8 @@ set_source_files_properties( ${HEADER_SOURCES} PROPERTIES HEADER_FILE_ONLY ON )
 set_source_files_properties( ${COMPILED_SOURCES} PROPERTIES HEADER_FILE_ONLY OFF )
 
 # ----------------------------------------------------------
-# Executbale
+# Engine : Host Executbale
 # ----------------------------------------------------------
-
-#add_executable(engine
-#    ${ENGINE_SOURCES}
-#)
 
 add_executable(engine
     ${ALL_FILES}
@@ -92,12 +66,40 @@ target_include_directories(engine PUBLIC
 	${CMAKE_SOURCE_DIR}/engine
 )
 
+# ----------------------------------------------------------
+# Engine : Link Libarries Host Links
+# ----------------------------------------------------------
+
 # Add loader object files to engine
 # target_sources(engine PRIVATE $<TARGET_OBJECTS:loader>)
 
 # engine executable is minimal: links loader + base
+target_link_libraries(engine PUBLIC platform_sys)
+target_link_libraries(engine PUBLIC module)
 target_link_libraries(engine PUBLIC core)
-target_link_libraries(engine PUBLIC platform)
+target_link_libraries(engine PUBLIC platform_app)
+
+# ----------------------------------------------------------
+# 2. CONDITIONAL LINKING LOGIC AT THE BOTTOM
+# ----------------------------------------------------------
+
+if(ENGINE_MONOLITHIC)
+    # In monolithic mode, the engine must statically link the modules.
+    # Because 'render' will export MODULE_LINK_STATIC publicly (see step 2), 
+    # the engine will also inherit the #define.
+    target_link_libraries(engine PUBLIC render)
+    
+    # You will add your other modules here later:
+    # target_link_libraries(engine PUBLIC audio physics)
+else()
+    # In dynamic mode, do NOT link the render target. 
+    # The engine will load render.dll at runtime via OS APIs (LoadLibrary/dlopen).
+endif()
+
+
+# ----------------------------------------------------------
+# Engine : Custom Solution Direction In Visual Studio
+# ----------------------------------------------------------
 
 # Put in a clear project folder
 set_target_properties(engine PROPERTIES FOLDER "Exec/")
@@ -120,25 +122,25 @@ source_group(
 
 
 # ==========================================================
-# Create Base folder for Unity include standard library
+# Services Folder
 # ==========================================================
 
-# 1. Define the directory and files
-set(VISUAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/base")
-file(GLOB_RECURSE VISUAL_FILES "${VISUAL_DIR}/*")
-
-# 2. Create the visual hierarchy in Visual Studio Solution Explorer
-source_group(TREE "${VISUAL_DIR}" PREFIX "Base" FILES ${VISUAL_FILES})
-
-# 3. Add to your target and mark as non-compiling
-# Note: 'my_project' is your existing add_executable or add_library target
-target_sources(engine PRIVATE ${VISUAL_FILES})
-
-# 4. Force Visual Studio to treat these as non-buildable items
-set_source_files_properties(${VISUAL_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
-
+set(SERVICES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/services")
+file(GLOB_RECURSE SERVICES_FILES "${SERVICES_DIR}/*")
+source_group(TREE "${SERVICES_DIR}" PREFIX "Services" FILES ${SERVICES_FILES})
+target_sources(engine PRIVATE ${SERVICES_FILES})
+# set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 # ==========================================================
+# Runtime Folder
+# ==========================================================
+
+set(RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+file(GLOB_RECURSE RUNTIME_FILES "${RUNTIME_DIR}/*")
+source_group(TREE "${RUNTIME_DIR}" PREFIX "Runtime" FILES ${RUNTIME_FILES})
+target_sources(engine PRIVATE ${RUNTIME_FILES})
+# set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+
 
 # ==========================================================
 # game/CMakeLists.txt

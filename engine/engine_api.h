@@ -17,9 +17,12 @@ typedef struct engine_api_s
 /*============================================================================================*/
 /* public core api functions */
 
-void          engine_api_init( void );
-void          engine_api_exit( void );
-engine_api_t* engine_get_api( void );
+typedef struct platform_app_api_s platform_app_api_t;
+typedef struct module_api_s       module_api_t;
+
+module_api_t*               engine_get_module_api( void ); /* the lifecycle descriptor */
+engine_api_t*               engine_get_api( void );        /* the typed API struct    */
+
 
 /*============================================================================================*/
 #endif    // ENGINE_API_H

@@ -1,19 +1,19 @@
 /*==============================================================================================
 
-    platform.c
+    platform_sys.c :
 
 ==============================================================================================*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <assert.h>
 
 #include "orb.h"
-#include "platform.h"
+#include "platform_sys_api.h"
+#include "platform_sys.h"
 
-// platform relies on core, sits above it in dependency stack
-#include "core/module_get_api.h"
-#include "core/module/module_api.h"
+#include "module/module_api.h"
 
 /*==============================================================================================
     Platform layer
@@ -29,8 +29,8 @@
 #    pragma comment( lib, "winmm.lib" )    // timeBeginPeriod
 
 #    include <windows.h>    // required for all windows applications.
-#    include <stdlib.h>      // __argc and __argv
 #    include <timeapi.h>    // timeBeginPeriod
+
 // #    include <process.h>     // _getpid
 // #    include <sys/stat.h>    // _stat for file calls
 // #    include <direct.h>      // directory handling. _mkdir
@@ -38,7 +38,7 @@
 #else
 
 #    define MAX_PATH 260
-#    error "module_sys: platform not implemented"
+#    error "platform_sys: platform not implemented"
 
 #endif
 
@@ -47,7 +47,13 @@
 ==============================================================================================*/
 
 #ifdef PLATFORM_WINDOWS
+
 #    include "win/win_tick.c"
+#    include "win/win_library.c"
+#    include "win/win_file_watch.c"
+#    include "win/win_file.c"
+#    include "win/win_console_input.c"
+
 #endif
 
 /*==============================================================================================
@@ -106,7 +112,7 @@ platform_on_reload( void* raw_state, module_sys_api_t* sys )
     Platform API
 ==============================================================================================*/
 
-static platform_api_t g_platform_api = {
+static platform_sys_api_t g_platform_sys_api = {
     .tick_reset        = sys_tick_reset,
     .tick_seconds      = sys_tick_seconds,
     .tick_microseconds = sys_tick_microseconds,
@@ -115,16 +121,11 @@ static platform_api_t g_platform_api = {
     .tick_sleep        = sys_tick_sleep,
 };
 
-platform_api_t*
-platform_get_api( void )
+platform_sys_api_t*
+platform_sys_get_api( void )
 {
-    return &g_platform_api;
+    return &g_platform_sys_api;
 }
-
-/*==============================================================================================
-    Required DLL exports (C linkage)
-==============================================================================================*/
-
 
 /*==============================================================================================
     Platform module
@@ -143,23 +144,10 @@ static module_api_t g_platform_module_api = {
     .on_reload  = platform_on_reload,
 };
 
-// static module_api_t*
-// get_platform_module_api( void )
-// {
-//     return &g_platform_module_api;
-// }
-
-static void*
-get_platform_api( void )
+module_api_t*
+platform_sys_get_module_api( void )
 {
-    return &g_platform_api;
+    return &g_platform_module_api;
 }
-
-/* public */ void
-platform_module_register( void )
-{
-    // module_register_static( "platform", &g_platform_module_api, get_platform_api() );
-}
-
 
 /*============================================================================================*/

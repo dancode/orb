@@ -6,23 +6,20 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 #include "orb.h"
 
-// #if PLATFORM_WINDOWS
-// #    define WIN32_LEAN_AND_MEAN
-// #    include <windows.h>
-// #else
-// #    include <unistd.h>
-// #    include <libgen.h>
-// #endif
-
 #include "core/core.h"
-#include "core/module_system.h"
-#include "platform/platform.h"
+#include "module/module.h"
+#include "platform_sys/platform_sys.h"
 
 // temp
 #include "core_api.h"
+#include "platform_sys/platform_sys_api.h"
+#include "engine_api.h"
+
+#include "systems/render/render_api.h"
 
 /*============================================================================================*/
 
@@ -33,99 +30,187 @@ void test_core_cvar( int argc, char** argv );    // ... temporary code ...
 /*============================================================================================*/
 
 /* declared in core_module.c / engine_module.c */
-void core_module_register( void );
-void platform_module_register( void );
-void engine_module_register( void );
+// void engine_module_register( void );
+
+// void platform_app_module_register( void );
+// void input_module_register( void );
+// void jobs_module_register( void );
+// void time_module_register( void );
+
+
+static void
+host_force_hot_reload( void )
+{
+    printf( "[host] force hot reload\n" );
+
+    /*
+        Later:
+            module_sys_reload_changed_modules();
+    */
+}
+
+static void
+host_force_recompile( void )
+{
+    printf( "[host] force recompile\n" );
+
+    /*
+        Later:
+            build_tool_compile_game_code();
+    */
+}
 
 /*============================================================================================*/
+/* test the module system by booting it, registering some static modules,
+   loading some dynamic ones, and running a main loop */
 
 void
 module_test( void )
 {
-    sys_tick_init(); 
+    sys_tick_init();
     sid_init();
 
     /* get static API pointers for the modules to use during init() */
 
-    core_api_t*     core     = core_get_api();
-    platform_api_t* platform = platform_get_api();
-    engine_api_t*   engine   = engine_get_api();
+    // core_api_t*     core     = core_get_api();
+    // platform_api_t* platform = platform_get_api();
+    // engine_api_t*   engine   = engine_get_api();
 
-    engine->print( "Module System Test\n" );
+    // engine->print( "Module System Test\n" );
 
-    /* ------------------------------------------------------------------ */
-    /* 1. Boot the module system                                          */
-    /* ------------------------------------------------------------------ */
+    /* ---- boot -------------------------------------------------------- */
 
-    module_system_init( core, engine );
+    module_system_init();
 
-    /* ------------------------------------------------------------------ */
-    /* 2. Register static modules (already live in the exe)               */
-    /*    Order matters here only for readability — the topo-sort handles */
-    /*    the actual initialization order.                                */
-    /* ------------------------------------------------------------------ */
+    /* ---- services (static, registered directly) ---------------------- */
 
-    core_module_register();
-    platform_module_register();
-    engine_module_register();
-    
-    /* ------------------------------------------------------------------ */
-    /* 3. Load dynamic modules (DLL copy → resolve exports → alloc state) */
-    /* ------------------------------------------------------------------ */
+    module_register_static( "core", core_get_module_api(), core_get_api() );
+    module_register_static( "platform_sys", platform_sys_get_module_api(), platform_sys_get_api() );
+    module_register_static( "engine", engine_get_module_api(), engine_get_api() );
 
-    if ( module_load( "render" ) == false )
+    // service_register( "platform_app", platform_app_get_module_api(), platform_app_get_api() );
+    // service_register( "input", input_get_module_api(), input_get_api() );
+    // service_register( "jobs", jobs_get_module_api(), jobs_get_api() );
+    // service_register( "time", time_get_module_api(), time_get_api() );
+
+    // platform_app_module_register(); /* window, gpu surface              */
+    // input_module_register();        /* action mapping on raw events      */
+    // jobs_module_register();         /* thread pool, fiber scheduler      */
+    // time_module_register();         /* frame dt, timers, fixed timestep  */
+
+    /* ---- systems (dynamic, hot-reloadable DLLs) ---------------------- */
+
+    // system_load( "renderer" );
+    // system_load( "audio" );
+    // system_load( "physics" );
+    // system_load( "animation" );
+    // system_load( "game_framework" );
+    // system_load( "my_game" );
+
+    if ( module_dynamic_load( "render" ) == false )
     {
-        core->log( "[main] fatal: %s", module_last_error() );
+        // core->log( "[main] fatal: %s", module_last_error() );
         goto shutdown;
     }
 
-    if ( module_load( "sample_game" ) == false )
-    {
-        core->log( "[main] fatal: %s", module_last_error() );
-        goto shutdown;
-    }
+    // if ( module_load( "game" ) == false )
+    // {
+    //     // core->log( "[main] fatal: %s", module_last_error() );
+    //     goto shutdown;
+    // }
+    //
+    // if ( module_load( "sample_game" ) == false )
+    // {
+    //     // core->log( "[main] fatal: %s", module_last_error() );
+    //     goto shutdown;
+    // }
 
-    /* ------------------------------------------------------------------ */
-    /* 4. Resolve dependencies, call every init() in order:               */
-    /*    core → engine → render → sample_game                            */
-    /* ------------------------------------------------------------------ */
+    /* ---- init all in dep order --------------------------------------- */
 
     if ( module_init_all() == false )
     {
-        core->log( "[main] fatal: %s\n", module_last_error() );
+        fprintf( stderr, "fatal: %s\n", module_last_error() );
         goto shutdown;
     }
 
     module_list_all();
 
-    /* ------------------------------------------------------------------ */
-    /* 5. Main loop                                                       */
-    /* ------------------------------------------------------------------ */
+    /* ---- game loop --------------------------------------------------- */
+
+    // engine_api_t* engine = module_get_api( "engine" );
+    platform_sys_api_t* platform_sys = module_get_api( "platform_sys" );
+
+    /* test constant API access across modules */
+    const render_api_t* r = module_get_api( "renderer" );
+    r->draw_frame( 0.5f );
+
+
+    /*
+    platform_app_api_t* platform = module_get_api( "platform_app" );
+    while ( !platform->should_quit() )
+    {
+        module_check_reloads();
+        module_system_tick( platform->frame_dt() );
+    }
+    */
+
+    /* ---- console input ----------------------------------------------- */
+
+    {
+        if ( !sys_console_input_init() )
+        {
+            printf( "[host] failed to initialize console input\n" );
+            return;
+        }
+        printf( "Bootstrap host running.\n" );
+        printf( "Keys:\n" );
+        printf( "  R = force hot reload\n" );
+        printf( "  C = force recompile\n" );
+        printf( "  Q = quit\n" );
+        printf( "  ESC = quit\n" );
+    }
+
+    /* ---- game loop --------------------------------------------------- */
 
     const float dt = 1.0f / 60.0f;
 
-    while ( engine->should_quit() == false )
+    // assert( engine );
+    assert( platform_sys );
+
+    bool running = true;
+    while ( 1 )
     {
-        // 1. Get delta time using your sys_tick functions
-        // f64 tick = sys_tick_seconds();
+        // engine->print( "Looping...\n" );
+        platform_sys->tick_sleep( 100 );
 
-        /* sleep to avoid busy-looping; adjust as needed for your timing method */
-        platform->tick_sleep( 16 );
-
-        // 2. Do work
-        engine->print( "Looping...\n" );
-
-        // sys_tick_sleep( 100 );
-
-        // 3. Logic to quit (Example)
         if ( 1 )
         {
             // engine_request_quit();
         }
 
+        sys_console_input_poll();
+
+        if ( sys_key_pressed( PLATFORM_KEY_R ) )
+        {
+            // hot_reload();
+        }
+
+        if ( sys_key_pressed( PLATFORM_KEY_C ) )
+        {
+            // recompile_code();
+        }
+
+        if ( sys_key_pressed( PLATFORM_KEY_Q ) )
+        {
+            running = false;
+        }
+
+
         module_check_reloads();   /* poll disk; reload any changed DLL   */
         module_system_tick( dt ); /* tick all INITIALIZED modules        */
     }
+
+    sys_console_input_shutdown();
 
     /* ------------------------------------------------------------------ */
     /* 6. Shutdown: exit in reverse dep order, unload DLLs, free state    */
@@ -134,10 +219,12 @@ module_test( void )
 shutdown:
 
     module_system_exit();
-    core_api_exit();
     sid_exit();
     sys_tick_exit();
 }
+
+/*============================================================================================*/
+/* test entry point */
 
 static void
 test( int argc, char** argv )
@@ -178,6 +265,7 @@ test( int argc, char** argv )
 }
 
 /*============================================================================================*/
+/* main entry point */
 
 int
 main( int argc, char** argv )
@@ -197,7 +285,7 @@ main( int argc, char** argv )
 
     // const char* mod_name = "sample_game";
     // char        path[ 256 ];
-    // 
+    //
     // snprintf( path, sizeof( path ), "%s%s%s%s", module_get_base_path(), LIB_PREFIX, mod_name, LIB_EXT );
 
     /**************************************************************/

@@ -12,36 +12,45 @@
 
 ==============================================================================================*/
 
+#include "core/core.h"
 #include "core/core_api.h"
-#include "module_api.h"
-#include "module_sys.h"
+#include "module/module_api.h"
 
-/* Forward: called by the module system with (state, core, engine).
-   Core has no dependencies and no persistent state, so these are no-ops. */
+/*============================================================================================*/
 
 static bool
 core_mod_init( void* state, module_sys_api_t* sys )
 {
     /* Core has no deps and no state — nothing to do. */
-    ( void )state;
-    ( void )sys;
+    UNUSED( state );
+    UNUSED( sys );
+
     return true;
 }
 
-static module_api_t g_core_module_api = {
-    .version    = 1,
-    .state_size = 0,
-    .dep_count  = 0,
-
-    .init       = core_mod_init,
-    .tick       = NULL,
-    .exit       = NULL,
-    .on_reload  = NULL,
-};
-
-void
-core_module_register( void )
+static bool
+core_mod_exit( void* state )
 {
-    /* exported_api is the live core_api_t* — what callers actually want. */
-    module_register_static( "core", &g_core_module_api, core_get_api() );
+    UNUSED( state );
+    return true;
 }
+
+/* core_module.c */
+module_api_t*
+core_get_module_api( void )
+{
+    static module_api_t module_api = {
+        .version    = 1,
+        .state_size = 0,
+        .dep_count  = 0,
+
+        .init       = core_mod_init,
+        .tick       = NULL,
+        .exit       = core_mod_exit,
+        .on_reload  = NULL,
+    };
+
+    return &module_api;
+}
+
+/*============================================================================================*/

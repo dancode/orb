@@ -8,32 +8,12 @@
 #include "orb.h"
 #include "render.h"
 
-#include "core/module_get_api.h"    /* module_sys_api_t                  */
-#include "core/module/module_api.h" /* module_api_t, mod_init_fn, etc.  */
-#include "core/core_api.h"          /* core_api_t                        */
-#include "engine_api.h"             /* engine_api_t                      */
+#include "module/module_sys_api.h" /* module_sys_api_t                  */
+#include "module/module_api.h"     /* module_api_t, mod_init_fn, etc.  */
+#include "core/core_api.h"         /* core_api_t                        */
+#include "engine_api.h"            /* engine_api_t                      */
 
 /*============================================================================================*/
-
-static int
-render_get_framecount( void )
-{
-    /* In a real module this would reach into the state via a module-level pointer.
-       Keeping it simple for the example. */
-    return 0;
-}
-
-void
-render_print( const char* msg )
-{
-    printf( msg );
-}
-
-float
-render_add( float a, float b )
-{
-    return a + b;
-}
 
 #define STATE_SENTINEL 0xC0FFEE /* written on first init; lets us detect reloads */
 
@@ -145,11 +125,52 @@ static module_api_t g_module_api = {
     Render API
 ==============================================================================================*/
 
-static render_api_t g_render_api = {
-    .get_framecount = render_get_framecount,
-    .render_print   = render_print,
-    .add            = render_add,
+// static int
+// render_get_framecount( void )
+// {
+//     /* In a real module this would reach into the state via a module-level pointer.
+//        Keeping it simple for the example. */
+//     return 0;
+// }
+// 
+// void
+// render_print( const char* msg )
+// {
+//     printf( msg );
+// }
+// 
+// float
+// render_add( float a, float b )
+// {
+//     return a + b;
+// }
+
+/*==============================================================================================
+    Implementation — shared by both build modes
+==============================================================================================*/
+
+static void
+render_impl_draw_frame( float dt )
+{
+    printf( "drawing frame with time: %f\n", dt  );
+}
+
+static void
+render_impl_set_clear_color( float r, float g, float b )
+{ 
+    printf( "set clear color\n" );
+}
+
+static const render_api_t g_render_api = {
+    .draw_frame      = render_impl_draw_frame,
+    .set_clear_color = render_impl_set_clear_color,
 };
+
+const render_api_t*
+get_render_api( void )
+{
+    return &g_render_api;
+}
 
 /*==============================================================================================
     Required DLL exports (C linkage)
@@ -161,10 +182,26 @@ get_module_api( void )
     return &g_module_api;
 }
 
-API_EXPORT void*
+API_EXPORT const void*
 get_api( void )
 {
     return &g_render_api;
 }
+
+/* game code */
+// const renderer_api_t* r = sys->get_api( "renderer" );
+// r->draw_frame( dt );
+
+/*==============================================================================================
+    Static build — compile-time const table
+    The compiler sees concrete function addresses.
+    LTO can inline across the pointer call if it chooses to.
+==============================================================================================*/
+
+// static render_api_t g_render_api = {
+//     .get_framecount = render_get_framecount,
+//     .render_print   = render_print,
+//     .add            = render_add,
+// };
 
 /*============================================================================================*/

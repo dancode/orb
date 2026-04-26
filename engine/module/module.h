@@ -10,7 +10,7 @@
     ---------
         module_system_init()          boot; no modules loaded yet
         module_register_static()      register a compile-time linked module (no DLL)
-        module_load()                 shadow-copy DLL → resolve API → alloc state
+        module_dynamic_load()         shadow-copy DLL → resolve API → alloc state
         module_init_all()             topo-sort deps → call each module's init()
         module_system_tick()          tick all INITIALIZED modules in dep order
         module_check_reloads()        poll file timestamps → reload changed DLLs
@@ -46,15 +46,12 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "module_api.h"
-#include "core/core_api.h"
-#include "engine_api.h"
 
 /*==============================================================================================
     Module Registry Entry
 ==============================================================================================*/
 
-typedef struct module_api_t module_api_t;
+typedef struct module_api_s module_api_t;
 
 typedef enum module_status_t
 {
@@ -67,15 +64,17 @@ typedef enum module_status_t
 
 // Note: sid_t is 32 but unsigned interned string id type (a string offset).
 
+#define MODULE_NAME_MAX 16
+
 typedef struct module_info_s
 {
-    sid_t           name;      // module name
-    module_status_t status;    // current status of the module
+    char            name[ MODULE_NAME_MAX ];    // module name
+    module_status_t status;                     // current status of the module
 
     bool            is_static;       // true → no DLL, no shadow copies
     uint32_t        shadow_count;    // fresh file name generator count to avoid file locking.
 
-    lib_handle_t    dll;           // handle to the loaded shadow copy
+    void*           dll;           // handle to the loaded shadow copy
     uint64_t        last_write;    // file-time at last successful load (for change detection)
 
     module_api_t*   module_api;      // lifecycle api: init/tick/exit/on_reload (called by module system)
@@ -91,9 +90,8 @@ typedef struct module_info_s
     System lifetime
 ==============================================================================================*/
 
-/* Boot the module system. No modules are loaded or initialized yet.
-   Note: "core" / "engine" are only used internally for logging and allocation. */
-void module_system_init( core_api_t* core, engine_api_t* engine );
+/* Boot the module system. No modules are loaded or initialized yet. */
+void module_system_init();
 
 /* Exit and unload every module in reverse dependency order, then clean up. */
 void module_system_exit( void );
@@ -110,7 +108,7 @@ bool module_register_static( const char* name, module_api_t* module_api, void* e
 /* Load a DLL by base name (e.g. "render" → "<exe_dir>\render.dll").
    Creates a shadow copy, loads it, resolves both exports, allocates state.
    Does NOT call init() — call module_init_all() once all modules are loaded. */
-bool module_load( const char* name );
+bool module_dynamic_load( const char* name );
 
 /* Call exit(), unload the DLL, free state, delete the shadow file. */
 bool module_unload( const char* name );

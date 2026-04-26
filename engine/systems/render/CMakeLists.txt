@@ -2,15 +2,11 @@
 # Engine : Render Library
 # ==========================================================
 
-# Collect all .c/.h/.natvis etc for IDE visibility
 file(GLOB_RECURSE ALL_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.natvis"
 )
-
-# Select which .c files should ACTUALLY compile
-# Everything else is HEADER_FILE_ONLY and treated as "unity fragments"
 set(COMPILED_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/render.c"
 )
@@ -19,32 +15,48 @@ set(COMPILED_SOURCES
 # Unity Module
 # ----------------------------------------------------------
 
-# Compute list of all other .c files (excluding compiled sources)
 set(HEADER_SOURCES ${ALL_FILES})
 list(REMOVE_ITEM HEADER_SOURCES ${COMPILED_SOURCES})
-
-# Mark all other .c files as header-only (not compiled)
-# Explicitly allow compiled files to compile normally
 set_source_files_properties( ${HEADER_SOURCES} PROPERTIES HEADER_FILE_ONLY ON )
 set_source_files_properties( ${COMPILED_SOURCES} PROPERTIES HEADER_FILE_ONLY OFF )
 
 # ----------------------------------------------------------
-# Build target
+# Build target is based on the ENGINE_MONOLITHIC flag
 # ----------------------------------------------------------
 
-add_library(render SHARED
+if(ENGINE_MONOLITHIC)
+    set(MODULE_TYPE STATIC)
+else()
+    set(MODULE_TYPE SHARED)
+endif()
+
+add_library(render ${MODULE_TYPE}
     ${ALL_FILES}          # everything shows in IDE
     ${COMPILED_SOURCES}   # these actually compile
 )
 
-set_target_properties(render PROPERTIES FOLDER "Engine/Systems")
+# 3. EXPORT THE #DEFINE TO C CODE
+if(ENGINE_MONOLITHIC)
+    # PUBLIC ensures both this DLL and anything linking to it (the engine) 
+    # gets the MODULE_LINK_STATIC definition in their C code.
+    target_compile_definitions(render PUBLIC MODULE_LINK_STATIC)
+endif()
+
+set_target_properties(render PROPERTIES FOLDER "Engine/System")
 set_target_properties(render PROPERTIES LINKER_LANGUAGE C )
 
+# ----------------------------------------------------------
 # Mirror physical directory structure inside Visual Studio
+# ----------------------------------------------------------
+
 source_group(
     TREE ${CMAKE_CURRENT_SOURCE_DIR}
     FILES ${ALL_FILES}
 )
+
+# ----------------------------------------------------------
+# Searched include directories at base directory
+# ----------------------------------------------------------
 
 target_include_directories(render PUBLIC
     ${CMAKE_SOURCE_DIR}/engine

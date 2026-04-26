@@ -17,7 +17,7 @@
 
 ==============================================================================================*/
 
-#include "core/module_get_api.h"
+#include "module/module_sys_api.h"
 
 /*==============================================================================================
     Module lifecycle callbacks
@@ -45,7 +45,7 @@ typedef void ( *mod_on_reload_fn )( void* state, module_sys_api_t* sys );
     module_api_t : struct every module must provide via get_module_api()
 ==============================================================================================*/
 
-typedef struct module_api_t
+typedef struct module_api_s
 {
     int32_t          version;                 /* bump when ABI changes */
     int32_t          state_size;              /* bytes to allocate for persistent state; 0 = stateless */
@@ -66,7 +66,7 @@ typedef struct module_api_t
 /* Lifecycle struct — system calls this once at load time. */
 typedef module_api_t* ( *get_module_api_fn )( void );
 
-/* Typed API struct — returned to callers via module_get_api_t::get_api(). */
+/* Typed API struct — returned to callers via module_sys_api_t::get_api(). */
 typedef void* ( *get_api_fn )( void );
 
 /*============================================================================================*/

@@ -1,5 +1,5 @@
 # ==========================================================
-# Engine : Platform Library
+# Engine : Module Library
 # ==========================================================
 
 # Collect all .c/.h/.natvis etc for IDE visibility
@@ -12,7 +12,7 @@ file(GLOB_RECURSE ALL_FILES
 # Select which .c files should ACTUALLY compile
 # Everything else is HEADER_FILE_ONLY and treated as "unity fragments"
 set(COMPILED_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/platform.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/module.c"
 )
 
 # ----------------------------------------------------------
@@ -32,13 +32,15 @@ set_source_files_properties( ${COMPILED_SOURCES} PROPERTIES HEADER_FILE_ONLY OFF
 # Build target
 # ----------------------------------------------------------
 
-add_library(platform STATIC
+add_library(module STATIC
     ${ALL_FILES}          # everything shows in IDE
     ${COMPILED_SOURCES}   # these actually compile
 )
 
-set_target_properties(platform PROPERTIES FOLDER "Engine")
-set_target_properties(platform PROPERTIES LINKER_LANGUAGE C )
+target_link_libraries(module PUBLIC platform_sys)
+
+set_target_properties(module PROPERTIES FOLDER "Engine/Static")
+set_target_properties(module PROPERTIES LINKER_LANGUAGE C )
 
 # Mirror physical directory structure inside Visual Studio
 source_group(
@@ -46,6 +48,7 @@ source_group(
     FILES ${ALL_FILES}
 )
 
-target_include_directories(platform PUBLIC
+target_include_directories(module PUBLIC
     ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
