@@ -55,6 +55,8 @@ dkms.conf
 *.dwo
 
 # CMake build directories
+[Bb]uild_[Dd]ymamic/
+[Bb]uild_[Mm]onolithic/
 [Bb]uild/
 [Bb]in/
 [Oo]ut/
