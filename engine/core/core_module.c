@@ -18,39 +18,39 @@
 
 /*============================================================================================*/
 
-static bool
-core_mod_init( void* state, module_sys_api_t* sys )
-{
-    /* Core has no deps and no state — nothing to do. */
-    UNUSED( state );
-    UNUSED( sys );
-
-    return true;
-}
-
-static bool
-core_mod_exit( void* state )
-{
-    UNUSED( state );
-    return true;
-}
-
-/* core_module.c */
-module_api_t*
-core_get_module_api( void )
-{
-    static module_api_t module_api = {
-        .version    = 1,
-        .state_size = 0,
-        .dep_count  = 0,
-
-        .init       = core_mod_init,
-        .tick       = NULL,
-        .exit       = core_mod_exit,
-        .on_reload  = NULL,
-    };
-
-    return &module_api;
-}
+//static bool
+//core_mod_init( void* state, module_sys_api_t* sys )
+//{
+//    /* Core has no deps and no state — nothing to do. */
+//    UNUSED( state );
+//    UNUSED( sys );
+//
+//    return true;
+//}
+//
+//static bool
+//core_mod_exit( void* state )
+//{
+//    UNUSED( state );
+//    return true;
+//}
+//
+///* core_module.c */
+//module_api_t*
+//core_get_module_api( void )
+//{
+//    static module_api_t module_api = {
+//        .version    = 1,
+//        .state_size = 0,
+//        .dep_count  = 0,
+//
+//        .init       = core_mod_init,
+//        .tick       = NULL,
+//        .exit       = core_mod_exit,
+//        .on_reload  = NULL,
+//    };
+//
+//    return &module_api;
+//}
 
 /*============================================================================================*/

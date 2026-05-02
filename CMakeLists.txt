@@ -2,6 +2,25 @@ cmake_minimum_required(VERSION 3.12)
 project(hybrid LANGUAGES C)
 
 # ==========================================================
+# BUILD MODE TOGGLE
+# ==========================================================
+
+# This determines if modules like 'render' are built as DLLs or static libs
+option(ENGINE_MONOLITHIC "Build as a single static executable" OFF)
+
+if(ENGINE_MONOLITHIC)
+    # This makes -DMODULE_LINK_STATIC visible to EVERY target in the project
+    add_compile_definitions(MODULE_LINK_STATIC)
+    message(STATUS "Global Flag: MODULE_LINK_STATIC is active.")
+endif()
+
+if(ENGINE_MONOLITHIC)
+    message(STATUS "Build Mode: Monolithic (Statically Linked)")
+else()
+    message(STATUS "Build Mode: Dynamic (Hot-Reload Enabled)")
+endif()
+
+# ==========================================================
 # LANGUAGE STANDARD
 # ==========================================================
 
@@ -53,9 +72,10 @@ if (CMAKE_C_COMPILER_ID MATCHES "Clang")
         add_compile_options(/W4 /WX /wd4100 /wd4189)
         add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
-        # Apply Clang-specific suppressions (still use -W for these)
-        add_compile_options(-Wno-unused-function -Wno-unused-variable)
-    
+		# Release-only suppressions for Clang-CL
+        add_compile_options("$<$<CONFIG:Release>:/wd4101;/wd4189;/wd4100>")
+        add_compile_options("$<$<CONFIG:Release>:-Wno-unused-variable;-Wno-unused-parameter>")
+		   
     else()
         message(STATUS "Compiler: Pure Clang (Unix/macOS)")
         
@@ -65,12 +85,19 @@ if (CMAKE_C_COMPILER_ID MATCHES "Clang")
 
 # Check if using native MSVC (Not Clang)
 elseif (MSVC)
+
     message(STATUS "Compiler: Native MSVC")
     
     # Apply standard MSVC flags
     add_compile_options(/W4 /WX /wd4100 /wd4189)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
+	# Disable unreferenced variable warnings ONLY in Release
+    # C4101: unreferenced local variable
+    # C4189: local variable is initialized but not referenced
+    # C4100: unreferenced formal parameter
+    add_compile_options("$<$<CONFIG:Release>:/wd4101;/wd4189;/wd4100>")
+	
 else()
     # Catch-all for GCC, etc.
     message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}")
@@ -79,28 +106,44 @@ else()
 
 endif()
 
+
+# ==========================================================
+# Debug Info for Release Builds
+# ==========================================================
+
+if (MSVC OR CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    # 1. Tell the Compiler to generate debug information
+    # /Zi: Produces a PDB file. /Z7: Embeds debug info in .obj (alternative)
+    add_compile_options("$<$<CONFIG:Release>:/Zi>")
+
+    # 2. Tell the Linker to create the PDB file
+    # /DEBUG: Generates the actual .pdb
+    # /OPT:REF and /OPT:ICF: Ensure optimizations (stripping unused code) stay ON
+    add_link_options("$<$<CONFIG:Release>:/DEBUG;/OPT:REF;/OPT:ICF>")
+    
+    message(STATUS "Release configuration: PDB generation enabled.")
+else()
+    # For Pure Clang or GCC
+    add_compile_options("$<$<CONFIG:Release>:-g>")
+endif()
+
+
 # ==========================================================
 # Create our main executable (engine.exe)
 # ==========================================================
 
-# Engine
+# Engine (Contains the 'engine' executable and 'render' library)
 add_subdirectory(engine)
-
-# Game framework
-# add_subdirectory(game)
 
 # Editor
 # add_subdirectory(editor)
 
-# Game Framework
-add_subdirectory(game)
-
 # Tools
-add_subdirectory(tools/build_tool)
-add_subdirectory(tools/asset_tool)
+# add_subdirectory(tools/build_tool)
+# add_subdirectory(tools/asset_tool)
 
 # Game Projects
-add_subdirectory(projects/sample_game)
+# add_subdirectory(projects/sample_game)
 
 # ==========================================================
 # Set default startup project

@@ -1,0 +1,4 @@
+﻿  Building Custom Rule F:/C/hybrid/engine/runtime/modules/example/CMakeLists.txt
+  example.c
+     Creating library F:/C/hybrid/build_dynamic/engine/runtime/modules/example/Debug/example.lib and object F:/C/hybrid/build_dynamic/engine/runtime/modules/example/Debug/example.exp
+  example.vcxproj -> F:\C\hybrid\build_dynamic\bin\Debug\example.dll

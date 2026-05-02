@@ -13,9 +13,9 @@
     Shadow-copy strategy
     --------------------
     The original DLL is never loaded directly — the build tool would lock it and
-    prevent recompilation.  Instead we copy it to a uniquely named shadow file and
-    load that.  The counter increments on each reload so there is never a name
-    collision with the still-loaded previous copy.
+    prevent recompilation.  Wwe copy it to a uniquely named shadow file and load that.
+    The counter increments on each reload so there is never a name collision with
+    the still-loaded previous copy.
 
         Original : <exe_dir>\render.dll
         Shadow 0 : <exe_dir>\render.tmp_0.dll
@@ -26,7 +26,9 @@
     The system allocates `state` from the core allocator using module_api_t::state_size.
     The pointer is passed into every init/tick/exit/on_reload call and is NEVER freed
     across a hot-reload, so modules keep their runtime data through code changes.
+
     On first load the block is zeroed; on reload it arrives with its previous values.
+    If state_size grows across a reload, the new tail bytes are zeroed; the block never shrinks.
 
     File watching
     -------------
@@ -35,49 +37,53 @@
     writing — the module is flagged on the first notification and reloaded only
     after DEBOUNCE_MS milliseconds have elapsed with no further notifications.
 
-    Example usage (remove in production)
-
-    module system
-
-    Startup sequence:
-        1. module_system_init()       — boot (no modules yet)
-        2. module_register_static()   — core + engine (already running in the exe)
-        3. module_dynamic_load()      — dynamic DLLs
-        4. module_init_all()          — topo-sort deps → call every init()
-        5. main loop                  — tick + hot-reload polling
-        6. module_system_exit()       — reverse-order exit + DLL unload + shadow cleanup
-
-     Depends on platform_sys (dll load, file watch, clock)
+    Debounce
+    ---------
+    module_check_reloads() flags a changed module into g_pending on first detection. Only
+    after DEBOUNCE_MS milliseconds with no further timestamp change does it call module_reload().
+    This prevents reloading while the linker is still writing the DLL.
 
 ==============================================================================================*/
 
 #include <stdio.h>     // snprintf
 #include <stdlib.h>    // malloc, free
 #include <stdarg.h>    // va_list, va_start, etc.
+#include <string.h>    // strcmp, etc.
 #include <assert.h>    // assert
-#include <string.h>
 
 #include "orb.h"
-#include "base/base.h" /* types, arena, str — zero deps  */
-#include "platform_sys/platform_sys.h"
-
+#include "base/base.h"
+#include "sys/sys.h"
 #include "core/core_api.h"
 
 #include "module_api.h"
 #include "module.h"
 
 /*==============================================================================================
-    Platform layer
+    Constants
 ==============================================================================================*/
 
+#define MODULE_NAME_MAX 32  /* max module name length including null terminator */
+#define MAX_MODULES     16  /* max concurrently registered modules */
+#define MAX_PENDING     16  /* max modules awaiting debounced reload */
+#define DEBOUNCE_MS     200 /* milliseconds to wait after last file change before reloading */
+
+#ifdef _WIN32
+#    define PATH_SEP '\\'
+#else
+#    define PATH_SEP '/'
+#endif
+
+#ifndef MAX_PATH
+#    define MAX_PATH 260
+#endif
 #define MAX_PATH 260
 
 /*==============================================================================================
-    Bootstrap implementations: Used only from module_system_init() until core's init() runs.
-    After that g_fn.log / g_fn.alloc / g_fn.free point at core's real versions.
+    Bootstrap log / alloc / free
+    These are used from startup until core's init() runs and promotes the real implementations.
 ==============================================================================================*/
 
-/* internal allocation — module_sys.c only */
 static void
 ms_log( const char* fmt, ... )
 {
@@ -103,44 +109,59 @@ ms_free( void* ptr )
 /*==============================================================================================
     Internal state
 ==============================================================================================*/
+// clang-format off
 
-#define MAX_MODULES 16
+typedef struct module_info_s
+{
+    char                name[ MODULE_NAME_MAX ];
+    module_status_t     status;
 
-static module_info_t    g_modules[ MAX_MODULES ];
-static int32_t          g_module_count = 0;
+    bool                is_static;                  /* true → no DLL, no shadow copies */
+    uint32_t            shadow_count;               /* shadow file name counter for this slot */
 
-static int32_t          g_init_order[ MAX_MODULES ];
-static int32_t          g_init_count        = 0;
+    void*               dll;                        /* handle to the loaded shadow copy */
+    uint64_t            last_write;                 /* file timestamp at last successful load */
 
-static char             g_root[ MAX_PATH ]  = { 0 };
-static char             g_last_error[ 256 ] = { 0 };
+    module_api_t*       module_api;                 /* lifecycle: init / tick / exit / on_reload */
 
-static uint32_t         g_shadow_counter    = 0; /* global incremented per shadow copy created */
+    void*               state;                      /* persistent state block; system-owned */
+    int32_t             state_size;                 /* size of the current allocation */
+    int32_t             version;                    /* increments on each hot-reload */
 
-static module_sys_api_t g_sys_api;
+} module_info_t;
 
-/* Passed into every init() / on_reload() call so DLLs can resolve APIs
-   without linking against the exe. Defined after module_get_api(). */
-
-#define DEBOUNCE_MS 150
-#define MAX_PENDING 16
-
-/* Debounce table for hot-reload */
 typedef struct
 {
-    char     name[ MODULE_NAME_MAX ];
-    uint64_t flagged_at_ms;
-
-    /* time of first notification; if current time - flagged_at_ms > DEBOUNCE_MS,
-       we reload and clear the flag */
+    char                name[ MODULE_NAME_MAX ];
+    uint64_t            flagged_at_ms;              /* time (ms) when the change was first detected */
+    uint64_t            last_seen_write;            /* file timestamp at flag time; reset if it changes again */
 
 } pending_reload_t;
+
+/*==============================================================================================
+    Global state
+==============================================================================================*/
+
+static module_info_t     g_modules[ MAX_MODULES ];
+static int32_t           g_module_count = 0;
+
+static int32_t           g_init_order[ MAX_MODULES ];
+static int32_t           g_init_count = 0;
+
+static char              g_root[ MAX_PATH ] = { 0 };
+static char              g_last_error[ 256 ] = { 0 };
+
+static uint32_t          g_shadow_counter = 0;      /* global incremented per shadow copy created */
+
+static get_api_fn        g_api_func;                /* passed into every init() / on_reload() */
 
 static pending_reload_t g_pending[ MAX_PENDING ];
 static int32_t          g_pending_count = 0;
 
+// clang-format on
+
 /*==============================================================================================
-    Error reporting (uses g_fn.log so it works in both bootstrap and promoted state)
+    Error reporting
 ==============================================================================================*/
 
 static void
@@ -150,7 +171,6 @@ set_error( const char* fmt, ... )
     va_start( args, fmt );
     vsnprintf( g_last_error, sizeof( g_last_error ), fmt, args );
     va_end( args );
-
     ms_log( "[module] ERROR: %s", g_last_error );
 }
 
@@ -168,14 +188,14 @@ static void
 path_dll( const char* name, char* out, size_t size )
 {
     /* "<root>\<name>.dll" */
-    snprintf( out, size, "%s\\%s.dll", g_root, name );
+    snprintf( out, size, "%s%c%s.dll", g_root, PATH_SEP, name );
 }
 
 static void
 path_shadow( const char* name, uint32_t counter, char* out, size_t size )
 {
     /* "<root>\<name>.tmp_<counter>.dll" */
-    snprintf( out, size, "%s\\%s.tmp_%u.dll", g_root, name, counter );
+    snprintf( out, size, "%s%c%s.tmp_%u.dll", g_root, PATH_SEP, name, counter );
 }
 
 /*==============================================================================================
@@ -185,12 +205,11 @@ path_shadow( const char* name, uint32_t counter, char* out, size_t size )
 static int
 slot_find( const char* name )
 {
-    /* find id of module if registered */
+    /* find id of module if previously registered */
     for ( int i = 0; i < MAX_MODULES; ++i )
     {
-        bool is_empty = g_modules[ i ].status == MODULE_STATUS_EMPTY;
-        bool is_equal = strcmp( g_modules[ i ].name, name ) == 0;
-        if ( is_empty == false && is_equal == true )
+        if ( g_modules[ i ].status != MODULE_STATUS_EMPTY &&
+             strncmp( g_modules[ i ].name, name, MODULE_NAME_MAX ) == 0 )
             return i;
     }
     return -1; /* not found */
@@ -225,14 +244,14 @@ slot_free( int slot )
     Shadow-copy helpers
 ==============================================================================================*/
 
-/* Copy <name>.dll → <name>.tmp_<counter>.dll.  Returns true on success. */
 static bool
 shadow_copy( const char* name, uint32_t counter )
 {
+    /* Copy <name>.dll > <name>.tmp_<counter>.dll.  Returns true on success. */
+
     char src[ MAX_PATH ], dst[ MAX_PATH ];
     path_dll( name, src, sizeof( src ) );
     path_shadow( name, counter, dst, sizeof( dst ) );
-
     if ( platform_copy_file( src, dst ) == false )
     {
         set_error( "copy failed: %s > %s", src, dst );
@@ -263,21 +282,20 @@ state_ensure( module_info_t* m )
     int32_t required = m->module_api->state_size;
     if ( required <= 0 )
     {
-        /* stateless module — nothing to do */
-        return true;
+        return true; /* stateless module — nothing to do */
     }
 
     if ( m->state == NULL )
     {
         /* first load — allocate and zero */
-        m->state      = ms_alloc( ( size_t )required );
-        m->state_size = required;
+        m->state = ms_alloc( ( size_t )required );
         if ( !m->state )
         {
             set_error( "'%s': state alloc failed (%d bytes)", m->name, required );
             return false;
         }
         memset( m->state, 0, ( size_t )required );
+        m->state_size = required;
     }
     else if ( required > m->state_size )
     {
@@ -308,14 +326,14 @@ slot_load_dll( module_info_t* m )
 {
     /* Load the DLL for slot, resolve API.  State must already be allocated (or NULL). */
 
-    const char* name = m->name;
-
     /* --- shadow copy --- */
+
     m->shadow_count = g_shadow_counter++;
-    if ( !shadow_copy( name, m->shadow_count ) )
+    if ( !shadow_copy( m->name, m->shadow_count ) )
         return false;
 
-    /* --- load shadow --- */
+    /* --- load shadow DLL --- */
+
     char shadow[ MAX_PATH ];
     path_shadow( m->name, m->shadow_count, shadow, sizeof( shadow ) );
 
@@ -327,49 +345,44 @@ slot_load_dll( module_info_t* m )
         return false;
     }
 
-    /* --- resolve lifecycle struct --- */
+    /* --- resolve module lifecycle struct --- */
+
     get_module_api_fn get_module_api = ( get_module_api_fn )library_get_symbol( m->dll, "get_module_api" );
-    if ( !get_module_api )
+    if ( get_module_api == NULL )
     {
-        set_error( "'%s' is missing 'get_module_api' export", name );
+        set_error( "'%s' is missing 'get_module_api' export", m->name );
         goto fail;
     }
     m->module_api = get_module_api();
-    if ( !m->module_api )
+    if ( m->module_api == NULL )
     {
-        set_error( "'%s' get_module_api() returned NULL", name );
+        set_error( "'%s' get_module_api() returned NULL", m->name );
         goto fail;
     }
-
-    /* --- resolve typed API struct --- */
-    get_api_fn get_api = ( get_api_fn )library_get_symbol( m->dll, "get_api" );
-    if ( !get_api )
+    if ( m->module_api->func_api == NULL )
     {
-        set_error( "'%s' is missing 'get_api' export", name );
-        goto fail;
-    }
-    m->exported_api = get_api();
-    if ( !m->exported_api )
-    {
-        set_error( "'%s' get_api() returned NULL", name );
+        set_error( "'%s': module_api_t::func_api is NULL", m->name );
         goto fail;
     }
 
     /* --- record file-time for hot-reload detection --- */
+
     char dll_path[ MAX_PATH ];
-    path_dll( name, dll_path, sizeof( dll_path ) );
+    path_dll( m->name, dll_path, sizeof( dll_path ) );
     m->last_write = platform_file_time( dll_path );
 
-    return true;
+    return true; /* success */
 
 fail:
 
     /* -- cleanup on failure --- */
+
     library_unload( m->dll );
     m->dll        = NULL;
     m->module_api = NULL;
-    shadow_delete( name, m->shadow_count );
-    return false;
+    shadow_delete( m->name, m->shadow_count );
+
+    return false; /* failure */
 }
 
 static void
@@ -383,9 +396,8 @@ slot_unload_dll( module_info_t* m )
     library_unload( m->dll );
     shadow_delete( m->name, m->shadow_count );
 
-    m->dll          = NULL;
-    m->module_api   = NULL;
-    m->exported_api = NULL;
+    m->dll        = NULL;
+    m->module_api = NULL;
 }
 
 /*==============================================================================================
@@ -398,9 +410,9 @@ static bool
 call_init( module_info_t* m )
 {
     if ( !m->module_api || !m->module_api->init )
-        return true;
+        return true; /* no init callback — fine */
 
-    return m->module_api->init( m->state, &g_sys_api );
+    return m->module_api->init( m->state, g_api_func );
 }
 
 static void
@@ -421,20 +433,37 @@ call_exit( module_info_t* m )
     m->module_api->exit( m->state );
 }
 
-static void
-call_on_reload( module_info_t* m )
-{
-    if ( !m->module_api || !m->module_api->on_reload )
-        return;
+/* call_reload: if the module provides on_reload, call that; otherwise fall back to init().
+   State is NEVER zeroed here — it arrives with its last values intact either way.
+   This is the key semantic: init() = first-time setup, on_reload() = pointer re-cache. */
 
-    m->module_api->on_reload( m->state, &g_sys_api );
+static bool
+call_reload( module_info_t* m )
+{
+    if ( !m->module_api )
+        return true;
+
+    if ( m->module_api->on_reload )
+    {
+        m->module_api->on_reload( m->state, g_api_func );
+        return true;
+    }
+
+    /* Fallback: re-run init() with preserved (non-zeroed) state.
+       Module's init() must tolerate being called with live state. */
+
+    if ( m->module_api->init )
+    {
+        return m->module_api->init( m->state, g_api_func );
+    }
+    return true;
 }
 
 /*==============================================================================================
     Public: API accessor
 ==============================================================================================*/
 
-void*
+const void*
 module_get_api( const char* name )
 {
     /* Returns the typed API pointer exported by the module, or NULL if not found or not initialized.
@@ -442,18 +471,64 @@ module_get_api( const char* name )
 
     int slot = slot_find( name );
     if ( slot < 0 )
+    {
+        ms_log( "[module] get_api(\"%s\"): module not registered", name );
         return NULL;
+    }
 
     module_info_t* m = &g_modules[ slot ];
     if ( m->status != MODULE_STATUS_INITIALIZED )
+    {
+        ms_log( "[module] get_api(\"%s\"): module exists but is not yet initialized (status %d)", name, m->status );
         return NULL;
+    }
 
-    return m->exported_api;
+    return m->module_api->func_api;
 }
 
 /*==============================================================================================
-    Public: load / register / unload / reload
+    Public: load / unload / reload
 ==============================================================================================*/
+
+bool
+module_static_load( const char* name, module_api_t* module_api )
+{
+    /* Register a statically-linked module (no DLL). */
+
+    assert( module_api != NULL );
+    assert( module_api->func_api != NULL && "'func_api' must not be NULL in a static module" );
+
+    if ( slot_find( name ) >= 0 )
+    {
+        ms_log( "[module] static '%s' already registered.\n", name );
+        return true;
+    }
+
+    int slot = slot_alloc();
+    if ( slot < 0 )
+    {
+        set_error( "no free module slots" );
+        return false;
+    }
+
+    module_info_t* m = &g_modules[ slot ];
+    memset( m, 0, sizeof( *m ) );
+    strncpy( m->name, name, MODULE_NAME_MAX - 1 );
+    m->name[ MODULE_NAME_MAX - 1 ] = '\0';
+    m->is_static                   = true;
+    m->module_api                  = module_api;
+    m->status                      = MODULE_STATUS_LOADED;
+
+    if ( state_ensure( m ) == false )
+    {
+        slot_free( slot );
+        return false;
+    }
+
+    ms_log( "[module] registered static '%s' (api_v%d, state %d B)", name, module_api->version,
+            module_api->state_size );
+    return true;
+}
 
 bool
 module_dynamic_load( const char* name )
@@ -476,7 +551,6 @@ module_dynamic_load( const char* name )
 
     module_info_t* m = &g_modules[ slot ];
     memset( m, 0, sizeof( *m ) );
-
     strncpy( m->name, name, MODULE_NAME_MAX - 1 );
     m->name[ MODULE_NAME_MAX - 1 ] = '\0';
     m->status                      = MODULE_STATUS_ERROR; /* provisional until success */
@@ -486,7 +560,6 @@ module_dynamic_load( const char* name )
         slot_free( slot );
         return false;
     }
-
     if ( state_ensure( m ) == false )
     {
         slot_unload_dll( m );
@@ -497,47 +570,6 @@ module_dynamic_load( const char* name )
     m->status  = MODULE_STATUS_LOADED;
     m->version = 0;
     ms_log( "[module] loaded '%s' (api v%d, state %d B)", name, m->module_api->version, m->module_api->state_size );
-    return true;
-}
-
-bool
-module_register_static( const char* name, module_api_t* module_api, void* exported_api )
-{
-    /* Register a statically-linked module (no DLL). Must be called before module_init_all(). */
-
-    assert( module_api != NULL );
-    assert( exported_api != NULL );
-
-    if ( slot_find( name ) >= 0 )
-    {
-        ms_log( "[module] static '%s' already registered.\n", name );
-        return true;
-    }
-
-    int slot = slot_alloc();
-    if ( slot < 0 )
-    {
-        set_error( "no free module slots" );
-        return false;
-    }
-
-    module_info_t* m = &g_modules[ slot ];
-    memset( m, 0, sizeof( *m ) );
-    strncpy( m->name, name, MODULE_NAME_MAX - 1 );
-    m->name[ MODULE_NAME_MAX - 1 ] = '\0';
-    m->is_static                   = true;
-    m->dll                         = NULL;
-    m->module_api                  = module_api;
-    m->exported_api                = exported_api;
-    m->status                      = MODULE_STATUS_LOADED;
-
-    if ( state_ensure( m ) == false )
-    {
-        slot_free( slot );
-        return false;
-    }
-
-    ms_log( "[module] registered static '%s'", name );
     return true;
 }
 
@@ -578,31 +610,33 @@ module_reload( const char* name )
     int slot = slot_find( name );
     if ( slot < 0 )
     {
-        set_error( "module_reload: '%s' not found", name );
+        set_error( "module_reload: '%s' not registered", name );
         return false;
     }
 
     module_info_t* m = &g_modules[ slot ];
-    if ( m->is_static == true )
+    if ( m->is_static )
     {
-        ms_log( "[module] '%s' is static, skipping reload.\n", name );
+        ms_log( "[module] '%s' is static — reload is a no-op", name );
         return true;
     }
 
-    /* ---- exit ---- */
+    /* --- exit --- */
+
     if ( m->status == MODULE_STATUS_INITIALIZED )
         call_exit( m );
 
-    /* ---- swap DLL (state pointer is kept) ---- */
-    slot_unload_dll( m );
+    /* --- swap DLL (state pointer preserved) --- */
 
+    slot_unload_dll( m );
     if ( slot_load_dll( m ) == false )
     {
         m->status = MODULE_STATUS_ERROR;
         return false;
     }
 
-    /* grow state if the new version needs more room */
+    /* Grow state if the new version needs more room. */
+
     if ( state_ensure( m ) == false )
     {
         m->status = MODULE_STATUS_ERROR;
@@ -612,19 +646,20 @@ module_reload( const char* name )
     m->version++;
     m->status = MODULE_STATUS_LOADED;
 
-    /* ---- re-init with preserved state ---- */
+    /* --- call on_reload() or fallback init() with preserved state --- */
 
-    if ( call_init( m ) == false )
+    /* This is the key semantic: on_reload() is for pointer re-cache, init() is for first-time setup.
+      State is NEVER zeroed here — it arrives with its last values intact either way. */
+
+    if ( call_reload( m ) == false )
     {
-        set_error( "'%s' init failed after reload", name );
+        set_error( "'%s' on_reload/init failed after reload", name );
         m->status = MODULE_STATUS_ERROR;
         return false;
     }
 
-    call_on_reload( m );
-
     m->status = MODULE_STATUS_INITIALIZED;
-    ms_log( "[module] reloaded '%s' (reload #%d)\n", name, m->version );
+    ms_log( "[module] reloaded '%s' (reload #%d)", name, m->version );
     return true;
 }
 
@@ -803,29 +838,99 @@ module_system_tick( float dt )
     }
 }
 
+/*==============================================================================================
+    Debounce helpers
+==============================================================================================*/
+
+static pending_reload_t*
+pending_find( const char* name )
+{
+    /* Find a pending reload entry by name, or return NULL if not found. */
+    for ( int i = 0; i < g_pending_count; ++i )
+    {
+        if ( strncmp( g_pending[ i ].name, name, MODULE_NAME_MAX ) == 0 )
+            return &g_pending[ i ];
+    }
+    return NULL;
+}
+
+static void
+pending_flag( const char* name, uint64_t now_ms, uint64_t file_time )
+{
+    pending_reload_t* p = pending_find( name );
+
+    if ( p )
+    {
+        /* Already pending — reset the debounce window if the file changed again
+           (linker may still be writing; wait another full DEBOUNCE_MS from now). */
+        if ( file_time != p->last_seen_write )
+        {
+            p->flagged_at_ms   = now_ms;
+            p->last_seen_write = file_time;
+        }
+        return;
+    }
+
+    if ( g_pending_count >= MAX_PENDING )
+    {
+        ms_log( "[module] WARN: pending reload table full, skipping '%s'", name );
+        return;
+    }
+
+    pending_reload_t* slot = &g_pending[ g_pending_count++ ];
+    strncpy( slot->name, name, MODULE_NAME_MAX - 1 );
+    slot->name[ MODULE_NAME_MAX - 1 ] = '\0';
+    slot->flagged_at_ms               = now_ms;
+    slot->last_seen_write             = file_time;
+    ms_log( "[module] '%s' changed — debouncing (%d ms)...", name, DEBOUNCE_MS );
+}
+
+static void
+pending_remove( int idx )
+{
+    g_pending[ idx ] = g_pending[ --g_pending_count ];
+}
+
 void
 module_check_reloads( void )
 {
-    /* Check file times on all loaded modules and reload any that changed on disk. */
+    uint64_t now_ms = platform_time_ms();
+
+    /* Phase 1: detect changed DLLs and add them to the pending table. */
 
     for ( int i = 0; i < MAX_MODULES; ++i )
     {
         module_info_t* m = &g_modules[ i ];
-
         if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
             continue;
 
+        /* Get the current file time of the original DLL (not the shadow copy). 
+           If it changed since the last load, flag this module for pending reload. */
+
         char dll_path[ MAX_PATH ];
         path_dll( m->name, dll_path, sizeof( dll_path ) );
+        uint64_t ft = platform_file_time( dll_path );
 
-        uint64_t time = platform_file_time( dll_path );
-        if ( time != 0 && time != m->last_write )
+        if ( ft != 0 && ft != m->last_write )
         {
-            ms_log( "[module] '%s' changed — reloading...", m->name );
-            module_reload( m->name );
+            pending_flag( m->name, now_ms, ft );
+        }
+    }
+
+    /* Phase 2: reload any pending entry that has been stable for DEBOUNCE_MS. */
+
+    for ( int i = g_pending_count - 1; i >= 0; --i )
+    {
+        if ( ( now_ms - g_pending[ i ].flagged_at_ms ) >= DEBOUNCE_MS )
+        {
+            char name[ MODULE_NAME_MAX ];
+            strncpy( name, g_pending[ i ].name, MODULE_NAME_MAX );
+            pending_remove( i );
+            module_reload( name );
         }
     }
 }
+
 
 /*==============================================================================================
     System init / exit
@@ -847,15 +952,15 @@ module_system_init()
     g_last_error[ 0 ] = '\0';
 
     /* wire up the get_api passed into every module init() */
-    g_sys_api.get_api = module_get_api;
+    g_api_func = module_get_api;
 
     /* set root path for module DLLs */
     platform_exe_dir( g_root, sizeof( g_root ) );
     ms_log( "[module] system init (root: %s)", g_root );
 
-    /* start file watcher via platform_sys (no core needed) */
+    /* start file watcher via sys (no core needed) */
     if ( file_watch_init( g_root ) == false )
-        ms_log( "[module] WARNING: file watch unavailable\n" );        
+        ms_log( "[module] WARNING: file watch unavailable\n" );
 }
 
 void

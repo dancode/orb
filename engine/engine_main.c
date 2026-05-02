@@ -4,39 +4,44 @@
 
 ==============================================================================================*/
 
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
+#include <stdio.h>    // printf, fprintf
 
-#include "orb.h"
+#include "orb.h"              // general project settings and declarations
+#include "module/module.h"    // module system (boot, load/unload, tick, shutdown)
 
-#include "core/core.h"
-#include "module/module.h"
-#include "platform_sys/platform_sys.h"
+/* specifiy before including headers */
 
-// temp
+#define BASE_LINK_STATIC    // static to exe and dynamic for modules if not declared
+#define CORE_LINK_STATIC    // static to exe and dynamic for modules if not declared
+#define JOBS_LINK_STATIC    // static to exe and dynamic for modules if not declared
+
+/* Tier 1 host-service headers only — struct path, safe to call here. */
+
 #include "core_api.h"
-#include "platform_sys/platform_sys_api.h"
+#include "sys/sys_api.h" /* change name? ew */
 #include "engine_api.h"
 
-#include "systems/render/render_api.h"
+/* Only exposed to host that initializes the static modules */
+struct module_api_s* core_get_module_api( void );
+struct module_api_s* sys_get_module_api( void );
+struct module_api_s* engine_get_module_api( void );
+
+/* Tier 2 headers included only so module_load() macro can resolve the getter names
+   in BUILD_STATIC.  Their API functions are NOT called from main(). */
+#include "runtime/modules/render/render_api.h"
+#include "runtime/modules/audio/audio_api.h"
+
+#ifdef BUILD_STATIC
+struct module_api_s* audio_get_module_api( void );
+struct module_api_s* render_get_module_api( void );
+struct module_api_s* game_get_module_api( void );
+struct module_api_s* sample_game_get_module_api( void );
+#endif
+
+/* Static lnked direct calls */
+#include "sys/sys.h"
 
 /*============================================================================================*/
-
-int  intern_test( void );                        // ... temporary code ...
-void reflection_test( void );                    // ... temporary code ...
-void test_core_cvar( int argc, char** argv );    // ... temporary code ...
-
-/*============================================================================================*/
-
-/* declared in core_module.c / engine_module.c */
-// void engine_module_register( void );
-
-// void platform_app_module_register( void );
-// void input_module_register( void );
-// void jobs_module_register( void );
-// void time_module_register( void );
-
 
 static void
 host_force_hot_reload( void )
@@ -67,65 +72,48 @@ host_force_recompile( void )
 void
 module_test( void )
 {
-    sys_tick_init();
-    sid_init();
-
-    /* get static API pointers for the modules to use during init() */
-
-    // core_api_t*     core     = core_get_api();
-    // platform_api_t* platform = platform_get_api();
-    // engine_api_t*   engine   = engine_get_api();
-
-    // engine->print( "Module System Test\n" );
-
-    /* ---- boot -------------------------------------------------------- */
+    /*------------------------------------------------------------------------------------------
+        1. Boot
+    ------------------------------------------------------------------------------------------*/
 
     module_system_init();
 
-    /* ---- services (static, registered directly) ---------------------- */
+    /* ── Tier 1: Host services — explicit module_static_load, never a DLL ────────────── */
 
-    module_register_static( "core", core_get_module_api(), core_get_api() );
-    module_register_static( "platform_sys", platform_sys_get_module_api(), platform_sys_get_api() );
-    module_register_static( "engine", engine_get_module_api(), engine_get_api() );
+    if ( !module_static_load( "core", core_get_module_api() ) )
+        goto shutdown;
+    if ( !module_static_load( "sys", sys_get_module_api() ) )
+        goto shutdown;
+    if ( !module_static_load( "engine", engine_get_module_api() ) )
+        goto shutdown;
 
-    // service_register( "platform_app", platform_app_get_module_api(), platform_app_get_api() );
-    // service_register( "input", input_get_module_api(), input_get_api() );
-    // service_register( "jobs", jobs_get_module_api(), jobs_get_api() );
-    // service_register( "time", time_get_module_api(), time_get_api() );
+    /* ── Tier 2: Switchable modules — static or DLL depending on BUILD_STATIC ─────── */
 
-    // platform_app_module_register(); /* window, gpu surface              */
-    // input_module_register();        /* action mapping on raw events      */
-    // jobs_module_register();         /* thread pool, fiber scheduler      */
-    // time_module_register();         /* frame dt, timers, fixed timestep  */
-
-    /* ---- systems (dynamic, hot-reloadable DLLs) ---------------------- */
-
-    // system_load( "renderer" );
-    // system_load( "audio" );
-    // system_load( "physics" );
-    // system_load( "animation" );
-    // system_load( "game_framework" );
-    // system_load( "my_game" );
-
-    if ( module_dynamic_load( "render" ) == false )
+    if ( !module_load( render ) )
     {
-        // core->log( "[main] fatal: %s", module_last_error() );
+        fprintf( stderr, "load renderer: %s\n", module_last_error() );
+        goto shutdown;
+    }
+    if ( !module_load( audio ) )
+    {
+        fprintf( stderr, "load audio: %s\n", module_last_error() );
+        goto shutdown;
+    }
+    if ( !module_load( game ) )
+    {
+        fprintf( stderr, "load game: %s\n", module_last_error() );
+        goto shutdown;
+    }
+    if ( !module_load( sample_game ) )
+    {
+        fprintf( stderr, "load sample_game: %s\n", module_last_error() );
         goto shutdown;
     }
 
-    // if ( module_load( "game" ) == false )
-    // {
-    //     // core->log( "[main] fatal: %s", module_last_error() );
-    //     goto shutdown;
-    // }
-    //
-    // if ( module_load( "sample_game" ) == false )
-    // {
-    //     // core->log( "[main] fatal: %s", module_last_error() );
-    //     goto shutdown;
-    // }
 
-    /* ---- init all in dep order --------------------------------------- */
+    /*------------------------------------------------------------------------------------------
+        3. Initialize — topo-sort fires audio_init() before renderer_init()
+    ------------------------------------------------------------------------------------------*/
 
     if ( module_init_all() == false )
     {
@@ -135,24 +123,21 @@ module_test( void )
 
     module_list_all();
 
-    /* ---- game loop --------------------------------------------------- */
+    core_api()->log( "Module System Initialized\n" );
 
-    // engine_api_t* engine = module_get_api( "engine" );
-    platform_sys_api_t* platform_sys = module_get_api( "platform_sys" );
+    // core_api()->log( "startup complete  workers=%d", jobs_api()->worker_count() );
 
-    /* test constant API access across modules */
-    const render_api_t* r = module_get_api( "renderer" );
-    r->draw_frame( 0.5f );
+    /*------------------------------------------------------------------------------------------
+        4. Application API usage.
 
+            audio_api() and render_api() are generated by MODULE_DEFINE_ACCESS_FUNC in each _api.h.
 
-    /*
-    platform_app_api_t* platform = module_get_api( "platform_app" );
-    while ( !platform->should_quit() )
-    {
-        module_check_reloads();
-        module_system_tick( platform->frame_dt() );
-    }
-    */
+            BUILD_STATIC:  audio_api() → &g_audio_api_struct    (direct, no indirection)
+            dynamic:       audio_api() → g_audio_api_ptr        (one load, cached in init)
+
+            The call site is identical.  The performance difference is at the compiler level,
+            not in this source file.  This is the entire point of the pattern.
+    ------------------------------------------------------------------------------------------*/
 
     /* ---- console input ----------------------------------------------- */
 
@@ -162,7 +147,7 @@ module_test( void )
             printf( "[host] failed to initialize console input\n" );
             return;
         }
-        printf( "Bootstrap host running.\n" );
+        printf( "\nBootstrap host running.\n" );
         printf( "Keys:\n" );
         printf( "  R = force hot reload\n" );
         printf( "  C = force recompile\n" );
@@ -172,16 +157,21 @@ module_test( void )
 
     /* ---- game loop --------------------------------------------------- */
 
-    const float dt = 1.0f / 60.0f;
+    const float dt      = 1.0f / 60.0f;
 
-    // assert( engine );
-    assert( platform_sys );
-
-    bool running = true;
-    while ( 1 )
+    bool        running = true;
+    while ( running )
     {
         // engine->print( "Looping...\n" );
-        platform_sys->tick_sleep( 100 );
+        // sys->tick_sleep( 100 );
+
+        module_system_tick( dt ); /* tick all INITIALIZED modules        */
+
+        /* Application-level API calls — no #ifdefs here, ever. */
+        // render_api()->draw_frame( dt );
+        // renderer_api()->draw_quad( 0.0f, 0.0f, 100.0f, 100.0f, 0xFF0000FF );
+        // renderer_api()->draw_quad( 200.0f, 150.0f, 50.0f, 50.0f, 0x00FF00FF );
+        // renderer_api()->end_frame();
 
         if ( 1 )
         {
@@ -192,22 +182,23 @@ module_test( void )
 
         if ( sys_key_pressed( PLATFORM_KEY_R ) )
         {
+            printf( "[host] R key pressed\n" );
             // hot_reload();
         }
 
         if ( sys_key_pressed( PLATFORM_KEY_C ) )
         {
+            printf( "[host] C key pressed\n" );
             // recompile_code();
         }
 
         if ( sys_key_pressed( PLATFORM_KEY_Q ) )
         {
+            printf( "[host] Q key pressed\n" );
             running = false;
         }
 
-
-        module_check_reloads();   /* poll disk; reload any changed DLL   */
-        module_system_tick( dt ); /* tick all INITIALIZED modules        */
+        module_check_reloads(); /* poll disk; reload any changed DLL   */
     }
 
     sys_console_input_shutdown();
@@ -218,106 +209,25 @@ module_test( void )
 
 shutdown:
 
+    fprintf( stderr, "%s\n", module_last_error() );
     module_system_exit();
-    sid_exit();
-    sys_tick_exit();
-}
-
-/*============================================================================================*/
-/* test entry point */
-
-static void
-test( int argc, char** argv )
-{
-    core_api_init();    // <-- required to debug natvis and must go first
-
-    /**************************************************************/
-    /* test module system */
-
-    module_test();    // <-- test module system
-
-    if ( 1 )
-        return;
-
-    /**************************************************************/
-    /* test memory, string intern, and reflection systems */
-
-    if ( 1 )
-    {
-        mem_test();           // <-- test memory system
-        intern_test();        // <-- test string interning system
-        reflection_test();    // <-- test reflection system
-    }
-
-    /**************************************************************/
-    /* test cvar system */
-
-    if ( 1 )
-    {
-        cvar_system_init();
-        test_core_cvar( argc, argv );    // <-- test cvar system
-        cvar_system_exit();
-    }
-
-    /**************************************************************/
-
-    core_api_exit();
 }
 
 /*============================================================================================*/
 /* main entry point */
 
+void test( int argc, char** argv );    // <-- test entry point, defined in engine_test.c
+
 int
 main( int argc, char** argv )
 {
-    test( argc, argv );
+    module_test();
 
-    core_init();
-
-    /**************************************************************/
-    /* setup module base path -- different per platform */
-    /* this setup code is designed to allow Google jules to find library files */
-
-    // ensure_root();
-
-    // sid_t game_module_name = sid_intern_cstr( "sample_game" );
-    // ( void )game_module_name;
-
-    // const char* mod_name = "sample_game";
-    // char        path[ 256 ];
-    //
-    // snprintf( path, sizeof( path ), "%s%s%s%s", module_get_base_path(), LIB_PREFIX, mod_name, LIB_EXT );
-
-    /**************************************************************/
-    /* new module laoding code path */
-
-    /**************************************************************/
-    /*
     if ( 0 )
     {
-        struct module_t* game = module_load( mod_name, path );
-        if ( game == NULL )
-        {
-            return 1;
-        }
-
-        for ( int i = 0; i < 3; i++ )
-        {
-            module_call_tick( game );
-        }
-
-        module_reload( game );
-
-        for ( int i = 0; i < 2; i++ )
-        {
-            module_call_tick( game );
-        }
-
-        module_unload( game );
-
-        core_exit();
+        test( argc, argv );
     }
-    */
+
     return 0;
 }
 

@@ -1,30 +1,62 @@
 # ==========================================================
-# projects/demo_game/CMakeLists.txt
+# Projects : Sample Game
 # ==========================================================
 
-set(SAMPLE_GAME_SOURCES
-	sample_game.c
-	sample_game.h
+file(GLOB_RECURSE ALL_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.natvis"
+)
+set(COMPILED_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/sample_game.c"
 )
 
-add_library(sample_game SHARED
-    ${SAMPLE_GAME_SOURCES}
-)
- 
-target_include_directories(sample_game PUBLIC
-	${CMAKE_SOURCE_DIR}/engine
+# ----------------------------------------------------------
+# Set As Unity Build For Compiled Sources Only
+# ----------------------------------------------------------
+
+set(HEADER_SOURCES ${ALL_FILES})
+list(REMOVE_ITEM HEADER_SOURCES ${COMPILED_SOURCES})
+set_source_files_properties( ${HEADER_SOURCES} PROPERTIES HEADER_FILE_ONLY ON )
+set_source_files_properties( ${COMPILED_SOURCES} PROPERTIES HEADER_FILE_ONLY OFF )
+
+# ----------------------------------------------------------
+# Create Build Target For Static or Dynamic (default) Module
+# ----------------------------------------------------------
+
+if(ENGINE_MONOLITHIC)
+    set(MODULE_TYPE STATIC)
+else()
+    set(MODULE_TYPE SHARED)
+endif()
+
+add_library(sample_game ${MODULE_TYPE}
+    ${ALL_FILES}          # everything that shows in IDE
+    ${COMPILED_SOURCES}   # these actually compile
 )
 
-# Put in a clear project folder
+# ----------------------------------------------------------
+# Set Automatic Include Directories
+# ----------------------------------------------------------
+
 set_target_properties(sample_game PROPERTIES FOLDER "Proj/Sample_Game")
-
-# IMPORTANT: Explicitly mark as C language for Clang-CL
 set_target_properties(sample_game PROPERTIES LINKER_LANGUAGE C )
 
-# Set the output name to avoid prefix 'lib' on Unix-like systems
-# set_target_properties(sample_game PROPERTIES OUTPUT_NAME "sample_game")
+# ----------------------------------------------------------
+# Mirror physical directory structure inside Visual Studio
+# ----------------------------------------------------------
 
-# Remove the default "Header Files" / "Source Files" filters in Visual Studio
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SAMPLE_GAME_SOURCES} )
+source_group(
+    TREE ${CMAKE_CURRENT_SOURCE_DIR}
+    FILES ${ALL_FILES}
+)
 
-# target_link_libraries(demo_game PRIVATE game)
+# ----------------------------------------------------------
+# Searched include directories at base directory
+# ----------------------------------------------------------
+
+target_include_directories(sample_game PUBLIC
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+

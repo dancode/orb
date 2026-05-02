@@ -37,7 +37,7 @@ add_library(module STATIC
     ${COMPILED_SOURCES}   # these actually compile
 )
 
-target_link_libraries(module PUBLIC platform_sys)
+target_link_libraries(module PUBLIC sys)
 
 set_target_properties(module PROPERTIES FOLDER "Engine/Static")
 set_target_properties(module PROPERTIES LINKER_LANGUAGE C )

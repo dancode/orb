@@ -1,12 +1,12 @@
 #pragma once
 /*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 5. runtime host for exe / editor / tool
 
      — picks which layers to include 
      — owns main(), the game loop, startup sequence
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 4. APP: platform app window, raw input, gpu surface
 
      — depends on : base, platform sys, core
@@ -14,14 +14,14 @@
      
      platform app — registered as a service after core. The actual window, input, GPU surface.
 
-    platform_app/
+    app/
 
-        platform_app_api.h    platform_app_api_t
+        app_api.h    app_api_t
         win32_window.c
         win32_input.c
         win32_gpu_surface.c
         linux_*.c
-        platform_app_module.c  module_api_t wrapper
+        app_module.c  module_api_t wrapper
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
 3. MOD: module system registry, hot-reload, dep sort
@@ -37,7 +37,7 @@
         module_api.h       contract every module implements
         module_sys_api.h   sys->get_api() handle passed into init()
         module_sys.h       public interface
-        module_sys.c       implementation (uses platform_sys directly)
+        module_sys.c       implementation (uses sys directly)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 3. CORE: sid, log, alloc, cvar, assert 
@@ -52,7 +52,7 @@
         core_api.h     core_api_t — the exported typed struct
         core.h         single include for internal use
         sid.h / .c     interned string ids (uses arena from base)
-        log.h / .c     logging (uses platform_sys file_io for output)
+        log.h / .c     logging (uses sys file_io for output)
         alloc.h / .c   allocators built on top of arena
         cvar.h / .c    config vars
         core_module.c  module_api_t wrapper, service_register() call
@@ -68,9 +68,9 @@
     No module API, no registration, no logging through core 
     (uses printf directly if it must log during bootstrap).
 
-    platform_sys/
+    sys/
 
-        platform_sys.h     single include — all functions below
+        sys.h     single include — all functions below
 
         library.h          library_load, library_unload, library_get_symbol
         library_win32.c

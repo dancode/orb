@@ -12,7 +12,6 @@ add_executable(build_tool
     ${ALL_SOURCES}
 )
 
-
 # add_library(build_tool SHARED
 #    ${ALL_SOURCES}
 # )
@@ -26,6 +25,13 @@ target_include_directories(build_tool PUBLIC
 )
 
 target_link_libraries(build_tool PRIVATE core)
+
+if(ENGINE_MONOLITHIC)
+    # In monolithic mode, the engine must statically link the modules.
+    # target_link_libraries(engine PUBLIC example)
+else()
+    # In dynamic mode, do NOT link the render target (load at runtime)
+endif()
 
 # engine executable is minimal: links loader + base
 # target_link_libraries(engine PUBLIC core)

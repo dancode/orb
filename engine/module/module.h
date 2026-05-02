@@ -8,44 +8,54 @@
 
     Lifecycle
     ---------
-        module_system_init()          boot; no modules loaded yet
-        module_register_static()      register a compile-time linked module (no DLL)
-        module_dynamic_load()         shadow-copy DLL → resolve API → alloc state
-        module_init_all()             topo-sort deps → call each module's init()
-        module_system_tick()          tick all INITIALIZED modules in dep order
-        module_check_reloads()        poll file timestamps → reload changed DLLs
-        module_system_exit()          exit + unload in reverse dep order; delete shadows
+        module_system_init()        boot; no modules loaded yet
+        module_load( name )         register and load a module (static or dynamic, see below)
+        module_init_all()           topo-sort deps → call each module's init()
+        module_system_tick( dt )    tick all INITIALIZED modules in dep order
+        module_check_reloads()      poll file timestamps → debounce → reload changed DLLs
+        module_system_exit()        exit + unload in reverse dep order; delete shadow files
 
-    Querying APIs from outside the module system (e.g. from the exe):
-        core_api_t*   core = module_get_api("core");
-        render_api_t* rend = module_get_api("render");
+    module_load( name ) build variants
+    -----------------------------------
+    Define BUILD_STATIC for a monolithic build where all modules are linked into the exe.
+    Omit it for a dynamic build where each module is a separate DLL.
 
-    Inside a DLL, use the module_get_api_t* passed into init() instead of
-    calling module_get_api() directly (the DLL cannot link against the exe).
+        BUILD_STATIC defined:
+            module_load( render ) → module_static_load( "render", render_get_module_api() )
 
-    Our static modules
-    ---------
+        BUILD_STATIC not defined:
+            module_load( render ) → module_dynamic_load( "render" )
+                                    shadow-copies render.dll → resolves exports → allocs state
 
-    core_api.h
+    Querying APIs from outside the module system (host exe or another module):
 
-    - The core api exports common systems used by all modules and are always available.
-    - These include logging, memory allocation, cvar access, file access etc.
-    - These do not directly interact with the game execution.
+        Static build — direct, zero-cost (LTO-devirtualizable):
+            render_api()->draw( dt );
 
-    engine_api.h
+        Dynamic build — one pointer load per call:
+            render_api()->draw( dt );   // identical call site; MODULE_GATEWAY handles the rest
 
-    - The engine api is not used to compose functionality but rather to access engine systems.
-    - Such as frame time, rendering, input, audio, etc. (the game execution system).
-
-    platform_api.h
-
-    - The platform api is used to access platform specific functionality like file IO,
-    - The engine systems abtracted from platform should be preferred when possible.
-    - Most modules will use the engine and core APIs, but not all need platform APIs.
+        See MODULE_GATEWAY, MODULE_DEFINE_API_PTR, MODULE_FETCH_API in module_api.h.
 
 ==============================================================================================*/
 
 #include "orb.h"
+
+/*==============================================================================================
+    module_load macro
+==============================================================================================*/
+
+// module_static_load( #name, name##_get_module_api(), ( void* )name##_get_api() )
+
+#ifdef BUILD_STATIC
+
+#    define module_load( name ) \
+        module_static_load( #name, name##_get_module_api() )
+#else
+
+#    define module_load( name ) module_dynamic_load( #name )
+
+#endif
 
 /*==============================================================================================
     Module Registry Entry
@@ -62,30 +72,6 @@ typedef enum module_status_t
 
 } module_status_t;
 
-// Note: sid_t is 32 but unsigned interned string id type (a string offset).
-
-#define MODULE_NAME_MAX 16
-
-typedef struct module_info_s
-{
-    char            name[ MODULE_NAME_MAX ];    // module name
-    module_status_t status;                     // current status of the module
-
-    bool            is_static;       // true → no DLL, no shadow copies
-    uint32_t        shadow_count;    // fresh file name generator count to avoid file locking.
-
-    void*           dll;           // handle to the loaded shadow copy
-    uint64_t        last_write;    // file-time at last successful load (for change detection)
-
-    module_api_t*   module_api;      // lifecycle api: init/tick/exit/on_reload (called by module system)
-    void*           exported_api;    // the module's typed API struct (render_api_t*, etc.)
-
-    void*           state;         // pointer to module-persistent memory struct
-    int32_t         state_size;    // size of the allocation; tracked here so we can realloc safely
-    int32_t         version;       // currently loaded module version (on reload we bump this)
-
-} module_info_t;
-
 /*==============================================================================================
     System lifetime
 ==============================================================================================*/
@@ -93,28 +79,29 @@ typedef struct module_info_s
 /* Boot the module system. No modules are loaded or initialized yet. */
 void module_system_init();
 
-/* Exit and unload every module in reverse dependency order, then clean up. */
+/* Exit every INITIALIZED module in reverse dependency order, then unload DLLs and clean up. */
 void module_system_exit( void );
 
 /*==============================================================================================
     Registration and loading
 ==============================================================================================*/
 
-/* Register a statically-linked module (no DLL).
-   module_api — lifecycle struct (init/tick/exit).
-   exported_api — the typed API struct callers receive via get_api("name"). */
-bool module_register_static( const char* name, module_api_t* module_api, void* exported_api );
+/* Register a statically-linked module.
+   module_api must have func_api set to the module's exported API struct.
+   Does NOT call init() — call module_init_all() once all modules are registered. */
+bool module_static_load( const char* name, module_api_t* module_api ); // , void* exported_api
 
-/* Load a DLL by base name (e.g. "render" → "<exe_dir>\render.dll").
-   Creates a shadow copy, loads it, resolves both exports, allocates state.
+/* Load a DLL by base name (e.g. "render" → "<exe_dir>/render.dll").
+   Creates a shadow copy, loads it, resolves exports, allocates state.
    Does NOT call init() — call module_init_all() once all modules are loaded. */
 bool module_dynamic_load( const char* name );
 
-/* Call exit(), unload the DLL, free state, delete the shadow file. */
+/* Unload a single module: call exit(), free state, unload DLL, delete shadow file. */
 bool module_unload( const char* name );
 
 /* Hot-reload a single module in place:
-   exit → unload DLL → shadow copy → load → init() (state pointer is preserved). */
+   Call exit → unload DLL → shadow copy → load new DLL → Call on_reload() or init().
+   State pointer is preserved; block is NOT zeroed on reload. */
 bool module_reload( const char* name );
 
 /*==============================================================================================
@@ -128,7 +115,9 @@ bool module_init_all( void );
 /* Tick every INITIALIZED module in dependency order. */
 void module_system_tick( float dt );
 
-/* Poll file timestamps and hot-reload any DLL that has changed on disk. */
+/* Poll file timestamps and hot-reload any DLL that has changed on disk.
+   Applies a debounce window (DEBOUNCE_MS) to avoid reloading while the linker
+   is still writing the file. */
 void module_check_reloads( void );
 
 /*==============================================================================================
@@ -136,10 +125,11 @@ void module_check_reloads( void );
 ==============================================================================================*/
 
 /* Returns the exported_api pointer for a named, INITIALIZED module, else NULL.
+   Call the module spefici function render_api(), audio_api() for direct access.
    Cast the result to the module's typed struct:
        core_api_t*   core = module_get_api("core");
        render_api_t* rend = module_get_api("render");  */
-void* module_get_api( const char* name );
+const void* module_get_api( const char* name );
 
 /* Last error message from any failed operation. */
 const char* module_last_error( void );
@@ -153,3 +143,56 @@ void module_list_all( void );
 
 /*============================================================================================*/
 #endif    // MODULE_SYS_H
+/*==============================================================================================
+ 
+    module notes:
+ 
+    The three registration tiers are intentional and must stay explicit.
+    Do not collapse them into a single macro — the distinction is load-bearing:
+ 
+    ── Tier 1 ──────────────────────────────────────────────────────────────────────────────
+    HOST SERVICES  —  module_static_load()
+        Always compiled into the exe.  Never a DLL.  No BUILD_STATIC switch.
+        Other modules acquire them through sys->get_api() in their init() callbacks.
+        Registered first so they are in the table before any DLL load-time dep inspection.
+ 
+            module_static_load( "core",  core_get_module_api() );
+            module_static_load( "base",  base_get_module_api() );
+            module_static_load( "jobs",  jobs_get_module_api() );
+ 
+    ── Tier 2 ──────────────────────────────────────────────────────────────────────────────
+    SWITCHABLE MODULES  —  module_load()  (macro)
+        Statically linked in a monolithic build, hot-reloadable DLL in a dynamic build.
+        The BUILD_STATIC flag controls which call the macro expands to.
+        These are the only modules that participate in the dynamic/static build switch.
+ 
+            module_load( renderer );
+            module_load( audio );
+            module_load( game );
+ 
+    ── Tier 3 ──────────────────────────────────────────────────────────────────────────────
+    FORCE-DYNAMIC  —  module_dynamic_load()  (rare, explicit)
+        Reserved for modules that must be DLLs regardless of BUILD_STATIC — e.g. a
+        scripting runtime or a platform plugin that ships as a separate binary.
+ 
+            module_dynamic_load( "lua_runtime" );
+ 
+    Both tiers are acquired identically at the call site:
+        core_api()->log(...)            — zero-cost in exe-linked TUs
+        renderer_api()->begin_frame()   — one load in dynamic builds
+ 
+    ── Build commands ───────────────────────────────────────────────────────────────────────
+    Monolithic (BUILD_STATIC, LTO):
+        cc -DBUILD_STATIC -flto \
+           main.c core.c base.c jobs.c renderer.c audio.c game.c module.c -o game
+ 
+    Mixed (host services in exe, switchable modules as DLLs):
+        Exe:
+            cc -DCORE_LINK_STATIC -DBASE_LINK_STATIC -DJOBS_LINK_STATIC \
+               main.c core.c base.c jobs.c module.c -o game
+        DLLs:
+            cc -shared renderer.c -o renderer.dll
+            cc -shared audio.c    -o audio.dll
+            cc -shared game.c     -o game.dll
+ 
+==============================================================================================*/

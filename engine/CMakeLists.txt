@@ -2,20 +2,15 @@
 # ORB Engine
 # ==========================================================
 
-# ----------------------------------------------------------
-# 1. COMPILE OPTION AT THE VERY TOP
-# ----------------------------------------------------------
-
-option(ENGINE_MONOLITHIC "Build engine with static linked modules instead of dynamic DLLs" OFF)
-
-# ==========================================================
-
 add_subdirectory(base)
-add_subdirectory(platform_sys)
+add_subdirectory(sys)
 add_subdirectory(module)
 add_subdirectory(core)
-add_subdirectory(platform_app)
-add_subdirectory(systems/render)
+add_subdirectory(app)
+add_subdirectory(runtime/modules/example)
+add_subdirectory(runtime/modules/render)
+add_subdirectory(runtime/modules/audio)
+add_subdirectory(game)
 
 # ==========================================================
 # Engine : Host Files
@@ -26,10 +21,10 @@ file(GLOB ALL_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/*.natvis"
-	"${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.h"
-	"${CMAKE_CURRENT_SOURCE_DIR}/services/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/services/*.h"
+	# "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.c"
+    # "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.h"
+	"${CMAKE_CURRENT_SOURCE_DIR}/runtime/services/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/services/*.h"
 )
 
 # Select which .c files should ACTUALLY compile
@@ -38,6 +33,7 @@ set(COMPILED_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/engine_main.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine_api.c"
+	"${CMAKE_CURRENT_SOURCE_DIR}/engine_test.c"
 	"${CMAKE_CURRENT_SOURCE_DIR}/services/jobs/job_system.c"
 )
 
@@ -74,10 +70,10 @@ target_include_directories(engine PUBLIC
 # target_sources(engine PRIVATE $<TARGET_OBJECTS:loader>)
 
 # engine executable is minimal: links loader + base
-target_link_libraries(engine PUBLIC platform_sys)
+target_link_libraries(engine PUBLIC sys)
 target_link_libraries(engine PUBLIC module)
 target_link_libraries(engine PUBLIC core)
-target_link_libraries(engine PUBLIC platform_app)
+target_link_libraries(engine PUBLIC app)
 
 # ----------------------------------------------------------
 # 2. CONDITIONAL LINKING LOGIC AT THE BOTTOM
@@ -85,15 +81,13 @@ target_link_libraries(engine PUBLIC platform_app)
 
 if(ENGINE_MONOLITHIC)
     # In monolithic mode, the engine must statically link the modules.
-    # Because 'render' will export MODULE_LINK_STATIC publicly (see step 2), 
-    # the engine will also inherit the #define.
-    target_link_libraries(engine PUBLIC render)
-    
-    # You will add your other modules here later:
-    # target_link_libraries(engine PUBLIC audio physics)
+    target_link_libraries(engine PUBLIC example)
+	target_link_libraries(engine PUBLIC render)
+	target_link_libraries(engine PUBLIC audio)   	    
+	target_link_libraries(engine PUBLIC game)   	    
+	target_link_libraries(engine PUBLIC sample_game)   	    
 else()
-    # In dynamic mode, do NOT link the render target. 
-    # The engine will load render.dll at runtime via OS APIs (LoadLibrary/dlopen).
+    # In dynamic mode, do NOT link the render target (load at runtime)
 endif()
 
 
@@ -125,9 +119,9 @@ source_group(
 # Services Folder
 # ==========================================================
 
-set(SERVICES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/services")
+set(SERVICES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime/services")
 file(GLOB_RECURSE SERVICES_FILES "${SERVICES_DIR}/*")
-source_group(TREE "${SERVICES_DIR}" PREFIX "Services" FILES ${SERVICES_FILES})
+source_group(TREE "${SERVICES_DIR}" PREFIX "Runtime/Services" FILES ${SERVICES_FILES})
 target_sources(engine PRIVATE ${SERVICES_FILES})
 # set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
@@ -135,11 +129,11 @@ target_sources(engine PRIVATE ${SERVICES_FILES})
 # Runtime Folder
 # ==========================================================
 
-set(RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
-file(GLOB_RECURSE RUNTIME_FILES "${RUNTIME_DIR}/*")
-source_group(TREE "${RUNTIME_DIR}" PREFIX "Runtime" FILES ${RUNTIME_FILES})
-target_sources(engine PRIVATE ${RUNTIME_FILES})
-# set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+#set(RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+#file(GLOB_RECURSE RUNTIME_FILES "${RUNTIME_DIR}/*")
+#source_group(TREE "${RUNTIME_DIR}" PREFIX "Runtime" FILES ${RUNTIME_FILES})
+#target_sources(engine PRIVATE ${RUNTIME_FILES})
+## set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 
 # ==========================================================
@@ -153,7 +147,7 @@ target_sources(engine PRIVATE ${RUNTIME_FILES})
 # )
 # 
 # target_link_libraries(game PRIVATE
-#     engine_core engine_platform engine_systems
+#     engine_core engine_platform engine_runtime
 # )
 
 # ==========================================================
@@ -168,7 +162,7 @@ target_sources(engine PRIVATE ${RUNTIME_FILES})
 # 
 # target_link_libraries(editor PRIVATE
 #     game
-#     engine_core engine_platform engine_systems
+#     engine_core engine_platform engine_runtime
 # )
 
 # ==========================================================
@@ -191,10 +185,10 @@ target_sources(engine PRIVATE ${RUNTIME_FILES})
 # 
 # # Asset tool
 # add_executable(asset_tool asset_tool/asset_main.c)
-# target_link_libraries(asset_tool PRIVATE tools_core engine_core engine_platform engine_systems)
+# target_link_libraries(asset_tool PRIVATE tools_core engine_core engine_platform engine_runtime)
 # 
 # # Shader tool
 # add_executable(shader_tool shader_tool/shader_main.c)
-# target_link_libraries(shader_tool PRIVATE tools_core engine_core engine_platform # engine_systems)
+# target_link_libraries(shader_tool PRIVATE tools_core engine_core engine_platform # engine_runtime)
 
 

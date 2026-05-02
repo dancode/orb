@@ -1,0 +1,118 @@
+organization layout
+
+engine/					// The runtime code that can be used by games, tools, and editor.
+
+  system/			 	// OS primitives
+    files/				// File read/write, directory traversal, file watching, timestamps.
+    threads/			// Threads, mutexes, atomics, semaphores, thread-local storage.
+    time/				// High-resolution timers, clocks, frame timing helpers.
+	process/			// Launching external tools, process handles, exit codes.
+	libarary/			// Dynamic library loading, DLL reload, symbol lookup.
+	paths/				// Executable path, project path, content path, temp path helpers.
+	console/			// Console output, key input for bootstrap tools, terminal helpers.
+
+
+	This layer is usually static and resident.
+
+  base/ 				// Lowest level, no OS, no graphics, no assumptions
+	base/				// Basic types, macros, platform defines, assertions, common helpers
+	memory/				// Allocators, arenas, memory tags, allocation apis
+	containers/			// Arrays, hash, pools queues, string builders.
+	strings/			// String views, formatting, UTF, parsing.
+	math/				// Vectors, matrices, quaternions, geometry helpers.
+	debug/				// Debug checks, crash handling, profiling markers, debug only utils.
+	logging/			// Core loggin api used by all engine modules.
+	config/				// Reading config values, command-line config, engine settings.
+
+  
+  app/					// Application shell services. Windows, OS events, and lifecycle.
+    application/		// app startup, app state, command-line handoff, platform itegration		
+	window/				// Window creation, resize, fullscreen, DPI, platform window handles.
+    events/				// OS event pump, app events, window events, quit events
+	input_source/		// Raw OS input collection before it becomes engine input.
+    lifecycle/			// Startup, shutdown, suspend, resume, focus changes.
+	
+
+TOOD: make Static become Engine\Static\
+TODO: make Services into Engine\Services\
+TODO: Make System into Engine\Systems\
+
+  runtime/				// Shared runtime services and loadable engine modules
+  
+	public/runtime.h 	// 
+	private/runtime.c 	// 
+  
+    core/				// Runtime host context, frame loop integration, runtime startup/shutdown.
+	registry/			// Module registration, dependency graph, init order, reload bookkeeping.
+	  	  	 
+    services/			// Resident runtime APIs provided to modules	
+      input/			// Engine-level input state, bindings, actions, axes, device abstraction.
+      jobs/				// Job system, task graph, worker threads, async execution.
+      timing/			// Frame delta, fixed update clock, timers, tick groups.
+      logging/			// Runtime logging service exposed to dynamic modules.
+      memory/			// Runtime allocator service exposed to dynamic modules.
+	  assets/			// Asset handles, asset database access, loading requests 
+	  reflection/		// Runtime type metadata, enums, fields, attributes, generated metadata. 
+	  console/			// Runtime console commands, cvars, debug command registration.
+
+    modules/			// Dynamically loaded runtime DLLs	
+      render/			// 
+      audio/
+      animation/
+      physics/
+      assets/
+
+	game/				// reusable game framework
+	  framework/
+		world/
+		entity/
+		component/
+		actor/
+		level/
+		prefab/
+	  modules/
+		character/
+		camera/
+		ai/
+		inventory/
+	  
+  tools/				//  engine-built tools
+    common/				// shared tool infrastructure
+      toolmain/
+      arguments/
+      commands/
+      diagnostics/
+
+    asset/				// asset pipeline tools
+      import/
+      bake/
+      convert/
+
+    build/				// build-time generators/compilers
+      shader_compiler/
+      asset_compiler/
+      reflection_gen/
+
+    package/			 // packaging/deployment tools
+      packager/
+      installer/
+      deploy/
+
+	gui/				// graphical tools and launchers
+		launcher/
+		project_browse/
+		asset_view/
+	    
+--- more --- 
+
+projects/				// user games/products
+	
+
+
+tools/common/
+  toolmain/      // main(), module loading, command dispatch
+  cli/           // argument parsing
+  commands/      // command abstraction
+  diagnostics/   // errors, logging, reporting
+  
+  

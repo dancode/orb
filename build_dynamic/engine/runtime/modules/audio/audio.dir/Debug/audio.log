@@ -1,0 +1,4 @@
+﻿  Building Custom Rule F:/C/hybrid/engine/runtime/modules/audio/CMakeLists.txt
+  audio.c
+     Creating library F:/C/hybrid/build_dynamic/engine/runtime/modules/audio/Debug/audio.lib and object F:/C/hybrid/build_dynamic/engine/runtime/modules/audio/Debug/audio.exp
+  audio.vcxproj -> F:\C\hybrid\build_dynamic\bin\Debug\audio.dll

@@ -51,33 +51,37 @@
 #    define API_EXPORT
 #endif
 
+#ifdef MODULE_LINK_STATIC
+#    define BUILD_STATIC
+#endif
+
 /*==============================================================================================
 
     fixed width basic types
 
 ==============================================================================================*/
 
-typedef int8_t     i8;
-typedef int16_t    i16;
-typedef int32_t    i32;
-typedef int64_t    i64;
-typedef uint8_t    u8;
-typedef uint16_t   u16;
-typedef uint32_t   u32;
-typedef uint64_t   u64;
-typedef float      f32;
-typedef double     f64;
+typedef int8_t         i8;
+typedef int16_t        i16;
+typedef int32_t        i32;
+typedef int64_t        i64;
+typedef uint8_t        u8;
+typedef uint16_t       u16;
+typedef uint32_t       u32;
+typedef uint64_t       u64;
+typedef float          f32;
+typedef double         f64;
 
-typedef const int8_t     ci8;
-typedef const int16_t    ci16;
-typedef const int32_t    ci32;
-typedef const int64_t    ci64;
-typedef const uint8_t    cu8;
-typedef const uint16_t   cu16;
-typedef const uint32_t   cu32;
-typedef const uint64_t   cu64;
-typedef const float      cf32;
-typedef const double     cf64;
+typedef const int8_t   ci8;
+typedef const int16_t  ci16;
+typedef const int32_t  ci32;
+typedef const int64_t  ci64;
+typedef const uint8_t  cu8;
+typedef const uint16_t cu16;
+typedef const uint32_t cu32;
+typedef const uint64_t cu64;
+typedef const float    cf32;
+typedef const double   cf64;
 
 #ifndef NULL
 #    ifdef __cplusplus

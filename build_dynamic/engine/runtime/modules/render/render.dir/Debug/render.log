@@ -1,0 +1,4 @@
+﻿  Building Custom Rule F:/C/hybrid/engine/runtime/modules/render/CMakeLists.txt
+  render.c
+     Creating library F:/C/hybrid/build_dynamic/engine/runtime/modules/render/Debug/render.lib and object F:/C/hybrid/build_dynamic/engine/runtime/modules/render/Debug/render.exp
+  render.vcxproj -> F:\C\hybrid\build_dynamic\bin\Debug\render.dll

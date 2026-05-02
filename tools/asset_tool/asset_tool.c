@@ -3,20 +3,20 @@
     asset_tool.c (asset cooker — example offline tool)
 
     Tools that don't need hot-reload, a service registry, or a game loop
-    skip the module system entirely and call platform_sys directly.
+    skip the module system entirely and call sys directly.
 
     Link list for this executable:
 
         base            (headers only — unity built in)
-        platform_sys    (file_io, clock — statically linked)
+        sys    (file_io, clock — statically linked)
 
-    Nothing else. No core, no module system, no platform_app.
+    Nothing else. No core, no module system, no app.
 
 ==============================================================================================*/
 
 #include <stdio.h>
 #include "base/base.h"
-#include "platform_sys/platform_sys.h"
+#include "sys/sys.h"
 
 /*============================================================================================*/
 

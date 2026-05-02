@@ -1,0 +1,8 @@
+﻿  Building Custom Rule F:/C/hybrid/engine/CMakeLists.txt
+  engine.c
+  engine_api.c
+  engine_main.c
+  engine_test.c
+  job_system.c
+  Generating Code...
+  engine.vcxproj -> F:\C\hybrid\build_dynamic\bin\Debug\engine.exe

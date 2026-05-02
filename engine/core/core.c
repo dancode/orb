@@ -14,19 +14,17 @@
 /*============================================================================================*/
 
 void
-core_init( void )
+core_init_startup( void )
 {
-    core_api_init();
     sid_init();
     cvar_system_init();
 }
 
 void
-core_exit( void )
+core_exit_shutdown( void )
 {
     cvar_system_exit();
     sid_exit();
-    core_api_exit();
 }
 
 /*============================================================================================*/

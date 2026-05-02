@@ -4,10 +4,9 @@
 
 ==============================================================================================*/
 #include <stdio.h>
+
 #include "orb.h"
 #include "engine_api.h"
-
-#include "module/module_api.h"
 
 /*============================================================================================*/
 
@@ -22,13 +21,13 @@ engine_print( const char* fmt )
 
 static bool g_engine_running = true;
 
-int
+static int
 engine_should_quit( void )
 {
     return !g_engine_running;
 }
 
-void
+static void
 engine_request_quit( void )
 {
     // Function to actually trigger the quit (call this when ESC is pressed, etc.)
@@ -37,38 +36,34 @@ engine_request_quit( void )
 
 /*============================================================================================*/
 
-static module_api_t g_module_api = {
-    .version    = 1,
-    .state_size = 0,
-    .deps       = { "core" },
-    .dep_count  = 1,
-
-    .init       = NULL,
-    .tick       = NULL,
-    .exit       = NULL,
-    .on_reload  = NULL,
-};
-
-module_api_t*
-engine_get_module_api( void )
-{
-    return &g_module_api;
-}
-
-/*============================================================================================*/
-
-static engine_api_t g_engine_api = {
-
-    .print = engine_print,
+const engine_api_t g_engine_api_struct = {
+    .print       = engine_print,
     .should_quit = engine_should_quit,
 };
 
 /*============================================================================================*/
 
-engine_api_t*
+module_api_t*
+engine_get_module_api( void )
+{
+    static module_api_t api = {
+        .version    = 1,
+        .state_size = 0,
+        .deps       = { "core" },
+        .dep_count  = 1,
+        .func_api   = &g_engine_api_struct,
+        .init       = NULL,
+        .tick       = NULL,
+        .exit       = NULL,
+        .on_reload  = NULL,
+    };
+    return &api;
+}
+
+void*
 engine_get_api( void )
 {
-    return &g_engine_api;
+    return ( void* )&g_engine_api_struct;
 }
 
 /*============================================================================================*/

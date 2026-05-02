@@ -43,7 +43,7 @@ add_library(core STATIC
     ${COMPILED_SOURCES}   # these actually compile
 )
 
-target_link_libraries(core PUBLIC platform_sys)
+target_link_libraries(core PUBLIC sys)
 
 set_target_properties(core PROPERTIES FOLDER "Engine/Static")
 set_target_properties(core PROPERTIES LINKER_LANGUAGE C )

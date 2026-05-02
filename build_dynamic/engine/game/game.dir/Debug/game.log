@@ -1,0 +1,4 @@
+﻿  Building Custom Rule F:/C/hybrid/engine/game/CMakeLists.txt
+  game.c
+     Creating library F:/C/hybrid/build_dynamic/engine/game/Debug/game.lib and object F:/C/hybrid/build_dynamic/engine/game/Debug/game.exp
+  game.vcxproj -> F:\C\hybrid\build_dynamic\bin\Debug\game.dll

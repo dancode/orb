@@ -15,8 +15,8 @@ typedef struct core_api_s core_api_t;
 
 ==============================================================================================*/
 
-void        core_init( void );
-void        core_exit( void );
+void core_init_startup( void );
+void core_exit_shutdown( void );
 
 /*==============================================================================================
 

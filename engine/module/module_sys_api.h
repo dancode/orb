@@ -17,16 +17,14 @@
 
 ==============================================================================================*/
 
-// typedef void* ( *get_api_fn )( const char* name );
-
-typedef struct module_sys_api_s
-{
-    /* Returns the exported API pointer for a named, initialized module.
-       Returns NULL if the module is not found or not yet initialized.
-       The caller casts the result to the expected typed struct pointer. */
-    void* ( *get_api )( const char* name );
-
-} module_sys_api_t;
+// typedef struct module_sys_api_s
+// {
+//     /* Returns the exported API pointer for a named, initialized module.
+//        Returns NULL if the module is not found or not yet initialized.
+//        The caller casts the result to the expected typed struct pointer. */
+//     void* ( *get_api )( const char* name );
+// 
+// } module_sys_api_t;
 
 /*============================================================================================*/
 #endif    // MODULE_SYS_API_H
