@@ -61,6 +61,8 @@ dkms.conf
 [Bb]in/
 [Oo]ut/
 build/
+build_dynamic/
+build_monolithic/
 **/build/
 cmake-build-*/
 
