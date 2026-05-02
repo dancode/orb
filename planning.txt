@@ -33,10 +33,6 @@ engine/					// The runtime code that can be used by games, tools, and editor.
     lifecycle/			// Startup, shutdown, suspend, resume, focus changes.
 	
 
-TOOD: make Static become Engine\Static\
-TODO: make Services into Engine\Services\
-TODO: Make System into Engine\Systems\
-
   runtime/				// Shared runtime services and loadable engine modules
   
 	public/runtime.h 	// 
@@ -55,64 +51,187 @@ TODO: Make System into Engine\Systems\
 	  reflection/		// Runtime type metadata, enums, fields, attributes, generated metadata. 
 	  console/			// Runtime console commands, cvars, debug command registration.
 
-    modules/			// Dynamically loaded runtime DLLs	
-      render/			// 
-      audio/
-      animation/
-      physics/
-      assets/
+    modules/			// Dynamically loaded runtime engine modules (DLLs)
+      render/			// Renderer API, render world, GPU resources, frame submission.
+      audio/			// Audio playback, mixer, emitters, sound assets.
+      animation/		// Animation clips, skeletons, animation graph, pose evaluation.
+      physics/			// Physics world, collision, rigid bodies, queries, simulation.
+      assets/			// Runtime asset loading, streaming, dependency resolution.
+	  scripting/		// Script VM or native script bridge if you add scripting.
+	  networking/		// Sockets, replication, packets, client/server runtime logic.
 
-	game/				// reusable game framework
-	  framework/
-		world/
-		entity/
-		component/
-		actor/
-		level/
-		prefab/
-	  modules/
-		character/
-		camera/
-		ai/
-		inventory/
+	game/				// Reusable game framework. Sill engine code, but closer to gameplay.
+	  framework/		// Game instance, game mode, game loop hooks, high-level gameplay lifecycle.
+		world/			// World object, scenes, ticking, world lifetime, runtime scene ownership
+		entity/			// Entity IDs, entity registry, entity lifetime
+		component/		// Component model, component storage, update hooks.
+		actor/			// Actor abstraction built on entities/components.
+		level/			// Level loading, level instances, world partitioning if needed.
+		prefab/			// Reusable object templates, archetypes, spawnable compositions.
+		gameplay_tags	// Tag system for gameplay queries, effects, filtering, rules.
+		
+	  modules/			// Reusable gameplay modules that are not tied to one project.
+		character/		// Character movement, pawn/controller logic, locomotion helpers
+		camera/			// Camera components, camera rigs, camera blending, view targets.
+		ai/				// AI controllers, behavior systems, navigation hooks.
+		inventory/		// Items, inventory slots, pickups, equipmen
+		abilities/		// Ability activation, cooldowns, costs, effects.
+		weapons/ 		// Weapon state, firing, ammo, targeting, hit logic
+		interaction/	// Use prompts, interactable components, targeting queries
 	  
-  tools/				//  engine-built tools
-    common/				// shared tool infrastructure
-      toolmain/
-      arguments/
-      commands/
-      diagnostics/
-
-    asset/				// asset pipeline tools
-      import/
-      bake/
-      convert/
-
-    build/				// build-time generators/compilers
-      shader_compiler/
-      asset_compiler/
-      reflection_gen/
-
-    package/			 // packaging/deployment tools
-      packager/
-      installer/
-      deploy/
-
-	gui/				// graphical tools and launchers
-		launcher/
-		project_browse/
-		asset_view/
-	    
---- more --- 
-
-projects/				// user games/products
+	  
+	  
+  editor/					// editor_host.c entry.
 	
+    host/					// Owns main(), startup, editor runtime creation, module loading, shutdown.
+		
+	core/					// Core editor-only services		
+		editor_app/			// Main editor state, editor tick, editor mode, global editor context.
+		project/			// Open/create projects, project settings, project paths.
+		selection/			// Current selected objects, selection sets, selection change events.
+		undo/				// Undo/redo stack, transactions, editor command history.
+		clipboard/			// Copy/paste for objects, components, assets, editor data.
+		commands/			// Editor command registry, shortcuts, menu actions.
+		document/			// Open documents/assets/scenes and track dirty state.
+		inspector/			// Property inspection, reflection-driven editing, detail views.
+			
+	ui/						// Generic editor UI framework.
+		imgui_backend/		// ImGui or UI backend binding to app/window/render modules.
+		widgets/			// Reusable editor widgets, property fields, tree views, lists.
+		docking/			// Docking layout, panel placement, workspace persistence.
+		menus/				// Main menu, context menu, toolbar construction.
+		theme/				// Editor colors, fonts, spacing, visual style.
+		icons/				// Icon loading, icon registry, asset type icons.
+		
+	panels/					// Specific editor windows.
+		viewport/			// Scene/game viewport, editor camera, selection picking, gizmos.
+		hierarchy/			// World/entity/actor tree view.
+		inspector/			// Selected object property panel.
+		content_browse/ 	// Asset browser, folders, drag/drop, asset actions.
+		console/			// Runtime/editor console command panel.
+		profiler/			// Frame timing, CPU/GPU profiling views.
+		log/				// Log output, filters, error navigation.
+		asset_import/		// Import UI, import settings, source asset workflows.
+	
+	tools/
+		transform_gizmo/	// Move/rotate/scale gizmo, snapping, pivot modes.
+		terrain/			// Terrain sculpting, painting, terrain asset editing.
+		material_editor/	// Material graph or material property editor.
+		animation_editor/	// Skeleton, animation clip, animation graph editor.
+		prefab_editor/		// Prefab editing, nested prefab management.
+		level_editor/		// Level editing mode, placement tools, scene manipulation.
+		
+	modules/				// Hot-reloadable editor extension modules.
+		render_debug/		// Renderdoc-style debug views, render resource inspection.
+		gameplay_debug/		// Gameplay state visualization, entities/components debugging.
+		asset_debug/		// Asset dependency graph, load state, missing asset tools.
+		nav_debug/			// Navigation mesh, pathfinding, AI debug visualization.
+	
+  
+  Note: Command-line and build-time tools.
+		These are not the editor, though the editor can call them.
+  
+  tools/					// Engine-built tools 
+	
+    common/					// Shared tool infrastructure
+		toolmain/			// Shared main() helper for command-line tools.
+		cli/				// Argument parsing, flags, options, command-line validation.
+		commands/			// Command registration, command dispatch, subcommands.
+		diagnostics/		// Tool errors, warnings, reporting, source locations.
+		tool_runtime/		// Shared tool startup, allocator/logging setup, module loading.
+				
+    asset/					// Asset pipeline tools
+		import/				// Imports source files into engine asset formats.
+		bake/				// Converts expensive source data into runtime-ready cooked data.
+		convert/			// Format-to-format conversion helpers.
+		validate/			// Asset validation, missing references, bad metadata checks.
+	  
+    build/					// Build-time generators/compilers
+		shader_compiler/	// Compiles shaders and emits runtime shader metadata.
+		asset_compiler/		// Builds cooked assets for a target platform.
+		reflection_gen/		// Parses headers/source annotations and emits reflection metadata.
+		codegen/			// Shared generated-code emission helpers.
+		module_builder/		// Builds/rebuilds dynamic modules for hot reload.
+
+    package/			 	// Packaging/deployment tools
+		packager/			// Collects cooked assets, binaries, config, and builds a distrib folder.
+		installer/			// Builds installer/package format if needed.
+		deploy/				// Copies or uploads builds to a device, server, or test location.
+	
+	gui/					// graphical tools and launchers
+		launcher/			// start game with prelaunch options.
+		project_browse/		// load an existing project from a browser.
+		asset_view/			// load and view assets (light preview)
+	    
+
+	projects/				// user games/products
+	
+	  sample_game/			
+		project/			// Project descriptor, project metadata, module list, asset roots.	
+		source/				 
+			game_module/	// The game’s runtime code, usually hot reloadable.
+			editor_module/	// Project-specific editor tools, inspectors, importers, debug views.
+		content/			// Source assets and game data
+		config/				// Project settings, input bindings, game config.
+		build/				// Project-local generated files, cooked files, temporary build outputs.
 
 
-tools/common/
-  toolmain/      // main(), module loading, command dispatch
-  cli/           // argument parsing
-  commands/      // command abstraction
-  diagnostics/   // errors, logging, reporting
+	modules/				// Every module should have the same internal shape.	
+							// e.g. engine/runtime/modules/render/
+	
+	module.json				// Module metadata: name, type, dependencies, reload policy, output kind
+	public/					// Headers exposed to other modules.
+		render.h
+		render_types.h
+	private/				// Implementation files only used by this module.
+		render.c
+		render_backend.c
+		render_resources.c			
+	generated/				// Reflection/codegen output owned by this module.
+		render.reflection.c
+	tests/					// Unit or integration tests for this module
+		render_tests.c
+  
+	Example JSon:			// This can also be written in code and grabbed at startup.
+	module.json
+	
+		// Dynamic Modules
+		{
+			"name": 	"render",
+			"type": 	"dynamic",
+			"layer": 	"runtime",
+			"dependencies": [
+				"base",
+				"memory",
+				"logging",
+				"window",
+				"assets"
+			],
+			"reloadable": true
+		}
+		// Static Modules 
+		{
+			"name":  	"math",
+			"type":  	"static",
+			"layer": 	"foundation",
+			"dependencies": [
+				"base"
+			],
+			"reloadable": false
+		}
   
   
+  hosts/
+	game/			// Executable that starts the engine and loads a game project.
+	editor/			// Executable that starts the editor and loads editor/runtime modules
+	tool/			// Executable or shared entry layer for command-line tools
+  
+  
+  hosts/editor/
+  module.json
+  private/
+    main.c
+    editor_host.c
+  public/
+    editor_host.h
+	

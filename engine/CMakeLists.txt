@@ -121,9 +121,10 @@ source_group(
 
 set(SERVICES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime/services")
 file(GLOB_RECURSE SERVICES_FILES "${SERVICES_DIR}/*")
-source_group(TREE "${SERVICES_DIR}" PREFIX "Runtime/Services" FILES ${SERVICES_FILES})
+source_group(TREE "${SERVICES_DIR}" PREFIX "Services" FILES ${SERVICES_FILES})
 target_sources(engine PRIVATE ${SERVICES_FILES})
 # set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+# set_target_properties(engine PROPERTIES FOLDER "Engine/Services")
 
 # ==========================================================
 # Runtime Folder

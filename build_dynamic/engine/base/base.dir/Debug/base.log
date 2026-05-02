@@ -1,6 +1,0 @@
-﻿  Building Custom Rule F:/C/hybrid/engine/base/CMakeLists.txt
-  base.c
-  standard.c
-  standard_string.c
-  Generating Code...
-  base.vcxproj -> F:\C\hybrid\build_dynamic\engine\base\Debug\base.lib
