@@ -39,7 +39,7 @@
 
 ==============================================================================================*/
 
-#include "orb.h"
+#include "base/orb.h"
 
 /*==============================================================================================
     module_load macro
@@ -125,7 +125,7 @@ void module_check_reloads( void );
 ==============================================================================================*/
 
 /* Returns the exported_api pointer for a named, INITIALIZED module, else NULL.
-   Call the module spefici function render_api(), audio_api() for direct access.
+   Call the module specific function render_api(), audio_api() for direct access.
    Cast the result to the module's typed struct:
        core_api_t*   core = module_get_api("core");
        render_api_t* rend = module_get_api("render");  */

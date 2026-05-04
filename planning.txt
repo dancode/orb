@@ -1,4 +1,14 @@
-organization layout
+repo organization layout
+
+root/
+
+  README.md
+  build.bat
+  build.sh
+  project.workspace.json
+  .gitignore
+  
+build/ 					// build outputs all in root 
 
 engine/					// The runtime code that can be used by games, tools, and editor.
 
@@ -11,11 +21,14 @@ engine/					// The runtime code that can be used by games, tools, and editor.
 	paths/				// Executable path, project path, content path, temp path helpers.
 	console/			// Console output, key input for bootstrap tools, terminal helpers.
 
-
 	This layer is usually static and resident.
 
-  base/ 				// Lowest level, no OS, no graphics, no assumptions
-	base/				// Basic types, macros, platform defines, assertions, common helpers
+  base/					// Basic types, macros, platform defines, assertions, common helpers  
+	string/				// string output and formatting.
+	character/			// character utility wrappers
+	assert/
+    
+  core/ 				// Lowest level, no OS, no graphics, no assumptions
 	memory/				// Allocators, arenas, memory tags, allocation apis
 	containers/			// Arrays, hash, pools queues, string builders.
 	strings/			// String views, formatting, UTF, parsing.
@@ -33,12 +46,12 @@ engine/					// The runtime code that can be used by games, tools, and editor.
     lifecycle/			// Startup, shutdown, suspend, resume, focus changes.
 	
 
-  runtime/				// Shared runtime services and loadable engine modules
+runtime/				// Shared runtime services and loadable engine modules
   
 	public/runtime.h 	// 
 	private/runtime.c 	// 
   
-    core/				// Runtime host context, frame loop integration, runtime startup/shutdown.
+    host/				// Runtime host context, frame loop integration, runtime startup/shutdown.
 	registry/			// Module registration, dependency graph, init order, reload bookkeeping.
 	  	  	 
     services/			// Resident runtime APIs provided to modules	
@@ -61,7 +74,7 @@ engine/					// The runtime code that can be used by games, tools, and editor.
 	  networking/		// Sockets, replication, packets, client/server runtime logic.
 
 	game/				// Reusable game framework. Sill engine code, but closer to gameplay.
-	  framework/		// Game instance, game mode, game loop hooks, high-level gameplay lifecycle.
+		framework/		// Game instance, game mode, game loop hooks, high-level gameplay lifecycle.
 		world/			// World object, scenes, ticking, world lifetime, runtime scene ownership
 		entity/			// Entity IDs, entity registry, entity lifetime
 		component/		// Component model, component storage, update hooks.
@@ -79,11 +92,10 @@ engine/					// The runtime code that can be used by games, tools, and editor.
 		weapons/ 		// Weapon state, firing, ammo, targeting, hit logic
 		interaction/	// Use prompts, interactable components, targeting queries
 	  
-	  
-	  
-  editor/					// editor_host.c entry.
+
+editor/					// editor_host.c entry.
 	
-    host/					// Owns main(), startup, editor runtime creation, module loading, shutdown.
+    host/					// Owns main(), startup, editor runtime creation, module load/shutdown
 		
 	core/					// Core editor-only services		
 		editor_app/			// Main editor state, editor tick, editor mode, global editor context.
@@ -128,10 +140,9 @@ engine/					// The runtime code that can be used by games, tools, and editor.
 		nav_debug/			// Navigation mesh, pathfinding, AI debug visualization.
 	
   
-  Note: Command-line and build-time tools.
-		These are not the editor, though the editor can call them.
+  Note: Command-line and build-time tools are not the editor, the editor can call them.
   
-  tools/					// Engine-built tools 
+tools/						// Engine-built tools 
 	
     common/					// Shared tool infrastructure
 		toolmain/			// Shared main() helper for command-line tools.
@@ -163,10 +174,28 @@ engine/					// The runtime code that can be used by games, tools, and editor.
 		project_browse/		// load an existing project from a browser.
 		asset_view/			// load and view assets (light preview)
 	    
-
-	projects/				// user games/products
+			
+hosts/						// Executables that load and run correct modules 
+ 
+	engine/					// Engine without a game for development and testing
+	game/					// Executable that starts the engine and loads a game project.
+	editor/					// Executable that starts the editor and loads editor/runtime modules
+	tool/					// Executable or shared entry layer for command-line tools
+    
+	Note: The engine is reusable and the host is the application.
 	
-	  sample_game/			
+		hosts/editor/
+			module.json
+			editor_host.h
+			private/
+				main.c				// entry point of exe
+				editor_host.c		// setup editor
+			
+	
+	
+projects/					// user games/products	
+
+	sample_game/			
 		project/			// Project descriptor, project metadata, module list, asset roots.	
 		source/				 
 			game_module/	// The game’s runtime code, usually hot reloadable.
@@ -176,11 +205,20 @@ engine/					// The runtime code that can be used by games, tools, and editor.
 		build/				// Project-local generated files, cooked files, temporary build outputs.
 
 
-	modules/				// Every module should have the same internal shape.	
-							// e.g. engine/runtime/modules/render/
+third_party/				// third party code compiled into project
+	lib_name/				// each module gets its own name.
+
+
+** end of project organization **
+** per module organization next **
 	
-	module.json				// Module metadata: name, type, dependencies, reload policy, output kind
-	public/					// Headers exposed to other modules.
+	modules/				// There are several different module directories for each category
+							// e.g. engine/runtime/modules/render/
+							// e.g. editor/runtime/modules/materia_editor
+		
+module_name/				// Each module has a standard subdirectory formatting
+	module.json				// Metadata: name, type, dependencies, reload policy, output kind
+	public/					// Headers exposed to other modules for being used
 		render.h
 		render_types.h
 	private/				// Implementation files only used by this module.
@@ -191,7 +229,11 @@ engine/					// The runtime code that can be used by games, tools, and editor.
 		render.reflection.c
 	tests/					// Unit or integration tests for this module
 		render_tests.c
-  
+			
+	
+	// Note: external module data only once our project can generate its own project data.
+	// Note: otherwise, we use CMake script and module data is defined internally.
+	
 	Example JSon:			// This can also be written in code and grabbed at startup.
 	module.json
 	
@@ -221,17 +263,141 @@ engine/					// The runtime code that can be used by games, tools, and editor.
 		}
   
   
-  hosts/
-	game/			// Executable that starts the engine and loads a game project.
-	editor/			// Executable that starts the editor and loads editor/runtime modules
-	tool/			// Executable or shared entry layer for command-line tools
-  
-  
-  hosts/editor/
-  module.json
-  private/
-    main.c
-    editor_host.c
-  public/
-    editor_host.h
+/* host responsibility */
+
+	main()
+	command-line parsing
+	startup/shutdown sequence
+	module loading
+	service creation
+	hot reload loop
+	application/game/editor/tool loop
+
+
+/* editor host */
+
+	int main(int argc, char** argv)
+	{
+		engine_init();
 	
+		editor_host_desc_t desc = {};
+		desc.argc = argc;
+		desc.argv = argv;
+	
+		editor_host_run(&desc);
+	
+		engine_shutdown();
+		return 0;
+	}
+
+/* game project running */
+
+	game.exe
+	loads project file
+	reads module list
+	starts engine runtime
+	loads render/audio/physics/assets
+	loads project game DLL
+	enters game loop
+
+/* game tool concept */
+
+	Then each tool is a module or command registered with the tool runtime.
+	
+	tool.exe reflection-gen --project projects/sample_game
+	tool.exe asset-compile --project projects/sample_game
+	tool.exe shader-compile --project projects/sample_game
+	tool.exe package --project projects/sample_game
+	
+	tool.exe reflection-gen
+	tool.exe shader-compile
+	tool.exe asset-compile
+	tool.exe package
+	
+	int main(int argc, char** argv)
+	{
+		tool_runtime_init();
+	
+		register_tool_command("reflection-gen", reflection_gen_main);
+		register_tool_command("shader-compile", shader_compiler_main);
+		register_tool_command("asset-compile", asset_compiler_main);
+		register_tool_command("package", packager_main);
+	
+		int result = tool_dispatch(argc, argv);
+	
+		tool_runtime_shutdown();
+		return result;
+	}
+	
+	tool.exe is the host
+	reflection_gen is a tool module
+	asset_compiler is a tool module
+	shader_compiler is a tool module
+	packager is a tool module
+	
+/* SLN organization */
+
+Engine.sln
+
+  hosts/
+    host_editor        -> editor.exe
+    host_game          -> game.exe
+    host_tool          -> tool.exe
+
+  engine_foundation/	
+    base               -> static lib
+    memory             -> static lib
+    math               -> static lib
+    logging            -> static lib
+
+  engine_system/
+    files              -> static lib
+    threads            -> static lib
+    time               -> static lib
+    library            -> static lib
+
+  engine_runtime/
+    runtime_core       -> static lib
+    module_registry    -> static lib
+    service_input      -> static lib
+    service_jobs       -> static lib
+
+  runtime_modules/
+    render             -> render.dll
+    audio              -> audio.dll
+    physics            -> physics.dll
+
+  editor/
+    editor_host        -> static lib
+    editor_app         -> static lib
+    panel_viewport     -> static lib
+    panel_inspector    -> static lib
+
+  tools/
+    tool_common        -> static lib
+    reflection_gen     -> static lib or dll
+    asset_compiler     -> static lib or dll
+    shader_compiler    -> static lib or dll
+
+  projects/
+    sample_game        -> sample_game.dll
+	
+	
+/* usage */
+
+editor.exe --project my_game.project
+  loads my_game.dll
+  loads my_game_editor.dll
+  loads engine runtime modules
+
+game.exe --project my_game.project
+  loads my_game.dll
+  loads engine runtime modules
+
+tool.exe reflection-gen --project my_game.project
+  reads project source and generates code
+
+tool.exe asset-compile --project my_game.project
+  reads project content and writes cooked assets
+  
+ 

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 project(hybrid LANGUAGES C)
 
+#TODO: rename to "orb"
+
 # ==========================================================
 # BUILD MODE TOGGLE
 # ==========================================================
@@ -40,6 +42,15 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+
+
+# Remove the nasty Release/Debug subfolders MSVC tries to make
+#foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+#    string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+#    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_SOURCE_DIR}/BUILD)
+#    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_SOURCE_DIR}/BUILD)
+#    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_SOURCE_DIR}/BUILD/lib)
+#endforeach()
 
 # Handle multi-config generators (Visual Studio, Xcode)
 # foreach(OUTPUTCONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
@@ -90,8 +101,9 @@ elseif (MSVC)
     
     # Apply standard MSVC flags
     add_compile_options(/W4 /WX /wd4100 /wd4189)
+	# add_compile_options(/Zc:preprocessor)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
-
+	
 	# Disable unreferenced variable warnings ONLY in Release
     # C4101: unreferenced local variable
     # C4189: local variable is initialized but not referenced
@@ -99,13 +111,12 @@ elseif (MSVC)
     add_compile_options("$<$<CONFIG:Release>:/wd4101;/wd4189;/wd4100>")
 	
 else()
+
     # Catch-all for GCC, etc.
-    message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}")
-    
+    message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID}")    
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-function)
 
 endif()
-
 
 # ==========================================================
 # Debug Info for Release Builds
@@ -128,12 +139,32 @@ else()
 endif()
 
 
+# ------------------------------------------------------------------------------
+# Global Include Directories
+# ------------------------------------------------------------------------------
+# This allows `#include "base/base.h"` and `#include "engine/core/core_api.h"` 
+# to work from anywhere in the codebase.
+include_directories(${CMAKE_SOURCE_DIR})
+
+
 # ==========================================================
 # Create our main executable (engine.exe)
 # ==========================================================
 
-# Engine (Contains the 'engine' executable and 'render' library)
+add_subdirectory(base)
 add_subdirectory(engine)
+
+add_subdirectory(runtime)
+add_subdirectory(runtime_modules/example)
+add_subdirectory(runtime_modules/render)
+add_subdirectory(runtime_modules/audio)
+
+add_subdirectory(hosts)
+
+# add_subdirectory(runtime/modules/example)
+# add_subdirectory(runtime/modules/render)
+# add_subdirectory(runtime/modules/audio)
+
 
 # Editor
 # add_subdirectory(editor)

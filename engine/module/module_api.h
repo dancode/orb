@@ -9,7 +9,7 @@
     Every module must provide two C functions:
 
         module_api_t*  name_get_module_api( void )   — lifecycle (init/tick/exit/on_reload)
-        void*          name_get_api( void )           — the module's own typed API struct
+        void*          name_get_api( void )          — the module's own typed API struct
 
     In dynamic builds these are resolved as undecorated DLL exports ("get_module_api",
     "get_api") via LoadLibrary.  In static builds they are called directly by the
@@ -30,7 +30,7 @@
     Use init() for first-time setup that should not repeat on reload.
 
 ==============================================================================================*/
-#include "orb.h"
+#include "base/orb.h"
 
 /* get_api: System interface passed into every module's init() and on_reload() call.
 
@@ -146,7 +146,7 @@ typedef module_api_t* ( *get_module_api_fn )( void ); /* DLL export typedefs (dy
     Place once in the module's API header after the struct typedef.
 ==============================================================================================*/
 
-#ifdef BUILD_STATIC
+#ifdef ORB_BUILD_STATIC
 #    define MODULE_GATEWAY( type, name ) MODULE_GATEWAY_STRUCT_PATH( type, name )
 #else
 #    define MODULE_GATEWAY( type, name ) MODULE_GATEWAY_PTR_PATH( type, name )
@@ -160,13 +160,13 @@ typedef module_api_t* ( *get_module_api_fn )( void ); /* DLL export typedefs (dy
 
     In the provider's API header (e.g. core_api.h), write:
 
-        #if defined( BUILD_STATIC ) || defined( CORE_LINK_STATIC )
+        #if defined( ORB_BUILD_STATIC ) || defined( CORE_LINK_STATIC )
             MODULE_GATEWAY_STRUCT_PATH( core_api_t, core )   // exe-linked: zero cost
         #else
             MODULE_GATEWAY_PTR_PATH( core_api_t, core )      // DLL-linked: one load
         #endif
 
-    The BUILD_STATIC arm covers a full monolithic build.
+    The ORB_BUILD_STATIC arm covers a full monolithic build.
     The CORE_LINK_STATIC arm covers mixed builds where this TU is compiled into the exe.
     The else arm covers DLL translation units that consume core via a cached pointer.
 
@@ -184,7 +184,7 @@ typedef module_api_t* ( *get_module_api_fn )( void ); /* DLL export typedefs (dy
 
 ==============================================================================================*/
 
-#ifdef BUILD_STATIC
+#ifdef ORB_BUILD_STATIC
 #    define MODULE_DEFINE_API_PTR( type, name ) /* struct linked directly — no pointer needed */
 #else
 #    define MODULE_DEFINE_API_PTR( type, name ) const type* g_##name##_api_ptr = NULL
@@ -198,7 +198,7 @@ typedef module_api_t* ( *get_module_api_fn )( void ); /* DLL export typedefs (dy
         if ( !MODULE_FETCH_API( core_api_t, core ) ) return false;
 ==============================================================================================*/
 
-#ifdef BUILD_STATIC
+#ifdef ORB_BUILD_STATIC
 #    define MODULE_GET_API( type, name ) ( 1 ) /* always succeeds — struct is linked */
 #else
 #    define MODULE_GET_API( type, name ) ( ( g_##name##_api_ptr = ( const type* )get_api( #name ) ) != NULL )
@@ -209,7 +209,7 @@ typedef module_api_t* ( *get_module_api_fn )( void ); /* DLL export typedefs (dy
     Expands to nothing on ELF targets (GCC/Clang visibility handles this).
 ==============================================================================================*/
 
-#if defined( _WIN32 ) && !defined( BUILD_STATIC )
+#if defined( _WIN32 ) && !defined( ORB_BUILD_STATIC )
 #    define MODULE_EXPORT __declspec( dllexport )
 #else
 #    define MODULE_EXPORT
@@ -222,7 +222,7 @@ typedef module_api_t* ( *get_module_api_fn )( void ); /* DLL export typedefs (dy
     Place once at the bottom of the module's .c, outside any function: MODULE_DEFINE_EXPORTS( render )
 ==============================================================================================*/
 
-#ifdef BUILD_STATIC
+#ifdef ORB_BUILD_STATIC
 #    define MODULE_DEFINE_EXPORTS( name ) /* static builds: system calls name##_get_module_api directly */
 #else
 #    define MODULE_DEFINE_EXPORTS( name )                                                      \
@@ -235,7 +235,7 @@ typedef module_api_t* ( *get_module_api_fn )( void ); /* DLL export typedefs (dy
     Triggers a compile error if the file is accidentally compiled as a DLL.
 ==============================================================================================*/
 
-#ifdef BUILD_STATIC
+#ifdef ORB_BUILD_STATIC
 #    define MODULE_NEVER_DYNAMIC( name )
 #else
 #    define MODULE_NEVER_DYNAMIC( name ) \

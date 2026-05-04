@@ -9,11 +9,11 @@
 #include <stdarg.h>
 #include <assert.h>
 
-#include "orb.h"
+#include "base/orb.h"
 #include "sys_api.h"
 #include "sys.h"
 
-#include "module/module_api.h"
+#include "engine/module/module_api.h"
 
 /*==============================================================================================
     Platform layer

@@ -2,65 +2,61 @@
 # ORB Engine
 # ==========================================================
 
-add_subdirectory(base)
 add_subdirectory(sys)
 add_subdirectory(module)
 add_subdirectory(core)
 add_subdirectory(app)
-add_subdirectory(runtime/modules/example)
-add_subdirectory(runtime/modules/render)
-add_subdirectory(runtime/modules/audio)
-add_subdirectory(game)
+
+# add_subdirectory(game)
 
 # ==========================================================
 # Engine : Host Files
 # ==========================================================
 
 # Collect all .c/.h/.natvis etc for IDE visibility
-file(GLOB ALL_FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.natvis"
-	# "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.c"
-    # "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.h"
-	"${CMAKE_CURRENT_SOURCE_DIR}/runtime/services/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/services/*.h"
-)
-
+#ile(GLOB ALL_FILES
+#   "${CMAKE_CURRENT_SOURCE_DIR}/*.c"
+#   "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
+#   "${CMAKE_CURRENT_SOURCE_DIR}/*.natvis"
+#	#"${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.c"
+#   #"${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.h"
+#	#"${CMAKE_CURRENT_SOURCE_DIR}/runtime/services/*.c"
+#   #"${CMAKE_CURRENT_SOURCE_DIR}/runtime/services/*.h"
+#
+#
 # Select which .c files should ACTUALLY compile
 # Everything else is HEADER_FILE_ONLY and treated as "unity fragments"
-set(COMPILED_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/engine_main.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/engine.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/engine_api.c"
-	"${CMAKE_CURRENT_SOURCE_DIR}/engine_test.c"
-	"${CMAKE_CURRENT_SOURCE_DIR}/services/jobs/job_system.c"
-)
+#set(COMPILED_SOURCES
+#    "${CMAKE_CURRENT_SOURCE_DIR}/engine_main.c"
+#    "${CMAKE_CURRENT_SOURCE_DIR}/engine.c"
+#    "${CMAKE_CURRENT_SOURCE_DIR}/engine_api.c"
+#	"${CMAKE_CURRENT_SOURCE_DIR}/engine_test.c"
+#)
 
 # ----------------------------------------------------------
 # Unity Module
 # ----------------------------------------------------------
 
 # Compute list of all other .c files (excluding compiled sources)
-set(HEADER_SOURCES ${ALL_FILES})
-list(REMOVE_ITEM HEADER_SOURCES ${COMPILED_SOURCES})
+# set(HEADER_SOURCES ${ALL_FILES})
+# list(REMOVE_ITEM HEADER_SOURCES ${COMPILED_SOURCES})
 
 # Mark all other .c files as header-only (not compiled)
 # Explicitly allow compiled files to compile normally
-set_source_files_properties( ${HEADER_SOURCES} PROPERTIES HEADER_FILE_ONLY ON )
-set_source_files_properties( ${COMPILED_SOURCES} PROPERTIES HEADER_FILE_ONLY OFF )
+#set_source_files_properties( ${HEADER_SOURCES} PROPERTIES HEADER_FILE_ONLY ON )
+#set_source_files_properties( ${COMPILED_SOURCES} PROPERTIES HEADER_FILE_ONLY OFF )
 
 # ----------------------------------------------------------
 # Engine : Host Executbale
 # ----------------------------------------------------------
 
-add_executable(engine
-    ${ALL_FILES}
-)
-
-target_include_directories(engine PUBLIC
-	${CMAKE_SOURCE_DIR}/engine
-)
+#add_executable(engine
+#    ${ALL_FILES}
+#)
+#
+#target_include_directories(engine PUBLIC
+#	${CMAKE_SOURCE_DIR}/engine
+#)
 
 # ----------------------------------------------------------
 # Engine : Link Libarries Host Links
@@ -70,25 +66,25 @@ target_include_directories(engine PUBLIC
 # target_sources(engine PRIVATE $<TARGET_OBJECTS:loader>)
 
 # engine executable is minimal: links loader + base
-target_link_libraries(engine PUBLIC sys)
-target_link_libraries(engine PUBLIC module)
-target_link_libraries(engine PUBLIC core)
-target_link_libraries(engine PUBLIC app)
+#target_link_libraries(engine PUBLIC sys)
+#target_link_libraries(engine PUBLIC module)
+#target_link_libraries(engine PUBLIC core)
+#target_link_libraries(engine PUBLIC app)
 
 # ----------------------------------------------------------
 # 2. CONDITIONAL LINKING LOGIC AT THE BOTTOM
 # ----------------------------------------------------------
 
-if(ENGINE_MONOLITHIC)
-    # In monolithic mode, the engine must statically link the modules.
-    target_link_libraries(engine PUBLIC example)
-	target_link_libraries(engine PUBLIC render)
-	target_link_libraries(engine PUBLIC audio)   	    
-	target_link_libraries(engine PUBLIC game)   	    
-	target_link_libraries(engine PUBLIC sample_game)   	    
-else()
-    # In dynamic mode, do NOT link the render target (load at runtime)
-endif()
+#if(ENGINE_MONOLITHIC)
+#    # In monolithic mode, the engine must statically link the modules.
+#    # target_link_libraries(engine PUBLIC example)
+#	# target_link_libraries(engine PUBLIC render)
+#	# target_link_libraries(engine PUBLIC audio)   	    
+#	# target_link_libraries(engine PUBLIC game)   	    
+#	# target_link_libraries(engine PUBLIC sample_game)   	    
+#else()
+#    # In dynamic mode, do NOT link the render target (load at runtime)
+#endif()
 
 
 # ----------------------------------------------------------
@@ -96,33 +92,33 @@ endif()
 # ----------------------------------------------------------
 
 # Put in a clear project folder
-set_target_properties(engine PROPERTIES FOLDER "Exec/")
-set_target_properties(engine PROPERTIES LINKER_LANGUAGE C )
+#set_target_properties(engine PROPERTIES FOLDER "Engine")
+#set_target_properties(engine PROPERTIES LINKER_LANGUAGE C )
 
-if(UNIX)
-    set_target_properties(engine PROPERTIES
-        INSTALL_RPATH "$ORIGIN/../lib"
-    )
-endif()
+#if(UNIX)
+#    set_target_properties(engine PROPERTIES
+#        INSTALL_RPATH "$ORIGIN/../lib"
+#    )
+#endif()
 
 # Remove the default "Header Files" / "Source Files" filters in Visual Studio
 # source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ENGINE_SOURCES} )
 
 # Mirror physical directory structure inside Visual Studio
-source_group(
-    TREE ${CMAKE_CURRENT_SOURCE_DIR}
-    FILES ${ALL_FILES}
-)
+#source_group(
+#    TREE ${CMAKE_CURRENT_SOURCE_DIR}
+#    FILES ${ALL_FILES}
+#)
 
 
 # ==========================================================
 # Services Folder
 # ==========================================================
 
-set(SERVICES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime/services")
-file(GLOB_RECURSE SERVICES_FILES "${SERVICES_DIR}/*")
-source_group(TREE "${SERVICES_DIR}" PREFIX "Services" FILES ${SERVICES_FILES})
-target_sources(engine PRIVATE ${SERVICES_FILES})
+# set(SERVICES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime/services")
+# file(GLOB_RECURSE SERVICES_FILES "${SERVICES_DIR}/*")
+# source_group(TREE "${SERVICES_DIR}" PREFIX "Services" FILES ${SERVICES_FILES})
+# target_sources(engine PRIVATE ${SERVICES_FILES})
 # set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 # set_target_properties(engine PROPERTIES FOLDER "Engine/Services")
 
@@ -130,11 +126,11 @@ target_sources(engine PRIVATE ${SERVICES_FILES})
 # Runtime Folder
 # ==========================================================
 
-#set(RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
-#file(GLOB_RECURSE RUNTIME_FILES "${RUNTIME_DIR}/*")
-#source_group(TREE "${RUNTIME_DIR}" PREFIX "Runtime" FILES ${RUNTIME_FILES})
-#target_sources(engine PRIVATE ${RUNTIME_FILES})
-## set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+# set(RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+# file(GLOB_RECURSE RUNTIME_FILES "${RUNTIME_DIR}/*")
+# source_group(TREE "${RUNTIME_DIR}" PREFIX "Runtime" FILES ${RUNTIME_FILES})
+# target_sources(engine PRIVATE ${RUNTIME_FILES})
+# set_source_files_properties(${RUNTIME_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 
 # ==========================================================

@@ -45,7 +45,7 @@ add_library(core STATIC
 
 target_link_libraries(core PUBLIC sys)
 
-set_target_properties(core PROPERTIES FOLDER "Engine/Static")
+set_target_properties(core PROPERTIES FOLDER "Engine")
 set_target_properties(core PROPERTIES LINKER_LANGUAGE C )
 
 # Mirror physical directory structure inside Visual Studio

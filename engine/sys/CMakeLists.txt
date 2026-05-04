@@ -37,7 +37,7 @@ add_library(sys STATIC
     ${COMPILED_SOURCES}   # these actually compile
 )
 
-set_target_properties(sys PROPERTIES FOLDER "Engine/Static")
+set_target_properties(sys PROPERTIES FOLDER "Engine")
 set_target_properties(sys PROPERTIES LINKER_LANGUAGE C )
 
 # Mirror physical directory structure inside Visual Studio
@@ -47,7 +47,7 @@ source_group(
 )
 
 target_include_directories(sys PUBLIC
-    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/
 )
 
 # ----------------------------------------------------------

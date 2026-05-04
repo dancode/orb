@@ -1,8 +1,8 @@
-#ifndef sys_API
-#define sys_API
+#ifndef SYS_API
+#define SYS_API
 /*============================================================================================*/
-#include "orb.h"
-#include "module/module_api.h"
+#include "base/orb.h"
+#include "engine/module/module_api.h"
 
 // typedef struct sys_api_t sys_api_t;
 typedef struct module_api_s       module_api_t;
@@ -35,5 +35,5 @@ MODULE_GATEWAY_PTR_PATH( sys_api_t, sys )
 #endif
 
 /*============================================================================================*/
-#endif    // sys_API
+#endif    // SYS_API
 

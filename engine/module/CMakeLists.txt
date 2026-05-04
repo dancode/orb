@@ -39,7 +39,7 @@ add_library(module STATIC
 
 target_link_libraries(module PUBLIC sys)
 
-set_target_properties(module PROPERTIES FOLDER "Engine/Static")
+set_target_properties(module PROPERTIES FOLDER "Engine")
 set_target_properties(module PROPERTIES LINKER_LANGUAGE C )
 
 # Mirror physical directory structure inside Visual Studio

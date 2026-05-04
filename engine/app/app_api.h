@@ -9,7 +9,7 @@ module_api_t*               app_get_module_api( void ); /* the lifecycle descrip
 app_api_t*                  app_get_api( void );        /* the typed API struct    */
 
 
-// #if defined( BUILD_STATIC ) || defined( APP_LINK_STATIC )
+// #if defined( ORB_BUILD_STATIC ) || defined( APP_LINK_STATIC )
 // MODULE_GATEWAY_STRUCT_PATH( app_api_t, app )
 // #else
 // MODULE_GATEWAY_PTR_PATH( app_api_t, app )

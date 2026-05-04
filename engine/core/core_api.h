@@ -6,7 +6,7 @@
 
 ==============================================================================================*/
 
-#include "module/module_api.h"
+#include "engine/module/module_api.h"
 
 /*============================================================================================*/
 /* These data pointers are required for natvis debugging within modules */
@@ -59,7 +59,7 @@ typedef struct core_api_s
 
 } core_api_t;
 
-#if defined( BUILD_STATIC ) || defined( CORE_LINK_STATIC )
+#if defined( ORB_BUILD_STATIC ) || defined( CORE_LINK_STATIC )
 
 /* Exe-linked: the struct is part of this binary.  Direct address, LTO-eligible. */
 MODULE_GATEWAY_STRUCT_PATH( core_api_t, core )

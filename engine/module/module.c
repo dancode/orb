@@ -51,7 +51,7 @@
 #include <string.h>    // strcmp, etc.
 #include <assert.h>    // assert
 
-#include "orb.h"
+#include "base/orb.h"
 #include "base/base.h"
 #include "sys/sys.h"
 #include "core/core_api.h"
@@ -77,7 +77,6 @@
 #ifndef MAX_PATH
 #    define MAX_PATH 260
 #endif
-#define MAX_PATH 260
 
 /*==============================================================================================
     Bootstrap log / alloc / free
@@ -433,9 +432,8 @@ call_exit( module_info_t* m )
     m->module_api->exit( m->state );
 }
 
-/* call_reload: if the module provides on_reload, call that; otherwise fall back to init().
-   State is NEVER zeroed here — it arrives with its last values intact either way.
-   This is the key semantic: init() = first-time setup, on_reload() = pointer re-cache. */
+/* call_reload: on_reload must be provided or reload will fail (no ambiguity) 
+   init() = first-time setup, on_reload() = pointer re-cache  */
 
 static bool
 call_reload( module_info_t* m )
@@ -448,15 +446,11 @@ call_reload( module_info_t* m )
         m->module_api->on_reload( m->state, g_api_func );
         return true;
     }
-
-    /* Fallback: re-run init() with preserved (non-zeroed) state.
-       Module's init() must tolerate being called with live state. */
-
-    if ( m->module_api->init )
+    else        
     {
-        return m->module_api->init( m->state, g_api_func );
+        ms_log( "[module] '%s' has no on_reload(), dynamic reload requires it", m->name );
+        return false;
     }
-    return true;
 }
 
 /*==============================================================================================

@@ -1,0 +1,129 @@
+Orb/..
+Build/			// Build Outputs
+
+1. Base/		// (The New Standard Library) Stateless and compiled into every dynamic module and the host.
+
+			// it must operate under one absolute rule: Zero Global State.
+			// Core typedefs (u32, i64, f32, b32). Platform detection macros and compiler intrinsics.
+			// Math library (vectors, matrices, intersections—these are pure functions).
+			// String manipulation (formatting, length, comparisons) that operates on pre-allocated buffers.
+			// Memory operations (memcpy, memset replacements if you compile with /NODEFAULTLIB or -nostdlib).
+			// Hashing algorithms (Murmur, FNV-1a).
+			// NO: Static or global variables, no malloc, file handles, log history.	
+
+2. Engine/		// (The Host Backbone) Only compiled in statically by the host.
+			// Contains state data, memory arenas, and OS hooks.
+			// The engine is a collection of systems but does not 'use' those systems
+			// That belongs to the runtime to decide the usage patterns.
+
+	Host/		// Engine setup
+
+	Core/		// Data structures, memory arenas, logging, cvar.
+	Sys/		// OS Primitives (threads, files, time, DLL loading).		
+	App/		// Platform application shell services, windows, OS events, lifecycle.
+	Mod/		// Dependency graph, module API registration, hot-reload bookkeeping.
+			// The registry passes function pointer tables (or API structs) between dynamic modules.
+
+3. Runtime/		// Runtime Host + Services + Modules
+
+			// Responsibility: This is the heart of the engine. The game/ folder sits here because it defines 
+			// the rules of the simulation (entities, components) without knowing about specific project mechanics.
+
+	Host/		// Runtime setup
+	Services/	// Resident APIs (input, jobs, assets, reflection metadata). 
+	Modules/	// Hot-reloadable engine DLLs (render, audio, physics).
+
+
+4. Game/..		// The reusable framework (entities, transforms, gameplay tags), sits above Runtime.
+			// It creates an Entity, attaches a Physics component, and asks the Render module to draw a model.
+
+	Host/ 		// Game setup
+	LifeCycle/	// Instance, Mode, Loop
+	Sim/		// World, Entity, Component, Actor
+	Content/	// Level, Prefab, Tags
+
+5. Editor/		// 
+
+	Host/		// Editor setup
+
+6. Tools/
+
+7. Projects/		// (User Game Code) Knows about everything
+			// Uses the Game Framework to define Heroes, Abilities, logic.
+	MyProject/	// User directory.
+	  /Source
+
+8. External/		// TODO: Move Third party libraries.
+
+9. Hosts/..		// Executables only (main.c + host glue)
+
+	Engine/
+	Game/
+	Editor/
+	Tool/
+
+			// Ex: main.c, game_host.c/h
+			// Ex: main.c, editor_host.c/h
+
+
+Assets/..		// Raw assets
+Content/..		// Imported content
+
+
+root/
+  BUILD/               // Binary outputs (.exe, .dll, .lib)
+  
+  BASE/                // Stateless standard library (included by all)
+  
+  ENGINE/              // Stateful foundation (Core, Sys, Mod, App)
+  RUNTIME/             // Host scaffolding & Services (Input, Jobs, etc.)
+  GAME/                // Gameplay framework (World, Entity, Tags)
+  EDITOR/              // Editor logic & UI
+  TOOLS/               // Pipeline tool logic
+  
+  RUNTIME_MODULES/     // Engine DLLs (Render, Audio, Physics)
+  GAME_MODULES/        // Reusable Gameplay DLLs (Abilities, Vehicles)
+  EDITOR_MODULES/      // Editor Extension DLLs
+  
+  PROJECTS/            // User Game Projects (Code + Local Assets/Content)
+  
+  EXTERNAL/            // Third-party source/libs
+
+  CONTENT/	       // The "Imported" Source Tree (ENGINE, GAME, EDITOR, TOOLS) 
+  ASSETS/              // The "Raw" Source Tree (ENGINE, GAME, EDITOR, TOOLS)
+  DOCS/                // Documentation
+  CONFIG/              // Engine/Tool configs
+  SCRIPTS/             // Build/Utility scripts
+
+
+The Directory Flow
+
+	HOST/game/main.c: Literally just calls runtime_host_main().
+
+	RUNTIME/host/: A static library that contains the actual "Game Loop" logic. 
+	It knows how to initialize the ENGINE, load MODULES, and tick the GAME framework.
+
+	EDITOR/host/: A static library that knows how to spin up the EDITOR UI, load the
+	RUNTIME in a sub-window, and manage the editor-specific module registry.
+
+	TOOLS/host/: A static library that provides the CLI dispatcher. 
+	It initializes a "headless" engine (no GPU/Window) and executes tool modules.
+
+
+// RUNTIME/host/runtime_host.c
+void runtime_host_run(runtime_params_t* params) {
+    engine_init();      // Setup core/sys/mod/app
+    mod_load(params->module_list); 
+    
+    while(running) {
+        mod_check_hot_reload();
+        mod_broadcast_update();
+    }
+    
+    engine_shutdown();
+}
+
+TODO: add game as subdirectory to root as library or dll
+TODO: runtime moved to root as library
+TODO: 
+

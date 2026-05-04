@@ -37,7 +37,7 @@ add_library(app STATIC
     ${COMPILED_SOURCES}   # these actually compile
 )
 
-set_target_properties(app PROPERTIES FOLDER "Engine/Static")
+set_target_properties(app PROPERTIES FOLDER "Engine")
 set_target_properties(app PROPERTIES LINKER_LANGUAGE C )
 
 # Mirror physical directory structure inside Visual Studio
