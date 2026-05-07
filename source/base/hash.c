@@ -1,0 +1,1 @@
+static int empty_temp = 0;

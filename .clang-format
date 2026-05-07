@@ -22,7 +22,9 @@ BreakStringLiterals: false                  # Don't split long string literals a
 # PREPROCESSOR / MACROS
 ##############################################
 
-IndentPPDirectives: AfterHash               # Indent directives after the hash symbol
+#AfterHash  BeforeHash
+
+IndentPPDirectives: BeforeHash              # Indent directives after the hash symbol
 AlignEscapedNewlines: true                  # Visually align escaped newlines in macros
 AlignConsecutiveMacros: AcrossEmptyLines    # Align #define blocks even across empty lines
 SpaceAfterLogicalNot: false                 # Avoid spacing after '!' (newer option)
