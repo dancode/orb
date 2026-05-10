@@ -144,7 +144,7 @@ typedef ptrdiff_t isize;
     Compiler Hints + Utility Macros
 ==============================================================================================*/
 
-#if defined( _MSC_VER )
+#if defined( COMPILER_MSVC )
     #define INLINE        __forceinline
     #define NOINLINE      __declspec( noinline )
     #define ALIGNAS( n )  __declspec( align( n ) )
@@ -166,7 +166,7 @@ typedef ptrdiff_t isize;
     Assertions (no CRT assert.h dependency)
 ==============================================================================================*/
 
-#if COMPILER_MSVC
+#if defined( COMPILER_MSVC )
     #define ORB_TRAP() __debugbreak()
 #else
     #define ORB_TRAP() __builtin_trap()

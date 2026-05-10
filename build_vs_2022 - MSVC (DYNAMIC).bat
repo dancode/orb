@@ -14,7 +14,7 @@ echo ========================================
 echo.
 
 :: Automatically selecting the Dynamic Build configuration
-set BUILD_DIR=build_dynamic
+set BUILD_DIR=build
 set MONO_FLAG=-DENGINE_MONOLITHIC=OFF
 
 echo Target: %BUILD_DIR%

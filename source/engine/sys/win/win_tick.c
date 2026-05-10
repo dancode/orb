@@ -153,8 +153,13 @@ sys_tick_nanoseconds( void )
 /*============================================================================================*/
 
 void
-sys_tick_sleep( i32 milliseconds )
+sys_sleep_milliseconds( i32 milliseconds )
 {
+    /* Sleep() is not super accurate, but it's good enough for our needs.  We call timeBeginPeriod(1)
+       in sys_tick_init to ensure that Sleep() has a resolution of 1 ms, which is sufficient for
+       our frame throttling.  For more precise sleeping, we would need to implement a busy-wait
+       loop that checks the high-resolution timer, but that would consume CPU resources. */
+
     Sleep( milliseconds ); /* win32 sleep function */
 }
 

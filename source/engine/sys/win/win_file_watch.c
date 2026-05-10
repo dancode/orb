@@ -7,19 +7,19 @@
     Usage
     -----
         // Init once, pointing at the directory to watch.
-        file_watch_init( "./modules" );
+        sys_filewatch_init( "./modules" );
 
         // Each frame: drain all pending notifications.
-        file_watch_poll( my_callback, userdata );
+        sys_filewatch_poll( my_callback, userdata );
 
         // On shutdown.
-        file_watch_shutdown();
+        sys_filewatch_shutdown();
 
     Callback
     --------
     Called once per changed file per poll.  `filename` is the bare filename
     (no path prefix), e.g. "render.dll".  The callback must not call
-    file_watch_init / file_watch_shutdown from within itself.
+    sys_filewatch_init / sys_filewatch_shutdown from within itself.
 
     Threading
     ---------
@@ -115,7 +115,7 @@ fw_prime_read( void )
 ==============================================================================================*/
 
 bool
-file_watch_init( const char* dir_path )
+sys_filewatch_init( const char* dir_path )
 {
     memset( &g_fw, 0, sizeof( g_fw ) );
 
@@ -158,7 +158,7 @@ file_watch_init( const char* dir_path )
 }
 
 int
-file_watch_poll( file_watch_callback_t cb, void* userdata )
+sys_filewatch_poll( file_watch_callback_t cb, void* userdata )
 {
     if ( g_fw.dir == INVALID_HANDLE_VALUE || !g_fw.read_pending )
         return 0;
@@ -221,7 +221,7 @@ file_watch_poll( file_watch_callback_t cb, void* userdata )
 }
 
 void
-file_watch_shutdown( void )
+sys_filewatch_shutdown( void )
 {
     if ( g_fw.dir != INVALID_HANDLE_VALUE )
     {
@@ -238,7 +238,7 @@ file_watch_shutdown( void )
 }
 
 const char*
-file_watch_last_error( void )
+sys_filewatch_last_error( void )
 {
     return g_fw.last_error;
 }

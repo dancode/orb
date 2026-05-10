@@ -7,11 +7,11 @@
     Lifecycle
     ---------
         module_system_init()        boot; no modules loaded yet
-        mod_static_load( name )  register a static module (no DLL, no shadow copy)
+        mod_static_load( name )     register a static module (no DLL, no shadow copy)
         module_load( name )         register and load a module (static or dynamic, see below)
         module_init_all()           topo-sort deps → call each module's init()
-        mod_system_tick( dt )    tick all INITIALIZED modules in dep order
-        mod_check_reloads()      poll file timestamps → debounce → reload changed DLLs
+        mod_system_tick( dt )       tick all INITIALIZED modules in dep order
+        mod_check_reloads()         poll file timestamps → debounce → reload changed DLLs
         module_system_exit()        exit + unload in reverse dep order; delete shadow files
 
     module_load( name ) build variants
@@ -100,6 +100,11 @@ bool mod_unload( const char* name );
    Call exit → unload DLL → shadow copy → load new DLL → Call on_reload() or init().
    State pointer is preserved; block is NOT zeroed on reload. */
 bool mod_reload( const char* name );
+
+/* Force-reload every dynamic module immediately, skipping the file-watch debounce.
+   Returns the count of modules successfully reloaded. Useful for an editor's
+   "Reload Modules" command. Static modules are skipped. */
+int mod_reload_all( void );
 
 /*==============================================================================================
     Initialization and update

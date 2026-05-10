@@ -2,12 +2,9 @@
 #define BASE_H
 /*==============================================================================================
 
-    base.h -- engine standard library
+    base.h -- engine (stateless) standard library
 
-        Fundamental types, platform macros, compiler helpers.
-
-        No OS headers. No stdlib (except stdint/stdbool/stddef).
-        Every other module includes this.
+        rules: cannot allocate memory. cannot depend on the OS. included by everything.
 
 ==============================================================================================*/
 #include "orb.h"

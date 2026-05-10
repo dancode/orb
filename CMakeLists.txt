@@ -108,8 +108,7 @@ else()
     # Catch-all for Pure Clang (Unix/macOS) and GCC
     message(STATUS "Compiler: Unix-style (${CMAKE_C_COMPILER_ID})")
     
-    add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-function)
-    
+    add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-function)    
     # Release-Only Suppressions and Debug Info
     add_compile_options("$<$<CONFIG:Release>:-Wno-unused-variable;-Wno-unused-parameter;-g>")
 
@@ -145,7 +144,7 @@ endif()
 # This allows `#include "orb.h"` and `#include "engine/core/core_api.h"` 
 # to work from anywhere in the codebase.
 
-include_directories(${CMAKE_SOURCE_DIR}/source)
+include_directories( ${CMAKE_SOURCE_DIR}/source )
 
 # ------------------------------------------------------------------------------
 # Create libray function (for Unity builds)
@@ -158,7 +157,7 @@ function(add_unity_library TARGET_NAME TARGET_TYPE SOURCE_DIR VS_FOLDER)
     # if you call this function from a nested CMakeLists.txt file.
     set(MODULE_ROOT "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}")
 
-# 2. Collect all raw files for IDE visibility
+    # 2. Collect all raw files for IDE visibility
     file(GLOB_RECURSE TARGET_FILES
         "${MODULE_ROOT}/*.c"
         "${MODULE_ROOT}/*.h"
@@ -167,7 +166,7 @@ function(add_unity_library TARGET_NAME TARGET_TYPE SOURCE_DIR VS_FOLDER)
 
     # 3. Process ALL trailing arguments (ARGN) as files to compile.
     # We automatically prepend the MODULE_ROOT here so you only have to 
-    # pass the local filenames (e.g., "sys_ub.c").
+    # pass the local filenames (e.g., "sys.c").
     set(TARGET_COMPILED "")
     foreach(SRC_FILE IN LISTS ARGN)
         list(APPEND TARGET_COMPILED "${MODULE_ROOT}/${SRC_FILE}")
@@ -195,7 +194,6 @@ function(add_unity_library TARGET_NAME TARGET_TYPE SOURCE_DIR VS_FOLDER)
 
     # 8. Mirror physical directory structure inside Visual Studio
     source_group(TREE "${MODULE_ROOT}" FILES ${TARGET_FILES})
-    # source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/${SOURCE_DIR}" FILES ${TARGET_FILES})
 
     # 9. Tuck the mandatory CMake script out of sight
     source_group("CMake Rules" FILES "CMakeLists.txt")
@@ -252,42 +250,49 @@ function(add_unity_executable TARGET_NAME SOURCE_DIR VS_FOLDER)
 endfunction()
 
 # ------------------------------------------------------------------------------
-# 0. Solution-Level Files (Organization)
+# 00 Project Level Files (not compiled - organization and visibility only)
 # ------------------------------------------------------------------------------
 # Create a dummy target to hold root-level files in Visual Studio
 
-set(ROOT_SOURCES
+set( ROOT_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/source/orb.h"
 )
-
-# ${CMAKE_SOURCE_DIR}/CMakeLists.txt
-# ${CMAKE_SOURCE_DIR}/generate_vs.bat 
-# You can add your .bat files or README.md here later so they show up in VS too!
-
-add_custom_target(root SOURCES ${ROOT_SOURCES})
-set_target_properties(root PROPERTIES FOLDER "0_Root")
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/source" FILES ${ROOT_SOURCES})
-
-# ------------------------------------------------------------------------------
-# 2. BASE (Stateless Standard Library)
-# ------------------------------------------------------------------------------
-
-# Single Unity File (The standard way)
-add_unity_library(base STATIC "source/base" "02_Base"
-    "base_ub.c"
+set( DOC_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/README.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/planning.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/project.txt"
 )
 
+add_custom_target(root SOURCES ${ROOT_SOURCES} ${DOC_SOURCES} )
+set_target_properties(root PROPERTIES FOLDER "00_Root")
+
+source_group( "Source" "${CMAKE_CURRENT_SOURCE_DIR}/source" FILES ${ROOT_SOURCES})
+source_group( "Docs" "${CMAKE_CURRENT_SOURCE_DIR}/docs" FILES ${DOC_SOURCES})
+
 # ------------------------------------------------------------------------------
-# 3. ENGINE
+# 01 BASE (Stateless Standard Library)
 # ------------------------------------------------------------------------------
 
-# 3. ENGINE : SUS
-add_unity_library(engine_sys STATIC "source/engine/sys" "03_Engine"
-    "sys_ub.c"
-)
+add_unity_library(base STATIC "source/base" "01_Base" "base_ub.c" )
 
-# # 3. ENGINE : CORE
-add_unity_library(engine_core STATIC "source/engine/core" "03_Engine"
+# ------------------------------------------------------------------------------
+# 02 ENGINE (Stateful Engine Framework)
+# ------------------------------------------------------------------------------
+
+# SYS
+add_unity_library( engine_sys STATIC "source/engine/sys" "02_Engine" "sys.c" )
+target_compile_definitions( engine_sys PUBLIC SYS_STATIC )
+
+# MOD
+add_unity_library( engine_mod STATIC "source/engine/mod" "02_Engine" "mod.c" )
+target_compile_definitions( engine_mod PUBLIC MOD_STATIC )
+
+# APP
+add_unity_library( engine_app STATIC "source/engine/app" "02_Engine" "app.c" )
+target_compile_definitions( engine_app PUBLIC APP_STATIC )
+
+# CORE
+add_unity_library( engine_core STATIC "source/engine/core" "02_Engine"
 	"core_api.c"
 	"core_sid.c"
 	"core_cvar.c"
@@ -296,67 +301,86 @@ add_unity_library(engine_core STATIC "source/engine/core" "03_Engine"
 	"core_reflect.c"
     "core_memory.c"    
 )
+target_compile_definitions( engine_core PUBLIC CORE_STATIC )
 
-# 3. ENGINE : MOD
-add_unity_library(engine_mod STATIC "source/engine/mod" "03_Engine"
-    "mod.c"
+# ENGINE LINK ORDER: SYS -> CORE -> MOD -> APP
+
+# target_link_libraries( engine_sys  PUBLIC base )
+target_link_libraries( engine_core PUBLIC engine_sys )
+target_link_libraries( engine_mod  PUBLIC engine_sys )
+target_link_libraries( engine_app  PUBLIC engine_sys )
+
+# ------------------------------------------------------------------------------
+# 03 RUNTIME: HOST + SERVICES
+# ------------------------------------------------------------------------------
+
+# RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)
+add_unity_library(runtime_host STATIC "source/runtime/host" "03_Runtime/Host"
+    "runtime_host.c"
 )
+target_link_libraries( runtime_host PUBLIC base engine_mod engine_core engine_app )
 
-# 3. ENGINE : App
-add_unity_library(engine_app STATIC "source/engine/app" "03_Engine"
-    "app.c"
-)
+# RUNTIME SERVICES
+add_unity_library( rt_jobs STATIC "source/runtime/services/jobs" "03_Runtime/Services" "rt_jobs.c" )
 
-# Module Engine Dependencies
-target_link_libraries(engine_sys  PUBLIC base)
-target_link_libraries(engine_core PUBLIC base engine_sys )
-target_link_libraries(engine_mod  PUBLIC base engine_sys)
-target_link_libraries(engine_app  PUBLIC base engine_sys engine_core)
+# Note: The runtime_host library doesn't actually link the services directly 
+#       The final executable (host_game) links them all together!
 
 # ------------------------------------------------------------------------------
-# 4. RUNTIME
+# 03 RUNTIME: MODULES
 # ------------------------------------------------------------------------------
 
-# 4. RUNTIME
-add_unity_library(runtime STATIC "source/runtime" "04_Runtime"
-    "runtime.c"
-)
-
-# ------------------------------------------------------------------------------
-# 5. RUNTIME MODULES (Dynamic or Static in Monolithic build)
-# ------------------------------------------------------------------------------
-
-add_unity_library(example ${MODULE_TYPE} "source/runtime_modules/example" "05_RuntimeModules"
+# EXAMPLE
+add_unity_library( example ${MODULE_TYPE} "source/runtime_module/example" "03_Runtime_Modules"
     "example.c"
 )
-add_unity_library(render ${MODULE_TYPE} "source/runtime_modules/render" "05_RuntimeModules"
+
+# RENDER
+add_unity_library( render ${MODULE_TYPE} "source/runtime_module/render" "03_Runtime_Modules"
     "render.c"
 )
-add_unity_library(audio ${MODULE_TYPE} "source/runtime_modules/audio" "05_RuntimeModules"
+
+# AUDIO
+add_unity_library( audio ${MODULE_TYPE} "source/runtime_module/audio" "03_Runtime_Modules"
     "audio.c"
 )
 
+# PHYSICS
+add_unity_library( physics ${MODULE_TYPE} "source/runtime_module/physics" "03_Runtime_Modules"
+    "physics.c"
+)
+
+# LINK
 target_link_libraries( example PUBLIC base )
 target_link_libraries( render PUBLIC base )
 target_link_libraries( audio PUBLIC base )
+target_link_libraries( physics PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 6. GAME (FRAMEWORK)
+# 04 DEVELOPER MODULES (PARALLEL TO GAME, BUT LINKED BY EDITOR/SANDBOX)
 # ------------------------------------------------------------------------------
 
-# 6. GAME (FRAMEWORK)
-add_unity_library(game ${MODULE_TYPE} "source/game" "06_Game"
+add_unity_library( dev_build_invoker STATIC "source/developer/dev_build_invoker" "04_Developer"
+    "build_invoker.c"
+)
+target_link_libraries( dev_build_invoker PUBLIC engine_sys )
+
+# ------------------------------------------------------------------------------
+# 04 GAME (FRAMEWORK)
+# ------------------------------------------------------------------------------
+
+# GAME
+add_unity_library(game ${MODULE_TYPE} "source/game" "04_Game"
     "game.c"
 )
-
 target_link_libraries( game PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 7. USER PROJECTS (Additional Game DLL)
+# 05 USER PROJECTS (Additional Game DLL)
 # ------------------------------------------------------------------------------
 
 # 7. GAME (FRAMEWORK)
-add_unity_library(sample_game ${MODULE_TYPE} "source/projects/sample_game" "07_Project"
+add_unity_library(sample_game ${MODULE_TYPE} "source/project/sample_game" "05_Project"
     "sample_game.c"
 )
 
@@ -364,57 +388,98 @@ add_unity_library(sample_game ${MODULE_TYPE} "source/projects/sample_game" "07_P
 # add_engine_dll(amberfall "7_Projects" PROJECTS/amberfall/source/af_unity.c "base;engine_core;game_framework")
 
 # ------------------------------------------------------------------------------
-# 8. HOSTS (Executables)
+# 06. HOST SHARED LIBRARY
 # ------------------------------------------------------------------------------
 
-#Engine Host (Used for testing core engine plumbing)
-# add_executable( host_engine "source/hosts/engine/engine_main.c" )
-# target_link_libraries( host_engine PRIVATE base engine_sys engine_mod engine_core )
-# set_target_properties( host_engine PROPERTIES FOLDER "0_Hosts" )
-
-add_unity_executable(host_engine "source/hosts/engine" "01_Hosts"
-    "engine_main.c"
-    "engine_test.c"
-)
-target_link_libraries( host_engine PRIVATE 
-    base 
-    engine_sys 
-    engine_mod 
-    engine_core 
+add_unity_library( host_common STATIC "source/host/common" "06_Host" 
+    "host_common.c"
 )
 
-# Runtime Host (Minimal, for testing runtime modules without the full game)
-add_unity_executable( host_runtime "source/hosts/runtime" "01_Hosts"
-    "runtime_main.c"
-)
-target_link_libraries( host_runtime PRIVATE 
-    base
-    engine_sys 
-    engine_mod
-    engine_core
-)
+# ------------------------------------------------------------------------------
+# 06 HOSTS (Executables)
+# ------------------------------------------------------------------------------
 
-if(ENGINE_MONOLITHIC)
-target_link_libraries(host_runtime PUBLIC example)
+# HOST Game
+add_unity_executable( host_game "source/host/game" "06_Host" "host_game_main.c" )
+target_link_libraries( host_game PRIVATE base engine_sys engine_mod engine_core engine_app )
+if ( ENGINE_MONOLITHIC ) 
+    target_link_libraries( host_game PUBLIC render audio physics )
 endif()
 
-# Game Host
-#add_executable(host_game HOST/game/main.c)
-#target_link_libraries(host_game PRIVATE runtime_host game_framework)
-#set_target_properties(host_game PROPERTIES FOLDER "0_Hosts")
+# HOST Editor
+add_unity_executable( host_editor "source/host/editor" "06_Host" "editor_main.c" )
+target_link_libraries( host_editor PRIVATE base engine_sys engine_mod engine_core )
+if ( ENGINE_MONOLITHIC ) 
+    target_link_libraries( host_editor PUBLIC render )
+endif()
 
-# Tool Host (Headless! Notice it links sys and mod, but NOT app)
-# add_executable(host_tool HOST/tool/main.c)
-# target_link_libraries(host_tool PRIVATE base engine_core engine_sys engine_mod)
-# set_target_properties(host_tool PROPERTIES FOLDER "0_Hosts")
+# HOST TOOL
+add_unity_executable( host_tool "source/host/tool" "06_Host" "tool_main.c" )
+target_link_libraries( host_tool PRIVATE base engine_mod engine_sys engine_core )
 
-# Editor Host
-# add_executable(host_editor HOST/editor/main.c EDITOR/host/editor_host.c)
-# target_link_libraries(host_editor PRIVATE runtime_host)
-# set_target_properties(host_editor PROPERTIES FOLDER "0_Hosts")
+
+# HOST Sandbox
+add_unity_executable( host_sandbox "source/host/sandbox" "06_Host" "host_sandbox.c" )
+target_link_libraries( host_sandbox PRIVATE base engine_sys engine_mod engine_core )
+if ( ENGINE_MONOLITHIC ) 
+endif()
+
+# --- The Magic IDE Config ---
+# Change "sandbox_imgui" here, run your build.bat, and VS will automatically 
+# pass this argument when you press F5.
+set_target_properties( host_sandbox PROPERTIES 
+    VS_DEBUGGER_COMMAND_ARGUMENTS "-module sandbox_imgui"
+)
 
 # ------------------------------------------------------------------------------
-# 3. MONOLITHIC Statically Links All DLL's
+# 07 SANDBOX (Executables)
+# ------------------------------------------------------------------------------
+
+# SANDBOX MODULE
+add_unity_executable( sandbox_module "source/sandbox/module" "07_Sandbox" "sb_module_main.c" )
+target_link_libraries( sandbox_module PRIVATE engine_sys engine_mod dev_build_invoker )
+if ( ENGINE_MONOLITHIC )
+endif()
+
+## TODO:
+
+# SANDBOX ENGINE
+add_unity_executable( sandbox_engine "source/sandbox/engine" "07_Sandbox" "sb_engine_main.c" )
+target_link_libraries( sandbox_engine PRIVATE base engine_sys engine_mod engine_core )
+
+# SANDBOX RUNTIME
+add_unity_executable( sandbox_runtime "source/sandbox/runtime" "07_Sandbox" "sb_runtime_main.c" )
+target_link_libraries( sandbox_runtime PRIVATE base engine_sys engine_mod engine_core )
+if ( ENGINE_MONOLITHIC )
+    target_link_libraries( sandbox_runtime PUBLIC example )
+endif()
+
+# SANDBOX GAME
+add_unity_executable( sandbox_game "source/sandbox/game" "07_Sandbox" "sb_game_main.c" )
+target_link_libraries( sandbox_game PRIVATE base engine_sys engine_mod engine_core )
+if ( ENGINE_MONOLITHIC )
+    # target_link_libraries( sandbox_game PUBLIC example )
+endif()
+
+# SANDBOX GAME
+# add_unity_executable( sandbox_game "source/hosts/sandbox_game" "01_Host_Sandbox" "sb_game.c" )
+# target_link_libraries( sandbox_game PRIVATE base engine_sys engine_mod engine_core game )
+# if ( ENGINE_MONOLITHIC )
+#     # target_link_libraries( sandbox_game PUBLIC example )
+# endif()
+
+# ------------------------------------------------------------------------------
+# 07 SANDBOXMODULES
+# ------------------------------------------------------------------------------
+
+# JOBS
+add_unity_library( sb_jobs ${MODULE_TYPE} "source/sandbox_module/jobs" "07_Sandbox_Modules"
+    "sb_jobs.c"
+)
+# target_link_libraries( sb_jobs PUBLIC base )
+
+# ------------------------------------------------------------------------------
+# MONOLITHIC BUILD COMBINES ALL LIBRARIES INTO HOST TARGET
 # ------------------------------------------------------------------------------
 
 if(ENGINE_MONOLITHIC)
@@ -429,41 +494,10 @@ if(ENGINE_MONOLITHIC)
 endif()
 
 # ------------------------------------------------------------------------------
-# Create our main executable (engine.exe)
-# ------------------------------------------------------------------------------
-
-# add_subdirectory(base)
-### add_subdirectory(engine)
-
-### add_subdirectory(runtime)
-### add_subdirectory(runtime_modules/example)
-### add_subdirectory(runtime_modules/render)
-### add_subdirectory(runtime_modules/audio)
-### 
-### add_subdirectory(hosts)
-
-# add_subdirectory(runtime/modules/example)
-# add_subdirectory(runtime/modules/render)
-# add_subdirectory(runtime/modules/audio)
-
-
-# Editor
-# add_subdirectory(editor)
-
-# Tools
-# add_subdirectory(tools/build_tool)
-# add_subdirectory(tools/asset_tool)
-
-# Game Projects
-# add_subdirectory(projects/sample_game)
-
-# ------------------------------------------------------------------------------
 # Set default startup project
 # ------------------------------------------------------------------------------
 
-### set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT engine)
-
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT host_engine)
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sandbox_engine )
 
 # ------------------------------------------------------------------------------
 # Hide CMake generated builds in Visual Studio project.

@@ -1,14 +1,38 @@
-#ifndef sys_H
-#define sys_H
+#ifndef SYS_H
+#define SYS_H
 /*==============================================================================================
 
-    sys.h
+    sys.h : System API for platform services (except app/window and input, which are app.h)
+
+    Platform abstraction and Tier 1 host service: always linked into the exe, never a DLL.
+
+    Why these are direct functions, not a function-pointer struct
+    -------------------------------------------------------------
+    sys is consumed by the module system itself (mod.c).  mod.c needs to call file_watch
+    and sys_library_load BEFORE any module has been initialized — which means the gateway
+    pointer cache cannot be populated yet.  So sys is exposed as plain extern functions
+    and gets statically linked into every exe alongside mod.c.
+
+    Modules outside of mod.c rarely need to call sys directly — they go through core or
+    a higher-level service.
 
 ==============================================================================================*/
 #include "orb.h"
 /*==============================================================================================
 
-    sys tick : high-resolution timer and sleep function
+    Library : Dynamic library loading and symbol lookup
+
+==============================================================================================*/
+
+typedef void* lib_handle_t;
+
+lib_handle_t  sys_library_load( const char* path );
+void*         sys_library_get_symbol( lib_handle_t module, const char* name );
+void          sys_library_unload( lib_handle_t module );
+
+/*==============================================================================================
+
+    Tick : High-resolution timer and sleep function
 
 ==============================================================================================*/
 
@@ -20,59 +44,80 @@ f64  sys_tick_seconds( void );
 i64  sys_tick_milliseconds( void );
 i64  sys_tick_microseconds( void );
 i64  sys_tick_nanoseconds( void );
-void sys_tick_sleep( i32 milliseconds );
+void sys_sleep_milliseconds( i32 milliseconds );
 
 /*==============================================================================================
 
-    sys library : dynamic library loading and symbol lookup
+    File : File operations and timestamps
 
 ==============================================================================================*/
 
-typedef void* lib_handle_t;
+void     sys_exe_dir( char* out, int size );
+uint64_t sys_time_ms( void );
 
-lib_handle_t  library_load( const char* path );
-void*         library_get_symbol( lib_handle_t h, const char* s );
-int           library_unload( lib_handle_t module );
-
-/*==============================================================================================
-
-    sys_file.c : file time, copy, delete, exe dir
-
-==============================================================================================*/
-
-uint64_t platform_time_ms( void );
-uint64_t platform_file_time( const char* path );
-bool     platform_copy_file( const char* src, const char* dst );
-bool     platform_delete_file( const char* path );
-void     platform_exe_dir( char* out, int size );
+uint64_t sys_file_time( const char* path );
+bool     sys_file_copy( const char* src, const char* dst );
+bool     sys_file_delete( const char* path );
 
 /*==============================================================================================
 
-    sys_file_watch.c : watch a directory for file changes, /w polling notifications
+    File Watch : Watch a directory for file changes, with polling notifications
 
 ==============================================================================================*/
 
 /* Callback: Called for each file that changed.
    `filename` — bare filename, no path, valid only for the duration of the call.
-   `userdata` — value passed to file_watch_poll(). */
+   `userdata` — value passed to sys_filewatch_poll(). */
 typedef void ( *file_watch_callback_t )( const char* filename, void* userdata );
 
-/* Start watching `dir_path`.  Returns false on failure (check file_watch_last_error). */
-bool file_watch_init( const char* dir_path );
+/* Start watching `dir_path`.  Returns false on failure (check sys_filewatch_last_error). */
+bool sys_filewatch_init( const char* dir_path );
 
 /* Drain all pending notifications, invoking `cb` for each changed file.
    Returns the number of notifications delivered (0 if nothing changed). */
-int file_watch_poll( file_watch_callback_t cb, void* userdata );
+int sys_filewatch_poll( file_watch_callback_t cb, void* userdata );
 
 /* Stop watching and release all resources. */
-void file_watch_shutdown( void );
+void sys_filewatch_shutdown( void );
 
 /* Human-readable description of the last error, or "" if none. */
-const char* file_watch_last_error( void );
+const char* sys_filewatch_last_error( void );
 
 /*==============================================================================================
 
-    System : Debug Print
+    Process : Spawn external processes synchronously, with optional output capture.
+
+    Used by the runtime build invoker to call cmake, but generally useful for any
+    "shell out and wait" operation. Output capture is implemented via a temp file on
+    Windows to avoid pipe-deadlock with long build logs.
+
+==============================================================================================*/
+
+typedef struct sys_process_result_s
+{
+    bool started;         /* true if the process actually launched */
+    int  exit_code;       /* process exit code (0 = success by convention) */
+    f64  elapsed_seconds; /* wall time spent waiting for the child */
+
+} sys_process_result_t;
+
+/* Run a command synchronously. Stdout/stderr are inherited (printed to the host's console).
+   `working_dir` may be NULL to inherit the caller's CWD.
+   Returns false only if the process could not be launched at all. */
+bool sys_process_run( const char* command_line, const char* working_dir, sys_process_result_t* result );
+
+/* Same, but captures combined stdout+stderr into `out_buffer`. Truncated to
+   `out_buffer_size - 1` bytes plus terminating NUL. `out_written` is optional. */
+bool sys_process_run_capture( const char*           command_line,
+                              const char*           working_dir,
+                              char*                 out_buffer,
+                              int                   out_buffer_size,
+                              int*                  out_written,
+                              sys_process_result_t* result );
+
+/*==============================================================================================
+
+    Print :
 
 ==============================================================================================*/
 
@@ -81,9 +126,7 @@ const char* file_watch_last_error( void );
 
 /*==============================================================================================
 
-    platform_console.c
-
-    Console input is for bootstrap tools, test hosts, and early engine loops.
+    Console Input : For bootstrap tools, test hosts, and early engine loops.
 
     It is intentionally not the same thing as app input.
 
@@ -102,9 +145,9 @@ const char* file_watch_last_error( void );
 #define CONFIG_CONSOLE
 #ifdef CONFIG_CONSOLE
 
-// void sys_console_open();
-// void sys_console_close();
-// i32  sys_console_read_line( i8* buffer, i32 buffer_size );
+    // void sys_console_open();
+    // void sys_console_close();
+    // i32  sys_console_read_line( i8* buffer, i32 buffer_size );
 
 #endif
 
@@ -187,4 +230,4 @@ bool sys_key_pressed( sys_key_t key );
 bool sys_key_released( sys_key_t key );
 
 /*============================================================================================*/
-#endif    // sys_H
+#endif    // SYS_H

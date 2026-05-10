@@ -23,31 +23,24 @@ typedef struct core_debug_api_s
 
 } core_debug_api_t;
 
-/*============================================================================================*/
-/* forward declarations for core API */
-
-// Logging
-typedef void ( *core_log_fn )( const char* fmt, ... );
-
-// Memory
-typedef void* ( *core_alloc_fn )( size_t size );
-typedef void ( *core_free_fn )( void* ptr );
-typedef void* ( *core_realloc_fn )( void* ptr, size_t size );
-
-/*============================================================================================*/
-/* core API struct — this is what modules get when they ask for "core" */
+/*==============================================================================================
+    Public API struct
+==============================================================================================*/
 
 typedef struct core_api_s
 {
     /* debug api */
     core_debug_api_t* debug_api;    // for natvis and debugging
 
-    /* simple api */
-    core_log_fn   log;
-    core_log_fn   warn;
-    core_log_fn   error;
-    core_alloc_fn alloc;
-    core_free_fn  free;
+    /* logging */
+    void ( *log )( const char* fmt, ... );
+    void ( *warn )( const char* fmt, ... );
+    void ( *error )( const char* fmt, ... );
+
+    /* allocator */
+    void* ( *alloc )( size_t size );
+    void* ( *realloc )( void* ptr, size_t size );
+    void ( *free )( void* ptr );
 
     /* cvar system */
     // cvar_find_fn cvar_find;
@@ -69,4 +62,3 @@ MOD_GATEWAY_DYNAMIC( core_api_t, core )
 
 /*============================================================================================*/
 #endif    // CORE_API_H
-

@@ -1,6 +1,5 @@
 #ifndef GAME_API_H
 #define GAME_API_H
-
 /*==============================================================================================
 
     game_api.h
@@ -17,7 +16,12 @@
 typedef struct game_api_s
 {
     /* Advance the game by one frame.  Internally calls renderer, audio, etc. */
-    void ( *update )( float dt );
+    void ( *on_start )( void );
+    void ( *on_update )( float dt );
+    void ( *on_render )( void );
+    void ( *on_stop )( void );
+
+    int ( *score )( void );
 
 } game_api_t;
 

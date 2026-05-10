@@ -1,5 +1,5 @@
-#ifndef app_API
-#define app_API
+#ifndef APP_API_H
+#define APP_API_H
 /*============================================================================================*/
 #include "engine/mod/mod_api.h"
 
@@ -18,4 +18,4 @@ MOD_GATEWAY_DYNAMIC( app_api_t, app )
 #endif
 
 /*============================================================================================*/
-#endif    // app_API
+#endif    // APP_API_H

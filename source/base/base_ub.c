@@ -1,6 +1,8 @@
 /*==============================================================================================
 
-    base.c 
+    base.c -- the engine's (stateless) standard library implementation.
+
+    rules: cannot allocate memory. cannot depend on the OS. included by all modules.
 
 ==============================================================================================*/
 

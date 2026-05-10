@@ -5,7 +5,7 @@ set GENERATOR=Visual Studio 17 2022
 set ARCH=x64
 
 :: This MUST match the name in your project() call in CMakeLists.txt
-set SLN_NAME=hybrid.sln
+set SLN_NAME=orb.sln
 
 echo ========================================
 echo ORB Engine Project Generator (Dynamic)
@@ -13,7 +13,7 @@ echo ========================================
 echo.
 
 :: Automatically selecting the Dynamic Build configuration
-set BUILD_DIR=build_monolithic
+set BUILD_DIR=build_static
 set MONO_FLAG=-DENGINE_MONOLITHIC=ON
 	
 echo Target: %BUILD_DIR%

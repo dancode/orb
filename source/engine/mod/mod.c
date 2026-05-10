@@ -55,6 +55,7 @@
 #include "engine/sys/sys.h"
 
 #include "mod_api.h"
+#include "mod_export.h"
 #include "mod.h"
 
 /*==============================================================================================
@@ -119,7 +120,7 @@ typedef struct mod_info_s
     void*               dll;                        /* handle to the loaded shadow copy */
     uint64_t            last_write;                 /* file timestamp at last successful load */
 
-    mod_api_t*       mod_api;                 /* lifecycle: init / tick / exit / on_reload */
+    mod_api_t*          mod_api;                    /* lifecycle: init / tick / exit / on_reload */
 
     void*               state;                      /* persistent state block; system-owned */
     int32_t             state_size;                 /* size of the current allocation */
@@ -139,24 +140,23 @@ typedef struct
     Global state
 ==============================================================================================*/
 
-static mod_info_t     g_modules[ MAX_MODULES ];
-static int32_t           g_module_count = 0;
+static mod_info_t           g_modules[ MAX_MODULES ];
+static int32_t              g_module_count = 0; 
 
-static int32_t           g_init_order[ MAX_MODULES ];
-static int32_t           g_init_count = 0;
+static int32_t              g_init_order[ MAX_MODULES ];
+static int32_t              g_init_count = 0;
 
-static char              g_root[ MAX_PATH ] = { 0 };
-static char              g_last_error[ 256 ] = { 0 };
+static char                 g_root[ MAX_PATH ] = { 0 };
+static char                 g_last_error[ 256 ] = { 0 };
 
-static uint32_t          g_shadow_counter = 0;      /* global incremented per shadow copy created */
+static uint32_t             g_shadow_counter = 0;      /* global incremented per shadow copy created */
 
-static get_api_fn        g_api_func;                /* passed into every init() / on_reload() */
+static get_api_fn           g_api_func;                /* passed into every init() / on_reload() */
 
-static pending_reload_t g_pending[ MAX_PENDING ];
-static int32_t          g_pending_count = 0;
+static pending_reload_t     g_pending[ MAX_PENDING ];
+static int32_t              g_pending_count = 0;
 
 // clang-format on
-
 /*==============================================================================================
     Error reporting
 ==============================================================================================*/
@@ -249,7 +249,7 @@ shadow_copy( const char* name, uint32_t counter )
     char src[ MAX_PATH ], dst[ MAX_PATH ];
     path_dll( name, src, sizeof( src ) );
     path_shadow( name, counter, dst, sizeof( dst ) );
-    if ( platform_copy_file( src, dst ) == false )
+    if ( sys_file_copy( src, dst ) == false )
     {
         set_error( "copy failed: %s > %s", src, dst );
         return false;
@@ -262,7 +262,7 @@ shadow_delete( const char* name, uint32_t counter )
 {
     char path[ MAX_PATH ];
     path_shadow( name, counter, path, sizeof( path ) );
-    platform_delete_file( path ); /* best-effort; ignore failure */
+    sys_file_delete( path ); /* best-effort; ignore failure */
 }
 
 /*==============================================================================================
@@ -334,7 +334,7 @@ slot_load_dll( mod_info_t* m )
     char shadow[ MAX_PATH ];
     path_shadow( m->name, m->shadow_count, shadow, sizeof( shadow ) );
 
-    m->dll = library_load( shadow ); /* platform: LoadLibraryA(full_path) */
+    m->dll = sys_library_load( shadow ); /* platform: LoadLibraryA(full_path) */
     if ( !m->dll )
     {
         set_error( "LoadLibrary failed: %s", shadow );
@@ -344,7 +344,7 @@ slot_load_dll( mod_info_t* m )
 
     /* --- resolve module lifecycle struct --- */
 
-    get_mod_api_fn get_mod_api = ( get_mod_api_fn )library_get_symbol( m->dll, "get_mod_api" );
+    get_mod_api_fn get_mod_api = ( get_mod_api_fn )sys_library_get_symbol( m->dll, "get_mod_api" );
     if ( get_mod_api == NULL )
     {
         set_error( "'%s' is missing 'get_mod_api' export", m->name );
@@ -366,7 +366,7 @@ slot_load_dll( mod_info_t* m )
 
     char dll_path[ MAX_PATH ];
     path_dll( m->name, dll_path, sizeof( dll_path ) );
-    m->last_write = platform_file_time( dll_path );
+    m->last_write = sys_file_time( dll_path );
 
     return true; /* success */
 
@@ -374,7 +374,7 @@ fail:
 
     /* -- cleanup on failure --- */
 
-    library_unload( m->dll );
+    sys_library_unload( m->dll );
     m->dll     = NULL;
     m->mod_api = NULL;
     shadow_delete( m->name, m->shadow_count );
@@ -390,7 +390,7 @@ slot_unload_dll( mod_info_t* m )
     if ( !m->dll )
         return;
 
-    library_unload( m->dll );
+    sys_library_unload( m->dll );
     shadow_delete( m->name, m->shadow_count );
 
     m->dll     = NULL;
@@ -655,6 +655,29 @@ mod_reload( const char* name )
 }
 
 /*==============================================================================================
+
+    mod_reload_all: force-reload every dynamic module immediately, skips the file-watch debounce.
+
+==============================================================================================*/
+
+int /* public */
+mod_reload_all( void )
+{
+    int reloaded = 0;
+    for ( int i = 0; i < MAX_MODULES; ++i )
+    {
+        mod_info_t* m = &g_modules[ i ];
+        if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
+            continue;
+
+        if ( mod_reload( m->name ) )
+            ++reloaded;
+    }
+    ms_log( "[module] force reload: %d module(s) reloaded", reloaded );
+    return reloaded;
+}
+
+/*==============================================================================================
     Dependency resolution — simple iterative topological sort
 
     The algorithm works like this:
@@ -885,7 +908,7 @@ pending_remove( int idx )
 void
 mod_check_reloads( void )
 {
-    uint64_t now_ms = platform_time_ms();
+    uint64_t now_ms = sys_time_ms();
 
     /* Phase 1: detect changed DLLs and add them to the pending table. */
 
@@ -900,7 +923,7 @@ mod_check_reloads( void )
 
         char dll_path[ MAX_PATH ];
         path_dll( m->name, dll_path, sizeof( dll_path ) );
-        uint64_t ft = platform_file_time( dll_path );
+        uint64_t ft = sys_file_time( dll_path );
 
         if ( ft != 0 && ft != m->last_write )
         {
@@ -945,18 +968,20 @@ mod_system_init()
     g_api_func = mod_get_api;
 
     /* set root path for module DLLs */
-    platform_exe_dir( g_root, sizeof( g_root ) );
+    sys_exe_dir( g_root, sizeof( g_root ) );
     ms_log( "[module] system init (root: %s)", g_root );
 
     /* start file watcher via sys (no core needed) */
-    if ( file_watch_init( g_root ) == false )
+    if ( sys_filewatch_init( g_root ) == false )
+    {
         ms_log( "[module] WARNING: file watch unavailable\n" );
+    }
 }
 
 void
 mod_system_exit( void )
 {
-    file_watch_shutdown();
+    sys_filewatch_shutdown();
 
     /* exit in reverse init order so dependencies outlive their dependents */
     for ( int k = g_init_count - 1; k >= 0; --k )
@@ -1013,9 +1038,11 @@ mod_list_all( void )
         if ( m->status == MODULE_STATUS_EMPTY )
             continue;
 
-        ms_log( "  [%2d]  %-24s  %-13s  api_v%-3d  reload#%-3d  state:%dB  %s", i, m->name,
+        ms_log( "  [%2d]  %-24s  %-13s  api_v%-3d  reload# %-3d  state:%dB  %s", i, m->name,
                 status_str[ m->status ], m->mod_api ? m->mod_api->version : 0, m->version, m->state_size,
                 m->is_static ? "(static)" : "" );
+
+        ms_log( "\n" );
     }
 }
 
