@@ -594,7 +594,7 @@ mod_get_api( const char* name )
 }
 
 /*==============================================================================================
-    Public: load / unload / reload
+    Public: Module Functions
 ==============================================================================================*/
 
 bool /* public */
@@ -646,6 +646,8 @@ mod_static_load( const char* name, mod_api_t* mod_api )
             mod_api->state_size, mod_api->func_api_size );
     return true;
 }
+
+/*============================================================================================*/
 
 bool /* public */
 mod_dynamic_load( const char* name )
@@ -702,6 +704,8 @@ mod_dynamic_load( const char* name )
 
     return true;
 }
+
+/*============================================================================================*/
 
 bool /* public */
 mod_unload( const char* name )
