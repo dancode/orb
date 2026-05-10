@@ -141,7 +141,7 @@ game_init( void* raw_state, get_api_fn get_api )
     return true;
 }
 
-static void
+static bool
 game_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
@@ -151,6 +151,7 @@ game_reload( void* raw_state, get_api_fn get_api )
     MOD_FETCH_API( audio_api_t, audio );
     MOD_FETCH_API( physics_api_t, physics );
     core_api()->log( "game: reloaded (score preserved = %d)", g_game_state->score );
+    return true;
 }
 
 void

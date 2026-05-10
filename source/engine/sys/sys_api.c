@@ -80,18 +80,16 @@ mod_api_t*
 sys_get_mod_api( void )
 {
     static mod_api_t api = {
-        .version    = 1,
-        .state_size = sizeof( sys_state_t ),
-
-        .deps       = NULL,
-        .dep_count  = 0,
-
-        .func_api   = &g_sys_api_struct,
-
-        .init       = sys_mod_init,
-        .tick       = sys_mod_tick,
-        .exit       = sys_mod_exit,
-        .reload     = NULL,
+        .version       = 1,
+        .state_size    = sizeof( sys_state_t ),
+        .func_api_size = sizeof( sys_api_t ),
+        .deps          = NULL,
+        .dep_count     = 0,
+        .func_api      = &g_sys_api_struct,
+        .init          = sys_mod_init,
+        .tick          = sys_mod_tick,
+        .exit          = sys_mod_exit,
+        .reload        = NULL,
     };
     return &api;
 }

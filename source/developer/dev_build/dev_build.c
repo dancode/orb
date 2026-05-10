@@ -10,7 +10,7 @@
 
 #include "orb.h"
 #include "engine/sys/sys.h"
-#include "developer/dev_build_invoker/build_invoker.h"
+#include "developer/dev_build/dev_build.h"
 
 #ifndef MAX_PATH
     #define MAX_PATH 260
@@ -24,7 +24,7 @@ static struct
 {
     char               build_dir[ MAX_PATH ];  /* full absolute path to cmake build dir */
     char               cmake_path[ MAX_PATH ]; /* full path to cmake.exe; defaults to "cmake" on PATH */
-    dev_build_config_t config;                 /* RT_BUILD_DEBUG or RT_BUILD_RELEASE */
+    dev_build_config_t config;                 /* DEV_BUILD_DEBUG or DEV_BUILD_RELEASE */
     bool               capture_output;         /* if true, fills result->log on each build */
     bool               initialized;            /* whether dev_build_init() has been called successfully */
 
@@ -155,14 +155,14 @@ dev_build_init( const dev_build_settings_t* settings )
     else
         snprintf( g_rt.cmake_path, sizeof( g_rt.cmake_path ), "cmake" );
 
-    g_rt.config         = settings ? settings->config : RT_BUILD_DEBUG;
+    g_rt.config         = settings ? settings->config : DEV_BUILD_DEBUG;
     g_rt.capture_output = settings ? settings->capture_output : true;
     g_rt.initialized    = true;
 
     purge_locked_pdbs(); /* <-- add this line at the end */
 
     printf( "[dev_build] init  build=%s  cmake=%s  config=%s\n", g_rt.build_dir, g_rt.cmake_path,
-            g_rt.config == RT_BUILD_RELEASE ? "Release" : "Debug" );
+            g_rt.config == DEV_BUILD_RELEASE ? "Release" : "Debug" );
     return true;
 }
 
@@ -173,7 +173,7 @@ dev_build_init( const dev_build_settings_t* settings )
 static const char*
 config_str( dev_build_config_t c )
 {
-    return c == RT_BUILD_RELEASE ? "Release" : "Debug";
+    return c == DEV_BUILD_RELEASE ? "Release" : "Debug";
 }
 
 static bool

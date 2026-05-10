@@ -19,7 +19,7 @@
     Modules declaration
     -------------------
 
-    To implement a module (DLL or static). Every module must provide two custom 
+    To implement a module (DLL or static). Every module must provide two custom
     "module name" derived C function:
 
         mod_api_t*  name_get_mod_api( void )  — lifecycle (init/tick/exit/on_reload)
@@ -50,6 +50,22 @@
 
     Use on_reload() to re-cache sibling API pointers that changed after a DLL swap.
     Use init() for first-time setup that should not repeat on reload.
+
+    func_api ownership
+    ------------------
+    The module returns a pointer to its const API struct (typically a file-scope
+    `g_<name>_api_struct`). The system COPIES this struct into a stable, system-owned
+    memory block at load time and at every successful reload. Consumers cache the
+    address of the system block — that address never changes — so a hot-reload
+    automatically swings every consumer's calls to the new functions without any
+    on_reload pointer re-cache.
+
+    Static modules skip the copy: their func_api already lives at a stable
+    address (the linked-in const struct), so the system points directly at it.
+
+    func_api_size MUST NOT change across a reload. Adding or removing functions in
+    the API requires a full host restart.
+
 
 ==============================================================================================*/
 #ifndef MOD_EXPORT_H
@@ -91,8 +107,10 @@ typedef void ( *mod_tick_fn )( void* state, float dt );
 /* exit : called before unload or reload.  Do NOT free state — the system owns it. */
 typedef void ( *mod_exit_fn )( void* state );
 
-/* reload : required for hot-reload, called INSTEAD of init(). state memory is preserved. */
-typedef void ( *mod_reload_fn )( void* state, get_api_fn get_api );
+/* reload : required for hot-reload, called INSTEAD of init(). state memory is preserved.
+    returns false to signal reload failure — the module system will roll back to the
+    previously loaded DLL and call its on_reload() to re-initialize it. */
+typedef bool ( *mod_reload_fn )( void* state, get_api_fn get_api );
 
 /*==============================================================================================
     mod_api_t — every module provides this via name_get_mod_api()
@@ -102,9 +120,10 @@ typedef struct mod_api_s
 {
     int32_t       version;              /* bump when ABI changes */
     int32_t       state_size;           /* persistent state size or 0 = stateless */
-    const char*   deps[ MOD_MAX_DEPS ]; /* names of modules to init before this one */
+    int32_t       func_api_size;        /* sizeof(<name>_api_t) — system snapshots this many bytes */
     int32_t       dep_count;            /* number of dependencies in deps[] */
-    const void*   func_api;             /* API struct pointer returned by MOD_FETCH_API() */
+    const void*   func_api;             /* template — system memcpys from here on each load */
+    const char*   deps[ MOD_MAX_DEPS ]; /* names of modules to init before this one */
 
     mod_init_fn   init;
     mod_tick_fn   tick;

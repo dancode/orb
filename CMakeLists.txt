@@ -64,11 +64,12 @@ foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${TARGET_LIB_DIR})
 endforeach()
 
-# Handle multi-config generators (Visual Studio, Xcode)
-# foreach(OUTPUTCONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
-#     string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG_UPPER)
-#     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${CMAKE_SOURCE_DIR}/bin")
-# endforeach()
+# PDB files (debug symbols) should also go to the bin directory for easy cleanup and hot-reload watching.
+set(CMAKE_PDB_OUTPUT_DIRECTORY ${TARGET_BIN_DIR})
+foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+    set(CMAKE_PDB_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${TARGET_BIN_DIR})
+endforeach()
 
 # ------------------------------------------------------------------------------
 # Build Type (for single-config generators)
@@ -250,6 +251,45 @@ function(add_unity_executable TARGET_NAME SOURCE_DIR VS_FOLDER)
 endfunction()
 
 # ------------------------------------------------------------------------------
+# PDB unlock helper (hot-reload under debugger, MSVC dynamic builds only)
+# ------------------------------------------------------------------------------
+# Call once after each add_unity_library that produces a hot-reloadable DLL.
+# In monolithic or non-MSVC builds this expands to nothing.
+
+function(target_unlock_pdb_on_rebuild TARGET_NAME)
+    if(MSVC AND NOT ENGINE_MONOLITHIC)
+        add_custom_command(TARGET ${TARGET_NAME} PRE_LINK
+            COMMAND ${CMAKE_COMMAND}
+                -D "PDB_PATH=$<TARGET_FILE_DIR:${TARGET_NAME}>/${TARGET_NAME}.pdb"
+                -P "${CMAKE_SOURCE_DIR}/cmake/unlock_pdb.cmake"
+            COMMENT "[${TARGET_NAME}] unlocking PDB for hot-reload rebuild"
+            VERBATIM
+        )
+    endif()
+endfunction()
+
+# ------------------------------------------------------------------------------
+# add_module: wrapper for hot-reloadable runtime modules.
+#
+#   - Calls add_unity_library with MODULE_TYPE (SHARED or STATIC per build mode)
+#   - Adds PRIVATE <NAME>_STATIC so the module can call its own API through
+#     the standard gateway (example_api()->func()) safely in dynamic builds
+#   - Registers the PRE_LINK PDB unlock for debugger-safe rebuilds
+#
+# Usage (identical to add_unity_library, just swaps the function name):
+#   add_module( example "source/runtime_module/example" "05_Runtime_Modules" "example.c" )
+# ------------------------------------------------------------------------------
+
+function(add_module TARGET_NAME SOURCE_DIR VS_FOLDER)
+    add_unity_library( ${TARGET_NAME} ${MODULE_TYPE} ${SOURCE_DIR} ${VS_FOLDER} ${ARGN} )
+
+    string(TOUPPER "${TARGET_NAME}" UPPER)
+    target_compile_definitions( ${TARGET_NAME} PRIVATE ${UPPER}_STATIC )
+
+    target_unlock_pdb_on_rebuild( ${TARGET_NAME} )
+endfunction()
+
+# ------------------------------------------------------------------------------
 # 00 Project Level Files (not compiled - organization and visibility only)
 # ------------------------------------------------------------------------------
 # Create a dummy target to hold root-level files in Visual Studio
@@ -261,6 +301,7 @@ set( DOC_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/README.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/planning.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/project.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/TODO.txt"
 )
 
 add_custom_target(root SOURCES ${ROOT_SOURCES} ${DOC_SOURCES} )
@@ -330,25 +371,11 @@ add_unity_library( rt_jobs STATIC "source/runtime/services/jobs" "03_Runtime/Ser
 # 03 RUNTIME: MODULES
 # ------------------------------------------------------------------------------
 
-# EXAMPLE
-add_unity_library( example ${MODULE_TYPE} "source/runtime_module/example" "03_Runtime_Modules"
-    "example.c"
-)
-
-# RENDER
-add_unity_library( render ${MODULE_TYPE} "source/runtime_module/render" "03_Runtime_Modules"
-    "render.c"
-)
-
-# AUDIO
-add_unity_library( audio ${MODULE_TYPE} "source/runtime_module/audio" "03_Runtime_Modules"
-    "audio.c"
-)
-
-# PHYSICS
-add_unity_library( physics ${MODULE_TYPE} "source/runtime_module/physics" "03_Runtime_Modules"
-    "physics.c"
-)
+# DYNAMIC MODULES (Built as separate DLLs for hot-reloading, but statically linked in monolithic mode)
+add_module( example "source/runtime_module/example" "03_Runtime_Modules" "example.c" )
+add_module( render  "source/runtime_module/render"  "03_Runtime_Modules" "render.c"  )
+add_module( audio   "source/runtime_module/audio"   "03_Runtime_Modules" "audio.c"   )
+add_module( physics "source/runtime_module/physics" "03_Runtime_Modules" "physics.c" )
 
 # LINK
 target_link_libraries( example PUBLIC base )
@@ -357,13 +384,18 @@ target_link_libraries( audio PUBLIC base )
 target_link_libraries( physics PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 04 DEVELOPER MODULES (PARALLEL TO GAME, BUT LINKED BY EDITOR/SANDBOX)
+# 04 DEVELOPER MODULES (dev_* services — link only in non-shipping hosts)
 # ------------------------------------------------------------------------------
 
-add_unity_library( dev_build_invoker STATIC "source/developer/dev_build_invoker" "04_Developer"
-    "build_invoker.c"
+add_unity_library( dev_build STATIC "source/developer/dev_build" "04_Developer"
+    "dev_build.c"
 )
-target_link_libraries( dev_build_invoker PUBLIC engine_sys )
+target_link_libraries( dev_build PUBLIC engine_sys )
+
+add_unity_library( dev_hot STATIC "source/developer/dev_hot" "04_Developer"
+    "dev_hot.c"
+)
+target_link_libraries( dev_hot PUBLIC engine_sys dev_build )
 
 # ------------------------------------------------------------------------------
 # 04 GAME (FRAMEWORK)
@@ -437,7 +469,7 @@ set_target_properties( host_sandbox PROPERTIES
 
 # SANDBOX MODULE
 add_unity_executable( sandbox_module "source/sandbox/module" "07_Sandbox" "sb_module_main.c" )
-target_link_libraries( sandbox_module PRIVATE engine_sys engine_mod dev_build_invoker )
+target_link_libraries( sandbox_module PRIVATE engine_sys engine_mod dev_build dev_hot )
 if ( ENGINE_MONOLITHIC )
 endif()
 
@@ -497,7 +529,7 @@ endif()
 # Set default startup project
 # ------------------------------------------------------------------------------
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sandbox_engine )
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sandbox_module )
 
 # ------------------------------------------------------------------------------
 # Hide CMake generated builds in Visual Studio project.

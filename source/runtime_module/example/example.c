@@ -13,8 +13,6 @@
 
 #include "orb.h"
 
-#define EXAMPLE_STATIC /* use local struct gateway */
-
 #include "engine/mod/mod_export.h"
 #include "runtime_module/example/example_api.h"
 
@@ -35,6 +33,7 @@ typedef struct
     bool example_init;
     int  reload_count;
     int  counter;
+    bool fail_next_reload;
 
 } example_state_t;
 
@@ -58,6 +57,16 @@ example_function_2( int value )
     return;
 }
 
+static void
+example_fail_next_reload( void )
+{
+    if ( example_state )
+    {
+        example_state->fail_next_reload = true;
+        printf( "[example] fail_next_reload armed — next on_reload will return false\n" );
+    }
+}
+
 /*==============================================================================================
     4. the public API struct, populated at file scope
 ==============================================================================================*/
@@ -65,6 +74,7 @@ example_function_2( int value )
 const example_api_t g_example_api_struct = {
     .example_function_1 = example_function_1,
     .example_function_2 = example_function_2,
+    .fail_next_reload   = example_fail_next_reload,
 };
 
 /*==============================================================================================
@@ -72,7 +82,7 @@ const example_api_t g_example_api_struct = {
 ==============================================================================================*/
 
 static bool
-example_init( void* raw_state, get_api_fn get_api )
+example_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
     example_state = ( example_state_t* )raw_state;
@@ -91,12 +101,19 @@ example_init( void* raw_state, get_api_fn get_api )
     return true;
 }
 
-static void
-example_on_reload( void* raw_state, get_api_fn get_api )
+static bool
+example_mod_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
     /* same pointer, preserved */
     example_state = ( example_state_t* )raw_state;
+
+    if ( example_state->fail_next_reload )
+    {
+        example_state->fail_next_reload = false; /* one-shot — snapshot_rollback path will succeed */
+        printf( "[example] on_reload: simulating failure (returning false)\n" );
+        return false;
+    }
 
     example_state->reload_count++;
     printf( "[example] on_reload: reload_count=%d\n", example_state->reload_count );
@@ -104,13 +121,16 @@ example_on_reload( void* raw_state, get_api_fn get_api )
     if ( example_state->counter > 0 )
         printf( "[example] on_reload: counter=%d\n", example_state->counter );
 
-    printf( "\n\n local build \n\n" );
+    printf( "\n\n NEW FUNCTIONS \n\n" );
+
     /* re-cache after DLL swap */
     // MOD_FETCH_API( core_api_t, core );
+
+    return true;
 }
 
 static void
-example_tick( void* raw_state, float dt )
+example_mod_tick( void* raw_state, float dt )
 {
     UNUSED( raw_state );
     UNUSED( dt );
@@ -121,7 +141,7 @@ example_tick( void* raw_state, float dt )
 }
 
 static void
-example_exit( void* raw_state )
+example_mod_exit( void* raw_state )
 {
     /* don't free state */
     UNUSED( raw_state );
@@ -137,15 +157,16 @@ mod_api_t*
 example_get_mod_api( void )
 {
     static mod_api_t api = {
-        .version    = 1,
-        .state_size = sizeof( example_state_t ),
-        .deps       = {NULL },
-        .dep_count  = 0,
-        .func_api   = &g_example_api_struct,
-        .init       = example_init,
-        .tick       = example_tick,
-        .exit       = example_exit,
-        .reload     = example_on_reload,
+        .version       = 1,
+        .state_size    = sizeof( example_state_t ),
+        .func_api_size = sizeof( example_api_t ),
+        .dep_count     = 0,
+        .deps          = { NULL },
+        .func_api      = &g_example_api_struct,
+        .init          = example_mod_init,
+        .tick          = example_mod_tick,
+        .exit          = example_mod_exit,
+        .reload        = example_mod_reload,
     };
     return &api;
 }

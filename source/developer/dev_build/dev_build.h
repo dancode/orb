@@ -1,12 +1,20 @@
-#ifndef BUILD_INVOKER_H
-#define BUILD_INVOKER_H
+#ifndef DEV_BUILD_H
+#define DEV_BUILD_H
 /*==============================================================================================
 
-    build_invoker.h : Run-time build invoker.
+    dev_build.h : Run-time build invoker for cmake-based projects.
 
     Spawns CMake to compile module DLLs on demand. Designed for editors and sandbox
     hosts that want to rebuild a hot-reloadable module from inside the running
     process.
+
+    It has one job, spawn a process, capture its output, and return a result.
+    
+    - Its only engine dependency is sys for the process call. 
+    - It knows nothing about modules, state, or reload semantics (see: dev_hot)
+    - Acts as a cmake shim can be used anywhere a process spawn is useful, 
+    - A future tools could trigger a build without any module system present at all.
+
 
     Why CMake and not direct cl.exe / clang invocation
     ---------------------------------------------------
@@ -22,7 +30,7 @@
 
     Recompile + reload flow
     -----------------------
-    1. Press C → host calls dev_build_module("example", &r)
+    1. Press C → host calls dev_build_module( "example", &r )
     2. cmake links a new example.dll into the build's bin/ directory
     3. Host calls mod_reload("example") on success — OR just lets the file-watch
        debounce in mod_check_reloads() trigger the reload automatically (200ms).
@@ -32,16 +40,17 @@
 
 typedef enum dev_build_config_t
 {
-    RT_BUILD_DEBUG   = 0,
-    RT_BUILD_RELEASE = 1,
+    DEV_BUILD_DEBUG   = 0,
+    DEV_BUILD_RELEASE = 1,
+
 } dev_build_config_t;
 
 typedef struct dev_build_settings_s
 {
-    const char*       build_dir;      /* absolute path to cmake build dir; NULL = auto-detect */
-    const char*       cmake_path;     /* absolute path to cmake.exe; NULL = "cmake" on PATH    */
-    dev_build_config_t config;         /* defaults to RT_BUILD_DEBUG                            */
-    bool              capture_output; /* if true, fills result->log on each build              */
+    const char*        build_dir;      /* absolute path to cmake build dir; NULL = auto-detect */
+    const char*        cmake_path;     /* absolute path to cmake.exe; NULL = "cmake" on PATH    */
+    dev_build_config_t config;         /* defaults to DEV_BUILD_DEBUG                            */
+    bool               capture_output; /* if true, fills result->log on each build              */
 
 } dev_build_settings_t;
 
@@ -70,4 +79,4 @@ bool dev_build_all( dev_build_result_t* result );
 const char* dev_build_last_error( void );
 
 /*============================================================================================*/
-#endif    // BUILD_INVOKER_H
+#endif    // DEV_BUILD_H

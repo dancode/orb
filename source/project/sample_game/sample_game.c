@@ -88,7 +88,7 @@ sample_game_exit( void* raw_state )
     core_api()->log( "[game] exit — score: %d  timer: %.2fs\n", s->score, s->timer );
 }
 
-static void
+static bool
 sample_game_on_reload( void* raw_state, get_api_fn get_api )
 {    
     example_game_state_t* s = raw_state;
@@ -96,6 +96,7 @@ sample_game_on_reload( void* raw_state, get_api_fn get_api )
     UNUSED( get_api );
 
     core_api()->log( "[game] on_reload — ready\n" );
+    return true;
 }
 
 /*============================================================================================*/

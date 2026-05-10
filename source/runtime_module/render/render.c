@@ -9,9 +9,6 @@
 #include <stdio.h>
 #include "orb.h"
 
-#define RENDER_STATIC /* use local struct gateway */
-// #include "engine/mod/mod_api.h"
-
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
 
@@ -123,7 +120,7 @@ render_tick( void* raw_state, float dt )
     UNUSED( dt );
 }
 
-static void
+static bool
 render_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
@@ -132,6 +129,7 @@ render_reload( void* raw_state, get_api_fn get_api )
     MOD_FETCH_API( core_api_t, core );
 
     core_api()->log( "render: reloaded (frames so far = %d)", g_state->frame_count );
+    return true;
 }
 
 /*==============================================================================================

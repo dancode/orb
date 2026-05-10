@@ -1,0 +1,219 @@
+CURRENT EXTERNAL TOOL VALUES
+====================================================
+
+					Tools -> External Tools
+
+Title: 				HOT BUILD: Module
+Command: 			F:\C\hybrid\build_hot.bat
+Args:				F:\C\hybrid\build example $(ConfigurationName)
+Init Dir:			$(ProjectDir)
+
+UseOutputWindow 	(checked)
+Others				(unchecked)
+
+
+====================================================
+HOT-RELOAD BUILD: VISUAL STUDIO EXTERNAL TOOL SETUP
+====================================================
+Reference guide for setting up a one-keypress module rebuild that keeps
+the Visual Studio debugger attached and lets the file watcher hot-reload
+the new DLL automatically.
+ 
+ 
+WHY THIS WORKS
+--------------
+Visual Studio External Tools run as completely separate processes.
+VS never treats them as a "build" that would stop the debug session.
+The debugger stays attached while cmake compiles the module. When the
+new DLL lands on disk, mod_check_reloads() detects the changed timestamp
+and reloads it automatically on the next tick.
+ 
+Note: $(ConfigurationName) is NOT available in the External Tools
+variable set. It exists only in MSBuild/project property pages.
+Use a hardcoded config in the bat file or pass it as a literal argument.
+ 
+ 
+WHAT YOU NEED
+-------------
+- cmake on your system PATH (verify: open a terminal, type "cmake --version")
+- The project already built at least once so the build directory exists
+- The CMake PRE_LINK PDB unlock step added (see cmake/unlock_pdb.cmake)
+ 
+ 
+PART 1: THE BUILD SCRIPT
+========================
+ 
+Create this file at your project root (same folder as CMakeLists.txt):
+ 
+    Filename: build_hot.bat
+ 
+    -----------------------------------------------------------------------
+    @echo off
+    REM build_hot.bat -- rebuild a single module for hot-reload.
+    REM Called by VS External Tools. The VS debugger stays attached.
+    REM
+    REM Arguments:
+    REM   %1 = cmake build directory (absolute path, no trailing slash)
+    REM   %2 = cmake target name  (e.g. example, render, audio)
+    REM   %3 = config             (Debug or Release -- defaults to Debug)
+ 
+    set BUILD_DIR=%1
+    set TARGET=%2
+    set CONFIG=%3
+    if "%CONFIG%"=="" set CONFIG=Debug
+ 
+    echo [hot-build] cmake --build %BUILD_DIR% --target %TARGET% --config %CONFIG%
+    cmake --build "%BUILD_DIR%" --target %TARGET% --config %CONFIG%
+ 
+    if %ERRORLEVEL% NEQ 0 (
+        echo [hot-build] FAILED
+        exit /b %ERRORLEVEL%
+    )
+ 
+    echo [hot-build] OK -- file watcher will reload %TARGET%
+    -----------------------------------------------------------------------
+ 
+ 
+PART 2: REGISTER THE EXTERNAL TOOL IN VISUAL STUDIO
+====================================================
+ 
+    1. Open Visual Studio.
+ 
+    2. Go to:  Tools  >  External Tools...
+ 
+    3. Click "Add" (top right of the dialog).
+ 
+    4. Fill in the fields as follows:
+ 
+       Title:
+           Hot Build: example
+           (This is the label that appears in the Tools menu.)
+ 
+       Command:
+           Full path to build_hot.bat, for example:
+           F:\C\hybrid\build_hot.bat
+ 
+       Arguments:
+           Your build directory path, then the target name:
+           F:\C\hybrid\build example
+ 
+           NOTE: Do not use $(ConfigurationName) here -- it is not
+           supported in External Tools and will expand to an empty string,
+           breaking the cmake --config argument. The bat file defaults
+           to Debug when no config is passed. To build Release explicitly,
+           add "Release" as a third argument:
+           F:\C\hybrid\build example Release
+ 
+       Initial directory:
+           Your project root, for example:
+           F:\C\hybrid
+ 
+       Checkboxes at the bottom:
+           [x] Use Output window       <-- check this
+           [ ] Prompt for arguments    <-- leave unchecked
+           [ ] Treat output as Unicode <-- leave unchecked
+           [ ] Close on exit           <-- leave unchecked
+ 
+    5. Click OK.
+ 
+    ADDING MORE TARGETS:
+    Repeat steps 3-5 for each module you want to rebuild independently.
+    Give each a descriptive title, e.g. "Hot Build: render", "Hot Build: audio".
+    Only the Arguments field changes (swap "example" for the target name).
+ 
+ 
+PART 3: ASSIGN A KEYBOARD SHORTCUT
+===================================
+ 
+    1. Go to:  Tools  >  Options  >  Environment  >  Keyboard
+ 
+    2. In the "Show commands containing" search box, type:
+           Tools.ExternalCommand
+ 
+    3. You will see a numbered list:
+           Tools.ExternalCommand1
+           Tools.ExternalCommand2
+           ... etc.
+       These are numbered in the order the tools appear in the
+       External Tools list. ExternalCommand1 is the first custom tool
+       you added (the default Spy++, Create GUID etc. are not counted
+       in versions that list only user-added tools -- verify by checking
+       the order in Tools > External Tools).
+ 
+    4. Click the correct ExternalCommand entry to select it.
+ 
+    5. Click in the "Press shortcut keys" field and press your chosen
+       shortcut, for example:  Ctrl + F6
+ 
+    6. Check "Global" is selected in the "Use new shortcut in" dropdown.
+ 
+    7. Click "Assign", then "OK".
+ 
+ 
+PART 4: DAILY WORKFLOW
+=======================
+ 
+    Standard hot-reload iteration loop:
+ 
+        F5              Start debugging (run sandbox_module.exe)
+        [edit code]
+        Ctrl+Shift+M   	Trigger External Tool -> cmake rebuilds example.dll
+                        (output appears in VS Output window)
+        [automatic]     mod_check_reloads() detects new DLL, reloads it
+        [continue]      Breakpoints in updated code work immediately
+ 
+    Force immediate reload without waiting for the 200ms file-watch debounce:
+ 
+        Press R in the running console window (mapped to mod_reload_all()).
+ 
+    To rebuild from a terminal instead (identical result):
+ 
+        cmake --build F:\C\hybrid\build --target example --config Debug
+ 
+ 
+PART 5: TROUBLESHOOTING
+========================
+ 
+    "cmake" is not recognized
+        cmake is not on your PATH. Either add it (the installer has a
+        checkbox for this) or use the full path to cmake.exe in the
+        Command field, e.g.:
+        C:\Program Files\CMake\bin\cmake.exe
+ 
+    LNK1201: error writing to program database
+        The PDB unlock CMake PRE_LINK step is missing. See the section
+        on cmake/unlock_pdb.cmake in the project setup notes. Without it,
+        the VS debugger holds example.pdb open and the linker cannot write
+        a new one.
+ 
+    DLL reloads but breakpoints do not bind
+        The debugger lost track of the new PDB. Try:
+        Debug > Windows > Modules, find example.tmp_N.dll, right-click,
+        "Load Symbols". Breakpoints should rebind.
+ 
+    Config defaults to Debug unexpectedly
+        $(ConfigurationName) is not a valid External Tools variable.
+        It will always expand to empty. Pass the config explicitly as a
+        third literal argument in the Arguments field, or accept the
+        Debug default and add a second tool entry for Release builds.
+ 
+    Output window shows nothing after the build
+        Ensure "Use Output window" is checked in the External Tool dialog.
+        Also confirm the tool is targeting the correct External Command
+        number in the keyboard shortcut assignment.
+ 
+ 
+NOTES
+=====
+ 
+- The External Tool approach bypasses VS's build system entirely.
+  VS never considers it a "build" that would end the debug session.
+ 
+- Each module needs its own External Tool entry if you want per-target
+  shortcuts. Alternatively, omit --target from the bat call to rebuild
+  everything (slower but one entry covers all modules).
+ 
+- Settings are stored in your VS profile's CurrentSettings.vssettings.
+  Back them up via Tools > Import and Export Settings if you want to
+  share the setup across machines or VS reinstalls.
+ 

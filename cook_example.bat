@@ -1,0 +1,1 @@
+cmake --build build --target example --config Debug

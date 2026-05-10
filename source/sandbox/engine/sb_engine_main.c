@@ -43,30 +43,6 @@
 #include "engine/sys/sys.h"
 
 /*============================================================================================*/
-
-static void
-host_force_hot_reload( void )
-{
-    printf( "[host] force hot reload\n" );
-
-    /*
-        Later:
-            module_sys_reload_changed_modules();
-    */
-}
-
-static void
-host_force_recompile( void )
-{
-    printf( "[host] force recompile\n" );
-
-    /*
-        Later:
-            build_tool_compile_game_code();
-    */
-}
-
-/*============================================================================================*/
 /* test the module system by booting it, registering some static modules,
    loading some dynamic ones, and running a main loop */
 
@@ -167,15 +143,11 @@ module_test( void )
         if ( sys_key_pressed( PLATFORM_KEY_R ) )
         {
             printf( "[host] R key pressed\n" );
-            // hot_reload();
         }
-
         if ( sys_key_pressed( PLATFORM_KEY_C ) )
         {
             printf( "[host] C key pressed\n" );
-            // recompile_code();
         }
-
         if ( sys_key_pressed( PLATFORM_KEY_Q ) )
         {
             printf( "[host] Q key pressed\n" );

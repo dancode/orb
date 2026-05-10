@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    engine_main.c
+    sandbox_module_main.c
 
 ==============================================================================================*/
 
@@ -9,51 +9,12 @@
 #include "orb.h"
 #include "engine/mod/mod.h"
 #include "engine/sys/sys_api.h"
-#include "engine/sys/sys.h"    // static inline functions for console input 
+#include "engine/sys/sys.h"
 
-#include "developer/dev_build_invoker/build_invoker.h"
+#include "developer/dev_hot/dev_hot.h"
 
-// #include "runtime_module/example/example_api.h"
-
-/*============================================================================================*/
-
-static void
-host_force_hot_reload( void )
-{
-    printf( "[host] force hot reload\n" );
-    int reloaded_count = mod_reload_all();
-    printf( "[host] force reload: %d module(s) reloaded\n", reloaded_count );
-}
-
-static void
-host_force_recompile( void )
-{
-    printf( "[host] force recompile\n" );
-
-    // mod_unload( "example" ); /* unload the module before recompiling, to free the DLL on Windows */ 
-
-    dev_build_result_t r;
-    if ( !dev_build_module( "example", &r ) )
-    {
-        /* fallback: try to reload the old module if the build system couldn't even be launched */
-        // mod_load( example );    
-        fprintf( stderr, "[host] could not launch build: %s\n", dev_build_last_error() );
-        return;
-    }
-
-    /* fallback: try to reload the old module if the build failed (e.g. due to compile errors) */
-    // mod_load( example ); 
-
-    if ( !r.success )
-    {
-        fprintf( stderr, "[host] build FAILED (exit %d, %.2fs):\n%.*s\n", r.exit_code, r.elapsed_seconds,
-                 r.log_len, r.log );
-        return;
-    }
-
-    printf( "[host] build OK in %.2fs - reloading.\n", r.elapsed_seconds );
-    mod_reload( "example" );
-}
+#include "runtime_module/example/example_api.h"
+MOD_DEFINE_API_PTR( example_api_t, example );
 
 /*============================================================================================*/
 /* test the module system by booting it, registering some static modules,
@@ -62,12 +23,13 @@ host_force_recompile( void )
 void
 module_test( void )
 {
-    /*------------------------------------------------------------------------------------------
-        1. Boot
-    ------------------------------------------------------------------------------------------*/
-
     mod_system_init();
-    dev_build_init( NULL ); /* auto-detect cmake on PATH and build dir from exe location */
+
+    /* setup hot reload */
+
+    dev_hot_init( NULL, NULL ); 
+
+    /* load modules */
 
     if ( !mod_static_load( "sys", sys_get_mod_api() ) )
         goto shutdown;
@@ -85,66 +47,78 @@ module_test( void )
     }
 
     mod_list_all();
-    
-    // HOST_FETCJ_API( example_api_t, example );
-    
+
+    HOST_FETCH_API( example_api_t, example );
+    example_api()->example_function_1();
+
     /* ---- console input ----------------------------------------------- */
 
+    if ( !sys_console_input_init() )
     {
-        if ( !sys_console_input_init() )
-        {
-            printf( "[host] failed to initialize console input\n" );
-            return;
-        }
-        printf( "\nBootstrap host running.\n" );
-        printf( "Keys:\n" );
-        printf( "  R = force hot reload\n" );
-        printf( "  C = force recompile\n" );
-        printf( "  Q = quit\n" );
-        printf( "  ESC = quit\n" );
+        printf( "[host] failed to initialize console input\n" );
+        return;
     }
+
+    printf( "\nKeys:\n" );
+    printf( "  C = recompile + reload example\n" );
+    printf( "  R = reload all modules\n" );
+    printf( "  F = simulate reload FAILURE (tests rollback)\n" );
+    printf( "  V = verify cached api pointer is still live\n" );
+    printf( "  Q = quit\n" );
 
     /* ---- game loop --------------------------------------------------- */
 
-    const float dt = 1.0f / 60.0f;
+    const float dt      = 1.0f / 60.0f;
+    bool        running = true;
 
-    UNUSED( dt );
-
-    bool running = true;
     while ( running )
     {
+        HOST_FETCH_API( example_api_t, example );
+        mod_system_tick( dt );
+
         sys_sleep_milliseconds( 16 );
-
-        mod_system_tick( dt ); /* tick all INITIALIZED modules */
-
         sys_console_input_poll();
-        
-        if ( sys_key_pressed( PLATFORM_KEY_R ) )
-        {
-            printf( "[host] R key pressed\n" );
-            host_force_hot_reload();
-        }
-        
         if ( sys_key_pressed( PLATFORM_KEY_C ) )
         {
             printf( "[host] C key pressed\n" );
-            host_force_recompile();
+            dev_hot_recompile( "example" );
         }
-        
+        if ( sys_key_pressed( PLATFORM_KEY_R ) )
+        {
+            printf( "[host] R key pressed\n" );
+            dev_hot_reload_all();
+        }
         if ( sys_key_pressed( PLATFORM_KEY_Q ) )
         {
             printf( "[host] Q key pressed\n" );
             running = false;
         }
-        
+        if ( sys_key_pressed( PLATFORM_KEY_F ) )
+        {
+            printf( "[host] F key pressed - arming reload failure\n" );
+            example_api()->fail_next_reload();
+
+            bool reload_ok = dev_hot_reload( "example" );
+            printf( "[host] dev_hot_reload returned %s (expected: false)\n", reload_ok ? "true" : "false" );
+
+            /* If snapshot_rollback worked, the old DLL is still loaded and these calls succeed.
+               Without the snapshot_rollback fix, this would dereference an unloaded library. */
+            printf( "[host] post-rollback sanity check - calling example_function_1():\n" );
+            example_api()->example_function_1();
+            example_api()->example_function_2( 42 );
+        }
+        if ( sys_key_pressed( PLATFORM_KEY_V ) )
+        {
+            printf( "[host] V key pressed - calling cached example_api()\n" );
+            example_api()->example_function_1();
+            example_api()->example_function_2( 99 );
+            printf( "[host] cached pointer still valid\n" );
+        }
+
         mod_check_reloads(); /* poll disk; reload any changed DLL   */
     }
 
     sys_console_input_shutdown();
-
-    /* ------------------------------------------------------------------ */
-    /* 6. Shutdown: exit in reverse dep order, unload DLLs, free state    */
-    /* ------------------------------------------------------------------ */
 
 shutdown:
 

@@ -30,6 +30,9 @@
     On first load the block is zeroed; on reload it arrives with its previous values.
     If state_size grows across a reload, the new tail bytes are zeroed; the block never shrinks.
 
+    State structures should never pointers into the module's own code or static data.
+    This will be lost on hot-reload. Store only data owned by the system (.exe)
+
     File watching
     -------------
     mod_check_reloads() delegates all platform I/O to the file_watch interface.
@@ -124,7 +127,11 @@ typedef struct mod_info_s
 
     void*               state;                      /* persistent state block; system-owned */
     int32_t             state_size;                 /* size of the current allocation */
-    int32_t             version;                    /* increments on each hot-reload */
+
+    void*               api_slot;                   /* stable address; system writes new func_api here on reload */
+    int32_t             api_slot_size;              /* sizeof(func_api); fixed for the module's lifetime */
+
+    int32_t             version;                    /* increments on each successful hot-reload */
 
 } mod_info_t;
 
@@ -157,6 +164,7 @@ static pending_reload_t     g_pending[ MAX_PENDING ];
 static int32_t              g_pending_count = 0;
 
 // clang-format on
+
 /*==============================================================================================
     Error reporting
 ==============================================================================================*/
@@ -266,7 +274,64 @@ shadow_delete( const char* name, uint32_t counter )
 }
 
 /*==============================================================================================
-    State helpers
+    State Helper: System-owned API slot
+
+    Each module gets a stable memory block that holds its live func_api struct.
+    Consumers cache the slot's address (returned by mod_get_api), which never changes.
+    On reload the system memcpys the new DLL's func_api into this same block — every
+    consumer automatically dispatches through the new function pointers, no on_reload
+    pointer re-cache required.
+
+    Static modules skip the copy: their func_api already lives at a stable address
+    in the exe's data section, so api_slot just points at it.
+==============================================================================================*/
+
+static bool
+api_slot_create( mod_info_t* m )
+{
+    int32_t size = m->mod_api->func_api_size;
+    if ( size <= 0 )
+    {
+        set_error( "'%s': func_api_size is zero", m->name );
+        return false;
+    }
+    if ( m->mod_api->func_api == NULL )
+    {
+        set_error( "'%s': func_api is NULL", m->name );
+        return false;
+    }
+
+    if ( m->is_static )
+    {
+        /* The const struct already has a stable address — point at it directly. */
+        m->api_slot      = ( void* )m->mod_api->func_api;
+        m->api_slot_size = size;
+        return true;
+    }
+
+    m->api_slot = ms_alloc( ( size_t )size );
+    if ( !m->api_slot )
+    {
+        set_error( "'%s': api slot alloc failed (%d bytes)", m->name, size );
+        return false;
+    }
+    m->api_slot_size = size;
+    memcpy( m->api_slot, m->mod_api->func_api, ( size_t )size );
+    return true;
+}
+
+/* Commit: copy the new DLL's func_api into the existing stable slot. Caller must
+   have validated that func_api_size still matches m->api_slot_size. */
+static void
+api_slot_refresh( mod_info_t* m )
+{
+    memcpy( m->api_slot, m->mod_api->func_api, ( size_t )m->api_slot_size );
+}
+
+/*==============================================================================================
+    State helper : allocate or reallocate the persistent state block for a module.
+    On first load this allocates and zeroes the block. On reload it preserves the pointer
+    and only reallocs if the new state_size is larger than the previous allocation.
 ==============================================================================================*/
 
 static bool
@@ -430,9 +495,6 @@ call_exit( mod_info_t* m )
     m->mod_api->exit( m->state );
 }
 
-/* call_reload: on_reload must be provided or reload will fail (no ambiguity)
-   init() = first-time setup, on_reload() = pointer re-cache  */
-
 static bool
 call_reload( mod_info_t* m )
 {
@@ -441,13 +503,69 @@ call_reload( mod_info_t* m )
 
     if ( m->mod_api->reload )
     {
-        m->mod_api->reload( m->state, g_api_func );
-        return true;
+        return m->mod_api->reload( m->state, g_api_func );
+    }
+
+    ms_log( "[module] '%s' has no on_reload(), dynamic reload requires it", m->name );
+    return false;
+}
+
+/*==============================================================================================
+    Reload snapshot — captures the live DLL handles so a failed reload can put them back
+==============================================================================================*/
+
+typedef struct mod_snapshot_s
+{
+    void*           dll;          /* handle to the loaded shadow copy, if any */
+    mod_api_t*      mod_api;      /* pointer to the module's API struct, if loaded and resolved */
+    uint32_t        shadow_count; /* shadow file name counter for this slot, if any */
+    uint64_t        last_write;   /* file timestamp at last successful load, for hot-reload detection */
+    module_status_t status;       /* status at the moment of the snapshot */
+
+} mod_snapshot_t;
+
+static void
+snapshot_save( const mod_info_t* m, mod_snapshot_t* s )
+{
+    s->dll          = m->dll;
+    s->mod_api      = m->mod_api;
+    s->shadow_count = m->shadow_count;
+    s->last_write   = m->last_write;
+    s->status       = m->status;
+}
+
+/* Restore the slot from a snapshot after a failed reload.
+
+   - Tears down whatever new DLL is currently in m (if any).
+   - Restores the saved handles so cached API pointers in other modules stay valid.
+   - Re-runs on_reload() on the restored code to bring it back to INITIALIZED.
+
+   `reason` is a short tag for the log line. */
+
+static void
+snapshot_rollback( mod_info_t* m, const mod_snapshot_t* s, const char* reason )
+{
+    /* If a new DLL was loaded since the snapshot, tear it down — m->dll and
+       m->shadow_count still point at the new shadow at this moment. */
+    if ( m->dll && m->dll != s->dll )
+        slot_unload_dll( m );
+
+    m->dll          = s->dll;
+    m->mod_api      = s->mod_api;
+    m->shadow_count = s->shadow_count;
+    m->last_write   = s->last_write;
+
+    /* Revive the old code. It already had exit() called, so on_reload is the
+       right hook to put it back to INITIALIZED. */
+    if ( s->status == MODULE_STATUS_INITIALIZED && call_reload( m ) )
+    {
+        m->status = MODULE_STATUS_INITIALIZED;
+        ms_log( "[module] '%s' %s - rolled back to previous version", m->name, reason );
     }
     else
     {
-        ms_log( "[module] '%s' has no on_reload(), dynamic reload requires it", m->name );
-        return false;
+        m->status = MODULE_STATUS_ERROR;
+        ms_log( "[module] '%s' %s AND rollback failed", m->name, reason );
     }
 }
 
@@ -458,9 +576,6 @@ call_reload( mod_info_t* m )
 const void* /* public */
 mod_get_api( const char* name )
 {
-    /* Returns the typed API pointer exported by the module, or NULL if not found or not initialized.
-      Caller casts to the expected type, e.g. (core_api_t*), (render_api_t*), etc. */
-
     int slot = slot_find( name );
     if ( slot < 0 )
     {
@@ -475,7 +590,7 @@ mod_get_api( const char* name )
         return NULL;
     }
 
-    return m->mod_api->func_api;
+    return m->api_slot; /* stable across reloads old: m->mod_api->func_api; */
 }
 
 /*==============================================================================================
@@ -516,8 +631,19 @@ mod_static_load( const char* name, mod_api_t* mod_api )
         slot_free( slot );
         return false;
     }
+    if ( api_slot_create( m ) == false )
+    {
+        if ( m->state )
+        {
+            ms_free( m->state );
+            m->state = NULL;
+        }
+        slot_free( slot );
+        return false;
+    }
 
-    ms_log( "[module] registered static '%s' (api_v%d, state %d B)", name, mod_api->version, mod_api->state_size );
+    ms_log( "[module] registered static '%s' (api v%d, state %d, api %d)", name, mod_api->version,
+            mod_api->state_size, mod_api->func_api_size );
     return true;
 }
 
@@ -557,10 +683,23 @@ mod_dynamic_load( const char* name )
         slot_free( slot );
         return false;
     }
+    if ( api_slot_create( m ) == false )
+    {
+        if ( m->state )
+        {
+            ms_free( m->state );
+            m->state = NULL;
+        }
+        slot_unload_dll( m );
+        slot_free( slot );
+        return false;
+    }
 
     m->status  = MODULE_STATUS_LOADED;
     m->version = 0;
-    ms_log( "[module] loaded '%s' (api v%d, state %d B)", name, m->mod_api->version, m->mod_api->state_size );
+    ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)", name, m->mod_api->version,
+            m->mod_api->state_size, m->mod_api->func_api_size );
+
     return true;
 }
 
@@ -587,13 +726,23 @@ mod_unload( const char* name )
         m->state = NULL;
     }
 
+    if ( m->is_static == false && m->api_slot != NULL )
+    {
+        ms_free( m->api_slot );
+        m->api_slot = NULL;
+    }
+
     if ( m->is_static == false )
+    {
         slot_unload_dll( m );
+    }
 
     ms_log( "[module] unloaded '%s'", name );
     slot_free( slot );
     return true;
 }
+
+/*============================================================================================*/
 
 bool /* public */
 mod_reload( const char* name )
@@ -608,47 +757,66 @@ mod_reload( const char* name )
     mod_info_t* m = &g_modules[ slot ];
     if ( m->is_static )
     {
-        ms_log( "[module] '%s' is static — reload is a no-op", name );
+        ms_log( "[module] '%s' is static - reload is a no-op", name );
         return true;
     }
 
-    /* --- exit --- */
+    /* Snapshot the live DLL handles. The api_slot is NOT touched until commit
+       below, so on rollback consumers continue to see the old function pointers
+       (the old DLL is still loaded). */
+
+    mod_snapshot_t prev;
+    snapshot_save( m, &prev );
 
     if ( m->status == MODULE_STATUS_INITIALIZED )
         call_exit( m );
 
-    /* --- swap DLL (state pointer preserved) --- */
+    /* Clear active fields so a slot_load_dll failure path can't touch the old DLL. */
 
-    slot_unload_dll( m );
-    if ( slot_load_dll( m ) == false )
+    m->dll     = NULL;
+    m->mod_api = NULL;
+
+    if ( !slot_load_dll( m ) )
     {
-        m->status = MODULE_STATUS_ERROR;
+        snapshot_rollback( m, &prev, "load failed" );
         return false;
     }
 
-    /* Grow state if the new version needs more room. */
-
-    if ( state_ensure( m ) == false )
+    /* func_api_size must remain stable across reloads — the slot address does not
+       move, but the bytes we memcpy must fit the original allocation exactly. */
+    if ( m->mod_api && ( m->mod_api->func_api_size != m->api_slot_size ) )
     {
-        m->status = MODULE_STATUS_ERROR;
+        set_error( "'%s': func_api_size changed across reload (%d -> %d); requires full restart", name,
+                   m->api_slot_size, m->mod_api->func_api_size );
+        snapshot_rollback( m, &prev, "api size changed" );
+        return false;
+    }
+    if ( !state_ensure( m ) )
+    {
+        snapshot_rollback( m, &prev, "state alloc failed" );
+        return false;
+    }
+    if ( !call_reload( m ) )
+    {
+        set_error( "'%s' on_reload returned false", name );
+        snapshot_rollback( m, &prev, "on_reload failed" );
         return false;
     }
 
-    m->version++;
-    m->status = MODULE_STATUS_LOADED;
+    /* Commit: overwrite the stable slot with the new DLL's function pointers.
+     Every consumer that cached the slot address now dispatches through the new code. */
+    api_slot_refresh( m );
 
-    /* --- call on_reload() or fallback init() with preserved state --- */
-
-    /* This is the key semantic: on_reload() is for pointer re-cache, init() is for first-time setup.
-      State is NEVER zeroed here — it arrives with its last values intact either way. */
-
-    if ( call_reload( m ) == false )
+    /* New code is live — release the old shadow now. */
+    if ( prev.dll )
     {
-        set_error( "'%s' on_reload/init failed after reload", name );
-        m->status = MODULE_STATUS_ERROR;
-        return false;
+        sys_library_unload( prev.dll );
+        char path[ MAX_PATH ];
+        path_shadow( m->name, prev.shadow_count, path, sizeof( path ) );
+        sys_file_delete( path );
     }
 
+    m->version++; /* increment version on each successful hot-reload for logging/debugging */
     m->status = MODULE_STATUS_INITIALIZED;
     ms_log( "[module] reloaded '%s' (reload #%d)", name, m->version );
     return true;
@@ -896,7 +1064,7 @@ pending_flag( const char* name, uint64_t now_ms, uint64_t file_time )
     slot->name[ MODULE_NAME_MAX - 1 ] = '\0';
     slot->flagged_at_ms               = now_ms;
     slot->last_seen_write             = file_time;
-    ms_log( "[module] '%s' changed — debouncing (%d ms)...", name, DEBOUNCE_MS );
+    ms_log( "[module] '%s' changed - debouncing (%d ms)...", name, DEBOUNCE_MS );
 }
 
 static void
@@ -1010,6 +1178,12 @@ mod_system_exit( void )
             m->state = NULL;
         }
 
+        if ( !m->is_static && m->api_slot )
+        {
+            ms_free( m->api_slot );
+            m->api_slot = NULL;
+        }
+
         if ( !m->is_static )
             slot_unload_dll( m );
     }
@@ -1041,9 +1215,8 @@ mod_list_all( void )
         ms_log( "  [%2d]  %-24s  %-13s  api_v%-3d  reload# %-3d  state:%dB  %s", i, m->name,
                 status_str[ m->status ], m->mod_api ? m->mod_api->version : 0, m->version, m->state_size,
                 m->is_static ? "(static)" : "" );
-
-        ms_log( "\n" );
     }
+    ms_log( "\n" );
 }
 
 /*==============================================================================================

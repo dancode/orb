@@ -134,6 +134,15 @@ Dynamic libraries providing hot-reloadable systems:
 
 ---
 
+# Developer
+
+Static services for developer only tools that are not shipped.
+
+- Run-time build invoker for cmake-based projects.
+- Developer hot-reload convenience service (wraps build invoker)
+
+---
+
 # Game
 
 Game framework (`.dll`).

@@ -35,7 +35,7 @@ const audio_api_t g_audio_api_struct = {
 ==============================================================================================*/
 
 static bool
-audio_init( void* raw_state, get_api_fn get_api )
+audio_mod_init( void* raw_state, get_api_fn get_api )
 {
     ( void )get_api;
     s = ( audio_state_t* )raw_state;
@@ -49,7 +49,7 @@ audio_init( void* raw_state, get_api_fn get_api )
 }
 
 static void
-audio_tick( void* raw_state, float dt )
+audio_mod_tick( void* raw_state, float dt )
 {
     ( void )raw_state;
     ( void )dt;
@@ -57,20 +57,21 @@ audio_tick( void* raw_state, float dt )
 }
 
 static void
-audio_exit( void* raw_state )
+audio_mod_exit( void* raw_state )
 {
     audio_state_t* a = ( audio_state_t* )raw_state;
     for ( int i = 0; i < AUDIO_MAX_SOUNDS; ++i ) a->sounds[ i ].active = false;
     printf( "[audio] exit\n" );
 }
 
-static void
-audio_on_reload( void* raw_state, get_api_fn get_api )
+static bool
+audio_mod_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
     /* Re-anchor the local state pointer; no sibling APIs to re-cache. */
     s = ( audio_state_t* )raw_state;
     printf( "[audio] reloaded  master_volume=%.2f\n", s->master_volume );
+    return true;
 }
 
 /*==============================================================================================
@@ -86,10 +87,10 @@ audio_get_mod_api( void )
         .deps       = { "core" },
         .dep_count  = 1,
         .func_api   = &g_audio_api_struct, /* the globally-visible struct above */
-        .init       = audio_init,
-        .tick       = audio_tick,
-        .exit       = audio_exit,
-        .reload     = audio_on_reload,
+        .init       = audio_mod_init,
+        .tick       = audio_mod_tick,
+        .exit       = audio_mod_exit,
+        .reload     = audio_mod_reload,
     };
     return &api;
 };

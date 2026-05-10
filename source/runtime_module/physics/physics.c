@@ -9,8 +9,6 @@
 #include <stdio.h>
 #include "orb.h"
 
-#define PHYSICS_STATIC /* use local struct gateway */
-
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
 
@@ -76,7 +74,7 @@ physics_tick( void* raw_state, float dt )
     UNUSED( dt );
 }
 
-static void
+static bool
 physics_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
@@ -85,6 +83,7 @@ physics_reload( void* raw_state, get_api_fn get_api )
     MOD_FETCH_API( core_api_t, core );
 
     core_api()->log( "physics: reloaded (frames so far = %d)", g_state->frame_count );
+    return true;
 }
 
 /*==============================================================================================
