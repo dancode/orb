@@ -17,6 +17,7 @@ typedef struct example_api_s
     void ( *example_function_1 )( void );
     void ( *example_function_2 )( int value );
     void ( *fail_next_reload )( void ); /* test helper: makes the next on_reload return false */
+    void ( *update )( float dt );
 
 } example_api_t;
 

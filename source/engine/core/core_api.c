@@ -194,7 +194,6 @@ core_get_mod_api( void )
         .dep_count  = 0,
         .func_api   = ( void* )&g_core_api_struct,
         .init       = core_mod_init,
-        .tick       = NULL,
         .exit       = core_mod_exit,
         .reload     = NULL,
     };

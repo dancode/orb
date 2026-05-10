@@ -67,6 +67,15 @@ example_fail_next_reload( void )
     }
 }
 
+static void
+example_update( float dt )
+{
+    UNUSED( dt );
+    example_state->counter++;
+    if ( example_state->counter % 60 == 0 )
+        printf( "[example] update: counter=%d\n", example_state->counter );
+}
+
 /*==============================================================================================
     4. the public API struct, populated at file scope
 ==============================================================================================*/
@@ -75,6 +84,7 @@ const example_api_t g_example_api_struct = {
     .example_function_1 = example_function_1,
     .example_function_2 = example_function_2,
     .fail_next_reload   = example_fail_next_reload,
+    .update             = example_update
 };
 
 /*==============================================================================================
@@ -130,17 +140,6 @@ example_mod_reload( void* raw_state, get_api_fn get_api )
 }
 
 static void
-example_mod_tick( void* raw_state, float dt )
-{
-    UNUSED( raw_state );
-    UNUSED( dt );
-
-    example_state->counter++;
-    if ( example_state->counter % 60 == 0 )
-        printf( "[example] tick: counter=%d\n", example_state->counter );
-}
-
-static void
 example_mod_exit( void* raw_state )
 {
     /* don't free state */
@@ -164,7 +163,6 @@ example_get_mod_api( void )
         .deps          = { NULL },
         .func_api      = &g_example_api_struct,
         .init          = example_mod_init,
-        .tick          = example_mod_tick,
         .exit          = example_mod_exit,
         .reload        = example_mod_reload,
     };

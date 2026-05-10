@@ -66,7 +66,6 @@
     func_api_size MUST NOT change across a reload. Adding or removing functions in
     the API requires a full host restart.
 
-
 ==============================================================================================*/
 #ifndef MOD_EXPORT_H
 #define MOD_EXPORT_H
@@ -98,18 +97,18 @@ typedef const void* ( *get_api_fn )( const char* name );
 
 #define MOD_MAX_DEPS 8
 
-/* init : first-time setup, state is zeroed on entry, and get_api resolves APIs. */
+/* init() is called on first load. Return false to fail the load and prevent the module from
+   initializing.  state is zeroed on first load, preserved across reloads. get_api() can be
+   used to fetch other modules' exported_api pointers. */
 typedef bool ( *mod_init_fn )( void* state, get_api_fn get_api );
 
-/* tick : called every frame while the module is INITIALIZED. */
-typedef void ( *mod_tick_fn )( void* state, float dt );
-
-/* exit : called before unload or reload.  Do NOT free state — the system owns it. */
+/* exit() is called on unload, before the DLL is unloaded and the state block is freed.
+   state is preserved across reloads, but may not be valid on unload if the module failed to
+   load or initialize.  Use it only for cleanup of live resources like threads or GPU objects. */
 typedef void ( *mod_exit_fn )( void* state );
 
-/* reload : required for hot-reload, called INSTEAD of init(). state memory is preserved.
-    returns false to signal reload failure — the module system will roll back to the
-    previously loaded DLL and call its on_reload() to re-initialize it. */
+/* on_reload() is called on hot-reload after the new DLL is loaded, but before the old DLL is unloaded.
+   state is preserved across reloads.  Return false to fail the reload and keep the old DLL loaded. */
 typedef bool ( *mod_reload_fn )( void* state, get_api_fn get_api );
 
 /*==============================================================================================
@@ -126,7 +125,6 @@ typedef struct mod_api_s
     const char*   deps[ MOD_MAX_DEPS ]; /* names of modules to init before this one */
 
     mod_init_fn   init;
-    mod_tick_fn   tick;
     mod_exit_fn   exit;
     mod_reload_fn reload;
 

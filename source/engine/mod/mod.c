@@ -46,6 +46,13 @@
     after DEBOUNCE_MS milliseconds with no further timestamp change does it call mod_reload().
     This prevents reloading while the linker is still writing the DLL.
 
+    Per-frame execution
+    -------------------
+    The module system does NOT tick modules. Per-frame work is exposed by each
+    module as an ordinary function in its api struct (e.g. example_api->update),
+    and the host calls them explicitly in the order the engine's frame demands.
+    The dependency graph is for INIT ORDER only — it is not the frame schedule.
+
 ==============================================================================================*/
 
 #include <stdio.h>     // snprintf
@@ -140,6 +147,7 @@ typedef struct
     char                name[ MODULE_NAME_MAX ];
     uint64_t            flagged_at_ms;              /* time (ms) when the change was first detected */
     uint64_t            last_seen_write;            /* file timestamp at flag time; reset if it changes again */
+    bool                force;                      /* true > bypass debounce at flush time */
 
 } pending_reload_t;
 
@@ -478,15 +486,6 @@ call_init( mod_info_t* m )
 }
 
 static void
-call_tick( mod_info_t* m, float dt )
-{
-    if ( !m->mod_api || !m->mod_api->tick )
-        return;
-
-    m->mod_api->tick( m->state, dt );
-}
-
-static void
 call_exit( mod_info_t* m )
 {
     if ( !m->mod_api || !m->mod_api->exit )
@@ -748,34 +747,24 @@ mod_unload( const char* name )
 
 /*============================================================================================*/
 
-bool /* public */
-mod_reload( const char* name )
+/* The actual swap. Internal, called only from mod_system_flush_reloads. */
+static bool
+do_reload( mod_info_t* m )
 {
-    int slot = slot_find( name );
-    if ( slot < 0 )
-    {
-        set_error( "mod_reload: '%s' not registered", name );
-        return false;
-    }
+    /* (body of the old mod_reload, starting from `if ( m->is_static )`,
+       with `name` replaced by `m->name`) */
 
-    mod_info_t* m = &g_modules[ slot ];
     if ( m->is_static )
     {
-        ms_log( "[module] '%s' is static - reload is a no-op", name );
+        ms_log( "[module] '%s' is static — reload is a no-op", m->name );
         return true;
     }
-
-    /* Snapshot the live DLL handles. The api_slot is NOT touched until commit
-       below, so on rollback consumers continue to see the old function pointers
-       (the old DLL is still loaded). */
 
     mod_snapshot_t prev;
     snapshot_save( m, &prev );
 
     if ( m->status == MODULE_STATUS_INITIALIZED )
         call_exit( m );
-
-    /* Clear active fields so a slot_load_dll failure path can't touch the old DLL. */
 
     m->dll     = NULL;
     m->mod_api = NULL;
@@ -786,15 +775,14 @@ mod_reload( const char* name )
         return false;
     }
 
-    /* func_api_size must remain stable across reloads — the slot address does not
-       move, but the bytes we memcpy must fit the original allocation exactly. */
-    if ( m->mod_api && ( m->mod_api->func_api_size != m->api_slot_size ) )
+    if ( m->mod_api && m->mod_api->func_api_size != m->api_slot_size )
     {
-        set_error( "'%s': func_api_size changed across reload (%d -> %d); requires full restart", name,
+        set_error( "'%s': func_api_size changed across reload (%d -> %d); requires full restart", m->name,
                    m->api_slot_size, m->mod_api->func_api_size );
         snapshot_rollback( m, &prev, "api size changed" );
         return false;
     }
+
     if ( !state_ensure( m ) )
     {
         snapshot_rollback( m, &prev, "state alloc failed" );
@@ -802,16 +790,13 @@ mod_reload( const char* name )
     }
     if ( !call_reload( m ) )
     {
-        set_error( "'%s' on_reload returned false", name );
+        set_error( "'%s' on_reload returned false", m->name );
         snapshot_rollback( m, &prev, "on_reload failed" );
         return false;
     }
 
-    /* Commit: overwrite the stable slot with the new DLL's function pointers.
-     Every consumer that cached the slot address now dispatches through the new code. */
     api_slot_refresh( m );
 
-    /* New code is live — release the old shadow now. */
     if ( prev.dll )
     {
         sys_library_unload( prev.dll );
@@ -820,9 +805,86 @@ mod_reload( const char* name )
         sys_file_delete( path );
     }
 
-    m->version++; /* increment version on each successful hot-reload for logging/debugging */
+    m->version++;
     m->status = MODULE_STATUS_INITIALIZED;
-    ms_log( "[module] reloaded '%s' (reload #%d)", name, m->version );
+    ms_log( "[module] reloaded '%s' (reload #%d)", m->name, m->version );
+    return true;
+}
+
+/*==============================================================================================
+    Debounce helpers
+==============================================================================================*/
+
+static pending_reload_t*
+pending_find( const char* name )
+{
+    /* Find a pending reload entry by name, or return NULL if not found. */
+    for ( int i = 0; i < g_pending_count; ++i )
+    {
+        if ( strncmp( g_pending[ i ].name, name, MODULE_NAME_MAX ) == 0 )
+            return &g_pending[ i ];
+    }
+    return NULL;
+}
+
+static void
+pending_flag( const char* name, uint64_t now_ms, uint64_t file_time, bool force )
+{
+    pending_reload_t* p = pending_find( name );
+
+    if ( p )
+    {
+        if ( force )
+            p->force = true; /* sticky */
+        if ( !p->force && file_time != p->last_seen_write )
+        {
+            p->flagged_at_ms   = now_ms; /* file moved again — reset debounce */
+            p->last_seen_write = file_time;
+        }
+        return;
+    }
+
+    if ( g_pending_count >= MAX_PENDING )
+    {
+        ms_log( "[module] WARN: pending reload table full, skipping '%s'", name );
+        return;
+    }
+
+    pending_reload_t* slot = &g_pending[ g_pending_count++ ];
+    strncpy( slot->name, name, MODULE_NAME_MAX - 1 );
+    slot->name[ MODULE_NAME_MAX - 1 ] = '\0';
+    slot->flagged_at_ms               = now_ms;
+    slot->last_seen_write             = file_time;
+    slot->force                       = force;
+
+    if ( force )
+        ms_log( "[module] '%s' reload queued", name );
+    else
+        ms_log( "[module] '%s' changed - debouncing (%d ms)...", name, DEBOUNCE_MS );
+}
+
+static void
+pending_remove( int idx )
+{
+    g_pending[ idx ] = g_pending[ --g_pending_count ];
+}
+
+bool /* public */
+mod_reload( const char* name )
+{
+    int slot = slot_find( name );
+    if ( slot < 0 )
+    {
+        set_error( "mod_reload: '%s' not registered", name );
+        return false;
+    }
+    if ( g_modules[ slot ].is_static )
+    {
+        ms_log( "[module] '%s' is static — reload is a no-op", name );
+        return true;
+    }
+
+    pending_flag( name, sys_time_ms(), 0, true );
     return true;
 }
 
@@ -835,17 +897,85 @@ mod_reload( const char* name )
 int /* public */
 mod_reload_all( void )
 {
-    int reloaded = 0;
+    uint64_t now_ms = sys_time_ms();
+    int      queued = 0;
+
     for ( int i = 0; i < MAX_MODULES; ++i )
     {
         mod_info_t* m = &g_modules[ i ];
         if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
             continue;
 
-        if ( mod_reload( m->name ) )
+        pending_flag( m->name, now_ms, 0, true );
+        ++queued;
+    }
+
+    ms_log( "[module] queued %d module(s) for reload", queued );
+    return queued;
+}
+
+/*==============================================================================================
+    System init / exit
+==============================================================================================*/
+
+void /* public */
+mod_check_reloads( void )
+{
+    uint64_t now_ms = sys_time_ms();
+
+    for ( int i = 0; i < MAX_MODULES; ++i )
+    {
+        mod_info_t* m = &g_modules[ i ];
+        if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
+            continue;
+
+        char dll_path[ MAX_PATH ];
+        path_dll( m->name, dll_path, sizeof( dll_path ) );
+        uint64_t ft = sys_file_time( dll_path );
+
+        if ( ft != 0 && ft != m->last_write )
+            pending_flag( m->name, now_ms, ft, false );
+    }
+}
+
+/*==============================================================================================
+
+    Called by the host's main loop after mod_check_reloads.  Walks the pending reloads and calls
+    do_reload() for each one that is ready.  Returns the number of modules successfully reloaded.
+
+==============================================================================================*/
+
+int /* public */
+mod_system_flush_reloads( void )
+{
+    if ( g_pending_count == 0 )
+        return 0;
+
+    uint64_t now_ms   = sys_time_ms();
+    int      reloaded = 0;
+
+    /* Walk backward so removals from pending_remove() don't shift unprocessed entries. */
+    for ( int i = g_pending_count - 1; i >= 0; --i )
+    {
+        pending_reload_t* p = &g_pending[ i ];
+
+        /* File-change entries wait out the debounce; forced entries fire now. */
+        if ( !p->force && ( now_ms - p->flagged_at_ms ) < DEBOUNCE_MS )
+            continue;
+
+        char name[ MODULE_NAME_MAX ];
+        strncpy( name, p->name, MODULE_NAME_MAX );
+        name[ MODULE_NAME_MAX - 1 ] = '\0';
+        pending_remove( i );
+
+        int slot = slot_find( name );
+        if ( slot < 0 )
+            continue; /* module unregistered between queue and flush */
+
+        if ( do_reload( &g_modules[ slot ] ) )
             ++reloaded;
     }
-    ms_log( "[module] force reload: %d module(s) reloaded", reloaded );
+
     return reloaded;
 }
 
@@ -1013,110 +1143,6 @@ mod_init_all( void )
     return true;
 }
 
-void
-mod_system_tick( float dt )
-{
-    for ( int k = 0; k < g_init_count; ++k )
-    {
-        mod_info_t* m = &g_modules[ g_init_order[ k ] ];
-        if ( m->status == MODULE_STATUS_INITIALIZED )
-            call_tick( m, dt );
-    }
-}
-
-/*==============================================================================================
-    Debounce helpers
-==============================================================================================*/
-
-static pending_reload_t*
-pending_find( const char* name )
-{
-    /* Find a pending reload entry by name, or return NULL if not found. */
-    for ( int i = 0; i < g_pending_count; ++i )
-    {
-        if ( strncmp( g_pending[ i ].name, name, MODULE_NAME_MAX ) == 0 )
-            return &g_pending[ i ];
-    }
-    return NULL;
-}
-
-static void
-pending_flag( const char* name, uint64_t now_ms, uint64_t file_time )
-{
-    pending_reload_t* p = pending_find( name );
-
-    if ( p )
-    {
-        /* Already pending — reset the debounce window if the file changed again
-           (linker may still be writing; wait another full DEBOUNCE_MS from now). */
-        if ( file_time != p->last_seen_write )
-        {
-            p->flagged_at_ms   = now_ms;
-            p->last_seen_write = file_time;
-        }
-        return;
-    }
-
-    if ( g_pending_count >= MAX_PENDING )
-    {
-        ms_log( "[module] WARN: pending reload table full, skipping '%s'", name );
-        return;
-    }
-
-    pending_reload_t* slot = &g_pending[ g_pending_count++ ];
-    strncpy( slot->name, name, MODULE_NAME_MAX - 1 );
-    slot->name[ MODULE_NAME_MAX - 1 ] = '\0';
-    slot->flagged_at_ms               = now_ms;
-    slot->last_seen_write             = file_time;
-    ms_log( "[module] '%s' changed - debouncing (%d ms)...", name, DEBOUNCE_MS );
-}
-
-static void
-pending_remove( int idx )
-{
-    g_pending[ idx ] = g_pending[ --g_pending_count ];
-}
-
-void
-mod_check_reloads( void )
-{
-    uint64_t now_ms = sys_time_ms();
-
-    /* Phase 1: detect changed DLLs and add them to the pending table. */
-
-    for ( int i = 0; i < MAX_MODULES; ++i )
-    {
-        mod_info_t* m = &g_modules[ i ];
-        if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
-            continue;
-
-        /* Get the current file time of the original DLL (not the shadow copy).
-           If it changed since the last load, flag this module for pending reload. */
-
-        char dll_path[ MAX_PATH ];
-        path_dll( m->name, dll_path, sizeof( dll_path ) );
-        uint64_t ft = sys_file_time( dll_path );
-
-        if ( ft != 0 && ft != m->last_write )
-        {
-            pending_flag( m->name, now_ms, ft );
-        }
-    }
-
-    /* Phase 2: reload any pending entry that has been stable for DEBOUNCE_MS. */
-
-    for ( int i = g_pending_count - 1; i >= 0; --i )
-    {
-        if ( ( now_ms - g_pending[ i ].flagged_at_ms ) >= DEBOUNCE_MS )
-        {
-            char name[ MODULE_NAME_MAX ];
-            strncpy( name, g_pending[ i ].name, MODULE_NAME_MAX );
-            pending_remove( i );
-            mod_reload( name );
-        }
-    }
-}
-
 /*==============================================================================================
     System init / exit
 ==============================================================================================*/
@@ -1149,6 +1175,8 @@ mod_system_init()
         ms_log( "[module] WARNING: file watch unavailable\n" );
     }
 }
+
+/*============================================================================================*/
 
 void
 mod_system_exit( void )

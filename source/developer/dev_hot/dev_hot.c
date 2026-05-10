@@ -80,11 +80,11 @@ dev_hot_recompile( const char* module_name )
         return false;
     }
 
-    printf( "[dev_hot] '%s': built in %.2fs — reloading\n", module_name, r.elapsed_seconds );
+    printf( "[dev_hot] '%s': built in %.2fs — reload queued for next frame\n", module_name, r.elapsed_seconds );
 
     if ( !mod_reload( module_name ) )
     {
-        printf( "[dev_hot] '%s': reload failed — %s\n", module_name, mod_last_error() );
+        printf( "[dev_hot] '%s': could not queue reload — %s\n", module_name, mod_last_error() );
         return false;
     }
 

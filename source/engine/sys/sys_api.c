@@ -87,7 +87,6 @@ sys_get_mod_api( void )
         .dep_count     = 0,
         .func_api      = &g_sys_api_struct,
         .init          = sys_mod_init,
-        .tick          = sys_mod_tick,
         .exit          = sys_mod_exit,
         .reload        = NULL,
     };

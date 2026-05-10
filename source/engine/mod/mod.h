@@ -1,18 +1,26 @@
 /*==============================================================================================
 
-    mod.h
-
-    Hot-reload module system — public interface.
+    engine/mod/mod.h : Hot-reload module system — public interface.
 
     Lifecycle
     ---------
-        module_system_init()        boot; no modules loaded yet
+        mod_system_init()           boot; no modules loaded yet
         mod_static_load( name )     register a static module (no DLL, no shadow copy)
-        module_load( name )         register and load a module (static or dynamic, see below)
-        module_init_all()           topo-sort deps → call each module's init()
-        mod_system_tick( dt )       tick all INITIALIZED modules in dep order
-        mod_check_reloads()         poll file timestamps → debounce → reload changed DLLs
-        module_system_exit()        exit + unload in reverse dep order; delete shadow files
+        mod_load( name )            register and load a module (static or dynamic)
+        mod_init_all()              topo-sort deps → call each module's init()
+        mod_check_reloads()         poll file timestamps → enqueue changed DLLs
+        mod_reload( name )          enqueue a single module for reload
+        mod_reload_all()            enqueue every dynamic module for reload
+        mod_system_flush_reloads()  perform queued swaps; call once per frame at sync point
+        mod_system_exit()           exit + unload in reverse dep order; delete shadow files
+    
+    Reload model
+    ------------
+    Reloads are NEVER applied synchronously. mod_reload, mod_reload_all, and the
+    file watcher all just enqueue. The host calls mod_system_flush_reloads() at
+    a single, well-defined point in its main loop — typically the end of the
+    frame, after simulation and rendering are complete and no module code is
+    in flight. This is the only point at which a DLL swap is provably safe.
 
     module_load( name ) build variants
     -----------------------------------
@@ -96,15 +104,22 @@ bool mod_dynamic_load( const char* name );
 /* Unload a single module: call exit(), free state, unload DLL, delete shadow file. */
 bool mod_unload( const char* name );
 
-/* Hot-reload a single module in place:
-   Call exit → unload DLL → shadow copy → load new DLL → Call on_reload() or init().
-   State pointer is preserved; block is NOT zeroed on reload. */
+/* Enqueue a reload to be performed at the next mod_system_flush_reloads() call.
+   Returns false only if `name` is not registered. */
 bool mod_reload( const char* name );
 
-/* Force-reload every dynamic module immediately, skipping the file-watch debounce.
-   Returns the count of modules successfully reloaded. Useful for an editor's
-   "Reload Modules" command. Static modules are skipped. */
+/* Enqueue every dynamic module for reload. Returns the number queued. */
 int mod_reload_all( void );
+
+/* Poll file timestamps and enqueue any DLL whose original file changed.
+   Debounce is applied at flush time, not here. */
+void mod_check_reloads( void );
+
+/* Drain the pending reload queue. Forced entries (from mod_reload / mod_reload_all)
+   reload immediately; file-watch entries wait out the debounce window.
+   Returns the number of modules actually reloaded this call.
+   Call this once per frame at a quiescent point. */
+int mod_system_flush_reloads( void );
 
 /*==============================================================================================
     Initialization and update
@@ -114,13 +129,6 @@ int mod_reload_all( void );
    Returns false on a dependency cycle or if any init() returns false. */
 bool mod_init_all( void );
 
-/* Tick every INITIALIZED module in dependency order. */
-void mod_system_tick( float dt );
-
-/* Poll file timestamps and hot-reload any DLL that has changed on disk.
-   Applies a debounce window (DEBOUNCE_MS) to avoid reloading while the linker
-   is still writing the file. */
-void mod_check_reloads( void );
 
 /*==============================================================================================
     API access

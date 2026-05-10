@@ -59,14 +59,6 @@ app_mod_init( void* raw_state, get_api_fn get_api )
 }
 
 static void
-app_mod_tick( void* raw_state, float dt )
-{
-    ( void )raw_state;
-    ( void )dt;
-    // app_poll_events(); /* sys call — direct */
-}
-
-static void
 app_mod_exit( void* raw_state )
 {
     state = (app_state_t*)raw_state;
@@ -89,7 +81,6 @@ app_get_mod_api( void )
         .dep_count  = 0,
 
         .init       = app_mod_init,
-        .tick       = app_mod_tick,
         .exit       = app_mod_exit,
         .reload     = NULL,
     };

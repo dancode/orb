@@ -66,7 +66,7 @@ module_test( void )
     printf( "  V = verify cached api pointer is still live\n" );
     printf( "  Q = quit\n" );
 
-    /* ---- game loop --------------------------------------------------- */
+    /* ---- main loop --------------------------------------------------- */
 
     const float dt      = 1.0f / 60.0f;
     bool        running = true;
@@ -74,24 +74,20 @@ module_test( void )
     while ( running )
     {
         HOST_FETCH_API( example_api_t, example );
-        mod_system_tick( dt );
+        
+        /* --- input ----------------------------------------------------- */
 
-        sys_sleep_milliseconds( 16 );
         sys_console_input_poll();
+
         if ( sys_key_pressed( PLATFORM_KEY_C ) )
         {
-            printf( "[host] C key pressed\n" );
+            printf( "[host] C: recompile + reload example\n" );
             dev_hot_recompile( "example" );
         }
         if ( sys_key_pressed( PLATFORM_KEY_R ) )
         {
-            printf( "[host] R key pressed\n" );
+            printf( "[host] R: reload all\n" );
             dev_hot_reload_all();
-        }
-        if ( sys_key_pressed( PLATFORM_KEY_Q ) )
-        {
-            printf( "[host] Q key pressed\n" );
-            running = false;
         }
         if ( sys_key_pressed( PLATFORM_KEY_F ) )
         {
@@ -114,8 +110,27 @@ module_test( void )
             example_api()->example_function_2( 99 );
             printf( "[host] cached pointer still valid\n" );
         }
+        if ( sys_key_pressed( PLATFORM_KEY_Q ) )
+        {
+            printf( "[host] Q key pressed\n" );
+            running = false;
+        }
 
-        mod_check_reloads(); /* poll disk; reload any changed DLL   */
+        /* --- simulation ------------------------------------------------ */
+
+        example_api()->update( dt );
+
+        /* --- file-watch detection (queues debounced reloads) ----------- */
+
+        mod_check_reloads();
+
+        /* --- frame boundary: apply queued swaps ------------------------ */
+
+        mod_system_flush_reloads();
+
+        /* --- frame pacing ---------------------------------------------- */
+
+        sys_sleep_milliseconds( 16 );
     }
 
     sys_console_input_shutdown();

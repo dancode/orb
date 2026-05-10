@@ -40,8 +40,9 @@
    Both NULL is the normal case. */
 bool dev_hot_init( const char* build_dir, const char* cmake_path );
 
-/* Build a module with cmake, then hot-reload it.
-   Prints build output and result to stdout. Returns true only if both succeed. */
+/* Build a module with cmake, then enqueue a hot-reload.
+   The actual DLL swap happens at the next mod_system_flush_reloads() call —
+   typically the end of the host's main-loop iteration. */
 bool dev_hot_recompile( const char* module_name );
 
 /* Reload a module that was already rebuilt externally — skips the build step. */
