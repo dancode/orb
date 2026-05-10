@@ -67,13 +67,6 @@ physics_exit( void* raw_state )
         core_api()->log( "physics: exit" );
 }
 
-void
-physics_tick( void* raw_state, float dt )
-{
-    UNUSED( raw_state );
-    UNUSED( dt );
-}
-
 static bool
 physics_reload( void* raw_state, get_api_fn get_api )
 {
@@ -100,7 +93,6 @@ physics_get_mod_api( void )
         .dep_count  = 1,
         .func_api   = &g_physics_api_struct,
         .init       = physics_init,
-        .tick       = physics_tick,
         .exit       = physics_exit,
         .reload     = physics_reload,
     };

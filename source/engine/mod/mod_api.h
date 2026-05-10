@@ -2,55 +2,40 @@
 #define MOD_API_H
 /*==============================================================================================
 
-    mod_api.h : API access macros for static and dynamic builds.
+    mod_api.h : Consumer-side module API access macros.
 
-    The module system supports both static and dynamic builds with zero code changes to the
-    consumer.  The build mode is determined by BUILD_STATIC, which controls how the API
-    struct is exposed by the provider module and how the consumer accesses it.
+    Supports both static and dynamic builds with identical call sites. The build mode is
+    controlled by BUILD_STATIC (monolithic) or per-module <NAME>_STATIC (exe-linked service).
+
+   MOD_GATEWAY_STATIC( type, name )
+        Static build: declares g_<name>_api_struct as extern and returns its address directly.
+        LTO can devirtualize: render_api()->draw(dt) becomes a direct call with no indirection.
+
+        Provider .c must define:
+            const <name>_api_t g_<name>_api_struct = { .func = internal_func, ... };
+
+    MOD_GATEWAY_DYNAMIC( type, name )
+        Dynamic build: declares g_<name>_api_ptr and returns it through a single pointer load.
+
+        Provider .c must populate the pointer in init() via MOD_FETCH_API.
+
+    Both macros emit an identical inline accessor: <name>_api()
+    Call sites are identical in both builds:  render_api()->begin_frame()
+
+    Static switch pattern (place in the module's API header)
+    ---------------------------------------------------------
+        #if defined( BUILD_STATIC ) || defined( RENDER_STATIC )
+            MOD_GATEWAY_STATIC( render_api_t, render )   // exe-linked: zero cost
+        #else
+            MOD_GATEWAY_DYNAMIC( render_api_t, render )  // DLL-linked: one pointer load
+        #endif
+
+    BUILD_STATIC covers a full monolithic build.
+    RENDER_STATIC covers mixed builds where this module is compiled into the exe.
+    The else arm covers DLLs that cache a pointer fetched during init().
 
 ==============================================================================================*/
 #include "orb.h"
-/*==============================================================================================
-
-    Macros To Pivot On Dynamic vs Static Builds
-    -------------------------------------------
-
-    Place GATEWAY macro in the API header (e.g. render_api.h) after the API struct is declared.
-    It declares the inline getter that all consumers call: render_api(), audio_api(), etc.
-
-    MOD_GATEWAY_STATIC (static) or MOD_GATEWAY_DYNAMIC (dynamic)
-
-    --- STATIC BUILD ---
-
-        The provider module (.c) must define a global (non-static) struct with expected name:
-
-            const <name>_api_t g_<name>_api_struct = { .func = internal_func, ... };
-
-        The global access function declares the the struct as extern and inlines a return.
-        The struct is a single globally-visible constant so LTO can devirtualize.
-        render_api()->draw(dt) bcomes a direct call to internal_draw(dt) with no indirection.
-
-    --- DYNAMIC BUILD ---
-
-        The provider module (.c) must define a local pointer.
-
-            const <name>_api_t* g_<name>_api_ptr = NULL;
-
-        The pointer is populated at init() via MOD_FETCH_API( <name>_api_t, <name> )
-        All calls to <name>_api() are a single pointer load, one extra indirection vs static.
-
-    -- USAGE IN API HEADER --
-
-            typedef struct <name>_api_s { void (*func)(float arg); } <name>_api_t;
-
-            (always static)  MOD_GATEWAY_STATIC( <name>_api_t, <name> ) OR
-            (always dynamic) MOD_GATEWAY_DYNAMIC( <name>_api_t, <name> )
-
-    Usage in consumer code (call site, identical in both builds):
-
-            <name>_api()->func( argument );
-
-==============================================================================================*/
 
 /* STATIC: every TU sees the struct directly. LTO can devirtualize the call. */
 #define MOD_GATEWAY_STATIC( type, name )             \
@@ -59,41 +44,19 @@
     static inline const type* name##_api( void ) { return &g_##name##_api_struct; } \
     mod_api_t*                name##_get_mod_api( void );
 
-/* DYNAMIC: every TU reads through a single pointer. Populated post-init. */
+/* DYNAMIC: every TU reads through a cached pointer populated during init(). */
 #define MOD_GATEWAY_DYNAMIC( type, name )         \
     typedef struct mod_api_s mod_api_t; \
     extern const type*        g_##name##_api_ptr; \
     static inline const type* name##_api( void ) { return g_##name##_api_ptr; }
 
 /*==============================================================================================
+    MOD_DEFINE_API_PTR — Allocates cached pointer storage in a consuming .c file.
 
-    MODULE_GATEWAY (STATIC SWITCH) — Gateway for modules that live in the exe at all times.
-
-    When declaring a module that is always static (e.g. core.c), the API struct is linked
-    in directly to the exectuable that compiled it in.
-
-    External DLL's still need to cache a pointer to the API struct. In this case they will
-    see the external pointer declaration from MOD_GATEWAY_DYNAMIC, but the module's init()
-    will populate that pointer.
-
-    #if defined( BUILD_STATIC ) || defined( CORE_STATIC )
-            MOD_GATEWAY_STATIC( core_api_t, core )          // EXE-linked: zero cost
-        #else
-            MOD_GATEWAY_DYNAMIC( core_api_t, core )         // DLL-linked: one load
-        #endif
-
-    The BUILD_STATIC arm covers a full monolithic build (even DLL's get struct)
-    The CORE_STATIC arm covers mixed builds where this TU is compiled into the exe.
-    The else arm covers DLL that store a local cached consmer pointer.
-
-================================================================================================
-
-    MOD_DEFINE_API_PTR — allocates cached pointer storage in a consuming .c file.
-    Expands to nothing in static builds (struct is linked in directly).
-
-    Place once at file scope in any .c that consumes a sibling API as a DLL:
+    Place once at file scope in any .c that consumes a module API as a DLL:
         MOD_DEFINE_API_PTR( core_api_t, core );
 
+    Expands to nothing in static builds (struct linked directly — no pointer needed).
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
@@ -103,10 +66,12 @@
 #endif
 
 /*==============================================================================================
-    MOD_FETCH_API — Populates the cached pointer inside init() or on_reload().
-                   - Redundant in static builds (struct is linked, nothing to fetch).
+    MOD_FETCH_API — Populates the cached pointer inside init() or reload().
+
+    Always succeeds in static builds (struct is linked; nothing to fetch).
+
     Usage:
-                     if ( !MOD_FETCH_API( core_api_t, core ) ) return false;
+        if ( !MOD_FETCH_API( core_api_t, core ) ) return false;
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
@@ -115,7 +80,7 @@
     #define MOD_FETCH_API( type, name ) ( ( g_##name##_api_ptr = ( const type* )get_api( #name ) ) != NULL )
 #endif
 
-/* Host-local helper — fetches via mod_get_api (works outside an init() callback) */
+/* Host-local variant — fetches via mod_get_api() (valid outside a module init() callback). */
 
 #ifdef BUILD_STATIC
     #define HOST_FETCH_API( type, name ) ( 1 )

@@ -45,7 +45,7 @@ void mem_swap( void* a, void* b, usize n );
 void mem_reverse( void* buf, usize n );
 
 // Align a pointer up to the next multiple of align (must be power of two).
-INLINE void*
+ORB_INLINE void*
 mem_align_ptr( void* ptr, usize align )
 {
     usize addr = ( usize )ptr;
@@ -54,7 +54,7 @@ mem_align_ptr( void* ptr, usize align )
 }
 
 // Align a size up to the next multiple of align (must be power of two).
-INLINE usize
+ORB_INLINE usize
 mem_align_size( usize size, usize align )
 {
     return ( size + ( align - 1 ) ) & ~( align - 1 );

@@ -1,48 +1,43 @@
 /*==============================================================================================
 
-    engine/mod/mod.h : Hot-reload module system — public interface.
+    engine/mod/mod.h : Hot-reload module system, public interface.
 
     Lifecycle
     ---------
-        mod_system_init()           boot; no modules loaded yet
-        mod_static_load( name )     register a static module (no DLL, no shadow copy)
-        mod_load( name )            register and load a module (static or dynamic)
-        mod_init_all()              topo-sort deps → call each module's init()
-        mod_check_reloads()         poll file timestamps → enqueue changed DLLs
-        mod_reload( name )          enqueue a single module for reload
-        mod_reload_all()            enqueue every dynamic module for reload
-        mod_system_flush_reloads()  perform queued swaps; call once per frame at sync point
-        mod_system_exit()           exit + unload in reverse dep order; delete shadow files
+        mod_system_init()           Boot; no modules loaded yet.
+        mod_static_load( name )     Register a statically-linked module (no DLL).
+        mod_load( name )            Register and load a module (expands per build mode).
+        mod_init_all()              Topo-sort deps, call each module's init().
+        mod_check_reloads()         Poll file timestamps; enqueue changed DLLs.
+        mod_reload( name )          Force-queue a single module for reload.
+        mod_reload_all()            Force-queue every dynamic module for reload.
+        mod_system_flush_reloads()  Apply queued swaps; call once per frame at a safe point.
+        mod_system_exit()           Exit in reverse dep order; unload DLLs; delete shadows.
     
-    Reload model
-    ------------
-    Reloads are NEVER applied synchronously. mod_reload, mod_reload_all, and the
-    file watcher all just enqueue. The host calls mod_system_flush_reloads() at
-    a single, well-defined point in its main loop — typically the end of the
-    frame, after simulation and rendering are complete and no module code is
-    in flight. This is the only point at which a DLL swap is provably safe.
+    Deferred reload model
+    ---------------------
+    mod_reload, mod_reload_all, and the file-watcher all enqueue — they never swap
+    immediately. The host calls mod_system_flush_reloads() at a single, well-defined
+    point each frame (after simulation and rendering, when no module code is in flight).
+    That is the only point where a DLL swap is provably safe.
 
-    module_load( name ) build variants
-    -----------------------------------
-    Define BUILD_STATIC for a monolithic build where all modules are linked into the exe.
-    Omit it for a dynamic build where each module is a separate DLL.
-
+    mod_load build variants
+    -----------------------
         BUILD_STATIC defined:
-            module_load( render ) → mod_static_load( "render", render_get_mod_api() )
+            mod_load( render ) → mod_static_load( "render", render_get_mod_api() )
 
         BUILD_STATIC not defined:
-            module_load( render ) → mod_dynamic_load( "render" )
-                                    shadow-copies render.dll → resolves exports → allocs state
+            mod_load( render ) → mod_dynamic_load( "render" )
+                                  shadow-copy → load → resolve exports → alloc state
+    
+    API access
+    ----------
+    Call sites are identical in both build modes:
 
-    Querying APIs from outside the module system (host exe or another module):
+        Static:  render_api()->begin_frame();   // zero-cost; LTO-devirtualizable
+        Dynamic: render_api()->begin_frame();   // one pointer load
 
-        Static build — direct, zero-cost (LTO-devirtualizable):
-            render_api()->draw( dt );
-
-        Dynamic build — one pointer load per call:
-            render_api()->draw( dt );   // identical call site; MODULE_GATEWAY handles the rest
-
-        See MODULE_GATEWAY, MOD_DEFINE_API_PTR, MOD_FETCH_API in mod_api.h.
+    See MOD_GATEWAY_STATIC / MOD_GATEWAY_DYNAMIC in mod_api.h.
 
 ==============================================================================================*/
 #ifndef MOD_H
@@ -51,10 +46,8 @@
 #include "orb.h"
 
 /*==============================================================================================
-    module_load macro
+    Build-mode–transparent module registration macro
 ==============================================================================================*/
-
-// mod_static_load( #name, name##_get_mod_api(), ( void* )name##_get_api() )
 
 #ifdef BUILD_STATIC
     #define mod_load( name ) mod_static_load( #name, name##_get_mod_api() )
@@ -63,7 +56,7 @@
 #endif
 
 /*==============================================================================================
-    Module Registry Entry
+    Types
 ==============================================================================================*/
 
 typedef struct mod_api_s mod_api_t;
@@ -91,64 +84,54 @@ void mod_system_exit( void );
     Registration and loading
 ==============================================================================================*/
 
-/* Register a statically-linked module.
-   mod_api must have func_api set to the module's exported API struct.
-   Does NOT call init() — call module_init_all() once all modules are registered. */
-bool mod_static_load( const char* name, mod_api_t* mod_api );    // , void* exported_api
+/* Register a statically-linked module. Does NOT call init() — use mod_init_all(). */
+bool mod_static_load( const char* name, mod_api_t* mod_api );
 
-/* Load a DLL by base name (e.g. "render" → "<exe_dir>/render.dll").
-   Creates a shadow copy, loads it, resolves exports, allocates state.
-   Does NOT call init() — call module_init_all() once all modules are loaded. */
+/* Shadow-copy, load, and register a DLL by base name (e.g. "render" → "<exe_dir>/render.dll").
+   Does NOT call init() — use mod_init_all(). */
 bool mod_dynamic_load( const char* name );
 
-/* Unload a single module: call exit(), free state, unload DLL, delete shadow file. */
+/* Exit, unload, and deregister a single module. */
 bool mod_unload( const char* name );
 
-/* Enqueue a reload to be performed at the next mod_system_flush_reloads() call.
-   Returns false only if `name` is not registered. */
+/* Force-queue a module for reload at the next mod_system_flush_reloads().
+   Static modules are silently ignored (returns true). */
 bool mod_reload( const char* name );
 
-/* Enqueue every dynamic module for reload. Returns the number queued. */
+/* Force-queue every dynamic module for reload. Returns the number queued. */
 int mod_reload_all( void );
 
-/* Poll file timestamps and enqueue any DLL whose original file changed.
-   Debounce is applied at flush time, not here. */
+/* Poll file timestamps and enqueue any DLL whose source file changed.
+   Debounce is applied at flush time. */
 void mod_check_reloads( void );
 
-/* Drain the pending reload queue. Forced entries (from mod_reload / mod_reload_all)
-   reload immediately; file-watch entries wait out the debounce window.
-   Returns the number of modules actually reloaded this call.
-   Call this once per frame at a quiescent point. */
+/* Drain the pending reload queue. Forced entries reload immediately; file-watch entries
+   wait out the debounce window. Returns the number of modules actually reloaded. */
 int mod_system_flush_reloads( void );
 
 /*==============================================================================================
-    Initialization and update
+    Initialization
 ==============================================================================================*/
 
-/* Topologically sort dependencies and call init() on every LOADED module.
+/* Topologically sort by dependency order and call init() on every LOADED module.
    Returns false on a dependency cycle or if any init() returns false. */
 bool mod_init_all( void );
-
 
 /*==============================================================================================
     API access
 ==============================================================================================*/
 
-/* Returns the exported_api pointer for a named, INITIALIZED module, else NULL.
-   Call the module specific function render_api(), audio_api() for direct access.
-   Cast the result to the module's typed struct:
-       core_api_t*   core = MOD_FETCH_API("core");
-       render_api_t* rend = MOD_FETCH_API("render");  */
+/* Returns the stable API pointer for a named, INITIALIZED module, or NULL.
+   Prefer the typed accessor (render_api(), audio_api(), etc.) at call sites. */
 const void* mod_get_api( const char* name );
 
-/* Last error message from any failed operation. */
+/* Human-readable description of the last failed operation. */
 const char* mod_last_error( void );
 
 /*==============================================================================================
     Debug
 ==============================================================================================*/
 
-/* Debug helpers */
 void mod_list_all( void );
 
 /*============================================================================================*/

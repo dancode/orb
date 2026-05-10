@@ -119,13 +119,13 @@ module_test( void )
 
     const float dt      = 1.0f / 60.0f;
 
+    UNUSED( dt );
+
     bool        running = true;
     while ( running )
     {
         // engine->print( "Looping...\n" );
         // sys->tick_sleep( 100 );
-
-        mod_system_tick( dt ); /* tick all INITIALIZED modules        */
 
         /* Application-level API calls — no #ifdefs here, ever. */
         // render_api()->draw_frame( dt );

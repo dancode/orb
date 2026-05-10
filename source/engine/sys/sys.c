@@ -1,6 +1,9 @@
 /*==============================================================================================
 
-    sys_ub.c
+    sys.c — Unity build entry point for the sys module.
+
+    Includes platform-specific implementations and the platform-agnostic API wiring.
+    Only one .c file from this module is passed to the compiler.
 
 ==============================================================================================*/
 #include <stdio.h>
@@ -10,7 +13,7 @@
 #include "orb.h"
 
 /*==============================================================================================
-    platform depdendencies
+    Platform includes
 ==============================================================================================*/
 
 #if OS_WINDOWS
@@ -22,12 +25,8 @@
 
 #    pragma comment( lib, "winmm.lib" )    // timeBeginPeriod
 
-#    include <windows.h>    // required for all windows applications.
-#    include <timeapi.h>    // timeBeginPeriod
-
-// #    include <process.h>     // _getpid
-// #    include <sys/stat.h>    // _stat for file calls
-// #    include <direct.h>      // directory handling. _mkdir
+#    include <windows.h>
+#    include <timeapi.h> 
 
 #else
 
@@ -37,8 +36,9 @@
 #endif
 
 /*==============================================================================================
-    unity build
+    Unity build
 ==============================================================================================*/
+
 
 #include "engine/sys/sys_api.h"
 #include "engine/sys/sys.h"
@@ -49,6 +49,8 @@
 #    include "win/win_library.c"
 #    include "win/win_file_watch.c"
 #    include "win/win_file.c"
+#    include "win/win_thread.c"
+#    include "win/win_mutex.c"
 #    include "win/win_process.c"
 #    include "win/win_console_input.c"
 

@@ -2,15 +2,25 @@
 
     orb.h -- The Glowing Orb Engine
 
-    This is the main header file for the Glowing Orb Engine. It includes all the necessary
-    declarations and definitions for using the engine's functionalities. This file should
-    be included in any source file that needs to interact with the engine.
+    Root header. Provides compiler/platform/arch detection, fixed-width type aliases,
+    DLL import/export macros, assertions, and common utility macros.
+
+    Include this at the top of every translation unit in the engine.
 
 ==============================================================================================*/
 #ifndef ORB_H
 #define ORB_H
+
 /*==============================================================================================
-    Debug / Release Macros
+    C11 Requirement
+==============================================================================================*/
+
+#if !defined( __STDC_VERSION__ ) || __STDC_VERSION__ < 201112L
+    #error "orb requires C11 or later"
+#endif
+
+/*==============================================================================================
+    Debug / Release
 ==============================================================================================*/
 
 #if defined( _DEBUG ) || !defined( NDEBUG )
@@ -19,14 +29,6 @@
 #else
     #define DEBUG   0
     #define RELEASE 1
-#endif
-
-/*==============================================================================================
-    C11 Requirement
-==============================================================================================*/
-
-#if !defined( __STDC_VERSION__ ) || __STDC_VERSION__ < 201112L
-    #error "base requires C11 or later"
 #endif
 
 /*==============================================================================================
@@ -104,40 +106,26 @@ typedef double    f64;
 typedef u32       b32;    // boolean: 0 = false, nonzero = true
 typedef uintptr_t uptr;
 typedef ptrdiff_t iptr;
-
 typedef size_t    usize;
 typedef ptrdiff_t isize;
 
 /*==============================================================================================
+    DLL Import / Export
 
-    static vs dynamic linking
-
-    The build system defines BUILD_STATIC to enable static linked monolithic builds.
-    In this mode, all modules are compiled into the exe and linked together, and the module
-    API structs are linked in directly (no pointers, no dynamic lookup).
-
+    BUILD_STATIC (monolithic): import/export decorators are not needed.
+    Dynamic builds: ORB_EXPORT marks symbols leaving a DLL; ORB_IMPORT marks symbols consumed
+    from one. Modules use their own per-module export macros (MOD_EXPORT in mod_export.h).
 ==============================================================================================*/
-
-#ifdef BUILD_STATIC
-#endif
-
-/*==============================================================================================
-    DLL import / export
-==============================================================================================*/
-
-/* for monolithic builds we don't need import/export at all */
 
 #if defined( BUILD_STATIC )
     #define ORB_EXPORT
     #define ORB_IMPORT
+#elif defined( OS_WINDOWS )
+    #define ORB_EXPORT __declspec( dllexport )
+    #define ORB_IMPORT __declspec( dllimport )
 #else
-    #if defined( OS_WINDOWS )
-        #define ORB_EXPORT __declspec( dllexport )
-        #define ORB_IMPORT __declspec( dllimport )
-    #else
-        #define ORB_EXPORT __attribute__( ( visibility( "default" ) ) )
-        #define ORB_IMPORT
-    #endif
+    #define ORB_EXPORT __attribute__( ( visibility( "default" ) ) )
+    #define ORB_IMPORT
 #endif
 
 /*==============================================================================================
@@ -145,25 +133,25 @@ typedef ptrdiff_t isize;
 ==============================================================================================*/
 
 #if defined( COMPILER_MSVC )
-    #define INLINE        __forceinline
-    #define NOINLINE      __declspec( noinline )
-    #define ALIGNAS( n )  __declspec( align( n ) )
-    #define THREAD_LOCAL  __declspec( thread )
-    #define LIKELY( x )   ( x )
-    #define UNLIKELY( x ) ( x )
+    #define ORB_INLINE        __forceinline
+    #define ORB_NOINLINE      __declspec( noinline )
+    #define ORB_ALIGNAS( n )  __declspec( align( n ) )
+    #define ORB_THREAD_LOCAL  __declspec( thread )
+    #define ORB_LIKELY( x )   ( x )
+    #define ORB_UNLIKELY( x ) ( x )
 #else
-    #define INLINE        inline __attribute__( ( always_inline ) )
-    #define NOINLINE      __attribute__( ( noinline ) )
-    #define ALIGNAS( n )  __attribute__( ( aligned( n ) ) )
-    #define THREAD_LOCAL  __thread    // C11: _Thread_local
-    #define LIKELY( x )   __builtin_expect( !!( x ), 1 )
-    #define UNLIKELY( x ) __builtin_expect( !!( x ), 0 )
+    #define ORB_INLINE        inline __attribute__( ( always_inline ) )
+    #define ORB_NOINLINE      __attribute__( ( noinline ) )
+    #define ORB_ALIGNAS( n )  __attribute__( ( aligned( n ) ) )
+    #define ORB_THREAD_LOCAL  __thread    // C11: _Thread_local
+    #define ORB_LIKELY( x )   __builtin_expect( !!( x ), 1 )
+    #define ORB_UNLIKELY( x ) __builtin_expect( !!( x ), 0 )
 #endif
 
 #define UNUSED( x ) ( void )x
 
 /*==============================================================================================
-    Assertions (no CRT assert.h dependency)
+    Assertions
 ==============================================================================================*/
 
 #if defined( COMPILER_MSVC )
@@ -193,7 +181,7 @@ typedef ptrdiff_t isize;
 #else
     #define ORB_ASSERT( cond )                                      \
         do {                                                        \
-            if ( ORB_UNLIKELY( !( cond ) ) )                        \
+            if ( UNLIKELY( !( cond ) ) )                            \
             {                                                       \
                 ORB_REPORT_ASSERT( #cond, "", __FILE__, __LINE__ ); \
                 ORB_TRAP();                                         \
@@ -203,7 +191,7 @@ typedef ptrdiff_t isize;
 
     #define ORB_ASSERT_MSG( cond, m )                              \
         do {                                                       \
-            if ( ORB_UNLIKELY( !( cond ) ) )                       \
+            if ( UNLIKELY( !( cond ) ) )                           \
             {                                                      \
                 ORB_REPORT_ASSERT( #cond, m, __FILE__, __LINE__ ); \
                 ORB_TRAP();                                        \

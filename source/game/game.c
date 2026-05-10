@@ -161,15 +161,15 @@ game_exit( void* raw_state )
     core_api()->log( "game exit" );
 }
 
-static void
-game_tick( void* raw_state, float dt )
-{
-    UNUSED( raw_state );
-    /* Per-frame work the host doesn't have to know about — we just plumb through. */
-    game_on_update( dt );
-    game_on_render();
-
-}
+// static void
+// game_tick( void* raw_state, float dt )
+// {
+//     UNUSED( raw_state );
+//     /* Per-frame work the host doesn't have to know about — we just plumb through. */
+//     game_on_update( dt );
+//     game_on_render();
+// 
+// }
 
 /*==============================================================================================
 Game module descriptor
@@ -185,7 +185,6 @@ game_get_mod_api( void )
         .dep_count  = 4,
         .func_api   = &g_game_api_struct,
         .init       = game_init,
-        .tick       = game_tick,
         .exit       = game_exit,
         .reload     = game_reload,
     };

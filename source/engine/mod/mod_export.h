@@ -1,70 +1,56 @@
 /*==============================================================================================
 
-    engine/mod_export.h : The module export API struct and lifecycle callback typedefs.
+    engine/mod_export.h :  Module implementation header.
 
-    Purpose
-    -------
-    This is the only header a module author needs to implement a module, whether static or dynamic.
-    It defines the mod_api_t struct that every module must return from its get_mod_api() export,
-    and the lifecycle callback typedefs (init/tick/exit/reload) that the system calls.
+    This is the only header a module author needs when implementing a module.
 
-    Includes the MOD_EXPORT / MOD_DEFINE_EXPORTS macros for DLL exports.
+    It provides:
 
-    Usage
-    -----
-    Only include this header when implementing a module, never in the host exe or other modules.
-    The host and other modules only include mod_api.h to get the API struct definitions and
-    consumer-side macros.
+      - mod_api_t: the descriptor every module returns from name_get_mod_api()
+      - Lifecycle callback typedefs (mod_init_fn, mod_exit_fn, mod_reload_fn)
+      - get_api_fn: the callback passed into init() and reload() for sibling API lookup
+      - MOD_EXPORT / MOD_DEFINE_EXPORTS: DLL export machinery
 
-    Modules declaration
-    -------------------
+    Include ONLY in a module's .c implementation. Hosts and sibling modules
+    include mod_api.h instead.
 
-    To implement a module (DLL or static). Every module must provide two custom
-    "module name" derived C function:
+    Module authoring
+    ----------------
+    Every module must provide two functions derived from its name:
 
-        mod_api_t*  name_get_mod_api( void )  — lifecycle (init/tick/exit/on_reload)
-        mod_api_t*  get_mod_api( void )       - exported accessor for dynamic builds
+        mod_api_t*  <name>_get_mod_api( void )  — lifecycle descriptor (static + dynamic)
+        get_mod_api( void )                     — generic DLL export (dynamic only)
 
-    In dynamic builds these are resolved as undecorated DLL exports via LoadLibrary:
+    The generic export is emitted by placing this once at the bottom of the module's .c:
 
-        MOD_DEFINE_EXPORTS( module_name );
-
-    This defines a single generic export "get_mod_api" whose implementation calls
-    the module-specific name_get_mod_api() internally.
-
-    In static builds mod_static_load() is used to get the module api and the
-    lifecycle callbacks and state size. Since there are no DLLs, the module's own API
-    struct is linked in directly and returned by name_get_api() with no indirection.
+        MOD_DEFINE_EXPORTS( <name> )
 
     State ownership
     ---------------
-    The system allocates state_size bytes, zeroes the block on first load, and
-    preserves it across hot-reloads.  Modules never free their own state
+    The system allocates state_size bytes and zeroes them on first load. State is
+    preserved across hot-reloads and freed only on final unload. Modules must not
+    free their own state.
 
     Reload semantics
     ----------------
-    on first load:   init()      is called with a zeroed state block.
-    on hot-reload:   on_reload() is called (must exist for hot-reload)
+    First load:    init()      — called with a zeroed state block.
+    Hot-reload:    reload()    — called with the preserved state block.
 
-                     State memory is PRESERVED in both cases.
+    Use reload() to re-cache sibling API pointers that may have changed after a DLL swap.
+    Use init() for one-time setup that must not repeat on reload.
 
-    Use on_reload() to re-cache sibling API pointers that changed after a DLL swap.
-    Use init() for first-time setup that should not repeat on reload.
-
-    func_api ownership
+    func_api stability
     ------------------
-    The module returns a pointer to its const API struct (typically a file-scope
-    `g_<name>_api_struct`). The system COPIES this struct into a stable, system-owned
-    memory block at load time and at every successful reload. Consumers cache the
-    address of the system block — that address never changes — so a hot-reload
-    automatically swings every consumer's calls to the new functions without any
-    on_reload pointer re-cache.
+    The system copies the module's func_api struct into a stable, system-owned memory block
+    at load time and on every successful reload. Consumers cache the address of that block —
+    it never changes — so hot-reload automatically routes all calls to new function pointers
+    without any manual pointer re-cache in reload().
 
-    Static modules skip the copy: their func_api already lives at a stable
-    address (the linked-in const struct), so the system points directly at it.
+    Static modules skip the copy: their func_api is a linked-in const struct at a stable
+    address, so the system points directly at it.
 
-    func_api_size MUST NOT change across a reload. Adding or removing functions in
-    the API requires a full host restart.
+    func_api_size MUST NOT change across a reload. Adding or removing API functions
+    requires a full host restart.
 
 ==============================================================================================*/
 #ifndef MOD_EXPORT_H
@@ -74,45 +60,38 @@
 #include "engine/mod/mod_api.h"
 
 /*==============================================================================================
+    get_api_fn — System callback passed into every module's init() and reload().
 
-    The system interface passed into every module's init() and on_reload() call.
+    The only system symbol a DLL ever calls back into — modules never link against the exe.
+    Use it inside init() or reload() to resolve sibling API pointers:
 
-    The ONLY system symbol a DLL ever touches — it never links against the exe.
-    At runtime the pointer is passed so the module can resolve any registered API.
+        if ( !MOD_FETCH_API( core_api_t, core ) ) return false;
 
-    Called only inside a DLL's init() or reload() function.
-
-        if ( !MOD_FETCH_API( core_api_t, core ))
-
-    In static builds this does nothing. In dynamic builds it resolves the API pointer
-    from the module system "get_api("name") and caches it in a global for subsequent calls.
-
+    In static builds MOD_FETCH_API is a no-op (structs are linked in directly).
 ==============================================================================================*/
 
 typedef const void* ( *get_api_fn )( const char* name );
 
 /*==============================================================================================
-    Module lifecycle callbacks
+    Lifecycle Callback Typedefs
 ==============================================================================================*/
 
 #define MOD_MAX_DEPS 8
 
-/* init() is called on first load. Return false to fail the load and prevent the module from
-   initializing.  state is zeroed on first load, preserved across reloads. get_api() can be
-   used to fetch other modules' exported_api pointers. */
+/* Called on first load. Return false to abort the load.
+   `state` is zeroed on first load and preserved across reloads. */
 typedef bool ( *mod_init_fn )( void* state, get_api_fn get_api );
 
-/* exit() is called on unload, before the DLL is unloaded and the state block is freed.
-   state is preserved across reloads, but may not be valid on unload if the module failed to
-   load or initialize.  Use it only for cleanup of live resources like threads or GPU objects. */
+/* Called on unload. Use only for cleanup of live resources (threads, GPU objects).
+   Do not free `state` — the system owns it. */
 typedef void ( *mod_exit_fn )( void* state );
 
-/* on_reload() is called on hot-reload after the new DLL is loaded, but before the old DLL is unloaded.
-   state is preserved across reloads.  Return false to fail the reload and keep the old DLL loaded. */
+/* Called after a new DLL is loaded but before the old one is unloaded.
+   Return false to abort the reload and keep the old DLL active. */
 typedef bool ( *mod_reload_fn )( void* state, get_api_fn get_api );
 
 /*==============================================================================================
-    mod_api_t — every module provides this via name_get_mod_api()
+    mod_api_t — Module descriptor. Every module returns one from name_get_mod_api().
 ==============================================================================================*/
 
 typedef struct mod_api_s
@@ -121,7 +100,7 @@ typedef struct mod_api_s
     int32_t       state_size;           /* persistent state size or 0 = stateless */
     int32_t       func_api_size;        /* sizeof(<name>_api_t) — system snapshots this many bytes */
     int32_t       dep_count;            /* number of dependencies in deps[] */
-    const void*   func_api;             /* template — system memcpys from here on each load */
+    const void*   func_api;             /* pointer to the module's exported API struct */
     const char*   deps[ MOD_MAX_DEPS ]; /* names of modules to init before this one */
 
     mod_init_fn   init;
@@ -130,11 +109,11 @@ typedef struct mod_api_s
 
 } mod_api_t;
 
-/* DLL API export function typedef (exported in dynamic builds only) */
+/* DLL entry-point typedef resolved via LoadLibrary / dlopen. */
 typedef mod_api_t* ( *get_mod_api_fn )( void );
 
 /*==============================================================================================
-    MOD_EXPORT — Marks DLL exports on platforms that require it.
+    MOD_EXPORT — Marks a symbol for DLL export on platforms that require it.
 ==============================================================================================*/
 
 #if defined( _WIN32 ) && !defined( BUILD_STATIC )
@@ -144,15 +123,17 @@ typedef mod_api_t* ( *get_mod_api_fn )( void );
 #endif
 
 /*==============================================================================================
-    MOD_DEFINE_EXPORTS — emits the undecorated "get_mod_api" / "get_api" symbols
-    that the module system resolves via LoadLibrary / dlopen.
+    MOD_DEFINE_EXPORTS — Emits the undecorated "get_mod_api" export resolved at runtime.
 
-    Place once at the bottom of the module's .c, outside any function: MOD_DEFINE_EXPORTS( render )
+    Place once at the bottom of the module's .c, outside any function:
+
+        MOD_DEFINE_EXPORTS( render )
+
+    In static builds this expands to nothing; the system calls name##_get_mod_api directly.
 ==============================================================================================*/
-// void* name##_get_api( void ) { return ( void* )&g_##name##_api_struct; }
 
 #ifdef BUILD_STATIC
-    #define MOD_DEFINE_EXPORTS( name ) /* static builds: system calls name##_get_mod_api directly */
+    #define MOD_DEFINE_EXPORTS( name )
 #else
     #define MOD_DEFINE_EXPORTS( name ) \
         MOD_EXPORT mod_api_t* get_mod_api( void ) { return name##_get_mod_api(); }

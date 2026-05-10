@@ -1,65 +1,70 @@
 /*==============================================================================================
 
-    mod.c
+    mod.c — Hot-reload module system implementation.
 
-    Hot-reload module system implementation.
-
-    Bootstrap
-    --------------------
-    The module system starts on its own bootstrap log/alloc so it can function
-    before core exists.  Once module_init_all() runs core's init(), the system
-    promotes itself to core's real implementations silently.
+    Bootstrap allocator
+    -------------------
+    The module system uses plain malloc/free/printf from startup so it can operate before
+    core exists. Once mod_init_all() runs core's init(), the system can be promoted to
+    core's real allocator; for now it stays on the bootstrap path throughout.
 
     Shadow-copy strategy
     --------------------
-    The original DLL is never loaded directly — the build tool would lock it and
-    prevent recompilation.  Wwe copy it to a uniquely named shadow file and load that.
-    The counter increments on each reload so there is never a name collision with
-    the still-loaded previous copy.
+    The original DLL is never loaded directly — the build tool would lock it and block
+    recompilation. We copy it to a uniquely-named shadow file and load that instead.
+    The counter increments on each reload so the new shadow never collides with the
+    still-loaded previous copy.
 
         Original : <exe_dir>\render.dll
         Shadow 0 : <exe_dir>\render.tmp_0.dll
-        Shadow 1 : <exe_dir>\render.tmp_1.dll   (shadow 0 deleted after unload)
+        Shadow 1 : <exe_dir>\render.tmp_1.dll  (shadow 0 deleted after unload)
 
     State ownership
     ---------------
-    The system allocates `state` from the core allocator using mod_api_t::state_size.
-    The pointer is passed into every init/tick/exit/on_reload call and is NEVER freed
-    across a hot-reload, so modules keep their runtime data through code changes.
+    The system allocates state_size bytes from the bootstrap allocator and zeroes them on
+    first load. State is preserved across hot-reloads and never freed until final unload.
+    If state_size grows across a reload the tail bytes are zeroed; the block never shrinks.
+    Modules must not store pointers into their own code or static data — those addresses
+    become invalid after a DLL swap.
 
-    On first load the block is zeroed; on reload it arrives with its previous values.
-    If state_size grows across a reload, the new tail bytes are zeroed; the block never shrinks.
+    Deferred reload and debounce
+    ----------------------------
+    mod_reload, mod_reload_all, and mod_check_reloads all enqueue into g_pending — they
+    never perform a swap directly. The host calls mod_system_flush_reloads() once per frame
+    at a quiescent point. File-change entries wait DEBOUNCE_MS before flushing to avoid
+    swapping while the linker is still writing the DLL. Forced entries (mod_reload /
+    mod_reload_all) bypass debounce and fire on the next flush.
 
-    State structures should never pointers into the module's own code or static data.
-    This will be lost on hot-reload. Store only data owned by the system (.exe)
+    Dependency order
+    ----------------
+    The init-order dependency graph is for initialization sequencing only. It does not
+    define the per-frame execution order; hosts schedule module update calls explicitly.
 
-    File watching
-    -------------
-    mod_check_reloads() delegates all platform I/O to the file_watch interface.
-    A debounce window (DEBOUNCE_MS) prevents reloading while the linker is still
-    writing — the module is flagged on the first notification and reloaded only
-    after DEBOUNCE_MS milliseconds have elapsed with no further notifications.
 
-    Debounce
-    ---------
-    mod_check_reloads() flags a changed module into g_pending on first detection. Only
-    after DEBOUNCE_MS milliseconds with no further timestamp change does it call mod_reload().
-    This prevents reloading while the linker is still writing the DLL.
+    Registration tiers — intentionally distinct, do not collapse into a single macro.
 
-    Per-frame execution
-    -------------------
-    The module system does NOT tick modules. Per-frame work is exposed by each
-    module as an ordinary function in its api struct (e.g. example_api->update),
-    and the host calls them explicitly in the order the engine's frame demands.
-    The dependency graph is for INIT ORDER only — it is not the frame schedule.
+    Tier 1 — HOST SERVICES   mod_static_load()
+        Always compiled into the exe. Acquired by other modules via MOD_FETCH_API() in init().
+            mod_static_load( "sys",  sys_get_mod_api() );
+            mod_static_load( "core", core_get_mod_api() );
+
+    Tier 2 — SWITCHABLE MODULES   mod_load()  (macro)
+        Static in monolithic builds, hot-reloadable DLL in dynamic builds.
+        BUILD_STATIC controls which path the macro expands to.
+            mod_load( render );
+            mod_load( audio );
+
+    Tier 3 — FORCE-DYNAMIC   mod_dynamic_load()
+        Must be a DLL regardless of BUILD_STATIC — scripting runtimes, platform plugins.
+            mod_dynamic_load( "lua_runtime" );
 
 ==============================================================================================*/
 
-#include <stdio.h>     // snprintf
-#include <stdlib.h>    // malloc, free
-#include <stdarg.h>    // va_list, va_start, etc.
-#include <string.h>    // strcmp, etc.
-#include <assert.h>    // assert
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <assert.h>
 
 #include "orb.h"
 #include "engine/sys/sys.h"
@@ -89,7 +94,8 @@
 
 /*==============================================================================================
     Bootstrap log / alloc / free
-    These are used from startup until core's init() runs and promotes the real implementations.
+
+    Used from startup until core's init() has run. Intentionally simple.
 ==============================================================================================*/
 
 static void
@@ -115,7 +121,7 @@ ms_free( void* ptr )
 }
 
 /*==============================================================================================
-    Internal state
+    Internal Types
 ==============================================================================================*/
 // clang-format off
 
@@ -152,7 +158,7 @@ typedef struct
 } pending_reload_t;
 
 /*==============================================================================================
-    Global state
+    Global State
 ==============================================================================================*/
 
 static mod_info_t           g_modules[ MAX_MODULES ];
@@ -174,7 +180,7 @@ static int32_t              g_pending_count = 0;
 // clang-format on
 
 /*==============================================================================================
-    Error reporting
+    Error Reporting
 ==============================================================================================*/
 
 static void
@@ -194,7 +200,7 @@ mod_last_error( void )
 }
 
 /*==============================================================================================
-    Path helpers
+    Path Helpers
 ==============================================================================================*/
 
 static void
@@ -212,7 +218,7 @@ path_shadow( const char* name, uint32_t counter, char* out, size_t size )
 }
 
 /*==============================================================================================
-    Slot management
+    Slot Management
 ==============================================================================================*/
 
 static int
@@ -284,14 +290,12 @@ shadow_delete( const char* name, uint32_t counter )
 /*==============================================================================================
     State Helper: System-owned API slot
 
-    Each module gets a stable memory block that holds its live func_api struct.
-    Consumers cache the slot's address (returned by mod_get_api), which never changes.
-    On reload the system memcpys the new DLL's func_api into this same block — every
-    consumer automatically dispatches through the new function pointers, no on_reload
-    pointer re-cache required.
+    Consumers cache the slot's address (returned by mod_get_api). On reload the system
+    memcpys the new func_api into this same block — consumers automatically dispatch
+    through the new pointers without any manual re-cache in their reload() callback.
 
-    Static modules skip the copy: their func_api already lives at a stable address
-    in the exe's data section, so api_slot just points at it.
+    Static modules skip the copy: their func_api is already a stable linked-in const
+    struct, so api_slot points directly at it.
 ==============================================================================================*/
 
 static bool
@@ -328,8 +332,8 @@ api_slot_create( mod_info_t* m )
     return true;
 }
 
-/* Commit: copy the new DLL's func_api into the existing stable slot. Caller must
-   have validated that func_api_size still matches m->api_slot_size. */
+/* Copy the new DLL's func_api into the existing stable slot.
+   Caller must have verified func_api_size still matches m->api_slot_size. */
 static void
 api_slot_refresh( mod_info_t* m )
 {
@@ -337,22 +341,19 @@ api_slot_refresh( mod_info_t* m )
 }
 
 /*==============================================================================================
-    State helper : allocate or reallocate the persistent state block for a module.
-    On first load this allocates and zeroes the block. On reload it preserves the pointer
-    and only reallocs if the new state_size is larger than the previous allocation.
+    State Helper — Allocate or grow the persistent state block.
+
+    Zeroes the block on first allocation. On reload, preserves existing data and
+    zeroes only the newly added tail if state_size grew. Never shrinks the allocation.
 ==============================================================================================*/
 
 static bool
 state_ensure( mod_info_t* m )
 {
-    /* Allocate (or reallocate) a module's persistent state block.
-       On first call `m->state` is NULL. On reload we preserve the pointer and
-       only realloc if the new api declares a larger state_size. */
-
     int32_t required = m->mod_api->state_size;
     if ( required <= 0 )
     {
-        return true; /* stateless module — nothing to do */
+        return true; /* stateless module */
     }
 
     if ( m->state == NULL )
@@ -533,14 +534,8 @@ snapshot_save( const mod_info_t* m, mod_snapshot_t* s )
     s->status       = m->status;
 }
 
-/* Restore the slot from a snapshot after a failed reload.
-
-   - Tears down whatever new DLL is currently in m (if any).
-   - Restores the saved handles so cached API pointers in other modules stay valid.
-   - Re-runs on_reload() on the restored code to bring it back to INITIALIZED.
-
-   `reason` is a short tag for the log line. */
-
+/* Tear down any partially-loaded new DLL, restore the saved handles, and re-run reload()
+   on the old code to bring the module back to INITIALIZED. `reason` labels the log line. */
 static void
 snapshot_rollback( mod_info_t* m, const mod_snapshot_t* s, const char* reason )
 {
@@ -745,9 +740,10 @@ mod_unload( const char* name )
     return true;
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+    do_reload — Internal swap. Called only from mod_system_flush_reloads().
+==============================================================================================*/
 
-/* The actual swap. Internal, called only from mod_system_flush_reloads. */
 static bool
 do_reload( mod_info_t* m )
 {
@@ -1251,60 +1247,4 @@ mod_list_all( void )
     ms_log( "\n" );
 }
 
-/*==============================================================================================
-
-    module notes:
-
-    The three registration tiers are intentional and must stay explicit.
-    Do not collapse them into a single macro — the distinction is load-bearing:
-
-    ── Tier 1 ──────────────────────────────────────────────────────────────────────────────
-    HOST SERVICES  —  mod_static_load()
-
-        Always compiled into the exe. Never a DLL.
-        Other modules acquire them through MOD_FETCH_API() in init()
-
-        mod_static_load( "core",  core_get_mod_api() );
-        mod_static_load( "jobs",  jobs_get_mod_api() );
-
-    ── Tier 2 ──────────────────────────────────────────────────────────────────────────────
-    SWITCHABLE MODULES  —  module_load()  (macro)
-
-        Statically linked in a monolithic build, hot-reloadable DLL in a dynamic build.
-        The BUILD_STATIC flag controls which call the macro expands to.
-        These are the only modules that participate in the dynamic/static build switch.
-
-            module_load( renderer );
-            module_load( audio );
-            module_load( game );
-
-    ── Tier 3 ──────────────────────────────────────────────────────────────────────────────
-    FORCE-DYNAMIC  —  mod_dynamic_load()  (rare, explicit)
-
-        Reserved for modules that must be DLLs regardless of BUILD_STATIC — e.g. a
-        scripting runtime or a platform plugin that ships as a separate binary.
-
-            mod_dynamic_load( "lua_runtime" );
-
-    Both tiers are acquired identically at the call site:
-
-        core_api()->log(...)            — zero-cost in exe-linked TUs
-        renderer_api()->begin_frame()   — one load in dynamic builds
-
-    ── Build commands ───────────────────────────────────────────────────────────────────────
-
-    Monolithic (BUILD_STATIC, LTO):
-        cc -DBUILD_STATIC -flto \
-           main.c core.c base.c jobs.c renderer.c audio.c game.c module.c -o game
-
-    Mixed (host services in exe, switchable modules as DLLs):
-
-        Exe:
-            cc -DCORE_STATIC -DBASE_STATIC -DJOBS_STATIC \
-               main.c core.c base.c jobs.c module.c -o game
-        DLLs:
-            cc -shared renderer.c -o renderer.dll
-            cc -shared audio.c    -o audio.dll
-            cc -shared game.c     -o game.dll
-
-==============================================================================================*/
+/*============================================================================================*/

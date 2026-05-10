@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    win_process.c : Process spawning + output capture for Windows.
+    win_process.c - Process spawning + output capture for Windows.
 
 ==============================================================================================*/
 

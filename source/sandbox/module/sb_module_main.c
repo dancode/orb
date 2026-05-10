@@ -1,6 +1,9 @@
 /*==============================================================================================
 
-    sandbox_module_main.c
+    sandbox_module_main.c — Module system sandbox.
+
+    Boots the module system, loads the example module (static or dynamic per build mode),
+    and runs a main loop exercising hot-reload, failure/rollback, and cached API access.
 
 ==============================================================================================*/
 
@@ -17,19 +20,13 @@
 MOD_DEFINE_API_PTR( example_api_t, example );
 
 /*============================================================================================*/
-/* test the module system by booting it, registering some static modules,
-   loading some dynamic ones, and running a main loop */
 
 void
 module_test( void )
 {
     mod_system_init();
 
-    /* setup hot reload */
-
     dev_hot_init( NULL, NULL ); 
-
-    /* load modules */
 
     if ( !mod_static_load( "sys", sys_get_mod_api() ) )
         goto shutdown;
@@ -71,10 +68,13 @@ module_test( void )
     const float dt      = 1.0f / 60.0f;
     bool        running = true;
 
+    /* Re-fetch after each flush so the pointer stays current post-reload.
+    In a real host this belongs in the post-flush update pass, not every tick. */
+
+    HOST_FETCH_API( example_api_t, example );
+
     while ( running )
-    {
-        HOST_FETCH_API( example_api_t, example );
-        
+    {        
         /* --- input ----------------------------------------------------- */
 
         sys_console_input_poll();

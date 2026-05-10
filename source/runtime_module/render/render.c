@@ -113,13 +113,6 @@ render_exit( void* raw_state )
         core_api()->log( "render: exit" );
 }
 
-void
-render_tick( void* raw_state, float dt )
-{
-    UNUSED( raw_state );
-    UNUSED( dt );
-}
-
 static bool
 render_reload( void* raw_state, get_api_fn get_api )
 {
@@ -142,11 +135,11 @@ render_get_mod_api( void )
     static mod_api_t api = {
         .version    = 1,
         .state_size = sizeof( render_state_t ),
+        .func_api_size = sizeof( render_api_t ),
         .deps       = { "core" },    // "app" + remove "engine"
         .dep_count  = 1,
         .func_api   = &g_render_api_struct,
         .init       = render_init,
-        .tick       = render_tick,
         .exit       = render_exit,
         .reload     = render_reload,
     };

@@ -1,6 +1,8 @@
 /*==============================================================================================
 
-    sys_api.c : The platform-agnostic "system" module.
+    sys_api.c — Platform-agnostic sys module wiring.
+
+    Implements the sys_api_t function-pointer struct and the mod_api_t lifecycle descriptor.
 
 ==============================================================================================*/
 
@@ -17,7 +19,7 @@ typedef struct sys_state_s
 } sys_state_t;
 
 /*==============================================================================================
-    API Start / Shutdown
+    Init / Exit
 ==============================================================================================*/
 
 void
@@ -56,13 +58,6 @@ sys_mod_init( void* raw_state, get_api_fn get_api )
     UNUSED( raw_state );
     sys_init();
     return true;
-}
-
-static void
-sys_mod_tick( void* raw_state, float dt )
-{
-    UNUSED( raw_state );
-    UNUSED( dt );
 }
 
 static void

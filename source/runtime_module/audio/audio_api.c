@@ -49,14 +49,6 @@ audio_mod_init( void* raw_state, get_api_fn get_api )
 }
 
 static void
-audio_mod_tick( void* raw_state, float dt )
-{
-    ( void )raw_state;
-    ( void )dt;
-    /* submit audio buffer to OS driver */
-}
-
-static void
 audio_mod_exit( void* raw_state )
 {
     audio_state_t* a = ( audio_state_t* )raw_state;
@@ -84,11 +76,11 @@ audio_get_mod_api( void )
     static mod_api_t api = {
         .version    = 1,
         .state_size = sizeof( audio_state_t ),
+        .func_api_size = sizeof( audio_api_t ),
         .deps       = { "core" },
         .dep_count  = 1,
         .func_api   = &g_audio_api_struct, /* the globally-visible struct above */
         .init       = audio_mod_init,
-        .tick       = audio_mod_tick,
         .exit       = audio_mod_exit,
         .reload     = audio_mod_reload,
     };
