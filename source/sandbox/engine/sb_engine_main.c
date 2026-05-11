@@ -8,7 +8,7 @@
 #include <stdio.h>    // printf, fprintf
 
 #include "orb.h"
-#include "orb.h"         // general project settings and declarations
+#include "orb.h"               // general project settings and declarations
 #include "engine/mod/mod.h"    // module system (only for host exe, not modules themselves)
 
 #include "sb_engine_test.c"
@@ -98,7 +98,7 @@ module_test( void )
 
     // HOST_FETCJ_API( example_api_t, example );
     core_api()->log( "Module System Initialized\n" );
-        
+
     /* ---- console input ----------------------------------------------- */
 
     {
@@ -117,11 +117,11 @@ module_test( void )
 
     /* ---- game loop --------------------------------------------------- */
 
-    const float dt      = 1.0f / 60.0f;
+    const float dt = 1.0f / 60.0f;
 
     UNUSED( dt );
 
-    bool        running = true;
+    bool running = true;
     while ( running )
     {
         // engine->print( "Looping...\n" );

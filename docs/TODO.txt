@@ -1,6 +1,6 @@
 Critical — will cause silent bugs or crashes
 
-WIP: No rollback on failed reload.
+DONE: No rollback on failed reload.
 
 	If slot_load_dll succeeds but call_reload returns false, m->status is set to MODULE_STATUS_ERROR 
 	and the module has no code. The old shadow DLL was already unloaded. The module is now a dead slot.
@@ -12,8 +12,7 @@ WIP: No rollback on failed reload.
 	Cascade on_reload to dependents (this will silently corrupt pointer caches as soon as you have inter-module dependencies in dynamic builds).
 	and shadow file cleanup at startup (this will cause confusing load failures in long development sessions). 
 
-
-TODO: Dependents of a reloaded module get stale API pointers.
+DONE: Dependents of a reloaded module get stale API pointers.
 
 	mod_reload("example") calls on_reload() on example itself, which re-caches its own sibling 
 	API pointers via MOD_FETCH_API. But any module that depends on example — 
@@ -34,17 +33,7 @@ TODO: Dependents of a reloaded module get stale API pointers.
 
 	Pick the best fix:
 
-TODO: Function pointers in module state will crash on reload:
-
-	Your state block is preserved across reloads by keeping the same memory. 
-	If a module stores function pointers inside its state struct — pointing into its own DLL — 
-	those addresses become dangling the moment the old DLL is unloaded. 
-	The state bytes look valid but point into freed memory. 
-	This is the most common hot-reload bug. The rule needs to be explicit: state structs must 
-	contain only POD data, system heap pointers, and opaque handles.
-	Never pointers into the module's own code or static data.
-
-TODO: Shadow files from crashed sessions accumulate forever.
+DONE: Shadow files from crashed sessions accumulate forever.
 
 	g_shadow_counter resets to 0 on every launch. shadow_delete only knows to delete the 
 	specific counter it created. Leftover .tmp_N.dll files from a previous crash are 

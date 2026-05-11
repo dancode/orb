@@ -26,7 +26,7 @@ module_test( void )
 {
     mod_system_init();
 
-    dev_hot_init( NULL, NULL ); 
+    dev_hot_init( NULL, NULL );
 
     if ( !mod_static_load( "sys", sys_get_mod_api() ) )
         goto shutdown;
@@ -74,7 +74,7 @@ module_test( void )
     HOST_FETCH_API( example_api_t, example );
 
     while ( running )
-    {        
+    {
         /* --- input ----------------------------------------------------- */
 
         sys_console_input_poll();
@@ -122,7 +122,7 @@ module_test( void )
 
         /* --- file-watch detection (queues debounced reloads) ----------- */
 
-        mod_check_reloads();
+        mod_check_reloads(); /* polls file timestamps, queues any changed modules for reload */
 
         /* --- frame boundary: apply queued swaps ------------------------ */
 

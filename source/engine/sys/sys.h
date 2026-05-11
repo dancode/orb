@@ -50,6 +50,20 @@ uint64_t sys_file_time( const char* path );
 bool     sys_file_copy( const char* src, const char* dst );
 bool     sys_file_delete( const char* path );
 
+/* Callback invoked by sys_file_glob() for each matching file.
+   `filename`  — bare filename only, no directory prefix; valid for the call duration.
+   `full_path` — absolute path to the file; valid for the call duration.
+   `userdata`  — opaque pointer passed through from sys_file_glob().
+   Return true to continue iterating, false to stop early. */
+
+typedef bool ( *sys_glob_fn )( const char* filename, const char* full_path, void* userdata );
+
+/* Enumerate every file in `dir` whose name matches `pattern` (supports * and ? wildcards).
+   Calls `cb` once per match; stops early if `cb` returns false.
+   Returns the total number of files delivered to `cb`. */
+
+int sys_file_glob( const char* dir, const char* pattern, sys_glob_fn cb, void* userdata );
+
 /*==============================================================================================
 
     File Watch - Directory change polling with debounced notifications
@@ -59,6 +73,7 @@ bool     sys_file_delete( const char* path );
 /* Callback: Called for each file that changed.
    filename - bare filename, no path, valid only for the duration of the call.
    userdata - value passed to sys_filewatch_poll(). */
+
 typedef void ( *file_watch_callback_t )( const char* filename, void* userdata );
 
 /* Start watching `dir_path`.  Returns false on failure (check sys_filewatch_last_error). */
@@ -67,12 +82,15 @@ bool sys_filewatch_init( const char* dir_path );
 
 /* Drain all pending notifications, invoking `cb` for each changed file.
    Returns the number of notifications delivered (0 if nothing changed). */
+
 int sys_filewatch_poll( file_watch_callback_t cb, void* userdata );
 
 /* Stop watching and release all resources. */
+
 void sys_filewatch_shutdown( void );
 
 /* Human-readable description of the last error, or "" if none. */
+
 const char* sys_filewatch_last_error( void );
 
 /*==============================================================================================
@@ -158,7 +176,6 @@ b32 mutex_try_lock( mutex_t* m );
 
 // Release. Must be called by the thread that called mutex_lock.
 void mutex_unlock( mutex_t* m );
-
 
 /*==============================================================================================
 

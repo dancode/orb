@@ -31,10 +31,10 @@ sys_exe_dir( char* out, int size )
 uint64_t
 sys_time_ms( void )
 {
-    /* GetTickCount64 returns the number of milliseconds that have elapsed since the system 
+    /* GetTickCount64 returns the number of milliseconds that have elapsed since the system
        was started. It is not affected by system time changes and has a resolution of around
-       10-16 ms, which is sufficient for our debounce timing. 
-       
+       10-16 ms, which is sufficient for our debounce timing.
+
        For higher-resolution timing, QueryPerformanceCounter (sys_tick) can be used. */
 
     return ( uint64_t )GetTickCount64();
@@ -79,6 +79,44 @@ sys_file_delete( const char* path )
        existence of the file and handle errors as needed. */
 
     return DeleteFileA( path ) != 0;
+}
+
+/*==============================================================================================
+    : Enumerate files matching a glob pattern
+==============================================================================================*/
+
+int
+sys_file_glob( const char* dir, const char* pattern, sys_glob_fn cb, void* userdata )
+{
+    char search[ MAX_PATH ];
+    snprintf( search, sizeof( search ), "%s\\%s", dir, pattern );
+
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA( search, &fd );
+    if ( h == INVALID_HANDLE_VALUE )
+        return 0;
+
+    int count = 0;
+    do {
+        /* Skip the pseudo-entries the OS always returns. */
+        if ( fd.cFileName[ 0 ] == '.' )
+            continue;
+
+        /* Skip subdirectories — callers only want files. */
+        if ( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY )
+            continue;
+
+        char full[ MAX_PATH ];
+        snprintf( full, sizeof( full ), "%s\\%s", dir, fd.cFileName );
+
+        ++count;
+        if ( !cb( fd.cFileName, full, userdata ) )
+            break;
+    }
+    while ( FindNextFileA( h, &fd ) );
+
+    FindClose( h );
+    return count;
 }
 
 /*============================================================================================*/

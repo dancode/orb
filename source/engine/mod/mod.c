@@ -886,7 +886,7 @@ mod_reload( const char* name )
 
 /*==============================================================================================
 
-    mod_reload_all: force-reload every dynamic module immediately, skips the file-watch debounce.
+    : Force-reload every dynamic module immediately, skips the file-watch debounce.
 
 ==============================================================================================*/
 
@@ -898,11 +898,13 @@ mod_reload_all( void )
 
     for ( int i = 0; i < MAX_MODULES; ++i )
     {
+        // skip empty slots and static modules — only dynamic modules can be reloaded
         mod_info_t* m = &g_modules[ i ];
         if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
             continue;
 
-        pending_flag( m->name, now_ms, 0, true );
+        // flag for immediate reload on next flush
+        pending_flag( m->name, now_ms, 0, true /* force */ );
         ++queued;
     }
 
@@ -911,7 +913,9 @@ mod_reload_all( void )
 }
 
 /*==============================================================================================
-    System init / exit
+
+    : Called by the host's main loop once per frame. Checks the file timestamps of all loaded
+
 ==============================================================================================*/
 
 void /* public */
@@ -921,23 +925,29 @@ mod_check_reloads( void )
 
     for ( int i = 0; i < MAX_MODULES; ++i )
     {
+        /* skip empty slots and static modules — only dynamic modules can be reloaded based on file changes */
         mod_info_t* m = &g_modules[ i ];
         if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
             continue;
 
+        /* Check the file timestamp of the original DLL (not the shadow) to detect changes. */
         char dll_path[ MAX_PATH ];
         path_dll( m->name, dll_path, sizeof( dll_path ) );
         uint64_t ft = sys_file_time( dll_path );
 
+        /* If the file timestamp has changed since the last successful load, flag for reload. */
         if ( ft != 0 && ft != m->last_write )
+        {
             pending_flag( m->name, now_ms, ft, false );
+        }
     }
 }
 
 /*==============================================================================================
 
-    Called by the host's main loop after mod_check_reloads.  Walks the pending reloads and calls
-    do_reload() for each one that is ready.  Returns the number of modules successfully reloaded.
+    : Called by the host's main loop after mod_check_reloads.
+    : Walks the pending reloads and calls do_reload() for each one that is ready.
+    : Returns the number of modules successfully reloaded.
 
 ==============================================================================================*/
 
@@ -1142,8 +1152,59 @@ mod_init_all( void )
 /*==============================================================================================
     System init / exit
 ==============================================================================================*/
+/* Delete every *.tmp_*.dll left behind by a previous session that crashed before it could
+   clean up its shadow copies.  Called once at startup, before any module is loaded.
 
-void
+   The pattern we look for is any file whose name contains ".tmp_" and ends with ".dll".
+   That is specific enough to never touch real build outputs, and it matches exactly the
+   names produced by path_shadow() — "<name>.tmp_<counter>.dll".
+
+   Runs best-effort: individual delete failures are logged but do not abort startup. */
+
+typedef struct
+{
+    int deleted;
+    int failed;
+
+} shadow_cleanup_ctx_t;
+
+static bool
+shadow_cleanup_cb( const char* filename, const char* full_path, void* userdata )
+{
+    shadow_cleanup_ctx_t* ctx = ( shadow_cleanup_ctx_t* )userdata;
+
+    /* Belt-and-suspenders: the glob already filtered by pattern, but confirm the
+       ".tmp_" signature so a future path_shadow() format change can't silently
+       widen the sweep to unrelated files. */
+
+    if ( !strstr( filename, ".tmp_" ) ) 
+        return true;
+
+    if ( sys_file_delete( full_path ) )
+        ++ctx->deleted;
+    else
+    {
+        ms_log( "[module] cleanup: could not delete stale shadow '%s'", filename );
+        ++ctx->failed;
+    }
+    return true; /* keep iterating */
+}
+
+static void
+cleanup_stale_shadows( void )
+{
+    shadow_cleanup_ctx_t ctx = { 0, 0 };
+    sys_file_glob( g_root, "*.tmp_*.dll", shadow_cleanup_cb, &ctx );
+
+    if ( ctx.deleted > 0 || ctx.failed > 0 )
+        ms_log( "[module] stale shadow cleanup: %d deleted, %d failed", ctx.deleted, ctx.failed );
+}
+
+/*==============================================================================================
+    System init / exit
+==============================================================================================*/
+
+void /* public */
 mod_system_init()
 {
     /* zero module slots (status = EMPTY) */
@@ -1164,6 +1225,9 @@ mod_system_init()
     /* set root path for module DLLs */
     sys_exe_dir( g_root, sizeof( g_root ) );
     ms_log( "[module] system init (root: %s)", g_root );
+
+    /* purge shadow copies left over from any previous session that crashed */
+    cleanup_stale_shadows();
 
     /* start file watcher via sys (no core needed) */
     if ( sys_filewatch_init( g_root ) == false )
