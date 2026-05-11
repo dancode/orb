@@ -408,16 +408,13 @@ add_unity_library(game ${MODULE_TYPE} "source/game" "04_Game"
 target_link_libraries( game PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 05 USER PROJECTS (Additional Game DLL)
+# 05 PROJECTS (THE ACTUAL GAME IMPLEMENTATION PROJECT)
 # ------------------------------------------------------------------------------
 
-# 7. GAME (FRAMEWORK)
+# 05 PROJECT
 add_unity_library(sample_game ${MODULE_TYPE} "source/project/sample_game" "05_Project"
     "sample_game.c"
 )
-
-# target_link_libraries(engine_core PUBLIC base engine_sys engine_core )
-# add_engine_dll(amberfall "7_Projects" PROJECTS/amberfall/source/af_unity.c "base;engine_core;game_framework")
 
 # ------------------------------------------------------------------------------
 # 06. HOST SHARED LIBRARY
@@ -445,10 +442,9 @@ if ( ENGINE_MONOLITHIC )
     target_link_libraries( host_editor PUBLIC render )
 endif()
 
-# HOST TOOL
+# HOST Tool
 add_unity_executable( host_tool "source/host/tool" "06_Host" "tool_main.c" )
 target_link_libraries( host_tool PRIVATE base engine_mod engine_sys engine_core )
-
 
 # HOST Sandbox
 add_unity_executable( host_sandbox "source/host/sandbox" "06_Host" "host_sandbox.c" )
@@ -459,9 +455,9 @@ endif()
 # --- The Magic IDE Config ---
 # Change "sandbox_imgui" here, run your build.bat, and VS will automatically 
 # pass this argument when you press F5.
-set_target_properties( host_sandbox PROPERTIES 
-    VS_DEBUGGER_COMMAND_ARGUMENTS "-module sandbox_imgui"
-)
+# set_target_properties( host_sandbox PROPERTIES 
+#     VS_DEBUGGER_COMMAND_ARGUMENTS "-module sandbox_imgui"
+# )
 
 # ------------------------------------------------------------------------------
 # 07 SANDBOX (Executables)
@@ -473,7 +469,7 @@ target_link_libraries( sandbox_module PRIVATE engine_sys engine_mod dev_build de
 if ( ENGINE_MONOLITHIC )
 endif()
 
-## TODO:
+# ------------------------------------------------------------------------------
 
 # SANDBOX ENGINE
 add_unity_executable( sandbox_engine "source/sandbox/engine" "07_Sandbox" "sb_engine_main.c" )
@@ -501,19 +497,18 @@ endif()
 # endif()
 
 # ------------------------------------------------------------------------------
-# 07 SANDBOXMODULES
+# 07 SANDBOX TEST MODULE (DLL STYLE TEST MODULES FROM SAME HOST) 
 # ------------------------------------------------------------------------------
 
 # JOBS
-add_unity_library( sb_jobs ${MODULE_TYPE} "source/sandbox_module/jobs" "07_Sandbox_Modules"
-    "sb_jobs.c"
-)
+add_unity_library( sb_jobs ${MODULE_TYPE} "source/sandbox_module/jobs" "07_Sandbox_Modules" "sb_jobs.c" )
 # target_link_libraries( sb_jobs PUBLIC base )
 
 # ------------------------------------------------------------------------------
 # MONOLITHIC BUILD COMBINES ALL LIBRARIES INTO HOST TARGET
 # ------------------------------------------------------------------------------
 
+# TODO: fixup dependencies later
 if(ENGINE_MONOLITHIC)
 # In monolithic mode, the engine must statically link the modules.
 # target_link_libraries(engine PUBLIC example)

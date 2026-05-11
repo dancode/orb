@@ -44,7 +44,10 @@ DONE: Shadow files from crashed sessions accumulate forever.
 
 Important — correctness gaps that compound as the engine grows
 
-TODO: Reload does not respect dependency order for batched changes.
+DONE: Reload does not respect dependency order for batched changes.
+	
+	If I do a full re-cook of several modules offline, and then hit reload manualy. It 
+	needs to load in depdendency order to ensure that modules see a consistent view of their dependencies.
 
 	When both render.dll and game.dll change simultaneously (a shared header edit),
 	they both enter g_pending. They expire debounce independently and reload in arrival order, 
@@ -72,7 +75,7 @@ TODO: No API struct version compatibility check.
 	declared they were built against. Since you control the build, the minimum viable check 
 	is asserting the version has not decreased on reload.
 
-TODO: get_mod_api returning a valid struct doesn't mean the API is fully implemented.
+DONE: get_mod_api returning a valid struct doesn't mean the API is fully implemented.
 
 	slot_load_dll validates that func_api is non-NULL, but nothing validates that individual function
 	pointers inside the API struct are non-NULL. A module under development might legitimately leave 
@@ -82,7 +85,7 @@ TODO: get_mod_api returning a valid struct doesn't mean the API is fully impleme
 
 Design gaps to address before the system scales
 
-TODO: No cooperative reload protocol.
+NOT DOING" No cooperative reload protocol.
 
 	Currently a module gets exit() called and must immediately comply. 
 	If a module is mid-frame with GPU commands in flight, audio buffers submitted, 

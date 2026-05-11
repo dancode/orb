@@ -31,15 +31,15 @@
     ----------------------------
     mod_reload, mod_reload_all, and mod_check_reloads all enqueue into g_pending — they
     never perform a swap directly. The host calls mod_system_flush_reloads() once per frame
-    at a quiescent point. File-change entries wait DEBOUNCE_MS before flushing to avoid
-    swapping while the linker is still writing the DLL. Forced entries (mod_reload /
-    mod_reload_all) bypass debounce and fire on the next flush.
+    at a quiescent point. Every entry waits DEBOUNCE_MS after the most recent file write
+    before flushing, so a swap can never race the linker. Manual reload requests are
+    queued the same way as file-watch entries; if the file is already stable they fire on
+    the very next flush, otherwise they wait out the writer.
 
     Dependency order
     ----------------
     The init-order dependency graph is for initialization sequencing only. It does not
     define the per-frame execution order; hosts schedule module update calls explicitly.
-
 
     Registration tiers — intentionally distinct, do not collapse into a single macro.
 
@@ -153,7 +153,6 @@ typedef struct
     char                name[ MODULE_NAME_MAX ];
     uint64_t            flagged_at_ms;              /* time (ms) when the change was first detected */
     uint64_t            last_seen_write;            /* file timestamp at flag time; reset if it changes again */
-    bool                force;                      /* true > bypass debounce at flush time */
 
 } pending_reload_t;
 
@@ -218,7 +217,7 @@ path_shadow( const char* name, uint32_t counter, char* out, size_t size )
 }
 
 /*==============================================================================================
-    Slot Management
+    Module Slot Management
 ==============================================================================================*/
 
 static int
@@ -260,7 +259,7 @@ slot_free( int slot )
 }
 
 /*==============================================================================================
-    Shadow-copy helpers
+    Shadow Copy Helpers
 ==============================================================================================*/
 
 static bool
@@ -338,6 +337,62 @@ static void
 api_slot_refresh( mod_info_t* m )
 {
     memcpy( m->api_slot, m->mod_api->func_api, ( size_t )m->api_slot_size );
+}
+
+/*==============================================================================================
+    API struct validation
+
+    Contract: func_api is a struct of function pointers only. func_api_size is therefore
+    an exact multiple of sizeof(void*), and each void*-sized slot must be a non-NULL function
+    pointer after a successful load or reload. Consumers cache the api_slot address and
+    dispatch through it without per-call NULL checks, so any NULL slot is a host crash
+    waiting to happen.
+
+    Runs on every load and every reload.
+==============================================================================================*/
+
+static bool
+api_validate_func( const char* name, const void* func_api, int32_t func_api_size )
+{
+    if ( func_api == NULL )
+    {
+        set_error( "'%s': func_api is NULL", name );
+        return false;
+    }
+    if ( func_api_size <= 0 )
+    {
+        set_error( "'%s': func_api_size is zero", name );
+        return false;
+    }
+    if ( ( func_api_size % ( int32_t )sizeof( void* ) ) != 0 )
+    {
+        set_error(
+            "'%s': func_api_size (%d) is not a multiple of sizeof(void*) (%zu) - "
+            "API struct must contain only function pointers",
+            name, func_api_size, sizeof( void* ) );
+        return false;
+    }
+
+    const void* const* slots      = ( const void* const* )func_api;
+    int                slot_count = ( int )( func_api_size / ( int32_t )sizeof( void* ) );
+    int                null_count = 0;
+
+    for ( int i = 0; i < slot_count; ++i )
+    {
+        if ( slots[ i ] == NULL )
+        {
+            ms_log( "[module] '%s': func_api slot %d (byte offset %d) is NULL", name, i, i * ( int )sizeof( void* ) );
+            ++null_count;
+        }
+    }
+
+    if ( null_count > 0 )
+    {
+        set_error( "'%s': %d NULL function pointer(s) in func_api - every slot must be set", name, null_count );
+        return false;
+    }
+
+    return true;
 }
 
 /*==============================================================================================
@@ -433,6 +488,10 @@ slot_load_dll( mod_info_t* m )
     if ( m->mod_api->func_api == NULL )
     {
         set_error( "'%s': mod_api_t::func_api is NULL", m->name );
+        goto fail;
+    }
+    if ( !api_validate_func( m->name, m->mod_api->func_api, m->mod_api->func_api_size ) )
+    {
         goto fail;
     }
 
@@ -619,6 +678,12 @@ mod_static_load( const char* name, mod_api_t* mod_api )
     m->is_static                   = true;
     m->mod_api                     = mod_api;
     m->status                      = MODULE_STATUS_LOADED;
+
+    if ( !api_validate_func( name, mod_api->func_api, mod_api->func_api_size ) )
+    {
+        slot_free( slot );
+        return false;
+    }
 
     if ( state_ensure( m ) == false )
     {
@@ -824,17 +889,16 @@ pending_find( const char* name )
 }
 
 static void
-pending_flag( const char* name, uint64_t now_ms, uint64_t file_time, bool force )
+pending_flag( const char* name, uint64_t now_ms, uint64_t file_time )
 {
     pending_reload_t* p = pending_find( name );
 
     if ( p )
     {
-        if ( force )
-            p->force = true; /* sticky */
-        if ( !p->force && file_time != p->last_seen_write )
+        /* File moved again before we got to flush — restart the debounce. */
+        if ( file_time != p->last_seen_write )
         {
-            p->flagged_at_ms   = now_ms; /* file moved again — reset debounce */
+            p->flagged_at_ms   = now_ms;
             p->last_seen_write = file_time;
         }
         return;
@@ -851,12 +915,8 @@ pending_flag( const char* name, uint64_t now_ms, uint64_t file_time, bool force 
     slot->name[ MODULE_NAME_MAX - 1 ] = '\0';
     slot->flagged_at_ms               = now_ms;
     slot->last_seen_write             = file_time;
-    slot->force                       = force;
 
-    if ( force )
-        ms_log( "[module] '%s' reload queued", name );
-    else
-        ms_log( "[module] '%s' changed - debouncing (%d ms)...", name, DEBOUNCE_MS );
+    ms_log( "[module] '%s' queued for reload (%d ms debounce)", name, DEBOUNCE_MS );
 }
 
 static void
@@ -880,7 +940,9 @@ mod_reload( const char* name )
         return true;
     }
 
-    pending_flag( name, sys_time_ms(), 0, true );
+    char dll_path[ MAX_PATH ];
+    path_dll( name, dll_path, sizeof( dll_path ) );
+    pending_flag( name, sys_time_ms(), sys_file_time( dll_path ) );
     return true;
 }
 
@@ -898,13 +960,13 @@ mod_reload_all( void )
 
     for ( int i = 0; i < MAX_MODULES; ++i )
     {
-        // skip empty slots and static modules — only dynamic modules can be reloaded
         mod_info_t* m = &g_modules[ i ];
         if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
             continue;
 
-        // flag for immediate reload on next flush
-        pending_flag( m->name, now_ms, 0, true /* force */ );
+        char dll_path[ MAX_PATH ];
+        path_dll( m->name, dll_path, sizeof( dll_path ) );
+        pending_flag( m->name, now_ms, sys_file_time( dll_path ) );
         ++queued;
     }
 
@@ -938,7 +1000,7 @@ mod_check_reloads( void )
         /* If the file timestamp has changed since the last successful load, flag for reload. */
         if ( ft != 0 && ft != m->last_write )
         {
-            pending_flag( m->name, now_ms, ft, false );
+            pending_flag( m->name, now_ms, ft );
         }
     }
 }
@@ -951,36 +1013,114 @@ mod_check_reloads( void )
 
 ==============================================================================================*/
 
+/*==============================================================================================
+    : Called by the host's main loop after mod_check_reloads.
+    : Collects every pending entry whose debounce has expired (or that was forced),
+    : sorts them by their position in g_init_order, and reloads in that dependency
+    : order. This guarantees that when a shared-header rebuild flags both 'render'
+    : and 'game' at once, 'render' (lower init rank) reloads first, so 'game's
+    : reload() sees the new render_api in place.
+    : Returns the number of modules successfully reloaded.
+==============================================================================================*/
+
 int /* public */
 mod_system_flush_reloads( void )
 {
     if ( g_pending_count == 0 )
         return 0;
 
-    uint64_t now_ms   = sys_time_ms();
-    int      reloaded = 0;
+    uint64_t now_ms = sys_time_ms();
 
-    /* Walk backward so removals from pending_remove() don't shift unprocessed entries. */
-    for ( int i = g_pending_count - 1; i >= 0; --i )
+    /* --- Step 1: collect ready entries with their dependency rank --- */
+
+    typedef struct
+    {
+        int pending_idx; /* index into g_pending */
+        int slot;        /* index into g_modules, or -1 if deregistered since queueing */
+        int dep_rank;    /* position in g_init_order; g_init_count means "unranked" */
+    } ready_entry_t;
+
+    ready_entry_t ready[ MAX_PENDING ];
+    int           ready_count = 0;
+
+    for ( int i = 0; i < g_pending_count; ++i )
     {
         pending_reload_t* p = &g_pending[ i ];
 
-        /* File-change entries wait out the debounce; forced entries fire now. */
-        if ( !p->force && ( now_ms - p->flagged_at_ms ) < DEBOUNCE_MS )
+        /* Wait out the debounce on every entry — manual reloads land here too. */
+        if ( ( now_ms - p->flagged_at_ms ) < DEBOUNCE_MS )
             continue;
 
-        char name[ MODULE_NAME_MAX ];
-        strncpy( name, p->name, MODULE_NAME_MAX );
-        name[ MODULE_NAME_MAX - 1 ] = '\0';
-        pending_remove( i );
+        int slot = slot_find( p->name );
 
-        int slot = slot_find( name );
-        if ( slot < 0 )
+        /* Default rank sorts after every dependency-ordered module. Covers
+           the LOADED-but-not-yet-INITIALIZED case and any deregistered name. */
+
+        int rank = g_init_count;
+        if ( slot >= 0 )
+        {
+            for ( int k = 0; k < g_init_count; ++k )
+            {
+                if ( g_init_order[ k ] == slot )
+                {
+                    rank = k;
+                    break;
+                }
+            }
+        }
+
+        ready[ ready_count ].pending_idx = i;
+        ready[ ready_count ].slot        = slot;
+        ready[ ready_count ].dep_rank    = rank;
+        ++ready_count;
+    }
+
+    if ( ready_count == 0 )
+        return 0;
+
+    /* --- Step 2: sort by dep_rank ascending (insertion sort; ready_count <= 16) --- */
+
+    for ( int i = 1; i < ready_count; ++i )
+    {
+        ready_entry_t key = ready[ i ];
+        int           j   = i - 1;
+        while ( j >= 0 && ready[ j ].dep_rank > key.dep_rank )
+        {
+            ready[ j + 1 ] = ready[ j ];
+            --j;
+        }
+        ready[ j + 1 ] = key;
+    }
+
+    /* --- Step 3: reload in dependency order --- */
+
+    int reloaded = 0;
+    for ( int i = 0; i < ready_count; ++i )
+    {
+        if ( ready[ i ].slot < 0 )
             continue; /* module unregistered between queue and flush */
 
-        if ( do_reload( &g_modules[ slot ] ) )
+        if ( do_reload( &g_modules[ ready[ i ].slot ] ) )
             ++reloaded;
     }
+
+    /* --- Step 4: compact g_pending, dropping the entries we just processed ---
+       Failed reloads are removed too, matching the original behaviour. */
+
+    bool processed[ MAX_PENDING ] = { false };
+    for ( int i = 0; i < ready_count; ++i ) processed[ ready[ i ].pending_idx ] = true;
+
+    int write = 0;
+    for ( int read = 0; read < g_pending_count; ++read )
+    {
+        if ( !processed[ read ] )
+        {
+            if ( write != read )
+                g_pending[ write ] = g_pending[ read ];
+            ++write;
+        }
+    }
+    g_pending_count = write;
 
     return reloaded;
 }
@@ -1177,7 +1317,7 @@ shadow_cleanup_cb( const char* filename, const char* full_path, void* userdata )
        ".tmp_" signature so a future path_shadow() format change can't silently
        widen the sweep to unrelated files. */
 
-    if ( !strstr( filename, ".tmp_" ) ) 
+    if ( !strstr( filename, ".tmp_" ) )
         return true;
 
     if ( sys_file_delete( full_path ) )
