@@ -684,7 +684,6 @@ mod_static_load( const char* name, mod_api_t* mod_api )
         slot_free( slot );
         return false;
     }
-
     if ( state_ensure( m ) == false )
     {
         slot_free( slot );
