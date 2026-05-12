@@ -6,6 +6,8 @@ orb.h : Root configuration header. Should be included in all source files.
 Config/ Configuration files for the engine, such as build settings, platform-specific configurations, and other global settings.
 Build/ Output directory for all compiled binaries (exe's, dll's, lib's) and intermediate files (obj's, pdb's, etc.).
 
+Engine Heirarchy Stack:
+
 01 Base/ A standard library (.lib) included by all modules. Cannot contain state as it is included in DLL's. Includes (math, memory, strings, logging).
 
 02 Engine/ Contains 4 stateful foundation static libraries (.lib)	
@@ -19,22 +21,27 @@ Build/ Output directory for all compiled binaries (exe's, dll's, lib's) and inte
 	- runtime services: (lib's) collection of static libraries that provide non-hot-reload services (jobs, input, timing, assets, console).
 	- runtime modules: (dll's) collection of dynamic libraries that provide hot-reloadable modules (renderer, physics, audio, etc.)
 
-Developer/ The development only fetures that are stripped away in public builds. build invoker, profiler, live coding, debug renderer,
+04 Developer/ The development only fetures that are stripped away in public builds. build invoker, profiler, live coding, debug renderer,
 	etc. These features are only available in development builds and are not included in the final game or editor builds.
 	- developer services: (lib's) collection of static libraries that provide non-hot-reload services for development (build invoker, profiler, live coding, debug renderer, etc.)
 	- developer modules: (dll's) collection of dynamic libraries that provide hot-reloadable modules for development (debug tools, performance analysis, etc.)
 
-Game/ The game framework (dll) (world, entity, component, actor)
+04 Game/ The game framework (dll) (world, entity, component, actor)
 	- game host: responsible for game specific startup and shutdown and running the main loop.
 	- game services: (lib's) collection of static libraries that provide non-hot-reload services (world, entity, component management).
 	- game modules: (dll's) collection of dynamic libraries that provide hot-reloadable modules (gameplay, ai, etc.)
 
-Editor/ The editor framework (dll) (windows, panels, tools) 
+05 Project/ The user project game implementation (dll) that contains the game specific code and assets. 
+	- project host: responsible for project specific startup and shutdown and running the main loop.
+	- project modules: (dll's) collection of dynamic libraries that provide hot-reloadable modules for the user project (game logic, levels, etc.)
+	- project services: (lib's) collection of static libraries that provide non-hot-reload services for the user project (game-specific utilities, etc.)	
+
+06 Editor/ The editor framework (dll) (windows, panels, tools) 
 	- editor host: responsible for editor specific startup and shutdown and running the main loop.
 	- editor services: (lib's) collection of static libraries that provide non-hot-reload services (window management, panel management, tool management).
 	- editor modules: (dll's) collection of dynamic libraries that provide hot-reloadable modules (scene view, asset browser, inspector, etc.)
 
-Tools/ A collection of standalone tools (exe's) that are not part of the editor but are used for content creation or other tasks (asset pipeline, level editor, etc.)
+06 Tools/ A collection of standalone tools (exe's) that are not part of the editor but are used for content creation or other tasks (asset pipeline, level editor, etc.)
 	- tools common: a static library that provides common functionality for all tools (logging, configuration, etc.)
 	- tools host: responsible for tool specific startup and shutdown and running the main loop.
 	- asset pipeline: a tool responsible for processing raw assets into engine-ready formats (textures, models, audio, etc.)
@@ -43,20 +50,22 @@ Tools/ A collection of standalone tools (exe's) that are not part of the editor 
 	- other tools: any additional tools that may be needed for development, such as performance profilers, debugging tools, etc.
 	- build system: a tool responsible for building the engine and game projects, managing dependencies, and automating the build process.
 	- launcher: a tool responsible for launching the game or editor with specific configurations (debug, release, etc.) and managing multiple versions of the engine or game.
+	
+	The executables are all built on top of the foundations (base, engine, runtime) and can share modules and services
+	where appropriate. 
+	
+	The hosts (also called sandbox for test hosts) are responsible for managing the lifecycle of their respective contexts 
+	and ensuring that the appropriate modules and services are loaded and available. This structure allows for a modular
+	and flexible architecture that can accommodate different use cases and development workflows while maintaining a clear 
+	separation of concerns between the editor, game, tools, and sandbox environments.
 
-Sandbox/ A separate executable (exe) that serves as a testing ground for new features, experiments, or prototypes without affecting the main editor or game.
+07 Sandbox/ A separate executable (exe) that serves as a testing ground for new features, experiments, or prototypes without affecting the main editor or game.
 	- sandbox host: responsible for sandbox specific startup and shutdown and running the main loop.
 	- sandbox modules: (dll's) collection of dynamic libraries that provide hot-reloadable modules for testing new features or prototypes (experimental renderer, physics, gameplay mechanics, etc.)
 
 	Executables: Also called Hosts, the engine will have multiple executables (exe's) that serve different purposes:
 
-	The executables are all built on top of the same foundations (base, engine, runtime) and can share modules and services
-	where appropriate. The hosts are responsible for managing the lifecycle of their respective contexts and ensuring
-	that the appropriate modules and services are loaded and available. This structure allows for a modular and flexible
-	architecture that can accommodate different use cases and development workflows while maintaining a clear separation
-	of concerns between the editor, game, tools, and sandbox environments.
-
-Hosts/ A collection of executable hosts (exe's) that serve as entry points for different contexts (editor, game, tools, sandbox).
+07 Host/ A collection of executable hosts (exe's) that serve as entry points for different contexts (editor, game, tools, sandbox).
 	- editor host: responsible for launching the editor and managing its lifecycle.
 	- game host: responsible for launching the game and managing its lifecycle.
 	- tools host: responsible for launching various tools and managing their lifecycles.

@@ -1,20 +1,22 @@
 /*==============================================================================================
 
-    platform_win_tick.c
+    win_tick.c : Windows implementation of high-resolution timer and sleep functions.
+
+     - Uses QueryPerformanceCounter for high-resolution timing.
+     - timeBeginPeriod(1) is called to ensure Sleep() has 1 ms resolution for frame throttling.
+     - Caches frequency and inverse frequency for efficient conversions.
+     - Provides elapsed time since last reset in seconds, milliseconds, microseconds, and nanoseconds.
+     - sys_sleep_milliseconds() wraps the Win32 Sleep() function.
 
 ==============================================================================================*/
-/*==============================================================================================
-
-
-
-==============================================================================================*/
+// clang-format off
 
 static i64  sys_tick_frequency;        // cached QPC ticks per second.
+static f64  sys_tick_inv_frequency;    // precompute inverse of frequency for multiplication instead of division (if needed).
 static i64  sys_tick_nano;             // cacehd QPC nanoseconds per tick.
 static i64  sys_tick_start;            // time base for counting (offset timing from init start)
 static bool sys_time_period_called;    // sync init and eixt
 
-// clang-format off
 /*==============================================================================================
 
     KHz = 1000
@@ -50,10 +52,11 @@ sys_tick_get_frequency( void )
 f64 /* elapsed since last reset */
 sys_tick_reset( void )
 {
+    // this will reset the starting time base of clock to zero.
+    // use carefully it will affect in flight timing if called after init.
+
     LARGE_INTEGER time;
     QueryPerformanceCounter( &time );
-
-    // Reset time base of clock to zero.
 
     i64 diff        = time.QuadPart - sys_tick_start;
     f64 sec_elapsed = (f64)diff / (f64)sys_tick_frequency;
@@ -74,8 +77,12 @@ sys_tick_init( void )
          timeBeginPeriod( 1 );
     }
     sys_tick_get_frequency();
+
+    // Cache the inverse to turn division into fast multiplication
+    sys_tick_inv_frequency = 1.0 / (f64)sys_tick_frequency;
+
     sys_tick_reset();
-    sys_tick_reset();    // called twice to clear sys_tick_start to zero.
+    sys_tick_reset();
 }
 
 void
@@ -99,7 +106,7 @@ sys_tick_seconds( void )
     QueryPerformanceCounter( &time );
 
     i64 diff = time.QuadPart - sys_tick_start;
-    f64 tick = (f64)diff / sys_tick_frequency;
+    f64 tick = (f64)diff * sys_tick_inv_frequency;
     return tick;
 }
 
@@ -165,5 +172,3 @@ sys_sleep_milliseconds( i32 milliseconds )
 
 /*============================================================================================*/
 // clang-format on
-
-/*============================================================================================*/

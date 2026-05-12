@@ -320,9 +320,11 @@ add_unity_library(base STATIC "source/base" "01_Base" "base_ub.c" )
 # 02 ENGINE (Stateful Engine Framework)
 # ------------------------------------------------------------------------------
 
-# SYS
+# SYS : shared OS dependency, the only module dependency in engine allowed.
 add_unity_library( engine_sys STATIC "source/engine/sys" "02_Engine" "sys.c" )
 target_compile_definitions( engine_sys PUBLIC SYS_STATIC )
+
+# ------------------------------------------------------------------------------
 
 # MOD
 add_unity_library( engine_mod STATIC "source/engine/mod" "02_Engine" "mod.c" )
@@ -352,14 +354,14 @@ target_link_libraries( engine_mod  PUBLIC engine_sys )
 target_link_libraries( engine_app  PUBLIC engine_sys )
 
 # ------------------------------------------------------------------------------
-# 03 RUNTIME: HOST + SERVICES
+# 03 RUNTIME: (EXE HOST + SERVICES)
 # ------------------------------------------------------------------------------
 
 # RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)
 add_unity_library(runtime_host STATIC "source/runtime/host" "03_Runtime/Host"
     "runtime_host.c"
 )
-target_link_libraries( runtime_host PUBLIC base engine_mod engine_core engine_app )
+target_link_libraries( runtime_host PUBLIC base engine_mod engine_sys engine_core engine_app )
 
 # RUNTIME SERVICES
 add_unity_library( rt_jobs STATIC "source/runtime/services/jobs" "03_Runtime/Services" "rt_jobs.c" )
@@ -463,31 +465,40 @@ endif()
 # 07 SANDBOX (Executables)
 # ------------------------------------------------------------------------------
 
-# SANDBOX MODULE
-add_unity_executable( sandbox_module "source/sandbox/module" "07_Sandbox" "sb_module_main.c" )
-target_link_libraries( sandbox_module PRIVATE engine_sys engine_mod dev_build dev_hot )
-if ( ENGINE_MONOLITHIC )
-endif()
+# SANDBOX ENGINE : LIBRARIES
+
+add_unity_executable( sb_engine_mod "source/sandbox/engine_mod" "07_Sandbox" "sb_engine_mod.c" )
+target_link_libraries( sb_engine_mod PRIVATE engine_sys engine_mod dev_build dev_hot )
+
+add_unity_executable( sb_engine_sys "source/sandbox/engine_sys" "07_Sandbox" "sb_engine_sys.c" )
+target_link_libraries( sb_engine_sys PRIVATE engine_sys )
+
+add_unity_executable( sb_engine_app "source/sandbox/engine_app" "07_Sandbox" "sb_engine_app.c" )
+target_link_libraries( sb_engine_app PRIVATE engine_app )
+
+add_unity_executable( sb_engine_core "source/sandbox/engine_core" "07_Sandbox" "sb_engine_core.c" )
+target_link_libraries( sb_engine_core PRIVATE engine_core )
+
 
 # ------------------------------------------------------------------------------
 
 # SANDBOX ENGINE
-add_unity_executable( sandbox_engine "source/sandbox/engine" "07_Sandbox" "sb_engine_main.c" )
-target_link_libraries( sandbox_engine PRIVATE base engine_sys engine_mod engine_core )
+# add_unity_executable( sandbox_engine "source/sandbox/engine" "07_Sandbox" "sb_engine_main.c" )
+# target_link_libraries( sandbox_engine PRIVATE base engine_sys engine_mod engine_core )
 
 # SANDBOX RUNTIME
-add_unity_executable( sandbox_runtime "source/sandbox/runtime" "07_Sandbox" "sb_runtime_main.c" )
-target_link_libraries( sandbox_runtime PRIVATE base engine_sys engine_mod engine_core )
+add_unity_executable( sb_runtime "source/sandbox/runtime" "07_Sandbox" "sb_runtime_main.c" )
+target_link_libraries( sb_runtime PRIVATE base engine_sys engine_mod engine_core host_common runtime_host )
 if ( ENGINE_MONOLITHIC )
-    target_link_libraries( sandbox_runtime PUBLIC example )
+    target_link_libraries( sb_runtime PUBLIC example )
 endif()
 
 # SANDBOX GAME
-add_unity_executable( sandbox_game "source/sandbox/game" "07_Sandbox" "sb_game_main.c" )
-target_link_libraries( sandbox_game PRIVATE base engine_sys engine_mod engine_core )
-if ( ENGINE_MONOLITHIC )
-    # target_link_libraries( sandbox_game PUBLIC example )
-endif()
+#       add_unity_executable( sandbox_game "source/sandbox/game" "07_Sandbox" "sb_game_main.c" )
+#       target_link_libraries( sandbox_game PRIVATE base engine_sys engine_mod engine_core )
+#       if ( ENGINE_MONOLITHIC )
+#           # target_link_libraries( sandbox_game PUBLIC example )
+#       endif()
 
 # SANDBOX GAME
 # add_unity_executable( sandbox_game "source/hosts/sandbox_game" "01_Host_Sandbox" "sb_game.c" )
@@ -524,7 +535,7 @@ endif()
 # Set default startup project
 # ------------------------------------------------------------------------------
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sandbox_module )
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sb_engine_sys )
 
 # ------------------------------------------------------------------------------
 # Hide CMake generated builds in Visual Studio project.

@@ -39,7 +39,6 @@
     Unity build
 ==============================================================================================*/
 
-
 #include "engine/sys/sys_api.h"
 #include "engine/sys/sys.h"
 
@@ -50,8 +49,11 @@
 #    include "win/win_file_watch.c"
 #    include "win/win_file.c"
 #    include "win/win_thread.c"
-#    include "win/win_mutex.c"
+#    include "win/win_thread_mutex.c"
+#    include "win/win_thread_sema.c"
 #    include "win/win_process.c"
+#    include "win/win_sys.c"
+#    include "win/win_memory.c"
 #    include "win/win_console_input.c"
 
 #endif

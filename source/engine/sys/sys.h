@@ -76,7 +76,7 @@ int sys_file_glob( const char* dir, const char* pattern, sys_glob_fn cb, void* u
 
 typedef void ( *file_watch_callback_t )( const char* filename, void* userdata );
 
-/* Start watching `dir_path`.  Returns false on failure (check sys_filewatch_last_error). */
+/* Start watching `dir_path`. Returns false on failure (check sys_filewatch_last_error). */
 
 bool sys_filewatch_init( const char* dir_path );
 
@@ -146,12 +146,7 @@ void thread_set_name( thread_t t, const char* name );
 
 /*==============================================================================================
 
-    Mutex - Create and manage threads, with a simple cross-platform API.
-
-    CRITICAL_SECTION on x64 Windows  = 40 bytes
-    pthread_mutex_t  on x64 Linux    = 40 bytes
-    pthread_mutex_t  on x64 macOS    = 56 bytes
-    Use 64 bytes for all — verified by _Static_assert in mutex.c.
+    Mutex - Mutual exclusion lock for synchronizing access to shared resources between threads.
 
 ==============================================================================================*/
 
@@ -176,6 +171,35 @@ b32 mutex_try_lock( mutex_t* m );
 
 // Release. Must be called by the thread that called mutex_lock.
 void mutex_unlock( mutex_t* m );
+
+/*==============================================================================================
+
+    Semaphore - Counting semaphore for thread
+
+==============================================================================================*/
+
+#define SEMA_BYTES 32
+
+typedef struct
+{
+    u8 _opaque[ SEMA_BYTES ];
+} sema_t;
+
+// Initialise with initial count.
+// count = 0: all waiters block until sema_post is called.
+void sema_init( sema_t* s, u32 initial_count );
+
+// Destroy and release OS resources.
+void sema_destroy( sema_t* s );
+
+// Decrement (block if count is 0 until another thread posts).
+void sema_wait( sema_t* s );
+
+// Non-blocking decrement. Returns 1 if decremented, 0 if count was already 0.
+b32 sema_try_wait( sema_t* s );
+
+// Increment by count (wakes count waiting threads).
+void sema_post( sema_t* s, u32 count );
 
 /*==============================================================================================
 
@@ -207,6 +231,30 @@ bool sys_process_run_capture( const char*           command_line,
                               int                   out_buffer_size,
                               int*                  out_written,
                               sys_process_result_t* result );
+
+/*==============================================================================================
+
+    System Infdormation - CPU count, process ID, local date/time
+
+==============================================================================================*/
+
+// Total logical CPU count (hardware threads, including hyperthreads).
+u32 sys_cpu_count( void );
+
+// Physical core count (logical / SMT factor — approximation).
+u32 sys_physical_core_count( void );
+
+// Current process ID.
+u32 sys_process_id( void );
+
+typedef struct
+{
+    u32 year, month, day;     /* 1-based */
+    u32 hour, minute, second; /* local time */
+    u32 millisecond;
+} SysDateTime;
+
+void sys_datetime_local( SysDateTime* dt );
 
 /*==============================================================================================
     Console Input — Simple key polling for bootstrap tools and early engine loops.
