@@ -2,6 +2,8 @@
 
     tool_main.c : Short-lived CLI dispatcher
 
+    TODO: An incomplete working prototype, but the idea is:
+
     Context (specific to this host)
     -------------------------------
 

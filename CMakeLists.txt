@@ -441,14 +441,14 @@ if ( ENGINE_MONOLITHIC )
 endif()
 
 # HOST Editor
-add_unity_executable( host_editor "source/host/editor" "06_Host" "editor_main.c" )
+add_unity_executable( host_editor "source/host/editor" "06_Host" "host_editor_main.c" )
 target_link_libraries( host_editor PRIVATE base engine_sys engine_mod engine_core )
 if ( ENGINE_MONOLITHIC ) 
     target_link_libraries( host_editor PUBLIC render )
 endif()
 
 # HOST Tool
-add_unity_executable( host_tool "source/host/tool" "06_Host" "tool_main.c" )
+add_unity_executable( host_tool "source/host/tool" "06_Host" "host_tool_main.c" )
 target_link_libraries( host_tool PRIVATE base engine_mod engine_sys engine_core )
 
 # HOST Sandbox
@@ -468,7 +468,6 @@ endif()
 # 07 SANDBOX (Executables)
 # ------------------------------------------------------------------------------
 
-# ------------------------------------------------------------------------------
 # SANDBOX ENGINE : LIBRARY TESTS MODULES FOR ENGINE
 
 add_unity_executable( sb_engine_mod "source/sandbox/engine_mod" "07_Sandbox" "sb_engine_mod.c" )
@@ -483,7 +482,6 @@ target_link_libraries( sb_engine_app PRIVATE engine_app )
 add_unity_executable( sb_engine_core "source/sandbox/engine_core" "07_Sandbox" "sb_engine_core.c" )
 target_link_libraries( sb_engine_core PRIVATE engine_core )
 
-# ------------------------------------------------------------------------------
 # SANDBOX EXAMPLES : Simple host setup examples for various use cases, 
 # all linking runtime_host to show how it provides access to the engine.
 
@@ -507,16 +505,9 @@ target_link_libraries( sb_example_game PRIVATE runtime_host )
 add_unity_executable( sb_example_runtime "source/sandbox_example/example_runtime" "07_Sandbox_Example" "example_runtime.c" )
 target_link_libraries( sb_example_runtime PRIVATE runtime_host )
 
+
 # add_unity_executable( sb_tool_modinfo "source/sandbox/tool_modinfo" "07_Sandbox" "sb_tool_modinfo.c" )
 # target_link_libraries( sb_tool_modinfo PRIVATE base engine_sys host_common )
-
-# ------------------------------------------------------------------------------
-# 07 SANDBOX TEST MODULE (DLL STYLE TEST MODULES FROM SAME HOST) 
-# ------------------------------------------------------------------------------
-
-# JOBS
-add_unity_library( sb_jobs ${MODULE_TYPE} "source/sandbox_module/jobs" "07_Sandbox_Modules" "sb_jobs.c" )
-# target_link_libraries( sb_jobs PUBLIC base )
 
 # ------------------------------------------------------------------------------
 # MONOLITHIC BUILD COMBINES ALL LIBRARIES INTO HOST TARGET
