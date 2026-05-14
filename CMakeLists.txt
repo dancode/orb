@@ -299,7 +299,6 @@ set( ROOT_SOURCES
 )
 set( DOC_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/README.md"
-    "${CMAKE_CURRENT_SOURCE_DIR}/docs/planning.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/project.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/TODO.txt"
 )
@@ -529,7 +528,7 @@ endif()
 # Set default startup project
 # ------------------------------------------------------------------------------
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sb_engine_sys )
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sb_example_runtime )
 
 # ------------------------------------------------------------------------------
 # Hide CMake generated builds in Visual Studio project.

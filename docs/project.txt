@@ -46,7 +46,6 @@ Engine Heirarchy Stack:
 	- tools host: responsible for tool specific startup and shutdown and running the main loop.
 	- asset pipeline: a tool responsible for processing raw assets into engine-ready formats (textures, models, audio, etc.)
 	- shader compiler: a tool responsible for compiling shader source code into platform-specific binary formats.
-	- level editor: a tool responsible for creating and editing game levels, separate from the main editor but can share modules and services.
 	- other tools: any additional tools that may be needed for development, such as performance profilers, debugging tools, etc.
 	- build system: a tool responsible for building the engine and game projects, managing dependencies, and automating the build process.
 	- launcher: a tool responsible for launching the game or editor with specific configurations (debug, release, etc.) and managing multiple versions of the engine or game.
