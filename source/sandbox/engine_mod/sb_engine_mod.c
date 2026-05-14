@@ -1,6 +1,8 @@
 /*==============================================================================================
 
-    sandbox_module_main.c — Module system sandbox.
+    sandbox/sb_engine_mod.c — For testing module library.
+
+    Not a real host; just a place to call app APIs and verify they work.
 
     Boots the module system, loads the example module (static or dynamic per build mode),
     and runs a main loop exercising hot-reload, failure/rollback, and cached API access.

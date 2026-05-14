@@ -16,8 +16,6 @@
 #include "engine/mod/mod_export.h"
 #include "runtime_module/example/example_api.h"
 
-// #include "engine/core/core_api.h"
-
 /*==============================================================================================
     1. Consumer-side pointer storage for each consumed API (no-op in BUILD_STATIC)
 ==============================================================================================*/
@@ -63,7 +61,7 @@ example_fail_next_reload( void )
     if ( example_state )
     {
         example_state->fail_next_reload = true;
-        printf( "[example] fail_next_reload armed — next on_reload will return false\n" );
+        printf( "[example] fail_next_reload armed - next on_reload will return false\n" );
     }
 }
 
@@ -131,7 +129,7 @@ example_mod_reload( void* raw_state, get_api_fn get_api )
     if ( example_state->counter > 0 )
         printf( "[example] on_reload: counter=%d\n", example_state->counter );
 
-    printf( "\n\n NEW FUNCTIONS \n\n" );
+    printf( "\n\n RELOADED \n\n" );
 
     /* re-cache after DLL swap */
     // MOD_FETCH_API( core_api_t, core );

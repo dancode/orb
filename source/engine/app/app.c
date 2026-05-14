@@ -1,61 +1,68 @@
 /*==============================================================================================
 
-    app_module.c : windowing and applicaiton lifecycle service
+    engine/app/app.c — Unity build entry point for the app module.
 
-    app depends on core (for log/alloc) and on 
-    sys directly for its OS calls
-    (sys is statically linked, never registered in the module system).
+    Inclusion order matters
+    -----------------------
+        1. Standard headers           (stdio)
+        2. orb.h                      (types and macros)
+        3. Platform headers           (windows.h, gated by OS_WINDOWS)
+        4. mod_export.h               (mod_api_t, get_api_fn)
+        5. app.h                      (app_api_t definition + key/button enums)
+        6. Platform backends          (win_input.c first — defines handlers
+                                       and snapshot; win_window.c second — its
+                                       WndProc calls those handlers, and
+                                       pump_events calls input_snapshot)
+        7. app_api.c                  (assigns every static function to
+                                       g_app_api_struct)
 
 ==============================================================================================*/
 
+#include <stdio.h>
 #include "orb.h"
 
-#include "engine/app/app_api.h"
-#include "engine/app/app.h"
+/*==============================================================================================
+    Platform headers
+==============================================================================================*/
 
-#include "engine/sys/sys.h"
+#if OS_WINDOWS
 
-/* we may need this later but for now no dependency on core */
+    #define NOMINMAX
+    #define WIN32_LEAN_AND_MEAN
+    #define WIN32_EXTRA_LEAN
+    #define VC_EXTRALEAN
 
-// #include "engine/core/core_api.h"
-// MOD_DEFINE_API_PTR( core_api_t, core );
+    #include <windows.h>
+
+#else
+
+    #error "app: platform not implemented"
+
+#endif
 
 /*==============================================================================================
-    unity build
+    Engine headers
+==============================================================================================*/
+
+#include "engine/mod/mod_export.h"
+#include "engine/app/app.h"
+
+/*==============================================================================================
+    Platform backend  (static functions appear in this TU)
+==============================================================================================*/
+
+#if OS_WINDOWS
+    #include "engine/app/win/win_input.c"
+    #include "engine/app/win/win_window.c"
+#endif
+
+/*==============================================================================================
+    API wiring  (must be last)
 ==============================================================================================*/
 
 #include "engine/app/app_api.c"
 
 /*============================================================================================*/
-/* Naive fixed - timestep loop with optional FPS throttle. */
-
-void
-app_loop_run( const app_loop_t* loop )
-{
-    uint64_t prev_ms   = sys_tick_milliseconds();
-    uint64_t target_ms = loop->target_fps > 0 ? ( 1000u / ( unsigned )loop->target_fps ) : 0u;
-
-    for ( ;; )
-    {
-        uint64_t now_ms = sys_tick_milliseconds();
-        float    dt_s   = ( float )( now_ms - prev_ms ) / 1000.0f;
-        prev_ms         = now_ms;
-
-        if ( !loop->on_frame( loop->user, dt_s ) )
-            break;
-
-        /* throttle */
-        if ( target_ms > 0 )
-        {
-            uint64_t elapsed = sys_tick_milliseconds() - now_ms;
-            if ( elapsed < target_ms )
-                sys_sleep_milliseconds( ( int )( target_ms - elapsed ) );
-        }
-    }
-}
-
-/*============================================================================================*/
-
 
 
 

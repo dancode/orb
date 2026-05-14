@@ -10,7 +10,7 @@
 #include "orb.h"
 
 #include "engine/mod/mod_export.h"
-#include "engine/core/core_api.h"
+#include "engine/core/core.h"
 
 #include "physics_api.h"
 

@@ -2,9 +2,17 @@
 #define CORE_API_H
 /*==============================================================================================
 
-    core_api.c
+    engine/core/core_api.h — core module API struct and gateway macro.
+
+    Consumers call core_api()->log_info(...) etc.
+    core is always statically linked, but the conditional below preserves the
+    pattern in case a future build mode pulls core out into a DLL.
 
 ==============================================================================================*/
+
+#ifndef CORE_DECLARED
+    #error "core_api.h should not be included directly; include core.h instead."
+#endif 
 
 #include "engine/mod/mod_api.h"
 
@@ -24,7 +32,7 @@ typedef struct core_debug_api_s
 } core_debug_api_t;
 
 /*==============================================================================================
-    Public API struct
+    API Struct
 ==============================================================================================*/
 
 typedef struct core_api_s
@@ -34,8 +42,10 @@ typedef struct core_api_s
 
     /* logging */
     void ( *log )( const char* fmt, ... );
-    void ( *warn )( const char* fmt, ... );
-    void ( *error )( const char* fmt, ... );
+    void ( *log_info )( const char* fmt, ... );
+    void ( *log_warn )( const char* fmt, ... );
+    void ( *log_error )( const char* fmt, ... );
+    void ( *log_set_min_level )( log_level_t level );
 
     /* allocator */
     void* ( *alloc )( size_t size );

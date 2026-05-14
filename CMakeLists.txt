@@ -142,7 +142,7 @@ endif()
 # Global Include Directories
 # ------------------------------------------------------------------------------
 
-# This allows `#include "orb.h"` and `#include "engine/core/core_api.h"` 
+# This allows `#include "orb.h"` and `#include "engine/core/core.h"` 
 # to work from anywhere in the codebase.
 
 include_directories( ${CMAKE_SOURCE_DIR}/source )
@@ -314,7 +314,7 @@ source_group( "Docs" "${CMAKE_CURRENT_SOURCE_DIR}/docs" FILES ${DOC_SOURCES})
 # 01 BASE (Stateless Standard Library)
 # ------------------------------------------------------------------------------
 
-add_unity_library(base STATIC "source/base" "01_Base" "base_ub.c" )
+add_unity_library(base STATIC "source/base" "01_Base" "base.c" )
 
 # ------------------------------------------------------------------------------
 # 02 ENGINE (Stateful Engine Framework)
@@ -335,15 +335,7 @@ add_unity_library( engine_app STATIC "source/engine/app" "02_Engine" "app.c" )
 target_compile_definitions( engine_app PUBLIC APP_STATIC )
 
 # CORE
-add_unity_library( engine_core STATIC "source/engine/core" "02_Engine"
-	"core_api.c"
-	"core_sid.c"
-	"core_cvar.c"
-	"core_debug.c"
-	"core_log.c"
-	"core_reflect.c"
-    "core_memory.c"    
-)
+add_unity_library( engine_core STATIC "source/engine/core" "02_Engine" "core.c" )
 target_compile_definitions( engine_core PUBLIC CORE_STATIC )
 
 # ENGINE LINK ORDER: SYS -> CORE -> MOD -> APP
@@ -358,10 +350,21 @@ target_link_libraries( engine_app  PUBLIC engine_sys )
 # ------------------------------------------------------------------------------
 
 # RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)
-add_unity_library(runtime_host STATIC "source/runtime/host" "03_Runtime/Host"
-    "runtime_host.c"
-)
-target_link_libraries( runtime_host PUBLIC base engine_mod engine_sys engine_core engine_app )
+add_unity_library( runtime_host STATIC "source/runtime/host" "03_Runtime/Host" "host.c" )
+target_link_libraries( runtime_host PUBLIC engine_mod engine_sys engine_core engine_app )
+
+# RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)
+#add_unity_library(runtime_host STATIC "source/runtime/host" "03_Runtime/Host"
+#    "runtime_host.c"
+#)
+#target_link_libraries( runtime_host PUBLIC base engine_mod engine_sys engine_core engine_app )
+
+#RUNTIEM APP (The "App" side of the runtime, which is linked by the runtime modules and the sandbox runtime)
+# add_unity_library( runtime_app STATIC "source/runtime/app" "03_Runtime/App"
+#     "runtime_app.c"
+# )
+# target_link_libraries( runtime_app PUBLIC runtime_host )
+
 
 # RUNTIME SERVICES
 add_unity_library( rt_jobs STATIC "source/runtime/services/jobs" "03_Runtime/Services" "rt_jobs.c" )
@@ -465,7 +468,8 @@ endif()
 # 07 SANDBOX (Executables)
 # ------------------------------------------------------------------------------
 
-# SANDBOX ENGINE : LIBRARIES
+# ------------------------------------------------------------------------------
+# SANDBOX ENGINE : LIBRARY TESTS MODULES FOR ENGINE
 
 add_unity_executable( sb_engine_mod "source/sandbox/engine_mod" "07_Sandbox" "sb_engine_mod.c" )
 target_link_libraries( sb_engine_mod PRIVATE engine_sys engine_mod dev_build dev_hot )
@@ -479,33 +483,32 @@ target_link_libraries( sb_engine_app PRIVATE engine_app )
 add_unity_executable( sb_engine_core "source/sandbox/engine_core" "07_Sandbox" "sb_engine_core.c" )
 target_link_libraries( sb_engine_core PRIVATE engine_core )
 
-
 # ------------------------------------------------------------------------------
+# SANDBOX EXAMPLES : Simple host setup examples for various use cases, 
+# all linking runtime_host to show how it provides access to the engine.
 
-# SANDBOX ENGINE
-# add_unity_executable( sandbox_engine "source/sandbox/engine" "07_Sandbox" "sb_engine_main.c" )
-# target_link_libraries( sandbox_engine PRIVATE base engine_sys engine_mod engine_core )
+# runtime_host includes engine static libraries already, so we don't
+# need to link them again here. Just link runtime_host and it works.
 
-# SANDBOX RUNTIME
-add_unity_executable( sb_runtime "source/sandbox/runtime" "07_Sandbox" "sb_runtime_main.c" )
-target_link_libraries( sb_runtime PRIVATE base engine_sys engine_mod engine_core host_common runtime_host )
-if ( ENGINE_MONOLITHIC )
-    target_link_libraries( sb_runtime PUBLIC example )
-endif()
+# TODO: Use host_common for shared code for parsing args, etc. 
 
-# SANDBOX GAME
-#       add_unity_executable( sandbox_game "source/sandbox/game" "07_Sandbox" "sb_game_main.c" )
-#       target_link_libraries( sandbox_game PRIVATE base engine_sys engine_mod engine_core )
-#       if ( ENGINE_MONOLITHIC )
-#           # target_link_libraries( sandbox_game PUBLIC example )
-#       endif()
+add_unity_executable( sb_example_tool "source/sandbox_example/example_tool" "07_Sandbox_Example" "example_tool.c" )
+target_link_libraries( sb_example_tool PRIVATE runtime_host )
 
-# SANDBOX GAME
-# add_unity_executable( sandbox_game "source/hosts/sandbox_game" "01_Host_Sandbox" "sb_game.c" )
-# target_link_libraries( sandbox_game PRIVATE base engine_sys engine_mod engine_core game )
-# if ( ENGINE_MONOLITHIC )
-#     # target_link_libraries( sandbox_game PUBLIC example )
-# endif()
+add_unity_executable( sb_example_server "source/sandbox_example/example_server" "07_Sandbox_Example" "example_server.c" )
+target_link_libraries( sb_example_server PRIVATE runtime_host )
+
+add_unity_executable( sb_example_editor "source/sandbox_example/example_editor" "07_Sandbox_Example" "example_editor.c" )
+target_link_libraries( sb_example_editor PRIVATE runtime_host )
+
+add_unity_executable( sb_example_game "source/sandbox_example/example_game" "07_Sandbox_Example" "example_game.c" )
+target_link_libraries( sb_example_game PRIVATE runtime_host )
+
+add_unity_executable( sb_example_runtime "source/sandbox_example/example_runtime" "07_Sandbox_Example" "example_runtime.c" )
+target_link_libraries( sb_example_runtime PRIVATE runtime_host )
+
+# add_unity_executable( sb_tool_modinfo "source/sandbox/tool_modinfo" "07_Sandbox" "sb_tool_modinfo.c" )
+# target_link_libraries( sb_tool_modinfo PRIVATE base engine_sys host_common )
 
 # ------------------------------------------------------------------------------
 # 07 SANDBOX TEST MODULE (DLL STYLE TEST MODULES FROM SAME HOST) 

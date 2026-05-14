@@ -10,7 +10,7 @@
 #include "orb.h"
 
 #include "engine/mod/mod_export.h"
-#include "engine/core/core_api.h"
+#include "engine/core/core.h"
 
 #include "render_api.h"
 
@@ -99,7 +99,7 @@ render_init( void* raw_state, get_api_fn get_api )
     g_state = ( render_state_t* )raw_state;
 
     if ( !MOD_FETCH_API( core_api_t, core ) )
-        return false;
+          return false;
 
     core_api()->log( "render: init (state=%p)", ( void* )g_state );
     return true;
@@ -110,7 +110,7 @@ render_exit( void* raw_state )
 {
     UNUSED( raw_state );
     if ( core_api() )
-        core_api()->log( "render: exit" );
+         core_api()->log( "render: exit" );
 }
 
 static bool
@@ -136,8 +136,8 @@ render_get_mod_api( void )
         .version    = 1,
         .state_size = sizeof( render_state_t ),
         .func_api_size = sizeof( render_api_t ),
-        .deps       = { "core" },    // "app" + remove "engine"
-        .dep_count  = 1,
+        .deps       = { "app" },    // "app" + remove "engine"
+        .dep_count  = 0,
         .func_api   = &g_render_api_struct,
         .init       = render_init,
         .exit       = render_exit,

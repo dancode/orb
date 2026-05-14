@@ -18,9 +18,9 @@
 
 typedef void* lib_handle_t;
 
-lib_handle_t  sys_library_load( const char* path );
-void*         sys_library_get_symbol( lib_handle_t module, const char* name );
-void          sys_library_unload( lib_handle_t module );
+lib_handle_t sys_library_load( const char* path );
+void*        sys_library_get_symbol( lib_handle_t module, const char* name );
+void         sys_library_unload( lib_handle_t module );
 
 /*==============================================================================================
 
@@ -301,6 +301,14 @@ void sys_console_input_poll( void ); /* call once per frame to update key state 
 bool sys_key_down( sys_key_t key );     /* true while the key is currently held. */
 bool sys_key_pressed( sys_key_t key );  /* true on the up→down transition only */
 bool sys_key_released( sys_key_t key ); /* true on the down→up transition only */
+
+/*==============================================================================================
+
+    Export the API struct and gateway macro for fetching the API.
+
+==============================================================================================*/
+
+#include "engine/sys/sys_api.h"
 
 /*============================================================================================*/
 #endif    // SYS_H

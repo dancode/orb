@@ -28,9 +28,8 @@
 #include "engine/mod/mod.h"        // mod_<functions>
 #include "engine/mod/mod_api.h"    // api_access macros
 
-#include "engine/app/app_api.h"
-#include "engine/core/core_api.h"
-#include "engine/sys/sys_api.h"
+#include "engine/core/core.h"
+#include "engine/sys/sys.h"
 #include "engine/app/app.h"    // app_loop_t, app_loop_run()
 
 #include "runtime_module/render/render_api.h"
@@ -65,13 +64,11 @@ typedef struct game_host_ctx_s
 static bool
 on_frame( void* user, float dt )
 {
+    UNUSED( dt );
     game_host_ctx_t* ctx = ( game_host_ctx_t* )user;
 
     /* Hot-reload check first so a freshly-recompiled DLL takes effect THIS frame. */
     mod_check_reloads();
-
-    /* Tick all modules in dep order — game's tick fans into update + render internally. */
-    mod_system_tick( dt );
 
     ctx->frames++;
     if ( ctx->frames >= ctx->max_frames )

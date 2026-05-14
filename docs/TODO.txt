@@ -1,2 +1,0 @@
-COMPLET SYSTEM OS LAYER + TEST FUNCTIONS
-	-- setup my unit test and sandbox test suits for confirm project layout and test functions work as expected

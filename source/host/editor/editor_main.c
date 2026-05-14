@@ -11,8 +11,8 @@
 #include "engine/mod/mod_api.h"
 
 /* declare static linked modules */
-#include "engine/core/core_api.h"
-#include "engine/sys/sys_api.h"
+#include "engine/core/core.h"
+#include "engine/sys/sys.h"
 
 /* for dynamic module access frp, host -- skip for static modules */
 // #include "runtime_modules/example/example_api.h"

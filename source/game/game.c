@@ -12,7 +12,7 @@
 #include "game/game_api.h"
 
 #include "engine/mod/mod_export.h"
-#include "engine/core/core_api.h"
+#include "engine/core/core.h"
 #include "runtime_module/audio/audio_api.h"
 #include "runtime_module/render/render_api.h"
 #include "runtime_module/physics/physics_api.h"

@@ -60,7 +60,7 @@
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
-    #define MOD_DEFINE_API_PTR( type, name ) /* struct linked directly — no pointer needed */
+    #define MOD_DEFINE_API_PTR( type, name ) /* struct linked directly from header extern */
 #else
     #define MOD_DEFINE_API_PTR( type, name ) const type* g_##name##_api_ptr = NULL
 #endif
@@ -75,7 +75,7 @@
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
-    #define MOD_FETCH_API( type, name ) ( 1 ) /* always succeeds — struct is linked */
+    #define MOD_FETCH_API( type, name ) ( 1 ) /* struct linked directly from header extern */
 #else
     #define MOD_FETCH_API( type, name ) ( ( g_##name##_api_ptr = ( const type* )get_api( #name ) ) != NULL )
 #endif
@@ -83,7 +83,7 @@
 /* Host-local variant — fetches via mod_get_api() (valid outside a module init() callback). */
 
 #ifdef BUILD_STATIC
-    #define HOST_FETCH_API( type, name ) ( 1 )
+    #define HOST_FETCH_API( type, name ) ( 1 ) /* struct linked directly from header extern */
 #else
     #define HOST_FETCH_API( type, name ) \
         ( ( g_##name##_api_ptr = ( const type* )mod_get_api( #name ) ) != NULL )

@@ -1,6 +1,12 @@
 /*==============================================================================================
 
-    sandbox_engine_sys.c - test system module and host.
+    sandbox_engine_sys.c - Test system module.
+
+    Not a real host; just a place to call app APIs and verify they work.
+
+    Boots the module system, loads the example module (static or dynamic per build mode),
+    and runs a main loop exercising hot-reload, failure/rollback, and cached API access.
+
 
 ==============================================================================================*/
 

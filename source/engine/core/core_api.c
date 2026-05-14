@@ -1,40 +1,13 @@
 /*==============================================================================================
 
-    core_api.c : the "core" module's API implementation.
+    engine/core/core_api.c : Platform-agnostic core module wiring.
 
-    The core module provides basic services like logging and memory allocation.  
-    It is the foundational Tier 1 module that all other modules depend on.
+    Included LAST by core.c. By the time this file is processed in the unity
+    build, every subsystem's static functions are visible in the translation
+    unit and can be assigned to the function-pointer slots of g_core_api_struct.
 
-    The API struct is defined in core_api.h and implemented here.  The struct contains function
-    pointers to the core services, and is exposed to other modules via the module system.
 
 ==============================================================================================*/
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-
-#include "orb.h"
-#include "engine/mod/mod_api.h"
-#include "engine/mod/mod_export.h"
-
-#include "engine/core/core.h"
-#include "engine/core/core_api.h"
-
-/*==============================================================================================
-    Persistent state
-==============================================================================================*/
-
-typedef struct
-{
-    uint64_t total_alloc_bytes;
-    uint32_t alloc_count;
-    uint32_t log_count;
-
-} core_state_t;
-
-static core_state_t* s = NULL;
-
 /*==============================================================================================
     API Start / Shutdown
 ==============================================================================================*/
@@ -42,7 +15,8 @@ static core_state_t* s = NULL;
 void
 core_init( void )
 {
-    sid_init();
+    log_init();
+    // sid_init();
     cvar_system_init();
 }
 
@@ -50,75 +24,21 @@ void
 core_exit( void )
 {
     cvar_system_exit();
-    sid_exit();
+    // sid_exit();
+    log_exit();
 }
 
 /*==============================================================================================
-    API implementation
+    Persistent state (allocated by module init)
 ==============================================================================================*/
 
-static void
-core_log( const char* fmt, ... )
+typedef struct
 {
-    va_list args;
-    va_start( args, fmt );
-    printf( "[log] " );
-    vprintf( fmt, args );
-    printf( "\n" );
-    va_end( args );
-    if ( s )
-        ++s->log_count;
-}
+    uint32_t log_count;
 
-static void
-core_warn( const char* fmt, ... )
-{
-    va_list ap;
-    va_start( ap, fmt );
-    printf( "[WRN] " );
-    vprintf( fmt, ap );
-    printf( "\n" );
-    va_end( ap );
-}
+} core_state_t;
 
-static void
-core_error( const char* fmt, ... )
-{
-    va_list ap;
-    va_start( ap, fmt );
-    printf( "[ERR] " );
-    vprintf( fmt, ap );
-    printf( "\n" );
-    va_end( ap );
-}
-
-static void*
-core_alloc( size_t size )
-{
-    if ( s )
-    {
-        s->total_alloc_bytes += size;
-        ++s->alloc_count;
-    }
-    return malloc( size );
-}
-
-static void*
-core_realloc( void* ptr, size_t size )
-{
-    if ( s )
-    {
-        s->total_alloc_bytes += size;
-        ++s->alloc_count;
-    }
-    return realloc( ptr, size );
-}
-
-static void
-core_free( void* ptr )
-{
-    free( ptr );
-}
+static core_state_t* s = NULL;
 
 /*============================================================================================*/
 /* required to debug natvis data from dll's (we must import reference to global data ) */
@@ -139,14 +59,17 @@ static core_debug_api_t   g_core_debug_api_struct = {
 
 const core_api_t g_core_api_struct = {
 
-    .debug_api = &g_core_debug_api_struct,
+    .debug_api         = &g_core_debug_api_struct,
 
-    .log       = core_log,
-    .warn      = core_warn,
-    .error     = core_error,
-    .alloc     = core_alloc,
-    .realloc   = core_realloc,
-    .free      = core_free,
+    .log               = log_default,
+    .log_info          = log_info,
+    .log_warn          = log_warn,
+    .log_error         = log_error,
+    .log_set_min_level = log_set_min_level,
+
+    .alloc             = core_alloc,
+    .realloc           = core_realloc,
+    .free              = core_free,
 
     // .cvar_find = cvar_find,
     // .cvar_register = cvar_register,
@@ -158,7 +81,7 @@ const core_api_t g_core_api_struct = {
 };
 
 /*==============================================================================================
-    Lifecycle
+    Module lifecycle  (called by the module system)
 ==============================================================================================*/
 
 static bool
@@ -167,17 +90,14 @@ core_mod_init( void* raw_state, get_api_fn get_api )
     UNUSED( raw_state );
     UNUSED( get_api );
     core_init();
-    core_log( "core initialized" );
     return true;
 }
 
 static void
 core_mod_exit( void* raw_state )
 {
-    core_state_t* c = ( core_state_t* )raw_state;
+    UNUSED( raw_state );    
     core_exit();
-    core_log( "core exit  logs=%u  allocs=%u  bytes=%llu", c->log_count, c->alloc_count,
-              ( unsigned long long )c->total_alloc_bytes );
 }
 
 /*==============================================================================================
@@ -188,14 +108,15 @@ mod_api_t*
 core_get_mod_api( void )
 {
     static mod_api_t api = {
-        .version    = 1,
-        .state_size = sizeof( core_state_t ),
-        .deps       = { NULL },
-        .dep_count  = 0,
-        .func_api   = ( void* )&g_core_api_struct,
-        .init       = core_mod_init,
-        .exit       = core_mod_exit,
-        .reload     = NULL,
+        .version       = 1,
+        .state_size    = sizeof( core_state_t ),
+        .func_api_size = sizeof( core_api_t ),
+        .func_api      = ( void* )&g_core_api_struct,
+        .deps          = { "sys" },
+        .dep_count     = 1,
+        .init          = core_mod_init,
+        .exit          = core_mod_exit,
+        .reload        = NULL,
     };
     return &api;
 }

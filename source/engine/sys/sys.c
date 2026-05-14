@@ -6,6 +6,7 @@
     Only one .c file from this module is passed to the compiler.
 
 ==============================================================================================*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -36,11 +37,16 @@
 #endif
 
 /*==============================================================================================
-    Unity build
+    Engine headers
 ==============================================================================================*/
 
-#include "engine/sys/sys_api.h"
+#include "engine/mod/mod_export.h" /* mod_api_t, get_api_fn */
 #include "engine/sys/sys.h"
+#include "engine/sys/sys_api.h"    /* API struct definition + gateway macro */
+
+/*==============================================================================================
+    Unity build
+==============================================================================================*/
 
 #if OS_WINDOWS
 

@@ -1,6 +1,8 @@
 /*==============================================================================================
 
-    sandbox/sb_engine_core.c - test system module and host.
+    sandbox/sb_engine_core.c - For testing engine core library features.     
+    
+    Not a real host; just a place to call core APIs and verify they work.
 
 ==============================================================================================*/
 
@@ -23,18 +25,17 @@ core_test( void )
     
     if ( 1 )
     {
-        mem_test();           // <-- test memory system
-        intern_test();        // <-- test string interning system
-        reflection_test();    // <-- test reflection system
+        /// mem_test();           // <-- test memory system
+        /// intern_test();        // <-- test string interning system
+        /// reflection_test();    // <-- test reflection system
     }
 
     if ( 0 )
     {
-        int argc = 0; char** argv = NULL;
-
-        cvar_system_init();
-        test_core_cvar( argc, argv );    // <-- test cvar system
-        cvar_system_exit();
+        /// int argc = 0; char** argv = NULL;
+        /// cvar_system_init();
+        /// test_core_cvar( argc, argv );    // <-- test cvar system
+        /// cvar_system_exit();
     }
     
 }

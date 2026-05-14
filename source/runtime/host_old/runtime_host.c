@@ -2,6 +2,12 @@
 
     runtime/host/runtime_host.c — Runtime host orchestrator implementation.
 
+    The Runtime Host (runtime_host.c): The core engine loop. 
+    
+    * It initializes the module system, loads requested modules (like sys and core), 
+    * primes the frame timer, and completely swallows the thread with a while loop. 
+    * It handles frame pacing, sleeping, and checking for hot-reloads.
+
     Frame timing
     ------------
     sys_tick_reset() is called once to prime the counter before the loop. Each
@@ -18,41 +24,58 @@
     during the update frame are finished before a DLL swap can occur.
     mod_system_flush_reloads() commits the swap at the defined quiescent point.
 
-==============================================================================================*/
+    App loop integration
+    --------------------
+    runtime_host does NOT pump app events. If a host loads app, it must call
+    app_api()->pump_events() inside its on_update and return false when that
+    returns false (WM_QUIT received). Keeping the pump out of runtime_host is
+    what keeps app optional — the runtime never references app's API.
 
+==============================================================================================*/
 #include <stdio.h>
 #include <string.h>
 
 #include "orb.h"
-#include "engine/sys/sys_api.h"
+#include "engine/sys/sys.h"
+#include "engine/core/core.h"
+#include "engine/app/app.h"
 #include "engine/mod/mod.h"
-#include "runtime/host/runtime_host.h"
+
+// #include "runtime/host/old_runtime_host.h"
 
 /*==============================================================================================
     Internal helpers: wrap module loading via a configuration struct.
 ==============================================================================================*/
 
 static bool
-internal_load_modules( const rt_config_t* config )
+load_modules( const rt_config_t* config )
 {
     if ( !config->modules )
         return true;
 
+#ifdef BUILD_STATIC
+    bool build_static = true;
+#else
+    bool build_static = false;
+#endif
+
+    /* Iterate the NULL-terminated module list and load each one. */
     for ( int i = 0; config->modules[ i ].name != NULL; ++i )
     {
         const rt_module_entry_t* entry = &config->modules[ i ];
         bool                     ok;
 
-#ifdef BUILD_STATIC
-
-        ORB_ASSERT_MSG( entry->get_api != NULL,
-                        "RUNTIME_MODULE entry missing get_api in BUILD_STATIC — "
-                        "include the module's API header at the call site" );
-
-        ok = mod_static_load( entry->name, entry->get_api() );
-#else
-        ok = mod_dynamic_load( entry->name );
-#endif
+        if ( build_static )
+        {
+            ORB_ASSERT_MSG( entry->get_api != NULL,
+                    "RUNTIME_MODULE entry missing get_api in BUILD_STATIC — "
+                    "include the module's API header at the call site" );
+            ok = mod_static_load( entry->name, entry->get_api() );
+        }
+        else
+        {
+            ok = mod_dynamic_load( entry->name );
+        }
         if ( ok == false )
         {
             fprintf( stderr, "[runtime:%s] failed to load module '%s': %s\n", config->host_name, entry->name,
@@ -102,23 +125,37 @@ runtime_host_run( const rt_config_t* config )
 
     if ( config->load_core == true )
     {
-        /* TODO: mod_static_load( "core", core_get_mod_api() )
-           Uncomment when core_api.h is available and core is ready to init.
-           Also add: #include "engine/core/core_api.h" at the top of this file. */
-        fprintf( stderr, "[runtime:%s] load_core requested but not yet wired — ignoring\n", config->host_name );
+        if ( !mod_static_load( "core", core_get_mod_api() ) )
+        {
+            fprintf( stderr, "[runtime:%s] failed to register core: %s\n", config->host_name, mod_last_error() );
+            goto fail;
+        }
     }
 
     /*--------------------------------------------------
-        4. Host-configured modules
+        4. app — optional; depends on sys
     --------------------------------------------------*/
 
-    if ( internal_load_modules( config ) == false )
+    if ( config->load_app )
+    {
+        if ( !mod_static_load( "app", app_get_mod_api() ) )
+        {
+            fprintf( stderr, "[runtime:%s] failed to register app: %s\n", config->host_name, mod_last_error() );
+            goto fail;
+        }
+    }
+
+    /*--------------------------------------------------
+        5. Host-configured modules
+    --------------------------------------------------*/
+
+    if ( load_modules( config ) == false )
     {
         goto fail;
     }
 
     /*--------------------------------------------------
-        5. Init all in dependency order
+        6. Init all in dependency order
     --------------------------------------------------*/
 
     if ( mod_init_all() == false )
@@ -130,7 +167,7 @@ runtime_host_run( const rt_config_t* config )
     mod_list_all();
 
     /*--------------------------------------------------
-        6. Host init callback
+        7. Host init callback
     --------------------------------------------------*/
 
     if ( config->on_init && config->on_init( config->userdata ) == false )
@@ -143,7 +180,7 @@ runtime_host_run( const rt_config_t* config )
     }
 
     /*--------------------------------------------------
-        7. Main loop
+        8. Main loop
     --------------------------------------------------*/
 
     /* Prime the timer. dt on the first frame is the configured target — a
@@ -172,7 +209,7 @@ runtime_host_run( const rt_config_t* config )
     }
 
     /*--------------------------------------------------
-        8 & 9. Exit callbacks + shutdown
+        9 & 10. Exit callbacks + shutdown
     --------------------------------------------------*/
 
     if ( config->on_exit )

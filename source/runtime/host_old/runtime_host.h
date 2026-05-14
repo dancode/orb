@@ -8,37 +8,39 @@
     Sequence inside runtime_host_run()
     -----------------------------------
         1.  mod_system_init()
-        2.  mod_static_load( "sys", ... )               always
-        3.  mod_static_load( "core", ... )              if config->load_core
-        4.  Load each entry in config->modules          static or dynamic per build mode
-        5.  mod_init_all()
-        6.  config->on_init( userdata )                 return false to abort
-        7.  Prime the frame timer
-        8.  while on_update( dt, userdata ) == true
-              mod_check_reloads()                       if enable_hot_reload
-              mod_system_flush_reloads()                if enable_hot_reload
+        2.  mod_static_load( "sys", ... )           always
+        3.  mod_static_load( "core", ... )          if config->load_core
+        4.  mod_static_load( "app", ... )           if config->load_app
+        5.  Load each entry in config->modules      static or dynamic per build mode
+        6.  mod_init_all()
+        7.  config->on_init( userdata )             return false to abort
+        8.  Prime the frame timer
+        9.  while on_update( dt, userdata ) == true
+              mod_check_reloads()                   if enable_hot_reload
+              mod_system_flush_reloads()            if enable_hot_reload
               sleep remainder of frame
               tick dt for next frame
-        9.  config->on_exit( userdata )
-       10.  mod_system_exit()
+       10.  config->on_exit( userdata )
+       11.  mod_system_exit()
+
+    Optional engine libraries
+    -------------------------
+    load_core and load_app are independent flags. A console tool sets neither.
+    A headless test runner sets only load_core (for logging). A windowed host
+    sets both. The host is responsible for calling app_api()->pump_events()
+    inside its on_update when load_app is set — runtime_host itself never
+    references app's API.
 
     Module entry arrays
     -------------------
-    Use the RUNTIME_MODULE / RUNTIME_MODULE_END macros to build module lists that
-    compile correctly in both static and dynamic builds:
+    Use the RUNTIME_MODULE / RUNTIME_MODULE_END macros to build module lists
+    that compile correctly in both static and dynamic builds:
 
         static const runtime_module_entry_t k_modules[] = {
             RUNTIME_MODULE( render ),
             RUNTIME_MODULE( audio ),
             RUNTIME_MODULE_END
         };
-
-    In BUILD_STATIC this expands each entry to { "render", render_get_mod_api }, with
-    the function pointer resolved at link time.  In dynamic builds it expands to
-    { "render", NULL } and runtime_host_run calls mod_dynamic_load() instead.
-
-    The module's own API header must be included at the call site for the
-    RUNTIME_MODULE macro to compile in BUILD_STATIC mode (it needs name##_get_mod_api).
 
 ==============================================================================================*/
 #ifndef RUNTIME_HOST_H
@@ -109,6 +111,9 @@ typedef struct rt_config_s
 
     i32                      frame_target_ms;   /* 0 = RUNTIME_DEFAULT_FRAME_MS (16) */
     bool                     load_core;         /* register engine_core as a static module */
+    bool                     load_app;          /* register engine_app */
+    bool                     load_rhi;          /* register engine_rhi */
+
     bool                     enable_hot_reload; /* call mod_check_reloads each frame */
 
 } rt_config_t;
@@ -117,11 +122,11 @@ typedef struct rt_config_s
     API
 ==============================================================================================*/
 
-/*  Main entry point for the runtime host, call to run the host. 
+/*  Main entry point for the runtime host, call to run the host.
     Blocks until on_update returns false or setup fails.
     Returns true on a clean exit, false if any setup step failed. */
 
 bool runtime_host_run( const rt_config_t* config );
 
 /*============================================================================================*/
-#endif    // RUNTIME_HOST_H
+#endif
