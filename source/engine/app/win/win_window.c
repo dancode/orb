@@ -2,9 +2,36 @@
 
     engine/app/win/win_window.c — Win32 window backend.
 
+    Window pool
+    -----------
+    Up to APP_WIN_MAX windows are held in a fixed pool. Each slot is identified
+    by a win_id_t (0 … APP_WIN_MAX-1). g_pool.alloc is a bitmask — bit i set
+    means slot i is occupied. The first window opened is recorded as main_id;
+    closing it sets g_app_quit so pump_events returns false.
+
+    Per-window back-pointer
+    -----------------------
+    CreateWindowExW stores NULL in GWLP_USERDATA until we call SetWindowLongPtrW
+    right after creation. WndProc reads that pointer at the top of every message;
+    messages that arrive before or after the pointer is valid fall through to
+    DefWindowProcW harmlessly.
+
+    State tracking
+    --------------
+    Each app_window_t carries state (current) and prev (previous frame). The
+    WndProc updates state in-place as WM_SIZE / WM_SETFOCUS / WM_KILLFOCUS
+    arrive. pump_events() snapshots prev = state at the top of the frame so
+    callers can compute changed = state.bits XOR prev.bits.
+
+    Class lifetime
+    --------------
+    The WNDCLASSEXW is registered on the first window_open and unregistered
+    when the last window is closed, so hosts that open / close / reopen windows
+    work correctly.
+
 ==============================================================================================*/
 
-/* windows.h is already included by app.c before this file. */
+/* windows.h is included by app.c before this file. */
 
 /*==============================================================================================
     State
@@ -12,172 +39,262 @@
 
 #define APP_WINDOW_CLASS_W L"orb_app_window"
 
-typedef struct app_window_s
-{
-    HINSTANCE hinst;
-    ATOM      class_atom;
-    HWND      hwnd;
-    bool      quit_requested;
-
-} app_window_t;
-
-static app_window_t g_window;
-
 /*==============================================================================================
-    Window procedure
+    Pool helpers
 ==============================================================================================*/
 
-/*==============================================================================================
-    Window procedure
-==============================================================================================*/
-
-static LRESULT CALLBACK
-app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
+static win_id_t
+win_alloc_slot( void )
 {
-    switch ( msg )
+    for ( int i = 0; i < APP_WIN_MAX; ++i )
     {
-        case WM_DESTROY: PostQuitMessage( 0 ); return 0;
-
-        case WM_KILLFOCUS:
-            /* Releases that happen while unfocused will never reach us, so
-               clear the state proactively to avoid stuck keys. */
-            input_clear_all_state();
-            return 0;
-
-            /* ---- Keyboard ---- */
-
-        case WM_KEYDOWN:
-        case WM_SYSKEYDOWN: input_handle_key_down( wp, lp ); return 0;
-
-        case WM_KEYUP:
-        case WM_SYSKEYUP:
-            input_handle_key_up( wp );
-            return 0;
-
-            /* ---- Mouse buttons ---- */
-
-        case WM_LBUTTONDOWN: input_handle_mouse_button( APP_MOUSE_LEFT, true ); return 0;
-        case WM_LBUTTONUP: input_handle_mouse_button( APP_MOUSE_LEFT, false ); return 0;
-        case WM_RBUTTONDOWN: input_handle_mouse_button( APP_MOUSE_RIGHT, true ); return 0;
-        case WM_RBUTTONUP: input_handle_mouse_button( APP_MOUSE_RIGHT, false ); return 0;
-        case WM_MBUTTONDOWN: input_handle_mouse_button( APP_MOUSE_MIDDLE, true ); return 0;
-        case WM_MBUTTONUP:
-            input_handle_mouse_button( APP_MOUSE_MIDDLE, false );
-            return 0;
-
-            /* ---- Mouse motion ---- */
-
-        case WM_MOUSEMOVE: input_handle_mouse_move( lp ); return 0;
-
-        default: return DefWindowProcW( hwnd, msg, wp, lp );
+        if ( !( g_pool.alloc & ( 1u << i ) ) )
+        {
+            g_pool.alloc |= ( 1u << i );
+            return ( win_id_t )i;
+        }
     }
+    return APP_WIN_INVALID;
+}
+
+static void
+win_free_slot( win_id_t id )
+{
+    if ( id >= 0 && id < APP_WIN_MAX )
+        g_pool.alloc &= ~( 1u << id );
+}
+
+static app_window_t*
+win_get( win_id_t id )
+{
+    if ( id < 0 || id >= APP_WIN_MAX )
+        return NULL;
+    if ( !( g_pool.alloc & ( 1u << id ) ) )
+        return NULL;
+    return &g_pool.wins[ id ];
 }
 
 /*==============================================================================================
     API implementations
 ==============================================================================================*/
 
-static bool
-app_window_create( const char* title, int width, int height )
+static win_id_t
+app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
 {
-    if ( g_window.hwnd != NULL )
+    /* Register the window class on first use. */
+    if ( !g_pool.hinst )
     {
-        printf( "[app] window_create: a window already exists\n" );
-        return false;
+        g_pool.hinst = GetModuleHandleW( NULL );
+
+        WNDCLASSEXW wc = {
+            .cbSize        = sizeof( wc ),
+            .style         = CS_HREDRAW | CS_VREDRAW,
+            .lpfnWndProc   = app_wnd_proc,
+            .hInstance     = g_pool.hinst,
+            .hCursor       = NULL, // LoadCursorW( NULL, IDC_ARROW ),
+            .hbrBackground = ( HBRUSH )( COLOR_WINDOW + 1 ),
+            .lpszClassName = APP_WINDOW_CLASS_W,
+        };
+
+        g_pool.class_atom = RegisterClassExW( &wc );
+        if ( !g_pool.class_atom )
+        {
+            printf( "[app] RegisterClassExW failed (err %lu)\n", GetLastError() );
+            return APP_WIN_INVALID;
+        }
     }
 
-    g_window.hinst = GetModuleHandleW( NULL );
-
-    WNDCLASSEXW wc = {
-        .cbSize        = sizeof( wc ),
-        .style         = CS_HREDRAW | CS_VREDRAW,
-        .lpfnWndProc   = app_wnd_proc,
-        .hInstance     = g_window.hinst,
-        .hCursor       = NULL,    // LoadCursorW( NULL, IDC_ARROW ),
-        .hbrBackground = ( HBRUSH )( COLOR_WINDOW + 1 ),
-        .lpszClassName = APP_WINDOW_CLASS_W,
-    };
-
-    g_window.class_atom = RegisterClassExW( &wc );
-    if ( !g_window.class_atom )
+    win_id_t id = win_alloc_slot();
+    if ( id == APP_WIN_INVALID )
     {
-        printf( "[app] RegisterClassExW failed (err %lu)\n", GetLastError() );
-        return false;
+        printf( "[app] window pool full (max %d)\n", APP_WIN_MAX );
+        return APP_WIN_INVALID;
     }
 
-    DWORD style = WS_OVERLAPPEDWINDOW;
-    RECT  rect  = { 0, 0, width, height };
-    AdjustWindowRect( &rect, style, FALSE );
+    app_window_t* win = &g_pool.wins[ id ];
+    win->id    = id;
+    win->state = ( app_win_state_t ){ 0 };
+    win->prev  = win->state;
+    win->w     = w;
+    win->h     = h;
+
+    /* Map app flags → Win32 style */
+    DWORD style    = 0;
+    DWORD ex_style = 0;
+
+    if ( flags & APP_WIN_FILLSCREEN )
+    {
+        style    = WS_POPUP;
+        ex_style = WS_EX_TOPMOST;
+    }
+    else if ( flags & APP_WIN_POPUP )
+    {
+        style = WS_POPUP;
+    }
+    else
+    {
+        if ( flags & APP_WIN_TITLE  ) style |= WS_CAPTION | WS_SYSMENU;
+        if ( flags & APP_WIN_RESIZE ) style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+        if ( !style ) style = WS_OVERLAPPEDWINDOW;
+    }
+
+    if ( flags & APP_WIN_TOPMOST ) ex_style |= WS_EX_TOPMOST;
+
+    /* Determine client size — 0 → 50% of desktop work area */
+    if ( w <= 0 || h <= 0 )
+    {
+        RECT work = { 0 };
+        SystemParametersInfoW( SPI_GETWORKAREA, 0, &work, 0 );
+        if ( w <= 0 ) w = ( work.right  - work.left ) / 2;
+        if ( h <= 0 ) h = ( work.bottom - work.top  ) / 2;
+    }
+
+    RECT rect = { 0, 0, w, h };
+    AdjustWindowRectEx( &rect, style, FALSE, ex_style );
+
+    /* x = y = 0 → OS positions (CW_USEDEFAULT) */
+    i32 win_x = ( x == 0 && y == 0 ) ? CW_USEDEFAULT : x;
+    i32 win_y = ( x == 0 && y == 0 ) ? CW_USEDEFAULT : y;
 
     wchar_t wide_title[ 256 ];
-    if ( MultiByteToWideChar( CP_UTF8, 0, title, -1, wide_title, 256 ) == 0 )
-    {
-        wide_title[ 0 ] = L'A';
-        wide_title[ 1 ] = L'p';
-        wide_title[ 2 ] = L'p';
-        wide_title[ 3 ] = L'\0';
-    }
+    if ( !title || MultiByteToWideChar( CP_UTF8, 0, title, -1, wide_title, 256 ) == 0 )
+        wide_title[ 0 ] = L'\0';
 
-    g_window.hwnd =
-        CreateWindowExW( 0, APP_WINDOW_CLASS_W, wide_title, style, CW_USEDEFAULT, CW_USEDEFAULT,
-                         rect.right - rect.left, rect.bottom - rect.top, NULL, NULL, g_window.hinst, NULL );
+    HWND hwnd = CreateWindowExW( ex_style, APP_WINDOW_CLASS_W, wide_title, style,
+                                 win_x, win_y,
+                                 rect.right - rect.left, rect.bottom - rect.top,
+                                 NULL, NULL, g_pool.hinst, NULL );
 
-    if ( !g_window.hwnd )
+    if ( !hwnd )
     {
         printf( "[app] CreateWindowExW failed (err %lu)\n", GetLastError() );
-        UnregisterClassW( APP_WINDOW_CLASS_W, g_window.hinst );
-        g_window.class_atom = 0;
-        return false;
+        win_free_slot( id );
+        return APP_WIN_INVALID;
     }
 
-    ShowWindow( g_window.hwnd, SW_SHOWNORMAL );
-    UpdateWindow( g_window.hwnd );
+    win->hwnd = hwnd;
+    SetWindowLongPtrW( hwnd, GWLP_USERDATA, ( LONG_PTR )win );
 
-    g_window.quit_requested = false;
-    printf( "[app] window created (%dx%d client)\n", width, height );
-    return true;
+    if ( g_pool.main_id == APP_WIN_INVALID )
+        g_pool.main_id = id;
+
+    /* Show window */
+    if ( flags & APP_WIN_HIDDEN )
+    {
+        ShowWindow( hwnd, SW_HIDE );
+        win->state.hidden = 1;
+    }
+    else if ( flags & APP_WIN_NOFOCUS )
+    {
+        ShowWindow( hwnd, SW_SHOWNOACTIVATE );
+    }
+    else if ( flags & APP_WIN_MAXIMIZE )
+    {
+        ShowWindow( hwnd, SW_SHOWMAXIMIZED );
+        win->state.maximized = 1;
+    }
+    else if ( flags & APP_WIN_MINIMIZE )
+    {
+        ShowWindow( hwnd, SW_SHOWMINIMIZED );
+        win->state.minimized = 1;
+    }
+    else
+    {
+        ShowWindow( hwnd, SW_SHOWNORMAL );
+        win->state.restored = 1;
+    }
+
+    UpdateWindow( hwnd );
+    win->prev = win->state;
+
+    printf( "[app] window %d opened (%dx%d client)\n", id, w, h );
+    return id;
 }
 
 static void
-app_window_destroy( void )
+app_window_close( win_id_t id )
 {
-    if ( g_window.hwnd )
+    app_window_t* win = win_get( id );
+    if ( !win )
+        return;
+
+    if ( win->hwnd )
     {
-        DestroyWindow( g_window.hwnd );
-        g_window.hwnd = NULL;
+        /* Clear the back-pointer before DestroyWindow so WndProc ignores
+           the WM_DESTROY-triggered cleanup messages. */
+        SetWindowLongPtrW( win->hwnd, GWLP_USERDATA, 0 );
+        DestroyWindow( win->hwnd );
+        win->hwnd = NULL;
     }
-    if ( g_window.class_atom )
+
+    if ( id == g_pool.main_id )
+        g_pool.main_id = APP_WIN_INVALID;
+
+    win_free_slot( id );
+
+    /* Unregister class when the last window is gone. */
+    if ( !g_pool.alloc && g_pool.class_atom )
     {
-        UnregisterClassW( APP_WINDOW_CLASS_W, g_window.hinst );
-        g_window.class_atom = 0;
+        UnregisterClassW( APP_WINDOW_CLASS_W, g_pool.hinst );
+        g_pool.class_atom = 0;
     }
-    printf( "[app] window destroyed\n" );
+
+    printf( "[app] window %d closed\n", id );
+}
+
+static bool
+app_window_is_valid( win_id_t id )
+{
+    return win_get( id ) != NULL;
+}
+
+static void*
+app_window_handle( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    return win ? ( void* )win->hwnd : NULL;
+}
+
+static bool
+app_window_is_minimized( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    return win ? ( bool )win->state.minimized : false;
+}
+
+static app_win_state_t
+app_window_state( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    if ( !win )
+        return ( app_win_state_t ){ 0 };
+    return win->state;
 }
 
 static bool
 app_pump_events( void )
 {
-    /* Snapshot input state FIRST so pressed/released transitions are computed
-       between the previous frame's drain and this frame's. */
+    /* Snapshot input and window state at frame boundary so pressed/released
+       and state-changed deltas reflect exactly one frame of transitions. */
     input_snapshot();
+
+    for ( int i = 0; i < APP_WIN_MAX; ++i )
+    {
+        if ( g_pool.alloc & ( 1u << i ) )
+            g_pool.wins[ i ].prev = g_pool.wins[ i ].state;
+    }
 
     MSG msg;
     while ( PeekMessageW( &msg, NULL, 0, 0, PM_REMOVE ) )
     {
         if ( msg.message == WM_QUIT )
-            g_window.quit_requested = true;
+            g_app_quit = true;
 
         TranslateMessage( &msg );
         DispatchMessageW( &msg );
     }
 
-    return !g_window.quit_requested;
-}
-
-static void*
-app_window_handle( void )
-{
-    return ( void* )g_window.hwnd;
+    return !g_app_quit;
 }
 
 /*============================================================================================*/

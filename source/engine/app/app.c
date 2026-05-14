@@ -52,8 +52,50 @@
 ==============================================================================================*/
 
 #if OS_WINDOWS
+
+typedef struct win_fillscreen_s
+{
+    bool  is_enabled;
+    bool  prev_maximized;
+    DWORD prev_style;
+    DWORD prev_exstyle;
+    i32   prev_w, prev_h;
+    i32   prev_x, prev_y;
+
+} win_fillscreen_t;
+
+typedef struct app_window_s
+{
+    win_id_t        id;
+    HWND            hwnd;
+    app_win_state_t state;
+    app_win_state_t prev;
+
+    i32  w, h;                  /* cached client dimensions — valid even when minimized */
+    bool hover_tracking;        /* TrackMouseEvent is armed                              */
+    bool resize_modal;          /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */
+    bool move_modal;
+    win_fillscreen_t fill;
+
+} app_window_t;
+
+typedef struct win_pool_s
+{
+    app_window_t wins[ APP_WIN_MAX ];
+    u32          alloc; /* bitmask: bit i = 1 → slot i is in use */
+    win_id_t     main_id;
+    ATOM         class_atom;
+    HINSTANCE    hinst;
+
+} win_pool_t;
+
+static win_pool_t g_pool;
+
     #include "engine/app/win/win_input.c"
+    #include "engine/app/win/win_window_proc.c"
     #include "engine/app/win/win_window.c"
+    #include "engine/app/win/win_lifecycle.c"
+
 #endif
 
 /*==============================================================================================
@@ -63,7 +105,6 @@
 #include "engine/app/app_api.c"
 
 /*============================================================================================*/
-
 
 
 /*============================================================================================*/

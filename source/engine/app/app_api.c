@@ -3,38 +3,27 @@
     engine/app/app_api.c — Platform-agnostic app module wiring.
 
 ==============================================================================================*/
-/*==============================================================================================
-    Init / Exit
-==============================================================================================*/
-
-/* Module-level lifecycle is intentionally empty for v0. The host owns the
-   window lifetime via window_create / window_destroy inside on_init / on_exit,
-   so app's mod_init has nothing to do. Memory and similar future subsystems
-   would be initialized here. */
 
 /*==============================================================================================
-    Persistent state (allocated by module init)
-==============================================================================================*/
-
-typedef struct app_state_s
-{
-    int32_t window_count;
-
-} app_state_t;
-
-static app_state_t* s = NULL;
-
-/*==============================================================================================
-    API Struct
+    API struct
 ==============================================================================================*/
 
 const app_api_t g_app_api_struct = {
 
     /* Window */
-    .window_create  = app_window_create,
-    .window_destroy = app_window_destroy,
-    .pump_events    = app_pump_events,
-    .window_handle  = app_window_handle,
+    .window_open         = app_window_open,
+    .window_close        = app_window_close,
+    .window_is_valid     = app_window_is_valid,
+    .window_handle       = app_window_handle,
+    .window_is_minimized      = app_window_is_minimized,
+    .window_state             = app_window_state,
+    .window_set_fillscreen    = app_window_set_fillscreen,
+    .window_toggle_fillscreen = app_window_toggle_fillscreen,
+
+    /* Event loop */
+    .pump_events = app_pump_events,
+    .next_event  = app_next_event,
+    .should_quit = app_should_quit,
 
     /* Keyboard */
     .key_down     = app_key_down,
@@ -46,10 +35,13 @@ const app_api_t g_app_api_struct = {
     .mouse_button_down     = app_mouse_button_down,
     .mouse_button_pressed  = app_mouse_button_pressed,
     .mouse_button_released = app_mouse_button_released,
+
+    /* Input mode */
+    .key_repeat_set = app_key_repeat_set,
 };
 
 /*==============================================================================================
-    Module lifecycle  (called by the module system)
+    Module lifecycle
 ==============================================================================================*/
 
 static bool
@@ -57,6 +49,11 @@ app_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
     UNUSED( get_api );
+
+    /* Pool main_id can't be zero-initialized to APP_WIN_INVALID (-1), so set
+       it here. g_events, g_input, and g_app_quit are fine as zero. */
+    g_pool.main_id = APP_WIN_INVALID;
+
     return true;
 }
 
@@ -75,11 +72,11 @@ app_get_mod_api( void )
 {
     static mod_api_t api = {
         .version       = 1,
-        .state_size    = 0, /* stateless at module level — window state lives in win_window.c */
+        .state_size    = 0, /* state lives in static storage in the platform backends */
         .func_api_size = sizeof( app_api_t ),
         .func_api      = &g_app_api_struct,
         .dep_count     = 1,
-        .deps          = { "sys" }, /* engine-tier rule: depends only on sys */
+        .deps          = { "sys" },
         .init          = app_mod_init,
         .exit          = app_mod_exit,
         .reload        = NULL,

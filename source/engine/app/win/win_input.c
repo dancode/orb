@@ -19,9 +19,19 @@
     This avoids "stuck keys" — without it, releasing a key while the window
     is unfocused would leave it reading as held down after refocus.
 
+    Event ring buffer
+    -----------------
+    win_post_event() writes 32-byte app_event_t entries into a power-of-2
+    ring. head is the next write slot; tail is the next read slot. The ring
+    is full when (head + 1) & mask == tail — incoming events are dropped rather
+    than overwriting unread ones. Callers drain via app_next_event() each frame.
+
 ==============================================================================================*/
+
+_Static_assert( sizeof( app_event_t ) == 32, "app_event_t must be 32 bytes" );
+
 /*==============================================================================================
-    State
+    Input state
 ==============================================================================================*/
 
 typedef struct app_input_s
@@ -40,23 +50,84 @@ typedef struct app_input_s
 static app_input_t g_input;
 
 /*==============================================================================================
+    Event ring buffer
+==============================================================================================*/
+
+typedef struct app_event_ring_s
+{
+    app_event_t buf[ APP_EVENT_MAX ];
+    u32         head;    /* next write slot  */
+    u32         tail;    /* next read slot   */
+    i32         next_id; /* monotonic counter */
+
+} app_event_ring_t;
+
+static app_event_ring_t g_events;
+static bool             g_app_quit;
+static bool             g_key_repeat;    /* false = game mode (suppress repeats); true = text mode */
+
+/*==============================================================================================
+    Helpers visible to win_window.c (included after this file in the unity build)
+==============================================================================================*/
+
+static app_mod_t
+win_get_mod( void )
+{
+    app_mod_t m = { 0 };
+    if ( GetKeyState( VK_CONTROL ) & 0x8000 )
+        m.ctrl = 1;
+    if ( GetKeyState( VK_SHIFT ) & 0x8000 )
+        m.shift = 1;
+    if ( GetKeyState( VK_MENU ) & 0x8000 )
+        m.alt = 1;
+    if ( ( GetKeyState( VK_LWIN ) & 0x8000 ) || ( GetKeyState( VK_RWIN ) & 0x8000 ) )
+        m.super = 1;
+    return m;
+}
+
+static app_event_t
+win_make_event( i32 type, i32 win_id )
+{
+    app_event_t ev = { 0 };
+    ev.event_id    = g_events.next_id++;
+    ev.win_id      = win_id;
+    ev.type        = type;
+    ev.timestamp   = ( i64 )GetTickCount64();
+    return ev;
+}
+
+static void
+win_post_event( const app_event_t* ev )
+{
+    u32 next = ( g_events.head + 1 ) & APP_EVENT_MASK;
+    if ( next == g_events.tail )
+        return; /* ring full — drop incoming event */
+    g_events.buf[ g_events.head ] = *ev;
+    g_events.head                 = next;
+}
+
+/*==============================================================================================
     Virtual key code → app_key_t mapping
 ==============================================================================================*/
 /* clang-format off */
 
 static app_key_t
-vk_to_app_key( WPARAM vk )
+vk_to_app_key( WPARAM vk, LPARAM lp )
 {
-    /* Letters and digits share their ASCII codes as Win32 VK values. */
     if ( vk >= 'A' && vk <= 'Z' ) return (app_key_t)( APP_KEY_A + ( vk - 'A' ) );
     if ( vk >= '0' && vk <= '9' ) return (app_key_t)( APP_KEY_0 + ( vk - '0' ) );
 
-    if ( vk >= VK_F1 && vk <= VK_F12 ) return (app_key_t)( APP_KEY_F1 + ( vk - VK_F1 ) );
+    if ( vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9 ) return (app_key_t)( APP_KEY_NP_0 + ( vk - VK_NUMPAD0 ) );
+    if ( vk >= VK_F1      && vk <= VK_F12      ) return (app_key_t)( APP_KEY_F1  + ( vk - VK_F1      ) );
+
+    /* Bit 24 of lParam: extended-key flag — distinguishes numpad Enter from main Enter,
+       right Ctrl from left Ctrl, right Alt from left Alt. */
+    bool ext = ( lp & ( 1 << 24 ) ) != 0;
 
     switch ( vk )
     {
         case VK_ESCAPE:    return APP_KEY_ESCAPE;
-        case VK_RETURN:    return APP_KEY_ENTER;
+        case VK_RETURN:    return ext ? APP_KEY_NP_ENTER : APP_KEY_ENTER;
         case VK_SPACE:     return APP_KEY_SPACE;
         case VK_TAB:       return APP_KEY_TAB;
         case VK_BACK:      return APP_KEY_BACKSPACE;
@@ -66,9 +137,51 @@ vk_to_app_key( WPARAM vk )
         case VK_UP:        return APP_KEY_UP;
         case VK_DOWN:      return APP_KEY_DOWN;
 
-        case VK_SHIFT:     return APP_KEY_SHIFT;
-        case VK_CONTROL:   return APP_KEY_CONTROL;
-        case VK_MENU:      return APP_KEY_ALT;
+        case VK_INSERT:    return APP_KEY_INSERT;
+        case VK_DELETE:    return APP_KEY_DELETE;
+        case VK_HOME:      return APP_KEY_HOME;
+        case VK_END:       return APP_KEY_END;
+        case VK_PRIOR:     return APP_KEY_PAGE_UP;
+        case VK_NEXT:      return APP_KEY_PAGE_DOWN;
+
+        /* Modifiers — use scancode to split left/right shift; extended flag for ctrl/alt. */
+        case VK_SHIFT:
+        {
+            static UINT vsc_lshift = 0;
+            if ( !vsc_lshift ) vsc_lshift = MapVirtualKeyW( VK_LSHIFT, MAPVK_VK_TO_VSC );
+            UINT sc = ( lp >> 16 ) & 0xFF;
+            return ( sc == vsc_lshift ) ? APP_KEY_LSHIFT : APP_KEY_RSHIFT;
+        }
+        case VK_CONTROL:   return ext ? APP_KEY_RCTRL  : APP_KEY_LCTRL;
+        case VK_MENU:      return ext ? APP_KEY_RALT   : APP_KEY_LALT;
+        case VK_LWIN:      return APP_KEY_LSUPER;
+        case VK_RWIN:      return APP_KEY_RSUPER;
+
+        case VK_CAPITAL:   return APP_KEY_CAPS_LOCK;
+        case VK_NUMLOCK:   return APP_KEY_NUM_LOCK;
+        case VK_SCROLL:    return APP_KEY_SCROLL_LOCK;
+
+        case VK_DECIMAL:   return APP_KEY_NP_DOT;
+        case VK_ADD:       return APP_KEY_NP_ADD;
+        case VK_SUBTRACT:  return APP_KEY_NP_SUB;
+        case VK_MULTIPLY:  return APP_KEY_NP_MUL;
+        case VK_DIVIDE:    return APP_KEY_NP_DIV;
+
+        case VK_OEM_3:     return APP_KEY_GRAVE;
+        case VK_OEM_MINUS: return APP_KEY_MINUS;
+        case VK_OEM_PLUS:  return APP_KEY_EQUAL;
+        case VK_OEM_4:     return APP_KEY_LBRACKET;
+        case VK_OEM_6:     return APP_KEY_RBRACKET;
+        case VK_OEM_5:     return APP_KEY_BACKSLASH;
+        case VK_OEM_1:     return APP_KEY_SEMICOLON;
+        case VK_OEM_7:     return APP_KEY_APOSTROPHE;
+        case VK_OEM_COMMA: return APP_KEY_COMMA;
+        case VK_OEM_PERIOD:return APP_KEY_PERIOD;
+        case VK_OEM_2:     return APP_KEY_SLASH;
+
+        case VK_PAUSE:     return APP_KEY_PAUSE;
+        case VK_SNAPSHOT:  return APP_KEY_PRINT_SCREEN;
+        case VK_APPS:      return APP_KEY_MENU;
 
         default:           return APP_KEY_NONE;
     }
@@ -81,47 +194,93 @@ vk_to_app_key( WPARAM vk )
 ==============================================================================================*/
 
 static void
-input_handle_key_down( WPARAM vk, LPARAM lp )
+input_handle_key_down( WPARAM vk, LPARAM lp, win_id_t win_id )
 {
-    /* Ignore auto-repeats. Bit 30 of lparam is the previous key state — set
-       means the key was already down, i.e. this is a repeat. We want a single
-       pressed-transition per physical key press, not one per repeat. */
-    if ( lp & ( ( LPARAM )1 << 30 ) )
+    app_key_t k = vk_to_app_key( vk, lp );
+    if ( k == APP_KEY_NONE )
         return;
 
-    app_key_t k = vk_to_app_key( vk );
-    if ( k != APP_KEY_NONE )
-        g_input.current_keys[ k ] = true;
+    g_input.current_keys[ k ] = true;
+
+    app_event_t ev            = win_make_event( APP_EV_KEY_DOWN, win_id );
+    ev.data.key.key           = ( i32 )k;
+    ev.data.key.press         = 255;
+    ev.data.key.mod           = win_get_mod();
+    win_post_event( &ev );
 }
 
 static void
-input_handle_key_up( WPARAM vk )
+input_handle_key_up( WPARAM vk, LPARAM lp, win_id_t win_id )
 {
-    app_key_t k = vk_to_app_key( vk );
-    if ( k != APP_KEY_NONE )
-        g_input.current_keys[ k ] = false;
+    app_key_t k = vk_to_app_key( vk, lp );
+    if ( k == APP_KEY_NONE )
+        return;
+
+    g_input.current_keys[ k ] = false;
+
+    app_event_t ev            = win_make_event( APP_EV_KEY_UP, win_id );
+    ev.data.key.key           = ( i32 )k;
+    ev.data.key.press         = 0;
+    ev.data.key.mod           = win_get_mod();
+    win_post_event( &ev );
 }
 
 static void
-input_handle_mouse_button( app_mouse_button_t btn, bool down )
+input_handle_char( WPARAM wp, win_id_t win_id )
 {
-    if ( ( int )btn >= 0 && ( int )btn < APP_MOUSE_BUTTON_COUNT )
-        g_input.current_mouse[ btn ] = down;
+    app_event_t ev         = win_make_event( APP_EV_CHAR, win_id );
+    ev.data.text.codepoint = ( u32 )wp;
+    ev.data.text.mod       = win_get_mod();
+    win_post_event( &ev );
 }
 
 static void
-input_handle_mouse_move( LPARAM lp )
+input_handle_mouse_button( app_mouse_button_t btn, bool down, i16 x, i16 y, win_id_t win_id )
 {
-    /* GET_X_LPARAM / GET_Y_LPARAM inlined: low/high word of lparam,
-       sign-extended through i16 so negative coords (drag outside window) work. */
-    g_input.mouse_x = ( i32 )( i16 )LOWORD( lp );
-    g_input.mouse_y = ( i32 )( i16 )HIWORD( lp );
+    if ( ( int )btn < 0 || ( int )btn >= APP_MOUSE_BUTTON_COUNT )
+        return;
+
+    g_input.current_mouse[ btn ] = down;
+
+    app_event_t ev               = win_make_event( down ? APP_EV_MOUSE_DOWN : APP_EV_MOUSE_UP, win_id );
+    ev.data.mouse_btn.button     = ( i32 )btn;
+    ev.data.mouse_btn.x          = x;
+    ev.data.mouse_btn.y          = y;
+    win_post_event( &ev );
+}
+
+static void
+input_handle_mouse_move( i16 x, i16 y, win_id_t win_id )
+{
+    i16 dx                = ( i16 )( x - ( i16 )g_input.mouse_x );
+    i16 dy                = ( i16 )( y - ( i16 )g_input.mouse_y );
+
+    g_input.mouse_x       = ( i32 )x;
+    g_input.mouse_y       = ( i32 )y;
+
+    app_event_t ev        = win_make_event( APP_EV_MOUSE_MOVE, win_id );
+    ev.data.mouse_move.x  = x;
+    ev.data.mouse_move.y  = y;
+    ev.data.mouse_move.dx = dx;
+    ev.data.mouse_move.dy = dy;
+    win_post_event( &ev );
+}
+
+static void
+input_handle_mouse_wheel( WPARAM wp, i16 x, i16 y, win_id_t win_id )
+{
+    i32         delta         = GET_WHEEL_DELTA_WPARAM( wp ) / WHEEL_DELTA;
+
+    app_event_t ev            = win_make_event( APP_EV_MOUSE_WHEEL, win_id );
+    ev.data.mouse_wheel.delta = delta;
+    ev.data.mouse_wheel.x     = x;
+    ev.data.mouse_wheel.y     = y;
+    win_post_event( &ev );
 }
 
 static void
 input_clear_all_state( void )
 {
-    /* Called on WM_KILLFOCUS — we won't see release messages while unfocused. */
     for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.current_keys[ i ] = false;
     for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.current_mouse[ i ] = false;
 }
@@ -198,6 +357,29 @@ app_mouse_button_released( app_mouse_button_t btn )
     if ( ( int )btn < 0 || ( int )btn >= APP_MOUSE_BUTTON_COUNT )
         return false;
     return !g_input.current_mouse[ btn ] && g_input.previous_mouse[ btn ];
+}
+
+static void
+app_key_repeat_set( bool enabled )
+{
+    g_key_repeat = enabled;
+}
+
+static bool
+app_next_event( app_event_t* out )
+{
+    if ( g_events.tail == g_events.head )
+        return false;
+
+    *out          = g_events.buf[ g_events.tail ];
+    g_events.tail = ( g_events.tail + 1 ) & APP_EVENT_MASK;
+    return true;
+}
+
+static bool
+app_should_quit( void )
+{
+    return g_app_quit;
 }
 
 /*============================================================================================*/

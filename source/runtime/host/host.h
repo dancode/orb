@@ -12,22 +12,28 @@
 
     The conventional game loop
     --------------------------
-    rt_host.c drives a direct, named-module loop. It knows about the engine-level
-    modules it manages (app, render) and calls them explicitly each frame. It does
-    NOT iterate the dep graph generically — each module call is intentional.
+    rt_host.c drives a direct, named-module loop. It knows the engine-level
+    modules it manages (app, render) and calls them by name. It does NOT iterate
+    the dep graph generically — each module call is intentional.
 
-        [pump OS events] ← app_api()->pump_events() — false = window closed
+        [pump OS events] ← app_api()->pump_events() — false = window closed (when app is loaded)
         [console poll]   ← sys, if RT_HOST_CONSOLE
         [on_update]      ← desc callback — host-level logic, game bootstrap
-        [render]         ← render_api()->draw() — when render is loaded
+        [render]         ← begin_frame / draw_frame / end_frame (when render is loaded)
         [hot-reload]     ← mod_check_reloads + flush, if RT_HOST_HOT_RELOAD
+
+    Windowed vs headless
+    --------------------
+    The host infers its mode from k_modules[]: if app is loaded, the host creates a
+    window and pumps OS events. If render is also loaded, it drives the render loop.
+    No separate flag — k_modules[] is the single declaration of intent.
 
     Callbacks
     ---------
-    on_ready  : called once after mod_init_all(), before the first frame.
-                Use for HOST_FETCH_API calls and one-time setup.
+    on_ready  : called once after mod_init_all() and window creation (if windowed).
+                Use for one-time setup — render_api() and app_api() are live here.
     on_update : called every frame, after input, before render.
-                The host's explicit update point — drives gameplay, tools, tests.
+
     Quit
     ----
     Windowed:  app_api()->pump_events() returning false breaks the loop.
@@ -37,14 +43,15 @@
 ==============================================================================================*/
 
 #include "orb.h"
+
 // #include "engine/mod/mod_api.h"
 
 /*============================================================================================*/
 
 enum    // RT_HOST_FLAGS
 {
-    RT_HOST_HOT_RELOAD = 1 << 0, /* poll DLL changes + flush each frame  */
-    RT_HOST_CONSOLE    = 1 << 1, /* sys_console_input_init / poll / shutdown  */
+    RT_HOST_HOT_RELOAD = 1 << 0, /* poll DLL changes + flush each frame        */
+    RT_HOST_CONSOLE    = 1 << 1, /* sys_console_input_init / poll / shutdown    */
 };
 
 /*============================================================================================*/
@@ -85,13 +92,15 @@ typedef struct
 
 typedef struct rt_host_desc_s
 {
-    const char*              name;            /* host name for logging and window titles */
-    u32                      flags;           /* RT_HOST_* */
-    rt_loop_mode_t           loop_mode;       /* determines how the main loop is driven */
-    i32                      frame_target_ms; /* 0 → default 16                        */
-    const rt_module_entry_t* modules;         /* null-terminated array                 */
-    void ( *on_ready )( void );               /* after init, before first frame  */
-    void ( *on_update )( f32 dt );            /* each frame, between input+render */
+    const char*              name;               // host name for logging and window title
+    u32                      flags;              // RT_HOST_*
+    rt_loop_mode_t           loop_mode;          // determines how the main loop is driven
+    i32                      frame_target_ms;    // 0 → default 16
+    i32                      window_width;       // client area width,  0 → 1280 (when app is loaded)
+    i32                      window_height;      // client area height, 0 → 720  (when app is loaded)
+    const rt_module_entry_t* modules;            // null-terminated array
+    void ( *on_ready )( void );                  // after init + window creation, before first frame
+    void ( *on_update )( f32 dt );               // each frame, between input and render
 
 } rt_host_desc_t;
 
