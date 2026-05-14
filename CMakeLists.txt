@@ -391,14 +391,10 @@ target_link_libraries( physics PUBLIC base )
 # 04 DEVELOPER MODULES (dev_* services — link only in non-shipping hosts)
 # ------------------------------------------------------------------------------
 
-add_unity_library( dev_build STATIC "source/developer/dev_build" "04_Developer"
-    "dev_build.c"
-)
+add_unity_library( dev_build STATIC "source/developer/dev_build" "04_Developer" "dev_build.c" )
 target_link_libraries( dev_build PUBLIC engine_sys )
 
-add_unity_library( dev_hot STATIC "source/developer/dev_hot" "04_Developer"
-    "dev_hot.c"
-)
+add_unity_library( dev_hot STATIC "source/developer/dev_hot" "04_Developer" "dev_hot.c")
 target_link_libraries( dev_hot PUBLIC engine_sys dev_build )
 
 # ------------------------------------------------------------------------------
@@ -476,7 +472,7 @@ add_unity_executable( sb_engine_sys "source/sandbox/engine_sys" "07_Sandbox" "sb
 target_link_libraries( sb_engine_sys PRIVATE engine_sys )
 
 add_unity_executable( sb_engine_app "source/sandbox/engine_app" "07_Sandbox" "sb_engine_app.c" )
-target_link_libraries( sb_engine_app PRIVATE engine_app )
+target_link_libraries( sb_engine_app PRIVATE engine_mod engine_sys engine_app )
 
 add_unity_executable( sb_engine_core "source/sandbox/engine_core" "07_Sandbox" "sb_engine_core.c" )
 target_link_libraries( sb_engine_core PRIVATE engine_core )

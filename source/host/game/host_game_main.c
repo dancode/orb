@@ -10,7 +10,7 @@
 
 #include "orb.h"
 
-#include "engine/mod/mod.h"        // mod_<functions>
+#include "engine/mod/mod_host.h"        // mod_<functions>
 #include "engine/mod/mod_api.h"    // api_access macros
 
 /*==============================================================================================

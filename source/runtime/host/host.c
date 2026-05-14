@@ -29,7 +29,7 @@
 #include <stdio.h>
 
 #include "orb.h"
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_host.h"
 #include "engine/mod/mod_export.h"
 #include "engine/sys/sys.h"
 #include "engine/app/app.h"

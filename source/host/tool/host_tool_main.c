@@ -32,7 +32,7 @@
 #include <string.h>
 
 #include "orb.h"
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_host.h"
 #include "engine/mod/mod_api.h"
 #include "engine/sys/sys.h"
 #include "engine/core/core.h"

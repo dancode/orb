@@ -72,7 +72,7 @@
 
 #include "mod_api.h"
 #include "mod_export.h"
-#include "mod.h"
+#include "mod_host.h"
 
 /*==============================================================================================
 

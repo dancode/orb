@@ -95,21 +95,21 @@ typedef enum app_event_type_e
 {
     APP_EV_NONE = 0,
 
-    APP_EV_KEY_DOWN, /* key pressed (no auto-repeat)                  */
-    APP_EV_KEY_UP,   /* key released                                  */
-    APP_EV_CHAR,     /* printable Unicode codepoint (UTF-32)          */
+    APP_EV_KEY_DOWN,    // key pressed (no auto-repeat)
+    APP_EV_KEY_UP,      // key released
+    APP_EV_CHAR,        // printable Unicode codepoint (UTF-32)
 
     APP_EV_MOUSE_MOVE,
     APP_EV_MOUSE_DOWN,
     APP_EV_MOUSE_UP,
     APP_EV_MOUSE_WHEEL,
 
-    APP_EV_WIN_FOCUS,  /* window gained OS focus                        */
-    APP_EV_WIN_BLUR,   /* window lost OS focus                          */
-    APP_EV_WIN_RESIZE, /* client area resized                           */
-    APP_EV_WIN_CLOSE,  /* user triggered window close                   */
+    APP_EV_WIN_FOCUS,     // window gained OS focus
+    APP_EV_WIN_BLUR,      // window lost OS focus
+    APP_EV_WIN_RESIZE,    // client area resized
+    APP_EV_WIN_CLOSE,     // user triggered window close
 
-    APP_EV_QUIT, /* application should exit                       */
+    APP_EV_QUIT,    // application should exit
 
 } app_event_type_t;
 
@@ -275,6 +275,7 @@ typedef enum app_key_e
     APP_KEY_COUNT
 
 } app_key_t;
+
 /* clang-format on */
 
 typedef enum app_mouse_button_e
@@ -282,8 +283,8 @@ typedef enum app_mouse_button_e
     APP_MOUSE_LEFT   = 0,
     APP_MOUSE_RIGHT  = 1,
     APP_MOUSE_MIDDLE = 2,
-    APP_MOUSE_X1     = 3,    /* extra button 4 (back)    */
-    APP_MOUSE_X2     = 4,    /* extra button 5 (forward) */
+    APP_MOUSE_X1     = 3, /* extra button 4 (back)    */
+    APP_MOUSE_X2     = 4, /* extra button 5 (forward) */
 
     APP_MOUSE_BUTTON_COUNT
 
@@ -306,10 +307,17 @@ typedef struct app_api_s
 
     bool ( *window_is_valid )( win_id_t id );
     void* ( *window_handle )( win_id_t id ); /* HWND on Windows */
-    bool            ( *window_is_minimized      )( win_id_t id );
-    app_win_state_t ( *window_state             )( win_id_t id );
-    void            ( *window_set_fillscreen    )( win_id_t id, bool enabled );
-    void            ( *window_toggle_fillscreen )( win_id_t id );
+    bool ( *window_is_minimized )( win_id_t id );
+    app_win_state_t ( *window_state )( win_id_t id );
+    void ( *window_set_fillscreen )( win_id_t id, bool enabled );
+    void ( *window_toggle_fillscreen )( win_id_t id );
+
+    /* Default OS background paint/erase. When enabled, Windows fills the client
+       area with the registered class brush on WM_ERASEBKGND. Disable once a
+       renderer owns the window's pixels — leaving it on causes flicker. */
+    void ( *window_set_paint )( win_id_t id, bool enabled );
+    void ( *window_toggle_paint )( win_id_t id );
+    bool ( *window_paint_enabled )( win_id_t id );
 
     /* ---- Event loop ---- */
 

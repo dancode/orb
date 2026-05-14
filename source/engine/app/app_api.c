@@ -19,6 +19,9 @@ const app_api_t g_app_api_struct = {
     .window_state             = app_window_state,
     .window_set_fillscreen    = app_window_set_fillscreen,
     .window_toggle_fillscreen = app_window_toggle_fillscreen,
+    .window_set_paint         = app_window_set_paint,
+    .window_toggle_paint      = app_window_toggle_paint,
+    .window_paint_enabled     = app_window_paint_enabled,
 
     /* Event loop */
     .pump_events = app_pump_events,
@@ -49,11 +52,6 @@ app_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
     UNUSED( get_api );
-
-    /* Pool main_id can't be zero-initialized to APP_WIN_INVALID (-1), so set
-       it here. g_events, g_input, and g_app_quit are fine as zero. */
-    g_pool.main_id = APP_WIN_INVALID;
-
     return true;
 }
 

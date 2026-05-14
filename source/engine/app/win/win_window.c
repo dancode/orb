@@ -92,7 +92,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
             .lpfnWndProc   = app_wnd_proc,
             .hInstance     = g_pool.hinst,
             .hCursor       = NULL, // LoadCursorW( NULL, IDC_ARROW ),
-            .hbrBackground = ( HBRUSH )( COLOR_WINDOW + 1 ),
+            .hbrBackground = CreateSolidBrush( RGB( 30, 80, 160 ) ), /* ( HBRUSH )( COLOR_WINDOW + 1 ) */
             .lpszClassName = APP_WINDOW_CLASS_W,
         };
 
@@ -112,11 +112,12 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     }
 
     app_window_t* win = &g_pool.wins[ id ];
-    win->id    = id;
-    win->state = ( app_win_state_t ){ 0 };
-    win->prev  = win->state;
-    win->w     = w;
-    win->h     = h;
+    win->id            = id;
+    win->state         = ( app_win_state_t ){ 0 };
+    win->prev          = win->state;
+    win->w             = w;
+    win->h             = h;
+    win->paint_enabled = true;
 
     /* Map app flags → Win32 style */
     DWORD style    = 0;
@@ -140,7 +141,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
 
     if ( flags & APP_WIN_TOPMOST ) ex_style |= WS_EX_TOPMOST;
 
-    /* Determine client size — 0 → 50% of desktop work area */
+    /* Determine client size — 0 then 50% of desktop work area */
     if ( w <= 0 || h <= 0 )
     {
         RECT work = { 0 };
@@ -152,7 +153,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     RECT rect = { 0, 0, w, h };
     AdjustWindowRectEx( &rect, style, FALSE, ex_style );
 
-    /* x = y = 0 → OS positions (CW_USEDEFAULT) */
+    /* x = y = 0 then OS positions (CW_USEDEFAULT) */
     i32 win_x = ( x == 0 && y == 0 ) ? CW_USEDEFAULT : x;
     i32 win_y = ( x == 0 && y == 0 ) ? CW_USEDEFAULT : y;
 
@@ -176,7 +177,12 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     SetWindowLongPtrW( hwnd, GWLP_USERDATA, ( LONG_PTR )win );
 
     if ( g_pool.main_id == APP_WIN_INVALID )
+    {
         g_pool.main_id = id;
+#ifdef APP_WIN_FIBER
+        win_fiber_init();
+#endif
+    }
 
     /* Show window */
     if ( flags & APP_WIN_HIDDEN )
@@ -239,6 +245,11 @@ app_window_close( win_id_t id )
         g_pool.class_atom = 0;
     }
 
+#ifdef APP_WIN_FIBER
+    if ( !g_pool.alloc && g_pool.fiber_main )
+        win_fiber_exit();
+#endif
+
     printf( "[app] window %d closed\n", id );
 }
 
@@ -284,6 +295,17 @@ app_pump_events( void )
             g_pool.wins[ i ].prev = g_pool.wins[ i ].state;
     }
 
+#ifdef APP_WIN_FIBER
+    if ( g_pool.fiber_message )
+    {
+        /* Yield to message fiber; returns here when fiber drains the queue or
+           the 1 ms timer fires during a DefWindowProc modal loop. */
+        SwitchToFiber( g_pool.fiber_message );
+        return !g_app_quit;
+    }
+#endif
+
+    /* Fallback: direct PeekMessage poll (no fiber or fiber not yet initialised). */
     MSG msg;
     while ( PeekMessageW( &msg, NULL, 0, 0, PM_REMOVE ) )
     {

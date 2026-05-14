@@ -9,7 +9,7 @@
 #include <stdio.h>    // printf, fprintf
 
 #include "orb.h"
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_host.h"
 #include "engine/sys/sys.h"
 #include "engine/core/core.h"
 

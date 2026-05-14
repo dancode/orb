@@ -9,10 +9,11 @@
         3. Platform headers           (windows.h, gated by OS_WINDOWS)
         4. mod_export.h               (mod_api_t, get_api_fn)
         5. app.h                      (app_api_t definition + key/button enums)
-        6. Platform backends          (win_input.c first — defines handlers
-                                       and snapshot; win_window.c second — its
-                                       WndProc calls those handlers, and
-                                       pump_events calls input_snapshot)
+        6. Platform backends          (win_input.c — input handlers and snapshot;
+                                       win_window_proc.c — WndProc uses those handlers;
+                                       win_fiber.c — fiber pump, guarded by APP_WIN_FIBER;
+                                       win_window.c — pool helpers, API impls, pump_events;
+                                       win_lifecycle.c — fillscreen and paint toggle)
         7. app_api.c                  (assigns every static function to
                                        g_app_api_struct)
 
@@ -33,6 +34,14 @@
     #define VC_EXTRALEAN
 
     #include <windows.h>
+
+    /* Enable fiber-based message pump so the game loop keeps ticking during
+       resize / move / menu modal loops inside DefWindowProc.
+       Comment this out to fall back to a direct PeekMessage poll. */
+    #define APP_WIN_FIBER
+
+    /* Timer ID used by the message fiber to re-enter the main fiber. */
+    #define APP_FIBER_TIMER_ID 1
 
 #else
 
@@ -66,15 +75,16 @@ typedef struct win_fillscreen_s
 
 typedef struct app_window_s
 {
-    win_id_t        id;
-    HWND            hwnd;
-    app_win_state_t state;
-    app_win_state_t prev;
+    win_id_t         id;
+    HWND             hwnd;
+    app_win_state_t  state;
+    app_win_state_t  prev;
 
-    i32  w, h;                  /* cached client dimensions — valid even when minimized */
-    bool hover_tracking;        /* TrackMouseEvent is armed                              */
-    bool resize_modal;          /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */
-    bool move_modal;
+    i32              w, h;           /* cached client dimensions — valid even when minimized */
+    bool             hover_tracking; /* TrackMouseEvent is armed                              */
+    bool             resize_modal;   /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */
+    bool             move_modal;
+    bool             paint_enabled; /* WM_ERASEBKGND uses class brush when true              */
     win_fillscreen_t fill;
 
 } app_window_t;
@@ -87,12 +97,20 @@ typedef struct win_pool_s
     ATOM         class_atom;
     HINSTANCE    hinst;
 
+#ifdef APP_WIN_FIBER
+    LPVOID fiber_main;    /* game-loop fiber (ConvertThreadToFiber) */
+    LPVOID fiber_message; /* message-drain fiber (CreateFiber)      */
+#endif
+
 } win_pool_t;
 
-static win_pool_t g_pool;
+static win_pool_t g_pool = { .main_id = APP_WIN_INVALID };
 
     #include "engine/app/win/win_input.c"
     #include "engine/app/win/win_window_proc.c"
+    #ifdef APP_WIN_FIBER
+    #include "engine/app/win/win_fiber.c"
+    #endif
     #include "engine/app/win/win_window.c"
     #include "engine/app/win/win_lifecycle.c"
 
@@ -103,8 +121,3 @@ static win_pool_t g_pool;
 ==============================================================================================*/
 
 #include "engine/app/app_api.c"
-
-/*============================================================================================*/
-
-
-/*============================================================================================*/

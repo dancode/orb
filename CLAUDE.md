@@ -24,7 +24,7 @@ REM Clean all build outputs
 clean_build.bat
 ```
 
-After generating, open the `.sln` in `build_dynamic/` or `build_monolithic/` and build from Visual Studio. Build outputs land flat in `<build_dir>/bin/` (no Release/Debug subdirectories).
+After generating, open the `.sln` in `build/` or `build_monolithic/` and build from Visual Studio. Build outputs land flat in `<build_dir>/bin/` (no Release/Debug subdirectories).
 
 **Hot-rebuild a single module** (keeps debugger attached):
 
@@ -151,5 +151,5 @@ Governed by `.clang-format` (Google base, customized):
 - Pointer alignment left: `int* ptr`
 - Spaces inside parentheses: `func( arg1, arg2 )`
 - `SortIncludes: false` — keep include order as written
-
+- DO NOT USED UNICODE characters in source generation, just use standard ascii
 The root header `source/orb.h` must be included in every source file. Include engine APIs via their aggregator `source/engine_api.h` where needed.

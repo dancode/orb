@@ -244,7 +244,11 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             return 0;
 
         case WM_ERASEBKGND:
-            return 1; /* renderer owns the background — suppress Windows erase to prevent flicker */
+            /* paint_enabled = true: let DefWindowProcW fill with the class brush.
+               paint_enabled = false: renderer owns the pixels — suppress to prevent flicker. */
+            if ( !win->paint_enabled )
+                return 1;
+            return DefWindowProcW( hwnd, msg, wp, lp );
 
         default: return DefWindowProcW( hwnd, msg, wp, lp );
     }
