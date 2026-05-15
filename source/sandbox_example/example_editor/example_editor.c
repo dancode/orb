@@ -20,9 +20,9 @@
 #include "engine/mod/mod_host.h"
 #include "engine/app/app.h"
 
-#include "runtime/run_host.h"
+#include "runtime/host.h"
 
-#include "runtime_module/example/example.h"
+#include "runtime_modules/example/example.h"
 MOD_DEFINE_API_PTR( example_api_t, example );
 
 /*==============================================================================================

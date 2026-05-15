@@ -1,8 +1,8 @@
-#ifndef RUN_H
-#define RUN_H
+#ifndef RUNTIME_H
+#define RUNTIME_H
 /*==============================================================================================
 
-    runtime/run.h — Runtime module API and frame clock.
+    runtime/runtime.h — Runtime module API and frame clock.
 
     Self-contained: include this directly from any module that needs run clock access.
 
@@ -20,9 +20,9 @@
         f64 t = run_api()->clock()->app_time;
         u64 f = run_api()->clock()->frame_number;
 
-    run_clock_update() is host-internal — only run_host.c calls it once per frame
+    run_clock_update() is host-internal — only host_main.c calls it once per frame
     before dispatching on_update. Modules must not call it.
-    ==============================================================================================*/
+==============================================================================================*/
 
 #include "orb.h"
 #include "engine/mod/mod.h"
@@ -47,8 +47,8 @@ typedef struct run_clock_s
 
 typedef struct run_api_s
 {
-    const run_clock_t* ( *clock )( void );         /* current frame clock (read-only)     */
-    void               ( *set_time_scale )( f32 ); /* adjust time scale from game or host */
+    const run_clock_t* ( *clock )( void ); /* current frame clock (read-only)     */
+    void ( *set_time_scale )( f32 );       /* adjust time scale from game or host */
 
 } run_api_t;
 
@@ -66,4 +66,4 @@ MOD_GATEWAY_DYNAMIC( run_api_t, run )
 void run_clock_update( f64 app_time, f32 dt_real );
 
 /*============================================================================================*/
-#endif    // RUN_H
+#endif    // RUNTIME_H

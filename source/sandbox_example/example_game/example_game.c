@@ -15,11 +15,11 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "runtime/run_host.h"
+#include "runtime/host.h"
 #include "engine/app/app.h"
 
 /* add module API headers as they are built:
-   #include "runtime_module/physics/physics_api.h"
+   #include "runtime_modules/physics/physics_api.h"
    #include "project/sample_game/sample_game_api.h"
 
    MOD_DEFINE_API_PTR( physics_api_t,     physics     );

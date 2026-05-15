@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime/run.c — Unity build entry point for the runtime (host) module.
+    runtime/runtime.c — Unity build entry point for the runtime (host) module.
 
 ==============================================================================================*/
 
@@ -12,7 +12,7 @@
 ==============================================================================================*/
 
 #include "engine/mod/mod_export.h" /* for exporting api description */
-#include "engine/mod/mod_host.h" /* module setup and loading (hosts only) */
+#include "engine/mod/mod_host.h"   /* module setup and loading (hosts only) */
 
 /* static modules used by runtime */
 #include "engine/sys/sys.h"
@@ -22,25 +22,25 @@
     (Optional Module Headers
 ==============================================================================================*/
 
-#include "runtime_module/render/render.h"
+#include "runtime_modules/render/render.h"
 
 /*==============================================================================================
     Runtime Headers
 ==============================================================================================*/
 
-#include "runtime/run.h"
-#include "runtime/run_host.h"
+#include "runtime.h"    // module API (hosts and clients).
+#include "host.h"       // hosts API (entry point, boot sequence, main loop, etc).
 
 /*==============================================================================================
     Unity Build
 ==============================================================================================*/
 
-#include "run_host.c" /* The main() entry point and boot sequence. */
+#include "host/host_main.c"    // The main() entry point and boot sequence.
 
 /*==============================================================================================
     Unity API Definition
 ==============================================================================================*/
 
-#include "run_api.c"
+#include "host/host_api.c"    // Host API definition (exported to modules).
 
 /*============================================================================================*/

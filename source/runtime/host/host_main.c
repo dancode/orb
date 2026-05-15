@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    run_host.c — runtime host implementation.
+    host_main.c — runtime host implementation.
 
     Boot sequence:
         1. mod_system_init()

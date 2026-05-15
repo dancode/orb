@@ -14,10 +14,10 @@
 #include "orb.h"
 #include "engine/sys/sys.h"
 #include "engine/mod/mod_host.h"
-#include "runtime/run_host.h"
+#include "runtime/host.h"
 
 /* declare dynamic modules api */
-#include "runtime_module/example/example.h"
+#include "runtime_modules/example/example.h"
 MOD_DEFINE_API_PTR( example_api_t, example );
 
 /*==============================================================================================

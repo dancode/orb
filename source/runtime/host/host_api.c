@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    run_api.c — runtime module implementation.
+    host_api.c — runtime module implementation.
 
     Maintains the authoritative frame clock. host.c calls run_clock_update() once
     per frame before dispatching on_update. The capping and time-scale logic lives
@@ -8,11 +8,6 @@
     can call run_api()->clock() to read app_time, frame_number, time_scale, etc.
 
 ==============================================================================================*/
-
-#include "orb.h"
-#include "engine/mod/mod_export.h"
-#include "runtime/run.h"
-
 /*==============================================================================================
     Internal state
 ==============================================================================================*/

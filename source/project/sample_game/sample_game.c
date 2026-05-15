@@ -18,7 +18,7 @@
 #include "engine/mod/mod.h"
 
 #include "engine/core/core.h"
-#include "runtime_module/render/render.h"
+#include "runtime_modules/render/render.h"
 #include "game/game.h"
 
 #include "sample_game.h"

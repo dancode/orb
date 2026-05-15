@@ -14,7 +14,7 @@
 #include "orb.h"
 
 #include "engine/mod/mod_export.h"
-#include "runtime_module/example/example.h"
+#include "runtime_modules/example/example.h"
 
 /*==============================================================================================
     1. Consumer-side pointer storage for each consumed API (no-op in BUILD_STATIC)

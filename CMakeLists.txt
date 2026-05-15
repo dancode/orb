@@ -277,7 +277,7 @@ endfunction()
 #   - Registers the PRE_LINK PDB unlock for debugger-safe rebuilds
 #
 # Usage (identical to add_unity_library, just swaps the function name):
-#   add_module( example "source/runtime_module/example" "05_Runtime_Modules" "example.c" )
+#   add_module( example "source/runtime_modules/example" "05_Runtime_Modules" "example.c" )
 # ------------------------------------------------------------------------------
 
 function(add_module TARGET_NAME SOURCE_DIR VS_FOLDER)
@@ -350,7 +350,7 @@ target_link_libraries( engine_app  PUBLIC engine_sys )
 
 # RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)
 # SOURCE_DIR covers all of source/runtime so run_api.c and host/host.c are both visible.
-add_unity_library( runtime_host STATIC "source/runtime" "03_Runtime/Host" "run.c" )
+add_unity_library( runtime_host STATIC "source/runtime" "03_Runtime" "runtime.c" )
 target_compile_definitions( runtime_host PUBLIC RUN_STATIC )
 target_link_libraries( runtime_host PUBLIC engine_mod engine_sys engine_core engine_app )
 
@@ -368,7 +368,7 @@ target_link_libraries( runtime_host PUBLIC engine_mod engine_sys engine_core eng
 
 
 # RUNTIME SERVICES
-add_unity_library( rt_jobs STATIC "source/runtime/services/jobs" "03_Runtime/Services" "rt_jobs.c" )
+add_unity_library( jobs STATIC "source/runtime_service/jobs" "03_Runtime_Service" "jobs.c" )
 
 # Note: The runtime_host library doesn't actually link the services directly 
 #       The final executable (host_game) links them all together!
@@ -378,10 +378,10 @@ add_unity_library( rt_jobs STATIC "source/runtime/services/jobs" "03_Runtime/Ser
 # ------------------------------------------------------------------------------
 
 # DYNAMIC MODULES (Built as separate DLLs for hot-reloading, but statically linked in monolithic mode)
-add_module( example "source/runtime_module/example" "03_Runtime_Modules" "example.c" )
-add_module( render  "source/runtime_module/render"  "03_Runtime_Modules" "render.c"  )
-add_module( audio   "source/runtime_module/audio"   "03_Runtime_Modules" "audio.c"   )
-add_module( physics "source/runtime_module/physics" "03_Runtime_Modules" "physics.c" )
+add_module( example "source/runtime_modules/example" "03_Runtime_Modules" "example.c" )
+add_module( render  "source/runtime_modules/render"  "03_Runtime_Modules" "render.c"  )
+add_module( audio   "source/runtime_modules/audio"   "03_Runtime_Modules" "audio.c"   )
+add_module( physics "source/runtime_modules/physics" "03_Runtime_Modules" "physics.c" )
 
 # LINK
 target_link_libraries( example PUBLIC base )

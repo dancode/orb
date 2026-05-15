@@ -18,7 +18,7 @@
 
 // #include "engine/sys/sys_api.h"
 
-// #include "runtime_module/example/example_api.h"
+// #include "runtime_modules/example/example_api.h"
 // MOD_DEFINE_API_PTR( example_api_t, example );
 
 

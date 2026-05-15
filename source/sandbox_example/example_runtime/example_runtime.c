@@ -21,8 +21,8 @@
 #include "engine/app/app.h"
 #include "engine/core/core.h"
 
-#include "runtime_module/render/render.h"
-#include "runtime/run_host.h"
+#include "runtime_modules/render/render.h"
+#include "runtime/host.h"
 
 /*==============================================================================================
     Host callbacks
@@ -31,9 +31,9 @@
 static void
 runtime_ready( void )
 {
-    /* Both app and render are initialized and the window exists — safe to call any API. */
+    /* Both app and render are initialized and the window exists - safe to call any API. */
     render_api()->set_clear_color( 0.08f, 0.10f, 0.18f );
-    printf( "[example_runtime] ready — press Escape to quit, R to reload modules\n" );
+    printf( "[example_runtime] ready - press escape to quit, R to reload modules\n" );
 }
 
 static void

@@ -41,7 +41,10 @@ render_begin_frame_impl( void )
     if ( !g_state )
         return;
     /* core_api() is the right call here — works in both static and dynamic builds */
-    core_api()->log( "render: begin frame %d", g_state->frame_count );
+    if ( g_state->frame_count % 60 == 0 )
+    {
+        core_api()->log( "render: begin frame %d", g_state->frame_count );
+    }
 }
 
 static void

@@ -1,8 +1,8 @@
-#ifndef RUN_HOST_H
-#define RUN_HOST_H
+#ifndef RUNTIME_HOST_H
+#define RUNTIME_HOST_H
 /*==============================================================================================
 
-    runtime/run_host.h — For host executables only.
+    runtime/host.h — For host executables only.
 
     Every exe converges on one call:
 
@@ -114,4 +114,4 @@ void run_host_quit( void ); /* headless quit — sets flag, checked each frame t
 bool run_host_should_quit( void );
 
 /*============================================================================================*/
-#endif /* RUN_HOST_H */
+#endif /* RUNTIME_HOST_H */
