@@ -68,6 +68,7 @@ run_host_should_quit( void )
 ==============================================================================================*/
 
 MOD_DEFINE_API_PTR( app_api_t,    app    );
+MOD_DEFINE_API_PTR( rhi_api_t,    rhi    );
 MOD_DEFINE_API_PTR( render_api_t, render );
 
 static win_id_t s_win_id = APP_WIN_INVALID;
@@ -161,6 +162,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                                          which is fine; the windowed path guards against it.
     */
     HOST_FETCH_API( app_api_t,    app    );
+    HOST_FETCH_API( rhi_api_t,    rhi    );
     HOST_FETCH_API( render_api_t, render );
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
@@ -181,6 +183,19 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             fprintf( stderr, "[host] window creation failed\n" );
             mod_system_exit();
             return 1;
+        }
+
+        if ( rhi_api() )
+        {
+            void* hwnd = app_api()->window_handle( s_win_id );
+            app_api()->window_set_paint( s_win_id, false );
+            if ( !rhi_api()->init( hwnd ) )
+            {
+                fprintf( stderr, "[host] rhi init failed\n" );
+                app_api()->window_close( s_win_id );
+                mod_system_exit();
+                return 1;
+            }
         }
     }
 
@@ -266,6 +281,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     }
 
     /* ---- shutdown ---------------------------------------------------- */
+
+    /* RHI destroys the Vulkan surface — must happen before the window (HWND) is destroyed. */
+    if ( rhi_api() )
+        rhi_api()->shutdown();
 
     if ( windowed && app_api() && s_win_id != APP_WIN_INVALID )
         app_api()->window_close( s_win_id );

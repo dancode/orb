@@ -1,8 +1,22 @@
 /*==============================================================================================
 
-    render.c
+    render.c — Renderer front-end module (hot-reloadable DLL).
 
-    Renderer module.
+    Sits on top of the RHI. Consumes rhi_api() for all GPU calls; exposes a
+    simple begin/draw/end frame surface to the host. State (clear color, frame
+    counter, in-flight command list) persists across reloads.
+
+    Layering
+    --------
+        rhi (static service)     <- Vulkan backend, swap-chain aware
+            ^
+            | rhi_api()->...
+            |
+        render (this DLL)        <- high-level framing, hot-reloadable
+            ^
+            | render_api()->...
+            |
+        host_main on_update      <- calls begin_frame / draw_frame / end_frame
 
 ==============================================================================================*/
 
@@ -12,27 +26,35 @@
 #include "engine/mod/mod_export.h"
 #include "engine/core/core.h"
 
+#include "runtime_service/rhi/rhi.h"
 #include "render.h"
 
-MOD_DEFINE_API_PTR( core_api_t, core );
+/*==============================================================================================
+    Cached API pointers
+==============================================================================================*/
 
-/*============================================================================================*/
+MOD_DEFINE_API_PTR( core_api_t, core );
+MOD_DEFINE_API_PTR( rhi_api_t,  rhi  );
+
+/*==============================================================================================
+    Persistent state
+==============================================================================================*/
 
 typedef struct render_state_s
 {
     int   frame_count;
     float total_time;
 
-    int   total_draw_calls;
-    int   frame_draw_calls;
-    bool  in_frame;
+    float clear_r, clear_g, clear_b, clear_a;
+
+    rhi_command_list_t cmd; /* valid between begin_frame / end_frame; NULL otherwise */
 
 } render_state_t;
 
 static render_state_t* g_state = NULL;
 
 /*==============================================================================================
-    Implementation — shared by both build modes
+    API implementations
 ==============================================================================================*/
 
 static void
@@ -40,19 +62,24 @@ render_begin_frame_impl( void )
 {
     if ( !g_state )
         return;
-    /* core_api() is the right call here — works in both static and dynamic builds */
-    if ( g_state->frame_count % 60 == 0 )
-    {
-        core_api()->log( "render: begin frame %d", g_state->frame_count );
-    }
+
+    g_state->cmd = rhi_api()->frame_begin();
+    /* NULL means the swap chain is not ready this frame (resize pending, etc.).
+       draw_frame and end_frame both guard on cmd != NULL. */
 }
 
 static void
 render_draw_frame_impl( float dt )
 {
-    if ( !g_state )
+    if ( !g_state || !g_state->cmd )
         return;
+
     g_state->total_time += dt;
+    rhi_api()->cmd_clear_color( g_state->cmd,
+                                g_state->clear_r,
+                                g_state->clear_g,
+                                g_state->clear_b,
+                                g_state->clear_a );
 }
 
 static void
@@ -60,6 +87,13 @@ render_end_frame_impl( void )
 {
     if ( !g_state )
         return;
+
+    if ( g_state->cmd )
+    {
+        rhi_api()->frame_end();
+        g_state->cmd = NULL;
+    }
+
     g_state->frame_count++;
 }
 
@@ -70,18 +104,19 @@ render_frame_count_impl( void )
 }
 
 static void
-render_set_clear_color_impl( float r, float g, float b )
+render_set_clear_color_impl( float r, float g, float b, float a )
 {
     if ( !g_state )
         return;
 
-    UNUSED( r );
-    UNUSED( g );
-    UNUSED( b );
+    g_state->clear_r = r;
+    g_state->clear_g = g;
+    g_state->clear_b = b;
+    g_state->clear_a = a;
 }
 
 /*==============================================================================================
-    API struct — globally visible, non-static (see audio.c for naming rationale).
+    API struct
 ==============================================================================================*/
 
 const render_api_t g_render_api_struct = {
@@ -99,33 +134,52 @@ const render_api_t g_render_api_struct = {
 static bool
 render_init( void* raw_state, get_api_fn get_api )
 {
+    UNUSED( get_api );
     g_state = ( render_state_t* )raw_state;
 
     if ( !MOD_FETCH_API( core_api_t, core ) )
-          return false;
+        return false;
+
+    if ( !MOD_FETCH_API( rhi_api_t, rhi ) )
+    {
+        fprintf( stderr, "[render] failed to fetch rhi_api\n" );
+        return false;
+    }
+
+    g_state->clear_r = 0.08f;
+    g_state->clear_g = 0.10f;
+    g_state->clear_b = 0.14f;
+    g_state->clear_a = 1.0f;
 
     core_api()->log( "render: init (state=%p)", ( void* )g_state );
     return true;
-}
-
-void
-render_exit( void* raw_state )
-{
-    UNUSED( raw_state );
-    if ( core_api() )
-         core_api()->log( "render: exit" );
 }
 
 static bool
 render_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
-
     g_state = ( render_state_t* )raw_state;
-    MOD_FETCH_API( core_api_t, core );
+
+    if ( !MOD_FETCH_API( core_api_t, core ) )
+        return false;
+
+    if ( !MOD_FETCH_API( rhi_api_t, rhi ) )
+    {
+        fprintf( stderr, "[render] failed to re-fetch rhi_api after reload\n" );
+        return false;
+    }
 
     core_api()->log( "render: reloaded (frames so far = %d)", g_state->frame_count );
     return true;
+}
+
+static void
+render_exit( void* raw_state )
+{
+    UNUSED( raw_state );
+    if ( core_api() )
+        core_api()->log( "render: exit" );
 }
 
 /*==============================================================================================
@@ -136,25 +190,19 @@ mod_api_t*
 render_get_mod_api( void )
 {
     static mod_api_t api = {
-        .version    = 1,
-        .state_size = sizeof( render_state_t ),
+        .version       = 1,
+        .state_size    = sizeof( render_state_t ),
         .func_api_size = sizeof( render_api_t ),
-        .deps       = { "app" },    // "app" + remove "engine"
-        .dep_count  = 0,
-        .func_api   = &g_render_api_struct,
-        .init       = render_init,
-        .exit       = render_exit,
-        .reload     = render_reload,
+        .deps          = { "core", "rhi" },
+        .dep_count     = 2,
+        .func_api      = &g_render_api_struct,
+        .init          = render_init,
+        .exit          = render_exit,
+        .reload        = render_reload,
     };
     return &api;
 }
 
-void*
-render_get_api( void )
-{
-    return ( void* )&g_render_api_struct;
-}
-
-MOD_DEFINE_EXPORTS( render );
+MOD_DEFINE_EXPORTS( render )
 
 /*============================================================================================*/

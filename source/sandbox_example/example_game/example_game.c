@@ -15,6 +15,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
+#include "runtime_service/rhi/rhi.h"
 #include "runtime/host.h"
 #include "engine/app/app.h"
 
@@ -49,7 +50,12 @@ game_update( f32 dt )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( app ), RUN_MODULE( render ), RUN_MODULE( sample_game ), { 0 } }; // RUN_MODULE( physics )
+    RUN_SERVICE( app    ),
+    RUN_SERVICE( rhi    ),
+    RUN_MODULE ( render ),
+    RUN_MODULE ( sample_game ),
+    { 0 }
+};  // add RUN_MODULE( physics ) when ready
 
 static const run_host_desc_t k_desc = {
     .name      = "sandbox_game",

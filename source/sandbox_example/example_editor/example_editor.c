@@ -20,6 +20,7 @@
 #include "engine/mod/mod_host.h"
 #include "engine/app/app.h"
 
+#include "runtime_service/rhi/rhi.h"
 #include "runtime/host.h"
 
 #include "runtime_modules/example/example.h"
@@ -70,10 +71,13 @@ editor_update( f32 dt )
     Host descriptor
 ==============================================================================================*/
 
-static const run_module_entry_t k_modules[] = { RUN_SERVICE( app ),    /* window, OS pump */
-                                                RUN_MODULE( render ),  /* renderer — null-safe if not present */
-                                                RUN_MODULE( example ),
-                                                { 0 } };
+static const run_module_entry_t k_modules[] = {
+    RUN_SERVICE( app     ),   /* window, OS pump */
+    RUN_SERVICE( rhi     ),   /* GPU backend — static service */
+    RUN_MODULE ( render  ),   /* renderer — hot-reloadable DLL */
+    RUN_MODULE ( example ),
+    { 0 }
+};
 
 static const run_host_desc_t    k_desc      = {
             .name      = "sandbox_editor",

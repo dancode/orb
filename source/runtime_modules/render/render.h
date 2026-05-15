@@ -20,7 +20,7 @@ typedef struct render_api_s
     void ( *draw_frame )( float dt );
     void ( *end_frame )( void );
     int  ( *frame_count )( void );
-    void ( *set_clear_color )( float r, float g, float b );
+    void ( *set_clear_color )( float r, float g, float b, float a );
 
 } render_api_t;
 

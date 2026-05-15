@@ -345,33 +345,28 @@ target_link_libraries( engine_mod  PUBLIC engine_sys )
 target_link_libraries( engine_app  PUBLIC engine_sys )
 
 # ------------------------------------------------------------------------------
-# 03 RUNTIME: (EXE HOST + SERVICES)
+# 03 RUNTIME HOST
 # ------------------------------------------------------------------------------
 
-# RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)
-# SOURCE_DIR covers all of source/runtime so run_api.c and host/host.c are both visible.
 add_unity_library( runtime_host STATIC "source/runtime" "03_Runtime" "runtime.c" )
 target_compile_definitions( runtime_host PUBLIC RUN_STATIC )
 target_link_libraries( runtime_host PUBLIC engine_mod engine_sys engine_core engine_app )
 
-# RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)
-#add_unity_library(runtime_host STATIC "source/runtime/host" "03_Runtime/Host"
-#    "runtime_host.c"
-#)
-#target_link_libraries( runtime_host PUBLIC base engine_mod engine_sys engine_core engine_app )
+# ------------------------------------------------------------------------------
+# 03 RUNTIME SERVICES
+# ------------------------------------------------------------------------------
 
-#RUNTIEM APP (The "App" side of the runtime, which is linked by the runtime modules and the sandbox runtime)
-# add_unity_library( runtime_app STATIC "source/runtime/app" "03_Runtime/App"
-#     "runtime_app.c"
-# )
-# target_link_libraries( runtime_app PUBLIC runtime_host )
+# RHI — Vulkan backend, static. Windowed hosts link this directly and call rhi_api()->init(hwnd)
+# after window creation. DLL modules (render) access it through the mod registry via MOD_FETCH_API.
+add_unity_library( rhi STATIC "source/runtime_service/rhi" "03_Runtime_Service" "rhi.c" )
+target_compile_definitions( rhi PUBLIC RHI_STATIC )
+target_link_libraries( rhi PUBLIC engine_app )
 
-
-# RUNTIME SERVICES
 add_unity_library( jobs STATIC "source/runtime_service/jobs" "03_Runtime_Service" "jobs.c" )
+# NOTE: This service has NOT been implemented yet (just placeholdeer)
 
-# Note: The runtime_host library doesn't actually link the services directly 
-#       The final executable (host_game) links them all together!
+# Note: The runtime_host library doesn't actually link the services directly.
+#       Final executables that need GPU link rt_rhi; headless hosts do not.
 
 # ------------------------------------------------------------------------------
 # 03 RUNTIME: MODULES
@@ -432,15 +427,15 @@ add_unity_library( host_common STATIC "source/host/common" "06_Host"
 
 # HOST Game
 add_unity_executable( host_game "source/host/game" "06_Host" "host_game_main.c" )
-target_link_libraries( host_game PRIVATE base engine_sys engine_mod engine_core engine_app )
-if ( ENGINE_MONOLITHIC ) 
+target_link_libraries( host_game PRIVATE base engine_sys engine_mod engine_core engine_app rhi )
+if ( ENGINE_MONOLITHIC )
     target_link_libraries( host_game PUBLIC render audio physics )
 endif()
 
 # HOST Editor
 add_unity_executable( host_editor "source/host/editor" "06_Host" "host_editor_main.c" )
-target_link_libraries( host_editor PRIVATE base engine_sys engine_mod engine_core )
-if ( ENGINE_MONOLITHIC ) 
+target_link_libraries( host_editor PRIVATE base engine_sys engine_mod engine_core rhi )
+if ( ENGINE_MONOLITHIC )
     target_link_libraries( host_editor PUBLIC render )
 endif()
 
@@ -494,13 +489,13 @@ add_unity_executable( sb_example_server "source/sandbox_example/example_server" 
 target_link_libraries( sb_example_server PRIVATE runtime_host )
 
 add_unity_executable( sb_example_editor "source/sandbox_example/example_editor" "07_Sandbox_Example" "example_editor.c" )
-target_link_libraries( sb_example_editor PRIVATE runtime_host )
+target_link_libraries( sb_example_editor PRIVATE runtime_host rhi )
 
 add_unity_executable( sb_example_game "source/sandbox_example/example_game" "07_Sandbox_Example" "example_game.c" )
-target_link_libraries( sb_example_game PRIVATE runtime_host )
+target_link_libraries( sb_example_game PRIVATE runtime_host rhi )
 
 add_unity_executable( sb_example_runtime "source/sandbox_example/example_runtime" "07_Sandbox_Example" "example_runtime.c" )
-target_link_libraries( sb_example_runtime PRIVATE runtime_host )
+target_link_libraries( sb_example_runtime PRIVATE runtime_host rhi )
 
 
 # add_unity_executable( sb_tool_modinfo "source/sandbox/tool_modinfo" "07_Sandbox" "sb_tool_modinfo.c" )
