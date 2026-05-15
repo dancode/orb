@@ -1,12 +1,8 @@
 /*==============================================================================================
 
-    reflect.c
+    core/core_reflect.c : Unity build entry point for the reflection system.
 
 ==============================================================================================*/
-
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
 
 #include "orb.h"
 

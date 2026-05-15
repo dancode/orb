@@ -1,11 +1,14 @@
 /*==============================================================================================
 
-    reflection registry.c
+    core/reflect/reflect_registry.c
+    
+    Holds all registered types, fields, and attributes in fixed-size arrays. 
+    Provides functions for initialization, shutdown, and internal management of the registry data.
 
 ==============================================================================================*/
 
-registry_t g_registry;         // global registry data (single instance)
-const bool rf_debug = true;    // enable debug output
+static registry_t g_registry;         // global registry data (single instance)
+static const bool rf_debug = true;    // enable debug output
 
 /*==============================================================================================
 

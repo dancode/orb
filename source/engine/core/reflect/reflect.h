@@ -2,7 +2,7 @@
 #define REFLECT_H
 /*==============================================================================================
 
-    reflect.h
+    core/reflect/reflect.h : Public API for the reflection system.
 
     -- Reflection system for runtime type information (RTTI)
     -- Allows registration and lookup of types and their fields.
@@ -13,7 +13,7 @@
     -- built-in types integrated as real entries in the same table
     -- single-array open-addressing hash table for named type lookups
     -- interned global string pool (one copy of each name) for names.
-    -- internal types use indexes and no pointers for hot-reloiad.
+    -- internal types use indexes and no pointers for hot-reload.
     -- registration API copies generated/static data into the registry and interns strings.
     -- reflect_type_id() helper and example of caching the returned id for fast runtime access
 
