@@ -30,7 +30,6 @@ void         sys_library_unload( lib_handle_t module );
 
 void sys_tick_init( void );
 void sys_tick_exit( void );
-f64  sys_tick_reset( void );
 f64  sys_tick_seconds( void );
 i64  sys_tick_milliseconds( void );
 i64  sys_tick_microseconds( void );

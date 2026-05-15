@@ -1,21 +1,30 @@
 /*==============================================================================================
 
-    rt_host.c — runtime host implementation.
+    run_host.c — runtime host implementation.
 
     Boot sequence:
         1. mod_system_init()
-        2. mod_static_load( "sys", ... )        — mandatory; timing + sleep
-        3. load every entry in desc->modules
-        4. mod_init_all()                       — topo-sort + init in dep order
-        5. HOST_FETCH_API( app, render )        — cache host-owned API ptrs
-        6. window_open()                        — when app is loaded (inferred from k_modules)
-        7. desc->on_ready()                     — host post-init hook
-        8. enter loop per desc->loop_mode
-        9. window_close() + mod_system_exit()  — exit in reverse dep order
+        2. mod_static_load( "sys", ... )        — mandatory; monotonic clock + sleep
+        3. mod_static_load( "run", ... )        — mandatory; frame clock service
+        4. load every entry in desc->modules
+        5. mod_init_all()                       — topo-sort + init in dep order
+        6. HOST_FETCH_API( app, render )        — cache host-owned API ptrs
+        7. window_open()                        — when app is loaded (inferred from k_modules)
+        8. desc->on_ready()                     — host post-init hook
+        9. enter loop per desc->loop_mode
+       10. window_close() + mod_system_exit()  — exit in reverse dep order
 
-    The loop is intentionally explicit. rt_host.c knows the engine-level modules
+    The loop is intentionally explicit. host.c knows the engine-level modules
     it manages (app, render) and calls them by name. It does not iterate the dep
     graph generically.
+
+    Frame timing
+    ------------
+    sys_api()->tick_seconds() returns a stable monotonic clock from engine init.
+    The host diffs two readings to compute raw dt each frame, then hands it to
+    run_clock_update() which caps it, applies time_scale, and stamps frame_number.
+    Callbacks receive f32 dt (capped, scaled). Richer timing is available via
+    run_api()->clock() from any module that depends on "run".
 
     API slot stability
     ------------------
@@ -25,18 +34,6 @@
     they point to are live after every reload flush.
 
 ==============================================================================================*/
-
-#include <stdio.h>
-
-#include "orb.h"
-#include "engine/mod/mod_host.h"
-#include "engine/mod/mod_export.h"
-#include "engine/sys/sys.h"
-#include "engine/app/app.h"
-#include "runtime_module/render/render_api.h"
-
-#include "runtime/host/host.h"
-
 /*==============================================================================================
     Quit flag (headless path)
 ==============================================================================================*/
@@ -44,13 +41,13 @@
 static bool g_quit_requested = false;
 
 void
-rt_host_quit( void )
+run_host_quit( void )
 {
     g_quit_requested = true;
 }
 
 bool
-rt_host_should_quit( void )
+run_host_should_quit( void )
 {
     return g_quit_requested;
 }
@@ -80,26 +77,26 @@ static win_id_t s_win_id = APP_WIN_INVALID;
 ==============================================================================================*/
 
 static bool
-load_entry( const rt_module_entry_t* e )
+load_entry( const run_module_entry_t* e )
 {
     return e->get_mod_api ? mod_static_load( e->name, e->get_mod_api() ) : mod_dynamic_load( e->name );
 }
 
 static bool
-load_all( const rt_module_entry_t* modules )
+load_all( const run_module_entry_t* modules )
 {
     if ( !modules )
         return true;
 
-    for ( const rt_module_entry_t* e = modules; e->name; ++e )
+    for ( const run_module_entry_t* e = modules; e->name; ++e )
     {
         if ( load_entry( e ) == false )
         {
-            fprintf( stderr, "[rt_host] failed to load '%s': %s\n", e->name, mod_last_error() );
+            fprintf( stderr, "[host] failed to load '%s': %s\n", e->name, mod_last_error() );
             return false;
         }
     }
-    return true; /* all loaded */
+    return true;
 }
 
 /*==============================================================================================
@@ -107,14 +104,14 @@ load_all( const rt_module_entry_t* modules )
 ==============================================================================================*/
 
 int
-rt_host_main( const rt_host_desc_t* desc, int argc, char** argv )
+run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 {
     UNUSED( argc );
     UNUSED( argv );
 
     if ( !desc || !desc->modules )
     {
-        fprintf( stderr, "[rt_host] descriptor or module list is missing\n" );
+        fprintf( stderr, "[host] descriptor or module list is missing\n" );
         return 1;
     }
 
@@ -125,10 +122,18 @@ rt_host_main( const rt_host_desc_t* desc, int argc, char** argv )
 
     mod_system_init();
 
-    /* sys is mandatory — provides tick_reset and sleep for the loop */
+    /* sys is mandatory — monotonic clock (tick_seconds) and sleep for the loop */
     if ( !mod_static_load( "sys", sys_get_mod_api() ) )
     {
-        fprintf( stderr, "[rt_host] sys load failed: %s\n", mod_last_error() );
+        fprintf( stderr, "[host] sys load failed: %s\n", mod_last_error() );
+        mod_system_exit();
+        return 1;
+    }
+
+    /* run is mandatory — frame clock service, available to all modules via MOD_FETCH_API */
+    if ( !mod_static_load( "run", run_get_mod_api() ) )
+    {
+        fprintf( stderr, "[host] run load failed: %s\n", mod_last_error() );
         mod_system_exit();
         return 1;
     }
@@ -141,7 +146,7 @@ rt_host_main( const rt_host_desc_t* desc, int argc, char** argv )
 
     if ( !mod_init_all() )
     {
-        fprintf( stderr, "[rt_host] init failed: %s\n", mod_last_error() );
+        fprintf( stderr, "[host] init failed: %s\n", mod_last_error() );
         mod_system_exit();
         return 1;
     }
@@ -173,22 +178,22 @@ rt_host_main( const rt_host_desc_t* desc, int argc, char** argv )
         s_win_id = app_api()->window_open( desc->name ? desc->name : "orb", 0, 0, w, h, APP_WIN_DEFAULT );
         if ( s_win_id == APP_WIN_INVALID )
         {
-            fprintf( stderr, "[rt_host] window creation failed\n" );
+            fprintf( stderr, "[host] window creation failed\n" );
             mod_system_exit();
             return 1;
         }
     }
 
-    printf( "[rt_host] '%s' ready\n", desc->name ? desc->name : "host" );
+    printf( "[host] '%s' ready\n", desc->name ? desc->name : "host" );
 
     /* ---- optional console input -------------------------------------- */
 
-    const bool console    = ( desc->flags & RT_HOST_CONSOLE    ) != 0;
-    const bool hot_reload = ( desc->flags & RT_HOST_HOT_RELOAD ) != 0;
+    const bool console    = ( desc->flags & RUN_HOST_CONSOLE    ) != 0;
+    const bool hot_reload = ( desc->flags & RUN_HOST_HOT_RELOAD ) != 0;
     const i32  frame_ms   = desc->frame_target_ms > 0 ? desc->frame_target_ms : 16;
 
     if ( console && !sys_console_input_init() )
-        fprintf( stderr, "[rt_host] WARNING: console input init failed\n" );
+        fprintf( stderr, "[host] WARNING: console input init failed\n" );
 
     /* ---- post-init host hook ----------------------------------------- */
 
@@ -197,25 +202,28 @@ rt_host_main( const rt_host_desc_t* desc, int argc, char** argv )
 
     /* ---- caller-driven path ------------------------------------------ */
 
-    if ( desc->loop_mode == RT_LOOP_NONE )
+    if ( desc->loop_mode == RUN_LOOP_NONE )
         return 0;
 
     /* ---- loop -------------------------------------------------------- */
 
-    sys_api()->tick_reset();
+    f64 last_tick = sys_api()->tick_seconds();
 
     while ( !g_quit_requested )
     {
         /* -- pump OS events (windowed) ---------------------------------- */
 
         if ( windowed && !app_api()->pump_events() )
-            break;    /* window closed — exit main loop */
+            break;
 
-        /* -- dt --------------------------------------------------------- */
+        /* -- frame clock ------------------------------------------------ */
 
-        f32 dt = ( f32 )sys_api()->tick_reset();
-        if ( dt > 0.25f )
-            dt = 0.25f; /* spiral-of-death guard */
+        f64 now      = sys_api()->tick_seconds();
+        f32 dt_real  = ( f32 )( now - last_tick );
+        last_tick    = now;
+
+        run_clock_update( now, dt_real );           /* caps, scales, stamps frame_number */
+        f32 dt = run_api()->clock()->dt;            /* capped + scaled — pass to callbacks */
 
         /* -- console key state ------------------------------------------ */
 
@@ -225,7 +233,7 @@ rt_host_main( const rt_host_desc_t* desc, int argc, char** argv )
         /* -- host update ------------------------------------------------- */
 
         /* Sandbox logic, game bootstrap, tool work. Lives at the top of the
-           stack — can call any loaded module API or rt_host_quit(). */
+           stack — can call any loaded module API or run_host_quit(). */
 
         if ( desc->on_update )
             desc->on_update( dt );
@@ -249,7 +257,7 @@ rt_host_main( const rt_host_desc_t* desc, int argc, char** argv )
 
         /* -- single-shot exit -------------------------------------------- */
 
-        if ( desc->loop_mode == RT_LOOP_ONCE )
+        if ( desc->loop_mode == RUN_LOOP_ONCE )
             break;
 
         /* -- frame pacing ------------------------------------------------ */
@@ -269,5 +277,4 @@ rt_host_main( const rt_host_desc_t* desc, int argc, char** argv )
     return 0;
 }
 
-/*============================================================================================*/
 /*============================================================================================*/

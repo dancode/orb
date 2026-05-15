@@ -1,15 +1,15 @@
-#ifndef EXAMPLE_API_H
-#define EXAMPLE_API_H
+#ifndef EXAMPLE_H
+#define EXAMPLE_H
 /*==============================================================================================
 
-    example_api.h : Example module API header
+    example.h — Public API exported by the example module.
 
 ==============================================================================================*/
 
-#include "engine/mod/mod_api.h"
+#include "engine/mod/mod.h"
 
 /*==============================================================================================
-    Example API struct
+    API struct
 ==============================================================================================*/
 
 typedef struct example_api_s
@@ -29,4 +29,4 @@ MOD_GATEWAY_DYNAMIC( example_api_t, example )
 #endif
 
 /*============================================================================================*/
-#endif    // EXAMPLE_API_H
+#endif    // EXAMPLE_H

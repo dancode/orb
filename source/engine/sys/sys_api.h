@@ -9,7 +9,7 @@
 
 ==============================================================================================*/
 
-#include "engine/mod/mod_api.h"
+#include "engine/mod/mod.h"
 
 /*==============================================================================================
     API Struct
@@ -17,11 +17,10 @@
 
 typedef struct sys_api_s
 {
-    f64 ( *tick_reset )( void );
-    f64 ( *tick_seconds )( void );
-    i64 ( *tick_milliseconds )( void );
-    i64 ( *tick_microseconds )( void );
-    i64 ( *tick_nanoseconds )( void );
+    f64  ( *tick_seconds )( void );      /* seconds since engine init — monotonic, never resets  */
+    i64  ( *tick_milliseconds )( void );
+    i64  ( *tick_microseconds )( void );
+    i64  ( *tick_nanoseconds )( void );
     void ( *sleep_milliseconds )( i32 milliseconds );
 
 } sys_api_t;

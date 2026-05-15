@@ -15,11 +15,11 @@
 
 #include "orb.h"
 #include "engine/mod/mod_export.h"
-#include "engine/mod/mod_api.h"
+#include "engine/mod/mod.h"
 
 #include "engine/core/core.h"
-#include "runtime_module/render/render_api.h"
-#include "game/game_api.h"
+#include "runtime_module/render/render.h"
+#include "game/game.h"
 
 #include "sample_game.h"
 

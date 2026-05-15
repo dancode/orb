@@ -23,9 +23,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AUDIO_LINK_STATIC
-#include "engine/mod/mod_api.h"
-#include "audio_api.h"
+#include "engine/mod/mod.h"
+#include "audio.h"
 
 /*==============================================================================================
     Audio State

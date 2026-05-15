@@ -1,13 +1,13 @@
-#ifndef MOD_API_H
-#define MOD_API_H
+#ifndef MOD_H
+#define MOD_H
 /*==============================================================================================
 
-    mod_api.h : Consumer-side module API access macros.
+    engine/mod/mod.h — Consumer-side module API access macros.
 
     Supports both static and dynamic builds with identical call sites. The build mode is
     controlled by BUILD_STATIC (monolithic) or per-module <NAME>_STATIC (exe-linked service).
 
-   MOD_GATEWAY_STATIC( type, name )
+    MOD_GATEWAY_STATIC( type, name )
         Static build: declares g_<name>_api_struct as extern and returns its address directly.
         LTO can devirtualize: render_api()->draw(dt) becomes a direct call with no indirection.
 
@@ -35,19 +35,20 @@
     The else arm covers DLLs that cache a pointer fetched during init().
 
 ==============================================================================================*/
+
 #include "orb.h"
 
 /* STATIC: every TU sees the struct directly. LTO can devirtualize the call. */
-#define MOD_GATEWAY_STATIC( type, name )             \
-    typedef struct mod_api_s  mod_api_t; \
-    extern const type         g_##name##_api_struct; \
+#define MOD_GATEWAY_STATIC( type, name )                          \
+    typedef struct mod_api_s  mod_api_t;                          \
+    extern const type         g_##name##_api_struct;              \
     static inline const type* name##_api( void ) { return &g_##name##_api_struct; } \
     mod_api_t*                name##_get_mod_api( void );
 
 /* DYNAMIC: every TU reads through a cached pointer populated during init(). */
-#define MOD_GATEWAY_DYNAMIC( type, name )         \
-    typedef struct mod_api_s mod_api_t; \
-    extern const type*        g_##name##_api_ptr; \
+#define MOD_GATEWAY_DYNAMIC( type, name )                         \
+    typedef struct mod_api_s mod_api_t;                           \
+    extern const type*        g_##name##_api_ptr;                 \
     static inline const type* name##_api( void ) { return g_##name##_api_ptr; }
 
 /*==============================================================================================
@@ -80,14 +81,5 @@
     #define MOD_FETCH_API( type, name ) ( ( g_##name##_api_ptr = ( const type* )get_api( #name ) ) != NULL )
 #endif
 
-/* Host-local variant — fetches via mod_get_api() (valid outside a module init() callback). */
-
-#ifdef BUILD_STATIC
-    #define HOST_FETCH_API( type, name ) ( 1 ) /* struct linked directly from header extern */
-#else
-    #define HOST_FETCH_API( type, name ) \
-        ( ( g_##name##_api_ptr = ( const type* )mod_get_api( #name ) ) != NULL )
-#endif
-
 /*============================================================================================*/
-#endif    // MOD_API_H
+#endif    // MOD_H

@@ -5,7 +5,8 @@
      - Uses QueryPerformanceCounter for high-resolution timing.
      - timeBeginPeriod(1) is called to ensure Sleep() has 1 ms resolution for frame throttling.
      - Caches frequency and inverse frequency for efficient conversions.
-     - Provides elapsed time since last reset in seconds, milliseconds, microseconds, and nanoseconds.
+     - Provides elapsed time since engine init in seconds, milliseconds, microseconds, and nanoseconds.
+       The epoch is set once in sys_tick_init() and never changes.
      - sys_sleep_milliseconds() wraps the Win32 Sleep() function.
 
 ==============================================================================================*/
@@ -14,8 +15,8 @@
 static i64  sys_tick_frequency;        // cached QPC ticks per second.
 static f64  sys_tick_inv_frequency;    // precompute inverse of frequency for multiplication instead of division (if needed).
 static i64  sys_tick_nano;             // cacehd QPC nanoseconds per tick.
-static i64  sys_tick_start;            // time base for counting (offset timing from init start)
-static bool sys_time_period_called;    // sync init and eixt
+static i64  sys_tick_start;            // epoch set once at init — never reset after that.
+static bool sys_time_period_called;    // sync init and exit
 
 /*==============================================================================================
 
@@ -49,28 +50,11 @@ sys_tick_get_frequency( void )
 
 /*============================================================================================*/
 
-f64 /* elapsed since last reset */
-sys_tick_reset( void )
-{
-    // this will reset the starting time base of clock to zero.
-    // use carefully it will affect in flight timing if called after init.
-
-    LARGE_INTEGER time;
-    QueryPerformanceCounter( &time );
-
-    i64 diff        = time.QuadPart - sys_tick_start;
-    f64 sec_elapsed = (f64)diff / (f64)sys_tick_frequency;
-    sys_tick_start  = time.QuadPart;
-    return sec_elapsed;
-};
-
-/*============================================================================================*/
-
 void
 sys_tick_init( void )
 {
     // timeBeginPeriod() function requests a minimum resolution for periodic timers that
-    // ensures Sleep() counts at the lowest resolution interval. 
+    // ensures Sleep() counts at the lowest resolution interval.
 
     if ( sys_time_period_called == false ) {
          sys_time_period_called = true;
@@ -81,8 +65,10 @@ sys_tick_init( void )
     // Cache the inverse to turn division into fast multiplication
     sys_tick_inv_frequency = 1.0 / (f64)sys_tick_frequency;
 
-    sys_tick_reset();
-    sys_tick_reset();
+    // Set the epoch once. All tick_* functions measure from this point forward.
+    LARGE_INTEGER now;
+    QueryPerformanceCounter( &now );
+    sys_tick_start = now.QuadPart;
 }
 
 void

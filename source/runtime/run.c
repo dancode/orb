@@ -1,60 +1,46 @@
 /*==============================================================================================
 
-    engine/core/core.c — Unity build entry point for the core module.
-    
+    runtime/run.c — Unity build entry point for the runtime (host) module.
+
 ==============================================================================================*/
 
 #include <stdio.h>
-#include <stdarg.h>
-#include <stdlib.h>
+#include "orb.h"
 
 /*==============================================================================================
     Engine headers
 ==============================================================================================*/
 
-#include "orb.h"
-#include "engine/mod/mod_export.h" /* mod_api_t, get_api_fn */
-#include "engine/core/core.h"      /* Public types (no function declarations) */
+#include "engine/mod/mod_export.h" /* for exporting api description */
+#include "engine/mod/mod_host.h" /* module setup and loading (hosts only) */
+
+/* static modules used by runtime */
+#include "engine/sys/sys.h"
+#include "engine/app/app.h"
 
 /*==============================================================================================
-    TEMPORARY API FNUCTIONS (until we implement a real memory system )
+    (Optional Module Headers
 ==============================================================================================*/
+
+#include "runtime_module/render/render.h"
 
 /*==============================================================================================
-    API Start / Shutdown
+    Runtime Headers
 ==============================================================================================*/
 
-static void*
-core_alloc( size_t size )
-{
-    return malloc( size );
-}
-
-static void*
-core_realloc( void* ptr, size_t size )
-{
-    return realloc( ptr, size );
-}
-
-static void
-core_free( void* ptr )
-{
-    free( ptr );
-}
+#include "runtime/run.h"
+#include "runtime/run_host.h"
 
 /*==============================================================================================
-    Subsystem implementations  (all functions are static within this TU)
+    Unity Build
 ==============================================================================================*/
 
-#include "engine/core/core_log.c"
-#include "engine/core/core_cvar.c"
-#include "engine/core/core_sid.c"
-// #include "engine/core/core_debug.c"
-// #include "engine/core/core_reflect.c"
-// #include "engine/core/core_memory.c"
+#include "run_host.c" /* The main() entry point and boot sequence. */
 
 /*==============================================================================================
-    API wiring  (must be last — assigns every static function to g_core_api_struct)
+    Unity API Definition
 ==============================================================================================*/
- 
-#include "engine/core/core_api.c"
+
+#include "run_api.c"
+
+/*============================================================================================*/

@@ -38,7 +38,6 @@ static sys_state_t* s = NULL;
 ==============================================================================================*/
 
 const sys_api_t g_sys_api_struct = {
-    .tick_reset         = sys_tick_reset,
     .tick_seconds       = sys_tick_seconds,
     .tick_microseconds  = sys_tick_microseconds,
     .tick_milliseconds  = sys_tick_milliseconds,
@@ -86,7 +85,5 @@ sys_get_mod_api( void )
     };
     return &api;
 }
-
-MOD_DEFINE_EXPORTS( sys )
 
 /*============================================================================================*/

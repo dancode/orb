@@ -9,13 +9,13 @@
     on_update drives the simulation: physics then gameplay, in the order that matters.
     Add modules to k_modules; fetch and call their APIs in game_ready / game_update.
 
-    Loop:  RT_LOOP_RUN
+    Loop:  RUN_LOOP_RUN
     Flags: (none)
 
 ==============================================================================================*/
 
 #include "orb.h"
-#include "runtime/host/host.h"
+#include "runtime/run_host.h"
 #include "engine/app/app.h"
 
 /* add module API headers as they are built:
@@ -48,13 +48,13 @@ game_update( f32 dt )
     Host descriptor
 ==============================================================================================*/
 
-static const rt_module_entry_t k_modules[] = {
-    RT_SERVICE( app ), RT_MODULE( render ), RT_MODULE( sample_game ), { 0 } }; // RT_MODULE( physics )
+static const run_module_entry_t k_modules[] = {
+    RUN_SERVICE( app ), RUN_MODULE( render ), RUN_MODULE( sample_game ), { 0 } }; // RUN_MODULE( physics )
 
-static const rt_host_desc_t k_desc = {
+static const run_host_desc_t k_desc = {
     .name      = "sandbox_game",
     .flags     = 0, /* no hot-reload, no console — shipping config */
-    .loop_mode = RT_LOOP_RUN,
+    .loop_mode = RUN_LOOP_RUN,
     .modules   = k_modules,
     .on_ready  = game_ready,
     .on_update = game_update,
@@ -63,5 +63,5 @@ static const rt_host_desc_t k_desc = {
 int
 main( int argc, char** argv )
 {
-    return rt_host_main( &k_desc, argc, argv );
+    return run_host_main( &k_desc, argc, argv );
 }

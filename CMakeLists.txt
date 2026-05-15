@@ -349,7 +349,9 @@ target_link_libraries( engine_app  PUBLIC engine_sys )
 # ------------------------------------------------------------------------------
 
 # RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)
-add_unity_library( runtime_host STATIC "source/runtime/host" "03_Runtime/Host" "host.c" )
+# SOURCE_DIR covers all of source/runtime so run_api.c and host/host.c are both visible.
+add_unity_library( runtime_host STATIC "source/runtime" "03_Runtime/Host" "run.c" )
+target_compile_definitions( runtime_host PUBLIC RUN_STATIC )
 target_link_libraries( runtime_host PUBLIC engine_mod engine_sys engine_core engine_app )
 
 # RUNTIME HOST (The "Host" side of the runtime, which is linked by the host executables)

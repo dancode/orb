@@ -12,7 +12,7 @@
 #include "engine/mod/mod_export.h"
 #include "engine/core/core.h"
 
-#include "render_api.h"
+#include "render.h"
 
 MOD_DEFINE_API_PTR( core_api_t, core );
 

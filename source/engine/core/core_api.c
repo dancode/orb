@@ -6,7 +6,6 @@
     build, every subsystem's static functions are visible in the translation
     unit and can be assigned to the function-pointer slots of g_core_api_struct.
 
-
 ==============================================================================================*/
 /*==============================================================================================
     API Start / Shutdown

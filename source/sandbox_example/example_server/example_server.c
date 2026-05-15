@@ -5,8 +5,8 @@
     Headless long-running host. Hot-reload lets modules be swapped without restart.
     Console input provides the operator quit path: Q exits cleanly.
 
-    Loop:  RT_LOOP_RUN
-    Flags: RT_HOST_CONSOLE | RT_HOST_HOT_RELOAD
+    Loop:  RUN_LOOP_RUN
+    Flags: RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD
 
 ==============================================================================================*/
 
@@ -14,12 +14,10 @@
 #include "orb.h"
 #include "engine/sys/sys.h"
 #include "engine/mod/mod_host.h"
-// #include "engine/mod/mod_api.h"
-
-#include "runtime/host/host.h"
+#include "runtime/run_host.h"
 
 /* declare dynamic modules api */
-#include "runtime_module/example/example_api.h"
+#include "runtime_module/example/example.h"
 MOD_DEFINE_API_PTR( example_api_t, example );
 
 /*==============================================================================================
@@ -40,7 +38,7 @@ server_update( f32 dt )
     if ( sys_key_pressed( PLATFORM_KEY_Q ) )
     {
         printf( "[server] shutdown requested\n" );
-        rt_host_quit();
+        run_host_quit();
         return;
     }
 
@@ -69,12 +67,12 @@ server_update( f32 dt )
     Host descriptor
 ==============================================================================================*/
 
-static const rt_module_entry_t k_modules[] = { RT_MODULE( example ), { 0 } };
+static const run_module_entry_t k_modules[] = { RUN_MODULE( example ), { 0 } };
 
-static const rt_host_desc_t    k_desc      = {
+static const run_host_desc_t    k_desc      = {
             .name            = "sandbox_server",
-            .flags           = RT_HOST_CONSOLE | RT_HOST_HOT_RELOAD,
-            .loop_mode       = RT_LOOP_RUN,
+            .flags           = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD,
+            .loop_mode       = RUN_LOOP_RUN,
             .frame_target_ms = 33, /* ~30 Hz — typical dedicated server tick */
             .modules         = k_modules,
             .on_ready        = server_ready,
@@ -84,7 +82,7 @@ static const rt_host_desc_t    k_desc      = {
 int
 main( int argc, char** argv )
 {
-    return rt_host_main( &k_desc, argc, argv );
+    return run_host_main( &k_desc, argc, argv );
 }
 
 /*============================================================================================*/

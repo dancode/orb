@@ -14,7 +14,7 @@
     #error "core_api.h should not be included directly; include core.h instead."
 #endif 
 
-#include "engine/mod/mod_api.h"
+#include "engine/mod/mod.h"
 
 /*============================================================================================*/
 /* These data pointers are required for natvis debugging within DLL modules */

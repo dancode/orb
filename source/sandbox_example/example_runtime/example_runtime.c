@@ -6,12 +6,12 @@
     engine (sys + app) + render module. Use this as a starting point for testing
     new runtime services or modules without pulling in game or editor layers.
 
-    k_modules[] is the single declaration of intent. Loading RT_SERVICE(app) causes
-    the host to create a window and pump OS events. Loading RT_MODULE(render) causes
+    k_modules[] is the single declaration of intent. Loading RUN_SERVICE(app) causes
+    the host to create a window and pump OS events. Loading RUN_MODULE(render) causes
     the host to drive begin_frame / draw_frame / end_frame each tick.
 
-    Loop:  RT_LOOP_RUN
-    Flags: RT_HOST_HOT_RELOAD
+    Loop:  RUN_LOOP_RUN
+    Flags: RUN_HOST_HOT_RELOAD
 
 ==============================================================================================*/
 
@@ -21,8 +21,8 @@
 #include "engine/app/app.h"
 #include "engine/core/core.h"
 
-#include "runtime_module/render/render_api.h"
-#include "runtime/host/host.h"
+#include "runtime_module/render/render.h"
+#include "runtime/run_host.h"
 
 /*==============================================================================================
     Host callbacks
@@ -43,7 +43,7 @@ runtime_update( f32 dt )
 
     if ( app_api()->key_pressed( APP_KEY_ESCAPE ) )
     {
-        rt_host_quit();
+        run_host_quit();
         return;
     }
 
@@ -58,17 +58,17 @@ runtime_update( f32 dt )
     Host descriptor
 ==============================================================================================*/
 
-static const rt_module_entry_t k_modules[] = {
-    RT_SERVICE( app    ),   /* windowing, input — always statically linked */
-    RT_SERVICE( core ),     /* logging, time, file I/O — always statically linked */   
-    RT_MODULE ( render ),   /* renderer — hot-reloadable DLL in dynamic builds */
+static const run_module_entry_t k_modules[] = {
+    RUN_SERVICE( app    ),   /* windowing, input — always statically linked */
+    RUN_SERVICE( core ),     /* logging, time, file I/O — always statically linked */
+    RUN_MODULE ( render ),   /* renderer — hot-reloadable DLL in dynamic builds */
     { 0 },
 };
 
-static const rt_host_desc_t k_desc = {
+static const run_host_desc_t k_desc = {
     .name      = "example_runtime",
-    .flags     = RT_HOST_HOT_RELOAD,
-    .loop_mode = RT_LOOP_RUN,
+    .flags     = RUN_HOST_HOT_RELOAD,
+    .loop_mode = RUN_LOOP_RUN,
     .modules   = k_modules,
     .on_ready  = runtime_ready,
     .on_update = runtime_update,
@@ -77,7 +77,7 @@ static const rt_host_desc_t k_desc = {
 int
 main( int argc, char** argv )
 {
-    return rt_host_main( &k_desc, argc, argv );
+    return run_host_main( &k_desc, argc, argv );
 }
 
 /*============================================================================================*/

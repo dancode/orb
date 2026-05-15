@@ -8,8 +8,8 @@
     The window close button quits via app_api()->pump_events() returning false.
     Q on the keyboard is an alternative quit for keyboard-first workflows.
 
-    Loop:  RT_LOOP_RUN
-    Flags: RT_HOST_CONSOLE | RT_HOST_HOT_RELOAD
+    Loop:  RUN_LOOP_RUN
+    Flags: RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD
 
 ==============================================================================================*/
 
@@ -20,9 +20,9 @@
 #include "engine/mod/mod_host.h"
 #include "engine/app/app.h"
 
-#include "runtime/host/host.h"
+#include "runtime/run_host.h"
 
-#include "runtime_module/example/example_api.h"
+#include "runtime_module/example/example.h"
 MOD_DEFINE_API_PTR( example_api_t, example );
 
 /*==============================================================================================
@@ -44,7 +44,7 @@ editor_update( f32 dt )
     if ( sys_key_pressed( PLATFORM_KEY_Q ) )
     {
         printf( "[editor] Q — quit\n" );
-        rt_host_quit();
+        run_host_quit();
         return;
     }
 
@@ -70,15 +70,15 @@ editor_update( f32 dt )
     Host descriptor
 ==============================================================================================*/
 
-static const rt_module_entry_t k_modules[] = { RT_SERVICE( app ), /* window, OS pump */
-                                               RT_MODULE( render ), /* renderer — null-safe in rt_host if not present */
-                                               RT_MODULE( example ),
-                                               { 0 } };
+static const run_module_entry_t k_modules[] = { RUN_SERVICE( app ),    /* window, OS pump */
+                                                RUN_MODULE( render ),  /* renderer — null-safe if not present */
+                                                RUN_MODULE( example ),
+                                                { 0 } };
 
-static const rt_host_desc_t    k_desc      = {
+static const run_host_desc_t    k_desc      = {
             .name      = "sandbox_editor",
-            .flags     = RT_HOST_CONSOLE | RT_HOST_HOT_RELOAD,
-            .loop_mode = RT_LOOP_RUN,
+            .flags     = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD,
+            .loop_mode = RUN_LOOP_RUN,
             .modules   = k_modules,
             .on_ready  = editor_ready,
             .on_update = editor_update,
@@ -87,7 +87,7 @@ static const rt_host_desc_t    k_desc      = {
 int
 main( int argc, char** argv )
 {
-    return rt_host_main( &k_desc, argc, argv );
+    return run_host_main( &k_desc, argc, argv );
 }
 
 /*============================================================================================*/

@@ -1,6 +1,8 @@
+#ifndef MOD_HOST_H
+#define MOD_HOST_H
 /*==============================================================================================
 
-    engine/mod/mod.h : Hot-reload module system, public interface.
+    engine/mod/mod_host.h — Module system management. Include in host executables only.
 
     Lifecycle
     ---------
@@ -13,7 +15,7 @@
         mod_reload_all()            Force-queue every dynamic module for reload.
         mod_system_flush_reloads()  Apply queued swaps; call once per frame at a safe point.
         mod_system_exit()           Exit in reverse dep order; unload DLLs; delete shadows.
-    
+
     Deferred reload model
     ---------------------
     mod_reload, mod_reload_all, and the file-watcher all enqueue — they never swap
@@ -24,12 +26,12 @@
     mod_load build variants
     -----------------------
         BUILD_STATIC defined:
-            mod_load( render ) → mod_static_load( "render", render_get_mod_api() )
+            mod_load( render ) -> mod_static_load( "render", render_get_mod_api() )
 
         BUILD_STATIC not defined:
-            mod_load( render ) → mod_dynamic_load( "render" )
-                                  shadow-copy → load → resolve exports → alloc state
-    
+            mod_load( render ) -> mod_dynamic_load( "render" )
+                                  shadow-copy -> load -> resolve exports -> alloc state
+
     API access
     ----------
     Call sites are identical in both build modes:
@@ -37,16 +39,15 @@
         Static:  render_api()->begin_frame();   // zero-cost; LTO-devirtualizable
         Dynamic: render_api()->begin_frame();   // one pointer load
 
-    See MOD_GATEWAY_STATIC / MOD_GATEWAY_DYNAMIC in mod_api.h.
+    See MOD_GATEWAY_STATIC / MOD_GATEWAY_DYNAMIC in mod.h.
 
 ==============================================================================================*/
-#ifndef MOD_H
-#define MOD_H
 
 #include "orb.h"
+#include "engine/mod/mod.h"
 
 /*==============================================================================================
-    Build-mode–transparent module registration macro
+    Build-mode-transparent module registration macro
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
@@ -63,10 +64,10 @@ typedef struct mod_api_s mod_api_t;
 
 typedef enum module_status_t
 {
-    MODULE_STATUS_EMPTY       = 0,    // slot unused
-    MODULE_STATUS_LOADED      = 1,    // DLL loaded, API resolved, state allocated
-    MODULE_STATUS_INITIALIZED = 2,    // init() returned true
-    MODULE_STATUS_ERROR       = 3,    // load or init failed
+    MODULE_STATUS_EMPTY       = 0,    /* slot unused      */
+    MODULE_STATUS_LOADED      = 1,    /* DLL loaded, API resolved, state allocated */
+    MODULE_STATUS_INITIALIZED = 2,    /* init() returned true */
+    MODULE_STATUS_ERROR       = 3,    /* load or init failed */
 
 } module_status_t;
 
@@ -74,59 +75,50 @@ typedef enum module_status_t
     System lifetime
 ==============================================================================================*/
 
-/* Boot the module system. No modules are loaded or initialized yet. */
-void mod_system_init();
-
-/* Exit every INITIALIZED module in reverse dependency order, then unload DLLs and clean up. */
+void mod_system_init( void );
 void mod_system_exit( void );
 
 /*==============================================================================================
     Registration and loading
 ==============================================================================================*/
 
-/* Register a statically-linked module. Does NOT call init() — use mod_init_all(). */
 bool mod_static_load( const char* name, mod_api_t* mod_api );
-
-/* Shadow-copy, load, and register a DLL by base name (e.g. "render" → "<exe_dir>/render.dll").
-   Does NOT call init() — use mod_init_all(). */
 bool mod_dynamic_load( const char* name );
-
-/* Exit, unload, and deregister a single module. */
 bool mod_unload( const char* name );
-
-/* Force-queue a module for reload at the next mod_system_flush_reloads().
-   Static modules are silently ignored (returns true). */
 bool mod_reload( const char* name );
-
-/* Force-queue every dynamic module for reload. Returns the number queued. */
-int mod_reload_all( void );
-
-/* Poll file timestamps and enqueue any DLL whose source file changed.
-   Debounce is applied at flush time. */
+int  mod_reload_all( void );
 void mod_check_reloads( void );
-
-/* Drain the pending reload queue. Forced entries reload immediately; file-watch entries
-   wait out the debounce window. Returns the number of modules actually reloaded. */
-int mod_system_flush_reloads( void );
+int  mod_system_flush_reloads( void );
 
 /*==============================================================================================
     Initialization
 ==============================================================================================*/
 
-/* Topologically sort by dependency order and call init() on every LOADED module.
-   Returns false on a dependency cycle or if any init() returns false. */
 bool mod_init_all( void );
 
 /*==============================================================================================
     API access
 ==============================================================================================*/
 
-/* Returns the stable API pointer for a named, INITIALIZED module, or NULL.
-   Prefer the typed accessor (render_api(), audio_api(), etc.) at call sites. */
 const void* mod_get_api( const char* name );
-
-/* Human-readable description of the last failed operation. */
 const char* mod_last_error( void );
+
+/*==============================================================================================
+    HOST_FETCH_API — Populates a cached API pointer from outside a module init() callback.
+
+    Valid only after mod_init_all(). Use inside on_ready() or host update loops.
+    Prefer MOD_FETCH_API (in mod.h) inside module init() / reload() callbacks instead.
+
+    Usage:
+        HOST_FETCH_API( render_api_t, render );
+==============================================================================================*/
+
+#ifdef BUILD_STATIC
+    #define HOST_FETCH_API( type, name ) ( 1 )
+#else
+    #define HOST_FETCH_API( type, name ) \
+        ( ( g_##name##_api_ptr = ( const type* )mod_get_api( #name ) ) != NULL )
+#endif
 
 /*==============================================================================================
     Debug
@@ -135,4 +127,4 @@ const char* mod_last_error( void );
 void mod_list_all( void );
 
 /*============================================================================================*/
-#endif    // MOD_H
+#endif    // MOD_HOST_H

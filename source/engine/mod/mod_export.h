@@ -12,7 +12,7 @@
       - MOD_EXPORT / MOD_DEFINE_EXPORTS: DLL export machinery
 
     Include ONLY in a module's .c implementation. Hosts and sibling modules
-    include mod_api.h instead.
+    include mod.h instead.
 
     Module authoring
     ----------------
@@ -57,7 +57,7 @@
 #define MOD_EXPORT_H
 
 #include "orb.h"
-#include "engine/mod/mod_api.h"
+#include "engine/mod/mod.h"
 
 /*==============================================================================================
     get_api_fn — System callback passed into every module's init() and reload().
@@ -91,10 +91,6 @@ typedef void ( *mod_exit_fn )( void* state );
 typedef bool ( *mod_reload_fn )( void* state, get_api_fn get_api );
 
 
-typedef void ( *mod_input_fn )( void* state, float dt );
-typedef void ( *mod_update_fn )( void* state, float dt );
-typedef void ( *mod_render_fn )( void* state, float dt );
-
 /*==============================================================================================
     mod_api_t — Module descriptor. Every module returns one from name_get_mod_api().
 ==============================================================================================*/
@@ -111,10 +107,6 @@ typedef struct mod_api_s
     mod_init_fn   init;
     mod_exit_fn   exit;
     mod_reload_fn reload;
-
-    mod_input_fn  on_input;  /* optional, NULL = skip */
-    mod_update_fn on_update; /* optional, NULL = skip */
-    mod_render_fn on_render; /* optional, NULL = skip */
 
 } mod_api_t;
 
