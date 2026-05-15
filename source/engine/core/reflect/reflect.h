@@ -239,7 +239,14 @@ uint16_t            rf_get_type_id_by_name  ( const char* type_name );
     Reflection : Field Access
 ==============================================================================================*/
 
+typedef void ( *rf_type_cb_t  )( uint16_t type_id,  const rf_type_t*  t, void* user );
 typedef void ( *rf_field_cb_t )( uint16_t field_index, const rf_field_t* f, void* user );
+
+                                            // Iterate all valid types (including builtins)
+uint16_t            rf_each_type            ( rf_type_cb_t cb, void* user );
+
+                                            // Iterate all valid types owned by a module
+uint16_t            rf_each_type_in_module  ( uint8_t module_id, rf_type_cb_t cb, void* user );
 
 const rf_field_t*   rf_get_field            ( uint32_t field_id );
 uint16_t            rf_get_field_id         ( const rf_field_t* field );

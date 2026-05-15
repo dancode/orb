@@ -150,19 +150,24 @@ rf_push_attributes( const rf_attrib_t* attrs, uint16_t count )
 }
 
 /*============================================================================================*/
+/* Add attribute to type (appended to end of current attributes) */
+/* An attribute is just a name and value pair that can be used to annotate types and fields
+   with extra information for tools, serialization, etc. */
 
 bool
 rf_type_add_attribute( uint16_t type_id, const rf_attrib_t* attr )
 {
+    /* incorrect parameter */
     if ( type_id >= g_registry.type_count || !attr )
+    {
+        assert( 0 && "Invalid type attribute registration!" );
         return false;
+    }
 
     rf_type_t* type = &g_registry.type_array[ type_id ];
 
-    /* First attribute for this type */
     if ( type->attr_count == 0 )
     {
-        /* Set first attribute index */
         type->attr_index = rf_push_attributes( attr, 1 );
         if ( type->attr_index == ATTR_INVALID )
             return false;
@@ -170,7 +175,11 @@ rf_type_add_attribute( uint16_t type_id, const rf_attrib_t* attr )
         return true;
     }
 
-    /* Append additional attribute */
+    /* Contiguity check: this type's block must end at the current tail.
+       All attributes for a type must be added before registering attributes on any other type or field. */
+    assert( ( uint16_t )( type->attr_index + type->attr_count ) == g_registry.attr_count &&
+            "rf_type_add_attribute: attributes must be registered contiguously" );
+
     uint16_t new_idx = rf_push_attributes( attr, 1 );
     if ( new_idx == ATTR_INVALID )
         return false;
@@ -185,9 +194,7 @@ bool
 rf_field_add_attribute( uint16_t field_id, const rf_attrib_t* attr )
 {
     if ( field_id >= g_registry.field_count || !attr )
-    {
         return false;
-    }
 
     rf_field_t* field = &g_registry.field_array[ field_id ];
 
@@ -199,6 +206,11 @@ rf_field_add_attribute( uint16_t field_id, const rf_attrib_t* attr )
         field->attr_count = 1;
         return true;
     }
+
+    /* Contiguity check: this field's block must end at the current tail.
+       All attributes for a field must be added before registering attributes on any other type or field. */
+    assert( ( uint16_t )( field->attr_index + field->attr_count ) == g_registry.attr_count &&
+            "rf_field_add_attribute: attributes must be registered contiguously" );
 
     uint16_t new_idx = rf_push_attributes( attr, 1 );
     if ( new_idx == ATTR_INVALID )
@@ -255,42 +267,6 @@ rf_create_type_slot( const rf_type_t* src_type )
     return id;
 }
 
-static uint16_t
-rf_update_type( uint16_t type_id, const rf_type_t* type, const rf_field_t* fields, uint16_t field_count )
-{
-    /* Update existing type definition (for hot-reload) */
-    /* Called if type already exists when registering */
-
-    if ( type_id >= g_registry.type_count || !type )
-    {
-        return TYPE_INVALID;
-    }
-
-    rf_type_t* target = &g_registry.type_array[ type_id ];
-
-    // Increment version on update
-    target->version++;
-    target->size       = type->size;
-    target->align      = type->align;
-    target->kind       = type->kind;
-    target->valid      = 1;
-
-    // Always update fields on hot-reload
-    uint16_t field_idx = 0;
-    if ( field_count > 0 )
-    {
-        field_idx = rf_push_fields( fields, field_count );
-        if ( field_idx == FIELD_INVALID )
-        {
-            target->valid = 0;
-            return TYPE_INVALID;
-        }
-    }
-    target->field_index = field_idx;
-    target->field_count = field_count;
-
-    return type_id;
-}
 
 /*==============================================================================================
     Reflection : Type Registration
@@ -306,11 +282,11 @@ rf_register_type( rf_type_t* type, const rf_field_t* fields, uint16_t field_coun
         return TYPE_INVALID;
 
     // Find or create slot
-    uint16_t type_id = rf_find_type_slot( type->hash );
+    uint16_t type_id  = rf_find_type_slot( type->hash );
+    bool     is_new   = ( type_id == TYPE_INVALID );
 
-    if ( type_id == TYPE_INVALID )
+    if ( is_new )
     {
-        // New type
         type_id = rf_create_type_slot( type );
         if ( type_id == TYPE_INVALID )
             return TYPE_INVALID;
@@ -319,23 +295,33 @@ rf_register_type( rf_type_t* type, const rf_field_t* fields, uint16_t field_coun
     rf_type_t* target = &g_registry.type_array[ type_id ];
 
     // Update type data
-    target->name_sid   = type->name_sid;
-    target->hash       = type->hash;
+    target->name_sid  = type->name_sid;
+    target->hash      = type->hash;
 
-    target->kind       = type->kind;
-    target->size       = type->size;
-    target->align      = type->align;
+    target->kind      = type->kind;
+    target->size      = type->size;
+    target->align     = type->align;
 
-    target->module_id  = type->module_id;
-    target->valid      = 1;
-    target->version    = type->version;
+    target->module_id = type->module_id;
+    target->valid     = 1;
+    // First registration uses the caller's version; hot-reload bumps it automatically.
+    if ( is_new )
+    {
+        target->version = type->version;
+    }
+    else
+    {
+        target->version++;
+        // Reset attribute block so re-registration appends fresh at the current tail.
+        // Old slots are orphaned in the array (acceptable; fixed-size design does not compact).
+        target->attr_index = ATTR_INVALID;
+        target->attr_count = 0;
+    }
 
-    // Update fields if count changed
-    // First call will have 0 count and pass.
-    // Second call will only update if changed.
-    // Updated field counts create new entries for hotreload.
+    // Update fields
     if ( target->field_count != field_count )
     {
+        // Count changed: push a new block; old block is orphaned.
         uint16_t field_idx = 0;
         if ( field_count > 0 )
         {
@@ -348,6 +334,29 @@ rf_register_type( rf_type_t* type, const rf_field_t* fields, uint16_t field_coun
         }
         target->field_index = field_idx;
         target->field_count = field_count;
+    }
+    else if ( !is_new && field_count > 0 )
+    {
+        // Same count on reload: check each field for content changes and update in place.
+        // type_id is reset to TYPE_INVALID on any changed field so rf_resolve_fields() re-links it.
+        rf_field_t* existing = &g_registry.field_array[ target->field_index ];
+        for ( uint16_t i = 0; i < field_count; i++ )
+        {
+            bool name_changed = !sid_equals( existing[ i ].name_sid, fields[ i ].name_sid );
+            bool type_changed = existing[ i ].type_hash != fields[ i ].type_hash;
+            if ( name_changed || type_changed )
+            {
+                printf( "WARNING: %s field[%u] changed on reload:", sid_cstr( target->name_sid ), i );
+                if ( name_changed )
+                    printf( " name '%s'->'%s'", sid_cstr( existing[ i ].name_sid ),
+                            sid_cstr( fields[ i ].name_sid ) );
+                if ( type_changed )
+                    printf( " type_hash 0x%08x->0x%08x", existing[ i ].type_hash, fields[ i ].type_hash );
+                printf( "\n" );
+                existing[ i ]         = fields[ i ];
+                existing[ i ].type_id = TYPE_INVALID;    // force re-resolve
+            }
+        }
     }
 
     // Update module tracking.
@@ -473,23 +482,56 @@ rf_validate_types( void )
 bool
 rf_validate_registry( void )
 {
-    /* validate the entire registry -- type hash collisions, etc. */
+    /* Validate the entire registry:
+       1. Every valid type must be reachable by its own hash.
+       2. No stale invalid entry may sit ahead of a valid entry with the same hash
+          in a chain (would have shadowed lookups before the rf_get_type_id_by_hash fix,
+          now reported as a structural warning). */
 
     bool valid = true;
 
-    // Check for type hash collisions
+    /* Pass 1: every valid type must round-trip through the hash table */
     for ( uint16_t i = 0; i < g_registry.type_count; i++ )
     {
         const rf_type_t* t = &g_registry.type_array[ i ];
         if ( !t->valid )
             continue;
 
-        // Verify we can look it up
         uint16_t found = rf_get_type_id_by_hash( t->hash );
         if ( found != i )
         {
-            printf( "ERROR: Type %s lookup mismatch\n", sid_cstr( t->name_sid ) );
+            printf( "ERROR: Type '%s' hash lookup returned %u, expected %u\n",
+                    sid_cstr( t->name_sid ), found, i );
             valid = false;
+        }
+    }
+
+    /* Pass 2: walk every hash chain and flag stale invalid entries that precede
+       a valid entry with the same full hash (structural shadowing). */
+    for ( int slot = 0; slot < TYPE_HASH_SIZE; slot++ )
+    {
+        uint16_t idx = g_registry.type_hash[ slot ];
+        while ( idx != TYPE_INVALID )
+        {
+            const rf_type_t* t = &g_registry.type_array[ idx ];
+            if ( !t->valid )
+            {
+                /* Check whether a valid entry with the same hash follows in this chain */
+                uint16_t next = t->next;
+                while ( next != TYPE_INVALID )
+                {
+                    const rf_type_t* n = &g_registry.type_array[ next ];
+                    if ( n->hash == t->hash && n->valid )
+                    {
+                        printf( "WARNING: Stale invalid entry '%s'[%u] precedes valid '%s'[%u] in hash chain\n",
+                                sid_cstr( t->name_sid ), idx, sid_cstr( n->name_sid ), next );
+                        valid = false;
+                        break;
+                    }
+                    next = n->next;
+                }
+            }
+            idx = t->next;
         }
     }
 

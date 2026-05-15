@@ -373,24 +373,20 @@ test_hot_reload( void )
     printf( "\n--- Module Reload ---\n" );
     module_id = rf_module_register( "game", 2 );
 
-    // Re-register types with changes
+    // Re-register types with changes (field count reduced to 2 to simulate a hot-reload delta)
     register_vec3_type( module_id );
-
-    // Updated entity with new field:
-    // Just to demonstrate version increment with changes to structure.
 
     uint32_t  hash_entity = sid_hash( "entity_t" );
     rf_type_t type        = { 0 };
     type.name_sid         = sid_intern_cstr( "entity_t" );
     type.hash             = hash_entity;
-    type.version          = 2;
+    type.version          = 1;    // ignored on update — registry auto-increments
     type.size             = RF_SIZEOF( entity_t );
     type.align            = RF_ALIGNOF( entity_t );
     type.kind             = RF_KIND_STRUCT;
     type.module_id        = module_id;
     type.valid            = 1;
 
-    // Simplified fields for demo
     rf_field_t fields[ 2 ] = { 0 };
     fields[ 0 ].name_sid   = sid_intern_cstr( "id" );
     fields[ 0 ].type_id    = RF_TYPE_INT32;
@@ -404,13 +400,10 @@ test_hot_reload( void )
     fields[ 1 ].size       = 4;
     fields[ 1 ].kind       = RF_KIND_PRIMITIVE;
 
-    /* TODO: we need to use register type again with new fields */
-    /* TODO: register type should detect existing type and call update */
-    /* TODO: version should not be set by reflection declaration but auto-incremented on update */
-
-    entity_id              = rf_update_type( entity_id, &type, fields, 2 );
-    entity                 = rf_get_type( entity_id );
-    printf( "entity_t version: %u, fields: %u\n", entity->version, entity->field_count );
+    entity_id = rf_register_type( &type, fields, 2 );
+    entity    = rf_get_type( entity_id );
+    if ( entity )
+        printf( "entity_t version: %u, fields: %u\n", entity->version, entity->field_count );
 
     rf_exit();
 }

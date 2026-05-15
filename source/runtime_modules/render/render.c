@@ -151,7 +151,7 @@ render_init( void* raw_state, get_api_fn get_api )
     g_state->clear_b = 0.14f;
     g_state->clear_a = 1.0f;
 
-    core_api()->log( "render: init (state=%p)", ( void* )g_state );
+    // core_api()->log( "render: init (state=%p)", ( void* )g_state );
     return true;
 }
 

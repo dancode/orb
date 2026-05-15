@@ -7,20 +7,10 @@
 const rf_type_t*
 rf_get_type( uint32_t id )
 {
-    /* get type by id */
-
     if ( id == TYPE_INVALID || id >= g_registry.type_count )
-    {
-        // lets find when this actually happens
-        assert( 0 && "Invalid type id" ); 
+        return NULL;
 
-        // return the 'invalid type' for out-of-bounds
-        // we want code that operates on types to always have a valid pointer
-        // so we don't have to null check constantly on every return value.
-        return &g_registry.type_array[ 0 ];    // default invalid type
-    }
-
-    return &g_registry.type_array[ id ];    // valid type
+    return &g_registry.type_array[ id ];
 }
 
 uint16_t
@@ -56,10 +46,8 @@ rf_get_type_id_by_hash( uint32_t hash )
     while ( idx != TYPE_INVALID )
     {
         const rf_type_t* t = &g_registry.type_array[ idx ];
-        if ( t->hash == hash )
-        {
-            return idx;    // found the type!
-        }
+        if ( t->hash == hash && t->valid )
+            return idx;
         idx = t->next;
     }
     return TYPE_INVALID;
@@ -73,11 +61,14 @@ rf_get_type_by_name( const char* type_name )
     if ( !type_name )
     {
         assert( 0 && "Invalid type name (NULL)" );
-        return &g_registry.type_array[ 0 ];
+        return NULL;
     }
 
     const uint32_t hash    = sid_hash( type_name );
     const uint16_t type_id = rf_get_type_id_by_hash( hash );
+    if ( type_id == TYPE_INVALID )
+        return NULL;
+
     return rf_get_type( type_id );
 }
 
@@ -92,6 +83,44 @@ rf_get_type_id_by_name( const char* type_name )
     }
 
     return rf_get_type_id_by_hash( sid_hash( type_name ) );
+}
+
+uint16_t
+rf_each_type( rf_type_cb_t callback, void* userdata )
+{
+    if ( !callback )
+        return 0;
+
+    uint16_t count = 0;
+    for ( uint16_t i = 0; i < g_registry.type_count; i++ )
+    {
+        const rf_type_t* t = &g_registry.type_array[ i ];
+        if ( !t->valid )
+            continue;
+        callback( i, t, userdata );
+        count++;
+    }
+    return count;
+}
+
+/*============================================================================================*/
+
+uint16_t
+rf_each_type_in_module( uint8_t module_id, rf_type_cb_t callback, void* userdata )
+{
+    if ( !callback || module_id >= g_registry.module_count )
+        return 0;
+
+    uint16_t count = 0;
+    for ( uint16_t i = 0; i < g_registry.type_count; i++ )
+    {
+        const rf_type_t* t = &g_registry.type_array[ i ];
+        if ( !t->valid || t->module_id != module_id )
+            continue;
+        callback( i, t, userdata );
+        count++;
+    }
+    return count;
 }
 
 /*==============================================================================================

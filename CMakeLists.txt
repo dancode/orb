@@ -462,25 +462,34 @@ endif()
 
 # SANDBOX ENGINE : LIBRARY TESTS MODULES FOR ENGINE
 
+# Test the engine module system in a sandbox environment.
 add_unity_executable( sb_engine_mod "source/sandbox/engine_mod" "07_Sandbox" "sb_engine_mod.c" )
 target_link_libraries( sb_engine_mod PRIVATE engine_sys engine_mod dev_build dev_hot )
 
+# Test the engine platofrm system layer in a sandbox environment
 add_unity_executable( sb_engine_sys "source/sandbox/engine_sys" "07_Sandbox" "sb_engine_sys.c" )
 target_link_libraries( sb_engine_sys PRIVATE engine_sys )
 
+# Test the engine platform applicaiton layer in a sandbox environment.
 add_unity_executable( sb_engine_app "source/sandbox/engine_app" "07_Sandbox" "sb_engine_app.c" )
 target_link_libraries( sb_engine_app PRIVATE engine_mod engine_sys engine_app )
 
+# Test the engine core layer in a sandbox environment.
 add_unity_executable( sb_engine_core "source/sandbox/engine_core" "07_Sandbox" "sb_engine_core.c" )
 target_link_libraries( sb_engine_core PRIVATE engine_core )
 
-# SANDBOX EXAMPLES : Simple host setup examples for various use cases, 
-# all linking runtime_host to show how it provides access to the engine.
-
-# runtime_host includes engine static libraries already, so we don't
-# need to link them again here. Just link runtime_host and it works.
+# Test the engine core reflection system
+add_unity_executable( sb_engine_core_reflect "source/sandbox/engine_core_reflect" "07_Sandbox" "sb_engine_core_reflect.c" )
+target_link_libraries( sb_engine_core_reflect PRIVATE engine_core )
 
 # TODO: Use host_common for shared code for parsing args, etc. 
+
+# ------------------------------------------------------------------------------
+# 07 SANDBOX RUNTIME EXAMPLES: 
+#
+#   Simple host setup examples for various use cases, all linking runtime_host 
+#   to show how it provides access to the engine.
+# ------------------------------------------------------------------------------
 
 add_unity_executable( sb_example_tool "source/sandbox_example/example_tool" "07_Sandbox_Example" "example_tool.c" )
 target_link_libraries( sb_example_tool PRIVATE runtime_host )

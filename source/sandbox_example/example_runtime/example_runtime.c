@@ -69,7 +69,7 @@ static const run_module_entry_t k_modules[] = {
 
 static const run_host_desc_t k_desc = {
     .name      = "example_runtime",
-    .flags     = RUN_HOST_HOT_RELOAD,
+    .flags     = RUN_HOST_HOT_RELOAD | RUN_HOST_CONSOLE,
     .loop_mode = RUN_LOOP_RUN,
     .modules   = k_modules,
     .on_ready  = runtime_ready,

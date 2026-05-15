@@ -129,7 +129,7 @@ example_mod_reload( void* raw_state, get_api_fn get_api )
     if ( example_state->counter > 0 )
         printf( "[example] on_reload: counter=%d\n", example_state->counter );
 
-    printf( "\n\n RELOADED \n\n" );
+    printf( "\n\n WOKRING!!!! \n\n" );
 
     /* re-cache after DLL swap */
     // MOD_FETCH_API( core_api_t, core );

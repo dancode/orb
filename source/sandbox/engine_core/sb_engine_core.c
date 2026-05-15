@@ -26,8 +26,8 @@ core_test( void )
     if ( 1 )
     {
         /// mem_test();           // <-- test memory system
-        /// intern_test();        // <-- test string interning system
-        /// reflection_test();    // <-- test reflection system
+        // intern_test();        // <-- test string interning system
+        reflection_test();    // <-- test reflection system
     }
 
     if ( 0 )
