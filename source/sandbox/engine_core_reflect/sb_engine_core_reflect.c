@@ -13,6 +13,7 @@
 #include "engine/core/core.h"
 
 void reflection_test( void );
+void rs_run_tests( void );
 
 /*============================================================================================*/
 
@@ -21,7 +22,8 @@ main( int argc, char** argv )
 {
     UNUSED( argc );
     UNUSED( argv );
-    reflection_test();
+    // reflection_test();
+    rs_run_tests();
     return 0;
 }
 
