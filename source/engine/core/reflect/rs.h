@@ -559,10 +559,10 @@ void rs_run_tests( void );
 
     Field annotations (inside a RS_STRUCT body):
 
-        RS_FIELD()                          int32_t  id;
-        RS_FIELD( transient )               void*    scratch;    // tag attribute
-        RS_FIELD( range=0, 100 )            float    health;     // value attribute
-        RS_PROP()                           vec3_t   position;   // alias for RS_FIELD
+        RS_PROP()                           int32_t  id;
+        RS_PROP( transient )               void*    scratch;    // tag attribute
+        RS_PROP( range=0, 100 )            float    health;     // value attribute
+        RS_PROP()                           vec3_t   position;
 
     Global variable annotation:
 
@@ -575,7 +575,6 @@ void rs_run_tests( void );
 #define RS_STRUCT(...)
 #define RS_ENUM(...)
 #define RS_BITSET(...)
-#define RS_FIELD(...)
 #define RS_PROP(...)
 #define RS_VAR(...)
 // clang-format on

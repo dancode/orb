@@ -17,23 +17,23 @@
     them back to that frame's starting marks.
 ==============================================================================================*/
 
+
 typedef struct rs_registry_s
 {
-    
-    uint16_t        type_count;
-    uint16_t        field_count;
-    uint16_t        attr_count;
-    uint16_t        enum_count;
-    uint16_t        frame_count;
-    uint8_t         _pad[ 2 ];
+    uint16_t    type_count;
+    uint16_t    field_count;
+    uint16_t    attr_count;
+    uint16_t    enum_count;
+    uint16_t    frame_count;
+    uint8_t     _pad[ 2 ];
 
-    rs_type_t       types[ RS_MAX_TYPES ];
-    rs_field_t      fields[ RS_MAX_FIELDS ];
-    rs_attrib_t     attrs[ RS_MAX_ATTRS ];
-    rs_enum_t       enums[ RS_MAX_ENUMS ];
-    rs_frame_t      frames[ RS_MAX_FRAMES ];
+    rs_type_t   types[ RS_MAX_TYPES ];
+    rs_field_t  fields[ RS_MAX_FIELDS ];
+    rs_attrib_t attrs[ RS_MAX_ATTRS ];
+    rs_enum_t   enums[ RS_MAX_ENUMS ];
+    rs_frame_t  frames[ RS_MAX_FRAMES ];
 
-    uint16_t        type_hash[ RS_TYPE_HASH_SIZE ];
+    uint16_t    type_hash[ RS_TYPE_HASH_SIZE ];
 
     /* Parallel to fields[]: pending base-type hash for forward-ref resolve.
        Populated by rs_register_type, consumed by rs_finalize_frame. Kept around
