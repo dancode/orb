@@ -45,6 +45,7 @@ typedef struct rs_registry_s
 
 #include "rs/rs_registry.c"
 #include "rs/rs_access.c"
+#include "rs/rs_walk.c"
 #include "rs/rs_print.c"
 #include "rs/rs_test.c"
 

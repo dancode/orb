@@ -294,6 +294,20 @@ rs_alloc_attr_slot( void )
     return g_rs.attr_count++;
 }
 
+static uint16_t
+rs_alloc_enum_block( uint16_t count )
+{
+    if ( count == 0 ) return 0;
+    if ( g_rs.enum_count + count > RS_MAX_ENUMS )
+    {
+        assert( 0 && "rs: enum table full" );
+        return RS_TYPE_INVALID;
+    }
+    uint16_t start = g_rs.enum_count;
+    g_rs.enum_count += count;
+    return start;
+}
+
 uint16_t
 rs_register_type( const rs_type_t* type,
                   const rs_field_t* fields,
@@ -368,6 +382,109 @@ rs_register_type( const rs_type_t* type,
                 type_id, sid_cstr( t->name_sid ), frame_id, field_count );
 
     return type_id;
+}
+
+/*==============================================================================================
+    Enum registration
+==============================================================================================*/
+
+static uint32_t
+rs_compute_enum_schema_hash( const rs_enumerator_t* e, uint16_t count )
+{
+    uint32_t h = 2166136261u;
+    for ( uint16_t i = 0; i < count; i++ )
+    {
+        h = rs_fnv1a_step( h, &e[ i ].name_sid, sizeof( e[ i ].name_sid ) );
+        h = rs_fnv1a_step( h, &e[ i ].value,    sizeof( e[ i ].value ) );
+    }
+    return h;
+}
+
+uint16_t
+rs_register_enum( const rs_type_t* type, const rs_enumerator_t* enumerators, uint16_t count )
+{
+    if ( !type ) { assert( 0 ); return RS_TYPE_INVALID; }
+    if ( count > 0 && !enumerators ) { assert( 0 ); return RS_TYPE_INVALID; }
+    if ( g_rs.frame_count == 0 )
+    {
+        assert( 0 && "rs_register_enum: no active frame" );
+        return RS_TYPE_INVALID;
+    }
+
+    uint8_t  frame_id = (uint8_t)( g_rs.frame_count - 1 );
+    uint16_t type_id  = rs_alloc_type_slot();
+    if ( type_id == RS_TYPE_INVALID )
+        return RS_TYPE_INVALID;
+
+    rs_type_t* t   = &g_rs.types[ type_id ];
+    *t             = *type;
+    t->kind        = RS_KIND_ENUM;
+    t->frame_id    = frame_id;
+    t->attr_index  = RS_ATTR_INVALID;
+    t->attr_count  = 0;
+    t->next        = RS_TYPE_INVALID;
+    t->schema_hash = rs_compute_enum_schema_hash( enumerators, count );
+
+    if ( count > 0 )
+    {
+        uint16_t first = rs_alloc_enum_block( count );
+        if ( first == RS_TYPE_INVALID )
+            return RS_TYPE_INVALID;
+        memcpy( &g_rs.enums[ first ], enumerators, count * sizeof( rs_enumerator_t ) );
+        t->field_index = first;     /* indexes enums[] when kind == RS_KIND_ENUM */
+        t->field_count = count;
+    }
+    else
+    {
+        t->field_index = 0;
+        t->field_count = 0;
+    }
+
+    rs_hash_insert( type_id );
+
+    if ( rs_debug )
+        printf( "rs: registered enum [%u] %s (frame %u, %u enumerators)\n",
+                type_id, sid_cstr( t->name_sid ), frame_id, count );
+
+    return type_id;
+}
+
+uint16_t
+rs_register_bitset( const rs_type_t* type, const rs_enumerator_t* enumerators, uint16_t count )
+{
+    if ( !type ) { assert( 0 ); return RS_TYPE_INVALID; }
+
+    rs_type_t patched   = *type;
+    patched.type_flags |= RS_TFLAG_BITSET;
+
+    return rs_register_enum( &patched, enumerators, count );
+}
+
+/*==============================================================================================
+    Function-signature registration
+
+    A signature type uses the same field-storage path as a struct; the only difference
+    is kind == RS_KIND_FUNCTION and the index convention (slot 0 = return, 1..N = params).
+==============================================================================================*/
+
+uint16_t
+rs_register_function( const rs_type_t* type,
+                      const rs_field_t* return_then_params,
+                      const uint32_t* type_hashes,
+                      uint16_t count )
+{
+    if ( !type || count == 0 )
+    {
+        assert( 0 && "rs_register_function: a signature must have at least a return type" );
+        return RS_TYPE_INVALID;
+    }
+
+    rs_type_t patched = *type;
+    patched.kind      = RS_KIND_FUNCTION;
+    /* Signatures themselves have no inherent size; pointer fields that reference one
+       carry sizeof(void*) themselves. Leave caller's `size` as-is (commonly sizeof(void*)). */
+
+    return rs_register_type( &patched, return_then_params, type_hashes, count );
 }
 
 /*==============================================================================================

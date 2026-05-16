@@ -85,6 +85,13 @@ typedef enum rs_kind_e
     RS_KIND_FUNCTION = 4,   /* signature type; field[0]=return, field[1..]=params */
 } rs_kind_t;
 
+/* Optional bit-flags on a type record (rs_type_t.type_flags). */
+typedef enum rs_type_flag_e
+{
+    RS_TFLAG_NONE   = 0,
+    RS_TFLAG_BITSET = ( 1 << 0 ),   /* for RS_KIND_ENUM: values are bitmask flags, not exclusive */
+} rs_type_flag_t;
+
 /*==============================================================================================
     Packed modifier chain (16 bits, 4 slots of 4 bits each)
 
@@ -212,7 +219,7 @@ typedef struct rs_type_s
     uint8_t     align;              // 1   alignof(T)
     uint8_t     kind;               // 1   rs_kind_t
     uint8_t     frame_id;           // 1   owning frame
-    uint8_t     _pad;               // 1
+    uint8_t     type_flags;         // 1   rs_type_flag_t (RS_TFLAG_BITSET, ...)
 } rs_type_t;                        // = 32 bytes
 
 /*==============================================================================================
@@ -279,6 +286,12 @@ uint16_t    rs_register_enum        ( const rs_type_t* type,
                                       const rs_enumerator_t* enumerators,
                                       uint16_t count );
 
+                                    /* Register a bitset enum (flag-style enum: values OR together).
+                                       Same storage as rs_register_enum, but RS_TFLAG_BITSET is set. */
+uint16_t    rs_register_bitset      ( const rs_type_t* type,
+                                      const rs_enumerator_t* enumerators,
+                                      uint16_t count );
+
                                     /* Register a function signature. `type->kind` is forced to
                                        RS_KIND_FUNCTION. `fields[0]` is the return type; `fields[1..]`
                                        are parameters in declaration order. `type_hashes` is parallel.
@@ -308,6 +321,17 @@ const rs_enumerator_t* rs_enum_find_by_name ( uint16_t type_id, const char* name
 const rs_enumerator_t* rs_enum_find_by_value( uint16_t type_id, int64_t value );
 const rs_enumerator_t* rs_get_enumerator    ( uint16_t enum_id );
 
+                                            /* Bitset-style enum helpers (type must have RS_TFLAG_BITSET). */
+typedef void ( *rs_enum_cb_t )( uint16_t enum_id, const rs_enumerator_t* e, void* user );
+
+bool                   rs_enum_is_bitset    ( uint16_t type_id );
+const rs_enumerator_t* rs_bitset_find_flag  ( uint16_t type_id, int64_t mask );
+uint16_t               rs_bitset_each_set_flag( uint16_t type_id, int64_t value,
+                                              rs_enum_cb_t cb, void* user );
+                                            /* "FLAG_A | FLAG_C" into buf; unrecognized bits emitted as hex. */
+size_t                 rs_bitset_describe   ( uint16_t type_id, int64_t value,
+                                              char* buf, size_t buf_size );
+
                                             /* Function-signature convenience accessors. */
 const rs_field_t*      rs_function_get_return( uint16_t type_id );
 uint16_t               rs_function_param_count( uint16_t type_id );
@@ -321,12 +345,38 @@ void                rs_get_stats        ( uint16_t* type_count, uint16_t* field_
 
 typedef void ( *rs_type_cb_t  )( uint16_t type_id,  const rs_type_t*       t, void* user );
 typedef void ( *rs_field_cb_t )( uint16_t field_id, const rs_field_t*      f, void* user );
-typedef void ( *rs_enum_cb_t  )( uint16_t enum_id,  const rs_enumerator_t* e, void* user );
+/* rs_enum_cb_t is forward-declared in the bitset block above. */
 
 uint16_t    rs_each_type            ( rs_type_cb_t cb, void* user );
 uint16_t    rs_each_type_in_frame   ( uint8_t frame_id, rs_type_cb_t cb, void* user );
 uint16_t    rs_each_field           ( uint16_t type_id, rs_field_cb_t cb, void* user );
 uint16_t    rs_each_enumerator      ( uint16_t type_id, rs_enum_cb_t  cb, void* user );
+
+/*==============================================================================================
+    Reference walker
+
+    Visits each pointer-bearing slot inside an instance. The walker DOES NOT follow
+    pointers; it discovers them and hands them to the visitor, which decides whether
+    to chase, mark, fix up, or ignore. Recurses into nested structs and inline arrays
+    of structs automatically.
+
+    Supported field shapes:
+        T  field                value of base type   -> recurse if base is struct/union
+        T* field                single pointer       -> one visit
+        T  field[N]             inline array         -> recurse N times if base is struct
+        T* field[N]             array of pointers    -> N visits
+        T (*field)[N]           pointer to array     -> one visit
+
+    Function pointers and >2-level modifier chains are skipped.
+==============================================================================================*/
+
+typedef void ( *rs_ref_visitor_t )( void** ref_slot,
+                                    uint16_t pointee_type_id,
+                                    const rs_field_t* field,
+                                    void* user );
+
+void        rs_walk_refs            ( void* instance, uint16_t type_id,
+                                      rs_ref_visitor_t visit, void* user );
 
 /*==============================================================================================
     Diagnostics

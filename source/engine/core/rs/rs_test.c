@@ -438,6 +438,223 @@ test_function_sigs( void )
 }
 
 /*==============================================================================================
+    Bitset enum test
+==============================================================================================*/
+
+typedef enum rs_test_perm_e
+{
+    RS_TEST_PERM_NONE    = 0,
+    RS_TEST_PERM_READ    = 1 << 0,
+    RS_TEST_PERM_WRITE   = 1 << 1,
+    RS_TEST_PERM_EXEC    = 1 << 2,
+    RS_TEST_PERM_ALL     = RS_TEST_PERM_READ | RS_TEST_PERM_WRITE | RS_TEST_PERM_EXEC,
+} rs_test_perm_t;
+
+static void
+test_bitset( void )
+{
+    printf( "\n=== rs: bitset enum ===\n" );
+
+    rs_init();
+    uint8_t game = rs_push_frame( "game", 1 );
+
+    rs_type_t type = { 0 };
+    type.name_sid  = sid_intern_cstr( "perm_t" );
+    type.hash      = sid_hash( "perm_t" );
+    type.size      = (uint16_t)sizeof( rs_test_perm_t );
+    type.align     = (uint8_t)_Alignof( rs_test_perm_t );
+
+    /* Order matters when decoding: place multi-bit masks (ALL) BEFORE the single-bit
+       components so a value of 0b111 prints as "ALL" instead of "READ | WRITE | EXEC".
+       Try swapping the order to see the alternative formatting. */
+    rs_enumerator_t entries[ 5 ] = {
+        { sid_intern_cstr( "NONE"  ), RS_TEST_PERM_NONE  },
+        { sid_intern_cstr( "ALL"   ), RS_TEST_PERM_ALL   },
+        { sid_intern_cstr( "READ"  ), RS_TEST_PERM_READ  },
+        { sid_intern_cstr( "WRITE" ), RS_TEST_PERM_WRITE },
+        { sid_intern_cstr( "EXEC"  ), RS_TEST_PERM_EXEC  },
+    };
+
+    uint16_t tid = rs_register_bitset( &type, entries, 5 );
+    rs_finalize_frame( game );
+
+    printf( "  is_bitset(perm_t) = %s\n", rs_enum_is_bitset( tid ) ? "true" : "false" );
+    assert( rs_enum_is_bitset( tid ) );
+
+    char buf[ 64 ];
+
+    /* 0 -> "NONE" via the zero-valued enumerator. */
+    rs_bitset_describe( tid, 0, buf, sizeof( buf ) );
+    printf( "  describe(0)               = \"%s\"\n", buf );
+
+    /* READ|WRITE -> "READ | WRITE" */
+    rs_bitset_describe( tid, RS_TEST_PERM_READ | RS_TEST_PERM_WRITE, buf, sizeof( buf ) );
+    printf( "  describe(READ|WRITE)      = \"%s\"\n", buf );
+
+    /* All bits -> "ALL" because the multi-bit mask comes first in registration. */
+    rs_bitset_describe( tid, RS_TEST_PERM_ALL, buf, sizeof( buf ) );
+    printf( "  describe(ALL)             = \"%s\"\n", buf );
+
+    /* Unknown bits -> tail hex */
+    rs_bitset_describe( tid, RS_TEST_PERM_READ | 0x100, buf, sizeof( buf ) );
+    printf( "  describe(READ|0x100)      = \"%s\"\n", buf );
+
+    /* find_flag(WRITE) */
+    const rs_enumerator_t* w = rs_bitset_find_flag( tid, RS_TEST_PERM_WRITE );
+    printf( "  find_flag(WRITE)          = %s\n", w ? sid_cstr( w->name_sid ) : "?" );
+    assert( w && w->value == RS_TEST_PERM_WRITE );
+
+    rs_pop_frame( game );
+    rs_exit();
+}
+
+/*==============================================================================================
+    Reference walker test
+
+      Reflect:
+          struct inner_t { vec3_t* p; };
+          struct walk_t  { int32_t id; vec3_t* single; vec3_t* slots[3]; inner_t nested; };
+
+      Expected visits: 1 (single) + 3 (slots) + 1 (nested.p) = 5
+==============================================================================================*/
+
+typedef struct rs_test_inner_s
+{
+    rs_test_vec3_t* p;
+} rs_test_inner_t;
+
+typedef struct rs_test_walk_s
+{
+    int32_t          id;
+    rs_test_vec3_t*  single;
+    rs_test_vec3_t*  slots[ 3 ];
+    rs_test_inner_t  nested;
+} rs_test_walk_t;
+
+typedef struct
+{
+    int       count;
+    uint16_t  expected_pointee_id;
+} rs_test_walk_ctx_t;
+
+static void
+rs_test_walk_visitor( void** slot, uint16_t pointee_id, const rs_field_t* f, void* user )
+{
+    rs_test_walk_ctx_t* ctx = (rs_test_walk_ctx_t*)user;
+    ctx->count++;
+
+    const rs_type_t* pointee = rs_get_type( pointee_id );
+    printf( "  visit field '%-12s' slot=%p -> %p  pointee=%s\n",
+            sid_cstr( f->name_sid ),
+            (void*)slot, *slot,
+            pointee ? sid_cstr( pointee->name_sid ) : "?" );
+
+    /* Loose sanity check: every visit in this test should point at a vec3_t. */
+    assert( pointee_id == ctx->expected_pointee_id );
+}
+
+static void
+test_walker( void )
+{
+    printf( "\n=== rs: reference walker ===\n" );
+
+    rs_init();
+    uint8_t game = rs_push_frame( "game", 1 );
+
+    rs_test_register_vec3();
+
+    /* Register rs_test_inner_t { vec3_t* p; } */
+    {
+        const uint32_t h_inner = sid_hash( "inner_t" );
+        const uint32_t h_vec3  = sid_hash( "vec3_t" );
+
+        rs_type_t type = { 0 };
+        type.name_sid  = sid_intern_cstr( "inner_t" );
+        type.hash      = h_inner;
+        type.size      = RS_SIZEOF( rs_test_inner_t );
+        type.align     = RS_ALIGNOF( rs_test_inner_t );
+        type.kind      = RS_KIND_STRUCT;
+
+        rs_field_t fields[ 1 ] = { 0 };
+        uint32_t   hashes[ 1 ] = { h_vec3 };
+
+        fields[ 0 ].name_sid = sid_intern_cstr( "p" );
+        fields[ 0 ].offset   = RS_OFFSETOF( rs_test_inner_t, p );
+        fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_inner_t, p );
+        fields[ 0 ].mods     = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+
+        rs_register_type( &type, fields, hashes, 1 );
+    }
+
+    /* Register rs_test_walk_t */
+    uint16_t walk_tid;
+    {
+        const uint32_t h_walk  = sid_hash( "walk_t" );
+        const uint32_t h_int32 = sid_hash( "int32_t" );
+        const uint32_t h_vec3  = sid_hash( "vec3_t" );
+        const uint32_t h_inner = sid_hash( "inner_t" );
+
+        rs_type_t type = { 0 };
+        type.name_sid  = sid_intern_cstr( "walk_t" );
+        type.hash      = h_walk;
+        type.size      = RS_SIZEOF( rs_test_walk_t );
+        type.align     = RS_ALIGNOF( rs_test_walk_t );
+        type.kind      = RS_KIND_STRUCT;
+
+        rs_field_t fields[ 4 ] = { 0 };
+        uint32_t   hashes[ 4 ] = { h_int32, h_vec3, h_vec3, h_inner };
+
+        fields[ 0 ].name_sid = sid_intern_cstr( "id" );
+        fields[ 0 ].offset   = RS_OFFSETOF( rs_test_walk_t, id );
+        fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_walk_t, id );
+
+        fields[ 1 ].name_sid = sid_intern_cstr( "single" );
+        fields[ 1 ].offset   = RS_OFFSETOF( rs_test_walk_t, single );
+        fields[ 1 ].size     = RS_FIELD_SIZE( rs_test_walk_t, single );
+        fields[ 1 ].mods     = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+
+        fields[ 2 ].name_sid = sid_intern_cstr( "slots" );
+        fields[ 2 ].offset   = RS_OFFSETOF( rs_test_walk_t, slots );
+        fields[ 2 ].size     = RS_FIELD_SIZE( rs_test_walk_t, slots );
+        fields[ 2 ].mods     = RS_MODS( RS_M_PTR, RS_M_ARRAY, RS_M_END, RS_M_END );
+        fields[ 2 ].aux      = 3;
+
+        fields[ 3 ].name_sid = sid_intern_cstr( "nested" );
+        fields[ 3 ].offset   = RS_OFFSETOF( rs_test_walk_t, nested );
+        fields[ 3 ].size     = RS_FIELD_SIZE( rs_test_walk_t, nested );
+
+        walk_tid = rs_register_type( &type, fields, hashes, 4 );
+    }
+
+    rs_finalize_frame( game );
+
+    /* Build an instance with distinctive dummy pointers so the visitor output is readable. */
+    rs_test_vec3_t v1 = { 1.0f, 0.0f, 0.0f };
+    rs_test_vec3_t v2 = { 0.0f, 2.0f, 0.0f };
+    rs_test_vec3_t v3 = { 0.0f, 0.0f, 3.0f };
+    rs_test_vec3_t v4 = { 9.0f, 9.0f, 9.0f };
+    rs_test_vec3_t v5 = { 7.0f, 7.0f, 7.0f };
+
+    rs_test_walk_t inst = { 0 };
+    inst.id        = 42;
+    inst.single    = &v1;
+    inst.slots[0]  = &v2;
+    inst.slots[1]  = &v3;
+    inst.slots[2]  = NULL;          /* walker still visits null slots */
+    inst.nested.p  = &v4;
+    (void)v5;
+
+    rs_test_walk_ctx_t ctx = { 0, rs_find_type_by_name( "vec3_t" ) };
+    rs_walk_refs( &inst, walk_tid, rs_test_walk_visitor, &ctx );
+
+    printf( "  total visits = %d (expected 5)\n", ctx.count );
+    assert( ctx.count == 5 );
+
+    rs_pop_frame( game );
+    rs_exit();
+}
+
+/*==============================================================================================
     Entry
 ==============================================================================================*/
 
@@ -457,7 +674,9 @@ rs_run_tests( void )
     test_mod_decode();
     test_hot_reload_rs();
     test_enums();
+    test_bitset();
     test_function_sigs();
+    test_walker();
 
     printf( "\nrs: all tests complete.\n" );
 }

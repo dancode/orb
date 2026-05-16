@@ -141,6 +141,118 @@ rs_enum_find_by_value( uint16_t type_id, int64_t value )
 }
 
 /*==============================================================================================
+    Bitset-enum helpers
+
+      Set semantics: an enumerator E is "set" in `value` iff E.value != 0
+                     and (value & E.value) == E.value.
+
+      Decoding is order-dependent when enumerators have overlapping bits (e.g. a multi-bit
+      mask alongside its single-bit components). Place multi-bit constants FIRST in the
+      registration order to get them matched preferentially.
+==============================================================================================*/
+
+bool
+rs_enum_is_bitset( uint16_t type_id )
+{
+    const rs_type_t* t = rs_get_type( type_id );
+    return t && t->kind == RS_KIND_ENUM && ( t->type_flags & RS_TFLAG_BITSET );
+}
+
+const rs_enumerator_t*
+rs_bitset_find_flag( uint16_t type_id, int64_t mask )
+{
+    const rs_type_t* t = rs_get_type( type_id );
+    if ( !t || t->kind != RS_KIND_ENUM || mask == 0 )
+        return NULL;
+
+    for ( uint16_t i = 0; i < t->field_count; i++ )
+    {
+        const rs_enumerator_t* e = &g_rs.enums[ t->field_index + i ];
+        if ( e->value == mask )
+            return e;
+    }
+    return NULL;
+}
+
+uint16_t
+rs_bitset_each_set_flag( uint16_t type_id, int64_t value, rs_enum_cb_t cb, void* user )
+{
+    const rs_type_t* t = rs_get_type( type_id );
+    if ( !t || t->kind != RS_KIND_ENUM || !cb )
+        return 0;
+
+    int64_t  remaining = value;
+    uint16_t hits      = 0;
+    for ( uint16_t i = 0; i < t->field_count; i++ )
+    {
+        const rs_enumerator_t* e = &g_rs.enums[ t->field_index + i ];
+        if ( e->value == 0 ) continue;
+        if ( ( remaining & e->value ) == e->value )
+        {
+            uint16_t eid = (uint16_t)( t->field_index + i );
+            cb( eid, e, user );
+            remaining &= ~e->value;
+            hits++;
+        }
+    }
+    return hits;
+}
+
+size_t
+rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size )
+{
+    if ( !buf || buf_size == 0 ) return 0;
+    buf[ 0 ] = '\0';
+
+    const rs_type_t* t = rs_get_type( type_id );
+    if ( !t || t->kind != RS_KIND_ENUM ) return 0;
+
+    /* Special case: zero. Prefer a registered zero-named enumerator (often "NONE"). */
+    if ( value == 0 )
+    {
+        const rs_enumerator_t* z = rs_enum_find_by_value( type_id, 0 );
+        const char* s = z ? sid_cstr( z->name_sid ) : "0";
+        size_t      n = 0;
+        while ( s[ n ] && n + 1 < buf_size ) { buf[ n ] = s[ n ]; n++; }
+        buf[ n ] = '\0';
+        return n;
+    }
+
+    size_t  pos        = 0;
+    int64_t remaining  = value;
+    bool    first      = true;
+
+    for ( uint16_t i = 0; i < t->field_count; i++ )
+    {
+        const rs_enumerator_t* e = &g_rs.enums[ t->field_index + i ];
+        if ( e->value == 0 ) continue;
+        if ( ( remaining & e->value ) != e->value ) continue;
+
+        if ( !first )
+        {
+            const char* sep = " | ";
+            while ( *sep && pos + 1 < buf_size ) buf[ pos++ ] = *sep++;
+        }
+        const char* name = sid_cstr( e->name_sid );
+        while ( *name && pos + 1 < buf_size ) buf[ pos++ ] = *name++;
+        first = false;
+        remaining &= ~e->value;
+    }
+
+    if ( remaining != 0 )
+    {
+        char tmp[ 32 ];
+        snprintf( tmp, sizeof( tmp ), "%s0x%llx",
+                  first ? "" : " | ", (long long)remaining );
+        const char* p = tmp;
+        while ( *p && pos + 1 < buf_size ) buf[ pos++ ] = *p++;
+    }
+
+    if ( pos < buf_size ) buf[ pos ] = '\0';
+    return pos;
+}
+
+/*==============================================================================================
     Function signature accessors (kind == RS_KIND_FUNCTION)
 ==============================================================================================*/
 
