@@ -14,7 +14,6 @@
 #include "engine/core/core.h"
 
 int  intern_test( void );                        // ... temporary code ...
-void reflection_test( void );                    // ... temporary code ...
 void test_core_cvar( int argc, char** argv );    // ... temporary code ...
 
 /*============================================================================================*/
@@ -27,7 +26,7 @@ core_test( void )
     {
         /// mem_test();           // <-- test memory system
         // intern_test();        // <-- test string interning system
-        reflection_test();    // <-- test reflection system
+        // reflection_test();    // <-- test reflection system
     }
 
     if ( 0 )

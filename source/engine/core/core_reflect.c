@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    core/core_reflect.c : Unity build entry point for the reflection system.
+    core/core_rs.c : Unity build entry point for the rs_ reflection system.
 
 ==============================================================================================*/
 
@@ -9,53 +9,45 @@
 /*============================================================================================*/
 
 #include "sid/sid.h"
-#include "reflect/reflect.h"
+#include "reflect/rs.h"
 
-/*============================================================================================*/
+/*==============================================================================================
+    The registry is defined here so all rs_*.c translation units share it through the
+    unity build. Tables are flat and append-only within a frame; rs_pop_frame() truncates
+    them back to that frame's starting marks.
+==============================================================================================*/
 
-typedef struct rf_module_s
+typedef struct rs_registry_s
 {
-    sid_t    name_sid;          // Module name
-    uint32_t version;           // Module version
-    uint32_t load_count;        // Number of times loaded
+    uint16_t        type_count;
+    uint16_t        field_count;
+    uint16_t        attr_count;
+    uint16_t        enum_count;
+    uint16_t        frame_count;
+    uint8_t         _pad[ 2 ];
 
-    uint16_t first_type_id;     // First type index (for iteration) -- rename type_index (like other code)
-    uint16_t type_count;        // Types defined by this module
+    rs_type_t       types[ RS_MAX_TYPES ];
+    rs_field_t      fields[ RS_MAX_FIELDS ];
+    rs_attrib_t     attrs[ RS_MAX_ATTRS ];
+    rs_enum_t       enums[ RS_MAX_ENUMS ];
+    rs_frame_t      frames[ RS_MAX_FRAMES ];
 
-    uint8_t  state;             // rf_module_state_t
-    uint8_t  reserved[ 3 ];     // Temp padding
+    uint16_t        type_hash[ RS_TYPE_HASH_SIZE ];
 
-    void*    dll_handle;        // Platform-specific handle
+    /* Parallel to fields[]: pending base-type hash for forward-ref resolve.
+       Populated by rs_register_type, consumed by rs_finalize_frame. Kept around
+       afterward only because truncation on pop is automatic via field_count. */
+    uint32_t pending_type_hash[ RS_MAX_FIELDS ];
 
-} rf_module_t;
-
-/*============================================================================================*/
-
-typedef struct registry_s
-{
-    uint16_t    type_count;                             // How many registered
-    uint16_t    field_count;                            // How many registered fields
-    uint16_t    attr_count;                             // How many registered attributes
-    uint16_t    reserved;                               // Padding
-
-    rf_type_t   type_array      [ MAX_TYPES ];          // All registered types
-    rf_field_t  field_array     [ MAX_FIELDS ];         // All registered fields
-    rf_attrib_t attrib_array    [ MAX_ATTRIBUTES ];     // All registered attributes
-    uint16_t    type_hash       [ TYPE_HASH_SIZE ];     // Index hash into type array (next chained)
-
-    rf_module_t module_array    [ MAX_MODULES ];        // module info
-    uint8_t     module_count;                           // number of registered modules
-    uint8_t     transaction_active;                     // 1 = in transaction
-    uint16_t    transaction_checkpoint;                 // Rollback point
-
-} registry_t;
+} rs_registry_t;
 
 /*============================================================================================*/
 
-#include "reflect/reflect_registry.c"
-#include "reflect/reflect_module.c"
-#include "reflect/reflect_access.c"
-#include "reflect/reflect_print.c"
-#include "reflect/reflect_test.c"
+#include "reflect/rs_registry.c"
+#include "reflect/rs_access.c"
+#include "reflect/rs_walk.c"
+#include "reflect/rs_serialize.c"
+#include "reflect/rs_print.c"
+#include "reflect/rs_test.c"
 
 /*============================================================================================*/

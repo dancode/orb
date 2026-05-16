@@ -189,7 +189,7 @@ test_basic( void )
     printf( "\n=== rs: basic registration ===\n" );
 
     rs_init();
-    uint8_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game", 1 );
 
     rs_test_register_vec3();
     rs_test_register_transform();
@@ -211,14 +211,13 @@ test_hot_reload_rs( void )
 
     rs_init();
 
-    uint8_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game", 1 );
     rs_test_register_vec3();
     rs_test_register_transform();
     rs_test_register_entity();
     rs_finalize_frame( game );
 
-    uint16_t t_count, f_count;
-    uint8_t  fr_count;
+    uint16_t t_count, f_count, fr_count;
     rs_get_stats( &t_count, &f_count, &fr_count );
     printf( "  before reload: types=%u fields=%u frames=%u\n", t_count, f_count, fr_count );
 
@@ -251,7 +250,7 @@ test_mod_decode( void )
     printf( "\n=== rs: mod chain pretty-print ===\n" );
 
     rs_init();
-    uint8_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game", 1 );
 
     rs_test_register_vec3();
     rs_test_register_transform();
@@ -283,7 +282,7 @@ test_enums( void )
     printf( "\n=== rs: enum registration ===\n" );
 
     rs_init();
-    uint8_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game", 1 );
 
     rs_type_t type = { 0 };
     type.name_sid  = sid_intern_cstr( "color_t" );
@@ -292,7 +291,7 @@ test_enums( void )
     type.align     = (uint8_t)_Alignof( rs_test_color_t );
     /* kind is forced to RS_KIND_ENUM by rs_register_enum */
 
-    rs_enumerator_t entries[ 4 ] = {
+    rs_enum_t entries[ 4 ] = {
         { sid_intern_cstr( "RED" ),   RS_TEST_COLOR_RED   },
         { sid_intern_cstr( "GREEN" ), RS_TEST_COLOR_GREEN },
         { sid_intern_cstr( "BLUE" ),  RS_TEST_COLOR_BLUE  },
@@ -305,12 +304,12 @@ test_enums( void )
     rs_print_type( tid );
 
     /* Lookup by name */
-    const rs_enumerator_t* by_name = rs_enum_find_by_name( tid, "BLUE" );
+    const rs_enum_t* by_name = rs_enum_find_by_name( tid, "BLUE" );
     printf( "  find_by_name(\"BLUE\")  -> value=%lld\n",
             by_name ? (long long)by_name->value : -1 );
 
     /* Lookup by value */
-    const rs_enumerator_t* by_value = rs_enum_find_by_value( tid, 0xFF );
+    const rs_enum_t* by_value = rs_enum_find_by_value( tid, 0xFF );
     printf( "  find_by_value(0xFF)   -> name=%s\n",
             by_value ? sid_cstr( by_value->name_sid ) : "<none>" );
 
@@ -355,7 +354,7 @@ test_function_sigs( void )
     printf( "\n=== rs: function signatures ===\n" );
 
     rs_init();
-    uint8_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game", 1 );
 
     /* vec3_t is needed by the signature's second parameter. */
     rs_test_register_vec3();
@@ -438,6 +437,155 @@ test_function_sigs( void )
 }
 
 /*==============================================================================================
+    Serialization round-trip test
+
+      Reflect a struct that exercises all the redaction rules:
+        - primitives, nested struct, inline char array        -> preserved
+        - pointer field                                       -> zeroed on save
+        - field marked @transient                             -> zeroed on save
+      Then write, scribble the destination, read back, and verify byte-for-byte equality
+      with the expected post-redaction state.
+==============================================================================================*/
+
+typedef struct rs_test_save_s
+{
+    int32_t          id;
+    float            health;
+    rs_test_vec3_t   position;       /* nested struct        */
+    char             name[ 16 ];     /* inline array         */
+    rs_test_vec3_t*  cache_ptr;      /* pointer - redacted   */
+    uint32_t         cached_hash;    /* @transient - redacted */
+} rs_test_save_t;
+
+static void
+test_serialize( void )
+{
+    printf( "\n=== rs: serialization round-trip ===\n" );
+
+    rs_init();
+    uint16_t game = rs_push_frame( "game", 1 );
+
+    rs_test_register_vec3();
+
+    /* Register save_t */
+    const uint32_t h_save  = sid_hash( "save_t" );
+    const uint32_t h_int32 = sid_hash( "int32_t" );
+    const uint32_t h_u32   = sid_hash( "uint32_t" );
+    const uint32_t h_float = sid_hash( "float" );
+    const uint32_t h_vec3  = sid_hash( "vec3_t" );
+    const uint32_t h_char  = sid_hash( "char" );
+
+    rs_type_t type = { 0 };
+    type.name_sid  = sid_intern_cstr( "save_t" );
+    type.hash      = h_save;
+    type.size      = RS_SIZEOF( rs_test_save_t );
+    type.align     = RS_ALIGNOF( rs_test_save_t );
+    type.kind      = RS_KIND_STRUCT;
+
+    rs_field_t fields[ 6 ] = { 0 };
+    uint32_t   hashes[ 6 ] = { h_int32, h_float, h_vec3, h_char, h_vec3, h_u32 };
+
+    fields[ 0 ].name_sid = sid_intern_cstr( "id" );
+    fields[ 0 ].offset   = RS_OFFSETOF( rs_test_save_t, id );
+    fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_save_t, id );
+
+    fields[ 1 ].name_sid = sid_intern_cstr( "health" );
+    fields[ 1 ].offset   = RS_OFFSETOF( rs_test_save_t, health );
+    fields[ 1 ].size     = RS_FIELD_SIZE( rs_test_save_t, health );
+
+    fields[ 2 ].name_sid = sid_intern_cstr( "position" );
+    fields[ 2 ].offset   = RS_OFFSETOF( rs_test_save_t, position );
+    fields[ 2 ].size     = RS_FIELD_SIZE( rs_test_save_t, position );
+
+    fields[ 3 ].name_sid = sid_intern_cstr( "name" );
+    fields[ 3 ].offset   = RS_OFFSETOF( rs_test_save_t, name );
+    fields[ 3 ].size     = RS_FIELD_SIZE( rs_test_save_t, name );
+    fields[ 3 ].mods     = RS_MODS( RS_M_ARRAY, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 3 ].aux      = 16;
+
+    fields[ 4 ].name_sid = sid_intern_cstr( "cache_ptr" );
+    fields[ 4 ].offset   = RS_OFFSETOF( rs_test_save_t, cache_ptr );
+    fields[ 4 ].size     = RS_FIELD_SIZE( rs_test_save_t, cache_ptr );
+    fields[ 4 ].mods     = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+
+    fields[ 5 ].name_sid = sid_intern_cstr( "cached_hash" );
+    fields[ 5 ].offset   = RS_OFFSETOF( rs_test_save_t, cached_hash );
+    fields[ 5 ].size     = RS_FIELD_SIZE( rs_test_save_t, cached_hash );
+
+    uint16_t tid = rs_register_type( &type, fields, hashes, 6 );
+
+    /* Mark cached_hash @transient. */
+    const rs_field_t* hash_field = rs_find_field( tid, "cached_hash" );
+    assert( hash_field );
+    {
+        uint16_t fid = (uint16_t)( hash_field - &g_rs.fields[ 0 ] );
+        rs_attrib_t a = { 0 };
+        a.name_sid    = sid_intern_cstr( "transient" );
+        a.type        = RS_ATTR_BOOL;
+        a.value.u32   = 1;
+        rs_field_add_attr( fid, &a );
+    }
+
+    rs_finalize_frame( game );
+
+    /* --- Source instance with distinctive values --- */
+    rs_test_vec3_t dummy = { 9, 9, 9 };
+    rs_test_save_t src   = { 0 };
+    src.id           = 42;
+    src.health       = 75.5f;
+    src.position     = (rs_test_vec3_t){ 1.0f, 2.0f, 3.0f };
+    memcpy( src.name, "hello", 6 );
+    src.cache_ptr    = &dummy;      /* should be zeroed on save */
+    src.cached_hash  = 0xCAFEBABE;  /* @transient - should be zeroed on save */
+
+    /* --- Write --- */
+    uint8_t buf[ 256 ];
+    size_t  written = rs_write( &src, tid, buf, sizeof( buf ) );
+    printf( "  wrote %zu bytes (header=%d + body=%u)\n",
+            written, RS_SAVE_HEADER_SIZE, (unsigned)sizeof( rs_test_save_t ) );
+    assert( written == (size_t)RS_SAVE_HEADER_SIZE + sizeof( rs_test_save_t ) );
+
+    /* peek */
+    uint32_t peeked = rs_peek_type_hash( buf, written );
+    printf( "  peek_type_hash    = 0x%08x  (expect 0x%08x)\n", peeked, h_save );
+    assert( peeked == h_save );
+
+    /* --- Read back into a deliberately-trashed destination --- */
+    rs_test_save_t dst;
+    memset( &dst, 0xAA, sizeof( dst ) );
+
+    size_t          consumed = 0;
+    rs_io_status_t  st       = rs_read( &dst, tid, buf, written, &consumed );
+    printf( "  read status=%d consumed=%zu\n", (int)st, consumed );
+    assert( st == RS_IO_OK );
+    assert( consumed == written );
+
+    /* --- Verify --- */
+    assert( dst.id          == 42 );
+    assert( dst.health      == 75.5f );
+    assert( dst.position.x  == 1.0f && dst.position.y == 2.0f && dst.position.z == 3.0f );
+    assert( memcmp( dst.name, "hello", 6 ) == 0 );
+    assert( dst.cache_ptr   == NULL );          /* pointer redacted */
+    assert( dst.cached_hash == 0 );             /* transient redacted */
+    printf( "  round-trip OK; pointer and @transient cleared as expected\n" );
+
+    /* --- Schema-hash mismatch: corrupt the header and expect refusal --- */
+    uint8_t corrupt[ 256 ];
+    memcpy( corrupt, buf, written );
+    corrupt[ 8 ] ^= 0x01;       /* flip a bit in schema_hash */
+    st = rs_read( &dst, tid, corrupt, written, NULL );
+    printf( "  corrupt schema -> status=%d (expect %d)\n", (int)st, RS_IO_INCOMPAT );
+    assert( st == RS_IO_INCOMPAT );
+
+    /* --- Truncated buffer --- */
+    st = rs_read( &dst, tid, buf, 10, NULL );
+    assert( st == RS_IO_TRUNCATED );
+
+    rs_pop_frame( game );
+    rs_exit();
+}
+
+/*==============================================================================================
     Bitset enum test
 ==============================================================================================*/
 
@@ -456,7 +604,7 @@ test_bitset( void )
     printf( "\n=== rs: bitset enum ===\n" );
 
     rs_init();
-    uint8_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game", 1 );
 
     rs_type_t type = { 0 };
     type.name_sid  = sid_intern_cstr( "perm_t" );
@@ -467,7 +615,7 @@ test_bitset( void )
     /* Order matters when decoding: place multi-bit masks (ALL) BEFORE the single-bit
        components so a value of 0b111 prints as "ALL" instead of "READ | WRITE | EXEC".
        Try swapping the order to see the alternative formatting. */
-    rs_enumerator_t entries[ 5 ] = {
+    rs_enum_t entries[ 5 ] = {
         { sid_intern_cstr( "NONE"  ), RS_TEST_PERM_NONE  },
         { sid_intern_cstr( "ALL"   ), RS_TEST_PERM_ALL   },
         { sid_intern_cstr( "READ"  ), RS_TEST_PERM_READ  },
@@ -500,7 +648,7 @@ test_bitset( void )
     printf( "  describe(READ|0x100)      = \"%s\"\n", buf );
 
     /* find_flag(WRITE) */
-    const rs_enumerator_t* w = rs_bitset_find_flag( tid, RS_TEST_PERM_WRITE );
+    const rs_enum_t* w = rs_bitset_find_flag( tid, RS_TEST_PERM_WRITE );
     printf( "  find_flag(WRITE)          = %s\n", w ? sid_cstr( w->name_sid ) : "?" );
     assert( w && w->value == RS_TEST_PERM_WRITE );
 
@@ -559,7 +707,7 @@ test_walker( void )
     printf( "\n=== rs: reference walker ===\n" );
 
     rs_init();
-    uint8_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game", 1 );
 
     rs_test_register_vec3();
 
@@ -677,6 +825,7 @@ rs_run_tests( void )
     test_bitset();
     test_function_sigs();
     test_walker();
+    test_serialize();
 
     printf( "\nrs: all tests complete.\n" );
 }

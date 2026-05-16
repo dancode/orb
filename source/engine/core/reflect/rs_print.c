@@ -44,23 +44,23 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
     const rs_type_t* base = rs_get_type( f->type_id );
     pos = rs_str_append( buf, buf_size, pos, base ? sid_cstr( base->name_sid ) : "<unresolved>" );
 
-    /* Detect whether any slot is a PTR-following-ARRAY, which needs parentheses
-       in C syntax ("T(*)[N]" rather than "T*[N]"). We do a quick scan first to
-       decide. */
-    bool needs_parens   = false;
-    int  array_after_ptr = 0;
+    /* Pre-scan: detect ARRAY followed by PTR, which requires parentheses in C syntax.
+       e.g. T(*)[N] rather than T*[N]. `saw_array` becomes true once we see an ARRAY slot;
+       if a PTR slot then follows, parens are needed. */
+    bool needs_parens = false;
+    bool saw_array    = false;
     for ( int slot = 0; slot < 4; slot++ )
     {
         uint8_t s = RS_MOD_GET( f->mods, slot );
         if ( RS_MOD_OP( s ) == RS_MOD_NONE )
             break;
-        if ( RS_MOD_OP( s ) == RS_MOD_PTR && array_after_ptr )
+        if ( RS_MOD_OP( s ) == RS_MOD_PTR && saw_array )
         {
             needs_parens = true;
             break;
         }
         if ( RS_MOD_OP( s ) == RS_MOD_ARRAY )
-            array_after_ptr = 1;
+            saw_array = true;
     }
 
     if ( needs_parens )
@@ -120,7 +120,7 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
     }
 
     if ( needs_parens )
-        pos = rs_str_append( buf, buf_size, pos, ")" );
+        pos = rs_str_append( buf, buf_size, pos, ")" );  /* safety: ARRAY with no following PTR slot */
 
     return pos;
 }
@@ -143,23 +143,24 @@ rs_print_type( uint16_t type_id )
         ( t->kind == RS_KIND_PRIM     ) ? "prim"     :
         ( t->kind == RS_KIND_STRUCT   ) ? "struct"   :
         ( t->kind == RS_KIND_ENUM     ) ? "enum"     :
+        ( t->kind == RS_KIND_BITSET   ) ? "bitset"   :
         ( t->kind == RS_KIND_UNION    ) ? "union"    :
         ( t->kind == RS_KIND_FUNCTION ) ? "function" : "?";
 
     const char* member_word =
-        ( t->kind == RS_KIND_ENUM     ) ? "enumerators" :
-        ( t->kind == RS_KIND_FUNCTION ) ? "params+1"    : "fields";
+        rs_kind_is_enum( (rs_kind_t)t->kind ) ? "enumerators" :
+        ( t->kind == RS_KIND_FUNCTION )        ? "params+1"    : "fields";
 
     printf( "type[%u] %s  kind=%s size=%u align=%u frame=%u schema=0x%08x %s=%u\n",
             type_id, sid_cstr( t->name_sid ), kind_str,
             t->size, t->align, t->frame_id, t->schema_hash, member_word, t->field_count );
 
-    if ( t->kind == RS_KIND_ENUM )
+    if ( rs_kind_is_enum( (rs_kind_t)t->kind ) )
     {
         for ( uint16_t i = 0; i < t->field_count; i++ )
         {
             uint16_t eid = (uint16_t)( t->field_index + i );
-            const rs_enumerator_t* e = &g_rs.enums[ eid ];
+            const rs_enum_t* e = &g_rs.enums[ eid ];
             printf( "    enum[%u] %-24s = %lld\n",
                     eid, sid_cstr( e->name_sid ), (long long)e->value );
         }
@@ -239,7 +240,7 @@ rs_print_types( void )
 ==============================================================================================*/
 
 void
-rs_print_frame( uint8_t frame_id )
+rs_print_frame( uint16_t frame_id )
 {
     const rs_frame_t* f = rs_get_frame( frame_id );
     if ( !f )

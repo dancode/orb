@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+    <Type Name="sid_s">
+        <DisplayString Condition="off == 0">(invalid)</DisplayString>
+        <DisplayString>{g_intern.arena.base + off,s}</DisplayString>
+
+        <Expand>
+            <Item Name="String">g_intern.arena.base + off,s</Item>
+            <Item Name="Length">(uint8_t)g_intern.arena.base[off - 1]</Item>
+            <Item Name="Offset">off</Item>
+        </Expand>
+    </Type>
+
+</AutoVisualizer>

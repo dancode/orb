@@ -96,10 +96,10 @@ rs_field_get_attr( uint16_t field_id, const char* name )
 }
 
 /*==============================================================================================
-    Enumerators (only valid for types with kind == RS_KIND_ENUM)
+    Enumerators (only valid for types with rs_kind_is_enum(kind))
 ==============================================================================================*/
 
-const rs_enumerator_t*
+const rs_enum_t*
 rs_get_enumerator( uint16_t enum_id )
 {
     if ( enum_id >= g_rs.enum_count )
@@ -107,33 +107,33 @@ rs_get_enumerator( uint16_t enum_id )
     return &g_rs.enums[ enum_id ];
 }
 
-const rs_enumerator_t*
+const rs_enum_t*
 rs_enum_find_by_name( uint16_t type_id, const char* name )
 {
     const rs_type_t* t = rs_get_type( type_id );
-    if ( !t || t->kind != RS_KIND_ENUM || !name )
+    if ( !t || !rs_kind_is_enum( (rs_kind_t)t->kind ) || !name )
         return NULL;
 
     sid_t target = sid_intern_cstr( name );
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
-        const rs_enumerator_t* e = &g_rs.enums[ t->field_index + i ];
+        const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
         if ( sid_equals( e->name_sid, target ) )
             return e;
     }
     return NULL;
 }
 
-const rs_enumerator_t*
+const rs_enum_t*
 rs_enum_find_by_value( uint16_t type_id, int64_t value )
 {
     const rs_type_t* t = rs_get_type( type_id );
-    if ( !t || t->kind != RS_KIND_ENUM )
+    if ( !t || !rs_kind_is_enum( (rs_kind_t)t->kind ) )
         return NULL;
 
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
-        const rs_enumerator_t* e = &g_rs.enums[ t->field_index + i ];
+        const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
         if ( e->value == value )
             return e;
     }
@@ -155,19 +155,19 @@ bool
 rs_enum_is_bitset( uint16_t type_id )
 {
     const rs_type_t* t = rs_get_type( type_id );
-    return t && t->kind == RS_KIND_ENUM && ( t->type_flags & RS_TFLAG_BITSET );
+    return t && t->kind == RS_KIND_BITSET;
 }
 
-const rs_enumerator_t*
+const rs_enum_t*
 rs_bitset_find_flag( uint16_t type_id, int64_t mask )
 {
     const rs_type_t* t = rs_get_type( type_id );
-    if ( !t || t->kind != RS_KIND_ENUM || mask == 0 )
+    if ( !t || t->kind != RS_KIND_BITSET || mask == 0 )
         return NULL;
 
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
-        const rs_enumerator_t* e = &g_rs.enums[ t->field_index + i ];
+        const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
         if ( e->value == mask )
             return e;
     }
@@ -178,14 +178,17 @@ uint16_t
 rs_bitset_each_set_flag( uint16_t type_id, int64_t value, rs_enum_cb_t cb, void* user )
 {
     const rs_type_t* t = rs_get_type( type_id );
-    if ( !t || t->kind != RS_KIND_ENUM || !cb )
+    if ( !t || t->kind != RS_KIND_BITSET || !cb )
         return 0;
 
+    /* Greedy bit-claim: each matched flag's bits are cleared from `remaining` so that
+       smaller overlapping flags cannot double-fire on the same bits. Registration order
+       therefore controls which flag wins (e.g. ALL before READ/WRITE/EXEC). */
     int64_t  remaining = value;
     uint16_t hits      = 0;
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
-        const rs_enumerator_t* e = &g_rs.enums[ t->field_index + i ];
+        const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
         if ( e->value == 0 ) continue;
         if ( ( remaining & e->value ) == e->value )
         {
@@ -205,12 +208,12 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
     buf[ 0 ] = '\0';
 
     const rs_type_t* t = rs_get_type( type_id );
-    if ( !t || t->kind != RS_KIND_ENUM ) return 0;
+    if ( !t || t->kind != RS_KIND_BITSET ) return 0;
 
     /* Special case: zero. Prefer a registered zero-named enumerator (often "NONE"). */
     if ( value == 0 )
     {
-        const rs_enumerator_t* z = rs_enum_find_by_value( type_id, 0 );
+        const rs_enum_t* z = rs_enum_find_by_value( type_id, 0 );
         const char* s = z ? sid_cstr( z->name_sid ) : "0";
         size_t      n = 0;
         while ( s[ n ] && n + 1 < buf_size ) { buf[ n ] = s[ n ]; n++; }
@@ -224,7 +227,7 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
 
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
-        const rs_enumerator_t* e = &g_rs.enums[ t->field_index + i ];
+        const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
         if ( e->value == 0 ) continue;
         if ( ( remaining & e->value ) != e->value ) continue;
 
@@ -299,11 +302,12 @@ rs_each_type( rs_type_cb_t cb, void* user )
 }
 
 uint16_t
-rs_each_type_in_frame( uint8_t frame_id, rs_type_cb_t cb, void* user )
+rs_each_type_in_frame( uint16_t frame_id, rs_type_cb_t cb, void* user )
 {
     if ( !cb || frame_id >= g_rs.frame_count ) return 0;
 
     uint16_t first = g_rs.frames[ frame_id ].first_type;
+    /* Last (topmost) frame owns up to type_count; earlier frames end where the next begins. */
     uint16_t end   = ( frame_id + 1 == g_rs.frame_count )
                      ? g_rs.type_count
                      : g_rs.frames[ frame_id + 1 ].first_type;
@@ -317,7 +321,7 @@ uint16_t
 rs_each_field( uint16_t type_id, rs_field_cb_t cb, void* user )
 {
     const rs_type_t* t = rs_get_type( type_id );
-    if ( !t || !cb || t->kind == RS_KIND_ENUM ) return 0;
+    if ( !t || !cb || rs_kind_is_enum( (rs_kind_t)t->kind ) ) return 0;
 
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
@@ -331,7 +335,7 @@ uint16_t
 rs_each_enumerator( uint16_t type_id, rs_enum_cb_t cb, void* user )
 {
     const rs_type_t* t = rs_get_type( type_id );
-    if ( !t || !cb || t->kind != RS_KIND_ENUM ) return 0;
+    if ( !t || !cb || !rs_kind_is_enum( (rs_kind_t)t->kind ) ) return 0;
 
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {

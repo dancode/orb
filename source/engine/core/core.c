@@ -50,8 +50,7 @@ core_free( void* ptr )
 #include "engine/core/core_cvar.c"
 #include "engine/core/core_sid.c"
 // #include "engine/core/core_debug.c"
-#include "engine/core/core_rs.c"
-#include "engine/core/core_reflect.c"
+#include "engine/core/core_reflect.c"    // rs_ reflection system
 // #include "engine/core/core_memory.c"
 
 /*==============================================================================================

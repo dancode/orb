@@ -39,8 +39,10 @@ There is no automated test framework. Validation is done by running sandbox exec
 
 - `sb_engine_sys` — sys layer (OS abstractions)
 - `sb_engine_core` — core layer (memory, logging, cvars)
+- `sb_engine_core_reflect` — rs_ reflection system (registration, lookup, hot-reload simulation)
 - `sb_engine_mod` — module system / hot-reload
 - `sb_engine_app` — application / windowing
+- `sb_tool_modinfo` — standalone module descriptor inspector (loads a DLL and prints its `mod_api_t`)
 
 Build and run the relevant sandbox target in Visual Studio, or via:
 
@@ -57,7 +59,7 @@ The engine is organized as a strict dependency hierarchy. Lower layers never dep
 source/base/          — stateless stdlib (math, strings, memory, logging)
 source/engine/
   sys/                — OS abstractions: files, threads, time, DLL loading, paths
-  core/               — stateful systems: memory arenas, logging, cvars, reflection, SIDs
+  core/               — stateful systems: memory arenas, logging, cvars, rs_ reflection, SIDs
   mod/                — module registry: dynamic loading, hot-reload, dependency graph
   app/                — windowing, events, main-loop lifecycle
 source/runtime/       — simulation scaffolding: host loop + services (jobs, input, timing, assets) + hot-reload DLLs (render, audio, physics, animation, asset)
@@ -73,6 +75,18 @@ source/project/       — game-specific code (sample_game)
 **`source/base/`** must remain stateless (no globals) because it links into both the host exe and DLLs. Any state lives in `engine/core/` or higher.
 
 **Engine libraries** (`sys`, `core`, `mod`, `app`) are always statically linked into the host. They are never inside a DLL.
+
+## Reflection System (rs_)
+
+Located in `source/engine/core/rs/`. The unity build entry is `core_reflect.c`, which defines the shared `rs_registry_t` and includes all `rs/*.c` translation units.
+
+Key design points:
+- **Stack-frame registry**: each module calls `rs_push_frame()` on load and `rs_pop_frame()` on unload; registration and teardown are O(1) with no tombstones or validity flags.
+- **Lazy resolution**: fields reference base types by hash during registration; `rs_finalize_frame()` resolves hashes to stable type IDs, so cross-type forward references work regardless of registration order.
+- **Packed modifier chain**: up to four declarator modifiers (pointer, array, const, etc.) encoded in a single 16-bit value per field, preserving exact C declaration order.
+- **Schema hash**: every registered type gets a deterministic hash of its reflected layout; used to detect hot-reload ABI breaks.
+
+Files: `rs.h` (public API), `rs_registry.c`, `rs_access.c`, `rs_walk.c`, `rs_serialize.c`, `rs_print.c`, `rs_test.c`.
 
 ## Module System
 

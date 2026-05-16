@@ -66,7 +66,8 @@ rs_walk_refs( void* instance, uint16_t type_id, rs_ref_visitor_t visit, void* us
             continue;
         }
 
-        /* Case 4: array of pointers T*[N]. Visit each pointer slot. */
+        /* Case 4: array of pointers T*[N]. Visit each pointer slot.
+           NULL entries are passed to the visitor as-is; filtering is the visitor's responsibility. */
         if ( op0 == RS_MOD_PTR && op1 == RS_MOD_ARRAY )
         {
             for ( uint16_t k = 0; k < f->aux; k++ )
