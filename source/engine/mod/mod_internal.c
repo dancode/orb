@@ -661,14 +661,19 @@ do_reload( mod_info_t* m )
         return false;
     }
 
-    /* Commit: publish the new func_api to consumers, then drop the old DLL. */
+    /* Commit: publish the new func_api to consumers, then swap DLL and notify. */
     api_slot_refresh( m );
 
     if ( prev.dll )
     {
+        if ( g_dll_unload_fn )
+            g_dll_unload_fn( m->name, prev.dll, g_dll_unload_user );
         sys_library_unload( prev.dll );
         shadow_delete( m->name, prev.shadow_count );
     }
+
+    if ( g_dll_load_fn )
+        g_dll_load_fn( m->name, m->dll, g_dll_load_user );
 
     m->version++;
     m->status = MODULE_STATUS_INITIALIZED;

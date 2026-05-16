@@ -42,7 +42,7 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
         pos = rs_str_append( buf, buf_size, pos, "const " );
 
     const rs_type_t* base = rs_get_type( f->type_id );
-    pos = rs_str_append( buf, buf_size, pos, base ? sid_cstr( base->name_sid ) : "<unresolved>" );
+    pos = rs_str_append( buf, buf_size, pos, base ? g_rs.cstr( base->name_id ) : "<unresolved>" );
 
     /* Pre-scan: detect ARRAY followed by PTR, which requires parentheses in C syntax.
        e.g. T(*)[N] rather than T*[N]. `saw_array` becomes true once we see an ARRAY slot;
@@ -104,7 +104,7 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
                 if ( sig && sig->kind == RS_KIND_FUNCTION )
                 {
                     pos = rs_str_append( buf, buf_size, pos, "(" );
-                    pos = rs_str_append( buf, buf_size, pos, sid_cstr( sig->name_sid ) );
+                    pos = rs_str_append( buf, buf_size, pos, g_rs.cstr( sig->name_id ) );
                     pos = rs_str_append( buf, buf_size, pos, ")" );
                 }
                 else
@@ -152,7 +152,7 @@ rs_print_type( uint16_t type_id )
         ( t->kind == RS_KIND_FUNCTION )        ? "params+1"    : "fields";
 
     printf( "type[%u] %s  kind=%s size=%u align=%u frame=%u schema=0x%08x %s=%u\n",
-            type_id, sid_cstr( t->name_sid ), kind_str,
+            type_id, g_rs.cstr( t->name_id ), kind_str,
             t->size, t->align, t->frame_id, t->schema_hash, member_word, t->field_count );
 
     if ( rs_kind_is_enum( (rs_kind_t)t->kind ) )
@@ -162,7 +162,7 @@ rs_print_type( uint16_t type_id )
             uint16_t eid = (uint16_t)( t->field_index + i );
             const rs_enum_t* e = &g_rs.enums[ eid ];
             printf( "    enum[%u] %-24s = %lld\n",
-                    eid, sid_cstr( e->name_sid ), (long long)e->value );
+                    eid, g_rs.cstr( e->name_id ), (long long)e->value );
         }
         return;
     }
@@ -181,7 +181,7 @@ rs_print_type( uint16_t type_id )
         {
             const rs_field_t* p = rs_function_get_param( type_id, i );
             rs_field_describe( p, typebuf, sizeof( typebuf ) );
-            printf( "    param[%u] %-16s : %s\n", i, sid_cstr( p->name_sid ), typebuf );
+            printf( "    param[%u] %-16s : %s\n", i, g_rs.cstr( p->name_id ), typebuf );
         }
         return;
     }
@@ -195,7 +195,7 @@ rs_print_type( uint16_t type_id )
         rs_field_describe( f, typebuf, sizeof( typebuf ) );
 
         printf( "    field[%u] %-16s : %-28s offset=%u size=%u",
-                fid, sid_cstr( f->name_sid ), typebuf, f->offset, f->size );
+                fid, g_rs.cstr( f->name_id ), typebuf, f->offset, f->size );
 
         if ( f->attr_count > 0 )
             printf( "  attrs=%u", f->attr_count );
@@ -204,13 +204,13 @@ rs_print_type( uint16_t type_id )
         for ( uint16_t a = 0; a < f->attr_count; a++ )
         {
             const rs_attrib_t* attr = &g_rs.attrs[ f->attr_index + a ];
-            printf( "        @%s = ", sid_cstr( attr->name_sid ) );
+            printf( "        @%s = ", g_rs.cstr( attr->name_id ) );
             switch ( attr->type )
             {
                 case RS_ATTR_INT:    printf( "%d\n",  attr->value.i32 ); break;
                 case RS_ATTR_FLOAT:  printf( "%g\n",  attr->value.f32 ); break;
                 case RS_ATTR_BOOL:   printf( "%s\n",  attr->value.u32 ? "true" : "false" ); break;
-                case RS_ATTR_STRING: printf( "\"%s\"\n", sid_cstr( attr->value.str ) ); break;
+                case RS_ATTR_STRING: printf( "\"%s\"\n", g_rs.cstr( attr->value.str ) ); break;
                 default:             printf( "(none)\n" ); break;
             }
         }
@@ -231,7 +231,7 @@ rs_print_types( void )
     {
         const rs_type_t* t = &g_rs.types[ i ];
         printf( "  [%3u] frame=%u %-20s size=%-4u fields=%u\n",
-                i, t->frame_id, sid_cstr( t->name_sid ), t->size, t->field_count );
+                i, t->frame_id, g_rs.cstr( t->name_id ), t->size, t->field_count );
     }
 }
 
@@ -254,7 +254,7 @@ rs_print_frame( uint16_t frame_id )
                        : g_rs.frames[ frame_id + 1 ].first_type;
 
     printf( "frame[%u] %s v%u  types[%u..%u) fields_start=%u attrs_start=%u\n",
-            frame_id, sid_cstr( f->name_sid ), f->version,
+            frame_id, g_rs.cstr( f->name_id ), f->version,
             f->first_type, type_end, f->first_field, f->first_attr );
 
     for ( uint16_t i = f->first_type; i < type_end; i++ )

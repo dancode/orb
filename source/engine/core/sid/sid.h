@@ -6,7 +6,7 @@
     str_intern.h
 
     Interned string entry (a compact representation for quick comparison)
-    Think of it like an “opaque ID” for a string.
+    Think of it like an ï¿½opaque IDï¿½ for a string.
 
 ==============================================================================================*/
 
@@ -56,14 +56,36 @@ typedef struct intern_state_s
 } intern_state_t;
 
 /*============================================================================================*/
-/* SID : HASHING */ 
+/* SID : HASHING (inline - zero plumbing, callable from any TU)                                */
 /*============================================================================================*/
 
-                                // case-insensitive FNV-1a hash
-uint32_t    sid_hash            ( const char* s );
+                                // case-insensitive FNV-1a, inlined so DLLs and codegen
+                                // can call it without going through engine_core symbols
+static inline uint32_t
+sid_hash( const char* s )
+{
+    uint32_t h = 2166136261u;
+    while ( *s )
+    {
+        unsigned char c = ( unsigned char )*s++;
+        if ( c >= 'A' && c <= 'Z' ) c = ( unsigned char )( c + 32 );
+        h = ( h ^ c ) * 16777619u;
+    }
+    return h;
+}
 
-                                // case-insensitive FNV-1a hash with length
-uint32_t    sid_hash_len        ( const char* str, size_t len );
+static inline uint32_t
+sid_hash_len( const char* str, size_t len )
+{
+    uint32_t h = 2166136261u;
+    for ( size_t i = 0; i < len; i++ )
+    {
+        unsigned char c = ( unsigned char )str[ i ];
+        if ( c >= 'A' && c <= 'Z' ) c = ( unsigned char )( c + 32 );
+        h = ( h ^ c ) * 16777619u;
+    }
+    return h;
+}
 
 /*============================================================================================*/
 /* SID : USAGE */

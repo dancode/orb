@@ -192,6 +192,7 @@ function( target_add_reflect_gen TARGET_NAME SOURCE_DIR MODULE_NAME )
     # Track all headers in the module so any change triggers a regen
     file( GLOB_RECURSE RS_HEADERS "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}/*.h" )
 
+    # Invoke build_reflect as a pre-build step to generate the reflection code.
     add_custom_command(
         OUTPUT  "${GEN_H}" "${GEN_C}"
         COMMAND $<TARGET_FILE:build_reflect>
@@ -203,6 +204,8 @@ function( target_add_reflect_gen TARGET_NAME SOURCE_DIR MODULE_NAME )
         VERBATIM
     )
 
+    # Add the generated files as sources for the target so they show
+    # up in the IDE and trigger rebuilds.
     target_sources( ${TARGET_NAME} PRIVATE "${GEN_H}" "${GEN_C}" )
     target_include_directories( ${TARGET_NAME} PRIVATE "${GEN_DIR}" )
 
@@ -403,7 +406,13 @@ target_compile_definitions( engine_app PUBLIC APP_STATIC )
 # CORE
 add_unity_library( engine_core STATIC "source/engine/core" "02_Engine" "core.c" )
 target_compile_definitions( engine_core PUBLIC CORE_STATIC )
-target_add_reflect_gen( engine_core "source/engine/core" "engine_core" )
+
+# RS (reflection system) - sibling of CORE; depends on neither.
+# Generated module reflection descriptors are registered by the host through
+# rs_register_module(), which takes sid_intern_cstr as a function pointer so
+# engine_rs has no link-time coupling to engine_core's sid implementation.
+add_unity_library( engine_rs STATIC "source/engine/rs" "02_Engine" "rs.c" )
+target_compile_definitions( engine_rs PUBLIC RS_STATIC )
 
 # ENGINE LINK ORDER: SYS -> CORE -> MOD -> APP
 
@@ -445,6 +454,9 @@ add_module( example "source/runtime_modules/example" "03_Runtime_Modules" "examp
 add_module( render  "source/runtime_modules/render"  "03_Runtime_Modules" "render.c"  )
 add_module( audio   "source/runtime_modules/audio"   "03_Runtime_Modules" "audio.c"   )
 add_module( physics "source/runtime_modules/physics" "03_Runtime_Modules" "physics.c" )
+
+add_module( example_reflect "source/runtime_modules/example_reflect" "03_Runtime_Modules" "example_reflect.c" )
+target_add_reflect_gen( example_reflect "source/runtime_modules/example_reflect" "example_reflect" )
 
 # LINK
 target_link_libraries( example PUBLIC base )
@@ -540,15 +552,24 @@ target_link_libraries( sb_engine_sys PRIVATE engine_sys )
 
 # Test the engine platform applicaiton layer in a sandbox environment.
 add_unity_executable( sb_engine_app "source/sandbox/engine_app" "07_Sandbox" "sb_engine_app.c" )
-target_link_libraries( sb_engine_app PRIVATE engine_mod engine_sys engine_app )
+target_link_libraries( sb_engine_app PRIVATE engine_sys engine_mod engine_app )
 
 # Test the engine core layer in a sandbox environment.
 add_unity_executable( sb_engine_core "source/sandbox/engine_core" "07_Sandbox" "sb_engine_core.c" )
 target_link_libraries( sb_engine_core PRIVATE engine_core )
 
-# Test the engine core reflection system
+# Test the engine_rs reflection system
 add_unity_executable( sb_engine_core_reflect "source/sandbox/engine_core_reflect" "07_Sandbox" "sb_engine_core_reflect.c" )
-target_link_libraries( sb_engine_core_reflect PRIVATE engine_core )
+target_link_libraries( sb_engine_core_reflect PRIVATE engine_core engine_rs )
+
+# only included for testing, not a header-only module, so ensure it's compiled as a separate TU
+set_source_files_properties( "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" PROPERTIES HEADER_FILE_ONLY OFF )
+target_sources( sb_engine_core_reflect PRIVATE "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" )
+
+# Test loading a reflect runtime module (example_reflect) - host drives registration.
+add_unity_executable( sb_runtime_reflect "source/sandbox/runtime_reflect" "07_Sandbox" "sb_runtime_reflect.c" )
+target_link_libraries( sb_runtime_reflect PRIVATE engine_sys engine_mod engine_core engine_rs )
+add_dependencies( sb_runtime_reflect example_reflect )
 
 # TODO: Use host_common for shared code for parsing args, etc. 
 

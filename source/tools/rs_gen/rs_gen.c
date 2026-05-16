@@ -86,16 +86,19 @@ main( int argc, char** argv )
 
     rg_platform_mkdir( output_dir );
 
-    rg_file_list_t files = { 0 };
-    rg_scan( source_dir, &files );
+    /* Parse data is large (worst-case ~12MB); keep it out of the stack. */
+    static rg_file_list_t  files;
+    static rg_parse_data_t data;
+    memset( &files, 0, sizeof files );
+    memset( &data,  0, sizeof data  );
 
-    rg_parse_data_t data = { 0 };
+    rg_scan( source_dir, &files );
     rg_parse( &files, &data );
 
     if ( !rg_output( output_dir, module_name, &data ) )
         return 1;
 
-    printf( "[build_reflect] %s: %d type(s), %d enum(s)\n",
-            module_name, data.type_count, data.enum_count );
+    printf( "[build_reflect] %s: %d struct(s), %d enum(s)\n",
+            module_name, data.struct_count, data.enum_count );
     return 0;
 }

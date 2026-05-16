@@ -125,7 +125,32 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "engine/core/sid/sid.h"
+
+/*==============================================================================================
+    rs_name_t  -  opaque u32 string identifier produced by the caller-supplied interner.
+    In the engine context this is a string-arena offset (sid_t.off); equal strings always
+    map to the same id within a session.  rs_hash_str is a separate FNV-1a hash used for
+    fast lookup; it is NOT the same value as an rs_name_t.
+
+    rs_hash_str must remain algorithmically identical to sid_hash (case-insensitive FNV-1a).
+==============================================================================================*/
+
+typedef uint32_t rs_name_t;
+typedef const char* ( *rs_cstr_fn )( rs_name_t );
+
+static inline uint32_t
+rs_hash_str( const char* s )
+{
+    uint32_t h = 2166136261u;
+    while ( *s )
+    {
+        unsigned char c = ( unsigned char )*s++;
+        if ( c >= 'A' && c <= 'Z' )
+            c = ( unsigned char )( c + 32 );
+        h = ( h ^ c ) * 16777619u;
+    }
+    return h;
+}
 
 // clang-format off
 /*==============================================================================================
@@ -263,16 +288,17 @@ typedef enum rs_attr_type_e
 
 typedef struct rs_attrib_s
 {
-    sid_t   name_sid;    // attribute name
-    uint8_t type;        // rs_attr_type_t
-    uint8_t _pad[ 3 ];
+    rs_name_t name_id;   // interned attribute name
+    uint32_t  name_hash; // rs_hash_str(name) for intern-free lookup
+    uint8_t   type;      // rs_attr_type_t
+    uint8_t   _pad[ 3 ];
 
     union
     {
-        int32_t  i32;
-        float    f32;
-        sid_t    str;
-        uint32_t u32;
+        int32_t   i32;
+        float     f32;
+        rs_name_t str;   // interned string value
+        uint32_t  u32;
     } value;
 
 } rs_attrib_t;
@@ -287,8 +313,9 @@ typedef struct rs_attrib_s
 
 typedef struct rs_enum_s
 {
-    sid_t   name_sid;       // enumerator name
-    int64_t value;          // signed; covers unsigned values up to INT64_MAX
+    rs_name_t name_id;      // interned enumerator name
+    uint32_t  name_hash;    // rs_hash_str(name) for intern-free lookup
+    int64_t   value;        // signed; covers unsigned values up to INT64_MAX
 
 } rs_enum_t;
 
@@ -298,16 +325,18 @@ typedef struct rs_enum_s
 
 typedef struct rs_field_s
 {
-    sid_t    name_sid;      // interned field name
-    uint16_t type_id;       // resolved base type (RS_TYPE_INVALID until finalize)
-    uint16_t offset;        // byte offset within parent struct
-    uint16_t size;          // sizeof(field), including any inline array
-    uint16_t mods;          // packed modifier chain (see above)
-    uint16_t aux;           // array element count, or function signature id
-    uint8_t  base_const;    // const on the base type itself (`const T x`)
-    uint8_t  kind;          // cached rs_kind_t of base, for fast dispatch
-    uint16_t attr_index;    // first attribute index (RS_ATTR_INVALID if none)
-    uint16_t attr_count;    // number of attributes
+    rs_name_t name_id;      // interned field name
+    uint32_t  name_hash;    // rs_hash_str(name) for intern-free lookup
+    uint32_t  type_hash;    // rs_hash_str(base_type_name) for lazy resolution
+    uint16_t  type_id;      // resolved base type (RS_TYPE_INVALID until finalize)
+    uint16_t  offset;       // byte offset within parent struct
+    uint16_t  size;         // sizeof(field), including any inline array
+    uint16_t  mods;         // packed modifier chain (see above)
+    uint16_t  aux;          // array element count, or function signature id
+    uint8_t   base_const;   // const on the base type itself (`const T x`)
+    uint8_t   kind;         // cached rs_kind_t of base, for fast dispatch
+    uint16_t  attr_index;   // first attribute index (RS_ATTR_INVALID if none)
+    uint16_t  attr_count;   // number of attributes
 
 } rs_field_t;
 
@@ -317,8 +346,8 @@ typedef struct rs_field_s
 
 typedef struct rs_type_s
 {
-    sid_t    name_sid;      // interned type name
-    uint32_t hash;          // sid_hash(name) - persistent identity
+    rs_name_t name_id;      // interned type name
+    uint32_t hash;          // rs_hash_str(name) - persistent identity
     uint32_t schema_hash;   // content hash over fields (for save-game compat)
 
     uint16_t field_index;   // first member: index into fields[] (struct/union) or enums[] (enum)
@@ -341,7 +370,7 @@ typedef struct rs_type_s
 
 typedef struct rs_frame_s
 {
-    sid_t    name_sid;      // name of module owning this frame (e.g. "core", "game" )
+    rs_name_t name_id;      // interned name of module owning this frame (e.g. "core", "game")
     uint32_t version;       // caller-supplied
     void*    dll_handle;    // platform handle (NULL for system frame)
 
@@ -363,11 +392,83 @@ typedef struct rs_frame_s
 #define RS_ARRAY_COUNT( a )   ( ( uint16_t )( sizeof( a ) / sizeof( ( a )[ 0 ] ) ) )
 
 /*==============================================================================================
-    Lifecycle
+    Caller-provided string-intern callback
+
+    engine_rs has zero link-time dependency on engine_core or any sid implementation.
+    The host supplies two function pointers at rs_init():
+
+        intern  - converts a name string into an rs_name_t (u32 arena offset in the engine;
+                  any consistent u32 mapping in standalone use)
+        cstr    - reverse mapping: rs_name_t -> const char* for diagnostics/print
+
+    In the engine, wire these with thin adapters:
+        static rs_name_t   rs_sid_intern( const char* s ) { return sid_intern_cstr(s).off; }
+        static const char* rs_sid_cstr  ( rs_name_t id )  { return sid_cstr((sid_t){id}); }
+
+    rs_hash_str is a local static inline (case-insensitive FNV-1a); call sites compute
+    hashes without any function-pointer indirection.
 ==============================================================================================*/
 
-void rs_init( void );
+typedef rs_name_t ( *rs_intern_fn )( const char* );
+
+/*==============================================================================================
+    Lifecycle  (host responsibility)
+
+    Order:
+        sid_init();
+        rs_init( rs_sid_intern, rs_sid_cstr );  // zero registry + store intern/cstr
+        rs_install_builtins();                  // register int32_t, float, etc.
+        ... load modules (rs_load_module_dll resolves "rs_register" per DLL) ...
+        rs_exit();
+        sid_exit();
+==============================================================================================*/
+
+void rs_init( rs_intern_fn intern, rs_cstr_fn cstr );
 void rs_exit( void );
+
+/* Populate the primitive types ("int32_t", "float", ...) in frame 0.
+   Uses the intern/cstr callbacks stored by rs_init(). */
+void rs_install_builtins( void );
+
+/*==============================================================================================
+    Registration API  -  function pointer bundle passed to the generated rs_register().
+
+    engine_rs is a static library that only links into the host. DLL modules must not call
+    registration functions directly. Instead the host fills this struct and passes it into
+    the DLL's rs_register() export, which calls back through the pointers.
+==============================================================================================*/
+
+typedef struct rs_reg_api_s
+{
+    uint16_t         ( *rs_register_type   )( const rs_type_t*, const rs_field_t*, uint16_t );
+    uint16_t         ( *rs_register_enum   )( const rs_type_t*, const rs_enum_t*, uint16_t );
+    uint16_t         ( *rs_register_bitset )( const rs_type_t*, const rs_enum_t*, uint16_t );
+    bool             ( *rs_type_add_attr   )( uint16_t type_id, const rs_attrib_t* );
+    bool             ( *rs_field_add_attr  )( uint16_t field_id, const rs_attrib_t* );
+    const rs_type_t* ( *rs_get_type        )( uint16_t type_id );
+
+} rs_reg_api_t;
+
+/*==============================================================================================
+    Module DLL integration
+
+    Designed to be wired as mod_set_dll_load_cb / mod_set_dll_unload_cb targets so the
+    reflection system tracks module DLLs automatically without engine_mod knowing about rs_.
+
+    rs_load_module_dll  - resolves "rs_register" from the DLL, pushes a frame, builds an
+                          rs_reg_api_t from the live registry functions, calls the DLL's
+                          rs_register, then finalizes. No-op (RS_FRAME_INVALID) if the DLL
+                          has no such export. `dll` is a lib_handle_t cast to void*.
+    rs_unload_module_dll - pops the frame owned by `name` (must be the topmost frame).
+==============================================================================================*/
+
+uint16_t rs_load_module_dll   ( const char* name, void* dll );
+void     rs_unload_module_dll ( const char* name );
+
+/* Static-build equivalent: caller passes the function pointer directly instead of
+   resolving it from a DLL. rs_unload_module_dll works for static modules too (pops by name). */
+uint16_t rs_load_module_static( const char* name,
+                                void ( *rs_reg )( rs_intern_fn, const rs_reg_api_t* ) );
 
 /*==============================================================================================
     Frames
@@ -379,16 +480,15 @@ bool              rs_finalize_frame     ( uint16_t frame_id );    // resolve fie
 const rs_frame_t* rs_get_frame          ( uint16_t frame_id );
 
 /*==============================================================================================
-    Registration
+    Low-level registration  (used by generated code; also available
+    for hand-rolled registration).
 
-    `fields` and `field_type_hashes` are PARALLEL arrays of the same length.
-    `field_type_hashes[i]` is the sid_hash() of the base type name for fields[i].
-    The hash array is consumed during registration; it does not need to outlive the call.
+    Each rs_field_t carries its own type_hash (rs_hash_str of the base type name).
+    Set field.type_hash before calling; no separate hash array is needed.
 ==============================================================================================*/
 
-uint16_t rs_register_type( const rs_type_t*  type, 
+uint16_t rs_register_type( const rs_type_t*  type,
                            const rs_field_t* fields,
-                           const uint32_t*   field_type_hashes,
                            uint16_t          field_count );
 
 bool rs_type_add_attr( uint16_t type_id, const rs_attrib_t* attr );
@@ -403,18 +503,20 @@ uint16_t rs_register_bitset( const rs_type_t* type, const rs_enum_t* enumerators
 
 /* Register a function signature. `type->kind` is forced to
    RS_KIND_FUNCTION. `fields[0]` is the return type; `fields[1..]`
-   are parameters in declaration order. `type_hashes` is parallel.
+   are parameters in declaration order. Each field carries its own type_hash.
    A function-pointer FIELD references this signature by storing
    its type_id in the field's `aux` slot, with RS_MOD_FUNCTION
    in the modifier chain. */
 uint16_t rs_register_function( const rs_type_t*  type,
                                const rs_field_t* return_then_params,
-                               const uint32_t*   type_hashes,
                                uint16_t          count );
 
 /*==============================================================================================
     Lookup
 ==============================================================================================*/
+
+/* Recover the string for a name_id via the cstr callback supplied to rs_init(). */
+const char*         rs_name_cstr( rs_name_t id );
 
 const rs_type_t*    rs_get_type( uint16_t type_id );
 uint16_t            rs_find_type( uint32_t name_hash );
@@ -578,6 +680,35 @@ void rs_run_tests( void );
 #define RS_PROP(...)
 #define RS_VAR(...)
 // clang-format on
+
+/*==============================================================================================
+    Module reflection export macros  (mirrors MOD_EXPORT / MOD_DEFINE_EXPORTS)
+
+    Generated code always defines name##_rs_register(). Place this at the bottom of the
+    generated .c to add the generic "rs_register" DLL export as a thin wrapper:
+
+        RS_DEFINE_EXPORTS( example_reflect )
+
+    Dynamic build: emits the undecorated rs_register export resolved by rs_load_module_dll.
+    Static build:  expands to nothing; host calls name##_rs_register directly via
+                   rs_load_module_static().
+==============================================================================================*/
+
+#if defined( _WIN32 ) && !defined( BUILD_STATIC )
+    #define RS_EXPORT __declspec( dllexport )
+#else
+    #define RS_EXPORT
+#endif
+
+#ifdef BUILD_STATIC
+    #define RS_DEFINE_EXPORTS( name )
+#else
+    #define RS_DEFINE_EXPORTS( name )                                              \
+        RS_EXPORT void rs_register( rs_intern_fn intern, const rs_reg_api_t* api ) \
+        {                                                                          \
+            name##_rs_register( intern, api );                                     \
+        }
+#endif
 
 /*============================================================================================*/
 #endif    // RS_H

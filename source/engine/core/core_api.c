@@ -15,7 +15,7 @@ void
 core_init( void )
 {
     log_init();
-    // sid_init();
+    sid_init();
     cvar_system_init();
 }
 
@@ -23,7 +23,7 @@ void
 core_exit( void )
 {
     cvar_system_exit();
-    // sid_exit();
+    sid_exit();
     log_exit();
 }
 
@@ -95,7 +95,7 @@ core_mod_init( void* raw_state, get_api_fn get_api )
 static void
 core_mod_exit( void* raw_state )
 {
-    UNUSED( raw_state );    
+    UNUSED( raw_state );
     core_exit();
 }
 

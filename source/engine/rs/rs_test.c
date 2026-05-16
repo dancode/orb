@@ -1,8 +1,39 @@
 /*==============================================================================================
 
-    core/rs/rs_test.c - Exercise the rs_ reflection system.
+    engine/rs/rs_test.c - Exercise the rs_ reflection system.
+
+    Compiled as a standalone TU in the test sandbox (sb_engine_core_reflect).
+    Depends on engine_rs (for the rs_ API) and engine_core (for sid_ as the interner).
 
 ==============================================================================================*/
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+#include "orb.h"
+#include "engine/core/sid/sid.h"
+#include "engine/rs/rs.h"
+
+/* Adapters that satisfy rs_intern_fn / rs_cstr_fn using the engine's sid system. */
+static rs_name_t    test_intern( const char* s ) { return sid_intern_cstr( s ).off; }
+static const char*  test_cstr  ( rs_name_t id )  { return sid_cstr( ( sid_t ){ id } ); }
+
+static inline void rs_init_full( void )
+{
+    sid_init();
+    rs_init( test_intern, test_cstr );
+    rs_install_builtins();
+}
+
+static inline void rs_exit_full( void )
+{
+    rs_exit();
+    sid_exit();
+}
+
+#define rs_init rs_init_full
+#define rs_exit rs_exit_full
 
 typedef struct rs_test_vec3_s
 {
@@ -34,36 +65,42 @@ typedef struct rs_test_entity_s
 static void
 rs_test_register_vec3( void )
 {
-    const uint32_t h_vec3  = sid_hash( "vec3_t" );
-    const uint32_t h_float = sid_hash( "float" );
+    const uint32_t h_vec3  = rs_hash_str( "vec3_t" );
+    const uint32_t h_float = rs_hash_str( "float" );
 
     rs_type_t type = { 0 };
-    type.name_sid  = sid_intern_cstr( "vec3_t" );
+    type.name_id  = test_intern( "vec3_t" );
     type.hash      = h_vec3;
     type.size      = RS_SIZEOF( rs_test_vec3_t );
     type.align     = RS_ALIGNOF( rs_test_vec3_t );
     type.kind      = RS_KIND_STRUCT;
 
     rs_field_t fields[ 3 ] = { 0 };
-    uint32_t   hashes[ 3 ] = { h_float, h_float, h_float };
 
-    fields[ 0 ].name_sid = sid_intern_cstr( "x" );
-    fields[ 0 ].offset   = RS_OFFSETOF( rs_test_vec3_t, x );
-    fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_vec3_t, x );
-    fields[ 0 ].mods     = RS_NO_MODS;
+    fields[ 0 ].name_id   = test_intern( "x" );
+    fields[ 0 ].name_hash = rs_hash_str( "x" );
+    fields[ 0 ].type_hash = h_float;
+    fields[ 0 ].offset    = RS_OFFSETOF( rs_test_vec3_t, x );
+    fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_vec3_t, x );
+    fields[ 0 ].mods      = RS_NO_MODS;
 
-    fields[ 1 ].name_sid = sid_intern_cstr( "y" );
-    fields[ 1 ].offset   = RS_OFFSETOF( rs_test_vec3_t, y );
-    fields[ 1 ].size     = RS_FIELD_SIZE( rs_test_vec3_t, y );
+    fields[ 1 ].name_id   = test_intern( "y" );
+    fields[ 1 ].name_hash = rs_hash_str( "y" );
+    fields[ 1 ].type_hash = h_float;
+    fields[ 1 ].offset    = RS_OFFSETOF( rs_test_vec3_t, y );
+    fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_vec3_t, y );
 
-    fields[ 2 ].name_sid = sid_intern_cstr( "z" );
-    fields[ 2 ].offset   = RS_OFFSETOF( rs_test_vec3_t, z );
-    fields[ 2 ].size     = RS_FIELD_SIZE( rs_test_vec3_t, z );
+    fields[ 2 ].name_id   = test_intern( "z" );
+    fields[ 2 ].name_hash = rs_hash_str( "z" );
+    fields[ 2 ].type_hash = h_float;
+    fields[ 2 ].offset    = RS_OFFSETOF( rs_test_vec3_t, z );
+    fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_vec3_t, z );
 
-    uint16_t tid = rs_register_type( &type, fields, hashes, 3 );
+    uint16_t tid = rs_register_type( &type, fields, 3 );
 
     rs_attrib_t a = { 0 };
-    a.name_sid    = sid_intern_cstr( "serializable" );
+    a.name_id    = test_intern( "serializable" );
+    a.name_hash  = rs_hash_str( "serializable" );
     a.type        = RS_ATTR_BOOL;
     a.value.u32   = 1;
     rs_type_add_attr( tid, &a );
@@ -72,105 +109,124 @@ rs_test_register_vec3( void )
 static void
 rs_test_register_transform( void )
 {
-    const uint32_t h_xform = sid_hash( "transform_t" );
-    const uint32_t h_vec3  = sid_hash( "vec3_t" );
+    const uint32_t h_xform = rs_hash_str( "transform_t" );
+    const uint32_t h_vec3  = rs_hash_str( "vec3_t" );
 
     rs_type_t type = { 0 };
-    type.name_sid  = sid_intern_cstr( "transform_t" );
+    type.name_id  = test_intern( "transform_t" );
     type.hash      = h_xform;
     type.size      = RS_SIZEOF( rs_test_transform_t );
     type.align     = RS_ALIGNOF( rs_test_transform_t );
     type.kind      = RS_KIND_STRUCT;
 
     rs_field_t fields[ 3 ] = { 0 };
-    uint32_t   hashes[ 3 ] = { h_vec3, h_vec3, h_vec3 };
 
-    fields[ 0 ].name_sid = sid_intern_cstr( "position" );
-    fields[ 0 ].offset   = RS_OFFSETOF( rs_test_transform_t, position );
-    fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_transform_t, position );
+    fields[ 0 ].name_id   = test_intern( "position" );
+    fields[ 0 ].name_hash = rs_hash_str( "position" );
+    fields[ 0 ].type_hash = h_vec3;
+    fields[ 0 ].offset    = RS_OFFSETOF( rs_test_transform_t, position );
+    fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_transform_t, position );
 
-    fields[ 1 ].name_sid = sid_intern_cstr( "rotation" );
-    fields[ 1 ].offset   = RS_OFFSETOF( rs_test_transform_t, rotation );
-    fields[ 1 ].size     = RS_FIELD_SIZE( rs_test_transform_t, rotation );
+    fields[ 1 ].name_id   = test_intern( "rotation" );
+    fields[ 1 ].name_hash = rs_hash_str( "rotation" );
+    fields[ 1 ].type_hash = h_vec3;
+    fields[ 1 ].offset    = RS_OFFSETOF( rs_test_transform_t, rotation );
+    fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_transform_t, rotation );
 
-    fields[ 2 ].name_sid = sid_intern_cstr( "scale" );
-    fields[ 2 ].offset   = RS_OFFSETOF( rs_test_transform_t, scale );
-    fields[ 2 ].size     = RS_FIELD_SIZE( rs_test_transform_t, scale );
+    fields[ 2 ].name_id   = test_intern( "scale" );
+    fields[ 2 ].name_hash = rs_hash_str( "scale" );
+    fields[ 2 ].type_hash = h_vec3;
+    fields[ 2 ].offset    = RS_OFFSETOF( rs_test_transform_t, scale );
+    fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_transform_t, scale );
 
-    rs_register_type( &type, fields, hashes, 3 );
+    rs_register_type( &type, fields, 3 );
 }
 
 static void
 rs_test_register_entity( void )
 {
-    const uint32_t h_entity = sid_hash( "entity_t" );
-    const uint32_t h_int32  = sid_hash( "int32_t" );
-    const uint32_t h_char   = sid_hash( "char" );
-    const uint32_t h_xform  = sid_hash( "transform_t" );
-    const uint32_t h_float  = sid_hash( "float" );
-    const uint32_t h_vec3   = sid_hash( "vec3_t" );
+    const uint32_t h_entity = rs_hash_str( "entity_t" );
+    const uint32_t h_int32  = rs_hash_str( "int32_t" );
+    const uint32_t h_char   = rs_hash_str( "char" );
+    const uint32_t h_xform  = rs_hash_str( "transform_t" );
+    const uint32_t h_float  = rs_hash_str( "float" );
+    const uint32_t h_vec3   = rs_hash_str( "vec3_t" );
 
     rs_type_t type = { 0 };
-    type.name_sid  = sid_intern_cstr( "entity_t" );
+    type.name_id  = test_intern( "entity_t" );
     type.hash      = h_entity;
     type.size      = RS_SIZEOF( rs_test_entity_t );
     type.align     = RS_ALIGNOF( rs_test_entity_t );
     type.kind      = RS_KIND_STRUCT;
 
     rs_field_t fields[ 7 ] = { 0 };
-    uint32_t   hashes[ 7 ] = { h_int32, h_char, h_xform, h_float, h_vec3, h_char, h_vec3 };
 
     /* id : int32_t                                  */
-    fields[ 0 ].name_sid = sid_intern_cstr( "id" );
-    fields[ 0 ].offset   = RS_OFFSETOF( rs_test_entity_t, id );
-    fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_entity_t, id );
+    fields[ 0 ].name_id   = test_intern( "id" );
+    fields[ 0 ].name_hash = rs_hash_str( "id" );
+    fields[ 0 ].type_hash = h_int32;
+    fields[ 0 ].offset    = RS_OFFSETOF( rs_test_entity_t, id );
+    fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_entity_t, id );
 
     /* name : char[64]    base=char, mods=[ARRAY], aux=64 */
-    fields[ 1 ].name_sid = sid_intern_cstr( "name" );
-    fields[ 1 ].offset   = RS_OFFSETOF( rs_test_entity_t, name );
-    fields[ 1 ].size     = RS_FIELD_SIZE( rs_test_entity_t, name );
-    fields[ 1 ].mods     = RS_MODS( RS_M_ARRAY, RS_M_END, RS_M_END, RS_M_END );
-    fields[ 1 ].aux      = 64;
+    fields[ 1 ].name_id   = test_intern( "name" );
+    fields[ 1 ].name_hash = rs_hash_str( "name" );
+    fields[ 1 ].type_hash = h_char;
+    fields[ 1 ].offset    = RS_OFFSETOF( rs_test_entity_t, name );
+    fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_entity_t, name );
+    fields[ 1 ].mods      = RS_MODS( RS_M_ARRAY, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 1 ].aux       = 64;
 
     /* transform : transform_t                       */
-    fields[ 2 ].name_sid = sid_intern_cstr( "transform" );
-    fields[ 2 ].offset   = RS_OFFSETOF( rs_test_entity_t, transform );
-    fields[ 2 ].size     = RS_FIELD_SIZE( rs_test_entity_t, transform );
+    fields[ 2 ].name_id   = test_intern( "transform" );
+    fields[ 2 ].name_hash = rs_hash_str( "transform" );
+    fields[ 2 ].type_hash = h_xform;
+    fields[ 2 ].offset    = RS_OFFSETOF( rs_test_entity_t, transform );
+    fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_entity_t, transform );
 
     /* health : float                                */
-    fields[ 3 ].name_sid = sid_intern_cstr( "health" );
-    fields[ 3 ].offset   = RS_OFFSETOF( rs_test_entity_t, health );
-    fields[ 3 ].size     = RS_FIELD_SIZE( rs_test_entity_t, health );
+    fields[ 3 ].name_id   = test_intern( "health" );
+    fields[ 3 ].name_hash = rs_hash_str( "health" );
+    fields[ 3 ].type_hash = h_float;
+    fields[ 3 ].offset    = RS_OFFSETOF( rs_test_entity_t, health );
+    fields[ 3 ].size      = RS_FIELD_SIZE( rs_test_entity_t, health );
 
     /* velocity : vec3_t*  base=vec3, mods=[PTR]     */
-    fields[ 4 ].name_sid = sid_intern_cstr( "velocity" );
-    fields[ 4 ].offset   = RS_OFFSETOF( rs_test_entity_t, velocity );
-    fields[ 4 ].size     = RS_FIELD_SIZE( rs_test_entity_t, velocity );
-    fields[ 4 ].mods     = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 4 ].name_id   = test_intern( "velocity" );
+    fields[ 4 ].name_hash = rs_hash_str( "velocity" );
+    fields[ 4 ].type_hash = h_vec3;
+    fields[ 4 ].offset    = RS_OFFSETOF( rs_test_entity_t, velocity );
+    fields[ 4 ].size      = RS_FIELD_SIZE( rs_test_entity_t, velocity );
+    fields[ 4 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
 
     /* label : const char*  base_const=1, mods=[PTR] */
-    fields[ 5 ].name_sid   = sid_intern_cstr( "label" );
+    fields[ 5 ].name_id    = test_intern( "label" );
+    fields[ 5 ].name_hash  = rs_hash_str( "label" );
+    fields[ 5 ].type_hash  = h_char;
     fields[ 5 ].offset     = RS_OFFSETOF( rs_test_entity_t, label );
     fields[ 5 ].size       = RS_FIELD_SIZE( rs_test_entity_t, label );
     fields[ 5 ].base_const = 1;
     fields[ 5 ].mods       = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
 
     /* slots : vec3_t*[8]   mods=[PTR, ARRAY], aux=8 */
-    fields[ 6 ].name_sid = sid_intern_cstr( "slots" );
-    fields[ 6 ].offset   = RS_OFFSETOF( rs_test_entity_t, slots );
-    fields[ 6 ].size     = RS_FIELD_SIZE( rs_test_entity_t, slots );
-    fields[ 6 ].mods     = RS_MODS( RS_M_PTR, RS_M_ARRAY, RS_M_END, RS_M_END );
-    fields[ 6 ].aux      = 8;
+    fields[ 6 ].name_id   = test_intern( "slots" );
+    fields[ 6 ].name_hash = rs_hash_str( "slots" );
+    fields[ 6 ].type_hash = h_vec3;
+    fields[ 6 ].offset    = RS_OFFSETOF( rs_test_entity_t, slots );
+    fields[ 6 ].size      = RS_FIELD_SIZE( rs_test_entity_t, slots );
+    fields[ 6 ].mods      = RS_MODS( RS_M_PTR, RS_M_ARRAY, RS_M_END, RS_M_END );
+    fields[ 6 ].aux       = 8;
 
-    uint16_t tid = rs_register_type( &type, fields, hashes, 7 );
+    uint16_t tid = rs_register_type( &type, fields, 7 );
 
     /* Attach two attributes to the 'health' field to exercise the repeated-entry path. */
     const rs_field_t* health = rs_find_field( tid, "health" );
     if ( health )
     {
-        uint16_t fid  = (uint16_t)( health - &g_rs.fields[ 0 ] );
+        uint16_t fid  = (uint16_t)( health - rs_get_field( 0 ) );
         rs_attrib_t a = { 0 };
-        a.name_sid    = sid_intern_cstr( "range" );
+        a.name_id    = test_intern( "range" );
+        a.name_hash  = rs_hash_str( "range" );
         a.type        = RS_ATTR_FLOAT;
         a.value.f32   = 0.0f;
         rs_field_add_attr( fid, &a );
@@ -285,17 +341,17 @@ test_enums( void )
     uint16_t game = rs_push_frame( "game", 1 );
 
     rs_type_t type = { 0 };
-    type.name_sid  = sid_intern_cstr( "color_t" );
-    type.hash      = sid_hash( "color_t" );
+    type.name_id  = test_intern( "color_t" );
+    type.hash      = rs_hash_str( "color_t" );
     type.size      = (uint16_t)sizeof( rs_test_color_t );
     type.align     = (uint8_t)_Alignof( rs_test_color_t );
     /* kind is forced to RS_KIND_ENUM by rs_register_enum */
 
     rs_enum_t entries[ 4 ] = {
-        { sid_intern_cstr( "RED" ),   RS_TEST_COLOR_RED   },
-        { sid_intern_cstr( "GREEN" ), RS_TEST_COLOR_GREEN },
-        { sid_intern_cstr( "BLUE" ),  RS_TEST_COLOR_BLUE  },
-        { sid_intern_cstr( "ALPHA" ), RS_TEST_COLOR_ALPHA },
+        { .name_id = test_intern( "RED" ),   .name_hash = rs_hash_str( "RED" ),   .value = RS_TEST_COLOR_RED   },
+        { .name_id = test_intern( "GREEN" ), .name_hash = rs_hash_str( "GREEN" ), .value = RS_TEST_COLOR_GREEN },
+        { .name_id = test_intern( "BLUE" ),  .name_hash = rs_hash_str( "BLUE" ),  .value = RS_TEST_COLOR_BLUE  },
+        { .name_id = test_intern( "ALPHA" ), .name_hash = rs_hash_str( "ALPHA" ), .value = RS_TEST_COLOR_ALPHA },
     };
 
     uint16_t tid = rs_register_enum( &type, entries, 4 );
@@ -311,7 +367,7 @@ test_enums( void )
     /* Lookup by value */
     const rs_enum_t* by_value = rs_enum_find_by_value( tid, 0xFF );
     printf( "  find_by_value(0xFF)   -> name=%s\n",
-            by_value ? sid_cstr( by_value->name_sid ) : "<none>" );
+            by_value ? test_cstr( by_value->name_id ) : "<none>" );
 
     /* Negative cases */
     if ( rs_enum_find_by_name( tid, "PURPLE" ) == NULL )
@@ -360,60 +416,68 @@ test_function_sigs( void )
     rs_test_register_vec3();
 
     /* --- Register the signature type "on_die_fn". --- */
-    const uint32_t h_sig   = sid_hash( "on_die_fn" );
-    const uint32_t h_void  = sid_hash( "void" );
-    const uint32_t h_int32 = sid_hash( "int32_t" );
-    const uint32_t h_vec3  = sid_hash( "vec3_t" );
+    const uint32_t h_sig   = rs_hash_str( "on_die_fn" );
+    const uint32_t h_void  = rs_hash_str( "void" );
+    const uint32_t h_int32 = rs_hash_str( "int32_t" );
+    const uint32_t h_vec3  = rs_hash_str( "vec3_t" );
 
     rs_type_t sig_type = { 0 };
-    sig_type.name_sid  = sid_intern_cstr( "on_die_fn" );
+    sig_type.name_id  = test_intern( "on_die_fn" );
     sig_type.hash      = h_sig;
     sig_type.size      = (uint16_t)sizeof( void* );    /* a pointer holds the callable */
     sig_type.align     = (uint8_t)_Alignof( void* );
 
     /* index 0 = return, indices 1..N = params */
     rs_field_t sig_fields[ 3 ] = { 0 };
-    uint32_t   sig_hashes[ 3 ] = { h_void, h_int32, h_vec3 };
 
-    sig_fields[ 0 ].name_sid = sid_intern_cstr( "return" );
+    sig_fields[ 0 ].name_id   = test_intern( "return" );
+    sig_fields[ 0 ].name_hash = rs_hash_str( "return" );
+    sig_fields[ 0 ].type_hash = h_void;
     /* return: void  -> no mods, no aux */
 
-    sig_fields[ 1 ].name_sid = sid_intern_cstr( "reason" );
-    sig_fields[ 1 ].size     = (uint16_t)sizeof( int32_t );
+    sig_fields[ 1 ].name_id   = test_intern( "reason" );
+    sig_fields[ 1 ].name_hash = rs_hash_str( "reason" );
+    sig_fields[ 1 ].type_hash = h_int32;
+    sig_fields[ 1 ].size      = (uint16_t)sizeof( int32_t );
     /* int32_t value */
 
-    sig_fields[ 2 ].name_sid = sid_intern_cstr( "loc" );
-    sig_fields[ 2 ].size     = (uint16_t)sizeof( rs_test_vec3_t* );
-    sig_fields[ 2 ].mods     = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+    sig_fields[ 2 ].name_id   = test_intern( "loc" );
+    sig_fields[ 2 ].name_hash = rs_hash_str( "loc" );
+    sig_fields[ 2 ].type_hash = h_vec3;
+    sig_fields[ 2 ].size      = (uint16_t)sizeof( rs_test_vec3_t* );
+    sig_fields[ 2 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
 
-    uint16_t sig_id = rs_register_function( &sig_type, sig_fields, sig_hashes, 3 );
+    uint16_t sig_id = rs_register_function( &sig_type, sig_fields, 3 );
 
     /* --- Register a struct that contains an on_die callback field. --- */
-    const uint32_t h_npc = sid_hash( "npc_t" );
+    const uint32_t h_npc = rs_hash_str( "npc_t" );
 
     rs_type_t npc_type = { 0 };
-    npc_type.name_sid  = sid_intern_cstr( "npc_t" );
+    npc_type.name_id  = test_intern( "npc_t" );
     npc_type.hash      = h_npc;
     npc_type.size      = RS_SIZEOF( rs_test_npc_t );
     npc_type.align     = RS_ALIGNOF( rs_test_npc_t );
     npc_type.kind      = RS_KIND_STRUCT;
 
     rs_field_t npc_fields[ 2 ] = { 0 };
-    uint32_t   npc_hashes[ 2 ] = { sid_hash( "float" ), h_void };
 
-    npc_fields[ 0 ].name_sid = sid_intern_cstr( "health" );
-    npc_fields[ 0 ].offset   = RS_OFFSETOF( rs_test_npc_t, health );
-    npc_fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_npc_t, health );
+    npc_fields[ 0 ].name_id   = test_intern( "health" );
+    npc_fields[ 0 ].name_hash = rs_hash_str( "health" );
+    npc_fields[ 0 ].type_hash = rs_hash_str( "float" );
+    npc_fields[ 0 ].offset    = RS_OFFSETOF( rs_test_npc_t, health );
+    npc_fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_npc_t, health );
 
     /* on_die: void(*)(int32_t, vec3_t*)
          base = void, mods=[FUNCTION], aux=sig_id  */
-    npc_fields[ 1 ].name_sid = sid_intern_cstr( "on_die" );
-    npc_fields[ 1 ].offset   = RS_OFFSETOF( rs_test_npc_t, on_die );
-    npc_fields[ 1 ].size     = RS_FIELD_SIZE( rs_test_npc_t, on_die );
-    npc_fields[ 1 ].mods     = RS_MODS( RS_M_FUNCTION, RS_M_END, RS_M_END, RS_M_END );
-    npc_fields[ 1 ].aux      = sig_id;
+    npc_fields[ 1 ].name_id   = test_intern( "on_die" );
+    npc_fields[ 1 ].name_hash = rs_hash_str( "on_die" );
+    npc_fields[ 1 ].type_hash = h_void;
+    npc_fields[ 1 ].offset    = RS_OFFSETOF( rs_test_npc_t, on_die );
+    npc_fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_npc_t, on_die );
+    npc_fields[ 1 ].mods      = RS_MODS( RS_M_FUNCTION, RS_M_END, RS_M_END, RS_M_END );
+    npc_fields[ 1 ].aux       = sig_id;
 
-    uint16_t npc_id = rs_register_type( &npc_type, npc_fields, npc_hashes, 2 );
+    uint16_t npc_id = rs_register_type( &npc_type, npc_fields, 2 );
 
     rs_finalize_frame( game );
 
@@ -430,7 +494,7 @@ test_function_sigs( void )
     printf( "  param_count = %u\n", rs_function_param_count( sig_id ) );
     const rs_field_t* p1 = rs_function_get_param( sig_id, 1 );
     printf( "  param[1] '%s' base_type_id=%u (expect vec3_t)\n",
-            p1 ? sid_cstr( p1->name_sid ) : "?", p1 ? p1->type_id : 0xFFFF );
+            p1 ? test_cstr( p1->name_id ) : "?", p1 ? p1->type_id : 0xFFFF );
 
     rs_pop_frame( game );
     rs_exit();
@@ -468,59 +532,71 @@ test_serialize( void )
     rs_test_register_vec3();
 
     /* Register save_t */
-    const uint32_t h_save  = sid_hash( "save_t" );
-    const uint32_t h_int32 = sid_hash( "int32_t" );
-    const uint32_t h_u32   = sid_hash( "uint32_t" );
-    const uint32_t h_float = sid_hash( "float" );
-    const uint32_t h_vec3  = sid_hash( "vec3_t" );
-    const uint32_t h_char  = sid_hash( "char" );
+    const uint32_t h_save  = rs_hash_str( "save_t" );
+    const uint32_t h_int32 = rs_hash_str( "int32_t" );
+    const uint32_t h_u32   = rs_hash_str( "uint32_t" );
+    const uint32_t h_float = rs_hash_str( "float" );
+    const uint32_t h_vec3  = rs_hash_str( "vec3_t" );
+    const uint32_t h_char  = rs_hash_str( "char" );
 
     rs_type_t type = { 0 };
-    type.name_sid  = sid_intern_cstr( "save_t" );
+    type.name_id  = test_intern( "save_t" );
     type.hash      = h_save;
     type.size      = RS_SIZEOF( rs_test_save_t );
     type.align     = RS_ALIGNOF( rs_test_save_t );
     type.kind      = RS_KIND_STRUCT;
 
     rs_field_t fields[ 6 ] = { 0 };
-    uint32_t   hashes[ 6 ] = { h_int32, h_float, h_vec3, h_char, h_vec3, h_u32 };
 
-    fields[ 0 ].name_sid = sid_intern_cstr( "id" );
-    fields[ 0 ].offset   = RS_OFFSETOF( rs_test_save_t, id );
-    fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_save_t, id );
+    fields[ 0 ].name_id   = test_intern( "id" );
+    fields[ 0 ].name_hash = rs_hash_str( "id" );
+    fields[ 0 ].type_hash = h_int32;
+    fields[ 0 ].offset    = RS_OFFSETOF( rs_test_save_t, id );
+    fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_save_t, id );
 
-    fields[ 1 ].name_sid = sid_intern_cstr( "health" );
-    fields[ 1 ].offset   = RS_OFFSETOF( rs_test_save_t, health );
-    fields[ 1 ].size     = RS_FIELD_SIZE( rs_test_save_t, health );
+    fields[ 1 ].name_id   = test_intern( "health" );
+    fields[ 1 ].name_hash = rs_hash_str( "health" );
+    fields[ 1 ].type_hash = h_float;
+    fields[ 1 ].offset    = RS_OFFSETOF( rs_test_save_t, health );
+    fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_save_t, health );
 
-    fields[ 2 ].name_sid = sid_intern_cstr( "position" );
-    fields[ 2 ].offset   = RS_OFFSETOF( rs_test_save_t, position );
-    fields[ 2 ].size     = RS_FIELD_SIZE( rs_test_save_t, position );
+    fields[ 2 ].name_id   = test_intern( "position" );
+    fields[ 2 ].name_hash = rs_hash_str( "position" );
+    fields[ 2 ].type_hash = h_vec3;
+    fields[ 2 ].offset    = RS_OFFSETOF( rs_test_save_t, position );
+    fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_save_t, position );
 
-    fields[ 3 ].name_sid = sid_intern_cstr( "name" );
-    fields[ 3 ].offset   = RS_OFFSETOF( rs_test_save_t, name );
-    fields[ 3 ].size     = RS_FIELD_SIZE( rs_test_save_t, name );
-    fields[ 3 ].mods     = RS_MODS( RS_M_ARRAY, RS_M_END, RS_M_END, RS_M_END );
-    fields[ 3 ].aux      = 16;
+    fields[ 3 ].name_id   = test_intern( "name" );
+    fields[ 3 ].name_hash = rs_hash_str( "name" );
+    fields[ 3 ].type_hash = h_char;
+    fields[ 3 ].offset    = RS_OFFSETOF( rs_test_save_t, name );
+    fields[ 3 ].size      = RS_FIELD_SIZE( rs_test_save_t, name );
+    fields[ 3 ].mods      = RS_MODS( RS_M_ARRAY, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 3 ].aux       = 16;
 
-    fields[ 4 ].name_sid = sid_intern_cstr( "cache_ptr" );
-    fields[ 4 ].offset   = RS_OFFSETOF( rs_test_save_t, cache_ptr );
-    fields[ 4 ].size     = RS_FIELD_SIZE( rs_test_save_t, cache_ptr );
-    fields[ 4 ].mods     = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 4 ].name_id   = test_intern( "cache_ptr" );
+    fields[ 4 ].name_hash = rs_hash_str( "cache_ptr" );
+    fields[ 4 ].type_hash = h_vec3;
+    fields[ 4 ].offset    = RS_OFFSETOF( rs_test_save_t, cache_ptr );
+    fields[ 4 ].size      = RS_FIELD_SIZE( rs_test_save_t, cache_ptr );
+    fields[ 4 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
 
-    fields[ 5 ].name_sid = sid_intern_cstr( "cached_hash" );
-    fields[ 5 ].offset   = RS_OFFSETOF( rs_test_save_t, cached_hash );
-    fields[ 5 ].size     = RS_FIELD_SIZE( rs_test_save_t, cached_hash );
+    fields[ 5 ].name_id   = test_intern( "cached_hash" );
+    fields[ 5 ].name_hash = rs_hash_str( "cached_hash" );
+    fields[ 5 ].type_hash = h_u32;
+    fields[ 5 ].offset    = RS_OFFSETOF( rs_test_save_t, cached_hash );
+    fields[ 5 ].size      = RS_FIELD_SIZE( rs_test_save_t, cached_hash );
 
-    uint16_t tid = rs_register_type( &type, fields, hashes, 6 );
+    uint16_t tid = rs_register_type( &type, fields, 6 );
 
     /* Mark cached_hash @transient. */
     const rs_field_t* hash_field = rs_find_field( tid, "cached_hash" );
     assert( hash_field );
     {
-        uint16_t fid = (uint16_t)( hash_field - &g_rs.fields[ 0 ] );
+        uint16_t fid = (uint16_t)( hash_field - rs_get_field( 0 ) );
         rs_attrib_t a = { 0 };
-        a.name_sid    = sid_intern_cstr( "transient" );
+        a.name_id    = test_intern( "transient" );
+        a.name_hash  = rs_hash_str( "transient" );
         a.type        = RS_ATTR_BOOL;
         a.value.u32   = 1;
         rs_field_add_attr( fid, &a );
@@ -607,8 +683,8 @@ test_bitset( void )
     uint16_t game = rs_push_frame( "game", 1 );
 
     rs_type_t type = { 0 };
-    type.name_sid  = sid_intern_cstr( "perm_t" );
-    type.hash      = sid_hash( "perm_t" );
+    type.name_id  = test_intern( "perm_t" );
+    type.hash      = rs_hash_str( "perm_t" );
     type.size      = (uint16_t)sizeof( rs_test_perm_t );
     type.align     = (uint8_t)_Alignof( rs_test_perm_t );
 
@@ -616,11 +692,11 @@ test_bitset( void )
        components so a value of 0b111 prints as "ALL" instead of "READ | WRITE | EXEC".
        Try swapping the order to see the alternative formatting. */
     rs_enum_t entries[ 5 ] = {
-        { sid_intern_cstr( "NONE"  ), RS_TEST_PERM_NONE  },
-        { sid_intern_cstr( "ALL"   ), RS_TEST_PERM_ALL   },
-        { sid_intern_cstr( "READ"  ), RS_TEST_PERM_READ  },
-        { sid_intern_cstr( "WRITE" ), RS_TEST_PERM_WRITE },
-        { sid_intern_cstr( "EXEC"  ), RS_TEST_PERM_EXEC  },
+        { .name_id = test_intern( "NONE"  ), .name_hash = rs_hash_str( "NONE"  ), .value = RS_TEST_PERM_NONE  },
+        { .name_id = test_intern( "ALL"   ), .name_hash = rs_hash_str( "ALL"   ), .value = RS_TEST_PERM_ALL   },
+        { .name_id = test_intern( "READ"  ), .name_hash = rs_hash_str( "READ"  ), .value = RS_TEST_PERM_READ  },
+        { .name_id = test_intern( "WRITE" ), .name_hash = rs_hash_str( "WRITE" ), .value = RS_TEST_PERM_WRITE },
+        { .name_id = test_intern( "EXEC"  ), .name_hash = rs_hash_str( "EXEC"  ), .value = RS_TEST_PERM_EXEC  },
     };
 
     uint16_t tid = rs_register_bitset( &type, entries, 5 );
@@ -649,7 +725,7 @@ test_bitset( void )
 
     /* find_flag(WRITE) */
     const rs_enum_t* w = rs_bitset_find_flag( tid, RS_TEST_PERM_WRITE );
-    printf( "  find_flag(WRITE)          = %s\n", w ? sid_cstr( w->name_sid ) : "?" );
+    printf( "  find_flag(WRITE)          = %s\n", w ? test_cstr( w->name_id ) : "?" );
     assert( w && w->value == RS_TEST_PERM_WRITE );
 
     rs_pop_frame( game );
@@ -693,9 +769,9 @@ rs_test_walk_visitor( void** slot, uint16_t pointee_id, const rs_field_t* f, voi
 
     const rs_type_t* pointee = rs_get_type( pointee_id );
     printf( "  visit field '%-12s' slot=%p -> %p  pointee=%s\n",
-            sid_cstr( f->name_sid ),
+            test_cstr( f->name_id ),
             (void*)slot, *slot,
-            pointee ? sid_cstr( pointee->name_sid ) : "?" );
+            pointee ? test_cstr( pointee->name_id ) : "?" );
 
     /* Loose sanity check: every visit in this test should point at a vec3_t. */
     assert( pointee_id == ctx->expected_pointee_id );
@@ -713,65 +789,73 @@ test_walker( void )
 
     /* Register rs_test_inner_t { vec3_t* p; } */
     {
-        const uint32_t h_inner = sid_hash( "inner_t" );
-        const uint32_t h_vec3  = sid_hash( "vec3_t" );
+        const uint32_t h_inner = rs_hash_str( "inner_t" );
+        const uint32_t h_vec3  = rs_hash_str( "vec3_t" );
 
         rs_type_t type = { 0 };
-        type.name_sid  = sid_intern_cstr( "inner_t" );
+        type.name_id  = test_intern( "inner_t" );
         type.hash      = h_inner;
         type.size      = RS_SIZEOF( rs_test_inner_t );
         type.align     = RS_ALIGNOF( rs_test_inner_t );
         type.kind      = RS_KIND_STRUCT;
 
         rs_field_t fields[ 1 ] = { 0 };
-        uint32_t   hashes[ 1 ] = { h_vec3 };
 
-        fields[ 0 ].name_sid = sid_intern_cstr( "p" );
-        fields[ 0 ].offset   = RS_OFFSETOF( rs_test_inner_t, p );
-        fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_inner_t, p );
-        fields[ 0 ].mods     = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+        fields[ 0 ].name_id   = test_intern( "p" );
+        fields[ 0 ].name_hash = rs_hash_str( "p" );
+        fields[ 0 ].type_hash = h_vec3;
+        fields[ 0 ].offset    = RS_OFFSETOF( rs_test_inner_t, p );
+        fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_inner_t, p );
+        fields[ 0 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
 
-        rs_register_type( &type, fields, hashes, 1 );
+        rs_register_type( &type, fields, 1 );
     }
 
     /* Register rs_test_walk_t */
     uint16_t walk_tid;
     {
-        const uint32_t h_walk  = sid_hash( "walk_t" );
-        const uint32_t h_int32 = sid_hash( "int32_t" );
-        const uint32_t h_vec3  = sid_hash( "vec3_t" );
-        const uint32_t h_inner = sid_hash( "inner_t" );
+        const uint32_t h_walk  = rs_hash_str( "walk_t" );
+        const uint32_t h_int32 = rs_hash_str( "int32_t" );
+        const uint32_t h_vec3  = rs_hash_str( "vec3_t" );
+        const uint32_t h_inner = rs_hash_str( "inner_t" );
 
         rs_type_t type = { 0 };
-        type.name_sid  = sid_intern_cstr( "walk_t" );
+        type.name_id  = test_intern( "walk_t" );
         type.hash      = h_walk;
         type.size      = RS_SIZEOF( rs_test_walk_t );
         type.align     = RS_ALIGNOF( rs_test_walk_t );
         type.kind      = RS_KIND_STRUCT;
 
         rs_field_t fields[ 4 ] = { 0 };
-        uint32_t   hashes[ 4 ] = { h_int32, h_vec3, h_vec3, h_inner };
 
-        fields[ 0 ].name_sid = sid_intern_cstr( "id" );
-        fields[ 0 ].offset   = RS_OFFSETOF( rs_test_walk_t, id );
-        fields[ 0 ].size     = RS_FIELD_SIZE( rs_test_walk_t, id );
+        fields[ 0 ].name_id   = test_intern( "id" );
+        fields[ 0 ].name_hash = rs_hash_str( "id" );
+        fields[ 0 ].type_hash = h_int32;
+        fields[ 0 ].offset    = RS_OFFSETOF( rs_test_walk_t, id );
+        fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_walk_t, id );
 
-        fields[ 1 ].name_sid = sid_intern_cstr( "single" );
-        fields[ 1 ].offset   = RS_OFFSETOF( rs_test_walk_t, single );
-        fields[ 1 ].size     = RS_FIELD_SIZE( rs_test_walk_t, single );
-        fields[ 1 ].mods     = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+        fields[ 1 ].name_id   = test_intern( "single" );
+        fields[ 1 ].name_hash = rs_hash_str( "single" );
+        fields[ 1 ].type_hash = h_vec3;
+        fields[ 1 ].offset    = RS_OFFSETOF( rs_test_walk_t, single );
+        fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_walk_t, single );
+        fields[ 1 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
 
-        fields[ 2 ].name_sid = sid_intern_cstr( "slots" );
-        fields[ 2 ].offset   = RS_OFFSETOF( rs_test_walk_t, slots );
-        fields[ 2 ].size     = RS_FIELD_SIZE( rs_test_walk_t, slots );
-        fields[ 2 ].mods     = RS_MODS( RS_M_PTR, RS_M_ARRAY, RS_M_END, RS_M_END );
-        fields[ 2 ].aux      = 3;
+        fields[ 2 ].name_id   = test_intern( "slots" );
+        fields[ 2 ].name_hash = rs_hash_str( "slots" );
+        fields[ 2 ].type_hash = h_vec3;
+        fields[ 2 ].offset    = RS_OFFSETOF( rs_test_walk_t, slots );
+        fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_walk_t, slots );
+        fields[ 2 ].mods      = RS_MODS( RS_M_PTR, RS_M_ARRAY, RS_M_END, RS_M_END );
+        fields[ 2 ].aux       = 3;
 
-        fields[ 3 ].name_sid = sid_intern_cstr( "nested" );
-        fields[ 3 ].offset   = RS_OFFSETOF( rs_test_walk_t, nested );
-        fields[ 3 ].size     = RS_FIELD_SIZE( rs_test_walk_t, nested );
+        fields[ 3 ].name_id   = test_intern( "nested" );
+        fields[ 3 ].name_hash = rs_hash_str( "nested" );
+        fields[ 3 ].type_hash = h_inner;
+        fields[ 3 ].offset    = RS_OFFSETOF( rs_test_walk_t, nested );
+        fields[ 3 ].size      = RS_FIELD_SIZE( rs_test_walk_t, nested );
 
-        walk_tid = rs_register_type( &type, fields, hashes, 4 );
+        walk_tid = rs_register_type( &type, fields, 4 );
     }
 
     rs_finalize_frame( game );

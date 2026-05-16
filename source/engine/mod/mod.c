@@ -103,6 +103,11 @@
 
 ==============================================================================================*/
 
+static mod_dll_event_fn g_dll_load_fn     = NULL;
+static void*            g_dll_load_user   = NULL;
+static mod_dll_event_fn g_dll_unload_fn   = NULL;
+static void*            g_dll_unload_user = NULL;
+
 #include "mod_internal.c"
 
 /*==============================================================================================
@@ -222,6 +227,10 @@ mod_dynamic_load( const char* name )
     m->version = 0;
     ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)", name, m->mod_api->version,
             m->mod_api->state_size, m->mod_api->func_api_size );
+
+    if ( g_dll_load_fn )
+        g_dll_load_fn( name, m->dll, g_dll_load_user );
+
     return true;
 }
 
@@ -238,6 +247,9 @@ mod_unload( const char* name )
     mod_info_t* m = &g_modules[ slot ];
     if ( m->status == MODULE_STATUS_INITIALIZED )
         call_exit( m );
+
+    if ( !m->is_static && g_dll_unload_fn )
+        g_dll_unload_fn( m->name, m->dll, g_dll_unload_user );
 
     slot_destroy( m );
     ms_log( "[module] unloaded '%s'", name );
@@ -438,6 +450,24 @@ mod_system_flush_reloads( void )
 }
 
 /*==============================================================================================
+    Public: DLL event callbacks
+==============================================================================================*/
+
+void
+mod_set_dll_load_cb( mod_dll_event_fn fn, void* user )
+{
+    g_dll_load_fn   = fn;
+    g_dll_load_user = user;
+}
+
+void
+mod_set_dll_unload_cb( mod_dll_event_fn fn, void* user )
+{
+    g_dll_unload_fn   = fn;
+    g_dll_unload_user = user;
+}
+
+/*==============================================================================================
     Public: API Access
 ==============================================================================================*/
 
@@ -465,6 +495,22 @@ const char*
 mod_last_error( void )
 {
     return g_last_error;
+}
+
+/*==============================================================================================
+    Public: iteration over loaded modules
+==============================================================================================*/
+
+void
+mod_each( mod_visitor_fn visit, void* user )
+{
+    if ( !visit ) return;
+    for ( int i = 0; i < MAX_MODULES; ++i )
+    {
+        mod_info_t* m = &g_modules[ i ];
+        if ( m->status == MODULE_STATUS_EMPTY ) continue;
+        visit( m->name, m->mod_api, user );
+    }
 }
 
 /*==============================================================================================

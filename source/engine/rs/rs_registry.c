@@ -89,14 +89,15 @@ static const struct
     [RS_PRIM_STRING]  = {"string",   sizeof( char* ), sizeof( char* )},
 };
 
-static void
+void
 rs_install_builtins( void )
 {
+    assert( g_rs.intern && "rs_install_builtins: call rs_init() first" );
     for ( uint16_t i = 0; i < RS_PRIM_COUNT; i++ )
     {
         rs_type_t* t   = &g_rs.types[ i ];
-        t->name_sid    = sid_intern_cstr( RS_BUILTINS[ i ].name );
-        t->hash        = sid_hash( RS_BUILTINS[ i ].name );
+        t->name_id     = g_rs.intern( RS_BUILTINS[ i ].name );
+        t->hash        = rs_hash_str( RS_BUILTINS[ i ].name );
         t->schema_hash = 0;
         t->field_index = 0;
         t->field_count = 0;
@@ -119,17 +120,19 @@ rs_install_builtins( void )
 ==============================================================================================*/
 
 void
-rs_init( void )
+rs_init( rs_intern_fn intern, rs_cstr_fn cstr )
 {
-    sid_init();
+    assert( intern && cstr && "rs_init: intern and cstr callbacks are required" );
     memset( &g_rs, 0, sizeof( g_rs ) );
+    g_rs.intern = intern;
+    g_rs.cstr   = cstr;
 
     for ( int i = 0; i < RS_TYPE_HASH_SIZE; i++ ) g_rs.type_hash[ i ] = RS_TYPE_INVALID;
 
-    /* Frame 0 = "system": holds the built-in primitives. Cannot be popped. */
+    /* Frame 0 = "system": holds the built-in primitives. Cannot be popped.
+       Builtins themselves are installed by the host via rs_install_builtins(). */
     uint16_t sys = rs_push_frame( "system", 1 );
     ( void )sys; /* always 0; no need to carry the id */
-    rs_install_builtins();
 }
 
 void
@@ -139,7 +142,6 @@ rs_exit( void )
     while ( g_rs.frame_count > 1 ) rs_pop_frame( g_rs.frame_count - 1 );
 
     memset( &g_rs, 0, sizeof( g_rs ) );
-    sid_exit();
 }
 
 void
@@ -169,7 +171,7 @@ rs_push_frame( const char* name, uint32_t version )
     uint16_t    id = g_rs.frame_count++;
     rs_frame_t* f  = &g_rs.frames[ id ];
 
-    f->name_sid    = sid_intern_cstr( name );
+    f->name_id     = g_rs.intern( name );
     f->version     = version;
     f->dll_handle  = NULL;
     f->first_type  = g_rs.type_count;
@@ -177,7 +179,7 @@ rs_push_frame( const char* name, uint32_t version )
     f->first_attr  = g_rs.attr_count;
     f->first_enum  = g_rs.enum_count;
 
-    if ( rs_debug )
+    if ( rs_debug && g_rs.cstr )
         printf( "rs: push frame[%u] '%s' v%u\n", id, name, version );
 
     return id;
@@ -241,18 +243,18 @@ rs_fnv1a_step( uint32_t h, const void* data, size_t len )
 }
 
 static uint32_t
-rs_compute_schema_hash( const rs_field_t* fields, const uint32_t* type_hashes, uint16_t count )
+rs_compute_schema_hash( const rs_field_t* fields, uint16_t count )
 {
     uint32_t h = 2166136261u; /* FNV-1a 32-bit offset basis */
     for ( uint16_t i = 0; i < count; i++ )
     {
         const rs_field_t* f = &fields[ i ];
-        h                   = rs_fnv1a_step( h, &f->name_sid, sizeof( f->name_sid ) );
+        h                   = rs_fnv1a_step( h, &f->name_id, sizeof( f->name_id ) );
         h                   = rs_fnv1a_step( h, &f->offset, sizeof( f->offset ) );
         h                   = rs_fnv1a_step( h, &f->size, sizeof( f->size ) );
         h                   = rs_fnv1a_step( h, &f->mods, sizeof( f->mods ) );
         h                   = rs_fnv1a_step( h, &f->aux, sizeof( f->aux ) );
-        h                   = rs_fnv1a_step( h, &type_hashes[ i ], sizeof( uint32_t ) );
+        h                   = rs_fnv1a_step( h, &f->type_hash, sizeof( f->type_hash ) );
     }
     return h;
 }
@@ -314,16 +316,16 @@ rs_alloc_enum_block( uint16_t count )
 }
 
 uint16_t
-rs_register_type( const rs_type_t* type, const rs_field_t* fields, const uint32_t* field_type_hashes, uint16_t field_count )
+rs_register_type( const rs_type_t* type, const rs_field_t* fields, uint16_t field_count )
 {
     if ( !type )
     {
         assert( 0 );
         return RS_TYPE_INVALID;
     }
-    if ( field_count > 0 && ( !fields || !field_type_hashes ) )
+    if ( field_count > 0 && !fields )
     {
-        assert( 0 && "rs_register_type: missing fields or type hashes" );
+        assert( 0 && "rs_register_type: missing fields array" );
         return RS_TYPE_INVALID;
     }
     if ( g_rs.frame_count == 0 )
@@ -343,7 +345,7 @@ rs_register_type( const rs_type_t* type, const rs_field_t* fields, const uint32_
     t->attr_index  = RS_ATTR_INVALID;
     t->attr_count  = 0;
     t->next        = RS_TYPE_INVALID;
-    t->schema_hash = rs_compute_schema_hash( fields, field_type_hashes, field_count );
+    t->schema_hash = rs_compute_schema_hash( fields, field_count );
 
     /* Reserve a contiguous block of fields and copy them in. */
     if ( field_count > 0 )
@@ -362,15 +364,8 @@ rs_register_type( const rs_type_t* type, const rs_field_t* fields, const uint32_
             dst->attr_index = RS_ATTR_INVALID;
             dst->attr_count = 0;
 
-            /* Stash the pending type-hash in the parallel side array. Used by
-               rs_finalize_frame() to resolve forward references, then becomes
-               quiet read-only metadata for diagnostics. */
-
-            uint32_t th = field_type_hashes[ i ];
-            g_rs.pending_type_hash[ first + i ] = th;
-
             /* Lazy resolve: try once now; gaps resolved at finalize_frame. */
-            uint16_t resolved = rs_hash_find( th );
+            uint16_t resolved = rs_hash_find( dst->type_hash );
             dst->type_id      = resolved;
             if ( resolved != RS_TYPE_INVALID )
                 dst->kind = g_rs.types[ resolved ].kind;
@@ -385,7 +380,7 @@ rs_register_type( const rs_type_t* type, const rs_field_t* fields, const uint32_
     rs_hash_insert( type_id );
 
     if ( rs_debug )
-        printf( "rs: registered [%u] %s (frame %u, %u fields)\n", type_id, sid_cstr( t->name_sid ), frame_id,
+        printf( "rs: registered [%u] %s (frame %u, %u fields)\n", type_id, g_rs.cstr( t->name_id ), frame_id,
                 field_count );
 
     return type_id;
@@ -401,7 +396,7 @@ rs_compute_enum_schema_hash( const rs_enum_t* e, uint16_t count )
     uint32_t h = 2166136261u;
     for ( uint16_t i = 0; i < count; i++ )
     {
-        h = rs_fnv1a_step( h, &e[ i ].name_sid, sizeof( e[ i ].name_sid ) );
+        h = rs_fnv1a_step( h, &e[ i ].name_id, sizeof( e[ i ].name_id ) );
         h = rs_fnv1a_step( h, &e[ i ].value, sizeof( e[ i ].value ) );
     }
     return h;
@@ -458,7 +453,7 @@ rs_register_enum( const rs_type_t* type, const rs_enum_t* enumerators, uint16_t 
     rs_hash_insert( type_id );
 
     if ( rs_debug )
-        printf( "rs: registered enum [%u] %s (frame %u, %u enumerators)\n", type_id, sid_cstr( t->name_sid ),
+        printf( "rs: registered enum [%u] %s (frame %u, %u enumerators)\n", type_id, g_rs.cstr( t->name_id ),
                 frame_id, count );
 
     return type_id;
@@ -487,7 +482,7 @@ rs_register_bitset( const rs_type_t* type, const rs_enum_t* enumerators, uint16_
 ==============================================================================================*/
 
 uint16_t
-rs_register_function( const rs_type_t* type, const rs_field_t* return_then_params, const uint32_t* type_hashes, uint16_t count )
+rs_register_function( const rs_type_t* type, const rs_field_t* return_then_params, uint16_t count )
 {
     if ( !type || count == 0 )
     {
@@ -500,7 +495,7 @@ rs_register_function( const rs_type_t* type, const rs_field_t* return_then_param
     /* Signatures themselves have no inherent size; pointer fields that reference one
        carry sizeof(void*) themselves. Leave caller's `size` as-is (commonly sizeof(void*)). */
 
-    return rs_register_type( &patched, return_then_params, type_hashes, count );
+    return rs_register_type( &patched, return_then_params, count );
 }
 
 /*==============================================================================================
@@ -594,12 +589,10 @@ rs_finalize_frame( uint16_t frame_id )
         rs_field_t* fld = &g_rs.fields[ i ];
         if ( fld->type_id != RS_TYPE_INVALID )
             continue;
-
-        uint32_t th = g_rs.pending_type_hash[ i ];
-        if ( th == 0 )
+        if ( fld->type_hash == 0 )
             continue;
 
-        uint16_t resolved = rs_hash_find( th );
+        uint16_t resolved = rs_hash_find( fld->type_hash );
         if ( resolved != RS_TYPE_INVALID )
         {
             fld->type_id = resolved;
@@ -612,14 +605,94 @@ rs_finalize_frame( uint16_t frame_id )
     for ( uint16_t i = f->first_field; i < field_end; i++ )
     {
         const rs_field_t* fld = &g_rs.fields[ i ];
-        if ( fld->type_id == RS_TYPE_INVALID && g_rs.pending_type_hash[ i ] != 0 )
+        if ( fld->type_id == RS_TYPE_INVALID && fld->type_hash != 0 )
         {
             printf( "rs: ERROR unresolved field '%s' (type hash 0x%08x) in frame %u\n",
-                    sid_cstr( fld->name_sid ), g_rs.pending_type_hash[ i ], frame_id );
+                    g_rs.cstr( fld->name_id ), fld->type_hash, frame_id );
             ok = false;
         }
     }
     return ok;
+}
+
+/*==============================================================================================
+    Module DLL integration
+==============================================================================================*/
+
+uint16_t
+rs_load_module_dll( const char* name, void* dll )
+{
+    if ( !dll || !name )
+        return RS_FRAME_INVALID;
+
+    typedef void ( *rs_register_fn )( rs_intern_fn intern, const rs_reg_api_t* api );
+    rs_register_fn rs_reg = ( rs_register_fn )sys_library_get_symbol( ( lib_handle_t )dll, "rs_register" );
+    if ( !rs_reg )
+        return RS_FRAME_INVALID;
+
+    uint16_t frame = rs_push_frame( name, 1 );
+    if ( frame == RS_FRAME_INVALID )
+        return RS_FRAME_INVALID;
+
+    rs_reg_api_t api = {
+        .rs_register_type   = rs_register_type,
+        .rs_register_enum   = rs_register_enum,
+        .rs_register_bitset = rs_register_bitset,
+        .rs_type_add_attr   = rs_type_add_attr,
+        .rs_field_add_attr  = rs_field_add_attr,
+        .rs_get_type        = rs_get_type,
+    };
+
+    rs_reg( g_rs.intern, &api );
+    rs_finalize_frame( frame );
+    return frame;
+}
+
+void
+rs_unload_module_dll( const char* name )
+{
+    if ( !name || g_rs.frame_count <= 1 )
+        return;
+
+    uint16_t top = g_rs.frame_count - 1;
+    if ( strcmp( g_rs.cstr( g_rs.frames[ top ].name_id ), name ) == 0 )
+    {
+        rs_pop_frame( top );
+        return;
+    }
+
+    printf( "rs: WARNING rs_unload_module_dll: '%s' is not the topmost frame (top='%s'); skipped\n",
+            name, g_rs.cstr( g_rs.frames[ top ].name_id ) );
+}
+
+uint16_t
+rs_load_module_static( const char* name, void ( *rs_reg )( rs_intern_fn, const rs_reg_api_t* ) )
+{
+    if ( !name || !rs_reg )
+        return RS_FRAME_INVALID;
+
+    uint16_t frame = rs_push_frame( name, 1 );
+    if ( frame == RS_FRAME_INVALID )
+        return RS_FRAME_INVALID;
+
+    rs_reg_api_t api = {
+        .rs_register_type   = rs_register_type,
+        .rs_register_enum   = rs_register_enum,
+        .rs_register_bitset = rs_register_bitset,
+        .rs_type_add_attr   = rs_type_add_attr,
+        .rs_field_add_attr  = rs_field_add_attr,
+        .rs_get_type        = rs_get_type,
+    };
+
+    rs_reg( g_rs.intern, &api );
+    rs_finalize_frame( frame );
+    return frame;
+}
+
+const char*
+rs_name_cstr( rs_name_t id )
+{
+    return g_rs.cstr ? g_rs.cstr( id ) : "";
 }
 
 /*============================================================================================*/

@@ -2,7 +2,7 @@
 #define CORE_API_H
 /*==============================================================================================
 
-    engine/core/core_api.h — core module API struct and gateway macro.
+    engine/core/core_api.h - core module API struct and gateway macro.
 
     Consumers call core_api()->log_info(...) etc.
     core is always statically linked, but the conditional below preserves the
@@ -12,7 +12,7 @@
 
 #ifndef CORE_DECLARED
     #error "core_api.h should not be included directly; include core.h instead."
-#endif 
+#endif
 
 #include "engine/mod/mod.h"
 

@@ -27,7 +27,7 @@ rs_find_type_by_name( const char* name )
 {
     if ( !name )
         return RS_TYPE_INVALID;
-    return rs_hash_find( sid_hash( name ) );
+    return rs_hash_find( rs_hash_str( name ) );
 }
 
 /*==============================================================================================
@@ -49,11 +49,11 @@ rs_find_field( uint16_t type_id, const char* name )
     if ( !t || !name )
         return NULL;
 
-    sid_t target = sid_intern_cstr( name );
+    uint32_t h = rs_hash_str( name );
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
         const rs_field_t* f = &g_rs.fields[ t->field_index + i ];
-        if ( sid_equals( f->name_sid, target ) )
+        if ( f->name_hash == h )
             return f;
     }
     return NULL;
@@ -69,11 +69,11 @@ rs_find_attr_in_block( uint16_t first, uint16_t count, const char* name )
     if ( count == 0 || first == RS_ATTR_INVALID || !name )
         return NULL;
 
-    sid_t target = sid_intern_cstr( name );
+    uint32_t h = rs_hash_str( name );
     for ( uint16_t i = 0; i < count; i++ )
     {
         const rs_attrib_t* a = &g_rs.attrs[ first + i ];
-        if ( sid_equals( a->name_sid, target ) )
+        if ( a->name_hash == h )
             return a;
     }
     return NULL;
@@ -114,11 +114,11 @@ rs_enum_find_by_name( uint16_t type_id, const char* name )
     if ( !t || !rs_kind_is_enum( (rs_kind_t)t->kind ) || !name )
         return NULL;
 
-    sid_t target = sid_intern_cstr( name );
+    uint32_t h = rs_hash_str( name );
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
         const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
-        if ( sid_equals( e->name_sid, target ) )
+        if ( e->name_hash == h )
             return e;
     }
     return NULL;
@@ -214,7 +214,7 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
     if ( value == 0 )
     {
         const rs_enum_t* z = rs_enum_find_by_value( type_id, 0 );
-        const char* s = z ? sid_cstr( z->name_sid ) : "0";
+        const char* s = z ? g_rs.cstr( z->name_id ) : "0";
         size_t      n = 0;
         while ( s[ n ] && n + 1 < buf_size ) { buf[ n ] = s[ n ]; n++; }
         buf[ n ] = '\0';
@@ -236,7 +236,7 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
             const char* sep = " | ";
             while ( *sep && pos + 1 < buf_size ) buf[ pos++ ] = *sep++;
         }
-        const char* name = sid_cstr( e->name_sid );
+        const char* name = g_rs.cstr( e->name_id );
         while ( *name && pos + 1 < buf_size ) buf[ pos++ ] = *name++;
         first = false;
         remaining &= ~e->value;

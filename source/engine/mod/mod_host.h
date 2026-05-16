@@ -45,6 +45,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod.h"
+#include "engine/sys/sys.h"
 
 /*==============================================================================================
     Build-mode-transparent module registration macro
@@ -119,6 +120,39 @@ const char* mod_last_error( void );
     #define HOST_FETCH_API( type, name ) \
         ( ( g_##name##_api_ptr = ( const type* )mod_get_api( #name ) ) != NULL )
 #endif
+
+/*==============================================================================================
+    DLL event callbacks
+
+    Register optional callbacks that fire on every dynamic module load and unload.
+    Useful for systems (e.g. reflection, profiler) that need to discover module DLLs
+    without the module system depending on them.
+
+    on_load  - fired after a DLL is loaded and its mod_api_t is resolved.
+    on_unload - fired before a DLL's handle is released (on explicit unload or hot-reload).
+
+    During a hot-reload the sequence is:
+        on_unload( name, old_dll )
+        old DLL released
+        on_load( name, new_dll )
+
+    Not fired for static modules (no DLL handle).
+==============================================================================================*/
+
+typedef void ( *mod_dll_event_fn )( const char* name, lib_handle_t dll, void* user );
+
+void mod_set_dll_load_cb  ( mod_dll_event_fn fn, void* user );
+void mod_set_dll_unload_cb( mod_dll_event_fn fn, void* user );
+
+/*==============================================================================================
+    Iteration
+
+    Visits every non-empty module slot in load order.
+==============================================================================================*/
+
+typedef void ( *mod_visitor_fn )( const char* name, const mod_api_t* api, void* user );
+
+void mod_each( mod_visitor_fn visit, void* user );
 
 /*==============================================================================================
     Debug

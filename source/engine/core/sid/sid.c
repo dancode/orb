@@ -1,41 +1,10 @@
 // clang-format off
 /*==============================================================================================
 
-    sid.c : hashing
-
-==============================================================================================*/
-
-static inline unsigned char
-ascii_tolower( unsigned char c )
-{
-    return ( c >= 'A' && c <= 'Z' ) ? ( c + 32 ) : c;
-}
-
-uint32_t
-sid_hash( const char* s )
-{
-    /* case-insensitive hash (FNV-1a) function */
-    uint32_t h = 2166136261u;
-    while ( *s ) h = ( h ^ ( uint8_t )ascii_tolower( ( unsigned char )*s++ ) ) * 16777619u;
-    return h;
-}
-
-uint32_t
-sid_hash_len( const char* str, size_t len )
-{
-    /* case-insensitive hash (FNV-1a) function */
-    uint32_t hash = 2166136261u;
-    for ( size_t i = 0; i < len; i++ )
-    {
-        hash ^= ( uint8_t )ascii_tolower( ( unsigned char )str[ i ] );
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-/*==============================================================================================
-
     sid.c : configuration
+
+    Note: sid_hash / sid_hash_len are static inline in sid.h - no plumbing required,
+    so any TU (including DLLs and codegen) can compute hashes directly.
 
 ==============================================================================================*/
 
@@ -51,6 +20,12 @@ sid_hash_len( const char* str, size_t len )
     sid.c : declarations
 
 ==============================================================================================*/
+
+static inline unsigned char
+ascii_tolower( unsigned char c )
+{
+    return ( c >= 'A' && c <= 'Z' ) ? ( c + 32 ) : c;
+}
 
 intern_state_t g_intern;    // global intern state (must be public for natvis debug)
 
