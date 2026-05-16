@@ -19,6 +19,7 @@
 
 typedef struct rs_registry_s
 {
+    
     uint16_t        type_count;
     uint16_t        field_count;
     uint16_t        attr_count;

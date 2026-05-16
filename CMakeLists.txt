@@ -148,6 +148,73 @@ endif()
 include_directories( ${CMAKE_SOURCE_DIR}/source )
 
 # ------------------------------------------------------------------------------
+# RS_GEN — Reflection code generation tool
+#
+# Standalone C11 executable: no engine deps, called as a pre-compile step.
+# Scans annotated headers and writes <module>.generated.h/.c into
+# ${CMAKE_BINARY_DIR}/generated/ (gitignored via the build directory).
+# ------------------------------------------------------------------------------
+
+set( BUILD_REFLECT_ROOT  "${CMAKE_SOURCE_DIR}/source/tools/rs_gen" )
+set( BUILD_REFLECT_UNITY "${BUILD_REFLECT_ROOT}/rs_gen.c" )
+
+file( GLOB_RECURSE BUILD_REFLECT_FILES
+    "${BUILD_REFLECT_ROOT}/*.c"
+    "${BUILD_REFLECT_ROOT}/*.h"
+)
+
+set_source_files_properties( ${BUILD_REFLECT_FILES}    PROPERTIES HEADER_FILE_ONLY ON )
+set_source_files_properties( "${BUILD_REFLECT_UNITY}"  PROPERTIES HEADER_FILE_ONLY OFF )
+
+add_executable( build_reflect ${BUILD_REFLECT_FILES} )
+set_target_properties( build_reflect PROPERTIES FOLDER "08_Tools" )
+source_group( TREE "${BUILD_REFLECT_ROOT}" FILES ${BUILD_REFLECT_FILES} )
+
+# target_add_reflect_gen( <target> <source_dir> <module_name> )
+#
+#   Wires build_reflect as a pre-compile step for <target>.
+#   Generated files land in ${CMAKE_BINARY_DIR}/generated/ and are
+#   added as sources so the IDE shows them and MSBuild rebuilds when
+#   headers change.
+#
+#   Example:
+#       target_add_reflect_gen( engine_core "source/engine/core" "engine_core" )
+
+function( target_add_reflect_gen TARGET_NAME SOURCE_DIR MODULE_NAME )
+
+    set( GEN_DIR "${CMAKE_BINARY_DIR}/generated" )
+    set( GEN_H   "${GEN_DIR}/${MODULE_NAME}.generated.h" )
+    set( GEN_C   "${GEN_DIR}/${MODULE_NAME}.generated.c" )
+
+    # Ensure the output directory exists at configure time
+    file( MAKE_DIRECTORY "${GEN_DIR}" )
+
+    # Track all headers in the module so any change triggers a regen
+    file( GLOB_RECURSE RS_HEADERS "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}/*.h" )
+
+    add_custom_command(
+        OUTPUT  "${GEN_H}" "${GEN_C}"
+        COMMAND $<TARGET_FILE:build_reflect>
+                "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}"
+                "${GEN_DIR}"
+                "${MODULE_NAME}"
+        DEPENDS build_reflect ${RS_HEADERS}
+        COMMENT "[build_reflect] generating reflection for ${MODULE_NAME}"
+        VERBATIM
+    )
+
+    target_sources( ${TARGET_NAME} PRIVATE "${GEN_H}" "${GEN_C}" )
+    target_include_directories( ${TARGET_NAME} PRIVATE "${GEN_DIR}" )
+
+    # .h is browsable, not compiled; .c is compiled as a separate TU
+    set_source_files_properties( "${GEN_H}" PROPERTIES HEADER_FILE_ONLY ON )
+    set_source_files_properties( "${GEN_C}" PROPERTIES HEADER_FILE_ONLY OFF )
+
+    source_group( "Generated" FILES "${GEN_H}" "${GEN_C}" )
+
+endfunction()
+
+# ------------------------------------------------------------------------------
 # Create libray function (for Unity builds)
 # ------------------------------------------------------------------------------
 
@@ -336,6 +403,7 @@ target_compile_definitions( engine_app PUBLIC APP_STATIC )
 # CORE
 add_unity_library( engine_core STATIC "source/engine/core" "02_Engine" "core.c" )
 target_compile_definitions( engine_core PUBLIC CORE_STATIC )
+target_add_reflect_gen( engine_core "source/engine/core" "engine_core" )
 
 # ENGINE LINK ORDER: SYS -> CORE -> MOD -> APP
 

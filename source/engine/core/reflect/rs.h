@@ -125,7 +125,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "sid/sid.h"
+#include "engine/core/sid/sid.h"
 
 // clang-format off
 /*==============================================================================================
@@ -539,6 +539,46 @@ size_t rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size );
 ==============================================================================================*/
 
 void rs_run_tests( void );
+
+/*==============================================================================================
+    Reflection annotation macros
+
+    These markers are parsed by rs_gen at build time and expand to nothing at compile time.
+    Place them immediately before the type or field declaration they annotate.
+
+    Type annotations:
+
+        RS_STRUCT()
+        typedef struct player_t { ... } player_t;
+
+        RS_ENUM()
+        typedef enum color_t { ... } color_t;
+
+        RS_BITSET()                         // flag-style: values OR together
+        typedef enum flags_t { ... } flags_t;
+
+    Field annotations (inside a RS_STRUCT body):
+
+        RS_FIELD()                          int32_t  id;
+        RS_FIELD( transient )               void*    scratch;    // tag attribute
+        RS_FIELD( range=0, 100 )            float    health;     // value attribute
+        RS_PROP()                           vec3_t   position;   // alias for RS_FIELD
+
+    Global variable annotation:
+
+        RS_VAR()                            int32_t g_frame_count;
+
+    Attributes in the parens are recorded by rs_gen. The C compiler sees nothing.
+==============================================================================================*/
+
+// clang-format off
+#define RS_STRUCT(...)
+#define RS_ENUM(...)
+#define RS_BITSET(...)
+#define RS_FIELD(...)
+#define RS_PROP(...)
+#define RS_VAR(...)
+// clang-format on
 
 /*============================================================================================*/
 #endif    // RS_H
