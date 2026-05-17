@@ -395,7 +395,7 @@ target_compile_definitions( engine_sys PUBLIC SYS_STATIC )
 
 # ------------------------------------------------------------------------------
 
-# MOD
+# MOD (THE MODULE LIBRARY IS NOT A MODULE ITSELF)
 add_unity_library( engine_mod STATIC "source/engine/mod" "02_Engine" "mod.c" )
 target_compile_definitions( engine_mod PUBLIC MOD_STATIC )
 
@@ -407,14 +407,9 @@ target_compile_definitions( engine_app PUBLIC APP_STATIC )
 add_unity_library( engine_core STATIC "source/engine/core" "02_Engine" "core.c" )
 target_compile_definitions( engine_core PUBLIC CORE_STATIC )
 
-# RS (reflection system) - sibling of CORE; depends on neither.
-# Generated module reflection descriptors are registered by the host through
-# rs_register_module(), which takes sid_intern_cstr as a function pointer so
-# engine_rs has no link-time coupling to engine_core's sid implementation.
+# RS (REFLECT)
 add_unity_library( engine_rs STATIC "source/engine/rs" "02_Engine" "rs.c" )
 target_compile_definitions( engine_rs PUBLIC RS_STATIC )
-
-# ENGINE LINK ORDER: SYS -> (RS, CORE) -> MOD -> APP
 
 # target_link_libraries( engine_sys  PUBLIC base )
 target_link_libraries( engine_core PUBLIC engine_sys engine_rs )

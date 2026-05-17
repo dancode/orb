@@ -31,8 +31,8 @@
 static char     g_rs_str_pool[ RS_STRING_POOL_SIZE ];
 static uint32_t g_rs_str_top;
 
-static rs_name_t
-rs_pool_intern( const char* s )
+rs_name_t
+rs_intern( const char* s )
 {
     uint32_t len = (uint32_t)strlen( s );
     uint32_t i   = 0;
@@ -48,8 +48,8 @@ rs_pool_intern( const char* s )
     return id;
 }
 
-static const char*
-rs_pool_cstr( rs_name_t id )
+const char*
+rs_cstr( rs_name_t id )
 {
     return g_rs_str_pool + id;
 }
@@ -66,9 +66,6 @@ typedef struct rs_registry_s
     uint16_t    enum_count;
     uint16_t    frame_count;
     uint8_t     _pad[ 2 ];
-
-    rs_intern_fn intern;             /* set to rs_pool_intern by rs_init() */
-    rs_cstr_fn   cstr;               /* set to rs_pool_cstr  by rs_init() */
 
     rs_type_t   types[ RS_MAX_TYPES ];
     rs_field_t  fields[ RS_MAX_FIELDS ];
@@ -102,14 +99,15 @@ const rs_api_t g_rs_api_struct = {
     .find_field         = rs_find_field,
     .type_get_attr      = rs_type_get_attr,
     .field_get_attr     = rs_field_get_attr,
-    .intern_name        = rs_intern_name,
-    .name_cstr          = rs_name_cstr,
+    .intern             = rs_intern,
+    .cstr               = rs_cstr,
     .each_type          = rs_each_type,
     .each_type_in_frame = rs_each_type_in_frame,
     .each_field         = rs_each_field,
     .each_enumerator    = rs_each_enumerator,
     .bitset_describe    = rs_bitset_describe,
     .walk_refs          = rs_walk_refs,
+    .walk               = rs_walk,
     .write              = rs_write,
     .read               = rs_read,
     .peek_type_hash     = rs_peek_type_hash,

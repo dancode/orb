@@ -1,16 +1,26 @@
 /*==============================================================================================
 
-    sandbox/sb_runtime_reflect.c - Testbed for loading a reflected module.
+    sandbox/sb_runtime_reflect.c - How to use the rs_ reflection system.
 
-    Boots the engine stack (rs + sys + core) as proper modules, wires rs_ to the mod DLL
-    lifecycle, then loads example_reflect.  Reflection registration is automatic:
+    This file is a guided tour. Read it top to bottom. Each section shows one concept.
 
-        mod_static_load("rs", ...)   -- rs_mod_init calls rs_init() + installs builtins
-        rs_wire_mod_callbacks()      -- wires rs_load_module_dll to DLL load events
-        mod_load( example_reflect )  -- fires on_load -> rs registers the module's types
-        mod_init_all()               -- calls example_reflect's init
+    The reflection system (rs_) lets you inspect C structs and enums at runtime — their
+    field names, types, offsets, and attributes — without writing any parsing code.
+    You annotate your types with RS_STRUCT / RS_PROP / RS_ENUM, run the build_reflect
+    tool, and it generates the registration code automatically.
 
-    After that, exercises the full feature surface against the registered types.
+    BOOT ORDER
+    ----------
+    Before you can query anything, three things must happen:
+
+        1. rs is loaded as a module     -- sets up the type registry and built-in primitives
+        2. rs_wire_mod_callbacks()      -- tells the module system to call rs automatically
+                                          whenever a DLL loads or unloads
+        3. mod_load( example_reflect )  -- loads the DLL; the DLL load callback fires and
+                                          rs reads the DLL's rs_register export, registering
+                                          all annotated types from that module
+
+    After that the registry is live and you can query types by name, walk fields, etc.
 
 ==============================================================================================*/
 
@@ -25,17 +35,23 @@
 
 #include "runtime_modules/example_reflect/example_reflect.h"
 
+/* Declare a cached pointer to example_reflect's API so we can call its functions. */
 MOD_DEFINE_API_PTR( example_reflect_api_t, example_reflect );
 
 /*==============================================================================================
-    Iteration callbacks for the feature tour
+    Callbacks used by the iteration and walker examples below.
+
+    rs_ uses callbacks for iteration — you give it a function, it calls it once per item.
+    Each callback receives the item and a void* user pointer for your own context.
 ==============================================================================================*/
 
+/* Used to filter types by frame when listing all types in a module. */
 typedef struct
 {
     uint16_t frame_id;
 } list_ctx_t;
 
+/* Called once per type in the registry. We filter to only print types from our module's frame. */
 static void
 list_type_cb( uint16_t type_id, const rs_type_t* t, void* user )
 {
@@ -52,10 +68,12 @@ list_type_cb( uint16_t type_id, const rs_type_t* t, void* user )
         default: break;
     }
     printf( "  [%3u] %-7s %-20s size=%-3u align=%-2u fields=%u\n",
-            type_id, kind, rs_name_cstr( t->name_id ),
+            type_id, kind, rs_cstr( t->name_id ),
             (unsigned)t->size, (unsigned)t->align, (unsigned)t->field_count );
 }
 
+/* Called once per field on a type. rs_field_describe builds a human-readable type string
+   like "const vec3_t*[8]" from the packed modifier chain stored in the field. */
 static void
 print_field_cb( uint16_t field_id, const rs_field_t* f, void* user )
 {
@@ -66,27 +84,125 @@ print_field_cb( uint16_t field_id, const rs_field_t* f, void* user )
     rs_field_describe( f, desc, sizeof desc );
 
     printf( "      %-20s : %-28s offset=%-3u size=%-3u",
-            rs_name_cstr( f->name_id ), desc, (unsigned)f->offset, (unsigned)f->size );
+            rs_cstr( f->name_id ), desc, (unsigned)f->offset, (unsigned)f->size );
     if ( f->attr_count > 0 ) printf( "  attrs=%u", (unsigned)f->attr_count );
     printf( "\n" );
 }
 
+/* Called once per enumerator on an enum or bitset type. */
 static void
 print_enum_cb( uint16_t enum_id, const rs_enum_t* e, void* user )
 {
     UNUSED( enum_id );
     UNUSED( user );
-    printf( "      %-20s = %lld\n", rs_name_cstr( e->name_id ), (long long)e->value );
+    printf( "      %-20s = %lld\n", rs_cstr( e->name_id ), (long long)e->value );
 }
+
+/*----------------------------------------------------------------------------------------------
+    value_visit  -  callback for rs_walk (the full value walker).
+
+    rs_walk visits every field of a live struct instance, recursing into nested structs
+    automatically. This callback is called once per field visit with:
+
+        addr     - pointer to the field's bytes inside the instance
+        type_id  - the base type of the field (e.g. RS_PRIM_F32 for float)
+        field    - the field's metadata (name, offset, size, mods, attributes)
+        user     - whatever you passed to rs_walk (unused here)
+
+    field->mods tells you the shape: plain value, pointer, array, etc.
+    RS_MOD_OP( RS_MOD_GET( field->mods, 0 ) ) gives you the outermost modifier.
+----------------------------------------------------------------------------------------------*/
+
+static void
+value_visit( void* addr, uint16_t type_id, const rs_field_t* field, void* user )
+{
+    UNUSED( user );
+
+    const rs_type_t* t     = rs_get_type( type_id );
+    const char*      tname = t ? rs_cstr( t->name_id ) : "?";
+    const char*      fname = rs_cstr( field->name_id );
+
+    /* Read the outermost modifier to know the field's shape. */
+    rs_mod_op_t op0 = RS_MOD_OP( RS_MOD_GET( field->mods, 0 ) );
+
+    /* Pointer field (T* or T*[N]): addr is the address of the pointer variable itself.
+       Cast to void** to read the pointer's value. */
+    if ( op0 == RS_MOD_PTR )
+    {
+        printf( "    %-20s %-14s %s\n", fname, tname, *(void**)addr ? "(non-null)" : "(null)" );
+        return;
+    }
+
+    /* Struct or union field: rs_walk will recurse into it automatically after this call,
+       so just print an opening marker. Sub-fields will appear on the lines that follow. */
+    if ( !t || ( t->kind == RS_KIND_STRUCT || t->kind == RS_KIND_UNION ) )
+    {
+        printf( "    %-20s %s {\n", fname, tname );
+        return;
+    }
+
+    /* Enum or bitset: read the integer value, then look up its name in the registry. */
+    if ( t->kind == RS_KIND_ENUM || t->kind == RS_KIND_BITSET )
+    {
+        int64_t val = 0;
+        switch ( t->size )
+        {
+            case 1: val = *(int8_t*)addr;  break;
+            case 2: val = *(int16_t*)addr; break;
+            case 4: val = *(int32_t*)addr; break;
+            case 8: val = *(int64_t*)addr; break;
+        }
+        const rs_enum_t* e = rs_enum_find_by_value( type_id, val );
+        printf( "    %-20s %-14s %s (%lld)\n", fname, tname,
+                e ? rs_cstr( e->name_id ) : "?", (long long)val );
+        return;
+    }
+
+    /* Inline char arrays (e.g. char name[64]) generate one visit per element.
+       Skip the trailing null bytes so we only see the actual string content. */
+    if ( op0 == RS_MOD_ARRAY && type_id == RS_PRIM_CHAR && *(char*)addr == '\0' )
+        return;
+
+    /* Primitive value: cast addr to the correct type and print. */
+    printf( "    %-20s %-14s ", fname, tname );
+    switch ( type_id )
+    {
+        case RS_PRIM_BOOL: printf( "%s",    *(bool*)addr ? "true" : "false" ); break;
+        case RS_PRIM_CHAR: printf( "'%c'",  *(char*)addr );                    break;
+        case RS_PRIM_I8:   printf( "%d",    *(int8_t*)addr );                  break;
+        case RS_PRIM_U8:   printf( "%u",    *(uint8_t*)addr );                 break;
+        case RS_PRIM_I16:  printf( "%d",    *(int16_t*)addr );                 break;
+        case RS_PRIM_U16:  printf( "%u",    *(uint16_t*)addr );                break;
+        case RS_PRIM_I32:  printf( "%d",    *(int32_t*)addr );                 break;
+        case RS_PRIM_U32:  printf( "%u",    *(uint32_t*)addr );                break;
+        case RS_PRIM_I64:  printf( "%lld",  *(int64_t*)addr );                 break;
+        case RS_PRIM_U64:  printf( "%llu",  *(uint64_t*)addr );                break;
+        case RS_PRIM_F32:  printf( "%.3f",  *(float*)addr );                   break;
+        case RS_PRIM_F64:  printf( "%.3f",  *(double*)addr );                  break;
+        default:           printf( "?" );                                       break;
+    }
+    printf( "\n" );
+}
+
+/*----------------------------------------------------------------------------------------------
+    ref_visit  -  callback for rs_walk_refs (the pointer-only walker).
+
+    Unlike rs_walk, rs_walk_refs only calls you for fields that hold pointers.
+    This is useful for GC, relocation, or anything that only cares about references.
+
+        slot             - address of the pointer variable (void**); write to it to relocate
+        pointee_type_id  - the type the pointer points to
+        field            - field metadata
+----------------------------------------------------------------------------------------------*/
 
 static void
 ref_visit( void** slot, uint16_t pointee_type_id, const rs_field_t* field, void* user )
 {
     UNUSED( user );
-    const char* fname = rs_name_cstr( field->name_id );
+    const char* fname = rs_cstr( field->name_id );
     const char* tname = "?";
     const rs_type_t* pt = rs_get_type( pointee_type_id );
-    if ( pt ) tname = rs_name_cstr( pt->name_id );
+    if ( pt ) tname = rs_cstr( pt->name_id );
     printf( "    ref slot '%s' -> %s* %s\n", fname, tname,
             *slot ? "(non-null)" : "(NULL)" );
 }
@@ -100,43 +216,58 @@ exercise_reflection( void )
 {
     const example_reflect_api_t* mod = example_reflect_api();
 
+    /* STEP 1: Look up types by name.
+       Every type registered from a reflected module gets a stable numeric ID (type_id).
+       rs_find_type_by_name does a hash lookup — O(1), no string scanning at runtime. */
     uint16_t entity_tid = rs_find_type_by_name( "ex_entity_t" );
     uint16_t facing_tid = rs_find_type_by_name( "ex_facing_t" );
     uint16_t caps_tid   = rs_find_type_by_name( "ex_caps_t" );
 
-    /* Frame iteration: ex_entity_t.frame_id identifies the module's frame. */
+    /* STEP 2: List all types registered by a module.
+       Each module owns a "frame" in the registry. When the module unloads, its frame
+       is popped and all its types disappear — no cleanup code needed. */
     list_ctx_t lc = { .frame_id = rs_get_type( entity_tid )->frame_id };
     printf( "\n=== Types in frame %u ===\n", lc.frame_id );
     rs_each_type( list_type_cb, &lc );
 
-    /* Fields */
+    /* STEP 3: Inspect a struct's fields.
+       rs_each_field calls your callback once per field with the full field descriptor:
+       name, type, byte offset, size, and the packed modifier chain (pointer/array/const). */
     const rs_type_t* etype = rs_get_type( entity_tid );
     if ( etype )
     {
-        printf( "\n=== Fields of %s ===\n", rs_name_cstr( etype->name_id ) );
+        printf( "\n=== Fields of %s ===\n", rs_cstr( etype->name_id ) );
         rs_each_field( entity_tid, print_field_cb, NULL );
 
+        /* STEP 4: Read attributes.
+           Attributes are metadata tags you write in the RS_PROP() annotation.
+           e.g. RS_PROP( tooltip="An entity" ) or RS_PROP( range=0, 100 )
+           They are stored flat in the registry alongside the field or type. */
         const rs_attrib_t* tip = rs_type_get_attr( entity_tid, "tooltip" );
         if ( tip && tip->type == RS_ATTR_STRING )
-            printf( "  tooltip = \"%s\"\n", rs_name_cstr( tip->value.str ) );
+            printf( "  tooltip = \"%s\"\n", rs_cstr( tip->value.str ) );
 
+        /* rs_find_field looks up a specific field by name on a type. */
         const rs_field_t* health = rs_find_field( entity_tid, "health" );
         if ( health )
             printf( "  field 'health' attr_count=%u (expect 2 from range=0,100)\n",
                     (unsigned)health->attr_count );
     }
 
-    /* Enum + bitset */
+    /* STEP 5: Enums and bitsets.
+       Enums are registered with their enumerator names and integer values.
+       Bitsets are flag-style enums where values OR together.
+       rs_bitset_describe turns a bitmask back into a readable "FLAG_A | FLAG_B" string. */
     const rs_type_t* ftype = rs_get_type( facing_tid );
     if ( ftype )
     {
-        printf( "\n=== Enumerators of %s ===\n", rs_name_cstr( ftype->name_id ) );
+        printf( "\n=== Enumerators of %s ===\n", rs_cstr( ftype->name_id ) );
         rs_each_enumerator( facing_tid, print_enum_cb, NULL );
     }
     const rs_type_t* ctype = rs_get_type( caps_tid );
     if ( ctype )
     {
-        printf( "\n=== Bitset %s ===\n", rs_name_cstr( ctype->name_id ) );
+        printf( "\n=== Bitset %s ===\n", rs_cstr( ctype->name_id ) );
         rs_each_enumerator( caps_tid, print_enum_cb, NULL );
 
         char buf[ 128 ];
@@ -145,7 +276,10 @@ exercise_reflection( void )
         printf( "  describe(0x%x) = %s\n", (unsigned)demo->caps, buf );
     }
 
-    /* Reference walker */
+    /* STEP 6: Pointer walker (rs_walk_refs).
+       Scans a live instance and calls your visitor only for fields that hold pointers.
+       Useful for garbage collection, memory relocation, or serialization pre-passes.
+       Recurses into nested structs automatically so buried pointers are found too. */
     if ( entity_tid != RS_TYPE_INVALID )
     {
         printf( "\n=== rs_walk_refs over demo entity ===\n" );
@@ -153,7 +287,23 @@ exercise_reflection( void )
         rs_walk_refs( &local, entity_tid, ref_visit, NULL );
     }
 
-    /* Serialization round-trip */
+    /* STEP 7: Full value walker (rs_walk).
+       Visits every field of a live instance — primitives, enums, structs, and pointers.
+       Recurses into nested structs automatically. Use this for inspection UIs, diffing,
+       copying, or any operation that needs to see every value in a struct tree.
+       The visitor receives the address of each field so you can read or write values. */
+    if ( entity_tid != RS_TYPE_INVALID )
+    {
+        printf( "\n=== rs_walk over demo entity ===\n" );
+        ex_entity_t local = *mod->demo_entity();
+        rs_walk( &local, entity_tid, value_visit, NULL );
+    }
+
+    /* STEP 8: Serialization.
+       rs_write saves a struct to a flat byte buffer. It zeroes pointer fields and any
+       field marked @transient so saved data is self-contained.
+       rs_read restores it, but only if the schema hash matches — meaning the struct layout
+       hasn't changed since it was saved. This catches hot-reload ABI breaks automatically. */
     if ( entity_tid != RS_TYPE_INVALID )
     {
         printf( "\n=== Serialization round-trip ===\n" );
@@ -163,6 +313,8 @@ exercise_reflection( void )
         size_t  n = rs_write( demo, entity_tid, buf, sizeof buf );
         printf( "  wrote %zu bytes\n", n );
 
+        /* rs_peek_type_hash reads the type identity from the saved header without
+           fully deserializing — handy for routing saved blobs to the right handler. */
         uint32_t tag = rs_peek_type_hash( buf, n );
         printf( "  peek type_hash = 0x%08x  (expected 0x%08x)\n",
                 tag, rs_hash_str( "ex_entity_t" ) );
@@ -193,29 +345,41 @@ main( int argc, char** argv )
 
     printf( "=== sb_runtime_reflect ===\n" );
 
+    /* Boot the module system. All modules are registered here but not yet initialised. */
     mod_system_init();
 
-    mod_static_load( "rs",   rs_get_mod_api() );    /* rs_init + builtins called inside */
+    /* Register the three engine modules. Order here just declares them; the module system
+       resolves the correct init order from their declared dependencies. */
+    mod_static_load( "rs",   rs_get_mod_api() );
     mod_static_load( "sys",  sys_get_mod_api() );
-    mod_static_load( "core", core_get_mod_api() );  /* dep on "rs" ensures rs inits first */
+    mod_static_load( "core", core_get_mod_api() );
 
-    rs_wire_mod_callbacks();    /* DLL load/unload -> rs_load/unload_module_dll */
+    /* Wire rs_ into the DLL lifecycle. After this call, loading any DLL that exports
+       "rs_register" will automatically register its types into the rs_ registry.
+       Call this before any mod_load, otherwise the first DLL load will be missed. */
+    rs_wire_mod_callbacks();
 
+    /* Initialise rs, sys, and core in dependency order. rs inits first because core
+       declares "rs" as a dependency, so the module system puts rs before core. */
     if ( !mod_init_all() )
     {
         fprintf( stderr, "init: %s\n", mod_last_error() );
         return 1;
     }
 
-    if ( !mod_load( example_reflect ) )    /* fires DLL load callback -> rs registers types */
+    /* Load example_reflect.dll. This fires the DLL load callback we wired above,
+       which calls the DLL's rs_register export and registers all its annotated types. */
+    if ( !mod_load( example_reflect ) )
         return 1;
 
-    if ( !mod_init_all() )                 /* runs example_reflect's init */
+    /* Initialise example_reflect (calls its mod_init, populates its demo instance). */
+    if ( !mod_init_all() )
     {
         fprintf( stderr, "init: %s\n", mod_last_error() );
         return 1;
     }
 
+    /* Cache the example_reflect API pointer so we can call into the module. */
     HOST_FETCH_API( example_reflect_api_t, example_reflect );
 
     exercise_reflection();

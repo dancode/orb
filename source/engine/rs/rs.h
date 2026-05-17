@@ -136,7 +136,6 @@
 ==============================================================================================*/
 
 typedef uint32_t rs_name_t;
-typedef const char* ( *rs_cstr_fn )( rs_name_t );
 
 static inline uint32_t
 rs_hash_str( const char* s )
@@ -351,7 +350,7 @@ typedef struct rs_type_s
     uint32_t schema_hash;   // content hash over fields (for save-game compat)
 
     uint16_t field_index;   // first member: index into fields[] (struct/union) or enums[] (enum)
-    uint16_t field_count;   // number of members
+    uint16_t field_count;   // number of members/enum values
     uint16_t attr_index;    // first attribute (RS_ATTR_INVALID if none)
     uint16_t attr_count;    // number of attributes
     uint16_t next;          // next index in hash chain (RS_TYPE_INVALID = end)
@@ -359,7 +358,7 @@ typedef struct rs_type_s
 
     uint8_t  align;         // alignof(T)
     uint8_t  kind;          // rs_kind_t
-    uint8_t  frame_id;      // owning frame
+    uint8_t  frame_id;      // owning frame (module)
     uint8_t  _pad;          // 
 
 } rs_type_t;
@@ -392,18 +391,9 @@ typedef struct rs_frame_s
 #define RS_ARRAY_COUNT( a )   ( ( uint16_t )( sizeof( a ) / sizeof( ( a )[ 0 ] ) ) )
 
 /*==============================================================================================
-    String intern callback type
-
-    engine_rs uses an internal flat string pool; no external interner is required.
-    rs_intern_fn is kept public because the generated rs_register() export uses it as
-    a parameter type: the host passes g_rs.intern into the DLL so the DLL can intern
-    type and field names without linking against engine_rs directly.
-
-    rs_hash_str is a local static inline (case-insensitive FNV-1a); call sites compute
-    hashes without any function-pointer indirection.
+    rs_hash_str - case-insensitive FNV-1a; call sites compute hashes inline with no
+    function-pointer indirection.
 ==============================================================================================*/
-
-typedef rs_name_t ( *rs_intern_fn )( const char* );
 
 /*==============================================================================================
     Lifecycle
@@ -426,11 +416,11 @@ void rs_exit( void );
     engine_rs is a static library that links only into the host.  DLL modules must not call
     registration functions directly.  rs_load_module_dll fills this struct and passes it
     into the DLL's rs_register() export, which calls back through the pointers.
-    rs_intern_fn is kept in the public API because generated rs_register() signatures use it.
 ==============================================================================================*/
 
 typedef struct rs_reg_api_s
 {
+    rs_name_t        ( *intern            )( const char* );
     uint16_t         ( *rs_register_type   )( const rs_type_t*, const rs_field_t*, uint16_t );
     uint16_t         ( *rs_register_enum   )( const rs_type_t*, const rs_enum_t*, uint16_t );
     uint16_t         ( *rs_register_bitset )( const rs_type_t*, const rs_enum_t*, uint16_t );
@@ -458,8 +448,7 @@ void     rs_unload_module_dll ( const char* name );
 
 /* Static-build equivalent: caller passes the function pointer directly instead of
    resolving it from a DLL. rs_unload_module_dll works for static modules too (pops by name). */
-uint16_t rs_load_module_static( const char* name,
-                                void ( *rs_reg )( rs_intern_fn, const rs_reg_api_t* ) );
+uint16_t rs_load_module_static( const char* name, void ( *rs_reg )( const rs_reg_api_t* ) );
 
 /*==============================================================================================
     Frames
@@ -506,12 +495,12 @@ uint16_t rs_register_function( const rs_type_t*  type,
     Lookup
 ==============================================================================================*/
 
-/* Intern a string into the rs_ string pool and return its name_id.
-   Used for hand-rolled registration; generated code receives an rs_intern_fn* instead. */
-rs_name_t           rs_intern_name( const char* s );
+/* Intern a string into the rs_ string pool and return its rs_name_t.
+   Hand-rolled registration uses this directly; generated code calls api->intern. */
+rs_name_t           rs_intern( const char* s );
 
 /* Recover the string for a name_id (reads from the rs_ internal string pool). */
-const char*         rs_name_cstr( rs_name_t id );
+const char*         rs_cstr( rs_name_t id );
 
 const rs_type_t*    rs_get_type( uint16_t type_id );
 uint16_t            rs_find_type( uint32_t name_hash );
@@ -553,10 +542,10 @@ typedef void ( *rs_field_cb_t )( uint16_t field_id, const rs_field_t* f, void* u
 
 /* rs_enum_cb_t is forward-declared in the bitset block above. */
 
-uint16_t            rs_each_type( rs_type_cb_t cb, void* user );
-uint16_t            rs_each_type_in_frame( uint16_t frame_id, rs_type_cb_t cb, void* user );
-uint16_t            rs_each_field( uint16_t type_id, rs_field_cb_t cb, void* user );
-uint16_t           rs_each_enumerator( uint16_t type_id, rs_enum_cb_t cb, void* user );
+uint16_t            rs_each_type            ( rs_type_cb_t cb, void* user );
+uint16_t            rs_each_type_in_frame   ( uint16_t frame_id, rs_type_cb_t cb, void* user );
+uint16_t            rs_each_field           ( uint16_t type_id, rs_field_cb_t cb, void* user );
+uint16_t            rs_each_enumerator      ( uint16_t type_id, rs_enum_cb_t cb, void* user );
 
 /*==============================================================================================
     Reference walker
@@ -579,6 +568,27 @@ uint16_t           rs_each_enumerator( uint16_t type_id, rs_enum_cb_t cb, void* 
 typedef void ( *rs_ref_visitor_t )( void** ref_slot, uint16_t pointee_type_id, const rs_field_t* field, void* user );
 
 void rs_walk_refs( void* instance, uint16_t type_id, rs_ref_visitor_t visit, void* user );
+
+/*==============================================================================================
+    Value walker
+
+    Visits every field of an instance, recursing into nested structs and each element of
+    inline arrays. The visitor is called once per logical value with its address and type.
+
+    Supported field shapes:
+        T  field                bare value           -> one visit; recurse if struct/union
+        T* field                pointer              -> one visit  (addr of the pointer var)
+        T  field[N]             inline array         -> N visits;  recurse if struct/union
+        T* field[N]             array of pointers    -> N visits  (addr of each pointer slot)
+        T (*field)[N]           pointer to array     -> one visit
+
+    Function pointers and >2-level modifier chains are visited once as opaque slots.
+    Use field->mods to distinguish value shapes inside the visitor.
+==============================================================================================*/
+
+typedef void ( *rs_visitor_t )( void* addr, uint16_t type_id, const rs_field_t* field, void* user );
+
+void rs_walk( void* instance, uint16_t type_id, rs_visitor_t visit, void* user );
 
 /*==============================================================================================
     Serialization
@@ -653,8 +663,8 @@ typedef struct rs_api_s
     const rs_field_t*  ( *find_field         )( uint16_t type_id, const char* name );
     const rs_attrib_t* ( *type_get_attr      )( uint16_t type_id, const char* key );
     const rs_attrib_t* ( *field_get_attr     )( uint16_t field_id, const char* key );
-    rs_name_t          ( *intern_name        )( const char* s );
-    const char*        ( *name_cstr          )( rs_name_t id );
+    rs_name_t          ( *intern             )( const char* s );
+    const char*        ( *cstr              )( rs_name_t id );
 
     /* Iteration */
     uint16_t           ( *each_type          )( rs_type_cb_t cb, void* user );
@@ -665,8 +675,9 @@ typedef struct rs_api_s
     /* Bitset helpers */
     size_t             ( *bitset_describe    )( uint16_t type_id, int64_t value, char* buf, size_t cap );
 
-    /* Reference walker */
+    /* Walkers */
     void               ( *walk_refs          )( void* inst, uint16_t type_id, rs_ref_visitor_t fn, void* user );
+    void               ( *walk               )( void* inst, uint16_t type_id, rs_visitor_t fn, void* user );
 
     /* Serialization */
     size_t             ( *write              )( const void* src, uint16_t type_id, uint8_t* out, size_t cap );
@@ -735,7 +746,7 @@ MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
         RS_DEFINE_EXPORTS( example_reflect )
 
     Dynamic build: emits the undecorated rs_register export resolved by rs_load_module_dll.
-    Static build:  expands to nothing; host calls name##_rs_register directly via
+    Static build:  expands to nothing; host calls name##_rs_register( api ) directly via
                    rs_load_module_static().
 ==============================================================================================*/
 
@@ -748,11 +759,8 @@ MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
 #ifdef BUILD_STATIC
     #define RS_DEFINE_EXPORTS( name )
 #else
-    #define RS_DEFINE_EXPORTS( name )                                              \
-        RS_EXPORT void rs_register( rs_intern_fn intern, const rs_reg_api_t* api ) \
-        {                                                                          \
-            name##_rs_register( intern, api );                                     \
-        }
+    #define RS_DEFINE_EXPORTS( name ) \
+        RS_EXPORT void rs_register( const rs_reg_api_t* api ) { name##_rs_register( api ); }
 #endif
 
 /*============================================================================================*/

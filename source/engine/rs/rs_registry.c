@@ -92,11 +92,10 @@ static const struct
 static void
 rs_install_builtins( void )
 {
-    assert( g_rs.intern && "rs_install_builtins: rs_init() must be called first" );
     for ( uint16_t i = 0; i < RS_PRIM_COUNT; i++ )
     {
         rs_type_t* t   = &g_rs.types[ i ];
-        t->name_id     = g_rs.intern( RS_BUILTINS[ i ].name );
+        t->name_id     = rs_intern( RS_BUILTINS[ i ].name );
         t->hash        = rs_hash_str( RS_BUILTINS[ i ].name );
         t->schema_hash = 0;
         t->field_index = 0;
@@ -124,9 +123,6 @@ rs_init( void )
 {
     g_rs_str_top = 0;
     memset( &g_rs, 0, sizeof( g_rs ) );
-    g_rs.intern = rs_pool_intern;
-    g_rs.cstr   = rs_pool_cstr;
-
     for ( int i = 0; i < RS_TYPE_HASH_SIZE; i++ ) g_rs.type_hash[ i ] = RS_TYPE_INVALID;
 
     /* Frame 0 = "system": holds the built-in primitives. Cannot be popped. */
@@ -170,7 +166,7 @@ rs_push_frame( const char* name, uint32_t version )
     uint16_t    id = g_rs.frame_count++;
     rs_frame_t* f  = &g_rs.frames[ id ];
 
-    f->name_id     = g_rs.intern( name );
+    f->name_id     = rs_intern( name );
     f->version     = version;
     f->dll_handle  = NULL;
     f->first_type  = g_rs.type_count;
@@ -178,7 +174,7 @@ rs_push_frame( const char* name, uint32_t version )
     f->first_attr  = g_rs.attr_count;
     f->first_enum  = g_rs.enum_count;
 
-    if ( rs_debug && g_rs.cstr )
+    if ( rs_debug )
         printf( "rs: push frame[%u] '%s' v%u\n", id, name, version );
 
     return id;
@@ -379,7 +375,7 @@ rs_register_type( const rs_type_t* type, const rs_field_t* fields, uint16_t fiel
     rs_hash_insert( type_id );
 
     if ( rs_debug )
-        printf( "rs: registered [%u] %s (frame %u, %u fields)\n", type_id, g_rs.cstr( t->name_id ), frame_id,
+        printf( "rs: registered [%u] %s (frame %u, %u fields)\n", type_id, rs_cstr( t->name_id ), frame_id,
                 field_count );
 
     return type_id;
@@ -452,7 +448,7 @@ rs_register_enum( const rs_type_t* type, const rs_enum_t* enumerators, uint16_t 
     rs_hash_insert( type_id );
 
     if ( rs_debug )
-        printf( "rs: registered enum [%u] %s (frame %u, %u enumerators)\n", type_id, g_rs.cstr( t->name_id ),
+        printf( "rs: registered enum [%u] %s (frame %u, %u enumerators)\n", type_id, rs_cstr( t->name_id ),
                 frame_id, count );
 
     return type_id;
@@ -607,7 +603,7 @@ rs_finalize_frame( uint16_t frame_id )
         if ( fld->type_id == RS_TYPE_INVALID && fld->type_hash != 0 )
         {
             printf( "rs: ERROR unresolved field '%s' (type hash 0x%08x) in frame %u\n",
-                    g_rs.cstr( fld->name_id ), fld->type_hash, frame_id );
+                    rs_cstr( fld->name_id ), fld->type_hash, frame_id );
             ok = false;
         }
     }
@@ -624,7 +620,7 @@ rs_load_module_dll( const char* name, void* dll )
     if ( !dll || !name )
         return RS_FRAME_INVALID;
 
-    typedef void ( *rs_register_fn )( rs_intern_fn intern, const rs_reg_api_t* api );
+    typedef void ( *rs_register_fn )( const rs_reg_api_t* api );
     rs_register_fn rs_reg = ( rs_register_fn )sys_library_get_symbol( ( lib_handle_t )dll, "rs_register" );
     if ( !rs_reg )
         return RS_FRAME_INVALID;
@@ -634,6 +630,7 @@ rs_load_module_dll( const char* name, void* dll )
         return RS_FRAME_INVALID;
 
     rs_reg_api_t api = {
+        .intern             = rs_intern,
         .rs_register_type   = rs_register_type,
         .rs_register_enum   = rs_register_enum,
         .rs_register_bitset = rs_register_bitset,
@@ -642,7 +639,7 @@ rs_load_module_dll( const char* name, void* dll )
         .rs_get_type        = rs_get_type,
     };
 
-    rs_reg( g_rs.intern, &api );
+    rs_reg( &api );
     rs_finalize_frame( frame );
     return frame;
 }
@@ -654,18 +651,18 @@ rs_unload_module_dll( const char* name )
         return;
 
     uint16_t top = g_rs.frame_count - 1;
-    if ( strcmp( g_rs.cstr( g_rs.frames[ top ].name_id ), name ) == 0 )
+    if ( strcmp( rs_cstr( g_rs.frames[ top ].name_id ), name ) == 0 )
     {
         rs_pop_frame( top );
         return;
     }
 
     printf( "rs: WARNING rs_unload_module_dll: '%s' is not the topmost frame (top='%s'); skipped\n",
-            name, g_rs.cstr( g_rs.frames[ top ].name_id ) );
+            name, rs_cstr( g_rs.frames[ top ].name_id ) );
 }
 
 uint16_t
-rs_load_module_static( const char* name, void ( *rs_reg )( rs_intern_fn, const rs_reg_api_t* ) )
+rs_load_module_static( const char* name, void ( *rs_reg )( const rs_reg_api_t* ) )
 {
     if ( !name || !rs_reg )
         return RS_FRAME_INVALID;
@@ -675,6 +672,7 @@ rs_load_module_static( const char* name, void ( *rs_reg )( rs_intern_fn, const r
         return RS_FRAME_INVALID;
 
     rs_reg_api_t api = {
+        .intern             = rs_intern,
         .rs_register_type   = rs_register_type,
         .rs_register_enum   = rs_register_enum,
         .rs_register_bitset = rs_register_bitset,
@@ -683,21 +681,9 @@ rs_load_module_static( const char* name, void ( *rs_reg )( rs_intern_fn, const r
         .rs_get_type        = rs_get_type,
     };
 
-    rs_reg( g_rs.intern, &api );
+    rs_reg( &api );
     rs_finalize_frame( frame );
     return frame;
-}
-
-const char*
-rs_name_cstr( rs_name_t id )
-{
-    return g_rs.cstr ? g_rs.cstr( id ) : "";
-}
-
-rs_name_t
-rs_intern_name( const char* s )
-{
-    return g_rs.intern ? g_rs.intern( s ) : 0;
 }
 
 /*============================================================================================*/

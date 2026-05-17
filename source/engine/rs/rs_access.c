@@ -214,7 +214,7 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
     if ( value == 0 )
     {
         const rs_enum_t* z = rs_enum_find_by_value( type_id, 0 );
-        const char* s = z ? g_rs.cstr( z->name_id ) : "0";
+        const char* s = z ? rs_cstr( z->name_id ) : "0";
         size_t      n = 0;
         while ( s[ n ] && n + 1 < buf_size ) { buf[ n ] = s[ n ]; n++; }
         buf[ n ] = '\0';
@@ -236,7 +236,7 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
             const char* sep = " | ";
             while ( *sep && pos + 1 < buf_size ) buf[ pos++ ] = *sep++;
         }
-        const char* name = g_rs.cstr( e->name_id );
+        const char* name = rs_cstr( e->name_id );
         while ( *name && pos + 1 < buf_size ) buf[ pos++ ] = *name++;
         first = false;
         remaining &= ~e->value;

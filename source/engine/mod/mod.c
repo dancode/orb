@@ -135,6 +135,8 @@ mod_system_init( void )
 
     if ( !sys_filewatch_init( g_root ) )
         ms_log( "[module] WARNING: file watch unavailable" );
+
+    mod_static_load( "mod", mod_get_mod_api() );
 }
 
 void 
@@ -471,7 +473,13 @@ mod_set_dll_unload_cb( mod_dll_event_fn fn, void* user )
     Public: API Access
 ==============================================================================================*/
 
-const void* 
+bool
+mod_is_loaded( const char* name )
+{
+    return slot_find( name ) >= 0;
+}
+
+const void*
 mod_get_api( const char* name )
 {
     int slot = slot_find( name );
@@ -495,6 +503,43 @@ const char*
 mod_last_error( void )
 {
     return g_last_error;
+}
+
+/*==============================================================================================
+    Public: self-registration as a discoverable module
+
+    The mod system registers itself so DLL modules can fetch mod_sys_api_t via the
+    standard MOD_FETCH_API / mod_api() pattern, enabling plugin management from DLLs
+    (e.g. an editor loading its own plugin DLLs) without special host wiring.
+
+    mod_get_mod_api is called once from mod_system_init().  Hosts that need to pass the
+    descriptor to tooling (e.g. mod inspector) may also call it directly.
+==============================================================================================*/
+
+const mod_sys_api_t g_mod_api_struct = {
+    .dynamic_load = mod_dynamic_load,
+    .unload       = mod_unload,
+    .get_api      = mod_get_api,
+    .reload       = mod_reload,
+    .is_loaded    = mod_is_loaded,
+    .each         = mod_each,
+    .last_error   = mod_last_error,
+};
+
+mod_api_t*
+mod_get_mod_api( void )
+{
+    static mod_api_t api = {
+        .version       = 1,
+        .state_size    = 0,
+        .func_api_size = sizeof( mod_sys_api_t ),
+        .func_api      = &g_mod_api_struct,
+        .dep_count     = 0,
+        .init          = NULL,
+        .exit          = NULL,
+        .reload        = NULL,
+    };
+    return &api;
 }
 
 /*==============================================================================================

@@ -15,8 +15,8 @@
 #include "orb.h"
 #include "engine/rs/rs.h"
 
-#define test_intern rs_intern_name
-#define test_cstr   rs_name_cstr
+#define test_intern rs_intern
+#define test_cstr   rs_cstr
 
 typedef struct rs_test_vec3_s
 {

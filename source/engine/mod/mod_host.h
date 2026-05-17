@@ -6,7 +6,7 @@
 
     Lifecycle
     ---------
-        mod_system_init()           Boot; no modules loaded yet.
+        mod_system_init()           Boot; registers "mod" itself as a static module automatically.
         mod_static_load( name )     Register a statically-linked module (no DLL).
         mod_load( name )            Register and load a module (expands per build mode).
         mod_init_all()              Topo-sort deps, call each module's init().
@@ -76,8 +76,9 @@ typedef enum module_status_t
     System lifetime
 ==============================================================================================*/
 
-void mod_system_init( void );
-void mod_system_exit( void );
+void       mod_system_init( void );
+void       mod_system_exit( void );
+mod_api_t* mod_get_mod_api( void );
 
 /*==============================================================================================
     Registration and loading
@@ -102,6 +103,7 @@ bool mod_init_all( void );
 ==============================================================================================*/
 
 const void* mod_get_api( const char* name );
+bool        mod_is_loaded( const char* name );
 const char* mod_last_error( void );
 
 /*==============================================================================================
@@ -147,10 +149,8 @@ void mod_set_dll_unload_cb( mod_dll_event_fn fn, void* user );
 /*==============================================================================================
     Iteration
 
-    Visits every non-empty module slot in load order.
+    Visits every non-empty module slot in load order.  mod_visitor_fn is defined in mod.h.
 ==============================================================================================*/
-
-typedef void ( *mod_visitor_fn )( const char* name, const mod_api_t* api, void* user );
 
 void mod_each( mod_visitor_fn visit, void* user );
 

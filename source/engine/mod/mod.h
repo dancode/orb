@@ -38,6 +38,9 @@
 
 #include "orb.h"
 
+/* Forward declaration — full definition is in mod_export.h / mod_host.h. */
+typedef struct mod_api_s mod_api_t;
+
 /* STATIC: every TU sees the struct directly. LTO can devirtualize the call. */
 #define MOD_GATEWAY_STATIC( type, name )                          \
     typedef struct mod_api_s  mod_api_t;                          \
@@ -79,6 +82,45 @@
     #define MOD_FETCH_API( type, name ) ( 1 ) /* struct linked directly from header extern */
 #else
     #define MOD_FETCH_API( type, name ) ( ( g_##name##_api_ptr = ( const type* )get_api( #name ) ) != NULL )
+#endif
+
+/*==============================================================================================
+    mod_visitor_fn — callback signature for mod_each / mod_sys_api_t.each
+==============================================================================================*/
+
+typedef void ( *mod_visitor_fn )( const char* name, const mod_api_t* api, void* user );
+
+/*==============================================================================================
+    mod_sys_api_t — callable function table exposed by the mod system itself.
+
+    DLL modules that need to manage sub-modules (e.g. an editor loading plugins) fetch this
+    via the standard gateway pattern:
+
+        MOD_DEFINE_API_PTR( mod_sys_api_t, mod );       // file scope (dynamic builds only)
+        MOD_FETCH_API( mod_sys_api_t, mod );             // inside init() / reload()
+        mod_api()->dynamic_load( "my_plugin" );          // call site — identical in both modes
+
+    The accessor mod_api() is always inline; in BUILD_STATIC it resolves to a direct struct
+    reference that LTO can devirtualize to a direct call with zero indirection overhead.
+==============================================================================================*/
+
+typedef struct mod_sys_api_s
+{
+    bool        ( *dynamic_load )( const char* name );
+    bool        ( *unload )( const char* name );
+    const void* ( *get_api )( const char* name );
+    bool        ( *reload )( const char* name );
+    bool        ( *is_loaded )( const char* name );
+    void        ( *each )( mod_visitor_fn visit, void* user );
+    const char* ( *last_error )( void );
+
+} mod_sys_api_t;
+
+/* mod is always exe-linked; DLLs in a dynamic build must still fetch via the registry. */
+#if defined( BUILD_STATIC ) || defined( MOD_STATIC )
+    MOD_GATEWAY_STATIC( mod_sys_api_t, mod )
+#else
+    MOD_GATEWAY_DYNAMIC( mod_sys_api_t, mod )
 #endif
 
 /*============================================================================================*/
