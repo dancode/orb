@@ -17,6 +17,7 @@
 /* static modules used by runtime */
 #include "engine/sys/sys.h"
 #include "engine/app/app.h"
+#include "engine/rs/rs_host.h"     /* reflection: auto-wired on every DLL load */
 
 /*==============================================================================================
     (Optional Module Headers
