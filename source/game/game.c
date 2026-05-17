@@ -175,10 +175,10 @@ game_exit( void* raw_state )
 Game module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-game_get_mod_api( void )
+mod_desc_t*
+game_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version    = 1,
         .state_size = sizeof( game_state_t ),
         .deps       = { "core", "render", "audio", "physics" },

@@ -8,9 +8,9 @@
     Host boot sequence with rs_ as a module:
 
         mod_system_init();
-        mod_static_load( "rs",   rs_get_mod_api() );
-        mod_static_load( "sys",  sys_get_mod_api() );
-        mod_static_load( "core", core_get_mod_api() );
+        mod_static_load( "rs",   rs_get_mod_desc() );
+        mod_static_load( "sys",  sys_get_mod_desc() );
+        mod_static_load( "core", core_get_mod_desc() );
         rs_wire_mod_callbacks();          // one call — no on_dll_load boilerplate
         mod_init_all();                   // inits rs, then sys, then core in topo order
         mod_load( my_reflected_module );  // DLL load fires rs_ registration automatically

@@ -7,7 +7,7 @@
         1. Standard headers           (stdio)
         2. orb.h                      (types and macros)
         3. Platform headers           (windows.h, gated by OS_WINDOWS)
-        4. mod_export.h               (mod_api_t, get_api_fn)
+        4. mod_export.h               (mod_desc_t, get_api_fn)
         5. app.h                      (app_api_t definition + key/button enums)
         6. Platform backends          (win_input.c — input handlers and snapshot;
                                        win_window_proc.c — WndProc uses those handlers;

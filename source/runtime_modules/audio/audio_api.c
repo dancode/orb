@@ -70,10 +70,10 @@ audio_mod_reload( void* raw_state, get_api_fn get_api )
     Module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-audio_get_mod_api( void )
+mod_desc_t*
+audio_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version    = 1,
         .state_size = sizeof( audio_state_t ),
         .func_api_size = sizeof( audio_api_t ),

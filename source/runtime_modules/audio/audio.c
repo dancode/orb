@@ -14,8 +14,8 @@
     1.  Implement the API functions as internal statics.
     2.  Define g_<name>_api_struct as a non-static global const — its address is the
         stable identity used by both the module system (func_api) and the gateway macro.
-    3.  Define g_<module>_api (mod_api_t) with func_api = &g_audio_api_struct.
-    4.  Expose name_get_mod_api() and name_get_api() for the module_load() macro.
+    3.  Define g_<module>_api (mod_desc_t) with func_api = &g_audio_api_struct.
+    4.  Expose name_get_mod_desc() and name_get_api() for the module_load() macro.
     5.  Use MOD_DEFINE_EXPORTS to emit undecorated DLL symbols (no-op for static builds).
 
 ==============================================================================================*/

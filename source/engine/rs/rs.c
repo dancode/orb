@@ -15,7 +15,7 @@
 #include <assert.h>
 
 #include "engine/sys/sys.h"          /* lib_handle_t, sys_library_get_symbol */
-#include "engine/mod/mod_export.h"   /* mod_api_t, get_api_fn */
+#include "engine/mod/mod_export.h"   /* mod_desc_t, get_api_fn */
 #include "engine/rs/rs.h"
 
 /*==============================================================================================
@@ -140,10 +140,10 @@ rs_mod_exit( void* state )
     Module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-rs_get_mod_api( void )
+mod_desc_t*
+rs_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version       = 1,
         .state_size    = 0,
         .func_api_size = sizeof( rs_api_t ),

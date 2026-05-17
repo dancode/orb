@@ -13,7 +13,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "engine/mod/mod_export.h" /* mod_api_t, get_api_fn */
+#include "engine/mod/mod_export.h" /* mod_desc_t, get_api_fn */
 #include "engine/core/core.h"      /* Public types (no function declarations) */
 
 /*==============================================================================================

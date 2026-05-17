@@ -6,7 +6,7 @@
     static functions in the same translation unit, so this file can:
         - Orchestrate the init/shutdown ordering across subsystems
         - Assign vk_* functions to the rhi_api_t slots
-        - Provide the mod_api_t descriptor for mod_static_load
+        - Provide the mod_desc_t descriptor for mod_static_load
 
 ==============================================================================================*/
 
@@ -147,10 +147,10 @@ rhi_mod_exit( void* raw_state )
     Module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-rhi_get_mod_api( void )
+mod_desc_t*
+rhi_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version       = 1,
         .state_size    = 0, /* singleton lives in vk_state.c's g_vk */
         .func_api_size = sizeof( rhi_api_t ),

@@ -6,7 +6,7 @@
       - pulling core / engine / render APIs through module_sys_api_t
       - persistent state that survives hot-reloads
       - first-load vs reload detection via a sentinel value
-      - both required DLL exports: get_mod_api() and get_api()
+      - both required DLL exports: get_mod_desc() and get_api()
 
     The module system owns all memory for game_state_t.  Never free it inside
     exit() — the system will reuse the same block on the next reload.
@@ -126,10 +126,10 @@ const sample_game_api_t g_sample_game_api_struct = {
     Module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-sample_game_get_mod_api( void )
+mod_desc_t*
+sample_game_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version    = 1,
         .state_size = sizeof( example_game_state_t ),
         .func_api_size = sizeof( sample_game_api_t ),

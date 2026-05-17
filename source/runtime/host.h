@@ -69,20 +69,20 @@ typedef enum run_loop_mode_e
     Module entries
 ==============================================================================================*/
 
-typedef struct mod_api_s mod_api_t;
-typedef mod_api_t* ( *run_get_mod_api_fn )( void );
+typedef struct mod_desc_s mod_desc_t;
+typedef mod_desc_t* ( *run_get_mod_desc_fn )( void );
 
 typedef struct
 {
     const char*        name;
-    run_get_mod_api_fn get_mod_api; /* NULL -> load as DLL */
+    run_get_mod_desc_fn get_mod_desc; /* NULL -> load as DLL */
 
 } run_module_entry_t;
 
-#define RUN_SERVICE( n ) { #n, n##_get_mod_api }
+#define RUN_SERVICE( n ) { #n, n##_get_mod_desc }
 
 #ifdef BUILD_STATIC
-    #define RUN_MODULE( n ) { #n, n##_get_mod_api }
+    #define RUN_MODULE( n ) { #n, n##_get_mod_desc }
 #else
     #define RUN_MODULE( n ) { #n, NULL }
 #endif

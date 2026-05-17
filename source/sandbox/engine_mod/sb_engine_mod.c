@@ -30,7 +30,7 @@ module_test( void )
 
     dev_hot_init( NULL, NULL );
 
-    if ( !mod_static_load( "sys", sys_get_mod_api() ) )
+    if ( !mod_static_load( "sys", sys_get_mod_desc() ) )
         goto shutdown;
 
     if ( !mod_load( example ) )

@@ -23,7 +23,7 @@ typedef struct example_api_s
 
 #if defined( BUILD_STATIC ) || defined( EXAMPLE_STATIC )
 MOD_GATEWAY_STATIC( example_api_t, example )
-mod_api_t* example_get_mod_api( void );
+mod_desc_t* example_get_mod_desc( void );
 #else
 MOD_GATEWAY_DYNAMIC( example_api_t, example )
 #endif

@@ -150,10 +150,10 @@ example_mod_exit( void* raw_state )
     6. the lifecycle struct
 ==============================================================================================*/
 
-mod_api_t*
-example_get_mod_api( void )
+mod_desc_t*
+example_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version       = 1,
         .state_size    = sizeof( example_state_t ),
         .func_api_size = sizeof( example_api_t ),

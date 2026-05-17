@@ -10,7 +10,7 @@
         1. Standard headers
         2. orb.h
         3. Platform headers           (windows.h, gated by OS_WINDOWS)
-        4. mod_export.h               (mod_api_t, get_api_fn)
+        4. mod_export.h               (mod_desc_t, get_api_fn)
         5. rhi.h                      (handle types, API struct, gateway)
         6. vk_state.c                 (the singleton — everything else uses it)
         7. vk_*.c                     (subsystem implementations)

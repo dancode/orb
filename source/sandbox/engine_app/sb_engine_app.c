@@ -538,8 +538,8 @@ main( int argc, char** argv )
     UNUSED( argv );
 
     mod_system_init();
-    mod_static_load( "sys", sys_get_mod_api() );
-    mod_static_load( "app", app_get_mod_api() );
+    mod_static_load( "sys", sys_get_mod_desc() );
+    mod_static_load( "app", app_get_mod_desc() );
 
     if ( !mod_init_all() )
     {

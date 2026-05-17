@@ -2,7 +2,7 @@
 
     sys_api.c — Platform-agnostic sys module wiring.
 
-    Implements the sys_api_t function-pointer struct and the mod_api_t lifecycle descriptor.
+    Implements the sys_api_t function-pointer struct and the mod_desc_t lifecycle descriptor.
 
 ==============================================================================================*/
 /*==============================================================================================
@@ -69,10 +69,10 @@ sys_mod_exit( void* raw_state )
     Module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-sys_get_mod_api( void )
+mod_desc_t*
+sys_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version       = 1,
         .state_size    = sizeof( sys_state_t ),
         .func_api_size = sizeof( sys_api_t ),

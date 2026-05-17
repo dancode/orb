@@ -6,7 +6,7 @@
 
     It provides:
 
-      - mod_api_t: the descriptor every module returns from name_get_mod_api()
+      - mod_desc_t: the descriptor every module returns from name_get_mod_desc()
       - Lifecycle callback typedefs (mod_init_fn, mod_exit_fn, mod_reload_fn)
       - get_api_fn: the callback passed into init() and reload() for sibling API lookup
       - MOD_EXPORT / MOD_DEFINE_EXPORTS: DLL export machinery
@@ -18,8 +18,8 @@
     ----------------
     Every module must provide two functions derived from its name:
 
-        mod_api_t*  <name>_get_mod_api( void )  — lifecycle descriptor (static + dynamic)
-        get_mod_api( void )                     — generic DLL export (dynamic only)
+        mod_desc_t*  <name>_get_mod_desc( void )  — lifecycle descriptor (static + dynamic)
+        get_mod_desc( void )                     — generic DLL export (dynamic only)
 
     The generic export is emitted by placing this once at the bottom of the module's .c:
 
@@ -92,10 +92,10 @@ typedef bool ( *mod_reload_fn )( void* state, get_api_fn get_api );
 
 
 /*==============================================================================================
-    mod_api_t — Module descriptor. Every module returns one from name_get_mod_api().
+    mod_desc_t — Module descriptor. Every module returns one from name_get_mod_desc().
 ==============================================================================================*/
 
-typedef struct mod_api_s
+typedef struct mod_desc_s
 {
     int32_t       version;              /* bump when ABI changes */
     int32_t       state_size;           /* persistent state size or 0 = stateless */
@@ -108,10 +108,10 @@ typedef struct mod_api_s
     mod_exit_fn   exit;
     mod_reload_fn reload;
 
-} mod_api_t;
+} mod_desc_t;
 
 /* DLL entry-point typedef resolved via LoadLibrary / dlopen. */
-typedef mod_api_t* ( *get_mod_api_fn )( void );
+typedef mod_desc_t* ( *get_mod_desc_fn )( void );
 
 /*==============================================================================================
     MOD_EXPORT — Marks a symbol for DLL export on platforms that require it.
@@ -124,20 +124,20 @@ typedef mod_api_t* ( *get_mod_api_fn )( void );
 #endif
 
 /*==============================================================================================
-    MOD_DEFINE_EXPORTS — Emits the undecorated "get_mod_api" export resolved at runtime.
+    MOD_DEFINE_EXPORTS — Emits the undecorated "get_mod_desc" export resolved at runtime.
 
     Place once at the bottom of the module's .c, outside any function:
 
         MOD_DEFINE_EXPORTS( render )
 
-    In static builds this expands to nothing; the system calls name##_get_mod_api directly.
+    In static builds this expands to nothing; the system calls name##_get_mod_desc directly.
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
     #define MOD_DEFINE_EXPORTS( name )
 #else
     #define MOD_DEFINE_EXPORTS( name ) \
-        MOD_EXPORT mod_api_t* get_mod_api( void ) { return name##_get_mod_api(); }
+        MOD_EXPORT mod_desc_t* get_mod_desc( void ) { return name##_get_mod_desc(); }
 #endif
 
 /*============================================================================================*/

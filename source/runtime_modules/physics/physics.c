@@ -83,10 +83,10 @@ physics_reload( void* raw_state, get_api_fn get_api )
     Module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-physics_get_mod_api( void )
+mod_desc_t*
+physics_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version    = 1,
         .state_size = sizeof( physics_state_t ),
         .deps       = { "core" },    // "app" + remove "engine"

@@ -9,8 +9,8 @@
     What it does
     ------------
     Given `-module <name>`, computes <exe_dir>/<name>.dll, loads it directly
-    via sys_library_load, resolves the get_mod_api export, and prints every
-    field of the returned mod_api_t descriptor. Then unloads and exits.
+    via sys_library_load, resolves the get_mod_desc export, and prints every
+    field of the returned mod_desc_t descriptor. Then unloads and exits.
 
     What it proves architecturally
     ------------------------------
@@ -36,7 +36,7 @@
 
 #include "orb.h"
 #include "engine/sys/sys.h"
-#include "engine/mod/mod_export.h" /* mod_api_t — type only; no symbols pulled in */
+#include "engine/mod/mod_export.h" /* mod_desc_t — type only; no symbols pulled in */
 
 #include "host/common/host_common.h"
 
@@ -55,14 +55,14 @@ print_usage( const char* argv0 )
 {
     fprintf( stderr, "Usage: %s -module <name>\n", argv0 );
     fprintf( stderr, "\n" );
-    fprintf( stderr, "  Loads <exe_dir>/<name>.dll and prints its mod_api_t descriptor.\n" );
+    fprintf( stderr, "  Loads <exe_dir>/<name>.dll and prints its mod_desc_t descriptor.\n" );
     fprintf( stderr, "  Examples:\n" );
     fprintf( stderr, "    %s -module example\n", argv0 );
     fprintf( stderr, "    %s -module render\n", argv0 );
 }
 
 static void
-print_descriptor( const char* mod_name, const mod_api_t* api )
+print_descriptor( const char* mod_name, const mod_desc_t* api )
 {
     const int slot_count = api->func_api_size / ( int )sizeof( void* );
 
@@ -132,7 +132,7 @@ main( int argc, char** argv )
     printf( "[modinfo] inspecting: %s\n", dll_path );
 
     /*--------------------------------------------------
-        Load the DLL and resolve get_mod_api
+        Load the DLL and resolve get_mod_desc
     --------------------------------------------------*/
 
     lib_handle_t lib = sys_library_load( dll_path );
@@ -142,19 +142,19 @@ main( int argc, char** argv )
         return 1;
     }
 
-    typedef mod_api_t* ( *get_mod_api_fn )( void );
-    get_mod_api_fn get_mod_api = ( get_mod_api_fn )sys_library_get_symbol( lib, "get_mod_api" );
-    if ( !get_mod_api )
+    typedef mod_desc_t* ( *get_mod_desc_fn )( void );
+    get_mod_desc_fn get_mod_desc = ( get_mod_desc_fn )sys_library_get_symbol( lib, "get_mod_desc" );
+    if ( !get_mod_desc )
     {
-        fprintf( stderr, "[modinfo] error: '%s' is missing the 'get_mod_api' export\n", mod_name );
+        fprintf( stderr, "[modinfo] error: '%s' is missing the 'get_mod_desc' export\n", mod_name );
         sys_library_unload( lib );
         return 1;
     }
 
-    mod_api_t* api = get_mod_api();
+    mod_desc_t* api = get_mod_desc();
     if ( !api )
     {
-        fprintf( stderr, "[modinfo] error: get_mod_api() returned NULL\n" );
+        fprintf( stderr, "[modinfo] error: get_mod_desc() returned NULL\n" );
         sys_library_unload( lib );
         return 1;
     }

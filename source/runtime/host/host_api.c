@@ -80,10 +80,10 @@ run_mod_exit( void* raw_state )
     Module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-run_get_mod_api( void )
+mod_desc_t*
+run_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version       = 1,
         .state_size    = 0,
         .func_api_size = sizeof( run_api_t ),

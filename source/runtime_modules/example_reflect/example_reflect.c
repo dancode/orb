@@ -106,10 +106,10 @@ example_reflect_mod_exit( void* raw_state )
     Module descriptor
 ==============================================================================================*/
 
-mod_api_t*
-example_reflect_get_mod_api( void )
+mod_desc_t*
+example_reflect_get_mod_desc( void )
 {
-    static mod_api_t api = {
+    static mod_desc_t api = {
         .version       = 1,
         .state_size    = sizeof( example_reflect_state_t ),
         .func_api_size = sizeof( example_reflect_api_t ),

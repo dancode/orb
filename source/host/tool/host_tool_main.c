@@ -138,7 +138,7 @@ main( int argc, char** argv )
     };
 
     mod_system_init();
-    if ( !mod_static_load( "core", core_get_mod_api() ) )
+    if ( !mod_static_load( "core", core_get_mod_desc() ) )
         return 1;
 
     /* Dispatch — each tool function loads its own additional modules. */

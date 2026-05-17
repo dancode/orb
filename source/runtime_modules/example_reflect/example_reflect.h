@@ -100,7 +100,7 @@ typedef struct example_reflect_api_s
 
 #if defined( BUILD_STATIC ) || defined( EXAMPLE_REFLECT_STATIC )
 MOD_GATEWAY_STATIC( example_reflect_api_t, example_reflect )
-mod_api_t* example_reflect_get_mod_api( void );
+mod_desc_t* example_reflect_get_mod_desc( void );
 #else
 MOD_GATEWAY_DYNAMIC( example_reflect_api_t, example_reflect )
 #endif

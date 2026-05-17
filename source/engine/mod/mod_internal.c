@@ -42,7 +42,7 @@ typedef struct mod_info_s
     void*           dll;           /* handle to the loaded shadow copy */
     uint64_t        last_write;    /* file timestamp at last successful load */
 
-    mod_api_t*      mod_api;       /* lifecycle: init / exit / reload + func_api */
+    mod_desc_t*      mod_api;       /* lifecycle: init / exit / reload + func_api */
 
     void*           state;         /* persistent state block; system-owned */
     int32_t         state_size;    /* size of the current allocation */
@@ -66,7 +66,7 @@ typedef struct pending_reload_s
 typedef struct mod_snapshot_s
 {
     void*           dll;
-    mod_api_t*      mod_api;
+    mod_desc_t*      mod_api;
     uint32_t        shadow_count;
     uint64_t        last_write;
     module_status_t status;
@@ -273,17 +273,17 @@ slot_load_dll( mod_info_t* m )
 
     /* --- resolve module lifecycle struct --- */
 
-    get_mod_api_fn get_mod_api = ( get_mod_api_fn )sys_library_get_symbol( m->dll, "get_mod_api" );
-    if ( !get_mod_api )
+    get_mod_desc_fn get_mod_desc = ( get_mod_desc_fn )sys_library_get_symbol( m->dll, "get_mod_desc" );
+    if ( !get_mod_desc )
     {
-        set_error( "'%s' is missing 'get_mod_api' export", m->name );
+        set_error( "'%s' is missing 'get_mod_desc' export", m->name );
         goto fail;
     }
 
-    m->mod_api = get_mod_api();
+    m->mod_api = get_mod_desc();
     if ( !m->mod_api )
     {
-        set_error( "'%s' get_mod_api() returned NULL", m->name );
+        set_error( "'%s' get_mod_desc() returned NULL", m->name );
         goto fail;
     }
     if ( !api_validate( m->name, m->mod_api->func_api, m->mod_api->func_api_size ) )

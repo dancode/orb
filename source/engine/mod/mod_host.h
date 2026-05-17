@@ -26,7 +26,7 @@
     mod_load build variants
     -----------------------
         BUILD_STATIC defined:
-            mod_load( render ) -> mod_static_load( "render", render_get_mod_api() )
+            mod_load( render ) -> mod_static_load( "render", render_get_mod_desc() )
 
         BUILD_STATIC not defined:
             mod_load( render ) -> mod_dynamic_load( "render" )
@@ -52,7 +52,7 @@
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
-    #define mod_load( name ) mod_static_load( #name, name##_get_mod_api() )
+    #define mod_load( name ) mod_static_load( #name, name##_get_mod_desc() )
 #else
     #define mod_load( name ) mod_dynamic_load( #name )
 #endif
@@ -61,7 +61,7 @@
     Types
 ==============================================================================================*/
 
-typedef struct mod_api_s mod_api_t;
+typedef struct mod_desc_s mod_desc_t;
 
 typedef enum module_status_t
 {
@@ -78,13 +78,13 @@ typedef enum module_status_t
 
 void       mod_system_init( void );
 void       mod_system_exit( void );
-mod_api_t* mod_get_mod_api( void );
+mod_desc_t* mod_get_mod_desc( void );
 
 /*==============================================================================================
     Registration and loading
 ==============================================================================================*/
 
-bool mod_static_load( const char* name, mod_api_t* mod_api );
+bool mod_static_load( const char* name, mod_desc_t* mod_api );
 bool mod_dynamic_load( const char* name );
 bool mod_unload( const char* name );
 bool mod_reload( const char* name );
@@ -130,7 +130,7 @@ const char* mod_last_error( void );
     Useful for systems (e.g. reflection, profiler) that need to discover module DLLs
     without the module system depending on them.
 
-    on_load  - fired after a DLL is loaded and its mod_api_t is resolved.
+    on_load  - fired after a DLL is loaded and its mod_desc_t is resolved.
     on_unload - fired before a DLL's handle is released (on explicit unload or hot-reload).
 
     During a hot-reload the sequence is:

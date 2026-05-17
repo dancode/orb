@@ -80,7 +80,7 @@ static win_id_t s_win_id = APP_WIN_INVALID;
 static bool
 load_entry( const run_module_entry_t* e )
 {
-    return e->get_mod_api ? mod_static_load( e->name, e->get_mod_api() ) : mod_dynamic_load( e->name );
+    return e->get_mod_desc ? mod_static_load( e->name, e->get_mod_desc() ) : mod_dynamic_load( e->name );
 }
 
 static bool
@@ -124,7 +124,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     mod_system_init();
 
     /* sys is mandatory — monotonic clock (tick_seconds) and sleep for the loop */
-    if ( !mod_static_load( "sys", sys_get_mod_api() ) )
+    if ( !mod_static_load( "sys", sys_get_mod_desc() ) )
     {
         fprintf( stderr, "[host] sys load failed: %s\n", mod_last_error() );
         mod_system_exit();
@@ -132,7 +132,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     }
 
     /* run is mandatory — frame clock service, available to all modules via MOD_FETCH_API */
-    if ( !mod_static_load( "run", run_get_mod_api() ) )
+    if ( !mod_static_load( "run", run_get_mod_desc() ) )
     {
         fprintf( stderr, "[host] run load failed: %s\n", mod_last_error() );
         mod_system_exit();

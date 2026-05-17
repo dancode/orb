@@ -350,9 +350,9 @@ main( int argc, char** argv )
 
     /* Register the three engine modules. Order here just declares them; the module system
        resolves the correct init order from their declared dependencies. */
-    mod_static_load( "rs",   rs_get_mod_api() );
-    mod_static_load( "sys",  sys_get_mod_api() );
-    mod_static_load( "core", core_get_mod_api() );
+    mod_static_load( "rs",   rs_get_mod_desc() );
+    mod_static_load( "sys",  sys_get_mod_desc() );
+    mod_static_load( "core", core_get_mod_desc() );
 
     /* Wire rs_ into the DLL lifecycle. After this call, loading any DLL that exports
        "rs_register" will automatically register its types into the rs_ registry.
