@@ -103,10 +103,10 @@
 
 ==============================================================================================*/
 
-static mod_dll_event_fn g_dll_load_fn     = NULL;
-static void*            g_dll_load_user   = NULL;
-static mod_dll_event_fn g_dll_unload_fn   = NULL;
-static void*            g_dll_unload_user = NULL;
+static mod_event_fn g_pre_init_fn   = NULL;
+static void*        g_pre_init_user = NULL;
+static mod_event_fn g_post_exit_fn  = NULL;
+static void*        g_post_exit_user = NULL;
 
 #include "mod_internal.c"
 
@@ -203,10 +203,16 @@ mod_static_load( const char* name, mod_desc_t* mod_desc )
     m->status = MODULE_STATUS_LOADED;
     ms_log( "[module] registered static '%s' (api v%d, state %d, api %d)", name, mod_desc->version,
             mod_desc->state_size, mod_desc->func_api_size );
+
+    /* No execution here — load is passive. The pre_init callback fires from
+       mod_init_all() in dep order, just before init(). This keeps "load = register a
+       descriptor" and guarantees subscribers (reflection, profilers) see modules in
+       dep order rather than arbitrary registration order. */
+
     return true;
 }
 
-bool 
+bool
 mod_dynamic_load( const char* name )
 {
     if ( slot_find( name ) >= 0 )
@@ -230,11 +236,9 @@ mod_dynamic_load( const char* name )
     ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)", name, m->mod_desc->version,
             m->mod_desc->state_size, m->mod_desc->func_api_size );
 
-    /* handle any post load DLL callbacks (reflection) - called before init() */
-    if ( g_dll_load_fn )
-    {
-        g_dll_load_fn( name, m->dll, g_dll_load_user );
-    }
+    /* No execution here — load is passive. See note in mod_static_load(). The pre_init
+       callback fires in dep order from mod_init_all(). Hot-reload swaps still fire
+       post_exit + pre_init at swap time (see mod_internal.c). */
 
     return true;
 }
@@ -253,11 +257,9 @@ mod_unload( const char* name )
     if ( m->status == MODULE_STATUS_INITIALIZED )
         call_exit( m );
 
-    /* handle any pre unload DLL callbacks (reflection) - called after exit() */
-    if ( !m->is_static && g_dll_unload_fn )
-    {
-        g_dll_unload_fn( m->name, m->dll, g_dll_unload_user );
-    }
+    /* post_exit: fires after exit() has run, before the slot is destroyed. */
+    if ( g_post_exit_fn )
+        g_post_exit_fn( m->name, m->mod_desc, g_post_exit_user );
 
     slot_destroy( m );
     ms_log( "[module] unloaded '%s'", name );
@@ -268,12 +270,28 @@ mod_unload( const char* name )
     Public: Initialization
 ==============================================================================================*/
 
-bool 
+bool
 mod_init_all( void )
 {
     if ( !build_init_order() )
         return false;
 
+    /* Pass 1 — fire pre_init for every newly-loaded module in dep order. Subscribers
+       (reflection, profilers) see deps before dependents, so any cross-module references
+       they record resolve cleanly. Modules already INITIALIZED are skipped (re-entry
+       after a late mod_dynamic_load). */
+    if ( g_pre_init_fn )
+    {
+        for ( int k = 0; k < g_init_count; ++k )
+        {
+            mod_info_t* m = &g_modules[ g_init_order[ k ] ];
+            if ( m->status != MODULE_STATUS_LOADED )
+                continue;
+            g_pre_init_fn( m->name, m->mod_desc, g_pre_init_user );
+        }
+    }
+
+    /* Pass 2 — run init() in the same order. */
     for ( int k = 0; k < g_init_count; ++k )
     {
         mod_info_t* m = &g_modules[ g_init_order[ k ] ];
@@ -458,21 +476,21 @@ mod_system_flush_reloads( void )
 }
 
 /*==============================================================================================
-    Public: DLL event callbacks
+    Public: lifecycle callbacks
 ==============================================================================================*/
 
 void
-mod_set_dll_load_cb( mod_dll_event_fn fn, void* user )
+mod_set_pre_init_cb( mod_event_fn fn, void* user )
 {
-    g_dll_load_fn   = fn;
-    g_dll_load_user = user;
+    g_pre_init_fn   = fn;
+    g_pre_init_user = user;
 }
 
 void
-mod_set_dll_unload_cb( mod_dll_event_fn fn, void* user )
+mod_set_post_exit_cb( mod_event_fn fn, void* user )
 {
-    g_dll_unload_fn   = fn;
-    g_dll_unload_user = user;
+    g_post_exit_fn   = fn;
+    g_post_exit_user = user;
 }
 
 /*==============================================================================================

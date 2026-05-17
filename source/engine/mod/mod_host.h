@@ -124,27 +124,36 @@ const char* mod_last_error( void );
 #endif
 
 /*==============================================================================================
-    DLL event callbacks
+    Module lifecycle callbacks
 
-    Register optional callbacks that fire on every dynamic module load and unload.
-    Useful for systems (e.g. reflection, profiler) that need to discover module DLLs
-    without the module system depending on them.
+    Two hook points named for the lifecycle moments they bracket — not for the load/unload
+    plumbing that triggers them. Both signatures are desc-based, so subscribers (reflection,
+    profilers) need not care whether the module came from a DLL or was statically linked.
 
-    on_load  - fired after a DLL is loaded and its mod_desc_t is resolved.
-    on_unload - fired before a DLL's handle is released (on explicit unload or hot-reload).
+    pre_init  - fires immediately BEFORE a module's init() runs. Dispatched from
+                mod_init_all() in dep order, once per newly-loaded module. Load itself
+                (mod_static_load / mod_dynamic_load) is passive — no callbacks fire there.
+                Subscribers therefore see modules in DEPENDENCY order, not registration
+                order, which is what the rs stack-frame model wants.
 
-    During a hot-reload the sequence is:
-        on_unload( name, old_dll )
-        old DLL released
-        on_load( name, new_dll )
+    post_exit - fires immediately AFTER a module's exit() has run. Dispatched from
+                mod_unload(). For DLLs this runs before the handle is released.
 
-    Not fired for static modules (no DLL handle).
+    Hot-reload is a self-contained mini-lifecycle outside mod_init_all. Its swap-commit
+    point fires both callbacks for that one module:
+
+        post_exit( name, old_desc )    // old instance is gone
+        ... DLL swap ...
+        pre_init ( name, new_desc )    // new instance about to come online
+
+    Callbacks installed AFTER some modules are already initialised do not retroactively
+    fire for those modules — install them once at host startup, before mod_init_all().
 ==============================================================================================*/
 
-typedef void ( *mod_dll_event_fn )( const char* name, lib_handle_t dll, void* user );
+typedef void ( *mod_event_fn )( const char* name, const mod_desc_t* desc, void* user );
 
-void mod_set_dll_load_cb  ( mod_dll_event_fn fn, void* user );
-void mod_set_dll_unload_cb( mod_dll_event_fn fn, void* user );
+void mod_set_pre_init_cb ( mod_event_fn fn, void* user );
+void mod_set_post_exit_cb( mod_event_fn fn, void* user );
 
 /*==============================================================================================
     Iteration

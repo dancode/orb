@@ -108,7 +108,36 @@ typedef struct mod_desc_s
     mod_exit_fn   exit;
     mod_reload_fn reload;
 
+    /* Optional reflection entry point — opaque to the mod system.
+       Set to the generated <name>_rs_register (via MOD_RS_REGISTER) when the module
+       has reflected types; NULL otherwise. The pointer lives in the same image as the
+       desc — exe for statics, DLL for dynamics — so calling through it works for both
+       build modes with no symbol lookup. See MOD_RS_REGISTER below. */
+    const void*   rs_register;          /* void (*)( const rs_reg_api_t* ) or NULL */
+
 } mod_desc_t;
+
+/*==============================================================================================
+    MOD_RS_REGISTER — Wire a module's reflection into its mod_desc_t.
+
+    The generated <name>.generated.h declares <name>_rs_register; this macro packs it into
+    the descriptor without forcing mod_export.h to include rs.h. Identical line for static
+    and dynamic modules — the function pointer always lives in the same image as the desc,
+    so no DLL symbol lookup is needed.
+
+    Usage:
+
+        #include "<name>.generated.h"        // declares <name>_rs_register
+
+        static mod_desc_t s_<name>_mod_desc = {
+            .version       = 1,
+            .func_api      = &g_<name>_api_struct,
+            .rs_register   = MOD_RS_REGISTER( <name> ),
+            ...
+        };
+==============================================================================================*/
+
+#define MOD_RS_REGISTER( name )  ( ( const void* )( name##_rs_register ) )
 
 /* DLL entry-point typedef resolved via LoadLibrary / dlopen. */
 typedef mod_desc_t* ( *get_mod_desc_fn )( void );

@@ -116,11 +116,21 @@ rs_install_builtins( void )
 
 /*==============================================================================================
     Lifecycle
+
+    rs_init() is idempotent. The registry self-bootstraps on first touch via rs_ensure_init()
+    (called from every entry that mutates the registry), so the host never has to sequence
+    "rs comes online" against module loads. rs's mod_init is therefore a no-op — its only
+    purpose is to publish rs_api_t through the standard module gateway.
 ==============================================================================================*/
+
+static bool g_rs_initialized = false;
 
 void
 rs_init( void )
 {
+    /* Unconditional reset. Callers that want lazy / one-shot bootstrap use rs_ensure_init.
+       Tests and explicit teardown/setup cycles call rs_init directly to guarantee a fresh
+       registry. */
     g_rs_str_top = 0;
     memset( &g_rs, 0, sizeof( g_rs ) );
     for ( int i = 0; i < RS_TYPE_HASH_SIZE; i++ ) g_rs.type_hash[ i ] = RS_TYPE_INVALID;
@@ -129,14 +139,26 @@ rs_init( void )
     uint16_t sys = rs_push_frame( "system", 1 );
     ( void )sys;
     rs_install_builtins();
+
+    g_rs_initialized = true;
+}
+
+static inline void
+rs_ensure_init( void )
+{
+    if ( !g_rs_initialized )
+        rs_init();
 }
 
 void
 rs_exit( void )
 {
+    if ( !g_rs_initialized )
+        return;
     while ( g_rs.frame_count > 1 ) rs_pop_frame( g_rs.frame_count - 1 );
     memset( &g_rs, 0, sizeof( g_rs ) );
-    g_rs_str_top = 0;
+    g_rs_str_top    = 0;
+    g_rs_initialized = false;
 }
 
 void
@@ -611,19 +633,25 @@ rs_finalize_frame( uint16_t frame_id )
 }
 
 /*==============================================================================================
-    Module DLL integration
+    Module reflection integration
+
+    One unified path for both static and dynamic modules. The mod_desc_t.rs_register slot
+    holds the generated <name>_rs_register function pointer (set via MOD_RS_REGISTER).
+    The pointer lives in the same image as the desc — exe for statics, DLL for dynamics —
+    so calling through it requires no symbol lookup.
 ==============================================================================================*/
 
 uint16_t
-rs_load_module_dll( const char* name, void* dll )
+rs_register_module( const char* name, const mod_desc_t* desc )
 {
-    if ( !dll || !name )
+    if ( !name || !desc || !desc->rs_register )
         return RS_FRAME_INVALID;
 
+    /* Self-bootstrap on first touch. Decouples rs registry setup from mod_init ordering. */
+    rs_ensure_init();
+
     typedef void ( *rs_register_fn )( const rs_reg_api_t* api );
-    rs_register_fn rs_reg = ( rs_register_fn )sys_library_get_symbol( ( lib_handle_t )dll, "rs_register" );
-    if ( !rs_reg )
-        return RS_FRAME_INVALID;
+    rs_register_fn rs_reg = ( rs_register_fn )desc->rs_register;
 
     uint16_t frame = rs_push_frame( name, 1 );
     if ( frame == RS_FRAME_INVALID )
@@ -645,7 +673,7 @@ rs_load_module_dll( const char* name, void* dll )
 }
 
 void
-rs_unload_module_dll( const char* name )
+rs_unregister_module( const char* name )
 {
     if ( !name || g_rs.frame_count <= 1 )
         return;
@@ -657,33 +685,23 @@ rs_unload_module_dll( const char* name )
         return;
     }
 
-    printf( "rs: WARNING rs_unload_module_dll: '%s' is not the topmost frame (top='%s'); skipped\n",
-            name, rs_cstr( g_rs.frames[ top ].name_id ) );
-}
-
-uint16_t
-rs_load_module_static( const char* name, void ( *rs_reg )( const rs_reg_api_t* ) )
-{
-    if ( !name || !rs_reg )
-        return RS_FRAME_INVALID;
-
-    uint16_t frame = rs_push_frame( name, 1 );
-    if ( frame == RS_FRAME_INVALID )
-        return RS_FRAME_INVALID;
-
-    rs_reg_api_t api = {
-        .intern             = rs_intern,
-        .rs_register_type   = rs_register_type,
-        .rs_register_enum   = rs_register_enum,
-        .rs_register_bitset = rs_register_bitset,
-        .rs_type_add_attr   = rs_type_add_attr,
-        .rs_field_add_attr  = rs_field_add_attr,
-        .rs_get_type        = rs_get_type,
-    };
-
-    rs_reg( &api );
-    rs_finalize_frame( frame );
-    return frame;
+    /* Module had no frame (no reflection) — silently ignore; the unload callback fires
+       for every module, not just reflected ones. */
+    if ( rs_debug )
+    {
+        /* Only warn if a frame with this name exists deeper in the stack — that's a
+           genuine LIFO violation. Plain "no frame" is normal and silent. */
+        for ( uint16_t i = 1; i < g_rs.frame_count; ++i )
+        {
+            if ( strcmp( rs_cstr( g_rs.frames[ i ].name_id ), name ) == 0 )
+            {
+                printf( "rs: WARNING rs_unregister_module: '%s' is not the topmost frame "
+                        "(top='%s'); skipped\n",
+                        name, rs_cstr( g_rs.frames[ top ].name_id ) );
+                return;
+            }
+        }
+    }
 }
 
 /*============================================================================================*/

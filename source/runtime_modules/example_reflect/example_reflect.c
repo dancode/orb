@@ -2,9 +2,10 @@
 
     example_reflect.c - Demo module that exercises the rs_ reflection system.
 
-    The module ships no reflection plumbing. Generated code (example_reflect.generated.c)
-    exports the well-known "rs_register" symbol, which the rs_ system discovers
-    and calls automatically via the mod DLL load callback. This TU knows nothing about rs_.
+    The module ships no reflection plumbing of its own. Generated code
+    (example_reflect.generated.c) defines example_reflect_rs_register(); we hand the
+    function pointer to the mod system via the descriptor's rs_register slot, and the
+    host's load callback invokes it. Same path for static and dynamic builds.
 
 ==============================================================================================*/
 
@@ -12,6 +13,7 @@
 #include "engine/mod/mod_export.h"
 
 #include "runtime_modules/example_reflect/example_reflect.h"
+#include "example_reflect.generated.h"   /* declares example_reflect_rs_register */
 
 #include <string.h>
 
@@ -119,6 +121,7 @@ example_reflect_get_mod_desc( void )
         .init          = example_reflect_mod_init,
         .reload        = example_reflect_mod_reload,
         .exit          = example_reflect_mod_exit,
+        .rs_register   = MOD_RS_REGISTER( example_reflect ),
     };
     return &api;
 }

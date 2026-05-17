@@ -14,7 +14,6 @@
 #include <string.h>
 #include <assert.h>
 
-#include "engine/sys/sys.h"          /* lib_handle_t, sys_library_get_symbol */
 #include "engine/mod/mod_export.h"   /* mod_desc_t, get_api_fn */
 #include "engine/rs/rs.h"
 
@@ -125,7 +124,9 @@ rs_mod_init( void* state, get_api_fn get_api )
 {
     UNUSED( state );
     UNUSED( get_api );
-    rs_init();
+    /* The registry self-bootstraps via rs_ensure_init() on first rs_register_module().
+       This callback is a no-op — its only purpose is to satisfy the mod lifecycle so
+       rs_api_t is published through the standard gateway. */
     return true;
 }
 

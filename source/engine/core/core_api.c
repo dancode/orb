@@ -7,6 +7,9 @@
     unit and can be assigned to the function-pointer slots of g_core_api_struct.
 
 ==============================================================================================*/
+#include "engine/mod/mod_export.h"
+
+#include "engine_core.generated.h"   /* declares engine_core_reflect_rs_register */
 /*==============================================================================================
     API Start / Shutdown
 ==============================================================================================*/
@@ -116,6 +119,7 @@ core_get_mod_desc( void )
         .init          = core_mod_init,
         .exit          = core_mod_exit,
         .reload        = NULL,
+        .rs_register   = MOD_RS_REGISTER( engine_core ),        
     };
     return &api;
 }

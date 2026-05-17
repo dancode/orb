@@ -3,31 +3,28 @@
     host_main.c — runtime host implementation.
 
     Boot sequence:
-        1. mod_system_init()
-        2. mod_static_load( sys, rs, run )      — mandatory engine baseline
-        3. mod_init_all()                       — PHASE 1: rs.init() brings the reflection
-                                                  registry online (string pool, frame stack)
-                                                  before any DLL load callback fires.
-        4. rs_wire_mod_callbacks()              — safe to fire now; rs registry is live
-        5. load_all( desc->modules )            — each dynamic_load fires the rs callback
-                                                  and registers the DLL's reflected types
-        6. mod_init_all()                       — PHASE 2: user modules init in dep order
-        7. HOST_FETCH_API( app, rhi, render )   — cache host-owned API ptrs
-        8. window_open()                        — when app is loaded (inferred from k_modules)
-        9. desc->on_ready()                     — host post-init hook
-       10. enter loop per desc->loop_mode
-       11. window_close() + mod_system_exit()  — exit in reverse dep order
+        1. mod_system_init()                    — registry online
+        2. rs_wire_mod_callbacks()              — install hooks; no code fires yet
+        3. mod_static_load( sys, rs, run )      — PASSIVE: engine baseline registered
+        4. load_all( desc->modules )            — PASSIVE: every entry registered
+        5. mod_init_all()                       — pass 1: load callbacks fire in dep order
+                                                          (rs frames pushed, reflection live)
+                                                  pass 2: init() runs in same order
+        6. HOST_FETCH_API( app, rhi, render )   — cache host-owned API ptrs
+        7. window_open()                        — when app is loaded (inferred from k_modules)
+        8. desc->on_ready()                     — host post-init hook
+        9. enter loop per desc->loop_mode
+       10. window_close() + mod_system_exit()  — exit in reverse dep order
+
+    Load is passive on purpose. mod_static_load / mod_dynamic_load only register the
+    descriptor — they fire no callbacks and run no module code. All lifecycle execution
+    is deferred to mod_init_all, which knows the dep order and fans out subscribers
+    (reflection, profilers) in that order. The rs frame stack therefore matches the
+    dep graph — dependencies below, dependents above.
 
     The engine baseline ( sys + rs + run ) is loaded by the host and is always present
     regardless of what k_modules[] declares. Higher layers (core, app, rhi, render, and
     eventually game / editor services) are declared by the host descriptor.
-
-    Two init_all calls are required, not stylistic:
-        rs_load_module_dll() runs inside the DLL load callback and needs the rs registry
-        to be initialized, not merely registered. Loading any DLL before phase 1 would
-        dereference an uninitialized string pool. Static loads don't fire DLL callbacks,
-        so a fully static host could collapse to a single init_all — but the host cannot
-        know that ahead of time, so it always does both.
 
     The loop is intentionally explicit. host.c knows the engine-level modules
     it manages (app, render) and calls them by name. It does not iterate the dep
@@ -138,44 +135,21 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     mod_system_init();
 
-    /* sys is mandatory — monotonic clock (tick_seconds) and sleep for the loop */
-    if ( !mod_static_load( "sys", sys_get_mod_desc() ) )
-    {
-        fprintf( stderr, "[host] sys load failed: %s\n", mod_last_error() );
-        mod_system_exit();
-        return 1;
-    }
-
-    /* rs is mandatory — reflection registry. Loaded before user modules so any reflected
-       DLL registers its types automatically on load via rs_wire_mod_callbacks(). */
-    if ( !mod_static_load( "rs", rs_get_mod_desc() ) )
-    {
-        fprintf( stderr, "[host] rs load failed: %s\n", mod_last_error() );
-        mod_system_exit();
-        return 1;
-    }
-
-    /* run is mandatory — frame clock service, available to all modules via MOD_FETCH_API */
-    if ( !mod_static_load( "run", run_get_mod_desc() ) )
-    {
-        fprintf( stderr, "[host] run load failed: %s\n", mod_last_error() );
-        mod_system_exit();
-        return 1;
-    }
-
-    /* PHASE 1: initialise the engine baseline. This runs rs.init(), bringing the
-       reflection registry online (string pool, frame stack) before any DLL load
-       callback can fire against it. */
-    if ( !mod_init_all() )
-    {
-        fprintf( stderr, "[host] baseline init failed: %s\n", mod_last_error() );
-        mod_system_exit();
-        return 1;
-    }
-
-    /* Wire rs into the DLL lifecycle. Must come AFTER rs.init() above and BEFORE any
-       dynamic_load. From here on, every DLL load auto-registers its reflected types. */
+    /* Wire rs into the module lifecycle BEFORE any module loads. The rs registry
+       self-bootstraps on first touch, so this is safe — there's no ordering dependency
+       on rs.mod_init. Every subsequent load (static, dynamic, or hot-reload swap)
+       auto-registers reflection through the generic callback. */
     rs_wire_mod_callbacks();
+
+    /* Engine baseline — sys (clock + sleep), rs (reflection), run (frame clock). */
+    if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
+         !mod_static_load( "rs",  rs_get_mod_desc()  ) ||
+         !mod_static_load( "run", run_get_mod_desc() ) )
+    {
+        fprintf( stderr, "[host] baseline load failed: %s\n", mod_last_error() );
+        mod_system_exit();
+        return 1;
+    }
 
     if ( !load_all( desc->modules ) )
     {
@@ -183,7 +157,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         return 1;
     }
 
-    /* PHASE 2: initialise user-declared modules in dep order. */
+    /* Single dep-ordered init pass. Every reflected module's init() can already query
+       its own types via rs_api() — the load callback pushed each frame on its way in. */
     if ( !mod_init_all() )
     {
         fprintf( stderr, "[host] init failed: %s\n", mod_last_error() );

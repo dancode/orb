@@ -11,16 +11,22 @@
 
     BOOT ORDER
     ----------
-    Before you can query anything, three things must happen:
+    Before you can query anything:
 
-        1. rs is loaded as a module     -- sets up the type registry and built-in primitives
-        2. rs_wire_mod_callbacks()      -- tells the module system to call rs automatically
-                                          whenever a DLL loads or unloads
-        3. mod_load( example_reflect )  -- loads the DLL; the DLL load callback fires and
-                                          rs reads the DLL's rs_register export, registering
-                                          all annotated types from that module
+        1. mod_system_init()                 -- module registry online
+        2. rs_wire_mod_callbacks()           -- install the load/unload hooks; nothing
+                                                fires yet. Safe to call before any module
+                                                loads because the rs registry self-
+                                                bootstraps on first touch.
+        3. mod_static_load / mod_load(...)   -- PASSIVE. Each call only registers the
+                                                descriptor. No callbacks fire here.
+        4. mod_init_all()                    -- pass 1 fires the load callback for every
+                                                newly-loaded module in dep order (rs reads
+                                                desc->rs_register and pushes a frame);
+                                                pass 2 runs init() in the same order.
 
-    After that the registry is live and you can query types by name, walk fields, etc.
+    After step 4 the registry reflects the dep graph: deps are below their dependents
+    on the rs frame stack, and every init() saw its own types already registered.
 
 ==============================================================================================*/
 
@@ -345,34 +351,23 @@ main( int argc, char** argv )
 
     printf( "=== sb_runtime_reflect ===\n" );
 
-    /* Boot the module system. All modules are registered here but not yet initialised. */
     mod_system_init();
 
-    /* Register the three engine modules. Order here just declares them; the module system
-       resolves the correct init order from their declared dependencies. */
-    mod_static_load( "rs",   rs_get_mod_desc() );
-    mod_static_load( "sys",  sys_get_mod_desc() );
-    mod_static_load( "core", core_get_mod_desc() );
-
-    /* Wire rs_ into the DLL lifecycle. After this call, loading any DLL that exports
-       "rs_register" will automatically register its types into the rs_ registry.
-       Call this before any mod_load, otherwise the first DLL load will be missed. */
+    /* Wire reflection into the module lifecycle. The rs registry self-bootstraps on
+       first reflected load, so this call is safe before any module's mod_init runs. */
     rs_wire_mod_callbacks();
 
-    /* Initialise rs, sys, and core in dependency order. rs inits first because core
-       declares "rs" as a dependency, so the module system puts rs before core. */
-    if ( !mod_init_all() )
-    {
-        fprintf( stderr, "init: %s\n", mod_last_error() );
-        return 1;
-    }
+    /* Register engine modules. Order here just declares them; mod_init_all() below
+       resolves the real init order from declared dependencies. */
+    mod_static_load( "rs",   rs_get_mod_desc()   );
+    mod_static_load( "sys",  sys_get_mod_desc()  );
+    mod_static_load( "core", core_get_mod_desc() );
 
-    /* Load example_reflect.dll. This fires the DLL load callback we wired above,
-       which calls the DLL's rs_register export and registers all its annotated types. */
+    /* Load example_reflect — the load callback above fires and registers its types. */
     if ( !mod_load( example_reflect ) )
         return 1;
 
-    /* Initialise example_reflect (calls its mod_init, populates its demo instance). */
+    /* Single dep-ordered init pass for everything. */
     if ( !mod_init_all() )
     {
         fprintf( stderr, "init: %s\n", mod_last_error() );

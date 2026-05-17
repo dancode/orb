@@ -399,23 +399,25 @@ typedef struct rs_frame_s
     Lifecycle
 
     rs_init() zeroes the registry, installs the internal string pool, pushes the system
-    frame, and registers all built-in primitive types.  Call it once before any other rs_
-    function.  In the engine, rs_init() is called by the rs module (see rs_host.h).
+    frame, and registers all built-in primitive types. It is idempotent and self-invoked
+    on first use, so hosts and modules never need to call it explicitly. rs_exit() tears
+    the registry down — typically called by rs.mod_exit during mod_system_exit.
 
-        rs_init();   // registry ready; builtins registered
-        ... load modules (rs_load_module_dll resolves "rs_register" per DLL) ...
-        rs_exit();
+        // typical: no explicit init call — first rs_register_module bootstraps the registry
+        rs_register_module( name, desc );    // first call triggers internal rs_init
+        ...
+        rs_exit();                           // optional; mod_system_exit handles it
 ==============================================================================================*/
 
 void rs_init( void );
 void rs_exit( void );
 
 /*==============================================================================================
-    Registration API  -  function pointer bundle passed to the generated rs_register().
+    Registration API  -  function pointer bundle passed to the generated <name>_rs_register().
 
     engine_rs is a static library that links only into the host.  DLL modules must not call
-    registration functions directly.  rs_load_module_dll fills this struct and passes it
-    into the DLL's rs_register() export, which calls back through the pointers.
+    registration functions directly.  rs_register_module fills this struct and passes it
+    into the module's generated registrar, which calls back through the pointers.
 ==============================================================================================*/
 
 typedef struct rs_reg_api_s
@@ -431,24 +433,27 @@ typedef struct rs_reg_api_s
 } rs_reg_api_t;
 
 /*==============================================================================================
-    Module DLL integration
+    Module reflection integration
 
-    Designed to be wired as mod_set_dll_load_cb / mod_set_dll_unload_cb targets so the
-    reflection system tracks module DLLs automatically without engine_mod knowing about rs_.
+    One entry point for both static and dynamic modules. The mod_desc_t.rs_register slot
+    carries the generated registrar function pointer, which lives in the same address
+    space as the desc (the exe for statics, the DLL image for dynamics). No symbol
+    lookup, no DLL-vs-static split.
 
-    rs_load_module_dll  - resolves "rs_register" from the DLL, pushes a frame, builds an
-                          rs_reg_api_t from the live registry functions, calls the DLL's
-                          rs_register, then finalizes. No-op (RS_FRAME_INVALID) if the DLL
-                          has no such export. `dll` is a lib_handle_t cast to void*.
-    rs_unload_module_dll - pops the frame owned by `name` (must be the topmost frame).
+    rs_register_module    - if desc->rs_register is non-NULL: pushes a frame named `name`,
+                            builds an rs_reg_api_t from the live registry functions, calls
+                            desc->rs_register through that, then finalizes the frame.
+                            Returns the new frame id, or RS_FRAME_INVALID if no reflection
+                            was registered.
+    rs_unregister_module  - pops the frame owned by `name` (must be the topmost frame).
+
+    Designed to be wired as mod_set_pre_init_cb / mod_set_post_exit_cb targets so
+    reflection tracks every module — static or dynamic — without engine_mod knowing
+    about rs_. See rs_host.h.
 ==============================================================================================*/
 
-uint16_t rs_load_module_dll   ( const char* name, void* dll );
-void     rs_unload_module_dll ( const char* name );
-
-/* Static-build equivalent: caller passes the function pointer directly instead of
-   resolving it from a DLL. rs_unload_module_dll works for static modules too (pops by name). */
-uint16_t rs_load_module_static( const char* name, void ( *rs_reg )( const rs_reg_api_t* ) );
+uint16_t rs_register_module  ( const char* name, const mod_desc_t* desc );
+void     rs_unregister_module( const char* name );
 
 /*==============================================================================================
     Frames
@@ -706,30 +711,22 @@ MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
 ==============================================================================================*/
 
 /*==============================================================================================
-    Module reflection export macros  (mirrors MOD_EXPORT / MOD_DEFINE_EXPORTS)
+    Module reflection wire-up
 
-    Generated code always defines name##_rs_register(). Place this at the bottom of the
-    generated .c to add the generic "rs_register" DLL export as a thin wrapper:
+    The generated <name>_rs_register() lives in the same image (exe for statics, DLL for
+    dynamics) as the module's mod_desc_t. Modules expose it by setting the rs_register slot:
 
-        RS_DEFINE_EXPORTS( example_reflect )
+        #include "<name>.generated.h"     // declares <name>_rs_register
 
-    Dynamic build: emits the undecorated rs_register export resolved by rs_load_module_dll.
-    Static build:  expands to nothing; host calls name##_rs_register( api ) directly via
-                   rs_load_module_static().
+        static mod_desc_t s_<name>_mod_desc = {
+            .func_api    = &g_<name>_api_struct,
+            .rs_register = MOD_RS_REGISTER( <name> ),
+            ...
+        };
+
+    The host's rs_wire_mod_callbacks() (rs_host.h) installs a load callback that reads the
+    slot and calls rs_register_module(). One mechanism for both static and dynamic builds.
 ==============================================================================================*/
-
-#if defined( _WIN32 ) && !defined( BUILD_STATIC )
-    #define RS_EXPORT __declspec( dllexport )
-#else
-    #define RS_EXPORT
-#endif
-
-#ifdef BUILD_STATIC
-    #define RS_DEFINE_EXPORTS( name )
-#else
-    #define RS_DEFINE_EXPORTS( name ) \
-        RS_EXPORT void rs_register( const rs_reg_api_t* api ) { name##_rs_register( api ); }
-#endif
 
 /*============================================================================================*/
 #endif    // RS_H

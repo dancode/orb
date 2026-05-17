@@ -666,14 +666,17 @@ do_reload( mod_info_t* m )
 
     if ( prev.dll )
     {
-        if ( g_dll_unload_fn )
-            g_dll_unload_fn( m->name, prev.dll, g_dll_unload_user );
+        /* post_exit for the OLD instance — pairs with its earlier exit(). */
+        if ( g_post_exit_fn )
+            g_post_exit_fn( m->name, prev.mod_desc, g_post_exit_user );
         sys_library_unload( prev.dll );
         shadow_delete( m->name, prev.shadow_count );
     }
 
-    if ( g_dll_load_fn )
-        g_dll_load_fn( m->name, m->dll, g_dll_load_user );
+    /* pre_init for the NEW instance — bracketing the reload() that just ran with the
+       same hook the initial init() would have received. */
+    if ( g_pre_init_fn )
+        g_pre_init_fn( m->name, m->mod_desc, g_pre_init_user );
 
     m->version++;
     m->status = MODULE_STATUS_INITIALIZED;

@@ -365,6 +365,8 @@ target_link_libraries( engine_mod  PUBLIC engine_sys )
 target_link_libraries( engine_app  PUBLIC engine_sys )
 target_link_libraries( engine_core PUBLIC engine_sys engine_rs )
 
+target_add_reflect_gen( engine_core "source/engine/core" "engine_core" )
+
 # ------------------------------------------------------------------------------
 # 03 RUNTIME
 # ------------------------------------------------------------------------------

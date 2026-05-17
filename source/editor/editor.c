@@ -23,14 +23,14 @@ editor_placeholder( void )
     Public API struct
 ==============================================================================================*/
 
-static const editor_api_t g_editor_api = {
+const editor_api_t g_editor_api_struct = {
     .placeholder = editor_placeholder,
 };
 
-editor_api_t*
-editor_api( void )
-{
-    return ( editor_api_t* )&g_editor_api;
-}
+// editor_api_t*
+// editor_api( void )
+// {
+//     return ( editor_api_t* )&g_editor_api;
+// }
 
 /*============================================================================================*/

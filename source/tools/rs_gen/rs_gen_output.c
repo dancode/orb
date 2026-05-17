@@ -4,12 +4,11 @@
 
     Output shape: ONE `void {module}_rs_register( const rs_reg_api_t* api )` per module,
     emitted as imperative registration calls using the rs_ low-level API directly.
-    The DLL exports the well-known symbol:
 
-        void rs_register( const rs_reg_api_t* api );
-
-    which rs_load_module_dll() discovers via sys_library_get_symbol and calls directly.
-    No descriptor types, no string tables, no secondary structs.
+    Modules wire the generated function into their mod_desc_t via MOD_RS_REGISTER. The
+    host's rs_register_module() reads desc->rs_register and calls it directly — same
+    path for static and dynamic builds. No DLL symbol lookup, no descriptor types, no
+    string tables.
 
 ==============================================================================================*/
 
@@ -220,8 +219,7 @@ emit_rs_register( FILE* fc, const char* module_name, const rg_parse_data_t* data
             emit_enum_block( fc, t );
     }
 
-    fprintf( fc, "}\n\n" );
-    fprintf( fc, "RS_DEFINE_EXPORTS( %s )\n", module_name );
+    fprintf( fc, "}\n" );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -274,8 +272,7 @@ rg_output( const char* output_dir, const char* module_name, const rg_parse_data_
     {
         fprintf( fc, "void\n%s_rs_register( const rs_reg_api_t* api )\n{\n", module_name );
         fprintf( fc, "    UNUSED( api );\n" );
-        fprintf( fc, "}\n\n" );
-        fprintf( fc, "RS_DEFINE_EXPORTS( %s )\n", module_name );
+        fprintf( fc, "}\n" );
     }
     else
     {
