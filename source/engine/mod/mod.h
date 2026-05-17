@@ -74,8 +74,7 @@ typedef struct mod_api_s mod_api_t;
 
     Always succeeds in static builds (struct is linked; nothing to fetch).
 
-    Usage:
-        if ( !MOD_FETCH_API( core_api_t, core ) ) return false;
+    Usage: if ( !MOD_FETCH_API( core_api_t, core ) ) return false;
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
