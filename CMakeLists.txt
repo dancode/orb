@@ -167,7 +167,7 @@ set_source_files_properties( ${BUILD_REFLECT_FILES}    PROPERTIES HEADER_FILE_ON
 set_source_files_properties( "${BUILD_REFLECT_UNITY}"  PROPERTIES HEADER_FILE_ONLY OFF )
 
 add_executable( build_reflect ${BUILD_REFLECT_FILES} )
-set_target_properties( build_reflect PROPERTIES FOLDER "08_Tools" )
+set_target_properties( build_reflect PROPERTIES FOLDER "10_Tools" )
 source_group( TREE "${BUILD_REFLECT_ROOT}" FILES ${BUILD_REFLECT_FILES} )
 
 # target_add_reflect_gen( <target> <source_dir> <module_name> )
@@ -347,7 +347,7 @@ endfunction()
 #   - Registers the PRE_LINK PDB unlock for debugger-safe rebuilds
 #
 # Usage (identical to add_unity_library, just swaps the function name):
-#   add_module( example "source/runtime_modules/example" "05_Runtime_Modules" "example.c" )
+#   add_module( example "source/runtime_modules/example" "03_Runtime_Modules" "example.c" )
 # ------------------------------------------------------------------------------
 
 function(add_module TARGET_NAME SOURCE_DIR VS_FOLDER)
@@ -460,17 +460,17 @@ target_link_libraries( audio PUBLIC base )
 target_link_libraries( physics PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 04 DEVELOPER MODULES (dev_* services — link only in non-shipping hosts)
+# 07 DEVELOPER MODULES (dev_* services — link only in non-shipping hosts)
 # ------------------------------------------------------------------------------
 
-add_unity_library( dev_build STATIC "source/developer/dev_build" "04_Developer" "dev_build.c" )
+add_unity_library( dev_build STATIC "source/developer/dev_build" "07_Developer" "dev_build.c" )
 target_link_libraries( dev_build PUBLIC engine_sys )
 
-add_unity_library( dev_hot STATIC "source/developer/dev_hot" "04_Developer" "dev_hot.c")
+add_unity_library( dev_hot STATIC "source/developer/dev_hot" "07_Developer" "dev_hot.c")
 target_link_libraries( dev_hot PUBLIC engine_sys dev_build )
 
 # ------------------------------------------------------------------------------
-# 04 GAME (FRAMEWORK)
+# 04 GAME HOST
 # ------------------------------------------------------------------------------
 
 # GAME
@@ -516,46 +516,46 @@ add_module( editor_example "source/editor_modules/editor_example" "05_Editor_Mod
 target_link_libraries( editor_example PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 05 PROJECTS (THE ACTUAL GAME IMPLEMENTATION PROJECT)
+# 06 PROJECTS (THE ACTUAL GAME IMPLEMENTATION PROJECT)
 # ------------------------------------------------------------------------------
 
-# 05 PROJECT
-add_unity_library(sample_game ${MODULE_TYPE} "source/project/sample_game" "05_Project"
+# 06 PROJECT
+add_unity_library(sample_game ${MODULE_TYPE} "source/project/sample_game" "06_Project"
     "sample_game.c"
 )
 
 # ------------------------------------------------------------------------------
-# 06. HOST SHARED LIBRARY
+# 08 HOST SHARED LIBRARY
 # ------------------------------------------------------------------------------
 
-add_unity_library( host_common STATIC "source/host/common" "06_Host" 
+add_unity_library( host_common STATIC "source/host/common" "08_Host" 
     "host_common.c"
 )
 
 # ------------------------------------------------------------------------------
-# 06 HOSTS (Executables)
+# 08 HOSTS (Executables)
 # ------------------------------------------------------------------------------
 
 # HOST Game
-add_unity_executable( host_game "source/host/game" "06_Host" "host_game_main.c" )
+add_unity_executable( host_game "source/host/game" "08_Host" "host_game_main.c" )
 target_link_libraries( host_game PRIVATE base engine_sys engine_mod engine_core engine_app rhi )
 if ( ENGINE_MONOLITHIC )
     target_link_libraries( host_game PUBLIC render audio physics )
 endif()
 
 # HOST Editor
-add_unity_executable( host_editor "source/host/editor" "06_Host" "host_editor_main.c" )
+add_unity_executable( host_editor "source/host/editor" "08_Host" "host_editor_main.c" )
 target_link_libraries( host_editor PRIVATE base engine_sys engine_mod engine_core rhi )
 if ( ENGINE_MONOLITHIC )
     target_link_libraries( host_editor PUBLIC render )
 endif()
 
 # HOST Tool
-add_unity_executable( host_tool "source/host/tool" "06_Host" "host_tool_main.c" )
+add_unity_executable( host_tool "source/host/tool" "08_Host" "host_tool_main.c" )
 target_link_libraries( host_tool PRIVATE base engine_mod engine_sys engine_core )
 
 # HOST Sandbox
-add_unity_executable( host_sandbox "source/host/sandbox" "06_Host" "host_sandbox.c" )
+add_unity_executable( host_sandbox "source/host/sandbox" "08_Host" "host_sandbox.c" )
 target_link_libraries( host_sandbox PRIVATE base engine_sys engine_mod engine_core )
 if ( ENGINE_MONOLITHIC ) 
 endif()
@@ -568,29 +568,29 @@ endif()
 # )
 
 # ------------------------------------------------------------------------------
-# 07 SANDBOX (Executables)
+# 09 SANDBOX (Executables)
 # ------------------------------------------------------------------------------
 
 # SANDBOX ENGINE : LIBRARY TESTS MODULES FOR ENGINE
 
 # Test the engine module system in a sandbox environment.
-add_unity_executable( sb_engine_mod "source/sandbox/engine_mod" "07_Sandbox" "sb_engine_mod.c" )
+add_unity_executable( sb_engine_mod "source/sandbox/engine_mod" "09_Sandbox" "sb_engine_mod.c" )
 target_link_libraries( sb_engine_mod PRIVATE engine_sys engine_mod dev_build dev_hot )
 
 # Test the engine platofrm system layer in a sandbox environment
-add_unity_executable( sb_engine_sys "source/sandbox/engine_sys" "07_Sandbox" "sb_engine_sys.c" )
+add_unity_executable( sb_engine_sys "source/sandbox/engine_sys" "09_Sandbox" "sb_engine_sys.c" )
 target_link_libraries( sb_engine_sys PRIVATE engine_sys )
 
 # Test the engine platform applicaiton layer in a sandbox environment.
-add_unity_executable( sb_engine_app "source/sandbox/engine_app" "07_Sandbox" "sb_engine_app.c" )
+add_unity_executable( sb_engine_app "source/sandbox/engine_app" "09_Sandbox" "sb_engine_app.c" )
 target_link_libraries( sb_engine_app PRIVATE engine_sys engine_mod engine_app )
 
 # Test the engine core layer in a sandbox environment.
-add_unity_executable( sb_engine_core "source/sandbox/engine_core" "07_Sandbox" "sb_engine_core.c" )
+add_unity_executable( sb_engine_core "source/sandbox/engine_core" "09_Sandbox" "sb_engine_core.c" )
 target_link_libraries( sb_engine_core PRIVATE engine_core )
 
 # Test the engine_rs reflection system
-add_unity_executable( sb_engine_reflect "source/sandbox/engine_reflect" "07_Sandbox" "sb_engine_reflect.c" )
+add_unity_executable( sb_engine_reflect "source/sandbox/engine_reflect" "09_Sandbox" "sb_engine_reflect.c" )
 target_link_libraries( sb_engine_reflect PRIVATE engine_core engine_rs )
 
 # only included for testing, not a header-only module, so ensure it's compiled as a separate TU
@@ -598,35 +598,35 @@ set_source_files_properties( "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" PR
 target_sources( sb_engine_reflect PRIVATE "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" )
 
 # Test loading a reflected runtime module via the full module boot sequence (rs+sys+core).
-add_unity_executable( sb_runtime_reflect "source/sandbox/runtime_reflect" "07_Sandbox" "sb_runtime_reflect.c" )
+add_unity_executable( sb_runtime_reflect "source/sandbox/runtime_reflect" "09_Sandbox" "sb_runtime_reflect.c" )
 target_link_libraries( sb_runtime_reflect PRIVATE engine_sys engine_mod engine_core engine_rs )
 add_dependencies( sb_runtime_reflect example_reflect )
 
 # TODO: Use host_common for shared code for parsing args, etc. 
 
 # ------------------------------------------------------------------------------
-# 07 SANDBOX RUNTIME EXAMPLES: 
+# 09 SANDBOX RUNTIME EXAMPLES: 
 #
 #   Simple host setup examples for various use cases, all linking runtime_host 
 #   to show how it provides access to the engine.
 # ------------------------------------------------------------------------------
 
-add_unity_executable( sb_example_tool "source/sandbox_example/example_tool" "07_Sandbox_Example" "example_tool.c" )
+add_unity_executable( sb_example_tool "source/sandbox_example/example_tool" "09_Sandbox_Example" "example_tool.c" )
 target_link_libraries( sb_example_tool PRIVATE runtime_host )
 
-add_unity_executable( sb_example_server "source/sandbox_example/example_server" "07_Sandbox_Example" "example_server.c" )
+add_unity_executable( sb_example_server "source/sandbox_example/example_server" "09_Sandbox_Example" "example_server.c" )
 target_link_libraries( sb_example_server PRIVATE runtime_host )
 
-add_unity_executable( sb_example_editor "source/sandbox_example/example_editor" "07_Sandbox_Example" "example_editor.c" )
+add_unity_executable( sb_example_editor "source/sandbox_example/example_editor" "09_Sandbox_Example" "example_editor.c" )
 target_link_libraries( sb_example_editor PRIVATE runtime_host rhi )
 
-add_unity_executable( sb_example_game "source/sandbox_example/example_game" "07_Sandbox_Example" "example_game.c" )
+add_unity_executable( sb_example_game "source/sandbox_example/example_game" "09_Sandbox_Example" "example_game.c" )
 target_link_libraries( sb_example_game PRIVATE runtime_host rhi )
 
-add_unity_executable( sb_example_runtime "source/sandbox_example/example_runtime" "07_Sandbox_Example" "example_runtime.c" )
+add_unity_executable( sb_example_runtime "source/sandbox_example/example_runtime" "09_Sandbox_Example" "example_runtime.c" )
 target_link_libraries( sb_example_runtime PRIVATE runtime_host rhi )
 
-# add_unity_executable( sb_tool_modinfo "source/sandbox/tool_modinfo" "07_Sandbox" "sb_tool_modinfo.c" )
+# add_unity_executable( sb_tool_modinfo "source/sandbox/tool_modinfo" "09_Sandbox" "sb_tool_modinfo.c" )
 # target_link_libraries( sb_tool_modinfo PRIVATE base engine_sys host_common )
 
 # ------------------------------------------------------------------------------
