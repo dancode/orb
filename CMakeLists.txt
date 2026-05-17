@@ -148,183 +148,91 @@ endif()
 include_directories( ${CMAKE_SOURCE_DIR}/source )
 
 # ------------------------------------------------------------------------------
-# RS_GEN — Reflection code generation tool
-#
-# Standalone C11 executable: no engine deps, called as a pre-compile step.
-# Scans annotated headers and writes <module>.generated.h/.c into
-# ${CMAKE_BINARY_DIR}/generated/ (gitignored via the build directory).
+# CMAKE HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
 
-set( BUILD_REFLECT_ROOT  "${CMAKE_SOURCE_DIR}/source/tools/rs_gen" )
-set( BUILD_REFLECT_UNITY "${BUILD_REFLECT_ROOT}/rs_gen.c" )
-
-file( GLOB_RECURSE BUILD_REFLECT_FILES
-    "${BUILD_REFLECT_ROOT}/*.c"
-    "${BUILD_REFLECT_ROOT}/*.h"
-)
-
-set_source_files_properties( ${BUILD_REFLECT_FILES}    PROPERTIES HEADER_FILE_ONLY ON )
-set_source_files_properties( "${BUILD_REFLECT_UNITY}"  PROPERTIES HEADER_FILE_ONLY OFF )
-
-add_executable( build_reflect ${BUILD_REFLECT_FILES} )
-set_target_properties( build_reflect PROPERTIES FOLDER "10_Tools" )
-source_group( TREE "${BUILD_REFLECT_ROOT}" FILES ${BUILD_REFLECT_FILES} )
-
-# target_add_reflect_gen( <target> <source_dir> <module_name> )
+# add_unity_library( TARGET_NAME TARGET_TYPE SOURCE_DIR VS_FOLDER [unity.c ...] )
 #
-#   Wires build_reflect as a pre-compile step for <target>.
-#   Generated files land in ${CMAKE_BINARY_DIR}/generated/ and are
-#   added as sources so the IDE shows them and MSBuild rebuilds when
-#   headers change.
-#
-#   Example:
-#       target_add_reflect_gen( engine_core "source/engine/core" "engine_core" )
-
-function( target_add_reflect_gen TARGET_NAME SOURCE_DIR MODULE_NAME )
-
-    set( GEN_DIR "${CMAKE_BINARY_DIR}/generated" )
-    set( GEN_H   "${GEN_DIR}/${MODULE_NAME}.generated.h" )
-    set( GEN_C   "${GEN_DIR}/${MODULE_NAME}.generated.c" )
-
-    # Ensure the output directory exists at configure time
-    file( MAKE_DIRECTORY "${GEN_DIR}" )
-
-    # Track all headers in the module so any change triggers a regen
-    file( GLOB_RECURSE RS_HEADERS "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}/*.h" )
-
-    # Invoke build_reflect as a pre-build step to generate the reflection code.
-    add_custom_command(
-        OUTPUT  "${GEN_H}" "${GEN_C}"
-        COMMAND $<TARGET_FILE:build_reflect>
-                "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}"
-                "${GEN_DIR}"
-                "${MODULE_NAME}"
-        DEPENDS build_reflect ${RS_HEADERS}
-        COMMENT "[build_reflect] generating reflection for ${MODULE_NAME}"
-        VERBATIM
-    )
-
-    # Add the generated files as sources for the target so they show
-    # up in the IDE and trigger rebuilds.
-    target_sources( ${TARGET_NAME} PRIVATE "${GEN_H}" "${GEN_C}" )
-    target_include_directories( ${TARGET_NAME} PRIVATE "${GEN_DIR}" )
-
-    # .h is browsable, not compiled; .c is compiled as a separate TU
-    set_source_files_properties( "${GEN_H}" PROPERTIES HEADER_FILE_ONLY ON )
-    set_source_files_properties( "${GEN_C}" PROPERTIES HEADER_FILE_ONLY OFF )
-
-    source_group( "Generated" FILES "${GEN_H}" "${GEN_C}" )
-
-endfunction()
-
-# ------------------------------------------------------------------------------
-# Create libray function (for Unity builds)
-# ------------------------------------------------------------------------------
+#   Creates a library with a unity build pattern. All .c/.h files in SOURCE_DIR
+#   are collected for IDE visibility; only the listed unity files are compiled.
 
 function(add_unity_library TARGET_NAME TARGET_TYPE SOURCE_DIR VS_FOLDER)
-    
-    # 1. Resolve the absolute path to the module directory.
-    # Anchoring to CMAKE_SOURCE_DIR guarantees this works flawlessly even 
-    # if you call this function from a nested CMakeLists.txt file.
+
     set(MODULE_ROOT "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}")
 
-    # 2. Collect all raw files for IDE visibility
     file(GLOB_RECURSE TARGET_FILES
         "${MODULE_ROOT}/*.c"
         "${MODULE_ROOT}/*.h"
         "${MODULE_ROOT}/*.natvis"
     )
 
-    # 3. Process ALL trailing arguments (ARGN) as files to compile.
-    # We automatically prepend the MODULE_ROOT here so you only have to 
-    # pass the local filenames (e.g., "sys.c").
     set(TARGET_COMPILED "")
     foreach(SRC_FILE IN LISTS ARGN)
         list(APPEND TARGET_COMPILED "${MODULE_ROOT}/${SRC_FILE}")
     endforeach()
 
-    # 4. Create the Headers list by cloning the full list and removing the compiled files
-    #    CMake's REMOVE_ITEM can handle a list, so we can remove them all at once
-    set(TARGET_HEADERS ${TARGET_FILES})        
+    set(TARGET_HEADERS ${TARGET_FILES})
     if(TARGET_COMPILED)
         list(REMOVE_ITEM TARGET_HEADERS ${TARGET_COMPILED})
     endif()
 
-    # 5. Apply properties
     set_source_files_properties(${TARGET_HEADERS} PROPERTIES HEADER_FILE_ONLY ON)
     set_source_files_properties(${TARGET_COMPILED} PROPERTIES HEADER_FILE_ONLY OFF)
 
-    # 6. Build the library (Static or Shared based on TARGET_TYPE)
     add_library(${TARGET_NAME} ${TARGET_TYPE}
         ${TARGET_HEADERS}
         ${TARGET_COMPILED}
     )
 
-    # 7. Organize inside Visual Studio Solution Explorer
     set_target_properties(${TARGET_NAME} PROPERTIES FOLDER ${VS_FOLDER})
-
-    # 8. Mirror physical directory structure inside Visual Studio
     source_group(TREE "${MODULE_ROOT}" FILES ${TARGET_FILES})
-
-    # 9. Tuck the mandatory CMake script out of sight
     source_group("CMake Rules" FILES "CMakeLists.txt")
 
 endfunction()
 
-# ------------------------------------------------------------------------------
-# Create Executable function (for Unity builds)
-# ------------------------------------------------------------------------------
+# add_unity_executable( TARGET_NAME SOURCE_DIR VS_FOLDER [main.c ...] )
+#
+#   Same as add_unity_library but produces an executable.
 
 function(add_unity_executable TARGET_NAME SOURCE_DIR VS_FOLDER)
-    
-    # 1. Resolve the absolute path to the host directory.
+
     set(MODULE_ROOT "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}")
 
-    # 2. Collect all raw files for IDE visibility
     file(GLOB_RECURSE TARGET_FILES
         "${MODULE_ROOT}/*.c"
         "${MODULE_ROOT}/*.h"
         "${MODULE_ROOT}/*.natvis"
     )
 
-    # 3. Process ALL trailing arguments (ARGN) as files to compile.
     set(TARGET_COMPILED "")
     foreach(SRC_FILE IN LISTS ARGN)
         list(APPEND TARGET_COMPILED "${MODULE_ROOT}/${SRC_FILE}")
     endforeach()
 
-    # 4. Create the Headers list by cloning and removing the compiled files
-    set(TARGET_HEADERS ${TARGET_FILES})            
+    set(TARGET_HEADERS ${TARGET_FILES})
     if(TARGET_COMPILED)
         list(REMOVE_ITEM TARGET_HEADERS ${TARGET_COMPILED})
     endif()
 
-    # 5. Apply properties (tell VS not to compile the individual .c files)
     set_source_files_properties(${TARGET_HEADERS} PROPERTIES HEADER_FILE_ONLY ON)
     set_source_files_properties(${TARGET_COMPILED} PROPERTIES HEADER_FILE_ONLY OFF)
 
-    # 6. Build the Executable (Notice: No TARGET_TYPE here)
     add_executable(${TARGET_NAME}
         ${TARGET_HEADERS}
         ${TARGET_COMPILED}
     )
 
-    # 7. Organize inside Visual Studio Solution Explorer
     set_target_properties(${TARGET_NAME} PROPERTIES FOLDER ${VS_FOLDER})
-
-    # 8. Mirror physical directory structure inside Visual Studio
     source_group(TREE "${MODULE_ROOT}" FILES ${TARGET_FILES})
-
-    # 9. Tuck the mandatory CMake script out of sight
     source_group("CMake Rules" FILES "CMakeLists.txt")
 
 endfunction()
 
-# ------------------------------------------------------------------------------
-# PDB unlock helper (hot-reload under debugger, MSVC dynamic builds only)
-# ------------------------------------------------------------------------------
-# Call once after each add_unity_library that produces a hot-reloadable DLL.
-# In monolithic or non-MSVC builds this expands to nothing.
+# target_unlock_pdb_on_rebuild( TARGET_NAME )
+#
+#   Adds a PRE_LINK step that deletes the PDB so MSVC can rewrite it during a
+#   hot-reload rebuild while the debugger holds the previous file open.
+#   No-op in monolithic builds and on non-MSVC compilers.
 
 function(target_unlock_pdb_on_rebuild TARGET_NAME)
     if(MSVC AND NOT ENGINE_MONOLITHIC)
@@ -338,17 +246,11 @@ function(target_unlock_pdb_on_rebuild TARGET_NAME)
     endif()
 endfunction()
 
-# ------------------------------------------------------------------------------
-# add_module: wrapper for hot-reloadable runtime modules.
+# add_module( TARGET_NAME SOURCE_DIR VS_FOLDER [unity.c ...] )
 #
-#   - Calls add_unity_library with MODULE_TYPE (SHARED or STATIC per build mode)
-#   - Adds PRIVATE <NAME>_STATIC so the module can call its own API through
-#     the standard gateway (example_api()->func()) safely in dynamic builds
-#   - Registers the PRE_LINK PDB unlock for debugger-safe rebuilds
-#
-# Usage (identical to add_unity_library, just swaps the function name):
-#   add_module( example "source/runtime_modules/example" "03_Runtime_Modules" "example.c" )
-# ------------------------------------------------------------------------------
+#   Wrapper for hot-reloadable modules. Calls add_unity_library with MODULE_TYPE,
+#   injects <NAME>_STATIC so the module can call its own gateway safely in dynamic
+#   builds, and registers the PDB unlock pre-link step.
 
 function(add_module TARGET_NAME SOURCE_DIR VS_FOLDER)
     add_unity_library( ${TARGET_NAME} ${MODULE_TYPE} ${SOURCE_DIR} ${VS_FOLDER} ${ARGN} )
@@ -359,10 +261,67 @@ function(add_module TARGET_NAME SOURCE_DIR VS_FOLDER)
     target_unlock_pdb_on_rebuild( ${TARGET_NAME} )
 endfunction()
 
+# target_add_reflect_gen( TARGET_NAME SOURCE_DIR MODULE_NAME )
+#
+#   Wires build_reflect as a pre-compile step for TARGET_NAME. Generated files
+#   land in ${CMAKE_BINARY_DIR}/generated/ and are added as sources so the IDE
+#   shows them and MSBuild rebuilds when headers change.
+
+function( target_add_reflect_gen TARGET_NAME SOURCE_DIR MODULE_NAME )
+
+    set( GEN_DIR "${CMAKE_BINARY_DIR}/generated" )
+    set( GEN_H   "${GEN_DIR}/${MODULE_NAME}.generated.h" )
+    set( GEN_C   "${GEN_DIR}/${MODULE_NAME}.generated.c" )
+
+    file( MAKE_DIRECTORY "${GEN_DIR}" )
+    file( GLOB_RECURSE RS_HEADERS "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}/*.h" )
+
+    add_custom_command(
+        OUTPUT  "${GEN_H}" "${GEN_C}"
+        COMMAND $<TARGET_FILE:build_reflect>
+                "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}"
+                "${GEN_DIR}"
+                "${MODULE_NAME}"
+        DEPENDS build_reflect ${RS_HEADERS}
+        COMMENT "[build_reflect] generating reflection for ${MODULE_NAME}"
+        VERBATIM
+    )
+
+    target_sources( ${TARGET_NAME} PRIVATE "${GEN_H}" "${GEN_C}" )
+    target_include_directories( ${TARGET_NAME} PRIVATE "${GEN_DIR}" )
+
+    set_source_files_properties( "${GEN_H}" PROPERTIES HEADER_FILE_ONLY ON )
+    set_source_files_properties( "${GEN_C}" PROPERTIES HEADER_FILE_ONLY OFF )
+
+    source_group( "Generated" FILES "${GEN_H}" "${GEN_C}" )
+
+endfunction()
+
 # ------------------------------------------------------------------------------
-# 00 Project Level Files (not compiled - organization and visibility only)
+# 10 TOOLS
+#
+# Declared before all other targets: build_reflect is a pre-build dependency
+# for any target that calls target_add_reflect_gen.
 # ------------------------------------------------------------------------------
-# Create a dummy target to hold root-level files in Visual Studio
+
+set( BUILD_REFLECT_ROOT  "${CMAKE_SOURCE_DIR}/source/tools/rs_gen" )
+set( BUILD_REFLECT_UNITY "${BUILD_REFLECT_ROOT}/rs_gen.c" )
+
+file( GLOB_RECURSE BUILD_REFLECT_FILES
+    "${BUILD_REFLECT_ROOT}/*.c"
+    "${BUILD_REFLECT_ROOT}/*.h"
+)
+
+set_source_files_properties( ${BUILD_REFLECT_FILES}   PROPERTIES HEADER_FILE_ONLY ON  )
+set_source_files_properties( "${BUILD_REFLECT_UNITY}" PROPERTIES HEADER_FILE_ONLY OFF )
+
+add_executable( build_reflect ${BUILD_REFLECT_FILES} )
+set_target_properties( build_reflect PROPERTIES FOLDER "10_Tools" )
+source_group( TREE "${BUILD_REFLECT_ROOT}" FILES ${BUILD_REFLECT_FILES} )
+
+# ------------------------------------------------------------------------------
+# 00 ROOT
+# ------------------------------------------------------------------------------
 
 set( ROOT_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/source/orb.h"
@@ -373,51 +332,41 @@ set( DOC_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/TODO.txt"
 )
 
-add_custom_target(root SOURCES ${ROOT_SOURCES} ${DOC_SOURCES} )
-set_target_properties(root PROPERTIES FOLDER "00_Root")
+add_custom_target( root SOURCES ${ROOT_SOURCES} ${DOC_SOURCES} )
+set_target_properties( root PROPERTIES FOLDER "00_Root" )
 
-source_group( "Source" "${CMAKE_CURRENT_SOURCE_DIR}/source" FILES ${ROOT_SOURCES})
-source_group( "Docs" "${CMAKE_CURRENT_SOURCE_DIR}/docs" FILES ${DOC_SOURCES})
-
-# ------------------------------------------------------------------------------
-# 01 BASE (Stateless Standard Library)
-# ------------------------------------------------------------------------------
-
-add_unity_library(base STATIC "source/base" "01_Base" "base.c" )
+source_group( "Source" "${CMAKE_CURRENT_SOURCE_DIR}/source" FILES ${ROOT_SOURCES} )
+source_group( "Docs"   "${CMAKE_CURRENT_SOURCE_DIR}/docs"   FILES ${DOC_SOURCES}  )
 
 # ------------------------------------------------------------------------------
-# 02 ENGINE (Stateful Engine Framework)
+# 01 BASE
 # ------------------------------------------------------------------------------
 
-# SYS : shared OS dependency, the only module dependency in engine allowed.
-add_unity_library( engine_sys STATIC "source/engine/sys" "02_Engine" "sys.c" )
-target_compile_definitions( engine_sys PUBLIC SYS_STATIC )
+add_unity_library( base STATIC "source/base" "01_Base" "base.c" )
 
 # ------------------------------------------------------------------------------
+# 02 ENGINE
+# ------------------------------------------------------------------------------
 
-# MOD (THE MODULE LIBRARY IS NOT A MODULE ITSELF)
-add_unity_library( engine_mod STATIC "source/engine/mod" "02_Engine" "mod.c" )
-target_compile_definitions( engine_mod PUBLIC MOD_STATIC )
-
-# APP
-add_unity_library( engine_app STATIC "source/engine/app" "02_Engine" "app.c" )
-target_compile_definitions( engine_app PUBLIC APP_STATIC )
-
-# CORE
+add_unity_library( engine_sys  STATIC "source/engine/sys"  "02_Engine" "sys.c"  )
+add_unity_library( engine_mod  STATIC "source/engine/mod"  "02_Engine" "mod.c"  )
+add_unity_library( engine_app  STATIC "source/engine/app"  "02_Engine" "app.c"  )
 add_unity_library( engine_core STATIC "source/engine/core" "02_Engine" "core.c" )
+add_unity_library( engine_rs   STATIC "source/engine/rs"   "02_Engine" "rs.c"   )
+
+target_compile_definitions( engine_sys  PUBLIC SYS_STATIC  )
+target_compile_definitions( engine_mod  PUBLIC MOD_STATIC  )
+target_compile_definitions( engine_app  PUBLIC APP_STATIC  )
 target_compile_definitions( engine_core PUBLIC CORE_STATIC )
+target_compile_definitions( engine_rs   PUBLIC RS_STATIC   )
 
-# RS (REFLECT)
-add_unity_library( engine_rs STATIC "source/engine/rs" "02_Engine" "rs.c" )
-target_compile_definitions( engine_rs PUBLIC RS_STATIC )
-
-# target_link_libraries( engine_sys  PUBLIC base )
-target_link_libraries( engine_core PUBLIC engine_sys engine_rs )
+# target_link_libraries( engine_sys PUBLIC base )
 target_link_libraries( engine_mod  PUBLIC engine_sys )
 target_link_libraries( engine_app  PUBLIC engine_sys )
+target_link_libraries( engine_core PUBLIC engine_sys engine_rs )
 
 # ------------------------------------------------------------------------------
-# 03 RUNTIME HOST
+# 03 RUNTIME
 # ------------------------------------------------------------------------------
 
 add_unity_library( runtime_host STATIC "source/runtime" "03_Runtime" "runtime.c" )
@@ -425,62 +374,45 @@ target_compile_definitions( runtime_host PUBLIC RUN_STATIC )
 target_link_libraries( runtime_host PUBLIC engine_mod engine_sys engine_core engine_app )
 
 # ------------------------------------------------------------------------------
-# 03 RUNTIME SERVICES
+# 03 RUNTIME SERVICE
 # ------------------------------------------------------------------------------
 
-# RHI — Vulkan backend, static. Windowed hosts link this directly and call rhi_api()->init(hwnd)
-# after window creation. DLL modules (render) access it through the mod registry via MOD_FETCH_API.
-add_unity_library( rhi STATIC "source/runtime_service/rhi" "03_Runtime_Service" "rhi.c" )
+# RHI — Vulkan backend, static. Windowed hosts link this directly; DLL modules
+# access it through the registry via MOD_FETCH_API. Headless hosts omit it.
+add_unity_library( rhi  STATIC "source/runtime_service/rhi"  "03_Runtime_Service" "rhi.c"  )
+add_unity_library( jobs STATIC "source/runtime_service/jobs" "03_Runtime_Service" "jobs.c" )
+
 target_compile_definitions( rhi PUBLIC RHI_STATIC )
 target_link_libraries( rhi PUBLIC engine_app )
 
-add_unity_library( jobs STATIC "source/runtime_service/jobs" "03_Runtime_Service" "jobs.c" )
-# NOTE: This service has NOT been implemented yet (just placeholdeer)
-
-# Note: The runtime_host library doesn't actually link the services directly.
-#       Final executables that need GPU link rt_rhi; headless hosts do not.
+# jobs: placeholder, not yet implemented
 
 # ------------------------------------------------------------------------------
-# 03 RUNTIME: MODULES
+# 03 RUNTIME MODULES
 # ------------------------------------------------------------------------------
 
-# DYNAMIC MODULES (Built as separate DLLs for hot-reloading, but statically linked in monolithic mode)
-add_module( example "source/runtime_modules/example" "03_Runtime_Modules" "example.c" )
-add_module( render  "source/runtime_modules/render"  "03_Runtime_Modules" "render.c"  )
-add_module( audio   "source/runtime_modules/audio"   "03_Runtime_Modules" "audio.c"   )
-add_module( physics "source/runtime_modules/physics" "03_Runtime_Modules" "physics.c" )
-
+add_module( example         "source/runtime_modules/example"         "03_Runtime_Modules" "example.c"         )
+add_module( render          "source/runtime_modules/render"          "03_Runtime_Modules" "render.c"          )
+add_module( audio           "source/runtime_modules/audio"           "03_Runtime_Modules" "audio.c"           )
+add_module( physics         "source/runtime_modules/physics"         "03_Runtime_Modules" "physics.c"         )
 add_module( example_reflect "source/runtime_modules/example_reflect" "03_Runtime_Modules" "example_reflect.c" )
+
 target_add_reflect_gen( example_reflect "source/runtime_modules/example_reflect" "example_reflect" )
 
-# LINK
-target_link_libraries( example PUBLIC base )
-target_link_libraries( render PUBLIC base )
-target_link_libraries( audio PUBLIC base )
-target_link_libraries( physics PUBLIC base )
+# target_link_libraries( example PUBLIC base )
+# target_link_libraries( render  PUBLIC base )
+# target_link_libraries( audio   PUBLIC base )
+# target_link_libraries( physics PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 07 DEVELOPER MODULES (dev_* services — link only in non-shipping hosts)
+# 04 GAME
 # ------------------------------------------------------------------------------
 
-add_unity_library( dev_build STATIC "source/developer/dev_build" "07_Developer" "dev_build.c" )
-target_link_libraries( dev_build PUBLIC engine_sys )
-
-add_unity_library( dev_hot STATIC "source/developer/dev_hot" "07_Developer" "dev_hot.c")
-target_link_libraries( dev_hot PUBLIC engine_sys dev_build )
-
-# ------------------------------------------------------------------------------
-# 04 GAME HOST
-# ------------------------------------------------------------------------------
-
-# GAME
-add_unity_library(game ${MODULE_TYPE} "source/game" "04_Game"
-    "game.c"
-)
+add_unity_library( game ${MODULE_TYPE} "source/game" "04_Game" "game.c" )
 target_link_libraries( game PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 04 GAME SERVICES
+# 04 GAME SERVICE
 # ------------------------------------------------------------------------------
 
 add_unity_library( nav STATIC "source/game_service/nav" "04_Game_Service" "nav.c" )
@@ -494,7 +426,7 @@ add_module( game_example "source/game_modules/game_example" "04_Game_Modules" "g
 target_link_libraries( game_example PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 05 EDITOR HOST
+# 05 EDITOR
 # ------------------------------------------------------------------------------
 
 add_unity_library( editor_host STATIC "source/editor" "05_Editor" "editor.c" )
@@ -502,7 +434,7 @@ target_compile_definitions( editor_host PUBLIC EDITOR_STATIC )
 target_link_libraries( editor_host PUBLIC engine_mod engine_sys engine_core engine_app )
 
 # ------------------------------------------------------------------------------
-# 05 EDITOR SERVICES
+# 05 EDITOR SERVICE
 # ------------------------------------------------------------------------------
 
 add_unity_library( viewport STATIC "source/editor_service/viewport" "05_Editor_Service" "viewport.c" )
@@ -516,148 +448,111 @@ add_module( editor_example "source/editor_modules/editor_example" "05_Editor_Mod
 target_link_libraries( editor_example PUBLIC base )
 
 # ------------------------------------------------------------------------------
-# 06 PROJECTS (THE ACTUAL GAME IMPLEMENTATION PROJECT)
-# ------------------------------------------------------------------------------
-
 # 06 PROJECT
-add_unity_library(sample_game ${MODULE_TYPE} "source/project/sample_game" "06_Project"
-    "sample_game.c"
-)
-
-# ------------------------------------------------------------------------------
-# 08 HOST SHARED LIBRARY
 # ------------------------------------------------------------------------------
 
-add_unity_library( host_common STATIC "source/host/common" "08_Host" 
-    "host_common.c"
-)
+add_unity_library( sample_game ${MODULE_TYPE} "source/project/sample_game" "06_Project" "sample_game.c" )
 
 # ------------------------------------------------------------------------------
-# 08 HOSTS (Executables)
+# 07 DEVELOPER
 # ------------------------------------------------------------------------------
 
-# HOST Game
-add_unity_executable( host_game "source/host/game" "08_Host" "host_game_main.c" )
-target_link_libraries( host_game PRIVATE base engine_sys engine_mod engine_core engine_app rhi )
-if ( ENGINE_MONOLITHIC )
-    target_link_libraries( host_game PUBLIC render audio physics )
-endif()
+add_unity_library( dev_build STATIC "source/developer/dev_build" "07_Developer" "dev_build.c" )
+target_link_libraries( dev_build PUBLIC engine_sys )
 
-# HOST Editor
-add_unity_executable( host_editor "source/host/editor" "08_Host" "host_editor_main.c" )
-target_link_libraries( host_editor PRIVATE base engine_sys engine_mod engine_core rhi )
-if ( ENGINE_MONOLITHIC )
+add_unity_library( dev_hot STATIC "source/developer/dev_hot" "07_Developer" "dev_hot.c" )
+target_link_libraries( dev_hot PUBLIC engine_sys dev_build )
+
+# ------------------------------------------------------------------------------
+# 08 HOST
+# ------------------------------------------------------------------------------
+
+add_unity_library( host_common STATIC "source/host/common" "08_Host" "host_common.c" )
+
+add_unity_executable( host_game    "source/host/game"    "08_Host" "host_game_main.c"   )
+add_unity_executable( host_editor  "source/host/editor"  "08_Host" "host_editor_main.c" )
+add_unity_executable( host_tool    "source/host/tool"    "08_Host" "host_tool_main.c"   )
+add_unity_executable( host_sandbox "source/host/sandbox" "08_Host" "host_sandbox.c"     )
+
+target_link_libraries( host_game    PRIVATE base engine_sys engine_mod engine_core engine_app rhi )
+target_link_libraries( host_editor  PRIVATE base engine_sys engine_mod engine_core rhi )
+target_link_libraries( host_tool    PRIVATE base engine_sys engine_mod engine_core )
+target_link_libraries( host_sandbox PRIVATE base engine_sys engine_mod engine_core )
+
+if( ENGINE_MONOLITHIC )
+    target_link_libraries( host_game   PUBLIC render audio physics )
     target_link_libraries( host_editor PUBLIC render )
 endif()
 
-# HOST Tool
-add_unity_executable( host_tool "source/host/tool" "08_Host" "host_tool_main.c" )
-target_link_libraries( host_tool PRIVATE base engine_mod engine_sys engine_core )
-
-# HOST Sandbox
-add_unity_executable( host_sandbox "source/host/sandbox" "08_Host" "host_sandbox.c" )
-target_link_libraries( host_sandbox PRIVATE base engine_sys engine_mod engine_core )
-if ( ENGINE_MONOLITHIC ) 
-endif()
-
 # --- The Magic IDE Config ---
-# Change "sandbox_imgui" here, run your build.bat, and VS will automatically 
+# Change "sandbox_imgui" here, run your build.bat, and VS will automatically
 # pass this argument when you press F5.
-# set_target_properties( host_sandbox PROPERTIES 
+# set_target_properties( host_sandbox PROPERTIES
 #     VS_DEBUGGER_COMMAND_ARGUMENTS "-module sandbox_imgui"
 # )
 
 # ------------------------------------------------------------------------------
-# 09 SANDBOX (Executables)
+# 09 SANDBOX
 # ------------------------------------------------------------------------------
 
-# SANDBOX ENGINE : LIBRARY TESTS MODULES FOR ENGINE
+add_unity_executable( sb_engine_mod      "source/sandbox/engine_mod"      "09_Sandbox" "sb_engine_mod.c"      )
+add_unity_executable( sb_engine_sys      "source/sandbox/engine_sys"      "09_Sandbox" "sb_engine_sys.c"      )
+add_unity_executable( sb_engine_app      "source/sandbox/engine_app"      "09_Sandbox" "sb_engine_app.c"      )
+add_unity_executable( sb_engine_core     "source/sandbox/engine_core"     "09_Sandbox" "sb_engine_core.c"     )
+add_unity_executable( sb_engine_reflect  "source/sandbox/engine_reflect"  "09_Sandbox" "sb_engine_reflect.c"  )
+add_unity_executable( sb_runtime_reflect "source/sandbox/runtime_reflect" "09_Sandbox" "sb_runtime_reflect.c" )
 
-# Test the engine module system in a sandbox environment.
-add_unity_executable( sb_engine_mod "source/sandbox/engine_mod" "09_Sandbox" "sb_engine_mod.c" )
-target_link_libraries( sb_engine_mod PRIVATE engine_sys engine_mod dev_build dev_hot )
+target_link_libraries( sb_engine_mod      PRIVATE engine_sys engine_mod dev_build dev_hot )
+target_link_libraries( sb_engine_sys      PRIVATE engine_sys )
+target_link_libraries( sb_engine_app      PRIVATE engine_sys engine_mod engine_app )
+target_link_libraries( sb_engine_core     PRIVATE engine_core )
+target_link_libraries( sb_engine_reflect  PRIVATE engine_core engine_rs )
+target_link_libraries( sb_runtime_reflect PRIVATE engine_sys engine_mod engine_core engine_rs )
 
-# Test the engine platofrm system layer in a sandbox environment
-add_unity_executable( sb_engine_sys "source/sandbox/engine_sys" "09_Sandbox" "sb_engine_sys.c" )
-target_link_libraries( sb_engine_sys PRIVATE engine_sys )
-
-# Test the engine platform applicaiton layer in a sandbox environment.
-add_unity_executable( sb_engine_app "source/sandbox/engine_app" "09_Sandbox" "sb_engine_app.c" )
-target_link_libraries( sb_engine_app PRIVATE engine_sys engine_mod engine_app )
-
-# Test the engine core layer in a sandbox environment.
-add_unity_executable( sb_engine_core "source/sandbox/engine_core" "09_Sandbox" "sb_engine_core.c" )
-target_link_libraries( sb_engine_core PRIVATE engine_core )
-
-# Test the engine_rs reflection system
-add_unity_executable( sb_engine_reflect "source/sandbox/engine_reflect" "09_Sandbox" "sb_engine_reflect.c" )
-target_link_libraries( sb_engine_reflect PRIVATE engine_core engine_rs )
-
-# only included for testing, not a header-only module, so ensure it's compiled as a separate TU
+# rs_test.c is not a unity entry; compile it as a separate TU for the reflect sandbox
 set_source_files_properties( "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" PROPERTIES HEADER_FILE_ONLY OFF )
 target_sources( sb_engine_reflect PRIVATE "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" )
 
-# Test loading a reflected runtime module via the full module boot sequence (rs+sys+core).
-add_unity_executable( sb_runtime_reflect "source/sandbox/runtime_reflect" "09_Sandbox" "sb_runtime_reflect.c" )
-target_link_libraries( sb_runtime_reflect PRIVATE engine_sys engine_mod engine_core engine_rs )
 add_dependencies( sb_runtime_reflect example_reflect )
 
-# TODO: Use host_common for shared code for parsing args, etc. 
-
 # ------------------------------------------------------------------------------
-# 09 SANDBOX RUNTIME EXAMPLES: 
+# 09 SANDBOX EXAMPLE
 #
-#   Simple host setup examples for various use cases, all linking runtime_host 
-#   to show how it provides access to the engine.
+#   Minimal host setup examples for various use cases, all linking runtime_host.
 # ------------------------------------------------------------------------------
 
-add_unity_executable( sb_example_tool "source/sandbox_example/example_tool" "09_Sandbox_Example" "example_tool.c" )
-target_link_libraries( sb_example_tool PRIVATE runtime_host )
-
-add_unity_executable( sb_example_server "source/sandbox_example/example_server" "09_Sandbox_Example" "example_server.c" )
-target_link_libraries( sb_example_server PRIVATE runtime_host )
-
-add_unity_executable( sb_example_editor "source/sandbox_example/example_editor" "09_Sandbox_Example" "example_editor.c" )
-target_link_libraries( sb_example_editor PRIVATE runtime_host rhi )
-
-add_unity_executable( sb_example_game "source/sandbox_example/example_game" "09_Sandbox_Example" "example_game.c" )
-target_link_libraries( sb_example_game PRIVATE runtime_host rhi )
-
+add_unity_executable( sb_example_tool    "source/sandbox_example/example_tool"    "09_Sandbox_Example" "example_tool.c"    )
+add_unity_executable( sb_example_server  "source/sandbox_example/example_server"  "09_Sandbox_Example" "example_server.c"  )
+add_unity_executable( sb_example_editor  "source/sandbox_example/example_editor"  "09_Sandbox_Example" "example_editor.c"  )
+add_unity_executable( sb_example_game    "source/sandbox_example/example_game"    "09_Sandbox_Example" "example_game.c"    )
 add_unity_executable( sb_example_runtime "source/sandbox_example/example_runtime" "09_Sandbox_Example" "example_runtime.c" )
+
+target_link_libraries( sb_example_tool    PRIVATE runtime_host )
+target_link_libraries( sb_example_server  PRIVATE runtime_host )
+target_link_libraries( sb_example_editor  PRIVATE runtime_host rhi )
+target_link_libraries( sb_example_game    PRIVATE runtime_host rhi )
 target_link_libraries( sb_example_runtime PRIVATE runtime_host rhi )
 
 # add_unity_executable( sb_tool_modinfo "source/sandbox/tool_modinfo" "09_Sandbox" "sb_tool_modinfo.c" )
 # target_link_libraries( sb_tool_modinfo PRIVATE base engine_sys host_common )
 
 # ------------------------------------------------------------------------------
-# MONOLITHIC BUILD COMBINES ALL LIBRARIES INTO HOST TARGET
+# MONOLITHIC
 # ------------------------------------------------------------------------------
 
-# TODO: fixup dependencies later
-if(ENGINE_MONOLITHIC)
-# In monolithic mode, the engine must statically link the modules.
-# target_link_libraries(engine PUBLIC example)
-# target_link_libraries(engine PUBLIC render)
-# target_link_libraries(engine PUBLIC audio)
-# target_link_libraries(engine PUBLIC game)
-# target_link_libraries(engine PUBLIC sample_game)
-#else()
-#    # In dynamic mode, do NOT link the render target (load at runtime)
+# TODO: wire monolithic static module links into host targets
+if( ENGINE_MONOLITHIC )
 endif()
 
 # ------------------------------------------------------------------------------
-# Set default startup project
+# VS SETTINGS
 # ------------------------------------------------------------------------------
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sb_example_runtime )
+set_property( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT sb_example_runtime )
 
-# ------------------------------------------------------------------------------
-# Hide CMake generated builds in Visual Studio project.
-# ------------------------------------------------------------------------------
-
-if(CMAKE_GENERATOR MATCHES "Visual Studio" OR CMAKE_GENERATOR MATCHES "Xcode")
-    set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-    set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "Auto")  
+if( CMAKE_GENERATOR MATCHES "Visual Studio" OR CMAKE_GENERATOR MATCHES "Xcode" )
+    set_property( GLOBAL PROPERTY USE_FOLDERS ON )
+    set_property( GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "Auto" )
 endif()
 
 # ------------------------------------------------------------------------------

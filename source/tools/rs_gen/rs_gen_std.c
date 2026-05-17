@@ -49,3 +49,5 @@ rg_str_ends_with( const char* s, const char* suffix )
         return 0;
     return memcmp( s + sl - xl, suffix, (size_t)xl ) == 0;
 }
+
+/*--------------------------------------------------------------------------------------------*/

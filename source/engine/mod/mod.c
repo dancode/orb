@@ -230,8 +230,11 @@ mod_dynamic_load( const char* name )
     ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)", name, m->mod_desc->version,
             m->mod_desc->state_size, m->mod_desc->func_api_size );
 
+    /* handle any post load DLL callbacks (reflection) - called before init() */
     if ( g_dll_load_fn )
+    {
         g_dll_load_fn( name, m->dll, g_dll_load_user );
+    }
 
     return true;
 }
@@ -250,8 +253,11 @@ mod_unload( const char* name )
     if ( m->status == MODULE_STATUS_INITIALIZED )
         call_exit( m );
 
+    /* handle any pre unload DLL callbacks (reflection) - called after exit() */
     if ( !m->is_static && g_dll_unload_fn )
+    {
         g_dll_unload_fn( m->name, m->dll, g_dll_unload_user );
+    }
 
     slot_destroy( m );
     ms_log( "[module] unloaded '%s'", name );

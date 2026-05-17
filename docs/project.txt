@@ -9,13 +9,13 @@ Build/ Output directory for all compiled binaries (exe's, dll's, lib's) and inte
 Engine Heirarchy Stack:
 
 00_Root
-  01_Base
-  02_Engine
-  03_Runtime / 03_Runtime_Service / 03_Runtime_Modules
-  04_Game    / 04_Game_Service    / 04_Game_Modules
-  05_Editor  / 05_Editor_Service  / 05_Editor_Modules
-  06_Project
-  07_Developer
-  08_Host
-  09_Sandbox / 09_Sandbox_Example
-  10_Tools
+01_Base
+02_Engine
+03_Runtime / 03_Runtime_Service / 03_Runtime_Modules
+04_Game    / 04_Game_Service    / 04_Game_Modules
+05_Editor  / 05_Editor_Service  / 05_Editor_Modules
+06_Project
+07_Developer
+08_Host
+09_Sandbox / 09_Sandbox_Example
+10_Tools

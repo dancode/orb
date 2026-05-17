@@ -2,7 +2,7 @@
 
     rs_gen_output.c - write <module>.generated.h and <module>.generated.c
 
-    Output shape: ONE `void rs_register( const rs_reg_api_t* api )` per module,
+    Output shape: ONE `void {module}_rs_register( const rs_reg_api_t* api )` per module,
     emitted as imperative registration calls using the rs_ low-level API directly.
     The DLL exports the well-known symbol:
 
@@ -27,7 +27,7 @@ to_upper_guard( char* dst, const char* src, int max )
     {
         char c = src[ i ];
         if ( c >= 'a' && c <= 'z' )
-            c = ( char )( c - 32 );
+            c = (char)( c - 32 );
         else if ( c == '.' || c == '-' || c == '/' || c == '\\' )
             c = '_';
         dst[ i ] = c;
@@ -40,9 +40,9 @@ attr_kind_macro( int kind )
 {
     switch ( kind )
     {
-        case RG_ATTR_TAG: return "RS_ATTR_BOOL";
-        case RG_ATTR_INT: return "RS_ATTR_INT";
-        case RG_ATTR_FLOAT: return "RS_ATTR_FLOAT";
+        case RG_ATTR_TAG:    return "RS_ATTR_BOOL";
+        case RG_ATTR_INT:    return "RS_ATTR_INT";
+        case RG_ATTR_FLOAT:  return "RS_ATTR_FLOAT";
         case RG_ATTR_STRING: return "RS_ATTR_STRING";
     }
     return "RS_ATTR_NONE";
@@ -54,20 +54,19 @@ kind_macro( int kind )
     switch ( kind )
     {
         case RG_KIND_STRUCT: return "RS_KIND_STRUCT";
-        case RG_KIND_ENUM: return "RS_KIND_ENUM";
+        case RG_KIND_ENUM:   return "RS_KIND_ENUM";
         case RG_KIND_BITSET: return "RS_KIND_BITSET";
     }
     return "RS_KIND_PRIM";
 }
 
-/*----------------------------------------------------------------------------------------------
-    Emit one rs_attrib_t inline and call the given add function.
-----------------------------------------------------------------------------------------------*/
-
+/* Emit one rs_attrib_t inline and call the given add function. */
 static void
-emit_attr_call( FILE* fc, const rg_attr_t* a, const char* add_fn, const char* id_expr, const char* indent )
+emit_attr_call( FILE* fc, const rg_attr_t* a, const char* add_fn, const char* id_expr,
+                const char* indent )
 {
-    fprintf( fc, "%s{ rs_attrib_t _a = { .name_id = api->intern( \"%s\" ), .name_hash = rs_hash_str( \"%s\" ), .type = %s, .value = { ",
+    fprintf( fc, "%s{ rs_attrib_t _a = { .name_id = api->intern( \"%s\" ), "
+                 ".name_hash = rs_hash_str( \"%s\" ), .type = %s, .value = { ",
              indent, a->name, a->name, attr_kind_macro( a->kind ) );
     switch ( a->kind )
     {
@@ -79,8 +78,31 @@ emit_attr_call( FILE* fc, const rg_attr_t* a, const char* add_fn, const char* id
     fprintf( fc, " } }; api->%s( %s, &_a ); }\n", add_fn, id_expr );
 }
 
+/* Emit the rs_type_t _t = { ... }; block shared by structs and enums. */
+static void
+emit_type_decl( FILE* fc, const rg_decl_type_t* t )
+{
+    fprintf( fc, "        rs_type_t _t = {\n" );
+    fprintf( fc, "            .name_id = api->intern( \"%s\" ),\n", t->name );
+    fprintf( fc, "            .hash    = rs_hash_str( \"%s\" ),\n", t->name );
+    fprintf( fc, "            .size    = RS_SIZEOF( %s ),\n", t->name );
+    fprintf( fc, "            .align   = RS_ALIGNOF( %s ),\n", t->name );
+    fprintf( fc, "            .kind    = %s,\n", kind_macro( t->kind ) );
+    fprintf( fc, "        };\n" );
+}
+
+/* Emit the api->rs_register_*() call, optionally capturing the returned type ID. */
+static void
+emit_register( FILE* fc, const char* fn, const char* items, int count, int capture_tid )
+{
+    if ( capture_tid )
+        fprintf( fc, "        uint16_t tid = api->%s( &_t, %s, %d );\n", fn, items, count );
+    else
+        fprintf( fc, "        api->%s( &_t, %s, %d );\n", fn, items, count );
+}
+
 /*----------------------------------------------------------------------------------------------
-    Emit one type block for a struct/union type.
+    Type block emitters
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -93,14 +115,7 @@ emit_struct_block( FILE* fc, const rg_decl_type_t* t )
     int needs_tid = ( t->attr_count > 0 || has_field_attrs );
 
     fprintf( fc, "    { /* %s */\n", t->name );
-
-    fprintf( fc, "        rs_type_t _t = {\n" );
-    fprintf( fc, "            .name_id  = api->intern( \"%s\" ),\n", t->name );
-    fprintf( fc, "            .hash     = rs_hash_str( \"%s\" ),\n", t->name );
-    fprintf( fc, "            .size     = RS_SIZEOF( %s ),\n", t->name );
-    fprintf( fc, "            .align    = RS_ALIGNOF( %s ),\n", t->name );
-    fprintf( fc, "            .kind     = %s,\n", kind_macro( t->kind ) );
-    fprintf( fc, "        };\n" );
+    emit_type_decl( fc, t );
 
     if ( t->field_count > 0 )
     {
@@ -108,31 +123,27 @@ emit_struct_block( FILE* fc, const rg_decl_type_t* t )
         for ( int fi = 0; fi < t->field_count; fi++ )
         {
             const rg_decl_field_t* f = &t->fields[ fi ];
-            fprintf( fc, "            { .name_id = api->intern( \"%s\" ), .name_hash = rs_hash_str( \"%s\" ),\n", f->name, f->name );
-            fprintf( fc, "              .type_hash = rs_hash_str( \"%s\" ), .type_id = RS_TYPE_INVALID,\n", f->base_type );
-            fprintf( fc, "              .offset = RS_OFFSETOF( %s, %s ), .size = RS_FIELD_SIZE( %s, %s )",
+            fprintf( fc, "            { .name_id = api->intern( \"%s\" ), "
+                         ".name_hash = rs_hash_str( \"%s\" ),\n", f->name, f->name );
+            fprintf( fc, "              .type_hash = rs_hash_str( \"%s\" ), "
+                         ".type_id = RS_TYPE_INVALID,\n", f->base_type );
+            fprintf( fc, "              .offset = RS_OFFSETOF( %s, %s ), "
+                         ".size = RS_FIELD_SIZE( %s, %s )",
                      t->name, f->name, t->name, f->name );
             if ( f->mods )
-                fprintf( fc, ",\n              .mods = (uint16_t)0x%04X", ( unsigned )f->mods );
+                fprintf( fc, ",\n              .mods = (uint16_t)0x%04X", (unsigned)f->mods );
             if ( f->array_count )
-                fprintf( fc, ",\n              .aux = %u", ( unsigned )f->array_count );
+                fprintf( fc, ",\n              .aux = %u", (unsigned)f->array_count );
             if ( f->base_const )
                 fprintf( fc, ",\n              .base_const = 1" );
             fprintf( fc, " },\n" );
         }
         fprintf( fc, "        };\n" );
-
-        if ( needs_tid )
-            fprintf( fc, "        uint16_t tid = api->rs_register_type( &_t, _fields, %d );\n", t->field_count );
-        else
-            fprintf( fc, "        api->rs_register_type( &_t, _fields, %d );\n", t->field_count );
+        emit_register( fc, "rs_register_type", "_fields", t->field_count, needs_tid );
     }
     else
     {
-        if ( needs_tid )
-            fprintf( fc, "        uint16_t tid = api->rs_register_type( &_t, NULL, 0 );\n" );
-        else
-            fprintf( fc, "        api->rs_register_type( &_t, NULL, 0 );\n" );
+        emit_register( fc, "rs_register_type", "NULL", 0, needs_tid );
     }
 
     for ( int ai = 0; ai < t->attr_count; ai++ )
@@ -157,25 +168,14 @@ emit_struct_block( FILE* fc, const rg_decl_type_t* t )
     fprintf( fc, "    }\n\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
-    Emit one type block for an enum or bitset type.
-----------------------------------------------------------------------------------------------*/
-
 static void
 emit_enum_block( FILE* fc, const rg_decl_type_t* t )
 {
-    int needs_tid = ( t->attr_count > 0 );
-    const char* reg_fn = ( t->kind == RG_KIND_BITSET ) ? "rs_register_bitset" : "rs_register_enum";
+    int         needs_tid = ( t->attr_count > 0 );
+    const char* reg_fn    = ( t->kind == RG_KIND_BITSET ) ? "rs_register_bitset" : "rs_register_enum";
 
     fprintf( fc, "    { /* %s */\n", t->name );
-
-    fprintf( fc, "        rs_type_t _t = {\n" );
-    fprintf( fc, "            .name_id  = api->intern( \"%s\" ),\n", t->name );
-    fprintf( fc, "            .hash     = rs_hash_str( \"%s\" ),\n", t->name );
-    fprintf( fc, "            .size     = RS_SIZEOF( %s ),\n", t->name );
-    fprintf( fc, "            .align    = RS_ALIGNOF( %s ),\n", t->name );
-    fprintf( fc, "            .kind     = %s,\n", kind_macro( t->kind ) );
-    fprintf( fc, "        };\n" );
+    emit_type_decl( fc, t );
 
     if ( t->enum_count > 0 )
     {
@@ -183,22 +183,17 @@ emit_enum_block( FILE* fc, const rg_decl_type_t* t )
         for ( int i = 0; i < t->enum_count; i++ )
         {
             const rg_enumerator_t* e = &t->enumerators[ i ];
-            fprintf( fc, "            { .name_id = api->intern( \"%s\" ), .name_hash = rs_hash_str( \"%s\" ), .value = (int64_t)( %s ) },\n",
+            fprintf( fc, "            { .name_id = api->intern( \"%s\" ), "
+                         ".name_hash = rs_hash_str( \"%s\" ), "
+                         ".value = (int64_t)( %s ) },\n",
                      e->name, e->name, e->has_value ? e->value_expr : e->name );
         }
         fprintf( fc, "        };\n" );
-
-        if ( needs_tid )
-            fprintf( fc, "        uint16_t tid = api->%s( &_t, _enums, %d );\n", reg_fn, t->enum_count );
-        else
-            fprintf( fc, "        api->%s( &_t, _enums, %d );\n", reg_fn, t->enum_count );
+        emit_register( fc, reg_fn, "_enums", t->enum_count, needs_tid );
     }
     else
     {
-        if ( needs_tid )
-            fprintf( fc, "        uint16_t tid = api->%s( &_t, NULL, 0 );\n", reg_fn );
-        else
-            fprintf( fc, "        api->%s( &_t, NULL, 0 );\n", reg_fn );
+        emit_register( fc, reg_fn, "NULL", 0, needs_tid );
     }
 
     for ( int ai = 0; ai < t->attr_count; ai++ )
@@ -208,7 +203,7 @@ emit_enum_block( FILE* fc, const rg_decl_type_t* t )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Emit the rs_register function.
+    Register function emitter
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -240,15 +235,8 @@ rg_output( const char* output_dir, const char* module_name, const rg_parse_data_
     char c_path[ RG_MAX_PATH ];
     char guard[ RG_MAX_NAME ];
 
-    rg_str_copy( h_path, output_dir, RG_MAX_PATH );
-    rg_str_cat( h_path, "/", RG_MAX_PATH );
-    rg_str_cat( h_path, module_name, RG_MAX_PATH );
-    rg_str_cat( h_path, ".generated.h", RG_MAX_PATH );
-
-    rg_str_copy( c_path, output_dir, RG_MAX_PATH );
-    rg_str_cat( c_path, "/", RG_MAX_PATH );
-    rg_str_cat( c_path, module_name, RG_MAX_PATH );
-    rg_str_cat( c_path, ".generated.c", RG_MAX_PATH );
+    snprintf( h_path, RG_MAX_PATH, "%s/%s.generated.h", output_dir, module_name );
+    snprintf( c_path, RG_MAX_PATH, "%s/%s.generated.c", output_dir, module_name );
 
     to_upper_guard( guard, module_name, RG_MAX_NAME );
     rg_str_cat( guard, "_GENERATED_H", RG_MAX_NAME );
@@ -278,7 +266,8 @@ rg_output( const char* output_dir, const char* module_name, const rg_parse_data_
     fprintf( fc, "/* Generated by build_reflect -- do not edit. */\n\n" );
     fprintf( fc, "#include \"orb.h\"\n" );
     fprintf( fc, "#include \"engine/rs/rs.h\"\n" );
-    for ( int i = 0; i < data->header_count; i++ ) fprintf( fc, "#include \"%s\"\n", data->headers[ i ] );
+    for ( int i = 0; i < data->header_count; i++ )
+        fprintf( fc, "#include \"%s\"\n", data->headers[ i ] );
     fprintf( fc, "#include \"%s.generated.h\"\n\n", module_name );
 
     if ( data->type_count == 0 )

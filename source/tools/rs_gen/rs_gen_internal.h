@@ -119,38 +119,29 @@ typedef struct rg_parse_data_s
 } rg_parse_data_t;
 
 /*==============================================================================================
-    std
+    Public function declarations
+    (Internal static helpers in lex/attr/parse are visible within the unity build by
+     inclusion order: std -> platform -> scan -> lex -> attr -> parse -> output)
 ==============================================================================================*/
 
+/* rs_gen_std.c */
 void rg_str_copy( char* dst, const char* src, int max );
 int  rg_str_len( const char* s );
 void rg_str_cat( char* dst, const char* src, int max );
 int  rg_str_ends_with( const char* s, const char* suffix );
 
-/*==============================================================================================
-    platform
-==============================================================================================*/
-
+/* rs_gen_platform.c */
 void rg_platform_mkdir( const char* path );
 int  rg_platform_scan_dir( const char* dir, char out_paths[][ RG_MAX_PATH ], int max_files );
 void rg_platform_exe_dir( char* out, int max );
 
-/*==============================================================================================
-    scan
-==============================================================================================*/
-
+/* rs_gen_scan.c */
 void rg_scan( const char* source_dir, rg_file_list_t* out );
 
-/*==============================================================================================
-    parse
-==============================================================================================*/
-
+/* rs_gen_parse.c */
 void rg_parse( const rg_file_list_t* files, rg_parse_data_t* out );
 
-/*==============================================================================================
-    output
-==============================================================================================*/
-
+/* rs_gen_output.c */
 int rg_output( const char* output_dir, const char* module_name, const rg_parse_data_t* data );
 
 /*============================================================================================*/

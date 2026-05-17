@@ -6,10 +6,14 @@
 
 #include "rs_gen_internal.h"
 
+/*--------------------------------------------------------------------------------------------*/
+/* Scan a directory for .h files. Uses the platform abstraction to get a list of all files,
+then filters to only .h files and writes those into the output list. Paths are normalized     */
+ 
 void
 rg_scan( const char* source_dir, rg_file_list_t* out )
 {
-    char all_paths[ RG_MAX_FILES ][ RG_MAX_PATH ];
+    static char all_paths[ RG_MAX_FILES ][ RG_MAX_PATH ];
     int  n = rg_platform_scan_dir( source_dir, all_paths, RG_MAX_FILES );
 
     out->count = 0;
@@ -21,3 +25,5 @@ rg_scan( const char* source_dir, rg_file_list_t* out )
         out->count++;
     }
 }
+
+/*--------------------------------------------------------------------------------------------*/

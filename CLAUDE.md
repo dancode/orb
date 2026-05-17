@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**ORB "The Glowing Orb"** — a C11 game engine with a modular, hot-reload-first architecture. Primary target is Windows with Visual Studio 2022; also supports Clang-CL.
+**ORB "The Glowing Orb"** — a C11 game engine with a modular, hot-reload-first architecture. Primary target is Windows with Visual Studio 2022 or higher;
+
+Only create the MSVC Win64 implementation and stub in #error messages for other platforms.
 
 ## Build
 
