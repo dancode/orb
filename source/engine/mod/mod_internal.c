@@ -42,7 +42,7 @@ typedef struct mod_info_s
     void*           dll;           /* handle to the loaded shadow copy */
     uint64_t        last_write;    /* file timestamp at last successful load */
 
-    mod_desc_t*      mod_api;       /* lifecycle: init / exit / reload + func_api */
+    mod_desc_t*     mod_desc;      /* lifecycle: init / exit / reload + func_api */
 
     void*           state;         /* persistent state block; system-owned */
     int32_t         state_size;    /* size of the current allocation */
@@ -66,7 +66,7 @@ typedef struct pending_reload_s
 typedef struct mod_snapshot_s
 {
     void*           dll;
-    mod_desc_t*      mod_api;
+    mod_desc_t*     mod_desc;
     uint32_t        shadow_count;
     uint64_t        last_write;
     module_status_t status;
@@ -280,13 +280,13 @@ slot_load_dll( mod_info_t* m )
         goto fail;
     }
 
-    m->mod_api = get_mod_desc();
-    if ( !m->mod_api )
+    m->mod_desc = get_mod_desc();
+    if ( !m->mod_desc )
     {
         set_error( "'%s' get_mod_desc() returned NULL", m->name );
         goto fail;
     }
-    if ( !api_validate( m->name, m->mod_api->func_api, m->mod_api->func_api_size ) )
+    if ( !api_validate( m->name, m->mod_desc->func_api, m->mod_desc->func_api_size ) )
         goto fail;
 
     /* --- record file-time for hot-reload detection --- */
@@ -298,7 +298,7 @@ fail:
     sys_library_unload( m->dll );
     shadow_delete( m->name, m->shadow_count );
     m->dll     = NULL;
-    m->mod_api = NULL;
+    m->mod_desc = NULL;
     return false;
 }
 
@@ -312,7 +312,7 @@ slot_unload_dll( mod_info_t* m )
     shadow_delete( m->name, m->shadow_count );
 
     m->dll     = NULL;
-    m->mod_api = NULL;
+    m->mod_desc = NULL;
 }
 
 /*==============================================================================================
@@ -332,7 +332,7 @@ slot_find( const char* name )
              strncmp( g_modules[ i ].name, name, MODULE_NAME_MAX ) == 0 )
             return i;
     }
-    return -1;
+    return -1; /* none found */
 }
 
 static int
@@ -358,7 +358,7 @@ slot_free( int slot )
 }
 
 /* Reserve a fresh slot with `name` set and everything else zeroed.
-   Caller fills in is_static, mod_api, status, then runs the setup helpers. */
+   Caller fills in is_static, mod_desc, status, then runs the setup helpers. */
 
 static mod_info_t*
 slot_create( const char* name )
@@ -409,7 +409,7 @@ slot_destroy( mod_info_t* m )
 static bool
 state_ensure( mod_info_t* m )
 {
-    int32_t required = m->mod_api->state_size;
+    int32_t required = m->mod_desc->state_size;
     if ( required <= 0 )
         return true; /* stateless module */
 
@@ -459,12 +459,12 @@ state_ensure( mod_info_t* m )
 static bool
 api_slot_create( mod_info_t* m )
 {
-    int32_t size = m->mod_api->func_api_size;
+    int32_t size = m->mod_desc->func_api_size;
 
     if ( m->is_static )
     {
         /* const struct already has a stable address — point at it directly */
-        m->api_slot      = ( void* )m->mod_api->func_api;
+        m->api_slot      = ( void* )m->mod_desc->func_api;
         m->api_slot_size = size;
         return true;
     }
@@ -477,7 +477,7 @@ api_slot_create( mod_info_t* m )
     }
 
     m->api_slot_size = size;
-    memcpy( m->api_slot, m->mod_api->func_api, ( size_t )size );
+    memcpy( m->api_slot, m->mod_desc->func_api, ( size_t )size );
     return true;
 }
 
@@ -487,7 +487,7 @@ api_slot_create( mod_info_t* m )
 static void
 api_slot_refresh( mod_info_t* m )
 {
-    memcpy( m->api_slot, m->mod_api->func_api, ( size_t )m->api_slot_size );
+    memcpy( m->api_slot, m->mod_desc->func_api, ( size_t )m->api_slot_size );
 }
 
 /*==============================================================================================
@@ -497,26 +497,26 @@ api_slot_refresh( mod_info_t* m )
 static bool
 call_init( mod_info_t* m )
 {
-    if ( !m->mod_api || !m->mod_api->init )
+    if ( !m->mod_desc || !m->mod_desc->init )
         return true;
-    return m->mod_api->init( m->state, g_api_func );
+    return m->mod_desc->init( m->state, g_api_func );
 }
 
 static void
 call_exit( mod_info_t* m )
 {
-    if ( !m->mod_api || !m->mod_api->exit )
+    if ( !m->mod_desc || !m->mod_desc->exit )
         return;
-    m->mod_api->exit( m->state );
+    m->mod_desc->exit( m->state );
 }
 
 static bool
 call_reload( mod_info_t* m )
 {
-    if ( !m->mod_api )
+    if ( !m->mod_desc )
         return true;
-    if ( m->mod_api->reload )
-        return m->mod_api->reload( m->state, g_api_func );
+    if ( m->mod_desc->reload )
+        return m->mod_desc->reload( m->state, g_api_func );
 
     ms_log( "[module] '%s' has no on_reload(), dynamic reload requires it", m->name );
     return false;
@@ -530,7 +530,7 @@ static void
 snapshot_save( const mod_info_t* m, mod_snapshot_t* s )
 {
     s->dll          = m->dll;
-    s->mod_api      = m->mod_api;
+    s->mod_desc     = m->mod_desc;
     s->shadow_count = m->shadow_count;
     s->last_write   = m->last_write;
     s->status       = m->status;
@@ -548,7 +548,7 @@ snapshot_rollback( mod_info_t* m, const mod_snapshot_t* s, const char* reason )
         slot_unload_dll( m );
 
     m->dll          = s->dll;
-    m->mod_api      = s->mod_api;
+    m->mod_desc     = s->mod_desc;
     m->shadow_count = s->shadow_count;
     m->last_write   = s->last_write;
 
@@ -632,7 +632,7 @@ do_reload( mod_info_t* m )
 
     /* Detach old handles so slot_load_dll has a clean slate to write into. */
     m->dll     = NULL;
-    m->mod_api = NULL;
+    m->mod_desc = NULL;
 
     if ( !slot_load_dll( m ) )
     {
@@ -640,10 +640,10 @@ do_reload( mod_info_t* m )
         return false;
     }
 
-    if ( m->mod_api->func_api_size != m->api_slot_size )
+    if ( m->mod_desc->func_api_size != m->api_slot_size )
     {
         set_error( "'%s': func_api_size changed across reload (%d -> %d); requires full restart", m->name,
-                   m->api_slot_size, m->mod_api->func_api_size );
+                   m->api_slot_size, m->mod_desc->func_api_size );
         snapshot_rollback( m, &prev, "api size changed" );
         return false;
     }
@@ -712,9 +712,9 @@ build_init_order( void )
             mod_info_t* m     = &g_modules[ i ];
             bool        ready = true;
 
-            for ( int d = 0; d < m->mod_api->dep_count && ready; ++d )
+            for ( int d = 0; d < m->mod_desc->dep_count && ready; ++d )
             {
-                const char* dep_name = m->mod_api->deps[ d ];
+                const char* dep_name = m->mod_desc->deps[ d ];
                 if ( !dep_name )
                     continue;
 

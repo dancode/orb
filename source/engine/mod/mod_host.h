@@ -84,7 +84,7 @@ mod_desc_t* mod_get_mod_desc( void );
     Registration and loading
 ==============================================================================================*/
 
-bool mod_static_load( const char* name, mod_desc_t* mod_api );
+bool mod_static_load( const char* name, mod_desc_t* mod_desc );
 bool mod_dynamic_load( const char* name );
 bool mod_unload( const char* name );
 bool mod_reload( const char* name );

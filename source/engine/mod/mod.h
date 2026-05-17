@@ -97,9 +97,9 @@ typedef void ( *mod_visitor_fn )( const char* name, const mod_desc_t* api, void*
 
         MOD_DEFINE_API_PTR( mod_api_t, mod );       // file scope (dynamic builds only)
         MOD_FETCH_API( mod_api_t, mod );             // inside init() / reload()
-        mod_api()->dynamic_load( "my_plugin" );          // call site — identical in both modes
+        mod_desc()->dynamic_load( "my_plugin" );          // call site — identical in both modes
 
-    The accessor mod_api() is always inline; in BUILD_STATIC it resolves to a direct struct
+    The accessor mod_desc() is always inline; in BUILD_STATIC it resolves to a direct struct
     reference that LTO can devirtualize to a direct call with zero indirection overhead.
 ==============================================================================================*/
 

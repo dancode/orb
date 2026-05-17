@@ -173,10 +173,10 @@ mod_system_exit( void )
 ==============================================================================================*/
 
 bool 
-mod_static_load( const char* name, mod_desc_t* mod_api )
+mod_static_load( const char* name, mod_desc_t* mod_desc )
 {
-    assert( mod_api != NULL );
-    assert( mod_api->func_api != NULL && "func_api must not be NULL in a static module" );
+    assert( mod_desc != NULL );
+    assert( mod_desc->func_api != NULL && "func_api must not be NULL in a static module" );
 
     if ( slot_find( name ) >= 0 )
     {
@@ -184,7 +184,7 @@ mod_static_load( const char* name, mod_desc_t* mod_api )
         return true;
     }
 
-    if ( !api_validate( name, mod_api->func_api, mod_api->func_api_size ) )
+    if ( !api_validate( name, mod_desc->func_api, mod_desc->func_api_size ) )
         return false;
 
     mod_info_t* m = slot_create( name );
@@ -192,7 +192,7 @@ mod_static_load( const char* name, mod_desc_t* mod_api )
         return false;
 
     m->is_static = true;
-    m->mod_api   = mod_api;
+    m->mod_desc   = mod_desc;
 
     if ( !state_ensure( m ) || !api_slot_create( m ) )
     {
@@ -201,8 +201,8 @@ mod_static_load( const char* name, mod_desc_t* mod_api )
     }
 
     m->status = MODULE_STATUS_LOADED;
-    ms_log( "[module] registered static '%s' (api v%d, state %d, api %d)", name, mod_api->version,
-            mod_api->state_size, mod_api->func_api_size );
+    ms_log( "[module] registered static '%s' (api v%d, state %d, api %d)", name, mod_desc->version,
+            mod_desc->state_size, mod_desc->func_api_size );
     return true;
 }
 
@@ -227,8 +227,8 @@ mod_dynamic_load( const char* name )
 
     m->status  = MODULE_STATUS_LOADED;
     m->version = 0;
-    ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)", name, m->mod_api->version,
-            m->mod_api->state_size, m->mod_api->func_api_size );
+    ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)", name, m->mod_desc->version,
+            m->mod_desc->state_size, m->mod_desc->func_api_size );
 
     if ( g_dll_load_fn )
         g_dll_load_fn( name, m->dll, g_dll_load_user );
@@ -509,7 +509,7 @@ mod_last_error( void )
     Public: self-registration as a discoverable module
 
     The mod system registers itself so DLL modules can fetch mod_api_t via the
-    standard MOD_FETCH_API / mod_api() pattern, enabling plugin management from DLLs
+    standard MOD_FETCH_API / mod_desc() pattern, enabling plugin management from DLLs
     (e.g. an editor loading its own plugin DLLs) without special host wiring.
 
     mod_get_mod_desc is called once from mod_system_init().  Hosts that need to pass the
@@ -554,7 +554,7 @@ mod_each( mod_visitor_fn visit, void* user )
     {
         mod_info_t* m = &g_modules[ i ];
         if ( m->status == MODULE_STATUS_EMPTY ) continue;
-        visit( m->name, m->mod_api, user );
+        visit( m->name, m->mod_desc, user );
     }
 }
 
@@ -575,7 +575,7 @@ mod_list_all( void )
             continue;
 
         ms_log( "  [%2d]  %-24s  %-13s  api_v%-3d  reload# %-3d  state:%dB  %s", i, m->name,
-                status_str[ m->status ], m->mod_api ? m->mod_api->version : 0, m->version, m->state_size,
+                status_str[ m->status ], m->mod_desc ? m->mod_desc->version : 0, m->version, m->state_size,
                 m->is_static ? "(static)" : "" );
     }
 }
