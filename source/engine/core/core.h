@@ -19,6 +19,7 @@
 
 ==============================================================================================*/
 
+RS_ENUM( tooltip = "Minimum severity level for a log message to be emitted." )
 typedef enum log_level_e
 {
     LOG_LEVEL_INFO  = 0,
@@ -33,13 +34,15 @@ typedef enum log_level_e
 
 ==============================================================================================*/
 
-enum
+RS_ENUM( tooltip = "Built-in memory tag IDs reserved by the engine." )
+typedef enum memtag_kind_e
 {
     MEMTAG_UNKNOWN = 0,    // unknown / untagged
     MEMTAG_CORE,           // core engine systems
     MEMTAG_ENGINE,         // engine systems
     MEMTAG_COUNT           // total number of built-in tags
-};
+
+} memtag_kind_t;
 
 typedef uint16_t memtag_t;    // runtime-generated tag ID
 

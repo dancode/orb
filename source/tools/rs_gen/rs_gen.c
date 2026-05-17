@@ -38,7 +38,6 @@
 #define RG_DEBUG_MODULE     "engine_core"
 #define RG_DEBUG_SOURCE_SUB "source/engine/core"
 
-
 /*----------------------------------------------------------------------------------------------
     Entry point
 ----------------------------------------------------------------------------------------------*/
@@ -54,11 +53,9 @@ main( int argc, char** argv )
     char dbg_src[ RG_MAX_PATH ];
     char dbg_out[ RG_MAX_PATH ];
 
-    int release = RELEASE;
-
     if ( argc < 4 )
     {
-        if ( release )
+        if ( RELEASE )
         {
             fprintf( stderr, "usage: build_reflect <source_dir> <output_dir> <module_name>\n" );
             return 1;
@@ -96,19 +93,33 @@ main( int argc, char** argv )
     rg_platform_mkdir( output_dir );
 
     /* Parse data is large (worst-case ~12MB); keep it out of the stack. */
+
     static rg_file_list_t  files;
     static rg_parse_data_t data;
     memset( &files, 0, sizeof files );
     memset( &data, 0, sizeof data );
 
+    /* Scan the source directory for files */
+
     rg_scan( source_dir, &files );
+
+    /* Parse each file for RS_STRUCT / RS_ENUM / RS_BITSET declarations and build the AST. */
+
     rg_parse( &files, &data );
 
-    if ( !rg_output( output_dir, module_name, &data ) )
-        return 1;
+    /* Generate the .h/.c files with rs_ registration code. */
 
-    printf( "[build_reflect] %s: %d struct(s), %d enum(s)\n", module_name, data.struct_count, data.enum_count );
-    return 0;
+    if ( rg_output( output_dir, module_name, &data ) == false )
+    {
+        return 1;
+    }
+    
+    /* Show results and exit. In release, this is the only output on success. */
+
+    printf( "[build_reflect] %s: %d struct(s), %d enum(s)\n", 
+        module_name, data.struct_count, data.enum_count );
+
+    return 0; /* Success */
 }
 
 /*--------------------------------------------------------------------------------------------*/

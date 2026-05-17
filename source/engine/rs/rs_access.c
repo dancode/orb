@@ -146,7 +146,7 @@ rs_enum_find_by_value( uint16_t type_id, int64_t value )
       Set semantics: an enumerator E is "set" in `value` iff E.value != 0
                      and (value & E.value) == E.value.
 
-      Decoding is order-dependent when enumerators have overlapping bits (e.g. a multi-bit
+      Decoding is order-dependent when enums have overlapping bits (e.g. a multi-bit
       mask alongside its single-bit components). Place multi-bit constants FIRST in the
       registration order to get them matched preferentially.
 ==============================================================================================*/

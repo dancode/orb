@@ -24,12 +24,15 @@
 
 #define RG_MAX_TYPES           128 /* types per module                     */
 #define RG_MAX_FIELDS_PER_TYPE 64  /* fields per struct                    */
-#define RG_MAX_ENUMS_PER_TYPE  128 /* enumerators per enum/bitset          */
+#define RG_MAX_ENUMS_PER_TYPE  128 /* enums per enum/bitset          */
 #define RG_MAX_ATTRS_PER_ITEM  8   /* attributes per field/type            */
 
 /*==============================================================================================
     File list
 ==============================================================================================*/
+
+/* Used to pass scan results from scan to parse, and to track which headers actually
+   contained RS_ declarations for output includes. */
 
 typedef struct rg_file_list_s
 {
@@ -44,20 +47,24 @@ typedef struct rg_file_list_s
 
 typedef enum rg_attr_kind_e
 {
-    RG_ATTR_TAG    = 0, /* bare identifier:  transient                  */
-    RG_ATTR_INT    = 1, /* integer literal:  range=0                    */
-    RG_ATTR_FLOAT  = 2, /* float literal:    weight=0.5                 */
-    RG_ATTR_STRING = 3, /* quoted string:    tooltip="text"             */
+    RG_ATTR_TAG    = 0,    // bare identifier:  transient
+    RG_ATTR_INT    = 1,    // integer literal:  range=0
+    RG_ATTR_FLOAT  = 2,    // float literal:    weight=0.5
+    RG_ATTR_STRING = 3,    // quoted string:    tooltip="text"
 
 } rg_attr_kind_t;
 
+/*--------------------------------------------------------------------------------------------*/
+
 typedef struct rg_attr_s
 {
-    char name[ RG_MAX_NAME ];
-    int  kind;                 /* rg_attr_kind_t                       */
-    char value[ RG_MAX_NAME ]; /* verbatim literal (without quotes)    */
+    int  kind;                    // rg_attr_kind_t
+    char name[ RG_MAX_NAME ];     //
+    char value[ RG_MAX_NAME ];    // verbatim literal (without quotes)
 
 } rg_attr_t;
+
+/*--------------------------------------------------------------------------------------------*/
 
 typedef struct rg_decl_field_s
 {
@@ -72,13 +79,17 @@ typedef struct rg_decl_field_s
 
 } rg_decl_field_t;
 
-typedef struct rg_enumerator_s
+/*--------------------------------------------------------------------------------------------*/
+
+typedef struct rg_enum_s
 {
     char name[ RG_MAX_NAME ];
     char value_expr[ RG_MAX_NAME ]; /* verbatim C expression; empty = auto  */
     int  has_value;
 
-} rg_enumerator_t;
+} rg_enum_t;
+
+/*--------------------------------------------------------------------------------------------*/
 
 typedef enum rg_kind_e
 {
@@ -88,15 +99,18 @@ typedef enum rg_kind_e
 
 } rg_kind_t;
 
+/*--------------------------------------------------------------------------------------------*/
+/* Per module type declarations filled by the parser and consumed by the output generator. */
+
 typedef struct rg_decl_type_s
 {
-    char            name[ RG_MAX_NAME ];
-    int             kind; /* rg_kind_t                            */
+    char            name[ RG_MAX_NAME ];    // the name of the struct/enum/bitset (not tag name)
+    int             kind;                   // rg_kind_t (STRUCT, ENUM, BITSET)
 
     rg_decl_field_t fields[ RG_MAX_FIELDS_PER_TYPE ];
     int             field_count;
 
-    rg_enumerator_t enumerators[ RG_MAX_ENUMS_PER_TYPE ];
+    rg_enum_t       enums[ RG_MAX_ENUMS_PER_TYPE ];
     int             enum_count;
 
     rg_attr_t       attrs[ RG_MAX_ATTRS_PER_ITEM ];
@@ -104,45 +118,61 @@ typedef struct rg_decl_type_s
 
 } rg_decl_type_t;
 
+/*--------------------------------------------------------------------------------------------*/
+/* Top-level parse output. The parser fills this with all the types it finds, and the output
+   generator loops over it to emit code. */
+
 typedef struct rg_parse_data_s
 {
     rg_decl_type_t types[ RG_MAX_TYPES ];
-    int            type_count; /* total declared types (any kind)      */
-    int            struct_count;
-    int            enum_count; /* enum + bitset                        */
+
+    int            type_count;      // total declared types (any kind)
+    int            struct_count;    // count used for output loops
+    int            enum_count;      // enum + bitset
 
     /* Include paths (relative to source/) for headers that actually contained
        RS_ markers. The generated .c #includes these so type names resolve. */
-    char           headers[ RG_MAX_FILES ][ RG_MAX_PATH ];
-    int            header_count;
+
+    char headers[ RG_MAX_FILES ][ RG_MAX_PATH ];
+    int  header_count;
 
 } rg_parse_data_t;
 
 /*==============================================================================================
+
     Public function declarations
-    (Internal static helpers in lex/attr/parse are visible within the unity build by
-     inclusion order: std -> platform -> scan -> lex -> attr -> parse -> output)
+
+    Internal static helpers in lex/attr/parse are visible within the unity build by
+    inclusion order: std -> platform -> scan -> lex -> attr -> parse -> output
+
 ==============================================================================================*/
+// clang-format off
 
 /* rs_gen_std.c */
-void rg_str_copy( char* dst, const char* src, int max );
-int  rg_str_len( const char* s );
-void rg_str_cat( char* dst, const char* src, int max );
-int  rg_str_ends_with( const char* s, const char* suffix );
+
+void    rg_str_copy             ( char* dst, const char* src, int max );
+int     rg_str_len              ( const char* s );
+void    rg_str_cat              ( char* dst, const char* src, int max );
+int     rg_str_ends_with        ( const char* s, const char* suffix );
 
 /* rs_gen_platform.c */
-void rg_platform_mkdir( const char* path );
-int  rg_platform_scan_dir( const char* dir, char out_paths[][ RG_MAX_PATH ], int max_files );
-void rg_platform_exe_dir( char* out, int max );
+
+void    rg_platform_mkdir       ( const char* path );
+int     rg_platform_scan_dir    ( const char* dir, char out_paths[][ RG_MAX_PATH ], int max_files );
+void    rg_platform_exe_dir     ( char* out, int max );
 
 /* rs_gen_scan.c */
-void rg_scan( const char* source_dir, rg_file_list_t* out );
+
+void    rg_scan                 ( const char* source_dir, rg_file_list_t* out );
 
 /* rs_gen_parse.c */
-void rg_parse( const rg_file_list_t* files, rg_parse_data_t* out );
+
+void    rg_parse                 ( const rg_file_list_t* files, rg_parse_data_t* out );
 
 /* rs_gen_output.c */
-int rg_output( const char* output_dir, const char* module_name, const rg_parse_data_t* data );
 
+int     rg_output                ( const char* output_dir, const char* module_name, const rg_parse_data_t* data );
+
+// clang-format on
 /*============================================================================================*/
 #endif    // RS_GEN_INTERNAL_H

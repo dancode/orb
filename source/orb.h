@@ -227,6 +227,27 @@ typedef ptrdiff_t isize;
 #define ORB_GB( n )        ( ( u64 )( n ) * 1024ULL * 1024ULL * 1024ULL )
 
 /*==============================================================================================
+    Reflection annotation macros
+
+    Parsed by rs_gen at build time; compile out to nothing at runtime.
+    Defined here so any annotated header needs only orb.h — no rs.h dependency.
+
+        RS_STRUCT()           typedef struct foo_s { ... } foo_t;
+        RS_ENUM()             typedef enum   bar_e { ... } bar_t;
+        RS_BITSET()           typedef enum   flags_e { ... } flags_t;   // OR-able bitmask
+        RS_PROP()             field_type field_name;                     // inside RS_STRUCT body
+        RS_VAR()              type g_name;                               // global variable
+==============================================================================================*/
+
+// clang-format off
+#define RS_STRUCT(...)
+#define RS_ENUM(...)
+#define RS_BITSET(...)
+#define RS_PROP(...)
+#define RS_VAR(...)
+// clang-format on
+
+/*==============================================================================================
     Version
 ==============================================================================================*/
 

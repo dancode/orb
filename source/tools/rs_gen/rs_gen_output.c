@@ -182,7 +182,7 @@ emit_enum_block( FILE* fc, const rg_decl_type_t* t )
         fprintf( fc, "        rs_enum_t _enums[] = {\n" );
         for ( int i = 0; i < t->enum_count; i++ )
         {
-            const rg_enumerator_t* e = &t->enumerators[ i ];
+            const rg_enum_t* e = &t->enums[ i ];
             fprintf( fc, "            { .name_id = api->intern( \"%s\" ), "
                          ".name_hash = rs_hash_str( \"%s\" ), "
                          ".value = (int64_t)( %s ) },\n",

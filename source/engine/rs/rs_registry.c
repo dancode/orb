@@ -398,14 +398,14 @@ rs_compute_enum_schema_hash( const rs_enum_t* e, uint16_t count )
 }
 
 uint16_t
-rs_register_enum( const rs_type_t* type, const rs_enum_t* enumerators, uint16_t count )
+rs_register_enum( const rs_type_t* type, const rs_enum_t* enums, uint16_t count )
 {
     if ( !type )
     {
         assert( 0 );
         return RS_TYPE_INVALID;
     }
-    if ( count > 0 && !enumerators )
+    if ( count > 0 && !enums )
     {
         assert( 0 );
         return RS_TYPE_INVALID;
@@ -428,14 +428,14 @@ rs_register_enum( const rs_type_t* type, const rs_enum_t* enumerators, uint16_t 
     t->attr_index  = RS_ATTR_INVALID;
     t->attr_count  = 0;
     t->next        = RS_TYPE_INVALID;
-    t->schema_hash = rs_compute_enum_schema_hash( enumerators, count );
+    t->schema_hash = rs_compute_enum_schema_hash( enums, count );
 
     if ( count > 0 )
     {
         uint16_t first = rs_alloc_enum_block( count );
         if ( first == RS_TYPE_INVALID )
             return RS_TYPE_INVALID;
-        memcpy( &g_rs.enums[ first ], enumerators, count * sizeof( rs_enum_t ) );
+        memcpy( &g_rs.enums[ first ], enums, count * sizeof( rs_enum_t ) );
         t->field_index = first; /* indexes enums[] when kind == RS_KIND_ENUM */
         t->field_count = count;
     }
@@ -455,7 +455,7 @@ rs_register_enum( const rs_type_t* type, const rs_enum_t* enumerators, uint16_t 
 }
 
 uint16_t
-rs_register_bitset( const rs_type_t* type, const rs_enum_t* enumerators, uint16_t count )
+rs_register_bitset( const rs_type_t* type, const rs_enum_t* enums, uint16_t count )
 {
     if ( !type )
     {
@@ -463,7 +463,7 @@ rs_register_bitset( const rs_type_t* type, const rs_enum_t* enumerators, uint16_
         return RS_TYPE_INVALID;
     }
 
-    uint16_t type_id = rs_register_enum( type, enumerators, count );
+    uint16_t type_id = rs_register_enum( type, enums, count );
     if ( type_id != RS_TYPE_INVALID )
         g_rs.types[ type_id ].kind = RS_KIND_BITSET;
     return type_id;

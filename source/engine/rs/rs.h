@@ -475,11 +475,11 @@ bool rs_type_add_attr( uint16_t type_id, const rs_attrib_t* attr );
 bool rs_field_add_attr( uint16_t field_id, const rs_attrib_t* attr );
 
 /* Register an enum type. `type->kind` is forced to RS_KIND_ENUM. */
-uint16_t rs_register_enum( const rs_type_t* type, const rs_enum_t* enumerators, uint16_t count );
+uint16_t rs_register_enum( const rs_type_t* type, const rs_enum_t* enums, uint16_t count );
 
 /* Register a bitset enum (flag-style: values OR together).
    `type->kind` is forced to RS_KIND_BITSET. */
-uint16_t rs_register_bitset( const rs_type_t* type, const rs_enum_t* enumerators, uint16_t count );
+uint16_t rs_register_bitset( const rs_type_t* type, const rs_enum_t* enums, uint16_t count );
 
 /* Register a function signature. `type->kind` is forced to
    RS_KIND_FUNCTION. `fields[0]` is the return type; `fields[1..]`
@@ -699,43 +699,11 @@ MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
 #endif
 
 /*==============================================================================================
-    Reflection annotation macros
+    Reflection annotation macros  -  defined in orb.h (included above via orb.h -> here).
 
-    These markers are parsed by rs_gen at build time and expand to nothing at compile time.
-    Place them immediately before the type or field declaration they annotate.
-
-    Type annotations:
-
-        RS_STRUCT()
-        typedef struct player_t { ... } player_t;
-
-        RS_ENUM()
-        typedef enum color_t { ... } color_t;
-
-        RS_BITSET()                         // flag-style: values OR together
-        typedef enum flags_t { ... } flags_t;
-
-    Field annotations (inside a RS_STRUCT body):
-
-        RS_PROP()                           int32_t  id;
-        RS_PROP( transient )               void*    scratch;    // tag attribute
-        RS_PROP( range=0, 100 )            float    health;     // value attribute
-        RS_PROP()                           vec3_t   position;
-
-    Global variable annotation:
-
-        RS_VAR()                            int32_t g_frame_count;
-
-    Attributes in the parens are recorded by rs_gen. The C compiler sees nothing.
+    RS_STRUCT / RS_ENUM / RS_BITSET / RS_PROP / RS_VAR all expand to nothing at compile
+    time; rs_gen parses them at build time.  See orb.h for the definitions and usage examples.
 ==============================================================================================*/
-
-// clang-format off
-#define RS_STRUCT(...)
-#define RS_ENUM(...)
-#define RS_BITSET(...)
-#define RS_PROP(...)
-#define RS_VAR(...)
-// clang-format on
 
 /*==============================================================================================
     Module reflection export macros  (mirrors MOD_EXPORT / MOD_DEFINE_EXPORTS)
