@@ -3,7 +3,8 @@
     engine/rs/rs_test.c - Exercise the rs_ reflection system.
 
     Compiled as a standalone TU in the test sandbox (sb_engine_core_reflect).
-    Depends on engine_rs (for the rs_ API) and engine_core (for sid_ as the interner).
+    Depends only on engine_rs.  rs_init() uses the internal string pool so no
+    external interner is needed.
 
 ==============================================================================================*/
 
@@ -12,28 +13,10 @@
 #include <assert.h>
 
 #include "orb.h"
-#include "engine/core/sid/sid.h"
 #include "engine/rs/rs.h"
 
-/* Adapters that satisfy rs_intern_fn / rs_cstr_fn using the engine's sid system. */
-static rs_name_t    test_intern( const char* s ) { return sid_intern_cstr( s ).off; }
-static const char*  test_cstr  ( rs_name_t id )  { return sid_cstr( ( sid_t ){ id } ); }
-
-static inline void rs_init_full( void )
-{
-    sid_init();
-    rs_init( test_intern, test_cstr );
-    rs_install_builtins();
-}
-
-static inline void rs_exit_full( void )
-{
-    rs_exit();
-    sid_exit();
-}
-
-#define rs_init rs_init_full
-#define rs_exit rs_exit_full
+#define test_intern rs_intern_name
+#define test_cstr   rs_name_cstr
 
 typedef struct rs_test_vec3_s
 {

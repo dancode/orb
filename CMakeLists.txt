@@ -414,10 +414,10 @@ target_compile_definitions( engine_core PUBLIC CORE_STATIC )
 add_unity_library( engine_rs STATIC "source/engine/rs" "02_Engine" "rs.c" )
 target_compile_definitions( engine_rs PUBLIC RS_STATIC )
 
-# ENGINE LINK ORDER: SYS -> CORE -> MOD -> APP
+# ENGINE LINK ORDER: SYS -> (RS, CORE) -> MOD -> APP
 
 # target_link_libraries( engine_sys  PUBLIC base )
-target_link_libraries( engine_core PUBLIC engine_sys )
+target_link_libraries( engine_core PUBLIC engine_sys engine_rs )
 target_link_libraries( engine_mod  PUBLIC engine_sys )
 target_link_libraries( engine_app  PUBLIC engine_sys )
 
@@ -559,14 +559,14 @@ add_unity_executable( sb_engine_core "source/sandbox/engine_core" "07_Sandbox" "
 target_link_libraries( sb_engine_core PRIVATE engine_core )
 
 # Test the engine_rs reflection system
-add_unity_executable( sb_engine_core_reflect "source/sandbox/engine_core_reflect" "07_Sandbox" "sb_engine_core_reflect.c" )
-target_link_libraries( sb_engine_core_reflect PRIVATE engine_core engine_rs )
+add_unity_executable( sb_engine_reflect "source/sandbox/engine_reflect" "07_Sandbox" "sb_engine_reflect.c" )
+target_link_libraries( sb_engine_reflect PRIVATE engine_core engine_rs )
 
 # only included for testing, not a header-only module, so ensure it's compiled as a separate TU
 set_source_files_properties( "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" PROPERTIES HEADER_FILE_ONLY OFF )
-target_sources( sb_engine_core_reflect PRIVATE "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" )
+target_sources( sb_engine_reflect PRIVATE "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" )
 
-# Test loading a reflect runtime module (example_reflect) - host drives registration.
+# Test loading a reflected runtime module via the full module boot sequence (rs+sys+core).
 add_unity_executable( sb_runtime_reflect "source/sandbox/runtime_reflect" "07_Sandbox" "sb_runtime_reflect.c" )
 target_link_libraries( sb_runtime_reflect PRIVATE engine_sys engine_mod engine_core engine_rs )
 add_dependencies( sb_runtime_reflect example_reflect )

@@ -2,14 +2,13 @@
 
     sandbox/sb_runtime_reflect.c - Testbed for loading a reflected module.
 
-    Boots sys + core, wires the rs_ system to the mod DLL load/unload callbacks,
-    then loads example_reflect. Reflection registration is automatic:
+    Boots the engine stack (rs + sys + core) as proper modules, wires rs_ to the mod DLL
+    lifecycle, then loads example_reflect.  Reflection registration is automatic:
 
-        rs_init(rs_sid_intern, rs_sid_cstr) + rs_install_builtins()
-        mod_set_dll_load_cb  -> rs_load_module_dll  (sym-looks up "rs_register")
-        mod_set_dll_unload_cb -> rs_unload_module_dll (pops the frame by name)
-
-        mod_load( example_reflect )  <-- triggers on_load, registers types
+        mod_static_load("rs", ...)   -- rs_mod_init calls rs_init() + installs builtins
+        rs_wire_mod_callbacks()      -- wires rs_load_module_dll to DLL load events
+        mod_load( example_reflect )  -- fires on_load -> rs registers the module's types
+        mod_init_all()               -- calls example_reflect's init
 
     After that, exercises the full feature surface against the registered types.
 
@@ -22,37 +21,11 @@
 #include "engine/mod/mod_host.h"
 #include "engine/sys/sys.h"
 #include "engine/core/core.h"
-#include "engine/core/sid/sid.h"
-#include "engine/rs/rs.h"
+#include "engine/rs/rs_host.h"
 
 #include "runtime_modules/example_reflect/example_reflect.h"
 
 MOD_DEFINE_API_PTR( example_reflect_api_t, example_reflect );
-
-/* Adapters that satisfy rs_intern_fn / rs_cstr_fn using the engine's sid system. */
-static rs_name_t    rs_sid_intern( const char* s ) { return sid_intern_cstr( s ).off; }
-static const char*  rs_sid_cstr  ( rs_name_t id )  { return sid_cstr( ( sid_t ){ id } ); }
-
-/*==============================================================================================
-    DLL callbacks wired to the rs_ system
-==============================================================================================*/
-
-static void
-on_dll_load( const char* name, lib_handle_t dll, void* user )
-{
-    UNUSED( user );
-    uint16_t frame = rs_load_module_dll( name, dll );
-    if ( frame != RS_FRAME_INVALID )
-        printf( "[host] reflect: loaded frame %u for '%s'\n", frame, name );
-}
-
-static void
-on_dll_unload( const char* name, lib_handle_t dll, void* user )
-{
-    UNUSED( dll );
-    UNUSED( user );
-    rs_unload_module_dll( name );
-}
 
 /*==============================================================================================
     Iteration callbacks for the feature tour
@@ -79,7 +52,7 @@ list_type_cb( uint16_t type_id, const rs_type_t* t, void* user )
         default: break;
     }
     printf( "  [%3u] %-7s %-20s size=%-3u align=%-2u fields=%u\n",
-            type_id, kind, sid_cstr( ( sid_t ){ t->name_id } ),
+            type_id, kind, rs_name_cstr( t->name_id ),
             (unsigned)t->size, (unsigned)t->align, (unsigned)t->field_count );
 }
 
@@ -93,7 +66,7 @@ print_field_cb( uint16_t field_id, const rs_field_t* f, void* user )
     rs_field_describe( f, desc, sizeof desc );
 
     printf( "      %-20s : %-28s offset=%-3u size=%-3u",
-            sid_cstr( ( sid_t ){ f->name_id } ), desc, (unsigned)f->offset, (unsigned)f->size );
+            rs_name_cstr( f->name_id ), desc, (unsigned)f->offset, (unsigned)f->size );
     if ( f->attr_count > 0 ) printf( "  attrs=%u", (unsigned)f->attr_count );
     printf( "\n" );
 }
@@ -103,17 +76,17 @@ print_enum_cb( uint16_t enum_id, const rs_enum_t* e, void* user )
 {
     UNUSED( enum_id );
     UNUSED( user );
-    printf( "      %-20s = %lld\n", sid_cstr( ( sid_t ){ e->name_id } ), (long long)e->value );
+    printf( "      %-20s = %lld\n", rs_name_cstr( e->name_id ), (long long)e->value );
 }
 
 static void
 ref_visit( void** slot, uint16_t pointee_type_id, const rs_field_t* field, void* user )
 {
     UNUSED( user );
-    const char* fname = sid_cstr( ( sid_t ){ field->name_id } );
+    const char* fname = rs_name_cstr( field->name_id );
     const char* tname = "?";
     const rs_type_t* pt = rs_get_type( pointee_type_id );
-    if ( pt ) tname = sid_cstr( ( sid_t ){ pt->name_id } );
+    if ( pt ) tname = rs_name_cstr( pt->name_id );
     printf( "    ref slot '%s' -> %s* %s\n", fname, tname,
             *slot ? "(non-null)" : "(NULL)" );
 }
@@ -140,12 +113,12 @@ exercise_reflection( void )
     const rs_type_t* etype = rs_get_type( entity_tid );
     if ( etype )
     {
-        printf( "\n=== Fields of %s ===\n", sid_cstr( ( sid_t ){ etype->name_id } ) );
+        printf( "\n=== Fields of %s ===\n", rs_name_cstr( etype->name_id ) );
         rs_each_field( entity_tid, print_field_cb, NULL );
 
         const rs_attrib_t* tip = rs_type_get_attr( entity_tid, "tooltip" );
         if ( tip && tip->type == RS_ATTR_STRING )
-            printf( "  tooltip = \"%s\"\n", sid_cstr( ( sid_t ){ tip->value.str } ) );
+            printf( "  tooltip = \"%s\"\n", rs_name_cstr( tip->value.str ) );
 
         const rs_field_t* health = rs_find_field( entity_tid, "health" );
         if ( health )
@@ -157,13 +130,13 @@ exercise_reflection( void )
     const rs_type_t* ftype = rs_get_type( facing_tid );
     if ( ftype )
     {
-        printf( "\n=== Enumerators of %s ===\n", sid_cstr( ( sid_t ){ ftype->name_id } ) );
+        printf( "\n=== Enumerators of %s ===\n", rs_name_cstr( ftype->name_id ) );
         rs_each_enumerator( facing_tid, print_enum_cb, NULL );
     }
     const rs_type_t* ctype = rs_get_type( caps_tid );
     if ( ctype )
     {
-        printf( "\n=== Bitset %s ===\n", sid_cstr( ( sid_t ){ ctype->name_id } ) );
+        printf( "\n=== Bitset %s ===\n", rs_name_cstr( ctype->name_id ) );
         rs_each_enumerator( caps_tid, print_enum_cb, NULL );
 
         char buf[ 128 ];
@@ -222,9 +195,11 @@ main( int argc, char** argv )
 
     mod_system_init();
 
-    /* Boot sys + core first so core_init() calls sid_init() before rs_ uses it. */
-    if ( !mod_static_load( "sys",  sys_get_mod_api() ) )  return 1;
-    if ( !mod_static_load( "core", core_get_mod_api() ) ) return 1;
+    mod_static_load( "rs",   rs_get_mod_api() );    /* rs_init + builtins called inside */
+    mod_static_load( "sys",  sys_get_mod_api() );
+    mod_static_load( "core", core_get_mod_api() );  /* dep on "rs" ensures rs inits first */
+
+    rs_wire_mod_callbacks();    /* DLL load/unload -> rs_load/unload_module_dll */
 
     if ( !mod_init_all() )
     {
@@ -232,18 +207,10 @@ main( int argc, char** argv )
         return 1;
     }
 
-    /* sid is live (core initialized it). Now set up reflection. */
-    rs_init( rs_sid_intern, rs_sid_cstr );
-    rs_install_builtins();
+    if ( !mod_load( example_reflect ) )    /* fires DLL load callback -> rs registers types */
+        return 1;
 
-    /* Wire rs_ to mod DLL events, then load the DLL (fires on_dll_load immediately). */
-    mod_set_dll_load_cb  ( on_dll_load,   NULL );
-    mod_set_dll_unload_cb( on_dll_unload, NULL );
-
-    if ( !mod_load( example_reflect ) )                   return 1;  /* fires on_dll_load */
-
-    /* mod_init_all skips already-initialized modules; only example_reflect runs init. */
-    if ( !mod_init_all() )
+    if ( !mod_init_all() )                 /* runs example_reflect's init */
     {
         fprintf( stderr, "init: %s\n", mod_last_error() );
         return 1;
@@ -253,8 +220,7 @@ main( int argc, char** argv )
 
     exercise_reflection();
 
-    rs_exit();
-    mod_system_exit();  /* core_exit() calls sid_exit() */
+    mod_system_exit();
     return 0;
 }
 

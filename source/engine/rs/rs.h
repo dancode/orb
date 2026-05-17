@@ -125,10 +125,10 @@
 ==============================================================================================*/
 
 #include "orb.h"
+#include "engine/mod/mod.h"
 
 /*==============================================================================================
-    rs_name_t  -  opaque u32 string identifier produced by the caller-supplied interner.
-    In the engine context this is a string-arena offset (sid_t.off); equal strings always
+    rs_name_t  -  opaque u32 offset into the rs_ internal string pool.  Equal strings always
     map to the same id within a session.  rs_hash_str is a separate FNV-1a hash used for
     fast lookup; it is NOT the same value as an rs_name_t.
 
@@ -392,18 +392,12 @@ typedef struct rs_frame_s
 #define RS_ARRAY_COUNT( a )   ( ( uint16_t )( sizeof( a ) / sizeof( ( a )[ 0 ] ) ) )
 
 /*==============================================================================================
-    Caller-provided string-intern callback
+    String intern callback type
 
-    engine_rs has zero link-time dependency on engine_core or any sid implementation.
-    The host supplies two function pointers at rs_init():
-
-        intern  - converts a name string into an rs_name_t (u32 arena offset in the engine;
-                  any consistent u32 mapping in standalone use)
-        cstr    - reverse mapping: rs_name_t -> const char* for diagnostics/print
-
-    In the engine, wire these with thin adapters:
-        static rs_name_t   rs_sid_intern( const char* s ) { return sid_intern_cstr(s).off; }
-        static const char* rs_sid_cstr  ( rs_name_t id )  { return sid_cstr((sid_t){id}); }
+    engine_rs uses an internal flat string pool; no external interner is required.
+    rs_intern_fn is kept public because the generated rs_register() export uses it as
+    a parameter type: the host passes g_rs.intern into the DLL so the DLL can intern
+    type and field names without linking against engine_rs directly.
 
     rs_hash_str is a local static inline (case-insensitive FNV-1a); call sites compute
     hashes without any function-pointer indirection.
@@ -412,30 +406,27 @@ typedef struct rs_frame_s
 typedef rs_name_t ( *rs_intern_fn )( const char* );
 
 /*==============================================================================================
-    Lifecycle  (host responsibility)
+    Lifecycle
 
-    Order:
-        sid_init();
-        rs_init( rs_sid_intern, rs_sid_cstr );  // zero registry + store intern/cstr
-        rs_install_builtins();                  // register int32_t, float, etc.
+    rs_init() zeroes the registry, installs the internal string pool, pushes the system
+    frame, and registers all built-in primitive types.  Call it once before any other rs_
+    function.  In the engine, rs_init() is called by the rs module (see rs_host.h).
+
+        rs_init();   // registry ready; builtins registered
         ... load modules (rs_load_module_dll resolves "rs_register" per DLL) ...
         rs_exit();
-        sid_exit();
 ==============================================================================================*/
 
-void rs_init( rs_intern_fn intern, rs_cstr_fn cstr );
+void rs_init( void );
 void rs_exit( void );
-
-/* Populate the primitive types ("int32_t", "float", ...) in frame 0.
-   Uses the intern/cstr callbacks stored by rs_init(). */
-void rs_install_builtins( void );
 
 /*==============================================================================================
     Registration API  -  function pointer bundle passed to the generated rs_register().
 
-    engine_rs is a static library that only links into the host. DLL modules must not call
-    registration functions directly. Instead the host fills this struct and passes it into
-    the DLL's rs_register() export, which calls back through the pointers.
+    engine_rs is a static library that links only into the host.  DLL modules must not call
+    registration functions directly.  rs_load_module_dll fills this struct and passes it
+    into the DLL's rs_register() export, which calls back through the pointers.
+    rs_intern_fn is kept in the public API because generated rs_register() signatures use it.
 ==============================================================================================*/
 
 typedef struct rs_reg_api_s
@@ -515,7 +506,11 @@ uint16_t rs_register_function( const rs_type_t*  type,
     Lookup
 ==============================================================================================*/
 
-/* Recover the string for a name_id via the cstr callback supplied to rs_init(). */
+/* Intern a string into the rs_ string pool and return its name_id.
+   Used for hand-rolled registration; generated code receives an rs_intern_fn* instead. */
+rs_name_t           rs_intern_name( const char* s );
+
+/* Recover the string for a name_id (reads from the rs_ internal string pool). */
 const char*         rs_name_cstr( rs_name_t id );
 
 const rs_type_t*    rs_get_type( uint16_t type_id );
@@ -641,6 +636,56 @@ size_t rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size );
 ==============================================================================================*/
 
 void rs_run_tests( void );
+
+/*==============================================================================================
+    rs_api_t - runtime API struct (accessible to DLL modules via rs_api())
+
+    Registration functions are NOT exposed here; DLL modules receive an rs_reg_api_t*
+    callback vtable during their rs_register() call and must use that instead.
+==============================================================================================*/
+
+typedef struct rs_api_s
+{
+    /* Lookup */
+    uint16_t           ( *find_type_by_name  )( const char* name );
+    const rs_type_t*   ( *get_type           )( uint16_t type_id );
+    const rs_field_t*  ( *get_field          )( uint16_t field_id );
+    const rs_field_t*  ( *find_field         )( uint16_t type_id, const char* name );
+    const rs_attrib_t* ( *type_get_attr      )( uint16_t type_id, const char* key );
+    const rs_attrib_t* ( *field_get_attr     )( uint16_t field_id, const char* key );
+    rs_name_t          ( *intern_name        )( const char* s );
+    const char*        ( *name_cstr          )( rs_name_t id );
+
+    /* Iteration */
+    uint16_t           ( *each_type          )( rs_type_cb_t cb, void* user );
+    uint16_t           ( *each_type_in_frame )( uint16_t frame_id, rs_type_cb_t cb, void* user );
+    uint16_t           ( *each_field         )( uint16_t type_id, rs_field_cb_t cb, void* user );
+    uint16_t           ( *each_enumerator    )( uint16_t type_id, rs_enum_cb_t cb, void* user );
+
+    /* Bitset helpers */
+    size_t             ( *bitset_describe    )( uint16_t type_id, int64_t value, char* buf, size_t cap );
+
+    /* Reference walker */
+    void               ( *walk_refs          )( void* inst, uint16_t type_id, rs_ref_visitor_t fn, void* user );
+
+    /* Serialization */
+    size_t             ( *write              )( const void* src, uint16_t type_id, uint8_t* out, size_t cap );
+    rs_io_status_t     ( *read               )( void* dst, uint16_t type_id, const uint8_t* buf, size_t cap, size_t* consumed );
+    uint32_t           ( *peek_type_hash     )( const uint8_t* buf, size_t cap );
+
+    /* Diagnostics */
+    size_t             ( *field_describe     )( const rs_field_t* f, char* buf, size_t cap );
+    void               ( *print_type         )( uint16_t type_id );
+    void               ( *print_types        )( void );
+
+} rs_api_t;
+
+/* rs is always statically linked into the host — RS_STATIC is set by CMake globally. */
+#if defined( BUILD_STATIC ) || defined( RS_STATIC )
+MOD_GATEWAY_STATIC( rs_api_t, rs )
+#else
+MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
+#endif
 
 /*==============================================================================================
     Reflection annotation macros

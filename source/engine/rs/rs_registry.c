@@ -89,10 +89,10 @@ static const struct
     [RS_PRIM_STRING]  = {"string",   sizeof( char* ), sizeof( char* )},
 };
 
-void
+static void
 rs_install_builtins( void )
 {
-    assert( g_rs.intern && "rs_install_builtins: call rs_init() first" );
+    assert( g_rs.intern && "rs_install_builtins: rs_init() must be called first" );
     for ( uint16_t i = 0; i < RS_PRIM_COUNT; i++ )
     {
         rs_type_t* t   = &g_rs.types[ i ];
@@ -120,28 +120,27 @@ rs_install_builtins( void )
 ==============================================================================================*/
 
 void
-rs_init( rs_intern_fn intern, rs_cstr_fn cstr )
+rs_init( void )
 {
-    assert( intern && cstr && "rs_init: intern and cstr callbacks are required" );
+    g_rs_str_top = 0;
     memset( &g_rs, 0, sizeof( g_rs ) );
-    g_rs.intern = intern;
-    g_rs.cstr   = cstr;
+    g_rs.intern = rs_pool_intern;
+    g_rs.cstr   = rs_pool_cstr;
 
     for ( int i = 0; i < RS_TYPE_HASH_SIZE; i++ ) g_rs.type_hash[ i ] = RS_TYPE_INVALID;
 
-    /* Frame 0 = "system": holds the built-in primitives. Cannot be popped.
-       Builtins themselves are installed by the host via rs_install_builtins(). */
+    /* Frame 0 = "system": holds the built-in primitives. Cannot be popped. */
     uint16_t sys = rs_push_frame( "system", 1 );
-    ( void )sys; /* always 0; no need to carry the id */
+    ( void )sys;
+    rs_install_builtins();
 }
 
 void
 rs_exit( void )
 {
-    /* Pop everything except the system frame. */
     while ( g_rs.frame_count > 1 ) rs_pop_frame( g_rs.frame_count - 1 );
-
     memset( &g_rs, 0, sizeof( g_rs ) );
+    g_rs_str_top = 0;
 }
 
 void
@@ -693,6 +692,12 @@ const char*
 rs_name_cstr( rs_name_t id )
 {
     return g_rs.cstr ? g_rs.cstr( id ) : "";
+}
+
+rs_name_t
+rs_intern_name( const char* s )
+{
+    return g_rs.intern ? g_rs.intern( s ) : 0;
 }
 
 /*============================================================================================*/

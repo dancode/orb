@@ -2,10 +2,10 @@
 
     engine/rs/rs.c - Unity build entry point for the rs_ reflection library.
 
-    engine_rs is a standalone static library with zero link-time dependency on engine_core.
-    The host supplies two callbacks at rs_init(): an intern function (string -> rs_name_t)
-    and a cstr function (rs_name_t -> string).  rs_hash_str is a local static inline so
-    hash computation needs no pointer indirection.
+    engine_rs is a standalone static library with no link-time dependency on engine_core.
+    It carries its own flat string pool for interning type and field names so it does not
+    need sid or any other external string system.  rs_hash_str is a local static inline
+    so hash computation needs no pointer indirection.
 
 ==============================================================================================*/
 
@@ -15,7 +15,44 @@
 #include <assert.h>
 
 #include "engine/sys/sys.h"          /* lib_handle_t, sys_library_get_symbol */
+#include "engine/mod/mod_export.h"   /* mod_api_t, get_api_fn */
 #include "engine/rs/rs.h"
+
+/*==============================================================================================
+    Internal string pool
+
+    A flat bump-allocator for interning type and field names.  O(n) intern, O(1) cstr.
+    Sufficient for the small, bounded set of reflected type names in a game engine session.
+    Stored as a separate global so memset(&g_rs) in rs_init does not clobber live strings.
+==============================================================================================*/
+
+#define RS_STRING_POOL_SIZE (16 * 1024)
+
+static char     g_rs_str_pool[ RS_STRING_POOL_SIZE ];
+static uint32_t g_rs_str_top;
+
+static rs_name_t
+rs_pool_intern( const char* s )
+{
+    uint32_t len = (uint32_t)strlen( s );
+    uint32_t i   = 0;
+    while ( i < g_rs_str_top )
+    {
+        if ( strcmp( g_rs_str_pool + i, s ) == 0 ) return (rs_name_t)i;
+        i += (uint32_t)strlen( g_rs_str_pool + i ) + 1;
+    }
+    assert( g_rs_str_top + len + 1 <= RS_STRING_POOL_SIZE && "rs string pool overflow" );
+    rs_name_t id = (rs_name_t)g_rs_str_top;
+    memcpy( g_rs_str_pool + g_rs_str_top, s, len + 1 );
+    g_rs_str_top += len + 1;
+    return id;
+}
+
+static const char*
+rs_pool_cstr( rs_name_t id )
+{
+    return g_rs_str_pool + id;
+}
 
 /*==============================================================================================
     Registry storage  (shared across all TUs in this unity build)
@@ -30,8 +67,8 @@ typedef struct rs_registry_s
     uint16_t    frame_count;
     uint8_t     _pad[ 2 ];
 
-    rs_intern_fn intern;             /* string -> rs_name_t, set by rs_init() */
-    rs_cstr_fn   cstr;               /* rs_name_t -> string, set by rs_init() */
+    rs_intern_fn intern;             /* set to rs_pool_intern by rs_init() */
+    rs_cstr_fn   cstr;               /* set to rs_pool_cstr  by rs_init() */
 
     rs_type_t   types[ RS_MAX_TYPES ];
     rs_field_t  fields[ RS_MAX_FIELDS ];
@@ -51,8 +88,75 @@ typedef struct rs_registry_s
 #include "engine/rs/rs_serialize.c"
 #include "engine/rs/rs_print.c"
 
-/* rs_test.c is intentionally NOT part of the library unity build.  It uses
-   sid_intern_cstr directly and is compiled as a separate TU in the test
-   sandbox target (sb_engine_core_reflect). */
+/* rs_test.c is intentionally NOT part of the library unity build.
+   It is compiled as a separate TU in the test sandbox (sb_engine_core_reflect). */
+
+/*==============================================================================================
+    Module API struct
+==============================================================================================*/
+
+const rs_api_t g_rs_api_struct = {
+    .find_type_by_name  = rs_find_type_by_name,
+    .get_type           = rs_get_type,
+    .get_field          = rs_get_field,
+    .find_field         = rs_find_field,
+    .type_get_attr      = rs_type_get_attr,
+    .field_get_attr     = rs_field_get_attr,
+    .intern_name        = rs_intern_name,
+    .name_cstr          = rs_name_cstr,
+    .each_type          = rs_each_type,
+    .each_type_in_frame = rs_each_type_in_frame,
+    .each_field         = rs_each_field,
+    .each_enumerator    = rs_each_enumerator,
+    .bitset_describe    = rs_bitset_describe,
+    .walk_refs          = rs_walk_refs,
+    .write              = rs_write,
+    .read               = rs_read,
+    .peek_type_hash     = rs_peek_type_hash,
+    .field_describe     = rs_field_describe,
+    .print_type         = rs_print_type,
+    .print_types        = rs_print_types,
+};
+
+/*==============================================================================================
+    Module lifecycle
+==============================================================================================*/
+
+static bool
+rs_mod_init( void* state, get_api_fn get_api )
+{
+    UNUSED( state );
+    UNUSED( get_api );
+    rs_init();
+    return true;
+}
+
+static void
+rs_mod_exit( void* state )
+{
+    UNUSED( state );
+    rs_exit();
+}
+
+/*==============================================================================================
+    Module descriptor
+==============================================================================================*/
+
+mod_api_t*
+rs_get_mod_api( void )
+{
+    static mod_api_t api = {
+        .version       = 1,
+        .state_size    = 0,
+        .func_api_size = sizeof( rs_api_t ),
+        .func_api      = ( void* )&g_rs_api_struct,
+        .deps          = { 0 },
+        .dep_count     = 0,
+        .init          = rs_mod_init,
+        .exit          = rs_mod_exit,
+        .reload        = NULL,
+    };
+    return &api;
+}
 
 /*============================================================================================*/
