@@ -75,7 +75,6 @@
         <Expand>
             <Item Name="name">        g_rs_str_pool+name_id,s</Item>
             <Item Name="version">     version</Item>
-            <Item Name="dll_handle">  dll_handle</Item>
             <Item Name="first_type">  first_type</Item>
             <Item Name="first_field"> first_field</Item>
             <Item Name="first_attr">  first_attr</Item>

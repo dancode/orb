@@ -61,20 +61,20 @@ static void
 list_type_cb( uint16_t type_id, const rs_type_t* t, void* user )
 {
     list_ctx_t* ctx = ( list_ctx_t* )user;
-    if ( t->frame_id != ctx->frame_id ) return;
+    if ( t->frame_id != ctx->frame_id )
+        return;
 
     const char* kind = "?";
     switch ( t->kind )
     {
         case RS_KIND_STRUCT: kind = "struct"; break;
-        case RS_KIND_ENUM:   kind = "enum";   break;
+        case RS_KIND_ENUM: kind = "enum"; break;
         case RS_KIND_BITSET: kind = "bitset"; break;
-        case RS_KIND_UNION:  kind = "union";  break;
+        case RS_KIND_UNION: kind = "union"; break;
         default: break;
     }
-    printf( "  [%3u] %-7s %-20s size=%-3u align=%-2u fields=%u\n",
-            type_id, kind, rs_cstr( t->name_id ),
-            (unsigned)t->size, (unsigned)t->align, (unsigned)t->field_count );
+    printf( "  [%3u] %-7s %-20s size=%-3u align=%-2u fields=%u\n", type_id, kind, rs_cstr( t->name_id ),
+            ( unsigned )t->size, ( unsigned )t->align, ( unsigned )t->field_count );
 }
 
 /* Called once per field on a type. rs_field_describe builds a human-readable type string
@@ -88,9 +88,10 @@ print_field_cb( uint16_t field_id, const rs_field_t* f, void* user )
     char desc[ 128 ];
     rs_field_describe( f, desc, sizeof desc );
 
-    printf( "      %-20s : %-28s offset=%-3u size=%-3u",
-            rs_cstr( f->name_id ), desc, (unsigned)f->offset, (unsigned)f->size );
-    if ( f->attr_count > 0 ) printf( "  attrs=%u", (unsigned)f->attr_count );
+    printf( "      %-20s : %-28s offset=%-3u size=%-3u", rs_cstr( f->name_id ), desc, ( unsigned )f->offset,
+            ( unsigned )f->size );
+    if ( f->attr_count > 0 )
+        printf( "  attrs=%u", ( unsigned )f->attr_count );
     printf( "\n" );
 }
 
@@ -100,7 +101,7 @@ print_enum_cb( uint16_t enum_id, const rs_enum_t* e, void* user )
 {
     UNUSED( enum_id );
     UNUSED( user );
-    printf( "      %-20s = %lld\n", rs_cstr( e->name_id ), (long long)e->value );
+    printf( "      %-20s = %lld\n", rs_cstr( e->name_id ), ( long long )e->value );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -134,7 +135,7 @@ value_visit( void* addr, uint16_t type_id, const rs_field_t* field, void* user )
        Cast to void** to read the pointer's value. */
     if ( op0 == RS_MOD_PTR )
     {
-        printf( "    %-20s %-14s %s\n", fname, tname, *(void**)addr ? "(non-null)" : "(null)" );
+        printf( "    %-20s %-14s %s\n", fname, tname, *( void** )addr ? "(non-null)" : "(null)" );
         return;
     }
 
@@ -152,39 +153,38 @@ value_visit( void* addr, uint16_t type_id, const rs_field_t* field, void* user )
         int64_t val = 0;
         switch ( t->size )
         {
-            case 1: val = *(int8_t*)addr;  break;
-            case 2: val = *(int16_t*)addr; break;
-            case 4: val = *(int32_t*)addr; break;
-            case 8: val = *(int64_t*)addr; break;
+            case 1: val = *( int8_t* )addr; break;
+            case 2: val = *( int16_t* )addr; break;
+            case 4: val = *( int32_t* )addr; break;
+            case 8: val = *( int64_t* )addr; break;
         }
         const rs_enum_t* e = rs_enum_find_by_value( type_id, val );
-        printf( "    %-20s %-14s %s (%lld)\n", fname, tname,
-                e ? rs_cstr( e->name_id ) : "?", (long long)val );
+        printf( "    %-20s %-14s %s (%lld)\n", fname, tname, e ? rs_cstr( e->name_id ) : "?", ( long long )val );
         return;
     }
 
     /* Inline char arrays (e.g. char name[64]) generate one visit per element.
        Skip the trailing null bytes so we only see the actual string content. */
-    if ( op0 == RS_MOD_ARRAY && type_id == RS_PRIM_CHAR && *(char*)addr == '\0' )
+    if ( op0 == RS_MOD_ARRAY && type_id == RS_PRIM_CHAR && *( char* )addr == '\0' )
         return;
 
     /* Primitive value: cast addr to the correct type and print. */
     printf( "    %-20s %-14s ", fname, tname );
     switch ( type_id )
     {
-        case RS_PRIM_BOOL: printf( "%s",    *(bool*)addr ? "true" : "false" ); break;
-        case RS_PRIM_CHAR: printf( "'%c'",  *(char*)addr );                    break;
-        case RS_PRIM_I8:   printf( "%d",    *(int8_t*)addr );                  break;
-        case RS_PRIM_U8:   printf( "%u",    *(uint8_t*)addr );                 break;
-        case RS_PRIM_I16:  printf( "%d",    *(int16_t*)addr );                 break;
-        case RS_PRIM_U16:  printf( "%u",    *(uint16_t*)addr );                break;
-        case RS_PRIM_I32:  printf( "%d",    *(int32_t*)addr );                 break;
-        case RS_PRIM_U32:  printf( "%u",    *(uint32_t*)addr );                break;
-        case RS_PRIM_I64:  printf( "%lld",  *(int64_t*)addr );                 break;
-        case RS_PRIM_U64:  printf( "%llu",  *(uint64_t*)addr );                break;
-        case RS_PRIM_F32:  printf( "%.3f",  *(float*)addr );                   break;
-        case RS_PRIM_F64:  printf( "%.3f",  *(double*)addr );                  break;
-        default:           printf( "?" );                                       break;
+        case RS_PRIM_BOOL: printf( "%s", *( bool* )addr ? "true" : "false" ); break;
+        case RS_PRIM_CHAR: printf( "'%c'", *( char* )addr ); break;
+        case RS_PRIM_I8: printf( "%d", *( int8_t* )addr ); break;
+        case RS_PRIM_U8: printf( "%u", *( uint8_t* )addr ); break;
+        case RS_PRIM_I16: printf( "%d", *( int16_t* )addr ); break;
+        case RS_PRIM_U16: printf( "%u", *( uint16_t* )addr ); break;
+        case RS_PRIM_I32: printf( "%d", *( int32_t* )addr ); break;
+        case RS_PRIM_U32: printf( "%u", *( uint32_t* )addr ); break;
+        case RS_PRIM_I64: printf( "%lld", *( int64_t* )addr ); break;
+        case RS_PRIM_U64: printf( "%llu", *( uint64_t* )addr ); break;
+        case RS_PRIM_F32: printf( "%.3f", *( float* )addr ); break;
+        case RS_PRIM_F64: printf( "%.3f", *( double* )addr ); break;
+        default: printf( "?" ); break;
     }
     printf( "\n" );
 }
@@ -204,12 +204,12 @@ static void
 ref_visit( void** slot, uint16_t pointee_type_id, const rs_field_t* field, void* user )
 {
     UNUSED( user );
-    const char* fname = rs_cstr( field->name_id );
-    const char* tname = "?";
-    const rs_type_t* pt = rs_get_type( pointee_type_id );
-    if ( pt ) tname = rs_cstr( pt->name_id );
-    printf( "    ref slot '%s' -> %s* %s\n", fname, tname,
-            *slot ? "(non-null)" : "(NULL)" );
+    const char*      fname = rs_cstr( field->name_id );
+    const char*      tname = "?";
+    const rs_type_t* pt    = rs_get_type( pointee_type_id );
+    if ( pt )
+        tname = rs_cstr( pt->name_id );
+    printf( "    ref slot '%s' -> %s* %s\n", fname, tname, *slot ? "(non-null)" : "(NULL)" );
 }
 
 /*==============================================================================================
@@ -224,14 +224,17 @@ exercise_reflection( void )
     /* STEP 1: Look up types by name.
        Every type registered from a reflected module gets a stable numeric ID (type_id).
        rs_find_type_by_name does a hash lookup — O(1), no string scanning at runtime. */
-    uint16_t entity_tid = rs_find_type_by_name( "ex_entity_t" );
-    uint16_t facing_tid = rs_find_type_by_name( "ex_facing_t" );
-    uint16_t caps_tid   = rs_find_type_by_name( "ex_caps_t" );
+
+    u16 entity_tid = rs_find_type_by_name( "ex_entity_t" );
+    u16 facing_tid = rs_find_type_by_name( "ex_facing_t" );
+    u16 caps_tid   = rs_find_type_by_name( "ex_caps_t" );
 
     /* STEP 2: List all types registered by a module.
        Each module owns a "frame" in the registry. When the module unloads, its frame
        is popped and all its types disappear — no cleanup code needed. */
+
     list_ctx_t lc = { .frame_id = rs_get_type( entity_tid )->frame_id };
+
     printf( "\n=== Types in frame %u ===\n", lc.frame_id );
     rs_each_type( list_type_cb, &lc );
 
@@ -255,8 +258,7 @@ exercise_reflection( void )
         /* rs_find_field looks up a specific field by name on a type. */
         const rs_field_t* health = rs_find_field( entity_tid, "health" );
         if ( health )
-            printf( "  field 'health' attr_count=%u (expect 2 from range=0,100)\n",
-                    (unsigned)health->attr_count );
+            printf( "  field 'health' attr_count=%u (expect 2 from range=0,100)\n", ( unsigned )health->attr_count );
     }
 
     /* STEP 5: Enums and bitsets.
@@ -275,10 +277,10 @@ exercise_reflection( void )
         printf( "\n=== Bitset %s ===\n", rs_cstr( ctype->name_id ) );
         rs_each_enumerator( caps_tid, print_enum_cb, NULL );
 
-        char buf[ 128 ];
+        char               buf[ 128 ];
         const ex_entity_t* demo = mod->demo_entity();
-        rs_bitset_describe( caps_tid, (int64_t)demo->caps, buf, sizeof buf );
-        printf( "  describe(0x%x) = %s\n", (unsigned)demo->caps, buf );
+        rs_bitset_describe( caps_tid, ( int64_t )demo->caps, buf, sizeof buf );
+        printf( "  describe(0x%x) = %s\n", ( unsigned )demo->caps, buf );
     }
 
     /* STEP 6: Pointer walker (rs_walk_refs).
@@ -314,27 +316,62 @@ exercise_reflection( void )
         printf( "\n=== Serialization round-trip ===\n" );
         const ex_entity_t* demo = mod->demo_entity();
 
-        uint8_t buf[ 1024 ];
-        size_t  n = rs_write( demo, entity_tid, buf, sizeof buf );
+        uint8_t            buf[ 1024 ];
+        size_t             n = rs_write( demo, entity_tid, buf, sizeof buf );
         printf( "  wrote %zu bytes\n", n );
 
         /* rs_peek_type_hash reads the type identity from the saved header without
            fully deserializing — handy for routing saved blobs to the right handler. */
         uint32_t tag = rs_peek_type_hash( buf, n );
-        printf( "  peek type_hash = 0x%08x  (expected 0x%08x)\n",
-                tag, rs_hash_str( "ex_entity_t" ) );
+        printf( "  peek type_hash = 0x%08x  (expected 0x%08x)\n", tag, rs_hash_str( "ex_entity_t" ) );
 
-        ex_entity_t restored = { 0 };
-        size_t consumed = 0;
-        rs_io_status_t st = rs_read( &restored, entity_tid, buf, n, &consumed );
-        printf( "  read status = %d, consumed=%zu\n", (int)st, consumed );
+        ex_entity_t    restored = { 0 };
+        size_t         consumed = 0;
+        rs_io_status_t st       = rs_read( &restored, entity_tid, buf, n, &consumed );
+        printf( "  read status = %d, consumed=%zu\n", ( int )st, consumed );
 
         if ( st == RS_IO_OK )
         {
-            printf( "  id=%d  facing=%d  caps=0x%x  health=%.2f\n",
-                    restored.id, (int)restored.facing,
-                    (unsigned)restored.caps, restored.health );
+            printf( "  id=%d  facing=%d  caps=0x%x  health=%.2f\n", restored.id, ( int )restored.facing,
+                    ( unsigned )restored.caps, restored.health );
         }
+    }
+
+    /* STEP 9: Tagged union.
+       RS_UNION() types are reflected identically to structs: each variant is a named field
+       with its own offset and size.  For a plain union all offsets are 0 (they all alias
+       the same bytes).  The discriminant lives in the enclosing struct (ex_event_t.kind)
+       and is a separate reflected field — the reflection system records the shape, not the
+       semantics of which variant is live.
+       Tools (inspectors, serializers) use the discriminant field to decide which member to
+       show or serialize; rs_walk visits every member when walking blindly. */
+    uint16_t payload_tid = rs_find_type_by_name( "ex_event_payload_t" );
+    uint16_t event_tid   = rs_find_type_by_name( "ex_event_t" );
+
+    if ( payload_tid != RS_TYPE_INVALID )
+    {
+        const rs_type_t* pt = rs_get_type( payload_tid );
+        printf( "\n=== Union %s  (kind=%u, size=%u, %u variants) ===\n", rs_cstr( pt->name_id ),
+                ( unsigned )pt->kind, ( unsigned )pt->size, ( unsigned )pt->field_count );
+        rs_each_field( payload_tid, print_field_cb, NULL );
+
+        const rs_attrib_t* tip = rs_type_get_attr( payload_tid, "tooltip" );
+        if ( tip && tip->type == RS_ATTR_STRING )
+            printf( "  tooltip = \"%s\"\n", rs_cstr( tip->value.str ) );
+    }
+
+    if ( event_tid != RS_TYPE_INVALID )
+    {
+        /* Construct a damage event locally — no module API needed.
+           rs_walk visits all fields including the nested union variants. */
+        ex_event_t ev               = { 0 };
+        ev.id                       = 42;
+        ev.kind                     = EX_EVENT_DAMAGE;
+        ev.payload.damage.amount    = 75;
+        ev.payload.damage.source_id = 1001;
+
+        printf( "\n=== rs_walk over ex_event_t (damage variant) ===\n" );
+        rs_walk( &ev, event_tid, value_visit, NULL );
     }
 }
 
@@ -358,9 +395,9 @@ main( int argc, char** argv )
 
     /* Register engine modules. Order here just declares them; mod_init_all() below
        resolves the real init order from declared dependencies. */
-    mod_static_load( "rs",   rs_get_mod_desc()   );
-    mod_static_load( "sys",  sys_get_mod_desc()  );
-    mod_static_load( "core", core_get_mod_desc() );
+    mod_static( rs );
+    mod_static( sys );
+    mod_static( core );
 
     /* Load example_reflect — the load callback above fires and registers its types. */
     if ( !mod_load( example_reflect ) )

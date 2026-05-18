@@ -175,7 +175,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                                          hosts that don't load app or render get NULL here,
                                          which is fine; the windowed path guards against it.
     */
-    MOD_HOST_FETCH_API( app_api_t,    app    );
+
     MOD_HOST_FETCH_API( rhi_api_t,    rhi    );
     MOD_HOST_FETCH_API( render_api_t, render );
 

@@ -11,6 +11,7 @@
         - regular enum
         - bitset (flag-style enum)
         - type-level and field-level attributes (tag, int, float, string)
+        - tagged union (discriminated variant: ex_event_t / ex_event_payload_t)
 
     Reflection data is exported from the generated TU as the well-known DLL symbol
     "rs_register". The rs_ system discovers and calls it automatically via the
@@ -84,6 +85,66 @@ typedef struct ex_entity_s
     RS_PROP()                                ex_vec3_t*     slots[ 4 ];
 
 } ex_entity_t;
+
+/*==============================================================================================
+    Reflected tagged union  (game-engine variant pattern)
+
+    ex_event_t is the canonical example: a discriminant field (kind) paired with a payload
+    union whose active member is determined by that discriminant.  The reflection system
+    records every variant's fields and offsets so tools (inspectors, serializers, diffing)
+    can display the correct member without bespoke switch-case code.
+==============================================================================================*/
+
+RS_ENUM( tooltip = "Selects the active member of ex_event_payload_t." )
+typedef enum ex_event_kind_e
+{
+    EX_EVENT_SPAWN  = 0,
+    EX_EVENT_DAMAGE = 1,
+    EX_EVENT_MOVE   = 2,
+
+} ex_event_kind_t;
+
+RS_STRUCT()
+typedef struct ex_spawn_payload_s
+{
+    RS_PROP() ex_vec3_t   origin;
+    RS_PROP() ex_facing_t facing;
+
+} ex_spawn_payload_t;
+
+RS_STRUCT()
+typedef struct ex_damage_payload_s
+{
+    RS_PROP( range = 0, 1000, tooltip = "Raw hit-point loss before mitigation." ) int32_t  amount;
+    RS_PROP()                                                                      uint32_t source_id;
+
+} ex_damage_payload_t;
+
+RS_STRUCT()
+typedef struct ex_move_payload_s
+{
+    RS_PROP() ex_vec3_t from;
+    RS_PROP() ex_vec3_t to;
+
+} ex_move_payload_t;
+
+RS_UNION( tooltip = "Per-event data; active member is selected by ex_event_t.kind." )
+typedef union ex_event_payload_u
+{
+    RS_PROP() ex_spawn_payload_t  spawn;
+    RS_PROP() ex_damage_payload_t damage;
+    RS_PROP() ex_move_payload_t   move;
+
+} ex_event_payload_t;
+
+RS_STRUCT( tooltip = "An engine event carrying a discriminated payload union." )
+typedef struct ex_event_s
+{
+    RS_PROP()                                uint32_t           id;
+    RS_PROP()                                ex_event_kind_t    kind;
+    RS_PROP()                                ex_event_payload_t payload;
+
+} ex_event_t;
 
 /*==============================================================================================
     Public module API

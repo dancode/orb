@@ -55,6 +55,7 @@ kind_macro( int kind )
         case RG_KIND_STRUCT: return "RS_KIND_STRUCT";
         case RG_KIND_ENUM:   return "RS_KIND_ENUM";
         case RG_KIND_BITSET: return "RS_KIND_BITSET";
+        case RG_KIND_UNION:  return "RS_KIND_UNION";
     }
     return "RS_KIND_PRIM";
 }
@@ -122,8 +123,7 @@ emit_struct_block( FILE* fc, const rg_decl_type_t* t )
         for ( int fi = 0; fi < t->field_count; fi++ )
         {
             const rg_decl_field_t* f = &t->fields[ fi ];
-            fprintf( fc, "            { .name_id = api->intern( \"%s\" ), "
-                         ".name_hash = rs_hash_str( \"%s\" ),\n", f->name, f->name );
+            fprintf( fc, "            { .name_id = api->intern( \"%s\" ),\n", f->name );
             fprintf( fc, "              .type_hash = rs_hash_str( \"%s\" ), "
                          ".type_id = RS_TYPE_INVALID,\n", f->base_type );
             fprintf( fc, "              .offset = RS_OFFSETOF( %s, %s ), "
@@ -286,7 +286,7 @@ emit_rs_register( FILE* fc, const char* module_name, const rg_parse_data_t* data
     for ( int i = 0; i < data->type_count; i++ )
     {
         const rg_decl_type_t* t = &data->types[ i ];
-        if ( t->kind == RG_KIND_STRUCT )
+        if ( t->kind == RG_KIND_STRUCT || t->kind == RG_KIND_UNION )
             emit_struct_block( fc, t );
         else
             emit_enum_block( fc, t );

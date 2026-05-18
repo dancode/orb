@@ -99,6 +99,7 @@ typedef enum rg_kind_e
     RG_KIND_STRUCT = 0,
     RG_KIND_ENUM   = 1,
     RG_KIND_BITSET = 2,
+    RG_KIND_UNION  = 3,
 
 } rg_kind_t;
 

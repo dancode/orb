@@ -61,20 +61,17 @@ rs_test_register_vec3( void )
     rs_field_t fields[ 3 ] = { 0 };
 
     fields[ 0 ].name_id   = test_intern( "x" );
-    fields[ 0 ].name_hash = rs_hash_str( "x" );
     fields[ 0 ].type_hash = h_float;
     fields[ 0 ].offset    = RS_OFFSETOF( rs_test_vec3_t, x );
     fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_vec3_t, x );
     fields[ 0 ].mods      = RS_NO_MODS;
 
     fields[ 1 ].name_id   = test_intern( "y" );
-    fields[ 1 ].name_hash = rs_hash_str( "y" );
     fields[ 1 ].type_hash = h_float;
     fields[ 1 ].offset    = RS_OFFSETOF( rs_test_vec3_t, y );
     fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_vec3_t, y );
 
     fields[ 2 ].name_id   = test_intern( "z" );
-    fields[ 2 ].name_hash = rs_hash_str( "z" );
     fields[ 2 ].type_hash = h_float;
     fields[ 2 ].offset    = RS_OFFSETOF( rs_test_vec3_t, z );
     fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_vec3_t, z );
@@ -105,19 +102,16 @@ rs_test_register_transform( void )
     rs_field_t fields[ 3 ] = { 0 };
 
     fields[ 0 ].name_id   = test_intern( "position" );
-    fields[ 0 ].name_hash = rs_hash_str( "position" );
     fields[ 0 ].type_hash = h_vec3;
     fields[ 0 ].offset    = RS_OFFSETOF( rs_test_transform_t, position );
     fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_transform_t, position );
 
     fields[ 1 ].name_id   = test_intern( "rotation" );
-    fields[ 1 ].name_hash = rs_hash_str( "rotation" );
     fields[ 1 ].type_hash = h_vec3;
     fields[ 1 ].offset    = RS_OFFSETOF( rs_test_transform_t, rotation );
     fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_transform_t, rotation );
 
     fields[ 2 ].name_id   = test_intern( "scale" );
-    fields[ 2 ].name_hash = rs_hash_str( "scale" );
     fields[ 2 ].type_hash = h_vec3;
     fields[ 2 ].offset    = RS_OFFSETOF( rs_test_transform_t, scale );
     fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_transform_t, scale );
@@ -146,14 +140,12 @@ rs_test_register_entity( void )
 
     /* id : int32_t                                  */
     fields[ 0 ].name_id   = test_intern( "id" );
-    fields[ 0 ].name_hash = rs_hash_str( "id" );
     fields[ 0 ].type_hash = h_int32;
     fields[ 0 ].offset    = RS_OFFSETOF( rs_test_entity_t, id );
     fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_entity_t, id );
 
     /* name : char[64]    base=char, mods=[ARRAY], aux=64 */
     fields[ 1 ].name_id   = test_intern( "name" );
-    fields[ 1 ].name_hash = rs_hash_str( "name" );
     fields[ 1 ].type_hash = h_char;
     fields[ 1 ].offset    = RS_OFFSETOF( rs_test_entity_t, name );
     fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_entity_t, name );
@@ -162,21 +154,18 @@ rs_test_register_entity( void )
 
     /* transform : transform_t                       */
     fields[ 2 ].name_id   = test_intern( "transform" );
-    fields[ 2 ].name_hash = rs_hash_str( "transform" );
     fields[ 2 ].type_hash = h_xform;
     fields[ 2 ].offset    = RS_OFFSETOF( rs_test_entity_t, transform );
     fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_entity_t, transform );
 
     /* health : float                                */
     fields[ 3 ].name_id   = test_intern( "health" );
-    fields[ 3 ].name_hash = rs_hash_str( "health" );
     fields[ 3 ].type_hash = h_float;
     fields[ 3 ].offset    = RS_OFFSETOF( rs_test_entity_t, health );
     fields[ 3 ].size      = RS_FIELD_SIZE( rs_test_entity_t, health );
 
     /* velocity : vec3_t*  base=vec3, mods=[PTR]     */
     fields[ 4 ].name_id   = test_intern( "velocity" );
-    fields[ 4 ].name_hash = rs_hash_str( "velocity" );
     fields[ 4 ].type_hash = h_vec3;
     fields[ 4 ].offset    = RS_OFFSETOF( rs_test_entity_t, velocity );
     fields[ 4 ].size      = RS_FIELD_SIZE( rs_test_entity_t, velocity );
@@ -184,7 +173,6 @@ rs_test_register_entity( void )
 
     /* label : const char*  base_const=1, mods=[PTR] */
     fields[ 5 ].name_id    = test_intern( "label" );
-    fields[ 5 ].name_hash  = rs_hash_str( "label" );
     fields[ 5 ].type_hash  = h_char;
     fields[ 5 ].offset     = RS_OFFSETOF( rs_test_entity_t, label );
     fields[ 5 ].size       = RS_FIELD_SIZE( rs_test_entity_t, label );
@@ -193,7 +181,6 @@ rs_test_register_entity( void )
 
     /* slots : vec3_t*[8]   mods=[PTR, ARRAY], aux=8 */
     fields[ 6 ].name_id   = test_intern( "slots" );
-    fields[ 6 ].name_hash = rs_hash_str( "slots" );
     fields[ 6 ].type_hash = h_vec3;
     fields[ 6 ].offset    = RS_OFFSETOF( rs_test_entity_t, slots );
     fields[ 6 ].size      = RS_FIELD_SIZE( rs_test_entity_t, slots );
@@ -414,18 +401,15 @@ test_function_sigs( void )
     rs_field_t sig_fields[ 3 ] = { 0 };
 
     sig_fields[ 0 ].name_id   = test_intern( "return" );
-    sig_fields[ 0 ].name_hash = rs_hash_str( "return" );
     sig_fields[ 0 ].type_hash = h_void;
     /* return: void  -> no mods, no aux */
 
     sig_fields[ 1 ].name_id   = test_intern( "reason" );
-    sig_fields[ 1 ].name_hash = rs_hash_str( "reason" );
     sig_fields[ 1 ].type_hash = h_int32;
     sig_fields[ 1 ].size      = (uint16_t)sizeof( int32_t );
     /* int32_t value */
 
     sig_fields[ 2 ].name_id   = test_intern( "loc" );
-    sig_fields[ 2 ].name_hash = rs_hash_str( "loc" );
     sig_fields[ 2 ].type_hash = h_vec3;
     sig_fields[ 2 ].size      = (uint16_t)sizeof( rs_test_vec3_t* );
     sig_fields[ 2 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
@@ -445,7 +429,6 @@ test_function_sigs( void )
     rs_field_t npc_fields[ 2 ] = { 0 };
 
     npc_fields[ 0 ].name_id   = test_intern( "health" );
-    npc_fields[ 0 ].name_hash = rs_hash_str( "health" );
     npc_fields[ 0 ].type_hash = rs_hash_str( "float" );
     npc_fields[ 0 ].offset    = RS_OFFSETOF( rs_test_npc_t, health );
     npc_fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_npc_t, health );
@@ -453,7 +436,6 @@ test_function_sigs( void )
     /* on_die: void(*)(int32_t, vec3_t*)
          base = void, mods=[FUNCTION], aux=sig_id  */
     npc_fields[ 1 ].name_id   = test_intern( "on_die" );
-    npc_fields[ 1 ].name_hash = rs_hash_str( "on_die" );
     npc_fields[ 1 ].type_hash = h_void;
     npc_fields[ 1 ].offset    = RS_OFFSETOF( rs_test_npc_t, on_die );
     npc_fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_npc_t, on_die );
@@ -532,25 +514,21 @@ test_serialize( void )
     rs_field_t fields[ 6 ] = { 0 };
 
     fields[ 0 ].name_id   = test_intern( "id" );
-    fields[ 0 ].name_hash = rs_hash_str( "id" );
     fields[ 0 ].type_hash = h_int32;
     fields[ 0 ].offset    = RS_OFFSETOF( rs_test_save_t, id );
     fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_save_t, id );
 
     fields[ 1 ].name_id   = test_intern( "health" );
-    fields[ 1 ].name_hash = rs_hash_str( "health" );
     fields[ 1 ].type_hash = h_float;
     fields[ 1 ].offset    = RS_OFFSETOF( rs_test_save_t, health );
     fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_save_t, health );
 
     fields[ 2 ].name_id   = test_intern( "position" );
-    fields[ 2 ].name_hash = rs_hash_str( "position" );
     fields[ 2 ].type_hash = h_vec3;
     fields[ 2 ].offset    = RS_OFFSETOF( rs_test_save_t, position );
     fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_save_t, position );
 
     fields[ 3 ].name_id   = test_intern( "name" );
-    fields[ 3 ].name_hash = rs_hash_str( "name" );
     fields[ 3 ].type_hash = h_char;
     fields[ 3 ].offset    = RS_OFFSETOF( rs_test_save_t, name );
     fields[ 3 ].size      = RS_FIELD_SIZE( rs_test_save_t, name );
@@ -558,14 +536,12 @@ test_serialize( void )
     fields[ 3 ].aux       = 16;
 
     fields[ 4 ].name_id   = test_intern( "cache_ptr" );
-    fields[ 4 ].name_hash = rs_hash_str( "cache_ptr" );
     fields[ 4 ].type_hash = h_vec3;
     fields[ 4 ].offset    = RS_OFFSETOF( rs_test_save_t, cache_ptr );
     fields[ 4 ].size      = RS_FIELD_SIZE( rs_test_save_t, cache_ptr );
     fields[ 4 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
 
     fields[ 5 ].name_id   = test_intern( "cached_hash" );
-    fields[ 5 ].name_hash = rs_hash_str( "cached_hash" );
     fields[ 5 ].type_hash = h_u32;
     fields[ 5 ].offset    = RS_OFFSETOF( rs_test_save_t, cached_hash );
     fields[ 5 ].size      = RS_FIELD_SIZE( rs_test_save_t, cached_hash );
@@ -785,7 +761,6 @@ test_walker( void )
         rs_field_t fields[ 1 ] = { 0 };
 
         fields[ 0 ].name_id   = test_intern( "p" );
-        fields[ 0 ].name_hash = rs_hash_str( "p" );
         fields[ 0 ].type_hash = h_vec3;
         fields[ 0 ].offset    = RS_OFFSETOF( rs_test_inner_t, p );
         fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_inner_t, p );
@@ -812,20 +787,17 @@ test_walker( void )
         rs_field_t fields[ 4 ] = { 0 };
 
         fields[ 0 ].name_id   = test_intern( "id" );
-        fields[ 0 ].name_hash = rs_hash_str( "id" );
         fields[ 0 ].type_hash = h_int32;
         fields[ 0 ].offset    = RS_OFFSETOF( rs_test_walk_t, id );
         fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_walk_t, id );
 
         fields[ 1 ].name_id   = test_intern( "single" );
-        fields[ 1 ].name_hash = rs_hash_str( "single" );
         fields[ 1 ].type_hash = h_vec3;
         fields[ 1 ].offset    = RS_OFFSETOF( rs_test_walk_t, single );
         fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_walk_t, single );
         fields[ 1 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
 
         fields[ 2 ].name_id   = test_intern( "slots" );
-        fields[ 2 ].name_hash = rs_hash_str( "slots" );
         fields[ 2 ].type_hash = h_vec3;
         fields[ 2 ].offset    = RS_OFFSETOF( rs_test_walk_t, slots );
         fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_walk_t, slots );
@@ -833,7 +805,6 @@ test_walker( void )
         fields[ 2 ].aux       = 3;
 
         fields[ 3 ].name_id   = test_intern( "nested" );
-        fields[ 3 ].name_hash = rs_hash_str( "nested" );
         fields[ 3 ].type_hash = h_inner;
         fields[ 3 ].offset    = RS_OFFSETOF( rs_test_walk_t, nested );
         fields[ 3 ].size      = RS_FIELD_SIZE( rs_test_walk_t, nested );

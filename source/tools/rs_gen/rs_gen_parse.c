@@ -382,6 +382,7 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
 
         if      ( !api_only && match_word( p, buf, "RS_STRUCT" ) ) kind = RG_KIND_STRUCT;
         else if ( !api_only && match_word( p, buf, "RS_BITSET" ) ) kind = RG_KIND_BITSET;
+        else if ( !api_only && match_word( p, buf, "RS_UNION"  ) ) kind = RG_KIND_UNION;
         else if ( !api_only && match_word( p, buf, "RS_ENUM"   ) ) kind = RG_KIND_ENUM;
         else if ( match_word( p, buf, "RS_MODULE" ) )
         {
@@ -412,8 +413,9 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
 
         if ( kind < 0 ) { p++; continue; }
 
-        p += ( kind == RG_KIND_ENUM ) ? (int)( sizeof( "RS_ENUM"   ) - 1 )
-                                      : (int)( sizeof( "RS_STRUCT" ) - 1 );
+        p += ( kind == RG_KIND_ENUM  ) ? (int)( sizeof( "RS_ENUM"   ) - 1 )
+           : ( kind == RG_KIND_UNION ) ? (int)( sizeof( "RS_UNION"  ) - 1 )
+           :                            (int)( sizeof( "RS_STRUCT" ) - 1 );
         p  = skip_ws( p );
 
         /* optional attribute args in parentheses, e.g. RS_STRUCT( my_attr="value", other_attr=123 ) */
@@ -471,7 +473,7 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
         const char* body_start = body_open + 1;
         const char* body_end   = body_close;
 
-        if ( kind == RG_KIND_STRUCT )
+        if ( kind == RG_KIND_STRUCT || kind == RG_KIND_UNION )
         {
             parse_struct_body( body_start, body_end, buf, t );
             out->struct_count++;

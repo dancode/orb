@@ -164,6 +164,7 @@ function(add_unity_library TARGET_NAME TARGET_TYPE SOURCE_DIR VS_FOLDER)
         "${MODULE_ROOT}/*.c"
         "${MODULE_ROOT}/*.h"
         "${MODULE_ROOT}/*.natvis"
+        "${MODULE_ROOT}/*.md"
     )
 
     set(TARGET_COMPILED "")
@@ -202,6 +203,7 @@ function(add_unity_executable TARGET_NAME SOURCE_DIR VS_FOLDER)
         "${MODULE_ROOT}/*.c"
         "${MODULE_ROOT}/*.h"
         "${MODULE_ROOT}/*.natvis"
+        "${MODULE_ROOT}/*.md"
     )
 
     set(TARGET_COMPILED "")
@@ -421,21 +423,21 @@ target_add_reflect_gen( example_gen     "source/runtime_modules/example_gen"    
 # ------------------------------------------------------------------------------
 
 add_unity_library( game ${MODULE_TYPE} "source/game" "04_Game" "game.c" )
-target_link_libraries( game PUBLIC base )
+# target_link_libraries( game PUBLIC base )
 
 # ------------------------------------------------------------------------------
 # 04 GAME SERVICE
 # ------------------------------------------------------------------------------
 
 add_unity_library( nav STATIC "source/game_service/nav" "04_Game_Service" "nav.c" )
-target_link_libraries( nav PUBLIC base )
+# target_link_libraries( nav PUBLIC base )
 
 # ------------------------------------------------------------------------------
 # 04 GAME MODULES
 # ------------------------------------------------------------------------------
 
 add_module( game_example "source/game_modules/game_example" "04_Game_Modules" "game_example.c" )
-target_link_libraries( game_example PUBLIC base )
+# target_link_libraries( game_example PUBLIC base )
 
 # ------------------------------------------------------------------------------
 # 05 EDITOR
@@ -450,14 +452,14 @@ target_link_libraries( editor_host PUBLIC engine_mod engine_sys engine_core engi
 # ------------------------------------------------------------------------------
 
 add_unity_library( viewport STATIC "source/editor_service/viewport" "05_Editor_Service" "viewport.c" )
-target_link_libraries( viewport PUBLIC base )
+# target_link_libraries( viewport PUBLIC base )
 
 # ------------------------------------------------------------------------------
 # 05 EDITOR MODULES
 # ------------------------------------------------------------------------------
 
 add_module( editor_example "source/editor_modules/editor_example" "05_Editor_Modules" "editor_example.c" )
-target_link_libraries( editor_example PUBLIC base )
+# target_link_libraries( editor_example PUBLIC base )
 
 # ------------------------------------------------------------------------------
 # 06 PROJECT

@@ -1,11 +1,6 @@
 /*==============================================================================================
 
-    engine/rs/rs.c - Unity build entry point for the rs_ reflection library.
-
-    engine_rs is a standalone static library with no link-time dependency on engine_core.
-    It carries its own flat string pool for interning type and field names so it does not
-    need sid or any other external string system.  rs_hash_str is a local static inline
-    so hash computation needs no pointer indirection.
+    engine/rs/rs.c - Unity entry point. See rs.md for architecture overview.
 
 ==============================================================================================*/
 
@@ -14,18 +9,13 @@
 #include <string.h>
 #include <assert.h>
 
-#include "engine/mod/mod_export.h"   /* mod_desc_t, get_api_fn */
+#include "engine/mod/mod_export.h"
 #include "engine/rs/rs.h"
 
-/*==============================================================================================
-    Internal string pool
+/* Flat bump-allocator for interning type/field names. Kept separate from g_rs so that
+   memset(&g_rs) in rs_init does not clobber live strings. O(n) intern, O(1) cstr. */
 
-    A flat bump-allocator for interning type and field names.  O(n) intern, O(1) cstr.
-    Sufficient for the small, bounded set of reflected type names in a game engine session.
-    Stored as a separate global so memset(&g_rs) in rs_init does not clobber live strings.
-==============================================================================================*/
-
-#define RS_STRING_POOL_SIZE (16 * 1024)
+#define RS_STRING_POOL_SIZE ( 16 * 1024 )
 
 static char     g_rs_str_pool[ RS_STRING_POOL_SIZE ];
 static uint32_t g_rs_str_top;
@@ -33,19 +23,22 @@ static uint32_t g_rs_str_top;
 rs_name_t
 rs_intern( const char* s )
 {
-    uint32_t len = (uint32_t)strlen( s );
+    uint32_t len = ( uint32_t )strlen( s );
     uint32_t i   = 0;
     while ( i < g_rs_str_top )
     {
-        if ( strcmp( g_rs_str_pool + i, s ) == 0 ) return (rs_name_t)i;
-        i += (uint32_t)strlen( g_rs_str_pool + i ) + 1;
+        if ( strcmp( g_rs_str_pool + i, s ) == 0 )
+            return ( rs_name_t )i;
+        i += ( uint32_t )strlen( g_rs_str_pool + i ) + 1;
     }
     assert( g_rs_str_top + len + 1 <= RS_STRING_POOL_SIZE && "rs string pool overflow" );
-    rs_name_t id = (rs_name_t)g_rs_str_top;
+    rs_name_t id = ( rs_name_t )g_rs_str_top;
     memcpy( g_rs_str_pool + g_rs_str_top, s, len + 1 );
     g_rs_str_top += len + 1;
     return id;
 }
+
+// clang-format off
 
 const char*
 rs_cstr( rs_name_t id )
@@ -53,10 +46,7 @@ rs_cstr( rs_name_t id )
     return g_rs_str_pool + id;
 }
 
-/*==============================================================================================
-    Registry storage  (shared across all TUs in this unity build)
-==============================================================================================*/
-
+/* Registry storage — shared across all TUs in this unity build */
 typedef struct rs_registry_s
 {
     uint16_t    type_count;
@@ -66,13 +56,13 @@ typedef struct rs_registry_s
     uint16_t    frame_count;
     uint8_t     _pad[ 2 ];
 
-    rs_type_t   types[ RS_MAX_TYPES ];
-    rs_field_t  fields[ RS_MAX_FIELDS ];
-    rs_attrib_t attrs[ RS_MAX_ATTRS ];
-    rs_enum_t   enums[ RS_MAX_ENUMS ];
-    rs_frame_t  frames[ RS_MAX_FRAMES ];
+    rs_type_t   types       [ RS_MAX_TYPES ];
+    rs_field_t  fields      [ RS_MAX_FIELDS ];
+    rs_attrib_t attrs       [ RS_MAX_ATTRS ];
+    rs_enum_t   enums       [ RS_MAX_ENUMS ];
+    rs_frame_t  frames      [ RS_MAX_FRAMES ];
 
-    uint16_t    type_hash[ RS_TYPE_HASH_SIZE ];
+    uint16_t    type_hash[   RS_TYPE_HASH_SIZE ];
 
 } rs_registry_t;
 
@@ -84,14 +74,12 @@ typedef struct rs_registry_s
 #include "engine/rs/rs_serialize.c"
 #include "engine/rs/rs_print.c"
 
-/* rs_test.c is intentionally NOT part of the library unity build.
-   It is compiled as a separate TU in the test sandbox (sb_engine_core_reflect). */
+/* rs_test.c is compiled separately as part of sb_engine_reflect, not this library. */
 
-/*==============================================================================================
-    Module API struct
-==============================================================================================*/
+/*============================================================================================*/
 
-const rs_api_t g_rs_api_struct = {
+const rs_api_t g_rs_api_struct = 
+{
     .find_type_by_name  = rs_find_type_by_name,
     .get_type           = rs_get_type,
     .get_field          = rs_get_field,
@@ -116,7 +104,7 @@ const rs_api_t g_rs_api_struct = {
 };
 
 /*==============================================================================================
-    Module lifecycle
+    Type Record  (28 bytes)
 ==============================================================================================*/
 
 static bool
@@ -124,9 +112,8 @@ rs_mod_init( void* state, get_api_fn get_api )
 {
     UNUSED( state );
     UNUSED( get_api );
-    /* The registry self-bootstraps via rs_ensure_init() on first rs_register_module().
-       This callback is a no-op — its only purpose is to satisfy the mod lifecycle so
-       rs_api_t is published through the standard gateway. */
+    /* Registry self-bootstraps via rs_ensure_init() — this is a no-op whose only purpose
+       is to publish rs_api_t through the standard module gateway. */
     return true;
 }
 
@@ -136,10 +123,6 @@ rs_mod_exit( void* state )
     UNUSED( state );
     rs_exit();
 }
-
-/*==============================================================================================
-    Module descriptor
-==============================================================================================*/
 
 mod_desc_t*
 rs_get_mod_desc( void )
@@ -159,3 +142,4 @@ rs_get_mod_desc( void )
 }
 
 /*============================================================================================*/
+// clang-format on
