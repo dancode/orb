@@ -15,7 +15,6 @@
 /*============================================================================================*/
 
 #define SID_INVALID     ((sid_t){ 0u })
-#define SID( str )      sid_intern( str, strlen( str ));
 
 /*============================================================================================*/
 
@@ -56,11 +55,10 @@ typedef struct intern_state_s
 } intern_state_t;
 
 /*============================================================================================*/
-/* SID : HASHING (inline - zero plumbing, callable from any TU)                                */
+/* SID : INLINE HELPERS (stateless - callable from any TU, no link dependency)               */
 /*============================================================================================*/
 
-                                // case-insensitive FNV-1a, inlined so DLLs and codegen
-                                // can call it without going through engine_core symbols
+// case-insensitive FNV-1a: DLLs and codegen call this directly
 static inline uint32_t
 sid_hash( const char* s )
 {
@@ -87,57 +85,11 @@ sid_hash_len( const char* str, size_t len )
     return h;
 }
 
-/*============================================================================================*/
-/* SID : USAGE */
-/*============================================================================================*/
-
-                                // get C string from sid
-const char* sid_cstr            ( sid_t sid );
-
-                                // get length of interned string
-uint8_t     sid_length          ( sid_t sid );
-
-                                // compare two sids for equality
-bool        sid_equals          ( sid_t a, sid_t b );
-
-                                // check if string matches canonical case for given sid
-bool        sid_is_canonical    ( sid_t sid, const char* str, size_t len );
-
-                                // get hash of string entry
-uint32_t    sid_get_hash        ( sid_t sid );
-
-/*============================================================================================*/
-/* SID : INITIALIZATION */
-/*============================================================================================*/
-                    
-                                // initialize string interning system
-void        sid_init            ( void );
-
-                                // shutdown string interning system
-void        sid_exit            ( void );
-
-/*============================================================================================*/
-/* INTERNING */
-/*============================================================================================*/
-
-                                // intern string with given length
-sid_t       sid_intern          ( const char* str, int32_t len );
-
-                                // intern C string (null-terminated)
-sid_t       sid_intern_cstr     ( const char* str );
-
-                                // intern C string (null-terminated)
-sid_t       sid_find_cstr       ( const char* str );
-
-/*============================================================================================*/
-/* DEBUG UTILITY */
-/*============================================================================================*/
-
-                                // print statistics to given file (e.g., stdout)
-void        sid_print_stats     ( void* fp );
-
-                                // reset period statistics counters (usually never).
-void        sid_reset_stats     ( void );
+static inline bool
+sid_equals( sid_t a, sid_t b )
+{
+    return a.off == b.off;
+}
 
 /*============================================================================================*/
 #endif // SID_H

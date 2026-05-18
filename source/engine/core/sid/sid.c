@@ -232,13 +232,6 @@ sid_length( sid_t sid )
     return ( uint8_t )g_intern.arena.base[ sid.off - 1 ];
 }
 
-bool inline 
-sid_equals( sid_t a, sid_t b )
-{
-    // super faster comparison by sid value (offset)
-    return a.off == b.off;
-}
-
 bool
 sid_is_canonical( sid_t sid, const char* str, size_t len )
 {
@@ -373,12 +366,6 @@ sid_intern( const char* str, int32_t len )
         assert_msg( false, "Invalid string length for interning" );
         return SID_INVALID;
     }
-    if ( len == 0 )
-    {
-        // handle empty string with generic singleton
-        return sid_intern_cstr("");
-    }
-
     uint32_t hash        = sid_hash_len( str, len );    // case-insensitive hash
     uint32_t mask        = g_intern.table_size - 1;     // table size mask
     uint32_t slot        = hash & mask;                 // initial slot
@@ -720,10 +707,6 @@ hash_perf_test()
         sid_print_stats( stdout );
     }
 }
-
-// extern core_api_t*       g_api;
-// extern core_debug_api_t* g_debug_api;
-
 
 /*============================================================================================*/
 /*

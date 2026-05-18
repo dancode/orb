@@ -22,11 +22,11 @@ core_test( void )
 {    
     // intern_test();    // <-- test string interning system
    
-    sid_init();
-    sid_t a = sid_intern_cstr( "Hello, World!" );
-    sid_exit();
+    // sid_init();
+    // sid_t a = sid_intern_cstr( "Hello, World!" );
+    // sid_exit();
+    // UNUSED( a );
 
-    UNUSED( a );
     if ( 1 )
     {
         /// mem_test();           // <-- test memory system

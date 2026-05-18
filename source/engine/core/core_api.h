@@ -55,6 +55,17 @@ typedef struct core_api_s
     void* ( *realloc )( void* ptr, size_t size );
     void ( *free )( void* ptr );
 
+    /* sid */
+    sid_t       ( *sid_intern )       ( const char* str, int32_t len );
+    sid_t       ( *sid_intern_cstr )  ( const char* str );
+    sid_t       ( *sid_find_cstr )    ( const char* str );
+    const char* ( *sid_cstr )         ( sid_t sid );
+    uint8_t     ( *sid_length )       ( sid_t sid );
+    bool        ( *sid_is_canonical ) ( sid_t sid, const char* str, size_t len );
+    uint32_t    ( *sid_get_hash )     ( sid_t sid );
+    void        ( *sid_print_stats )  ( void* fp );
+    void        ( *sid_reset_stats )  ( void );
+
     /* cvar system */
     // cvar_find_fn cvar_find;
     // cvar_register_fn   cvar_register;

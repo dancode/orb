@@ -57,3 +57,9 @@ typedef uint16_t memtag_t;    // runtime-generated tag ID
 #include "engine/core/debug/assert.h"
 
 /*============================================================================================*/
+/* SID convenience macros — require core_api() to be live at call time                       */
+
+#define SID( str )       core_api()->sid_intern( ( str ), ( int32_t )strlen( str ) )
+#define SID_CSTR( str )  core_api()->sid_intern_cstr( str )
+
+/*============================================================================================*/

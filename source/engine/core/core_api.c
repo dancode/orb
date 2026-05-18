@@ -75,6 +75,16 @@ const core_api_t g_core_api_struct = {
     .realloc           = core_realloc,
     .free              = core_free,
 
+    .sid_intern        = sid_intern,
+    .sid_intern_cstr   = sid_intern_cstr,
+    .sid_find_cstr     = sid_find_cstr,
+    .sid_cstr          = sid_cstr,
+    .sid_length        = sid_length,
+    .sid_is_canonical  = sid_is_canonical,
+    .sid_get_hash      = sid_get_hash,
+    .sid_print_stats   = sid_print_stats,
+    .sid_reset_stats   = sid_reset_stats,
+
     // .cvar_find = cvar_find,
     // .cvar_register = cvar_register,
     // .cvar_get_int  = cvar_get_int,
