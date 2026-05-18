@@ -317,7 +317,7 @@ rg_output( const char* output_dir, const char* module_name, const rg_parse_data_
     fprintf( fh, "#include \"engine/rs/rs.h\"\n" );
     fprintf( fh, "\n" );
     fprintf( fh, "void %s_rs_register( const rs_reg_api_t* api );\n\n", module_name );
-    if ( data->module_api.has_module )
+    if ( data->module_api.has_module && data->module_api.func_count > 0 )
         emit_module_api_h( fh, module_name, &data->module_api );
     fprintf( fh, "#endif /* %s */\n", guard );
     fclose( fh );

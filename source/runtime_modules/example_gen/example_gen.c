@@ -46,11 +46,11 @@ example_gen_mod_exit( void* state )
 /*==============================================================================================
     API implementations
 ==============================================================================================*/
-// RS_API() void
-// test_function_one( void )
-// {
-//     return;
-// }
+RS_API() void
+test_function_one( void )
+{
+    return;
+}
 
 // 
 // RS_API()
