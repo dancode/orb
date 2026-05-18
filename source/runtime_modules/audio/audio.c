@@ -6,7 +6,7 @@
 
     This module is always compiled into the exe.  Dynamic DLLs that depend on audio
     call sys->get_api("audio") in their init() to receive a pointer to g_audio_api_struct.
-    In static builds, callers who include audio_api.h resolve audio_api() directly to
+    In static builds, callers who include audio_api.h resolve audio() directly to
     &g_audio_api_struct at link time — no pointer indirection, LTO-visible.
 
     PROVIDER PATTERN:

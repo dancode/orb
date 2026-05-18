@@ -5,7 +5,7 @@
     Windowed, hot-reloadable, console-assisted. The primary development environment:
     edit a module, rebuild the DLL, watch it swap in while the window keeps running.
 
-    The window close button quits via app_api()->pump_events() returning false.
+    The window close button quits via app()->pump_events() returning false.
     Q on the keyboard is an alternative quit for keyboard-first workflows.
 
     Loop:  RUN_LOOP_RUN
@@ -56,15 +56,15 @@ editor_update( f32 dt )
     }
 
     if ( sys_key_pressed( PLATFORM_KEY_F ) )
-        example_api()->fail_next_reload();
+        example()->fail_next_reload();
 
     if ( sys_key_pressed( PLATFORM_KEY_V ) )
     {
         printf( "[editor] V — verify\n" );
-        example_api()->example_function_1();
+        example()->example_function_1();
     }
 
-    example_api()->update( dt );
+    example()->update( dt );
 }
 
 /*==============================================================================================

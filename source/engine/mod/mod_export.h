@@ -108,36 +108,40 @@ typedef struct mod_desc_s
     mod_reload_fn reload;
 
     /* Optional reflection entry point — opaque to the mod system.
-       Set to the generated <name>_rs_register (via MOD_RS_REGISTER) when the module
+       Set to the generated <name>_rs_register (via MOD_REFLECT_FUNC) when the module
        has reflected types; NULL otherwise. The pointer lives in the same image as the
        desc — exe for statics, DLL for dynamics — so calling through it works for both
-       build modes with no symbol lookup. See MOD_RS_REGISTER below. */
+       build modes with no symbol lookup. See MOD_REFLECT_FUNC below. */
 
     const void* rs_register; /* void (*)( const rs_reg_api_t* ) or NULL */
 
 } mod_desc_t;
 
 /*==============================================================================================
-    MOD_RS_REGISTER — Wire a module's reflection into its mod_desc_t.
+    MOD_API_FUNC / MOD_REFLECT_FUNC — Wire a module's exports into its mod_desc_t.
 
-    The generated <name>.generated.h declares <name>_rs_register; this macro packs it into
-    the descriptor without forcing mod_export.h to include rs.h. Identical line for static
-    and dynamic modules — the function pointer always lives in the same image as the desc,
-    so no DLL symbol lookup is needed.
+    MOD_API_FUNC( name )     — points func_api at the generated g_<name>_api_struct.
+    MOD_REFLECT_FUNC( name ) — points rs_register at the generated <name>_rs_register.
+
+    Both macros cast to const void* so mod_export.h stays independent of rs.h and the
+    generated headers. The function pointers always live in the same image as the desc
+    (exe for statics, DLL for dynamics) — no symbol lookup needed in either build mode.
 
     Usage:
 
-        #include "<name>.generated.h"        // declares <name>_rs_register
+        #include "<name>.generated.h"
 
         static mod_desc_t s_<name>_mod_desc = {
             .version       = 1,
-            .func_api      = &g_<name>_api_struct,
-            .rs_register   = MOD_RS_REGISTER( <name> ),
+            .func_api      = MOD_API_FUNC( <name> ),
+            .func_api_size = sizeof( <name>_api_t ),
+            .rs_register   = MOD_REFLECT_FUNC( <name> ),
             ...
         };
 ==============================================================================================*/
 
-#define MOD_RS_REGISTER( name ) ( ( const void* )( name##_rs_register ) )
+#define MOD_API_FUNC( name )     ( ( const void* )( &g_##name##_api_struct ) )
+#define MOD_REFLECT_FUNC( name ) ( ( const void* )( name##_rs_register ) )
 
 /* DLL entry-point typedef resolved via LoadLibrary / dlopen. */
 typedef mod_desc_t* ( *get_mod_desc_fn )( void );

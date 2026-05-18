@@ -16,7 +16,7 @@
     modules it manages (app, render) and calls them by name. It does NOT iterate
     the dep graph generically — each module call is intentional.
 
-        [pump OS events] <- app_api()->pump_events() — false = window closed (when app is loaded)
+        [pump OS events] <- app()->pump_events() — false = window closed (when app is loaded)
         [console poll]   <- sys, if RUN_HOST_CONSOLE
         [clock update]   <- run_clock_update() — stamps app_time, dt, frame_number
         [on_update]      <- desc callback — host-level logic, game bootstrap
@@ -32,14 +32,14 @@
     Callbacks
     ---------
     on_ready  : called once after mod_init_all() and window creation (if windowed).
-                Use for one-time setup — render_api() and app_api() are live here.
+                Use for one-time setup — render() and app() are live here.
     on_update : called every frame, after clock update, before render.
-                Receives f32 dt (capped, time-scaled). Call run_api()->clock() for
+                Receives f32 dt (capped, time-scaled). Call run()->clock() for
                 richer timing (app_time, frame_number, time_scale, dt_real).
 
     Quit
     ----
-    Windowed:  app_api()->pump_events() returning false breaks the loop.
+    Windowed:  app()->pump_events() returning false breaks the loop.
     Headless:  run_host_quit() sets a flag checked at the top of each frame.
     Both paths lead to the same clean shutdown: mod_system_exit() in reverse dep order.
 

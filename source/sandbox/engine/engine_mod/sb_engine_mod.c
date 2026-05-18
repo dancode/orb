@@ -48,7 +48,7 @@ module_test( void )
     mod_list_all();
 
     MOD_HOST_FETCH_API( example_api_t, example );
-    example_api()->example_function_1();
+    example()->example_function_1();
 
     /* ---- console input ----------------------------------------------- */
 
@@ -94,7 +94,7 @@ module_test( void )
         if ( sys_key_pressed( PLATFORM_KEY_F ) )
         {
             printf( "[host] F key pressed - arming reload failure\n" );
-            example_api()->fail_next_reload();
+            example()->fail_next_reload();
 
             bool reload_ok = dev_hot_reload( "example" );
             printf( "[host] dev_hot_reload returned %s (expected: false)\n", reload_ok ? "true" : "false" );
@@ -102,14 +102,14 @@ module_test( void )
             /* If snapshot_rollback worked, the old DLL is still loaded and these calls succeed.
                Without the snapshot_rollback fix, this would dereference an unloaded library. */
             printf( "[host] post-rollback sanity check - calling example_function_1():\n" );
-            example_api()->example_function_1();
-            example_api()->example_function_2( 42 );
+            example()->example_function_1();
+            example()->example_function_2( 42 );
         }
         if ( sys_key_pressed( PLATFORM_KEY_V ) )
         {
-            printf( "[host] V key pressed - calling cached example_api()\n" );
-            example_api()->example_function_1();
-            example_api()->example_function_2( 99 );
+            printf( "[host] V key pressed - calling cached example()\n" );
+            example()->example_function_1();
+            example()->example_function_2( 99 );
             printf( "[host] cached pointer still valid\n" );
         }
         if ( sys_key_pressed( PLATFORM_KEY_Q ) )
@@ -120,7 +120,7 @@ module_test( void )
 
         /* --- simulation ------------------------------------------------ */
 
-        example_api()->update( dt );
+        example()->update( dt );
 
         /* --- file-watch detection (queues debounced reloads) ----------- */
 

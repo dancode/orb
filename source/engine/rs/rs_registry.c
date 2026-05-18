@@ -636,7 +636,7 @@ rs_finalize_frame( uint16_t frame_id )
     Module reflection integration
 
     One unified path for both static and dynamic modules. The mod_desc_t.rs_register slot
-    holds the generated <name>_rs_register function pointer (set via MOD_RS_REGISTER).
+    holds the generated <name>_rs_register function pointer (set via MOD_REFLECT_FUNC).
     The pointer lives in the same image as the desc — exe for statics, DLL for dynamics —
     so calling through it requires no symbol lookup.
 ==============================================================================================*/

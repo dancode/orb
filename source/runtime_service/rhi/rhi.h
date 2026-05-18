@@ -5,7 +5,7 @@
     Single public header following the core.h / app.h pattern. Exposes opaque
     handle types, the API struct, and the gateway accessor. Every implementation
     function is static inside rhi.c's unity build; the only way to reach the RHI
-    is through rhi_api()->...
+    is through rhi()->...
 
     Backend
     -------
@@ -66,7 +66,7 @@ typedef struct rhi_api_s
 {
     /* ---- Lifecycle ----
        init() needs the native window handle (HWND on Windows) to create a
-       presentation surface. Call AFTER app_api()->window_create() succeeds. */
+       presentation surface. Call AFTER app()->window_create() succeeds. */
 
     bool ( *init     )( void* native_window_handle );
     void ( *shutdown )( void );

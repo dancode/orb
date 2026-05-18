@@ -39,8 +39,8 @@
     ----------
     Call sites are identical in both build modes:
 
-        Static:  render_api()->begin_frame();   // zero-cost; LTO-devirtualizable
-        Dynamic: render_api()->begin_frame();   // one pointer load
+        Static:  render()->begin_frame();   // zero-cost; LTO-devirtualizable
+        Dynamic: render()->begin_frame();   // one pointer load
 
     See MOD_GATEWAY_STATIC / MOD_GATEWAY_DYNAMIC in mod.h.
 

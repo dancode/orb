@@ -44,7 +44,7 @@ void core_assert_set_skip( bool skip );
     {                                                                                   \
         if ( ORB_UNLIKELY( !( cond ) ) )                                                \
         {                                                                               \
-            if ( !core_api()->assert_report( #cond, NULL, __FILE__, __LINE__ ) )        \
+            if ( !core()->assert_report( #cond, NULL, __FILE__, __LINE__ ) )        \
                 ORB_TRAP();                                                             \
         }                                                                               \
     } while ( 0 )
@@ -54,7 +54,7 @@ void core_assert_set_skip( bool skip );
     {                                                                                   \
         if ( ORB_UNLIKELY( !( cond ) ) )                                                \
         {                                                                               \
-            if ( !core_api()->assert_report( #cond, ( msg ), __FILE__, __LINE__ ) )     \
+            if ( !core()->assert_report( #cond, ( msg ), __FILE__, __LINE__ ) )     \
                 ORB_TRAP();                                                             \
         }                                                                               \
     } while ( 0 )

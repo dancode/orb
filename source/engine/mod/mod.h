@@ -12,7 +12,7 @@
 
     MOD_GATEWAY_STATIC( type, name )
         Static build: declares g_<name>_api_struct as extern and returns its address directly.
-        LTO can devirtualize: render_api()->draw(dt) becomes a direct call with no indirection.
+        LTO can devirtualize: render()->draw(dt) becomes a direct call with no indirection.
 
         Provider .c must define:
             const <name>_api_t g_<name>_api_struct = { .func = internal_func, ... };
@@ -22,8 +22,8 @@
 
         Provider .c must get the pointer in init() via MOD_FETCH_API.
 
-    Both macros emit an identical inline accessor: <name>_api()
-    Call sites are identical in both builds: render_api()->begin_frame()
+    Both macros emit an identical inline accessor: <name>()
+    Call sites are identical in both builds: render()->begin_frame()
 
     Example: 
     
@@ -45,17 +45,17 @@
 typedef struct mod_desc_s mod_desc_t;
 
 /* STATIC: every TU sees the struct directly. LTO can devirtualize the call. */
-#define MOD_GATEWAY_STATIC( type, name )                                            \
-    typedef struct mod_desc_s mod_desc_t;                                           \
-    extern const type         g_##name##_api_struct;                                \
-    static inline const type* name##_api( void ) { return &g_##name##_api_struct; } \
+#define MOD_GATEWAY_STATIC( type, name )                                         \
+    typedef struct mod_desc_s mod_desc_t;                                        \
+    extern const type         g_##name##_api_struct;                             \
+    static inline const type* name( void ) { return &g_##name##_api_struct; }   \
     mod_desc_t*               name##_get_mod_desc( void );
 
 /* DYNAMIC: every TU reads through a cached pointer populated during init(). */
 #define MOD_GATEWAY_DYNAMIC( type, name )         \
     typedef struct mod_desc_s mod_desc_t;         \
     extern const type*        g_##name##_api_ptr; \
-    static inline const type* name##_api( void ) { return g_##name##_api_ptr; }
+    static inline const type* name( void ) { return g_##name##_api_ptr; }
 
 /*==============================================================================================
     MOD_DEFINE_API_PTR — Allocates cached pointer storage in a consuming .c file.

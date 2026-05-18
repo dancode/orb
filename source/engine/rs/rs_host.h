@@ -12,7 +12,7 @@
 
         static mod_desc_t s_<name>_mod_desc = {
             .func_api    = &g_<name>_api_struct,
-            .rs_register = MOD_RS_REGISTER( <name> ),
+            .rs_register = MOD_REFLECT_FUNC( <name> ),
             ...
         };
 

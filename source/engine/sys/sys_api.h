@@ -4,7 +4,7 @@
 
     sys_api.h — sys module API struct and gateway macro.
 
-    Consumers call sys_api()->tick_seconds() etc.
+    Consumers call sys()->tick_seconds() etc.
     sys is always statically linked, so MOD_GATEWAY_STATIC is used unconditionally.
 
 ==============================================================================================*/

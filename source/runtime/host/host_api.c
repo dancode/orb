@@ -5,7 +5,7 @@
     Maintains the authoritative frame clock. host.c calls run_clock_update() once
     per frame before dispatching on_update. The capping and time-scale logic lives
     here so the host loop stays minimal. Modules that need more than a plain f32 dt
-    can call run_api()->clock() to read app_time, frame_number, time_scale, etc.
+    can call run()->clock() to read app_time, frame_number, time_scale, etc.
 
 ==============================================================================================*/
 /*==============================================================================================

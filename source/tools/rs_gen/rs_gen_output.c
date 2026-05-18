@@ -5,7 +5,7 @@
     Output shape: ONE `void {module}_rs_register( const rs_reg_api_t* api )` per module,
     emitted as imperative registration calls using the rs_ low-level API directly.
 
-    Modules wire the generated function into their mod_desc_t via MOD_RS_REGISTER. The
+    Modules wire the generated function into their mod_desc_t via MOD_REFLECT_FUNC. The
     host's rs_register_module() reads desc->rs_register and calls it directly — same
     path for static and dynamic builds. No DLL symbol lookup, no descriptor types, no
     string tables.

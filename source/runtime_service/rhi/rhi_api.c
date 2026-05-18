@@ -129,7 +129,7 @@ rhi_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
     UNUSED( get_api );
-    /* Real device init happens in rhi_api()->init() once the host calls it with
+    /* Real device init happens in rhi()->init() once the host calls it with
        a window handle. Nothing to do here. */
     return true;
 }

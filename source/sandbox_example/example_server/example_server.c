@@ -51,16 +51,16 @@ server_update( f32 dt )
 
     /* F — arm example to fail its next reload (tests rollback) */
     if ( sys_key_pressed( PLATFORM_KEY_F ) )
-        example_api()->fail_next_reload();
+        example()->fail_next_reload();
 
     /* V — verify the cached API pointer is still live */
     if ( sys_key_pressed( PLATFORM_KEY_V ) )
     {
         printf( "[server] verify - calling example\n" );
-        example_api()->example_function_1();
+        example()->example_function_1();
     }
 
-    example_api()->update( dt );
+    example()->update( dt );
 }
 
 /*==============================================================================================

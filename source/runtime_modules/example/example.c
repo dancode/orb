@@ -100,7 +100,7 @@ example_mod_init( void* raw_state, get_api_fn get_api )
     //     return false;
 
     /* local api is already available */
-    example_api()->example_function_1();
+    example()->example_function_1();
 
     /* core api is available after fetch in init() */
     example_state->example_init = true;

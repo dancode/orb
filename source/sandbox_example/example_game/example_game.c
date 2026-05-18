@@ -3,7 +3,7 @@
     sandbox_game_main.c — SHIPPED GAME shape.
 
     Windowed, no hot-reload, no console. The only quit path is the OS window close
-    button, routed through app_api()->pump_events() returning false. No developer
+    button, routed through app()->pump_events() returning false. No developer
     features, no operator keyboard shortcuts.
 
     on_update drives the simulation: physics then gameplay, in the order that matters.
@@ -40,7 +40,7 @@ game_ready( void )
 static void
 game_update( f32 dt )
 {
-    /* physics_api()->update( dt );
+    /* physics()->update( dt );
        sample_game_api()->update( dt ); */
     UNUSED( dt );
 }

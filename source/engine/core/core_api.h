@@ -4,7 +4,7 @@
 
     engine/core/core_api.h - core module API struct and gateway macro.
 
-    Consumers call core_api()->log_info(...) etc.
+    Consumers call core()->log_info(...) etc.
     core is always statically linked, but the conditional below preserves the
     pattern in case a future build mode pulls core out into a DLL.
 

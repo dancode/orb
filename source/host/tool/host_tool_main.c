@@ -64,7 +64,7 @@ run_reflection_gen( tool_ctx_t* ctx )
     if ( !mod_init_all() )
         return 1;
 
-    core_api()->log( "reflection_gen: would parse %s and emit reflection tables",
+    core()->log( "reflection_gen: would parse %s and emit reflection tables",
                      ctx->argc > 2 ? ctx->argv[ 2 ] : "<missing input>" );
     return 0;
 }
@@ -82,14 +82,14 @@ run_asset_bake( tool_ctx_t* ctx )
     // if ( !MOD_HOST_FETCH_API( render_api_t, render ) )
     //    return 1;
     //
-    // core_api()->log( "asset_bake: starting (target frames-rendered API works: %d)", render_api()->frame_count() );
+    // core()->log( "asset_bake: starting (target frames-rendered API works: %d)", render()->frame_count() );
     // 
     // /* Pretend we baked a few assets — drive the API once to prove it's wired. */
-    // render_api()->begin_frame();
-    // render_api()->draw( 0.f );
-    // render_api()->end_frame();
+    // render()->begin_frame();
+    // render()->draw( 0.f );
+    // render()->end_frame();
     // 
-    // core_api()->log( "asset_bake: done (%d 'frames' processed)", render_api()->frame_count() );
+    // core()->log( "asset_bake: done (%d 'frames' processed)", render()->frame_count() );
     UNUSED( ctx );
     return 0;
 }

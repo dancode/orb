@@ -7,7 +7,7 @@
 
     Initialization is two-phase:
         - rhi_mod_init  (cheap, called by module system at mod_init_all time)
-        - rhi_api()->init( hwnd )  (real, called by host after window exists)
+        - rhi()->init( hwnd )  (real, called by host after window exists)
 
     The split exists because Vulkan surface creation needs a window handle, and
     we want the module system load to remain side-effect-free.

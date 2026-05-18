@@ -4,7 +4,7 @@
 
     render.h — Public API exported by the renderer module.
 
-    Consumers include this header and call render_api()->begin_frame() etc.
+    Consumers include this header and call render()->begin_frame() etc.
 
 ==============================================================================================*/
 

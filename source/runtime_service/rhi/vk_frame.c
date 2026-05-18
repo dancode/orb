@@ -2,7 +2,7 @@
 
     vulkan/vk_frame.c — Per-frame orchestration.
 
-    Implements rhi_api()->frame_begin and frame_end. These are the only RHI
+    Implements rhi()->frame_begin and frame_end. These are the only RHI
     functions called every frame, so the per-frame Vulkan choreography lives
     here. cmd_* recording functions (currently just cmd_clear_color) also live
     here in v0; when there are more commands they'll move to dedicated files.

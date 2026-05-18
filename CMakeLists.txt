@@ -272,7 +272,7 @@ function( target_add_reflect_gen TARGET_NAME SOURCE_DIR MODULE_NAME )
     set( GEN_DIR  "${CMAKE_BINARY_DIR}/generated" )
     set( GEN_H    "${GEN_DIR}/${MODULE_NAME}.generated.h" )
     set( GEN_C    "${GEN_DIR}/${MODULE_NAME}.generated.c" )
-    set( GEN_INC  "${GEN_DIR}/${MODULE_NAME}.gen_desc.inc" )
+  # set( GEN_INC  "${GEN_DIR}/${MODULE_NAME}.gen_desc.inc" )
 
     file( MAKE_DIRECTORY "${GEN_DIR}" )
     file( GLOB_RECURSE RS_HEADERS "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}/*.h" )

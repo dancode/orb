@@ -2,7 +2,7 @@
 
     render.c — Renderer front-end module (hot-reloadable DLL).
 
-    Sits on top of the RHI. Consumes rhi_api() for all GPU calls; exposes a
+    Sits on top of the RHI. Consumes rhi() for all GPU calls; exposes a
     simple begin/draw/end frame surface to the host. State (clear color, frame
     counter, in-flight command list) persists across reloads.
 
@@ -10,11 +10,11 @@
     --------
         rhi (static service)     <- Vulkan backend, swap-chain aware
             ^
-            | rhi_api()->...
+            | rhi()->...
             |
         render (this DLL)        <- high-level framing, hot-reloadable
             ^
-            | render_api()->...
+            | render()->...
             |
         host_main on_update      <- calls begin_frame / draw_frame / end_frame
 
@@ -63,7 +63,7 @@ render_begin_frame_impl( void )
     if ( !g_state )
         return;
 
-    g_state->cmd = rhi_api()->frame_begin();
+    g_state->cmd = rhi()->frame_begin();
     /* NULL means the swap chain is not ready this frame (resize pending, etc.).
        draw_frame and end_frame both guard on cmd != NULL. */
 }
@@ -75,7 +75,7 @@ render_draw_frame_impl( float dt )
         return;
 
     g_state->total_time += dt;
-    rhi_api()->cmd_clear_color( g_state->cmd,
+    rhi()->cmd_clear_color( g_state->cmd,
                                 g_state->clear_r,
                                 g_state->clear_g,
                                 g_state->clear_b,
@@ -90,7 +90,7 @@ render_end_frame_impl( void )
 
     if ( g_state->cmd )
     {
-        rhi_api()->frame_end();
+        rhi()->frame_end();
         g_state->cmd = NULL;
     }
 
@@ -151,7 +151,7 @@ render_init( void* raw_state, get_api_fn get_api )
     g_state->clear_b = 0.14f;
     g_state->clear_a = 1.0f;
 
-    // core_api()->log( "render: init (state=%p)", ( void* )g_state );
+    // core()->log( "render: init (state=%p)", ( void* )g_state );
     return true;
 }
 
@@ -170,7 +170,7 @@ render_reload( void* raw_state, get_api_fn get_api )
         return false;
     }
 
-    core_api()->log( "render: reloaded (frames so far = %d)", g_state->frame_count );
+    core()->log( "render: reloaded (frames so far = %d)", g_state->frame_count );
     return true;
 }
 
@@ -178,8 +178,8 @@ static void
 render_exit( void* raw_state )
 {
     UNUSED( raw_state );
-    if ( core_api() )
-        core_api()->log( "render: exit" );
+    if ( core() )
+        core()->log( "render: exit" );
 }
 
 /*==============================================================================================

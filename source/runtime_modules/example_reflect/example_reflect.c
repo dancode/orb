@@ -13,9 +13,10 @@
 #include "engine/mod/mod_export.h"
 
 #include "runtime_modules/example_reflect/example_reflect.h"
-#include "example_reflect.generated.h"   /* declares example_reflect_rs_register */
-
+#include "example_reflect.generated.h"
 #include <string.h>
+
+// RS_MODULE( example_reflect )
 
 /*==============================================================================================
     Persistent state
@@ -67,21 +68,22 @@ populate_demo( example_reflect_state_t* st )
     API implementations
 ==============================================================================================*/
 
-static const ex_entity_t*
+RS_API() 
+const ex_entity_t*
 api_demo_entity( void )
 {
     return s ? &s->demo : NULL;
 }
 
-const example_reflect_api_t g_example_reflect_api_struct = {
-    .demo_entity = api_demo_entity,
-};
+// const example_reflect_api_t g_example_reflect_api_struct = {
+//     .demo_entity = api_demo_entity,
+// };
 
 /*==============================================================================================
     Lifecycle callbacks
 ==============================================================================================*/
 
-static bool
+bool
 example_reflect_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
@@ -90,7 +92,7 @@ example_reflect_mod_init( void* raw_state, get_api_fn get_api )
     return true;
 }
 
-static bool
+bool
 example_reflect_mod_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
@@ -98,11 +100,18 @@ example_reflect_mod_reload( void* raw_state, get_api_fn get_api )
     return true;
 }
 
-static void
+void
 example_reflect_mod_exit( void* raw_state )
 {
     UNUSED( raw_state );
 }
+
+RS_API() int 
+this_is_a_function()
+{
+    return 123;
+}
+
 
 /*==============================================================================================
     Module descriptor
@@ -121,7 +130,7 @@ example_reflect_get_mod_desc( void )
         .init          = example_reflect_mod_init,
         .reload        = example_reflect_mod_reload,
         .exit          = example_reflect_mod_exit,
-        .rs_register   = MOD_RS_REGISTER( example_reflect ),
+        .rs_register   = MOD_REFLECT_FUNC( example_reflect ),
     };
     return &api;
 }

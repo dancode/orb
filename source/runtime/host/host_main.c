@@ -32,11 +32,11 @@
 
     Frame timing
     ------------
-    sys_api()->tick_seconds() returns a stable monotonic clock from engine init.
+    sys()->tick_seconds() returns a stable monotonic clock from engine init.
     The host diffs two readings to compute raw dt each frame, then hands it to
     run_clock_update() which caps it, applies time_scale, and stamps frame_number.
     Callbacks receive f32 dt (capped, scaled). Richer timing is available via
-    run_api()->clock() from any module that depends on "run".
+    run()->clock() from any module that depends on "run".
 
     API slot stability
     ------------------
@@ -72,10 +72,10 @@ run_host_should_quit( void )
                           (no-op in BUILD_STATIC; struct is linked directly)
 
     In static/monolithic builds:
-        app_api() == &g_app_api_struct  — direct address, LTO can devirtualize call sites.
+        app() == &g_app_api_struct  — direct address, LTO can devirtualize call sites.
 
     In dynamic builds:
-        app_api() == g_app_api_ptr      — cached by MOD_HOST_FETCH_API; NULL if not loaded.
+        app() == g_app_api_ptr      — cached by MOD_HOST_FETCH_API; NULL if not loaded.
         The null path handles headless hosts that don't include app in their module list.
 ==============================================================================================*/
 
@@ -158,7 +158,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     }
 
     /* Single dep-ordered init pass. Every reflected module's init() can already query
-       its own types via rs_api() — the load callback pushed each frame on its way in. */
+       its own types via rs() — the load callback pushed each frame on its way in. */
     if ( !mod_init_all() )
     {
         fprintf( stderr, "[host] init failed: %s\n", mod_last_error() );
@@ -168,7 +168,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
-       MOD_HOST_FETCH_API in static builds:  no-op — app_api() / render_api() return the
+       MOD_HOST_FETCH_API in static builds:  no-op — app() / render() return the
                                          linked struct directly.
        MOD_HOST_FETCH_API in dynamic builds: populates g_*_api_ptr from the module registry.
                                          Returns NULL when the module is absent — headless
@@ -181,17 +181,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*
-       If app was declared in k_modules, app_api() is non-NULL here and we
+       If app was declared in k_modules, app() is non-NULL here and we
        create a window. No separate flag — the module list is the declaration.
     */
-    const bool windowed = ( app_api() != NULL );
+    const bool windowed = ( app() != NULL );
 
     if ( windowed )
     {
         const i32 w = desc->window_width  > 0 ? desc->window_width  : 1280;
         const i32 h = desc->window_height > 0 ? desc->window_height : 720;
 
-        s_win_id = app_api()->window_open( desc->name ? desc->name : "orb", 0, 0, w, h, APP_WIN_DEFAULT );
+        s_win_id = app()->window_open( desc->name ? desc->name : "orb", 0, 0, w, h, APP_WIN_DEFAULT );
         if ( s_win_id == APP_WIN_INVALID )
         {
             fprintf( stderr, "[host] window creation failed\n" );
@@ -199,14 +199,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             return 1;
         }
 
-        if ( rhi_api() )
+        if ( rhi() )
         {
-            void* hwnd = app_api()->window_handle( s_win_id );
-            app_api()->window_set_paint( s_win_id, false );
-            if ( !rhi_api()->init( hwnd ) )
+            void* hwnd = app()->window_handle( s_win_id );
+            app()->window_set_paint( s_win_id, false );
+            if ( !rhi()->init( hwnd ) )
             {
                 fprintf( stderr, "[host] rhi init failed\n" );
-                app_api()->window_close( s_win_id );
+                app()->window_close( s_win_id );
                 mod_system_exit();
                 return 1;
             }
@@ -236,23 +236,23 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- loop -------------------------------------------------------- */
 
-    f64 last_tick = sys_api()->tick_seconds();
+    f64 last_tick = sys()->tick_seconds();
 
     while ( !g_quit_requested )
     {
         /* -- pump OS events (windowed) ---------------------------------- */
 
-        if ( windowed && !app_api()->pump_events() )
+        if ( windowed && !app()->pump_events() )
             break;
 
         /* -- frame clock ------------------------------------------------ */
 
-        f64 now      = sys_api()->tick_seconds();
+        f64 now      = sys()->tick_seconds();
         f32 dt_real  = ( f32 )( now - last_tick );
         last_tick    = now;
 
         run_clock_update( now, dt_real );           /* caps, scales, stamps frame_number */
-        f32 dt = run_api()->clock()->dt;            /* capped + scaled — pass to callbacks */
+        f32 dt = run()->clock()->dt;            /* capped + scaled — pass to callbacks */
 
         /* -- console key state ------------------------------------------ */
 
@@ -269,11 +269,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- render ------------------------------------------------------ */
 
-        if ( windowed && render_api() )
+        if ( windowed && render() )
         {
-            render_api()->begin_frame();
-            render_api()->draw_frame( dt );
-            render_api()->end_frame();
+            render()->begin_frame();
+            render()->draw_frame( dt );
+            render()->end_frame();
         }
 
         /* -- hot-reload -------------------------------------------------- */
@@ -291,17 +291,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- frame pacing ------------------------------------------------ */
 
-        sys_api()->sleep_milliseconds( frame_ms );
+        sys()->sleep_milliseconds( frame_ms );
     }
 
     /* ---- shutdown ---------------------------------------------------- */
 
     /* RHI destroys the Vulkan surface — must happen before the window (HWND) is destroyed. */
-    if ( rhi_api() )
-        rhi_api()->shutdown();
+    if ( rhi() )
+        rhi()->shutdown();
 
-    if ( windowed && app_api() && s_win_id != APP_WIN_INVALID )
-        app_api()->window_close( s_win_id );
+    if ( windowed && app() && s_win_id != APP_WIN_INVALID )
+        app()->window_close( s_win_id );
 
     if ( console )
         sys_console_input_shutdown();

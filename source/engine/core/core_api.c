@@ -131,7 +131,7 @@ core_get_mod_desc( void )
         .init          = core_mod_init,
         .exit          = core_mod_exit,
         .reload        = NULL,
-        .rs_register   = MOD_RS_REGISTER( engine_core ),        
+        .rs_register   = MOD_REFLECT_FUNC( engine_core ),
     };
     return &api;
 }

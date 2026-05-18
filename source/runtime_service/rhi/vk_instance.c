@@ -24,7 +24,7 @@ vk_instance_create( void )
        5. vkCreateInstance → g_vk.instance.
        6. Load instance-level function pointers (volk, or manual vkGetInstanceProcAddr).
        7. In debug, vkCreateDebugUtilsMessengerEXT with a callback that routes
-          severity≥WARNING through printf for now (later: core_api()->log_warn). */
+          severity≥WARNING through printf for now (later: core()->log_warn). */
 
     return true;
 }

@@ -187,13 +187,13 @@ print_event( const app_event_t* ev )
 static void
 print_state_full( win_id_t id )
 {
-    if ( !app_api()->window_is_valid( id ) )
+    if ( !app()->window_is_valid( id ) )
     {
         printf( "[win %d]  (invalid)\n", id );
         return;
     }
 
-    app_win_state_t s = app_api()->window_state( id );
+    app_win_state_t s = app()->window_state( id );
     printf( "[win %d]  %s  %s  %s  %s  %s  %s  %s  %s\n", id,
             s.focused    ? "+focus"   : "-focus",
             s.minimized  ? "+min"     : "-min",
@@ -205,15 +205,15 @@ print_state_full( win_id_t id )
             s.hidden     ? "+hidden"  : "-hidden" );
 
     i32 mx = 0, my = 0;
-    app_api()->mouse_position( &mx, &my );
+    app()->mouse_position( &mx, &my );
     printf( "         mouse (%d,%d)  L:%s R:%s M:%s X1:%s X2:%s  paint:%s\n",
             mx, my,
-            app_api()->mouse_button_down( APP_MOUSE_LEFT   ) ? "1" : "0",
-            app_api()->mouse_button_down( APP_MOUSE_RIGHT  ) ? "1" : "0",
-            app_api()->mouse_button_down( APP_MOUSE_MIDDLE ) ? "1" : "0",
-            app_api()->mouse_button_down( APP_MOUSE_X1     ) ? "1" : "0",
-            app_api()->mouse_button_down( APP_MOUSE_X2     ) ? "1" : "0",
-            app_api()->window_paint_enabled( id ) ? "on" : "off" );
+            app()->mouse_button_down( APP_MOUSE_LEFT   ) ? "1" : "0",
+            app()->mouse_button_down( APP_MOUSE_RIGHT  ) ? "1" : "0",
+            app()->mouse_button_down( APP_MOUSE_MIDDLE ) ? "1" : "0",
+            app()->mouse_button_down( APP_MOUSE_X1     ) ? "1" : "0",
+            app()->mouse_button_down( APP_MOUSE_X2     ) ? "1" : "0",
+            app()->window_paint_enabled( id ) ? "on" : "off" );
 }
 
 /* Prints only bits within mask that changed between prev and now. */
@@ -348,9 +348,9 @@ print_menu( void )
 static void
 close_extra_win( void )
 {
-    if ( app_api()->window_is_valid( g_extra_win ) )
+    if ( app()->window_is_valid( g_extra_win ) )
     {
-        app_api()->window_close( g_extra_win );
+        app()->window_close( g_extra_win );
         printf( "[info] closed extra window\n" );
     }
     g_extra_win  = APP_WIN_INVALID;
@@ -361,7 +361,7 @@ static void
 leave_mode( test_mode_t m )
 {
     if ( m == MODE_KEYS_TEXT )
-        app_api()->key_repeat_set( false );
+        app()->key_repeat_set( false );
     if ( m == MODE_MULTI_WIN )
         close_extra_win();
 }
@@ -373,7 +373,7 @@ enter_mode( test_mode_t m )
 
     /* flush stale ring events so the new mode starts clean */
     app_event_t discard;
-    while ( app_api()->next_event( &discard ) ) {}
+    while ( app()->next_event( &discard ) ) {}
 
     g_mode = m;
     printf( "\n" );
@@ -417,7 +417,7 @@ enter_mode( test_mode_t m )
             printf( "  Try:      LAlt vs RAlt, LCtrl vs RCtrl -- same left/right distinction\n" );
             printf( "  NOTE:     Alt+F4 and Alt+Enter are consumed before this ring\n" );
             printf( "  S = full snapshot   ESC = back to menu\n" );
-            app_api()->key_repeat_set( false );
+            app()->key_repeat_set( false );
             break;
 
         case MODE_KEYS_TEXT:
@@ -429,7 +429,7 @@ enter_mode( test_mode_t m )
             printf( "  NOTE:     initial delay and repeat rate are OS keyboard settings\n" );
             printf( "  NOTE:     repeat = UP then DOWN pair per tick so key_pressed re-fires\n" );
             printf( "  S = full snapshot   ESC = back to menu\n" );
-            app_api()->key_repeat_set( true );
+            app()->key_repeat_set( true );
             break;
 
         case MODE_CHAR_INPUT:
@@ -506,13 +506,13 @@ enter_mode( test_mode_t m )
             printf( "  Try:      close extra via X -- WIN_CLOSE fires; O reopens it\n" );
             printf( "  NOTE:     each event line shows win_id so you can tell which window fired\n" );
             printf( "  O = reopen extra   S = full snapshot   ESC = back to menu\n" );
-            if ( !app_api()->window_is_valid( g_extra_win ) )
+            if ( !app()->window_is_valid( g_extra_win ) )
             {
-                g_extra_win = app_api()->window_open( "sb_engine_app: extra", 120, 80, 480, 320,
+                g_extra_win = app()->window_open( "sb_engine_app: extra", 120, 80, 480, 320,
                                                       APP_WIN_DEFAULT );
                 if ( g_extra_win != APP_WIN_INVALID )
                 {
-                    g_prev_extra = app_api()->window_state( g_extra_win );
+                    g_prev_extra = app()->window_state( g_extra_win );
                     printf( "[info] opened extra window id=%d\n", g_extra_win );
                 }
                 else
@@ -548,7 +548,7 @@ main( int argc, char** argv )
         return 1;
     }
 
-    g_main_win = app_api()->window_open( "sb_engine_app", 0, 0, 0, 0, APP_WIN_DEFAULT );
+    g_main_win = app()->window_open( "sb_engine_app", 0, 0, 0, 0, APP_WIN_DEFAULT );
     if ( g_main_win == APP_WIN_INVALID )
     {
         fprintf( stderr, "window_open failed\n" );
@@ -556,24 +556,24 @@ main( int argc, char** argv )
         return 1;
     }
 
-    g_prev_main = app_api()->window_state( g_main_win );
+    g_prev_main = app()->window_state( g_main_win );
 
     print_menu();
 
-    while ( app_api()->pump_events() )
+    while ( app()->pump_events() )
     {
         /* --- quit (any mode) ---------------------------------------------- */
-        if ( app_api()->key_pressed( APP_KEY_Q ) )
+        if ( app()->key_pressed( APP_KEY_Q ) )
         {
             printf( "[host] quit\n" );
             break;
         }
 
         /* --- state snapshot (any mode) ------------------------------------ */
-        if ( app_api()->key_pressed( APP_KEY_S ) )
+        if ( app()->key_pressed( APP_KEY_S ) )
         {
             print_state_full( g_main_win );
-            if ( app_api()->window_is_valid( g_extra_win ) )
+            if ( app()->window_is_valid( g_extra_win ) )
                 print_state_full( g_extra_win );
         }
 
@@ -582,13 +582,13 @@ main( int argc, char** argv )
         {
             for ( int i = 1; i <= 9; i++ )
             {
-                if ( app_api()->key_pressed( (app_key_t)( APP_KEY_0 + i ) ) )
+                if ( app()->key_pressed( (app_key_t)( APP_KEY_0 + i ) ) )
                 {
                     enter_mode( (test_mode_t)i );
                     break;
                 }
             }
-            if ( app_api()->key_pressed( APP_KEY_0 ) )
+            if ( app()->key_pressed( APP_KEY_0 ) )
                 enter_mode( MODE_MULTI_WIN );
 
             sys_sleep_milliseconds( 16 );
@@ -596,7 +596,7 @@ main( int argc, char** argv )
         }
 
         /* --- test mode: ESC returns to menu ------------------------------- */
-        if ( app_api()->key_pressed( APP_KEY_ESCAPE ) )
+        if ( app()->key_pressed( APP_KEY_ESCAPE ) )
         {
             leave_mode( g_mode );
             g_mode = MODE_MENU;
@@ -606,21 +606,21 @@ main( int argc, char** argv )
         }
 
         /* --- mode-specific controls --------------------------------------- */
-        if ( g_mode == MODE_FILLSCREEN && app_api()->key_pressed( APP_KEY_F ) )
+        if ( g_mode == MODE_FILLSCREEN && app()->key_pressed( APP_KEY_F ) )
         {
-            app_api()->window_toggle_fillscreen( g_main_win );
+            app()->window_toggle_fillscreen( g_main_win );
             printf( "[fill] F key -- fillscreen toggled\n" );
         }
 
-        if ( g_mode == MODE_MULTI_WIN && app_api()->key_pressed( APP_KEY_O ) )
+        if ( g_mode == MODE_MULTI_WIN && app()->key_pressed( APP_KEY_O ) )
         {
-            if ( !app_api()->window_is_valid( g_extra_win ) )
+            if ( !app()->window_is_valid( g_extra_win ) )
             {
-                g_extra_win = app_api()->window_open( "sb_engine_app: extra", 120, 80, 480, 320,
+                g_extra_win = app()->window_open( "sb_engine_app: extra", 120, 80, 480, 320,
                                                       APP_WIN_DEFAULT );
                 if ( g_extra_win != APP_WIN_INVALID )
                 {
-                    g_prev_extra = app_api()->window_state( g_extra_win );
+                    g_prev_extra = app()->window_state( g_extra_win );
                     printf( "[info] opened extra window id=%d\n", g_extra_win );
                 }
                 else
@@ -632,7 +632,7 @@ main( int argc, char** argv )
 
         /* --- drain typed events (mode-filtered) --------------------------- */
         app_event_t ev;
-        while ( app_api()->next_event( &ev ) )
+        while ( app()->next_event( &ev ) )
         {
             /* Close the extra window when it receives WIN_CLOSE in multi-win mode. */
             if ( g_mode == MODE_MULTI_WIN && ev.type == APP_EV_WIN_CLOSE &&
@@ -649,16 +649,16 @@ main( int argc, char** argv )
 
         /* --- state diffs -------------------------------------------------- */
         u32 mask = mode_state_mask( g_mode );
-        if ( app_api()->window_is_valid( g_main_win ) )
+        if ( app()->window_is_valid( g_main_win ) )
         {
-            app_win_state_t now = app_api()->window_state( g_main_win );
+            app_win_state_t now = app()->window_state( g_main_win );
             if ( mask )
                 print_state_diff( g_main_win, g_prev_main, now, mask );
             g_prev_main = now;
         }
-        if ( app_api()->window_is_valid( g_extra_win ) )
+        if ( app()->window_is_valid( g_extra_win ) )
         {
-            app_win_state_t now = app_api()->window_state( g_extra_win );
+            app_win_state_t now = app()->window_state( g_extra_win );
             if ( mask )
                 print_state_diff( g_extra_win, g_prev_extra, now, mask );
             g_prev_extra = now;
@@ -668,8 +668,8 @@ main( int argc, char** argv )
     }
 
     leave_mode( g_mode );
-    if ( app_api()->window_is_valid( g_main_win ) )
-        app_api()->window_close( g_main_win );
+    if ( app()->window_is_valid( g_main_win ) )
+        app()->window_close( g_main_win );
 
     mod_system_exit();
     return 0;

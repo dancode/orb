@@ -653,7 +653,7 @@ size_t rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size );
 void rs_run_tests( void );
 
 /*==============================================================================================
-    rs_api_t - runtime API struct (accessible to DLL modules via rs_api())
+    rs_api_t - runtime API struct (accessible to DLL modules via rs())
 
     Registration functions are NOT exposed here; DLL modules receive an rs_reg_api_t*
     callback vtable during their rs_register() call and must use that instead.
@@ -720,7 +720,7 @@ MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
 
         static mod_desc_t s_<name>_mod_desc = {
             .func_api    = &g_<name>_api_struct,
-            .rs_register = MOD_RS_REGISTER( <name> ),
+            .rs_register = MOD_REFLECT_FUNC( <name> ),
             ...
         };
 

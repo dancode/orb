@@ -36,7 +36,7 @@ physics_function( void )
         return;
 
     g_state->frame_count++;
-    core_api()->log( "physics: physics_function called (frame_count=%d)", g_state->frame_count );
+    core()->log( "physics: physics_function called (frame_count=%d)", g_state->frame_count );
 }
 
 const physics_api_t g_physics_api_struct = {
@@ -55,7 +55,7 @@ physics_init( void* raw_state, get_api_fn get_api )
     if ( !MOD_FETCH_API( core_api_t, core ) )
         return false;
 
-    core_api()->log( "physics: init (state=%p)", ( void* )g_state );
+    core()->log( "physics: init (state=%p)", ( void* )g_state );
     return true;
 }
 
@@ -63,8 +63,8 @@ void
 physics_exit( void* raw_state )
 {
     UNUSED( raw_state );
-    if ( core_api() )
-        core_api()->log( "physics: exit" );
+    if ( core() )
+        core()->log( "physics: exit" );
 }
 
 static bool
@@ -75,7 +75,7 @@ physics_reload( void* raw_state, get_api_fn get_api )
     g_state = ( physics_state_t* )raw_state;
     MOD_FETCH_API( core_api_t, core );
 
-    core_api()->log( "physics: reloaded (frames so far = %d)", g_state->frame_count );
+    core()->log( "physics: reloaded (frames so far = %d)", g_state->frame_count );
     return true;
 }
 

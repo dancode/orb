@@ -17,8 +17,8 @@
         if ( !MOD_FETCH_API( run_api_t, run ) ) return false;
 
         // At any call site:
-        f64 t = run_api()->clock()->app_time;
-        u64 f = run_api()->clock()->frame_number;
+        f64 t = run()->clock()->app_time;
+        u64 f = run()->clock()->frame_number;
 
     run_clock_update() is host-internal — only host_main.c calls it once per frame
     before dispatching on_update. Modules must not call it.

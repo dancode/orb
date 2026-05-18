@@ -55,10 +55,10 @@ game_on_start( void )
     g_game_state->score         = 0;
     g_game_state->time_in_level = 0.f;
 
-    // physics_api()->spawn_body();
-    // physics_api()->spawn_body();
-    audio_api()->play( "intro_jingle", 0.5 );
-    core_api()->log( "game: started" );
+    // physics()->spawn_body();
+    // physics()->spawn_body();
+    audio()->play( "intro_jingle", 0.5 );
+    core()->log( "game: started" );
 }
 
 static void
@@ -77,17 +77,17 @@ game_on_update( float dt )
     {
         g_game_state->score++;
         g_game_state->time_in_level = 0.f;
-        core_api()->log( "game: score = %d", g_game_state->score );
+        core()->log( "game: score = %d", g_game_state->score );
     }
-    // physics_api()->simulate( dt );
+    // physics()->simulate( dt );
 }
 
 static void
 game_on_render( void )
 {
-    render_api()->begin_frame();
+    render()->begin_frame();
     /* would issue draw calls here in a real engine */
-    render_api()->end_frame();
+    render()->end_frame();
 }
 
 static void
@@ -96,9 +96,9 @@ game_on_stop( void )
     if ( !g_game_state )
         return;
 
-    audio_api()->stop( 1 );
+    audio()->stop( 1 );
     g_game_state->started = 0;
-    core_api()->log( "game: stopped (final score = %d)", g_game_state->score );
+    core()->log( "game: stopped (final score = %d)", g_game_state->score );
 }
 
 static int
@@ -137,7 +137,7 @@ game_init( void* raw_state, get_api_fn get_api )
     if ( !MOD_FETCH_API( physics_api_t, physics ) )
         return false;
 
-    core_api()->log( "game: init (deps satisfied)" );
+    core()->log( "game: init (deps satisfied)" );
     return true;
 }
 
@@ -150,7 +150,7 @@ game_reload( void* raw_state, get_api_fn get_api )
     MOD_FETCH_API( render_api_t, render );
     MOD_FETCH_API( audio_api_t, audio );
     MOD_FETCH_API( physics_api_t, physics );
-    core_api()->log( "game: reloaded (score preserved = %d)", g_game_state->score );
+    core()->log( "game: reloaded (score preserved = %d)", g_game_state->score );
     return true;
 }
 
@@ -158,7 +158,7 @@ void
 game_exit( void* raw_state )
 {
     ( void )raw_state;
-    core_api()->log( "game exit" );
+    core()->log( "game exit" );
 }
 
 // static void

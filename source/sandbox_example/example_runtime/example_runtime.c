@@ -35,7 +35,7 @@
     Frame loop (driven by run_host_main)
     ------------------------------------
         pump_events  -> if windowed
-        clock_update -> dt = run_api()->clock()->dt   (capped, time-scaled)
+        clock_update -> dt = run()->clock()->dt   (capped, time-scaled)
         on_update    -> this file's per-frame hook
         render       -> begin_frame / draw_frame / end_frame, if render is loaded
         hot_reload   -> mod_check_reloads + flush at the single safe point per frame
@@ -88,7 +88,7 @@ runtime_ready( void )
        are live. Use for one-time setup: register cvars, install default settings,
        hand initial state to modules. */
 
-    render_api()->set_clear_color( 0.08f, 0.10f, 0.18f, 1.0f );
+    render()->set_clear_color( 0.08f, 0.10f, 0.18f, 1.0f );
 
     printf( "[example_runtime] ready - ESC to quit, R to reload all DLLs\n" );
 
@@ -103,13 +103,13 @@ runtime_update( f32 dt )
 {
     UNUSED( dt );
 
-    if ( app_api()->key_pressed( APP_KEY_ESCAPE ) )
+    if ( app()->key_pressed( APP_KEY_ESCAPE ) )
     {
         run_host_quit();
         return;
     }
 
-    if ( app_api()->key_pressed( APP_KEY_R ) )
+    if ( app()->key_pressed( APP_KEY_R ) )
     {
         printf( "[example_runtime] reloading all dynamic modules\n" );
         mod_reload_all();
@@ -119,7 +119,7 @@ runtime_update( f32 dt )
        - input sampling -> input_api()->snapshot()
        - simulation tick -> world_api()->tick( dt )
        - gameplay scripts -> script_api()->run_frame( dt )
-       Rendering is driven automatically by the host when render_api() is live. */
+       Rendering is driven automatically by the host when render() is live. */
 }
 
 /*==============================================================================================

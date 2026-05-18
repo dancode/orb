@@ -220,7 +220,7 @@ ref_visit( void** slot, uint16_t pointee_type_id, const rs_field_t* field, void*
 static void
 exercise_reflection( void )
 {
-    const example_reflect_api_t* mod = example_reflect_api();
+    const example_reflect_api_t* mod = example_reflect();
 
     /* STEP 1: Look up types by name.
        Every type registered from a reflected module gets a stable numeric ID (type_id).
