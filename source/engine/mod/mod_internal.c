@@ -6,9 +6,8 @@
     or internal helpers consumed only within that translation unit.
 
 ==============================================================================================*/
-
 /*==============================================================================================
-    Constants
+    Internal Constants
 ==============================================================================================*/
 
 #define MODULE_NAME_MAX 32  /* max module name length including null terminator */

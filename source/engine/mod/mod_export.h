@@ -90,7 +90,6 @@ typedef void ( *mod_exit_fn )( void* state );
    Return false to abort the reload and keep the old DLL active. */
 typedef bool ( *mod_reload_fn )( void* state, get_api_fn get_api );
 
-
 /*==============================================================================================
     mod_desc_t — Module descriptor. Every module returns one from name_get_mod_desc().
 ==============================================================================================*/
@@ -113,7 +112,8 @@ typedef struct mod_desc_s
        has reflected types; NULL otherwise. The pointer lives in the same image as the
        desc — exe for statics, DLL for dynamics — so calling through it works for both
        build modes with no symbol lookup. See MOD_RS_REGISTER below. */
-    const void*   rs_register;          /* void (*)( const rs_reg_api_t* ) or NULL */
+
+    const void* rs_register; /* void (*)( const rs_reg_api_t* ) or NULL */
 
 } mod_desc_t;
 
@@ -137,7 +137,7 @@ typedef struct mod_desc_s
         };
 ==============================================================================================*/
 
-#define MOD_RS_REGISTER( name )  ( ( const void* )( name##_rs_register ) )
+#define MOD_RS_REGISTER( name ) ( ( const void* )( name##_rs_register ) )
 
 /* DLL entry-point typedef resolved via LoadLibrary / dlopen. */
 typedef mod_desc_t* ( *get_mod_desc_fn )( void );

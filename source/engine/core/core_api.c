@@ -61,7 +61,9 @@ static core_debug_api_t   g_core_debug_api_struct = {
 
 const core_api_t g_core_api_struct = {
 
-    .debug_api         = &g_core_debug_api_struct,
+    .debug_api     = &g_core_debug_api_struct,
+
+    .assert_report = assert_report,
 
     .log               = log_default,
     .log_info          = log_info,

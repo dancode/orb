@@ -28,7 +28,7 @@ static void
 server_ready( void )
 {
     /* called once after init — fetch APIs for every module we drive in on_update */
-    HOST_FETCH_API( example_api_t, example );
+    MOD_HOST_FETCH_API( example_api_t, example );
 }
 
 static void

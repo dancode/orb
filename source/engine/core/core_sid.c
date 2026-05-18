@@ -14,13 +14,13 @@
 ==============================================================================================*/
 /* unity compiled module */ 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <assert.h>
-
-#include "orb.h"
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <string.h>
+// #include <stdarg.h>
+// 
+// #include "orb.h"
+// #include "debug/assert.h"
 
 #include "sid/sid.h"
 #include "sid/sid.c"
@@ -28,6 +28,6 @@
 /*============================================================================================*/
 /* optional tests */
 
-#include "test/test_core_sid.c"
+// #include "test/test_core_sid.c"
 
 /*============================================================================================*/

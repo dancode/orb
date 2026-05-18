@@ -33,6 +33,8 @@
 #include "base/math.c"
 #include "base/hash.c"
 
+#include "base/test.c"    // testing framework
+
 // #include "base/string.c"
 #include "base/str.c"
 #include "base/fmt.c"
@@ -40,5 +42,3 @@
 #include "base/standard.c"
 
 /*============================================================================================*/
-
-

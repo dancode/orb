@@ -17,10 +17,6 @@
 #include "engine/core/core.h"      /* Public types (no function declarations) */
 
 /*==============================================================================================
-    TEMPORARY API FNUCTIONS (until we implement a real memory system )
-==============================================================================================*/
-
-/*==============================================================================================
     API Start / Shutdown
 ==============================================================================================*/
 
@@ -46,10 +42,11 @@ core_free( void* ptr )
     Subsystem implementations  (all functions are static within this TU)
 ==============================================================================================*/
 
+#include "engine/core/core_debug.c"
 #include "engine/core/core_log.c"
 #include "engine/core/core_cvar.c"
 #include "engine/core/core_sid.c"
-// #include "engine/core/core_debug.c"
+
 // #include "engine/core/core_memory.c"
 
 /*==============================================================================================

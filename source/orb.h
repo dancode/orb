@@ -175,28 +175,28 @@ typedef ptrdiff_t isize;
     #define ORB_REPORT_ASSERT( cond, msg, file, line ) ( ( void )0 )
 #endif
 
-#ifdef RELEASE
+#if RELEASE
     #define ORB_ASSERT( cond )        ( ( void )0 )
     #define ORB_ASSERT_MSG( cond, m ) ( ( void )0 )
 #else
-    #define ORB_ASSERT( cond )                                      \
-        do {                                                        \
-            if ( UNLIKELY( !( cond ) ) )                            \
-            {                                                       \
-                ORB_REPORT_ASSERT( #cond, "", __FILE__, __LINE__ ); \
-                ORB_TRAP();                                         \
-            }                                                       \
-        }                                                           \
+    #define ORB_ASSERT( cond )                                          \
+        do {                                                            \
+            if ( ORB_UNLIKELY( !( cond ) ) )                            \
+            {                                                           \
+                ORB_REPORT_ASSERT( #cond, "", __FILE__, __LINE__ );     \
+                ORB_TRAP();                                             \
+            }                                                           \
+        }                                                               \
         while ( 0 )
 
-    #define ORB_ASSERT_MSG( cond, m )                              \
-        do {                                                       \
-            if ( UNLIKELY( !( cond ) ) )                           \
-            {                                                      \
-                ORB_REPORT_ASSERT( #cond, m, __FILE__, __LINE__ ); \
-                ORB_TRAP();                                        \
-            }                                                      \
-        }                                                          \
+    #define ORB_ASSERT_MSG( cond, m )                                   \
+        do {                                                            \
+            if ( ORB_UNLIKELY( !( cond ) ) )                            \
+            {                                                           \
+                ORB_REPORT_ASSERT( #cond, m, __FILE__, __LINE__ );      \
+                ORB_TRAP();                                             \
+            }                                                           \
+        }                                                               \
         while ( 0 )
 #endif
 

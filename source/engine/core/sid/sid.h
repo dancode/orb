@@ -127,7 +127,7 @@ sid_t       sid_intern          ( const char* str, int32_t len );
 sid_t       sid_intern_cstr     ( const char* str );
 
                                 // intern C string (null-terminated)
-sid_t       sid_find_cstr       ( const char* str );   
+sid_t       sid_find_cstr       ( const char* str );
 
 /*============================================================================================*/
 /* DEBUG UTILITY */

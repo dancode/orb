@@ -7,6 +7,9 @@
     Supports both static and dynamic builds with identical call sites. The build mode is
     controlled by BUILD_STATIC (monolithic) or per-module <NAME>_STATIC (exe-linked service).
 
+    Header file markup pattern (place in modules API header)
+    --------------------------------------------------------
+
     MOD_GATEWAY_STATIC( type, name )
         Static build: declares g_<name>_api_struct as extern and returns its address directly.
         LTO can devirtualize: render_api()->draw(dt) becomes a direct call with no indirection.
@@ -17,22 +20,22 @@
     MOD_GATEWAY_DYNAMIC( type, name )
         Dynamic build: declares g_<name>_api_ptr and returns it through a single pointer load.
 
-        Provider .c must populate the pointer in init() via MOD_FETCH_API.
+        Provider .c must get the pointer in init() via MOD_FETCH_API.
 
     Both macros emit an identical inline accessor: <name>_api()
-    Call sites are identical in both builds:  render_api()->begin_frame()
+    Call sites are identical in both builds: render_api()->begin_frame()
 
-    Static switch pattern (place in the module's API header)
-    ---------------------------------------------------------
+    Example: 
+    
         #if defined( BUILD_STATIC ) || defined( RENDER_STATIC )
-            MOD_GATEWAY_STATIC( render_api_t, render )   // exe-linked: zero cost
+            MOD_GATEWAY_STATIC( render_api_t, render )   // EXE-linked: zero cost
         #else
             MOD_GATEWAY_DYNAMIC( render_api_t, render )  // DLL-linked: one pointer load
         #endif
 
-    BUILD_STATIC covers a full monolithic build.
-    RENDER_STATIC covers mixed builds where this module is compiled into the exe.
-    The else arm covers DLLs that cache a pointer fetched during init().
+    BUILD_STATIC covers a full monolithic build and RENDER_STATIC covers mixed builds
+    where this module is compiled into the exe but also used from a DLL that caches 
+    a pointer fetched during init().
 
 ==============================================================================================*/
 
@@ -102,18 +105,21 @@ typedef void ( *mod_visitor_fn )( const char* name, const mod_desc_t* api, void*
     The accessor mod_desc() is always inline; in BUILD_STATIC it resolves to a direct struct
     reference that LTO can devirtualize to a direct call with zero indirection overhead.
 ==============================================================================================*/
+// clang-format off
 
 typedef struct mod_api_s
 {
-    bool ( *dynamic_load )( const char* name );
-    bool ( *unload )( const char* name );
-    const void* ( *get_api )( const char* name );
-    bool ( *reload )( const char* name );
-    bool ( *is_loaded )( const char* name );
-    void ( *each )( mod_visitor_fn visit, void* user );
-    const char* ( *last_error )( void );
+    bool        ( *dynamic_load )   ( const char* name );
+    bool        ( *unload )         ( const char* name );
+    const void* ( *get_api )        ( const char* name );
+    bool        ( *reload )         ( const char* name );
+    bool        ( *is_loaded )      ( const char* name );
+    void        ( *each )           ( mod_visitor_fn visit, void* user );
+    const char* ( *last_error )     ( void );
 
 } mod_api_t;
+
+// clang-format on
 
 /* mod is always exe-linked; DLLs in a dynamic build must still fetch via the registry. */
 #if defined( BUILD_STATIC ) || defined( MOD_STATIC )

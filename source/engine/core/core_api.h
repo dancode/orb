@@ -40,6 +40,9 @@ typedef struct core_api_s
     /* debug api */
     core_debug_api_t* debug_api;    // for natvis and debugging
 
+    /* assertions */
+    bool ( *assert_report )( const char* cond, const char* msg, const char* file, int line );
+
     /* logging */
     void ( *log )( const char* fmt, ... );
     void ( *log_info )( const char* fmt, ... );

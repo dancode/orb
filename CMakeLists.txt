@@ -354,6 +354,8 @@ add_unity_library( engine_app  STATIC "source/engine/app"  "02_Engine" "app.c"  
 add_unity_library( engine_core STATIC "source/engine/core" "02_Engine" "core.c" )
 add_unity_library( engine_rs   STATIC "source/engine/rs"   "02_Engine" "rs.c"   )
 
+# engine_
+
 target_compile_definitions( engine_sys  PUBLIC SYS_STATIC  )
 target_compile_definitions( engine_mod  PUBLIC MOD_STATIC  )
 target_compile_definitions( engine_app  PUBLIC APP_STATIC  )
@@ -497,13 +499,15 @@ endif()
 # 09 SANDBOX
 # ------------------------------------------------------------------------------
 
-add_unity_executable( sb_engine_mod      "source/sandbox/engine_mod"      "09_Sandbox" "sb_engine_mod.c"      )
-add_unity_executable( sb_engine_sys      "source/sandbox/engine_sys"      "09_Sandbox" "sb_engine_sys.c"      )
-add_unity_executable( sb_engine_app      "source/sandbox/engine_app"      "09_Sandbox" "sb_engine_app.c"      )
-add_unity_executable( sb_engine_core     "source/sandbox/engine_core"     "09_Sandbox" "sb_engine_core.c"     )
-add_unity_executable( sb_engine_reflect  "source/sandbox/engine_reflect"  "09_Sandbox" "sb_engine_reflect.c"  )
-add_unity_executable( sb_runtime_reflect "source/sandbox/runtime_reflect" "09_Sandbox" "sb_runtime_reflect.c" )
+add_unity_executable( sb_base            "source/sandbox/base/"                   "09_Sandbox/Base"   "sb_base.c" )
+add_unity_executable( sb_engine_mod      "source/sandbox/engine/engine_mod"       "09_Sandbox/Engine" "sb_engine_mod.c" )
+add_unity_executable( sb_engine_sys      "source/sandbox/engine/engine_sys"       "09_Sandbox/Engine" "sb_engine_sys.c" )
+add_unity_executable( sb_engine_app      "source/sandbox/engine/engine_app"       "09_Sandbox/Engine" "sb_engine_app.c")
+add_unity_executable( sb_engine_core     "source/sandbox/engine/engine_core"      "09_Sandbox/Engine" "sb_engine_core.c" )
+add_unity_executable( sb_engine_reflect  "source/sandbox/engine/engine_reflect"   "09_Sandbox/Engine" "sb_engine_reflect.c" )
+add_unity_executable( sb_runtime_reflect "source/sandbox/runtime/runtime_reflect" "09_Sandbox/Runtime" "sb_runtime_reflect.c" )
 
+target_link_libraries( sb_base            PRIVATE base )
 target_link_libraries( sb_engine_mod      PRIVATE engine_sys engine_mod dev_build dev_hot )
 target_link_libraries( sb_engine_sys      PRIVATE engine_sys )
 target_link_libraries( sb_engine_app      PRIVATE engine_sys engine_mod engine_app )

@@ -33,7 +33,7 @@ MOD_DEFINE_API_PTR( example_api_t, example );
 static void
 editor_ready( void )
 {
-    HOST_FETCH_API( example_api_t, example );
+    MOD_HOST_FETCH_API( example_api_t, example );
 
     printf( "Keys: Q=quit  R=reload all  F=arm failure  V=verify\n" );
 }

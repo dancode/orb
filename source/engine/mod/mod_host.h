@@ -11,9 +11,12 @@
         mod_load( name )            Register and load a module (expands per build mode).
         mod_init_all()              Topo-sort deps, call each module's init().
         mod_check_reloads()         Poll file timestamps; enqueue changed DLLs.
+        mod_system_flush_reloads()  Apply queued swaps; call once per frame at a safe point.
+
+                                    Use these for on demand reloads.
         mod_reload( name )          Force-queue a single module for reload.
         mod_reload_all()            Force-queue every dynamic module for reload.
-        mod_system_flush_reloads()  Apply queued swaps; call once per frame at a safe point.
+        
         mod_system_exit()           Exit in reverse dep order; unload DLLs; delete shadows.
 
     Deferred reload model
@@ -47,14 +50,32 @@
 #include "engine/mod/mod.h"
 #include "engine/sys/sys.h"
 
+// clang-format off
 /*==============================================================================================
-    Build-mode-transparent module registration macro
+    MODULE LOAD — Build-mode-transparent module registration macro
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
     #define mod_load( name ) mod_static_load( #name, name##_get_mod_desc() )
 #else
     #define mod_load( name ) mod_dynamic_load( #name )
+#endif
+
+/*==============================================================================================
+    MOD_HOST_FETCH_API — Populates a cached API pointer from outside a module init() callback.
+
+    Valid only after mod_init_all(). Use inside on_ready() or host update loops.
+    Prefer MOD_FETCH_API (in mod.h) inside module init() / reload() callbacks instead.
+
+    Usage:
+        MOD_HOST_FETCH_API( render_api_t, render );
+==============================================================================================*/
+
+#ifdef BUILD_STATIC
+    #define MOD_HOST_FETCH_API( type, name ) ( 1 )
+#else
+    #define MOD_HOST_FETCH_API( type, name ) \
+        ( ( g_##name##_api_ptr = ( const type* )mod_get_api( #name ) ) != NULL )
 #endif
 
 /*==============================================================================================
@@ -65,10 +86,10 @@ typedef struct mod_desc_s mod_desc_t;
 
 typedef enum module_status_t
 {
-    MODULE_STATUS_EMPTY       = 0,    /* slot unused      */
-    MODULE_STATUS_LOADED      = 1,    /* DLL loaded, API resolved, state allocated */
-    MODULE_STATUS_INITIALIZED = 2,    /* init() returned true */
-    MODULE_STATUS_ERROR       = 3,    /* load or init failed */
+    MODULE_STATUS_EMPTY       = 0, /* slot unused      */
+    MODULE_STATUS_LOADED      = 1, /* DLL loaded, API resolved, state allocated */
+    MODULE_STATUS_INITIALIZED = 2, /* init() returned true */
+    MODULE_STATUS_ERROR       = 3, /* load or init failed */
 
 } module_status_t;
 
@@ -76,52 +97,35 @@ typedef enum module_status_t
     System lifetime
 ==============================================================================================*/
 
-void       mod_system_init( void );
-void       mod_system_exit( void );
-mod_desc_t* mod_get_mod_desc( void );
+void            mod_system_init             ( void );
+void            mod_system_exit             ( void );
+mod_desc_t*     mod_get_mod_desc            ( void );
 
 /*==============================================================================================
     Registration and loading
 ==============================================================================================*/
 
-bool mod_static_load( const char* name, mod_desc_t* mod_desc );
-bool mod_dynamic_load( const char* name );
-bool mod_unload( const char* name );
-bool mod_reload( const char* name );
-int  mod_reload_all( void );
-void mod_check_reloads( void );
-int  mod_system_flush_reloads( void );
+bool            mod_static_load             ( const char* name, mod_desc_t* mod_desc );
+bool            mod_dynamic_load            ( const char* name );
+bool            mod_unload                  ( const char* name );
+bool            mod_reload                  ( const char* name );
+int             mod_reload_all              ( void );
+void            mod_check_reloads           ( void );
+int             mod_system_flush_reloads    ( void );
 
 /*==============================================================================================
     Initialization
 ==============================================================================================*/
 
-bool mod_init_all( void );
+bool            mod_init_all                ( void );
 
 /*==============================================================================================
     API access
 ==============================================================================================*/
 
-const void* mod_get_api( const char* name );
-bool        mod_is_loaded( const char* name );
-const char* mod_last_error( void );
-
-/*==============================================================================================
-    HOST_FETCH_API — Populates a cached API pointer from outside a module init() callback.
-
-    Valid only after mod_init_all(). Use inside on_ready() or host update loops.
-    Prefer MOD_FETCH_API (in mod.h) inside module init() / reload() callbacks instead.
-
-    Usage:
-        HOST_FETCH_API( render_api_t, render );
-==============================================================================================*/
-
-#ifdef BUILD_STATIC
-    #define HOST_FETCH_API( type, name ) ( 1 )
-#else
-    #define HOST_FETCH_API( type, name ) \
-        ( ( g_##name##_api_ptr = ( const type* )mod_get_api( #name ) ) != NULL )
-#endif
+const void*     mod_get_api                 ( const char* name );
+bool            mod_is_loaded               ( const char* name );
+const char*     mod_last_error              ( void );
 
 /*==============================================================================================
     Module lifecycle callbacks
@@ -152,8 +156,8 @@ const char* mod_last_error( void );
 
 typedef void ( *mod_event_fn )( const char* name, const mod_desc_t* desc, void* user );
 
-void mod_set_pre_init_cb ( mod_event_fn fn, void* user );
-void mod_set_post_exit_cb( mod_event_fn fn, void* user );
+void            mod_set_pre_init_cb         ( mod_event_fn fn, void* user );
+void            mod_set_post_exit_cb        ( mod_event_fn fn, void* user );
 
 /*==============================================================================================
     Iteration
@@ -161,13 +165,14 @@ void mod_set_post_exit_cb( mod_event_fn fn, void* user );
     Visits every non-empty module slot in load order.  mod_visitor_fn is defined in mod.h.
 ==============================================================================================*/
 
-void mod_each( mod_visitor_fn visit, void* user );
+void            mod_each                    ( mod_visitor_fn visit, void* user );
 
 /*==============================================================================================
     Debug
 ==============================================================================================*/
 
-void mod_list_all( void );
+void            mod_list_all                ( void );
 
+// clang-format on
 /*============================================================================================*/
 #endif    // MOD_HOST_H

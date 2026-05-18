@@ -7,7 +7,7 @@
 #include "orb.h"
 
 // #include "cvar/cvar.h"
-// #include "sid/sid.h"
+#include "sid/sid.h"
 
 /*==============================================================================================
 
@@ -54,5 +54,6 @@ typedef uint16_t memtag_t;    // runtime-generated tag ID
 
 #define CORE_DECLARED
 #include "engine/core/core_api.h"
+#include "engine/core/debug/assert.h"
 
 /*============================================================================================*/

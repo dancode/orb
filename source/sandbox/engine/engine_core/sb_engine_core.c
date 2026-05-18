@@ -10,7 +10,6 @@
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
-#include "engine/sys/sys.h"
 #include "engine/core/core.h"
 
 int  intern_test( void );                        // ... temporary code ...
@@ -20,13 +19,18 @@ void test_core_cvar( int argc, char** argv );    // ... temporary code ...
 
 void
 core_test( void )
-{
-    
+{    
+    // intern_test();    // <-- test string interning system
+   
+    sid_init();
+    sid_t a = sid_intern_cstr( "Hello, World!" );
+    sid_exit();
+
+    UNUSED( a );
     if ( 1 )
     {
         /// mem_test();           // <-- test memory system
-        // intern_test();        // <-- test string interning system
-        // reflection_test();    // <-- test reflection system
+        
     }
 
     if ( 0 )

@@ -135,6 +135,7 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( app    ),   /* windowing + input — static; presence enables windowed mode    */
     RUN_SERVICE( rhi    ),   /* Vulkan RHI — static; inits after window_open                  */
     RUN_MODULE ( render ),   /* renderer front-end — DLL in dynamic builds, static otherwise  */
+    RUN_MODULE( example_reflect ),   /* example  module to test reflection */
 
     /* Future entries (commented out until those layers exist):
         RUN_SERVICE( jobs       ),

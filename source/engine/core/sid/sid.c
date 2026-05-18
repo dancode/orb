@@ -84,7 +84,7 @@ arena_grow( string_arena_t* arena, uint32_t needed )
 
     /* only occurs if we overflowed the maximum arena size */
     if ( arena->used + needed > new_capacity ) {
-        assert( 0 && "String arena exceeded maximum size" && MAX_ARENA_SIZE );
+        assert_msg( false, "String arena exceeded maximum size" );
         return false;
     }
 
@@ -288,19 +288,18 @@ sid_init( void )
     /* Initialize global intern state */
     memset( &g_intern, 0, sizeof( g_intern ) );
 
-    /* Sanity: table size must be power-of-two */
-    assert( ( DEFAULT_TABLE_SIZE & ( DEFAULT_TABLE_SIZE - 1 ) ) == 0 );
+    ORB_STATIC_ASSERT( ( DEFAULT_TABLE_SIZE & ( DEFAULT_TABLE_SIZE - 1 ) ) == 0, "DEFAULT_TABLE_SIZE must be a power of two" );
 
     /* initialize table and arena */
     if ( table_init( &g_intern.table, DEFAULT_TABLE_SIZE ) == false )
     {
-        assert( 0 && "Failed to initialize intern table" );
+        assert_msg( false, "Failed to initialize intern table" );
         return;
     }
     if ( arena_init( &g_intern.arena, DEFAULT_ARENA_SIZE ) == false )
     {
         free( g_intern.table );
-        assert( 0 && "Failed to initialize string arena" );
+        assert_msg( false, "Failed to initialize string arena" );
         return;
     }
 
@@ -366,12 +365,12 @@ sid_intern( const char* str, int32_t len )
 
     if ( str == NULL )
     {
-        assert( 0 && "NULL string passed to sid_intern" );
+        assert_msg( false, "NULL string passed to sid_intern" );
         return SID_INVALID;
     }
     if ( len < 0 || len > MAX_STRING_LENGTH )
     {
-        assert( 0 && "Invalid string length for interning" );
+        assert_msg( false, "Invalid string length for interning" );
         return SID_INVALID;
     }
     if ( len == 0 )
@@ -422,7 +421,7 @@ sid_intern( const char* str, int32_t len )
     /* ensure capacity before adding -- may need to rehash */
     if ( !table_ensure_capacity( &g_intern ) )
     {
-        assert( 0 && "failed to grow hash table" );
+        assert_msg( false, "failed to grow hash table" );
         return SID_INVALID;
     }
 
@@ -430,7 +429,7 @@ sid_intern( const char* str, int32_t len )
     sid_t new_sid = arena_add_string( &g_intern.arena, str, ( uint8_t )len );
     if ( sid_equals( new_sid, SID_INVALID ))
     {
-        assert( 0 && "string arena allocation failed" );
+        assert_msg( false, "string arena allocation failed" );
         return SID_INVALID;
     }
 

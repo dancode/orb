@@ -10,7 +10,7 @@
         5. mod_init_all()                       — pass 1: load callbacks fire in dep order
                                                           (rs frames pushed, reflection live)
                                                   pass 2: init() runs in same order
-        6. HOST_FETCH_API( app, rhi, render )   — cache host-owned API ptrs
+        6. MOD_HOST_FETCH_API( app, rhi, render )   — cache host-owned API ptrs
         7. window_open()                        — when app is loaded (inferred from k_modules)
         8. desc->on_ready()                     — host post-init hook
         9. enter loop per desc->loop_mode
@@ -68,14 +68,14 @@ run_host_should_quit( void )
     Cached engine module API pointers
 
     MOD_DEFINE_API_PTR  — defines g_<name>_api_ptr storage (no-op in BUILD_STATIC)
-    HOST_FETCH_API      — populates the pointer after mod_init_all()
+    MOD_HOST_FETCH_API      — populates the pointer after mod_init_all()
                           (no-op in BUILD_STATIC; struct is linked directly)
 
     In static/monolithic builds:
         app_api() == &g_app_api_struct  — direct address, LTO can devirtualize call sites.
 
     In dynamic builds:
-        app_api() == g_app_api_ptr      — cached by HOST_FETCH_API; NULL if not loaded.
+        app_api() == g_app_api_ptr      — cached by MOD_HOST_FETCH_API; NULL if not loaded.
         The null path handles headless hosts that don't include app in their module list.
 ==============================================================================================*/
 
@@ -140,7 +140,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        on rs.mod_init. Every subsequent load (static, dynamic, or hot-reload swap)
        auto-registers reflection through the generic callback. */
     rs_wire_mod_callbacks();
-
+       
     /* Engine baseline — sys (clock + sleep), rs (reflection), run (frame clock). */
     if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
          !mod_static_load( "rs",  rs_get_mod_desc()  ) ||
@@ -168,16 +168,16 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
-       HOST_FETCH_API in static builds:  no-op — app_api() / render_api() return the
+       MOD_HOST_FETCH_API in static builds:  no-op — app_api() / render_api() return the
                                          linked struct directly.
-       HOST_FETCH_API in dynamic builds: populates g_*_api_ptr from the module registry.
+       MOD_HOST_FETCH_API in dynamic builds: populates g_*_api_ptr from the module registry.
                                          Returns NULL when the module is absent — headless
                                          hosts that don't load app or render get NULL here,
                                          which is fine; the windowed path guards against it.
     */
-    HOST_FETCH_API( app_api_t,    app    );
-    HOST_FETCH_API( rhi_api_t,    rhi    );
-    HOST_FETCH_API( render_api_t, render );
+    MOD_HOST_FETCH_API( app_api_t,    app    );
+    MOD_HOST_FETCH_API( rhi_api_t,    rhi    );
+    MOD_HOST_FETCH_API( render_api_t, render );
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*
