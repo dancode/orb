@@ -38,7 +38,7 @@ main( int argc, char** argv )
 
     MOD_HOST_FETCH_API( example_gen_api_t, example_gen );
     example_gen_api()->test_function_one();
-    example_gen_api()->test_function_two();
+    // example_gen_api()->test_function_two();
 
 
 shutdown:
