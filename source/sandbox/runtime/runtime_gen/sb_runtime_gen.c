@@ -7,8 +7,9 @@
 #include "engine/rs/rs.h"
 
 #include "runtime_modules/example_gen/example_gen.h"
-MOD_DEFINE_API_PTR( example_gen_api_t, example_gen );
+
 MOD_USE_CORE;
+MOD_USE_EXAMPLE_GEN;
 
 /*============================================================================================*/
 int
@@ -42,7 +43,6 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
-    MOD_HOST_FETCH_API( core_api_t, core );
     sid_t sid = core()->sid_intern_cstr( "test_sid_host" );
 
     UNUSED( sid );
@@ -50,8 +50,7 @@ main( int argc, char** argv )
 
     MOD_HOST_FETCH_API( example_gen_api_t, example_gen );
     example_gen()->test_function_one();
-    // example_gen()->test_function_two();
-
+    example_gen()->test_function_two();
 
 shutdown:
 
