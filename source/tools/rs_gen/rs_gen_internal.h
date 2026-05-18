@@ -24,8 +24,10 @@
 
 #define RG_MAX_TYPES           128 /* types per module                     */
 #define RG_MAX_FIELDS_PER_TYPE 64  /* fields per struct                    */
-#define RG_MAX_ENUMS_PER_TYPE  128 /* enums per enum/bitset          */
+#define RG_MAX_ENUMS_PER_TYPE  128 /* enums per enum/bitset                */
 #define RG_MAX_ATTRS_PER_ITEM  8   /* attributes per field/type            */
+#define RG_MAX_API_FUNCS       64  /* RS_API() functions per module        */
+#define RG_MAX_PARAM_STR       512 /* param list string per API function   */
 
 /*==============================================================================================
     File list
@@ -38,6 +40,7 @@ typedef struct rg_file_list_s
 {
     char paths[ RG_MAX_FILES ][ RG_MAX_PATH ];
     int  count;
+    char source_dir[ RG_MAX_PATH ]; /* directory passed to rg_scan, reused for .c pass */
 
 } rg_file_list_t;
 
@@ -118,6 +121,33 @@ typedef struct rg_decl_type_s
 
 } rg_decl_type_t;
 
+/*==============================================================================================
+    Module API (RS_MODULE / RS_API)
+==============================================================================================*/
+
+/* One RS_API()-annotated function. */
+
+typedef struct rg_api_func_s
+{
+    char ret_type  [ RG_MAX_NAME * 2 ];  /* return type string e.g. "const char*" */
+    char name      [ RG_MAX_NAME ];      /* full function name  e.g. "audio_play"  */
+    char field_name[ RG_MAX_NAME ];      /* struct field name   e.g. "play"         */
+    char params    [ RG_MAX_PARAM_STR ]; /* param list string   e.g. "int x, int y" */
+    int  src_is_c;                       /* 1 if found in a .c file, 0 if in a .h   */
+
+} rg_api_func_t;
+
+/* Module-level API descriptor collected from RS_MODULE() / RS_API() markers. */
+
+typedef struct rg_module_api_s
+{
+    int           has_module;            /* non-zero when RS_MODULE() was seen */
+    char          name[ RG_MAX_NAME ];   /* module name from RS_MODULE( name ) */
+    rg_api_func_t funcs[ RG_MAX_API_FUNCS ];
+    int           func_count;
+
+} rg_module_api_t;
+
 /*--------------------------------------------------------------------------------------------*/
 /* Top-level parse output. The parser fills this with all the types it finds, and the output
    generator loops over it to emit code. */
@@ -135,6 +165,10 @@ typedef struct rg_parse_data_s
 
     char headers[ RG_MAX_FILES ][ RG_MAX_PATH ];
     int  header_count;
+
+    /* Module API collected from RS_MODULE() / RS_API() markers. */
+
+    rg_module_api_t module_api;
 
 } rg_parse_data_t;
 

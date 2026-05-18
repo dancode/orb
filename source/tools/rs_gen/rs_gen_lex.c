@@ -82,6 +82,71 @@ skip_ws( const char* p )
     return p;
 }
 
+/* Strip C and C++ comments from a mutable buffer in-place before parsing.
+   Line comments (//) become spaces up to (not including) the newline.
+   Block comments become spaces with embedded newlines preserved.
+   String and character literal contents are passed through unchanged. */
+static void
+strip_comments( char* p )
+{
+    while ( *p )
+    {
+        /* String literal: skip to closing quote so // inside "..." is ignored. */
+        if ( *p == '"' )
+        {
+            p++;
+            while ( *p && *p != '"' )
+            {
+                if ( *p == '\\' && p[ 1 ] ) p++;
+                p++;
+            }
+            if ( *p ) p++;
+            continue;
+        }
+
+        /* Character literal: same reason. */
+        if ( *p == '\'' )
+        {
+            p++;
+            while ( *p && *p != '\'' )
+            {
+                if ( *p == '\\' && p[ 1 ] ) p++;
+                p++;
+            }
+            if ( *p ) p++;
+            continue;
+        }
+
+        /* Line comment: blank everything up to (not including) the newline. */
+        if ( p[ 0 ] == '/' && p[ 1 ] == '/' )
+        {
+            while ( *p && *p != '\n' ) *p++ = ' ';
+            continue;
+        }
+
+        /* Block comment: blank everything, preserving embedded newlines. */
+        if ( p[ 0 ] == '/' && p[ 1 ] == '*' )
+        {
+            p[ 0 ] = p[ 1 ] = ' ';
+            p += 2;
+            while ( *p )
+            {
+                if ( p[ 0 ] == '*' && p[ 1 ] == '/' )
+                {
+                    p[ 0 ] = p[ 1 ] = ' ';
+                    p += 2;
+                    break;
+                }
+                if ( *p != '\n' ) *p = ' ';
+                p++;
+            }
+            continue;
+        }
+
+        p++;
+    }
+}
+
 /*----------------------------------------------------------------------------------------------
     Token readers
 ----------------------------------------------------------------------------------------------*/

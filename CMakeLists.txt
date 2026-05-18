@@ -269,31 +269,35 @@ endfunction()
 
 function( target_add_reflect_gen TARGET_NAME SOURCE_DIR MODULE_NAME )
 
-    set( GEN_DIR "${CMAKE_BINARY_DIR}/generated" )
-    set( GEN_H   "${GEN_DIR}/${MODULE_NAME}.generated.h" )
-    set( GEN_C   "${GEN_DIR}/${MODULE_NAME}.generated.c" )
+    set( GEN_DIR  "${CMAKE_BINARY_DIR}/generated" )
+    set( GEN_H    "${GEN_DIR}/${MODULE_NAME}.generated.h" )
+    set( GEN_C    "${GEN_DIR}/${MODULE_NAME}.generated.c" )
+    set( GEN_INC  "${GEN_DIR}/${MODULE_NAME}.gen_desc.inc" )
 
     file( MAKE_DIRECTORY "${GEN_DIR}" )
     file( GLOB_RECURSE RS_HEADERS "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}/*.h" )
+    file( GLOB_RECURSE RS_SOURCES "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}/*.c" )
 
     add_custom_command(
-        OUTPUT  "${GEN_H}" "${GEN_C}"
+        OUTPUT  "${GEN_H}" "${GEN_C}" "${GEN_INC}"
         COMMAND $<TARGET_FILE:build_reflect>
                 "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}"
                 "${GEN_DIR}"
                 "${MODULE_NAME}"
-        DEPENDS build_reflect ${RS_HEADERS}
+        DEPENDS build_reflect ${RS_HEADERS} ${RS_SOURCES}
         COMMENT "[build_reflect] generating reflection for ${MODULE_NAME}"
         VERBATIM
     )
 
-    target_sources( ${TARGET_NAME} PRIVATE "${GEN_H}" "${GEN_C}" )
-    target_include_directories( ${TARGET_NAME} PRIVATE "${GEN_DIR}" )
+    target_sources( ${TARGET_NAME} PRIVATE "${GEN_H}" "${GEN_C}" "${GEN_INC}" )
+    # PUBLIC so that consumers of this target can also find {module}.generated.h
+    target_include_directories( ${TARGET_NAME} PUBLIC "${GEN_DIR}" )
 
-    set_source_files_properties( "${GEN_H}" PROPERTIES HEADER_FILE_ONLY ON )
-    set_source_files_properties( "${GEN_C}" PROPERTIES HEADER_FILE_ONLY OFF )
+    set_source_files_properties( "${GEN_H}"   PROPERTIES HEADER_FILE_ONLY ON )
+    set_source_files_properties( "${GEN_C}"   PROPERTIES HEADER_FILE_ONLY OFF )
+    set_source_files_properties( "${GEN_INC}" PROPERTIES HEADER_FILE_ONLY ON )
 
-    source_group( "Generated" FILES "${GEN_H}" "${GEN_C}" )
+    source_group( "Generated" FILES "${GEN_H}" "${GEN_C}" "${GEN_INC}" )
 
 endfunction()
 
@@ -400,8 +404,10 @@ add_module( render          "source/runtime_modules/render"          "03_Runtime
 add_module( audio           "source/runtime_modules/audio"           "03_Runtime_Modules" "audio.c"           )
 add_module( physics         "source/runtime_modules/physics"         "03_Runtime_Modules" "physics.c"         )
 add_module( example_reflect "source/runtime_modules/example_reflect" "03_Runtime_Modules" "example_reflect.c" )
+add_module( example_gen     "source/runtime_modules/example_gen"     "03_Runtime_Modules" "example_gen.c" )
 
 target_add_reflect_gen( example_reflect "source/runtime_modules/example_reflect" "example_reflect" )
+target_add_reflect_gen( example_gen     "source/runtime_modules/example_gen"     "example_gen" )
 
 # target_link_libraries( example PUBLIC base )
 # target_link_libraries( render  PUBLIC base )
@@ -505,7 +511,9 @@ add_unity_executable( sb_engine_sys      "source/sandbox/engine/engine_sys"     
 add_unity_executable( sb_engine_app      "source/sandbox/engine/engine_app"       "09_Sandbox/Engine" "sb_engine_app.c")
 add_unity_executable( sb_engine_core     "source/sandbox/engine/engine_core"      "09_Sandbox/Engine" "sb_engine_core.c" )
 add_unity_executable( sb_engine_reflect  "source/sandbox/engine/engine_reflect"   "09_Sandbox/Engine" "sb_engine_reflect.c" )
+
 add_unity_executable( sb_runtime_reflect "source/sandbox/runtime/runtime_reflect" "09_Sandbox/Runtime" "sb_runtime_reflect.c" )
+add_unity_executable( sb_runtime_gen     "source/sandbox/runtime/runtime_gen"     "09_Sandbox/Runtime" "sb_runtime_gen.c" )
 
 target_link_libraries( sb_base            PRIVATE base )
 target_link_libraries( sb_engine_mod      PRIVATE engine_sys engine_mod dev_build dev_hot )
@@ -513,7 +521,9 @@ target_link_libraries( sb_engine_sys      PRIVATE engine_sys )
 target_link_libraries( sb_engine_app      PRIVATE engine_sys engine_mod engine_app )
 target_link_libraries( sb_engine_core     PRIVATE engine_core )
 target_link_libraries( sb_engine_reflect  PRIVATE engine_core engine_rs )
+
 target_link_libraries( sb_runtime_reflect PRIVATE engine_sys engine_mod engine_core engine_rs )
+target_link_libraries( sb_runtime_gen     PRIVATE engine_sys engine_mod engine_core engine_rs )
 
 # rs_test.c is not a unity entry; compile it as a separate TU for the reflect sandbox
 set_source_files_properties( "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" PROPERTIES HEADER_FILE_ONLY OFF )

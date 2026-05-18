@@ -16,6 +16,7 @@ rg_scan( const char* source_dir, rg_file_list_t* out )
     static char all_paths[ RG_MAX_FILES ][ RG_MAX_PATH ];
     int  n = rg_platform_scan_dir( source_dir, all_paths, RG_MAX_FILES );
 
+    rg_str_copy( out->source_dir, source_dir, RG_MAX_PATH );
     out->count = 0;
     for ( int i = 0; i < n && out->count < RG_MAX_FILES; i++ )
     {

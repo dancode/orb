@@ -244,7 +244,9 @@ typedef ptrdiff_t isize;
 #define RS_ENUM(...)
 #define RS_BITSET(...)
 #define RS_PROP(...)
-#define RS_VAR(...)
+
+#define RS_MODULE(...)
+#define RS_API(...)
 // clang-format on
 
 /*==============================================================================================

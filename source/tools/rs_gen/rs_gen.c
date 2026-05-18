@@ -116,8 +116,12 @@ main( int argc, char** argv )
     
     /* Show results and exit. In release, this is the only output on success. */
 
-    printf( "[build_reflect] %s: %d struct(s), %d enum(s)\n", 
-        module_name, data.struct_count, data.enum_count );
+    if ( data.module_api.has_module )
+        printf( "[build_reflect] %s: %d struct(s), %d enum(s), module API: %d fn(s)\n",
+                module_name, data.struct_count, data.enum_count, data.module_api.func_count );
+    else
+        printf( "[build_reflect] %s: %d struct(s), %d enum(s)\n",
+                module_name, data.struct_count, data.enum_count );
 
     return 0; /* Success */
 }
