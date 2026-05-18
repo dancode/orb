@@ -19,7 +19,7 @@
 #include "developer/dev_hot/dev_hot.h"
 
 #include "runtime_modules/example/example.h"
-MOD_DEFINE_API_PTR( example_api_t, example );
+MOD_USE_EXAMPLE;
 
 /*============================================================================================*/
 

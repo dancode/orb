@@ -55,35 +55,38 @@ static core_debug_api_t   g_core_debug_api_struct = {
       .intern_arena     = &g_intern.arena,
 };
 
+/* Natvis anchor: the exe's g_debug_api. Each DLL defines its own via CORE_DEBUG_API_DECL. */
+core_debug_api_t* g_debug_api = &g_core_debug_api_struct;
+
 /*==============================================================================================
     API struct
 ==============================================================================================*/
 
 const core_api_t g_core_api_struct = {
 
-    .debug_api     = &g_core_debug_api_struct,
+    .debug_api          = &g_core_debug_api_struct,
 
-    .assert_report = assert_report,
+    .assert_report      = assert_report,
 
-    .log               = log_default,
-    .log_info          = log_info,
-    .log_warn          = log_warn,
-    .log_error         = log_error,
-    .log_set_min_level = log_set_min_level,
+    .log                = log_default,
+    .log_info           = log_info,
+    .log_warn           = log_warn,
+    .log_error          = log_error,
+    .log_set_min_level  = log_set_min_level,
 
-    .alloc             = core_alloc,
-    .realloc           = core_realloc,
-    .free              = core_free,
+    .alloc              = core_alloc,
+    .realloc            = core_realloc,
+    .free               = core_free,
 
-    .sid_intern        = sid_intern,
-    .sid_intern_cstr   = sid_intern_cstr,
-    .sid_find_cstr     = sid_find_cstr,
-    .sid_cstr          = sid_cstr,
-    .sid_length        = sid_length,
-    .sid_is_canonical  = sid_is_canonical,
-    .sid_get_hash      = sid_get_hash,
-    .sid_print_stats   = sid_print_stats,
-    .sid_reset_stats   = sid_reset_stats,
+    .sid_intern         = sid_intern,
+    .sid_intern_cstr    = sid_intern_cstr,
+    .sid_find_cstr      = sid_find_cstr,
+    .sid_cstr           = sid_cstr,
+    .sid_length         = sid_length,
+    .sid_is_canonical   = sid_is_canonical,
+    .sid_get_hash       = sid_get_hash,
+    .sid_print_stats    = sid_print_stats,
+    .sid_reset_stats    = sid_reset_stats,
 
     // .cvar_find = cvar_find,
     // .cvar_register = cvar_register,
@@ -98,7 +101,7 @@ const core_api_t g_core_api_struct = {
     Module lifecycle  (called by the module system)
 ==============================================================================================*/
 
-static bool
+bool
 core_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
@@ -107,7 +110,7 @@ core_mod_init( void* raw_state, get_api_fn get_api )
     return true;
 }
 
-static void
+void
 core_mod_exit( void* raw_state )
 {
     UNUSED( raw_state );

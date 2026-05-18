@@ -409,6 +409,8 @@ add_module( example_gen     "source/runtime_modules/example_gen"     "03_Runtime
 target_add_reflect_gen( example_reflect "source/runtime_modules/example_reflect" "example_reflect" )
 target_add_reflect_gen( example_gen     "source/runtime_modules/example_gen"     "example_gen" )
 
+# target_link_libraries( example_gen PUBLIC engine_core )
+
 # target_link_libraries( example PUBLIC base )
 # target_link_libraries( render  PUBLIC base )
 # target_link_libraries( audio   PUBLIC base )

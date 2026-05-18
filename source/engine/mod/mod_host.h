@@ -61,6 +61,9 @@
     #define mod_load( name ) mod_dynamic_load( #name )
 #endif
 
+/* Always-static variant — use for modules that are never DLLs (sys, core, mod). */
+#define mod_static( name ) mod_static_load( #name, name##_get_mod_desc() )
+
 /*==============================================================================================
     MOD_HOST_FETCH_API — Populates a cached API pointer from outside a module init() callback.
 

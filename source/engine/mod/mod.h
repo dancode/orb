@@ -128,5 +128,13 @@ MOD_GATEWAY_STATIC( mod_api_t, mod )
 MOD_GATEWAY_DYNAMIC( mod_api_t, mod )
 #endif
 
+#if defined( BUILD_STATIC ) || defined( MOD_STATIC )
+    #define MOD_USE_MOD    /* static build */
+    #define MOD_FETCH_MOD  true
+#else
+    #define MOD_USE_MOD    MOD_DEFINE_API_PTR( mod_api_t, mod )
+    #define MOD_FETCH_MOD  MOD_FETCH_API( mod_api_t, mod )
+#endif
+
 /*============================================================================================*/
 #endif    // MOD_H

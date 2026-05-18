@@ -41,8 +41,7 @@
 
 #include "runtime_modules/example_reflect/example_reflect.h"
 
-/* Declare a cached pointer to example_reflect's API so we can call its functions. */
-MOD_DEFINE_API_PTR( example_reflect_api_t, example_reflect );
+MOD_USE_EXAMPLE_REFLECT;
 
 /*==============================================================================================
     Callbacks used by the iteration and walker examples below.

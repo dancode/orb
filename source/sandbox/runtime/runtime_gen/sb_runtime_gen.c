@@ -3,10 +3,12 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 
+#include "engine/core/core.h"
+#include "engine/rs/rs.h"
 
 #include "runtime_modules/example_gen/example_gen.h"
 MOD_DEFINE_API_PTR( example_gen_api_t, example_gen );
-
+MOD_USE_CORE;
 
 /*============================================================================================*/
 int
@@ -19,7 +21,13 @@ main( int argc, char** argv )
 
     // dev_hot_init( NULL, NULL );
 
-    if ( !mod_static_load( "sys", sys_get_mod_desc() ) )
+    if ( !mod_static( sys ) )
+        goto shutdown;
+
+    if ( !mod_static( rs ) )
+        goto shutdown;
+
+    if ( !mod_static( core ) )
         goto shutdown;
 
     if ( !mod_load( example_gen ) )
@@ -34,6 +42,10 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
+    MOD_HOST_FETCH_API( core_api_t, core );
+    sid_t sid = core()->sid_intern_cstr( "test_sid_host" );
+
+    UNUSED( sid );
     mod_list_all();
 
     MOD_HOST_FETCH_API( example_gen_api_t, example_gen );

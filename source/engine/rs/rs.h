@@ -703,6 +703,14 @@ MOD_GATEWAY_STATIC( rs_api_t, rs )
 MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
 #endif
 
+#if defined( BUILD_STATIC ) || defined( RS_STATIC )
+    #define MOD_USE_RS    /* static build */
+    #define MOD_FETCH_RS  true
+#else
+    #define MOD_USE_RS    MOD_DEFINE_API_PTR( rs_api_t, rs )
+    #define MOD_FETCH_RS  MOD_FETCH_API( rs_api_t, rs )
+#endif
+
 /*==============================================================================================
     Reflection annotation macros  -  defined in orb.h (included above via orb.h -> here).
 

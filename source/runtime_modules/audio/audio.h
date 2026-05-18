@@ -26,5 +26,13 @@ MOD_GATEWAY_STATIC( audio_api_t, audio )
 MOD_GATEWAY_DYNAMIC( audio_api_t, audio )
 #endif
 
+#if defined( BUILD_STATIC ) || defined( AUDIO_STATIC )
+    #define MOD_USE_AUDIO    /* static build */
+    #define MOD_FETCH_AUDIO  true
+#else
+    #define MOD_USE_AUDIO    MOD_DEFINE_API_PTR( audio_api_t, audio )
+    #define MOD_FETCH_AUDIO  MOD_FETCH_API( audio_api_t, audio )
+#endif
+
 /*============================================================================================*/
 #endif    // AUDIO_H

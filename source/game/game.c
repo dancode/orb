@@ -17,10 +17,10 @@
 #include "runtime_modules/render/render.h"
 #include "runtime_modules/physics/physics.h"
 
-MOD_DEFINE_API_PTR( core_api_t, core );
-MOD_DEFINE_API_PTR( render_api_t, render );
-MOD_DEFINE_API_PTR( audio_api_t, audio );
-MOD_DEFINE_API_PTR( physics_api_t, physics );
+MOD_USE_CORE;
+MOD_USE_RENDER;
+MOD_USE_AUDIO;
+MOD_USE_PHYSICS;
 
 /*==============================================================================================
     Game state
@@ -128,14 +128,10 @@ game_init( void* raw_state, get_api_fn get_api )
 {
     g_game_state = ( game_state_t* )raw_state;
 
-    if ( !MOD_FETCH_API( core_api_t, core ) )
-        return false;
-    if ( !MOD_FETCH_API( render_api_t, render ) )
-        return false;
-    if ( !MOD_FETCH_API( audio_api_t, audio ) )
-        return false;
-    if ( !MOD_FETCH_API( physics_api_t, physics ) )
-        return false;
+    if ( !MOD_FETCH_CORE )    return false;
+    if ( !MOD_FETCH_RENDER )  return false;
+    if ( !MOD_FETCH_AUDIO )   return false;
+    if ( !MOD_FETCH_PHYSICS ) return false;
 
     core()->log( "game: init (deps satisfied)" );
     return true;
@@ -146,10 +142,10 @@ game_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
     g_game_state = ( game_state_t* )raw_state;
-    MOD_FETCH_API( core_api_t, core );
-    MOD_FETCH_API( render_api_t, render );
-    MOD_FETCH_API( audio_api_t, audio );
-    MOD_FETCH_API( physics_api_t, physics );
+    MOD_FETCH_CORE;
+    MOD_FETCH_RENDER;
+    MOD_FETCH_AUDIO;
+    MOD_FETCH_PHYSICS;
     core()->log( "game: reloaded (score preserved = %d)", g_game_state->score );
     return true;
 }

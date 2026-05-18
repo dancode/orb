@@ -79,9 +79,9 @@ run_host_should_quit( void )
         The null path handles headless hosts that don't include app in their module list.
 ==============================================================================================*/
 
-MOD_DEFINE_API_PTR( app_api_t,    app    );
-MOD_DEFINE_API_PTR( rhi_api_t,    rhi    );
-MOD_DEFINE_API_PTR( render_api_t, render );
+MOD_USE_APP;
+MOD_USE_RHI;
+MOD_USE_RENDER;
 
 static win_id_t s_win_id = APP_WIN_INVALID;
 

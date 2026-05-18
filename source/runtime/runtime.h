@@ -58,6 +58,14 @@ MOD_GATEWAY_STATIC( run_api_t, run )
 MOD_GATEWAY_DYNAMIC( run_api_t, run )
 #endif
 
+#if defined( BUILD_STATIC ) || defined( RUN_STATIC )
+    #define MOD_USE_RUN    /* static build */
+    #define MOD_FETCH_RUN  true
+#else
+    #define MOD_USE_RUN    MOD_DEFINE_API_PTR( run_api_t, run )
+    #define MOD_FETCH_RUN  MOD_FETCH_API( run_api_t, run )
+#endif
+
 /*==============================================================================================
     Host-internal — called once per frame by run_host.c before on_update is dispatched.
     Modules must not call this.

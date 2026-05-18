@@ -11,7 +11,12 @@
 #include "runtime_modules/example_gen/example_gen.h"
 #include "example_gen.generated.h"
 
+#include "engine/core/core.h"
+
 RS_MODULE( example_gen )
+
+MOD_USE_CORE;
+
 
 /*==============================================================================================
     API implementations
@@ -31,6 +36,14 @@ example_gen_mod_init( void* state, get_api_fn get_api )
     UNUSED( state );
     UNUSED( get_api );
     printf( "\n[example_gen] init\n" );
+
+    if ( !MOD_FETCH_CORE ) {
+        return false;
+    }
+
+    sid_t sid = core()->sid_intern_cstr( "test_sid_string" );
+    UNUSED( sid );
+
     return true;
 }
 
@@ -39,6 +52,9 @@ example_gen_mod_reload( void* state, get_api_fn get_api )
 {
     UNUSED( state );
     UNUSED( get_api );
+    if ( !MOD_FETCH_CORE ) {
+        return false;
+    }
     printf( "\n[example_gen] reload\n" );
     return true;
 }
@@ -54,7 +70,6 @@ example_gen_mod_exit( void* state )
     API implementations
 ==============================================================================================*/
 RS_API() void test_function_one( void ) { return; }
-
 RS_API() int test_function_two( void ) { return 99; }
 
 mod_desc_t*
@@ -65,8 +80,8 @@ example_gen_get_mod_desc( void )
         .state_size    = sizeof( example_gen_state_t ),
         .func_api      = MOD_API_FUNC( example_gen ),
         .func_api_size = sizeof( example_gen_api_t ),
-        .deps          = {},
-        .dep_count     = 0,
+        .deps          = { "core" },
+        .dep_count     = 1,
         .init          = example_gen_mod_init,
         .reload        = example_gen_mod_reload,
         .exit          = example_gen_mod_exit,

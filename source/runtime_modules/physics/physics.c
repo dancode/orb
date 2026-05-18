@@ -14,7 +14,7 @@
 
 #include "physics.h"
 
-MOD_DEFINE_API_PTR( core_api_t, core );
+MOD_USE_CORE;
 
 /*============================================================================================*/
 
@@ -52,7 +52,7 @@ physics_init( void* raw_state, get_api_fn get_api )
 {
     g_state = ( physics_state_t* )raw_state;
 
-    if ( !MOD_FETCH_API( core_api_t, core ) )
+    if ( !MOD_FETCH_CORE )
         return false;
 
     core()->log( "physics: init (state=%p)", ( void* )g_state );
@@ -73,7 +73,7 @@ physics_reload( void* raw_state, get_api_fn get_api )
     UNUSED( get_api );
 
     g_state = ( physics_state_t* )raw_state;
-    MOD_FETCH_API( core_api_t, core );
+    MOD_FETCH_CORE;
 
     core()->log( "physics: reloaded (frames so far = %d)", g_state->frame_count );
     return true;

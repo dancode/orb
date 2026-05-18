@@ -16,9 +16,8 @@
 #include "engine/mod/mod_host.h"
 #include "runtime/host.h"
 
-/* declare dynamic modules api */
 #include "runtime_modules/example/example.h"
-MOD_DEFINE_API_PTR( example_api_t, example );
+MOD_USE_EXAMPLE;
 
 /*==============================================================================================
     Host callbacks

@@ -28,5 +28,13 @@ mod_desc_t* example_get_mod_desc( void );
 MOD_GATEWAY_DYNAMIC( example_api_t, example )
 #endif
 
+#if defined( BUILD_STATIC ) || defined( EXAMPLE_STATIC )
+    #define MOD_USE_EXAMPLE    /* static build */
+    #define MOD_FETCH_EXAMPLE  true
+#else
+    #define MOD_USE_EXAMPLE    MOD_DEFINE_API_PTR( example_api_t, example )
+    #define MOD_FETCH_EXAMPLE  MOD_FETCH_API( example_api_t, example )
+#endif
+
 /*============================================================================================*/
 #endif    // EXAMPLE_H

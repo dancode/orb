@@ -20,10 +20,6 @@
     Literal classification
 ----------------------------------------------------------------------------------------------*/
 
-/**
- * Determines if a token is an integer, float, string literal, or a "tag" (identifier).
- * Used to set the correct metadata type for attribute values.
- */
 static int
 classify_literal( const char* s )
 {
@@ -63,39 +59,15 @@ classify_literal( const char* s )
     String helpers
 ----------------------------------------------------------------------------------------------*/
 
-/**
- * Removes the outer double-quotes from a string literal.
- * Note: Escape sequences (\n, \", etc.) remain raw in this stage.
- */
 static void
 unquote_string( char* s )
 {
     int n = rg_str_len( s );
     if ( n >= 2 && s[ 0 ] == '"' && s[ n - 1 ] == '"' )
     {
-        /* Shift content left by 1 and terminate. */
         memmove( s, s + 1, ( size_t )( n - 2 ) );
         s[ n - 2 ] = '\0';
     }
-}
-
-/*--------------------------------------------------------------------------------------------*/
-/* Removes leading and trailing whitespace characters in-place.                               */
-
-static void
-trim( char* s )
-{
-    /* Remove trailing spaces. */
-    int n = rg_str_len( s );
-    while ( n > 0 && is_space( ( unsigned char )s[ n - 1 ] ) ) s[ --n ] = '\0';
-
-    /* Find first non-space character. */
-    int i = 0;
-    while ( s[ i ] && is_space( ( unsigned char )s[ i ] ) ) i++;
-
-    /* If leading spaces found, shift the string left. */
-    if ( i > 0 )
-        memmove( s, s + i, ( size_t )( rg_str_len( s + i ) + 1 ) );
 }
 
 // clang-format off

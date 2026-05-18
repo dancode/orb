@@ -277,20 +277,14 @@ parse_api_func( const char* p, rg_module_api_t* mod )
     Body parsers
 ----------------------------------------------------------------------------------------------*/
 
-/* Scan a RS_STRUCT body for RS_PROP markers and parse each field declaration.
-   `body_start` points just after '{'; `body_end` points at the closing '}'. */
-
 static void
 parse_struct_body( const char* body_start, const char* body_end, const char* buf_start, rg_decl_type_t* type )
 {
     const char* p = body_start;
     while ( p < body_end && ( p = (const char*)memchr( p, 'R', (size_t)( body_end - p ) ) ) != NULL )
     {
-        if ( p[ 1 ] != 'S' || p[ 2 ] != '_' )                               { p++; continue; }
-        if ( p > buf_start && is_ident_char( (unsigned char)p[ -1 ] ) )      { p++; continue; }
-        if ( strncmp( p + 3, "PROP", 4 ) != 0 || is_ident_char( (unsigned char)p[ 7 ] ) ) { p++; continue; }
-
-        p += 7;
+        if ( !match_word( p, buf_start, "RS_PROP" ) ) { p++; continue; }
+        p += (int)( sizeof( "RS_PROP" ) - 1 );
         p = skip_ws( p );
 
         char args[ 1024 ] = { 0 };
@@ -384,26 +378,14 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
     const char* p = buf;
     while ( ( p = strchr( p, 'R' ) ) != NULL )
     {
-        /* pre-filter: all our markers begin with RS_ and skip everything else. */
-        if ( p[ 1 ] != 'S' || p[ 2 ] != '_' ) { p++; continue; }
-
-        /* check leading character before 'R' invalidaetes it PARSE, or xRS_, etc */
-        if ( p > buf && is_ident_char( (unsigned char)p[ -1 ] ) ) { p++; continue; }
-
-        const char* s = p + 3; /* skip RS_ */
-
-        /* dispatch on the suffix; trailing boundary checked per match. */        
-
         int kind = -1;
-        int marker_len = 0;
 
-        if      ( !api_only && strncmp( s, "STRUCT", 6 ) == 0 && !is_ident_char( (unsigned char)s[ 6 ] ) ) { kind = RG_KIND_STRUCT; marker_len = 9; }
-        else if ( !api_only && strncmp( s, "BITSET", 6 ) == 0 && !is_ident_char( (unsigned char)s[ 6 ] ) ) { kind = RG_KIND_BITSET; marker_len = 9; }
-        else if ( !api_only && strncmp( s, "ENUM",   4 ) == 0 && !is_ident_char( (unsigned char)s[ 4 ] ) ) { kind = RG_KIND_ENUM;   marker_len = 7; }
-        else if ( strncmp( s, "MODULE", 6 ) == 0 && !is_ident_char( (unsigned char)s[ 6 ] ) )
+        if      ( !api_only && match_word( p, buf, "RS_STRUCT" ) ) kind = RG_KIND_STRUCT;
+        else if ( !api_only && match_word( p, buf, "RS_BITSET" ) ) kind = RG_KIND_BITSET;
+        else if ( !api_only && match_word( p, buf, "RS_ENUM"   ) ) kind = RG_KIND_ENUM;
+        else if ( match_word( p, buf, "RS_MODULE" ) )
         {
-            /* RS_MODULE( name ) — declares the module name for API generation */
-            p += 9; /* advance past "RS_MODULE" */
+            p += (int)( sizeof( "RS_MODULE" ) - 1 );
             p = skip_ws( p );
             char mod_name[ RG_MAX_NAME ] = { 0 };
             if ( *p == '(' )
@@ -416,22 +398,22 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
             }
             continue;
         }
-        else if ( strncmp( s, "API", 3 ) == 0 && !is_ident_char( (unsigned char)s[ 3 ] ) )
+        else if ( match_word( p, buf, "RS_API" ) )
         {
-            /* RS_API() func_sig — adds a function to the generated module API struct */
-            p += 6; /* advance past "RS_API" */
+            p += (int)( sizeof( "RS_API" ) - 1 );
             p = skip_ws( p );
             char dummy[ 16 ] = { 0 };
             if ( *p == '(' )
-                p = read_paren_block( p, dummy, sizeof dummy ); /* consume the () */
+                p = read_paren_block( p, dummy, sizeof dummy );
             p = skip_ws( p );
             p = parse_api_func( p, &out->module_api );
             continue;
         }
 
-        if ( kind < 0 ) { p++; continue; } /* move to next 'R' and try again */
+        if ( kind < 0 ) { p++; continue; }
 
-        p += marker_len;
+        p += ( kind == RG_KIND_ENUM ) ? (int)( sizeof( "RS_ENUM"   ) - 1 )
+                                      : (int)( sizeof( "RS_STRUCT" ) - 1 );
         p  = skip_ws( p );
 
         /* optional attribute args in parentheses, e.g. RS_STRUCT( my_attr="value", other_attr=123 ) */
@@ -443,22 +425,13 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
         if ( out->type_count >= RG_MAX_TYPES )
             continue;
 
-        /* Found a valid marker. Parse it and add to the output list. 
-           We may still discard it later if we can't find a body or name,
-           but we'll count it as a type for now to avoid overflowing 
-           the output array with too many partial matches. */
-
-        /* new type entry, zero-initialised except for kind and attrs filled from marker args. */
-
         rg_decl_type_t* t = &out->types[ out->type_count ];
         memset( t, 0, sizeof *t );
         t->kind = kind;
-
         parse_attr_args( args, t->attrs, RG_MAX_ATTRS_PER_ITEM, &t->attr_count );
 
-        /* Walk forward past optional 'typedef struct tag' preamble to the opening '{'.
-           Skip a trailing ';' so that RS_ENUM(); on its own line works correctly. */
-
+        /* Walk past optional 'typedef struct tag' preamble to '{'.
+           RS_ENUM(); on its own line emits a trailing ';' we also skip. */
         p = skip_ws( p );
         if ( *p == ';' ) { p++; p = skip_ws( p ); }
         while ( is_ident_start( ( unsigned char )*p ) )
@@ -520,6 +493,71 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
 // clang-format on
 
 /*----------------------------------------------------------------------------------------------
+    File loader and per-file parse helpers
+----------------------------------------------------------------------------------------------*/
+
+/* Opens path, reads up to max-1 bytes into buf, null-terminates, returns bytes read.
+   Returns 0 on failure or if file is empty / exceeds buffer. */
+static size_t
+load_file( const char* path, char* buf, size_t max )
+{
+    FILE* f = fopen( path, "rb" );
+    if ( !f )
+        return 0;
+    fseek( f, 0, SEEK_END );
+    long size = ftell( f );
+    fseek( f, 0, SEEK_SET );
+    if ( size <= 0 || ( size_t )size >= max )
+    {
+        fclose( f );
+        return 0;
+    }
+    size_t n  = fread( buf, 1, ( size_t )size, f );
+    fclose( f );
+    buf[ n ] = '\0';
+    return n;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Full parse pass (.h): collects types + API; 
+    records path in parse data->headers[] when something is found.
+----------------------------------------------------------------------------------------------*/
+
+static void
+parse_file_headers( const char* path, rg_parse_data_t* out, char* buf, size_t buf_max )
+{
+    if ( !load_file( path, buf, buf_max ) )
+        return;
+
+    strip_comments( buf );
+
+    int before_types = out->type_count;
+    int before_funcs = out->module_api.func_count;
+
+    parse_buffer( buf, out, 0 );
+
+    if ( ( out->type_count > before_types || out->module_api.func_count > before_funcs )
+         && out->header_count < RG_MAX_FILES )
+    {
+        make_include_path( path, out->headers[ out->header_count++ ], RG_MAX_PATH );
+    }
+}
+
+/* API-only parse pass (.c): collects RS_MODULE/RS_API and marks found funcs as C-sourced. */
+static void
+parse_file_api( const char* path, rg_parse_data_t* out, char* buf, size_t buf_max )
+{
+    if ( !load_file( path, buf, buf_max ) )
+        return;
+    strip_comments( buf );
+
+    int before_funcs = out->module_api.func_count;
+    parse_buffer( buf, out, 1 );
+    for ( int fi = before_funcs; fi < out->module_api.func_count; fi++ )
+        out->module_api.funcs[ fi ].src_is_c = 1;
+}
+
+/*----------------------------------------------------------------------------------------------
     Public entry
 ----------------------------------------------------------------------------------------------*/
 
@@ -534,100 +572,18 @@ rg_parse( const rg_file_list_t* files, rg_parse_data_t* out )
     out->module_api.func_count = 0;
     out->module_api.name[ 0 ]  = '\0';
 
-    /* Single reusable read buffer - files are processed one at a time. */
     static char s_buf[ 8 * 1024 * 1024 + 1 ];
 
+    /* Header pass: types + API from .h files collected by rg_scan. */
     for ( int i = 0; i < files->count; i++ )
-    {
-        FILE* f = fopen( files->paths[ i ], "rb" );
-        if ( !f )
-            continue;
+        parse_file_headers( files->paths[ i ], out, s_buf, sizeof s_buf );
 
-        /* Determine file size by seeking to end, then back to start.
-           If the file is empty or too large for our buffer, skip it. */
-
-        fseek( f, 0, SEEK_END );
-        long size = ftell( f );
-        fseek( f, 0, SEEK_SET );
-
-        if ( size <= 0 || size >= ( long )sizeof s_buf )
-        {
-            fclose( f );
-            continue;
-        }
-
-        /* Read the whole file into the buffer, then parse it. */
-
-        size_t nread = fread( s_buf, 1, ( size_t )size, f );
-        fclose( f );
-        s_buf[ nread ] = '\0';
-        strip_comments( s_buf );
-
-        /* parse_buffer may find multiple types in the same file, but we only add the file to the
-           header list if at least one new type is found (to avoid spurious includes from files
-           that only have forward declarations or attributes). */
-
-        int before_types = out->type_count;        // RS_STRUCT/RS_ENUM count before parsing
-        int before_funcs = out->module_api.func_count; // RS_API count before parsing
-
-        parse_buffer( s_buf, out, 0 /* full pass: types + API */ );
-
-        /* Add the file to the include list if any new types or API functions were found.
-           This ensures the generated .c can see the declarations for both struct types
-           and RS_API()-annotated functions. */
-
-        int new_types = out->type_count > before_types;
-        int new_funcs = out->module_api.func_count > before_funcs;
-
-        if ( ( new_types || new_funcs ) && out->header_count < RG_MAX_FILES )
-        {
-            make_include_path( files->paths[ i ], out->headers[ out->header_count ], RG_MAX_PATH );
-            out->header_count++;
-        }
-    }
-
-    /* Second pass: scan .c files in the same directory for RS_MODULE / RS_API only.
-       RS_STRUCT/RS_ENUM are skipped to avoid double-counting types that also appear
-       in the .h files via #include.  Functions found here get forward declarations
-       emitted into the generated .c so the struct initialiser can reference them. */
-
+    /* Source pass: API-only from .c files; found functions get forward-decls in the generated .c. */
     static char s_c_paths[ RG_MAX_FILES ][ RG_MAX_PATH ];
     int c_count = rg_platform_scan_dir( files->source_dir, s_c_paths, RG_MAX_FILES );
-
     for ( int i = 0; i < c_count; i++ )
-    {
-        if ( !rg_str_ends_with( s_c_paths[ i ], ".c" ) )
-            continue;
-
-        FILE* f = fopen( s_c_paths[ i ], "rb" );
-        if ( !f )
-            continue;
-
-        fseek( f, 0, SEEK_END );
-        long size = ftell( f );
-        fseek( f, 0, SEEK_SET );
-
-        if ( size <= 0 || size >= ( long )sizeof s_buf )
-        {
-            fclose( f );
-            continue;
-        }
-
-        size_t nread = fread( s_buf, 1, ( size_t )size, f );
-        fclose( f );
-        s_buf[ nread ] = '\0';
-        strip_comments( s_buf );
-
-        int before_funcs = out->module_api.func_count;
-
-        parse_buffer( s_buf, out, 1 /* api_only */ );
-
-        /* Mark found functions as coming from a .c source so the output can emit
-           forward declarations instead of relying on a header include. */
-
-        for ( int fi = before_funcs; fi < out->module_api.func_count; fi++ )
-            out->module_api.funcs[ fi ].src_is_c = 1;
-    }
+        if ( rg_str_ends_with( s_c_paths[ i ], ".c" ) )
+            parse_file_api( s_c_paths[ i ], out, s_buf, sizeof s_buf );
 }
 
 /*--------------------------------------------------------------------------------------------*/

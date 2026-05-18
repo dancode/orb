@@ -96,5 +96,13 @@ MOD_GATEWAY_STATIC( rhi_api_t, rhi )
 MOD_GATEWAY_DYNAMIC( rhi_api_t, rhi )
 #endif
 
+#if defined( BUILD_STATIC ) || defined( RHI_STATIC )
+    #define MOD_USE_RHI    /* static build */
+    #define MOD_FETCH_RHI  true
+#else
+    #define MOD_USE_RHI    MOD_DEFINE_API_PTR( rhi_api_t, rhi )
+    #define MOD_FETCH_RHI  MOD_FETCH_API( rhi_api_t, rhi )
+#endif
+
 /*============================================================================================*/
 #endif    // RHI_H

@@ -41,30 +41,30 @@ typedef struct core_api_s
     core_debug_api_t* debug_api;    // for natvis and debugging
 
     /* assertions */
-    bool ( *assert_report )( const char* cond, const char* msg, const char* file, int line );
+    bool        ( *assert_report )      ( const char* cond, const char* msg, const char* file, int line );
 
     /* logging */
-    void ( *log )( const char* fmt, ... );
-    void ( *log_info )( const char* fmt, ... );
-    void ( *log_warn )( const char* fmt, ... );
-    void ( *log_error )( const char* fmt, ... );
-    void ( *log_set_min_level )( log_level_t level );
+    void        ( *log )                ( const char* fmt, ... );
+    void        ( *log_info )           ( const char* fmt, ... );
+    void        ( *log_warn )           ( const char* fmt, ... );
+    void        ( *log_error )          ( const char* fmt, ... );
+    void        ( *log_set_min_level )  ( log_level_t level );
 
     /* allocator */
-    void* ( *alloc )( size_t size );
-    void* ( *realloc )( void* ptr, size_t size );
-    void ( *free )( void* ptr );
+    void*       ( *alloc )              ( size_t size );
+    void*       ( *realloc )            ( void* ptr, size_t size );
+    void        ( *free )               ( void* ptr );
 
     /* sid */
-    sid_t       ( *sid_intern )       ( const char* str, int32_t len );
-    sid_t       ( *sid_intern_cstr )  ( const char* str );
-    sid_t       ( *sid_find_cstr )    ( const char* str );
-    const char* ( *sid_cstr )         ( sid_t sid );
-    uint8_t     ( *sid_length )       ( sid_t sid );
-    bool        ( *sid_is_canonical ) ( sid_t sid, const char* str, size_t len );
-    uint32_t    ( *sid_get_hash )     ( sid_t sid );
-    void        ( *sid_print_stats )  ( void* fp );
-    void        ( *sid_reset_stats )  ( void );
+    sid_t       ( *sid_intern )         ( const char* str, int32_t len );
+    sid_t       ( *sid_intern_cstr )    ( const char* str );
+    sid_t       ( *sid_find_cstr )      ( const char* str );
+    const char* ( *sid_cstr )           ( sid_t sid );
+    uint8_t     ( *sid_length )         ( sid_t sid );
+    bool        ( *sid_is_canonical )   ( sid_t sid, const char* str, size_t len );
+    uint32_t    ( *sid_get_hash )       ( sid_t sid );
+    void        ( *sid_print_stats )    ( void* fp );
+    void        ( *sid_reset_stats )    ( void );
 
     /* cvar system */
     // cvar_find_fn cvar_find;
@@ -82,6 +82,30 @@ typedef struct core_api_s
 MOD_GATEWAY_STATIC( core_api_t, core )
 #else
 MOD_GATEWAY_DYNAMIC( core_api_t, core )
+#endif
+
+/*==============================================================================================
+    MOD_USE_CORE   — File-scope: defines the core API pointer and the natvis g_debug_api anchor.
+    MOD_FETCH_CORE — In init()/reload(): populates both in one call. Requires get_api in scope.
+
+    Static builds: g_debug_api is defined in engine_core; no DLL pointer needed.
+    Dynamic builds: both are NULL until MOD_FETCH_CORE runs in init()/reload().
+
+    Usage:
+        MOD_USE_CORE;                              // file scope
+        if ( !MOD_FETCH_CORE ) return false;       // in init() / reload()
+==============================================================================================*/
+
+#if defined( BUILD_STATIC ) || defined( CORE_STATIC )
+    #define MOD_USE_CORE    /* g_debug_api defined in engine_core; static gateway needs no ptr */
+    #define MOD_FETCH_CORE  true
+#else
+    #define MOD_USE_CORE \
+        const core_api_t* g_core_api_ptr = NULL; \
+        core_debug_api_t* g_debug_api    = NULL
+    #define MOD_FETCH_CORE \
+        ( ( g_core_api_ptr = ( const core_api_t* )get_api( "core" ) ) != NULL && \
+          ( g_debug_api = g_core_api_ptr->debug_api, true ) )
 #endif
 
 /*============================================================================================*/

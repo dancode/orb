@@ -33,8 +33,8 @@
     Cached API pointers
 ==============================================================================================*/
 
-MOD_DEFINE_API_PTR( core_api_t, core );
-MOD_DEFINE_API_PTR( rhi_api_t,  rhi  );
+MOD_USE_CORE;
+MOD_USE_RHI;
 
 /*==============================================================================================
     Persistent state
@@ -137,10 +137,10 @@ render_init( void* raw_state, get_api_fn get_api )
     UNUSED( get_api );
     g_state = ( render_state_t* )raw_state;
 
-    if ( !MOD_FETCH_API( core_api_t, core ) )
+    if ( !MOD_FETCH_CORE )
         return false;
 
-    if ( !MOD_FETCH_API( rhi_api_t, rhi ) )
+    if ( !MOD_FETCH_RHI )
     {
         fprintf( stderr, "[render] failed to fetch rhi_api\n" );
         return false;
@@ -161,10 +161,10 @@ render_reload( void* raw_state, get_api_fn get_api )
     UNUSED( get_api );
     g_state = ( render_state_t* )raw_state;
 
-    if ( !MOD_FETCH_API( core_api_t, core ) )
+    if ( !MOD_FETCH_CORE )
         return false;
 
-    if ( !MOD_FETCH_API( rhi_api_t, rhi ) )
+    if ( !MOD_FETCH_RHI )
     {
         fprintf( stderr, "[render] failed to re-fetch rhi_api after reload\n" );
         return false;

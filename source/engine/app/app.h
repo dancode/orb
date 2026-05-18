@@ -352,5 +352,13 @@ MOD_GATEWAY_STATIC( app_api_t, app )
 MOD_GATEWAY_DYNAMIC( app_api_t, app )
 #endif
 
+#if defined( BUILD_STATIC ) || defined( APP_STATIC )
+    #define MOD_USE_APP    /* static build */
+    #define MOD_FETCH_APP  true
+#else
+    #define MOD_USE_APP    MOD_DEFINE_API_PTR( app_api_t, app )
+    #define MOD_FETCH_APP  MOD_FETCH_API( app_api_t, app )
+#endif
+
 /*============================================================================================*/
 #endif    // APP_H

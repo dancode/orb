@@ -43,13 +43,24 @@ is_ident_char( int c )
 }
 
 /*----------------------------------------------------------------------------------------------
+    String trimmer
+----------------------------------------------------------------------------------------------*/
+
+static void
+trim( char* s )
+{
+    int n = rg_str_len( s );
+    while ( n > 0 && is_space( ( unsigned char )s[ n - 1 ] ) ) s[ --n ] = '\0';
+    int i = 0;
+    while ( s[ i ] && is_space( ( unsigned char )s[ i ] ) ) i++;
+    if ( i > 0 )
+        memmove( s, s + i, ( size_t )( rg_str_len( s + i ) + 1 ) );
+}
+
+/*----------------------------------------------------------------------------------------------
     Whitespace and comment skipper
 ----------------------------------------------------------------------------------------------*/
 
-/**
- * Advances the cursor past all whitespace and C/C++ style comments.
- * Ensures the parser only sees relevant code tokens.
- */
 static const char*
 skip_ws( const char* p )
 {
@@ -151,10 +162,7 @@ strip_comments( char* p )
     Token readers
 ----------------------------------------------------------------------------------------------*/
 
-/**
- * Checks if a specific word (keyword) exists at the current cursor position.
- * It ensures the word is not just a substring of a larger identifier.
- */
+/* True if kw appears at p as a whole word (not preceded or followed by an ident char). */
 static int
 match_word( const char* p, const char* buf_start, const char* kw )
 {
@@ -177,9 +185,6 @@ match_word( const char* p, const char* buf_start, const char* kw )
 
 /*--------------------------------------------------------------------------------------------*/
 
-/**
- * Extracts a full C identifier (like a variable or struct name) into 'out'.
- */
 static const char*
 read_ident( const char* p, char* out, int max )
 {
@@ -205,10 +210,7 @@ read_ident( const char* p, char* out, int max )
 
 /*--------------------------------------------------------------------------------------------*/
 
-/**
- * Reads the content inside a set of parentheses: ( ... )
- * Correctly handles nested parentheses and string literals to find the true closing paren.
- */
+/* Reads the content inside ( ... ), handling nesting and string literals. */
 static const char*
 read_paren_block( const char* p, char* out, int max )
 {
@@ -282,10 +284,7 @@ read_paren_block( const char* p, char* out, int max )
     Brace block navigation
 ----------------------------------------------------------------------------------------------*/
 
-/**
- * Skips an entire { ... } block.
- * Handles nested braces, comments, and strings to ensure it finds the correct matching brace.
- */
+/* Advances past a matching { ... } block, respecting string literals and nested braces. */
 static const char*
 skip_brace_block( const char* p )
 {
@@ -295,43 +294,19 @@ skip_brace_block( const char* p )
     int depth = 1;
     while ( *p && depth > 0 )
     {
-        /* Skip line comments. */
-        if ( p[ 0 ] == '/' && p[ 1 ] == '/' )
-        {
-            while ( *p && *p != '\n' ) p++;
-            continue;
-        }
-
-        /* Skip block comments. */
-        if ( p[ 0 ] == '/' && p[ 1 ] == '*' )
-        {
-            p += 2;
-            while ( *p && !( p[ 0 ] == '*' && p[ 1 ] == '/' ) ) p++;
-            if ( *p )
-                p += 2;
-            continue;
-        }
-
-        /* Skip strings and character literals so braces inside them don't affect depth. */
         if ( *p == '"' || *p == '\'' )
         {
             char q = *p++;
             while ( *p && *p != q )
             {
-                if ( *p == '\\' && p[ 1 ] )
-                    p++;
+                if ( *p == '\\' && p[ 1 ] ) p++;
                 p++;
             }
-            if ( *p )
-                p++;
+            if ( *p ) p++;
             continue;
         }
-
-        /* Track nesting depth. */
-        if ( *p == '{' )
-            depth++;
-        else if ( *p == '}' )
-            depth--;
+        if ( *p == '{' ) depth++;
+        else if ( *p == '}' ) depth--;
         p++;
     }
     return p;
@@ -349,11 +324,7 @@ find_close_brace( const char* p )
     Struct / enum head parsing
 ----------------------------------------------------------------------------------------------*/
 
-/**
- * Attempts to read a typedef name after a closing brace.
- * Example: `} MyType;` -> extracts "MyType".
- * It also handles attributes like `} __attribute__((...)) MyType;`
- */
+/* Reads the typedef name after a closing '}', skipping any __attribute__((...)) tokens. */
 static int
 read_typedef_name( const char* close_brace, char* out, int max )
 {

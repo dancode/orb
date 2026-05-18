@@ -30,5 +30,13 @@ MOD_GATEWAY_STATIC( render_api_t, render )
 MOD_GATEWAY_DYNAMIC( render_api_t, render )
 #endif
 
+#if defined( BUILD_STATIC ) || defined( RENDER_STATIC )
+    #define MOD_USE_RENDER    /* static build */
+    #define MOD_FETCH_RENDER  true
+#else
+    #define MOD_USE_RENDER    MOD_DEFINE_API_PTR( render_api_t, render )
+    #define MOD_FETCH_RENDER  MOD_FETCH_API( render_api_t, render )
+#endif
+
 /*============================================================================================*/
 #endif    // RENDER_H

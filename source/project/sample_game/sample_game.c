@@ -23,9 +23,9 @@
 
 #include "sample_game.h"
 
-MOD_DEFINE_API_PTR( core_api_t, core );
-MOD_DEFINE_API_PTR( render_api_t, render );
-MOD_DEFINE_API_PTR( game_api_t, game );
+MOD_USE_CORE;
+MOD_USE_RENDER;
+MOD_USE_GAME;
 
 /*============================================================================================*/
 
