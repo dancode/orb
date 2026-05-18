@@ -75,9 +75,9 @@ api_demo_entity( void )
     return s ? &s->demo : NULL;
 }
 
-// const example_reflect_api_t g_example_reflect_api_struct = {
-//     .demo_entity = api_demo_entity,
-// };
+const example_reflect_api_t g_example_reflect_api_struct = {
+    .demo_entity = api_demo_entity,
+};
 
 /*==============================================================================================
     Lifecycle callbacks

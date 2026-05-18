@@ -89,21 +89,21 @@ typedef struct ex_entity_s
     Public module API
 ==============================================================================================*/
 
-// typedef struct example_reflect_api_s
-// {
-//     /* Returns a populated demo entity (pointer is stable for the module's lifetime). */
-//     const ex_entity_t* ( *demo_entity )( void );
-// 
-// } example_reflect_api_t;
+typedef struct example_reflect_api_s
+{
+    /* Returns a populated demo entity (pointer is stable for the module's lifetime). */
+    const ex_entity_t* ( *demo_entity )( void );
+
+} example_reflect_api_t;
 
 /*============================================================================================*/
 
-// #if defined( BUILD_STATIC ) || defined( EXAMPLE_REFLECT_STATIC )
-// MOD_GATEWAY_STATIC( example_reflect_api_t, example_reflect )
-// mod_desc_t* example_reflect_get_mod_desc( void );
-// #else
-// MOD_GATEWAY_DYNAMIC( example_reflect_api_t, example_reflect )
-// #endif
+#if defined( BUILD_STATIC ) || defined( EXAMPLE_REFLECT_STATIC )
+MOD_GATEWAY_STATIC( example_reflect_api_t, example_reflect )
+mod_desc_t* example_reflect_get_mod_desc( void );
+#else
+MOD_GATEWAY_DYNAMIC( example_reflect_api_t, example_reflect )
+#endif
 
 /*============================================================================================*/
 #endif    // EXAMPLE_REFLECT_H
