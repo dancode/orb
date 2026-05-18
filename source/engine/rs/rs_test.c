@@ -215,7 +215,7 @@ test_basic( void )
     printf( "\n=== rs: basic registration ===\n" );
 
     rs_init();
-    uint16_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game" );
 
     rs_test_register_vec3();
     rs_test_register_transform();
@@ -237,7 +237,7 @@ test_hot_reload_rs( void )
 
     rs_init();
 
-    uint16_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game" );
     rs_test_register_vec3();
     rs_test_register_transform();
     rs_test_register_entity();
@@ -252,7 +252,7 @@ test_hot_reload_rs( void )
     rs_get_stats( &t_count, &f_count, &fr_count );
     printf( "  after pop    : types=%u fields=%u frames=%u\n", t_count, f_count, fr_count );
 
-    game = rs_push_frame( "game", 2 );
+    game = rs_push_frame( "game" );
     rs_test_register_vec3();
     rs_test_register_transform();
     rs_test_register_entity();
@@ -276,7 +276,7 @@ test_mod_decode( void )
     printf( "\n=== rs: mod chain pretty-print ===\n" );
 
     rs_init();
-    uint16_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game" );
 
     rs_test_register_vec3();
     rs_test_register_transform();
@@ -308,7 +308,7 @@ test_enums( void )
     printf( "\n=== rs: enum registration ===\n" );
 
     rs_init();
-    uint16_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game" );
 
     rs_type_t type = { 0 };
     type.name_id  = test_intern( "color_t" );
@@ -347,7 +347,7 @@ test_enums( void )
     uint32_t schema_before = rs_get_type( tid )->schema_hash;
     rs_pop_frame( game );
 
-    game = rs_push_frame( "game", 2 );
+    game = rs_push_frame( "game" );
     tid  = rs_register_enum( &type, entries, 4 );
     rs_finalize_frame( game );
 
@@ -380,7 +380,7 @@ test_function_sigs( void )
     printf( "\n=== rs: function signatures ===\n" );
 
     rs_init();
-    uint16_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game" );
 
     /* vec3_t is needed by the signature's second parameter. */
     rs_test_register_vec3();
@@ -492,7 +492,7 @@ test_serialize( void )
     printf( "\n=== rs: serialization round-trip ===\n" );
 
     rs_init();
-    uint16_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game" );
 
     rs_test_register_vec3();
 
@@ -639,7 +639,7 @@ test_bitset( void )
     printf( "\n=== rs: bitset enum ===\n" );
 
     rs_init();
-    uint16_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game" );
 
     rs_type_t type = { 0 };
     type.name_id  = test_intern( "perm_t" );
@@ -742,7 +742,7 @@ test_walker( void )
     printf( "\n=== rs: reference walker ===\n" );
 
     rs_init();
-    uint16_t game = rs_push_frame( "game", 1 );
+    uint16_t game = rs_push_frame( "game" );
 
     rs_test_register_vec3();
 

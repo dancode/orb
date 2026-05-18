@@ -71,10 +71,9 @@
 
     <!-- rs_frame_t -->
     <Type Name="rs_frame_t">
-        <DisplayString>"{g_rs_str_pool+name_id,s}"  v{version}  types=[{first_type}..)</DisplayString>
+        <DisplayString>"{g_rs_str_pool+name_id,s}"  types=[{first_type}..)</DisplayString>
         <Expand>
             <Item Name="name">        g_rs_str_pool+name_id,s</Item>
-            <Item Name="version">     version</Item>
             <Item Name="first_type">  first_type</Item>
             <Item Name="first_field"> first_field</Item>
             <Item Name="first_attr">  first_attr</Item>

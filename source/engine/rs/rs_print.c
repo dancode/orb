@@ -186,8 +186,8 @@ rs_print_frame( uint16_t frame_id )
                        ? g_rs.type_count
                        : g_rs.frames[ frame_id + 1 ].first_type;
 
-    printf( "frame[%u] %s v%u  types[%u..%u) fields_start=%u attrs_start=%u\n",
-            frame_id, rs_cstr( f->name_id ), f->version,
+    printf( "frame[%u] %s  types[%u..%u) fields_start=%u attrs_start=%u\n",
+            frame_id, rs_cstr( f->name_id ),
             f->first_type, type_end, f->first_field, f->first_attr );
 
     for ( uint16_t i = f->first_type; i < type_end; i++ ) rs_print_type( i );

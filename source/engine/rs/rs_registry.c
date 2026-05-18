@@ -105,7 +105,7 @@ rs_init( void )
     memset( &g_rs, 0, sizeof( g_rs ) );
     for ( int i = 0; i < RS_TYPE_HASH_SIZE; i++ ) g_rs.type_hash[ i ] = RS_TYPE_INVALID;
 
-    uint16_t sys = rs_push_frame( "reflect", 1 );
+    uint16_t sys = rs_push_frame( "rs" );
     ( void )sys;
     rs_install_builtins();
 
@@ -141,7 +141,7 @@ rs_get_stats( uint16_t* type_count, uint16_t* field_count, uint16_t* frame_count
 /* Frames */
 
 uint16_t
-rs_push_frame( const char* name, uint32_t version )
+rs_push_frame( const char* name )
 {
     if ( !name || g_rs.frame_count >= RS_MAX_FRAMES )
     {
@@ -152,15 +152,14 @@ rs_push_frame( const char* name, uint32_t version )
     uint16_t    id = g_rs.frame_count++;
     rs_frame_t* f  = &g_rs.frames[ id ];
 
-    f->name_id = rs_intern( name );
-    f->version = version;
+    f->name_id     = rs_intern( name );
     f->first_type  = g_rs.type_count;
     f->first_field = g_rs.field_count;
     f->first_attr  = g_rs.attr_count;
     f->first_enum  = g_rs.enum_count;
 
     if ( rs_debug )
-        printf( "rs: push frame[%u] '%s' v%u\n", id, name, version );
+        printf( "rs: push frame[%u] '%s'\n", id, name );
 
     return id;
 }
@@ -487,7 +486,7 @@ rs_register_module( const char* name, const mod_desc_t* desc )
     typedef void ( *rs_register_fn )( const rs_reg_api_t* api );
     rs_register_fn rs_reg = ( rs_register_fn )desc->rs_register;
 
-    uint16_t frame = rs_push_frame( name, 1 );
+    uint16_t frame = rs_push_frame( name );
     if ( frame == RS_FRAME_INVALID ) return RS_FRAME_INVALID;
 
     rs_reg_api_t api = {

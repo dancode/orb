@@ -252,7 +252,6 @@ typedef struct rs_type_s
 typedef struct rs_frame_s
 {
     rs_name_t  name_id;         // interned module name; matches the module name passed to rs_push_frame
-    uint32_t   version;         // module version
     uint16_t   first_type;      // start of modules types - pop rewinds to these points
     uint16_t   first_field;     // start of modules fields
     uint16_t   first_attr;      // start of modules attributes
@@ -312,7 +311,7 @@ void      rs_unregister_module( const char* name );
     Frames
 ==============================================================================================*/
 
-uint16_t          rs_push_frame    ( const char* name, uint32_t version );
+uint16_t          rs_push_frame    ( const char* name );
 void              rs_pop_frame     ( uint16_t frame_id );
 bool              rs_finalize_frame( uint16_t frame_id );   /* resolve forward refs; false on error */
 const rs_frame_t* rs_get_frame     ( uint16_t frame_id );
