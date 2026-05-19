@@ -71,7 +71,7 @@ rs_write( const void* instance, uint16_t type_id, uint8_t* buf, size_t cap )
     if ( cap < need ) return 0;
 
     rs_write_u32_le( buf +  0, RS_SAVE_MAGIC );
-    rs_write_u32_le( buf +  4, t->hash );
+    rs_write_u32_le( buf +  4, t->name_hash );
     rs_write_u32_le( buf +  8, t->schema_hash );
     rs_write_u32_le( buf + 12, (uint32_t)t->size );
     rs_write_u32_le( buf + 16, 0 );
@@ -102,7 +102,7 @@ rs_read( void* instance, uint16_t expected_type_id,
     const rs_type_t* t = rs_get_type( expected_type_id );
     if ( !t ) return RS_IO_NO_TYPE;
 
-    if ( t->hash        != type_hash   ) return RS_IO_INCOMPAT;
+    if ( t->name_hash   != type_hash   ) return RS_IO_INCOMPAT;
     if ( t->schema_hash != schema_hash ) return RS_IO_INCOMPAT;
     if ( body_size      != t->size     ) return RS_IO_INCOMPAT;
 

@@ -57,7 +57,7 @@ rs_test_register_vec3( void )
 
     rs_type_t      type    = { 0 };
     type.name_id           = test_intern( "vec3_t" );
-    type.hash              = h_vec3;
+    type.name_hash        = h_vec3;
     type.size              = RS_SIZEOF( rs_test_vec3_t );
     type.align             = RS_ALIGNOF( rs_test_vec3_t );
     type.kind              = RS_KIND_STRUCT;
@@ -98,7 +98,7 @@ rs_test_register_transform( void )
 
     rs_type_t      type    = { 0 };
     type.name_id           = test_intern( "transform_t" );
-    type.hash              = h_xform;
+    type.name_hash         = h_xform;
     type.size              = RS_SIZEOF( rs_test_transform_t );
     type.align             = RS_ALIGNOF( rs_test_transform_t );
     type.kind              = RS_KIND_STRUCT;
@@ -135,7 +135,7 @@ rs_test_register_entity( void )
 
     rs_type_t      type     = { 0 };
     type.name_id            = test_intern( "entity_t" );
-    type.hash               = h_entity;
+    type.name_hash          = h_entity;
     type.size               = RS_SIZEOF( rs_test_entity_t );
     type.align              = RS_ALIGNOF( rs_test_entity_t );
     type.kind               = RS_KIND_STRUCT;
@@ -317,7 +317,7 @@ test_enums( void )
 
     rs_type_t type = { 0 };
     type.name_id   = test_intern( "color_t" );
-    type.hash      = rs_hash_str( "color_t" );
+    type.name_hash = rs_hash_str( "color_t" );
     type.size      = ( uint16_t )sizeof( rs_test_color_t );
     type.align     = ( uint8_t )_Alignof( rs_test_color_t );
     /* kind is forced to RS_KIND_ENUM by rs_register_enum */
@@ -395,7 +395,7 @@ test_function_sigs( void )
 
     rs_type_t      sig_type = { 0 };
     sig_type.name_id        = test_intern( "on_die_fn" );
-    sig_type.hash           = h_sig;
+    sig_type.name_hash      = h_sig;
     sig_type.size           = ( uint16_t )sizeof( void* ); /* a pointer holds the callable */
     sig_type.align          = ( uint8_t )_Alignof( void* );
 
@@ -423,7 +423,7 @@ test_function_sigs( void )
 
     rs_type_t      npc_type    = { 0 };
     npc_type.name_id           = test_intern( "npc_t" );
-    npc_type.hash              = h_npc;
+    npc_type.name_hash         = h_npc;
     npc_type.size              = RS_SIZEOF( rs_test_npc_t );
     npc_type.align             = RS_ALIGNOF( rs_test_npc_t );
     npc_type.kind              = RS_KIND_STRUCT;
@@ -507,7 +507,7 @@ test_serialize( void )
 
     rs_type_t      type    = { 0 };
     type.name_id           = test_intern( "save_t" );
-    type.hash              = h_save;
+    type.name_hash         = h_save;
     type.size              = RS_SIZEOF( rs_test_save_t );
     type.align             = RS_ALIGNOF( rs_test_save_t );
     type.kind              = RS_KIND_STRUCT;
@@ -644,7 +644,7 @@ test_bitset( void )
 
     rs_type_t type = { 0 };
     type.name_id   = test_intern( "perm_t" );
-    type.hash      = rs_hash_str( "perm_t" );
+    type.name_hash = rs_hash_str( "perm_t" );
     type.size      = ( uint16_t )sizeof( rs_test_perm_t );
     type.align     = ( uint8_t )_Alignof( rs_test_perm_t );
 
@@ -752,7 +752,7 @@ test_walker( void )
 
         rs_type_t      type    = { 0 };
         type.name_id           = test_intern( "inner_t" );
-        type.hash              = h_inner;
+        type.name_hash         = h_inner;
         type.size              = RS_SIZEOF( rs_test_inner_t );
         type.align             = RS_ALIGNOF( rs_test_inner_t );
         type.kind              = RS_KIND_STRUCT;
@@ -778,7 +778,7 @@ test_walker( void )
 
         rs_type_t      type    = { 0 };
         type.name_id           = test_intern( "walk_t" );
-        type.hash              = h_walk;
+        type.name_hash         = h_walk;
         type.size              = RS_SIZEOF( rs_test_walk_t );
         type.align             = RS_ALIGNOF( rs_test_walk_t );
         type.kind              = RS_KIND_STRUCT;
@@ -972,10 +972,10 @@ rs_usage_inspect_field( uint16_t field_id, const rs_field_t* f, void* user )
     - Print @range min/max for float fields
     - Respect RS_FF_HIDDEN, RS_FF_READONLY flags
 
-    1. Multi-value attribute access — rs_field_get_attr returns only the first matching entry. 
+    1. Multi-value attribute access ï¿½ rs_field_get_attr returns only the first matching entry. 
        Getting @range max requires rmin + 1 pointer arithmetic; there is no rs_each_field_attr iterator.
 
-    2. field_id from field pointer — rs_find_field returns const rs_field_t*, but 
+    2. field_id from field pointer ï¿½ rs_find_field returns const rs_field_t*, but 
        rs_field_add_attr takes a uint16_t field_id. Bridging them requires 
        (field - rs_get_field(0)) pointer subtraction. There's no 
        rs_get_field_id(const rs_field_t*) helper.
@@ -994,7 +994,7 @@ test_usage_example( void )
     const uint32_t h_stance    = rs_hash_str( "stance_t" );
     rs_type_t      stance_type = { 0 };
     stance_type.name_id        = test_intern( "stance_t" );
-    stance_type.hash           = h_stance;
+    stance_type.name_hash      = h_stance;
     stance_type.size           = (uint16_t)sizeof( rs_test_stance_t );
     stance_type.align          = (uint8_t)_Alignof( rs_test_stance_t );
 
@@ -1014,7 +1014,7 @@ test_usage_example( void )
 
     rs_type_t player_type = { 0 };
     player_type.name_id   = test_intern( "player_t" );
-    player_type.hash      = h_player;
+    player_type.name_hash = h_player;
     player_type.size      = RS_SIZEOF( rs_test_player_t );
     player_type.align     = RS_ALIGNOF( rs_test_player_t );
     player_type.kind      = RS_KIND_STRUCT;

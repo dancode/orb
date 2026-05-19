@@ -321,7 +321,7 @@ typedef enum rs_type_flag_e
 typedef struct rs_type_s
 {
     rs_name_t  name_id;             // gen: interned type name
-    uint32_t   hash;                // gen: rs_hash_str(name) — persistent identity
+    uint32_t   name_hash;           // gen: rs_hash_str(name) — persistent identity
     uint32_t   schema_hash;         // ___: content hash of field layout (save-game / hot-reload compat)
 
     uint16_t   field_index;         // ___: first entry in fields[] (struct/union) or enums[] (enum)

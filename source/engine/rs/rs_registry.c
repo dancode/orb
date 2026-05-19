@@ -14,7 +14,7 @@ static void
 rs_hash_insert( uint16_t type_id )
 {
     rs_type_t* t           = &g_rs.types[ type_id ];
-    uint32_t   slot        = t->hash & RS_TYPE_HASH_MASK;
+    uint32_t   slot        = t->name_hash & RS_TYPE_HASH_MASK;
     t->next                = g_rs.type_hash[ slot ];
     g_rs.type_hash[ slot ] = type_id;
 }
@@ -23,7 +23,7 @@ static void
 rs_hash_remove( uint16_t type_id )
 {
     rs_type_t* t    = &g_rs.types[ type_id ];
-    uint32_t   slot = t->hash & RS_TYPE_HASH_MASK;
+    uint32_t   slot = t->name_hash & RS_TYPE_HASH_MASK;
     uint16_t   cur  = g_rs.type_hash[ slot ];
     uint16_t   prev = RS_TYPE_INVALID;
 
@@ -47,7 +47,7 @@ rs_hash_find( uint32_t hash )
     uint16_t idx = g_rs.type_hash[ hash & RS_TYPE_HASH_MASK ];
     while ( idx != RS_TYPE_INVALID )
     {
-        if ( g_rs.types[ idx ].hash == hash )
+        if ( g_rs.types[ idx ].name_hash == hash )
             return idx;
         idx = g_rs.types[ idx ].next;
     }
@@ -86,7 +86,7 @@ rs_install_builtins( void )
     {
         rs_type_t* t   = &g_rs.types[ i ];
         t->name_id     = rs_intern( RS_BUILTINS[ i ].name );
-        t->hash        = rs_hash_str( RS_BUILTINS[ i ].name );
+        t->name_hash   = rs_hash_str( RS_BUILTINS[ i ].name );
         t->schema_hash = 0;
         t->field_index = 0;
         t->field_count = 0;
@@ -259,32 +259,40 @@ rs_compute_schema_hash( const rs_field_t* fields, uint16_t count )
 
 static uint16_t rs_alloc_type_slot( void )
 {
-    if ( g_rs.type_count >= RS_MAX_TYPES ) { assert( 0 && "rs: type table full" ); return RS_TYPE_INVALID; }
+    if ( g_rs.type_count >= RS_MAX_TYPES ) { 
+        assert( 0 && "rs: type table full" ); return RS_TYPE_INVALID; 
+    }
     return g_rs.type_count++;
 }
 
 static uint16_t rs_alloc_field_block( uint16_t count )
 {
     if ( count == 0 ) return 0;
-    if ( g_rs.field_count + count > RS_MAX_FIELDS ) { assert( 0 && "rs: field table full" ); return RS_FIELD_INVALID; }
+    if ( g_rs.field_count + count > RS_MAX_FIELDS ) { 
+        assert( 0 && "rs: field table full" ); return RS_FIELD_INVALID; 
+    }
     uint16_t start = g_rs.field_count;
     g_rs.field_count += count;
     return start;
 }
 
-static uint16_t rs_alloc_attr_slot( void )
-{
-    if ( g_rs.attr_count >= RS_MAX_ATTRS ) { assert( 0 && "rs: attribute table full" ); return RS_ATTR_INVALID; }
-    return g_rs.attr_count++;
-}
-
 static uint16_t rs_alloc_enum_block( uint16_t count )
 {
     if ( count == 0 ) return 0;
-    if ( g_rs.enum_count + count > RS_MAX_ENUMS ) { assert( 0 && "rs: enum table full" ); return RS_TYPE_INVALID; }
+    if ( g_rs.enum_count + count > RS_MAX_ENUMS ) { 
+        assert( 0 && "rs: enum table full" ); return RS_TYPE_INVALID; 
+    }
     uint16_t start = g_rs.enum_count;
     g_rs.enum_count += count;
     return start;
+}
+
+static uint16_t rs_alloc_attr_slot( void )
+{
+    if ( g_rs.attr_count >= RS_MAX_ATTRS ) { 
+        assert( 0 && "rs: attribute table full" ); return RS_ATTR_INVALID; 
+    }
+    return g_rs.attr_count++;
 }
 
 /*==============================================================================================

@@ -106,11 +106,11 @@ static void
 emit_type_decl( FILE* fc, const rg_decl_type_t* t )
 {
     fprintf( fc, "        rs_type_t _t = {\n" );
-    fprintf( fc, "            .name_id = api->intern( \"%s\" ),\n", t->name );
-    fprintf( fc, "            .hash    = rs_hash_str( \"%s\" ),\n", t->name );
-    fprintf( fc, "            .size    = RS_SIZEOF( %s ),\n", t->name );
-    fprintf( fc, "            .align   = RS_ALIGNOF( %s ),\n", t->name );
-    fprintf( fc, "            .kind    = %s,\n", kind_macro( t->kind ) );
+    fprintf( fc, "            .name_id  = api->intern( \"%s\" ),\n", t->name );
+    fprintf( fc, "            .name_hash = rs_hash_str( \"%s\" ),\n", t->name );
+    fprintf( fc, "            .size     = RS_SIZEOF( %s ),\n", t->name );
+    fprintf( fc, "            .align    = RS_ALIGNOF( %s ),\n", t->name );
+    fprintf( fc, "            .kind     = %s,\n", kind_macro( t->kind ) );
     fprintf( fc, "        };\n" );
 }
 
