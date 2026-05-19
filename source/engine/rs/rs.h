@@ -245,8 +245,8 @@ typedef struct rs_attrib_s
 
 typedef struct rs_enum_s
 {
-    rs_name_t  name_id;         // interned enumerator name
-    int32_t    value;           // signed; covers unsigned values up to INT32_MAX
+    rs_name_t  name_id;             // interned enumerator name
+    int32_t    value;               // signed; covers unsigned values up to INT32_MAX
 
 } rs_enum_t;
 
@@ -260,13 +260,13 @@ typedef struct rs_enum_s
 
 typedef enum rs_field_flag_e
 {
-    RS_FF_TRANSIENT  = ( 1 << 0 ),          // serialize: exclude from serialization
-    RS_FF_EDITOR     = ( 1 << 1 ),          // editor: show in editor inspector
-    RS_FF_READONLY   = ( 1 << 2 ),          // editor: display in editor, no edit
-    RS_FF_HIDDEN     = ( 1 << 3 ),          // editor: hide from editor
-    RS_FF_NETWORK    = ( 1 << 4 ),          // network: replicate over network
-    RS_FF_DEPRECATED = ( 1 << 5 ),          // developer: warn on use
-    RS_FF_REQUIRED   = ( 1 << 6 ),          // developer: validation: field must be set
+    RS_FF_TRANSIENT  = ( 1 << 0 ),  // serialize: exclude from serialization
+    RS_FF_EDITOR     = ( 1 << 1 ),  // editor: show in editor inspector
+    RS_FF_READONLY   = ( 1 << 2 ),  // editor: display in editor, no edit
+    RS_FF_HIDDEN     = ( 1 << 3 ),  // editor: hide from editor
+    RS_FF_NETWORK    = ( 1 << 4 ),  // network: replicate over network
+    RS_FF_DEPRECATED = ( 1 << 5 ),  // developer: warn on use
+    RS_FF_REQUIRED   = ( 1 << 6 ),  // developer: validation: field must be set
 
     /* bits 16-31: user defined */
 
@@ -278,21 +278,21 @@ typedef enum rs_field_flag_e
 
 typedef struct rs_field_s
 {
-    rs_name_t  name_id;                 // interned field name
-    uint32_t   type_hash;               // rs_hash_str(base_type_name) — used during lazy resolution
-    uint16_t   type_id;                 // resolved base type (RS_TYPE_INVALID until finalize)
-    uint16_t   offset;                  // byte offset within parent struct
-    uint16_t   size;                    // sizeof(field), including any inline array
-    uint16_t   mods;                    // packed modifier chain
-    uint16_t   aux;                     // array element count, or function signature type_id
+    rs_name_t  name_id;             // gen: interned field name
+    uint32_t   type_hash;           // gen: rs_hash_str(base_type_name) — used during lazy resolution
+    uint16_t   type_id;             // ___: resolved base type (RS_TYPE_INVALID until finalize)
+    uint16_t   offset;              // gen: byte offset within parent struct
+    uint16_t   size;                // gen: sizeof(field), including any inline array
+    uint16_t   mods;                // gen: packed modifier chain
+    uint16_t   aux;                 // gen: array element count, or function signature type_id
 
-    uint8_t    kind;                    // cached rs_kind_t of base, for fast dispatch
-    uint8_t    _pad;                    // reserved for future use
+    uint8_t    kind;                // ___: gcached rs_kind_t of base, for fast dispatch
+    uint8_t    _pad;                // ___: reserved for future use
 
-    uint16_t   attr_index;              // first attribute index (RS_ATTR_INVALID if none)
-    uint16_t   attr_count;              // number of attributes
+    uint16_t   attr_index;          // ___: first attribute index (RS_ATTR_INVALID if none)
+    uint16_t   attr_count;          // ___: number of attributes
 
-    uint32_t   flags;                   // rs_field_flag_t bitmask (0 = no flags set)
+    uint32_t   flags;               // gen: rs_field_flag_t bitmask (0 = no flags set)
 
 } rs_field_t;
 
@@ -305,10 +305,10 @@ typedef struct rs_field_s
 
 typedef enum rs_type_flag_e
 {
-    RS_TF_ABSTRACT   = ( 1 << 0 ),      // not directly instantiable (e.g. interface or base struct)
-    RS_TF_SERIALIZE  = ( 1 << 1 ),      // default-serialize all fields
-    RS_TF_EDITOR     = ( 1 << 2 ),      // show in editor type browser
-    RS_TF_DEPRECATED = ( 1 << 3 ),      // warn on use
+    RS_TF_ABSTRACT   = ( 1 << 0 ),  // not directly instantiable (e.g. interface or base struct)
+    RS_TF_SERIALIZE  = ( 1 << 1 ),  // default-serialize all fields
+    RS_TF_EDITOR     = ( 1 << 2 ),  // show in editor type browser
+    RS_TF_DEPRECATED = ( 1 << 3 ),  // warn on use
 
     /* bits 4-7: project/game-defined */
 
@@ -320,23 +320,23 @@ typedef enum rs_type_flag_e
 
 typedef struct rs_type_s
 {
-    rs_name_t  name_id;         // interned type name
-    uint32_t   hash;            // rs_hash_str(name) — persistent identity
-    uint32_t   schema_hash;     // content hash of field layout (save-game / hot-reload compat)
+    rs_name_t  name_id;             // gen: interned type name
+    uint32_t   hash;                // gen: rs_hash_str(name) — persistent identity
+    uint32_t   schema_hash;         // ___: content hash of field layout (save-game / hot-reload compat)
 
-    uint16_t   field_index;     // first entry in fields[] (struct/union) or enums[] (enum)
-    uint16_t   field_count;     // number of fields or enumerators in this type
+    uint16_t   field_index;         // ___: first entry in fields[] (struct/union) or enums[] (enum)
+    uint16_t   field_count;         // ___: number of fields or enumerators in this type
 
-    uint16_t   attr_index;      // first attribute (RS_ATTR_INVALID if none)
-    uint16_t   attr_count;      // number of attributes on the type itself (not counting fields)
+    uint16_t   attr_index;          // ___: first attribute (RS_ATTR_INVALID if none)
+    uint16_t   attr_count;          // ___: number of attributes on the type itself (not counting fields)
 
-    uint16_t   next;            // next type in hash chain (RS_TYPE_INVALID = end)
-    uint16_t   size;            // sizeof(T)
+    uint16_t   next;                // ___: next type in hash chain (RS_TYPE_INVALID = end)
+    uint16_t   size;                // gen: sizeof(T)
 
-    uint8_t    align;           // alignof(T)
-    uint8_t    kind;            // rs_kind_t (prim, struct, enum, etc.)
-    uint8_t    frame_id;        // owning frame (module) — used for cleanup on unload
-    uint8_t    flags;           // rs_type_flag_t bitmask (0 = no flags set)
+    uint8_t    align;               // gen: alignof(T)
+    uint8_t    kind;                // ___: rs_kind_t (prim, struct, enum, etc.)
+    uint8_t    frame_id;            // ___: owning frame (module) — used for cleanup on unload
+    uint8_t    flags;               // gen: rs_type_flag_t bitmask (0 = no flags set)
 
 } rs_type_t;
 
@@ -348,11 +348,11 @@ typedef struct rs_type_s
 
 typedef struct rs_frame_s
 {
-    rs_name_t  name_id;         // interned module name; matches the module name passed to rs_push_frame
-    uint16_t   first_type;      // start of modules types - pop rewinds to these points
-    uint16_t   first_field;     // start of modules fields
-    uint16_t   first_attr;      // start of modules attributes
-    uint16_t   first_enum;      // start of modules enums
+    rs_name_t  name_id;             // interned module name; matches the module name passed to rs_push_frame
+    uint16_t   first_type;          // start of modules types - pop rewinds to these points
+    uint16_t   first_field;         // start of modules fields
+    uint16_t   first_attr;          // start of modules attributes
+    uint16_t   first_enum;          // start of modules enums
 
 } rs_frame_t;
 

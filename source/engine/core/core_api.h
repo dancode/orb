@@ -38,7 +38,7 @@ typedef struct core_api_s
     core_debug_api_t* debug_api;    // for natvis and debugging
 
     /* assertions */
-    bool        ( *assert_report )      ( const char* cond, const char* msg, const char* file, int line );
+    bool        ( *assert_report )      ( const char* cond, const char* msg, const char* func, const char* file, int line );
 
     /* logging */
     void        ( *log )                ( const char* fmt, ... );

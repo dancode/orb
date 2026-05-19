@@ -166,41 +166,50 @@ typedef ptrdiff_t isize;
 
 /* Override this macro to provide a custom assert handler.
 
-    #define ORB_REPORT_ASSERT(cond, msg, file, line) \
-    my_assert_handler(cond, msg, file, line)
+    #define ORB_REPORT_ASSERT(cond, msg, func, file, line) \
+    my_assert_handler(cond, msg, func, file, line)
     #include "orb.h"
 */
 
 #ifndef ORB_REPORT_ASSERT
-    #define ORB_REPORT_ASSERT( cond, msg, file, line ) ( ( void )0 )
+    #define ORB_REPORT_ASSERT( cond, msg, func, file, line ) ( ( void )0 )
 #endif
 
 #if RELEASE
     #define ORB_ASSERT( cond )        ( ( void )0 )
     #define ORB_ASSERT_MSG( cond, m ) ( ( void )0 )
 #else
-    #define ORB_ASSERT( cond )                                          \
-        do {                                                            \
-            if ( ORB_UNLIKELY( !( cond ) ) )                            \
-            {                                                           \
-                ORB_REPORT_ASSERT( #cond, "", __FILE__, __LINE__ );     \
-                ORB_TRAP();                                             \
-            }                                                           \
-        }                                                               \
+    #define ORB_ASSERT( cond )                                                   \
+        do {                                                                     \
+            if ( ORB_UNLIKELY( !( cond ) ) )                                     \
+            {                                                                    \
+                ORB_REPORT_ASSERT( #cond, "", __func__, __FILE__, __LINE__ );    \
+                ORB_TRAP();                                                      \
+            }                                                                    \
+        }                                                                        \
         while ( 0 )
 
-    #define ORB_ASSERT_MSG( cond, m )                                   \
-        do {                                                            \
-            if ( ORB_UNLIKELY( !( cond ) ) )                            \
-            {                                                           \
-                ORB_REPORT_ASSERT( #cond, m, __FILE__, __LINE__ );      \
-                ORB_TRAP();                                             \
-            }                                                           \
-        }                                                               \
+    #define ORB_ASSERT_MSG( cond, m )                                            \
+        do {                                                                     \
+            if ( ORB_UNLIKELY( !( cond ) ) )                                     \
+            {                                                                    \
+                ORB_REPORT_ASSERT( #cond, m, __func__, __FILE__, __LINE__ );     \
+                ORB_TRAP();                                                      \
+            }                                                                    \
+        }                                                                        \
         while ( 0 )
 #endif
 
 #define ORB_STATIC_ASSERT( cond, msg ) _Static_assert( cond, msg )
+
+/* Redirect standard assert to ORB_ASSERT so any file including orb.h gets our handler.
+   core/debug/assert.h will undef and re-define again once core is wired up. */
+
+// #undef assert
+// #define assert( cond )          ORB_ASSERT( cond )
+
+#undef assert_msg
+#define assert_msg( cond, msg ) ORB_ASSERT_MSG( cond, msg )
 
 /*==============================================================================================
     Utility Macros

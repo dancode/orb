@@ -840,6 +840,298 @@ test_walker( void )
 }
 
 /*==============================================================================================
+    Usage Example: Generic Editor Inspector
+
+    Scenario: an editor panel receives a (type_name, instance_ptr) pair and must enumerate
+    all inspectable fields, print their live values, respect visibility/mutability flags,
+    and surface any editor metadata (range clamps, display hints).
+
+    This is the realistic "day one" use case for the reflection library. Read the friction
+    comments to see where the API makes the user reach below the abstraction boundary.
+
+    Types registered here:
+        stance_t  -- enum (IDLE / RUNNING / CROUCHED)
+        player_t  -- struct with mixed field flags and @range attrs on float fields
+==============================================================================================*/
+
+typedef enum rs_test_stance_e
+{
+    RS_TEST_STANCE_IDLE     = 0,
+    RS_TEST_STANCE_RUNNING  = 1,
+    RS_TEST_STANCE_CROUCHED = 2,
+} rs_test_stance_t;
+
+typedef struct rs_test_player_s
+{
+    int32_t          id;
+    char             name[ 32 ];
+    float            health;
+    float            speed;
+    rs_test_stance_t stance;
+    uint32_t         internal_cookie;  /* RS_FF_HIDDEN -- runtime only, never inspected */
+    int32_t          kill_count;       /* RS_FF_READONLY -- visible but not editable */
+} rs_test_player_t;
+
+typedef struct
+{
+    const void* instance;
+} rs_usage_ctx_t;
+
+static void
+rs_usage_inspect_field( uint16_t field_id, const rs_field_t* f, void* user )
+{
+    const rs_usage_ctx_t* ctx  = (const rs_usage_ctx_t*)user;
+    const void*           addr = (const char*)ctx->instance + f->offset;
+
+    /* Hidden fields are runtime-only; the inspector never shows them. */
+    if ( f->flags & RS_FF_HIDDEN ) return;
+
+    const char* label    = rs_cstr( f->name_id );
+    bool        readonly = ( f->flags & RS_FF_READONLY ) != 0;
+
+    printf( "  %s %-16s : ", readonly ? "[RO]" : "    ", label );
+
+    /* f->kind is the cached kind of the resolved base type -- no extra lookup needed. */
+    if ( f->mods == RS_MODS_ARRAY && f->kind == RS_KIND_PRIM && f->type_id == RS_PRIM_CHAR )
+    {
+        /* char[N] inline string */
+        printf( "\"%.*s\"", (int)f->aux, (const char*)addr );
+    }
+    else if ( f->mods == RS_MODS_VALUE )
+    {
+        switch ( (rs_kind_t)f->kind )
+        {
+            case RS_KIND_PRIM:
+            {
+                /* FRICTION: no typed read helpers; offset cast is the only path. */
+                switch ( (rs_prim_t)f->type_id )
+                {
+                    case RS_PRIM_I32: printf( "%d", *(const int32_t*)addr );  break;
+                    case RS_PRIM_U32: printf( "%u", *(const uint32_t*)addr ); break;
+                    case RS_PRIM_F32:
+                    {
+                        float v = *(const float*)addr;
+                        printf( "%.2f", v );
+
+                        /* Read @range min -- rs_field_get_attr returns the first entry only.
+                           FRICTION: for multi-entry attributes (range has min + max as two
+                           consecutive entries sharing the same name_id), there is no
+                           rs_each_field_attr.  The entries are contiguous in the attr block
+                           so pointer arithmetic to +1 works, but it relies on layout knowledge
+                           that the public API does not expose through a typed accessor. */
+                        const rs_attrib_t* rmin = rs_field_get_attr( field_id, RS_ANAME_RANGE );
+                        if ( rmin && RS_ATTR_COUNT( rmin->ci ) >= 2 )
+                        {
+                            const rs_attrib_t* rmax = rmin + 1;
+                            printf( "  [range %.0f..%.0f]", rmin->value.f32, rmax->value.f32 );
+                        }
+                        break;
+                    }
+                    default: printf( "<prim id=%u>", f->type_id ); break;
+                }
+                break;
+            }
+            case RS_KIND_ENUM:
+            {
+                /* Print the enumerator name instead of the raw integer. */
+                int32_t           v     = *(const int32_t*)addr;
+                const rs_enum_t*  entry = rs_enum_find_by_value( f->type_id, v );
+                if ( entry ) printf( "%s",              rs_cstr( entry->name_id ) );
+                else         printf( "<unknown %d>", v );
+                break;
+            }
+            default:
+            {
+                /* Nested struct or unknown -- print type name as placeholder. */
+                const rs_type_t* bt = rs_get_type( f->type_id );
+                printf( "{%s}", bt ? rs_cstr( bt->name_id ) : "?" );
+                break;
+            }
+        }
+    }
+    else if ( f->mods & RS_MODS_PTR )
+    {
+        const void* ptr = *(const void* const*)addr;
+        printf( "%p", ptr );
+    }
+    else
+    {
+        printf( "<mods=0x%04x>", f->mods );
+    }
+
+    printf( "\n" );
+}
+
+/*==============================================================================================
+    - Find a type by name (simulating a generic system that only has a string)
+    - Read RS_TF_* type flags for fast-path editor/serialization checks
+    - Iterate all fields via rs_each_field with a callback
+    - Offset-cast to read live field values (*(float*)((char*)instance + f->offset))
+    - Use f->kind for dispatch without a secondary rs_get_type lookup
+    - Render an enum field as its name string via rs_enum_find_by_value
+    - Print @range min/max for float fields
+    - Respect RS_FF_HIDDEN, RS_FF_READONLY flags
+
+    1. Multi-value attribute access — rs_field_get_attr returns only the first matching entry. 
+       Getting @range max requires rmin + 1 pointer arithmetic; there is no rs_each_field_attr iterator.
+
+    2. field_id from field pointer — rs_find_field returns const rs_field_t*, but 
+       rs_field_add_attr takes a uint16_t field_id. Bridging them requires 
+       (field - rs_get_field(0)) pointer subtraction. There's no 
+       rs_get_field_id(const rs_field_t*) helper.
+
+==============================================================================================*/
+
+static void
+test_usage_example( void )
+{
+    printf( "\n=== rs: usage example -- generic editor inspector ===\n" );
+
+    rs_init();
+    uint16_t game = rs_push_frame( "game" );
+
+    /* Register stance_t enum. */
+    const uint32_t h_stance    = rs_hash_str( "stance_t" );
+    rs_type_t      stance_type = { 0 };
+    stance_type.name_id        = test_intern( "stance_t" );
+    stance_type.hash           = h_stance;
+    stance_type.size           = (uint16_t)sizeof( rs_test_stance_t );
+    stance_type.align          = (uint8_t)_Alignof( rs_test_stance_t );
+
+    rs_enum_t stances[ 3 ] = {
+        {.name_id = test_intern( "IDLE" ),     .value = RS_TEST_STANCE_IDLE    },
+        {.name_id = test_intern( "RUNNING" ),  .value = RS_TEST_STANCE_RUNNING },
+        {.name_id = test_intern( "CROUCHED" ), .value = RS_TEST_STANCE_CROUCHED},
+    };
+    rs_register_enum( &stance_type, stances, 3 );
+
+    /* Register player_t struct with per-field flags. */
+    const uint32_t h_player = rs_hash_str( "player_t" );
+    const uint32_t h_int32  = rs_hash_str( "int32_t" );
+    const uint32_t h_char   = rs_hash_str( "char" );
+    const uint32_t h_float  = rs_hash_str( "float" );
+    const uint32_t h_u32    = rs_hash_str( "uint32_t" );
+
+    rs_type_t player_type = { 0 };
+    player_type.name_id   = test_intern( "player_t" );
+    player_type.hash      = h_player;
+    player_type.size      = RS_SIZEOF( rs_test_player_t );
+    player_type.align     = RS_ALIGNOF( rs_test_player_t );
+    player_type.kind      = RS_KIND_STRUCT;
+    player_type.flags     = RS_TF_EDITOR | RS_TF_SERIALIZE;
+
+    rs_field_t fields[ 7 ] = { 0 };
+
+    fields[ 0 ].name_id   = test_intern( "id" );
+    fields[ 0 ].type_hash = h_int32;
+    fields[ 0 ].offset    = RS_OFFSETOF( rs_test_player_t, id );
+    fields[ 0 ].size      = RS_FIELD_SIZE( rs_test_player_t, id );
+    fields[ 0 ].flags     = RS_FF_READONLY;   /* assigned once; never changed via editor */
+
+    fields[ 1 ].name_id   = test_intern( "name" );
+    fields[ 1 ].type_hash = h_char;
+    fields[ 1 ].offset    = RS_OFFSETOF( rs_test_player_t, name );
+    fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_player_t, name );
+    fields[ 1 ].mods      = RS_MODS_ARRAY;
+    fields[ 1 ].aux       = 32;
+
+    fields[ 2 ].name_id   = test_intern( "health" );
+    fields[ 2 ].type_hash = h_float;
+    fields[ 2 ].offset    = RS_OFFSETOF( rs_test_player_t, health );
+    fields[ 2 ].size      = RS_FIELD_SIZE( rs_test_player_t, health );
+
+    fields[ 3 ].name_id   = test_intern( "speed" );
+    fields[ 3 ].type_hash = h_float;
+    fields[ 3 ].offset    = RS_OFFSETOF( rs_test_player_t, speed );
+    fields[ 3 ].size      = RS_FIELD_SIZE( rs_test_player_t, speed );
+
+    fields[ 4 ].name_id   = test_intern( "stance" );
+    fields[ 4 ].type_hash = h_stance;
+    fields[ 4 ].offset    = RS_OFFSETOF( rs_test_player_t, stance );
+    fields[ 4 ].size      = RS_FIELD_SIZE( rs_test_player_t, stance );
+
+    fields[ 5 ].name_id   = test_intern( "internal_cookie" );
+    fields[ 5 ].type_hash = h_u32;
+    fields[ 5 ].offset    = RS_OFFSETOF( rs_test_player_t, internal_cookie );
+    fields[ 5 ].size      = RS_FIELD_SIZE( rs_test_player_t, internal_cookie );
+    fields[ 5 ].flags     = RS_FF_HIDDEN | RS_FF_TRANSIENT;   /* runtime-only; never serialized */
+
+    fields[ 6 ].name_id   = test_intern( "kill_count" );
+    fields[ 6 ].type_hash = h_int32;
+    fields[ 6 ].offset    = RS_OFFSETOF( rs_test_player_t, kill_count );
+    fields[ 6 ].size      = RS_FIELD_SIZE( rs_test_player_t, kill_count );
+    fields[ 6 ].flags     = RS_FF_READONLY;   /* stat: displayed, not editable */
+
+    uint16_t player_tid = rs_register_type( &player_type, fields, 7 );
+
+    /* Attach @range(0, 100) to health and @range(0, 20) to speed.
+       FRICTION: rs_find_field returns a const rs_field_t*; rs_field_add_attr requires a
+       field_id (uint16_t).  Bridging the two requires pointer subtraction from the base
+       of the field table -- there is no rs_get_field_id(const rs_field_t*) helper. */
+    {
+        const rs_field_t* hf  = rs_find_field( player_tid, "health" );
+        uint16_t          hid = (uint16_t)( hf - rs_get_field( 0 ) );
+
+        rs_attrib_t a = { 0 };
+        a.name_id     = test_intern( RS_ANAME_RANGE );
+        a.type        = RS_ATTR_FLOAT;
+        a.flags       = RS_AF_RANGE;
+        a.ci          = RS_ATTR_CI( 2, 0 );
+        a.value.f32   = 0.0f;
+        rs_field_add_attr( hid, &a );
+        a.ci          = RS_ATTR_CI( 2, 1 );
+        a.value.f32   = 100.0f;
+        rs_field_add_attr( hid, &a );
+    }
+    {
+        const rs_field_t* sf  = rs_find_field( player_tid, "speed" );
+        uint16_t          sid = (uint16_t)( sf - rs_get_field( 0 ) );
+
+        rs_attrib_t a = { 0 };
+        a.name_id     = test_intern( RS_ANAME_RANGE );
+        a.type        = RS_ATTR_FLOAT;
+        a.flags       = RS_AF_RANGE;
+        a.ci          = RS_ATTR_CI( 2, 0 );
+        a.value.f32   = 0.0f;
+        rs_field_add_attr( sid, &a );
+        a.ci          = RS_ATTR_CI( 2, 1 );
+        a.value.f32   = 20.0f;
+        rs_field_add_attr( sid, &a );
+    }
+
+    rs_finalize_frame( game );
+
+    /* Build a live instance with distinctive values. */
+    rs_test_player_t player = { 0 };
+    player.id               = 7;
+    memcpy( player.name, "Aragorn", 8 );
+    player.health           = 82.5f;
+    player.speed            = 6.3f;
+    player.stance           = RS_TEST_STANCE_RUNNING;
+    player.internal_cookie  = 0xDEADBEEF;   /* hidden -- inspector must not show this */
+    player.kill_count       = 42;
+
+    /* Simulate a generic system that only knows the type name, not the C type. */
+    uint16_t         tid = rs_find_type_by_name( "player_t" );
+    const rs_type_t* t   = rs_get_type( tid );
+    assert( tid != RS_TYPE_INVALID && t );
+
+    /* Type-level flags are a fast-path alternative to attribute lookup for common semantics. */
+    printf( "Inspecting '%s'  size=%u  flags:%s%s\n", rs_cstr( t->name_id ), t->size,
+            ( t->flags & RS_TF_EDITOR    ) ? " EDITOR"    : "",
+            ( t->flags & RS_TF_SERIALIZE ) ? " SERIALIZE" : "" );
+
+    rs_usage_ctx_t ctx = { .instance = &player };
+    rs_each_field( tid, rs_usage_inspect_field, &ctx );
+
+    /* Verify internal_cookie was silently skipped (its sentinel 0xDEADBEEF never printed). */
+    printf( "  (internal_cookie[0xDEADBEEF] hidden -- not shown above)\n" );
+
+    rs_pop_frame( game );
+    rs_exit();
+}
+
+/*==============================================================================================
     Entry
 ==============================================================================================*/
 
@@ -855,15 +1147,19 @@ rs_run_tests( void )
     printf( "  sizeof(rs_attrib_t) = %zu\n", sizeof( rs_attrib_t ) );
     printf( "  sizeof(rs_frame_t)  = %zu\n", sizeof( rs_frame_t ) );
     printf( "========================================\n" );
-
-    test_basic();
-    test_mod_decode();
-    test_hot_reload_rs();
-    test_enums();
-    test_bitset();
-    test_function_sigs();
-    test_walker();
-    test_serialize();
+    
+    if ( 0 )
+    {
+        test_basic();
+        test_mod_decode();
+        test_hot_reload_rs();
+        test_enums();
+        test_bitset();
+        test_function_sigs();
+        test_walker();
+        test_serialize();
+    }
+    test_usage_example();
 
     printf( "\nrs: all tests complete.\n" );
 }

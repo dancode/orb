@@ -21,6 +21,7 @@ main( int argc, char** argv )
 {
     UNUSED( argc );
     UNUSED( argv );
+
     rs_run_tests();
 
     

@@ -76,6 +76,9 @@ typedef struct rs_registry_s
 
 } rs_registry_t;
 
+static rs_registry_t    g_rs;
+static const bool       rs_debug = true;
+
 /*==============================================================================================
     Implementation Includes (Unity Build)
 ==============================================================================================*/

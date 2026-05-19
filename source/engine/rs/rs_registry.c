@@ -3,17 +3,7 @@
     engine/rs/rs_registry.c - Frame lifecycle, registration, lazy type resolution
 
 ==============================================================================================*/
-
-
-/*==============================================================================================
-    Registry State
-
-    Global storage for all reflected types, fields, and frames.
-==============================================================================================*/
-
-static rs_registry_t g_rs;
-static const bool    rs_debug = true;
-
+// clang-format off
 /*==============================================================================================
     Type Hashing
 
@@ -306,13 +296,18 @@ static uint16_t rs_alloc_enum_block( uint16_t count )
 uint16_t
 rs_register_type( const rs_type_t* type, const rs_field_t* fields, uint16_t field_count )
 {
-    if ( !type ) { assert( 0 ); return RS_TYPE_INVALID; }
-    if ( field_count > 0 && !fields ) { assert( 0 && "rs_register_type: missing fields array" ); return RS_TYPE_INVALID; }
-    if ( g_rs.frame_count == 0 ) { assert( 0 && "rs_register_type: no active frame" ); return RS_TYPE_INVALID; }
+    if ( !type )                      { assert( 0 ); return RS_TYPE_INVALID; }
+    if ( field_count > 0 && !fields ) { assert( 0 ); return RS_TYPE_INVALID; }
+    if ( g_rs.frame_count <= 1 )      { assert( 0 ); return RS_TYPE_INVALID; }
 
-    uint16_t frame_id = g_rs.frame_count - 1;
+    /* current frame is -1 since the frame_push increments */
+
+    uint16_t frame_id = g_rs.frame_count - 1; 
     uint16_t type_id  = rs_alloc_type_slot();
     if ( type_id == RS_TYPE_INVALID ) return RS_TYPE_INVALID;
+
+    /* assign the type data reflection data we were sent */
+    /* fill in the internal book keeping after */
 
     rs_type_t* t   = &g_rs.types[ type_id ];
     *t             = *type;
@@ -379,13 +374,18 @@ rs_compute_enum_schema_hash( const rs_enum_t* e, uint16_t count )
 uint16_t
 rs_register_enum( const rs_type_t* type, const rs_enum_t* enums, uint16_t count )
 {
-    if ( !type ) { assert( 0 ); return RS_TYPE_INVALID; }
-    if ( count > 0 && !enums ) { assert( 0 ); return RS_TYPE_INVALID; }
-    if ( g_rs.frame_count == 0 ) { assert( 0 && "rs_register_enum: no active frame" ); return RS_TYPE_INVALID; }
+    if ( !type )                 { assert( 0 ); return RS_TYPE_INVALID; }
+    if ( count > 0 && !enums )   { assert( 0 ); return RS_TYPE_INVALID; }
+    if ( g_rs.frame_count <= 1 ) { assert( 0 ); return RS_TYPE_INVALID; }
+
+    /* current frame is -1 since the frame_push increments */
 
     uint16_t frame_id = g_rs.frame_count - 1;
     uint16_t type_id  = rs_alloc_type_slot();
-    if ( type_id == RS_TYPE_INVALID ) return RS_TYPE_INVALID;
+    if ( type_id == RS_TYPE_INVALID ) 
+        return RS_TYPE_INVALID;
+
+    /* init the enum type record;  */
 
     rs_type_t* t   = &g_rs.types[ type_id ];
     *t             = *type;
@@ -395,6 +395,8 @@ rs_register_enum( const rs_type_t* type, const rs_enum_t* enums, uint16_t count 
     t->attr_count  = 0;
     t->next        = RS_TYPE_INVALID;
     t->schema_hash = rs_compute_enum_schema_hash( enums, count );
+
+    /* enums are stored in the fields[] table but indexed via field_index/field_count */
 
     if ( count > 0 )
     {
@@ -421,6 +423,9 @@ rs_register_enum( const rs_type_t* type, const rs_enum_t* enums, uint16_t count 
 uint16_t
 rs_register_bitset( const rs_type_t* type, const rs_enum_t* enums, uint16_t count )
 {
+    /* Enums and bitsets share the same registration path since they are structurally
+       identical except for interpretation -- just modify the flag after */
+
     if ( !type ) { assert( 0 ); return RS_TYPE_INVALID; }
     uint16_t type_id = rs_register_enum( type, enums, count );
     if ( type_id != RS_TYPE_INVALID )
@@ -593,4 +598,5 @@ rs_unregister_module( const char* name )
     }
 }
 
+// clang-format off
 /*============================================================================================*/

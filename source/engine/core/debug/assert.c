@@ -12,6 +12,7 @@
 
 /*  Forward-declare OutputDebugStringA without pulling in windows.h.
     On x64 Windows, __stdcall is a no-op but we keep it for correctness. */
+
 #if OS_WINDOWS
     extern __declspec( dllimport ) void __stdcall OutputDebugStringA( const char* lpOutputString );
 #else
@@ -40,21 +41,24 @@ core_assert_set_skip( bool skip )
 
 /*  Called by ORB_ASSERT / ORB_ASSERT_MSG on failure.
     Returns true to skip the ORB_TRAP() (skip mode), false to trap. */
+
 ORB_NOINLINE static bool
-assert_report( const char* cond, const char* msg, const char* file, int line )
+assert_report( const char* cond, const char* msg, const char* func, const char* file, int line )
 {
     char buf[1024];
 
     /* VS Output window clickable format: file(line): text */
+
     if ( msg && msg[0] )
         snprintf( buf, sizeof( buf ),
-                  "%s(%d): assertion failed: %s\n"
-                  "    msg: %s\n",
-                  file, line, cond, msg );
+                  "\n%s(%d): assertion failed: %s\n"
+                  "    FUNCTION: %s : %s\n\n",
+                  file, line, cond, func, msg );
     else
         snprintf( buf, sizeof( buf ),
-                  "%s(%d): assertion failed: %s\n",
-                  file, line, cond );
+                  "\n%s(%d): assertion failed: %s\n"
+                  "    FNUCTION: %s\n\n",
+                  file, line, cond, func );
 
     fputs( buf, stderr );
     OutputDebugStringA( buf );

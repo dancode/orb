@@ -37,7 +37,7 @@
     {                                                                                   \
         if ( ORB_UNLIKELY( !( cond ) ) )                                                \
         {                                                                               \
-            if ( !core()->assert_report( #cond, NULL, __FILE__, __LINE__ ) )        \
+            if ( !core()->assert_report( #cond, NULL, __func__, __FILE__, __LINE__ ) )  \
                 ORB_TRAP();                                                             \
         }                                                                               \
     } while ( 0 )
@@ -47,7 +47,7 @@
     {                                                                                   \
         if ( ORB_UNLIKELY( !( cond ) ) )                                                \
         {                                                                               \
-            if ( !core()->assert_report( #cond, ( msg ), __FILE__, __LINE__ ) )     \
+            if ( !core()->assert_report( #cond, ( msg ), __func__, __FILE__, __LINE__ ) ) \
                 ORB_TRAP();                                                             \
         }                                                                               \
     } while ( 0 )
