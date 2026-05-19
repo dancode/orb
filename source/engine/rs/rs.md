@@ -54,29 +54,26 @@ serializer gates compatibility on this value; callers use it to detect hot-reloa
 
 ### Packed modifier chain
 
-Each `rs_field_t.mods` is 16 bits encoding up to four declarator-modifier slots of 4 bits
-each. Slot 0 is the innermost wrapper around the base type; read low→high to walk outward.
-
-Each slot:
-
-```
-bits 1-0 : operation  (RS_MOD_NONE=0, RS_MOD_PTR=1, RS_MOD_ARRAY=2, RS_MOD_FUNCTION=3)
-bit  2   : const on this wrapper  (e.g. `T* const`)
-bit  3   : reserved
-```
-
-Common encodings:
+`rs_field_t.mods` is a `uint16_t` holding one of the `rs_mods_t` enum values. The full
+set of supported C-field shapes is a closed, named enumeration — invalid combinations are
+unrepresentable. Use the `rs_mods_is_*` predicates or compare directly against the enum:
 
 ```
-T              RS_NO_MODS                             0x0000
-T*             RS_MODS(RS_M_PTR, 0, 0, 0)             0x0001
-T**            RS_MODS(RS_M_PTR, RS_M_PTR, 0, 0)      0x0011
-T* const       RS_MODS(RS_M_CONST_PTR, 0, 0, 0)       0x0005
-T[N]           RS_MODS(RS_M_ARRAY, 0, 0, 0)           0x0002  aux=N
-T*[N]          RS_MODS(RS_M_PTR, RS_M_ARRAY, 0, 0)    0x0021  aux=N
-T(*)[N]        RS_MODS(RS_M_ARRAY, RS_M_PTR, 0, 0)    0x0012  aux=N
-const T*       RS_MODS(RS_M_PTR, 0, 0, 0)             0x0001  base_const=1
+RS_MODS_VALUE        0x0000   T
+RS_MODS_PTR          0x0001   T*
+RS_MODS_PTR_PTR      0x0101   T**
+RS_MODS_CONST_PTR    0x0009   T* const
+RS_MODS_ARRAY        0x0002   T[N]        aux = element count
+RS_MODS_PTR_ARRAY    0x0201   T*[N]       aux = element count
+RS_MODS_ARRAY_PTR    0x0102   T(*)[N]     aux = element count
+RS_MODS_FUNCTION     0x0004   T(*)()      aux = signature type_id
+RS_MODS_CONST_VALUE  0x0010   const T
+RS_MODS_PTR_TO_CONST 0x0011   const T*
 ```
+
+The bit values preserve the encoding of the former two-slot scheme (low byte = innermost
+declarator, high byte = outer), so the `schema_hash` of existing registered types is
+unchanged.
 
 Multi-dimensional arrays (`T[A][B]`) are not supported — wrap the inner dimension in a
 struct or typedef.
@@ -243,6 +240,6 @@ Header layout (all u32 LE):
 | `RS_MAX_ATTRS` | 1024 |
 | `RS_MAX_ENUMS` | 1024 |
 | String pool | 16 KB |
-| Modifier slots per field | 4 |
+| Modifier shapes (`rs_mods_t` values) | 10 |
 
 All storage is static global (`g_rs`). No heap allocation at any point.

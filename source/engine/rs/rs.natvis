@@ -26,6 +26,7 @@
         <Expand>
             <Item Name="name">        g_rs_str_pool+name_id,s</Item>
             <Item Name="kind">        (rs_kind_t)kind</Item>
+            <Item Name="flags">       flags,x</Item>
             <Item Name="size">        size</Item>
             <Item Name="align">       align</Item>
             <Item Name="hash">        hash,x</Item>
@@ -45,6 +46,7 @@
             <Item Name="name">       g_rs_str_pool+name_id,s</Item>
             <Item Name="offset">     offset</Item>
             <Item Name="size">       size</Item>
+            <Item Name="flags">      flags,x</Item>
             <Item Name="mods">       mods,x</Item>
             <Item Name="aux">        aux</Item>
             <Item Name="base_const"> base_const</Item>
@@ -60,10 +62,12 @@
         <DisplayString>{g_rs_str_pool+name_id,s} = {value}</DisplayString>
     </Type>
 
-    <!-- rs_attrib_t -->
+    <!-- rs_attrib_t  (ci high-nibble=count, low-nibble=index) -->
     <Type Name="rs_attrib_t">
-        <DisplayString Condition="type == 1">{g_rs_str_pool+name_id,s} = {value.i32}</DisplayString>
-        <DisplayString Condition="type == 2">{g_rs_str_pool+name_id,s} = {value.f32}</DisplayString>
+        <DisplayString Condition="type == 1 &amp;&amp; (ci &gt;&gt; 4) &lt;= 1">{g_rs_str_pool+name_id,s} = {value.i32}</DisplayString>
+        <DisplayString Condition="type == 1 &amp;&amp; (ci &gt;&gt; 4) &gt;  1">{g_rs_str_pool+name_id,s}[{ci &amp; 0xF}/{ci &gt;&gt; 4}] = {value.i32}</DisplayString>
+        <DisplayString Condition="type == 2 &amp;&amp; (ci &gt;&gt; 4) &lt;= 1">{g_rs_str_pool+name_id,s} = {value.f32}</DisplayString>
+        <DisplayString Condition="type == 2 &amp;&amp; (ci &gt;&gt; 4) &gt;  1">{g_rs_str_pool+name_id,s}[{ci &amp; 0xF}/{ci &gt;&gt; 4}] = {value.f32}</DisplayString>
         <DisplayString Condition="type == 3">{g_rs_str_pool+name_id,s}  [bool]</DisplayString>
         <DisplayString Condition="type == 4">{g_rs_str_pool+name_id,s} = "{g_rs_str_pool+value.str,s}"</DisplayString>
         <DisplayString>                      {g_rs_str_pool+name_id,s}</DisplayString>

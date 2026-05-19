@@ -18,21 +18,18 @@
 
 // clang-format off
 /*==============================================================================================
-    Slot Builders
+    Modifier Shorthand
 
-    Hand-craft packed modifier chains when not using the reflection generator.
-    RS_MOD_SLOT builds one 4-bit slot; RS_MODS packs up to four slots into a uint16_t.
-    Use RS_M_END (== 0) to fill unused trailing slots.
+    Assign rs_mods_t enum values from rs.h directly to field.mods.
+    RS_NO_MODS is a zero-value alias for RS_MODS_VALUE (bare T field).
+
+    Examples:
+        field.mods = RS_MODS_PTR;        // T*
+        field.mods = RS_MODS_ARRAY;      // T[N]
+        field.mods = RS_MODS_PTR_ARRAY;  // T*[N]
 ==============================================================================================*/
 
-#define RS_MOD_SLOT( op, is_const )   ( ((op) & 0x3) | (((is_const) & 0x1) << 2) )
-#define RS_MODS( s0, s1, s2, s3 )     ( (uint16_t)((s0) | ((s1) << 4) | ((s2) << 8) | ((s3) << 12)) )
-#define RS_M_END                      RS_MOD_SLOT( RS_MOD_NONE,     0 )
-#define RS_M_PTR                      RS_MOD_SLOT( RS_MOD_PTR,      0 )
-#define RS_M_CONST_PTR                RS_MOD_SLOT( RS_MOD_PTR,      1 )   /* T* const -- the pointer is const */
-#define RS_M_ARRAY                    RS_MOD_SLOT( RS_MOD_ARRAY,    0 )
-#define RS_M_FUNCTION                 RS_MOD_SLOT( RS_MOD_FUNCTION, 0 )
-#define RS_NO_MODS                    ( (uint16_t)0 )
+#define RS_NO_MODS  ( (uint16_t)RS_MODS_VALUE )
 
 /*==============================================================================================
     Codegen Helpers

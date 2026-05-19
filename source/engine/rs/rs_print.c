@@ -30,71 +30,47 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
 
     size_t pos = 0;
 
-    if ( f->base_const )
+    if ( rs_mods_is_const_value( f->mods ) || rs_mods_is_ptr_to_const( f->mods ) )
         pos = rs_str_append( buf, buf_size, pos, "const " );
 
     const rs_type_t* base = rs_get_type( f->type_id );
     pos = rs_str_append( buf, buf_size, pos, base ? rs_cstr( base->name_id ) : "<unresolved>" );
 
-    /* Pre-scan: detect ARRAY followed by PTR, which needs parentheses: T(*)[N]. */
-    bool needs_parens = false;
-    bool saw_array    = false;
-    for ( int slot = 0; slot < 4; slot++ )
+    char tmp[ 24 ];
+    switch ( (rs_mods_t)f->mods )
     {
-        uint8_t s = RS_MOD_GET( f->mods, slot );
-        if ( RS_MOD_OP( s ) == RS_MOD_NONE ) break;
-        if ( RS_MOD_OP( s ) == RS_MOD_PTR && saw_array ) { needs_parens = true; break; }
-        if ( RS_MOD_OP( s ) == RS_MOD_ARRAY ) saw_array = true;
-    }
-
-    if ( needs_parens ) pos = rs_str_append( buf, buf_size, pos, "(" );
-
-    for ( int slot = 0; slot < 4; slot++ )
-    {
-        uint8_t     s  = RS_MOD_GET( f->mods, slot );
-        rs_mod_op_t op = RS_MOD_OP( s );
-        if ( op == RS_MOD_NONE ) break;
-
-        switch ( op )
+        case RS_MODS_VALUE:        break;
+        case RS_MODS_CONST_VALUE:  break;
+        case RS_MODS_PTR:          pos = rs_str_append( buf, buf_size, pos, "*" ); break;
+        case RS_MODS_PTR_TO_CONST: pos = rs_str_append( buf, buf_size, pos, "*" ); break;
+        case RS_MODS_PTR_PTR:      pos = rs_str_append( buf, buf_size, pos, "**" ); break;
+        case RS_MODS_CONST_PTR:    pos = rs_str_append( buf, buf_size, pos, "* const" ); break;
+        case RS_MODS_ARRAY:
+            snprintf( tmp, sizeof( tmp ), "[%u]", (unsigned)f->aux );
+            pos = rs_str_append( buf, buf_size, pos, tmp );
+            break;
+        case RS_MODS_PTR_ARRAY:
+            snprintf( tmp, sizeof( tmp ), "*[%u]", (unsigned)f->aux );
+            pos = rs_str_append( buf, buf_size, pos, tmp );
+            break;
+        case RS_MODS_ARRAY_PTR:
+            snprintf( tmp, sizeof( tmp ), "(*)[%u]", (unsigned)f->aux );
+            pos = rs_str_append( buf, buf_size, pos, tmp );
+            break;
+        case RS_MODS_FUNCTION:
         {
-            case RS_MOD_PTR:
-                pos = rs_str_append( buf, buf_size, pos, "*" );
-                if ( RS_MOD_IS_CONST( s ) ) pos = rs_str_append( buf, buf_size, pos, " const" );
-                break;
-
-            case RS_MOD_ARRAY:
+            const rs_type_t* sig = rs_get_type( f->aux );
+            if ( sig && sig->kind == RS_KIND_FUNCTION )
             {
-                if ( needs_parens && pos < buf_size )
-                {
-                    buf[ pos++ ] = ')';
-                    if ( pos < buf_size ) buf[ pos ] = '\0';
-                    needs_parens = false;
-                }
-                char tmp[ 24 ];
-                snprintf( tmp, sizeof( tmp ), "[%u]", (unsigned)f->aux );
-                pos = rs_str_append( buf, buf_size, pos, tmp );
-                break;
+                pos = rs_str_append( buf, buf_size, pos, "(" );
+                pos = rs_str_append( buf, buf_size, pos, rs_cstr( sig->name_id ) );
+                pos = rs_str_append( buf, buf_size, pos, ")" );
             }
-
-            case RS_MOD_FUNCTION:
-            {
-                const rs_type_t* sig = rs_get_type( f->aux );
-                if ( sig && sig->kind == RS_KIND_FUNCTION )
-                {
-                    pos = rs_str_append( buf, buf_size, pos, "(" );
-                    pos = rs_str_append( buf, buf_size, pos, rs_cstr( sig->name_id ) );
-                    pos = rs_str_append( buf, buf_size, pos, ")" );
-                }
-                else
-                    pos = rs_str_append( buf, buf_size, pos, "(...)" );
-                break;
-            }
-
-            default: break;
+            else
+                pos = rs_str_append( buf, buf_size, pos, "(...)" );
+            break;
         }
     }
-
-    if ( needs_parens ) pos = rs_str_append( buf, buf_size, pos, ")" );
 
     return pos;
 }

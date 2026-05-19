@@ -18,6 +18,25 @@
     Helpers
 ----------------------------------------------------------------------------------------------*/
 
+static const char*
+rg_mods_name( uint16_t mods )
+{
+    switch ( mods )
+    {
+        case 0x0000: return "RS_MODS_VALUE";
+        case 0x0001: return "RS_MODS_PTR";
+        case 0x0101: return "RS_MODS_PTR_PTR";
+        case 0x0009: return "RS_MODS_CONST_PTR";
+        case 0x0002: return "RS_MODS_ARRAY";
+        case 0x0201: return "RS_MODS_PTR_ARRAY";
+        case 0x0102: return "RS_MODS_ARRAY_PTR";
+        case 0x0004: return "RS_MODS_FUNCTION";
+        case 0x0010: return "RS_MODS_CONST_VALUE";
+        case 0x0011: return "RS_MODS_PTR_TO_CONST";
+        default:     return NULL;
+    }
+}
+
 static void
 to_upper_guard( char* dst, const char* src, int max )
 {
@@ -66,7 +85,7 @@ emit_attr_call( FILE* fc, const rg_attr_t* a, const char* add_fn, const char* id
                 const char* indent )
 {
     fprintf( fc, "%s{ rs_attrib_t _a = { .name_id = api->intern( \"%s\" ), "
-                 ".type = %s, .value = { ",
+                 ".type = %s, .ci = RS_ATTR_CI_SINGLE, .value = { ",
              indent, a->name, attr_kind_macro( a->kind ) );
     switch ( a->kind )
     {
@@ -130,11 +149,15 @@ emit_struct_block( FILE* fc, const rg_decl_type_t* t )
                          ".size = RS_FIELD_SIZE( %s, %s )",
                      t->name, f->name, t->name, f->name );
             if ( f->mods )
-                fprintf( fc, ",\n              .mods = (uint16_t)0x%04X", (unsigned)f->mods );
+            {
+                const char* mname = rg_mods_name( f->mods );
+                if ( mname )
+                    fprintf( fc, ",\n              .mods = %s", mname );
+                else
+                    fprintf( fc, ",\n              .mods = (uint16_t)0x%04X", (unsigned)f->mods );
+            }
             if ( f->array_count )
                 fprintf( fc, ",\n              .aux = %u", (unsigned)f->array_count );
-            if ( f->base_const )
-                fprintf( fc, ",\n              .base_const = 1" );
             fprintf( fc, " },\n" );
         }
         fprintf( fc, "        };\n" );

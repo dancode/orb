@@ -48,8 +48,7 @@ rs_serialize_zero_transient( uint8_t* body, uint16_t type_id )
             continue;
         }
 
-        uint8_t s0 = RS_MOD_GET( f->mods, 0 );
-        if ( RS_MOD_OP( s0 ) == RS_MOD_NONE && ( f->kind == RS_KIND_STRUCT || f->kind == RS_KIND_UNION ) )
+        if ( rs_mods_is_value( f->mods ) && ( f->kind == RS_KIND_STRUCT || f->kind == RS_KIND_UNION ) )
             rs_serialize_zero_transient( body + f->offset, f->type_id );
     }
 }

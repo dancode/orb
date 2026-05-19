@@ -120,58 +120,47 @@ rs_kind_is_enum( rs_kind_t k )
 /*==============================================================================================
     Packed Modifier Chain
 
-    16 bits encoding up to four declarator-modifier slots of 4 bits each.
-    Slot 0 is the innermost wrapper around the base type; read low->high to walk outward.
+    uint16_t mods: a flat 16-bit enum encoding the complete declarator shape of a field.
+    The full set of supported C-field shapes is enumerated below; invalid combinations
+    are unrepresentable.
 
-    Each slot:
-        bits[1:0]  operation NONE = 0, PTR = 1, ARRAY = 2, FUNCTION = 3
-        bit[2]     const on this wrapper (e.g. T* const)
-        bit[3]     reserved
-
-    See rs.md for encoding examples and the full table.
-
-    T              [0000|0000|0000|0000]   all NONE
-    T*             [0000|0000|0000|0001]   s0=PTR
-    T**            [0000|0000|0001|0001]   s0=PTR, s1=PTR
-    T* const       [0000|0000|0000|0101]   s0=PTR(const_bit set)
-    T[N]           [0000|0000|0000|0010]   s0=ARRAY
-    T*[N]          [0000|0000|0010|0001]   s0=PTR, s1=ARRAY
-    T(*)[N]        [0000|0000|0001|0010]   s0=ARRAY, s1=PTR
-    const T*       [0000|0000|0000|0001]   s0=PTR, base_const separate
-
-    T              — value of type T
-    T*             — pointer to T
-    T**            — pointer to a pointer to T
-    T* const       — constant pointer to T (the pointer cannot be reassigned)
-    T[N]           — inline array of N T values
-    T*[N]          — inline array of N pointers to T
-    T(*)[N]        — pointer TO AN array of N T values
-    const T*       — pointer to a constant T (the pointed-at value cannot be modified)
+    RS_MODS_VALUE        — T               value of type T
+    RS_MODS_CONST_VALUE  — const T         const-qualified value
+    RS_MODS_PTR          — T*              pointer to T
+    RS_MODS_PTR_TO_CONST — const T*        pointer to const T
+    RS_MODS_PTR_PTR      — T**             pointer to a pointer to T
+    RS_MODS_CONST_PTR    — T* const        constant pointer to T (pointer cannot be reassigned)
+    RS_MODS_ARRAY        — T[N]            inline array of N T values
+    RS_MODS_PTR_ARRAY    — T*[N]           inline array of N pointers to T
+    RS_MODS_ARRAY_PTR    — T(*)[N]         pointer to an array of N T values
+    RS_MODS_FUNCTION     — T(*)()          function pointer
 
 ==============================================================================================*/
 
-typedef enum rs_mod_op_e
+typedef enum rs_mods_e
 {
-    RS_MOD_NONE     = 0,
-    RS_MOD_PTR      = 1,
-    RS_MOD_ARRAY    = 2,
-    RS_MOD_FUNCTION = 3,
+    RS_MODS_VALUE        = 0x0000,   /* T          */
+    RS_MODS_PTR          = 0x0001,   /* T*         */
+    RS_MODS_PTR_PTR      = 0x0101,   /* T**        */
+    RS_MODS_CONST_PTR    = 0x0009,   /* T* const   */
+    RS_MODS_ARRAY        = 0x0002,   /* T[N]       */
+    RS_MODS_PTR_ARRAY    = 0x0201,   /* T*[N]      */
+    RS_MODS_ARRAY_PTR    = 0x0102,   /* T(*)[N]    */
+    RS_MODS_FUNCTION     = 0x0004,   /* T(*)()     */
+    RS_MODS_CONST_VALUE  = 0x0010,   /* const T    */
+    RS_MODS_PTR_TO_CONST = 0x0011,   /* const T*   */
 
-} rs_mod_op_t;
+} rs_mods_t;
 
-/* Slot accessors -- used to extract information from a packed modifier chain */
-/* Example: to check if the outermost modifier is a const pointer:
-
-    uint16_t mods = field->mods;
-    rs_mod_op_t op = RS_MOD_OP( RS_MOD_GET( mods, 0 ) );
-    bool is_const = RS_MOD_IS_CONST( mods, 0 );
-    if ( op == RS_MOD_PTR && is_const )
-        printf( "field is a const pointer\n" );
-*/
-
-#define RS_MOD_GET( mods, slot )      ( (uint8_t)(((mods) >> ((slot) * 4)) & 0xF) )
-#define RS_MOD_OP( slot_bits )        ( (rs_mod_op_t)((slot_bits) & 0x3) )
-#define RS_MOD_IS_CONST( slot_bits )  ( ((slot_bits) >> 2) & 0x1 )
+static inline bool rs_mods_is_value       ( u16 m ) { return m == RS_MODS_VALUE;        }
+static inline bool rs_mods_is_const_value ( u16 m ) { return m == RS_MODS_CONST_VALUE;  }
+static inline bool rs_mods_is_ptr         ( u16 m ) { return m == RS_MODS_PTR;          }
+static inline bool rs_mods_is_ptr_to_const( u16 m ) { return m == RS_MODS_PTR_TO_CONST; }
+static inline bool rs_mods_is_ptr_ptr     ( u16 m ) { return m == RS_MODS_PTR_PTR;      }
+static inline bool rs_mods_is_const_ptr   ( u16 m ) { return m == RS_MODS_CONST_PTR;    }
+static inline bool rs_mods_is_array       ( u16 m ) { return m == RS_MODS_ARRAY;        }
+static inline bool rs_mods_is_ptr_array   ( u16 m ) { return m == RS_MODS_PTR_ARRAY;    }
+static inline bool rs_mods_is_array_ptr   ( u16 m ) { return m == RS_MODS_ARRAY_PTR;    }
 
 /*==============================================================================================
     Attribute
@@ -179,6 +168,22 @@ typedef enum rs_mod_op_e
     Single 4-byte payload entry. Multi-value metadata (@range(0, 100)) uses repeated
     entries with the same name_id. Larger types are split across multiple entries.
     String values are interned into the rs_ string pool.
+
+    flags (uint16_t): engine bits 0-7, user-defined bits 8-15.
+        Use rs_attr_flag_t for engine bits. Check with (attr->flags & RS_AF_*).
+
+    ci (uint8_t): packed group size and position.
+        High nibble = count (total entries in logical group, 1 = single value).
+        Low  nibble = index (this entry's 0-based position within the group).
+        Build with RS_ATTR_CI(count, index). Read with RS_ATTR_COUNT(ci), RS_ATTR_INDEX(ci).
+
+    Layout (12 bytes):
+        [0-3]  name_id  uint32_t
+        [4-5]  flags    uint16_t   -- placed here so uint16_t is 2-byte aligned
+        [6]    type     uint8_t
+        [7]    ci       uint8_t
+        [8-11] value    union
+
 ==============================================================================================*/
 
 typedef enum rs_attr_type_e
@@ -191,11 +196,44 @@ typedef enum rs_attr_type_e
 
 } rs_attr_type_t;
 
+/* Built-in attribute semantic flags -- bits 0-7 engine, bits 8-15 user-defined.
+   Each flag identifies the semantic role of an attrib entry without a strcmp.
+   Pair with RS_ANAME_* constants for the canonical interned name strings.*/
+
+typedef enum rs_attr_flag_e
+{
+    RS_AF_RANGE        = ( 1 << 0 ),   // min/max hard clamp on value and editor edit
+    RS_AF_CLAMP_UI     = ( 1 << 1 ),   // min/max soft UI limiter; user can type past
+    RS_AF_DISPLAY_NAME = ( 1 << 2 ),   // string override for editor display name    
+    RS_AF_TOOLTIP      = ( 1 << 3 ),   // tooltip / helper string shown in editor    
+    /* bits 4-7: engine reserved */                                                    
+    /* bits 8-15: user-defined */                                                      
+
+} rs_attr_flag_t;
+
+#define RS_AF_CLAMP             RS_AF_RANGE   /* range and clamp are the same concept */
+
+/* Canonical name strings for built-in attributes -- include in name_id interns */
+
+#define RS_ANAME_RANGE          "range"
+#define RS_ANAME_CLAMP          "range"             /* alias */
+#define RS_ANAME_CLAMP_UI       "clamp_ui"
+#define RS_ANAME_DISPLAY_NAME   "display_name"
+#define RS_ANAME_TOOLTIP        "tooltip"
+
+/* Pack count (1-15) and index (0-14) into one byte: high nibble = count, low = index */
+
+#define RS_ATTR_CI( count, index )  ( (uint8_t)( ( (uint8_t)(count) & 0x0F ) << 4 | ( (uint8_t)(index) & 0x0F ) ) )
+#define RS_ATTR_COUNT( ci )         ( (uint8_t)( (uint8_t)(ci) >> 4 ) )
+#define RS_ATTR_INDEX( ci )         ( (uint8_t)( (uint8_t)(ci) & 0x0F ) )
+#define RS_ATTR_CI_SINGLE           RS_ATTR_CI( 1, 0 )   /* shorthand for a lone entry */
+
 typedef struct rs_attrib_s
 {
     rs_name_t  name_id;         // interned attribute name
+    uint16_t   flags;           // rs_attr_flag_t bitmask; bits 8-15 user-defined
     uint8_t    type;            // rs_attr_type_t
-    uint8_t    _pad[ 3 ];       // reserved
+    uint8_t    ci;              // packed: high nibble=count, low nibble=index
     union
     {
         int32_t   i32;
@@ -217,29 +255,73 @@ typedef struct rs_attrib_s
 typedef struct rs_enum_s
 {
     rs_name_t  name_id;         // interned enumerator name
-    int64_t    value;           // signed; covers unsigned values up to INT64_MAX
+    int32_t    value;           // signed; covers unsigned values up to INT32_MAX
 
 } rs_enum_t;
 
 /*==============================================================================================
-    Field Record  (24 bytes)
+    Field Flags
+
+    Common field-level semantics stored directly on rs_field_t for O(1) access.
+    Bits 0-15 are engine-defined. Bits 16-31 are reserved for project/game use.
+
+==============================================================================================*/
+
+typedef enum rs_field_flag_e
+{
+    RS_FF_TRANSIENT  = ( 1 << 0 ),          // serialize: exclude from serialization
+    RS_FF_EDITOR     = ( 1 << 1 ),          // editor: show in editor inspector
+    RS_FF_READONLY   = ( 1 << 2 ),          // editor: display in editor, no edit
+    RS_FF_HIDDEN     = ( 1 << 3 ),          // editor: hide from editor
+    RS_FF_NETWORK    = ( 1 << 4 ),          // network: replicate over network
+    RS_FF_DEPRECATED = ( 1 << 5 ),          // developer: warn on use
+    RS_FF_REQUIRED   = ( 1 << 6 ),          // developer: validation: field must be set
+
+    /* bits 16-31: user defined */
+
+} rs_field_flag_t;
+
+/*==============================================================================================
+    Field Record  (28 bytes)
 ==============================================================================================*/
 
 typedef struct rs_field_s
 {
-    rs_name_t  name_id;         // interned field name
-    uint32_t   type_hash;       // rs_hash_str(base_type_name) — used during lazy resolution
-    uint16_t   type_id;         // resolved base type (RS_TYPE_INVALID until finalize)
-    uint16_t   offset;          // byte offset within parent struct
-    uint16_t   size;            // sizeof(field), including any inline array
-    uint16_t   mods;            // packed modifier chain
-    uint16_t   aux;             // array element count, or function signature type_id
-    uint8_t    base_const;      // const on the base type itself (`const T x`)
-    uint8_t    kind;            // cached rs_kind_t of base, for fast dispatch
-    uint16_t   attr_index;      // first attribute index (RS_ATTR_INVALID if none)
-    uint16_t   attr_count;      // number of attributes
+    rs_name_t  name_id;                 // interned field name
+    uint32_t   type_hash;               // rs_hash_str(base_type_name) — used during lazy resolution
+    uint16_t   type_id;                 // resolved base type (RS_TYPE_INVALID until finalize)
+    uint16_t   offset;                  // byte offset within parent struct
+    uint16_t   size;                    // sizeof(field), including any inline array
+    uint16_t   mods;                    // packed modifier chain
+    uint16_t   aux;                     // array element count, or function signature type_id
+
+    uint8_t    kind;                    // cached rs_kind_t of base, for fast dispatch
+    uint8_t    _pad;
+
+    uint16_t   attr_index;              // first attribute index (RS_ATTR_INVALID if none)
+    uint16_t   attr_count;              // number of attributes
+
+    uint32_t   flags;                   // rs_field_flag_t bitmask (0 = no flags set)
 
 } rs_field_t;
+
+/*==============================================================================================
+    Type Flags
+
+    Common type-level semantics stored directly on rs_type_t for O(1) access.
+    Bits 0-3 are engine-defined. Bits 4-7 are reserved for project/game use.
+==============================================================================================*/
+
+typedef enum rs_type_flag_e
+{
+    RS_TF_ABSTRACT   = ( 1 << 0 ),      // not directly instantiable (e.g. interface or base struct)
+    RS_TF_SERIALIZE  = ( 1 << 1 ),      // default-serialize all fields
+    RS_TF_EDITOR     = ( 1 << 2 ),      // show in editor type browser
+    RS_TF_DEPRECATED = ( 1 << 3 ),      // warn on use
+
+    /* bits 4-7: project/game-defined */
+
+} rs_type_flag_t;
 
 /*==============================================================================================
     Type Record  (28 bytes)
@@ -250,16 +332,20 @@ typedef struct rs_type_s
     rs_name_t  name_id;         // interned type name
     uint32_t   hash;            // rs_hash_str(name) — persistent identity
     uint32_t   schema_hash;     // content hash of field layout (save-game / hot-reload compat)
+
     uint16_t   field_index;     // first entry in fields[] (struct/union) or enums[] (enum)
     uint16_t   field_count;     // number of fields or enumerators in this type
+
     uint16_t   attr_index;      // first attribute (RS_ATTR_INVALID if none)
     uint16_t   attr_count;      // number of attributes on the type itself (not counting fields)
+
     uint16_t   next;            // next type in hash chain (RS_TYPE_INVALID = end)
     uint16_t   size;            // sizeof(T)
+
     uint8_t    align;           // alignof(T)
     uint8_t    kind;            // rs_kind_t (prim, struct, enum, etc.)
     uint8_t    frame_id;        // owning frame (module) — used for cleanup on unload
-    uint8_t    _pad;            // padding for alignment
+    uint8_t    flags;           // rs_type_flag_t bitmask (0 = no flags set)
 
 } rs_type_t;
 

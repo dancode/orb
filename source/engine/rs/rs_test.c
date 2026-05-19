@@ -85,6 +85,7 @@ rs_test_register_vec3( void )
     rs_attrib_t a          = { 0 };
     a.name_id              = test_intern( "serializable" );
     a.type                 = RS_ATTR_BOOL;
+    a.ci                   = RS_ATTR_CI_SINGLE;
     a.value.u32            = 1;
     rs_type_add_attr( tid, &a );
 }
@@ -152,7 +153,7 @@ rs_test_register_entity( void )
     fields[ 1 ].type_hash = h_char;
     fields[ 1 ].offset    = RS_OFFSETOF( rs_test_entity_t, name );
     fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_entity_t, name );
-    fields[ 1 ].mods      = RS_MODS( RS_M_ARRAY, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 1 ].mods      = RS_MODS_ARRAY;
     fields[ 1 ].aux       = 64;
 
     /* transform : transform_t                       */
@@ -172,22 +173,21 @@ rs_test_register_entity( void )
     fields[ 4 ].type_hash = h_vec3;
     fields[ 4 ].offset    = RS_OFFSETOF( rs_test_entity_t, velocity );
     fields[ 4 ].size      = RS_FIELD_SIZE( rs_test_entity_t, velocity );
-    fields[ 4 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 4 ].mods      = RS_MODS_PTR;
 
-    /* label : const char*  base_const=1, mods=[PTR] */
+    /* label : const char*  mods=PTR_TO_CONST */
     fields[ 5 ].name_id    = test_intern( "label" );
     fields[ 5 ].type_hash  = h_char;
     fields[ 5 ].offset     = RS_OFFSETOF( rs_test_entity_t, label );
     fields[ 5 ].size       = RS_FIELD_SIZE( rs_test_entity_t, label );
-    fields[ 5 ].base_const = 1;
-    fields[ 5 ].mods       = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 5 ].mods       = RS_MODS_PTR_TO_CONST;
 
     /* slots : vec3_t*[8]   mods=[PTR, ARRAY], aux=8 */
     fields[ 6 ].name_id   = test_intern( "slots" );
     fields[ 6 ].type_hash = h_vec3;
     fields[ 6 ].offset    = RS_OFFSETOF( rs_test_entity_t, slots );
     fields[ 6 ].size      = RS_FIELD_SIZE( rs_test_entity_t, slots );
-    fields[ 6 ].mods      = RS_MODS( RS_M_PTR, RS_M_ARRAY, RS_M_END, RS_M_END );
+    fields[ 6 ].mods      = RS_MODS_PTR_ARRAY;
     fields[ 6 ].aux       = 8;
 
     uint16_t tid          = rs_register_type( &type, fields, 7 );
@@ -198,11 +198,14 @@ rs_test_register_entity( void )
     {
         uint16_t    fid = ( uint16_t )( health - rs_get_field( 0 ) );
         rs_attrib_t a   = { 0 };
-        a.name_id       = test_intern( "range" );
+        a.name_id       = test_intern( RS_ANAME_RANGE );
         a.type          = RS_ATTR_FLOAT;
+        a.flags         = RS_AF_RANGE;
+        a.ci            = RS_ATTR_CI( 2, 0 );
         a.value.f32     = 0.0f;
         rs_field_add_attr( fid, &a );
-        a.value.f32 = 100.0f;
+        a.ci            = RS_ATTR_CI( 2, 1 );
+        a.value.f32     = 100.0f;
         rs_field_add_attr( fid, &a );
     }
 }
@@ -411,7 +414,7 @@ test_function_sigs( void )
     sig_fields[ 2 ].name_id   = test_intern( "loc" );
     sig_fields[ 2 ].type_hash = h_vec3;
     sig_fields[ 2 ].size      = ( uint16_t )sizeof( rs_test_vec3_t* );
-    sig_fields[ 2 ].mods      = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+    sig_fields[ 2 ].mods      = RS_MODS_PTR;
 
     uint16_t sig_id           = rs_register_function( &sig_type, sig_fields, 3 );
 
@@ -438,7 +441,7 @@ test_function_sigs( void )
     npc_fields[ 1 ].type_hash = h_void;
     npc_fields[ 1 ].offset    = RS_OFFSETOF( rs_test_npc_t, on_die );
     npc_fields[ 1 ].size      = RS_FIELD_SIZE( rs_test_npc_t, on_die );
-    npc_fields[ 1 ].mods      = RS_MODS( RS_M_FUNCTION, RS_M_END, RS_M_END, RS_M_END );
+    npc_fields[ 1 ].mods      = RS_MODS_FUNCTION;
     npc_fields[ 1 ].aux       = sig_id;
 
     uint16_t npc_id           = rs_register_type( &npc_type, npc_fields, 2 );
@@ -530,14 +533,14 @@ test_serialize( void )
     fields[ 3 ].type_hash  = h_char;
     fields[ 3 ].offset     = RS_OFFSETOF( rs_test_save_t, name );
     fields[ 3 ].size       = RS_FIELD_SIZE( rs_test_save_t, name );
-    fields[ 3 ].mods       = RS_MODS( RS_M_ARRAY, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 3 ].mods       = RS_MODS_ARRAY;
     fields[ 3 ].aux        = 16;
 
     fields[ 4 ].name_id    = test_intern( "cache_ptr" );
     fields[ 4 ].type_hash  = h_vec3;
     fields[ 4 ].offset     = RS_OFFSETOF( rs_test_save_t, cache_ptr );
     fields[ 4 ].size       = RS_FIELD_SIZE( rs_test_save_t, cache_ptr );
-    fields[ 4 ].mods       = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+    fields[ 4 ].mods       = RS_MODS_PTR;
 
     fields[ 5 ].name_id    = test_intern( "cached_hash" );
     fields[ 5 ].type_hash  = h_u32;
@@ -554,6 +557,7 @@ test_serialize( void )
         rs_attrib_t a   = { 0 };
         a.name_id       = test_intern( "transient" );
         a.type          = RS_ATTR_BOOL;
+        a.ci            = RS_ATTR_CI_SINGLE;
         a.value.u32     = 1;
         rs_field_add_attr( fid, &a );
     }
@@ -759,7 +763,7 @@ test_walker( void )
         fields[ 0 ].type_hash  = h_vec3;
         fields[ 0 ].offset     = RS_OFFSETOF( rs_test_inner_t, p );
         fields[ 0 ].size       = RS_FIELD_SIZE( rs_test_inner_t, p );
-        fields[ 0 ].mods       = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+        fields[ 0 ].mods       = RS_MODS_PTR;
 
         rs_register_type( &type, fields, 1 );
     }
@@ -790,13 +794,13 @@ test_walker( void )
         fields[ 1 ].type_hash  = h_vec3;
         fields[ 1 ].offset     = RS_OFFSETOF( rs_test_walk_t, single );
         fields[ 1 ].size       = RS_FIELD_SIZE( rs_test_walk_t, single );
-        fields[ 1 ].mods       = RS_MODS( RS_M_PTR, RS_M_END, RS_M_END, RS_M_END );
+        fields[ 1 ].mods       = RS_MODS_PTR;
 
         fields[ 2 ].name_id    = test_intern( "slots" );
         fields[ 2 ].type_hash  = h_vec3;
         fields[ 2 ].offset     = RS_OFFSETOF( rs_test_walk_t, slots );
         fields[ 2 ].size       = RS_FIELD_SIZE( rs_test_walk_t, slots );
-        fields[ 2 ].mods       = RS_MODS( RS_M_PTR, RS_M_ARRAY, RS_M_END, RS_M_END );
+        fields[ 2 ].mods       = RS_MODS_PTR_ARRAY;
         fields[ 2 ].aux        = 3;
 
         fields[ 3 ].name_id    = test_intern( "nested" );

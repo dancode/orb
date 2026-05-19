@@ -7,13 +7,14 @@
 
     Field declarations supported (one declarator per RS_PROP):
 
-        T        name;          -> base = T,  no mods
-        T*       name;          -> base = T,  mods = [PTR]
-        T**      name;          -> base = T,  mods = [PTR, PTR]
-        T* const name;          -> base = T,  mods = [CONST_PTR]
-        const T  name;          -> base = T,  base_const = 1
-        T        name[N];       -> base = T,  mods = [ARRAY],      aux = N
-        T*       name[N];       -> base = T,  mods = [PTR, ARRAY], aux = N
+        T        name;          -> base = T,  mods = RS_MODS_VALUE
+        T*       name;          -> base = T,  mods = RS_MODS_PTR
+        T**      name;          -> base = T,  mods = RS_MODS_PTR_PTR
+        T* const name;          -> base = T,  mods = RS_MODS_CONST_PTR
+        const T  name;          -> base = T,  mods = RS_MODS_CONST_VALUE
+        const T* name;          -> base = T,  mods = RS_MODS_PTR_TO_CONST
+        T        name[N];       -> base = T,  mods = RS_MODS_ARRAY,      aux = N
+        T*       name[N];       -> base = T,  mods = RS_MODS_PTR_ARRAY,  aux = N
 
     Multi-declarator statements (e.g. `float x, y, z;`) are NOT supported per
     RS_PROP; place one RS_PROP marker per field.
@@ -22,12 +23,13 @@
 
 #include "rs_gen_internal.h"
 
-/* mirror of rs.h modifier slot encoding (kept local so the tool has zero engine deps) */
+/* mirror of rs_mods_t bit encoding (kept local so the tool has zero engine deps) */
 
-#define RG_MOD_NONE          0
-#define RG_MOD_PTR           1
-#define RG_MOD_ARRAY         2
-#define RG_MOD_SLOT( op, c ) ( ( ( op ) & 0x3 ) | ( ( ( c ) & 0x1 ) << 2 ) )
+#define RG_MOD_NONE        0x00
+#define RG_MOD_PTR         0x01
+#define RG_MOD_ARRAY       0x02
+#define RG_MOD_CONST       0x08   /* const on the pointer itself (T* const) */
+#define RG_MOD_CONST_BASE  0x10   /* const on the base type (const T, const T*) */
 
 // clang-format off
 /*----------------------------------------------------------------------------------------------
@@ -44,7 +46,7 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
     char     base_type[ RG_MAX_NAME ]  = { 0 };
     int      have_base                 = 0;
     char     field_name[ RG_MAX_NAME ] = { 0 };
-    uint8_t  slots[ 4 ]                = { 0, 0, 0, 0 };
+    uint8_t  slots[ 2 ]                = { 0, 0 };
     int      slot_count                = 0;
     uint16_t array_count               = 0;
     int      seen_star                 = 0;
@@ -62,8 +64,8 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
         }
         if ( *p == '*' )
         {
-            if ( slot_count < 4 )
-                slots[ slot_count++ ] = ( uint8_t )RG_MOD_SLOT( RG_MOD_PTR, 0 );
+            if ( slot_count < 2 )
+                slots[ slot_count++ ] = RG_MOD_PTR;
             seen_star = 1;
             p++;
             continue;
@@ -79,8 +81,8 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
                     base_const = 1;
                 else if ( seen_star && slot_count > 0 )
                 {
-                    /* T* const -> mark last PTR slot as const-qualified */
-                    slots[ slot_count - 1 ] = ( uint8_t )( ( slots[ slot_count - 1 ] & 0x3 ) | ( 1 << 2 ) );
+                    /* T* const -> set CONST bit on the last PTR slot */
+                    slots[ slot_count - 1 ] |= RG_MOD_CONST;
                 }
                 else
                     base_const = 1;
@@ -136,8 +138,8 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
                 if ( *q == ']' )
                     q++;
                 p = q;
-                if ( slot_count < 4 )
-                    slots[ slot_count++ ] = ( uint8_t )RG_MOD_SLOT( RG_MOD_ARRAY, 0 );
+                if ( slot_count < 2 )
+                    slots[ slot_count++ ] = RG_MOD_ARRAY;
             }
             continue;
         }
@@ -150,11 +152,10 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
     rg_str_copy( out->name, field_name, RG_MAX_NAME );
     rg_str_copy( out->base_type, base_type, RG_MAX_NAME );
     out->array_count = array_count;
-    out->base_const  = ( uint8_t )base_const;
 
-    uint16_t mods    = 0;
-    for ( int i = 0; i < 4; i++ ) mods = ( uint16_t )( mods | ( ( uint16_t )slots[ i ] << ( i * 4 ) ) );
-    out->mods = mods;
+    if ( base_const )
+        slots[ 0 ] |= RG_MOD_CONST_BASE;
+    out->mods = ( uint16_t )( slots[ 0 ] | ( ( uint16_t )slots[ 1 ] << 8 ) );
 
     return p;
 }

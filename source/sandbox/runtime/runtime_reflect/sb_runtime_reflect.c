@@ -115,8 +115,8 @@ print_enum_cb( uint16_t enum_id, const rs_enum_t* e, void* user )
         field    - the field's metadata (name, offset, size, mods, attributes)
         user     - whatever you passed to rs_walk (unused here)
 
-    field->mods tells you the shape: plain value, pointer, array, etc.
-    RS_MOD_OP( RS_MOD_GET( field->mods, 0 ) ) gives you the outermost modifier.
+    field->mods tells you the shape: compare against rs_mods_t values (RS_MODS_PTR etc.)
+    or use the rs_mods_is_* predicates from rs.h.
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -128,12 +128,10 @@ value_visit( void* addr, uint16_t type_id, const rs_field_t* field, void* user )
     const char*      tname = t ? rs_cstr( t->name_id ) : "?";
     const char*      fname = rs_cstr( field->name_id );
 
-    /* Read the outermost modifier to know the field's shape. */
-    rs_mod_op_t op0 = RS_MOD_OP( RS_MOD_GET( field->mods, 0 ) );
-
-    /* Pointer field (T* or T*[N]): addr is the address of the pointer variable itself.
-       Cast to void** to read the pointer's value. */
-    if ( op0 == RS_MOD_PTR )
+    /* Pointer field (T*, T**, T* const, T*[N]): addr is the pointer variable itself. */
+    bool is_ptr_shape = ( rs_mods_is_ptr( field->mods )       || rs_mods_is_ptr_ptr( field->mods ) ||
+                          rs_mods_is_const_ptr( field->mods )  || rs_mods_is_ptr_array( field->mods ) );
+    if ( is_ptr_shape )
     {
         printf( "    %-20s %-14s %s\n", fname, tname, *( void** )addr ? "(non-null)" : "(null)" );
         return;
@@ -165,7 +163,7 @@ value_visit( void* addr, uint16_t type_id, const rs_field_t* field, void* user )
 
     /* Inline char arrays (e.g. char name[64]) generate one visit per element.
        Skip the trailing null bytes so we only see the actual string content. */
-    if ( op0 == RS_MOD_ARRAY && type_id == RS_PRIM_CHAR && *( char* )addr == '\0' )
+    if ( rs_mods_is_array( field->mods ) && type_id == RS_PRIM_CHAR && *( char* )addr == '\0' )
         return;
 
     /* Primitive value: cast addr to the correct type and print. */

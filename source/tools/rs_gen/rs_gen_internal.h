@@ -73,9 +73,8 @@ typedef struct rg_decl_field_s
 {
     char      name[ RG_MAX_NAME ];
     char      base_type[ RG_MAX_NAME ]; /* e.g. "vec3_t", "int32_t"             */
-    uint16_t  mods;                     /* RS_MODS() packed value               */
+    uint16_t  mods;                     /* rs_mods_t enum value from rs.h       */
     uint16_t  array_count;              /* aux; 0 if not an array               */
-    uint8_t   base_const;               /* `const T x`                          */
 
     int       attr_count;
     rg_attr_t attrs[ RG_MAX_ATTRS_PER_ITEM ];
