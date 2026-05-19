@@ -84,13 +84,21 @@ Every engine library uses a three-header split:
 
 | Header | Who includes it | What it contains |
 |--------|----------------|-----------------|
-| `<module>.h` | Everyone | Types, enums, structs, constants, callback typedefs, helper macros. No vtable. No function declarations. Includes `<module>_api.h` at the bottom. |
-| `<module>_api.h` | DLL modules, generated code, anything calling through the vtable | `<module>_api_t` function-pointer struct, `MOD_GATEWAY_*` macro, `MOD_USE_*` / `MOD_FETCH_*` macros. Includes `mod.h`. |
-| `<module>_host.h` | Host executables, unity build entries, test sandboxes | Direct-call function declarations (lifecycle, registration, lookup, diagnostics, etc.) and `<module>_get_mod_desc()`. Includes `<module>.h` and `mod_host.h`. |
+| `<module>.h` | Other headers needing only types | Pure types, enums, structs, constants, callback typedefs, helper macros. No vtable. No function declarations. No downstream includes. |
+| `<module>_api.h` | DLL module `.c` files calling through the vtable | Includes `<module>.h` and `mod.h`. Adds `<module>_api_t` function-pointer struct, `MOD_GATEWAY_*` macro, `MOD_USE_*` / `MOD_FETCH_*` macros. |
+| `<module>_host.h` | Host executables, unity build entries, test sandboxes | Includes `<module>_api.h`. Adds direct-call function declarations, `<module>_get_mod_desc()`. |
 
-**The rule:** if your code calls `module_fn()` directly, include `<module>_host.h`. If it only uses the vtable (`module()->fn()`), include `<module>.h` (which pulls in `<module>_api.h` automatically).
+Include chain: `module_host.h` → `module_api.h` → `module.h`
 
-Existing sets: `mod.h/mod_host.h`, `rs.h/rs_api.h/rs_host.h`, `sys.h/sys_api.h/sys_host.h`, `app.h/app_api.h/app_host.h`.
+**The rule:** headers that only need a type include `<module>.h`. DLL `.c` files that call `module()->fn()` include `<module>_api.h`. Code that calls `module_fn()` directly (hosts, unity builds, tests) includes `<module>_host.h`.
+
+**mod is self-hosting** — it ships four files instead of three:
+- `mod.h` — pure infrastructure macros (`MOD_GATEWAY_*`, `MOD_FETCH_API`, `MOD_DEFINE_API_PTR`) that every other `_api.h` depends on. Also `mod_visitor_fn` and the `mod_desc_t` forward decl.
+- `mod_api.h` — mod's own vtable (`mod_api_t`, gateway, `MOD_USE_MOD`/`MOD_FETCH_MOD`). Includes `mod.h`.
+- `mod_host.h` — direct-call mod system functions. Includes `mod_api.h`.
+- `mod_export.h` — module implementation header (include only in `.c` files). Defines `mod_desc_t`, lifecycle typedefs, `MOD_DEFINE_EXPORTS`. Includes `mod.h`.
+
+Existing sets: `mod.h/mod_api.h/mod_host.h/mod_export.h`, `rs.h/rs_api.h/rs_host.h`, `sys.h/sys_api.h/sys_host.h`, `app.h/app_api.h/app_host.h`, `core.h/core_api.h/core_host.h`.
 
 When adding a new engine library, follow the same split.
 

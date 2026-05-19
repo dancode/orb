@@ -87,54 +87,10 @@ typedef struct mod_desc_s mod_desc_t;
 #endif
 
 /*==============================================================================================
-    mod_visitor_fn — callback signature for mod_each / mod_api_t.each
+    mod_visitor_fn — callback for mod_each; used by mod_api_t and mod_host.h.
 ==============================================================================================*/
 
 typedef void ( *mod_visitor_fn )( const char* name, const mod_desc_t* api, void* user );
-
-/*==============================================================================================
-    mod_api_t — callable function table exposed by the mod system itself.
-
-    DLL modules that need to manage sub-modules (e.g. an editor loading plugins) fetch this
-    via the standard gateway pattern:
-
-        MOD_DEFINE_API_PTR( mod_api_t, mod );       // file scope (dynamic builds only)
-        MOD_FETCH_API( mod_api_t, mod );             // inside init() / reload()
-        mod()->dynamic_load( "my_plugin" );          // call site — identical in both modes
-
-    The accessor mod() is always inline; in BUILD_STATIC it resolves to a direct struct
-    reference that LTO can devirtualize to a direct call with zero indirection overhead.
-==============================================================================================*/
-// clang-format off
-
-typedef struct mod_api_s
-{
-    bool        ( *dynamic_load )   ( const char* name );
-    bool        ( *unload )         ( const char* name );
-    const void* ( *get_api )        ( const char* name );
-    bool        ( *reload )         ( const char* name );
-    bool        ( *is_loaded )      ( const char* name );
-    void        ( *each )           ( mod_visitor_fn visit, void* user );
-    const char* ( *last_error )     ( void );
-
-} mod_api_t;
-
-// clang-format on
-
-/* mod is always exe-linked; DLLs in a dynamic build must still fetch via the registry. */
-#if defined( BUILD_STATIC ) || defined( MOD_STATIC )
-MOD_GATEWAY_STATIC( mod_api_t, mod )
-#else
-MOD_GATEWAY_DYNAMIC( mod_api_t, mod )
-#endif
-
-#if defined( BUILD_STATIC ) || defined( MOD_STATIC )
-    #define MOD_USE_MOD    /* static build */
-    #define MOD_FETCH_MOD  true
-#else
-    #define MOD_USE_MOD    MOD_DEFINE_API_PTR( mod_api_t, mod )
-    #define MOD_FETCH_MOD  MOD_FETCH_API( mod_api_t, mod )
-#endif
 
 /*============================================================================================*/
 #endif    // MOD_H
