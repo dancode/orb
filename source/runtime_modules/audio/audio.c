@@ -23,7 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_import.h"
 #include "audio.h"
 
 /*==============================================================================================

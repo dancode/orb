@@ -13,7 +13,7 @@
 
 #include <stdio.h>
 #include "orb.h"
-#include "runtime/host.h"
+#include "runtime/runtime_host.h"
 
 /*==============================================================================================
     Tool logic — runs once

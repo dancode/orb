@@ -9,7 +9,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod_export.h"
-#include "editor_modules/editor_example/editor_example.h"
+#include "editor_modules/editor_example/editor_example_api.h"
 
 /*==============================================================================================
     Persistent state

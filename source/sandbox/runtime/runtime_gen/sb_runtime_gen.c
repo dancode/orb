@@ -3,6 +3,7 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 
+#include "engine/sys/sys_api.h"
 #include "engine/core/core_api.h"
 #include "engine/rs/rs_api.h"
 

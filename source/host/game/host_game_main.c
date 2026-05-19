@@ -11,7 +11,7 @@
 #include "orb.h"
 
 #include "engine/mod/mod_host.h"        // mod_<functions>
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_import.h"
 
 /*==============================================================================================
     main

@@ -213,7 +213,7 @@ emit_module_api_h( FILE* fh, const char* module_name, const rg_module_api_t* api
     char upper[ RG_MAX_NAME ];
     to_upper_guard( upper, module_name, RG_MAX_NAME );
 
-    fprintf( fh, "#include \"engine/mod/mod.h\"\n\n" );
+    fprintf( fh, "#include \"engine/mod/mod_import.h\"\n\n" );
 
     fprintf( fh, "typedef struct %s_api_s\n{\n", module_name );
     for ( int i = 0; i < api->func_count; i++ )

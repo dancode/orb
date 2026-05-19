@@ -39,7 +39,7 @@
 #include "engine/core/core_api.h"
 #include "engine/rs/rs_host.h"
 
-#include "runtime_modules/example_reflect/example_reflect.h"
+#include "runtime_modules/example_reflect/example_reflect_api.h"
 
 MOD_USE_EXAMPLE_REFLECT;
 

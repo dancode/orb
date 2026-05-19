@@ -12,7 +12,7 @@
       - MOD_EXPORT / MOD_DEFINE_EXPORTS: DLL export machinery
 
     Include ONLY in a module's .c implementation. Hosts and sibling modules
-    include mod.h instead.
+    include mod_import.h instead.
 
     Module authoring
     ----------------
@@ -57,7 +57,7 @@
 #define MOD_EXPORT_H
 
 #include "orb.h"
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_import.h"
 
 /*==============================================================================================
     get_api_fn — System callback passed into every module's init() and reload().

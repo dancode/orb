@@ -11,11 +11,11 @@
         if ( !MOD_FETCH_MOD ) return false;          // in init() / reload()
         mod()->dynamic_load( "my_plugin" );          // call site — identical in both modes
 
-    Includes mod.h for the infrastructure macros (MOD_GATEWAY_*, MOD_FETCH_API, etc.)
+    Includes mod_import.h for the infrastructure macros (MOD_GATEWAY_*, MOD_FETCH_API, etc.)
 
 ==============================================================================================*/
 
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_import.h"
 
 // clang-format off
 /*==============================================================================================

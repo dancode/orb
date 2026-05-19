@@ -11,7 +11,7 @@
 ==============================================================================================*/
 
 #include "engine/core/core.h"
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_import.h"
 
 /*============================================================================================*/
 /* These data pointers are required for natvis debugging within DLL modules */

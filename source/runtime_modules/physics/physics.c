@@ -12,7 +12,7 @@
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
 
-#include "physics.h"
+#include "runtime_modules/physics/physics_api.h"
 
 MOD_USE_CORE;
 

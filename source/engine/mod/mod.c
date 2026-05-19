@@ -70,7 +70,7 @@
 
 #include "engine/sys/sys_host.h"
 
-#include "mod.h"
+#include "mod_import.h"
 #include "mod_export.h"
 #include "mod_host.h"
 

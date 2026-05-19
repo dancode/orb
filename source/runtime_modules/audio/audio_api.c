@@ -6,6 +6,7 @@
 
 #include "engine/mod/mod_export.h"
 
+#include "runtime_modules/audio/audio_api.h"
 
 /*==============================================================================================
     Persistent state

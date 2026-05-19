@@ -7,7 +7,7 @@
 #define RS_API_H
 
 #include "engine/rs/rs.h"
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_import.h"
 
 // clang-format off
 

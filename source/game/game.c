@@ -9,13 +9,13 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "game/game.h"
+#include "game/game_api.h"
 
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
-#include "runtime_modules/audio/audio.h"
-#include "runtime_modules/render/render.h"
-#include "runtime_modules/physics/physics.h"
+#include "runtime_modules/audio/audio_api.h"
+#include "runtime_modules/render/render_api.h"
+#include "runtime_modules/physics/physics_api.h"
 
 MOD_USE_CORE;
 MOD_USE_RENDER;

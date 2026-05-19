@@ -18,7 +18,7 @@
 
 #include "developer/dev_hot/dev_hot.h"
 
-#include "runtime_modules/example/example.h"
+#include "runtime_modules/example/example_api.h"
 MOD_USE_EXAMPLE;
 
 /*============================================================================================*/

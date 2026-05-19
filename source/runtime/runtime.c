@@ -11,38 +11,44 @@
     Engine headers
 ==============================================================================================*/
 
-#include "engine/mod/mod_export.h" /* for exporting api description */
-#include "engine/mod/mod_host.h"   /* module setup and loading (hosts only) */
+
+
 
 /* static modules used by runtime */
 #include "engine/sys/sys_host.h"
-#include "engine/app/app_api.h"
-#include "engine/rs/rs_host.h"     /* reflection: auto-wired on every DLL load */
+#include "engine/rs/rs_host.h"    // reflection: auto-wired on every DLL load
 
 /*==============================================================================================
-    (Optional Module Headers
+    (Optional) Module API's
 ==============================================================================================*/
 
-#include "runtime_service/rhi/rhi.h"
-#include "runtime_modules/render/render.h"
+#include "engine/app/app_api.h"
+#include "runtime_service/rhi/rhi_api.h"
+#include "runtime_modules/render/render_api.h"
+
+/*==============================================================================================
+    Our API
+==============================================================================================*/
+
+#include "runtime/runtime_api.h"
 
 /*==============================================================================================
     Runtime Headers
 ==============================================================================================*/
 
-#include "runtime.h"    // module API (hosts and clients).
-#include "host.h"       // hosts API (entry point, boot sequence, main loop, etc).
+#include "runtime/runtime.h"            // module API (hosts and clients).
+#include "runtime/runtime_host.h"       // hosts API (entry point, boot sequence, main loop, etc).
 
 /*==============================================================================================
-    Unity Build
+    Unity Build (The Host Entry Point)
 ==============================================================================================*/
 
-#include "host/host_main.c"    // The main() entry point and boot sequence.
+#include "runtime/host/host_main.c"    // The main() entry point and boot sequence.
 
 /*==============================================================================================
     Unity API Definition
 ==============================================================================================*/
 
-#include "host/host_api.c"    // Host API definition (exported to modules).
+#include "runtime/host/host_api.c"    // Host API definition (exported to modules).
 
 /*============================================================================================*/

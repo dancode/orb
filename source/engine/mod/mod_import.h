@@ -1,8 +1,8 @@
-#ifndef MOD_H
-#define MOD_H
+#ifndef MOD_IMPORT_H
+#define MOD_IMPORT_H
 /*==============================================================================================
 
-    engine/mod/mod.h — Consumer-side module API access macros.
+    engine/mod/mod_import.h — Consumer-side module API access macros.
 
     Supports both static and dynamic builds with identical call sites. The build mode is
     controlled by BUILD_STATIC (monolithic) or per-module <NAME>_STATIC (exe-linked service).
@@ -93,4 +93,4 @@ typedef struct mod_desc_s mod_desc_t;
 typedef void ( *mod_visitor_fn )( const char* name, const mod_desc_t* api, void* user );
 
 /*============================================================================================*/
-#endif    // MOD_H
+#endif    // MOD_IMPORT_H

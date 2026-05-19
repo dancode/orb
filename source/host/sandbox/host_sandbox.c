@@ -18,7 +18,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_import.h"
 
 /*============================================================================================*/
 

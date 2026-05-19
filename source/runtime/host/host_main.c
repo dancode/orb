@@ -82,6 +82,7 @@ run_host_should_quit( void )
 MOD_USE_APP;
 MOD_USE_RHI;
 MOD_USE_RENDER;
+MOD_USE_RUN
 
 static win_id_t s_win_id = APP_WIN_INVALID;
 

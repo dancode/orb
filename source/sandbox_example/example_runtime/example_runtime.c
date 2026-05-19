@@ -72,10 +72,10 @@
 #include "engine/core/core_api.h"
 #include "engine/app/app_api.h"
 
-#include "runtime_service/rhi/rhi.h"
-#include "runtime_modules/render/render.h"
-#include "runtime/runtime.h"
-#include "runtime/host.h"
+#include "runtime_service/rhi/rhi_api.h"
+#include "runtime_modules/render/render_api.h"
+#include "runtime/runtime_api.h"
+#include "runtime/runtime_host.h"
 
 /*==============================================================================================
     Host callbacks

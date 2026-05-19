@@ -42,12 +42,11 @@
         Static:  render()->begin_frame();   // zero-cost; LTO-devirtualizable
         Dynamic: render()->begin_frame();   // one pointer load
 
-    See MOD_GATEWAY_STATIC / MOD_GATEWAY_DYNAMIC in mod.h.
+    See MOD_GATEWAY_STATIC / MOD_GATEWAY_DYNAMIC in mod_import.h.
 
 ==============================================================================================*/
 
 #include "engine/mod/mod_api.h"
-#include "engine/sys/sys_host.h"
 
 // clang-format off
 /*==============================================================================================
@@ -67,7 +66,7 @@
     MOD_HOST_FETCH_API — Populates a cached API pointer from outside a module init() callback.
 
     Valid only after mod_init_all(). Use inside on_ready() or host update loops.
-    Prefer MOD_FETCH_API (in mod.h) inside module init() / reload() callbacks instead.
+    Prefer MOD_FETCH_API (in mod_import.h) inside module init() / reload() callbacks instead.
 
     Usage:
         MOD_HOST_FETCH_API( render_api_t, render );
@@ -164,7 +163,7 @@ void            mod_set_post_exit_cb        ( mod_event_fn fn, void* user );
 /*==============================================================================================
     Iteration
 
-    Visits every non-empty module slot in load order.  mod_visitor_fn is defined in mod.h.
+    Visits every non-empty module slot in load order.  mod_visitor_fn is defined in mod_import.h.
 ==============================================================================================*/
 
 void            mod_each                    ( mod_visitor_fn visit, void* user );

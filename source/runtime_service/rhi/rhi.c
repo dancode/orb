@@ -66,7 +66,7 @@
 ==============================================================================================*/
 
 #include "engine/mod/mod_export.h"
-#include "runtime_service/rhi/rhi.h"
+#include "runtime_service/rhi/rhi_api.h"
 
 /*==============================================================================================
     Vulkan backend  (vk_state.c FIRST so g_vk is visible to everything below)

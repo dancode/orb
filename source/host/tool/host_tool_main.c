@@ -33,7 +33,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
-#include "engine/mod/mod.h"
+#include "engine/mod/mod_import.h"
 #include "engine/sys/sys_host.h"
 #include "engine/core/core_host.h"
 

@@ -20,7 +20,6 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "engine/mod/mod.h"
 #include "engine/rs/rs_api.h"
 
 /*==============================================================================================
@@ -145,34 +144,6 @@ typedef struct ex_event_s
     RS_PROP()                                ex_event_payload_t payload;
 
 } ex_event_t;
-
-/*==============================================================================================
-    Public module API
-==============================================================================================*/
-
-typedef struct example_reflect_api_s
-{
-    /* Returns a populated demo entity (pointer is stable for the module's lifetime). */
-    const ex_entity_t* ( *demo_entity )( void );
-
-} example_reflect_api_t;
-
-/*============================================================================================*/
-
-#if defined( BUILD_STATIC ) || defined( EXAMPLE_REFLECT_STATIC )
-MOD_GATEWAY_STATIC( example_reflect_api_t, example_reflect )
-mod_desc_t* example_reflect_get_mod_desc( void );
-#else
-MOD_GATEWAY_DYNAMIC( example_reflect_api_t, example_reflect )
-#endif
-
-#if defined( BUILD_STATIC ) || defined( EXAMPLE_REFLECT_STATIC )
-    #define MOD_USE_EXAMPLE_REFLECT    /* static build */
-    #define MOD_FETCH_EXAMPLE_REFLECT  true
-#else
-    #define MOD_USE_EXAMPLE_REFLECT    MOD_DEFINE_API_PTR( example_reflect_api_t, example_reflect )
-    #define MOD_FETCH_EXAMPLE_REFLECT  MOD_FETCH_API( example_reflect_api_t, example_reflect )
-#endif
 
 /*============================================================================================*/
 #endif    // EXAMPLE_REFLECT_H

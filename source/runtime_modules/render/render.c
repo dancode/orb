@@ -26,8 +26,8 @@
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
 
-#include "runtime_service/rhi/rhi.h"
-#include "render.h"
+#include "runtime_service/rhi/rhi_api.h"
+#include "runtime_modules/render/render_api.h"
 
 /*==============================================================================================
     Cached API pointers

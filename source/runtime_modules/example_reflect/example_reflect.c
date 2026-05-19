@@ -12,7 +12,7 @@
 #include "orb.h"
 #include "engine/mod/mod_export.h"
 
-#include "runtime_modules/example_reflect/example_reflect.h"
+#include "runtime_modules/example_reflect/example_reflect_api.h"
 #include "example_reflect.generated.h"
 #include <string.h>
 
