@@ -1,7 +1,10 @@
 /* engine/rs/rs_print.c - Diagnostics: type description strings and console dump. */
 
-/* rs_field_describe — emit a C-style type string into buf.
-   E.g. "const vec3_t*", "vec3_t*[8]", "vec3_t(*)[8]". Returns chars written. */
+/*==============================================================================================
+    String Helpers
+
+    Internal growth-safe string concatenation for description building.
+==============================================================================================*/
 
 static int
 rs_str_append( char* buf, size_t cap, size_t pos, const char* s )
@@ -10,6 +13,13 @@ rs_str_append( char* buf, size_t cap, size_t pos, const char* s )
     if ( pos < cap ) buf[ pos ] = '\0';
     return (int)pos;
 }
+
+/*==============================================================================================
+    Type Description
+
+    Emits a C-style type string for fields and types.
+    E.g. "const vec3_t*", "vec3_t*[8]", "vec3_t(*)[8]".
+==============================================================================================*/
 
 size_t
 rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
@@ -88,6 +98,12 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
 
     return pos;
 }
+
+/*==============================================================================================
+    Diagnostic Printing
+
+    Console dumping of reflection metadata for debugging.
+==============================================================================================*/
 
 void
 rs_print_type( uint16_t type_id )

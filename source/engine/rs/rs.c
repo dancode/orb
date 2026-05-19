@@ -12,8 +12,13 @@
 #include "engine/mod/mod_export.h"
 #include "engine/rs/rs.h"
 
-/* Flat bump-allocator for interning type/field names. Kept separate from g_rs so that
-   memset(&g_rs) in rs_init does not clobber live strings. O(n) intern, O(1) cstr. */
+// clang-format off
+/*==============================================================================================
+    String Pool
+
+    Flat bump-allocator for interning type/field names. Kept separate from g_rs so that
+    memset(&g_rs) in rs_init does not clobber live strings. O(n) intern, O(1) cstr.
+==============================================================================================*/
 
 #define RS_STRING_POOL_SIZE ( 16 * 1024 )
 
@@ -38,15 +43,18 @@ rs_intern( const char* s )
     return id;
 }
 
-// clang-format off
-
 const char*
 rs_cstr( rs_name_t id )
 {
     return g_rs_str_pool + id;
 }
 
-/* Registry storage — shared across all TUs in this unity build */
+/*==============================================================================================
+    Registry Storage
+
+    Shared state used across all TUs in this unity build.
+==============================================================================================*/
+
 typedef struct rs_registry_s
 {
     uint16_t    type_count;
@@ -66,7 +74,9 @@ typedef struct rs_registry_s
 
 } rs_registry_t;
 
-/*============================================================================================*/
+/*==============================================================================================
+    Implementation Includes (Unity Build)
+==============================================================================================*/
 
 #include "engine/rs/rs_registry.c"
 #include "engine/rs/rs_access.c"
@@ -76,10 +86,13 @@ typedef struct rs_registry_s
 
 /* rs_test.c is compiled separately as part of sb_engine_reflect, not this library. */
 
-/*============================================================================================*/
+/*==============================================================================================
+    API Publishing
+==============================================================================================*/
 
 const rs_api_t g_rs_api_struct = 
 {
+     /* Lookup */
     .find_type_by_name  = rs_find_type_by_name,
     .get_type           = rs_get_type,
     .get_field          = rs_get_field,
@@ -88,23 +101,33 @@ const rs_api_t g_rs_api_struct =
     .field_get_attr     = rs_field_get_attr,
     .intern             = rs_intern,
     .cstr               = rs_cstr,
+
+    /* Iteration */
     .each_type          = rs_each_type,
     .each_type_in_frame = rs_each_type_in_frame,
     .each_field         = rs_each_field,
     .each_enumerator    = rs_each_enumerator,
+
+    /* Bitset helpers */
     .bitset_describe    = rs_bitset_describe,
+
+    /* Walkers */
     .walk_refs          = rs_walk_refs,
     .walk               = rs_walk,
+
+    /* Serialization */
     .write              = rs_write,
     .read               = rs_read,
     .peek_type_hash     = rs_peek_type_hash,
+
+    /* Diagnostics */
     .field_describe     = rs_field_describe,
     .print_type         = rs_print_type,
     .print_types        = rs_print_types,
 };
 
 /*==============================================================================================
-    Type Record  (28 bytes)
+    Module Integration
 ==============================================================================================*/
 
 static bool

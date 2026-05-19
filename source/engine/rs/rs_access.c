@@ -1,6 +1,10 @@
 /* engine/rs/rs_access.c - Type, field, attribute lookups and iteration. */
 
-/* Types */
+/*==============================================================================================
+    Type Access
+
+    Retrieving types by ID or name hash.
+==============================================================================================*/
 
 const rs_type_t*
 rs_get_type( uint16_t type_id )
@@ -23,7 +27,11 @@ rs_find_type_by_name( const char* name )
     return rs_hash_find( rs_hash_str( name ) );
 }
 
-/* Fields */
+/*==============================================================================================
+    Field Access
+
+    Retrieving field metadata by ID or name within a type.
+==============================================================================================*/
 
 const rs_field_t*
 rs_get_field( uint16_t field_id )
@@ -48,7 +56,11 @@ rs_find_field( uint16_t type_id, const char* name )
     return NULL;
 }
 
-/* Attributes — first match wins; use iteration for repeated entries */
+/*==============================================================================================
+    Attribute Access
+
+    First-match wins; use iteration for repeated entries.
+==============================================================================================*/
 
 static const rs_attrib_t*
 rs_find_attr_in_block( uint16_t first, uint16_t count, const char* name )
@@ -79,7 +91,11 @@ rs_field_get_attr( uint16_t field_id, const char* name )
     return rs_find_attr_in_block( f->attr_index, f->attr_count, name );
 }
 
-/* Enumerators */
+/*==============================================================================================
+    Enumerator Access
+
+    Retrieving individual enum values or searching by name/value.
+==============================================================================================*/
 
 const rs_enum_t*
 rs_get_enumerator( uint16_t enum_id )
@@ -117,9 +133,12 @@ rs_enum_find_by_value( uint16_t type_id, int64_t value )
     return NULL;
 }
 
-/* Bitset helpers
-   Decoding is order-dependent when enums have overlapping bits. Place multi-bit
-   constants first in registration order to match them preferentially. */
+/*==============================================================================================
+    Bitset Helpers
+
+    Decoding is order-dependent when enums have overlapping bits. Place multi-bit
+    constants first in registration order to match them preferentially.
+==============================================================================================*/
 
 bool
 rs_enum_is_bitset( uint16_t type_id )
@@ -215,7 +234,11 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
     return pos;
 }
 
-/* Function signature accessors (kind == RS_KIND_FUNCTION) */
+/*==============================================================================================
+    Function Signature Access
+
+    Accessors for parameters and return types (kind == RS_KIND_FUNCTION).
+==============================================================================================*/
 
 const rs_field_t*
 rs_function_get_return( uint16_t type_id )
@@ -242,7 +265,11 @@ rs_function_get_param( uint16_t type_id, uint16_t param_index )
     return &g_rs.fields[ t->field_index + 1 + param_index ];
 }
 
-/* Iteration */
+/*==============================================================================================
+    Iteration
+
+    Callback-based iteration over types, fields, and enumerators.
+==============================================================================================*/
 
 uint16_t
 rs_each_type( rs_type_cb_t cb, void* user )

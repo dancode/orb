@@ -3,6 +3,12 @@
 
 // clang-format off
 
+/*==============================================================================================
+    Binary I/O Helpers
+
+    Endian-neutral (little-endian) read/write for header fields.
+==============================================================================================*/
+
 static void rs_write_u32_le( uint8_t* dst, uint32_t v )
 {
     dst[0]=(uint8_t)(v); dst[1]=(uint8_t)(v>>8); dst[2]=(uint8_t)(v>>16); dst[3]=(uint8_t)(v>>24);
@@ -12,6 +18,12 @@ static uint32_t rs_read_u32_le( const uint8_t* src )
 {
     return (uint32_t)src[0] | ((uint32_t)src[1]<<8) | ((uint32_t)src[2]<<16) | ((uint32_t)src[3]<<24);
 }
+
+/*==============================================================================================
+    Serialization Prep
+
+    Walks an instance and zeros out volatile data (pointers, @transient) before writing.
+==============================================================================================*/
 
 static void
 rs_serialize_zero_ptr( void** slot, uint16_t pointee_id, const rs_field_t* f, void* user )
@@ -41,6 +53,12 @@ rs_serialize_zero_transient( uint8_t* body, uint16_t type_id )
             rs_serialize_zero_transient( body + f->offset, f->type_id );
     }
 }
+
+/*==============================================================================================
+    Binary Serialization API
+
+    Schema-gated raw memory snapshots. Supports pointer zeroing and transient skip.
+==============================================================================================*/
 
 size_t
 rs_write( const void* instance, uint16_t type_id, uint8_t* buf, size_t cap )

@@ -1,5 +1,11 @@
 /* engine/rs/rs_walk.c - Reference walker and value walker. See rs.md for supported shapes. */
 
+/*==============================================================================================
+    Reference Walker
+
+    Visits only pointer slots (T*, T*[N], etc.). Used for fixups and pointer tracking.
+==============================================================================================*/
+
 void
 rs_walk_refs( void* instance, uint16_t type_id, rs_ref_visitor_t visit, void* user )
 {
@@ -64,6 +70,12 @@ rs_walk_refs( void* instance, uint16_t type_id, rs_ref_visitor_t visit, void* us
         /* Function pointers and deeper chains are intentionally skipped. */
     }
 }
+
+/*==============================================================================================
+    Generic Value Walker
+
+    Traverses all fields recursively, including bare values and arrays.
+==============================================================================================*/
 
 void
 rs_walk( void* instance, uint16_t type_id, rs_visitor_t visit, void* user )

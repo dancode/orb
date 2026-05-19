@@ -1,9 +1,24 @@
-/* engine/rs/rs_registry.c - Frame lifecycle, registration, lazy type resolution. */
+/*==============================================================================================
+
+    engine/rs/rs_registry.c - Frame lifecycle, registration, lazy type resolution
+
+==============================================================================================*/
+
+
+/*==============================================================================================
+    Registry State
+
+    Global storage for all reflected types, fields, and frames.
+==============================================================================================*/
 
 static rs_registry_t g_rs;
 static const bool    rs_debug = true;
 
-/* Hash chain helpers — separate chaining; `next` in rs_type_t is the link. */
+/*==============================================================================================
+    Type Hashing
+
+    Internal helpers for fast type lookup by name hash.
+==============================================================================================*/
 
 static void
 rs_hash_insert( uint16_t type_id )
@@ -49,7 +64,11 @@ rs_hash_find( uint32_t hash )
     return RS_TYPE_INVALID;
 }
 
-/* Built-in primitives installed in frame 0 ("system") */
+/*==============================================================================================
+    Built-in Primitives
+
+    Initializes the base types (int, float, etc.) in the 'system' frame.
+==============================================================================================*/
 
 static const struct { const char* name; uint16_t size; uint8_t align; }
 RS_BUILTINS[ RS_PRIM_COUNT ] = {
@@ -94,7 +113,11 @@ rs_install_builtins( void )
     g_rs.type_count = RS_PRIM_COUNT;
 }
 
-/* Lifecycle */
+/*==============================================================================================
+    Lifecycle
+
+    Global init/exit for the reflection system.
+==============================================================================================*/
 
 static bool g_rs_initialized = false;
 
@@ -124,6 +147,7 @@ rs_exit( void )
 {
     if ( !g_rs_initialized )
         return;
+
     while ( g_rs.frame_count > 1 ) rs_pop_frame( g_rs.frame_count - 1 );
     memset( &g_rs, 0, sizeof( g_rs ) );
     g_rs_str_top     = 0;
@@ -138,7 +162,11 @@ rs_get_stats( uint16_t* type_count, uint16_t* field_count, uint16_t* frame_count
     if ( frame_count ) *frame_count = g_rs.frame_count;
 }
 
-/* Frames */
+/*==============================================================================================
+    Frame Management
+
+    Frames represent module boundaries. They allow for bulk-unloading of reflection data.
+==============================================================================================*/
 
 uint16_t
 rs_push_frame( const char* name )
@@ -202,7 +230,11 @@ rs_get_frame( uint16_t frame_id )
     return &g_rs.frames[ frame_id ];
 }
 
-/* Schema hash — FNV-1a over field layout (name, offset, size, mods, aux, type_hash) */
+/*==============================================================================================
+    Schema Hashing
+
+    Computes a hash based on the physical layout and field metadata to detect binary mismatches.
+==============================================================================================*/
 
 static uint32_t
 rs_fnv1a_step( uint32_t h, const void* data, size_t len )
@@ -229,7 +261,11 @@ rs_compute_schema_hash( const rs_field_t* fields, uint16_t count )
     return h;
 }
 
-/* Table allocators */
+/*==============================================================================================
+    Table Allocators
+
+    Internal growth helpers for the registry's fixed-size arrays.
+==============================================================================================*/
 
 static uint16_t rs_alloc_type_slot( void )
 {
@@ -261,7 +297,11 @@ static uint16_t rs_alloc_enum_block( uint16_t count )
     return start;
 }
 
-/* Registration */
+/*==============================================================================================
+    Type Registration
+
+    Core functions for adding structs, classes, and complex types to the registry.
+==============================================================================================*/
 
 uint16_t
 rs_register_type( const rs_type_t* type, const rs_field_t* fields, uint16_t field_count )
@@ -318,7 +358,11 @@ rs_register_type( const rs_type_t* type, const rs_field_t* fields, uint16_t fiel
     return type_id;
 }
 
-/* Enum registration */
+/*==============================================================================================
+    Enum & Bitset Registration
+
+    Specialized registration for enumerations and flag-based bitsets.
+==============================================================================================*/
 
 static uint32_t
 rs_compute_enum_schema_hash( const rs_enum_t* e, uint16_t count )
@@ -384,8 +428,12 @@ rs_register_bitset( const rs_type_t* type, const rs_enum_t* enums, uint16_t coun
     return type_id;
 }
 
-/* Function signature — same field storage as struct; kind forced to RS_KIND_FUNCTION.
-   fields[0]=return, fields[1..]=params in declaration order. */
+/*==============================================================================================
+    Function Signature Registration
+
+    Functions are registered similarly to structs, using fields to represent return/parameters.
+==============================================================================================*/
+
 uint16_t
 rs_register_function( const rs_type_t* type, const rs_field_t* return_then_params, uint16_t count )
 {
@@ -395,7 +443,11 @@ rs_register_function( const rs_type_t* type, const rs_field_t* return_then_param
     return rs_register_type( &patched, return_then_params, count );
 }
 
-/* Attribute attachment — attrs must be appended contiguously per owner. */
+/*==============================================================================================
+    Attribute Management
+
+    Attaches key-value or tag metadata to types and fields.
+==============================================================================================*/
 
 static bool
 rs_append_attr( uint16_t* owner_index, uint16_t* owner_count, const rs_attrib_t* attr )
@@ -433,7 +485,11 @@ bool rs_field_add_attr( uint16_t field_id, const rs_attrib_t* attr )
     return rs_append_attr( &f->attr_index, &f->attr_count, attr );
 }
 
-/* Finalize frame — second-pass resolution for any fields still holding RS_TYPE_INVALID */
+/*==============================================================================================
+    Frame Finalization
+
+    Performs a second pass to resolve forward references once all types in a frame are known.
+==============================================================================================*/
 
 bool
 rs_finalize_frame( uint16_t frame_id )
@@ -473,7 +529,11 @@ rs_finalize_frame( uint16_t frame_id )
     return ok;
 }
 
-/* Module integration */
+/*==============================================================================================
+    Module Integration
+
+    Glues the reflection registry to the dynamic module system.
+==============================================================================================*/
 
 uint16_t
 rs_register_module( const char* name, const mod_desc_t* desc )

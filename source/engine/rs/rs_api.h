@@ -1,10 +1,16 @@
+/*==============================================================================================
+
+    engine/rs/rs_api.h : rs_api_t function-pointer struct and module accessor macros.
+
+==============================================================================================*/
 #ifndef RS_API_H
 #define RS_API_H
-/* engine/rs/rs_api.h - rs_api_t function-pointer struct and module accessor macros.
-   Included at the bottom of rs.h — all rs_ types are already declared at that point. */
+
+// clang-format off
 
 /* Runtime API exposed to DLL modules. Registration is NOT included — modules receive
    an rs_reg_api_t* during their rs_register() call and must use that instead. */
+
 typedef struct rs_api_s
 {
     /* Lookup */
@@ -39,13 +45,16 @@ typedef struct rs_api_s
     size_t             ( *field_describe     )( const rs_field_t* f, char* buf, size_t cap );
     void               ( *print_type         )( uint16_t type_id );
     void               ( *print_types        )( void );
+
 } rs_api_t;
 
+/*============================================================================================*/
 /* rs is always statically linked into the host — RS_STATIC is set by CMake globally. */
+
 #if defined( BUILD_STATIC ) || defined( RS_STATIC )
-MOD_GATEWAY_STATIC( rs_api_t, rs )
+    MOD_GATEWAY_STATIC( rs_api_t, rs )
 #else
-MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
+    MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
 #endif
 
 #if defined( BUILD_STATIC ) || defined( RS_STATIC )
@@ -56,5 +65,6 @@ MOD_GATEWAY_DYNAMIC( rs_api_t, rs )
     #define MOD_FETCH_RS  MOD_FETCH_API( rs_api_t, rs )
 #endif
 
+// clang-format on
 /*============================================================================================*/
 #endif    // RS_API_H

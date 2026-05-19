@@ -21,6 +21,7 @@
 typedef struct rs_test_vec3_s
 {
     float x, y, z;
+
 } rs_test_vec3_t;
 
 typedef struct rs_test_transform_s
@@ -28,6 +29,7 @@ typedef struct rs_test_transform_s
     rs_test_vec3_t position;
     rs_test_vec3_t rotation;
     rs_test_vec3_t scale;
+
 } rs_test_transform_t;
 
 typedef struct rs_test_entity_s
@@ -39,6 +41,7 @@ typedef struct rs_test_entity_s
     rs_test_vec3_t*      velocity;       /* pointer field    */
     const char*          label;          /* const char*      */
     rs_test_vec3_t*      slots[ 8 ];     /* array-of-pointer */
+
 } rs_test_entity_t;
 
 /*==============================================================================================
