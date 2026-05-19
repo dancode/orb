@@ -66,11 +66,10 @@ static const rs_attrib_t*
 rs_find_attr_in_block( uint16_t first, uint16_t count, const char* name )
 {
     if ( count == 0 || first == RS_ATTR_INVALID || !name ) return NULL;
-    uint32_t h = rs_hash_str( name );
     for ( uint16_t i = 0; i < count; i++ )
     {
         const rs_attrib_t* a = &g_rs.attrs[ first + i ];
-        if ( a->name_hash == h ) return a;
+        if ( strcmp( rs_cstr( a->name_id ), name ) == 0 ) return a;
     }
     return NULL;
 }
@@ -110,11 +109,10 @@ rs_enum_find_by_name( uint16_t type_id, const char* name )
     const rs_type_t* t = rs_get_type( type_id );
     if ( !t || !rs_kind_is_enum( (rs_kind_t)t->kind ) || !name ) return NULL;
 
-    uint32_t h = rs_hash_str( name );
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
         const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
-        if ( e->name_hash == h ) return e;
+        if ( strcmp( rs_cstr( e->name_id ), name ) == 0 ) return e;
     }
     return NULL;
 }

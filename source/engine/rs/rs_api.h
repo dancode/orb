@@ -6,48 +6,50 @@
 #ifndef RS_API_H
 #define RS_API_H
 
+// #include "engine/rs/rs_import.h"
 #include "engine/rs/rs.h"
 #include "engine/mod/mod_import.h"
 
 // clang-format off
 
-/* Runtime API exposed to DLL modules. Registration is NOT included — modules receive
-   an rs_reg_api_t* during their rs_register() call and must use that instead. */
+/*==============================================================================================
+    Reflection Runtime API
+==============================================================================================*/
 
 typedef struct rs_api_s
 {
     /* Lookup */
-    uint16_t           ( *find_type_by_name  )( const char* name );
-    const rs_type_t*   ( *get_type           )( uint16_t type_id );
-    const rs_field_t*  ( *get_field          )( uint16_t field_id );
-    const rs_field_t*  ( *find_field         )( uint16_t type_id, const char* name );
-    const rs_attrib_t* ( *type_get_attr      )( uint16_t type_id, const char* key );
-    const rs_attrib_t* ( *field_get_attr     )( uint16_t field_id, const char* key );
-    rs_name_t          ( *intern             )( const char* s );
-    const char*        ( *cstr               )( rs_name_t id );
+    uint16_t            ( *find_type_by_name  )( const char* name );
+    const rs_type_t*    ( *get_type           )( uint16_t type_id );
+    const rs_field_t*   ( *get_field          )( uint16_t field_id );
+    const rs_field_t*   ( *find_field         )( uint16_t type_id, const char* name );
+    const rs_attrib_t*  ( *type_get_attr      )( uint16_t type_id, const char* key );
+    const rs_attrib_t*  ( *field_get_attr     )( uint16_t field_id, const char* key );
+    rs_name_t           ( *intern             )( const char* s );
+    const char*         ( *cstr               )( rs_name_t id );
 
     /* Iteration */
-    uint16_t           ( *each_type          )( rs_type_cb_t cb, void* user );
-    uint16_t           ( *each_type_in_frame )( uint16_t frame_id, rs_type_cb_t cb, void* user );
-    uint16_t           ( *each_field         )( uint16_t type_id, rs_field_cb_t cb, void* user );
-    uint16_t           ( *each_enumerator    )( uint16_t type_id, rs_enum_cb_t cb, void* user );
+    uint16_t            ( *each_type          )( rs_type_cb_t cb, void* user );
+    uint16_t            ( *each_type_in_frame )( uint16_t frame_id, rs_type_cb_t cb, void* user );
+    uint16_t            ( *each_field         )( uint16_t type_id, rs_field_cb_t cb, void* user );
+    uint16_t            ( *each_enumerator    )( uint16_t type_id, rs_enum_cb_t cb, void* user );
 
     /* Bitset helpers */
-    size_t             ( *bitset_describe    )( uint16_t type_id, int64_t value, char* buf, size_t cap );
+    size_t              ( *bitset_describe    )( uint16_t type_id, int64_t value, char* buf, size_t cap );
 
     /* Walkers */
-    void               ( *walk_refs          )( void* inst, uint16_t type_id, rs_ref_visitor_t fn, void* user );
-    void               ( *walk               )( void* inst, uint16_t type_id, rs_visitor_t fn, void* user );
+    void                ( *walk_refs          )( void* inst, uint16_t type_id, rs_ref_visitor_t fn, void* user );
+    void                ( *walk               )( void* inst, uint16_t type_id, rs_visitor_t fn, void* user );
 
-    /* Serialization */
-    size_t             ( *write              )( const void* src, uint16_t type_id, uint8_t* out, size_t cap );
-    rs_io_status_t     ( *read               )( void* dst, uint16_t type_id, const uint8_t* buf, size_t cap, size_t* consumed );
-    uint32_t           ( *peek_type_hash     )( const uint8_t* buf, size_t cap );
+    /* Serialization */ 
+    size_t              ( *write              )( const void* src, uint16_t type_id, uint8_t* out, size_t cap );
+    rs_io_status_t      ( *read               )( void* dst, uint16_t type_id, const uint8_t* buf, size_t cap, size_t* consumed );
+    uint32_t            ( *peek_type_hash     )( const uint8_t* buf, size_t cap );
 
     /* Diagnostics */
-    size_t             ( *field_describe     )( const rs_field_t* f, char* buf, size_t cap );
-    void               ( *print_type         )( uint16_t type_id );
-    void               ( *print_types        )( void );
+    size_t              ( *field_describe     )( const rs_field_t* f, char* buf, size_t cap );
+    void                ( *print_type         )( uint16_t type_id );
+    void                ( *print_types        )( void );
 
 } rs_api_t;
 

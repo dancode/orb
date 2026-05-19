@@ -1,8 +1,11 @@
 /*==============================================================================================
 
-    engine/rs/rs.h - Reflection types, callback typedefs, rs_reg_api_t, and rs_api_t accessor.
-    Include this in DLL modules and generated registration code.
-    Include engine/rs/rs_host.h instead when you need direct function calls (host/tests).
+    engine/rs/rs.h - Reflection types, enums, structs, constants, and callback typedefs.
+
+    Pure types only -- no vtable, no function declarations.
+    Include engine/rs/rs_import.h for the registration vtable (generated code).
+    Include engine/rs/rs_api.h for the runtime vtable (DLL modules).
+    Include engine/rs/rs_host.h for direct function calls (host/tests).
 
 ==============================================================================================*/
 #ifndef RS_H
@@ -60,7 +63,7 @@ rs_hash_str( const char* s )
 #define RS_MAX_ENUMS            1024
 
 /* Hash table */
-#define RS_TYPE_HASH_SIZE       1024                        /* must be power of two */
+#define RS_TYPE_HASH_SIZE       1024                            /* must be power of two */
 #define RS_TYPE_HASH_MASK       ( RS_TYPE_HASH_SIZE - 1 )
 
 /*==============================================================================================
@@ -126,6 +129,25 @@ rs_kind_is_enum( rs_kind_t k )
         bit[3]     reserved
 
     See rs.md for encoding examples and the full table.
+
+    T              [0000|0000|0000|0000]   all NONE
+    T*             [0000|0000|0000|0001]   s0=PTR
+    T**            [0000|0000|0001|0001]   s0=PTR, s1=PTR
+    T* const       [0000|0000|0000|0101]   s0=PTR(const_bit set)
+    T[N]           [0000|0000|0000|0010]   s0=ARRAY
+    T*[N]          [0000|0000|0010|0001]   s0=PTR, s1=ARRAY
+    T(*)[N]        [0000|0000|0001|0010]   s0=ARRAY, s1=PTR
+    const T*       [0000|0000|0000|0001]   s0=PTR, base_const separate
+
+    T              — value of type T
+    T*             — pointer to T
+    T**            — pointer to a pointer to T
+    T* const       — constant pointer to T (the pointer cannot be reassigned)
+    T[N]           — inline array of N T values
+    T*[N]          — inline array of N pointers to T
+    T(*)[N]        — pointer TO AN array of N T values
+    const T*       — pointer to a constant T (the pointed-at value cannot be modified)
+
 ==============================================================================================*/
 
 typedef enum rs_mod_op_e
@@ -137,18 +159,15 @@ typedef enum rs_mod_op_e
 
 } rs_mod_op_t;
 
-/* Slot builders -- used to manually construct modifier chains */
-
-#define RS_MOD_SLOT( op, is_const )   ( ((op) & 0x3) | (((is_const) & 0x1) << 2) )
-#define RS_MODS( s0, s1, s2, s3 )     ( (uint16_t)((s0) | ((s1) << 4) | ((s2) << 8) | ((s3) << 12)) )
-#define RS_M_END                      RS_MOD_SLOT( RS_MOD_NONE,     0 )
-#define RS_M_PTR                      RS_MOD_SLOT( RS_MOD_PTR,      0 )
-#define RS_M_CONST_PTR                RS_MOD_SLOT( RS_MOD_PTR,      1 )   /* T* const — the pointer is const */
-#define RS_M_ARRAY                    RS_MOD_SLOT( RS_MOD_ARRAY,    0 )
-#define RS_M_FUNCTION                 RS_MOD_SLOT( RS_MOD_FUNCTION, 0 )
-#define RS_NO_MODS                    ( (uint16_t)0 )
-
 /* Slot accessors -- used to extract information from a packed modifier chain */
+/* Example: to check if the outermost modifier is a const pointer:
+
+    uint16_t mods = field->mods;
+    rs_mod_op_t op = RS_MOD_OP( RS_MOD_GET( mods, 0 ) );
+    bool is_const = RS_MOD_IS_CONST( mods, 0 );
+    if ( op == RS_MOD_PTR && is_const )
+        printf( "field is a const pointer\n" );
+*/
 
 #define RS_MOD_GET( mods, slot )      ( (uint8_t)(((mods) >> ((slot) * 4)) & 0xF) )
 #define RS_MOD_OP( slot_bits )        ( (rs_mod_op_t)((slot_bits) & 0x3) )
@@ -175,7 +194,6 @@ typedef enum rs_attr_type_e
 typedef struct rs_attrib_s
 {
     rs_name_t  name_id;         // interned attribute name
-    uint32_t   name_hash;       // rs_hash_str(name) for intern-free lookup
     uint8_t    type;            // rs_attr_type_t
     uint8_t    _pad[ 3 ];       // reserved
     union
@@ -199,7 +217,6 @@ typedef struct rs_attrib_s
 typedef struct rs_enum_s
 {
     rs_name_t  name_id;         // interned enumerator name
-    uint32_t   name_hash;       // rs_hash_str(name) for intern-free lookup
     int64_t    value;           // signed; covers unsigned values up to INT64_MAX
 
 } rs_enum_t;
@@ -263,16 +280,6 @@ typedef struct rs_frame_s
 } rs_frame_t;
 
 /*==============================================================================================
-    Codegen Helpers : Used by generated reflection code.
-==============================================================================================*/
-
-#define RS_OFFSETOF( T, m )    ( (uint16_t)offsetof( T, m ) )
-#define RS_SIZEOF( T )         ( (uint16_t)sizeof( T ) )
-#define RS_ALIGNOF( T )        ( (uint8_t)_Alignof( T ) )
-#define RS_FIELD_SIZE( T, m )  ( (uint16_t)sizeof( ((T*)0)->m ) )
-#define RS_ARRAY_COUNT( a )    ( (uint16_t)( sizeof( a ) / sizeof( (a)[0] ) ) )
-
-/*==============================================================================================
     Serialization Status
 
     rs_io_status_t is part of the rs_api_t vtable surface; kept here so DLL modules can
@@ -304,25 +311,6 @@ typedef void ( *rs_field_cb_t     ) ( uint16_t field_id, const rs_field_t* f, vo
 typedef void ( *rs_enum_cb_t      ) ( uint16_t enum_id,  const rs_enum_t*  e, void* user );
 typedef void ( *rs_ref_visitor_t  ) ( void** ref_slot, uint16_t pointee_type_id, const rs_field_t*, void* user );
 typedef void ( *rs_visitor_t      ) ( void*  addr,     uint16_t type_id,         const rs_field_t*, void* user );
-
-/*==============================================================================================
-    Registration API
-
-    Vtable passed to generated <name>_rs_register() functions. DLL modules must call through
-    this instead of calling rs_register_type etc. directly (those access g_rs in the host).
-==============================================================================================*/
-
-typedef struct rs_reg_api_s
-{
-    rs_name_t           ( *intern             )( const char* );
-    uint16_t            ( *rs_register_type   )( const rs_type_t*, const rs_field_t*, uint16_t );
-    uint16_t            ( *rs_register_enum   )( const rs_type_t*, const rs_enum_t*,  uint16_t );
-    uint16_t            ( *rs_register_bitset )( const rs_type_t*, const rs_enum_t*,  uint16_t );
-    bool                ( *rs_type_add_attr   )( uint16_t type_id,  const rs_attrib_t* );
-    bool                ( *rs_field_add_attr  )( uint16_t field_id, const rs_attrib_t* );
-    const rs_type_t*    ( *rs_get_type        )( uint16_t type_id );
-
-} rs_reg_api_t;
 
 // clang-format on
 /*============================================================================================*/

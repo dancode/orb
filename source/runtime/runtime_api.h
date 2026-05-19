@@ -22,9 +22,9 @@ typedef struct run_api_s
 } run_api_t;
 
 #if defined( BUILD_STATIC ) || defined( RUN_STATIC )
-MOD_GATEWAY_STATIC( run_api_t, run )
+    MOD_GATEWAY_STATIC( run_api_t, run )
 #else
-MOD_GATEWAY_DYNAMIC( run_api_t, run )
+    MOD_GATEWAY_DYNAMIC( run_api_t, run )
 #endif
 
 #if defined( BUILD_STATIC ) || defined( RUN_STATIC )
