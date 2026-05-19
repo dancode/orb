@@ -6,6 +6,9 @@
 #ifndef RS_API_H
 #define RS_API_H
 
+#include "engine/rs/rs.h"
+#include "engine/mod/mod.h"
+
 // clang-format off
 
 /* Runtime API exposed to DLL modules. Registration is NOT included — modules receive

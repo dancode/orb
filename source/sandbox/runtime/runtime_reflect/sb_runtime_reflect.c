@@ -35,8 +35,8 @@
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
-#include "engine/sys/sys.h"
-#include "engine/core/core.h"
+#include "engine/sys/sys_host.h"
+#include "engine/core/core_api.h"
 #include "engine/rs/rs_host.h"
 
 #include "runtime_modules/example_reflect/example_reflect.h"

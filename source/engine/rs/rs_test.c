@@ -13,7 +13,7 @@
 #include <assert.h>
 
 #include "orb.h"
-#include "engine/rs/rs.h"
+#include "engine/rs/rs_host.h"
 
 #define test_intern rs_intern
 #define test_cstr   rs_cstr

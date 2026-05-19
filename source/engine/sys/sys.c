@@ -41,7 +41,7 @@
 ==============================================================================================*/
 
 #include "engine/mod/mod_export.h" /* mod_desc_t, get_api_fn */
-#include "engine/sys/sys.h"
+#include "engine/sys/sys_host.h"
 #include "engine/sys/sys_api.h"    /* API struct definition + gateway macro */
 
 /*==============================================================================================

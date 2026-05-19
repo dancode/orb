@@ -46,20 +46,4 @@ typedef enum memtag_kind_e
 
 typedef uint16_t memtag_t;    // runtime-generated tag ID
 
-/*==============================================================================================
-
-    Export the API struct and gateway macro for fetching the API.
-
-==============================================================================================*/
-
-#define CORE_DECLARED
-#include "engine/core/core_api.h"
-#include "engine/core/debug/assert.h"
-
-/*============================================================================================*/
-/* SID convenience macros — require core() to be live at call time                       */
-
-#define SID( str )       core()->sid_intern( ( str ), ( int32_t )strlen( str ) )
-#define SID_CSTR( str )  core()->sid_intern_cstr( str )
-
 /*============================================================================================*/

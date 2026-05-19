@@ -10,7 +10,7 @@
 #include <assert.h>
 
 #include "engine/mod/mod_export.h"
-#include "engine/rs/rs.h"
+#include "engine/rs/rs_host.h"
 
 // clang-format off
 /*==============================================================================================

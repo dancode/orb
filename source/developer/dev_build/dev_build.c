@@ -9,7 +9,7 @@
 #include <stdarg.h>
 
 #include "orb.h"
-#include "engine/sys/sys.h"
+#include "engine/sys/sys_host.h"
 #include "developer/dev_build/dev_build.h"
 
 #ifndef MAX_PATH

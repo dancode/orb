@@ -21,7 +21,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod.h"
-#include "engine/rs/rs.h"
+#include "engine/rs/rs_api.h"
 
 /*==============================================================================================
     Reflected enums

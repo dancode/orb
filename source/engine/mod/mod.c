@@ -68,7 +68,7 @@
 
 #include "orb.h"
 
-#include "engine/sys/sys.h"
+#include "engine/sys/sys_host.h"
 
 #include "mod.h"
 #include "mod_export.h"

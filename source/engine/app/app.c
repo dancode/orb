@@ -54,7 +54,7 @@
 ==============================================================================================*/
 
 #include "engine/mod/mod_export.h"
-#include "engine/app/app.h"
+#include "engine/app/app_host.h"
 
 /*==============================================================================================
     Platform backend  (static functions appear in this TU)

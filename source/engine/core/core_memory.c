@@ -11,7 +11,7 @@
 #include <stdarg.h>    // va_list
 
 #include "orb.h"
-#include "engine/sys/sys.h"
-#include "engine/core/core.h"
+#include "engine/sys/sys_host.h"
+#include "engine/core/core_api.h"
 
 #include "memory/memory.c"

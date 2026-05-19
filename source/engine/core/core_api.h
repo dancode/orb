@@ -10,10 +10,7 @@
 
 ==============================================================================================*/
 
-#ifndef CORE_DECLARED
-    #error "core_api.h should not be included directly; include core.h instead."
-#endif
-
+#include "engine/core/core.h"
 #include "engine/mod/mod.h"
 
 /*============================================================================================*/
@@ -107,6 +104,16 @@ MOD_GATEWAY_DYNAMIC( core_api_t, core )
         ( ( g_core_api_ptr = ( const core_api_t* )get_api( "core" ) ) != NULL && \
           ( g_debug_api = g_core_api_ptr->debug_api, true ) )
 #endif
+
+/*============================================================================================*/
+
+#include "engine/core/debug/assert.h"
+
+/*============================================================================================*/
+/* SID convenience macros — require core() to be live at call time */
+
+#define SID( str )       core()->sid_intern( ( str ), ( int32_t )strlen( str ) )
+#define SID_CSTR( str )  core()->sid_intern_cstr( str )
 
 /*============================================================================================*/
 #endif    // CORE_API_H

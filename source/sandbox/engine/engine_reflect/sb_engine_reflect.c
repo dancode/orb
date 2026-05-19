@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 #include "orb.h"
-#include "engine/core/core.h"
+#include "engine/core/core_api.h"
 
 void rs_run_tests( void );
 

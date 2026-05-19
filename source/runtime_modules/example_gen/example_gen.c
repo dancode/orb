@@ -11,7 +11,7 @@
 #include "runtime_modules/example_gen/example_gen.h"
 #include "example_gen.generated.h"
 
-#include "engine/core/core.h"
+#include "engine/core/core_api.h"
 
 RS_MODULE( example_gen )
 

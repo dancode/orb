@@ -15,8 +15,8 @@
 #include "engine/mod/mod_host.h"   /* module setup and loading (hosts only) */
 
 /* static modules used by runtime */
-#include "engine/sys/sys.h"
-#include "engine/app/app.h"
+#include "engine/sys/sys_host.h"
+#include "engine/app/app_api.h"
 #include "engine/rs/rs_host.h"     /* reflection: auto-wired on every DLL load */
 
 /*==============================================================================================

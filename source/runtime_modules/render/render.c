@@ -24,7 +24,7 @@
 #include "orb.h"
 
 #include "engine/mod/mod_export.h"
-#include "engine/core/core.h"
+#include "engine/core/core_api.h"
 
 #include "runtime_service/rhi/rhi.h"
 #include "render.h"

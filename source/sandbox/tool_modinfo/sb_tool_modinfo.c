@@ -35,7 +35,7 @@
 #include <string.h>
 
 #include "orb.h"
-#include "engine/sys/sys.h"
+#include "engine/sys/sys_host.h"
 #include "engine/mod/mod_export.h" /* mod_desc_t — type only; no symbols pulled in */
 
 #include "host/common/host_common.h"

@@ -10,7 +10,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
-#include "engine/core/core.h"
+#include "engine/core/core_api.h"
 
 int  intern_test( void );                        // ... temporary code ...
 void test_core_cvar( int argc, char** argv );    // ... temporary code ...

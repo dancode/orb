@@ -17,7 +17,7 @@
 #include "engine/mod/mod_export.h"
 #include "engine/mod/mod.h"
 
-#include "engine/core/core.h"
+#include "engine/core/core_api.h"
 #include "runtime_modules/render/render.h"
 #include "game/game.h"
 

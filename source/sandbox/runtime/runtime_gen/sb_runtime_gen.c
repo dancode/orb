@@ -3,8 +3,8 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 
-#include "engine/core/core.h"
-#include "engine/rs/rs.h"
+#include "engine/core/core_api.h"
+#include "engine/rs/rs_api.h"
 
 #include "runtime_modules/example_gen/example_gen.h"
 

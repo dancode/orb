@@ -13,21 +13,14 @@
     Call sites expand to: one branch + one indirect call + one conditional trap.
     The report body is ORB_NOINLINE — no code bloat at call sites.
 
-    Do not include this directly. Include core.h.
+    Included by core_api.h after the gateway macro. Do not include directly.
 
 ==============================================================================================*/
 #pragma once
 
 #ifndef CORE_API_H
-    #error "assert.h must not be included directly; include core.h"
+    #error "assert.h must not be included directly; include core_api.h"
 #endif
-
-/*==============================================================================================
-    Skip mode — for test suites that need to run past assertion failures
-==============================================================================================*/
-
-/* When enabled, ORB_ASSERT prints the diagnostic but does not call ORB_TRAP(). */
-void core_assert_set_skip( bool skip );
 
 /*==============================================================================================
     Override orb.h stubs

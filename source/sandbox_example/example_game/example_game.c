@@ -17,7 +17,7 @@
 #include "orb.h"
 #include "runtime_service/rhi/rhi.h"
 #include "runtime/host.h"
-#include "engine/app/app.h"
+#include "engine/app/app_api.h"
 
 /* add module API headers as they are built:
    #include "runtime_modules/physics/physics_api.h"

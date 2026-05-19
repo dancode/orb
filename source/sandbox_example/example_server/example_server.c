@@ -12,7 +12,7 @@
 
 #include <stdio.h>
 #include "orb.h"
-#include "engine/sys/sys.h"
+#include "engine/sys/sys_host.h"
 #include "engine/mod/mod_host.h"
 #include "runtime/host.h"
 
