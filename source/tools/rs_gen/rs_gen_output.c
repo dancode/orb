@@ -84,17 +84,21 @@ static void
 emit_attr_call( FILE* fc, const rg_attr_t* a, const char* add_fn, const char* id_expr,
                 const char* indent )
 {
-    fprintf( fc, "%s{ rs_attrib_t _a = { .name_id = api->intern( \"%s\" ), "
-                 ".type = %s, .ci = RS_ATTR_CI_SINGLE, .value = { ",
-             indent, a->name, attr_kind_macro( a->kind ) );
+    fprintf( fc, "%s{ rs_attrib_t _a = {\n", indent );
+    fprintf( fc, "%s      .name_id = api->intern( \"%s\" ),\n", indent, a->name );
+    fprintf( fc, "%s      .type    = %s,\n",                    indent, attr_kind_macro( a->kind ) );
+    fprintf( fc, "%s      .ci      = RS_ATTR_CI_SINGLE,\n",     indent );
+    fprintf( fc, "%s      .value   = { ",                       indent );
     switch ( a->kind )
     {
         case RG_ATTR_TAG:    fprintf( fc, ".u32 = 1" ); break;
         case RG_ATTR_INT:    fprintf( fc, ".i32 = (int32_t)(%s)", a->value[ 0 ] ? a->value : "0" ); break;
-        case RG_ATTR_FLOAT:  fprintf( fc, ".f32 = (float)(%s)", a->value[ 0 ] ? a->value : "0" ); break;
+        case RG_ATTR_FLOAT:  fprintf( fc, ".f32 = (float)(%s)",   a->value[ 0 ] ? a->value : "0" ); break;
         case RG_ATTR_STRING: fprintf( fc, ".str = api->intern( \"%s\" )", a->value ); break;
     }
-    fprintf( fc, " } }; api->%s( %s, &_a ); }\n", add_fn, id_expr );
+    fprintf( fc, " },\n" );
+    fprintf( fc, "%s  };\n",                         indent );
+    fprintf( fc, "%s  api->%s( %s, &_a ); }\n", indent, add_fn, id_expr );
 }
 
 /* Emit the rs_type_t _t = { ... }; block shared by structs and enums. */

@@ -115,8 +115,7 @@ print_enum_cb( uint16_t enum_id, const rs_enum_t* e, void* user )
         field    - the field's metadata (name, offset, size, mods, attributes)
         user     - whatever you passed to rs_walk (unused here)
 
-    field->mods tells you the shape: compare against rs_mods_t values (RS_MODS_PTR etc.)
-    or use the rs_mods_is_* predicates from rs.h.
+    field->mods tells you the shape: compare directly against rs_mods_t values (RS_MODS_PTR etc.).
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -129,8 +128,9 @@ value_visit( void* addr, uint16_t type_id, const rs_field_t* field, void* user )
     const char*      fname = rs_cstr( field->name_id );
 
     /* Pointer field (T*, T**, T* const, T*[N]): addr is the pointer variable itself. */
-    bool is_ptr_shape = ( rs_mods_is_ptr( field->mods )       || rs_mods_is_ptr_ptr( field->mods ) ||
-                          rs_mods_is_const_ptr( field->mods )  || rs_mods_is_ptr_array( field->mods ) );
+    bool is_ptr_shape = ( field->mods == RS_MODS_PTR         || field->mods == RS_MODS_PTR_PTR  ||
+                          field->mods == RS_MODS_CONST_PTR   || field->mods == RS_MODS_PTR_ARRAY ||
+                          field->mods == RS_MODS_PTR_TO_CONST );
     if ( is_ptr_shape )
     {
         printf( "    %-20s %-14s %s\n", fname, tname, *( void** )addr ? "(non-null)" : "(null)" );
@@ -163,7 +163,7 @@ value_visit( void* addr, uint16_t type_id, const rs_field_t* field, void* user )
 
     /* Inline char arrays (e.g. char name[64]) generate one visit per element.
        Skip the trailing null bytes so we only see the actual string content. */
-    if ( rs_mods_is_array( field->mods ) && type_id == RS_PRIM_CHAR && *( char* )addr == '\0' )
+    if ( field->mods == RS_MODS_ARRAY && type_id == RS_PRIM_CHAR && *( char* )addr == '\0' )
         return;
 
     /* Primitive value: cast addr to the correct type and print. */

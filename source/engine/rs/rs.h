@@ -122,45 +122,37 @@ rs_kind_is_enum( rs_kind_t k )
 
     uint16_t mods: a flat 16-bit enum encoding the complete declarator shape of a field.
     The full set of supported C-field shapes is enumerated below; invalid combinations
-    are unrepresentable.
+    are unrepresentable. Compare f->mods directly against these named values.
 
-    RS_MODS_VALUE        — T               value of type T
-    RS_MODS_CONST_VALUE  — const T         const-qualified value
-    RS_MODS_PTR          — T*              pointer to T
-    RS_MODS_PTR_TO_CONST — const T*        pointer to const T
-    RS_MODS_PTR_PTR      — T**             pointer to a pointer to T
-    RS_MODS_CONST_PTR    — T* const        constant pointer to T (pointer cannot be reassigned)
-    RS_MODS_ARRAY        — T[N]            inline array of N T values
-    RS_MODS_PTR_ARRAY    — T*[N]           inline array of N pointers to T
-    RS_MODS_ARRAY_PTR    — T(*)[N]         pointer to an array of N T values
-    RS_MODS_FUNCTION     — T(*)()          function pointer
+    Bit layout:
+        bits [2:0]  primary declarator   (0x1=ptr, 0x2=array, 0x4=fn)
+        bit  [3]    internal const       (pointer itself is const: T* const)
+        bit  [4]    external const       (base type is const:      const T)
+        bits [10:8] secondary declarator (outer wrapper, same encoding as bits [2:0])
 
 ==============================================================================================*/
 
 typedef enum rs_mods_e
 {
-    RS_MODS_VALUE        = 0x0000,   /* T          */
-    RS_MODS_PTR          = 0x0001,   /* T*         */
-    RS_MODS_PTR_PTR      = 0x0101,   /* T**        */
-    RS_MODS_CONST_PTR    = 0x0009,   /* T* const   */
-    RS_MODS_ARRAY        = 0x0002,   /* T[N]       */
-    RS_MODS_PTR_ARRAY    = 0x0201,   /* T*[N]      */
-    RS_MODS_ARRAY_PTR    = 0x0102,   /* T(*)[N]    */
-    RS_MODS_FUNCTION     = 0x0004,   /* T(*)()     */
-    RS_MODS_CONST_VALUE  = 0x0010,   /* const T    */
-    RS_MODS_PTR_TO_CONST = 0x0011,   /* const T*   */
+    /* value */
+    RS_MODS_VALUE        = 0x0000,   // T           value of type T  
+    RS_MODS_CONST_VALUE  = 0x0010,   // const T     const-qualified value
+
+    /* pointer */
+    RS_MODS_PTR          = 0x0001,   // T*          pointer to T
+    RS_MODS_PTR_TO_CONST = 0x0011,   // const T*    pointer to const T
+    RS_MODS_CONST_PTR    = 0x0009,   // T* const    constant pointer to T
+    RS_MODS_PTR_PTR      = 0x0101,   // T**         pointer to a pointer to T
+
+    /* array */
+    RS_MODS_ARRAY        = 0x0002,   // T[N]        array of values     ( aux = count )
+    RS_MODS_PTR_ARRAY    = 0x0201,   // T*[N]       array of pointers   ( aux = count )
+    RS_MODS_ARRAY_PTR    = 0x0102,   // T(*)[N]     pointer to an array ( aux = count ) 
+
+    /* function */
+    RS_MODS_FUNCTION     = 0x0004,   // T(*)()      function pointer    ( aux = sig type_id )
 
 } rs_mods_t;
-
-static inline bool rs_mods_is_value       ( u16 m ) { return m == RS_MODS_VALUE;        }
-static inline bool rs_mods_is_const_value ( u16 m ) { return m == RS_MODS_CONST_VALUE;  }
-static inline bool rs_mods_is_ptr         ( u16 m ) { return m == RS_MODS_PTR;          }
-static inline bool rs_mods_is_ptr_to_const( u16 m ) { return m == RS_MODS_PTR_TO_CONST; }
-static inline bool rs_mods_is_ptr_ptr     ( u16 m ) { return m == RS_MODS_PTR_PTR;      }
-static inline bool rs_mods_is_const_ptr   ( u16 m ) { return m == RS_MODS_CONST_PTR;    }
-static inline bool rs_mods_is_array       ( u16 m ) { return m == RS_MODS_ARRAY;        }
-static inline bool rs_mods_is_ptr_array   ( u16 m ) { return m == RS_MODS_PTR_ARRAY;    }
-static inline bool rs_mods_is_array_ptr   ( u16 m ) { return m == RS_MODS_ARRAY_PTR;    }
 
 /*==============================================================================================
     Attribute
@@ -170,19 +162,17 @@ static inline bool rs_mods_is_array_ptr   ( u16 m ) { return m == RS_MODS_ARRAY_
     String values are interned into the rs_ string pool.
 
     flags (uint16_t): engine bits 0-7, user-defined bits 8-15.
-        Use rs_attr_flag_t for engine bits. Check with (attr->flags & RS_AF_*).
 
-    ci (uint8_t): packed group size and position.
+        Use rs_attr_flag_t for engine bits. 
+        Check with (attr->flags & RS_AF_*).
+
+    ci  packed group size and position in a byte.
+
         High nibble = count (total entries in logical group, 1 = single value).
         Low  nibble = index (this entry's 0-based position within the group).
-        Build with RS_ATTR_CI(count, index). Read with RS_ATTR_COUNT(ci), RS_ATTR_INDEX(ci).
 
-    Layout (12 bytes):
-        [0-3]  name_id  uint32_t
-        [4-5]  flags    uint16_t   -- placed here so uint16_t is 2-byte aligned
-        [6]    type     uint8_t
-        [7]    ci       uint8_t
-        [8-11] value    union
+        Build with:  RS_ATTR_CI( count, index ). 
+        Read withL   RS_ATTR_COUNT( ci ), RS_ATTR_INDEX( ci ).
 
 ==============================================================================================*/
 
@@ -206,8 +196,9 @@ typedef enum rs_attr_flag_e
     RS_AF_CLAMP_UI     = ( 1 << 1 ),   // min/max soft UI limiter; user can type past
     RS_AF_DISPLAY_NAME = ( 1 << 2 ),   // string override for editor display name    
     RS_AF_TOOLTIP      = ( 1 << 3 ),   // tooltip / helper string shown in editor    
-    /* bits 4-7: engine reserved */                                                    
-    /* bits 8-15: user-defined */                                                      
+
+    /* bits 4-7: engine reserved */
+    /* bits 8-15: user-defined */
 
 } rs_attr_flag_t;
 
@@ -233,7 +224,7 @@ typedef struct rs_attrib_s
     rs_name_t  name_id;         // interned attribute name
     uint16_t   flags;           // rs_attr_flag_t bitmask; bits 8-15 user-defined
     uint8_t    type;            // rs_attr_type_t
-    uint8_t    ci;              // packed: high nibble=count, low nibble=index
+    uint8_t    ci;              // packed: high nibble = count, low nibble = index
     union
     {
         int32_t   i32;
@@ -296,7 +287,7 @@ typedef struct rs_field_s
     uint16_t   aux;                     // array element count, or function signature type_id
 
     uint8_t    kind;                    // cached rs_kind_t of base, for fast dispatch
-    uint8_t    _pad;
+    uint8_t    _pad;                    // reserved for future use
 
     uint16_t   attr_index;              // first attribute index (RS_ATTR_INVALID if none)
     uint16_t   attr_count;              // number of attributes

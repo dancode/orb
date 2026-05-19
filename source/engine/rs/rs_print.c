@@ -30,7 +30,7 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
 
     size_t pos = 0;
 
-    if ( rs_mods_is_const_value( f->mods ) || rs_mods_is_ptr_to_const( f->mods ) )
+    if ( f->mods == RS_MODS_CONST_VALUE || f->mods == RS_MODS_PTR_TO_CONST )
         pos = rs_str_append( buf, buf_size, pos, "const " );
 
     const rs_type_t* base = rs_get_type( f->type_id );
@@ -39,10 +39,12 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
     char tmp[ 24 ];
     switch ( (rs_mods_t)f->mods )
     {
-        case RS_MODS_VALUE:        break;
-        case RS_MODS_CONST_VALUE:  break;
-        case RS_MODS_PTR:          pos = rs_str_append( buf, buf_size, pos, "*" ); break;
-        case RS_MODS_PTR_TO_CONST: pos = rs_str_append( buf, buf_size, pos, "*" ); break;
+        case RS_MODS_VALUE:
+        case RS_MODS_CONST_VALUE:
+            break;
+        case RS_MODS_PTR:
+        case RS_MODS_PTR_TO_CONST:
+            pos = rs_str_append( buf, buf_size, pos, "*" ); break;
         case RS_MODS_PTR_PTR:      pos = rs_str_append( buf, buf_size, pos, "**" ); break;
         case RS_MODS_CONST_PTR:    pos = rs_str_append( buf, buf_size, pos, "* const" ); break;
         case RS_MODS_ARRAY:
