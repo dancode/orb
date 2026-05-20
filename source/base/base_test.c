@@ -6,7 +6,7 @@
     Does not compile into base automatically, a test project msut include this file.
 
 ==============================================================================================*/
-#include <stdio.h>     /* printf for demo output */
+#include <stdio.h> /* printf for demo output */
 
 #include "orb.h"
 #include "base/base.h"
@@ -353,10 +353,10 @@ static void
 test_bit_clz_ctz( void )
 {
     // CLZ (undefined for 0 � skip that case)
-    test_equal( 31, bit_u32_clz2( 1u ) );
-    test_equal( 0, bit_u32_clz2( 0x80000000u ) );
-    test_equal( 16, bit_u32_clz2( 0x0000FFFFu ) );
-    test_equal( 24, bit_u32_clz2( 0x000000FFu ) );
+    test_equal( 31, bit_u32_clz( 1u ) );
+    test_equal( 0, bit_u32_clz( 0x80000000u ) );
+    test_equal( 16, bit_u32_clz( 0x0000FFFFu ) );
+    test_equal( 24, bit_u32_clz( 0x000000FFu ) );
 
     test_equal( 63, bit_u64_clz( 1ULL ) );
     test_equal( 0, bit_u64_clz( 0x8000000000000000ULL ) );
@@ -386,13 +386,13 @@ test_bit_pow2( void )
     test_false( bit_u32_is_pow2( 6u ) );
 
     // next_pow2: returns x if x is already a power of two
-    test_equal( 1u, bit_u32_next_pow22( 0u ) );
-    test_equal( 1u, bit_u32_next_pow22( 1u ) );
-    test_equal( 2u, bit_u32_next_pow22( 2u ) );
-    test_equal( 4u, bit_u32_next_pow22( 3u ) );
-    test_equal( 8u, bit_u32_next_pow22( 5u ) );
-    test_equal( 16u, bit_u32_next_pow22( 9u ) );
-    test_equal( 256u, bit_u32_next_pow22( 129u ) );
+    test_equal( 1u, bit_u32_next_pow2( 0u ) );
+    test_equal( 1u, bit_u32_next_pow2( 1u ) );
+    test_equal( 2u, bit_u32_next_pow2( 2u ) );
+    test_equal( 4u, bit_u32_next_pow2( 3u ) );
+    test_equal( 8u, bit_u32_next_pow2( 5u ) );
+    test_equal( 16u, bit_u32_next_pow2( 9u ) );
+    test_equal( 256u, bit_u32_next_pow2( 129u ) );
 
     test_equal( 1ULL, bit_u64_next_pow2( 0ULL ) );
     test_equal( 8ULL, bit_u64_next_pow2( 5ULL ) );
@@ -467,22 +467,25 @@ base_run_tests( void )
 {
     test_str();
 
-    // test_register( "char_classify", test_char_classify );
-    // test_register( "char_convert", test_char_convert );
-    // test_register( "mem_copy_move", test_mem_copy_move );
-    // test_register( "mem_set_zero", test_mem_set_zero );
-    // test_register( "mem_compare", test_mem_compare );
-    // test_register( "mem_swap_reverse", test_mem_swap_reverse );
-    // test_register( "mem_align", test_mem_align );
-    // test_register( "math_minmax_clamp", test_math_minmax_clamp );
-    // test_register( "math_abs", test_math_abs );
-    // test_register( "math_lerp", test_math_lerp );
-    // test_register( "math_sign_align", test_math_sign_align );
-    // test_register( "bit_popcount", test_bit_popcount );
-    // test_register( "bit_clz_ctz", test_bit_clz_ctz );
-    // test_register( "bit_pow2", test_bit_pow2 );
-    // test_register( "bit_rotate", test_bit_rotate );
-    // test_register( "bit_fields_flags", test_bit_fields_flags );
+    test_register( "char_classify", test_char_classify );
+    test_register( "char_convert", test_char_convert );
+
+    test_register( "mem_copy_move", test_mem_copy_move );
+    test_register( "mem_set_zero", test_mem_set_zero );
+    test_register( "mem_compare", test_mem_compare );
+    test_register( "mem_swap_reverse", test_mem_swap_reverse );
+    test_register( "mem_align", test_mem_align );
+
+    test_register( "math_minmax_clamp", test_math_minmax_clamp );
+    test_register( "math_abs", test_math_abs );
+    test_register( "math_lerp", test_math_lerp );
+    test_register( "math_sign_align", test_math_sign_align );
+
+    test_register( "bit_popcount", test_bit_popcount );
+    test_register( "bit_clz_ctz", test_bit_clz_ctz );
+    test_register( "bit_pow2", test_bit_pow2 );
+    test_register( "bit_rotate", test_bit_rotate );
+    test_register( "bit_fields_flags", test_bit_fields_flags );
 
     return test_run( "base" );
 }

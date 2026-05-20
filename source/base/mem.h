@@ -1,14 +1,16 @@
 /*==============================================================================================
 
     base/mem.h -- Memory operations (NO allocation).
-
-    All functions are allocation-free. Allocators live in core/, not here.
+        
+        Uses compiler intrinsics when available (MSVC / GCC / Clang).
+        Most functions are ORB_INLINE for maximum performance in release builds.
 
 ==============================================================================================*/
 #ifndef MEM_H
 #define MEM_H
-
-/*============================================================================================*/
+/*==============================================================================================
+    Intrinsics Configuration
+==============================================================================================*/
 
 // Compiler intrinsics for memory operations to avoid <string.h>
 #if defined( _MSC_VER )
@@ -26,7 +28,9 @@
     #define memcmp  __builtin_memcmp
 #endif
 
-/*============================================================================================*/
+/*==============================================================================================
+    Copy and Move
+==============================================================================================*/
 
 // Copy n bytes from src to dst. Regions must NOT overlap.
 ORB_INLINE void
@@ -42,7 +46,9 @@ mem_move( void* dst, const void* src, usize n )
     memmove( dst, src, n );
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+    Fill
+==============================================================================================*/
 
 // Fill n bytes at dst with value.
 ORB_INLINE void
@@ -64,7 +70,9 @@ mem_zero( void* dst, usize n )
 // Zero an array of count elements (ptr must be a typed pointer).
 #define mem_zero_array( ptr, count ) mem_zero( ( ptr ), sizeof( *( ptr ) ) * ( count ) )
 
-/*============================================================================================*/
+/*==============================================================================================
+    Comparison
+==============================================================================================*/
 
 // Returns 1 if first n bytes of a and b are identical, 0 otherwise.
 ORB_INLINE b32
@@ -80,13 +88,19 @@ mem_compare( const void* a, const void* b, usize n )
     return memcmp( a, b, n );
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+    Swap and Reverse
+==============================================================================================*/
 
 // Swap n bytes between a and b. Buffers must not overlap.
 void mem_swap( void* a, void* b, usize n );
 
 // Reverse n bytes in-place.
 void mem_reverse( void* buf, usize n );
+
+/*==============================================================================================
+    Alignment
+==============================================================================================*/
 
 // Align a pointer up to the next multiple of align (must be power of two).
 ORB_INLINE void*
@@ -104,7 +118,9 @@ mem_align_size( usize size, usize align )
     return ( size + ( align - 1 ) ) & ~( align - 1 );
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+    Swap
+==============================================================================================*/
 
 // Swap two lvalues of the same type without a temp variable name collision.
 #define mem_swap_t( a, b, T )      \

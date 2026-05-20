@@ -27,8 +27,6 @@
 #include "base/bit.c"
 #include "base/math.c"
 
-// #include "base/test.c"    // testing framework
-
 #include "base/str.c"
 #include "base/str_buf.c"
 #include "base/str_arena.c"

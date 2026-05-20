@@ -5,153 +5,150 @@
     Explicit, type-safe API (no C11 _Generic).
     Naming scheme: math_<type>_<operation>
 
-    Example:
-        math_i32_min(a, b)
-        math_f32_abs(x)
-
 ==============================================================================================*/
 #ifndef MATH_H
 #define MATH_H
 
 // clang-format off
 /*==============================================================================================
-     Min / Max
+    Constants
 ==============================================================================================*/
 
-// i32
-static inline i32 math_i32_min(i32 a, i32 b) { return a < b ? a : b; }
-static inline i32 math_i32_max(i32 a, i32 b) { return a > b ? a : b; }
+#define MATH_PI          3.14159265358979323846f
+#define MATH_TAU         6.28318530717958647692f
+#define MATH_INV_PI      0.31830988618379067154f
+#define MATH_PI_OVER_2   1.57079632679489661923f
+#define MATH_PI_OVER_4   0.78539816339744830962f
 
-// i64
-static inline i64 math_i64_min(i64 a, i64 b) { return a < b ? a : b; }
-static inline i64 math_i64_max(i64 a, i64 b) { return a > b ? a : b; }
+#define MATH_DEG_TO_RAD  ( MATH_PI / 180.0f )
+#define MATH_RAD_TO_DEG  ( 180.0f / MATH_PI )
 
-// u32
-static inline u32 math_u32_min(u32 a, u32 b) { return a < b ? a : b; }
-static inline u32 math_u32_max(u32 a, u32 b) { return a > b ? a : b; }
-
-// u64
-static inline u64 math_u64_min(u64 a, u64 b) { return a < b ? a : b; }
-static inline u64 math_u64_max(u64 a, u64 b) { return a > b ? a : b; }
-
-// f32
-static inline f32 math_f32_min(f32 a, f32 b) { return a < b ? a : b; }
-static inline f32 math_f32_max(f32 a, f32 b) { return a > b ? a : b; }
-
-// f64
-static inline f64 math_f64_min(f64 a, f64 b) { return a < b ? a : b; }
-static inline f64 math_f64_max(f64 a, f64 b) { return a > b ? a : b; }
+#define F32_EPSILON      1e-6f
 
 /*==============================================================================================
-    Clamp
+    Intrinsics
 ==============================================================================================*/
 
-static inline i32 math_i32_clamp(i32 v, i32 lo, i32 hi) { return math_i32_min(math_i32_max(v, lo), hi); }
-static inline i64 math_i64_clamp(i64 v, i64 lo, i64 hi) { return math_i64_min(math_i64_max(v, lo), hi); }
-static inline u32 math_u32_clamp(u32 v, u32 lo, u32 hi) { return math_u32_min(math_u32_max(v, lo), hi); }
-static inline u64 math_u64_clamp(u64 v, u64 lo, u64 hi) { return math_u64_min(math_u64_max(v, lo), hi); }
-static inline f32 math_f32_clamp(f32 v, f32 lo, f32 hi) { return math_f32_min(math_f32_max(v, lo), hi); }
-static inline f64 math_f64_clamp(f64 v, f64 lo, f64 hi) { return math_f64_min(math_f64_max(v, lo), hi); }
+#if COMPILER_MSVC
+    #include <math.h>
+    #include <intrin.h>
+#else
+    #include <math.h>
+    #define math_f32_abs( x )   __builtin_fabsf( x )
+    #define math_f64_abs( x )   __builtin_fabs( x )
+    #define math_f32_sqrt( x )  __builtin_sqrtf( x )
+    #define math_f32_sin( x )   __builtin_sinf( x )
+    #define math_f32_cos( x )   __builtin_cosf( x )
+    #define math_f32_tan( x )   __builtin_tanf( x )
+    #define math_f32_acos( x )  __builtin_acosf( x )
+    #define math_f32_asin( x )  __builtin_asinf( x )
+    #define math_f32_atan2( y, x ) __builtin_atan2f( y, x )
+#endif
+
+#if COMPILER_MSVC
+ORB_INLINE f32 math_f32_abs( f32 x ) { return fabsf( x ); }
+ORB_INLINE f64 math_f64_abs( f64 x ) { return fabs( x ); }
+ORB_INLINE f32 math_f32_sqrt( f32 x ) { return sqrtf( x ); }
+ORB_INLINE f32 math_f32_sin( f32 x ) { return sinf( x ); }
+ORB_INLINE f32 math_f32_cos( f32 x ) { return cosf( x ); }
+ORB_INLINE f32 math_f32_tan( f32 x ) { return tanf( x ); }
+ORB_INLINE f32 math_f32_acos( f32 x ) { return acosf( x ); }
+ORB_INLINE f32 math_f32_asin( f32 x ) { return asinf( x ); }
+ORB_INLINE f32 math_f32_atan2( f32 y, f32 x ) { return atan2f( y, x ); }
+#endif
 
 /*==============================================================================================
-    Absolute value
+    Min / Max
 ==============================================================================================*/
 
-static inline i32 math_i32_abs(i32 a) { return a < 0 ? -a : a; }
-static inline i64 math_i64_abs(i64 a) { return a < 0 ? -a : a; }
-static inline f32 math_f32_abs(f32 a) { return a < 0.0f ? -a : a; }
-static inline f64 math_f64_abs(f64 a) { return a < 0.0  ? -a : a; }
+ORB_INLINE i32 math_i32_min( i32 a, i32 b ) { return a < b ? a : b; }
+ORB_INLINE i32 math_i32_max( i32 a, i32 b ) { return a > b ? a : b; }
+
+ORB_INLINE i64 math_i64_min( i64 a, i64 b ) { return a < b ? a : b; }
+ORB_INLINE i64 math_i64_max( i64 a, i64 b ) { return a > b ? a : b; }
+
+ORB_INLINE u32 math_u32_min( u32 a, u32 b ) { return a < b ? a : b; }
+ORB_INLINE u32 math_u32_max( u32 a, u32 b ) { return a > b ? a : b; }
+
+ORB_INLINE u64 math_u64_min( u64 a, u64 b ) { return a < b ? a : b; }
+ORB_INLINE u64 math_u64_max( u64 a, u64 b ) { return a > b ? a : b; }
+
+ORB_INLINE f32 math_f32_min( f32 a, f32 b ) { return a < b ? a : b; }
+ORB_INLINE f32 math_f32_max( f32 a, f32 b ) { return a > b ? a : b; }
+
+ORB_INLINE f64 math_f64_min( f64 a, f64 b ) { return a < b ? a : b; }
+ORB_INLINE f64 math_f64_max( f64 a, f64 b ) { return a > b ? a : b; }
 
 /*==============================================================================================
-    Alignment (power-of-two)
+    Clamp / Abs
 ==============================================================================================*/
 
-// Align v up to next multiple of align (align must be power of two).
-#define math_align_up(v, align)   ( ((v) + (align) - 1) & ~((align) - 1) )
+ORB_INLINE i32 math_i32_clamp( i32 v, i32 lo, i32 hi ) { return math_i32_min( math_i32_max( v, lo ), hi ); }
+ORB_INLINE i64 math_i64_clamp( i64 v, i64 lo, i64 hi ) { return math_i64_min( math_i64_max( v, lo ), hi ); }
+ORB_INLINE u32 math_u32_clamp( u32 v, u32 lo, u32 hi ) { return math_u32_min( math_u32_max( v, lo ), hi ); }
+ORB_INLINE u64 math_u64_clamp( u64 v, u64 lo, u64 hi ) { return math_u64_min( math_u64_max( v, lo ), hi ); }
+ORB_INLINE f32 math_f32_clamp( f32 v, f32 lo, f32 hi ) { return math_f32_min( math_f32_max( v, lo ), hi ); }
+ORB_INLINE f64 math_f64_clamp( f64 v, f64 lo, f64 hi ) { return math_f64_min( math_f64_max( v, lo ), hi ); }
 
-// Align v down to nearest multiple of align (align must be power of two).
-#define math_align_down(v, align) ( (v) & ~((align) - 1) )
-
-/*==============================================================================================
-    Power-of-two
-==============================================================================================*/
-
-static inline bool math_u32_is_pow2( u32 v ) 
-{
-    return v != 0 && (v & (v - 1)) == 0; 
-}
-
-static inline u32 math_u32_next_pow2( u32 v )
-{
-    if ( v == 0 )
-        return 1;
-    v--;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    return v + 1;
-}
+ORB_INLINE i32 math_i32_abs( i32 a ) { return a < 0 ? -a : a; }
+ORB_INLINE i64 math_i64_abs( i64 a ) { return a < 0 ? -a : a; }
 
 /*==============================================================================================
     Interpolation
 ==============================================================================================*/
 
-// Linear interpolation
-static inline f32 math_f32_lerp(f32 a, f32 b, f32 t)
+// Numerically stable linear interpolation: a when t=0, b when t=1.
+ORB_INLINE f32
+math_f32_lerp( f32 a, f32 b, f32 t )
 {
-    return a + t * (b - a);
+    return ( 1.0f - t ) * a + t * b;
 }
 
-static inline f64 math_f64_lerp(f64 a, f64 b, f64 t)
+ORB_INLINE f64
+math_f64_lerp( f64 a, f64 b, f64 t )
 {
-    return a + t * (b - a);
+    return ( 1.0 - t ) * a + t * b;
 }
 
-// Inverse lerp
-static inline f32 math_f32_unlerp(f32 a, f32 b, f32 v)
+// Inverse lerp: returns t such that lerp(a, b, t) == v.
+ORB_INLINE f32
+math_f32_unlerp( f32 a, f32 b, f32 v )
 {
-    /* Returns the t (time) value such that math_f32_lerp(a, b, t) == v. */
-    return (v - a) / (b - a);
+    return ( v - a ) / ( b - a );
 }
 
-// Remap
-static inline f32 math_f32_remap(f32 in_lo, f32 in_hi, f32 out_lo, f32 out_hi, f32 v)
+ORB_INLINE f32
+math_f32_remap( f32 in_lo, f32 in_hi, f32 out_lo, f32 out_hi, f32 v )
 {
-    /* Maps v from range [in_lo, in_hi] to range [out_lo, out_hi]. */
-    return math_f32_lerp(out_lo, out_hi, math_f32_unlerp(in_lo, in_hi, v));
+    return math_f32_lerp( out_lo, out_hi, math_f32_unlerp( in_lo, in_hi, v ) );
 }
 
 /*==============================================================================================
-    Sign
+    Sign / Compare
 ==============================================================================================*/
 
-static inline i32 math_i32_sign(i32 x)
+ORB_INLINE i32 math_i32_sign( i32 x ) { return ( x > 0 ) - ( x < 0 ); }
+ORB_INLINE f32 math_f32_sign( f32 x ) { return ( f32 )( ( x > 0.0f ) - ( x < 0.0f ) ); }
+
+ORB_INLINE b32
+math_f32_nearly_equal( f32 a, f32 b, f32 eps )
 {
-    return (x > 0) - (x < 0);
+    return math_f32_abs( a - b ) <= eps;
 }
 
-static inline f32 math_f32_sign(f32 x)
-{
-    return (f32)((x > 0.0f) - (x < 0.0f));
-}
 /*==============================================================================================
-    Float comparison
+    Alignment
 ==============================================================================================*/
 
-#define F32_EPSILON 1e-6f /* A small value used as tolerance for floating-point comparisons */
+// Align v up to next multiple of align (align must be power of two).
+#define math_align_up( v, align )   ( ( ( v ) + ( align ) - 1 ) & ~( ( align ) - 1 ) )
 
-/* Returns 1 if a and b are within eps of each other, 0 otherwise. */
-static inline int math_f32_nearly_equal(f32 a, f32 b, f32 eps)
-{
-    f32 d = a - b;
-    return (d < 0 ? -d : d) <= eps;
-}
+// Align v down to nearest multiple of align (align must be power of two).
+#define math_align_down( v, align ) ( ( v ) & ~( ( align ) - 1 ) )
 
-// ============================================================
-// Compile-time integer log2 (for constants only)
-// ============================================================
+/*==============================================================================================
+    Compile-time integer log2 (for constants only)
+==============================================================================================*/
 
 #define MATH_LOG2_CONST(n) \
     ((n) <= (1<<0)  ? 0  : (n) <= (1<<1)  ? 1  : (n) <= (1<<2)  ? 2  : \
@@ -163,4 +160,4 @@ static inline int math_f32_nearly_equal(f32 a, f32 b, f32 eps)
 
 // clang-format on
 /*============================================================================================*/
-#endif    // MATH_H
+#endif // MATH_H
