@@ -24,8 +24,11 @@
 int
 main( int argc, char** argv )
 {
-    launch_params_t params;
-    host_args_parse( argc, argv, &params );
+    UNUSED( argc );
+    UNUSED( argv );
+
+    // launch_params_t params;
+    // host_args_parse( argc, argv, &params );
 
     /* Boot the module system and register the static engine layers in dependency order. */
     mod_system_init();
@@ -41,8 +44,8 @@ main( int argc, char** argv )
     }
 
     /* Route mod and app output through core's logger now that core is live. */
-    mod_set_log_fn( core_log_fn );
-    app_set_log_fn( core_log_fn );
+    // mod_set_log_fn( core_log_fn );
+    // app_set_log_fn( core_log_fn );
 
     /* TODO: game loop */
 

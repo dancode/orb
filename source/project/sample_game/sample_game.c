@@ -14,6 +14,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
+#define LOG_CH "sample_game"
 #include "engine/mod/mod_export.h"
 #include "engine/mod/mod_import.h"
 
@@ -76,7 +77,7 @@ static void
 sample_game_exit( void* raw_state )
 {
     example_game_state_t* s = raw_state;
-    core()->log( "[game] exit — score: %d  timer: %.2fs\n", s->score, s->timer );
+    LOG_INFO( "exit -- score: %d  timer: %.2fs", s->score, s->timer );
 }
 
 static bool
@@ -86,7 +87,7 @@ sample_game_on_reload( void* raw_state, get_api_fn get_api )
     UNUSED( s );
     UNUSED( get_api );
 
-    core()->log( "[game] on_reload — ready\n" );
+    LOG_INFO( "on_reload -- ready" );
     return true;
 }
 

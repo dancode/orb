@@ -85,7 +85,7 @@ app_log( int level, const char* fmt, ... )
     if ( g_app_log_fn )
          g_app_log_fn( level, "app", buf );
     else
-        fprintf( level >= 2 ? stderr : stdout, "[app] %s\n", buf );
+        fprintf( level >= ORB_LOG_WARN ? stderr : stdout, "[app] %s\n", buf );
 }
 
 /*==============================================================================================

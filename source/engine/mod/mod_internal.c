@@ -109,7 +109,7 @@ ms_log( const char* fmt, ... )
     /* route log messages through the host-provided log function */
 
     if ( g_mod_log_fn )
-         g_mod_log_fn( 0, "mod", buf );
+         g_mod_log_fn( ORB_LOG_INFO, "mod", buf );
     else
         printf( "%s\n", buf );
 }

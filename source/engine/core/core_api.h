@@ -4,7 +4,7 @@
 
     engine/core/core_api.h - core module API struct and gateway macro.
 
-    Consumers call core()->log_info(...) etc.
+    Consumers use LOG_INFO/LOG_WARN/LOG_ERROR macros from log.h (included below).
     core is always statically linked, but the conditional below preserves the
     pattern in case a future build mode pulls core out into a DLL.
 
@@ -39,14 +39,17 @@ typedef struct core_api_s
     core_debug_api_t* debug_api;    // for natvis and debugging
 
     /* assertions */
-    bool        ( *assert_report )      ( const char* cond, const char* msg, 
-                                          const char* func, const char* file, int line );
+    bool        ( *assert_report )      ( const char* cond, const char* msg, const char* func, const char* file, int line );
     /* logging */
-    void        ( *log )                ( const char* fmt, ... );
-    void        ( *log_info )           ( const char* fmt, ... );
-    void        ( *log_warn )           ( const char* fmt, ... );
-    void        ( *log_error )          ( const char* fmt, ... );
-    void        ( *log_set_min_level )  ( log_level_t level );
+    void        ( *log_write )           ( log_level_t level, const char* channel, const char* fmt, ... );
+    void        ( *log_set_min_level )   ( log_level_t level );
+    void        ( *log_add_sink )        ( log_sink_fn fn, void* userdata );
+    void        ( *log_remove_sink )     ( log_sink_fn fn );
+
+    /* ring buffer access for editor/tools */
+    const log_entry_t* ( *log_ring_entries )  ( void );
+    u32         ( *log_ring_capacity )  ( void );
+    u32         ( *log_ring_seq )       ( void );
 
     /* allocator */
     void*       ( *alloc )              ( size_t size );
@@ -109,6 +112,7 @@ MOD_GATEWAY_DYNAMIC( core_api_t, core )
 /*============================================================================================*/
 
 #include "engine/core/debug/assert.h"
+#include "engine/core/core_api_log.h"
 
 /*============================================================================================*/
 /* SID convenience macros — require core() to be live at call time */

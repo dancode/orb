@@ -68,11 +68,13 @@ const core_api_t g_core_api_struct = {
 
     .assert_report      = assert_report,
 
-    .log                = log_default,
-    .log_info           = log_info,
-    .log_warn           = log_warn,
-    .log_error          = log_error,
+    .log_write          = log_write,
     .log_set_min_level  = log_set_min_level,
+    .log_add_sink       = log_add_sink,
+    .log_remove_sink    = log_remove_sink,
+    .log_ring_entries   = log_ring_entries,
+    .log_ring_capacity  = log_ring_capacity,
+    .log_ring_seq       = log_ring_seq,
 
     .alloc              = core_alloc,
     .realloc            = core_realloc,

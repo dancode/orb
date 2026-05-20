@@ -213,13 +213,21 @@ typedef ptrdiff_t isize;
 #define assert_msg( cond, msg ) ORB_ASSERT_MSG( cond, msg )
 
 /*==============================================================================================
-    Log Sink
+    Log Levels + Sink
+
+    Integer constants shared by every layer (sys, mod, app, core).
+    Defined here so pre-core layers can pass typed levels without depending on core.h.
+    core.h maps these to the log_level_t enum; they must stay in sync.
 
     A log_fn_t receives a pre-formatted message. Libraries call the registered sink
-    instead of writing directly to stdout/stderr. Callers fall back to stdio when no
-    sink is installed. Defined here so every layer can hold and call a sink without
-    depending on core.
+    instead of writing directly to stdout/stderr.
 ==============================================================================================*/
+
+#define ORB_LOG_TRACE  0
+#define ORB_LOG_DEBUG  1
+#define ORB_LOG_INFO   2
+#define ORB_LOG_WARN   3
+#define ORB_LOG_ERROR  4
 
 typedef void ( *log_fn_t )( int level, const char* tag, const char* msg );
 

@@ -99,7 +99,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
         g_pool.class_atom = RegisterClassExW( &wc );
         if ( !g_pool.class_atom )
         {
-            app_log( 2, "RegisterClassExW failed (err %lu)", GetLastError() );
+            app_log( ORB_LOG_ERROR, "RegisterClassExW failed (err %lu)", GetLastError() );
             return APP_WIN_INVALID;
         }
     }
@@ -107,7 +107,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     win_id_t id = win_alloc_slot();
     if ( id == APP_WIN_INVALID )
     {
-        app_log( 2, "window pool full (max %d)", APP_WIN_MAX );
+        app_log( ORB_LOG_ERROR, "window pool full (max %d)", APP_WIN_MAX );
         return APP_WIN_INVALID;
     }
 
@@ -168,7 +168,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
 
     if ( !hwnd )
     {
-        app_log( 2, "CreateWindowExW failed (err %lu)", GetLastError() );
+        app_log( ORB_LOG_ERROR, "CreateWindowExW failed (err %lu)", GetLastError() );
         win_free_slot( id );
         return APP_WIN_INVALID;
     }
@@ -213,7 +213,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     UpdateWindow( hwnd );
     win->prev = win->state;
 
-    app_log( 0, "window %d opened (%dx%d client)", id, w, h );
+    app_log( ORB_LOG_INFO, "window %d opened (%dx%d client)", id, w, h );
     return id;
 }
 
@@ -250,7 +250,7 @@ app_window_close( win_id_t id )
         win_fiber_exit();
 #endif
 
-    app_log( 0, "window %d closed", id );
+    app_log( ORB_LOG_INFO, "window %d closed", id );
 }
 
 static bool

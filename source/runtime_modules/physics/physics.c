@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include "orb.h"
+#define LOG_CH "physics"
 
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
@@ -36,7 +37,7 @@ physics_function( void )
         return;
 
     g_state->frame_count++;
-    core()->log( "physics: physics_function called (frame_count=%d)", g_state->frame_count );
+    LOG_TRACE( "physics_function called (frame_count=%d)", g_state->frame_count );
 }
 
 const physics_api_t g_physics_api_struct = {
@@ -55,7 +56,7 @@ physics_init( void* raw_state, get_api_fn get_api )
     if ( !MOD_FETCH_CORE )
         return false;
 
-    core()->log( "physics: init (state=%p)", ( void* )g_state );
+    LOG_INFO( "init (state=%p)", ( void* )g_state );
     return true;
 }
 
@@ -64,7 +65,7 @@ physics_exit( void* raw_state )
 {
     UNUSED( raw_state );
     if ( core() )
-        core()->log( "physics: exit" );
+        LOG_INFO( "exit" );
 }
 
 static bool
@@ -75,7 +76,7 @@ physics_reload( void* raw_state, get_api_fn get_api )
     g_state = ( physics_state_t* )raw_state;
     MOD_FETCH_CORE;
 
-    core()->log( "physics: reloaded (frames so far = %d)", g_state->frame_count );
+    LOG_INFO( "reloaded (frames so far = %d)", g_state->frame_count );
     return true;
 }
 

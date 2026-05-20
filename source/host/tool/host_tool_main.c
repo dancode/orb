@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "orb.h"
+#define LOG_CH "tool"
 #include "engine/mod/mod_host.h"
 #include "engine/mod/mod_import.h"
 #include "engine/sys/sys_host.h"
@@ -66,8 +67,8 @@ run_reflection_gen( tool_ctx_t* ctx )
 
     mod_set_log_fn( core_log_fn );
 
-    core()->log( "reflection_gen: would parse %s and emit reflection tables",
-                     ctx->argc > 2 ? ctx->argv[ 2 ] : "<missing input>" );
+    LOG_INFO( "reflection_gen: would parse %s and emit reflection tables",
+              ctx->argc > 2 ? ctx->argv[ 2 ] : "<missing input>" );
     return 0;
 }
 

@@ -11,22 +11,40 @@
 
 /*==============================================================================================
 
-    engine/core/core_log.h — Logging subsystem, public interface.
+    engine/core/core_log — Logging subsystem types.
 
-    Three severity levels, printf-style formatting, automatic newline.
-    Info goes to stdout; warn and error to stderr. A min-level filter lets release
-    builds suppress info traffic without touching call sites.
+    Five severity levels. Compile-time stripping via LOG_COMPILE_MIN (see log.h).
+    Entries flow through a fixed ring buffer and a small sink list.
 
 ==============================================================================================*/
 
-RS_ENUM( tooltip = "Minimum severity level for a log message to be emitted." )
+RS_ENUM( tooltip = "Severity level for a log message." )
 typedef enum log_level_e
 {
-    LOG_LEVEL_INFO  = 0,
-    LOG_LEVEL_WARN  = 1,
-    LOG_LEVEL_ERROR = 2,
+    LOG_LEVEL_TRACE = ORB_LOG_TRACE,    // per-frame spam; stripped in release by default
+    LOG_LEVEL_DEBUG = ORB_LOG_DEBUG,    // development diagnostics
+    LOG_LEVEL_INFO  = ORB_LOG_INFO,     // significant one-time events
+    LOG_LEVEL_WARN  = ORB_LOG_WARN,     // recoverable issues
+    LOG_LEVEL_ERROR = ORB_LOG_ERROR,    // non-fatal errors
 
 } log_level_t;
+
+#define LOG_LEVEL_COUNT   5
+#define LOG_RING_CAPACITY 4096          // ring slot count; must be a power of 2
+
+/* Single log record written into the ring buffer and passed to every sink. */
+
+typedef struct log_entry_s      /* 256 bytes */
+{
+    u32          seq;           /* monotonic write counter */
+    log_level_t  level;         /* severity level logged */
+    const char*  channel;       /* points to a static string; always valid */
+    char         msg[ 240 ];    /* pre-formatted, null-terminated */
+
+} log_entry_t;
+
+/* Sink callback — called once per log_write that passes the runtime level filter. */
+typedef void ( *log_sink_fn )( const log_entry_t* entry, void* userdata );
 
 /*==============================================================================================
 

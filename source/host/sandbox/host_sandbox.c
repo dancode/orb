@@ -22,18 +22,22 @@
 #include "engine/core/core_host.h"
 #include "engine/app/app_host.h"
 
+// MOD_USE_APP;
+
 /*============================================================================================*/
 
 int
 main( int argc, char** argv )
 {
-    launch_params_t params;
-    host_args_parse( argc, argv, &params );
+    UNUSED( argc );
+    UNUSED( argv );
+    // launch_params_t params;
+    // host_args_parse( argc, argv, &params );
 
     mod_system_init();
     mod_static( sys );
     mod_static( core );
-    mod_static( app );
+    // mod_static( app );
 
     if ( !mod_init_all() )
     {
@@ -43,8 +47,8 @@ main( int argc, char** argv )
     }
 
     /* Route mod and app output through core's logger now that core is live. */
-    mod_set_log_fn( core_log_fn );
-    app_set_log_fn( core_log_fn );
+    // mod_set_log_fn( core_log_fn );
+    // app_set_log_fn( core_log_fn );
 
     /* TODO: load and drive sandbox module specified by params.module_override */
 

@@ -22,6 +22,7 @@
 
 #include <stdio.h>
 #include "orb.h"
+#define LOG_CH "render"
 
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
@@ -166,11 +167,11 @@ render_reload( void* raw_state, get_api_fn get_api )
 
     if ( !MOD_FETCH_RHI )
     {
-        fprintf( stderr, "[render] failed to re-fetch rhi_api after reload\n" );
+        LOG_ERROR( "failed to re-fetch rhi_api after reload" );
         return false;
     }
 
-    core()->log( "render: reloaded (frames so far = %d)", g_state->frame_count );
+    LOG_INFO( "reloaded (frames so far = %d)", g_state->frame_count );
     return true;
 }
 
@@ -179,7 +180,7 @@ render_exit( void* raw_state )
 {
     UNUSED( raw_state );
     if ( core() )
-        core()->log( "render: exit" );
+        LOG_INFO( "exit" );
 }
 
 /*==============================================================================================

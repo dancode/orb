@@ -9,6 +9,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
+#define LOG_CH "game"
 #include "game/game_api.h"
 
 #include "engine/mod/mod_export.h"
@@ -58,7 +59,7 @@ game_on_start( void )
     // physics()->spawn_body();
     // physics()->spawn_body();
     audio()->play( "intro_jingle", 0.5 );
-    core()->log( "game: started" );
+    LOG_INFO( "started" );
 }
 
 static void
@@ -77,7 +78,7 @@ game_on_update( float dt )
     {
         g_game_state->score++;
         g_game_state->time_in_level = 0.f;
-        core()->log( "game: score = %d", g_game_state->score );
+        LOG_INFO( "score = %d", g_game_state->score );
     }
     // physics()->simulate( dt );
 }
@@ -98,7 +99,7 @@ game_on_stop( void )
 
     audio()->stop( 1 );
     g_game_state->started = 0;
-    core()->log( "game: stopped (final score = %d)", g_game_state->score );
+    LOG_INFO( "stopped (final score = %d)", g_game_state->score );
 }
 
 static int
@@ -133,7 +134,7 @@ game_init( void* raw_state, get_api_fn get_api )
     if ( !MOD_FETCH_AUDIO )   return false;
     if ( !MOD_FETCH_PHYSICS ) return false;
 
-    core()->log( "game: init (deps satisfied)" );
+    LOG_INFO( "init (deps satisfied)" );
     return true;
 }
 
@@ -146,7 +147,7 @@ game_reload( void* raw_state, get_api_fn get_api )
     MOD_FETCH_RENDER;
     MOD_FETCH_AUDIO;
     MOD_FETCH_PHYSICS;
-    core()->log( "game: reloaded (score preserved = %d)", g_game_state->score );
+    LOG_INFO( "reloaded (score preserved = %d)", g_game_state->score );
     return true;
 }
 
@@ -154,7 +155,7 @@ void
 game_exit( void* raw_state )
 {
     ( void )raw_state;
-    core()->log( "game exit" );
+    LOG_INFO( "exit" );
 }
 
 // static void
