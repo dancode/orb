@@ -1,0 +1,134 @@
+1. The Build Tool (build_tool.c)
+
+	- A basic orchestrator. This program is purely standard C. 
+	- It doesn't use CMake or any external libraries.
+	- It constructs a "Command Line String" 
+	- cl.exe ... /I source ... /Fe:bin/game.exe)
+	- It executes that string using system().
+	- It handles the differences between Debug and Release (using if statements).
+
+2. The "Dummy" Project Setup
+
+	In Visual Studio, you don't use the standard "Console Application" template.
+	Instead:
+
+	1. File > New > Project → Choose "Makefile Project" (under C++ Windows Desktop).
+	2. Name it: orb_build.
+	3. In Properties:
+		* Build Command Line: bin\build_tool.exe -target game -config debug
+	       	* Rebuild Command Line: bin\build_tool.exe -target game -config debug -rebuild
+	       	* Output: bin\host_game.exe (This tells VS where the finished exe is so it can launch the debugger).
+		* Search: $(ProjectDir)source;
+		* Preprocessor: DEBUG;OS_WINDOWS;COMPILER_MSVC;
+		* Clean: bin\build_tool.exe -clean
+
+	bin\build_tool.exe -target base -config debug
+	bin\build_tool.exe -target base -config debug -rebuild
+	bin\base.exe
+
+		$(ProjectDir)source;
+		DEBUG;OS_WINDOWS;COMPILER_MSVC;
+
+	
+	bin\build_tool.exe -target base -config release
+	bin\build_tool.exe -target base -config release -rebuild
+	bin\base.exe
+
+		$(ProjectDir)source;
+		NDEBUG;OS_WINDOWS;COMPILER_MSVC;
+
+	Fix config easier:
+	bin\build_tool.exe -target game -config $(Configuration)
+
+
+	1. Include search path (Highly Recommended):
+		Purpose: This tells the IDE where to look when you press F12 (Go to Definition) or use autocomplete.
+		Set this to: $(ProjectDir)source;
+		Result: Without this, your #include "base/math.h" will have a red squiggly line, 
+		and VS won't be able to find the file for you.
+
+	2. Preprocessor definitions (Recommended)
+		Purpose: This tells IntelliSense which #ifdef blocks are active.
+		* Set this to: OS_WINDOWS;DEBUG;COMPILER_MSVC;
+		* Result: If you have code inside #ifdef OS_WINDOWS, the IDE will show it in full color. 
+		If you leave this field empty, the IDE might think that block is inactive and "gray it out,"
+		even though your build_tool.exe is actually compiling it.
+
+	3. Clean command line (Useful)
+		Purpose: What happens when you click Build > Clean Solution.
+		* Set this to: bin\build_tool.exe -clean
+		* Result: This allows you to write logic in your build_tool.c to delete 
+		  the bin/ and obj/ folders. It’s much cleaner than manually
+		  deleting files when things get messy.
+
+	4. Force included files (Optional)
+		Purpose: Automatically "injects" a header into every file without you writing #include.
+		* Recommendation: Leave it empty. It's better to be explicit in your source code
+		so other tools (like your reflection generator) can see what's happening.
+
+	Pro-Tip: You can actually have your build_tool.exe generate these settings into 
+		 a file that VS reads, but for now, just typing them into the dialog 
+		 once is the fastest way to get a professional-feeling setup
+
+	* The Build Tool handles the compiler (cl.exe).
+	* These VS Fields handle the editor (IntelliSense, Autocomplete, F12).
+
+	You need to tell Visual Studio to "Step out" to the root of your engine before running the tool. 
+	Update your Build Command Line in the Project Properties to this:
+
+	cd /d "$(SolutionDir)..\..\" && bin\build_tool.exe -target base -config debug
+
+		$(SolutionDir)..\..\: This uses Visual Studio macros to find your engine root
+		If your solution is in build_project\orb_build\, going up two levels puts you at F:\orb\.
+		&&: This tells the command prompt, "If the cd worked, then run the next part."
+		bin\build_tool.exe: Now that the working directory is the root, this path is correct.
+
+	$(SolutionDir)..\..\bin\
+
+	Output: $(SolutionDir)..\..\bin\sb_base_custom.exe
+	Working Directory: $(SolutionDir)..\..\
+
+3. Can you still see your files?
+
+	Yes. To make Visual Studio useful as an editor, you do this:
+	1. Right-click the Project in VS → Add > Existing Item...
+	2. Select your entire source/ folder.
+	3. VS will list all your .c and .h files.
+	4. Crucial Difference: Because this is a "Makefile Project," VS will not
+   	   try to compile these files itself. It will just let you edit
+	   them. When you press F7, it simply runs the "Build Command Line" 
+  	   you wrote in step 2.
+
+4. What about IntelliSense (The Red Squiggly Lines)?
+   Since VS isn't managing the build, you have to tell its IntelliSense engine where 
+   the headers are manually:
+
+	1. Project Properties > NMake > Include Search Path.
+	2. Add $(ProjectDir)\source.
+	3. Now, VS will understand your #include statements and give you autocomplete,
+	   even though it's not the one doing the actual compilation.
+
+5. The "Bootstrap" (The First Step)
+  	To get started, I’ve created a file called bootstrap_build_tool.bat.
+	* You run this once to compile the build_tool.c into build_tool.exe.
+	* From then on, your build tool is ready to build the rest of the engine.
+
+Assessment for ORB:
+
+	This approach is extremely powerful for your modular architecture. 
+	Your build_tool.c can be programmed to:
+
+	1. Compile base.lib.
+	2. Compile render.dll.
+	3. Compile host_game.exe.
+	4. Copy files to a deployment/ folder.
+	5. All while keeping your build logic in C code rather than CMake's DSL.
+
+Would you like me to expand the build_tool.c to handle your specific engine layers (base, engine, runtime)? 
+(Note: You can still keep CMake around while you test this out—they won't interfere with each other).
+
+How would you like the build tool to handle the modular vs monolithic builds? Should
+I make it a command-line flag like -monolithic?
+
+
+

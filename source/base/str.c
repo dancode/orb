@@ -439,10 +439,11 @@ str_to_cstr( str_t s, char* buf, i32 cap )
         return 0;
 
     /* Copy at most cap-1 bytes so there is always room for the null terminator. */
-    i32 copy = s.len < ( cap - 1 ) ? s.len : ( cap - 1 );
+    i32  copy = s.len < ( cap - 1 ) ? s.len : ( cap - 1 );
     if ( copy > 0 )
         memcpy( buf, s.ptr, ( usize )copy );
     buf[ copy ] = '\0';
+
     return copy;
 }
 

@@ -34,27 +34,27 @@
     #include <intrin.h>
 #else
     #include <math.h>
-    #define f32_abs( x )   __builtin_fabsf( x )
-    #define f64_abs( x )   __builtin_fabs( x )
-    #define f32_sqrt( x )  __builtin_sqrtf( x )
-    #define f32_sin( x )   __builtin_sinf( x )
-    #define f32_cos( x )   __builtin_cosf( x )
-    #define f32_tan( x )   __builtin_tanf( x )
-    #define f32_acos( x )  __builtin_acosf( x )
-    #define f32_asin( x )  __builtin_asinf( x )
-    #define f32_atan2( y, x ) __builtin_atan2f( y, x )
+    #define f32_abs( x )        __builtin_fabsf( x )
+    #define f64_abs( x )        __builtin_fabs( x )
+    #define f32_sqrt( x )       __builtin_sqrtf( x )
+    #define f32_sin( x )        __builtin_sinf( x )
+    #define f32_cos( x )        __builtin_cosf( x )
+    #define f32_tan( x )        __builtin_tanf( x )
+    #define f32_acos( x )       __builtin_acosf( x )
+    #define f32_asin( x )       __builtin_asinf( x )
+    #define f32_atan2( y, x )   __builtin_atan2f( y, x )
 #endif
 
 #if COMPILER_MSVC
-ORB_INLINE f32 f32_abs( f32 x ) { return fabsf( x ); }
-ORB_INLINE f64 f64_abs( f64 x ) { return fabs( x ); }
-ORB_INLINE f32 f32_sqrt( f32 x ) { return sqrtf( x ); }
-ORB_INLINE f32 f32_sin( f32 x ) { return sinf( x ); }
-ORB_INLINE f32 f32_cos( f32 x ) { return cosf( x ); }
-ORB_INLINE f32 f32_tan( f32 x ) { return tanf( x ); }
-ORB_INLINE f32 f32_acos( f32 x ) { return acosf( x ); }
-ORB_INLINE f32 f32_asin( f32 x ) { return asinf( x ); }
-ORB_INLINE f32 f32_atan2( f32 y, f32 x ) { return atan2f( y, x ); }
+ORB_INLINE f32 f32_abs   ( f32 x )        { return fabsf  ( x );    }
+ORB_INLINE f64 f64_abs   ( f64 x )        { return fabs   ( x );    }
+ORB_INLINE f32 f32_sqrt  ( f32 x )        { return sqrtf  ( x );    }
+ORB_INLINE f32 f32_sin   ( f32 x )        { return sinf   ( x );    }
+ORB_INLINE f32 f32_cos   ( f32 x )        { return cosf   ( x );    }
+ORB_INLINE f32 f32_tan   ( f32 x )        { return tanf   ( x );    }
+ORB_INLINE f32 f32_acos  ( f32 x )        { return acosf  ( x );    }
+ORB_INLINE f32 f32_asin  ( f32 x )        { return asinf  ( x );    }
+ORB_INLINE f32 f32_atan2 ( f32 y, f32 x ) { return atan2f ( y, x ); }
 #endif
 
 /*==============================================================================================
