@@ -1157,7 +1157,7 @@ test_usage_example( void )
     uint16_t         tid = rs_find_type_by_name( "player_t" );
     const rs_type_t* t   = rs_get_type( tid );
     assert( tid != RS_TYPE_INVALID && t );
-    1
+    
     /* Type-level flags are a fast-path alternative to attribute lookup for common semantics. */
     printf( "Inspecting '%s'  size=%u  flags:%s%s\n", rs_cstr( t->name_id ), t->size,
             ( t->flags & RS_TF_EDITOR    ) ? " EDITOR"    : "",

@@ -7,47 +7,6 @@
 
 ==============================================================================================*/
 
-void
-mem_copy( void* dst, const void* src, usize n )
-{
-    // memcpy is undefined for overlapping ranges; use mem_move if needed.
-    memcpy( dst, src, n );
-}
-
-void
-mem_move( void* dst, const void* src, usize n )
-{
-    memmove( dst, src, n );
-}
-
-/*============================================================================================*/
-
-void
-mem_set( void* dst, u8 value, usize n )
-{
-    memset( dst, ( int )value, n );
-}
-
-void
-mem_zero( void* dst, usize n )
-{
-    mem_set( dst, 0, n );
-}
-
-/*============================================================================================*/
-
-b32
-mem_equal( const void* a, const void* b, usize n )
-{
-    return memcmp( a, b, n ) == 0;
-}
-
-int
-mem_compare( const void* a, const void* b, usize n )
-{
-    return memcmp( a, b, n );
-}
-
 /*============================================================================================*/
 
 void

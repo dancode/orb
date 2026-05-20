@@ -12,15 +12,15 @@
       With raw char[]:
           char path[512];
           int len = 0;
-          len += sprintf(path + len, "%s/", base);   // not safe: no overflow check
-          len += sprintf(path + len, "%s", file);    // still not safe
+          len += sprintf(path + len, "%s/", base);      // not safe: no overflow check
+          len += sprintf(path + len, "%s", file);       // still not safe
 
       With strbuf_t:
           strbuf_decl( path, 512 );
           strbuf_appendf( &path, "%s/", base );
           strbuf_appendf( &path, "%s", file );
           if ( !strbuf_ok( path ) ) handle_overflow();
-          fopen( path.ptr, "rb" );                   // ptr always null-terminated
+          fopen( path.ptr, "rb" );                      // ptr always null-terminated
 
       Benefits:
         - Overflow is tracked and checked at any point with strbuf_ok(), not silently ignored.
@@ -51,9 +51,10 @@
 
 typedef struct
 {
-    char* ptr;  /* writable buffer; always null-terminated within cap */
-    i32   len;  /* current byte count, NOT including the null terminator */
-    i32   cap;  /* total buffer bytes including the null slot; high bit = overflow flag */
+    char* ptr; /* writable buffer; always null-terminated within cap */
+    i32   len; /* current byte count, NOT including the null terminator */
+    i32   cap; /* total buffer bytes including the null slot; high bit = overflow flag */
+
 } strbuf_t;
 
 /*==============================================================================================
@@ -129,9 +130,9 @@ typedef struct
 #define strbuf_from_ptr_cap( p, c ) \
     ( strbuf_t ) { .ptr = ( char* )( p ), .len = 0, .cap = ( i32 )( c ) }
 
-#define strbuf_decl( name, size )              \
-    char     name##_buf_[ ( size ) ] = { 0 };  \
-    strbuf_t name = { .ptr = name##_buf_, .len = 0, .cap = ( i32 )( size ) }
+#define strbuf_decl( name, size )             \
+    char     name##_buf_[ ( size ) ] = { 0 }; \
+    strbuf_t name                    = { .ptr = name##_buf_, .len = 0, .cap = ( i32 )( size ) }
 
 #define strbuf_str( sb ) \
     ( str_t ) { .ptr = ( sb ).ptr, .len = ( sb ).len }

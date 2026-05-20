@@ -1,26 +1,62 @@
-#ifndef MEM_H
-#define MEM_H
 /*==============================================================================================
 
-    mem.h -- Memory operations (NO allocation).
+    base/mem.h -- Memory operations (NO allocation).
 
-        All functions are allocation-free. Allocators live in core/, not here.
+    All functions are allocation-free. Allocators live in core/, not here.
 
 ==============================================================================================*/
+#ifndef MEM_H
+#define MEM_H
+
+/*============================================================================================*/
+
+// Compiler intrinsics for memory operations to avoid <string.h>
+#if defined( _MSC_VER )
+    // MSVC
+    void* __cdecl memcpy( void*, const void*, usize );
+    void* __cdecl memmove( void*, const void*, usize );
+    void* __cdecl memset( void*, int, usize );
+    int   __cdecl memcmp( const void*, const void*, usize );
+    #pragma intrinsic( memcpy, memmove, memset, memcmp )
+#else
+    // Clang / GCC
+    #define memcpy  __builtin_memcpy
+    #define memmove __builtin_memmove
+    #define memset  __builtin_memset
+    #define memcmp  __builtin_memcmp
+#endif
+
+/*============================================================================================*/
 
 // Copy n bytes from src to dst. Regions must NOT overlap.
-void mem_copy( void* dst, const void* src, usize n );
+ORB_INLINE void
+mem_copy( void* dst, const void* src, usize n )
+{
+    memcpy( dst, src, n );
+}
 
 // Copy n bytes, handling overlapping regions correctly.
-void mem_move( void* dst, const void* src, usize n );
+ORB_INLINE void
+mem_move( void* dst, const void* src, usize n )
+{
+    memmove( dst, src, n );
+}
 
 /*============================================================================================*/
 
 // Fill n bytes at dst with value.
-void mem_set( void* dst, u8 value, usize n );
+ORB_INLINE void
+mem_set( void* dst, u8 value, usize n )
+{
+    memset( dst, ( int )value, n );
+}
 
 // Zero n bytes at dst.
-void mem_zero( void* dst, usize n );
+ORB_INLINE void
+mem_zero( void* dst, usize n )
+{
+    mem_set( dst, 0, n );
+}
 
 // Zero a single typed value via pointer.
 #define mem_zero_struct( ptr ) mem_zero( ( ptr ), sizeof( *( ptr ) ) )
@@ -31,10 +67,18 @@ void mem_zero( void* dst, usize n );
 /*============================================================================================*/
 
 // Returns 1 if first n bytes of a and b are identical, 0 otherwise.
-b32 mem_equal( const void* a, const void* b, usize n );
+ORB_INLINE b32
+mem_equal( const void* a, const void* b, usize n )
+{
+    return memcmp( a, b, n ) == 0;
+}
 
 // Lexicographic compare; returns <0, 0, or >0 (same contract as memcmp).
-int mem_compare( const void* a, const void* b, usize n );
+ORB_INLINE int
+mem_compare( const void* a, const void* b, usize n )
+{
+    return memcmp( a, b, n );
+}
 
 /*============================================================================================*/
 
@@ -70,7 +114,6 @@ mem_align_size( usize size, usize align )
         ( b )        = _swap_tmp_; \
     }                              \
     while ( 0 )
-
 
 /*============================================================================================*/
 #endif MEM_H

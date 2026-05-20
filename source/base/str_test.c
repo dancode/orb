@@ -1,17 +1,12 @@
 /*==============================================================================================
 
-    str_new_test.c -- Demonstration and test for str_t / strbuf_t.
+    str_test.c -- Demonstration and test for str_t / strbuf_t.
 
     This file shows why str_t + strbuf_t are superior to raw C strings for a game engine.
     Each section has a commentary block explaining the design benefit, followed by tests
     that exercise the code with ORB_ASSERT.
 
 ==============================================================================================*/
-#include "orb.h"
-#include "str_buf.h"   /* includes str.h transitively */
-#include "str_arena.h"
-#include <stdio.h>     /* printf for demo output */
-
 /*==============================================================================================
 
     WHY THIS IS BETTER THAN C STRINGS -- OVERVIEW
@@ -110,13 +105,14 @@ test_substrings_and_trim( void )
     ORB_ASSERT( str_equal( str_suffix( greeting, 6 ), STR( "World!" ) ) );
 
     /* str_trim_left / str_trim_right -- each direction independently. */
-    ORB_ASSERT( str_equal( str_trim_left( STR( "   hello" ) ), STR( "hello" ) ) );
-    ORB_ASSERT( str_equal( str_trim_left( STR( "hello" ) ), STR( "hello" ) ) );    /* no leading spaces */
-    ORB_ASSERT( str_equal( str_trim_right( STR( "hello   " ) ), STR( "hello" ) ) );
-    ORB_ASSERT( str_equal( str_trim_right( STR( "hello" ) ), STR( "hello" ) ) );   /* no trailing spaces */
+    ORB_ASSERT( str_equal( str_trim_left(   STR( "   hello" ) ), STR( "hello" ) ) );
+    ORB_ASSERT( str_equal( str_trim_left(   STR( "hello" ) ),    STR( "hello" ) ) );    /* no leading spaces */
+    ORB_ASSERT( str_equal( str_trim_right(  STR( "hello   " ) ), STR( "hello" ) ) );
+    ORB_ASSERT( str_equal( str_trim_right(  STR( "hello" ) ),    STR( "hello" ) ) );   /* no trailing spaces */
+    
     /* trim_left should not remove trailing; trim_right should not remove leading */
-    ORB_ASSERT( str_equal( str_trim_left( STR( "  hi  " ) ), STR( "hi  " ) ) );
-    ORB_ASSERT( str_equal( str_trim_right( STR( "  hi  " ) ), STR( "  hi" ) ) );
+    ORB_ASSERT( str_equal( str_trim_left(   STR( "  hi  " ) ),   STR( "hi  " ) ) );
+    ORB_ASSERT( str_equal( str_trim_right(  STR( "  hi  " ) ),   STR( "  hi" ) ) );
 
     printf( "[PASS] substrings and trim\n" );
 }
@@ -640,8 +636,8 @@ test_str_arena( void )
     Entry Point
 ==============================================================================================*/
 
-void
-test_str_new( void )
+static void
+test_str( void )
 {
     printf( "\n=== str_t / strbuf_t tests ===\n" );
 

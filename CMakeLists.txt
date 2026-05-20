@@ -529,6 +529,10 @@ target_link_libraries( sb_engine_reflect  PRIVATE engine_core engine_rs )
 target_link_libraries( sb_runtime_reflect PRIVATE engine_sys engine_mod engine_core engine_rs )
 target_link_libraries( sb_runtime_gen     PRIVATE engine_sys engine_mod engine_core engine_rs )
 
+# base_test.c is not a unity entry; compile it as a separate TU for the 
+set_source_files_properties( "${CMAKE_SOURCE_DIR}/source/base/base_test.c" PROPERTIES HEADER_FILE_ONLY OFF )
+target_sources( sb_base PRIVATE "${CMAKE_SOURCE_DIR}/source/base/base_test.c" )
+
 # rs_test.c is not a unity entry; compile it as a separate TU for the reflect sandbox
 set_source_files_properties( "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" PROPERTIES HEADER_FILE_ONLY OFF )
 target_sources( sb_engine_reflect PRIVATE "${CMAKE_SOURCE_DIR}/source/engine/rs/rs_test.c" )

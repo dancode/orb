@@ -26,15 +26,14 @@
 #include "base/char.c"
 #include "base/bit.c"
 #include "base/math.c"
-#include "base/hash.c"
 
-#include "base/test.c"    // testing framework
+// #include "base/test.c"    // testing framework
 
 #include "base/str.c"
 #include "base/str_buf.c"
 #include "base/str_arena.c"
 
-// #include "base/standard.c"
+#include "base/str_test.c"
 
 
 
