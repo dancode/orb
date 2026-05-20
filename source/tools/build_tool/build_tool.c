@@ -7,6 +7,9 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "build_tool.h"
 
+// Unity Includes
+#include "build_tool_gen.c"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -129,6 +132,7 @@ int
 main( int argc, char** argv )
 {
     bool            should_clean = false;
+    bool            should_gen   = false;
     build_context_t ctx          = { 0 };
     ctx.config                   = CONFIG_DEBUG;
     ctx.target                   = TARGET_HOST_SANDBOX;
@@ -138,6 +142,8 @@ main( int argc, char** argv )
     {
         if ( strcmp( argv[ i ], "-clean" ) == 0 || strcmp( argv[ i ], "clean" ) == 0 )
             should_clean = true;
+        if ( strcmp( argv[ i ], "-gen" ) == 0 || strcmp( argv[ i ], "gen" ) == 0 )
+            should_gen = true;
         if ( _stricmp( argv[ i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         if ( strcmp( argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
     }
@@ -145,6 +151,12 @@ main( int argc, char** argv )
     if ( should_clean )
     {
         build_clean();
+        return 0;
+    }
+
+    if ( should_gen )
+    {
+        build_gen_projects();
         return 0;
     }
 

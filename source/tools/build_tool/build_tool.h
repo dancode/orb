@@ -43,5 +43,8 @@ bool build_target( build_context_t* ctx );
 // Clean build artifacts.
 void build_clean( void );
 
+// Generate Visual Studio project files.
+void build_gen_projects( void );
+
 /*============================================================================================*/
 #endif // BUILD_TOOL_H

@@ -338,11 +338,20 @@ set( DOC_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/TODO.txt"
 )
 
-add_custom_target( root SOURCES ${ROOT_SOURCES} ${DOC_SOURCES} )
+
+file(GLOB_RECURSE TOOL_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/tools/build_tool/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/tools/build_tool/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/tools/build_tool/*.natvis"
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/tools/build_tool/*.md"
+)
+
+add_custom_target( root SOURCES ${ROOT_SOURCES} ${DOC_SOURCES} ${TOOL_SOURCES} )
 set_target_properties( root PROPERTIES FOLDER "00_Root" )
 
 source_group( "Source" "${CMAKE_CURRENT_SOURCE_DIR}/source" FILES ${ROOT_SOURCES} )
 source_group( "Docs"   "${CMAKE_CURRENT_SOURCE_DIR}/docs"   FILES ${DOC_SOURCES}  )
+source_group( "Build"  "${CMAKE_CURRENT_SOURCE_DIR}/source/tools/build_tool" FILES ${TOOL_SOURCES}  )
 
 # ------------------------------------------------------------------------------
 # 01 BASE
