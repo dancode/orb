@@ -34,64 +34,64 @@
     #include <intrin.h>
 #else
     #include <math.h>
-    #define math_f32_abs( x )   __builtin_fabsf( x )
-    #define math_f64_abs( x )   __builtin_fabs( x )
-    #define math_f32_sqrt( x )  __builtin_sqrtf( x )
-    #define math_f32_sin( x )   __builtin_sinf( x )
-    #define math_f32_cos( x )   __builtin_cosf( x )
-    #define math_f32_tan( x )   __builtin_tanf( x )
-    #define math_f32_acos( x )  __builtin_acosf( x )
-    #define math_f32_asin( x )  __builtin_asinf( x )
-    #define math_f32_atan2( y, x ) __builtin_atan2f( y, x )
+    #define f32_abs( x )   __builtin_fabsf( x )
+    #define f64_abs( x )   __builtin_fabs( x )
+    #define f32_sqrt( x )  __builtin_sqrtf( x )
+    #define f32_sin( x )   __builtin_sinf( x )
+    #define f32_cos( x )   __builtin_cosf( x )
+    #define f32_tan( x )   __builtin_tanf( x )
+    #define f32_acos( x )  __builtin_acosf( x )
+    #define f32_asin( x )  __builtin_asinf( x )
+    #define f32_atan2( y, x ) __builtin_atan2f( y, x )
 #endif
 
 #if COMPILER_MSVC
-ORB_INLINE f32 math_f32_abs( f32 x ) { return fabsf( x ); }
-ORB_INLINE f64 math_f64_abs( f64 x ) { return fabs( x ); }
-ORB_INLINE f32 math_f32_sqrt( f32 x ) { return sqrtf( x ); }
-ORB_INLINE f32 math_f32_sin( f32 x ) { return sinf( x ); }
-ORB_INLINE f32 math_f32_cos( f32 x ) { return cosf( x ); }
-ORB_INLINE f32 math_f32_tan( f32 x ) { return tanf( x ); }
-ORB_INLINE f32 math_f32_acos( f32 x ) { return acosf( x ); }
-ORB_INLINE f32 math_f32_asin( f32 x ) { return asinf( x ); }
-ORB_INLINE f32 math_f32_atan2( f32 y, f32 x ) { return atan2f( y, x ); }
+ORB_INLINE f32 f32_abs( f32 x ) { return fabsf( x ); }
+ORB_INLINE f64 f64_abs( f64 x ) { return fabs( x ); }
+ORB_INLINE f32 f32_sqrt( f32 x ) { return sqrtf( x ); }
+ORB_INLINE f32 f32_sin( f32 x ) { return sinf( x ); }
+ORB_INLINE f32 f32_cos( f32 x ) { return cosf( x ); }
+ORB_INLINE f32 f32_tan( f32 x ) { return tanf( x ); }
+ORB_INLINE f32 f32_acos( f32 x ) { return acosf( x ); }
+ORB_INLINE f32 f32_asin( f32 x ) { return asinf( x ); }
+ORB_INLINE f32 f32_atan2( f32 y, f32 x ) { return atan2f( y, x ); }
 #endif
 
 /*==============================================================================================
     Min / Max
 ==============================================================================================*/
 
-ORB_INLINE i32 math_i32_min( i32 a, i32 b ) { return a < b ? a : b; }
-ORB_INLINE i32 math_i32_max( i32 a, i32 b ) { return a > b ? a : b; }
+ORB_INLINE i32 i32_min( i32 a, i32 b ) { return a < b ? a : b; }
+ORB_INLINE i32 i32_max( i32 a, i32 b ) { return a > b ? a : b; }
 
-ORB_INLINE i64 math_i64_min( i64 a, i64 b ) { return a < b ? a : b; }
-ORB_INLINE i64 math_i64_max( i64 a, i64 b ) { return a > b ? a : b; }
+ORB_INLINE i64 i64_min( i64 a, i64 b ) { return a < b ? a : b; }
+ORB_INLINE i64 i64_max( i64 a, i64 b ) { return a > b ? a : b; }
 
-ORB_INLINE u32 math_u32_min( u32 a, u32 b ) { return a < b ? a : b; }
-ORB_INLINE u32 math_u32_max( u32 a, u32 b ) { return a > b ? a : b; }
+ORB_INLINE u32 u32_min( u32 a, u32 b ) { return a < b ? a : b; }
+ORB_INLINE u32 u32_max( u32 a, u32 b ) { return a > b ? a : b; }
 
-ORB_INLINE u64 math_u64_min( u64 a, u64 b ) { return a < b ? a : b; }
-ORB_INLINE u64 math_u64_max( u64 a, u64 b ) { return a > b ? a : b; }
+ORB_INLINE u64 u64_min( u64 a, u64 b ) { return a < b ? a : b; }
+ORB_INLINE u64 u64_max( u64 a, u64 b ) { return a > b ? a : b; }
 
-ORB_INLINE f32 math_f32_min( f32 a, f32 b ) { return a < b ? a : b; }
-ORB_INLINE f32 math_f32_max( f32 a, f32 b ) { return a > b ? a : b; }
+ORB_INLINE f32 f32_min( f32 a, f32 b ) { return a < b ? a : b; }
+ORB_INLINE f32 f32_max( f32 a, f32 b ) { return a > b ? a : b; }
 
-ORB_INLINE f64 math_f64_min( f64 a, f64 b ) { return a < b ? a : b; }
-ORB_INLINE f64 math_f64_max( f64 a, f64 b ) { return a > b ? a : b; }
+ORB_INLINE f64 f64_min( f64 a, f64 b ) { return a < b ? a : b; }
+ORB_INLINE f64 f64_max( f64 a, f64 b ) { return a > b ? a : b; }
 
 /*==============================================================================================
     Clamp / Abs
 ==============================================================================================*/
 
-ORB_INLINE i32 math_i32_clamp( i32 v, i32 lo, i32 hi ) { return math_i32_min( math_i32_max( v, lo ), hi ); }
-ORB_INLINE i64 math_i64_clamp( i64 v, i64 lo, i64 hi ) { return math_i64_min( math_i64_max( v, lo ), hi ); }
-ORB_INLINE u32 math_u32_clamp( u32 v, u32 lo, u32 hi ) { return math_u32_min( math_u32_max( v, lo ), hi ); }
-ORB_INLINE u64 math_u64_clamp( u64 v, u64 lo, u64 hi ) { return math_u64_min( math_u64_max( v, lo ), hi ); }
-ORB_INLINE f32 math_f32_clamp( f32 v, f32 lo, f32 hi ) { return math_f32_min( math_f32_max( v, lo ), hi ); }
-ORB_INLINE f64 math_f64_clamp( f64 v, f64 lo, f64 hi ) { return math_f64_min( math_f64_max( v, lo ), hi ); }
+ORB_INLINE i32 i32_clamp( i32 v, i32 lo, i32 hi ) { return i32_min( i32_max( v, lo ), hi ); }
+ORB_INLINE i64 i64_clamp( i64 v, i64 lo, i64 hi ) { return i64_min( i64_max( v, lo ), hi ); }
+ORB_INLINE u32 u32_clamp( u32 v, u32 lo, u32 hi ) { return u32_min( u32_max( v, lo ), hi ); }
+ORB_INLINE u64 u64_clamp( u64 v, u64 lo, u64 hi ) { return u64_min( u64_max( v, lo ), hi ); }
+ORB_INLINE f32 f32_clamp( f32 v, f32 lo, f32 hi ) { return f32_min( f32_max( v, lo ), hi ); }
+ORB_INLINE f64 f64_clamp( f64 v, f64 lo, f64 hi ) { return f64_min( f64_max( v, lo ), hi ); }
 
-ORB_INLINE i32 math_i32_abs( i32 a ) { return a < 0 ? -a : a; }
-ORB_INLINE i64 math_i64_abs( i64 a ) { return a < 0 ? -a : a; }
+ORB_INLINE i32 i32_abs( i32 a ) { return a < 0 ? -a : a; }
+ORB_INLINE i64 i64_abs( i64 a ) { return a < 0 ? -a : a; }
 
 /*==============================================================================================
     Interpolation
@@ -99,41 +99,41 @@ ORB_INLINE i64 math_i64_abs( i64 a ) { return a < 0 ? -a : a; }
 
 // Numerically stable linear interpolation: a when t=0, b when t=1.
 ORB_INLINE f32
-math_f32_lerp( f32 a, f32 b, f32 t )
+f32_lerp( f32 a, f32 b, f32 t )
 {
     return ( 1.0f - t ) * a + t * b;
 }
 
 ORB_INLINE f64
-math_f64_lerp( f64 a, f64 b, f64 t )
+f64_lerp( f64 a, f64 b, f64 t )
 {
     return ( 1.0 - t ) * a + t * b;
 }
 
 // Inverse lerp: returns t such that lerp(a, b, t) == v.
 ORB_INLINE f32
-math_f32_unlerp( f32 a, f32 b, f32 v )
+f32_unlerp( f32 a, f32 b, f32 v )
 {
     return ( v - a ) / ( b - a );
 }
 
 ORB_INLINE f32
-math_f32_remap( f32 in_lo, f32 in_hi, f32 out_lo, f32 out_hi, f32 v )
+f32_remap( f32 in_lo, f32 in_hi, f32 out_lo, f32 out_hi, f32 v )
 {
-    return math_f32_lerp( out_lo, out_hi, math_f32_unlerp( in_lo, in_hi, v ) );
+    return f32_lerp( out_lo, out_hi, f32_unlerp( in_lo, in_hi, v ) );
 }
 
 /*==============================================================================================
     Sign / Compare
 ==============================================================================================*/
 
-ORB_INLINE i32 math_i32_sign( i32 x ) { return ( x > 0 ) - ( x < 0 ); }
-ORB_INLINE f32 math_f32_sign( f32 x ) { return ( f32 )( ( x > 0.0f ) - ( x < 0.0f ) ); }
+ORB_INLINE i32 i32_sign( i32 x ) { return ( x > 0 ) - ( x < 0 ); }
+ORB_INLINE f32 f32_sign( f32 x ) { return ( f32 )( ( x > 0.0f ) - ( x < 0.0f ) ); }
 
 ORB_INLINE b32
-math_f32_nearly_equal( f32 a, f32 b, f32 eps )
+f32_nearly_equal( f32 a, f32 b, f32 eps )
 {
-    return math_f32_abs( a - b ) <= eps;
+    return f32_abs( a - b ) <= eps;
 }
 
 /*==============================================================================================

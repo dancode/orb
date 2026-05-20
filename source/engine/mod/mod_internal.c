@@ -32,43 +32,43 @@
 
 typedef struct mod_info_s
 {
-    char            name[ MODULE_NAME_MAX ];
-    module_status_t status;
+    char                name[ MODULE_NAME_MAX ];
+    module_status_t     status;
 
-    bool            is_static;     /* true → no DLL, no shadow copies */
-    uint32_t        shadow_count;  /* shadow file name counter for this slot */
+    bool                is_static;     /* true → no DLL, no shadow copies */
+    uint32_t            shadow_count;  /* shadow file name counter for this slot */
 
-    void*           dll;           /* handle to the loaded shadow copy */
-    uint64_t        last_write;    /* file timestamp at last successful load */
+    void*               dll;           /* handle to the loaded shadow copy */
+    uint64_t            last_write;    /* file timestamp at last successful load */
 
-    mod_desc_t*     mod_desc;      /* lifecycle: init / exit / reload + func_api */
+    mod_desc_t*         mod_desc;      /* lifecycle: init / exit / reload + func_api */
 
-    void*           state;         /* persistent state block; system-owned */
-    int32_t         state_size;    /* size of the current allocation */
+    void*               state;         /* persistent state block; system-owned */
+    int32_t             state_size;    /* size of the current allocation */
 
-    void*           api_slot;      /* stable address; system writes new func_api here on reload */
-    int32_t         api_slot_size; /* sizeof(func_api); fixed for the module's lifetime */
+    void*               api_slot;      /* stable address; system writes new func_api here on reload */
+    int32_t             api_slot_size; /* sizeof(func_api); fixed for the module's lifetime */
 
-    int32_t         version;       /* increments on each successful hot-reload */
+    int32_t             version;       /* increments on each successful hot-reload */
 
 } mod_info_t;
 
 typedef struct pending_reload_s
 {
-    char     name[ MODULE_NAME_MAX ];
-    uint64_t flagged_at_ms;   /* time the change was first detected */
-    uint64_t last_seen_write; /* file timestamp at flag time; reset if the file moves again */
+    char                name[ MODULE_NAME_MAX ];
+    uint64_t            flagged_at_ms;   /* time the change was first detected */
+    uint64_t            last_seen_write; /* file timestamp at flag time; reset if the file moves again */
 
 } pending_reload_t;
 
 /* Captured pre-reload handles. Restored by snapshot_rollback() if any step fails. */
 typedef struct mod_snapshot_s
 {
-    void*           dll;
-    mod_desc_t*     mod_desc;
-    uint32_t        shadow_count;
-    uint64_t        last_write;
-    module_status_t status;
+    void*               dll;
+    mod_desc_t*         mod_desc;
+    uint32_t            shadow_count;
+    uint64_t            last_write;
+    module_status_t     status;
 
 } mod_snapshot_t;
 
@@ -90,8 +90,6 @@ static char             g_last_error[ 256 ];
 static uint32_t         g_shadow_counter;  /* globally incremented per shadow copy created */
 static get_api_fn       g_api_func;        /* passed into every init() / reload() */
 
-// clang-format on
-
 /*==============================================================================================
     Bootstrap Allocator
 
@@ -101,11 +99,19 @@ static get_api_fn       g_api_func;        /* passed into every init() / reload(
 static void
 ms_log( const char* fmt, ... )
 {
+    char buf[ 512 ];
+
     va_list ap;
     va_start( ap, fmt );
-    vprintf( fmt, ap );
-    printf( "\n" );
+    vsnprintf( buf, sizeof( buf ), fmt, ap );
     va_end( ap );
+
+    /* route log messages through the host-provided log function */
+
+    if ( g_mod_log_fn )
+         g_mod_log_fn( 0, "mod", buf );
+    else
+        printf( "%s\n", buf );
 }
 
 static void*
@@ -812,4 +818,5 @@ shadow_cleanup( void )
         ms_log( "[module] stale shadow cleanup: %d deleted, %d failed", ctx.deleted, ctx.failed );
 }
 
+// clang-format on
 /*============================================================================================*/

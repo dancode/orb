@@ -11,9 +11,6 @@
     Engine headers
 ==============================================================================================*/
 
-
-
-
 /* static modules used by runtime */
 #include "engine/sys/sys_host.h"
 #include "engine/rs/rs_host.h"    // reflection: auto-wired on every DLL load
@@ -22,7 +19,8 @@
     (Optional) Module API's
 ==============================================================================================*/
 
-#include "engine/app/app_api.h"
+#include "engine/app/app_host.h"
+#include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_modules/render/render_api.h"
 

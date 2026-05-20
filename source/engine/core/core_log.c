@@ -91,4 +91,22 @@ log_error( const char* fmt, ... )
     va_end( ap );
 }
 
+/*==============================================================================================
+    Log Sink Adapter
+
+    Matches log_fn_t so other engine libraries can route their output through core.
+    The tag is prefixed in brackets; the message is forwarded to the appropriate level.
+==============================================================================================*/
+
+void
+core_log_fn( int level, const char* tag, const char* msg )
+{
+    switch ( level )
+    {
+        case LOG_LEVEL_WARN:  log_warn( "[%s] %s", tag, msg );  break;
+        case LOG_LEVEL_ERROR: log_error( "[%s] %s", tag, msg ); break;
+        default:              log_info( "[%s] %s", tag, msg );  break;
+    }
+}
+
 /*============================================================================================*/

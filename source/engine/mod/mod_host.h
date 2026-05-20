@@ -157,6 +157,7 @@ const char*     mod_last_error              ( void );
 
 typedef void ( *mod_event_fn )( const char* name, const mod_desc_t* desc, void* user );
 
+void            mod_set_log_fn              ( log_fn_t fn );
 void            mod_set_pre_init_cb         ( mod_event_fn fn, void* user );
 void            mod_set_post_exit_cb        ( mod_event_fn fn, void* user );
 

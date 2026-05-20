@@ -64,6 +64,8 @@ run_reflection_gen( tool_ctx_t* ctx )
     if ( !mod_init_all() )
         return 1;
 
+    mod_set_log_fn( core_log_fn );
+
     core()->log( "reflection_gen: would parse %s and emit reflection tables",
                      ctx->argc > 2 ? ctx->argv[ 2 ] : "<missing input>" );
     return 0;
@@ -78,6 +80,8 @@ run_asset_bake( tool_ctx_t* ctx )
         return 1;
     if ( !mod_init_all() )
         return 1;
+
+    mod_set_log_fn( core_log_fn );
 
     // if ( !MOD_HOST_FETCH_API( render_api_t, render ) )
     //    return 1;
@@ -100,6 +104,9 @@ run_list_modules( tool_ctx_t* ctx )
     UNUSED( ctx );
     if ( !mod_init_all() )
         return 1;
+
+    mod_set_log_fn( core_log_fn );
+
     mod_list_all();
     return 0;
 }
@@ -138,8 +145,8 @@ main( int argc, char** argv )
     };
 
     mod_system_init();
-    if ( !mod_static_load( "core", core_get_mod_desc() ) )
-        return 1;
+    mod_static( sys );
+    mod_static( core );
 
     /* Dispatch — each tool function loads its own additional modules. */
 

@@ -245,25 +245,25 @@ test_mem_align( void )
 static void
 test_math_minmax_clamp( void )
 {
-    test_equal( 3, math_i32_min( 3, 5 ) );
-    test_equal( 3, math_i32_min( 5, 3 ) );
-    test_equal( 5, math_i32_max( 3, 5 ) );
-    test_equal( 5, math_i32_max( 5, 3 ) );
-    test_equal( -5, math_i32_min( -5, 3 ) );
-    test_equal( 3, math_i32_max( -5, 3 ) );
+    test_equal( 3, i32_min( 3, 5 ) );
+    test_equal( 3, i32_min( 5, 3 ) );
+    test_equal( 5, i32_max( 3, 5 ) );
+    test_equal( 5, i32_max( 5, 3 ) );
+    test_equal( -5, i32_min( -5, 3 ) );
+    test_equal( 3, i32_max( -5, 3 ) );
 
-    test_equal( 3u, math_u32_min( 3u, 5u ) );
-    test_equal( 5u, math_u32_max( 3u, 5u ) );
+    test_equal( 3u, u32_min( 3u, 5u ) );
+    test_equal( 5u, u32_max( 3u, 5u ) );
 
-    test_equal( 5, math_i32_clamp( 5, 0, 10 ) );
-    test_equal( 0, math_i32_clamp( -1, 0, 10 ) );
-    test_equal( 10, math_i32_clamp( 20, 0, 10 ) );
-    test_equal( 0, math_i32_clamp( 0, 0, 10 ) );
-    test_equal( 10, math_i32_clamp( 10, 0, 10 ) );
+    test_equal( 5, i32_clamp( 5, 0, 10 ) );
+    test_equal( 0, i32_clamp( -1, 0, 10 ) );
+    test_equal( 10, i32_clamp( 20, 0, 10 ) );
+    test_equal( 0, i32_clamp( 0, 0, 10 ) );
+    test_equal( 10, i32_clamp( 10, 0, 10 ) );
 
-    test_equal( 5u, math_u32_clamp( 5u, 0u, 10u ) );
-    test_equal( 0u, math_u32_clamp( 0u, 0u, 10u ) );
-    test_equal( 10u, math_u32_clamp( 99u, 0u, 10u ) );
+    test_equal( 5u, u32_clamp( 5u, 0u, 10u ) );
+    test_equal( 0u, u32_clamp( 0u, 0u, 10u ) );
+    test_equal( 10u, u32_clamp( 99u, 0u, 10u ) );
 }
 
 /*==============================================================================================
@@ -273,16 +273,16 @@ test_math_minmax_clamp( void )
 static void
 test_math_abs( void )
 {
-    test_equal( 5, math_i32_abs( 5 ) );
-    test_equal( 5, math_i32_abs( -5 ) );
-    test_equal( 0, math_i32_abs( 0 ) );
+    test_equal( 5, i32_abs( 5 ) );
+    test_equal( 5, i32_abs( -5 ) );
+    test_equal( 0, i32_abs( 0 ) );
 
-    test_equal( 5, math_i64_abs( -5LL ) );
-    test_equal( 0, math_i64_abs( 0LL ) );
+    test_equal( 5, i64_abs( -5LL ) );
+    test_equal( 0, i64_abs( 0LL ) );
 
-    test_true( math_f32_abs( -3.14f ) > 0.0f );
-    test_true( math_f32_nearly_equal( math_f32_abs( -3.14f ), 3.14f, F32_EPSILON ) );
-    test_true( math_f32_nearly_equal( math_f32_abs( 3.14f ), 3.14f, F32_EPSILON ) );
+    test_true( f32_abs( -3.14f ) > 0.0f );
+    test_true( f32_nearly_equal( f32_abs( -3.14f ), 3.14f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_abs( 3.14f ), 3.14f, F32_EPSILON ) );
 }
 
 /*==============================================================================================
@@ -292,16 +292,16 @@ test_math_abs( void )
 static void
 test_math_lerp( void )
 {
-    test_true( math_f32_nearly_equal( math_f32_lerp( 0.0f, 10.0f, 0.0f ), 0.0f, F32_EPSILON ) );
-    test_true( math_f32_nearly_equal( math_f32_lerp( 0.0f, 10.0f, 0.5f ), 5.0f, F32_EPSILON ) );
-    test_true( math_f32_nearly_equal( math_f32_lerp( 0.0f, 10.0f, 1.0f ), 10.0f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_lerp( 0.0f, 10.0f, 0.0f ), 0.0f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_lerp( 0.0f, 10.0f, 0.5f ), 5.0f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_lerp( 0.0f, 10.0f, 1.0f ), 10.0f, F32_EPSILON ) );
 
-    test_true( math_f32_nearly_equal( math_f32_unlerp( 0.0f, 10.0f, 0.0f ), 0.0f, F32_EPSILON ) );
-    test_true( math_f32_nearly_equal( math_f32_unlerp( 0.0f, 10.0f, 5.0f ), 0.5f, F32_EPSILON ) );
-    test_true( math_f32_nearly_equal( math_f32_unlerp( 0.0f, 10.0f, 10.0f ), 1.0f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_unlerp( 0.0f, 10.0f, 0.0f ), 0.0f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_unlerp( 0.0f, 10.0f, 5.0f ), 0.5f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_unlerp( 0.0f, 10.0f, 10.0f ), 1.0f, F32_EPSILON ) );
 
     // remap: 5 in [0,10] maps to 50 in [0,100]
-    test_true( math_f32_nearly_equal( math_f32_remap( 0.0f, 10.0f, 0.0f, 100.0f, 5.0f ), 50.0f, 1e-4f ) );
+    test_true( f32_nearly_equal( f32_remap( 0.0f, 10.0f, 0.0f, 100.0f, 5.0f ), 50.0f, 1e-4f ) );
 }
 
 /*==============================================================================================
@@ -311,13 +311,13 @@ test_math_lerp( void )
 static void
 test_math_sign_align( void )
 {
-    test_equal( 1, math_i32_sign( 5 ) );
-    test_equal( -1, math_i32_sign( -5 ) );
-    test_equal( 0, math_i32_sign( 0 ) );
+    test_equal( 1, i32_sign( 5 ) );
+    test_equal( -1, i32_sign( -5 ) );
+    test_equal( 0, i32_sign( 0 ) );
 
-    test_true( math_f32_nearly_equal( math_f32_sign( 3.14f ), 1.0f, F32_EPSILON ) );
-    test_true( math_f32_nearly_equal( math_f32_sign( -1.0f ), -1.0f, F32_EPSILON ) );
-    test_true( math_f32_nearly_equal( math_f32_sign( 0.0f ), 0.0f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_sign( 3.14f ), 1.0f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_sign( -1.0f ), -1.0f, F32_EPSILON ) );
+    test_true( f32_nearly_equal( f32_sign( 0.0f ), 0.0f, F32_EPSILON ) );
 
     test_equal( 8, math_align_up( 5, 8 ) );
     test_equal( 8, math_align_up( 8, 8 ) );    // already aligned

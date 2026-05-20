@@ -20,8 +20,10 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <stdarg.h>
 #include "orb.h"
 
+// clang-format off
 /*==============================================================================================
     Platform headers
 ==============================================================================================*/
@@ -57,6 +59,36 @@
 #include "engine/app/app_host.h"
 
 /*==============================================================================================
+    Log Sink
+
+    g_app_log_fn routes window and event messages through core once wired by the host.
+    Falls back to stdio when NULL (before core is live, or in tests that don't wire it).
+==============================================================================================*/
+
+static log_fn_t g_app_log_fn = NULL;
+
+void
+app_set_log_fn( log_fn_t fn )
+{
+    g_app_log_fn = fn;
+}
+
+static void
+app_log( int level, const char* fmt, ... )
+{
+    char    buf[ 256 ];
+    va_list ap;
+    va_start( ap, fmt );
+    vsnprintf( buf, sizeof( buf ), fmt, ap );
+    va_end( ap );
+
+    if ( g_app_log_fn )
+         g_app_log_fn( level, "app", buf );
+    else
+        fprintf( level >= 2 ? stderr : stdout, "[app] %s\n", buf );
+}
+
+/*==============================================================================================
     Platform backend  (static functions appear in this TU)
 ==============================================================================================*/
 
@@ -64,42 +96,44 @@
 
 typedef struct win_fillscreen_s
 {
-    bool  is_enabled;
-    bool  prev_maximized;
-    DWORD prev_style;
-    DWORD prev_exstyle;
-    i32   prev_w, prev_h;
-    i32   prev_x, prev_y;
+    bool            is_enabled;
+    bool            prev_maximized;
+    DWORD           prev_style;
+    DWORD           prev_exstyle;
+    i32             prev_w, prev_h;
+    i32             prev_x, prev_y;
 
 } win_fillscreen_t;
 
 typedef struct app_window_s
 {
-    win_id_t         id;
-    HWND             hwnd;
-    app_win_state_t  state;
-    app_win_state_t  prev;
+    win_id_t             id;
+    HWND                hwnd;
+    app_win_state_t     state;
+    app_win_state_t     prev;
 
-    i32              w, h;           /* cached client dimensions — valid even when minimized */
-    bool             hover_tracking; /* TrackMouseEvent is armed                              */
-    bool             resize_modal;   /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */
-    bool             move_modal;
-    bool             paint_enabled; /* WM_ERASEBKGND uses class brush when true              */
-    win_fillscreen_t fill;
+    i32                 w, h;           /* cached client dimensions — valid even when minimized */
+    bool                hover_tracking; /* TrackMouseEvent is armed                              */
+    bool                resize_modal;   /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */
+    bool                move_modal;
+    bool                paint_enabled; /* WM_ERASEBKGND uses class brush when true              */
+    win_fillscreen_t    fill;
 
 } app_window_t;
 
 typedef struct win_pool_s
 {
-    app_window_t wins[ APP_WIN_MAX ];
-    u32          alloc; /* bitmask: bit i = 1 → slot i is in use */
-    win_id_t     main_id;
-    ATOM         class_atom;
-    HINSTANCE    hinst;
+    app_window_t    wins[ APP_WIN_MAX ];
+    u32             alloc; /* bitmask: bit i = 1 → slot i is in use */
+    win_id_t        main_id;
+    ATOM            class_atom;
+    HINSTANCE       hinst;
 
 #ifdef APP_WIN_FIBER
-    LPVOID fiber_main;    /* game-loop fiber (ConvertThreadToFiber) */
-    LPVOID fiber_message; /* message-drain fiber (CreateFiber)      */
+
+    LPVOID          fiber_main;    /* game-loop fiber (ConvertThreadToFiber) */
+    LPVOID          fiber_message; /* message-drain fiber (CreateFiber)      */
+
 #endif
 
 } win_pool_t;
@@ -116,8 +150,10 @@ static win_pool_t g_pool = { .main_id = APP_WIN_INVALID };
 
 #endif
 
+// clang-format on
 /*==============================================================================================
     API Definition (must be last)
 ==============================================================================================*/
 
 #include "engine/app/app_api.c"
+

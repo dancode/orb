@@ -108,6 +108,11 @@ static void*        g_pre_init_user = NULL;
 static mod_event_fn g_post_exit_fn  = NULL;
 static void*        g_post_exit_user = NULL;
 
+/* Output sink for the bootstrap logger (ms_log). 
+   NULL until the host calls mod_set_log_fn(). */
+
+static log_fn_t     g_mod_log_fn = NULL;
+
 #include "mod_internal.c"
 
 /*==============================================================================================
@@ -478,6 +483,12 @@ mod_system_flush_reloads( void )
 /*==============================================================================================
     Public: lifecycle callbacks
 ==============================================================================================*/
+
+void
+mod_set_log_fn( log_fn_t fn )
+{
+    g_mod_log_fn = fn;
+}
 
 void
 mod_set_pre_init_cb( mod_event_fn fn, void* user )

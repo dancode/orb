@@ -66,17 +66,6 @@ run_host_should_quit( void )
 
 /*==============================================================================================
     Cached engine module API pointers
-
-    MOD_DEFINE_API_PTR  — defines g_<name>_api_ptr storage (no-op in BUILD_STATIC)
-    MOD_HOST_FETCH_API      — populates the pointer after mod_init_all()
-                          (no-op in BUILD_STATIC; struct is linked directly)
-
-    In static/monolithic builds:
-        app() == &g_app_api_struct  — direct address, LTO can devirtualize call sites.
-
-    In dynamic builds:
-        app() == g_app_api_ptr      — cached by MOD_HOST_FETCH_API; NULL if not loaded.
-        The null path handles headless hosts that don't include app in their module list.
 ==============================================================================================*/
 
 MOD_USE_APP;
@@ -166,6 +155,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         mod_system_exit();
         return 1;
     }
+
+    /* Route mod and app output through core's logger now that core is live. */
+    mod_set_log_fn( core_log_fn );
+    app_set_log_fn( core_log_fn );
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*

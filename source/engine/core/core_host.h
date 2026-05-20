@@ -26,5 +26,9 @@ mod_desc_t* core_get_mod_desc( void );
 /* Enable skip mode: ORB_ASSERT prints but does not trap. Used by test suites. */
 void core_assert_set_skip( bool skip );
 
+/* Log sink adapter: routes log_fn_t calls through core's logger.
+   Pass this to mod_set_log_fn / app_set_log_fn after mod_init_all(). */
+void core_log_fn( int level, const char* tag, const char* msg );
+
 /*============================================================================================*/
 #endif    // CORE_HOST_H

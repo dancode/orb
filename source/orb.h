@@ -92,6 +92,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdarg.h>
 
 typedef uint8_t   u8;
 typedef uint16_t  u16;
@@ -210,6 +211,17 @@ typedef ptrdiff_t isize;
 
 #undef assert_msg
 #define assert_msg( cond, msg ) ORB_ASSERT_MSG( cond, msg )
+
+/*==============================================================================================
+    Log Sink
+
+    A log_fn_t receives a pre-formatted message. Libraries call the registered sink
+    instead of writing directly to stdout/stderr. Callers fall back to stdio when no
+    sink is installed. Defined here so every layer can hold and call a sink without
+    depending on core.
+==============================================================================================*/
+
+typedef void ( *log_fn_t )( int level, const char* tag, const char* msg );
 
 /*==============================================================================================
     Utility Macros
