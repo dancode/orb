@@ -9,7 +9,7 @@
 #include <string.h>
 #include <io.h>
 
-// clang-format off
+static const char* g_proj_name = "orb_make";
 
 typedef struct
 {
@@ -70,16 +70,19 @@ scan_directory( const char* dir, path_list_t* cl_files, path_list_t* h_files )
 void
 build_gen_projects( void )
 {
-    printf( "Generating Visual Studio projects...\n" );
+    printf( "Generating Visual Studio projects [%s]...\n", g_proj_name );
 
     path_list_t cl_files = { 0 };
     path_list_t h_files  = { 0 };
     scan_directory( "source", &cl_files, &h_files );
 
-    FILE* f = fopen( "orb.vcxproj", "w" );
+    char vcxproj_path[ 256 ];
+    sprintf( vcxproj_path, "%s.vcxproj", g_proj_name );
+
+    FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
     {
-        printf( "Error: Could not open orb.vcxproj for writing.\n" );
+        printf( "Error: Could not open %s for writing.\n", vcxproj_path );
         return;
     }
 
@@ -121,12 +124,15 @@ build_gen_projects( void )
     fclose( f );
 
     // Minimal solution file (.sln)
-    f = fopen( "orb.sln", "w" );
+    char sln_path[ 256 ];
+    sprintf( sln_path, "%s.sln", g_proj_name );
+
+    f = fopen( sln_path, "w" );
     if ( f )
     {
         fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
         fprintf( f, "# Visual Studio Version 17\n" );
-        fprintf( f, "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"orb\", \"orb.vcxproj\", \"{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}\"\n" );
+        fprintf( f, "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"%s\", \"%s.vcxproj\", \"{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}\"\n", g_proj_name, g_proj_name );
         fprintf( f, "EndProject\n" );
         fprintf( f, "Global\n" );
         fprintf( f, "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n" );
@@ -137,7 +143,7 @@ build_gen_projects( void )
         fclose( f );
     }
 
-    printf( "Projects generated: orb.vcxproj, orb.sln\n" );
+    printf( "Projects generated: %s, %s\n", vcxproj_path, sln_path );
 
     for ( size_t i = 0; i < cl_files.count; ++i ) free( cl_files.paths[ i ] );
     for ( size_t i = 0; i < h_files.count; ++i ) free( h_files.paths[ i ] );
@@ -145,5 +151,4 @@ build_gen_projects( void )
     free( h_files.paths );
 }
 
-// clang-format on
 /*============================================================================================*/
