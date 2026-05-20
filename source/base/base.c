@@ -16,12 +16,7 @@
 #include <string.h>    // memcpy, memmove, memset, memcmp
 #include <stdarg.h>    // va_list, va_start, va_end
 
-#include "mem.h"
-#include "char.h"
-#include "bit.h"
-#include "math.h"
-#include "str.h"
-#include "fmt.h"
+#include "base.h"
 
 /*==============================================================================================
     unity build
@@ -35,10 +30,13 @@
 
 #include "base/test.c"    // testing framework
 
-// #include "base/string.c"
 #include "base/str.c"
-#include "base/fmt.c"
+#include "base/str_buf.c"
+#include "base/str_arena.c"
 
-#include "base/standard.c"
+// #include "base/standard.c"
+
+
+
 
 /*============================================================================================*/

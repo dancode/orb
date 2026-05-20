@@ -1,9 +1,16 @@
-/* engine/rs/rs_access.c - Type, field, attribute lookups and iteration. */
+/* engine/rs/rs_access.c - Type, field, attribute lookups and iteration.
+
+   All functions here are read-only accessors into g_rs. They are safe to call from any
+   thread that holds a read lock on the registry; none of them mutate state.
+   rs_hash_find (in rs_registry.c) is the fast O(1) path; the linear scans below are
+   used only when an index is not available (find-by-name within a type, etc.). */
 
 /*==============================================================================================
     Type Access
 
-    Retrieving types by ID or name hash.
+    Retrieving types by ID or name hash. Type IDs are stable within a session as long as
+    the owning frame has not been popped. Across hot-reloads the ID changes; use name_hash
+    for identity that survives reload.
 ==============================================================================================*/
 
 const rs_type_t*
@@ -47,6 +54,8 @@ rs_find_field( uint16_t type_id, const char* name )
     const rs_type_t* t = rs_get_type( type_id );
     if ( !t || !name ) return NULL;
 
+    /* Linear scan through the type's field block. Acceptable because structs rarely have
+       more than ~16 fields; a hash would add complexity for no practical gain. */
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
         const rs_field_t* f = &g_rs.fields[ t->field_index + i ];
@@ -59,7 +68,10 @@ rs_find_field( uint16_t type_id, const char* name )
 /*==============================================================================================
     Attribute Access
 
-    First-match wins; use iteration for repeated entries.
+    Attributes are accessed by name string; the first matching entry in the owner's block
+    is returned. For multi-entry attributes (e.g. @range with min and max as two consecutive
+    entries sharing the same name_id), the caller must read subsequent entries via pointer
+    arithmetic (+1) since there is no rs_each_attr iterator in the public API.
 ==============================================================================================*/
 
 static const rs_attrib_t*
@@ -134,8 +146,15 @@ rs_enum_find_by_value( uint16_t type_id, int64_t value )
 /*==============================================================================================
     Bitset Helpers
 
-    Decoding is order-dependent when enums have overlapping bits. Place multi-bit
-    constants first in registration order to match them preferentially.
+    Bitsets are enums where values are independent bit masks that can be OR'd together.
+    The "greedy bit-claim" algorithm in rs_bitset_each_set_flag/rs_bitset_describe iterates
+    enumerators in registration order and claims bits as it matches them. Once a flag's bits
+    are claimed they are cleared from the remaining mask, so smaller overlapping flags do not
+    double-fire on bits already consumed by a multi-bit entry.
+
+    This means registration order determines precedence: place multi-bit compound values
+    (e.g. ALL = READ|WRITE|EXEC) BEFORE their constituent single-bit flags so that a value
+    of ALL prints as "ALL" rather than "READ | WRITE | EXEC".
 ==============================================================================================*/
 
 bool
@@ -151,6 +170,7 @@ rs_bitset_find_flag( uint16_t type_id, int64_t mask )
     const rs_type_t* t = rs_get_type( type_id );
     if ( !t || t->kind != RS_KIND_BITSET || mask == 0 ) return NULL;
 
+    /* Exact mask match -- used when the caller has a single flag value and wants its name. */
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
         const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
@@ -177,7 +197,7 @@ rs_bitset_each_set_flag( uint16_t type_id, int64_t value, rs_enum_cb_t cb, void*
         {
             uint16_t eid = (uint16_t)( t->field_index + i );
             cb( eid, e, user );
-            remaining &= ~e->value;
+            remaining &= ~e->value;   /* consume bits so narrower flags don't re-fire */
             hits++;
         }
     }
@@ -193,6 +213,7 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
     const rs_type_t* t = rs_get_type( type_id );
     if ( !t || t->kind != RS_KIND_BITSET ) return 0;
 
+    /* Zero is a special case: look for a zero-valued enumerator (e.g. "NONE"), or just "0". */
     if ( value == 0 )
     {
         const rs_enum_t* z = rs_enum_find_by_value( type_id, 0 );
@@ -207,6 +228,7 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
     int64_t remaining = value;
     bool    first     = true;
 
+    /* Emit "FLAG_A | FLAG_B" for matched bits; each matched flag clears its bits from remaining. */
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
         const rs_enum_t* e = &g_rs.enums[ t->field_index + i ];
@@ -220,6 +242,7 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
         remaining &= ~e->value;
     }
 
+    /* Any bits not claimed by a named flag are appended as a hex literal tail. */
     if ( remaining != 0 )
     {
         char tmp[ 32 ];
@@ -235,7 +258,10 @@ rs_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size 
 /*==============================================================================================
     Function Signature Access
 
-    Accessors for parameters and return types (kind == RS_KIND_FUNCTION).
+    Function signature types store their return and parameters as fields, following the
+    convention: field[0] = return type, field[1..field_count-1] = parameters in order.
+    These helpers provide named access to avoid off-by-one mistakes with that index layout.
+    Use these instead of rs_each_field() for RS_KIND_FUNCTION types.
 ==============================================================================================*/
 
 const rs_field_t*
@@ -266,7 +292,13 @@ rs_function_get_param( uint16_t type_id, uint16_t param_index )
 /*==============================================================================================
     Iteration
 
-    Callback-based iteration over types, fields, and enumerators.
+    Callback-based iteration over types, fields, and enumerators. The callback receives
+    both the id (index into the relevant pool) and a const pointer to the record so the
+    caller can either use the record directly or store the id for later re-lookup.
+
+    rs_each_field and rs_each_enumerator are intentionally exclusive -- rs_each_field
+    rejects enum/bitset types because their "fields" are actually entries in enums[], not
+    fields[], and reading them as rs_field_t would be incorrect.
 ==============================================================================================*/
 
 uint16_t
@@ -283,7 +315,9 @@ rs_each_type_in_frame( uint16_t frame_id, rs_type_cb_t cb, void* user )
     if ( !cb || frame_id >= g_rs.frame_count ) return 0;
 
     uint16_t first = g_rs.frames[ frame_id ].first_type;
-    /* Topmost frame owns up to type_count; earlier frames end where the next begins. */
+
+    /* Topmost frame owns [first_type .. type_count); earlier frames own
+       [first_type .. next_frame.first_type). Derive the end boundary accordingly. */
     uint16_t end   = ( frame_id + 1 == g_rs.frame_count )
                      ? g_rs.type_count
                      : g_rs.frames[ frame_id + 1 ].first_type;
@@ -296,6 +330,9 @@ uint16_t
 rs_each_field( uint16_t type_id, rs_field_cb_t cb, void* user )
 {
     const rs_type_t* t = rs_get_type( type_id );
+
+    /* Enum and bitset types store their entries in enums[], not fields[]. Iterating them
+       here would be a table-confusion bug; callers must use rs_each_enumerator instead. */
     if ( !t || !cb || rs_kind_is_enum( (rs_kind_t)t->kind ) ) return 0;
 
     for ( uint16_t i = 0; i < t->field_count; i++ )
@@ -310,6 +347,8 @@ uint16_t
 rs_each_enumerator( uint16_t type_id, rs_enum_cb_t cb, void* user )
 {
     const rs_type_t* t = rs_get_type( type_id );
+
+    /* Only valid for enum/bitset types -- for structs/unions use rs_each_field. */
     if ( !t || !cb || !rs_kind_is_enum( (rs_kind_t)t->kind ) ) return 0;
 
     for ( uint16_t i = 0; i < t->field_count; i++ )

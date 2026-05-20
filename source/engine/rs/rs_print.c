@@ -1,9 +1,16 @@
-/* engine/rs/rs_print.c - Diagnostics: type description strings and console dump. */
+/* engine/rs/rs_print.c - Diagnostics: type description strings and console dump.
+
+   These are debug/editor utilities -- not used in shipping builds. rs_field_describe
+   reconstructs a C-style declaration string (e.g. "const vec3_t*") from packed mods.
+   rs_print_type and rs_print_frame dump human-readable type info to stdout. */
 
 /*==============================================================================================
     String Helpers
 
-    Internal growth-safe string concatenation for description building.
+    Safe bounded append -- writes characters into buf[pos..cap-2], always null-terminates.
+    Returns the new position (not the length), so the caller can chain calls without
+    tracking intermediate string lengths. Does not use printf/sprintf to avoid format-string
+    overhead for simple string assembly.
 ==============================================================================================*/
 
 static int
@@ -17,8 +24,10 @@ rs_str_append( char* buf, size_t cap, size_t pos, const char* s )
 /*==============================================================================================
     Type Description
 
-    Emits a C-style type string for fields and types.
-    E.g. "const vec3_t*", "vec3_t*[8]", "vec3_t(*)[8]".
+    Reconstructs a C-style type declaration string for a field by reading its mods value.
+    Examples: "const vec3_t*", "vec3_t*[8]", "vec3_t(*)[8]", "float[4]".
+    Used by the editor inspector and by rs_print_type for diagnostic output.
+    Returns the number of characters written (not counting the null terminator).
 ==============================================================================================*/
 
 size_t
@@ -30,9 +39,11 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
 
     size_t pos = 0;
 
+    /* Prepend "const " if the base type is const-qualified (covers both const T and const T*). */
     if ( f->mods == RS_MODS_CONST_VALUE || f->mods == RS_MODS_PTR_TO_CONST )
         pos = rs_str_append( buf, buf_size, pos, "const " );
 
+    /* Emit the base type name; fall back to "<unresolved>" for fields that failed finalization. */
     const rs_type_t* base = rs_get_type( f->type_id );
     pos = rs_str_append( buf, buf_size, pos, base ? rs_cstr( base->name_id ) : "<unresolved>" );
 
@@ -80,7 +91,9 @@ rs_field_describe( const rs_field_t* f, char* buf, size_t buf_size )
 /*==============================================================================================
     Diagnostic Printing
 
-    Console dumping of reflection metadata for debugging.
+    Console dumps of the registry for debugging and development. rs_print_type dispatches
+    on kind so that enums, function signatures, and structs each display in the most readable
+    format for their content. These functions are intentionally simple -- clarity over brevity.
 ==============================================================================================*/
 
 void

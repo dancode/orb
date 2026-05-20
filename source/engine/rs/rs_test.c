@@ -47,6 +47,14 @@ typedef struct rs_test_entity_s
 
 /*==============================================================================================
     Registration helpers
+
+    These functions demonstrate the manual registration API that generated code (from the
+    rs_import.h macros) produces automatically. Each helper interns names, hashes type names,
+    fills rs_type_t / rs_field_t descriptors, and calls rs_register_type / rs_register_enum.
+
+    In production, a code-gen tool emits these calls from annotated C headers. Here they are
+    hand-written so the tests have no dependency on the generator and can serve as a reference
+    for what the generated output should look like.
 ==============================================================================================*/
 
 static void
@@ -212,11 +220,17 @@ rs_test_register_entity( void )
 
 /*==============================================================================================
     Test cases
+
+    Each test is self-contained: it calls rs_init() at the top and rs_exit() at the bottom
+    so the registry is always in a clean state. Tests must be run sequentially (they share
+    the single global g_rs), but can be toggled individually by the if(0) block in rs_run_tests.
 ==============================================================================================*/
 
 static void
 test_basic( void )
 {
+    /* Smoke test: register three types with cross-references, finalize, print, and pop.
+       Verifies the push/register/finalize/pop lifecycle without any special cases. */
     printf( "\n=== rs: basic registration ===\n" );
 
     rs_init();
@@ -238,6 +252,9 @@ test_basic( void )
 static void
 test_hot_reload_rs( void )
 {
+    /* Simulates a DLL hot-reload: pop the "game" frame, re-register identical types, and
+       verify that schema_hash is stable. An unchanged schema_hash means hot-loaded save
+       data can be reused without a reload warning. */
     printf( "\n=== rs: hot reload via pop + repush ===\n" );
 
     rs_init();
@@ -278,6 +295,8 @@ test_hot_reload_rs( void )
 static void
 test_mod_decode( void )
 {
+    /* Exercises rs_field_describe() by registering entity_t which contains fields with
+       every interesting modifier (PTR, ARRAY, PTR_ARRAY, PTR_TO_CONST) and printing them. */
     printf( "\n=== rs: mod chain pretty-print ===\n" );
 
     rs_init();
@@ -379,6 +398,10 @@ typedef struct rs_test_npc_s
 static void
 test_function_sigs( void )
 {
+    /* Registers a function signature type "on_die_fn" and a struct that embeds it as a
+       callback field (RS_MODS_FUNCTION, aux=sig_id). Verifies that rs_function_get_return
+       and rs_function_get_param correctly navigate the field[0]=return / field[1..]=params
+       layout, and that the inspector can print the struct with the callback field. */
     printf( "\n=== rs: function signatures ===\n" );
 
     rs_init();
@@ -490,6 +513,11 @@ typedef struct rs_test_save_s
 static void
 test_serialize( void )
 {
+    /* Full round-trip test for rs_write / rs_read. The save_t struct has:
+       - primitives and nested struct -> must survive unchanged
+       - a pointer field (cache_ptr)   -> must be NULL in the output (pointer redaction)
+       - a @transient field             -> must be 0 in the output (transient redaction)
+       Also verifies schema-hash mismatch rejection and truncated-buffer rejection. */
     printf( "\n=== rs: serialization round-trip ===\n" );
 
     rs_init();
@@ -637,6 +665,10 @@ typedef enum rs_test_perm_e
 static void
 test_bitset( void )
 {
+    /* Tests the greedy bit-claim decoding. The "ALL" entry is registered before its
+       constituent bits (READ, WRITE, EXEC) so that rs_bitset_describe(ALL) returns "ALL"
+       rather than "READ | WRITE | EXEC". Swapping registration order would change the output.
+       Also verifies zero-value display, unknown-bits hex tail, and rs_bitset_find_flag. */
     printf( "\n=== rs: bitset enum ===\n" );
 
     rs_init();
@@ -738,6 +770,11 @@ rs_test_walk_visitor( void** slot, uint16_t pointee_id, const rs_field_t* f, voi
 static void
 test_walker( void )
 {
+    /* Tests rs_walk_refs() traversal across a struct hierarchy:
+       walk_t { id, single*, slots*[3], nested{p*} }
+       Expected visits: 1 (single) + 3 (slots[0..2]) + 1 (nested.p) = 5.
+       slots[2] is NULL, but the walker still visits the slot -- visiting a null pointer
+       slot is correct behaviour since the callback decides what to do with it. */
     printf( "\n=== rs: reference walker ===\n" );
 
     rs_init();
@@ -852,6 +889,11 @@ test_walker( void )
     Types registered here:
         stance_t  -- enum (IDLE / RUNNING / CROUCHED)
         player_t  -- struct with mixed field flags and @range attrs on float fields
+
+    The inspector callback rs_usage_inspect_field demonstrates the canonical dispatch
+    pattern: check f->flags for RS_FF_HIDDEN early, then switch on f->kind for the
+    value type, using f->type_id as the prim or enum id when kind is known. f->kind is
+    cached at finalize time so this dispatch needs no secondary rs_get_type() call.
 ==============================================================================================*/
 
 typedef enum rs_test_stance_e
@@ -1115,7 +1157,7 @@ test_usage_example( void )
     uint16_t         tid = rs_find_type_by_name( "player_t" );
     const rs_type_t* t   = rs_get_type( tid );
     assert( tid != RS_TYPE_INVALID && t );
-
+    1
     /* Type-level flags are a fast-path alternative to attribute lookup for common semantics. */
     printf( "Inspecting '%s'  size=%u  flags:%s%s\n", rs_cstr( t->name_id ), t->size,
             ( t->flags & RS_TF_EDITOR    ) ? " EDITOR"    : "",

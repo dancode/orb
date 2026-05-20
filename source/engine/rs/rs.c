@@ -20,6 +20,10 @@
 
     Flat bump-allocator for interning type/field names. Kept separate from g_rs so that
     memset(&g_rs) in rs_init does not clobber live strings. O(n) intern, O(1) cstr.
+
+    rs_name_t is a u32 byte offset into g_rs_str_pool -- the name "id" is literally the
+    offset, so rs_cstr is a single pointer add. Equal strings always produce the same id
+    within a session, which lets field/type names be compared by value instead of strcmp.
 ==============================================================================================*/
 
 #define RS_STRING_POOL_SIZE ( 16 * 1024 )
@@ -32,12 +36,17 @@ rs_intern( const char* s )
 {
     uint32_t len = ( uint32_t )strlen( s );
     uint32_t i   = 0;
+
+    /* Linear scan: pool is small (16 KB) and type counts are low, so O(n) is acceptable.
+       Returns the existing offset immediately on a hit to guarantee stable ids. */
     while ( i < g_rs_str_top )
     {
         if ( strcmp( g_rs_str_pool + i, s ) == 0 )
             return ( rs_name_t )i;
         i += ( uint32_t )strlen( g_rs_str_pool + i ) + 1;
     }
+
+    /* Bump-allocate the new string; null terminator is included in the copy. */
     assert( g_rs_str_top + len + 1 <= RS_STRING_POOL_SIZE && "rs string pool overflow" );
     rs_name_t id = ( rs_name_t )g_rs_str_top;
     memcpy( g_rs_str_pool + g_rs_str_top, s, len + 1 );
@@ -48,13 +57,19 @@ rs_intern( const char* s )
 const char*
 rs_cstr( rs_name_t id )
 {
+    /* id is a direct byte offset -- O(1) pointer add, no table lookup. */
     return g_rs_str_pool + id;
 }
 
 /*==============================================================================================
     Registry Storage
 
-    Shared state used across all TUs in this unity build.
+    All reflection data lives in a single global struct so that the entire system can be
+    reset with one memset. The five arrays are flat pools indexed by uint16_t ids; frames
+    mark watermarks into each pool so a module unload just rewinds the count.
+
+    type_hash[] is an open-addressing chain table: types[i].next forms the bucket chains,
+    so no separate link storage is needed (the type record itself is the list node).
 ==============================================================================================*/
 
 typedef struct rs_registry_s
@@ -72,6 +87,7 @@ typedef struct rs_registry_s
     rs_enum_t   enums       [ RS_MAX_ENUMS ];
     rs_frame_t  frames      [ RS_MAX_FRAMES ];
 
+    /* Hash table: maps name_hash -> type_id; bucket chains use rs_type_t.next. */
     uint16_t    type_hash[   RS_TYPE_HASH_SIZE ];
 
 } rs_registry_t;
@@ -93,9 +109,14 @@ static const bool       rs_debug = true;
 
 /*==============================================================================================
     API Publishing
+
+    g_rs_api_struct is the vtable that DLL modules receive when they call MOD_FETCH_API(rs_api_t).
+    Every function pointer here is a direct-call entry point compiled into this TU via
+    the unity includes above -- no indirection cost at the call site beyond the pointer load.
+    The struct is const because modules never write to it; they cache a pointer in their own state.
 ==============================================================================================*/
 
-const rs_api_t g_rs_api_struct = 
+const rs_api_t g_rs_api_struct =
 {
      /* Lookup */
     .find_type_by_name  = rs_find_type_by_name,
@@ -140,8 +161,11 @@ rs_mod_init( void* state, get_api_fn get_api )
 {
     UNUSED( state );
     UNUSED( get_api );
-    /* Registry self-bootstraps via rs_ensure_init() — this is a no-op whose only purpose
-       is to publish rs_api_t through the standard module gateway. */
+    /* rs is a leaf module with no dependencies. The registry initializes lazily via
+       rs_ensure_init() the first time any registration function is called, so this
+       init callback's only job is to publish rs_api_t through the standard mod gateway.
+       core declares "rs" as a dependency so the mod system loads rs before core, guaranteeing
+       the vtable is live when core -- and every module thereafter -- fetches it. */
     return true;
 }
 

@@ -13,6 +13,7 @@
 #include "engine/core/core.h"
 #include "engine/mod/mod_import.h"
 
+// clang-format off
 /*============================================================================================*/
 /* These data pointers are required for natvis debugging within DLL modules */
 
@@ -38,8 +39,8 @@ typedef struct core_api_s
     core_debug_api_t* debug_api;    // for natvis and debugging
 
     /* assertions */
-    bool        ( *assert_report )      ( const char* cond, const char* msg, const char* func, const char* file, int line );
-
+    bool        ( *assert_report )      ( const char* cond, const char* msg, 
+                                          const char* func, const char* file, int line );
     /* logging */
     void        ( *log )                ( const char* fmt, ... );
     void        ( *log_info )           ( const char* fmt, ... );
@@ -115,5 +116,6 @@ MOD_GATEWAY_DYNAMIC( core_api_t, core )
 #define SID( str )       core()->sid_intern( ( str ), ( int32_t )strlen( str ) )
 #define SID_CSTR( str )  core()->sid_intern_cstr( str )
 
+// clang-format on
 /*============================================================================================*/
 #endif    // CORE_API_H

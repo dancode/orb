@@ -1,65 +1,99 @@
+// clang-format off
 /*==============================================================================================
 
-    str.h -- C string operations implementation.
-
-        No global state. No dynamic allocation.
+    str_new.c -- Non-owning string view implementation.
 
 ==============================================================================================*/
-
+#include "orb.h"
 #include "str.h"
+#include <string.h>
+
+/* Global empty string sentinel. ptr points to a real empty string so callers can safely
+   call str_to_cstr on it without a NULL check at every site. */
+const str_t STR_EMPTY = { .ptr = "", .len = 0 };
 
 /*==============================================================================================
-    Length / Query
+    Internal Helpers
 ==============================================================================================*/
 
-usize
-str_len( const char* s )
+/* Inline ASCII lowercase -- avoids local dependencies and is branch-predictable. */
+static ORB_INLINE char
+_char_lower( char c )
+{
+    return ( c >= 'A' && c <= 'Z' ) ? ( char )( c + 32 ) : c;
+}
+
+/* ASCII whitespace: space, tab, newline, carriage-return, vertical-tab, form-feed. */
+static ORB_INLINE b32
+_char_is_space( char c )
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
+
+/*==============================================================================================
+    Construction
+==============================================================================================*/
+
+str_t
+str_from_cstr( const char* s )
 {
     if ( !s )
-        return 0;
-    const char* p = s;
-    while ( *p ) ++p;
-    return ( usize )( p - s );
+        return STR_EMPTY;
+
+    /* Walk once to measure length; this is the only strlen call in the str_t lifecycle. */
+    i32 n = 0; while ( s[ n ] ) n++;
+
+    return str_from_ptr_len( s, n );
 }
 
-b32
-str_empty( const char* s )
+str_t
+str_sub( str_t s, i32 start, i32 end )
 {
-    return !s || s[ 0 ] == '\0';
+    /* Clamp to valid range so callers never need to guard against edge cases. */
+    if ( start < 0 ) start = 0;
+    if ( end > s.len ) end = s.len;
+    if ( start >= end ) return STR_EMPTY;
+
+    return str_from_ptr_len( s.ptr + start, end - start );
 }
 
-/*==============================================================================================
-    Copy / Concat
-==============================================================================================*/
-
-usize
-str_copy( char* dst, usize dst_cap, const char* src )
+str_t
+str_prefix( str_t s, i32 n )
 {
-    usize src_len = str_len( src );
-    if ( dst_cap == 0 )
-        return src_len;
-
-    usize copy = src_len < ( dst_cap - 1 ) ? src_len : ( dst_cap - 1 );
-    // Manual copy (avoids pulling in memcpy separately here;
-    // in practice, base.h is included and mem_copy is available)
-    for ( usize i = 0; i < copy; ++i ) dst[ i ] = src[ i ];
-    dst[ copy ] = '\0';
-    return src_len;
+    return str_sub( s, 0, n );
 }
 
-usize
-str_append( char* dst, usize dst_cap, const char* src )
+str_t
+str_suffix( str_t s, i32 n )
 {
-    usize dst_len = str_len( dst );
-    usize src_len = str_len( src );
-    if ( dst_cap == 0 )
-        return dst_len + src_len;
+    return str_sub( s, s.len - n, s.len );
+}
 
-    usize space = ( dst_len < dst_cap ) ? ( dst_cap - dst_len - 1 ) : 0;
-    usize copy  = src_len < space ? src_len : space;
-    for ( usize i = 0; i < copy; ++i ) dst[ dst_len + i ] = src[ i ];
-    dst[ dst_len + copy ] = '\0';
-    return dst_len + src_len;
+str_t
+str_trim_left( str_t s )
+{
+    /* Advance ptr and shrink len symmetrically -- result is still a valid view. */
+    while ( s.len > 0 && _char_is_space( s.ptr[ 0 ] ) )
+    {
+        s.ptr++;
+        s.len--;
+    }
+    return s;
+}
+
+str_t
+str_trim_right( str_t s )
+{
+    /* Reduce len only -- ptr is unchanged, backing memory is untouched. */
+    while ( s.len > 0 && _char_is_space( s.ptr[ s.len - 1 ] ) )
+        s.len--;
+    return s;
+}
+
+str_t
+str_trim( str_t s )
+{
+    return str_trim_right( str_trim_left( s ) );
 }
 
 /*==============================================================================================
@@ -67,239 +101,350 @@ str_append( char* dst, usize dst_cap, const char* src )
 ==============================================================================================*/
 
 b32
-str_equal( const char* a, const char* b )
+str_equal( str_t a, str_t b )
 {
-    if ( a == b )
-        return 1;
-    if ( !a || !b )
+    if ( a.len != b.len )
         return 0;
-    while ( *a && *a == *b )
-    {
-        ++a;
-        ++b;
-    }
-    return *a == *b;
-}
 
-i32
-str_cmp( const char* a, const char* b )
-{
-    if ( !a && !b )
-        return 0;
-    if ( !a )
-        return -1;
-    if ( !b )
+    /* Pointer equality fast path avoids memcmp when comparing a string to itself. */
+    if ( a.ptr == b.ptr )
         return 1;
-    while ( *a && *a == *b )
-    {
-        ++a;
-        ++b;
-    }
-    return ( unsigned char )*a - ( unsigned char )*b;
-}
 
-i32
-str_ncmp( const char* a, const char* b, usize n )
-{
-    for ( usize i = 0; i < n; ++i )
-    {
-        unsigned char ca = ( unsigned char )a[ i ];
-        unsigned char cb = ( unsigned char )b[ i ];
-        if ( ca != cb )
-            return ( i32 )ca - ( i32 )cb;
-        if ( ca == 0 )
-            return 0;    // both terminated
-    }
-    return 0;
+    return memcmp( a.ptr, b.ptr, ( usize )a.len ) == 0;
 }
 
 b32
-str_equal_nocase( const char* a, const char* b )
+str_equal_nocase( str_t a, str_t b )
 {
-    if ( a == b )
-        return 1;
-    if ( !a || !b )
+    if ( a.len != b.len )
         return 0;
-    // ASCII-only tolower
-    while ( *a && *b )
+
+    for ( i32 i = 0; i < a.len; i++ )
     {
-        char ca = *a | 0x20;    // works for A-Z only
-        char cb = *b | 0x20;
-        // Only apply lowercasing to letters; check letter range
-        char la = ( *a >= 'A' && *a <= 'Z' ) ? ca : *a;
-        char lb = ( *b >= 'A' && *b <= 'Z' ) ? cb : *b;
-        if ( la != lb )
+        if ( _char_lower( a.ptr[ i ] ) != _char_lower( b.ptr[ i ] ) )
             return 0;
-        ++a;
-        ++b;
     }
-    return *a == *b;
+    return 1;
+}
+
+i32
+str_cmp( str_t a, str_t b )
+{
+    i32 min_len = a.len < b.len ? a.len : b.len;
+    i32 r       = memcmp( a.ptr, b.ptr, ( usize )min_len );
+    if ( r != 0 )
+        return r;
+
+    /* Equal prefix: shorter string sorts first. */
+    return a.len - b.len;
 }
 
 /*==============================================================================================
     Search
 ==============================================================================================*/
 
-const char*
-str_find_char( const char* s, char c )
+i32
+str_find_char( str_t s, char c )
 {
-    if ( !s )
-        return 0;
-    for ( ; *s; ++s )
+    for ( i32 i = 0; i < s.len; i++ )
     {
-        if ( *s == c )
-            return s;
+        if ( s.ptr[ i ] == c )
+            return i;
     }
-    return 0;
+    return STR_NOT_FOUND;
 }
 
-const char*
-str_rfind_char( const char* s, char c )
+i32
+str_rfind_char( str_t s, char c )
 {
-    if ( !s )
-        return 0;
-    const char* last = 0;
-    for ( ; *s; ++s )
+    for ( i32 i = s.len - 1; i >= 0; i-- )
     {
-        if ( *s == c )
-            last = s;
+        if ( s.ptr[ i ] == c )
+            return i;
     }
-    return last;
+    return STR_NOT_FOUND;
 }
 
-const char*
-str_find_sub( const char* haystack, const char* needle )
+i32
+str_find( str_t haystack, str_t needle )
 {
-    if ( !haystack || !needle )
-        return 0;
-    if ( !needle[ 0 ] )
-        return haystack;
+    if ( needle.len == 0 )
+        return 0;  /* empty needle matches at offset 0 (same as strstr convention) */
 
-    for ( ; *haystack; ++haystack )
+    if ( needle.len > haystack.len )
+        return STR_NOT_FOUND;
+
+    /* memcmp at each candidate -- no extra state, works well for short needles. */
+    i32 limit = haystack.len - needle.len;
+    for ( i32 i = 0; i <= limit; i++ )
     {
-        const char* h = haystack;
-        const char* n = needle;
-        while ( *h && *n && *h == *n )
-        {
-            ++h;
-            ++n;
-        }
-        if ( !*n )
-            return haystack;    // full needle matched
+        if ( memcmp( haystack.ptr + i, needle.ptr, ( usize )needle.len ) == 0 )
+            return i;
     }
-    return 0;
+    return STR_NOT_FOUND;
 }
 
 b32
-str_starts_with( const char* s, const char* prefix )
+str_starts_with( str_t s, str_t prefix )
 {
-    if ( !s || !prefix )
+    if ( prefix.len > s.len )
         return 0;
-    while ( *prefix )
+    return memcmp( s.ptr, prefix.ptr, ( usize )prefix.len ) == 0;
+}
+
+b32
+str_ends_with( str_t s, str_t suffix )
+{
+    if ( suffix.len > s.len )
+        return 0;
+    return memcmp( s.ptr + s.len - suffix.len, suffix.ptr, ( usize )suffix.len ) == 0;
+}
+
+b32
+str_contains( str_t s, str_t needle )
+{
+    return str_find( s, needle ) != STR_NOT_FOUND;
+}
+
+/*==============================================================================================
+    Hashing -- FNV-1a
+==============================================================================================*/
+
+/* Widely used non-cryptographic hash with excellent distribution for short strings.
+   Case-sensitive. Changing any byte changes the hash -- strong avalanche. */
+
+#define FNV32_BASIS 2166136261U
+#define FNV32_PRIME 16777619U
+#define FNV64_BASIS 14695981039346656037ULL
+#define FNV64_PRIME 1099511628211ULL
+
+u32
+str_hash32( str_t s )
+{
+    u32 h = FNV32_BASIS;
+    for ( i32 i = 0; i < s.len; i++ )
     {
-        if ( *s++ != *prefix++ )
-            return 0;
+        h ^= ( u8 )s.ptr[ i ];
+        h *= FNV32_PRIME;
     }
+    return h;
+}
+
+u64
+str_hash64( str_t s )
+{
+    u64 h = FNV64_BASIS;
+    for ( i32 i = 0; i < s.len; i++ )
+    {
+        h ^= ( u64 )( u8 )s.ptr[ i ];
+        h *= FNV64_PRIME;
+    }
+    return h;
+}
+
+/*==============================================================================================
+    Parsing
+==============================================================================================*/
+
+b32
+str_to_i32( str_t s, i32* out )
+{
+    if ( s.len == 0 || !out )
+        return 0;
+
+    i32 i = 0, sign = 1, val = 0;
+
+    if ( s.ptr[ i ] == '-' )
+    {
+        sign = -1;
+        i++;
+    }
+    else if ( s.ptr[ i ] == '+' )
+    {
+        i++;
+    }
+
+    if ( i == s.len )
+        return 0;  /* sign only, no digits */
+
+    for ( ; i < s.len; i++ )
+    {
+        char c = s.ptr[ i ];
+        if ( c < '0' || c > '9' )
+            return 0;
+        val = val * 10 + ( c - '0' );
+    }
+
+    *out = val * sign;
     return 1;
 }
 
 b32
-str_ends_with( const char* s, const char* suffix )
+str_to_i64( str_t s, i64* out )
 {
-    if ( !s || !suffix )
+    if ( s.len == 0 || !out )
         return 0;
-    usize s_len = str_len( s );
-    usize p_len = str_len( suffix );
-    if ( p_len > s_len )
-        return 0;
-    return str_ncmp( s + s_len - p_len, suffix, p_len ) == 0;
-}
 
-/*==============================================================================================
-    Hashing
-==============================================================================================*/
+    i32 i    = 0;
+    i64 sign = 1, val = 0;
 
-// FNV-1a 64-bit constants
-#define FNV1A_OFFSET 14695981039346656037ULL
-#define FNV1A_PRIME  1099511628211ULL
-
-u64
-str_hash( const char* s )
-{
-    u64 h = FNV1A_OFFSET;
-    if ( !s )
-        return h;
-    while ( *s )
-    {
-        h ^= ( u64 )( unsigned char )*s++;
-        h *= FNV1A_PRIME;
-    }
-    return h;
-}
-
-u64
-str_hash_n( const char* s, usize n )
-{
-    u64 h = FNV1A_OFFSET;
-    for ( usize i = 0; i < n; ++i )
-    {
-        h ^= ( u64 )( unsigned char )s[ i ];
-        h *= FNV1A_PRIME;
-    }
-    return h;
-}
-
-/*==============================================================================================
-    Parsing Helpers
-==============================================================================================*/
-
-usize
-str_parse_i64( const char* s, long long* out )
-{
-    if ( !s || !out )
-        return 0;
-    const char* p    = s;
-    long long   sign = 1;
-    if ( *p == '-' )
+    if ( s.ptr[ i ] == '-' )
     {
         sign = -1;
-        ++p;
+        i++;
     }
-    else if ( *p == '+' )
+    else if ( s.ptr[ i ] == '+' )
     {
-        ++p;
+        i++;
     }
 
-    if ( *p < '0' || *p > '9' )
+    if ( i == s.len )
         return 0;
 
-    long long val = 0;
-    while ( *p >= '0' && *p <= '9' )
+    for ( ; i < s.len; i++ )
     {
-        val = val * 10 + ( *p - '0' );
-        ++p;
+        char c = s.ptr[ i ];
+        if ( c < '0' || c > '9' )
+            return 0;
+        val = val * 10 + ( i64 )( c - '0' );
     }
-    *out = sign * val;
-    return ( usize )( p - s );
+
+    *out = val * sign;
+    return 1;
 }
 
-usize
-str_parse_u64( const char* s, unsigned long long* out )
+b32
+str_to_f64( str_t s, f64* out )
 {
-    if ( !s || !out )
-        return 0;
-    const char* p = s;
-    if ( *p < '0' || *p > '9' )
+    if ( s.len == 0 || !out )
         return 0;
 
-    unsigned long long val = 0;
-    while ( *p >= '0' && *p <= '9' )
+    i32 i    = 0;
+    f64 sign = 1.0;
+
+    if ( s.ptr[ i ] == '-' )
     {
-        val = val * 10 + ( unsigned long long )( *p - '0' );
-        ++p;
+        sign = -1.0;
+        i++;
     }
+    else if ( s.ptr[ i ] == '+' )
+    {
+        i++;
+    }
+
+    /* Integer part. */
+    f64 val       = 0.0;
+    b32 has_digit = 0;
+    while ( i < s.len && s.ptr[ i ] >= '0' && s.ptr[ i ] <= '9' )
+    {
+        val       = val * 10.0 + ( f64 )( s.ptr[ i ] - '0' );
+        has_digit = 1;
+        i++;
+    }
+
+    /* Optional fractional part. */
+    if ( i < s.len && s.ptr[ i ] == '.' )
+    {
+        i++;
+        f64 frac = 0.1;
+        while ( i < s.len && s.ptr[ i ] >= '0' && s.ptr[ i ] <= '9' )
+        {
+            val += ( f64 )( s.ptr[ i ] - '0' ) * frac;
+            frac *= 0.1;
+            has_digit = 1;
+            i++;
+        }
+    }
+
+    if ( !has_digit )
+        return 0;
+
+    *out = val * sign;
+    return 1;
+}
+
+b32
+str_to_f32( str_t s, f32* out )
+{
+    if ( !out )
+        return 0;
+    f64 v;
+    if ( !str_to_f64( s, &v ) )
+        return 0;
+    *out = ( f32 )v;
+    return 1;
+}
+
+i32
+str_scan_i64( str_t s, i64* out )
+{
+    /* Prefix parse: consume sign + digit run, stop at first non-digit. */
+    if ( s.len == 0 || !out )
+        return 0;
+
+    i32 i    = 0;
+    i64 sign = 1;
+
+    if ( s.ptr[ i ] == '-' )
+    {
+        sign = -1;
+        i++;
+    }
+    else if ( s.ptr[ i ] == '+' )
+    {
+        i++;
+    }
+
+    if ( i == s.len || s.ptr[ i ] < '0' || s.ptr[ i ] > '9' )
+        return 0;  /* sign only, or non-digit start */
+
+    i64 val = 0;
+    while ( i < s.len && s.ptr[ i ] >= '0' && s.ptr[ i ] <= '9' )
+    {
+        val = val * 10 + ( i64 )( s.ptr[ i ] - '0' );
+        i++;
+    }
+
+    *out = val * sign;
+    return i;
+}
+
+i32
+str_scan_u64( str_t s, u64* out )
+{
+    /* Prefix parse: consume digit run, stop at first non-digit. */
+    if ( s.len == 0 || !out || s.ptr[ 0 ] < '0' || s.ptr[ 0 ] > '9' )
+        return 0;
+
+    i32 i   = 0;
+    u64 val = 0;
+    while ( i < s.len && s.ptr[ i ] >= '0' && s.ptr[ i ] <= '9' )
+    {
+        val = val * 10 + ( u64 )( s.ptr[ i ] - '0' );
+        i++;
+    }
+
     *out = val;
-    return ( usize )( p - s );
+    return i;
+}
+
+/*==============================================================================================
+    C String Interop
+==============================================================================================*/
+
+i32
+str_to_cstr( str_t s, char* buf, i32 cap )
+{
+    if ( !buf || cap <= 0 )
+        return 0;
+
+    /* Copy at most cap-1 bytes so there is always room for the null terminator. */
+    i32 copy = s.len < ( cap - 1 ) ? s.len : ( cap - 1 );
+    if ( copy > 0 )
+        memcpy( buf, s.ptr, ( usize )copy );
+    buf[ copy ] = '\0';
+    return copy;
 }
 
 /*============================================================================================*/
+// clang-format on

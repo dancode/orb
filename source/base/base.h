@@ -19,7 +19,8 @@
 #include "bit.h"
 #include "math.h"
 #include "str.h"
-#include "fmt.h"
+#include "str_buf.h"
+#include "str_arena.h"
 
 /*============================================================================================*/
 #endif    // BASE_H
