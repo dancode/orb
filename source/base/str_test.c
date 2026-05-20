@@ -8,8 +8,9 @@
 
 ==============================================================================================*/
 #include "orb.h"
-#include "str_buf.h" /* includes str_new.h transitively */
-#include <stdio.h>   /* printf for demo output */
+#include "str_buf.h"   /* includes str.h transitively */
+#include "str_arena.h"
+#include <stdio.h>     /* printf for demo output */
 
 /*==============================================================================================
 
@@ -107,6 +108,15 @@ test_substrings_and_trim( void )
     str_t greeting = STR( "Hello, World!" );
     ORB_ASSERT( str_equal( str_prefix( greeting, 5 ), STR( "Hello" ) ) );
     ORB_ASSERT( str_equal( str_suffix( greeting, 6 ), STR( "World!" ) ) );
+
+    /* str_trim_left / str_trim_right -- each direction independently. */
+    ORB_ASSERT( str_equal( str_trim_left( STR( "   hello" ) ), STR( "hello" ) ) );
+    ORB_ASSERT( str_equal( str_trim_left( STR( "hello" ) ), STR( "hello" ) ) );    /* no leading spaces */
+    ORB_ASSERT( str_equal( str_trim_right( STR( "hello   " ) ), STR( "hello" ) ) );
+    ORB_ASSERT( str_equal( str_trim_right( STR( "hello" ) ), STR( "hello" ) ) );   /* no trailing spaces */
+    /* trim_left should not remove trailing; trim_right should not remove leading */
+    ORB_ASSERT( str_equal( str_trim_left( STR( "  hi  " ) ), STR( "hi  " ) ) );
+    ORB_ASSERT( str_equal( str_trim_right( STR( "  hi  " ) ), STR( "  hi" ) ) );
 
     printf( "[PASS] substrings and trim\n" );
 }
@@ -226,6 +236,21 @@ test_parsing( void )
     str_t value_str = str_sub( config, eq + 1, config.len );
     ORB_ASSERT( str_to_i32( value_str, &ival ) && ival == 1920 );
 
+    /* str_scan_i64 / str_scan_u64 -- prefix scan: stops at first non-digit,
+       returns bytes consumed. Old str_parse_i64 behaviour. */
+    i64 sval;
+    ORB_ASSERT( str_scan_i64( STR( "123" ), &sval ) == 3 && sval == 123 );
+    ORB_ASSERT( str_scan_i64( STR( "-456rest" ), &sval ) == 4 && sval == -456 );
+    ORB_ASSERT( str_scan_i64( STR( "+7xyz" ), &sval ) == 2 && sval == 7 );
+    ORB_ASSERT( str_scan_i64( STR( "99x" ), &sval ) == 2 && sval == 99 );   /* stops at 'x' */
+    ORB_ASSERT( str_scan_i64( STR( "abc" ), &sval ) == 0 );                 /* no digits */
+    ORB_ASSERT( str_scan_i64( STR_EMPTY, &sval ) == 0 );
+
+    u64 uval;
+    ORB_ASSERT( str_scan_u64( STR( "789end" ), &uval ) == 3 && uval == 789 );
+    ORB_ASSERT( str_scan_u64( STR( "0" ), &uval ) == 1 && uval == 0 );
+    ORB_ASSERT( str_scan_u64( STR( "abc" ), &uval ) == 0 );
+
     printf( "[PASS] parsing\n" );
 }
 
@@ -270,6 +295,22 @@ test_strbuf_basic( void )
     str_t view = strbuf_str( path );
     ORB_ASSERT( view.ptr == path.ptr );
     ORB_ASSERT( view.len == path.len );
+
+    /* STRBUF() macro wraps a pre-existing char array -- capacity derived at compile time. */
+    char      storage[ 32 ] = { 0 };
+    strbuf_t  wrapped = STRBUF( storage );
+    ORB_ASSERT( strbuf_ok( wrapped ) );
+    ORB_ASSERT( strbuf_cap( wrapped ) == 32 );
+    strbuf_append( &wrapped, STR( "wrap" ) );
+    ORB_ASSERT( str_equal( strbuf_str( wrapped ), STR( "wrap" ) ) );
+
+    /* strbuf_from_ptr_cap when capacity is a runtime value. */
+    char      dynbuf[ 16 ] = { 0 };
+    i32       dynlen = 16;
+    strbuf_t  dyn = strbuf_from_ptr_cap( dynbuf, dynlen );
+    ORB_ASSERT( strbuf_cap( dyn ) == 16 );
+    strbuf_append_cstr( &dyn, "dynamic" );
+    ORB_ASSERT( str_equal( strbuf_str( dyn ), STR( "dynamic" ) ) );
 
     printf( "[PASS] strbuf basic\n" );
 }
@@ -324,6 +365,28 @@ test_strbuf_format( void )
     strbuf_t sf = strbuf_from_f64( 3.14159, 2, ftmp, sizeof( ftmp ) );
     ORB_ASSERT( strbuf_ok( sf ) );
     ORB_ASSERT( str_equal( strbuf_str( sf ), STR( "3.14" ) ) );
+
+    /* strbuf_from_u64 -- unsigned decimal (covers old fmt_u64 tests). */
+    char utmp[ 32 ];
+    strbuf_t su0 = strbuf_from_u64( 0u, utmp, sizeof( utmp ) );
+    ORB_ASSERT( strbuf_ok( su0 ) && str_equal( strbuf_str( su0 ), STR( "0" ) ) );
+
+    strbuf_t su1 = strbuf_from_u64( 999u, utmp, sizeof( utmp ) );
+    ORB_ASSERT( strbuf_ok( su1 ) && str_equal( strbuf_str( su1 ), STR( "999" ) ) );
+
+    strbuf_t su2 = strbuf_from_u64( 4294967295u, utmp, sizeof( utmp ) );  /* UINT32_MAX */
+    ORB_ASSERT( strbuf_ok( su2 ) && str_equal( strbuf_str( su2 ), STR( "4294967295" ) ) );
+
+    /* strbuf_from_hex64 -- lowercase hex, no "0x" prefix (covers old fmt_hex64 tests). */
+    char htmp[ 32 ];
+    strbuf_t sh0 = strbuf_from_hex64( 0u, htmp, sizeof( htmp ) );
+    ORB_ASSERT( strbuf_ok( sh0 ) && str_equal( strbuf_str( sh0 ), STR( "0" ) ) );
+
+    strbuf_t sh1 = strbuf_from_hex64( 0xABCu, htmp, sizeof( htmp ) );
+    ORB_ASSERT( strbuf_ok( sh1 ) && str_equal( strbuf_str( sh1 ), STR( "abc" ) ) );
+
+    strbuf_t sh2 = strbuf_from_hex64( 0xDEADBEEFu, htmp, sizeof( htmp ) );
+    ORB_ASSERT( strbuf_ok( sh2 ) && str_equal( strbuf_str( sh2 ), STR( "deadbeef" ) ) );
 
     printf( "[PASS] strbuf format\n" );
 }
@@ -414,6 +477,11 @@ test_editing( void )
     strbuf_strip_trailing( &buf, '/' );
     ORB_ASSERT( str_equal( strbuf_str( buf ), STR( "path/to/dir" ) ) );
 
+    /* strbuf_set_cstr -- overwrite from a null-terminated C string. */
+    strbuf_set_cstr( &buf, "from_cstr" );
+    ORB_ASSERT( str_equal( strbuf_str( buf ), STR( "from_cstr" ) ) );
+    ORB_ASSERT( buf.ptr[ buf.len ] == '\0' );
+
     printf( "[PASS] editing\n" );
 }
 
@@ -489,6 +557,85 @@ test_composition( void )
     printf( "[PASS] composition\n" );
 }
 
+/*----------------------------------------------------------------------------------------------
+    SECTION 12: str_arena_t -- scope-lifetime string building
+
+    str_arena_t manages many temporary strings that all share a single flat buffer and
+    are freed together at scope exit. Marks + pops provide stack-like lifetime semantics
+    with no per-string tracking.
+
+    The key benefit over strbuf_t: three strings in one scope = one arena, not three
+    separate fixed buffers with three independent overflow checks.
+----------------------------------------------------------------------------------------------*/
+static void
+test_str_arena( void )
+{
+    /* Declare a self-contained stack-backed arena in one line. */
+    str_arena_decl( scratch, 512 );
+    ORB_ASSERT( str_arena_remaining( scratch ) == 512 );
+
+    /* Push a formatted string -- null-terminated, safe as char* directly. */
+    str_t a = str_arena_push_fmt( &scratch, "entity_%04d", 7 );
+    ORB_ASSERT( str_equal( a, STR( "entity_0007" ) ) );
+
+    /* Push a str_t view -- copies bytes into arena, no original pointer kept. */
+    str_t b = str_arena_push_str( &scratch, STR( "render_pass" ) );
+    ORB_ASSERT( str_equal( b, STR( "render_pass" ) ) );
+
+    /* Push from a null-terminated C string. */
+    str_t c = str_arena_push_cstr( &scratch, "hello" );
+    ORB_ASSERT( str_equal( c, STR( "hello" ) ) );
+
+    /* Multiple strings coexist -- arena cursor just advanced each time. */
+    ORB_ASSERT( a.ptr != b.ptr );
+    ORB_ASSERT( b.ptr != c.ptr );
+
+    /* Marks allow releasing a group of allocations at once. */
+    i32 mark = str_arena_mark( &scratch );
+    i32 used_before = scratch.pos;
+
+    str_t tmp1 = str_arena_push_fmt( &scratch, "tmp_%d", 1 );
+    str_t tmp2 = str_arena_push_fmt( &scratch, "tmp_%d", 2 );
+    ORB_ASSERT( str_equal( tmp1, STR( "tmp_1" ) ) );
+    ORB_ASSERT( str_equal( tmp2, STR( "tmp_2" ) ) );
+    ORB_ASSERT( scratch.pos > used_before );
+
+    str_arena_pop( &scratch, mark );         /* release tmp1 and tmp2 together */
+    ORB_ASSERT( scratch.pos == used_before );/* cursor back to where it was */
+
+    /* str_arena_clear resets the entire arena. */
+    str_arena_clear( &scratch );
+    ORB_ASSERT( scratch.pos == 0 );
+
+    /* strbuf integration: allocate a writable strbuf from the arena, build incrementally,
+       then trim the unused reservation so cursor sits just past the written content. */
+    strbuf_t ab = str_arena_strbuf( &scratch, 128 );
+    ORB_ASSERT( strbuf_ok( ab ) );
+    strbuf_appendf( &ab, "cmd: %s --n %d", "compile", 4 );
+    ORB_ASSERT( strbuf_ok( ab ) );
+    str_arena_trim_strbuf( &scratch, &ab );   /* release unused tail */
+    str_t result = strbuf_str( ab );
+    ORB_ASSERT( str_equal( result, STR( "cmd: compile --n 4" ) ) );
+
+    /* Out-of-space: push_fmt returns STR_EMPTY when the arena is full. */
+    str_arena_decl( tiny, 8 );
+    str_t fail = str_arena_push_fmt( &tiny, "this is definitely too long" );
+    ORB_ASSERT( str_is_empty( fail ) );
+    ORB_ASSERT( tiny.pos == 0 );  /* cursor not advanced on failure */
+
+    /* STR_ARENA() compound literal and str_arena_from_ptr_cap work symmetrically. */
+    char        storage[ 64 ] = { 0 };
+    str_arena_t lit = STR_ARENA( storage );
+    ORB_ASSERT( lit.cap == 64 );
+    str_t lit_s = str_arena_push_cstr( &lit, "arena_literal" );
+    ORB_ASSERT( str_equal( lit_s, STR( "arena_literal" ) ) );
+
+    str_arena_t dyn = str_arena_from_ptr_cap( storage, 64 );
+    ORB_ASSERT( dyn.cap == 64 );
+
+    printf( "[PASS] str_arena\n" );
+}
+
 /*==============================================================================================
     Entry Point
 ==============================================================================================*/
@@ -509,6 +656,7 @@ test_str_new( void )
     test_editing();
     test_cstr_interop();
     test_composition();
+    test_str_arena();
 
     printf( "=== all tests passed ===\n\n" );
 }
