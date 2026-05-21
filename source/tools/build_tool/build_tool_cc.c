@@ -92,6 +92,11 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
         cmd_append( &cmd, "%s/%s.generated.c ", gen_dir, target->reflect_name );
     }
 
+    // Spill to response file if the assembled command is too long for cmd.exe.
+    char rsp_path[ 256 ];
+    snprintf( rsp_path, sizeof( rsp_path ), "%s/cl.rsp", obj_dir );
+    cmd_spill_to_response_file( &cmd, rsp_path );
+
     // Write the captured header list to <obj_dir>/_deps.txt for the next
     // incremental check to read. Coarse-grained (one file per target) which
     // matches the unity-build pattern: any header change forces a target
@@ -119,6 +124,10 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     if ( target->type == TARGET_STATIC_LIB )
     {
         cmd_append( &cmd, "lib.exe /nologo /OUT:bin/%s.lib %s/*.obj", target->name, obj_dir );
+
+        char rsp_path[ 256 ];
+        snprintf( rsp_path, sizeof( rsp_path ), "%s/lib.rsp", obj_dir );
+        cmd_spill_to_response_file( &cmd, rsp_path );
     }
     else
     {
@@ -150,6 +159,10 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
         
         // System libraries.
         cmd_append( &cmd, "user32.lib shell32.lib gdi32.lib advapi32.lib " );
+
+        char rsp_path[ 256 ];
+        snprintf( rsp_path, sizeof( rsp_path ), "%s/link.rsp", obj_dir );
+        cmd_spill_to_response_file( &cmd, rsp_path );
     }
 
     return build_run_cmd( cmd.buf ) == 0;

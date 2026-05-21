@@ -29,8 +29,13 @@ typedef struct
 {
     char   buf[ CMD_BUF_MAX ];
     size_t size;
+    bool   truncated;   // Set by cmd_append() when an append could not fit.
 
 } cmd_buf_t;
+
+// Safe threshold below cmd.exe's 8191-char command line limit. Leaves room
+// for the vcvars prefix that build_run_cmd() prepends to compiler calls.
+#define CMD_RSP_THRESHOLD 7000
 
 // --- Configuration ---
 // ... (rest of the file remains same but I need to provide it all or a good chunk)
@@ -137,6 +142,12 @@ void build_setup_vc_env( void );
 
 // Appends a formatted string to a command buffer.
 void cmd_append( cmd_buf_t* b, const char* fmt, ... );
+
+// If the command buffer is near the shell limit (or already truncated),
+// spill everything after the first token (the tool exe name) to a response
+// file at rsp_path and rewrite the buffer to "<exe> @<rsp_path>". Returns
+// true if a response file was created.
+bool cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path );
 
 // Returns the last modification time of a file. Returns 0 if not found.
 __time64_t build_get_mtime( const char* path );
