@@ -19,6 +19,7 @@ static const char* g_out_name        = "sb_base_custom";
 static const char* g_build_proj_name = "orb_build";
 
 // Unity Includes
+#include "build_tool_targets.c"
 #include "build_tool_gen.c"
 
 /*============================================================================================*/
@@ -184,7 +185,7 @@ build_clean( void )
 /*============================================================================================*/
 
 bool
-build_target( build_context_t* ctx )
+build_target( build_context_t* ctx, target_info_t* target )
 {
     // Ensure directories exist
 #if defined( _WIN32 )
@@ -217,20 +218,25 @@ build_target( build_context_t* ctx )
         cmd_append( &cmd, "/O2 /MD /DNDEBUG " );
     }
 
-    // 4. Source Files (Simplified example: just compiling the base test)
-	
-	if (ctx->target == TARGET_HOST_SANDBOX) {
-		// cmd_append(&cmd, "source/base/*.c source/sandbox/sb_base.c ");
-	}
+    // 4. Source Files (Target Units)
+    for ( int i = 0; i < target->unit_count; ++i )
+    {
+        cmd_append( &cmd, "%s/%s ", target->root_dir, target->units[ i ] );
+    }
     
-    cmd_append( &cmd, "source/base/base_main.c " );
-	// cmd_append( &cmd, "source/base/base_main.c source/base/base_test.c " );
-	
-    // 5. Output	
-    cmd_append( &cmd, "/Fe:bin/%s.exe ", g_out_name );
-
-    // 6. Linker Flags
-    cmd_append( &cmd, "/link /DEBUG /PDB:bin/%s.pdb ", g_out_name );
+    // 5. Output
+    if ( target->type == TARGET_STATIC_LIB )
+    {
+        cmd_append( &cmd, "/c /Foobj/%s.obj ", target->name );
+        // NOTE: Static libraries require a separate link step (lib.exe)
+        // We'll just compile to obj for now or add lib.exe support.
+    }
+    else
+    {
+        cmd_append( &cmd, "/Fe:bin/%s.exe ", target->name );
+        // 6. Linker Flags
+        cmd_append( &cmd, "/link /DEBUG /PDB:bin/%s.pdb ", target->name );
+    }
 
     // Execute
     int result = build_run_cmd( cmd.buf );
@@ -248,10 +254,10 @@ main( int argc, char** argv )
     build_context_t ctx = { 0 };
 
     ctx.config          = CONFIG_DEBUG;
-    ctx.target          = TARGET_HOST_SANDBOX;
 
     bool should_clean   = false;
     bool should_gen     = false;
+    char* target_name   = NULL;
 
     // Simple arg parsing
     for ( int i = 1; i < argc; ++i )
@@ -260,6 +266,7 @@ main( int argc, char** argv )
         if (  strcmp(  argv[ i ], "-gen" ) == 0 || strcmp( argv[ i ], "gen" ) == 0 ) should_gen = true;
         if ( _stricmp( argv[ i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         if (  strcmp(  argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
+        if (  strcmp(  argv[ i ], "-target" ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
     }
 
     if ( should_clean )
@@ -280,12 +287,46 @@ main( int argc, char** argv )
 
     printf( "Config: %s\n", ctx.config == CONFIG_DEBUG ? "Debug" : "Release" );
     printf( "Compiler: %s\n", ctx.is_clang ? "Clang" : "MSVC" );
-    printf( "\n\n" );
+    printf( "\n" );
 
-    if ( !build_target( &ctx ) )
+    if ( target_name )
     {
-        printf( "\nFAILED!\n" );
-        return 1;
+        target_info_t* target = NULL;
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( _stricmp( g_targets[ i ].name, target_name ) == 0 )
+            {
+                target = &g_targets[ i ];
+                break;
+            }
+        }
+
+        if ( target )
+        {
+            if ( !build_target( &ctx, target ) )
+            {
+                printf( "\nFAILED!\n" );
+                return 1;
+            }
+        }
+        else
+        {
+            printf( "Error: Unknown target '%s'\n", target_name );
+            return 1;
+        }
+    }
+    else
+    {
+        // Build all targets if none specified
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            printf( "Building target: %s\n", g_targets[ i ].name );
+            if ( !build_target( &ctx, &g_targets[ i ] ) )
+            {
+                printf( "\nFAILED on target '%s'!\n", g_targets[ i ].name );
+                return 1;
+            }
+        }
     }
 
     printf( "\nSUCCESS!\n" );

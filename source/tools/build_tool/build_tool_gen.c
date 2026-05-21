@@ -3,10 +3,9 @@
     build_tool_gen.c -- Generation of Visual Studio project files.
 
 ==============================================================================================*/
-// clang-format off
 
-#define MAX_FILES 512
-#define MAX_FILTERS 256
+#define MAX_FILES 1024
+#define MAX_FILTERS 512
 
 typedef struct
 {
@@ -20,6 +19,10 @@ static int         g_file_count = 0;
 
 static char g_filters[ MAX_FILTERS ][ 256 ];
 static int  g_filter_count = 0;
+
+// GUIDs for static projects
+static const char* g_guid_engine = "{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}";
+static const char* g_guid_build  = "{DE231EAC-9C33-B4FA-8440-E3A81E12CA87}";
 
 static void
 add_filter( const char* filter )
@@ -74,7 +77,7 @@ get_filter_for_path( const char* path, char* out_filter )
 }
 
 static void
-scan_directory( const char* dir )
+scan_directory_recursive( const char* dir )
 {
     char search_path[ 512 ];
     sprintf( search_path, "%s/*", dir );
@@ -93,7 +96,7 @@ scan_directory( const char* dir )
 
         if ( find_data.attrib & _A_SUBDIR )
         {
-            scan_directory( path );
+            scan_directory_recursive( path );
         }
         else
         {
@@ -120,152 +123,152 @@ scan_directory( const char* dir )
 }
 
 static void
-write_vcxproj_file_group( FILE* f, const char* tag, bool headers )
+write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, bool is_lib )
 {
-    fprintf( f, "  <ItemGroup>\n" );
-    for ( int i = 0; i < g_file_count; ++i )
-    {
-        if ( g_files[ i ].is_header == headers )
-        {
-            fprintf( f, "    <%s Include=\"%s\" />\n", tag, g_files[ i ].path );
-        }
-    }
+    fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
+    fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+    fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
+    fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
+    fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
     fprintf( f, "  </ItemGroup>\n" );
+    fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
+    fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", guid );
+    fprintf( f, "  </PropertyGroup>\n" );
+    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
+    fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
+    fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
+    fprintf( f, "    <PlatformToolset>v143</PlatformToolset>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
+    fprintf( f, "  <PropertyGroup>\n" );
+    fprintf( f, "    <NMakeBuildCommandLine>bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
+    fprintf( f, "    <NMakeOutput>bin\\%s%s</NMakeOutput>\n", out_name, is_lib ? ".lib" : ".exe" );
+    fprintf( f, "    <NMakeCleanCommandLine>bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
+    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
 }
 
 static void
-write_filters_file_group( FILE* f, const char* tag, bool headers )
-{
-    fprintf( f, "  <ItemGroup>\n" );
-    for ( int i = 0; i < g_file_count; ++i )
-    {
-        if ( g_files[ i ].is_header == headers )
-        {
-            fprintf( f, "    <%s Include=\"%s\">\n", tag, g_files[ i ].path );
-            if ( g_files[ i ].filter[ 0 ] != '\0' )
-            {
-                fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
-            }
-            fprintf( f, "    </%s>\n", tag );
-        }
-    }
-    fprintf( f, "  </ItemGroup>\n" );
-}
-
-static void
-build_gen_proj_build_tool( void )
+build_gen_proj_target( target_info_t* target, int index )
 {
     char vcxproj_path[ 256 ];
-    sprintf( vcxproj_path, "%s.vcxproj", g_build_proj_name );
+    sprintf( vcxproj_path, "%s.vcxproj", target->name );
 
-    const char* build_tool_compile[] = {
-        "source/tools/build_tool/build_tool.c",
-    };
-    const char* build_tool_header[]  = {
-        "source/tools/build_tool/build_tool.h",
-        "source/tools/build_tool/build_tool_gen.c",
-    };
-    size_t build_tool_compile_count = sizeof( build_tool_compile ) / sizeof( build_tool_compile[ 0 ] );
-    size_t build_tool_header_count  = sizeof( build_tool_header ) / sizeof( build_tool_header[ 0 ] );
+    char guid[ 64 ];
+    sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + index );
 
     FILE* f = fopen( vcxproj_path, "w" );
-    if ( f )
+    if ( !f ) return;
+
+    write_vcxproj_common_header( f, guid, target->name, target->type == TARGET_STATIC_LIB );
+
+    // 1. Scan target directory for files
+    // For simplicity, we'll just scan the immediate root_dir for now.
+    // If the target spans multiple folders, it would need a more complex scan.
+    
+    char search_path[ 512 ];
+    sprintf( search_path, "%s/*", target->root_dir );
+
+    struct _finddata_t find_data;
+    intptr_t           handle = _findfirst( search_path, &find_data );
+
+    if ( handle != -1 )
     {
-        fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
-        fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-        fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
-        fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
-        fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
+        fprintf( f, "  <ItemGroup>\n" );
+        do
+        {
+            if ( find_data.attrib & _A_SUBDIR ) continue;
+
+            const char* ext = strrchr( find_data.name, '.' );
+            if ( !ext ) continue;
+
+            bool is_c = _stricmp( ext, ".c" ) == 0;
+            bool is_h = _stricmp( ext, ".h" ) == 0;
+
+            if ( is_c || is_h )
+            {
+                bool is_unit = false;
+                for ( int i = 0; i < target->unit_count; ++i )
+                {
+                    if ( _stricmp( find_data.name, target->units[ i ] ) == 0 )
+                    {
+                        is_unit = true;
+                        break;
+                    }
+                }
+
+                if ( !is_unit )
+                {
+                    fprintf( f, "    <ClInclude Include=\"%s/%s\" />\n", target->root_dir, find_data.name );
+                }
+            }
+        }
+        while ( _findnext( handle, &find_data ) == 0 );
+        _findclose( handle );
         fprintf( f, "  </ItemGroup>\n" );
-        fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
-        fprintf( f, "    <ProjectGuid>{DE231EAC-9C33-B4FA-8440-E3A81E12CA87}</ProjectGuid>\n" );
-        fprintf( f, "  </PropertyGroup>\n" );
-        fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
-        fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
-        fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
-        fprintf( f, "    <PlatformToolset>v143</PlatformToolset>\n" );
-        fprintf( f, "  </PropertyGroup>\n" );
-        fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
-        fprintf( f, "  <PropertyGroup>\n" );
-        fprintf( f, "    <NMakeBuildCommandLine>cl.exe /nologo /W4 /Zi source/tools/build_tool/build_tool.c /I source /Foobj/ /Fdobj/ /Fe:bin/build_tool.exe</NMakeBuildCommandLine>\n" );
-        fprintf( f, "    <NMakeOutput>bin\\build_tool.exe</NMakeOutput>\n" );
-        fprintf( f, "    <NMakeCleanCommandLine>bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
-        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
-        fprintf( f, "  </PropertyGroup>\n" );
 
         fprintf( f, "  <ItemGroup>\n" );
-        for ( size_t i = 0; i < build_tool_header_count; ++i ) fprintf( f, "    <ClInclude Include=\"%s\" />\n", build_tool_header[ i ] );
+        for ( int i = 0; i < target->unit_count; ++i )
+        {
+            fprintf( f, "    <ClCompile Include=\"%s/%s\" />\n", target->root_dir, target->units[ i ] );
+        }
         fprintf( f, "  </ItemGroup>\n" );
-
-        fprintf( f, "  <ItemGroup>\n" );
-        for ( size_t i = 0; i < build_tool_compile_count; ++i ) fprintf( f, "    <ClCompile Include=\"%s\" />\n", build_tool_compile[ i ] );
-        fprintf( f, "  </ItemGroup>\n" );
-
-        fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
-        fprintf( f, "</Project>\n" );
-        fclose( f );
     }
 
-    char sln_path[ 256 ];
-    sprintf( sln_path, "%s.sln", g_build_proj_name );
-    f = fopen( sln_path, "w" );
-    if ( f )
-    {
-        fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
-        fprintf( f, "# Visual Studio Version 17\n" );
-        fprintf( f, "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"%s\", \"%s.vcxproj\", \"{DE231EAC-9C33-B4FA-8440-E3A81E12CA87}\"\n", g_build_proj_name, g_build_proj_name );
-        fprintf( f, "EndProject\n" );
-        fprintf( f, "Global\n\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n\t\tDebug|x64 = Debug|x64\n\t\tRelease|x64 = Release|x64\n\tEndGlobalSection\nEndGlobal\n" );
-        fclose( f );
-    }
+    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
+    fprintf( f, "</Project>\n" );
+    fclose( f );
 }
 
 static void
-build_gen_proj_engine( void )
+build_gen_proj_engine_navigation( void )
 {
     g_file_count   = 0;
     g_filter_count = 0;
-    scan_directory( "source" );
+    scan_directory_recursive( "source" );
 
-    // --- 1. Project File (.vcxproj) ---
     char vcxproj_path[ 256 ];
     sprintf( vcxproj_path, "%s.vcxproj", g_proj_name );
     FILE* f = fopen( vcxproj_path, "w" );
-    if ( f )
+    if ( !f ) return;
+
+    fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
+    fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+    fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
+    fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
+    fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
+    fprintf( f, "  </ItemGroup>\n" );
+    fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
+    fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", g_guid_engine );
+    fprintf( f, "  </PropertyGroup>\n" );
+    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
+    fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
+    fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
+    fprintf( f, "    <PlatformToolset>v143</PlatformToolset>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
+    fprintf( f, "  <PropertyGroup>\n" );
+    fprintf( f, "    <NMakeBuildCommandLine>bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
+    fprintf( f, "    <NMakeOutput>bin\\%s.exe</NMakeOutput>\n", g_out_name );
+    fprintf( f, "    <NMakeCleanCommandLine>bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
+    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+
+    fprintf( f, "  <ItemGroup>\n" );
+    for ( int i = 0; i < g_file_count; ++i )
     {
-        fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
-        fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-        fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
-        fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
-        fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
-        fprintf( f, "  </ItemGroup>\n" );
-        fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
-        fprintf( f, "    <ProjectGuid>{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}</ProjectGuid>\n" );
-        fprintf( f, "  </PropertyGroup>\n" );
-        fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
-        fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
-        fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
-        fprintf( f, "    <PlatformToolset>v143</PlatformToolset>\n" );
-        fprintf( f, "  </PropertyGroup>\n" );
-        fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
-        fprintf( f, "  <PropertyGroup>\n" );
-        fprintf( f, "    <NMakeBuildCommandLine>bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
-        fprintf( f, "    <NMakeOutput>bin\\%s.exe</NMakeOutput>\n", g_out_name );
-        fprintf( f, "    <NMakeCleanCommandLine>bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
-        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
-        fprintf( f, "  </PropertyGroup>\n" );
-
-        write_vcxproj_file_group( f, "ClInclude", true );
-        write_vcxproj_file_group( f, "ClCompile", false );
-
-        fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
-        fprintf( f, "</Project>\n" );
-        fclose( f );
+        const char* tag = g_files[ i ].is_header ? "ClInclude" : "ClCompile";
+        fprintf( f, "    <%s Include=\"%s\" />\n", tag, g_files[ i ].path );
     }
+    fprintf( f, "  </ItemGroup>\n" );
 
-    // --- 2. Filters File (.vcxproj.filters) ---
+    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
+    fprintf( f, "</Project>\n" );
+    fclose( f );
+
+    // Filters file
     char filters_path[ 256 ];
     sprintf( filters_path, "%s.vcxproj.filters", g_proj_name );
     f = fopen( filters_path, "w" );
@@ -273,7 +276,6 @@ build_gen_proj_engine( void )
     {
         fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
         fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_filter_count; ++i )
         {
@@ -282,25 +284,16 @@ build_gen_proj_engine( void )
             fprintf( f, "    </Filter>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
-
-        write_filters_file_group( f, "ClInclude", true );
-        write_filters_file_group( f, "ClCompile", false );
-
+        fprintf( f, "  <ItemGroup>\n" );
+        for ( int i = 0; i < g_file_count; ++i )
+        {
+            const char* tag = g_files[ i ].is_header ? "ClInclude" : "ClCompile";
+            fprintf( f, "    <%s Include=\"%s\">\n", tag, g_files[ i ].path );
+            if ( g_files[ i ].filter[ 0 ] != '\0' ) fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
+            fprintf( f, "    </%s>\n", tag );
+        }
+        fprintf( f, "  </ItemGroup>\n" );
         fprintf( f, "</Project>\n" );
-        fclose( f );
-    }
-
-    // --- 3. Solution File (.sln) ---
-    char sln_path[ 256 ];
-    sprintf( sln_path, "%s.sln", g_proj_name );
-    f = fopen( sln_path, "w" );
-    if ( f )
-    {
-        fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
-        fprintf( f, "# Visual Studio Version 17\n" );
-        fprintf( f, "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"%s\", \"%s.vcxproj\", \"{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}\"\n", g_proj_name, g_proj_name );
-        fprintf( f, "EndProject\n" );
-        fprintf( f, "Global\n\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n\t\tDebug|x64 = Debug|x64\n\t\tRelease|x64 = Release|x64\n\tEndGlobalSection\nEndGlobal\n" );
         fclose( f );
     }
 }
@@ -310,11 +303,57 @@ build_gen_projects( void )
 {
     printf( "Generating Visual Studio projects...\n" );
 
-    build_gen_proj_build_tool();
-    build_gen_proj_engine();
+    // 1. Generate Target Projects
+    for ( int i = 0; i < g_target_count; ++i )
+    {
+        build_gen_proj_target( &g_targets[ i ], i );
+    }
+
+    // 2. Generate Navigation Project
+    build_gen_proj_engine_navigation();
+
+    // 3. Generate Master Solution
+    char sln_path[ 256 ];
+    sprintf( sln_path, "%s.sln", g_proj_name );
+    FILE* f = fopen( sln_path, "w" );
+    if ( f )
+    {
+        fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
+        fprintf( f, "# Visual Studio Version 17\n" );
+
+        // Write Engine Project
+        fprintf( f, "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", g_proj_name, g_proj_name, g_guid_engine );
+        fprintf( f, "EndProject\n" );
+
+        // Write Target Projects
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            char guid[ 64 ];
+            sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
+            fprintf( f, "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", g_targets[ i ].name, g_targets[ i ].name, guid );
+            fprintf( f, "EndProject\n" );
+        }
+
+        fprintf( f, "Global\n" );
+        
+        // Configuration Mapping
+        fprintf( f, "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n" );
+        fprintf( f, "\t\tDebug|x64 = Debug|x64\n" );
+        fprintf( f, "\t\tRelease|x64 = Release|x64\n" );
+        fprintf( f, "\tEndGlobalSection\n" );
+
+        // Solution Folders (Nesting)
+        fprintf( f, "\tGlobalSection(NestedProjects) = preSolution\n" );
+        // We'll need another set of GUIDs for the folders themselves.
+        // For now, let's keep it simple and just list projects.
+        // Folders require explicit "Project" entries of a special type.
+        fprintf( f, "\tEndGlobalSection\n" );
+
+        fprintf( f, "EndGlobal\n" );
+        fclose( f );
+    }
 
     printf( "Projects generated successfully.\n" );
 }
 
-// clang-format on
 /*============================================================================================*/

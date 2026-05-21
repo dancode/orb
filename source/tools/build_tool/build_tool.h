@@ -18,18 +18,30 @@ typedef enum
 
 typedef enum
 {
-    TARGET_HOST_GAME,
-    TARGET_HOST_EDITOR,
-    TARGET_HOST_SANDBOX,
-    TARGET_HOST_TOOL,
-    TARGET_COUNT
+    TARGET_STATIC_LIB,
+    TARGET_DYNAMIC_LIB,
+    TARGET_EXECUTABLE
 
-} target_t;
+} target_type_t;
+
+typedef struct
+{
+    const char*   name;
+    target_type_t type;
+    const char*   root_dir;
+    const char*   sln_folder;
+    const char*   units[ 16 ];
+    int           unit_count;
+
+} target_info_t;
+
+// --- Target Registry ---
+extern target_info_t g_targets[];
+extern int           g_target_count;
 
 typedef struct
 {
     config_t config;
-    target_t target;
     bool     is_monolithic;
     bool     is_clang;
 
@@ -41,7 +53,7 @@ typedef struct
 int build_run_cmd( const char* cmd );
 
 // Build a specific target using the given context.
-bool build_target( build_context_t* ctx );
+bool build_target( build_context_t* ctx, target_info_t* target );
 
 // Clean build artifacts.
 void build_clean( void );
