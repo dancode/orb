@@ -2,14 +2,26 @@
 
     build_tool.c -- The "Boss" build orchestrator.
 
-    This tool is the heart of ORB's custom build system. It replaces complex Makefiles
-    or CMake scripts with a simple, high-performance C program that directly invokes
-    the compiler (cl.exe) and linker (link.exe).
+    This tool is the heart of ORB's custom build system. It replaces Makefiles /
+    CMake / MSBuild with a small C program that directly invokes the compiler
+    (cl.exe), linker (link.exe), and archiver (lib.exe), and that also generates
+    .sln/.vcxproj files so Visual Studio can attach a debugger and provide
+    IntelliSense without taking over the build itself.
 
-    Architecture Note:
-    This tool is designed to be a "Unity Build" — all supporting files (.c) are 
-    directly included here. This makes bootstrapping the build tool itself 
-    instantaneous (see bootstrap_build_tool.bat).
+    Unity build layout:
+        This file #includes every other .c in the directory in dependency order.
+        The whole tool compiles in one cl.exe invocation. That keeps the
+        bootstrap script (bootstrap_build_tool.bat) to a single command line
+        and lets later files use static helpers declared in earlier files
+        without having to expose them in the header.
+
+    Module roles (in the include order below):
+        build_tool_utils.c   -- cmd_buf, mtime, per-target named-mutex lock.
+        build_tool_vcvars.c  -- VS env discovery + CreateProcess child spawn.
+        build_tool_cc.c      -- cl.exe / link.exe / lib.exe command emission.
+        build_tool_targets.c -- The actual g_targets[] / g_solutions[] data.
+        build_tool_gen.c     -- .sln / .vcxproj / .filters generation.
+        build_tool_sched.c   -- Topological worker-pool parallel scheduler.
 
 ==============================================================================================*/
 // clang-format off
@@ -29,12 +41,18 @@
 #include <time.h>
 
 // --- Project Constants ---
-
+//
+// All build outputs land under <g_build_dir>/. The .sln/.vcxproj files also
+// live here (see build_tool_gen.c) so VS treats the directory as the
+// project root for its IntelliSense and intermediate caches.
 static const char* g_build_dir       = "build_new";      // Root for intermediate/generated files.
-static const char* g_int_dir         = "obj";            // Folder for .obj files.
-static const char* g_gen_dir         = "generated";      // Folder for reflection-generated code.
+static const char* g_int_dir         = "obj";            // Sub-folder for .obj files (per-target).
+static const char* g_gen_dir         = "generated";      // Sub-folder for reflection-generated .c/.h.
 
 // --- Unity Includes ---
+//
+// Order matters: each file may reference statics defined in earlier files.
+// utils -> vcvars -> cc -> targets (pure data) -> gen -> sched.
 #include "build_tool_utils.c"
 #include "build_tool_vcvars.c"
 #include "build_tool_cc.c"
@@ -47,25 +65,38 @@ static const char* g_gen_dir         = "generated";      // Folder for reflectio
 
 /**
  * build_clean()
- * 
- * Wipes the bin/ and obj/ directories. 
+ *
+ * Wipes intermediate (.obj), generated (reflection), and final artifact
+ * (.lib/.dll/.exe/.pdb) outputs so the next build starts cold.
+ *
+ * The exe sweep deliberately skips build_tool.exe itself: deleting a
+ * running image on Windows fails with sharing-violation, which would
+ * cascade into a confusing exit code. Keeping our own binary in place is
+ * harmless — it'll be overwritten on its own next rebuild (via the
+ * .exe -> .exe.old rename trick handled in build_target step 4).
  */
 void
 build_clean( void )
 {
     printf( "Cleaning build artifacts...\n" );
 #if defined( _WIN32 )
+    // Wipe per-target obj and generated trees. del /s recurses; /q suppresses
+    // the "Are you sure?" prompt; stdout+stderr go to nul so a missing
+    // directory doesn't dump a noisy error to the build log.
     char cmd[ BT_PATH_MAX ];
     snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
     build_run_cmd( cmd );
     snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
     build_run_cmd( cmd );
 
+    // Final artifacts in bin/. PDBs deleted first so the linker can't be
+    // tempted to do an incremental link off a stale one.
     build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
 
-    // Surgical delete: remove all EXEs EXCEPT ourselves.
+    // Surgical delete: remove all EXEs EXCEPT ourselves. Deleting the
+    // currently-running build_tool.exe would fail with sharing-violation.
     build_run_cmd( "for %f in (bin\\*.exe) do if not \"%~nxf\"==\"build_tool.exe\" del \"%f\" >nul 2>nul" );
 #else
     char cmd[ BT_PATH_MAX ];
@@ -84,23 +115,41 @@ build_clean( void )
 
 /**
  * build_target()
- * 
- * The main worker function for building a single artifact.
+ *
+ * The main worker function. Builds one target, optionally recursing into
+ * its dependencies first. Idempotent: a fully up-to-date target returns
+ * true without invoking any compiler. Phases run in this order:
+ *
+ *   0. Dependency resolution (skipped if ctx->skip_deps)
+ *   1. Path preparation (obj_dir, out_path, etc.)
+ *   2. Up-to-date check (artifact mtime vs unit / dep-lib / header mtimes)
+ *   3. Output directory creation
+ *   4. Locked-file management (.exe -> .exe.old rename trick)
+ *   5. Reflection codegen (only if target->has_reflect)
+ *   6. Compile + link
+ *
+ * Concurrency: from step 1 onward a per-target named mutex is held, so
+ * two build_tool.exe invocations (or two scheduler workers — see
+ * build_tool_sched.c) targeting the same name will serialize here.
+ * Independent targets run fully in parallel because their mutex names differ.
  */
 bool
 build_target( build_context_t* ctx, target_info_t* target )
 {
     // --- 0. Dependency Resolution ---
     //
-    // Skipped when -no-deps is set. The VS solution generator emits that flag
-    // because MSBuild's own scheduler honors ProjectDependencies and will
-    // launch dep projects before dependent ones — letting the orchestrator
-    // also recurse would mean every dep gets walked once per dependent and
-    // multiple build_tool.exe processes would race on shared outputs.
+    // Recurse into link deps and tool deps before building this target.
+    // Skipped entirely when -no-deps is set:
+    //  - VS solution builds (-no-deps from the .vcxproj) let MSBuild's
+    //    scheduler honor ProjectDependencies and queue dep projects first.
+    //  - The CLI parallel scheduler (build_run_parallel) sets skip_deps=true
+    //    on each worker call because the scheduler itself is the dep authority.
+    // Recursing in either context would mean every dep gets walked once per
+    // dependent, and multiple processes/threads would race shared outputs.
 
     if ( !ctx->skip_deps )
     {
-        // Link Dependencies (libs)
+        // Link Dependencies — other targets whose .lib must be linked in.
         for ( int i = 0; i < target->dep_count; ++i )
         {
             target_info_t* dep = NULL;
@@ -111,7 +160,8 @@ build_target( build_context_t* ctx, target_info_t* target )
             if ( dep && !build_target( ctx, dep ) ) return false;
         }
 
-        // Tool Dependencies (exes)
+        // Tool Dependencies — exes the build needs to RUN (e.g. build_reflect),
+        // not link against. Same recursion, no linker side-effect.
         for ( int i = 0; i < target->tool_dep_count; ++i )
         {
             target_info_t* tool = NULL;
@@ -147,10 +197,17 @@ build_target( build_context_t* ctx, target_info_t* target )
     snprintf( out_path, sizeof( out_path ), "bin\\%s%s", target->name, ext );
 
     // --- 2. Up-to-Date Check ---
+    //
+    // Three independent freshness tests, each guarded by the running
+    // `up_to_date` flag so we short-circuit out of expensive walks. A miss
+    // on ANY test forces a full rebuild; we don't try to be clever about
+    // partial recompilation because unity builds make per-file rebuilds
+    // meaningless anyway (one TU touches everything).
 
     __time64_t out_mtime = build_get_mtime( out_path );
-    bool up_to_date = ( out_mtime != 0 );
+    bool up_to_date = ( out_mtime != 0 );  // No artifact = first build = rebuild.
 
+    // Test A: any explicit translation unit newer than the artifact?
     if ( up_to_date )
     {
         for ( int i = 0; i < target->unit_count; ++i )
@@ -161,6 +218,8 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
     }
 
+    // Test B: any linked dep .lib newer than the artifact? Catches the case
+    // where a sibling target rebuilt and we need to re-link against it.
     if ( up_to_date )
     {
         for ( int i = 0; i < target->dep_count; ++i )
@@ -171,10 +230,15 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
     }
 
-    // Header dependency check. _deps.txt is written by /showIncludes during
-    // the previous compile (see build_target_compile). If it does not exist,
-    // we have no header info → force a rebuild. If any listed header is newer
-    // than the artifact, rebuild.
+    // Test C: header dependency check. The previous successful compile
+    // wrote every #included header path into <obj_dir>/_deps.txt (parsed out
+    // of cl.exe's /showIncludes output — see build_target_compile and
+    // build_run_cmd_capture_deps). On this pass we replay that list and
+    // rebuild if any listed header is newer than the artifact.
+    //
+    // No _deps.txt = no recorded header set = we have to assume the worst
+    // and rebuild. This is correct on the very first build and after a
+    // clean; it auto-recovers on the next pass.
     if ( up_to_date )
     {
         char deps_path[ BT_PATH_MAX ];
@@ -189,6 +253,8 @@ build_target( build_context_t* ctx, target_info_t* target )
             char header_path[ BT_PATH_MAX ];
             while ( fgets( header_path, sizeof( header_path ), deps ) )
             {
+                // Strip trailing CR/LF from fgets so the path round-trips
+                // through build_get_mtime cleanly.
                 size_t l = strlen( header_path );
                 while ( l > 0 && ( header_path[ l - 1 ] == '\n' || header_path[ l - 1 ] == '\r' ) )
                     header_path[ --l ] = '\0';
@@ -204,11 +270,18 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
     }
 
+    // All three tests passed → skip compile + link entirely. We still ran
+    // through the lock-and-prepare phase so concurrent callers got serialized
+    // and observed the artifact as fully written.
     if ( up_to_date ) { result = true; goto cleanup; }
 
     printf( "Building target: %s\n", target->name );
 
     // --- 3. Directory Creation ---
+    //
+    // Make sure every directory we're about to write into exists. _access()
+    // probes are cheap and let us skip the mkdir spawn when the dir is
+    // already present (the common case after the first build).
 
 #if defined( _WIN32 )
     if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
@@ -226,6 +299,13 @@ build_target( build_context_t* ctx, target_info_t* target )
 #endif
 
     // --- 4. Locked File Management ---
+    //
+    // Windows refuses to overwrite a running .exe (sharing violation), but
+    // it WILL let you rename one. So if we're about to relink an EXE that
+    // might be in use (e.g. a sandbox the user just ran from VS), shove
+    // the old image aside to <name>.exe.old first. If the subsequent compile
+    // or link fails we restore it; if everything succeeds the .old file is
+    // overwritten on the next build cycle.
 
     char exe_path[ BT_PATH_MAX ];
     char old_path[ BT_PATH_MAX ];
@@ -245,6 +325,11 @@ build_target( build_context_t* ctx, target_info_t* target )
     // build_tool_cc.c for the garbage-collection of unlocked leftovers.
 
     // --- 5. Reflection ---
+    //
+    // Generate the rs_-system codegen for targets that opt in via
+    // has_reflect=true. build_reflect.exe scans root_dir for annotated
+    // types and writes <gen_dir>/<reflect_name>.generated.{c,h}; the
+    // generated .c is then appended to the compile step's input list.
 
     if ( target->has_reflect )
     {
@@ -253,13 +338,19 @@ build_target( build_context_t* ctx, target_info_t* target )
         snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\build_reflect.exe %s %s %s", target->root_dir, gen_dir, target->reflect_name );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
-            if ( renamed ) rename( old_path, exe_path );
+            if ( renamed ) rename( old_path, exe_path );  // restore live exe
             result = false;
             goto cleanup;
         }
     }
 
     // --- 6. Compile & Link ---
+    //
+    // Two phases. Compile emits .obj files into obj_dir and records the
+    // header dependency set into _deps.txt. Link/archive ties the .obj
+    // files into the final .lib/.dll/.exe artifact. Either failing
+    // restores the renamed-aside .exe.old so the user is not left with a
+    // gap where the binary used to be.
 
     if ( !build_target_compile( ctx, target, obj_dir, gen_dir ) )
     {
@@ -276,12 +367,26 @@ build_target( build_context_t* ctx, target_info_t* target )
     }
 
 cleanup:
+    // Always release the per-target mutex on the way out, regardless of
+    // success/failure/short-circuit, so concurrent callers can proceed.
     build_unlock_target( target_lock );
     return result;
 }
 
 /*============================================================================================*/
 // --- Main Entry ---
+//
+// Recognized arguments:
+//   -clean / clean          Wipe build outputs and exit.
+//   -gen   / gen            Regenerate .sln/.vcxproj and exit.
+//   -target <name>          Restrict the build to one target's closure.
+//   -no-deps                Build only the target itself, no dep recursion
+//                           (set by VS .vcxproj files; do not use on the CLI
+//                           unless you know exactly what you're doing).
+//   -config <Debug|Release> Pick build config (default Debug).
+//   release                 Shortcut for -config Release.
+//   clang                   Use clang-cl instead of cl.exe.
+//   -j N                    Worker thread count; 0/unset = auto-detect.
 
 int
 main( int argc, char** argv )
@@ -294,6 +399,10 @@ main( int argc, char** argv )
     char* target_name  = NULL;
     int   j_threads    = 0;   // 0 → auto-detect from CPU count.
 
+    // --- Arg parsing ---
+    // Order-independent; the loop just sets flags. Unknown args are silently
+    // ignored (intentional — keeps backward compat with VS External Tools
+    // call sites that might pass legacy positional args).
     for ( int i = 1; i < argc; ++i )
     {
         if ( strcmp( argv[ i ], "-clean" ) == 0 || strcmp( argv[ i ], "clean" ) == 0 ) should_clean = true;
@@ -309,7 +418,11 @@ main( int argc, char** argv )
         }
     }
 
-    // Auto-pick worker count = logical processor count, capped sensibly.
+    // --- Worker count ---
+    // Auto-pick = logical processor count, clamped to [1, 16]. The upper
+    // cap matches diminishing returns once we exceed the dep graph's
+    // critical-path width; more threads past that just trade memory for
+    // wall time wins that don't materialize.
     if ( j_threads <= 0 )
     {
         SYSTEM_INFO si;
@@ -319,10 +432,16 @@ main( int argc, char** argv )
         if ( j_threads > 16 ) j_threads = 16;
     }
 
+    // --- Standalone subcommands ---
+    // clean and gen are bookkeeping passes — no need to set up the toolchain
+    // env. Returning early skips the vcvars import below.
     if ( should_clean ) { build_clean(); return 0; }
     if ( should_gen ) { build_gen_projects(); return 0; }
 
     printf( "--- ORB Build Starting ---\n\n" );
+
+    // Make cl.exe / link.exe / lib.exe callable. Idempotent fast-path when
+    // we're already inside a Developer Command Prompt (or VS-launched shell).
     build_setup_vc_env();
 
     printf( "Config: %s\n", ctx.config == CONFIG_DEBUG ? "Debug" : "Release" );

@@ -30,40 +30,63 @@
 ==============================================================================================*/
 #include <process.h>
 
-#define MAX_JOBS     64
-#define MAX_THREADS  32
-#define MAX_REV_DEPS 32
-#define MAX_LOCAL_DEPS 32
+// Fixed upper bounds. Picked generously vs. the project's actual scale so
+// we never have to grow these dynamically. Hitting either MAX_JOBS or
+// MAX_REV_DEPS is a hard error — preferable to silently dropping deps.
+#define MAX_JOBS       64   // Distinct targets in any single closure.
+#define MAX_THREADS    32   // Worker thread cap (build_run_parallel further clamps to logical CPUs).
+#define MAX_REV_DEPS   32   // Dependents per target. Inverse fan-out limit.
+#define MAX_LOCAL_DEPS 32   // Deps per target captured during add_job recursion.
 
+// Per-target scheduling state. Created once during add_job() and consulted
+// by workers and the scheduler's bookkeeping passes.
 typedef struct
 {
-    target_info_t* target;
-    int            remaining_deps;
+    target_info_t* target;          // The thing to build.
+    int            remaining_deps;  // Unfinished deps; reaches 0 → ready to run.
     int            rev_dep_count;
-    int            rev_deps[ MAX_REV_DEPS ];
-    char           log_path[ BT_PATH_MAX ];
+    int            rev_deps[ MAX_REV_DEPS ];   // Indices of jobs that depend on us.
+    char           log_path[ BT_PATH_MAX ];    // Per-target build log (cl/link output).
     bool           done;
     bool           failed;
 
 } sched_job_t;
 
+// The single global scheduler state. Workers serialize their bookkeeping
+// updates on `lock` and sleep on `cv` while waiting for new ready work.
 typedef struct
 {
     sched_job_t        jobs[ MAX_JOBS ];
     int                job_count;
+
+    // Ready stack: indices into jobs[] for targets whose deps have all
+    // finished. LIFO is fine since no caller cares about within-wave order.
     int                ready[ MAX_JOBS ];
     int                ready_count;
-    int                in_flight;
-    int                total_remaining;
-    bool               any_failed;
-    CRITICAL_SECTION   lock;
-    CONDITION_VARIABLE cv;
-    build_context_t*   ctx;
+
+    int                in_flight;        // Workers currently inside build_target().
+    int                total_remaining;  // Jobs not yet completed.
+    bool               any_failed;       // Sticky: one failure stops new dispatches.
+
+    CRITICAL_SECTION   lock;             // Guards every field below `jobs[]`.
+    CONDITION_VARIABLE cv;               // Signaled on state changes (new ready or done).
+
+    build_context_t*   ctx;              // Shared base context; workers clone with skip_deps=true.
 
 } sched_t;
 
+// Singleton scheduler instance. Reset by memset at the start of every
+// build_run_parallel() call; only one parallel build runs at a time.
 static sched_t           g_sched;
+
+// TLS slot holding the active worker's log_path pointer. Read by the vcvars
+// module (via sched_log_path()) to redirect child stdio. TLS_OUT_OF_INDEXES
+// sentinels "scheduler not initialized yet" — sched_log_path() returns NULL
+// in that case, which is exactly the "no redirection" path.
 static DWORD             g_sched_log_tls    = TLS_OUT_OF_INDEXES;
+
+// Print lock for atomic per-target log dumps. Initialized lazily on first
+// build_run_parallel() call so the serial path doesn't pay for it.
 static CRITICAL_SECTION  g_print_lock;
 static bool              g_print_lock_inited = false;
 
@@ -88,6 +111,14 @@ sched_log_path( void )
 /*============================================================================================*/
 // --- Job graph construction ---
 
+/**
+ * find_job()
+ *
+ * Linear search g_sched.jobs[] for an existing job with this target name.
+ * Returns -1 if not yet registered. Used by add_job() to make recursive
+ * insertion idempotent — a diamond dep graph still produces exactly one
+ * job per target.
+ */
 static int
 find_job( const char* name )
 {
@@ -176,6 +207,21 @@ add_job( target_info_t* t )
 /*============================================================================================*/
 // --- Worker thread ---
 
+/**
+ * worker_main()
+ *
+ * Long-running worker thread body. Each iteration:
+ *   1. Acquire the scheduler lock and wait for a ready job (or for the
+ *      scheduler to wind down).
+ *   2. Pop a ready job, mark it in-flight, drop the lock.
+ *   3. Run build_target() with skip_deps=true (we own dep ordering).
+ *   4. Take the print lock and dump the per-target log atomically.
+ *   5. Reacquire the scheduler lock, decrement counters, promote any
+ *      dependents whose final dep just completed, broadcast on the CV.
+ *
+ * Termination: returns 0 when total_remaining hits 0, or when any_failed
+ * is sticky-set and the ready queue has drained.
+ */
 static unsigned __stdcall
 worker_main( void* arg )
 {
@@ -185,10 +231,15 @@ worker_main( void* arg )
     {
         EnterCriticalSection( &g_sched.lock );
 
-        // Wait for work, or for the build to wind down.
+        // --- 1. Wait for work, or for the build to wind down ---
+        // Loop is correct against spurious wakeups; the predicate is the
+        // "no ready work yet but more work expected" condition.
         while ( g_sched.ready_count == 0 && g_sched.total_remaining > 0 && !g_sched.any_failed )
         {
-            // Cycle detection: nothing in flight, nothing ready, work left → deadlock.
+            // Cycle detection: nothing in flight, nothing ready, work left
+            // means no job will ever produce a wakeup that satisfies the
+            // predicate above → deadlock. Set the failure flag and let
+            // the exit branch below carry us out.
             if ( g_sched.in_flight == 0 )
             {
                 printf( "Error: dependency cycle detected in build graph (%d targets stuck).\n",
@@ -200,7 +251,8 @@ worker_main( void* arg )
             SleepConditionVariableCS( &g_sched.cv, &g_sched.lock, INFINITE );
         }
 
-        // Exit conditions: all done, or a previous failure has fully drained.
+        // Exit conditions: nothing left to do, or a previous failure has
+        // fully drained the queue. Wake siblings so they exit too.
         if ( g_sched.total_remaining == 0
              || ( g_sched.any_failed && g_sched.ready_count == 0 ) )
         {
@@ -209,12 +261,17 @@ worker_main( void* arg )
             return 0;
         }
 
+        // --- 2. Pop a ready job ---
+        // LIFO via pre-decrement: ready[--ready_count]. Within-wave order
+        // doesn't matter for correctness.
         int idx = g_sched.ready[ --g_sched.ready_count ];
         g_sched.in_flight++;
         sched_job_t* j = &g_sched.jobs[ idx ];
         LeaveCriticalSection( &g_sched.lock );
 
-        // Truncate any stale log from a previous run.
+        // --- 3. Run the build under per-target output redirection ---
+        // Truncate any stale log from a previous run so the dump below shows
+        // only the current build's output.
         FILE* clr = fopen( j->log_path, "w" );
         if ( clr ) fclose( clr );
 
@@ -228,7 +285,9 @@ worker_main( void* arg )
 
         TlsSetValue( g_sched_log_tls, NULL );
 
-        // Atomically dump this target's full log to the console.
+        // --- 4. Atomically dump this target's full log to the console ---
+        // The print lock guarantees no other worker's dump can interleave
+        // between our header and the last line of our log.
         EnterCriticalSection( &g_print_lock );
         printf( "\n=== %s : %s ===\n", j->target->name, ok ? "OK" : "FAILED" );
         FILE* lf = fopen( j->log_path, "r" );
@@ -241,7 +300,7 @@ worker_main( void* arg )
         fflush( stdout );
         LeaveCriticalSection( &g_print_lock );
 
-        // Mark completion and unblock dependents.
+        // --- 5. Mark completion and unblock dependents ---
         EnterCriticalSection( &g_sched.lock );
         j->done   = true;
         j->failed = !ok;
@@ -250,6 +309,9 @@ worker_main( void* arg )
         if ( !ok ) g_sched.any_failed = true;
         else
         {
+            // Walk our reverse-dep edges: each dependent decrements its
+            // remaining_deps; when one hits zero, push it onto the ready
+            // stack so a sibling worker can pick it up.
             for ( int i = 0; i < j->rev_dep_count; ++i )
             {
                 int ri = j->rev_deps[ i ];

@@ -1,6 +1,23 @@
 /*==============================================================================================
 
-    build_tool_cc.c -- Compiler and Linker command generation.
+    build_tool_cc.c -- Compiler and linker command generation.
+
+    Builds the cl.exe / link.exe / lib.exe command lines for a single target
+    using cmd_buf_t (see build_tool_utils.c) and dispatches them through
+    build_run_cmd / build_run_cmd_capture_deps (see build_tool_vcvars.c).
+
+    Two public entry points, both called from build_target():
+      build_target_compile() -- cl.exe with /showIncludes for dep capture.
+      build_target_link()    -- lib.exe for static libs, link.exe otherwise.
+
+    Flag philosophy:
+      - The same defines we emit here must match the per-config IntelliSense
+        defines emitted by build_tool_gen.c. Drift between the two surfaces
+        as IDE squigglies that don't reproduce at build time, which is
+        exactly the kind of bug that wastes hours to chase.
+      - Response-file spill is wired in unconditionally at the end of each
+        path so any future target growth past the cmd.exe arg limit is
+        handled transparently.
 
 ==============================================================================================*/
 #include "build_tool.h"
@@ -13,6 +30,16 @@
 /*============================================================================================*/
 // --- Internal Helpers ---
 
+/**
+ * get_target_upper()
+ *
+ * Copy `name` to `out`, ASCII-uppercasing as we go. Used to derive the
+ * <TARGET>_STATIC preprocessor symbol from a target's lower-case registry
+ * name. The same helper is reached from build_tool_gen.c (unity build)
+ * so IntelliSense and compile-time defines emit the exact same identifier.
+ *
+ * Caller must size `out` >= strlen(name)+1.
+ */
 static void
 get_target_upper( const char* name, char* out )
 {
@@ -20,9 +47,20 @@ get_target_upper( const char* name, char* out )
     for ( char* p = out; *p; ++p ) *p = ( char )toupper( *p );
 }
 
-// Sweep bin/<name>_*.pdb. Files locked by an attached debugger fail silently —
-// exactly what we want: the running debug session keeps its PDB, and any
-// unlocked leftovers from previous rebuilds get garbage-collected here.
+/**
+ * cleanup_stale_pdbs()
+ *
+ * Garbage-collect PDB files left over from previous links. Each link
+ * writes bin/<name>_<unix_timestamp>.pdb (see build_target_link below);
+ * over time that accumulates one file per rebuild. This function sweeps
+ * bin/<name>_*.pdb and removes whatever it can.
+ *
+ * Files held open by an attached debugger fail `remove()` with sharing-
+ * violation, which is silently ignored — exactly the behavior we want:
+ * the live debug session keeps the PDB it needs, and only the unlocked
+ * stale leftovers are cleaned up. The new link will write a fresh,
+ * uniquely-named PDB regardless, so there is never a collision.
+ */
 static void
 cleanup_stale_pdbs( const char* target_name )
 {
@@ -47,8 +85,13 @@ cleanup_stale_pdbs( const char* target_name )
 
 /**
  * build_target_compile()
- * 
- * Generates and executes the cl.exe command line for a target.
+ *
+ * Assemble and run the cl.exe (or clang-cl.exe) command line for one
+ * target. Returns true iff the compiler exited with 0.
+ *
+ * The function builds up the command incrementally via cmd_append so the
+ * truncation logic in cmd_buf_t can flag overflow and the response-file
+ * spill at the end can kick in for very large targets.
  */
 bool
 build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir )
@@ -57,42 +100,57 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
     const char* cc = ctx->is_clang ? "clang-cl.exe" : "cl.exe";
 
     // Base flags. /showIncludes emits a "Note: including file:" line for every
-    // header pulled in, which we capture into a per-target dep file so the
-    // incremental rebuild logic can detect header edits (essential for unity
-    // builds where the listed .units are just umbrella TUs).
+    // header pulled in, which build_run_cmd_capture_deps strips out into a
+    // per-target dep file so the incremental rebuild logic in build_target's
+    // step-2 check can detect header edits. Essential for unity builds where
+    // the listed .units are just umbrella TUs and the real source surface is
+    // hidden behind their #includes.
     cmd_append( &cmd, "%s /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes ", cc );
-    
-    // Include paths and output directories.
+
+    // Include paths and output directories. /Fo = object output dir, /Fd =
+    // PDB output dir. Trailing slash matters — without it cl treats the path
+    // as a filename prefix instead of a directory.
     cmd_append( &cmd, "/I source /I %s /Fo%s/ /Fd%s/ ", gen_dir, obj_dir, obj_dir );
 
-    // Architectural Defines
+    // Architectural defines that every TU sees. Must stay in lockstep with
+    // the IntelliSense defines emitted by build_tool_gen.c.
     cmd_append( &cmd, "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS " );
 
-    // Target-specific static define (e.g. /DBASE_STATIC).
+    // Target-specific static define (e.g. /DBASE_STATIC). Allows public APIs
+    // declared in this target to flip between dllexport/dllimport depending
+    // on whether the consumer is the same translation unit or a sibling DLL.
     char target_upper[ 128 ];
     get_target_upper( target->name, target_upper );
     cmd_append( &cmd, "/D%s_STATIC ", target_upper );
 
+    // BUILD_STATIC fully disables hot-reload — the whole engine links into
+    // one image. Only set when an external caller chose monolithic mode.
     if ( ctx->is_monolithic )
         cmd_append( &cmd, "/DBUILD_STATIC " );
 
-    // Config-specific flags.
+    // Config-specific flags. Debug = full symbols, no optimization, debug
+    // CRT. Release = /O2 and the retail CRT. _DEBUG / NDEBUG are the
+    // canonical guards downstream code reads to gate assertions etc.
     if ( ctx->config == CONFIG_DEBUG )
         cmd_append( &cmd, "/Zi /Od /MDd /D_DEBUG " );
     else
         cmd_append( &cmd, "/O2 /MD /DNDEBUG " );
 
-    // Add translation units.
+    // Add the explicit translation units listed in target_info_t.units[].
     for ( int i = 0; i < target->unit_count; ++i )
         cmd_append( &cmd, "%s/%s ", target->root_dir, target->units[ i ] );
 
-    // Add generated reflection code.
+    // Add the reflection-generated translation unit (step 5 of build_target
+    // wrote it under <gen_dir>/<reflect_name>.generated.c).
     if ( target->has_reflect )
     {
         cmd_append( &cmd, "%s/%s.generated.c ", gen_dir, target->reflect_name );
     }
 
-    // Spill to response file if the assembled command is too long for cmd.exe.
+    // Spill to a cl.rsp response file if the assembled command crossed the
+    // shell threshold (or got flagged truncated). The buffer is rewritten
+    // to "cl.exe @<path>" form in-place; cl.exe reads the file like a
+    // continuation of its argv.
     char rsp_path[ BT_PATH_MAX ];
     snprintf( rsp_path, sizeof( rsp_path ), "%s/cl.rsp", obj_dir );
     cmd_spill_to_response_file( &cmd, rsp_path );
@@ -112,8 +170,16 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
 
 /**
  * build_target_link()
- * 
- * Generates and executes the link.exe or lib.exe command line for a target.
+ *
+ * Assemble and run the final-stage command for one target:
+ *  - TARGET_STATIC_LIB  → lib.exe (archive .obj files into a .lib).
+ *  - TARGET_DYNAMIC_LIB → link.exe /DLL with /IMPLIB so consumers can
+ *                         link against the import lib at compile time.
+ *  - TARGET_EXECUTABLE  → link.exe straight, producing a .exe.
+ *
+ * The DLL and EXE paths share a single linker invocation because the only
+ * differences (the /DLL switch and the /IMPLIB output) are additive.
+ * Returns true iff the tool exited with 0.
  */
 bool
 build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir )
@@ -123,41 +189,53 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
 
     if ( target->type == TARGET_STATIC_LIB )
     {
+        // lib.exe simply globs every .obj in the target's obj dir into the
+        // archive — no link-time codegen, no per-symbol dep resolution.
         cmd_append( &cmd, "lib.exe /nologo /OUT:bin/%s.lib %s/*.obj", target->name, obj_dir );
 
+        // Static libs can grow large too (many TUs over time), so spill if needed.
         char rsp_path[ BT_PATH_MAX ];
         snprintf( rsp_path, sizeof( rsp_path ), "%s/lib.rsp", obj_dir );
         cmd_spill_to_response_file( &cmd, rsp_path );
     }
     else
     {
+        // Shared start of the link.exe command for both DLL and EXE.
         const char* linker = "link.exe";
         cmd_append( &cmd, "%s /nologo ", linker );
-        
+
+        // DLL extras: tell the linker to produce a side-by-side .lib so other
+        // targets can /LINK against it without needing the .dll at compile time.
         if ( target->type == TARGET_DYNAMIC_LIB )
         {
             cmd_append( &cmd, "/DLL " );
             cmd_append( &cmd, "/IMPLIB:bin/%s.lib ", target->name );
         }
 
+        // Pick the artifact extension based on target type. Both consume the
+        // same `*.obj` glob in the target's obj dir.
         cmd_append( &cmd, "/OUT:bin/%s%s %s/*.obj ", target->name,
                     (target->type == TARGET_EXECUTABLE) ? ".exe" : ".dll", obj_dir );
 
-        // Rotate the PDB filename every link so an attached debugger never
-        // collides with the linker over the previous build's symbol file.
-        // Stale unlocked PDBs are removed first; locked ones (held by a live
-        // debug session) survive the sweep and remain valid for that session.
+        // PDB rotation: each link writes a uniquely-named PDB so an attached
+        // debugger can never collide with the linker over the previous
+        // build's symbol file. cleanup_stale_pdbs() above garbage-collects
+        // the leftover files that aren't currently locked by a debugger.
         cleanup_stale_pdbs( target->name );
         cmd_append( &cmd, "/DEBUG /PDB:bin/%s_%lld.pdb ",
                     target->name, ( long long )time( NULL ) );
 
-        // Link against dependencies.
+        // Link against the target's declared dep .libs. The scheduler / dep
+        // resolver guarantees these exist by the time we get here.
         for ( int i = 0; i < target->dep_count; ++i )
         {
             cmd_append( &cmd, "bin/%s.lib ", target->deps[ i ] );
         }
-        
-        // System libraries.
+
+        // Windows system libs every binary in the project happens to want.
+        // Hard-coded here because every target so far uses at least one of
+        // these — keeping them per-target metadata would be ceremony with
+        // zero benefit.
         cmd_append( &cmd, "user32.lib shell32.lib gdi32.lib advapi32.lib " );
 
         char rsp_path[ BT_PATH_MAX ];

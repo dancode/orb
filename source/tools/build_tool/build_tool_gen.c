@@ -1,33 +1,46 @@
 /*==============================================================================================
 
-    build_tool_gen.c -- Generation of Visual Studio project files.
+    build_tool_gen.c -- Visual Studio .sln / .vcxproj generator.
 
-    This module allows the custom build system to "hijack" the Visual Studio IDE.
-    Instead of using VS's built-in build system (MSBuild), we generate "Makefile" 
-    projects that call our build_tool.exe for all compilation and linking.
+    The build system "hijacks" Visual Studio: instead of letting MSBuild own
+    the build, each .vcxproj is emitted as a Makefile-style project whose
+    NMakeBuildCommandLine shells out to bin\build_tool.exe. The IDE provides
+    IntelliSense, the debugger, and source navigation; we keep absolute
+    control over the actual compile/link pipeline.
 
-    This gives us the best of both worlds:
-    1. Full IDE features (IntelliSense, F5 Debugging, Navigation).
-    2. Absolute control over the build process via C code.
+    What gets emitted, per solution in g_solutions[]:
+      <name>.sln                           -- references all member projects
+      <name>_nav.vcxproj  (if nav_dir set) -- "Mega" navigation project,
+                                              every file as ClInclude so it
+                                              never competes with a target
+                                              for IntelliSense ownership
+      <target>.vcxproj                     -- one per target referenced by sln
+      <target>.vcxproj.filters             -- mirrors the on-disk folder tree
 
-    The generator creates a dedicated .sln for each entry in the Solution Registry,
-    allowing developers to work in focused workspaces without IDE clutter.
+    GUID strategy (see guid_from_name): every project GUID is a hash of its
+    name, so reordering g_targets[] is a no-op for VS user state.
+
+    IntelliSense strategy (see write_vcxproj_common_header): per-config
+    PropertyGroups emit /std:c11 /Zc:preprocessor + the same defines cl.exe
+    sees at build time, so squigglies match build errors.
 
 ==============================================================================================*/
 
-#define MAX_FILES 1024
-#define MAX_FILTERS 512
+#define MAX_FILES   1024   // Max source files scanned per vcxproj.
+#define MAX_FILTERS  512   // Max virtual filter folders per vcxproj.
 
-// Metadata for a single source file in the solution. 
-// Used during the recursive directory scan to build virtual filters.
+// Metadata for one source file picked up by scan_directory_recursive().
+// Drives both the <ItemGroup> entries in the .vcxproj and the matching
+// <Filter> mappings in the .filters file.
 typedef struct
 {
     char path[ BT_PATH_MAX ];   // Relative path from project root.
     char filter[ BT_PATH_MAX ]; // Virtual folder path in VS (e.g. "engine\\core").
-    bool is_header;
+    bool is_header;             // True for .h files; influences ClInclude vs ClCompile choice.
 } file_info_t;
 
-// Global buffers used during the directory scanning phase.
+// Per-scan buffers. Reset (g_file_count = 0, g_filter_count = 0) at the
+// start of every project emission — they are reusable scratch, not state.
 static file_info_t g_files[ MAX_FILES ];
 static int         g_file_count = 0;
 
@@ -79,8 +92,13 @@ guid_from_name( const char* name, char* out )
 
 /**
  * add_filter()
- * 
- * Registers a virtual folder (Filter) in the Visual Studio project.
+ *
+ * Registers a virtual folder ("Filter" in VS terminology) for this scan.
+ * Filters are how the Solution Explorer renders nested folders that don't
+ * exist on disk — or, in our case, that mirror disk layout but live in a
+ * separate XML namespace from the source files.
+ *
+ * Idempotent: a no-op if `filter` is empty or already present.
  */
 static void
 add_filter( const char* filter )
@@ -293,9 +311,15 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 
 /**
  * build_gen_proj_target()
- * 
- * Generates a .vcxproj for a specific engine target (e.g. "base", "core").
- * It adds all files in the target's root directory to the project.
+ *
+ * Emit one .vcxproj + matching .vcxproj.filters for a specific engine
+ * target. The vcxproj's <ClCompile> entry is the target's actual unity TU;
+ * every other discovered file under target->root_dir is added as
+ * <ClInclude> so it shows up in Solution Explorer and IntelliSense can
+ * index it, without claiming compile ownership.
+ *
+ * `index` is preserved in the signature for backwards compat with earlier
+ * call sites — the GUID derivation no longer uses it (see guid_from_name).
  */
 static void
 build_gen_proj_target( target_info_t* target, int index )
@@ -409,10 +433,17 @@ build_gen_proj_target( target_info_t* target, int index )
 
 /**
  * build_gen_proj_engine_navigation()
- * 
- * Generates a "Mega" navigation project that contains every source file 
- * in a directory hierarchy. This project is what developers use for 
- * global search and browsing.
+ *
+ * Emit the "Mega" navigation .vcxproj for a solution. Scans nav_dir
+ * recursively and lists EVERY .c/.h as <ClInclude> (never ClCompile) so
+ * the developer gets a unified Solution Explorer view for grep/jump/find,
+ * but the nav project never competes with a target .vcxproj for any
+ * file's IntelliSense TU context. See the long-form comment in the
+ * function body for the "why never ClCompile" rationale.
+ *
+ * `nav_guid` is the per-solution stable GUID computed by the caller via
+ * guid_from_name("nav:<sln_name>"), so two solutions opened together
+ * don't claim the same project identity.
  */
 static void
 build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target,
@@ -527,14 +558,28 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
 
 /**
  * build_gen_solution()
- * 
- * Writes a .sln file for a specific solution descriptor.
- * 
- * Logic:
- * 1. Navigation Project: Scans and adds all files in the solution's scope.
- * 2. Target Projects: Adds .vcxproj files for all targets assigned to this solution.
- * 3. Project Dependencies: Crucial step! Tells MSBuild the build order for parallel execution.
- * 4. SLN Folders: Adds virtual nesting for cleaner IDE presentation.
+ *
+ * Write the .sln descriptor for one entry of g_solutions[]. The .sln is
+ * the file the user actually opens in Visual Studio; it references the
+ * per-target .vcxproj files (and optionally the nav project) generated
+ * elsewhere in this file.
+ *
+ * Pipeline:
+ *   1. Compute nav_guid up front (hash of "nav:<sln_name>") so it can be
+ *      reused by every .sln section that references the nav project.
+ *   2. If nav_dir is set, emit the nav .vcxproj + register it in the .sln.
+ *   3. For each target listed in sln->target_names:
+ *      - Emit a "Project(...)" entry with that target's stable GUID.
+ *      - Emit ProjectDependencies cross-references so VS's parallel
+ *        build scheduler can respect link order. This is the surface
+ *        that, combined with -no-deps in each project, makes parallel
+ *        VS solution builds safe.
+ *      - Track this target's sln_folder so the NestedProjects section
+ *        below can nest the project under the right virtual folder.
+ *   4. Emit virtual SLN folders ("01_BASE", "02_ENGINE", ...) as separate
+ *      Project entries.
+ *   5. Emit GlobalSection blocks: configuration mapping (Debug/Release ×
+ *      x64) + NestedProjects (puts each target under its folder).
  */
 static void
 build_gen_solution( solution_info_t* sln )
@@ -712,15 +757,25 @@ build_gen_solution( solution_info_t* sln )
 
 /**
  * build_gen_projects()
- * 
- * Entry point for Visual Studio project generation.
- * Generates all .sln files defined in the Solution Registry.
+ *
+ * Top-level entry point invoked by `build_tool.exe -gen`. Regenerates
+ * every .vcxproj and every .sln from the current target/solution registry.
+ *
+ * Two-phase emission:
+ *   1. One .vcxproj per target (shared across solutions that reference it).
+ *   2. One .sln per solution descriptor in g_solutions[].
+ *
+ * Safe to re-run anytime; the generated XML is fully deterministic given
+ * the registry contents, so VS user state survives regen as long as the
+ * target name doesn't change (see guid_from_name).
  */
 void
 build_gen_projects( void )
 {
     printf( "Generating Visual Studio projects in %s/...\n", g_build_dir );
 
+    // Make sure the output directory exists. _access first so the mkdir
+    // child spawn is skipped in the common (already-exists) case.
 #if defined( _WIN32 )
     if ( _access( g_build_dir, 0 ) != 0 )
     {
@@ -734,15 +789,16 @@ build_gen_projects( void )
     system( cmd );
 #endif
 
-    // 1. Generate ALL target projects.
-    // We generate every .vcxproj defined in the pool once. They are then 
-    // shared across different solutions as needed.
+    // 1. Generate every target's .vcxproj once. They're shared across
+    //    solutions by name — a single base.vcxproj is referenced by
+    //    every .sln that lists "base" in its target_names.
     for ( int i = 0; i < g_target_count; ++i )
     {
         build_gen_proj_target( &g_targets[ i ], i );
     }
 
-    // 2. Generate each Solution defined in the registry.
+    // 2. Generate each .sln in the registry. Each call also writes its
+    //    own nav .vcxproj if nav_dir is set on the descriptor.
     for ( int i = 0; i < g_solution_count; ++i )
     {
         printf( "Generating Solution: %s.sln\n", g_solutions[ i ].name );

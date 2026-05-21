@@ -26,12 +26,33 @@ const char* sched_log_path( void );
 /*============================================================================================*/
 // --- VC Environment Import ---
 
-// Locate vcvarsall.bat. First try `vswhere` (the modern, future-proof path),
-// then fall back to scanning well-known installation paths. Returns true and
-// fills `out` with an absolute path on success.
+/**
+ * locate_vcvarsall()
+ *
+ * Find a usable vcvarsall.bat on this machine and write its absolute path
+ * to `out`. Two-stage lookup:
+ *
+ *   1. Ask vswhere.exe (the Microsoft-blessed VS discovery tool) for the
+ *      latest installation, then derive the vcvarsall path from it. This
+ *      tracks per-machine installs, side-by-side VS versions, and the
+ *      Preview / Build Tools SKUs without us hard-coding anything.
+ *   2. If vswhere is missing or returned nothing usable, fall back to
+ *      probing a small list of well-known install locations.
+ *
+ * Returns true and fills `out` on success. False means no VS install was
+ * discovered — caller should print a warning and let cl.exe lookups fail
+ * naturally so the error is easy to diagnose.
+ *
+ * vswhere paths are double-quoted because the default install location
+ * lives under "Program Files (x86)" with a space; cmd.exe needs the quotes
+ * to treat the whole executable path as a single token. _popen wraps it in
+ * cmd.exe automatically.
+ */
 static bool
 locate_vcvarsall( char* out, size_t out_size )
 {
+    // Three vswhere candidates: literal path, plus two env-var forms in case
+    // the user has installed VS to a non-default Program Files location.
     const char* vswhere_paths[] = {
         "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
         "\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
@@ -40,6 +61,8 @@ locate_vcvarsall( char* out, size_t out_size )
 
     for ( int i = 0; i < ( int )( sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ) ); ++i )
     {
+        // Ask for the latest install, any product (Community / Pro / Build
+        // Tools / Preview), and print just the install path on stdout.
         char cmd[ 1024 ];
         snprintf( cmd, sizeof( cmd ),
                   "%s -latest -products * -property installationPath",
@@ -51,6 +74,7 @@ locate_vcvarsall( char* out, size_t out_size )
         char inst[ 512 ] = { 0 };
         if ( fgets( inst, sizeof( inst ), pipe ) )
         {
+            // Strip the trailing newline that fgets keeps.
             char* nl = strpbrk( inst, "\r\n" );
             if ( nl ) *nl = '\0';
         }
@@ -58,12 +82,15 @@ locate_vcvarsall( char* out, size_t out_size )
 
         if ( inst[ 0 ] )
         {
+            // vcvarsall.bat is always at <install>\VC\Auxiliary\Build\.
             snprintf( out, out_size, "%s\\VC\\Auxiliary\\Build\\vcvarsall.bat", inst );
             if ( _access( out, 0 ) == 0 ) return true;
         }
     }
 
-    // Fallback: probe a few common, hard-coded install paths.
+    // Fallback: probe a few common, hard-coded install paths. Catches the
+    // case where vswhere is missing (rare but possible on Build-Tools-only
+    // installs) or unreachable for whatever reason.
     const char* common[] = {
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat",
@@ -82,13 +109,23 @@ locate_vcvarsall( char* out, size_t out_size )
     return false;
 }
 
-// Run "<vcvarsall> x64 && set" in a sub-shell and apply every printed
-// KEY=VALUE to our own process environment via _putenv_s. Subsequent
-// CreateProcess / system children inherit it.
-//
-// The double-double-quote cmd /c "" "<path>" args "" idiom is required when
-// the vcvarsall path itself contains spaces (it always does on default
-// installations under "Program Files").
+/**
+ * import_vcvars_env()
+ *
+ * Run "<vcvarsall> x64 && set" in a sub-shell and apply every printed
+ * KEY=VALUE line to our own process environment via _putenv_s. Subsequent
+ * CreateProcess children inherit the modified env, so cl/link/lib become
+ * directly callable for the lifetime of THIS process.
+ *
+ * One-time cost (~2.5s) replaces the legacy "prepend `call vcvarsall.bat &&`
+ * to every compiler call" pattern, which would otherwise add 200-500 ms × N
+ * tool invocations to every build.
+ *
+ * The double-double-quote `cmd /c "" "<path>" args ""` idiom is required
+ * when the vcvarsall path itself contains spaces (which it always does on
+ * default installations under "Program Files"). The outer pair of empty
+ * quotes tells cmd not to strip the second-pair quotes.
+ */
 static int
 import_vcvars_env( const char* vcvars_path )
 {
@@ -104,14 +141,20 @@ import_vcvars_env( const char* vcvars_path )
     }
 
     int imported = 0;
-    // Each `set` line may be up to ~8KB (PATH/INCLUDE/LIB get long).
+    // Each `set` line may be up to ~8KB (PATH/INCLUDE/LIB get long under
+    // a full VS install). 16KB gives comfortable headroom.
     char line[ 16384 ];
     while ( fgets( line, sizeof( line ), pipe ) )
     {
+        // Strip trailing CR/LF so the value doesn't get newline-suffixed
+        // into the env (would break tools that don't trim).
         size_t l = strlen( line );
         while ( l > 0 && ( line[ l - 1 ] == '\n' || line[ l - 1 ] == '\r' ) ) line[ --l ] = '\0';
         if ( l == 0 ) continue;
 
+        // Split on the first '=' to produce key/value. An '=' at position 0
+        // means the line has no key — `set` shouldn't emit these but skip
+        // defensively.
         char* eq = strchr( line, '=' );
         if ( !eq || eq == line ) continue;
         *eq = '\0';
@@ -157,31 +200,33 @@ build_setup_vc_env( void )
 
 /*============================================================================================*/
 // --- Command Execution ---
+//
+// All child-process invocations route through one of two helpers below:
+//   spawn_cmd()                  -- run + wait, output to log_path or stdout.
+//   build_run_cmd_capture_deps() -- run + wait, parse /showIncludes lines.
+//
+// Both deliberately avoid system() / _popen / _pclose, which the legacy
+// implementation used. Those CRT wrappers internally manipulate (dup) the
+// parent's stdio descriptors as a side effect of setting up the child's
+// stdin/stdout/stderr. When the parallel scheduler calls them from N
+// worker threads at once, the dups race and children inherit clobbered
+// handles — observable as silent exit-code-1 failures with empty output.
+// CreateProcess sets the child's stdio via STARTUPINFO, with NO mutation
+// of the parent's fds, so concurrent calls from N threads are safe.
 
-/**
- * build_run_cmd()
- *
- * Run a shell command and return its exit code. The orchestrator's own
- * environment (set up by build_setup_vc_env above) is inherited by the
- * spawned cmd.exe, so cl/link/lib are directly callable with no prefix.
- */
 /**
  * spawn_cmd()
  *
- * Spawn a child via CreateProcessA. Output is appended to log_path if
- * non-NULL, else inherits the parent's stdout/stderr.
+ * Spawn a child via CreateProcessA, wait for it, and return its exit code.
  *
- * IMPORTANT: We avoid system()/_popen here because both internally dup the
- * parent's stdio descriptors as a side effect of spawning. When several
- * worker threads call system() simultaneously, those dups race and the
- * children end up inheriting clobbered or closed handles — manifesting as
- * mysterious exit-code-1 failures with empty output (which is exactly what
- * we hit before this rewrite). CreateProcess sets up the child's stdio
- * via the STARTUPINFO passed to it, with no parent-side mutation, so
- * concurrent calls from N threads don't interact.
+ * If `log_path` is non-NULL the child's stdout AND stderr are appended to
+ * that file. NULL routes them to whatever stdout/stderr the parent
+ * currently owns (the shared console). Workers pass their per-target log
+ * path so parallel output never interleaves on screen — the log is dumped
+ * atomically by the scheduler when the target finishes.
  *
- * The command is wrapped with "cmd.exe /C" so shell builtins (del, for)
- * and glob expansion in tool args (`*.obj`) keep working unchanged.
+ * `cmd` is wrapped with "cmd.exe /C" so shell builtins (del, for) and
+ * tool-side glob expansion (`*.obj`) keep working unchanged.
  */
 static int
 spawn_cmd( const char* cmd, const char* log_path )
@@ -189,6 +234,9 @@ spawn_cmd( const char* cmd, const char* log_path )
     SECURITY_ATTRIBUTES sa = { sizeof( sa ), NULL, TRUE };
     HANDLE              hout = NULL;
 
+    // If a log path was given, open it for append with SHARE_WRITE so two
+    // workers writing to DIFFERENT log paths can never block each other,
+    // and so that we can pass the HANDLE to the child for inheritance.
     if ( log_path )
     {
         hout = CreateFileA( log_path, FILE_APPEND_DATA,
@@ -202,9 +250,15 @@ spawn_cmd( const char* cmd, const char* log_path )
         }
     }
 
+    // Wrap in cmd.exe /C. Buffer is CMD_BUF_MAX + 64 to accommodate the
+    // "cmd.exe /C " prefix on top of any maximum-length compile/link line.
     char wrapped[ CMD_BUF_MAX + 64 ];
     snprintf( wrapped, sizeof( wrapped ), "cmd.exe /C %s", cmd );
 
+    // Fully populate STARTUPINFO so the child gets explicit, inheritable
+    // handles for stdio. Without STARTF_USESTDHANDLES, CreateProcess would
+    // give the child whatever default fds it computes — usually fine, but
+    // we need to guarantee the log-file handle is what the child sees.
     STARTUPINFOA si = { 0 };
     si.cb         = sizeof( si );
     si.dwFlags    = STARTF_USESTDHANDLES;
@@ -221,6 +275,8 @@ spawn_cmd( const char* cmd, const char* log_path )
         return -1;
     }
 
+    // Block until the child exits. INFINITE is fine — none of our tools
+    // hang indefinitely, and if they do the build is broken anyway.
     WaitForSingleObject( pi.hProcess, INFINITE );
     DWORD ec = 1;
     GetExitCodeProcess( pi.hProcess, &ec );
@@ -230,6 +286,13 @@ spawn_cmd( const char* cmd, const char* log_path )
     return ( int )ec;
 }
 
+/**
+ * build_run_cmd()
+ *
+ * Public entry point for one-shot command execution. Routes to spawn_cmd()
+ * with the active worker's log path (if any) and prefixes the log/console
+ * with "[CMD] ..." so the build trace is auditable.
+ */
 int
 build_run_cmd( const char* cmd )
 {
@@ -246,6 +309,8 @@ build_run_cmd( const char* cmd )
             fclose( lf );
         }
         int rc = spawn_cmd( cmd, log );
+        // Surface non-zero exit in the log so post-mortem inspection sees
+        // a clear failure marker even when the child wrote nothing to stderr.
         if ( rc != 0 )
         {
             FILE* lf2 = fopen( log, "a" );
@@ -258,22 +323,22 @@ build_run_cmd( const char* cmd )
 }
 
 /**
- * build_run_cmd_capture_deps()
+ * process_deps_line()
  *
- * Same as build_run_cmd, but pipes stdout+stderr through and extracts
- * /showIncludes "Note: including file:" markers into deps_path. Non-marker
- * lines are forwarded to stdout so the user still sees compile warnings
- * and errors.
+ * Classify one line of cl.exe stdout/stderr output:
  *
- * System headers from the MSVC toolchain and Windows SDK are filtered out;
- * they cannot be invalidated by edits to project sources.
+ *  - "Note: including file: <path>" → header path of a #include cl just
+ *    resolved. Strip whitespace + CR/LF, filter out paths from the VC
+ *    toolchain / Windows SDK (project source can't invalidate those), and
+ *    record what remains into the per-target _deps.txt file.
+ *
+ *  - Anything else → forward to the build sink (worker log file or stdout)
+ *    so compile warnings, errors, and the source-file banner cl emits are
+ *    still visible to the user.
  *
  * NOTE: The "Note: including file:" prefix is English-only. For other
  * locales, set VSLANG=1033 in the environment before launching the build.
  */
-// Process one /showIncludes output line: either record an included header
-// into the deps file (filtering system headers), or forward it to the
-// log/stdout stream as normal compiler output.
 static void
 process_deps_line( char* line, FILE* deps, FILE* out )
 {
@@ -307,13 +372,24 @@ process_deps_line( char* line, FILE* deps, FILE* out )
     }
 }
 
+/**
+ * build_run_cmd_capture_deps()
+ *
+ * Same role as build_run_cmd(), but additionally pipes the child's
+ * stdout+stderr back through us so /showIncludes lines can be parsed out
+ * into deps_path. Used exclusively by the compile step — see
+ * build_target_compile() in build_tool_cc.c.
+ */
 int
 build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
 {
     // CreatePipe + CreateProcess instead of _popen/_pclose, for the same
-    // thread-safety reason explained in spawn_cmd(): _popen mutates the
-    // parent's stdio fds during setup, and concurrent calls from multiple
-    // worker threads race on that mutation.
+    // thread-safety reason explained in spawn_cmd() above.
+    //
+    // Pipe layout: write end (wr) goes to the child; read end (rd) stays
+    // with us and we stream it line-by-line below. SetHandleInformation
+    // turns OFF inheritance on the read end so the child can never see it
+    // (which would prevent the pipe from EOF'ing when the child exits).
     SECURITY_ATTRIBUTES sa = { sizeof( sa ), NULL, TRUE };
     HANDLE              rd = NULL, wr = NULL;
     if ( !CreatePipe( &rd, &wr, &sa, 65536 ) ) return -1;
@@ -336,7 +412,10 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
         CloseHandle( wr );
         return -1;
     }
-    CloseHandle( wr );   // Parent's copy; child has its own.
+    // Close OUR copy of the write end. Once the child also closes it
+    // (process exit), ReadFile on rd will return EOF. Without this, the
+    // ReadFile loop below would block forever.
+    CloseHandle( wr );
 
     // Output sink: per-worker log if active, otherwise stdout.
     const char* log_path  = sched_log_path();
@@ -351,7 +430,12 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
 
     FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
 
-    // Stream the pipe into a line buffer; flush each full line.
+    // Stream the pipe into a line buffer; classify each full line via
+    // process_deps_line(). \r is dropped on the fly so the line buffer
+    // contains only the Unix-style content even on Windows console pipes.
+    // Any line longer than sizeof(line)-1 is flushed mid-way; that's
+    // acceptable because the only "interesting" lines we parse (the
+    // "Note: including file:" markers) are well under 4KB in practice.
     char  line[ 4096 ];
     size_t line_len = 0;
     char  buf[ 4096 ];
@@ -374,7 +458,8 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
             }
         }
     }
-    // Flush any trailing partial line.
+    // Flush any trailing partial line — last line of cl output may not have
+    // a trailing newline if the child exits without flushing.
     if ( line_len > 0 )
     {
         line[ line_len ] = '\0';

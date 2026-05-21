@@ -2,6 +2,14 @@
 
     build_tool_utils.c -- Common helper utilities for the build orchestrator.
 
+    Three independent helper families live here:
+      - cmd_buf_t management   (safe append + response-file overflow spill)
+      - filesystem mtime probe (drives the incremental rebuild decision)
+      - per-target named mutex (cross-process serialization of same-target builds)
+
+    All three are stateless modules: no globals, no init/shutdown, can be
+    used from any thread or from any time in the build lifecycle.
+
 ==============================================================================================*/
 #include "build_tool.h"
 #include <stdio.h>
@@ -33,6 +41,9 @@
 void
 cmd_append( cmd_buf_t* b, const char* fmt, ... )
 {
+    // Early-out if a prior append already filled the buffer; flagging
+    // truncated again is harmless and lets the caller bail without
+    // continuing to format unused arguments.
     if ( b->size >= CMD_BUF_MAX ) { b->truncated = true; return; }
 
     size_t remaining = CMD_BUF_MAX - b->size;
@@ -42,11 +53,16 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
     int written = vsnprintf( b->buf + b->size, remaining, fmt, args );
     va_end( args );
 
+    // vsnprintf returns < 0 on encoding errors. We can't tell how much (if
+    // any) was written, so the safe move is to treat the buffer as toast
+    // and force a response-file spill on the next caller check.
     if ( written < 0 ) { b->truncated = true; return; }
 
     if ( ( size_t )written >= remaining )
     {
-        // Did not fit. Mark truncated and pin size at the null-terminator.
+        // Did not fit. Mark truncated and pin size at the null-terminator
+        // so subsequent reads see a valid C string and so the "remaining"
+        // computation above can never underflow on the next append.
         b->size                  = CMD_BUF_MAX - 1;
         b->buf[ CMD_BUF_MAX - 1 ] = '\0';
         b->truncated             = true;
@@ -73,21 +89,25 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
 bool
 cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
 {
+    // Nothing to do if the buffer is comfortably under the shell limit and
+    // hasn't been flagged truncated. The common case for small targets.
     if ( !b->truncated && b->size < CMD_RSP_THRESHOLD ) return false;
 
-    // Find the end of the first token (the tool exe).
+    // Find the end of the first token (the tool exe). Whatever follows that
+    // whitespace boundary is the argument list we'll write to the rsp file.
     const char* args = b->buf;
     while ( *args && *args != ' ' && *args != '\t' ) ++args;
-    if ( !*args ) return false;
+    if ( !*args ) return false;   // No args present; nothing useful to spill.
 
     size_t exe_len = ( size_t )( args - b->buf );
-    if ( exe_len == 0 || exe_len >= 64 ) return false;
+    if ( exe_len == 0 || exe_len >= 64 ) return false;   // Exe name implausibly large.
 
     char exe[ 64 ];
     memcpy( exe, b->buf, exe_len );
     exe[ exe_len ] = '\0';
 
-    // Skip whitespace between exe and first arg.
+    // Skip whitespace between exe and first arg so the rsp file starts
+    // cleanly on the first real argument.
     while ( *args == ' ' || *args == '\t' ) ++args;
 
     FILE* f = fopen( rsp_path, "w" );
@@ -99,8 +119,9 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
     fputs( args, f );
     fclose( f );
 
-    // Rewrite the buffer to the short "@file" form. Clear truncated so the
-    // (now short) buffer is treated as valid by downstream callers.
+    // Rewrite the buffer to the short "<exe> @<rsp_path>" form. Clear
+    // truncated so the (now short) buffer is treated as valid by downstream
+    // callers; cmd_append below has the room to rebuild it safely.
     b->size      = 0;
     b->truncated = false;
     cmd_append( b, "%s @%s", exe, rsp_path );
@@ -112,9 +133,16 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
 
 /**
  * build_get_mtime()
- * 
- * Returns the last modification time of a file. Returns 0 if the file doesn't exist.
- * This is the foundation of our incremental build system.
+ *
+ * Returns the last modification time of `path`, or 0 if the file is missing
+ * or unreadable. 0 is a deliberately unambiguous "never modified" sentinel
+ * — using `(out_mtime != 0)` as the "artifact exists" predicate lets the
+ * up-to-date check in build_target collapse missing-output and stale-output
+ * into a single rebuild branch.
+ *
+ * Resolution is 1 second (NTFS) or coarser; back-to-back rebuilds within
+ * the same second can therefore falsely look "up to date". Not addressed
+ * here; production projects tend to be slow enough that this never bites.
  */
 __time64_t
 build_get_mtime( const char* path )

@@ -2,26 +2,41 @@
 
     build_tool.h -- Core abstractions for the custom ORB build system.
 
-    This header defines the "schema" for the entire build system. It separates the 
-    logic of *how* to build (build_tool.c) from the data of *what* to build 
-    (build_tool_targets.c).
+    This header defines the "schema" for the entire build system. It separates the
+    logic of *how* to build (build_tool.c and friends) from the data of *what* to
+    build (build_tool_targets.c).
 
     Architectural Goals:
-    - High Performance: Minimal filesystem overhead and direct tool invocation.
-    - Simplicity: A flat, unified target pool with explicit dependencies.
-    - Flexibility: Support for multiple standalone IDE solutions sharing common targets.
-    - Automation: Recursive dependency resolution and automatic tool bootstrapping.
+    - High Performance: Minimal filesystem overhead, direct tool invocation, 
+      no shell-out indirection beyond what cmd.exe requires for builtins/globs.
+    - Simplicity: A flat, unified target pool with explicit dependencies. No
+      Makefile / CMake DSL — everything is described as plain C structs.
+    - Flexibility: Multiple standalone IDE solutions share the same target pool.
+    - Automation: Recursive dependency resolution, automatic vcvars env setup,
+      and self-hosting bootstrap from a single .bat file.
+    - Parallelism: A topological worker pool drives CLI builds across N threads
+      with per-target output capture; VS solution builds defer to MSBuild's own
+      scheduler via ProjectDependencies + the -no-deps flag.
+
+    Unity build:
+    - build_tool.exe is itself a unity build. build_tool.c #includes every other
+      .c file in this directory in dependency order. This means all "static"
+      functions are visible across the whole tool while still compiling in a
+      single cl.exe invocation — and bootstrapping needs just one command line.
 
 ==============================================================================================*/
 #ifndef BUILD_TOOL_H
 #define BUILD_TOOL_H
+
+// clang-format off
 
 #include <stdbool.h>
 #include <time.h>
 
 // --- Project Constants ---
 
-#define CMD_BUF_MAX 65536  // Max size for any single compiler/linker command line.
+// Max size for any single compiler/linker command line.
+#define CMD_BUF_MAX 16384    
 
 // Path buffer size for every filesystem path the build tool constructs.
 // Windows MAX_PATH is 260; 512 gives generous headroom for composite paths
@@ -31,6 +46,10 @@
 
 // --- Helper Types ---
 
+// Reusable command-line buffer for assembling cl.exe / link.exe / lib.exe
+// invocations. cmd_append() formats into `buf` and updates `size`; if an
+// append cannot fit, `truncated` is set so the caller can decide whether to
+// spill the tail into a response file (see cmd_spill_to_response_file).
 typedef struct
 {
     char   buf[ CMD_BUF_MAX ];
@@ -44,11 +63,11 @@ typedef struct
 #define CMD_RSP_THRESHOLD 7000
 
 // --- Configuration ---
-// ... (rest of the file remains same but I need to provide it all or a good chunk)
 
-// Standard build configurations. These map to compiler optimization levels 
+// Standard build configurations. These map to compiler optimization levels
 // and debug symbol generation. The enum values are used to index configuration
-// specific settings in the orchestrator.
+// specific settings in the orchestrator (see build_target_compile() for the
+// per-config flag emission).
 typedef enum
 {
     CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
@@ -72,28 +91,41 @@ typedef enum
 // --- Target Descriptor ---
 
 // A target_info_t represents a single buildable unit in the ORB ecosystem.
-// It contains all metadata required to compile and link the target.
-// Targets are shared across different IDE solutions.
+// It contains all metadata required to compile and link the target. Targets
+// are pooled in g_targets[] (see build_tool_targets.c) and shared across
+// every IDE solution that references them by name.
+//
+// The fixed-size arrays (deps[16], units[16], tool_deps[16]) cap us at 16
+// entries per slot. This matches the project's actual scale and keeps the
+// descriptor a plain POD — no heap, no growth, no init/free dance.
 typedef struct
 {
     const char*   name;             // Unique name (e.g., "base", "core", "app").
     target_type_t type;             // Artifact type (Lib, DLL, Exe).
     const char*   root_dir;         // Base path for source files relative to project root.
     const char*   sln_folder;       // Virtual folder in the Visual Studio solution.
-    const char*   units[ 16 ];      // Translation units (.c files) to compile.
+
+    // Translation units (.c files) compiled into this target. In our unity-build
+    // pattern, each entry is typically a single umbrella TU that #includes the
+    // rest of the target's sources. As a target grows, split it into multiple
+    // sub-unities here so the scheduler can compile them with one cl.exe each.
+    const char*   units[ 16 ];
     int           unit_count;
-    
+
     // Link Dependencies: Other targets that produce .libs this target must link against.
-    const char*   deps[ 16 ];   
+    // Drives both the linker's input list and the parallel scheduler's topological order.
+    const char*   deps[ 16 ];
     int           dep_count;
 
     // Tool Dependencies: Standalone utilities that must exist to build this target.
-    // These are built recursively but NOT linked into the final binary.
-    const char*   tool_deps[ 16 ]; 
+    // These are built recursively but NOT linked into the final binary. Example:
+    // any target with has_reflect=true depends on build_reflect.exe as a tool dep.
+    const char*   tool_deps[ 16 ];
     int           tool_dep_count;
 
-    // Reflection metadata: If true, the build tool runs build_reflect.exe 
-    // on this target's root_dir before compilation.
+    // Reflection metadata: if true, build_reflect.exe is invoked on root_dir
+    // before compilation. Generated files land in <build_dir>/generated/ and
+    // are appended to the cl.exe command line for this target.
     bool          has_reflect;
     const char*   reflect_name;     // Base name for generated .c/.h files.
 
@@ -140,16 +172,27 @@ extern solution_info_t g_solutions[];
 extern int             g_solution_count;
 
 // --- Orchestration API ---
+//
+// Everything below is the public surface for the unity-built build_tool.exe.
+// Implementations live in the corresponding _cc / _utils / _vcvars / _sched
+// translation units that build_tool.c #includes.
 
-// ... (other declarations)
-
-// Compiles all translation units for a target.
+// Compiles all translation units for a target. Emits the cl.exe command line
+// with /showIncludes so build_run_cmd_capture_deps can record the header set
+// into <obj_dir>/_deps.txt for the next incremental check.
 bool build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir );
 
-// Links or archives the target's objects into the final artifact.
+// Links or archives the target's objects into the final artifact: lib.exe
+// for static libs, link.exe (with /DLL or as an exe) for the rest. PDB paths
+// are rotated per-link so an attached debugger never collides with the
+// linker over a held-open symbol file.
 bool build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir );
 
-// Locates the Visual Studio installation and prepares the environment.
+// Locates the Visual Studio installation (via vswhere or hard-coded probes)
+// and imports vcvarsall.bat's environment into THIS process via _putenv_s.
+// Idempotent — fast-paths out if cl.exe is already on PATH (Dev Cmd Prompt
+// or VS-launched terminal). One-time cost, ~2.5s; saves ~50s across a full
+// rebuild that would otherwise pay vcvars-prefix overhead per cl invocation.
 void build_setup_vc_env( void );
 
 // Appends a formatted string to a command buffer.
@@ -174,17 +217,25 @@ void* build_lock_target( const char* target_name );
 // Release a lock acquired by build_lock_target(). NULL is a safe no-op.
 void  build_unlock_target( void* lock );
 
-// Run a shell command and return the exit code.
-// Automatically handles Visual Studio environment (vcvarsall) if necessary.
+// Run a shell command via CreateProcess and return its exit code. cmd is
+// wrapped with "cmd.exe /C" so shell builtins (del, for) and glob args
+// (*.obj) keep working. Output is redirected to the per-thread log file if
+// a parallel worker is active (see sched_log_path), otherwise inherits the
+// parent's stdout/stderr.
 int build_run_cmd( const char* cmd );
 
-// Like build_run_cmd, but captures /showIncludes output to deps_path.
-// Non-include lines are forwarded to stdout. See build_tool_vcvars.c.
+// Like build_run_cmd, but pipes the child's stdout+stderr back through us
+// so /showIncludes lines can be parsed out and written to deps_path. All
+// other lines are forwarded to the active sink (worker log or stdout).
+// System headers from the VC toolchain and Windows SDK are filtered from
+// the deps file (they cannot be invalidated by project edits).
 int build_run_cmd_capture_deps( const char* cmd, const char* deps_path );
 
-// The core worker function. Handles recursive dependency resolution,
-// incremental build timestamp checks, reflection generation,
-// and the final compile/link steps for a target.
+// The core worker function. Handles recursive dependency resolution
+// (unless ctx->skip_deps), per-target locking, the incremental-build
+// timestamp check (artifact mtime vs. each unit, link dep, and recorded
+// header), reflection codegen, then compile + link. Idempotent: a fully
+// up-to-date target short-circuits before any cl.exe spawn.
 bool build_target( build_context_t* ctx, target_info_t* target );
 
 // Parallel scheduler. Builds the transitive closure of `root` (or every
@@ -202,5 +253,6 @@ void build_clean( void );
 // This maps our custom build system into the Visual Studio IDE.
 void build_gen_projects( void );
 
+// clang-format on
 /*============================================================================================*/
 #endif // BUILD_TOOL_H
