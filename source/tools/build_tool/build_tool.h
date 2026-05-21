@@ -13,6 +13,7 @@ typedef enum
     CONFIG_DEBUG,
     CONFIG_RELEASE,
     CONFIG_COUNT
+
 } config_t;
 
 typedef enum
@@ -22,6 +23,7 @@ typedef enum
     TARGET_HOST_SANDBOX,
     TARGET_HOST_TOOL,
     TARGET_COUNT
+
 } target_t;
 
 typedef struct
@@ -30,6 +32,7 @@ typedef struct
     target_t target;
     bool     is_monolithic;
     bool     is_clang;
+
 } build_context_t;
 
 // --- Helper Functions ---

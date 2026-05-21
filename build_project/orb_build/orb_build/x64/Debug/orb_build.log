@@ -1,7 +1,0 @@
-﻿  base_main.c
-  --- ORB Build Starting ---
-  Config: Debug
-  Compiler: MSVC
-  [CMD] cl.exe /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Zi /Od /MDd /D_DEBUG source/base/base_main.c /Fe:bin/sb_base_custom.exe /link /DEBUG 
-  
-  SUCCESS!
