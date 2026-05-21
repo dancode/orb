@@ -666,9 +666,16 @@ build_gen_solution( solution_info_t* sln )
                 // Implicit dep: has_reflect targets always depend on the reflect tool.
                 if ( target->has_reflect )
                 {
-                    char refl_guid[ 64 ];
-                    guid_from_name( k_build_reflect_tool, refl_guid );
-                    fprintf( f, "\t\t%s = %s\n", refl_guid, refl_guid );
+                    for ( int k = 0; k < g_target_count; ++k )
+                    {
+                        if ( g_targets[ k ].is_reflect_tool )
+                        {
+                            char refl_guid[ 64 ];
+                            guid_from_name( g_targets[ k ].name, refl_guid );
+                            fprintf( f, "\t\t%s = %s\n", refl_guid, refl_guid );
+                            break;
+                        }
+                    }
                 }
 
                 fprintf( f, "\tEndProjectSection\n" );

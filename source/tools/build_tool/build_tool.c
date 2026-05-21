@@ -49,9 +49,6 @@ static const char* g_build_dir       = "build_new";      // Root for intermediat
 static const char* g_int_dir         = "obj";            // Sub-folder for .obj files (per-target).
 static const char* g_gen_dir         = "generated";      // Sub-folder for reflection-generated .c/.h.
 
-// Canonical name of the reflection code-generator executable. Referenced by
-// the dep graph (build_target, add_job, gen) so renaming it is a one-line change.
-static const char* const k_build_reflect_tool = "build_reflect";
 
 // --- Unity Includes ---
 //
@@ -251,9 +248,9 @@ build_target( build_context_t* ctx, target_info_t* target )
         target_info_t* refl_tool = NULL;
         for ( int j = 0; j < g_target_count; ++j )
         {
-            if ( strcmp( g_targets[ j ].name, k_build_reflect_tool ) == 0 ) { refl_tool = &g_targets[ j ]; break; }
+            if ( g_targets[ j ].is_reflect_tool ) { refl_tool = &g_targets[ j ]; break; }
         }
-        if ( !refl_tool ) { printf( "Error: '%s' needs reflection but '%s' is not in the target registry\n", target->name, k_build_reflect_tool ); return false; }
+        if ( !refl_tool ) { printf( "Error: '%s' needs reflection but no is_reflect_tool target is registered\n", target->name ); return false; }
         if ( !build_target( ctx, refl_tool ) ) return false;
     }
 
@@ -418,13 +415,25 @@ build_target( build_context_t* ctx, target_info_t* target )
 
     if ( target->has_reflect )
     {
+        target_info_t* refl_tool = NULL;
+        for ( int j = 0; j < g_target_count; ++j )
+        {
+            if ( g_targets[ j ].is_reflect_tool ) { refl_tool = &g_targets[ j ]; break; }
+        }
+        if ( !refl_tool )
+        {
+            printf( "Error: no is_reflect_tool target registered — cannot generate reflection for '%s'\n", target->name );
+            if ( renamed ) rename( old_path, exe_path );
+            result = false;
+            goto cleanup;
+        }
         const char* rname = target->reflect_name ? target->reflect_name : target->name;
         printf( "[REFL] Generating reflection for %s...\n", rname );
         char refl_cmd[ BT_PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\build_reflect.exe %s %s %s", target->root_dir, gen_dir, rname );
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s", refl_tool->name, target->root_dir, gen_dir, rname );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
-            if ( renamed ) rename( old_path, exe_path );  // restore live exe
+            if ( renamed ) rename( old_path, exe_path );
             result = false;
             goto cleanup;
         }

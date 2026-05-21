@@ -134,6 +134,11 @@ typedef struct
     // dep resolution — never delegated to VS ProjectDependencies.
     bool          is_tool;
 
+    // If true, this is the reflection code-generator tool. Targets with
+    // has_reflect=true automatically depend on whichever target carries
+    // this flag — no hardcoded name needed anywhere in the build logic.
+    bool          is_reflect_tool;
+
 } target_info_t;
 
 // --- Global Registry ---

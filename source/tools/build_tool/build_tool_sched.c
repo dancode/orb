@@ -189,14 +189,14 @@ add_job( target_info_t* t )
         }
     }
 
-    // Implicit dep: has_reflect targets always depend on k_build_reflect_tool.
+    // Implicit dep: has_reflect targets always depend on the is_reflect_tool target.
     // Deduplicate before adding — a double entry would inflate remaining_deps
     // and leave the job permanently stuck in the ready queue.
     if ( t->has_reflect && dep_count < MAX_LOCAL_DEPS )
     {
         for ( int k = 0; k < g_target_count; ++k )
         {
-            if ( strcmp( g_targets[ k ].name, k_build_reflect_tool ) == 0 )
+            if ( g_targets[ k ].is_reflect_tool )
             {
                 int di = add_job( &g_targets[ k ] );
                 if ( di >= 0 )

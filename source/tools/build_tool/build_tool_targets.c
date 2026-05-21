@@ -125,13 +125,14 @@ target_info_t g_targets[] = {
 
     // The reflection generator. Scans source and writes generated .c/.h files.
     {
-     .name       = "build_reflect",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/tools/rs_gen",
-     .sln_folder = "08_TOOL",
-     .units      = { "rs_gen.c" },
-     .deps       = {},
-     .is_tool    = true,
+     .name            = "build_reflect",
+     .type            = TARGET_EXECUTABLE,
+     .root_dir        = "source/tools/rs_gen",
+     .sln_folder      = "08_TOOL",
+     .units           = { "rs_gen.c" },
+     .deps            = {},
+     .is_tool         = true,
+     .is_reflect_tool = true,
      },};
 
 int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );
