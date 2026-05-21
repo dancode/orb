@@ -7,7 +7,10 @@
 
 #include "build_tool.h"
 
+#ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +23,7 @@ static const char* g_out_name        = "sb_base_custom";
 static const char* g_build_proj_name = "orb_build";
 static const char* g_build_dir       = "build_new";
 static const char* g_int_dir         = "obj";
+static const char* g_gen_dir         = "generated";
 
 // Unity Includes
 #include "build_tool_targets.c"
@@ -175,16 +179,23 @@ build_clean( void )
     char cmd[ 256 ];
     sprintf( cmd, "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
     build_run_cmd( cmd );
+    sprintf( cmd, "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
+    build_run_cmd( cmd );
     build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
-    build_run_cmd( "del /s /q bin\\*.exe >nul 2>nul" ); 
+
+    // Delete all EXEs EXCEPT the build_tool itself to prevent locking issues and 
+    // keep the tool available even if a clean followed by a failed build occurs.
+    build_run_cmd( "for %f in (bin\\*.exe) do if not \"%~nxf\"==\"build_tool.exe\" del \"%f\" >nul 2>nul" );
 #else
     char cmd[ 256 ];
-    sprintf( cmd, "rm -rf bin %s/%s", g_build_dir, g_int_dir );
+    sprintf( cmd, "rm -rf bin %s/%s %s/%s", g_build_dir, g_int_dir, g_build_dir, g_gen_dir );
     build_run_cmd( cmd );
     build_run_cmd( "mkdir bin" );
     sprintf( cmd, "mkdir -p %s/%s", g_build_dir, g_int_dir );
+    build_run_cmd( cmd );
+    sprintf( cmd, "mkdir -p %s/%s", g_build_dir, g_gen_dir );
     build_run_cmd( cmd );
 #endif
     printf( "Clean complete.\n" );
@@ -198,6 +209,14 @@ build_target( build_context_t* ctx, target_info_t* target )
     // 1. Setup paths
     char target_obj_dir[ 256 ];
     sprintf( target_obj_dir, "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+    char target_gen_dir[ 256 ];
+    sprintf( target_gen_dir, "%s\\%s", g_build_dir, g_gen_dir );
+
+    char exe_path[ 256 ];
+    char old_path[ 256 ];
+    bool renamed = false;
+    sprintf( exe_path, "bin\\\\%s.exe", target->name );
+    sprintf( old_path, "bin\\\\%s.exe.old", target->name );
 
 #if defined( _WIN32 )
     if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
@@ -217,6 +236,13 @@ build_target( build_context_t* ctx, target_info_t* target )
         system( cmd );
     }
 
+    if ( _access( target_gen_dir, 0 ) != 0 )
+    {
+        char cmd[ 256 ];
+        sprintf( cmd, "mkdir %s", target_gen_dir );
+        system( cmd );
+    }
+
     if ( _access( target_obj_dir, 0 ) != 0 )
     {
         char cmd[ 256 ];
@@ -225,19 +251,19 @@ build_target( build_context_t* ctx, target_info_t* target )
     }
 #else
     char cmd_mkdir[ 512 ];
-    sprintf( cmd_mkdir, "mkdir -p bin %s/%s/%s", g_build_dir, g_int_dir, target->name );
+    sprintf( cmd_mkdir, "mkdir -p bin %s/%s/%s %s/%s", g_build_dir, g_int_dir, target->name, g_build_dir, g_gen_dir );
     system( cmd_mkdir );
 #endif
 
-    // Self-rebuild protection
-    char exe_path[ 256 ];
-    sprintf( exe_path, "bin/%s.exe", target->name );
+    // Self-rebuild protection: Rename the existing EXE so the linker can write a new one
+    // even if the old one is currently running (like build_tool itself).
     if ( target->type == TARGET_EXECUTABLE && _access( exe_path, 0 ) == 0 )
     {
-        char old_path[ 256 ];
-        sprintf( old_path, "bin/%s.exe.old", target->name );
         remove( old_path );
-        rename( exe_path, old_path );
+        if ( rename( exe_path, old_path ) == 0 )
+        {
+            renamed = true;
+        }
     }
 
     // PDB Unlock: If we have an existing PDB, rename it so the linker can write a new one
@@ -255,11 +281,25 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
     }
 
+    // Reflection Step
+    if ( target->has_reflect )
+    {
+        printf( "[REFL] Generating reflection for %s...\n", target->reflect_name );
+        char refl_cmd[ 1024 ];
+        sprintf( refl_cmd, "bin\\build_reflect.exe %s %s %s", target->root_dir, target_gen_dir, target->reflect_name );
+        if ( build_run_cmd( refl_cmd ) != 0 )
+        {
+            if ( renamed ) rename( old_path, exe_path );
+            printf( "Error: Reflection generation failed for %s\n", target->name );
+            return false;
+        }
+    }
+
     // --- Phase 1: Compile ---
     cmd_buf_t compile_cmd = { 0 };
     const char* cc = ctx->is_clang ? "clang-cl.exe" : "cl.exe";
     cmd_append( &compile_cmd, "%s /c /nologo /W4 /WX /Zc:preprocessor /std:c11 ", cc );
-    cmd_append( &compile_cmd, "/I source /Fo%s/ /Fd%s/ ", target_obj_dir, target_obj_dir );
+    cmd_append( &compile_cmd, "/I source /I %s /Fo%s/ /Fd%s/ ", target_gen_dir, target_obj_dir, target_obj_dir );
 
     // Architectural Defines
     cmd_append( &compile_cmd, "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS " );
@@ -281,8 +321,14 @@ build_target( build_context_t* ctx, target_info_t* target )
     for ( int i = 0; i < target->unit_count; ++i )
         cmd_append( &compile_cmd, "%s/%s ", target->root_dir, target->units[ i ] );
 
+    if ( target->has_reflect )
+    {
+        cmd_append( &compile_cmd, "%s/%s.generated.c ", target_gen_dir, target->reflect_name );
+    }
+
     if ( build_run_cmd( compile_cmd.buf ) != 0 )
     {
+        if ( renamed ) rename( old_path, exe_path );
         free( compile_cmd.buf );
         return false;
     }
@@ -324,6 +370,12 @@ build_target( build_context_t* ctx, target_info_t* target )
 
     int result = build_run_cmd( link_cmd.buf );
     free( link_cmd.buf );
+
+    if ( result != 0 && renamed )
+    {
+        // Restore the old executable if the link failed
+        rename( old_path, exe_path );
+    }
 
     return result == 0;
 }
@@ -372,6 +424,27 @@ main( int argc, char** argv )
     printf( "Compiler: %s\n", ctx.is_clang ? "Clang" : "MSVC" );
     printf( "\n" );
 
+    // --- Prioritize build_reflect ---
+    // If we're building everything, or if a target needs reflection, we must have build_reflect.
+    // For simplicity, always try to build it first if it exists in the registry.
+    target_info_t* refl_tool = NULL;
+    for ( int i = 0; i < g_target_count; ++i )
+    {
+        if ( strcmp( g_targets[ i ].name, "build_reflect" ) == 0 )
+        {
+            refl_tool = &g_targets[ i ];
+            break;
+        }
+    }
+    if ( refl_tool )
+    {
+        if ( !build_target( &ctx, refl_tool ) )
+        {
+            printf( "Error: Failed to build reflection tool!\n" );
+            return 1;
+        }
+    }
+
     if ( target_name )
     {
         target_info_t* target = NULL;
@@ -379,6 +452,7 @@ main( int argc, char** argv )
         {
             if ( _stricmp( g_targets[ i ].name, target_name ) == 0 )
             {
+                if ( &g_targets[ i ] == refl_tool ) return 0; // Already built
                 target = &g_targets[ i ];
                 break;
             }

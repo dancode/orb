@@ -35,6 +35,9 @@ typedef struct
     const char*   deps[ 16 ];
     int           dep_count;
 
+    bool          has_reflect;
+    const char*   reflect_name;
+
 } target_info_t;
 
 // --- Target Registry ---

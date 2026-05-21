@@ -378,7 +378,18 @@ make_include_path( const char* abs_path, char* out, int max )
     tmp[ n ] = '\0';
 
     const char* sep = strstr( tmp, "/source/" );
-    rg_str_copy( out, sep ? sep + 8 : tmp, max );
+    if ( sep )
+    {
+        rg_str_copy( out, sep + 8, max );
+    }
+    else if ( strncmp( tmp, "source/", 7 ) == 0 )
+    {
+        rg_str_copy( out, tmp + 7, max );
+    }
+    else
+    {
+        rg_str_copy( out, tmp, max );
+    }
 }
 
 /*--------------------------------------------------------------------------------------------*/

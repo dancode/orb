@@ -60,6 +60,8 @@ dkms.conf
 [Bb]uild/
 [Bb]in/
 [Oo]ut/
+build_new/
+build_new/obj/
 build/
 build_dynamic/
 build_monolithic/

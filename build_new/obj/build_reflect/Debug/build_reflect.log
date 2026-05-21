@@ -1,10 +1,20 @@
-﻿  rs_gen.c
+﻿  
+  F:\orb>if not "build_tool.exe" == "build_tool.exe" del "bin\build_tool.exe"  1>nul 2>nul 
+  Cleaning build artifacts...
+  [CMD] del /s /q build_new\obj\* >nul 2>nul
+  [CMD] del /s /q build_new\generated\* >nul 2>nul
+  [CMD] del /s /q bin\*.pdb >nul 2>nul
+  [CMD] del /s /q bin\*.lib >nul 2>nul
+  [CMD] del /s /q bin\*.dll >nul 2>nul
+  [CMD] for %f in (bin\*.exe) do if not "%~nxf"=="build_tool.exe" del "%f" >nul 2>nul
+  Clean complete.
+  rs_gen.c
+source/tools/rs_gen/rs_gen.c : fatal error C1041: cannot open program database 'F:\orb\build_new\obj\build_reflect\vc140.pdb'; if multiple CL.EXE write to the same .PDB file, please use /FS
   --- ORB Build Starting ---
   
   Config: Debug
   Compiler: MSVC
   
-  [CMD] cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Fobuild_new\obj\build_reflect/ /Fdbuild_new\obj\build_reflect/ /DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS /DBUILD_REFLECT_STATIC /Zi /Od /MDd /D_DEBUG source/tools/rs_gen/rs_gen.c 
-  [CMD] link.exe /nologo /OUT:bin/build_reflect.exe build_new\obj\build_reflect/*.obj /DEBUG /PDB:bin/build_reflect.pdb user32.lib shell32.lib gdi32.lib advapi32.lib 
-  
-  SUCCESS!
+  [CMD] cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /I build_new\generated /Fobuild_new\obj\build_reflect/ /Fdbuild_new\obj\build_reflect/ /DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS /DBUILD_REFLECT_STATIC /Zi /Od /MDd /D_DEBUG source/tools/rs_gen/rs_gen.c 
+EXEC : error : Failed to build reflection tool!
+C:\Program Files\Microsoft Visual Studio\18\Insiders\MSBuild\Microsoft\VC\v170\Microsoft.MakeFile.Targets(55,5): error MSB3073: The command "cd .. && bin\build_tool.exe -config Debug -target build_reflect" exited with code 1.
