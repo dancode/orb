@@ -22,7 +22,6 @@ static int  g_filter_count = 0;
 
 // GUIDs for static projects
 static const char* g_guid_engine = "{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}";
-static const char* g_guid_build  = "{DE231EAC-9C33-B4FA-8440-E3A81E12CA87}";
 
 static void
 add_filter( const char* filter )
@@ -141,6 +140,9 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, bo
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
     fprintf( f, "  <PropertyGroup>\n" );
+    // Consolidate MSBuild output folders to stop the "explosion" in the root
+    fprintf( f, "    <OutDir>$(ProjectDir)bin\\</OutDir>\n" );
+    fprintf( f, "    <IntDir>$(ProjectDir)obj\\$(ProjectName)\\$(Configuration)\\</IntDir>\n" );
     fprintf( f, "    <NMakeBuildCommandLine>bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
     fprintf( f, "    <NMakeOutput>bin\\%s%s</NMakeOutput>\n", out_name, is_lib ? ".lib" : ".exe" );
     fprintf( f, "    <NMakeCleanCommandLine>bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
@@ -163,10 +165,6 @@ build_gen_proj_target( target_info_t* target, int index )
 
     write_vcxproj_common_header( f, guid, target->name, target->type == TARGET_STATIC_LIB );
 
-    // 1. Scan target directory for files
-    // For simplicity, we'll just scan the immediate root_dir for now.
-    // If the target spans multiple folders, it would need a more complex scan.
-    
     char search_path[ 512 ];
     sprintf( search_path, "%s/*", target->root_dir );
 
@@ -249,6 +247,9 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
     fprintf( f, "  <PropertyGroup>\n" );
+    // Consolidate MSBuild output folders
+    fprintf( f, "    <OutDir>$(ProjectDir)bin\\</OutDir>\n" );
+    fprintf( f, "    <IntDir>$(ProjectDir)obj\\$(ProjectName)\\$(Configuration)\\</IntDir>\n" );
     fprintf( f, "    <NMakeBuildCommandLine>bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
     fprintf( f, "    <NMakeOutput>bin\\%s.exe</NMakeOutput>\n", g_out_name );
     fprintf( f, "    <NMakeCleanCommandLine>bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
@@ -268,7 +269,6 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "</Project>\n" );
     fclose( f );
 
-    // Filters file
     char filters_path[ 256 ];
     sprintf( filters_path, "%s.vcxproj.filters", g_proj_name );
     f = fopen( filters_path, "w" );
@@ -303,16 +303,14 @@ build_gen_projects( void )
 {
     printf( "Generating Visual Studio projects...\n" );
 
-    // 1. Generate Target Projects
     for ( int i = 0; i < g_target_count; ++i )
     {
         build_gen_proj_target( &g_targets[ i ], i );
     }
 
-    // 2. Generate Navigation Project
     build_gen_proj_engine_navigation();
 
-    // 3. Generate Master Solution
+    // --- 3. Master Solution File ---
     char sln_path[ 256 ];
     sprintf( sln_path, "%s.sln", g_proj_name );
     FILE* f = fopen( sln_path, "w" );
@@ -321,34 +319,81 @@ build_gen_projects( void )
         fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
         fprintf( f, "# Visual Studio Version 17\n" );
 
-        // Write Engine Project
-        fprintf( f, "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", g_proj_name, g_proj_name, g_guid_engine );
+        // VS Project Type GUIDs
+        const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
+        const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
+
+        // Write Navigation Project
+        fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, g_proj_name, g_proj_name, g_guid_engine );
         fprintf( f, "EndProject\n" );
+
+        // Collect Unique Folders
+        char  folders[ 16 ][ 64 ];
+        char  folder_guids[ 16 ][ 64 ];
+        int   folder_count = 0;
+
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            bool found = false;
+            for ( int j = 0; j < folder_count; ++j )
+            {
+                if ( strcmp( folders[ j ], g_targets[ i ].sln_folder ) == 0 )
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if ( !found && folder_count < 16 )
+            {
+                strcpy( folders[ folder_count ], g_targets[ i ].sln_folder );
+                sprintf( folder_guids[ folder_count ], "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xF000 + folder_count );
+                folder_count++;
+            }
+        }
+
+        // Write Folder Projects
+        for ( int i = 0; i < folder_count; ++i )
+        {
+            fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", folder_type_guid, folders[ i ], folders[ i ], folder_guids[ i ] );
+            fprintf( f, "EndProject\n" );
+        }
 
         // Write Target Projects
         for ( int i = 0; i < g_target_count; ++i )
         {
             char guid[ 64 ];
             sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
-            fprintf( f, "Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", g_targets[ i ].name, g_targets[ i ].name, guid );
+            fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, g_targets[ i ].name, g_targets[ i ].name, guid );
             fprintf( f, "EndProject\n" );
         }
 
         fprintf( f, "Global\n" );
-        
-        // Configuration Mapping
         fprintf( f, "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n" );
         fprintf( f, "\t\tDebug|x64 = Debug|x64\n" );
         fprintf( f, "\t\tRelease|x64 = Release|x64\n" );
         fprintf( f, "\tEndGlobalSection\n" );
 
-        // Solution Folders (Nesting)
         fprintf( f, "\tGlobalSection(NestedProjects) = preSolution\n" );
-        // We'll need another set of GUIDs for the folders themselves.
-        // For now, let's keep it simple and just list projects.
-        // Folders require explicit "Project" entries of a special type.
-        fprintf( f, "\tEndGlobalSection\n" );
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            char proj_guid[ 64 ];
+            sprintf( proj_guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
 
+            char folder_guid[ 64 ] = "";
+            for ( int j = 0; j < folder_count; ++j )
+            {
+                if ( strcmp( folders[ j ], g_targets[ i ].sln_folder ) == 0 )
+                {
+                    strcpy( folder_guid, folder_guids[ j ] );
+                    break;
+                }
+            }
+            if ( folder_guid[ 0 ] != '\0' )
+            {
+                fprintf( f, "\t\t%s = %s\n", proj_guid, folder_guid );
+            }
+        }
+        fprintf( f, "\tEndGlobalSection\n" );
         fprintf( f, "EndGlobal\n" );
         fclose( f );
     }

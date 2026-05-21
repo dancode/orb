@@ -165,16 +165,15 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
 void
 build_clean( void )
 {
-	 // Deletes the entire bin/ and obj/ dirs and re-creates them as empty folders.
-	 // Ensures old DLLs, PDBs, or EXEs are wiped before a fresh build starts.
-	 
     printf( "Cleaning build artifacts...\n" );
 #if defined( _WIN32 )
-    // Deleting directories on Windows
-    build_run_cmd( "rmdir /s /q bin" );
-    build_run_cmd( "rmdir /s /q obj" );
-    build_run_cmd( "mkdir bin" );
-    build_run_cmd( "mkdir obj" );
+    // We avoid rmdir /s /q bin because the build_tool.exe itself is likely running from there.
+    // Instead, we surgically delete files we can, and ignore the rest.
+    build_run_cmd( "del /s /q obj\\* >nul 2>nul" );
+    build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
+    build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
+    build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
+    build_run_cmd( "del /s /q bin\\*.exe >nul 2>nul" ); 
 #else
     build_run_cmd( "rm -rf bin obj" );
     build_run_cmd( "mkdir bin obj" );
@@ -189,11 +188,27 @@ build_target( build_context_t* ctx, target_info_t* target )
 {
     // Ensure directories exist
 #if defined( _WIN32 )
-    system( "if not exist bin mkdir bin" );
-    system( "if not exist obj mkdir obj" );
+    if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
+    if ( _access( "obj", 0 ) != 0 ) system( "mkdir obj" );
 #else
     system( "mkdir -p bin obj" );
 #endif
+
+    // Self-rebuild protection: If we are building ourselves, rename the running exe
+    // so the linker can create a new one without "Access Denied".
+    char exe_path[ 256 ];
+    sprintf( exe_path, "bin/%s.exe", target->name );
+    if ( target->type == TARGET_EXECUTABLE && _access( exe_path, 0 ) == 0 )
+    {
+        char old_path[ 256 ];
+        sprintf( old_path, "bin/%s.exe.old", target->name );
+        remove( old_path );
+        if ( rename( exe_path, old_path ) != 0 )
+        {
+            // If rename fails, it might be already renamed or locked by something else.
+            // We continue anyway and let the linker report the error if it persists.
+        }
+    }
 
     cmd_buf_t cmd = { 0 };
 

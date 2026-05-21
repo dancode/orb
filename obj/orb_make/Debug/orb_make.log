@@ -1,0 +1,26 @@
+﻿  Cleaning build artifacts...
+  [CMD] del /s /q obj\* >nul 2>nul
+  [CMD] del /s /q bin\*.pdb >nul 2>nul
+  [CMD] del /s /q bin\*.lib >nul 2>nul
+  [CMD] del /s /q bin\*.dll >nul 2>nul
+  [CMD] del /s /q bin\*.exe >nul 2>nul
+  Clean complete.
+cl : Command line warning D9025: overriding '/Foobj/' with '/Foobj/orb_base.obj'
+  base.c
+  base_main.c
+  LINK : bin\sb_base_custom.exe not found or not built by the last incremental link; performing full link
+  build_tool.c
+  LINK : bin\build_tool.exe not found or not built by the last incremental link; performing full link
+  --- ORB Build Starting ---
+  
+  Config: Debug
+  Compiler: MSVC
+  
+  Building target: orb_base
+  [CMD] cl.exe /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Foobj/ /Fdobj/ /Zi /Od /MDd /D_DEBUG source/base/base.c /c /Foobj/orb_base.obj 
+  Building target: sb_base_custom
+  [CMD] cl.exe /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Foobj/ /Fdobj/ /Zi /Od /MDd /D_DEBUG source/base/base_main.c /Fe:bin/sb_base_custom.exe /link /DEBUG /PDB:bin/sb_base_custom.pdb 
+  Building target: build_tool
+  [CMD] cl.exe /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Foobj/ /Fdobj/ /Zi /Od /MDd /D_DEBUG source/tools/build_tool/build_tool.c /Fe:bin/build_tool.exe /link /DEBUG /PDB:bin/build_tool.pdb 
+  
+  SUCCESS!
