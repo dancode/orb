@@ -6,15 +6,6 @@
     or CMake scripts with a simple, high-performance C program that directly invokes
     the compiler (cl.exe) and linker (link.exe).
 
-    Key Responsibilities:
-    1. Locating Visual Studio and setting up the shell environment (vcvarsall).
-    2. Managing build artifacts (bin/ and obj/ directories).
-    3. Performing recursive dependency resolution (building required libs/tools).
-    4. Implementing timestamp-based incremental builds (only rebuild what changed).
-    5. Coordinating reflection generation via build_reflect.exe.
-    6. Constructing and executing compiler/linker command lines for all targets.
-    7. Generating Visual Studio solution files for developer ergonomics.
-
     Architecture Note:
     This tool is designed to be a "Unity Build" — all supporting files (.c) are 
     directly included here. This makes bootstrapping the build tool itself 
@@ -23,12 +14,11 @@
 ==============================================================================================*/
 // clang-format off
 
-#include "build_tool.h"
-
 #ifndef _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS /* required for bootstrap_build_tool.bat */
+#define _CRT_SECURE_NO_WARNINGS
 #endif
 
+#include "build_tool.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,169 +30,16 @@
 
 // --- Project Constants ---
 
-static const char* g_proj_name       = "orb_stack";      // The main VS solution name.
-static const char* g_out_name        = "sb_base_custom"; // Default "output" target for navigation.
-static const char* g_build_proj_name = "orb_build";      // Secondary build solution.
 static const char* g_build_dir       = "build_new";      // Root for intermediate/generated files.
 static const char* g_int_dir         = "obj";            // Folder for .obj files.
 static const char* g_gen_dir         = "generated";      // Folder for reflection-generated code.
 
 // --- Unity Includes ---
-// We include the target registry and project generator directly to keep the
-// build tool as a single compilation unit for extreme speed and simplicity.
+#include "build_tool_utils.c"
+#include "build_tool_vcvars.c"
+#include "build_tool_cc.c"
 #include "build_tool_targets.c"
 #include "build_tool_gen.c"
-
-/*============================================================================================*/
-// --- Command Execution & Environment ---
-
-#define CMD_BUF_MAX 65536  // Max size for any single compiler/linker command line.
-
-// Stores the "call vcvarsall.bat &&" prefix used for all compiler commands.
-static char g_vc_env_cmd[ 512 ] = { 0 };
-
-/**
- * build_setup_vc_env()
- * 
- * Locates the Visual Studio installation on the host machine. 
- * This is crucial because cl.exe and link.exe are not in the PATH by default.
- * It uses 'vswhere.exe' to find the latest VS installation and prepares a 
- * "call vcvarsall.bat" command that will be prefixed to every compiler call.
- */
-static void
-build_setup_vc_env( void )
-{
-#if defined( _WIN32 )
-    // Optimization: If cl.exe is already in the PATH (e.g. running from a Dev Cmd Prompt),
-    // we don't need to do anything.
-    if ( system( "cl.exe >nul 2>nul" ) == 0 ) return;
-
-    printf( "cl.exe not found in PATH. Attempting to locate Visual Studio...\n" );
-
-    // Common locations for vswhere.exe (the standard VS discovery tool).
-    const char* vswhere_paths[] = {
-        "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
-        "\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",        
-        "\"%ProgramFiles%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
-    };
-
-    bool found = false;
-    for ( int i = 0; i < sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ); ++i )
-    {
-        char cmd[ 1024 ];
-        // Run vswhere to get the installation path and pipe it to a temporary file.
-        sprintf( cmd, "%s -latest -products * -property installationPath > vc_path.txt", vswhere_paths[ i ] );
-
-        if ( system( cmd ) == 0 )
-        {
-            FILE* f = fopen( "vc_path.txt", "r" );
-            if ( f )
-            {
-                char vc_path[ 512 ];
-                if ( fgets( vc_path, sizeof( vc_path ), f ) )
-                {
-                    // Clean up newline characters from the path.
-                    char* nl = strpbrk( vc_path, "\r\n" );
-                    if ( nl ) *nl = '\0';
-
-                    if ( strlen( vc_path ) > 0 )
-                    {
-                        // Construct the command that sets up the x64 environment.
-                        sprintf( g_vc_env_cmd, "call \"%s\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 >nul && ", vc_path );
-                        found = true;
-                    }
-                }
-                fclose( f );
-                remove( "vc_path.txt" );
-            }
-        }
-        if ( found ) break;
-    }
-
-    if ( found )
-    {
-        printf( "VC Environment setup command: %s\n", g_vc_env_cmd );
-    }
-    else
-    {
-        // Fallback: If vswhere fails, check common installation paths directly.
-        printf( "Warning: Could not auto-locate Visual Studio via vswhere. Trying common paths...\n" );
-        const char* common_vcvars[] = {
-            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
-            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat",
-            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat",
-            "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
-        };
-
-        for ( int i = 0; i < sizeof( common_vcvars ) / sizeof( common_vcvars[ 0 ] ); ++i )
-        {
-            if ( _access( common_vcvars[ i ], 0 ) == 0 )
-            {
-                sprintf( g_vc_env_cmd, "call \"%s\" x64 >nul && ", common_vcvars[ i ] );
-                printf( "Found vcvarsall.bat at: %s\n", common_vcvars[ i ] );
-                found = true;
-                break;
-            }
-        }
-    }
-
-    if ( !found )
-    {
-        printf( "Warning: Could not locate Visual Studio. Compiler commands will likely fail.\n" );
-    }
-#endif
-}
-
-/**
- * build_run_cmd()
- * 
- * A wrapper around system() that automatically injects the VC environment prefix
- * if the command is a compiler/linker call. This allows the build tool to work
- * even when run from a standard PowerShell/CMD prompt.
- */
-int
-build_run_cmd( const char* cmd )
-{
-    // Extra 1024 for the vcvarsall prefix on top of the max command length.
-    char full_cmd[ CMD_BUF_MAX + 1024 ];
-    if ( g_vc_env_cmd[ 0 ] != '\0' && ( strstr( cmd, "cl.exe" ) || strstr( cmd, "link.exe" ) || strstr( cmd, "lib.exe" ) ) )
-    {
-        snprintf( full_cmd, sizeof( full_cmd ), "%s %s", g_vc_env_cmd, cmd );
-    }
-    else
-    {
-        snprintf( full_cmd, sizeof( full_cmd ), "%s", cmd );
-    }
-
-    printf( "[CMD] %s\n", full_cmd );
-    return system( full_cmd );
-}
-
-/*============================================================================================*/
-// --- String Buffer (Helper for building command lines) ---
-
-typedef struct
-{
-    char   buf[ CMD_BUF_MAX ];
-    size_t size;
-
-} cmd_buf_t;
-
-/**
- * cmd_append()
- * 
- * Appends a formatted string to a command buffer. 
- * High-performance alternative to repeated strcat/sprintf calls.
- */
-static void
-cmd_append( cmd_buf_t* b, const char* fmt, ... )
-{
-    va_list args;
-    va_start( args, fmt );
-    int written = vsnprintf( b->buf + b->size, CMD_BUF_MAX - b->size, fmt, args );
-    va_end( args );
-    if ( written > 0 ) b->size += (size_t)written;
-}
 
 /*============================================================================================*/
 // --- Core Build Logic ---
@@ -211,8 +48,6 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
  * build_clean()
  * 
  * Wipes the bin/ and obj/ directories. 
- * Special care is taken on Windows to not delete the build_tool.exe itself 
- * because it's usually the one running this code!
  */
 void
 build_clean( void )
@@ -220,19 +55,16 @@ build_clean( void )
     printf( "Cleaning build artifacts...\n" );
 #if defined( _WIN32 )
     char cmd[ 256 ];
-    // Delete intermediate objects and generated reflection code.
     sprintf( cmd, "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
     build_run_cmd( cmd );
     sprintf( cmd, "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
     build_run_cmd( cmd );
     
-    // Delete binaries.
     build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
 
     // Surgical delete: remove all EXEs EXCEPT ourselves. 
-    // This allows the build system to "self-clean" without crashing.
     build_run_cmd( "for %f in (bin\\*.exe) do if not \"%~nxf\"==\"build_tool.exe\" del \"%f\" >nul 2>nul" );
 #else
     char cmd[ 256 ];
@@ -250,133 +82,96 @@ build_clean( void )
 /*============================================================================================*/
 
 /**
- * build_get_mtime()
- * 
- * Returns the last modification time of a file. Returns 0 if the file doesn't exist.
- * This is the foundation of our incremental build system.
- */
-static __time64_t
-build_get_mtime( const char* path )
-{
-    struct __stat64 s;
-    if ( _stat64( path, &s ) == 0 ) return s.st_mtime;
-    return 0;
-}
-
-/**
  * build_target()
  * 
  * The main worker function for building a single artifact.
- * 
- * Execution Flow:
- * 1. Dependency Check: Recursively builds any deps or tool_deps.
- * 2. Incremental Check: Compares output timestamp against all sources/deps.
- * 3. Environment Setup: Ensures output directories exist.
- * 4. Locked File Management: Renames existing EXEs/PDBs to allow overwriting.
- * 5. Reflection Phase: Runs build_reflect.exe if required.
- * 6. Compilation Phase: Invokes cl.exe for all translation units.
- * 7. Linking/Archiving Phase: Invokes link.exe or lib.exe.
  */
 bool
 build_target( build_context_t* ctx, target_info_t* target )
 {
     // --- 0. Dependency Resolution ---
     
-    // Build Link Dependencies (libs).
+    // Link Dependencies (libs)
     for ( int i = 0; i < target->dep_count; ++i )
     {
         target_info_t* dep = NULL;
         for ( int j = 0; j < g_target_count; ++j )
         {
-            if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 )
-            {
-                dep = &g_targets[ j ];
-                break;
-            }
+            if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 ) { dep = &g_targets[ j ]; break; }
         }
-        if ( dep )
-        {
-            // Recursive call. If it returns true, it might have been rebuilt or skipped.
-            if ( !build_target( ctx, dep ) ) return false;
-        }
+        if ( dep && !build_target( ctx, dep ) ) return false;
     }
 
-    // Build Tool Dependencies (exes). 
-    // These must exist to build the current target (e.g. build_reflect.exe).
+    // Tool Dependencies (exes)
     for ( int i = 0; i < target->tool_dep_count; ++i )
     {
         target_info_t* tool = NULL;
         for ( int j = 0; j < g_target_count; ++j )
         {
-            if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 )
-            {
-                tool = &g_targets[ j ];
-                break;
-            }
+            if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
         }
-        if ( tool )
-        {
-            if ( !build_target( ctx, tool ) ) return false;
-        }
+        if ( tool && !build_target( ctx, tool ) ) return false;
     }
 
     // --- 1. Path Preparation ---
-    char target_obj_dir[ 256 ];
-    sprintf( target_obj_dir, "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
-    char target_gen_dir[ 256 ];
-    sprintf( target_gen_dir, "%s\\%s", g_build_dir, g_gen_dir );
+    char obj_dir[ 256 ];
+    sprintf( obj_dir, "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+    char gen_dir[ 256 ];
+    sprintf( gen_dir, "%s\\%s", g_build_dir, g_gen_dir );
 
-    char ext[ 8 ];
-    if ( target->type == TARGET_STATIC_LIB ) strcpy( ext, ".lib" );
-    else if ( target->type == TARGET_DYNAMIC_LIB ) strcpy( ext, ".dll" );
-    else strcpy( ext, ".exe" );
+    const char* ext = ( target->type == TARGET_STATIC_LIB )  ? ".lib" :
+                      ( target->type == TARGET_DYNAMIC_LIB ) ? ".dll" : ".exe";
 
     char out_path[ 256 ];
     sprintf( out_path, "bin\\%s%s", target->name, ext );
 
-    // --- 2. Up-to-Date Check (Incremental Building) ---
+    // --- 2. Up-to-Date Check ---
 
     __time64_t out_mtime = build_get_mtime( out_path );
-    bool is_up_to_date = ( out_mtime != 0 );
+    bool up_to_date = ( out_mtime != 0 );
 
-    if ( is_up_to_date )
+    if ( up_to_date )
     {
-        // Check if any source files are newer than the output.
         for ( int i = 0; i < target->unit_count; ++i )
         {
             char src_path[ 512 ];
             sprintf( src_path, "%s/%s", target->root_dir, target->units[ i ] );
-            if ( build_get_mtime( src_path ) > out_mtime )
-            {
-                is_up_to_date = false;
-                break;
-            }
+            if ( build_get_mtime( src_path ) > out_mtime ) { up_to_date = false; break; }
         }
     }
 
-    if ( is_up_to_date )
+    if ( up_to_date )
     {
-        // Check if any link dependencies are newer than the output.
-        // This ensures that if base.lib changes, sb_base_custom.exe is re-linked.
         for ( int i = 0; i < target->dep_count; ++i )
         {
             char dep_path[ 256 ];
             sprintf( dep_path, "bin\\%s.lib", target->deps[ i ] );
-            if ( build_get_mtime( dep_path ) > out_mtime )
-            {
-                is_up_to_date = false;
-                break;
-            }
+            if ( build_get_mtime( dep_path ) > out_mtime ) { up_to_date = false; break; }
         }
     }
 
-    if ( is_up_to_date )
-    {
-        // Target is up to date, skip building.
-        return true;
-    }
+    if ( up_to_date ) return true;
 
     printf( "Building target: %s\n", target->name );
+
+    // --- 3. Directory Creation ---
+
+#if defined( _WIN32 )
+    if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
+    if ( _access( g_build_dir, 0 ) != 0 ) { char c[256]; sprintf(c, "mkdir %s", g_build_dir); system(c); }
+    
+    char int_root[ 256 ];
+    sprintf( int_root, "%s\\%s", g_build_dir, g_int_dir );
+    if ( _access( int_root, 0 ) != 0 ) { char c[256]; sprintf(c, "mkdir %s", int_root); system(c); }
+    if ( _access( gen_dir, 0 ) != 0 ) { char c[256]; sprintf(c, "mkdir %s", gen_dir); system(c); }
+    if ( _access( obj_dir, 0 ) != 0 ) { char c[256]; sprintf(c, "mkdir %s", obj_dir); system(c); }
+#else
+    char cmd_mkdir[ 512 ];
+    sprintf( cmd_mkdir, "mkdir -p bin %s/%s/%s %s/%s", g_build_dir, g_int_dir, target->name, g_build_dir, g_gen_dir );
+    system( cmd_mkdir );
+#endif
+
+    // --- 4. Locked File Management ---
 
     char exe_path[ 256 ];
     char old_path[ 256 ];
@@ -384,289 +179,105 @@ build_target( build_context_t* ctx, target_info_t* target )
     sprintf( exe_path, "bin\\%s.exe", target->name );
     sprintf( old_path, "bin\\%s.exe.old", target->name );
 
-#if defined( _WIN32 )
-    // Ensure the entire directory hierarchy exists before starting.
-    if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
-    if ( _access( g_build_dir, 0 ) != 0 )
-    {
-        char cmd[ 256 ];
-        sprintf( cmd, "mkdir %s", g_build_dir );
-        system( cmd );
-    }
-    
-    char int_root[ 256 ];
-    sprintf( int_root, "%s\\%s", g_build_dir, g_int_dir );
-    if ( _access( int_root, 0 ) != 0 )
-    {
-        char cmd[ 256 ];
-        sprintf( cmd, "mkdir %s", int_root );
-        system( cmd );
-    }
-
-    if ( _access( target_gen_dir, 0 ) != 0 )
-    {
-        char cmd[ 256 ];
-        sprintf( cmd, "mkdir %s", target_gen_dir );
-        system( cmd );
-    }
-
-    if ( _access( target_obj_dir, 0 ) != 0 )
-    {
-        char cmd[ 256 ];
-        sprintf( cmd, "mkdir %s", target_obj_dir );
-        system( cmd );
-    }
-#else
-    char cmd_mkdir[ 512 ];
-    sprintf( cmd_mkdir, "mkdir -p bin %s/%s/%s %s/%s", g_build_dir, g_int_dir, target->name, g_build_dir, g_gen_dir );
-    system( cmd_mkdir );
-#endif
-
-    // --- 3. Locked File Management ---
-
-    // Self-rebuild protection: On Windows, you can't overwrite a running .exe, 
-    // but you CAN rename it. This allows the build_tool to rebuild itself 
-    // while it's running.
     if ( target->type == TARGET_EXECUTABLE && _access( exe_path, 0 ) == 0 )
     {
         remove( old_path );
-        if ( rename( exe_path, old_path ) == 0 )
-        {
-            renamed = true;
-        }
+        if ( rename( exe_path, old_path ) == 0 ) renamed = true;
     }
 
-    // PDB Unlock: Simlar to EXEs, debuggers (like VS) often lock .pdb files.
-    // Renaming them allows the linker to write a fresh one.
     if ( target->type == TARGET_EXECUTABLE || target->type == TARGET_DYNAMIC_LIB )
     {
-        char pdb_path[ 256 ];
+        char pdb_path[ 256 ], old_pdb[ 256 ];
         sprintf( pdb_path, "bin/%s.pdb", target->name );
-        if ( _access( pdb_path, 0 ) == 0 )
-        {
-            char old_pdb[ 256 ];
-            sprintf( old_pdb, "bin/%s.pdb.old", target->name );
-            remove( old_pdb );
-            rename( pdb_path, old_pdb );
-        }
+        sprintf( old_pdb, "bin/%s.pdb.old", target->name );
+        if ( _access( pdb_path, 0 ) == 0 ) { remove( old_pdb ); rename( pdb_path, old_pdb ); }
     }
 
-    // --- 4. Reflection Generation ---
+    // --- 5. Reflection ---
 
-    // If the target has the has_reflect flag, we invoke the specialized
-    // build_reflect.exe tool. It parses the target's source code and
-    // generates metadata (.c/.h) files used by the engine's runtime 
-    // reflection system.
     if ( target->has_reflect )
     {
         printf( "[REFL] Generating reflection for %s...\n", target->reflect_name );
         char refl_cmd[ 1024 ];
-        sprintf( refl_cmd, "bin\\build_reflect.exe %s %s %s", target->root_dir, target_gen_dir, target->reflect_name );
+        sprintf( refl_cmd, "bin\\build_reflect.exe %s %s %s", target->root_dir, gen_dir, target->reflect_name );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
-            // If reflection fails, we abort and try to restore the old binary.
             if ( renamed ) rename( old_path, exe_path );
-            printf( "Error: Reflection generation failed for %s\n", target->name );
             return false;
         }
     }
 
-    // --- Phase 1: Compile ---
+    // --- 6. Compile & Link ---
 
-    cmd_buf_t compile_cmd = { 0 };
-    const char* cc = ctx->is_clang ? "clang-cl.exe" : "cl.exe";
-
-    // Base flags: 
-    // /c: Compile only, no link.
-    // /nologo: Suppress banner.
-    // /W4 /WX: Max warnings, treat as errors.
-    // /std:c11: Use C11 standard.
-    cmd_append( &compile_cmd, "%s /c /nologo /W4 /WX /Zc:preprocessor /std:c11 ", cc );
-    
-    // Include paths and output directories.
-    cmd_append( &compile_cmd, "/I source /I %s /Fo%s/ /Fd%s/ ", target_gen_dir, target_obj_dir, target_obj_dir );
-
-    // Architectural Defines used globally in the engine.
-    cmd_append( &compile_cmd, "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS " );
-
-    // Target-specific static define (e.g. /DBASE_STATIC).
-    // This is used for export/import macros in headers.
-    char target_upper[ 128 ];
-    strcpy( target_upper, target->name );
-    for ( char* p = target_upper; *p; ++p ) *p = ( char )toupper( *p );
-    cmd_append( &compile_cmd, "/D%s_STATIC ", target_upper );
-
-    if ( ctx->is_monolithic )
-        cmd_append( &compile_cmd, "/DBUILD_STATIC " );
-
-    // Config-specific flags.
-    if ( ctx->config == CONFIG_DEBUG )
-        cmd_append( &compile_cmd, "/Zi /Od /MDd /D_DEBUG " ); // Debug: Symbols, No Opts, Debug CRT.
-    else
-        cmd_append( &compile_cmd, "/O2 /MD /DNDEBUG " );      // Release: Max Opts, No Symbols, Release CRT.
-
-    // Add all translation units listed in the target descriptor.
-    for ( int i = 0; i < target->unit_count; ++i )
-        cmd_append( &compile_cmd, "%s/%s ", target->root_dir, target->units[ i ] );
-
-    // Add generated reflection code if applicable.
-    if ( target->has_reflect )
-    {
-        cmd_append( &compile_cmd, "%s/%s.generated.c ", target_gen_dir, target->reflect_name );
-    }
-
-    if ( build_run_cmd( compile_cmd.buf ) != 0 )
+    if ( !build_target_compile( ctx, target, obj_dir, gen_dir ) )
     {
         if ( renamed ) rename( old_path, exe_path );
         return false;
     }
 
-    // --- Phase 2: Link/Archive ---
-
-    cmd_buf_t link_cmd = { 0 };
-    if ( target->type == TARGET_STATIC_LIB )
+    if ( !build_target_link( ctx, target, obj_dir ) )
     {
-        // For static libraries, we use lib.exe to bundle .obj files into a .lib archive.
-        cmd_append( &link_cmd, "lib.exe /nologo /OUT:bin/%s.lib %s/*.obj", target->name, target_obj_dir );
-    }
-    else
-    {
-        // For EXEs and DLLs, we use link.exe.
-        const char* linker = "link.exe";
-        cmd_append( &link_cmd, "%s /nologo ", linker );
-        
-        if ( target->type == TARGET_DYNAMIC_LIB )
-        {
-            cmd_append( &link_cmd, "/DLL " );
-            // Import lib lands in bin/ alongside static libs so dep resolution is uniform.
-            cmd_append( &link_cmd, "/IMPLIB:bin/%s.lib ", target->name );
-        }
-
-        cmd_append( &link_cmd, "/OUT:bin/%s%s %s/*.obj ", target->name, 
-                    (target->type == TARGET_EXECUTABLE) ? ".exe" : ".dll", target_obj_dir );
-        
-        cmd_append( &link_cmd, "/DEBUG /PDB:bin/%s.pdb ", target->name );
-
-        // Link against dependencies listed in the registry.
-        // For now, we assume all dependencies are static libraries located in bin/.
-        for ( int i = 0; i < target->dep_count; ++i )
-        {
-            cmd_append( &link_cmd, "bin/%s.lib ", target->deps[ i ] );
-        }
-        
-        // Link against standard Windows system libraries.
-        cmd_append( &link_cmd, "user32.lib shell32.lib gdi32.lib advapi32.lib " );
+        if ( renamed ) rename( old_path, exe_path );
+        return false;
     }
 
-    int result = build_run_cmd( link_cmd.buf );
-
-    if ( result != 0 && renamed )
-    {
-        // If the build failed, try to restore the old executable so the user
-        // still has something they can run (or so build_tool.exe is preserved).
-        rename( old_path, exe_path );
-    }
-
-    return result == 0;
+    return true;
 }
 
 /*============================================================================================*/
 // --- Main Entry ---
 
-/**
- * main()
- * 
- * Orchestrates the overall build process based on command line arguments.
- */
 int
 main( int argc, char** argv )
 {
     build_context_t ctx = { 0 };
+    ctx.config = CONFIG_DEBUG;
 
-    ctx.config          = CONFIG_DEBUG; // Default to Debug.
+    bool should_clean = false;
+    bool should_gen   = false;
+    char* target_name = NULL;
 
-    bool should_clean   = false;
-    bool should_gen     = false;
-    char* target_name   = NULL;
-
-    // --- 1. Argument Parsing ---
     for ( int i = 1; i < argc; ++i )
     {
-        if (  strcmp(  argv[ i ], "-clean" ) == 0 || strcmp( argv[ i ], "clean" ) == 0 ) should_clean = true;
-        if (  strcmp(  argv[ i ], "-gen" ) == 0 || strcmp( argv[ i ], "gen" ) == 0 ) should_gen = true;
+        if ( strcmp( argv[ i ], "-clean" ) == 0 || strcmp( argv[ i ], "clean" ) == 0 ) should_clean = true;
+        if ( strcmp( argv[ i ], "-gen" ) == 0 || strcmp( argv[ i ], "gen" ) == 0 ) should_gen = true;
         if ( _stricmp( argv[ i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
-        if (  strcmp(  argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
-        if (  strcmp(  argv[ i ], "-target" ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
-        // VS NMake passes -config Debug|Release — this is the primary config selector from the IDE.
-        if (  strcmp(  argv[ i ], "-config" ) == 0 && i + 1 < argc )
+        if ( strcmp( argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
+        if ( strcmp( argv[ i ], "-target" ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
+        if ( strcmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
         {
             if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
     }
 
-    // --- 2. Clean Command ---
-    if ( should_clean )
-    {
-        build_clean();
-        return 0;
-    }
-
-    // --- 3. Project Generation ---
-    if ( should_gen )
-    {
-        build_gen_projects();
-        return 0;
-    }
+    if ( should_clean ) { build_clean(); return 0; }
+    if ( should_gen ) { build_gen_projects(); return 0; }
 
     printf( "--- ORB Build Starting ---\n\n" );
-
-    // --- 4. Environment Setup ---
     build_setup_vc_env();
 
     printf( "Config: %s\n", ctx.config == CONFIG_DEBUG ? "Debug" : "Release" );
-    printf( "Compiler: %s\n", ctx.is_clang ? "Clang" : "MSVC" );
-    printf( "\n" );
-
-    // --- 5. Target Execution ---
+    printf( "Compiler: %s\n\n", ctx.is_clang ? "Clang" : "MSVC" );
 
     if ( target_name )
     {
-        // Build a specific target requested by the user. 
-        // Recursive logic handles all dependencies.
         target_info_t* target = NULL;
         for ( int i = 0; i < g_target_count; ++i )
         {
-            if ( _stricmp( g_targets[ i ].name, target_name ) == 0 )
-            {
-                target = &g_targets[ i ];
-                break;
-            }
+            if ( _stricmp( g_targets[ i ].name, target_name ) == 0 ) { target = &g_targets[ i ]; break; }
         }
 
         if ( target )
         {
-            if ( !build_target( &ctx, target ) )
-            {
-                printf( "\nFAILED!\n" );
-                return 1;
-            }
+            if ( !build_target( &ctx, target ) ) { printf( "\nFAILED!\n" ); return 1; }
         }
-        else
-        {
-            printf( "Error: Unknown target '%s'\n", target_name );
-            return 1;
-        }
+        else { printf( "Error: Unknown target '%s'\n", target_name ); return 1; }
     }
     else
     {
-        // Default behavior: Build all targets in the registry sequentially.
         for ( int i = 0; i < g_target_count; ++i )
         {
-            if ( !build_target( &ctx, &g_targets[ i ] ) )
-            {
-                printf( "\nFAILED on target '%s'!\n", g_targets[ i ].name );
-                return 1;
-            }
+            if ( !build_target( &ctx, &g_targets[ i ] ) ) { printf( "\nFAILED on target '%s'!\n", g_targets[ i ].name ); return 1; }
         }
     }
 

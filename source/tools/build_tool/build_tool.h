@@ -17,8 +17,23 @@
 #define BUILD_TOOL_H
 
 #include <stdbool.h>
+#include <time.h>
+
+// --- Project Constants ---
+
+#define CMD_BUF_MAX 65536  // Max size for any single compiler/linker command line.
+
+// --- Helper Types ---
+
+typedef struct
+{
+    char   buf[ CMD_BUF_MAX ];
+    size_t size;
+
+} cmd_buf_t;
 
 // --- Configuration ---
+// ... (rest of the file remains same but I need to provide it all or a good chunk)
 
 // Standard build configurations. These map to compiler optimization levels 
 // and debug symbol generation. The enum values are used to index configuration
@@ -108,6 +123,23 @@ extern solution_info_t g_solutions[];
 extern int             g_solution_count;
 
 // --- Orchestration API ---
+
+// ... (other declarations)
+
+// Compiles all translation units for a target.
+bool build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir );
+
+// Links or archives the target's objects into the final artifact.
+bool build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir );
+
+// Locates the Visual Studio installation and prepares the environment.
+void build_setup_vc_env( void );
+
+// Appends a formatted string to a command buffer.
+void cmd_append( cmd_buf_t* b, const char* fmt, ... );
+
+// Returns the last modification time of a file. Returns 0 if not found.
+__time64_t build_get_mtime( const char* path );
 
 // Run a shell command and return the exit code. 
 // Automatically handles Visual Studio environment (vcvarsall) if necessary.
