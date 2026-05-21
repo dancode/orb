@@ -122,8 +122,12 @@ scan_directory_recursive( const char* dir )
 }
 
 static void
-write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, bool is_lib )
+write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, target_type_t type )
 {
+    const char* ext = ".exe";
+    if ( type == TARGET_STATIC_LIB ) ext = ".lib";
+    if ( type == TARGET_DYNAMIC_LIB ) ext = ".dll";
+
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
     fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
@@ -143,7 +147,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, bo
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
-    fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, is_lib ? ".lib" : ".exe" );
+    fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
@@ -162,7 +166,7 @@ build_gen_proj_target( target_info_t* target, int index )
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f ) return;
 
-    write_vcxproj_common_header( f, guid, target->name, target->type == TARGET_STATIC_LIB );
+    write_vcxproj_common_header( f, guid, target->name, target->type );
 
     char search_path[ 512 ];
     sprintf( search_path, "%s/*", target->root_dir );

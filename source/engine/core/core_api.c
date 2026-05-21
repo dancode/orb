@@ -9,7 +9,11 @@
 ==============================================================================================*/
 #include "engine/mod/mod_export.h"
 
-#include "engine_core.generated.h"   /* declares engine_core_reflect_rs_register */
+#if __has_include( "engine_core.generated.h" )
+    #include "engine_core.generated.h"    
+    #define HAS_GENERATED_FILE 1
+#endif
+
 /*==============================================================================================
     API Start / Shutdown
 ==============================================================================================*/

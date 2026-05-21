@@ -1,0 +1,10 @@
+﻿  rs_gen.c
+  --- ORB Build Starting ---
+  
+  Config: Debug
+  Compiler: MSVC
+  
+  [CMD] cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Fobuild_new\obj\build_reflect/ /Fdbuild_new\obj\build_reflect/ /DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS /DBUILD_REFLECT_STATIC /Zi /Od /MDd /D_DEBUG source/tools/rs_gen/rs_gen.c 
+  [CMD] link.exe /nologo /OUT:bin/build_reflect.exe build_new\obj\build_reflect/*.obj /DEBUG /PDB:bin/build_reflect.pdb user32.lib shell32.lib gdi32.lib advapi32.lib 
+  
+  SUCCESS!

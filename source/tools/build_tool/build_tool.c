@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <ctype.h>
 #include <io.h>
 
 static const char* g_proj_name       = "orb_make";
@@ -110,7 +111,7 @@ int
 build_run_cmd( const char* cmd )
 {
     char full_cmd[ 8192 ];
-    if ( g_vc_env_cmd[ 0 ] != '\0' && ( strstr( cmd, "cl.exe" ) || strstr( cmd, "link.exe" ) ) )
+    if ( g_vc_env_cmd[ 0 ] != '\0' && ( strstr( cmd, "cl.exe" ) || strstr( cmd, "link.exe" ) || strstr( cmd, "lib.exe" ) ) )
     {
         sprintf( full_cmd, "%s %s", g_vc_env_cmd, cmd );
     }
@@ -239,11 +240,38 @@ build_target( build_context_t* ctx, target_info_t* target )
         rename( exe_path, old_path );
     }
 
+    // PDB Unlock: If we have an existing PDB, rename it so the linker can write a new one
+    // even if the old one is technically "in use" by a debugger or the OS.
+    if ( target->type == TARGET_EXECUTABLE || target->type == TARGET_DYNAMIC_LIB )
+    {
+        char pdb_path[ 256 ];
+        sprintf( pdb_path, "bin/%s.pdb", target->name );
+        if ( _access( pdb_path, 0 ) == 0 )
+        {
+            char old_pdb[ 256 ];
+            sprintf( old_pdb, "bin/%s.pdb.old", target->name );
+            remove( old_pdb );
+            rename( pdb_path, old_pdb );
+        }
+    }
+
     // --- Phase 1: Compile ---
     cmd_buf_t compile_cmd = { 0 };
     const char* cc = ctx->is_clang ? "clang-cl.exe" : "cl.exe";
     cmd_append( &compile_cmd, "%s /c /nologo /W4 /WX /Zc:preprocessor /std:c11 ", cc );
     cmd_append( &compile_cmd, "/I source /Fo%s/ /Fd%s/ ", target_obj_dir, target_obj_dir );
+
+    // Architectural Defines
+    cmd_append( &compile_cmd, "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS " );
+
+    // Target-specific static define (e.g. EXAMPLE_STATIC)
+    char target_upper[ 128 ];
+    strcpy( target_upper, target->name );
+    for ( char* p = target_upper; *p; ++p ) *p = ( char )toupper( *p );
+    cmd_append( &compile_cmd, "/D%s_STATIC ", target_upper );
+
+    if ( ctx->is_monolithic )
+        cmd_append( &compile_cmd, "/DBUILD_STATIC " );
 
     if ( ctx->config == CONFIG_DEBUG )
         cmd_append( &compile_cmd, "/Zi /Od /MDd /D_DEBUG " );
@@ -268,10 +296,14 @@ build_target( build_context_t* ctx, target_info_t* target )
     }
     else
     {
-        const char* linker = "link.exe"; // clang-cl usually uses link.exe too, or lld-link
+        const char* linker = "link.exe";
         cmd_append( &link_cmd, "%s /nologo ", linker );
         if ( target->type == TARGET_DYNAMIC_LIB )
+        {
             cmd_append( &link_cmd, "/DLL " );
+            // Redirect import library to obj so it doesn't clutter bin
+            cmd_append( &link_cmd, "/IMPLIB:%s/%s.lib ", target_obj_dir, target->name );
+        }
 
         cmd_append( &link_cmd, "/OUT:bin/%s%s %s/*.obj ", target->name, 
                     (target->type == TARGET_EXECUTABLE) ? ".exe" : ".dll", target_obj_dir );
@@ -281,14 +313,13 @@ build_target( build_context_t* ctx, target_info_t* target )
         // Add dependencies
         for ( int i = 0; i < target->dep_count; ++i )
         {
+            // Note: If we link against a module, we should link against its IMPLIB in obj
+            // For now, we assume dependencies are STATIC_LIBs in bin/
             cmd_append( &link_cmd, "bin/%s.lib ", target->deps[ i ] );
         }
         
         // Add common libraries
         cmd_append( &link_cmd, "user32.lib shell32.lib gdi32.lib advapi32.lib " );
-
-        // If this is an EXE or DLL that needs orb_base, we'd add it here.
-        // For now, we assume unity builds include everything needed.
     }
 
     int result = build_run_cmd( link_cmd.buf );
