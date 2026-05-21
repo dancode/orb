@@ -17,6 +17,7 @@
 static const char* g_proj_name       = "orb_make";
 static const char* g_out_name        = "sb_base_custom";
 static const char* g_build_proj_name = "orb_build";
+static const char* g_build_dir       = "build_new";
 
 // Unity Includes
 #include "build_tool_targets.c"

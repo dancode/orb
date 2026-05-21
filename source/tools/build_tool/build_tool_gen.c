@@ -140,14 +140,13 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, bo
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
     fprintf( f, "  <PropertyGroup>\n" );
-    // Consolidate MSBuild output folders to stop the "explosion" in the root
-    fprintf( f, "    <OutDir>$(ProjectDir)bin\\</OutDir>\n" );
-    fprintf( f, "    <IntDir>$(ProjectDir)obj\\$(ProjectName)\\$(Configuration)\\</IntDir>\n" );
-    fprintf( f, "    <NMakeBuildCommandLine>bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
-    fprintf( f, "    <NMakeOutput>bin\\%s%s</NMakeOutput>\n", out_name, is_lib ? ".lib" : ".exe" );
-    fprintf( f, "    <NMakeCleanCommandLine>bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
+    fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
+    fprintf( f, "    <IntDir>$(ProjectDir)..\\obj\\$(ProjectName)\\$(Configuration)\\</IntDir>\n" );
+    fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
+    fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, is_lib ? ".lib" : ".exe" );
+    fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 }
 
@@ -155,7 +154,7 @@ static void
 build_gen_proj_target( target_info_t* target, int index )
 {
     char vcxproj_path[ 256 ];
-    sprintf( vcxproj_path, "%s.vcxproj", target->name );
+    sprintf( vcxproj_path, "%s/%s.vcxproj", g_build_dir, target->name );
 
     char guid[ 64 ];
     sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + index );
@@ -198,7 +197,7 @@ build_gen_proj_target( target_info_t* target, int index )
 
                 if ( !is_unit )
                 {
-                    fprintf( f, "    <ClInclude Include=\"%s/%s\" />\n", target->root_dir, find_data.name );
+                    fprintf( f, "    <ClInclude Include=\"..\\%s/%s\" />\n", target->root_dir, find_data.name );
                 }
             }
         }
@@ -209,7 +208,7 @@ build_gen_proj_target( target_info_t* target, int index )
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < target->unit_count; ++i )
         {
-            fprintf( f, "    <ClCompile Include=\"%s/%s\" />\n", target->root_dir, target->units[ i ] );
+            fprintf( f, "    <ClCompile Include=\"..\\%s/%s\" />\n", target->root_dir, target->units[ i ] );
         }
         fprintf( f, "  </ItemGroup>\n" );
     }
@@ -227,7 +226,7 @@ build_gen_proj_engine_navigation( void )
     scan_directory_recursive( "source" );
 
     char vcxproj_path[ 256 ];
-    sprintf( vcxproj_path, "%s.vcxproj", g_proj_name );
+    sprintf( vcxproj_path, "%s/%s.vcxproj", g_build_dir, g_proj_name );
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f ) return;
 
@@ -247,21 +246,20 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
     fprintf( f, "  <PropertyGroup>\n" );
-    // Consolidate MSBuild output folders
-    fprintf( f, "    <OutDir>$(ProjectDir)bin\\</OutDir>\n" );
-    fprintf( f, "    <IntDir>$(ProjectDir)obj\\$(ProjectName)\\$(Configuration)\\</IntDir>\n" );
-    fprintf( f, "    <NMakeBuildCommandLine>bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
-    fprintf( f, "    <NMakeOutput>bin\\%s.exe</NMakeOutput>\n", g_out_name );
-    fprintf( f, "    <NMakeCleanCommandLine>bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
+    fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
+    fprintf( f, "    <IntDir>$(ProjectDir)..\\obj\\$(ProjectName)\\$(Configuration)\\</IntDir>\n" );
+    fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
+    fprintf( f, "    <NMakeOutput>..\\bin\\%s.exe</NMakeOutput>\n", g_out_name );
+    fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
         const char* tag = g_files[ i ].is_header ? "ClInclude" : "ClCompile";
-        fprintf( f, "    <%s Include=\"%s\" />\n", tag, g_files[ i ].path );
+        fprintf( f, "    <%s Include=\"..\\%s\" />\n", tag, g_files[ i ].path );
     }
     fprintf( f, "  </ItemGroup>\n" );
 
@@ -270,7 +268,7 @@ build_gen_proj_engine_navigation( void )
     fclose( f );
 
     char filters_path[ 256 ];
-    sprintf( filters_path, "%s.vcxproj.filters", g_proj_name );
+    sprintf( filters_path, "%s/%s.vcxproj.filters", g_build_dir, g_proj_name );
     f = fopen( filters_path, "w" );
     if ( f )
     {
@@ -288,7 +286,7 @@ build_gen_proj_engine_navigation( void )
         for ( int i = 0; i < g_file_count; ++i )
         {
             const char* tag = g_files[ i ].is_header ? "ClInclude" : "ClCompile";
-            fprintf( f, "    <%s Include=\"%s\">\n", tag, g_files[ i ].path );
+            fprintf( f, "    <%s Include=\"..\\%s\">\n", tag, g_files[ i ].path );
             if ( g_files[ i ].filter[ 0 ] != '\0' ) fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
             fprintf( f, "    </%s>\n", tag );
         }
@@ -301,7 +299,20 @@ build_gen_proj_engine_navigation( void )
 void
 build_gen_projects( void )
 {
-    printf( "Generating Visual Studio projects...\n" );
+    printf( "Generating Visual Studio projects in %s/...\n", g_build_dir );
+
+#if defined( _WIN32 )
+    if ( _access( g_build_dir, 0 ) != 0 )
+    {
+        char cmd[ 256 ];
+        sprintf( cmd, "mkdir %s", g_build_dir );
+        system( cmd );
+    }
+#else
+    char cmd[ 256 ];
+    sprintf( cmd, "mkdir -p %s", g_build_dir );
+    system( cmd );
+#endif
 
     for ( int i = 0; i < g_target_count; ++i )
     {
@@ -310,24 +321,20 @@ build_gen_projects( void )
 
     build_gen_proj_engine_navigation();
 
-    // --- 3. Master Solution File ---
     char sln_path[ 256 ];
-    sprintf( sln_path, "%s.sln", g_proj_name );
+    sprintf( sln_path, "%s/%s.sln", g_build_dir, g_proj_name );
     FILE* f = fopen( sln_path, "w" );
     if ( f )
     {
         fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
         fprintf( f, "# Visual Studio Version 17\n" );
 
-        // VS Project Type GUIDs
         const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
         const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
 
-        // Write Navigation Project
         fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, g_proj_name, g_proj_name, g_guid_engine );
         fprintf( f, "EndProject\n" );
 
-        // Collect Unique Folders
         char  folders[ 16 ][ 64 ];
         char  folder_guids[ 16 ][ 64 ];
         int   folder_count = 0;
@@ -351,14 +358,12 @@ build_gen_projects( void )
             }
         }
 
-        // Write Folder Projects
         for ( int i = 0; i < folder_count; ++i )
         {
             fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", folder_type_guid, folders[ i ], folders[ i ], folder_guids[ i ] );
             fprintf( f, "EndProject\n" );
         }
 
-        // Write Target Projects
         for ( int i = 0; i < g_target_count; ++i )
         {
             char guid[ 64 ];
@@ -398,7 +403,7 @@ build_gen_projects( void )
         fclose( f );
     }
 
-    printf( "Projects generated successfully.\n" );
+    printf( "Projects generated successfully in %s/.\n", g_build_dir );
 }
 
 /*============================================================================================*/
