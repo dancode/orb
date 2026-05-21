@@ -2,6 +2,16 @@
 
     build_tool_vcvars.c -- Visual Studio environment discovery and command execution.
 
+    The legacy approach was to prepend "call vcvarsall.bat x64 && " to every
+    cl/link/lib invocation. vcvarsall takes 200-500 ms to run, and a real
+    engine build issues dozens of compiler calls, so that overhead can easily
+    cost 10+ seconds of wall time per build.
+
+    Instead, we now run vcvarsall ONCE at orchestrator startup, capture the
+    environment variables it sets via "&& set", and apply them to our own
+    process with _putenv_s(). Every child process we spawn after that inherits
+    the modified environment for free — no per-invocation prefix needed.
+
 ==============================================================================================*/
 #include "build_tool.h"
 #include <stdio.h>
@@ -10,149 +20,174 @@
 #include <io.h>
 
 /*============================================================================================*/
-// --- Command Execution & Environment ---
+// --- VC Environment Import ---
 
-// Stores the "call vcvarsall.bat &&" prefix used for all compiler commands.
-static char g_vc_env_cmd[ 512 ] = { 0 };
+// Locate vcvarsall.bat. First try `vswhere` (the modern, future-proof path),
+// then fall back to scanning well-known installation paths. Returns true and
+// fills `out` with an absolute path on success.
+static bool
+locate_vcvarsall( char* out, size_t out_size )
+{
+    const char* vswhere_paths[] = {
+        "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
+        "\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
+        "\"%ProgramFiles%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
+    };
+
+    for ( int i = 0; i < ( int )( sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ) ); ++i )
+    {
+        char cmd[ 1024 ];
+        snprintf( cmd, sizeof( cmd ),
+                  "%s -latest -products * -property installationPath",
+                  vswhere_paths[ i ] );
+
+        FILE* pipe = _popen( cmd, "rt" );
+        if ( !pipe ) continue;
+
+        char inst[ 512 ] = { 0 };
+        if ( fgets( inst, sizeof( inst ), pipe ) )
+        {
+            char* nl = strpbrk( inst, "\r\n" );
+            if ( nl ) *nl = '\0';
+        }
+        _pclose( pipe );
+
+        if ( inst[ 0 ] )
+        {
+            snprintf( out, out_size, "%s\\VC\\Auxiliary\\Build\\vcvarsall.bat", inst );
+            if ( _access( out, 0 ) == 0 ) return true;
+        }
+    }
+
+    // Fallback: probe a few common, hard-coded install paths.
+    const char* common[] = {
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+    };
+    for ( int i = 0; i < ( int )( sizeof( common ) / sizeof( common[ 0 ] ) ); ++i )
+    {
+        if ( _access( common[ i ], 0 ) == 0 )
+        {
+            snprintf( out, out_size, "%s", common[ i ] );
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Run "<vcvarsall> x64 && set" in a sub-shell and apply every printed
+// KEY=VALUE to our own process environment via _putenv_s. Subsequent
+// CreateProcess / system children inherit it.
+//
+// The double-double-quote cmd /c "" "<path>" args "" idiom is required when
+// the vcvarsall path itself contains spaces (it always does on default
+// installations under "Program Files").
+static int
+import_vcvars_env( const char* vcvars_path )
+{
+    char run_cmd[ 1024 ];
+    snprintf( run_cmd, sizeof( run_cmd ),
+              "cmd /c \"\"%s\" x64 >nul 2>nul && set\"", vcvars_path );
+
+    FILE* pipe = _popen( run_cmd, "rt" );
+    if ( !pipe )
+    {
+        printf( "Warning: could not spawn sub-shell for vcvars import.\n" );
+        return 0;
+    }
+
+    int imported = 0;
+    // Each `set` line may be up to ~8KB (PATH/INCLUDE/LIB get long).
+    char line[ 16384 ];
+    while ( fgets( line, sizeof( line ), pipe ) )
+    {
+        size_t l = strlen( line );
+        while ( l > 0 && ( line[ l - 1 ] == '\n' || line[ l - 1 ] == '\r' ) ) line[ --l ] = '\0';
+        if ( l == 0 ) continue;
+
+        char* eq = strchr( line, '=' );
+        if ( !eq || eq == line ) continue;
+        *eq = '\0';
+
+        const char* key   = line;
+        const char* value = eq + 1;
+        if ( _putenv_s( key, value ) == 0 ) ++imported;
+    }
+    _pclose( pipe );
+    return imported;
+}
 
 /**
  * build_setup_vc_env()
- * 
- * Locates the Visual Studio installation on the host machine. 
- * This is crucial because cl.exe and link.exe are not in the PATH by default.
+ *
+ * Idempotent one-time setup. If cl.exe is already discoverable in PATH
+ * (Developer Command Prompt or pre-sourced vcvars), do nothing. Otherwise
+ * locate vcvarsall.bat and import its environment into THIS process so
+ * every subsequent child invocation runs with the VC toolchain visible.
  */
 void
 build_setup_vc_env( void )
 {
 #if defined( _WIN32 )
-    // Optimization: If cl.exe is already in the PATH (e.g. running from a Dev Cmd Prompt),
-    // we don't need to do anything.
+    // Fast path: cl.exe already on PATH. system() returns 0 because cl.exe
+    // with no args prints its banner and exits 0.
     if ( system( "cl.exe >nul 2>nul" ) == 0 ) return;
 
-    printf( "cl.exe not found in PATH. Attempting to locate Visual Studio...\n" );
+    printf( "cl.exe not in PATH. Locating Visual Studio...\n" );
 
-    // Common locations for vswhere.exe (the standard VS discovery tool).
-    const char* vswhere_paths[] = {
-        "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
-        "\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",        
-        "\"%ProgramFiles%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
-    };
-
-    bool found = false;
-    for ( int i = 0; i < sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ); ++i )
+    char vcvars_path[ 512 ] = { 0 };
+    if ( !locate_vcvarsall( vcvars_path, sizeof( vcvars_path ) ) )
     {
-        char cmd[ 1024 ];
-        sprintf( cmd, "%s -latest -products * -property installationPath > vc_path.txt", vswhere_paths[ i ] );
-
-        if ( system( cmd ) == 0 )
-        {
-            FILE* f = fopen( "vc_path.txt", "r" );
-            if ( f )
-            {
-                char vc_path[ 512 ];
-                if ( fgets( vc_path, sizeof( vc_path ), f ) )
-                {
-                    char* nl = strpbrk( vc_path, "\r\n" );
-                    if ( nl ) *nl = '\0';
-
-                    if ( strlen( vc_path ) > 0 )
-                    {
-                        sprintf( g_vc_env_cmd, "call \"%s\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 >nul && ", vc_path );
-                        found = true;
-                    }
-                }
-                fclose( f );
-                remove( "vc_path.txt" );
-            }
-        }
-        if ( found ) break;
+        printf( "Warning: Could not locate vcvarsall.bat. Compiler calls will fail.\n" );
+        return;
     }
 
-    if ( found )
-    {
-        printf( "VC Environment setup command: %s\n", g_vc_env_cmd );
-    }
-    else
-    {
-        // Fallback: Check common installation paths directly.
-        printf( "Warning: Could not auto-locate Visual Studio via vswhere. Trying common paths...\n" );
-        const char* common_vcvars[] = {
-            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
-            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat",
-            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat",
-            "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
-        };
-
-        for ( int i = 0; i < sizeof( common_vcvars ) / sizeof( common_vcvars[ 0 ] ); ++i )
-        {
-            if ( _access( common_vcvars[ i ], 0 ) == 0 )
-            {
-                sprintf( g_vc_env_cmd, "call \"%s\" x64 >nul && ", common_vcvars[ i ] );
-                printf( "Found vcvarsall.bat at: %s\n", common_vcvars[ i ] );
-                found = true;
-                break;
-            }
-        }
-    }
-
-    if ( !found )
-    {
-        printf( "Warning: Could not locate Visual Studio. Compiler commands will likely fail.\n" );
-    }
+    printf( "Importing VC environment from %s\n", vcvars_path );
+    int n = import_vcvars_env( vcvars_path );
+    printf( "Imported %d environment variables (in-process).\n", n );
 #endif
 }
 
-// Compose the final command line, prepending the VC env if this is a tool call.
-static void
-build_compose_full_cmd( const char* cmd, const char* suffix, char* out, size_t out_size )
-{
-    bool needs_env = ( g_vc_env_cmd[ 0 ] != '\0' )
-                     && ( strstr( cmd, "cl.exe" ) || strstr( cmd, "link.exe" ) || strstr( cmd, "lib.exe" ) );
-
-    if ( needs_env )
-        snprintf( out, out_size, "%s %s%s", g_vc_env_cmd, cmd, suffix ? suffix : "" );
-    else
-        snprintf( out, out_size, "%s%s", cmd, suffix ? suffix : "" );
-}
+/*============================================================================================*/
+// --- Command Execution ---
 
 /**
  * build_run_cmd()
  *
- * A wrapper around system() that automatically injects the VC environment prefix
- * if the command is a compiler/linker call.
+ * Run a shell command and return its exit code. The orchestrator's own
+ * environment (set up by build_setup_vc_env above) is inherited by the
+ * spawned cmd.exe, so cl/link/lib are directly callable with no prefix.
  */
 int
 build_run_cmd( const char* cmd )
 {
-    char full_cmd[ CMD_BUF_MAX + 1024 ];
-    build_compose_full_cmd( cmd, NULL, full_cmd, sizeof( full_cmd ) );
-    printf( "[CMD] %s\n", full_cmd );
-    return system( full_cmd );
+    printf( "[CMD] %s\n", cmd );
+    return system( cmd );
 }
 
 /**
  * build_run_cmd_capture_deps()
  *
- * Variant of build_run_cmd that captures the compiler's stdout, parses
- * /showIncludes "Note: including file:" markers, and writes the resulting
- * header paths to deps_path (one per line). Lines that are not include
- * markers are forwarded to stdout so compile errors and warnings remain
- * visible to the user.
+ * Same as build_run_cmd, but pipes stdout+stderr through and extracts
+ * /showIncludes "Note: including file:" markers into deps_path. Non-marker
+ * lines are forwarded to stdout so the user still sees compile warnings
+ * and errors.
  *
  * System headers from the MSVC toolchain and Windows SDK are filtered out;
- * they cannot be invalidated by edits to project sources, so tracking them
- * just bloats the dep file and wastes stat() calls on incremental builds.
+ * they cannot be invalidated by edits to project sources.
  *
- * NOTE: The "Note: including file:" prefix is locale-dependent. This works
- * on English-locale MSVC. For other locales, set the cl flag
- * /D_CL_SHOWINCLUDES_ENGLISH or pipe through VSLANG=1033 in the env.
+ * NOTE: The "Note: including file:" prefix is English-only. For other
+ * locales, set VSLANG=1033 in the environment before launching the build.
  */
 int
 build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
 {
-    char full_cmd[ CMD_BUF_MAX + 1024 ];
     // 2>&1 merges stderr into the pipe so warnings/errors are also forwarded.
-    build_compose_full_cmd( cmd, " 2>&1", full_cmd, sizeof( full_cmd ) );
+    char full_cmd[ CMD_BUF_MAX + 16 ];
+    snprintf( full_cmd, sizeof( full_cmd ), "%s 2>&1", cmd );
     printf( "[CMD] %s\n", full_cmd );
 
     FILE* pipe = _popen( full_cmd, "rt" );
@@ -160,13 +195,12 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
 
     FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
 
-    static const char k_prefix[]   = "Note: including file:";
+    static const char   k_prefix[] = "Note: including file:";
     static const size_t k_prefix_n = sizeof( k_prefix ) - 1;
 
     char line[ 4096 ];
     while ( fgets( line, sizeof( line ), pipe ) )
     {
-        // /showIncludes indents the marker with one space per include depth.
         char* p = line;
         while ( *p == ' ' || *p == '\t' ) ++p;
 
@@ -175,12 +209,10 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
             char* path = p + k_prefix_n;
             while ( *path == ' ' || *path == '\t' ) ++path;
 
-            // Strip CR/LF.
             size_t l = strlen( path );
             while ( l > 0 && ( path[ l - 1 ] == '\n' || path[ l - 1 ] == '\r' ) ) path[ --l ] = '\0';
             if ( l == 0 ) continue;
 
-            // Filter system headers — they're owned by the toolchain, not us.
             bool is_system = strstr( path, "\\VC\\Tools\\" ) != NULL
                              || strstr( path, "\\Windows Kits\\" ) != NULL
                              || strstr( path, "/VC/Tools/" ) != NULL
@@ -190,8 +222,6 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
         }
         else
         {
-            // Forward normal compiler output so the user sees source banners,
-            // warnings, and errors as usual.
             fputs( line, stdout );
         }
     }
