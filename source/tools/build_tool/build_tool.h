@@ -62,6 +62,7 @@ typedef struct
 
 // Safe threshold below cmd.exe's 8191-char command line limit. Leaves room
 // for the vcvars prefix that build_run_cmd() prepends to compiler calls.
+
 #define CMD_RSP_THRESHOLD 7000
 
 // --- Configuration ---
@@ -99,7 +100,7 @@ typedef enum
 // Targets are pooled in g_targets[] (see build_tool_targets.c).
 // Shared across every IDE solution that references them by name. 
 
-typedef struct
+typedef struct target_info_s
 {
     const char*   name;             // Unique name (e.g., "base", "core", "app").
     target_type_t type;             // Artifact type (LIB, DLL, or EXE).
@@ -152,7 +153,7 @@ extern int           g_target_count;
 // --- Execution Context ---
 
 // State passed through the build process to maintain consistency.
-typedef struct
+typedef struct build_context_s
 {
     config_t config;        // Selected build config (Debug/Release).
     bool     is_monolithic; // Reserved: for building everything into one binary.
