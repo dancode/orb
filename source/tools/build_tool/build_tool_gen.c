@@ -2,27 +2,42 @@
 
     build_tool_gen.c -- Generation of Visual Studio project files.
 
+    This module allows the custom build system to "hijack" the Visual Studio IDE.
+    Instead of using VS's built-in build system (MSBuild), we generate "Makefile" 
+    projects that call our build_tool.exe for all compilation and linking.
+
+    This gives us the best of both worlds:
+    1. Full IDE features (IntelliSense, F5 Debugging, Navigation).
+    2. Absolute control over the build process via C code.
+
 ==============================================================================================*/
 
 #define MAX_FILES 1024
 #define MAX_FILTERS 512
 
+// Metadata for a single source file in the solution.
 typedef struct
 {
-    char path[ 256 ];
-    char filter[ 256 ];
+    char path[ 256 ];   // Relative path from project root.
+    char filter[ 256 ]; // Virtual folder path in VS (e.g. "engine\\core").
     bool is_header;
 } file_info_t;
 
+// Global buffers used during the directory scanning phase.
 static file_info_t g_files[ MAX_FILES ];
 static int         g_file_count = 0;
 
 static char g_filters[ MAX_FILTERS ][ 256 ];
 static int  g_filter_count = 0;
 
-// GUIDs for static projects
+// Stable GUID used for the primary "Navigation" project.
 static const char* g_guid_engine = "{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}";
 
+/**
+ * add_filter()
+ * 
+ * Registers a virtual folder (Filter) in the Visual Studio project.
+ */
 static void
 add_filter( const char* filter )
 {
@@ -37,6 +52,12 @@ add_filter( const char* filter )
     }
 }
 
+/**
+ * add_filters_recursive()
+ * 
+ * Ensures all parent folders of a filter path are also registered.
+ * e.g. "engine\\core\\win" -> adds "engine", "engine\\core", and "engine\\core\\win".
+ */
 static void
 add_filters_recursive( const char* filter )
 {
@@ -56,6 +77,12 @@ add_filters_recursive( const char* filter )
     add_filter( tmp );
 }
 
+/**
+ * get_filter_for_path()
+ * 
+ * Maps a physical file path to a virtual VS filter path.
+ * e.g. "source/engine/core/core.c" -> "engine\\core"
+ */
 static void
 get_filter_for_path( const char* path, char* out_filter )
 {
@@ -69,12 +96,19 @@ get_filter_for_path( const char* path, char* out_filter )
             size_t len = last_slash - sub;
             strncpy( out_filter, sub, len );
             out_filter[ len ] = '\0';
+            // VS uses backslashes for filters.
             for ( char* p = out_filter; *p; ++p )
                 if ( *p == '/' ) *p = '\\';
         }
     }
 }
 
+/**
+ * scan_directory_recursive()
+ * 
+ * Traverses the source tree and collects all .c and .h files to be
+ * included in the master navigation project.
+ */
 static void
 scan_directory_recursive( const char* dir )
 {
@@ -88,6 +122,7 @@ scan_directory_recursive( const char* dir )
 
     do
     {
+        // Skip hidden/special directories.
         if ( strcmp( find_data.name, "." ) == 0 || strcmp( find_data.name, ".." ) == 0 ) continue;
 
         char path[ 512 ];
@@ -121,6 +156,12 @@ scan_directory_recursive( const char* dir )
     _findclose( handle );
 }
 
+/**
+ * write_vcxproj_common_header()
+ * 
+ * Writes the boilerplate XML required for a Visual Studio Makefile project.
+ * This sets up the build/clean command lines that VS will call.
+ */
 static void
 write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, target_type_t type )
 {
@@ -130,98 +171,109 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, ta
 
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+    
+    // Configurations (Debug/Release)
     fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
     fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
     fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
     fprintf( f, "  </ItemGroup>\n" );
+    
     fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
     fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", guid );
     fprintf( f, "  </PropertyGroup>\n" );
+    
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
-    fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
-    fprintf( f, "    <PlatformToolset>v143</PlatformToolset>\n" );
+    fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" ); // Important: Makefile type
+    fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
+    
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
+    
+    // Commands used by VS when you press Build/Clean or run the executable.
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
+    
+    // The "Hook": Tell VS to call our build_tool.exe
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
+    
+    // IntelliSense setup
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 }
 
+/**
+ * build_gen_proj_target()
+ * 
+ * Generates a .vcxproj for a specific engine target (e.g. "base", "core").
+ * It adds all files in the target's root directory to the project.
+ */
 static void
 build_gen_proj_target( target_info_t* target, int index )
 {
     char vcxproj_path[ 256 ];
     sprintf( vcxproj_path, "%s/%s.vcxproj", g_build_dir, target->name );
 
+    // Generate a deterministic GUID for this project.
     char guid[ 64 ];
     sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + index );
 
     FILE* f = fopen( vcxproj_path, "w" );
-    if ( !f ) return;
+    if ( !f )
+    {
+        printf( "Error: could not write %s\n", vcxproj_path );
+        return;
+    }
 
     write_vcxproj_common_header( f, guid, target->name, target->type );
 
-    char search_path[ 512 ];
-    sprintf( search_path, "%s/*", target->root_dir );
+    // Scan the target's source tree recursively so unity sub-files appear in VS.
+    g_file_count   = 0;
+    g_filter_count = 0;
+    scan_directory_recursive( target->root_dir );
 
-    struct _finddata_t find_data;
-    intptr_t           handle = _findfirst( search_path, &find_data );
-
-    if ( handle != -1 )
+    // Single ItemGroup: units as ClCompile, everything else as ClInclude.
+    // This lets VS show all files while only the true compilation units are built.
+    fprintf( f, "  <ItemGroup>\n" );
+    for ( int i = 0; i < g_file_count; ++i )
     {
-        fprintf( f, "  <ItemGroup>\n" );
-        do
+        // Check whether this file is a named compilation unit.
+        bool        is_unit  = false;
+        const char* filename = strrchr( g_files[ i ].path, '/' );
+        if ( filename ) filename++;   // skip past the final slash
+        else filename = g_files[ i ].path;
+
+        for ( int j = 0; j < target->unit_count; ++j )
         {
-            if ( find_data.attrib & _A_SUBDIR ) continue;
-
-            const char* ext = strrchr( find_data.name, '.' );
-            if ( !ext ) continue;
-
-            bool is_c = _stricmp( ext, ".c" ) == 0;
-            bool is_h = _stricmp( ext, ".h" ) == 0;
-
-            if ( is_c || is_h )
+            if ( _stricmp( filename, target->units[ j ] ) == 0 )
             {
-                bool is_unit = false;
-                for ( int i = 0; i < target->unit_count; ++i )
-                {
-                    if ( _stricmp( find_data.name, target->units[ i ] ) == 0 )
-                    {
-                        is_unit = true;
-                        break;
-                    }
-                }
-
-                if ( !is_unit )
-                {
-                    fprintf( f, "    <ClInclude Include=\"..\\%s/%s\" />\n", target->root_dir, find_data.name );
-                }
+                is_unit = true;
+                break;
             }
         }
-        while ( _findnext( handle, &find_data ) == 0 );
-        _findclose( handle );
-        fprintf( f, "  </ItemGroup>\n" );
 
-        fprintf( f, "  <ItemGroup>\n" );
-        for ( int i = 0; i < target->unit_count; ++i )
-        {
-            fprintf( f, "    <ClCompile Include=\"..\\%s/%s\" />\n", target->root_dir, target->units[ i ] );
-        }
-        fprintf( f, "  </ItemGroup>\n" );
+        const char* tag = is_unit ? "ClCompile" : "ClInclude";
+        fprintf( f, "    <%s Include=\"..\\%s\" />\n", tag, g_files[ i ].path );
     }
+    fprintf( f, "  </ItemGroup>\n" );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
     fprintf( f, "</Project>\n" );
     fclose( f );
 }
 
+/**
+ * build_gen_proj_engine_navigation()
+ * 
+ * Generates the master "orb_make" project. 
+ * This project contains EVERY source file in the entire repository, 
+ * organized by folder. This is the primary project developers use 
+ * for browsing and global searching.
+ */
 static void
 build_gen_proj_engine_navigation( void )
 {
@@ -232,8 +284,13 @@ build_gen_proj_engine_navigation( void )
     char vcxproj_path[ 256 ];
     sprintf( vcxproj_path, "%s/%s.vcxproj", g_build_dir, g_proj_name );
     FILE* f = fopen( vcxproj_path, "w" );
-    if ( !f ) return;
+    if ( !f )
+    {
+        printf( "Error: could not write %s\n", vcxproj_path );
+        return;
+    }
 
+    // Standard header
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
     fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
@@ -246,9 +303,11 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
-    fprintf( f, "    <PlatformToolset>v143</PlatformToolset>\n" );
+    fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
+    
+    // Makefile commands for the master project
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
@@ -259,6 +318,7 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
+    // List every file found by the recursive scan.
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
@@ -271,6 +331,7 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "</Project>\n" );
     fclose( f );
 
+    // Generate the .filters file which defines the folder structure in Solution Explorer.
     char filters_path[ 256 ];
     sprintf( filters_path, "%s/%s.vcxproj.filters", g_build_dir, g_proj_name );
     f = fopen( filters_path, "w" );
@@ -278,6 +339,8 @@ build_gen_proj_engine_navigation( void )
     {
         fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
         fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+        
+        // Write virtual filter definitions
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_filter_count; ++i )
         {
@@ -286,6 +349,8 @@ build_gen_proj_engine_navigation( void )
             fprintf( f, "    </Filter>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
+        
+        // Map each file to its virtual filter
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_file_count; ++i )
         {
@@ -300,6 +365,12 @@ build_gen_proj_engine_navigation( void )
     }
 }
 
+/**
+ * build_gen_projects()
+ * 
+ * Entry point for Visual Studio project generation.
+ * Generates one .sln file and multiple .vcxproj files.
+ */
 void
 build_gen_projects( void )
 {
@@ -318,13 +389,16 @@ build_gen_projects( void )
     system( cmd );
 #endif
 
+    // Generate individual target projects.
     for ( int i = 0; i < g_target_count; ++i )
     {
         build_gen_proj_target( &g_targets[ i ], i );
     }
 
+    // Generate master navigation project.
     build_gen_proj_engine_navigation();
 
+    // --- Generate the Solution (.sln) file ---
     char sln_path[ 256 ];
     sprintf( sln_path, "%s/%s.sln", g_build_dir, g_proj_name );
     FILE* f = fopen( sln_path, "w" );
@@ -336,9 +410,11 @@ build_gen_projects( void )
         const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
         const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
 
+        // Add the Navigation project.
         fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, g_proj_name, g_proj_name, g_guid_engine );
         fprintf( f, "EndProject\n" );
 
+        // Collect and add virtual SLN folders based on the registry's sln_folder field.
         char  folders[ 16 ][ 64 ];
         char  folder_guids[ 16 ][ 64 ];
         int   folder_count = 0;
@@ -368,6 +444,7 @@ build_gen_projects( void )
             fprintf( f, "EndProject\n" );
         }
 
+        // Add each target as a project in the solution.
         for ( int i = 0; i < g_target_count; ++i )
         {
             char guid[ 64 ];
@@ -376,12 +453,32 @@ build_gen_projects( void )
             fprintf( f, "EndProject\n" );
         }
 
+        // Setup Global Section (Configurations and Folder Nesting).
         fprintf( f, "Global\n" );
         fprintf( f, "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n" );
         fprintf( f, "\t\tDebug|x64 = Debug|x64\n" );
         fprintf( f, "\t\tRelease|x64 = Release|x64\n" );
         fprintf( f, "\tEndGlobalSection\n" );
 
+        // Maps each project's configurations to the solution configurations.
+        // Without this VS shows every project as "Build = No" in Configuration Manager.
+        fprintf( f, "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n" );
+        fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", g_guid_engine );
+        fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", g_guid_engine );
+        fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", g_guid_engine );
+        fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", g_guid_engine );
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            char guid[ 64 ];
+            sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
+            fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", guid );
+            fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", guid );
+            fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", guid );
+            fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", guid );
+        }
+        fprintf( f, "\tEndGlobalSection\n" );
+
+        // Nest target projects into their respective SLN folders.
         fprintf( f, "\tGlobalSection(NestedProjects) = preSolution\n" );
         for ( int i = 0; i < g_target_count; ++i )
         {
@@ -409,5 +506,7 @@ build_gen_projects( void )
 
     printf( "Projects generated successfully in %s/.\n", g_build_dir );
 }
+
+/*============================================================================================*/
 
 /*============================================================================================*/

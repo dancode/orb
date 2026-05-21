@@ -9,7 +9,7 @@ if not exist build_new mkdir build_new
 if not exist build_new\obj mkdir build_new\obj
 
 echo Bootstrapping Build Tool...
-cl.exe /nologo /W4 /Zi source/tools/build_tool/build_tool.c /I source /Fobuild_new/obj/ /Fdbuild_new/obj/ /Fe:bin/build_tool.exe
+cl.exe /nologo /W4 /WX /Zi /std:c11 source/tools/build_tool/build_tool.c /I source /Fobuild_new/obj/ /Fdbuild_new/obj/ /Fe:bin/build_tool.exe
 
 if %errorlevel% neq 0 (
     echo FAILED to bootstrap build tool!

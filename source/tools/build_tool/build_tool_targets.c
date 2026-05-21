@@ -2,10 +2,17 @@
 
     build_tool_targets.c -- Central registry for all buildable artifacts.
 
+    This file contains the "data" portion of the build system. It defines the 
+    entire dependency graph and source layout for the engine.
+
+    To add a new library or executable to the project, simply add a new 
+    target_info_t entry to the g_targets array below.
+
 ==============================================================================================*/
 
 target_info_t g_targets[] = {
-    // --- 01_Library (Engine Foundation) ---
+    // --- 01_BASE (Foundation) ---
+    // The lowest layer. Stateless and dependency-free.
     {
      .name       = "base",
      .type       = TARGET_STATIC_LIB,
@@ -16,6 +23,10 @@ target_info_t g_targets[] = {
      .deps       = {},
      .dep_count  = 0,
      },
+
+    // --- 02_ENGINE (Stateful Systems) ---
+    
+    // OS Abstractions (Files, Threads, DLLs).
     {
      .name       = "sys",
      .type       = TARGET_STATIC_LIB,
@@ -26,6 +37,8 @@ target_info_t g_targets[] = {
      .deps       = {},
      .dep_count  = 0,
      },
+
+    // Reflection System (Metadata registry).
     {
      .name       = "rs",
      .type       = TARGET_STATIC_LIB,
@@ -36,6 +49,8 @@ target_info_t g_targets[] = {
      .deps       = {},
      .dep_count  = 0,
      },
+
+    // Module System (Hot-reloading).
     {
      .name       = "mod",
      .type       = TARGET_STATIC_LIB,
@@ -46,6 +61,8 @@ target_info_t g_targets[] = {
      .deps       = { "sys" },
      .dep_count  = 1,
      },
+
+    // Application Layer (Windows, Events).
     {
      .name       = "app",
      .type       = TARGET_STATIC_LIB,
@@ -56,6 +73,9 @@ target_info_t g_targets[] = {
      .deps       = { "sys" },
      .dep_count  = 1,
      },
+
+    // Core Engine Services (Logging, Memory Arenas).
+    // Note: This target uses 'has_reflect' which triggers the reflection generator.
     {
      .name         = "core",
      .type         = TARGET_STATIC_LIB,
@@ -69,19 +89,9 @@ target_info_t g_targets[] = {
      .reflect_name = "engine_core",
      },
 
-    // --- 02_Library (Developer Tools) ---
-    // {
-    //  .name       = "dev_hot",
-    //  .type       = TARGET_STATIC_LIB,
-    //  .root_dir   = "source/developer/dev_hot",
-    //  .sln_folder = "01_Library",
-    //  .units      = { "dev_hot.c" },
-    //  .unit_count = 1,
-    //  .deps       = { "base", "sys", "core", "mod" },
-    //  .dep_count  = 4,
-    //  },
-
-    // --- 03_Modules ---
+    // --- 03_RUNTIME_MODULES (Hot-Reloadable DLLs) ---
+    
+    // An example module to verify hot-reloading.
     {
      .name       = "example",
      .type       = TARGET_DYNAMIC_LIB,
@@ -93,7 +103,9 @@ target_info_t g_targets[] = {
      .dep_count  = 0,
      },
 
-    // --- 02_Sandbox ---
+    // --- 02_SANDBOX (Verification Targets) ---
+
+    // A minimal executable to test the base library.
     {
      .name       = "sb_base_custom",
      .type       = TARGET_EXECUTABLE,
@@ -104,18 +116,10 @@ target_info_t g_targets[] = {
      .deps       = { "base" },
      .dep_count  = 1,
      },
-    // {
-    //  .name       = "sb_engine_mod",
-    //  .type       = TARGET_EXECUTABLE,
-    //  .root_dir   = "source/sandbox/engine/engine_mod",
-    //  .sln_folder = "02_Sandbox",
-    //  .units      = { "sb_engine_mod.c" },
-    //  .unit_count = 1,
-    //  .deps       = { "base", "sys", "core", "mod", "dev_hot" },
-    //  .dep_count  = 5,
-    //  },
 
-    // --- 00_Build ---
+    // --- 08_TOOL (Development Utilities) ---
+
+    // The build tool itself (this program!).
     {
      .name       = "build_tool",
      .type       = TARGET_EXECUTABLE,
@@ -126,6 +130,8 @@ target_info_t g_targets[] = {
      .deps       = {},
      .dep_count  = 0,
      },
+
+    // The reflection generator. Must be built first!
     {
      .name       = "build_reflect",
      .type       = TARGET_EXECUTABLE,
