@@ -56,8 +56,11 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
     cmd_buf_t cmd = { 0 };
     const char* cc = ctx->is_clang ? "clang-cl.exe" : "cl.exe";
 
-    // Base flags
-    cmd_append( &cmd, "%s /c /nologo /W4 /WX /Zc:preprocessor /std:c11 ", cc );
+    // Base flags. /showIncludes emits a "Note: including file:" line for every
+    // header pulled in, which we capture into a per-target dep file so the
+    // incremental rebuild logic can detect header edits (essential for unity
+    // builds where the listed .units are just umbrella TUs).
+    cmd_append( &cmd, "%s /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes ", cc );
     
     // Include paths and output directories.
     cmd_append( &cmd, "/I source /I %s /Fo%s/ /Fd%s/ ", gen_dir, obj_dir, obj_dir );
@@ -89,7 +92,14 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
         cmd_append( &cmd, "%s/%s.generated.c ", gen_dir, target->reflect_name );
     }
 
-    return build_run_cmd( cmd.buf ) == 0;
+    // Write the captured header list to <obj_dir>/_deps.txt for the next
+    // incremental check to read. Coarse-grained (one file per target) which
+    // matches the unity-build pattern: any header change forces a target
+    // recompile, but headers in OTHER targets don't trigger spurious rebuilds.
+    char deps_path[ 256 ];
+    snprintf( deps_path, sizeof( deps_path ), "%s/_deps.txt", obj_dir );
+
+    return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
 }
 
 /*============================================================================================*/

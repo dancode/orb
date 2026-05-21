@@ -102,9 +102,22 @@ build_setup_vc_env( void )
 #endif
 }
 
+// Compose the final command line, prepending the VC env if this is a tool call.
+static void
+build_compose_full_cmd( const char* cmd, const char* suffix, char* out, size_t out_size )
+{
+    bool needs_env = ( g_vc_env_cmd[ 0 ] != '\0' )
+                     && ( strstr( cmd, "cl.exe" ) || strstr( cmd, "link.exe" ) || strstr( cmd, "lib.exe" ) );
+
+    if ( needs_env )
+        snprintf( out, out_size, "%s %s%s", g_vc_env_cmd, cmd, suffix ? suffix : "" );
+    else
+        snprintf( out, out_size, "%s%s", cmd, suffix ? suffix : "" );
+}
+
 /**
  * build_run_cmd()
- * 
+ *
  * A wrapper around system() that automatically injects the VC environment prefix
  * if the command is a compiler/linker call.
  */
@@ -112,15 +125,77 @@ int
 build_run_cmd( const char* cmd )
 {
     char full_cmd[ CMD_BUF_MAX + 1024 ];
-    if ( g_vc_env_cmd[ 0 ] != '\0' && ( strstr( cmd, "cl.exe" ) || strstr( cmd, "link.exe" ) || strstr( cmd, "lib.exe" ) ) )
-    {
-        snprintf( full_cmd, sizeof( full_cmd ), "%s %s", g_vc_env_cmd, cmd );
-    }
-    else
-    {
-        snprintf( full_cmd, sizeof( full_cmd ), "%s", cmd );
-    }
-
+    build_compose_full_cmd( cmd, NULL, full_cmd, sizeof( full_cmd ) );
     printf( "[CMD] %s\n", full_cmd );
     return system( full_cmd );
+}
+
+/**
+ * build_run_cmd_capture_deps()
+ *
+ * Variant of build_run_cmd that captures the compiler's stdout, parses
+ * /showIncludes "Note: including file:" markers, and writes the resulting
+ * header paths to deps_path (one per line). Lines that are not include
+ * markers are forwarded to stdout so compile errors and warnings remain
+ * visible to the user.
+ *
+ * System headers from the MSVC toolchain and Windows SDK are filtered out;
+ * they cannot be invalidated by edits to project sources, so tracking them
+ * just bloats the dep file and wastes stat() calls on incremental builds.
+ *
+ * NOTE: The "Note: including file:" prefix is locale-dependent. This works
+ * on English-locale MSVC. For other locales, set the cl flag
+ * /D_CL_SHOWINCLUDES_ENGLISH or pipe through VSLANG=1033 in the env.
+ */
+int
+build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
+{
+    char full_cmd[ CMD_BUF_MAX + 1024 ];
+    // 2>&1 merges stderr into the pipe so warnings/errors are also forwarded.
+    build_compose_full_cmd( cmd, " 2>&1", full_cmd, sizeof( full_cmd ) );
+    printf( "[CMD] %s\n", full_cmd );
+
+    FILE* pipe = _popen( full_cmd, "rt" );
+    if ( !pipe ) return -1;
+
+    FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
+
+    static const char k_prefix[]   = "Note: including file:";
+    static const size_t k_prefix_n = sizeof( k_prefix ) - 1;
+
+    char line[ 4096 ];
+    while ( fgets( line, sizeof( line ), pipe ) )
+    {
+        // /showIncludes indents the marker with one space per include depth.
+        char* p = line;
+        while ( *p == ' ' || *p == '\t' ) ++p;
+
+        if ( strncmp( p, k_prefix, k_prefix_n ) == 0 )
+        {
+            char* path = p + k_prefix_n;
+            while ( *path == ' ' || *path == '\t' ) ++path;
+
+            // Strip CR/LF.
+            size_t l = strlen( path );
+            while ( l > 0 && ( path[ l - 1 ] == '\n' || path[ l - 1 ] == '\r' ) ) path[ --l ] = '\0';
+            if ( l == 0 ) continue;
+
+            // Filter system headers — they're owned by the toolchain, not us.
+            bool is_system = strstr( path, "\\VC\\Tools\\" ) != NULL
+                             || strstr( path, "\\Windows Kits\\" ) != NULL
+                             || strstr( path, "/VC/Tools/" ) != NULL
+                             || strstr( path, "/Windows Kits/" ) != NULL;
+
+            if ( deps && !is_system ) fprintf( deps, "%s\n", path );
+        }
+        else
+        {
+            // Forward normal compiler output so the user sees source banners,
+            // warnings, and errors as usual.
+            fputs( line, stdout );
+        }
+    }
+
+    if ( deps ) fclose( deps );
+    return _pclose( pipe );
 }

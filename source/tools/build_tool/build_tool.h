@@ -141,9 +141,13 @@ void cmd_append( cmd_buf_t* b, const char* fmt, ... );
 // Returns the last modification time of a file. Returns 0 if not found.
 __time64_t build_get_mtime( const char* path );
 
-// Run a shell command and return the exit code. 
+// Run a shell command and return the exit code.
 // Automatically handles Visual Studio environment (vcvarsall) if necessary.
 int build_run_cmd( const char* cmd );
+
+// Like build_run_cmd, but captures /showIncludes output to deps_path.
+// Non-include lines are forwarded to stdout. See build_tool_vcvars.c.
+int build_run_cmd_capture_deps( const char* cmd, const char* deps_path );
 
 // The core worker function. Handles recursive dependency resolution, 
 // incremental build timestamp checks, reflection generation, 

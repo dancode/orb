@@ -150,6 +150,39 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
     }
 
+    // Header dependency check. _deps.txt is written by /showIncludes during
+    // the previous compile (see build_target_compile). If it does not exist,
+    // we have no header info → force a rebuild. If any listed header is newer
+    // than the artifact, rebuild.
+    if ( up_to_date )
+    {
+        char deps_path[ 256 ];
+        sprintf( deps_path, "%s\\_deps.txt", obj_dir );
+        FILE* deps = fopen( deps_path, "r" );
+        if ( !deps )
+        {
+            up_to_date = false;
+        }
+        else
+        {
+            char header_path[ 1024 ];
+            while ( fgets( header_path, sizeof( header_path ), deps ) )
+            {
+                size_t l = strlen( header_path );
+                while ( l > 0 && ( header_path[ l - 1 ] == '\n' || header_path[ l - 1 ] == '\r' ) )
+                    header_path[ --l ] = '\0';
+                if ( l == 0 ) continue;
+
+                if ( build_get_mtime( header_path ) > out_mtime )
+                {
+                    up_to_date = false;
+                    break;
+                }
+            }
+            fclose( deps );
+        }
+    }
+
     if ( up_to_date ) return true;
 
     printf( "Building target: %s\n", target->name );

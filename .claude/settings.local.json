@@ -4,7 +4,9 @@
       "Bash(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\engine\\\\rs\" -Recurse -File)",
       "Bash(Select-Object FullName)",
       "PowerShell(cmd /c \"call .\\\\vc_vars_setup.bat && call .\\\\bootstrap_build_tool.bat < nul\")",
-      "PowerShell(cmd /c \"call .\\\\vc_vars_setup.bat >nul && bin\\\\build_tool.exe -target example\" 2>&1 | Select-Object -Last 25)"
+      "PowerShell(cmd /c \"call .\\\\vc_vars_setup.bat >nul && bin\\\\build_tool.exe -target example\" 2>&1 | Select-Object -Last 25)",
+      "PowerShell(\\(Get-Item F:\\\\orb\\\\source\\\\runtime_modules\\\\example\\\\example.h\\).LastWriteTime = \\(Get-Date\\); cmd /c \"call .\\\\vc_vars_setup.bat >nul 2>&1 && bin\\\\build_tool.exe -target example\" 2>&1 | Select-String \"Building target|SUCCESS|FAILED\")",
+      "PowerShell(\\(Get-Item F:\\\\orb\\\\source\\\\engine\\\\core\\\\core.h\\).LastWriteTime = \\(Get-Date\\); cmd /c \"call .\\\\vc_vars_setup.bat >nul 2>&1 && bin\\\\build_tool.exe -target example\" 2>&1 | Select-String \"Building target|SUCCESS|FAILED\")"
     ]
   }
 }
