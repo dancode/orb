@@ -90,28 +90,48 @@ bool
 build_target( build_context_t* ctx, target_info_t* target )
 {
     // --- 0. Dependency Resolution ---
-    
-    // Link Dependencies (libs)
-    for ( int i = 0; i < target->dep_count; ++i )
+    //
+    // Skipped when -no-deps is set. The VS solution generator emits that flag
+    // because MSBuild's own scheduler honors ProjectDependencies and will
+    // launch dep projects before dependent ones — letting the orchestrator
+    // also recurse would mean every dep gets walked once per dependent and
+    // multiple build_tool.exe processes would race on shared outputs.
+
+    if ( !ctx->skip_deps )
     {
-        target_info_t* dep = NULL;
-        for ( int j = 0; j < g_target_count; ++j )
+        // Link Dependencies (libs)
+        for ( int i = 0; i < target->dep_count; ++i )
         {
-            if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 ) { dep = &g_targets[ j ]; break; }
+            target_info_t* dep = NULL;
+            for ( int j = 0; j < g_target_count; ++j )
+            {
+                if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 ) { dep = &g_targets[ j ]; break; }
+            }
+            if ( dep && !build_target( ctx, dep ) ) return false;
         }
-        if ( dep && !build_target( ctx, dep ) ) return false;
+
+        // Tool Dependencies (exes)
+        for ( int i = 0; i < target->tool_dep_count; ++i )
+        {
+            target_info_t* tool = NULL;
+            for ( int j = 0; j < g_target_count; ++j )
+            {
+                if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
+            }
+            if ( tool && !build_target( ctx, tool ) ) return false;
+        }
     }
 
-    // Tool Dependencies (exes)
-    for ( int i = 0; i < target->tool_dep_count; ++i )
-    {
-        target_info_t* tool = NULL;
-        for ( int j = 0; j < g_target_count; ++j )
-        {
-            if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
-        }
-        if ( tool && !build_target( ctx, tool ) ) return false;
-    }
+    // --- Critical section ---
+    //
+    // Hold a per-target named mutex from path prep through link. Two concurrent
+    // build_tool.exe invocations of the SAME target will serialize here; two
+    // invocations of independent targets run in parallel (different mutex
+    // names). Acquired BEFORE the up-to-date check so a second invocation
+    // observes the post-build artifact mtimes — never a half-written .obj/.lib.
+
+    void* target_lock = build_lock_target( target->name );
+    bool  result      = true;
 
     // --- 1. Path Preparation ---
     char obj_dir[ 256 ];
@@ -183,7 +203,7 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
     }
 
-    if ( up_to_date ) return true;
+    if ( up_to_date ) { result = true; goto cleanup; }
 
     printf( "Building target: %s\n", target->name );
 
@@ -233,7 +253,8 @@ build_target( build_context_t* ctx, target_info_t* target )
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
             if ( renamed ) rename( old_path, exe_path );
-            return false;
+            result = false;
+            goto cleanup;
         }
     }
 
@@ -242,16 +263,20 @@ build_target( build_context_t* ctx, target_info_t* target )
     if ( !build_target_compile( ctx, target, obj_dir, gen_dir ) )
     {
         if ( renamed ) rename( old_path, exe_path );
-        return false;
+        result = false;
+        goto cleanup;
     }
 
     if ( !build_target_link( ctx, target, obj_dir ) )
     {
         if ( renamed ) rename( old_path, exe_path );
-        return false;
+        result = false;
+        goto cleanup;
     }
 
-    return true;
+cleanup:
+    build_unlock_target( target_lock );
+    return result;
 }
 
 /*============================================================================================*/
@@ -273,6 +298,7 @@ main( int argc, char** argv )
         if ( strcmp( argv[ i ], "-gen" ) == 0 || strcmp( argv[ i ], "gen" ) == 0 ) should_gen = true;
         if ( _stricmp( argv[ i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         if ( strcmp( argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
+        if ( strcmp( argv[ i ], "-no-deps" ) == 0 ) ctx.skip_deps = true;
         if ( strcmp( argv[ i ], "-target" ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
         if ( strcmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
         {

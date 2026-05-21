@@ -8,6 +8,10 @@
 #include <stdarg.h>
 #include <string.h>
 #include <sys/stat.h>
+#if defined( _WIN32 )
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 /*============================================================================================*/
 // --- Command Buffer Management ---
@@ -118,4 +122,53 @@ build_get_mtime( const char* path )
     struct __stat64 s;
     if ( _stat64( path, &s ) == 0 ) return s.st_mtime;
     return 0;
+}
+
+/*============================================================================================*/
+// --- Cross-Process Target Locking ---
+
+/**
+ * build_lock_target()
+ *
+ * Returns a kernel-mutex handle scoped to the named target. Blocks until the
+ * mutex is granted. The name lives in the unprivileged local-session namespace
+ * so any number of build_tool.exe processes in the same logon session share
+ * the same mutex object for a given target.
+ *
+ * Failure to create the mutex is non-fatal: we return NULL and the caller
+ * proceeds unlocked. Better to risk a rare collision than to refuse to build.
+ */
+void*
+build_lock_target( const char* target_name )
+{
+#if defined( _WIN32 )
+    char name[ 256 ];
+    snprintf( name, sizeof( name ), "orb_build_tool_%s", target_name );
+
+    HANDLE h = CreateMutexA( NULL, FALSE, name );
+    if ( !h ) return NULL;
+
+    WaitForSingleObject( h, INFINITE );
+    return ( void* )h;
+#else
+    ( void )target_name;
+    return NULL;
+#endif
+}
+
+/**
+ * build_unlock_target()
+ *
+ * Releases and closes a target lock previously returned by build_lock_target.
+ */
+void
+build_unlock_target( void* lock )
+{
+#if defined( _WIN32 )
+    if ( !lock ) return;
+    ReleaseMutex( ( HANDLE )lock );
+    CloseHandle( ( HANDLE )lock );
+#else
+    ( void )lock;
+#endif
 }

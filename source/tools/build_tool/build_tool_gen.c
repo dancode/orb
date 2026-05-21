@@ -207,10 +207,14 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, ta
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
     
     // The "Hook": Tell VS to call our build_tool.exe with the specific target.
-    fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
+    // -no-deps lets MSBuild's scheduler (which honors ProjectDependencies in
+    // the .sln) be the sole authority on build order; each project builds
+    // only itself, so parallel solution builds never have two build_tool.exe
+    // instances racing on a shared dep's outputs.
+    fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
-    fprintf( f, "    <NMakeCompileFile>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeCompileFile>\n", out_name );
+    fprintf( f, "    <NMakeCompileFile>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeCompileFile>\n", out_name );
     
     // IntelliSense setup: Definitions and paths needed for the IDE parser.
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );

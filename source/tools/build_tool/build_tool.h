@@ -107,6 +107,12 @@ typedef struct
     config_t config;        // Selected build config (Debug/Release).
     bool     is_monolithic; // Reserved: for building everything into one binary.
     bool     is_clang;      // If true, uses clang-cl instead of cl.
+    bool     skip_deps;     // If true, build_target() does NOT recurse into
+                            // its dependencies. The VS solution generator
+                            // emits this flag so MSBuild's own scheduler is
+                            // the single authority on dep order — preventing
+                            // multiple build_tool.exe instances from racing
+                            // on shared dep outputs during a parallel build.
 
 } build_context_t;
 
@@ -151,6 +157,16 @@ bool cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path );
 
 // Returns the last modification time of a file. Returns 0 if not found.
 __time64_t build_get_mtime( const char* path );
+
+// Acquire a Windows named mutex scoped to a single target, blocking until
+// granted. Used to serialize concurrent invocations of build_tool.exe that
+// would otherwise both compile/link the same target's outputs. Returns an
+// opaque handle that must be passed to build_unlock_target() — or NULL on
+// failure (in which case the caller proceeds without locking).
+void* build_lock_target( const char* target_name );
+
+// Release a lock acquired by build_lock_target(). NULL is a safe no-op.
+void  build_unlock_target( void* lock );
 
 // Run a shell command and return the exit code.
 // Automatically handles Visual Studio environment (vcvarsall) if necessary.
