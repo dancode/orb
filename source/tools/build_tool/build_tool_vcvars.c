@@ -19,6 +19,10 @@
 #include <string.h>
 #include <io.h>
 
+// Forward decl from build_tool_sched.c (later in the unity build). Returns
+// NULL outside a parallel worker — in that case we write to stdout directly.
+const char* sched_log_path( void );
+
 /*============================================================================================*/
 // --- VC Environment Import ---
 
@@ -161,11 +165,96 @@ build_setup_vc_env( void )
  * environment (set up by build_setup_vc_env above) is inherited by the
  * spawned cmd.exe, so cl/link/lib are directly callable with no prefix.
  */
+/**
+ * spawn_cmd()
+ *
+ * Spawn a child via CreateProcessA. Output is appended to log_path if
+ * non-NULL, else inherits the parent's stdout/stderr.
+ *
+ * IMPORTANT: We avoid system()/_popen here because both internally dup the
+ * parent's stdio descriptors as a side effect of spawning. When several
+ * worker threads call system() simultaneously, those dups race and the
+ * children end up inheriting clobbered or closed handles — manifesting as
+ * mysterious exit-code-1 failures with empty output (which is exactly what
+ * we hit before this rewrite). CreateProcess sets up the child's stdio
+ * via the STARTUPINFO passed to it, with no parent-side mutation, so
+ * concurrent calls from N threads don't interact.
+ *
+ * The command is wrapped with "cmd.exe /C" so shell builtins (del, for)
+ * and glob expansion in tool args (`*.obj`) keep working unchanged.
+ */
+static int
+spawn_cmd( const char* cmd, const char* log_path )
+{
+    SECURITY_ATTRIBUTES sa = { sizeof( sa ), NULL, TRUE };
+    HANDLE              hout = NULL;
+
+    if ( log_path )
+    {
+        hout = CreateFileA( log_path, FILE_APPEND_DATA,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL );
+        if ( hout == INVALID_HANDLE_VALUE )
+        {
+            printf( "Error: could not open log file %s (err %lu)\n",
+                    log_path, GetLastError() );
+            return -1;
+        }
+    }
+
+    char wrapped[ CMD_BUF_MAX + 64 ];
+    snprintf( wrapped, sizeof( wrapped ), "cmd.exe /C %s", cmd );
+
+    STARTUPINFOA si = { 0 };
+    si.cb         = sizeof( si );
+    si.dwFlags    = STARTF_USESTDHANDLES;
+    si.hStdInput  = GetStdHandle( STD_INPUT_HANDLE );
+    si.hStdOutput = hout ? hout : GetStdHandle( STD_OUTPUT_HANDLE );
+    si.hStdError  = hout ? hout : GetStdHandle( STD_ERROR_HANDLE );
+
+    PROCESS_INFORMATION pi = { 0 };
+    if ( !CreateProcessA( NULL, wrapped, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi ) )
+    {
+        DWORD err = GetLastError();
+        if ( hout ) CloseHandle( hout );
+        printf( "Error: CreateProcess failed (err %lu): %s\n", err, cmd );
+        return -1;
+    }
+
+    WaitForSingleObject( pi.hProcess, INFINITE );
+    DWORD ec = 1;
+    GetExitCodeProcess( pi.hProcess, &ec );
+    CloseHandle( pi.hProcess );
+    CloseHandle( pi.hThread );
+    if ( hout ) CloseHandle( hout );
+    return ( int )ec;
+}
+
 int
 build_run_cmd( const char* cmd )
 {
+    const char* log = sched_log_path();
+    if ( log )
+    {
+        // Worker thread: redirect stdout+stderr into this target's log file
+        // so parallel workers don't interleave on the shared console. The
+        // log gets flushed in one atomic block when the target completes.
+        FILE* lf = fopen( log, "a" );
+        if ( lf )
+        {
+            fprintf( lf, "[CMD] %s\n", cmd );
+            fclose( lf );
+        }
+        int rc = spawn_cmd( cmd, log );
+        if ( rc != 0 )
+        {
+            FILE* lf2 = fopen( log, "a" );
+            if ( lf2 ) { fprintf( lf2, "[CMD exit=%d]\n", rc ); fclose( lf2 ); }
+        }
+        return rc;
+    }
     printf( "[CMD] %s\n", cmd );
-    return system( cmd );
+    return spawn_cmd( cmd, NULL );
 }
 
 /**
@@ -182,50 +271,124 @@ build_run_cmd( const char* cmd )
  * NOTE: The "Note: including file:" prefix is English-only. For other
  * locales, set VSLANG=1033 in the environment before launching the build.
  */
-int
-build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
+// Process one /showIncludes output line: either record an included header
+// into the deps file (filtering system headers), or forward it to the
+// log/stdout stream as normal compiler output.
+static void
+process_deps_line( char* line, FILE* deps, FILE* out )
 {
-    // 2>&1 merges stderr into the pipe so warnings/errors are also forwarded.
-    char full_cmd[ CMD_BUF_MAX + 16 ];
-    snprintf( full_cmd, sizeof( full_cmd ), "%s 2>&1", cmd );
-    printf( "[CMD] %s\n", full_cmd );
-
-    FILE* pipe = _popen( full_cmd, "rt" );
-    if ( !pipe ) return -1;
-
-    FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
-
     static const char   k_prefix[] = "Note: including file:";
     static const size_t k_prefix_n = sizeof( k_prefix ) - 1;
 
-    char line[ 4096 ];
-    while ( fgets( line, sizeof( line ), pipe ) )
+    char* p = line;
+    while ( *p == ' ' || *p == '\t' ) ++p;
+
+    if ( strncmp( p, k_prefix, k_prefix_n ) == 0 )
     {
-        char* p = line;
-        while ( *p == ' ' || *p == '\t' ) ++p;
+        char* path = p + k_prefix_n;
+        while ( *path == ' ' || *path == '\t' ) ++path;
+        size_t l = strlen( path );
+        while ( l > 0 && ( path[ l - 1 ] == '\r' || path[ l - 1 ] == '\n' ) ) path[ --l ] = '\0';
+        if ( l == 0 ) return;
 
-        if ( strncmp( p, k_prefix, k_prefix_n ) == 0 )
+        bool is_system = strstr( path, "\\VC\\Tools\\" ) != NULL
+                         || strstr( path, "\\Windows Kits\\" ) != NULL
+                         || strstr( path, "/VC/Tools/" ) != NULL
+                         || strstr( path, "/Windows Kits/" ) != NULL;
+        if ( deps && !is_system ) fprintf( deps, "%s\n", path );
+    }
+    else
+    {
+        fputs( line, out );
+        // line may not have a trailing newline (we may have flushed mid-line
+        // due to a long line). Add one so the log stays readable.
+        size_t l = strlen( line );
+        if ( l == 0 || line[ l - 1 ] != '\n' ) fputc( '\n', out );
+    }
+}
+
+int
+build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
+{
+    // CreatePipe + CreateProcess instead of _popen/_pclose, for the same
+    // thread-safety reason explained in spawn_cmd(): _popen mutates the
+    // parent's stdio fds during setup, and concurrent calls from multiple
+    // worker threads race on that mutation.
+    SECURITY_ATTRIBUTES sa = { sizeof( sa ), NULL, TRUE };
+    HANDLE              rd = NULL, wr = NULL;
+    if ( !CreatePipe( &rd, &wr, &sa, 65536 ) ) return -1;
+    SetHandleInformation( rd, HANDLE_FLAG_INHERIT, 0 );
+
+    char wrapped[ CMD_BUF_MAX + 64 ];
+    snprintf( wrapped, sizeof( wrapped ), "cmd.exe /C %s", cmd );
+
+    STARTUPINFOA si = { 0 };
+    si.cb         = sizeof( si );
+    si.dwFlags    = STARTF_USESTDHANDLES;
+    si.hStdInput  = GetStdHandle( STD_INPUT_HANDLE );
+    si.hStdOutput = wr;
+    si.hStdError  = wr;
+
+    PROCESS_INFORMATION pi = { 0 };
+    if ( !CreateProcessA( NULL, wrapped, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi ) )
+    {
+        CloseHandle( rd );
+        CloseHandle( wr );
+        return -1;
+    }
+    CloseHandle( wr );   // Parent's copy; child has its own.
+
+    // Output sink: per-worker log if active, otherwise stdout.
+    const char* log_path  = sched_log_path();
+    FILE*       owned_log = NULL;
+    FILE*       out       = stdout;
+    if ( log_path )
+    {
+        owned_log = fopen( log_path, "a" );
+        if ( owned_log ) out = owned_log;
+    }
+    fprintf( out, "[CMD] %s\n", cmd );
+
+    FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
+
+    // Stream the pipe into a line buffer; flush each full line.
+    char  line[ 4096 ];
+    size_t line_len = 0;
+    char  buf[ 4096 ];
+    DWORD br = 0;
+    while ( ReadFile( rd, buf, sizeof( buf ), &br, NULL ) && br > 0 )
+    {
+        for ( DWORD i = 0; i < br; ++i )
         {
-            char* path = p + k_prefix_n;
-            while ( *path == ' ' || *path == '\t' ) ++path;
-
-            size_t l = strlen( path );
-            while ( l > 0 && ( path[ l - 1 ] == '\n' || path[ l - 1 ] == '\r' ) ) path[ --l ] = '\0';
-            if ( l == 0 ) continue;
-
-            bool is_system = strstr( path, "\\VC\\Tools\\" ) != NULL
-                             || strstr( path, "\\Windows Kits\\" ) != NULL
-                             || strstr( path, "/VC/Tools/" ) != NULL
-                             || strstr( path, "/Windows Kits/" ) != NULL;
-
-            if ( deps && !is_system ) fprintf( deps, "%s\n", path );
-        }
-        else
-        {
-            fputs( line, stdout );
+            char c = buf[ i ];
+            if ( c == '\r' ) continue;
+            if ( c == '\n' || line_len >= sizeof( line ) - 1 )
+            {
+                line[ line_len ] = '\0';
+                process_deps_line( line, deps, out );
+                line_len = 0;
+            }
+            else
+            {
+                line[ line_len++ ] = c;
+            }
         }
     }
+    // Flush any trailing partial line.
+    if ( line_len > 0 )
+    {
+        line[ line_len ] = '\0';
+        process_deps_line( line, deps, out );
+    }
+
+    CloseHandle( rd );
+    WaitForSingleObject( pi.hProcess, INFINITE );
+    DWORD ec = 1;
+    GetExitCodeProcess( pi.hProcess, &ec );
+    CloseHandle( pi.hProcess );
+    CloseHandle( pi.hThread );
 
     if ( deps ) fclose( deps );
-    return _pclose( pipe );
+    if ( owned_log ) fclose( owned_log );
+    return ( int )ec;
 }

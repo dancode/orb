@@ -176,10 +176,17 @@ int build_run_cmd( const char* cmd );
 // Non-include lines are forwarded to stdout. See build_tool_vcvars.c.
 int build_run_cmd_capture_deps( const char* cmd, const char* deps_path );
 
-// The core worker function. Handles recursive dependency resolution, 
-// incremental build timestamp checks, reflection generation, 
+// The core worker function. Handles recursive dependency resolution,
+// incremental build timestamp checks, reflection generation,
 // and the final compile/link steps for a target.
 bool build_target( build_context_t* ctx, target_info_t* target );
+
+// Parallel scheduler. Builds the transitive closure of `root` (or every
+// target in g_targets[] if `root` is NULL) using up to `thread_count`
+// concurrent workers. Each worker calls build_target() with skip_deps=true;
+// the scheduler itself owns dep ordering. Returns true iff all targets
+// finished successfully.
+bool build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count );
 
 // Deletes build artifacts from bin/ and obj/. 
 // Surgically avoids deleting the build_tool.exe itself to prevent locking.

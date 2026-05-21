@@ -40,6 +40,7 @@ static const char* g_gen_dir         = "generated";      // Folder for reflectio
 #include "build_tool_cc.c"
 #include "build_tool_targets.c"
 #include "build_tool_gen.c"
+#include "build_tool_sched.c"
 
 /*============================================================================================*/
 // --- Core Build Logic ---
@@ -288,9 +289,10 @@ main( int argc, char** argv )
     build_context_t ctx = { 0 };
     ctx.config = CONFIG_DEBUG;
 
-    bool should_clean = false;
-    bool should_gen   = false;
-    char* target_name = NULL;
+    bool  should_clean = false;
+    bool  should_gen   = false;
+    char* target_name  = NULL;
+    int   j_threads    = 0;   // 0 → auto-detect from CPU count.
 
     for ( int i = 1; i < argc; ++i )
     {
@@ -300,10 +302,21 @@ main( int argc, char** argv )
         if ( strcmp( argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
         if ( strcmp( argv[ i ], "-no-deps" ) == 0 ) ctx.skip_deps = true;
         if ( strcmp( argv[ i ], "-target" ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
+        if ( strcmp( argv[ i ], "-j" ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
         if ( strcmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
         {
             if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
+    }
+
+    // Auto-pick worker count = logical processor count, capped sensibly.
+    if ( j_threads <= 0 )
+    {
+        SYSTEM_INFO si;
+        GetSystemInfo( &si );
+        j_threads = ( int )si.dwNumberOfProcessors;
+        if ( j_threads < 1 ) j_threads = 1;
+        if ( j_threads > 16 ) j_threads = 16;
     }
 
     if ( should_clean ) { build_clean(); return 0; }
@@ -315,25 +328,33 @@ main( int argc, char** argv )
     printf( "Config: %s\n", ctx.config == CONFIG_DEBUG ? "Debug" : "Release" );
     printf( "Compiler: %s\n\n", ctx.is_clang ? "Clang" : "MSVC" );
 
+    // Dispatch:
+    //  -no-deps           → serial in-process build of exactly one target.
+    //                       VS uses this so MSBuild's scheduler stays the sole
+    //                       authority on solution-level parallelism.
+    //  -target X          → parallel scheduler over X's dependency closure.
+    //  no -target         → parallel scheduler over every registered target.
+    target_info_t* target = NULL;
     if ( target_name )
     {
-        target_info_t* target = NULL;
         for ( int i = 0; i < g_target_count; ++i )
         {
             if ( _stricmp( g_targets[ i ].name, target_name ) == 0 ) { target = &g_targets[ i ]; break; }
         }
+        if ( !target ) { printf( "Error: Unknown target '%s'\n", target_name ); return 1; }
+    }
 
-        if ( target )
-        {
-            if ( !build_target( &ctx, target ) ) { printf( "\nFAILED!\n" ); return 1; }
-        }
-        else { printf( "Error: Unknown target '%s'\n", target_name ); return 1; }
+    if ( ctx.skip_deps )
+    {
+        if ( !target ) { printf( "Error: -no-deps requires -target.\n" ); return 1; }
+        if ( !build_target( &ctx, target ) ) { printf( "\nFAILED!\n" ); return 1; }
     }
     else
     {
-        for ( int i = 0; i < g_target_count; ++i )
+        if ( !build_run_parallel( &ctx, target, j_threads ) )
         {
-            if ( !build_target( &ctx, &g_targets[ i ] ) ) { printf( "\nFAILED on target '%s'!\n", g_targets[ i ].name ); return 1; }
+            printf( "\nFAILED!\n" );
+            return 1;
         }
     }
 

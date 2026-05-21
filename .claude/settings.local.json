@@ -16,7 +16,12 @@
       "Bash(bin\\\\\\\\build_tool.exe -gen)",
       "Bash(./bin/build_tool.exe -gen)",
       "Bash(grep -h \"ProjectGuid\" build_new/core.vcxproj build_new/base.vcxproj build_new/mod.vcxproj build_new/orb_make_nav.vcxproj)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(./bin/build_tool.exe -clean)",
+      "Bash(time ./bin/build_tool.exe -j 1)",
+      "Bash(time ./bin/build_tool.exe)",
+      "Bash(./bin/build_tool.exe)",
+      "Bash(./bin/build_tool.exe -j 1 -target sys)"
     ]
   }
 }
