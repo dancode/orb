@@ -55,10 +55,10 @@ dkms.conf
 *.dwo
 
 # Build directories
-[Bb]uild/
-[Bb]uild_*/
-[Bb]in/
-[Oo]ut/
+/[Bb]uild/
+/[Bb]uild_*/
+/[Bb]in/
+/[Oo]ut/
 cmake-build-*/
 
 # Visual Studio specific
