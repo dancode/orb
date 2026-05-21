@@ -70,47 +70,110 @@ static const char* const k_build_reflect_tool = "build_reflect";
 /**
  * build_clean()
  *
- * Wipes intermediate (.obj), generated (reflection), and final artifact
- * (.lib/.dll/.exe/.pdb) outputs so the next build starts cold.
+ * Two modes:
  *
- * The exe sweep deliberately skips build_tool.exe itself: deleting a
- * running image on Windows fails with sharing-violation, which would
- * cascade into a confusing exit code. Keeping our own binary in place is
- * harmless — it'll be overwritten on its own next rebuild (via the
- * .exe -> .exe.old rename trick handled in build_target step 4).
+ *   Per-target (target != NULL): removes only that target's artifacts —
+ *   bin/<name>.{lib,dll,exe,exp,pdb}, obj/<name>/, and any generated
+ *   reflection files. Called from each VS .vcxproj's NMakeCleanCommandLine
+ *   so a solution rebuild cleans each project independently rather than
+ *   wiping the whole bin/ tree before every project.
+ *
+ *   Global (target == NULL): wipes all intermediates and artifacts. Skips
+ *   is_tool executables (build_reflect, build_tool) so tools survive a
+ *   full clean — they are rebuilt on demand by our dep resolution, not
+ *   by VS, so deleting them would leave no path to recreate them.
  */
 void
-build_clean( void )
+build_clean( target_info_t* target )
 {
-    printf( "Cleaning build artifacts...\n" );
 #if defined( _WIN32 )
-    // Wipe per-target obj and generated trees. del /s recurses; /q suppresses
-    // the "Are you sure?" prompt; stdout+stderr go to nul so a missing
-    // directory doesn't dump a noisy error to the build log.
-    char cmd[ BT_PATH_MAX ];
-    snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
-    build_run_cmd( cmd );
-    snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
-    build_run_cmd( cmd );
+    char cmd[ BT_PATH_MAX * 2 ];
 
-    // Final artifacts in bin/. PDBs deleted first so the linker can't be
-    // tempted to do an incremental link off a stale one.
-    build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
-    build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
-    build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
+    if ( target )
+    {
+        printf( "Cleaning target: %s\n", target->name );
 
-    // Surgical delete: remove all EXEs EXCEPT ourselves. Deleting the
-    // currently-running build_tool.exe would fail with sharing-violation.
-    build_run_cmd( "for %f in (bin\\*.exe) do if not \"%~nxf\"==\"build_tool.exe\" del \"%f\" >nul 2>nul" );
+        // Primary artifact.
+        const char* ext = ( target->type == TARGET_STATIC_LIB )  ? "lib" :
+                          ( target->type == TARGET_DYNAMIC_LIB ) ? "dll" : "exe";
+        snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.%s >nul 2>nul", target->name, ext );
+        build_run_cmd( cmd );
+
+        // DLL side products: import lib and export file.
+        if ( target->type == TARGET_DYNAMIC_LIB )
+        {
+            snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.lib >nul 2>nul", target->name );
+            build_run_cmd( cmd );
+            snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.exp >nul 2>nul", target->name );
+            build_run_cmd( cmd );
+        }
+
+        // Rotated PDBs.
+        snprintf( cmd, sizeof( cmd ), "del /q bin\\%s_*.pdb >nul 2>nul", target->name );
+        build_run_cmd( cmd );
+
+        // Intermediate obj tree.
+        snprintf( cmd, sizeof( cmd ), "rd /s /q %s\\%s\\%s >nul 2>nul", g_build_dir, g_int_dir, target->name );
+        build_run_cmd( cmd );
+
+        // Reflection-generated sources.
+        if ( target->has_reflect )
+        {
+            const char* rname = target->reflect_name ? target->reflect_name : target->name;
+            snprintf( cmd, sizeof( cmd ), "del /q %s\\%s\\%s.generated.c >nul 2>nul", g_build_dir, g_gen_dir, rname );
+            build_run_cmd( cmd );
+            snprintf( cmd, sizeof( cmd ), "del /q %s\\%s\\%s.generated.h >nul 2>nul", g_build_dir, g_gen_dir, rname );
+            build_run_cmd( cmd );
+        }
+    }
+    else
+    {
+        printf( "Cleaning all build artifacts...\n" );
+
+        // Wipe entire obj and generated trees.
+        snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
+        build_run_cmd( cmd );
+        snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
+        build_run_cmd( cmd );
+
+        build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
+        build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
+        build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
+        build_run_cmd( "del /s /q bin\\*.exp >nul 2>nul" );
+
+        // Delete executables only for non-tool targets. is_tool executables
+        // (build_reflect, build_tool) are rebuilt by our dep resolution and
+        // have no VS project to rebuild them after a clean, so leave them.
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( g_targets[ i ].type == TARGET_EXECUTABLE && !g_targets[ i ].is_tool )
+            {
+                snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
+                build_run_cmd( cmd );
+            }
+        }
+    }
 #else
     char cmd[ BT_PATH_MAX ];
-    snprintf( cmd, sizeof( cmd ), "rm -rf bin %s/%s %s/%s", g_build_dir, g_int_dir, g_build_dir, g_gen_dir );
-    build_run_cmd( cmd );
-    build_run_cmd( "mkdir bin" );
-    snprintf( cmd, sizeof( cmd ), "mkdir -p %s/%s", g_build_dir, g_int_dir );
-    build_run_cmd( cmd );
-    snprintf( cmd, sizeof( cmd ), "mkdir -p %s/%s", g_build_dir, g_gen_dir );
-    build_run_cmd( cmd );
+    if ( target )
+    {
+        const char* ext = ( target->type == TARGET_STATIC_LIB )  ? "lib" :
+                          ( target->type == TARGET_DYNAMIC_LIB ) ? "so"  : "";
+        snprintf( cmd, sizeof( cmd ), "rm -f bin/%s.%s", target->name, ext );
+        build_run_cmd( cmd );
+        snprintf( cmd, sizeof( cmd ), "rm -rf %s/%s/%s", g_build_dir, g_int_dir, target->name );
+        build_run_cmd( cmd );
+    }
+    else
+    {
+        snprintf( cmd, sizeof( cmd ), "rm -rf bin %s/%s %s/%s", g_build_dir, g_int_dir, g_build_dir, g_gen_dir );
+        build_run_cmd( cmd );
+        build_run_cmd( "mkdir bin" );
+        snprintf( cmd, sizeof( cmd ), "mkdir -p %s/%s", g_build_dir, g_int_dir );
+        build_run_cmd( cmd );
+        snprintf( cmd, sizeof( cmd ), "mkdir -p %s/%s", g_build_dir, g_gen_dir );
+        build_run_cmd( cmd );
+    }
 #endif
     printf( "Clean complete.\n" );
 }
@@ -153,7 +216,8 @@ build_target( build_context_t* ctx, target_info_t* target )
 
     if ( !ctx->skip_deps )
     {
-        // Link Dependencies — other targets whose .lib must be linked in.
+        // Link Dependencies — VS manages these via ProjectDependencies when
+        // -no-deps is set. Skip here to avoid racing VS's parallel scheduler.
         for ( int i = 0; target->deps[ i ]; ++i )
         {
             target_info_t* dep = NULL;
@@ -164,33 +228,33 @@ build_target( build_context_t* ctx, target_info_t* target )
             if ( !dep ) { printf( "Error: '%s' depends on unknown target '%s'\n", target->name, target->deps[ i ] ); return false; }
             if ( !build_target( ctx, dep ) ) return false;
         }
+    }
 
-        // Tool Dependencies — exes the build needs to RUN (e.g. build_reflect),
-        // not link against. Same recursion, no linker side-effect.
-        for ( int i = 0; target->tool_deps[ i ]; ++i )
+    // Tool Dependencies — always our responsibility regardless of -no-deps.
+    // VS has no visibility into tool executables not listed in the solution,
+    // so we must always check and rebuild them ourselves. build_target is
+    // idempotent; the up-to-date check short-circuits when nothing changed.
+    for ( int i = 0; target->tool_deps[ i ]; ++i )
+    {
+        target_info_t* tool = NULL;
+        for ( int j = 0; j < g_target_count; ++j )
         {
-            target_info_t* tool = NULL;
-            for ( int j = 0; j < g_target_count; ++j )
-            {
-                if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
-            }
-            if ( !tool ) { printf( "Error: '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] ); return false; }
-            if ( !build_target( ctx, tool ) ) return false;
+            if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
         }
+        if ( !tool ) { printf( "Error: '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] ); return false; }
+        if ( !build_target( ctx, tool ) ) return false;
+    }
 
-        // Implicit tool dep: has_reflect targets always need k_build_reflect_tool.
-        // build_target is idempotent so double-building (if somehow also listed
-        // in tool_deps) is harmless — the up-to-date check short-circuits it.
-        if ( target->has_reflect )
+    // Implicit reflect tool dep — same always-rebuild guarantee.
+    if ( target->has_reflect )
+    {
+        target_info_t* refl_tool = NULL;
+        for ( int j = 0; j < g_target_count; ++j )
         {
-            target_info_t* refl_tool = NULL;
-            for ( int j = 0; j < g_target_count; ++j )
-            {
-                if ( strcmp( g_targets[ j ].name, k_build_reflect_tool ) == 0 ) { refl_tool = &g_targets[ j ]; break; }
-            }
-            if ( !refl_tool ) { printf( "Error: '%s' needs reflection but '%s' is not in the target registry\n", target->name, k_build_reflect_tool ); return false; }
-            if ( !build_target( ctx, refl_tool ) ) return false;
+            if ( strcmp( g_targets[ j ].name, k_build_reflect_tool ) == 0 ) { refl_tool = &g_targets[ j ]; break; }
         }
+        if ( !refl_tool ) { printf( "Error: '%s' needs reflection but '%s' is not in the target registry\n", target->name, k_build_reflect_tool ); return false; }
+        if ( !build_target( ctx, refl_tool ) ) return false;
     }
 
     // --- Critical section ---
@@ -457,7 +521,20 @@ main( int argc, char** argv )
     // --- Standalone subcommands ---
     // clean and gen are bookkeeping passes — no need to set up the toolchain
     // env. Returning early skips the vcvars import below.
-    if ( should_clean ) { build_clean(); return 0; }
+    if ( should_clean )
+    {
+        target_info_t* clean_target = NULL;
+        if ( target_name )
+        {
+            for ( int i = 0; i < g_target_count; ++i )
+            {
+                if ( _stricmp( g_targets[ i ].name, target_name ) == 0 ) { clean_target = &g_targets[ i ]; break; }
+            }
+            if ( !clean_target ) { printf( "Error: Unknown target '%s'\n", target_name ); return 1; }
+        }
+        build_clean( clean_target );
+        return 0;
+    }
     if ( should_gen ) { build_gen_projects(); return 0; }
 
     printf( "--- ORB Build Starting ---\n\n" );

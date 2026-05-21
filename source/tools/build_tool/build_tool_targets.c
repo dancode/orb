@@ -120,6 +120,7 @@ target_info_t g_targets[] = {
      .sln_folder = "08_TOOL",
      .units      = { "build_tool.c" },
      .deps       = {},
+     .is_tool    = true,
      },
 
     // The reflection generator. Scans source and writes generated .c/.h files.
@@ -130,6 +131,7 @@ target_info_t g_targets[] = {
      .sln_folder = "08_TOOL",
      .units      = { "rs_gen.c" },
      .deps       = {},
+     .is_tool    = true,
      },};
 
 int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );

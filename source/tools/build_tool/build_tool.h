@@ -125,15 +125,21 @@ typedef struct
     // are appended to the cl.exe command line for this target.
     bool          has_reflect;
 
-    // Base name for generated .c/.h files. Default is NULL, which means the 
+    // Base name for generated .c/.h files. Default is NULL, which means the
     // files are named after the target (e.g. "core" -> "core.generated.c/h").
     const char*   reflect_name;
+
+    // If true, this is a build-time tool executable (e.g. build_reflect).
+    // Tool targets survive global clean and are always rebuilt by our own
+    // dep resolution — never delegated to VS ProjectDependencies.
+    bool          is_tool;
 
 } target_info_t;
 
 // --- Global Registry ---
 
-// These are defined in build_tool_targets.c and used by the orchestrator.
+// The list of all targets defined in build_tool_targets.c and used by
+// the orchestrator and solution generator.
 
 extern target_info_t g_targets[];
 extern int           g_target_count;
@@ -248,9 +254,10 @@ bool build_target( build_context_t* ctx, target_info_t* target );
 // finished successfully.
 bool build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count );
 
-// Deletes build artifacts from bin/ and obj/. 
-// Surgically avoids deleting the build_tool.exe itself to prevent locking.
-void build_clean( void );
+// Deletes build artifacts. If target is non-NULL, only that target's artifacts
+// are removed (bin/<name>.*, obj/<name>/). If NULL, a global wipe runs —
+// is_tool executables are excluded so tools survive a full clean.
+void build_clean( target_info_t* target );
 
 // Generates all .sln and .vcxproj files defined in the Solution Registry.
 // This maps our custom build system into the Visual Studio IDE.
