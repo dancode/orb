@@ -44,7 +44,7 @@ typedef struct
 static file_info_t g_files[ MAX_FILES ];
 static int         g_file_count = 0;
 
-static char g_filters[ MAX_FILTERS ][ 256 ];
+static char g_filters[ MAX_FILTERS ][ BT_PATH_MAX ];
 static int  g_filter_count = 0;
 
 /**
@@ -363,7 +363,7 @@ build_gen_proj_target( target_info_t* target, int index )
         if ( filename ) filename++;   // skip past the final slash
         else filename = g_files[ i ].path;
 
-        for ( int j = 0; j < target->unit_count; ++j )
+        for ( int j = 0; target->units[ j ]; ++j )
         {
             if ( _stricmp( filename, target->units[ j ] ) == 0 )
             {
@@ -411,7 +411,7 @@ build_gen_proj_target( target_info_t* target, int index )
             if ( filename ) filename++;
             else filename = g_files[ i ].path;
 
-            for ( int j = 0; j < target->unit_count; ++j )
+            for ( int j = 0; target->units[ j ]; ++j )
             {
                 if ( _stricmp( filename, target->units[ j ] ) == 0 )
                 {
@@ -616,7 +616,7 @@ build_gen_solution( solution_info_t* sln )
     }
 
     // 2. Add Target Projects.
-    char  folders[ 16 ][ 64 ];
+    char  folders[ 16 ][ BT_PATH_MAX ];
     char  folder_guids[ 16 ][ 64 ];
     int   folder_count = 0;
 
@@ -643,24 +643,32 @@ build_gen_solution( solution_info_t* sln )
             // This section tells Visual Studio's scheduler exactly which projects
             // must be finished before starting this one. This prevents race conditions
             // where multiple cl.exe instances try to write to the same PDB.
-            if ( target->dep_count > 0 || target->tool_dep_count > 0 )
+            if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect )
             {
                 fprintf( f, "\tProjectSection(ProjectDependencies) = postProject\n" );
 
                 // Add Link Dependencies (libs).
-                for ( int i = 0; i < target->dep_count; ++i )
+                for ( int i = 0; target->deps[ i ]; ++i )
                 {
                     char dep_guid[ 64 ];
                     guid_from_name( target->deps[ i ], dep_guid );
                     fprintf( f, "\t\t%s = %s\n", dep_guid, dep_guid );
                 }
 
-                // Add Tool Dependencies (exes). e.g. core depends on build_reflect.
-                for ( int i = 0; i < target->tool_dep_count; ++i )
+                // Add Tool Dependencies (exes).
+                for ( int i = 0; target->tool_deps[ i ]; ++i )
                 {
                     char tool_guid[ 64 ];
                     guid_from_name( target->tool_deps[ i ], tool_guid );
                     fprintf( f, "\t\t%s = %s\n", tool_guid, tool_guid );
+                }
+
+                // Implicit dep: has_reflect targets always depend on the reflect tool.
+                if ( target->has_reflect )
+                {
+                    char refl_guid[ 64 ];
+                    guid_from_name( k_build_reflect_tool, refl_guid );
+                    fprintf( f, "\t\t%s = %s\n", refl_guid, refl_guid );
                 }
 
                 fprintf( f, "\tEndProjectSection\n" );
@@ -676,7 +684,7 @@ build_gen_solution( solution_info_t* sln )
             }
             if ( !found && folder_count < 16 )
             {
-                strcpy( folders[ folder_count ], target->sln_folder );
+                snprintf( folders[ folder_count ], BT_PATH_MAX, "%s", target->sln_folder );
                 // Folder GUID is per-(solution, folder) — same folder name in a
                 // different solution stays distinct, but is stable across regens.
                 char key[ 192 ];

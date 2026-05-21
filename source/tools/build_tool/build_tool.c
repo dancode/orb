@@ -49,6 +49,10 @@ static const char* g_build_dir       = "build_new";      // Root for intermediat
 static const char* g_int_dir         = "obj";            // Sub-folder for .obj files (per-target).
 static const char* g_gen_dir         = "generated";      // Sub-folder for reflection-generated .c/.h.
 
+// Canonical name of the reflection code-generator executable. Referenced by
+// the dep graph (build_target, add_job, gen) so renaming it is a one-line change.
+static const char* const k_build_reflect_tool = "build_reflect";
+
 // --- Unity Includes ---
 //
 // Order matters: each file may reference statics defined in earlier files.
@@ -150,26 +154,42 @@ build_target( build_context_t* ctx, target_info_t* target )
     if ( !ctx->skip_deps )
     {
         // Link Dependencies — other targets whose .lib must be linked in.
-        for ( int i = 0; i < target->dep_count; ++i )
+        for ( int i = 0; target->deps[ i ]; ++i )
         {
             target_info_t* dep = NULL;
             for ( int j = 0; j < g_target_count; ++j )
             {
                 if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 ) { dep = &g_targets[ j ]; break; }
             }
-            if ( dep && !build_target( ctx, dep ) ) return false;
+            if ( !dep ) { printf( "Error: '%s' depends on unknown target '%s'\n", target->name, target->deps[ i ] ); return false; }
+            if ( !build_target( ctx, dep ) ) return false;
         }
 
         // Tool Dependencies — exes the build needs to RUN (e.g. build_reflect),
         // not link against. Same recursion, no linker side-effect.
-        for ( int i = 0; i < target->tool_dep_count; ++i )
+        for ( int i = 0; target->tool_deps[ i ]; ++i )
         {
             target_info_t* tool = NULL;
             for ( int j = 0; j < g_target_count; ++j )
             {
                 if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
             }
-            if ( tool && !build_target( ctx, tool ) ) return false;
+            if ( !tool ) { printf( "Error: '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] ); return false; }
+            if ( !build_target( ctx, tool ) ) return false;
+        }
+
+        // Implicit tool dep: has_reflect targets always need k_build_reflect_tool.
+        // build_target is idempotent so double-building (if somehow also listed
+        // in tool_deps) is harmless — the up-to-date check short-circuits it.
+        if ( target->has_reflect )
+        {
+            target_info_t* refl_tool = NULL;
+            for ( int j = 0; j < g_target_count; ++j )
+            {
+                if ( strcmp( g_targets[ j ].name, k_build_reflect_tool ) == 0 ) { refl_tool = &g_targets[ j ]; break; }
+            }
+            if ( !refl_tool ) { printf( "Error: '%s' needs reflection but '%s' is not in the target registry\n", target->name, k_build_reflect_tool ); return false; }
+            if ( !build_target( ctx, refl_tool ) ) return false;
         }
     }
 
@@ -210,7 +230,7 @@ build_target( build_context_t* ctx, target_info_t* target )
     // Test A: any explicit translation unit newer than the artifact?
     if ( up_to_date )
     {
-        for ( int i = 0; i < target->unit_count; ++i )
+        for ( int i = 0; target->units[ i ]; ++i )
         {
             char src_path[ BT_PATH_MAX ];
             snprintf( src_path, sizeof( src_path ), "%s/%s", target->root_dir, target->units[ i ] );
@@ -222,7 +242,7 @@ build_target( build_context_t* ctx, target_info_t* target )
     // where a sibling target rebuilt and we need to re-link against it.
     if ( up_to_date )
     {
-        for ( int i = 0; i < target->dep_count; ++i )
+        for ( int i = 0; target->deps[ i ]; ++i )
         {
             char dep_path[ BT_PATH_MAX ];
             snprintf( dep_path, sizeof( dep_path ), "bin\\%s.lib", target->deps[ i ] );
@@ -328,14 +348,16 @@ build_target( build_context_t* ctx, target_info_t* target )
     //
     // Generate the rs_-system codegen for targets that opt in via
     // has_reflect=true. build_reflect.exe scans root_dir for annotated
-    // types and writes <gen_dir>/<reflect_name>.generated.{c,h}; the
+    // types and writes <gen_dir>/<rname>.generated.{c,h}; the
     // generated .c is then appended to the compile step's input list.
+    // reflect_name overrides the stem; falls back to target->name when NULL.
 
     if ( target->has_reflect )
     {
-        printf( "[REFL] Generating reflection for %s...\n", target->reflect_name );
+        const char* rname = target->reflect_name ? target->reflect_name : target->name;
+        printf( "[REFL] Generating reflection for %s...\n", rname );
         char refl_cmd[ BT_PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\build_reflect.exe %s %s %s", target->root_dir, gen_dir, target->reflect_name );
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\build_reflect.exe %s %s %s", target->root_dir, gen_dir, rname );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
             if ( renamed ) rename( old_path, exe_path );  // restore live exe

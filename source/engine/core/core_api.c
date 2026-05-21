@@ -9,8 +9,8 @@
 ==============================================================================================*/
 #include "engine/mod/mod_export.h"
 
-#if __has_include( "engine_core.generated.h" )
-    #include "engine_core.generated.h"    
+#if __has_include( "core.generated.h" )
+    #include "core.generated.h"    
     #define HAS_GENERATED_FILE 1
 #endif
 
@@ -140,7 +140,7 @@ core_get_mod_desc( void )
         .init          = core_mod_init,
         .exit          = core_mod_exit,
         .reload        = NULL,
-        .rs_register   = MOD_REFLECT_FUNC( engine_core ),
+        .rs_register   = MOD_REFLECT_FUNC( core ),
     };
     return &api;
 }

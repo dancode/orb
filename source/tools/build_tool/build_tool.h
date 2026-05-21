@@ -36,12 +36,13 @@
 // --- Project Constants ---
 
 // Max size for any single compiler/linker command line.
+
 #define CMD_BUF_MAX 16384    
 
 // Path buffer size for every filesystem path the build tool constructs.
-// Windows MAX_PATH is 260; 512 gives generous headroom for composite paths
-// (e.g. <obj_dir>\<filename>) without forcing us to opt into long-path
-// support, which the user has explicitly opted out of.
+// Windows MAX_PATH is 260; 512 gives generous headroom for composite paths.
+// <obj_dir>\<filename> without forcing us to opt into long-path support
+
 #define BT_PATH_MAX 512
 
 // --- Helper Types ---
@@ -50,11 +51,12 @@
 // invocations. cmd_append() formats into `buf` and updates `size`; if an
 // append cannot fit, `truncated` is set so the caller can decide whether to
 // spill the tail into a response file (see cmd_spill_to_response_file).
+
 typedef struct
 {
     char   buf[ CMD_BUF_MAX ];
     size_t size;
-    bool   truncated;   // Set by cmd_append() when an append could not fit.
+    bool   truncated; // Set by cmd_append() when an append could not fit.
 
 } cmd_buf_t;
 
@@ -66,8 +68,8 @@ typedef struct
 
 // Standard build configurations. These map to compiler optimization levels
 // and debug symbol generation. The enum values are used to index configuration
-// specific settings in the orchestrator (see build_target_compile() for the
-// per-config flag emission).
+// specific settings in the orchestrator 
+
 typedef enum
 {
     CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
@@ -78,8 +80,9 @@ typedef enum
 
 // --- Target Types ---
 
-// Defines the output artifact type. This dictates which tool (cl, link, lib)
+// Defines the artifact type, determining which toolchain (cl, link, lib)
 // is used in the final phase of building a target.
+
 typedef enum
 {
     TARGET_STATIC_LIB,  // Compiles to a .lib archive via lib.exe.
@@ -90,50 +93,48 @@ typedef enum
 
 // --- Target Descriptor ---
 
-// A target_info_t represents a single buildable unit in the ORB ecosystem.
-// It contains all metadata required to compile and link the target. Targets
-// are pooled in g_targets[] (see build_tool_targets.c) and shared across
-// every IDE solution that references them by name.
-//
-// The fixed-size arrays (deps[16], units[16], tool_deps[16]) cap us at 16
-// entries per slot. This matches the project's actual scale and keeps the
-// descriptor a plain POD — no heap, no growth, no init/free dance.
+// Represents a single buildable unit in the ORB ecosystem. It contains all
+// metadata required to compile and link the target. 
+
+// Targets are pooled in g_targets[] (see build_tool_targets.c).
+// Shared across every IDE solution that references them by name. 
+
 typedef struct
 {
     const char*   name;             // Unique name (e.g., "base", "core", "app").
-    target_type_t type;             // Artifact type (Lib, DLL, Exe).
+    target_type_t type;             // Artifact type (LIB, DLL, or EXE).
     const char*   root_dir;         // Base path for source files relative to project root.
     const char*   sln_folder;       // Virtual folder in the Visual Studio solution.
 
-    // Translation units (.c files) compiled into this target. In our unity-build
-    // pattern, each entry is typically a single umbrella TU that #includes the
-    // rest of the target's sources. As a target grows, split it into multiple
-    // sub-unities here so the scheduler can compile them with one cl.exe each.
+    // Translation Units (Unity Build Fragments)
+    // Each entry is typically an umbrella .c file that includes other sources.
+    // Multiple units allow the scheduler to parallelize cl.exe calls.
     const char*   units[ 16 ];
-    int           unit_count;
 
     // Link Dependencies: Other targets that produce .libs this target must link against.
     // Drives both the linker's input list and the parallel scheduler's topological order.
     const char*   deps[ 16 ];
-    int           dep_count;
 
     // Tool Dependencies: Standalone utilities that must exist to build this target.
-    // These are built recursively but NOT linked into the final binary. Example:
-    // any target with has_reflect=true depends on build_reflect.exe as a tool dep.
+    // These are built recursively but NOT linked into the final binary. 
+    // Ex: any target with 'has_reflect' depends on build_reflect.exe as a tool dep.
     const char*   tool_deps[ 16 ];
-    int           tool_dep_count;
 
     // Reflection metadata: if true, build_reflect.exe is invoked on root_dir
     // before compilation. Generated files land in <build_dir>/generated/ and
     // are appended to the cl.exe command line for this target.
     bool          has_reflect;
-    const char*   reflect_name;     // Base name for generated .c/.h files.
+
+    // Base name for generated .c/.h files. Default is NULL, which means the 
+    // files are named after the target (e.g. "core" -> "core.generated.c/h").
+    const char*   reflect_name;
 
 } target_info_t;
 
 // --- Global Registry ---
 
 // These are defined in build_tool_targets.c and used by the orchestrator.
+
 extern target_info_t g_targets[];
 extern int           g_target_count;
 
@@ -171,8 +172,10 @@ typedef struct
 extern solution_info_t g_solutions[];
 extern int             g_solution_count;
 
-// --- Orchestration API ---
-//
+// =============================================================================
+// --- Orchestration API -------------------------------------------------------
+// =============================================================================
+
 // Everything below is the public surface for the unity-built build_tool.exe.
 // Implementations live in the corresponding _cc / _utils / _vcvars / _sched
 // translation units that build_tool.c #includes.

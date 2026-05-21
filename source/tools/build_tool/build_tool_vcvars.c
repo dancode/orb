@@ -451,6 +451,8 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
                 line[ line_len ] = '\0';
                 process_deps_line( line, deps, out );
                 line_len = 0;
+                // Re-append the non-newline overflow character so it is not dropped.
+                if ( c != '\n' ) line[ line_len++ ] = c;
             }
             else
             {

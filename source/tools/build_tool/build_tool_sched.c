@@ -164,7 +164,7 @@ add_job( target_info_t* t )
     int dep_indices[ MAX_LOCAL_DEPS ];
     int dep_count = 0;
 
-    for ( int i = 0; i < t->dep_count && dep_count < MAX_LOCAL_DEPS; ++i )
+    for ( int i = 0; t->deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
         for ( int k = 0; k < g_target_count; ++k )
         {
@@ -176,7 +176,7 @@ add_job( target_info_t* t )
             }
         }
     }
-    for ( int i = 0; i < t->tool_dep_count && dep_count < MAX_LOCAL_DEPS; ++i )
+    for ( int i = 0; t->tool_deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
         for ( int k = 0; k < g_target_count; ++k )
         {
@@ -184,6 +184,27 @@ add_job( target_info_t* t )
             {
                 int di = add_job( &g_targets[ k ] );
                 if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
+                break;
+            }
+        }
+    }
+
+    // Implicit dep: has_reflect targets always depend on k_build_reflect_tool.
+    // Deduplicate before adding — a double entry would inflate remaining_deps
+    // and leave the job permanently stuck in the ready queue.
+    if ( t->has_reflect && dep_count < MAX_LOCAL_DEPS )
+    {
+        for ( int k = 0; k < g_target_count; ++k )
+        {
+            if ( strcmp( g_targets[ k ].name, k_build_reflect_tool ) == 0 )
+            {
+                int di = add_job( &g_targets[ k ] );
+                if ( di >= 0 )
+                {
+                    bool dup = false;
+                    for ( int d = 0; d < dep_count; ++d ) if ( dep_indices[ d ] == di ) { dup = true; break; }
+                    if ( !dup ) dep_indices[ dep_count++ ] = di;
+                }
                 break;
             }
         }
@@ -410,8 +431,11 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     int    spawned = 0;
     for ( int i = 0; i < thread_count; ++i )
     {
-        threads[ i ] = ( HANDLE )_beginthreadex( NULL, 0, worker_main, NULL, 0, NULL );
-        if ( threads[ i ] ) ++spawned;
+        // Store into threads[spawned] so valid handles are always contiguous
+        // from [0..spawned-1]; a NULL gap would cause WaitForMultipleObjects
+        // to use the wrong handles and leave live workers unjoined.
+        HANDLE h = ( HANDLE )_beginthreadex( NULL, 0, worker_main, NULL, 0, NULL );
+        if ( h ) threads[ spawned++ ] = h;
     }
 
     WaitForMultipleObjects( spawned, threads, TRUE, INFINITE );

@@ -137,14 +137,15 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
         cmd_append( &cmd, "/O2 /MD /DNDEBUG " );
 
     // Add the explicit translation units listed in target_info_t.units[].
-    for ( int i = 0; i < target->unit_count; ++i )
+    for ( int i = 0; target->units[ i ]; ++i )
         cmd_append( &cmd, "%s/%s ", target->root_dir, target->units[ i ] );
 
     // Add the reflection-generated translation unit (step 5 of build_target
-    // wrote it under <gen_dir>/<reflect_name>.generated.c).
+    // wrote it under <gen_dir>/<rname>.generated.c).
     if ( target->has_reflect )
     {
-        cmd_append( &cmd, "%s/%s.generated.c ", gen_dir, target->reflect_name );
+        const char* rname = target->reflect_name ? target->reflect_name : target->name;
+        cmd_append( &cmd, "%s/%s.generated.c ", gen_dir, rname );
     }
 
     // Spill to a cl.rsp response file if the assembled command crossed the
@@ -227,7 +228,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
 
         // Link against the target's declared dep .libs. The scheduler / dep
         // resolver guarantees these exist by the time we get here.
-        for ( int i = 0; i < target->dep_count; ++i )
+        for ( int i = 0; target->deps[ i ]; ++i )
         {
             cmd_append( &cmd, "bin/%s.lib ", target->deps[ i ] );
         }
