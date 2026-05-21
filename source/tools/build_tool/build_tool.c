@@ -30,43 +30,75 @@ static void
 build_setup_vc_env( void )
 {
 #if defined( _WIN32 )
-    // If cl.exe is already in the path, we are good.
     if ( system( "cl.exe >nul 2>nul" ) == 0 ) return;
 
     printf( "cl.exe not found in PATH. Attempting to locate Visual Studio...\n" );
 
-    // Use vswhere to find the latest VS installation
-    // Standard path for vswhere
-    const char* vswhere_path = "\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"";
-    char        cmd[ 512 ];
-    sprintf( cmd, "%s -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath > vc_path.txt", vswhere_path );
+    const char* vswhere_paths[] = {
+        "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
+        "\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",        
+        "\"%ProgramFiles%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
+    };
 
-    if ( system( cmd ) == 0 )
+    bool found = false;
+    for ( int i = 0; i < sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ); ++i )
     {
-        FILE* f = fopen( "vc_path.txt", "r" );
-        if ( f )
-        {
-            char vc_path[ 512 ];
-            if ( fgets( vc_path, sizeof( vc_path ), f ) )
-            {
-                // Remove newline
-                char* nl = strchr( vc_path, '\n' );
-                if ( nl ) *nl = '\0';
-                nl = strchr( vc_path, '\r' );
-                if ( nl ) *nl = '\0';
+        char cmd[ 1024 ];
+        sprintf( cmd, "%s -latest -products * -property installationPath > vc_path.txt", vswhere_paths[ i ] );
 
-                sprintf( g_vc_env_cmd, "call \"%s\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 >nul && ", vc_path );
-                printf( "Found VS at: %s\n", vc_path );
+        if ( system( cmd ) == 0 )
+        {
+            FILE* f = fopen( "vc_path.txt", "r" );
+            if ( f )
+            {
+                char vc_path[ 512 ];
+                if ( fgets( vc_path, sizeof( vc_path ), f ) )
+                {
+                    char* nl = strpbrk( vc_path, "\r\n" );
+                    if ( nl ) *nl = '\0';
+
+                    if ( strlen( vc_path ) > 0 )
+                    {
+                        sprintf( g_vc_env_cmd, "call \"%s\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 >nul && ", vc_path );
+                        found = true;
+                    }
+                }
+                fclose( f );
+                remove( "vc_path.txt" );
             }
-            fclose( f );
-            remove( "vc_path.txt" );
+        }
+        if ( found ) break;
+    }
+
+    if ( found )
+    {
+        printf( "VC Environment setup command: %s\n", g_vc_env_cmd );
+    }
+    else
+    {
+        printf( "Warning: Could not auto-locate Visual Studio via vswhere. Trying common paths...\n" );
+        const char* common_vcvars[] = {
+            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+            "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+            "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        };
+
+        for ( int i = 0; i < sizeof( common_vcvars ) / sizeof( common_vcvars[ 0 ] ); ++i )
+        {
+            if ( _access( common_vcvars[ i ], 0 ) == 0 )
+            {
+                sprintf( g_vc_env_cmd, "call \"%s\" x64 >nul && ", common_vcvars[ i ] );
+                printf( "Found vcvarsall.bat at: %s\n", common_vcvars[ i ] );
+                found = true;
+                break;
+            }
         }
     }
 
-    if ( g_vc_env_cmd[ 0 ] == '\0' )
+    if ( !found )
     {
-        printf( "Warning: Could not auto-locate Visual Studio. Compiler commands may fail.\n" );
-        printf( "Tip: Run from a Developer Command Prompt or check your VS installation.\n" );
+        printf( "Warning: Could not locate Visual Studio. Compiler commands will likely fail.\n" );
     }
 #endif
 }
@@ -190,7 +222,7 @@ build_target( build_context_t* ctx )
 	if (ctx->target == TARGET_HOST_SANDBOX) {
 		// cmd_append(&cmd, "source/base/*.c source/sandbox/sb_base.c ");
 	}
-   
+    
     cmd_append( &cmd, "source/base/base_main.c " );
 	// cmd_append( &cmd, "source/base/base_main.c source/base/base_test.c " );
 	

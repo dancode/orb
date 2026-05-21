@@ -45,11 +45,23 @@ The engine is organized into the following hierarchical layers (from lowest to h
   - Pointer alignment left: `int* ptr`.
 - **Character Set**: Use standard ASCII only; do not use Unicode in source generation.
 
+## Custom Build System
+ORB uses a self-contained, high-performance C-based build orchestrator to replace traditional CMake or complex batch scripts.
+
+- **Bootstrapper**: `bootstrap_build_tool.bat` compiles the build tool from source using a minimal `cl.exe` call.
+- **Orchestrator**: `source/tools/build_tool/build_tool.c` manages compiler/linker flags, environment detection (via `vswhere.exe`), and target orchestration.
+- **Project Generator**: `source/tools/build_tool/build_tool_gen.c` (included as a unity fragment in `build_tool.c`) generates Visual Studio `.sln` and `.vcxproj` files.
+- **Artifacts**: All binaries land in `bin/` and all intermediate objects/PDBs land in `obj/`.
+- **Interface**:
+  - `build_tool.exe -gen`: Generates/updates IDE project files.
+  - `build_tool.exe -clean`: Wipes `bin/` and `obj/` for a fresh start.
+  - `build_tool.exe -config <Debug|Release>`: Performs the actual build. Case-insensitive to match VS macros.
+
 ## Build & Execution
-- **Generate Solution**: Use `build_vs_2022 - MSVC (DYNAMIC).bat` for development.
+- **Bootstrap**: Run `bootstrap_build_tool.bat` if `bin/build_tool.exe` is missing or needs an update.
+- **Generate Solution**: Run `bin/build_tool.exe -gen` to create `orb_make.sln` and `orb_build.sln`.
 - **Hot-Rebuild**: Use `build_hot.bat <build_dir> <target> <config>` to rebuild a module while the debugger is attached.
-- **Output**: Binaries land in `<build_dir>/bin/`.
-- **Verification**: Use relevant sandbox targets (e.g., `sb_engine_*`) to verify changes in specific layers.
+- **Verification**: Use relevant sandbox targets (e.g., `sb_base_custom.exe`) to verify changes.
 
 ## AI Workflow Guidelines
 - **Stateless Base**: When modifying `source/base/`, ensure no global or static state is introduced.

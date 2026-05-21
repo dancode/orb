@@ -148,8 +148,10 @@ How would you like the build tool to handle the modular vs monolithic builds? Sh
 I make it a command-line flag like -monolithic?
 
 ----------------------------------------------------
-GENERATOR
+TODO:
 ----------------------------------------------------
+
+	- orb_build project is a unity build style include but does not have intellisense when build_tool_gen.c added.
 
 
 
