@@ -58,10 +58,19 @@ ORB uses a self-contained, high-performance C-based build orchestrator to replac
   - `build_tool.exe -config <Debug|Release>`: Performs the actual build. Case-insensitive to match VS macros.
 
 ## Build & Execution
-- **Bootstrap**: Run `bootstrap_build_tool.bat` if `bin/build_tool.exe` is missing or needs an update.
+- **Bootstrap**: Run `bootstrap_build_tool.bat` if `bin/build_tool.exe` is missing or needs an update. 
+  - **CRITICAL**: This requires an MSVC environment. Use `vc_vars_setup.bat` to find the path to `vcvarsall.bat` and run it in the same shell session before bootstrapping.
+  - **Command**: `cmd /c 'call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 && bootstrap_build_tool.bat'` (Adjust path based on `vc_vars_setup.bat`).
 - **Generate Solution**: Run `bin/build_tool.exe -gen` to create `orb_make.sln` and `orb_build.sln`.
 - **Hot-Rebuild**: Use `build_hot.bat <build_dir> <target> <config>` to rebuild a module while the debugger is attached.
 - **Verification**: Use relevant sandbox targets (e.g., `sb_base_custom.exe`) to verify changes.
+
+## Troubleshooting & Common Mistakes
+- **Shell Environment**: When running on Windows via PowerShell, always use `.\script.bat` or `cmd /c script.bat` to execute batch files.
+- **Missing cl.exe**: If `cl.exe` is not found, the MSVC environment is not initialized. Refer to `vc_vars_setup.bat`.
+- **Git Ignored Files**: The `build_new/` directory and `.vcxproj` files are often git-ignored. When searching or reading them with tools, ensure `respect_git_ignore: false` is set.
+- **Tool Collisions**: Do not attempt to run `replace` on the same file multiple times in a single turn.
+- **Bootstrap Failures**: If `bootstrap_build_tool.bat` fails due to locked files, ensure no instances of `build_tool.exe` are running.
 
 ## AI Workflow Guidelines
 - **Stateless Base**: When modifying `source/base/`, ensure no global or static state is introduced.
