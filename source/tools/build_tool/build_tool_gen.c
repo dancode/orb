@@ -89,13 +89,18 @@ add_filters_recursive( const char* filter )
  * e.g. "source/engine/core/core.c" -> "engine\\core"
  */
 static void
-get_filter_for_path( const char* path, char* out_filter )
+get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
 {
     out_filter[ 0 ] = '\0';
-    if ( strncmp( path, "source/", 7 ) == 0 )
+    size_t root_len = strlen( root_dir );
+    if ( strncmp( path, root_dir, root_len ) == 0 )
     {
-        const char* sub        = path + 7;
+        const char* sub = path + root_len;
+        if ( *sub == '/' || *sub == '\\' ) sub++;
+
         const char* last_slash = strrchr( sub, '/' );
+        if ( !last_slash ) last_slash = strrchr( sub, '\\' );
+
         if ( last_slash )
         {
             size_t len = last_slash - sub;
@@ -115,7 +120,7 @@ get_filter_for_path( const char* path, char* out_filter )
  * included in the navigation project.
  */
 static void
-scan_directory_recursive( const char* dir )
+scan_directory_recursive( const char* dir, const char* root_dir )
 {
     char search_path[ 512 ];
     sprintf( search_path, "%s/*", dir );
@@ -135,7 +140,7 @@ scan_directory_recursive( const char* dir )
 
         if ( find_data.attrib & _A_SUBDIR )
         {
-            scan_directory_recursive( path );
+            scan_directory_recursive( path, root_dir );
         }
         else
         {
@@ -150,7 +155,7 @@ scan_directory_recursive( const char* dir )
                     file_info_t* f = &g_files[ g_file_count++ ];
                     strcpy( f->path, path );
                     f->is_header = is_h;
-                    get_filter_for_path( path, f->filter );
+                    get_filter_for_path( path, root_dir, f->filter );
                     if ( f->filter[ 0 ] != '\0' ) add_filters_recursive( f->filter );
                 }
             }
@@ -205,6 +210,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, ta
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
+    fprintf( f, "    <NMakeCompileFile>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeCompileFile>\n", out_name );
     
     // IntelliSense setup: Definitions and paths needed for the IDE parser.
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
@@ -240,7 +246,7 @@ build_gen_proj_target( target_info_t* target, int index )
     // Scan the target's source tree recursively so unity sub-files appear in VS.
     g_file_count   = 0;
     g_filter_count = 0;
-    scan_directory_recursive( target->root_dir );
+    scan_directory_recursive( target->root_dir, target->root_dir );
 
     // Single ItemGroup: units as ClCompile, everything else as ClInclude.
     // This lets VS show all files while only the true compilation units are built.
@@ -250,6 +256,8 @@ build_gen_proj_target( target_info_t* target, int index )
         // Check whether this file is a named compilation unit.
         bool        is_unit  = false;
         const char* filename = strrchr( g_files[ i ].path, '/' );
+        if ( !filename ) filename = strrchr( g_files[ i ].path, '\\' );
+
         if ( filename ) filename++;   // skip past the final slash
         else filename = g_files[ i ].path;
 
@@ -270,6 +278,55 @@ build_gen_proj_target( target_info_t* target, int index )
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
     fprintf( f, "</Project>\n" );
     fclose( f );
+
+    // Generate the .filters file to mirror the folder structure in Solution Explorer.
+    char filters_path[ 256 ];
+    sprintf( filters_path, "%s/%s.vcxproj.filters", g_build_dir, target->name );
+    f = fopen( filters_path, "w" );
+    if ( f )
+    {
+        fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
+        fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+        
+        // Write virtual filter definitions.
+        fprintf( f, "  <ItemGroup>\n" );
+        for ( int i = 0; i < g_filter_count; ++i )
+        {
+            fprintf( f, "    <Filter Include=\"%s\">\n", g_filters[ i ] );
+            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n", (unsigned int)i );
+            fprintf( f, "    </Filter>\n" );
+        }
+        fprintf( f, "  </ItemGroup>\n" );
+        
+        // Map each file to its virtual filter.
+        fprintf( f, "  <ItemGroup>\n" );
+        for ( int i = 0; i < g_file_count; ++i )
+        {
+            // Match the tag used in the .vcxproj file.
+            bool        is_unit  = false;
+            const char* filename = strrchr( g_files[ i ].path, '/' );
+            if ( !filename ) filename = strrchr( g_files[ i ].path, '\\' );
+            if ( filename ) filename++;
+            else filename = g_files[ i ].path;
+
+            for ( int j = 0; j < target->unit_count; ++j )
+            {
+                if ( _stricmp( filename, target->units[ j ] ) == 0 )
+                {
+                    is_unit = true;
+                    break;
+                }
+            }
+
+            const char* tag = is_unit ? "ClCompile" : "ClInclude";
+            fprintf( f, "    <%s Include=\"..\\%s\">\n", tag, g_files[ i ].path );
+            if ( g_files[ i ].filter[ 0 ] != '\0' ) fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
+            fprintf( f, "    </%s>\n", tag );
+        }
+        fprintf( f, "  </ItemGroup>\n" );
+        fprintf( f, "</Project>\n" );
+        fclose( f );
+    }
 }
 
 /**
@@ -284,7 +341,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
 {
     g_file_count   = 0;
     g_filter_count = 0;
-    scan_directory_recursive( nav_dir );
+    scan_directory_recursive( nav_dir, nav_dir );
 
     char vcxproj_path[ 256 ];
     sprintf( vcxproj_path, "%s/%s_nav.vcxproj", g_build_dir, sln_name );
@@ -319,6 +376,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s.exe</NMakeOutput>\n", default_target );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
+    fprintf( f, "    <NMakeCompileFile>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeCompileFile>\n" );
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
