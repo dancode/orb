@@ -55,26 +55,26 @@ build_clean( void )
 {
     printf( "Cleaning build artifacts...\n" );
 #if defined( _WIN32 )
-    char cmd[ 256 ];
-    sprintf( cmd, "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
+    char cmd[ BT_PATH_MAX ];
+    snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
     build_run_cmd( cmd );
-    sprintf( cmd, "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
+    snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
     build_run_cmd( cmd );
-    
+
     build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
 
-    // Surgical delete: remove all EXEs EXCEPT ourselves. 
+    // Surgical delete: remove all EXEs EXCEPT ourselves.
     build_run_cmd( "for %f in (bin\\*.exe) do if not \"%~nxf\"==\"build_tool.exe\" del \"%f\" >nul 2>nul" );
 #else
-    char cmd[ 256 ];
-    sprintf( cmd, "rm -rf bin %s/%s %s/%s", g_build_dir, g_int_dir, g_build_dir, g_gen_dir );
+    char cmd[ BT_PATH_MAX ];
+    snprintf( cmd, sizeof( cmd ), "rm -rf bin %s/%s %s/%s", g_build_dir, g_int_dir, g_build_dir, g_gen_dir );
     build_run_cmd( cmd );
     build_run_cmd( "mkdir bin" );
-    sprintf( cmd, "mkdir -p %s/%s", g_build_dir, g_int_dir );
+    snprintf( cmd, sizeof( cmd ), "mkdir -p %s/%s", g_build_dir, g_int_dir );
     build_run_cmd( cmd );
-    sprintf( cmd, "mkdir -p %s/%s", g_build_dir, g_gen_dir );
+    snprintf( cmd, sizeof( cmd ), "mkdir -p %s/%s", g_build_dir, g_gen_dir );
     build_run_cmd( cmd );
 #endif
     printf( "Clean complete.\n" );
@@ -135,16 +135,16 @@ build_target( build_context_t* ctx, target_info_t* target )
     bool  result      = true;
 
     // --- 1. Path Preparation ---
-    char obj_dir[ 256 ];
-    sprintf( obj_dir, "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
-    char gen_dir[ 256 ];
-    sprintf( gen_dir, "%s\\%s", g_build_dir, g_gen_dir );
+    char obj_dir[ BT_PATH_MAX ];
+    snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+    char gen_dir[ BT_PATH_MAX ];
+    snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
 
     const char* ext = ( target->type == TARGET_STATIC_LIB )  ? ".lib" :
                       ( target->type == TARGET_DYNAMIC_LIB ) ? ".dll" : ".exe";
 
-    char out_path[ 256 ];
-    sprintf( out_path, "bin\\%s%s", target->name, ext );
+    char out_path[ BT_PATH_MAX ];
+    snprintf( out_path, sizeof( out_path ), "bin\\%s%s", target->name, ext );
 
     // --- 2. Up-to-Date Check ---
 
@@ -155,8 +155,8 @@ build_target( build_context_t* ctx, target_info_t* target )
     {
         for ( int i = 0; i < target->unit_count; ++i )
         {
-            char src_path[ 512 ];
-            sprintf( src_path, "%s/%s", target->root_dir, target->units[ i ] );
+            char src_path[ BT_PATH_MAX ];
+            snprintf( src_path, sizeof( src_path ), "%s/%s", target->root_dir, target->units[ i ] );
             if ( build_get_mtime( src_path ) > out_mtime ) { up_to_date = false; break; }
         }
     }
@@ -165,8 +165,8 @@ build_target( build_context_t* ctx, target_info_t* target )
     {
         for ( int i = 0; i < target->dep_count; ++i )
         {
-            char dep_path[ 256 ];
-            sprintf( dep_path, "bin\\%s.lib", target->deps[ i ] );
+            char dep_path[ BT_PATH_MAX ];
+            snprintf( dep_path, sizeof( dep_path ), "bin\\%s.lib", target->deps[ i ] );
             if ( build_get_mtime( dep_path ) > out_mtime ) { up_to_date = false; break; }
         }
     }
@@ -177,8 +177,8 @@ build_target( build_context_t* ctx, target_info_t* target )
     // than the artifact, rebuild.
     if ( up_to_date )
     {
-        char deps_path[ 256 ];
-        sprintf( deps_path, "%s\\_deps.txt", obj_dir );
+        char deps_path[ BT_PATH_MAX ];
+        snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );
         FILE* deps = fopen( deps_path, "r" );
         if ( !deps )
         {
@@ -186,7 +186,7 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
         else
         {
-            char header_path[ 1024 ];
+            char header_path[ BT_PATH_MAX ];
             while ( fgets( header_path, sizeof( header_path ), deps ) )
             {
                 size_t l = strlen( header_path );
@@ -212,26 +212,26 @@ build_target( build_context_t* ctx, target_info_t* target )
 
 #if defined( _WIN32 )
     if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
-    if ( _access( g_build_dir, 0 ) != 0 ) { char c[256]; sprintf(c, "mkdir %s", g_build_dir); system(c); }
-    
-    char int_root[ 256 ];
-    sprintf( int_root, "%s\\%s", g_build_dir, g_int_dir );
-    if ( _access( int_root, 0 ) != 0 ) { char c[256]; sprintf(c, "mkdir %s", int_root); system(c); }
-    if ( _access( gen_dir, 0 ) != 0 ) { char c[256]; sprintf(c, "mkdir %s", gen_dir); system(c); }
-    if ( _access( obj_dir, 0 ) != 0 ) { char c[256]; sprintf(c, "mkdir %s", obj_dir); system(c); }
+    if ( _access( g_build_dir, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", g_build_dir); system(c); }
+
+    char int_root[ BT_PATH_MAX ];
+    snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
+    if ( _access( int_root, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", int_root); system(c); }
+    if ( _access( gen_dir, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", gen_dir); system(c); }
+    if ( _access( obj_dir, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", obj_dir); system(c); }
 #else
-    char cmd_mkdir[ 512 ];
-    sprintf( cmd_mkdir, "mkdir -p bin %s/%s/%s %s/%s", g_build_dir, g_int_dir, target->name, g_build_dir, g_gen_dir );
+    char cmd_mkdir[ BT_PATH_MAX ];
+    snprintf( cmd_mkdir, sizeof( cmd_mkdir ), "mkdir -p bin %s/%s/%s %s/%s", g_build_dir, g_int_dir, target->name, g_build_dir, g_gen_dir );
     system( cmd_mkdir );
 #endif
 
     // --- 4. Locked File Management ---
 
-    char exe_path[ 256 ];
-    char old_path[ 256 ];
+    char exe_path[ BT_PATH_MAX ];
+    char old_path[ BT_PATH_MAX ];
     bool renamed = false;
-    sprintf( exe_path, "bin\\%s.exe", target->name );
-    sprintf( old_path, "bin\\%s.exe.old", target->name );
+    snprintf( exe_path, sizeof( exe_path ), "bin\\%s.exe", target->name );
+    snprintf( old_path, sizeof( old_path ), "bin\\%s.exe.old", target->name );
 
     if ( target->type == TARGET_EXECUTABLE && _access( exe_path, 0 ) == 0 )
     {
@@ -249,8 +249,8 @@ build_target( build_context_t* ctx, target_info_t* target )
     if ( target->has_reflect )
     {
         printf( "[REFL] Generating reflection for %s...\n", target->reflect_name );
-        char refl_cmd[ 1024 ];
-        sprintf( refl_cmd, "bin\\build_reflect.exe %s %s %s", target->root_dir, gen_dir, target->reflect_name );
+        char refl_cmd[ BT_PATH_MAX * 2 ];
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\build_reflect.exe %s %s %s", target->root_dir, gen_dir, target->reflect_name );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
             if ( renamed ) rename( old_path, exe_path );

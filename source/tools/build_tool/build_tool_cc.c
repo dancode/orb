@@ -26,16 +26,16 @@ get_target_upper( const char* name, char* out )
 static void
 cleanup_stale_pdbs( const char* target_name )
 {
-    char pattern[ 256 ];
-    sprintf( pattern, "bin/%s_*.pdb", target_name );
+    char pattern[ BT_PATH_MAX ];
+    snprintf( pattern, sizeof( pattern ), "bin/%s_*.pdb", target_name );
 
     struct _finddata_t fd;
     intptr_t h = _findfirst( pattern, &fd );
     if ( h == -1 ) return;
     do
     {
-        char path[ 256 ];
-        sprintf( path, "bin/%s", fd.name );
+        char path[ BT_PATH_MAX ];
+        snprintf( path, sizeof( path ), "bin/%s", fd.name );
         remove( path );
     }
     while ( _findnext( h, &fd ) == 0 );
@@ -93,7 +93,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
     }
 
     // Spill to response file if the assembled command is too long for cmd.exe.
-    char rsp_path[ 256 ];
+    char rsp_path[ BT_PATH_MAX ];
     snprintf( rsp_path, sizeof( rsp_path ), "%s/cl.rsp", obj_dir );
     cmd_spill_to_response_file( &cmd, rsp_path );
 
@@ -101,7 +101,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
     // incremental check to read. Coarse-grained (one file per target) which
     // matches the unity-build pattern: any header change forces a target
     // recompile, but headers in OTHER targets don't trigger spurious rebuilds.
-    char deps_path[ 256 ];
+    char deps_path[ BT_PATH_MAX ];
     snprintf( deps_path, sizeof( deps_path ), "%s/_deps.txt", obj_dir );
 
     return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
@@ -125,7 +125,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     {
         cmd_append( &cmd, "lib.exe /nologo /OUT:bin/%s.lib %s/*.obj", target->name, obj_dir );
 
-        char rsp_path[ 256 ];
+        char rsp_path[ BT_PATH_MAX ];
         snprintf( rsp_path, sizeof( rsp_path ), "%s/lib.rsp", obj_dir );
         cmd_spill_to_response_file( &cmd, rsp_path );
     }
@@ -160,7 +160,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
         // System libraries.
         cmd_append( &cmd, "user32.lib shell32.lib gdi32.lib advapi32.lib " );
 
-        char rsp_path[ 256 ];
+        char rsp_path[ BT_PATH_MAX ];
         snprintf( rsp_path, sizeof( rsp_path ), "%s/link.rsp", obj_dir );
         cmd_spill_to_response_file( &cmd, rsp_path );
     }

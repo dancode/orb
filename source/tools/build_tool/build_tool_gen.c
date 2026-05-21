@@ -22,8 +22,8 @@
 // Used during the recursive directory scan to build virtual filters.
 typedef struct
 {
-    char path[ 256 ];   // Relative path from project root.
-    char filter[ 256 ]; // Virtual folder path in VS (e.g. "engine\\core").
+    char path[ BT_PATH_MAX ];   // Relative path from project root.
+    char filter[ BT_PATH_MAX ]; // Virtual folder path in VS (e.g. "engine\\core").
     bool is_header;
 } file_info_t;
 
@@ -66,13 +66,15 @@ guid_from_name( const char* name, char* out )
         h1 = ( h1 ^ *p ) * 0x100000001b3ULL;
         h2 = ( h2 ^ *p ) * 0x880355f21e6d1965ULL;
     }
-    sprintf( out, "{%08X-%04X-%04X-%04X-%04X%08X}",
-             ( unsigned int )( h1 >> 32 ),
-             ( unsigned int )( ( h1 >> 16 ) & 0xFFFFu ),
-             ( unsigned int )( h1 & 0xFFFFu ),
-             ( unsigned int )( h2 >> 48 ),
-             ( unsigned int )( ( h2 >> 32 ) & 0xFFFFu ),
-             ( unsigned int )( h2 & 0xFFFFFFFFu ) );
+    // 38-byte fixed output (32 hex + 4 dashes + 2 braces + NUL); caller passes
+    // a 64-byte buffer. Use snprintf with a conservative cap for safety.
+    snprintf( out, 64, "{%08X-%04X-%04X-%04X-%04X%08X}",
+              ( unsigned int )( h1 >> 32 ),
+              ( unsigned int )( ( h1 >> 16 ) & 0xFFFFu ),
+              ( unsigned int )( h1 & 0xFFFFu ),
+              ( unsigned int )( h2 >> 48 ),
+              ( unsigned int )( ( h2 >> 32 ) & 0xFFFFu ),
+              ( unsigned int )( h2 & 0xFFFFFFFFu ) );
 }
 
 /**
@@ -104,9 +106,9 @@ add_filter( const char* filter )
 static void
 add_filters_recursive( const char* filter )
 {
-    char  tmp[ 256 ];
+    char  tmp[ BT_PATH_MAX ];
     char* p = tmp;
-    strcpy( tmp, filter );
+    snprintf( tmp, sizeof( tmp ), "%s", filter );
     while ( *p )
     {
         if ( *p == '\\' )
@@ -160,8 +162,8 @@ get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
 static void
 scan_directory_recursive( const char* dir, const char* root_dir )
 {
-    char search_path[ 512 ];
-    sprintf( search_path, "%s/*", dir );
+    char search_path[ BT_PATH_MAX ];
+    snprintf( search_path, sizeof( search_path ), "%s/*", dir );
 
     struct _finddata_t find_data;
     intptr_t           handle = _findfirst( search_path, &find_data );
@@ -173,8 +175,8 @@ scan_directory_recursive( const char* dir, const char* root_dir )
         // Skip hidden/special directories.
         if ( strcmp( find_data.name, "." ) == 0 || strcmp( find_data.name, ".." ) == 0 ) continue;
 
-        char path[ 512 ];
-        sprintf( path, "%s/%s", dir, find_data.name );
+        char path[ BT_PATH_MAX ];
+        snprintf( path, sizeof( path ), "%s/%s", dir, find_data.name );
 
         if ( find_data.attrib & _A_SUBDIR )
         {
@@ -298,8 +300,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 static void
 build_gen_proj_target( target_info_t* target, int index )
 {
-    char vcxproj_path[ 256 ];
-    sprintf( vcxproj_path, "%s/%s.vcxproj", g_build_dir, target->name );
+    char vcxproj_path[ BT_PATH_MAX ];
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s/%s.vcxproj", g_build_dir, target->name );
 
     // Generate a deterministic GUID for this project from its name.
     char guid[ 64 ];
@@ -356,8 +358,8 @@ build_gen_proj_target( target_info_t* target, int index )
     fclose( f );
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
-    char filters_path[ 256 ];
-    sprintf( filters_path, "%s/%s.vcxproj.filters", g_build_dir, target->name );
+    char filters_path[ BT_PATH_MAX ];
+    snprintf( filters_path, sizeof( filters_path ), "%s/%s.vcxproj.filters", g_build_dir, target->name );
     f = fopen( filters_path, "w" );
     if ( f )
     {
@@ -420,8 +422,8 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     g_filter_count = 0;
     scan_directory_recursive( nav_dir, nav_dir );
 
-    char vcxproj_path[ 256 ];
-    sprintf( vcxproj_path, "%s/%s_nav.vcxproj", g_build_dir, sln_name );
+    char vcxproj_path[ BT_PATH_MAX ];
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s/%s_nav.vcxproj", g_build_dir, sln_name );
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
     {
@@ -490,8 +492,8 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fclose( f );
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
-    char filters_path[ 256 ];
-    sprintf( filters_path, "%s/%s_nav.vcxproj.filters", g_build_dir, sln_name );
+    char filters_path[ BT_PATH_MAX ];
+    snprintf( filters_path, sizeof( filters_path ), "%s/%s_nav.vcxproj.filters", g_build_dir, sln_name );
     f = fopen( filters_path, "w" );
     if ( f )
     {
@@ -537,8 +539,8 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
 static void
 build_gen_solution( solution_info_t* sln )
 {
-    char sln_path[ 256 ];
-    sprintf( sln_path, "%s/%s.sln", g_build_dir, sln->name );
+    char sln_path[ BT_PATH_MAX ];
+    snprintf( sln_path, sizeof( sln_path ), "%s/%s.sln", g_build_dir, sln->name );
     FILE* f = fopen( sln_path, "w" );
     if ( !f ) return;
 
@@ -722,13 +724,13 @@ build_gen_projects( void )
 #if defined( _WIN32 )
     if ( _access( g_build_dir, 0 ) != 0 )
     {
-        char cmd[ 256 ];
-        sprintf( cmd, "mkdir %s", g_build_dir );
+        char cmd[ BT_PATH_MAX ];
+        snprintf( cmd, sizeof( cmd ), "mkdir %s", g_build_dir );
         system( cmd );
     }
 #else
-    char cmd[ 256 ];
-    sprintf( cmd, "mkdir -p %s", g_build_dir );
+    char cmd[ BT_PATH_MAX ];
+    snprintf( cmd, sizeof( cmd ), "mkdir -p %s", g_build_dir );
     system( cmd );
 #endif
 

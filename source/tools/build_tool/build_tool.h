@@ -23,6 +23,12 @@
 
 #define CMD_BUF_MAX 65536  // Max size for any single compiler/linker command line.
 
+// Path buffer size for every filesystem path the build tool constructs.
+// Windows MAX_PATH is 260; 512 gives generous headroom for composite paths
+// (e.g. <obj_dir>\<filename>) without forcing us to opt into long-path
+// support, which the user has explicitly opted out of.
+#define BT_PATH_MAX 512
+
 // --- Helper Types ---
 
 typedef struct

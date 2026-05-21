@@ -41,7 +41,7 @@ typedef struct
     int            remaining_deps;
     int            rev_dep_count;
     int            rev_deps[ MAX_REV_DEPS ];
-    char           log_path[ 256 ];
+    char           log_path[ BT_PATH_MAX ];
     bool           done;
     bool           failed;
 
@@ -327,12 +327,12 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     // would otherwise race on mkdir.
     for ( int i = 0; i < g_sched.job_count; ++i )
     {
-        char dir_path[ 256 ];
+        char dir_path[ BT_PATH_MAX ];
         snprintf( dir_path, sizeof( dir_path ), "%s\\%s\\%s",
                   g_build_dir, g_int_dir, g_sched.jobs[ i ].target->name );
         if ( _access( dir_path, 0 ) != 0 )
         {
-            char mk[ 512 ];
+            char mk[ BT_PATH_MAX ];
             snprintf( mk, sizeof( mk ), "mkdir %s >nul 2>nul", dir_path );
             system( mk );
         }
