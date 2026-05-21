@@ -146,4 +146,31 @@ target_info_t g_targets[] = {
 
 int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );
 
+// --- Solution Registry ---
+
+// Main engine workspace.
+static const char* g_sln_main_targets[] = {
+    "base", "sys", "rs", "mod", "app", "core", "example", "sb_base_custom", NULL
+};
+
+// Standalone build tools workspace.
+static const char* g_sln_tools_targets[] = {
+    "build_tool", "build_reflect", NULL
+};
+
+solution_info_t g_solutions[] = {
+    {
+     .name         = "orb_make",
+     .target_names = g_sln_main_targets,
+     .nav_dir      = "source", // Includes everything in source/ for navigation.
+     },
+    {
+     .name         = "orb_build",
+     .target_names = g_sln_tools_targets,
+     .nav_dir      = NULL, // No extra navigation project needed for tools.
+     },
+};
+
+int g_solution_count = sizeof( g_solutions ) / sizeof( g_solutions[ 0 ] );
+
 /*============================================================================================*/

@@ -75,6 +75,21 @@ typedef struct
 
 } build_context_t;
 
+// --- Solution Descriptor ---
+
+// Defines a Visual Studio solution and which targets from the pool it contains.
+typedef struct
+{
+    const char*  name;         // Name of the .sln file (e.g. "orb_make").
+    const char** target_names; // NULL-terminated list of target names to include.
+    const char*  nav_dir;      // If non-NULL, generate a "Mega" navigation project for this directory.
+
+} solution_info_t;
+
+// These are defined in build_tool_targets.c.
+extern solution_info_t g_solutions[];
+extern int             g_solution_count;
+
 // --- Orchestration API ---
 
 // Run a shell command and return the exit code. 

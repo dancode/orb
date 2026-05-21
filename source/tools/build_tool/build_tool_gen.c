@@ -269,20 +269,18 @@ build_gen_proj_target( target_info_t* target, int index )
 /**
  * build_gen_proj_engine_navigation()
  * 
- * Generates the master "orb_make" project. 
- * This project contains EVERY source file in the entire repository, 
- * organized by folder. This is the primary project developers use 
- * for browsing and global searching.
+ * Generates a "Mega" navigation project that contains every source file 
+ * in a directory hierarchy.
  */
 static void
-build_gen_proj_engine_navigation( void )
+build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target )
 {
     g_file_count   = 0;
     g_filter_count = 0;
-    scan_directory_recursive( "source" );
+    scan_directory_recursive( nav_dir );
 
     char vcxproj_path[ 256 ];
-    sprintf( vcxproj_path, "%s/%s.vcxproj", g_build_dir, g_proj_name );
+    sprintf( vcxproj_path, "%s/%s_nav.vcxproj", g_build_dir, sln_name );
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
     {
@@ -290,7 +288,8 @@ build_gen_proj_engine_navigation( void )
         return;
     }
 
-    // Standard header
+    // Use a deterministic GUID for navigation projects based on the solution name hash or similar.
+    // For now, we'll use the solution name as part of the label.
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
     fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
@@ -307,18 +306,16 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
     
-    // Makefile commands for the master project
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
-    fprintf( f, "    <NMakeOutput>..\\bin\\%s.exe</NMakeOutput>\n", g_out_name );
+    fprintf( f, "    <NMakeOutput>..\\bin\\%s.exe</NMakeOutput>\n", default_target );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
-    // List every file found by the recursive scan.
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
@@ -331,16 +328,14 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "</Project>\n" );
     fclose( f );
 
-    // Generate the .filters file which defines the folder structure in Solution Explorer.
+    // Generate the .filters file.
     char filters_path[ 256 ];
-    sprintf( filters_path, "%s/%s.vcxproj.filters", g_build_dir, g_proj_name );
+    sprintf( filters_path, "%s/%s_nav.vcxproj.filters", g_build_dir, sln_name );
     f = fopen( filters_path, "w" );
     if ( f )
     {
         fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
         fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-        
-        // Write virtual filter definitions
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_filter_count; ++i )
         {
@@ -349,8 +344,6 @@ build_gen_proj_engine_navigation( void )
             fprintf( f, "    </Filter>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
-        
-        // Map each file to its virtual filter
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_file_count; ++i )
         {
@@ -366,10 +359,149 @@ build_gen_proj_engine_navigation( void )
 }
 
 /**
+ * build_gen_solution()
+ * 
+ * Writes a .sln file for a specific solution descriptor.
+ */
+static void
+build_gen_solution( solution_info_t* sln )
+{
+    char sln_path[ 256 ];
+    sprintf( sln_path, "%s/%s.sln", g_build_dir, sln->name );
+    FILE* f = fopen( sln_path, "w" );
+    if ( !f ) return;
+
+    fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
+    fprintf( f, "# Visual Studio Version 17\n" );
+
+    const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
+    const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
+
+    // 1. Add Navigation Project if requested.
+    if ( sln->nav_dir )
+    {
+        // We assume the first target in the list is the "primary" one for NMakeOutput.
+        const char* default_target = (sln->target_names && sln->target_names[ 0 ]) ? sln->target_names[ 0 ] : "unknown";
+        build_gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target );
+        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n", 
+                cpp_type_guid, sln->name, sln->name, g_guid_engine );
+        fprintf( f, "EndProject\n" );
+    }
+
+    // 2. Add Target Projects.
+    char  folders[ 16 ][ 64 ];
+    char  folder_guids[ 16 ][ 64 ];
+    int   folder_count = 0;
+
+    for ( const char** tn = sln->target_names; *tn; ++tn )
+    {
+        target_info_t* target = NULL;
+        int target_index = -1;
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
+            {
+                target = &g_targets[ i ];
+                target_index = i;
+                break;
+            }
+        }
+
+        if ( target )
+        {
+            char guid[ 64 ];
+            sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + target_index );
+            fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", 
+                    cpp_type_guid, target->name, target->name, guid );
+            fprintf( f, "EndProject\n" );
+
+            // Collect folders for nesting.
+            bool found = false;
+            for ( int j = 0; j < folder_count; ++j )
+            {
+                if ( strcmp( folders[ j ], target->sln_folder ) == 0 ) { found = true; break; }
+            }
+            if ( !found && folder_count < 16 )
+            {
+                strcpy( folders[ folder_count ], target->sln_folder );
+                sprintf( folder_guids[ folder_count ], "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xF000 + folder_count );
+                folder_count++;
+            }
+        }
+    }
+
+    // 3. Add SLN Folders.
+    for ( int i = 0; i < folder_count; ++i )
+    {
+        fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", 
+                folder_type_guid, folders[ i ], folders[ i ], folder_guids[ i ] );
+        fprintf( f, "EndProject\n" );
+    }
+
+    // 4. Global Section.
+    fprintf( f, "Global\n" );
+    fprintf( f, "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n" );
+    fprintf( f, "\t\tDebug|x64 = Debug|x64\n" );
+    fprintf( f, "\t\tRelease|x64 = Release|x64\n" );
+    fprintf( f, "\tEndGlobalSection\n" );
+
+    fprintf( f, "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n" );
+    if ( sln->nav_dir )
+    {
+        fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", g_guid_engine );
+        fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", g_guid_engine );
+        fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", g_guid_engine );
+        fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", g_guid_engine );
+    }
+    for ( const char** tn = sln->target_names; *tn; ++tn )
+    {
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
+            {
+                char guid[ 64 ];
+                sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
+                fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", guid );
+                fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", guid );
+                fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", guid );
+                fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", guid );
+                break;
+            }
+        }
+    }
+    fprintf( f, "\tEndGlobalSection\n" );
+
+    fprintf( f, "\tGlobalSection(NestedProjects) = preSolution\n" );
+    for ( const char** tn = sln->target_names; *tn; ++tn )
+    {
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
+            {
+                char proj_guid[ 64 ];
+                sprintf( proj_guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
+                for ( int j = 0; j < folder_count; ++j )
+                {
+                    if ( strcmp( folders[ j ], g_targets[ i ].sln_folder ) == 0 )
+                    {
+                        fprintf( f, "\t\t%s = %s\n", proj_guid, folder_guids[ j ] );
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    fprintf( f, "\tEndGlobalSection\n" );
+    fprintf( f, "EndGlobal\n" );
+    fclose( f );
+}
+
+/**
  * build_gen_projects()
  * 
  * Entry point for Visual Studio project generation.
- * Generates one .sln file and multiple .vcxproj files.
+ * Generates all .sln files defined in the Solution Registry.
  */
 void
 build_gen_projects( void )
@@ -389,122 +521,22 @@ build_gen_projects( void )
     system( cmd );
 #endif
 
-    // Generate individual target projects.
+    // 1. Generate ALL target projects.
+    // We generate every .vcxproj defined in the pool to ensure they are available
+    // for use in any solution or via CLI.
     for ( int i = 0; i < g_target_count; ++i )
     {
         build_gen_proj_target( &g_targets[ i ], i );
     }
 
-    // Generate master navigation project.
-    build_gen_proj_engine_navigation();
-
-    // --- Generate the Solution (.sln) file ---
-    char sln_path[ 256 ];
-    sprintf( sln_path, "%s/%s.sln", g_build_dir, g_proj_name );
-    FILE* f = fopen( sln_path, "w" );
-    if ( f )
+    // 2. Generate each Solution from the registry.
+    for ( int i = 0; i < g_solution_count; ++i )
     {
-        fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
-        fprintf( f, "# Visual Studio Version 17\n" );
-
-        const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
-        const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
-
-        // Add the Navigation project.
-        fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, g_proj_name, g_proj_name, g_guid_engine );
-        fprintf( f, "EndProject\n" );
-
-        // Collect and add virtual SLN folders based on the registry's sln_folder field.
-        char  folders[ 16 ][ 64 ];
-        char  folder_guids[ 16 ][ 64 ];
-        int   folder_count = 0;
-
-        for ( int i = 0; i < g_target_count; ++i )
-        {
-            bool found = false;
-            for ( int j = 0; j < folder_count; ++j )
-            {
-                if ( strcmp( folders[ j ], g_targets[ i ].sln_folder ) == 0 )
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if ( !found && folder_count < 16 )
-            {
-                strcpy( folders[ folder_count ], g_targets[ i ].sln_folder );
-                sprintf( folder_guids[ folder_count ], "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xF000 + folder_count );
-                folder_count++;
-            }
-        }
-
-        for ( int i = 0; i < folder_count; ++i )
-        {
-            fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", folder_type_guid, folders[ i ], folders[ i ], folder_guids[ i ] );
-            fprintf( f, "EndProject\n" );
-        }
-
-        // Add each target as a project in the solution.
-        for ( int i = 0; i < g_target_count; ++i )
-        {
-            char guid[ 64 ];
-            sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
-            fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, g_targets[ i ].name, g_targets[ i ].name, guid );
-            fprintf( f, "EndProject\n" );
-        }
-
-        // Setup Global Section (Configurations and Folder Nesting).
-        fprintf( f, "Global\n" );
-        fprintf( f, "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n" );
-        fprintf( f, "\t\tDebug|x64 = Debug|x64\n" );
-        fprintf( f, "\t\tRelease|x64 = Release|x64\n" );
-        fprintf( f, "\tEndGlobalSection\n" );
-
-        // Maps each project's configurations to the solution configurations.
-        // Without this VS shows every project as "Build = No" in Configuration Manager.
-        fprintf( f, "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n" );
-        fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", g_guid_engine );
-        fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", g_guid_engine );
-        fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", g_guid_engine );
-        fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", g_guid_engine );
-        for ( int i = 0; i < g_target_count; ++i )
-        {
-            char guid[ 64 ];
-            sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
-            fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", guid );
-            fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", guid );
-            fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", guid );
-            fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", guid );
-        }
-        fprintf( f, "\tEndGlobalSection\n" );
-
-        // Nest target projects into their respective SLN folders.
-        fprintf( f, "\tGlobalSection(NestedProjects) = preSolution\n" );
-        for ( int i = 0; i < g_target_count; ++i )
-        {
-            char proj_guid[ 64 ];
-            sprintf( proj_guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
-
-            char folder_guid[ 64 ] = "";
-            for ( int j = 0; j < folder_count; ++j )
-            {
-                if ( strcmp( folders[ j ], g_targets[ i ].sln_folder ) == 0 )
-                {
-                    strcpy( folder_guid, folder_guids[ j ] );
-                    break;
-                }
-            }
-            if ( folder_guid[ 0 ] != '\0' )
-            {
-                fprintf( f, "\t\t%s = %s\n", proj_guid, folder_guid );
-            }
-        }
-        fprintf( f, "\tEndGlobalSection\n" );
-        fprintf( f, "EndGlobal\n" );
-        fclose( f );
+        printf( "Generating Solution: %s.sln\n", g_solutions[ i ].name );
+        build_gen_solution( &g_solutions[ i ] );
     }
 
-    printf( "Projects generated successfully in %s/.\n", g_build_dir );
+    printf( "\nProjects generated successfully in %s/.\n", g_build_dir );
 }
 
 /*============================================================================================*/

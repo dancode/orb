@@ -19,7 +19,7 @@
 #include "build_tool.h"
 
 #ifndef _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS /* required for bootstrap_build_tool.bat */
 #endif
 
 #include <stdio.h>
@@ -31,7 +31,7 @@
 
 // --- Project Constants ---
 
-static const char* g_proj_name       = "orb_make";       // The main VS solution name.
+static const char* g_proj_name       = "orb_stack";      // The main VS solution name.
 static const char* g_out_name        = "sb_base_custom"; // Default "output" target for navigation.
 static const char* g_build_proj_name = "orb_build";      // Secondary build solution.
 static const char* g_build_dir       = "build_new";      // Root for intermediate/generated files.
