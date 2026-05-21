@@ -194,33 +194,41 @@ build_clean( void )
 bool
 build_target( build_context_t* ctx, target_info_t* target )
 {
-    // Ensure directories exist
+    // 1. Setup paths
+    char target_obj_dir[ 256 ];
+    sprintf( target_obj_dir, "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+
 #if defined( _WIN32 )
     if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
-    
-    char obj_dir[ 256 ];
-    sprintf( obj_dir, "%s\\%s", g_build_dir, g_int_dir );
     if ( _access( g_build_dir, 0 ) != 0 )
     {
         char cmd[ 256 ];
         sprintf( cmd, "mkdir %s", g_build_dir );
         system( cmd );
     }
-    if ( _access( obj_dir, 0 ) != 0 )
+    
+    char int_root[ 256 ];
+    sprintf( int_root, "%s\\%s", g_build_dir, g_int_dir );
+    if ( _access( int_root, 0 ) != 0 )
     {
         char cmd[ 256 ];
-        sprintf( cmd, "mkdir %s", obj_dir );
+        sprintf( cmd, "mkdir %s", int_root );
+        system( cmd );
+    }
+
+    if ( _access( target_obj_dir, 0 ) != 0 )
+    {
+        char cmd[ 256 ];
+        sprintf( cmd, "mkdir %s", target_obj_dir );
         system( cmd );
     }
 #else
-    system( "mkdir -p bin" );
-    char cmd[ 256 ];
-    sprintf( cmd, "mkdir -p %s/%s", g_build_dir, g_int_dir );
-    system( cmd );
+    char cmd_mkdir[ 512 ];
+    sprintf( cmd_mkdir, "mkdir -p bin %s/%s/%s", g_build_dir, g_int_dir, target->name );
+    system( cmd_mkdir );
 #endif
 
-    // Self-rebuild protection: If we are building ourselves, rename the running exe
-    // so the linker can create a new one without "Access Denied".
+    // Self-rebuild protection
     char exe_path[ 256 ];
     sprintf( exe_path, "bin/%s.exe", target->name );
     if ( target->type == TARGET_EXECUTABLE && _access( exe_path, 0 ) == 0 )
@@ -228,60 +236,64 @@ build_target( build_context_t* ctx, target_info_t* target )
         char old_path[ 256 ];
         sprintf( old_path, "bin/%s.exe.old", target->name );
         remove( old_path );
-        if ( rename( exe_path, old_path ) != 0 )
-        {
-            // If rename fails, it might be already renamed or locked by something else.
-            // We continue anyway and let the linker report the error if it persists.
-        }
+        rename( exe_path, old_path );
     }
 
-    cmd_buf_t cmd = { 0 };
-
-    // 1. Pick compiler
+    // --- Phase 1: Compile ---
+    cmd_buf_t compile_cmd = { 0 };
     const char* cc = ctx->is_clang ? "clang-cl.exe" : "cl.exe";
-    cmd_append( &cmd, "%s ", cc );
+    cmd_append( &compile_cmd, "%s /c /nologo /W4 /WX /Zc:preprocessor /std:c11 ", cc );
+    cmd_append( &compile_cmd, "/I source /Fo%s/ /Fd%s/ ", target_obj_dir, target_obj_dir );
 
-    // 2. Common Flags  
-    cmd_append( &cmd, "/nologo /W4 /WX /Zc:preprocessor /std:c11 " );
-    cmd_append( &cmd, "/I source " );
-    
-    // Intermediate files
-    cmd_append( &cmd, "/Fo%s/%s/ /Fd%s/%s/ ", g_build_dir, g_int_dir, g_build_dir, g_int_dir );
-
-    // 3. Config Flags
     if ( ctx->config == CONFIG_DEBUG )
-    {
-        cmd_append( &cmd, "/Zi /Od /MDd /D_DEBUG " );
-    }
+        cmd_append( &compile_cmd, "/Zi /Od /MDd /D_DEBUG " );
     else
-    {
-        cmd_append( &cmd, "/O2 /MD /DNDEBUG " );
-    }
+        cmd_append( &compile_cmd, "/O2 /MD /DNDEBUG " );
 
-    // 4. Source Files (Target Units)
     for ( int i = 0; i < target->unit_count; ++i )
+        cmd_append( &compile_cmd, "%s/%s ", target->root_dir, target->units[ i ] );
+
+    if ( build_run_cmd( compile_cmd.buf ) != 0 )
     {
-        cmd_append( &cmd, "%s/%s ", target->root_dir, target->units[ i ] );
+        free( compile_cmd.buf );
+        return false;
     }
-    
-    // 5. Output
+    free( compile_cmd.buf );
+
+    // --- Phase 2: Link/Archive ---
+    cmd_buf_t link_cmd = { 0 };
     if ( target->type == TARGET_STATIC_LIB )
     {
-        cmd_append( &cmd, "/c /Fo%s/%s/%s.obj ", g_build_dir, g_int_dir, target->name );
-        // NOTE: Static libraries require a separate link step (lib.exe)
-        // We'll just compile to obj for now or add lib.exe support.
+        cmd_append( &link_cmd, "lib.exe /nologo /OUT:bin/%s.lib %s/*.obj", target->name, target_obj_dir );
     }
     else
     {
-        cmd_append( &cmd, "/Fe:bin/%s.exe ", target->name );
-        // 6. Linker Flags
-        cmd_append( &cmd, "/link /DEBUG /PDB:bin/%s.pdb ", target->name );
+        const char* linker = "link.exe"; // clang-cl usually uses link.exe too, or lld-link
+        cmd_append( &link_cmd, "%s /nologo ", linker );
+        if ( target->type == TARGET_DYNAMIC_LIB )
+            cmd_append( &link_cmd, "/DLL " );
+
+        cmd_append( &link_cmd, "/OUT:bin/%s%s %s/*.obj ", target->name, 
+                    (target->type == TARGET_EXECUTABLE) ? ".exe" : ".dll", target_obj_dir );
+        
+        cmd_append( &link_cmd, "/DEBUG /PDB:bin/%s.pdb ", target->name );
+
+        // Add dependencies
+        for ( int i = 0; i < target->dep_count; ++i )
+        {
+            cmd_append( &link_cmd, "bin/%s.lib ", target->deps[ i ] );
+        }
+        
+        // Add common libraries
+        cmd_append( &link_cmd, "user32.lib shell32.lib gdi32.lib advapi32.lib " );
+
+        // If this is an EXE or DLL that needs orb_base, we'd add it here.
+        // For now, we assume unity builds include everything needed.
     }
 
-    // Execute
-    int result = build_run_cmd( cmd.buf );
+    int result = build_run_cmd( link_cmd.buf );
+    free( link_cmd.buf );
 
-    free( cmd.buf );
     return result == 0;
 }
 

@@ -32,6 +32,8 @@ typedef struct
     const char*   sln_folder;
     const char*   units[ 16 ];
     int           unit_count;
+    const char*   deps[ 16 ];
+    int           dep_count;
 
 } target_info_t;
 
