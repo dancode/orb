@@ -34,8 +34,46 @@ static int         g_file_count = 0;
 static char g_filters[ MAX_FILTERS ][ 256 ];
 static int  g_filter_count = 0;
 
-// Stable GUID used for the primary "Navigation" project in every solution.
-static const char* g_guid_engine = "{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}";
+/**
+ * guid_from_name()
+ *
+ * Produces a deterministic 128-bit GUID from a string, formatted in the
+ * standard 8-4-4-4-12 hex form Visual Studio expects.
+ *
+ * The previous scheme derived GUIDs from the target's index in g_targets[]
+ * (e.g. {...12B000+i}). That made every GUID a function of registry order,
+ * so inserting or reordering a target shifted every subsequent GUID. The
+ * resulting churn invalidated user-visible state stored against those
+ * GUIDs: .suo files, window layouts, breakpoints, ProjectDependencies
+ * cross-references, source-control mappings, anything CMake/MSBuild cached.
+ *
+ * Hashing the project's name instead means the GUID is stable for the life
+ * of the name — registry reorderings cost nothing, renames cost only their
+ * own project's identity (which is correct: a rename is a new project).
+ *
+ * Two FNV-1a passes with different seeds and primes fill the 16 bytes.
+ * FNV is not cryptographic, but we are not defending against collisions
+ * from an adversary — we just need 2^128 worth of spread across the few
+ * dozen names this tool will ever see.
+ */
+static void
+guid_from_name( const char* name, char* out )
+{
+    unsigned long long h1 = 0xcbf29ce484222325ULL;
+    unsigned long long h2 = 0x9ae16a3b2f90404fULL;
+    for ( const unsigned char* p = ( const unsigned char* )name; *p; ++p )
+    {
+        h1 = ( h1 ^ *p ) * 0x100000001b3ULL;
+        h2 = ( h2 ^ *p ) * 0x880355f21e6d1965ULL;
+    }
+    sprintf( out, "{%08X-%04X-%04X-%04X-%04X%08X}",
+             ( unsigned int )( h1 >> 32 ),
+             ( unsigned int )( ( h1 >> 16 ) & 0xFFFFu ),
+             ( unsigned int )( h1 & 0xFFFFu ),
+             ( unsigned int )( h2 >> 48 ),
+             ( unsigned int )( ( h2 >> 32 ) & 0xFFFFu ),
+             ( unsigned int )( h2 & 0xFFFFFFFFu ) );
+}
 
 /**
  * add_filter()
@@ -234,9 +272,10 @@ build_gen_proj_target( target_info_t* target, int index )
     char vcxproj_path[ 256 ];
     sprintf( vcxproj_path, "%s/%s.vcxproj", g_build_dir, target->name );
 
-    // Generate a deterministic GUID for this project.
+    // Generate a deterministic GUID for this project from its name.
     char guid[ 64 ];
-    sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + index );
+    guid_from_name( target->name, guid );
+    ( void )index;
 
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
@@ -341,7 +380,8 @@ build_gen_proj_target( target_info_t* target, int index )
  * global search and browsing.
  */
 static void
-build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target )
+build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target,
+                                  const char* nav_guid )
 {
     g_file_count   = 0;
     g_filter_count = 0;
@@ -363,7 +403,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
     fprintf( f, "  </ItemGroup>\n" );
     fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
-    fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", g_guid_engine );
+    fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", nav_guid );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
@@ -457,14 +497,23 @@ build_gen_solution( solution_info_t* sln )
     const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
     const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
 
+    // Each solution's nav project gets its own stable GUID derived from
+    // the sln name, so two solutions opened side-by-side don't collide.
+    char nav_guid[ 64 ] = { 0 };
+    {
+        char key[ 128 ];
+        snprintf( key, sizeof( key ), "nav:%s", sln->name );
+        guid_from_name( key, nav_guid );
+    }
+
     // 1. Add Navigation Project if requested.
     if ( sln->nav_dir )
     {
         // We assume the first target in the list is the "primary" one for NMakeOutput.
         const char* default_target = (sln->target_names && sln->target_names[ 0 ]) ? sln->target_names[ 0 ] : "unknown";
-        build_gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target );
-        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n", 
-                cpp_type_guid, sln->name, sln->name, g_guid_engine );
+        build_gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target, nav_guid );
+        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n",
+                cpp_type_guid, sln->name, sln->name, nav_guid );
         fprintf( f, "EndProject\n" );
     }
 
@@ -476,13 +525,11 @@ build_gen_solution( solution_info_t* sln )
     for ( const char** tn = sln->target_names; *tn; ++tn )
     {
         target_info_t* target = NULL;
-        int target_index = -1;
         for ( int i = 0; i < g_target_count; ++i )
         {
             if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
             {
                 target = &g_targets[ i ];
-                target_index = i;
                 break;
             }
         }
@@ -490,44 +537,34 @@ build_gen_solution( solution_info_t* sln )
         if ( target )
         {
             char guid[ 64 ];
-            sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + target_index );
-            fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", 
+            guid_from_name( target->name, guid );
+            fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n",
                     cpp_type_guid, target->name, target->name, guid );
-            
+
             // --- Project Dependencies ---
-            // This section tells Visual Studio's scheduler exactly which projects 
-            // must be finished before starting this one. This prevents race conditions 
+            // This section tells Visual Studio's scheduler exactly which projects
+            // must be finished before starting this one. This prevents race conditions
             // where multiple cl.exe instances try to write to the same PDB.
             if ( target->dep_count > 0 || target->tool_dep_count > 0 )
             {
                 fprintf( f, "\tProjectSection(ProjectDependencies) = postProject\n" );
-                
+
                 // Add Link Dependencies (libs).
                 for ( int i = 0; i < target->dep_count; ++i )
                 {
-                    for ( int j = 0; j < g_target_count; ++j )
-                    {
-                        if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 )
-                        {
-                            fprintf( f, "\t\t{DE231EAC-9C33-B4FA-8440-E3A81E12%04X} = {DE231EAC-9C33-B4FA-8440-E3A81E12%04X}\n", 0xB000 + j, 0xB000 + j );
-                            break;
-                        }
-                    }
+                    char dep_guid[ 64 ];
+                    guid_from_name( target->deps[ i ], dep_guid );
+                    fprintf( f, "\t\t%s = %s\n", dep_guid, dep_guid );
                 }
-                
+
                 // Add Tool Dependencies (exes). e.g. core depends on build_reflect.
                 for ( int i = 0; i < target->tool_dep_count; ++i )
                 {
-                    for ( int j = 0; j < g_target_count; ++j )
-                    {
-                        if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 )
-                        {
-                            fprintf( f, "\t\t{DE231EAC-9C33-B4FA-8440-E3A81E12%04X} = {DE231EAC-9C33-B4FA-8440-E3A81E12%04X}\n", 0xB000 + j, 0xB000 + j );
-                            break;
-                        }
-                    }
+                    char tool_guid[ 64 ];
+                    guid_from_name( target->tool_deps[ i ], tool_guid );
+                    fprintf( f, "\t\t%s = %s\n", tool_guid, tool_guid );
                 }
-                
+
                 fprintf( f, "\tEndProjectSection\n" );
             }
 
@@ -542,7 +579,11 @@ build_gen_solution( solution_info_t* sln )
             if ( !found && folder_count < 16 )
             {
                 strcpy( folders[ folder_count ], target->sln_folder );
-                sprintf( folder_guids[ folder_count ], "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xF000 + folder_count );
+                // Folder GUID is per-(solution, folder) — same folder name in a
+                // different solution stays distinct, but is stable across regens.
+                char key[ 192 ];
+                snprintf( key, sizeof( key ), "folder:%s:%s", sln->name, target->sln_folder );
+                guid_from_name( key, folder_guids[ folder_count ] );
                 folder_count++;
             }
         }
@@ -566,10 +607,10 @@ build_gen_solution( solution_info_t* sln )
     fprintf( f, "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n" );
     if ( sln->nav_dir )
     {
-        fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", g_guid_engine );
-        fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", g_guid_engine );
-        fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", g_guid_engine );
-        fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", g_guid_engine );
+        fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", nav_guid );
+        fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", nav_guid );
+        fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", nav_guid );
+        fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", nav_guid );
     }
     for ( const char** tn = sln->target_names; *tn; ++tn )
     {
@@ -578,7 +619,7 @@ build_gen_solution( solution_info_t* sln )
             if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
             {
                 char guid[ 64 ];
-                sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
+                guid_from_name( g_targets[ i ].name, guid );
                 fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", guid );
                 fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", guid );
                 fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", guid );
@@ -598,7 +639,7 @@ build_gen_solution( solution_info_t* sln )
             if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
             {
                 char proj_guid[ 64 ];
-                sprintf( proj_guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + i );
+                guid_from_name( g_targets[ i ].name, proj_guid );
                 for ( int j = 0; j < folder_count; ++j )
                 {
                     if ( strcmp( folders[ j ], g_targets[ i ].sln_folder ) == 0 )
