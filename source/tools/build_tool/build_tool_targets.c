@@ -3,16 +3,24 @@
     build_tool_targets.c -- Central registry for all buildable artifacts.
 
     This file contains the "data" portion of the build system. It defines the 
-    entire dependency graph and source layout for the engine.
+    entire dependency graph, source layout, and IDE solution mappings.
 
-    To add a new library or executable to the project, simply add a new 
-    target_info_t entry to the g_targets array below.
+    Structure:
+    1. Target Pool (g_targets): The master list of everything the orchestrator can build.
+    2. Solution Registry (g_solutions): Groups of targets mapped to specific .sln files.
+
+    How to add a new library:
+    - Add an entry to g_targets[].
+    - Add its name to the relevant solution target list (e.g. g_sln_main_targets).
 
 ==============================================================================================*/
 
 target_info_t g_targets[] = {
+    
     // --- 01_BASE (Foundation) ---
+    
     // The lowest layer. Stateless and dependency-free.
+    // Produces bin/base.lib.
     {
      .name       = "base",
      .type       = TARGET_STATIC_LIB,
@@ -75,7 +83,7 @@ target_info_t g_targets[] = {
      },
 
     // Core Engine Services (Logging, Memory Arenas).
-    // Note: This target uses 'has_reflect' which triggers the reflection generator.
+    // This target requires build_reflect.exe to run before it can compile.
     {
      .name           = "core",
      .type           = TARGET_STATIC_LIB,
@@ -90,9 +98,11 @@ target_info_t g_targets[] = {
      .has_reflect    = true,
      .reflect_name   = "engine_core",
      },
+
     // --- 03_RUNTIME_MODULES (Hot-Reloadable DLLs) ---
     
     // An example module to verify hot-reloading.
+    // Produces bin/example.dll and bin/example.lib (implib).
     {
      .name       = "example",
      .type       = TARGET_DYNAMIC_LIB,
@@ -132,7 +142,7 @@ target_info_t g_targets[] = {
      .dep_count  = 0,     
      },
 
-    // The reflection generator. Must be built first!
+    // The reflection generator. Scans source and writes generated .c/.h files.
     {
      .name       = "build_reflect",
      .type       = TARGET_EXECUTABLE,
@@ -149,26 +159,29 @@ int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );
 
 // --- Solution Registry ---
 
-// Main engine workspace.
+// These lists are NULL-terminated.
+
+// Main engine workspace. Includes core libraries and sandboxes.
 static const char* g_sln_main_targets[] = {
     "base", "sys", "rs", "mod", "app", "core", "example", "sb_base_custom", NULL
 };
 
-// Standalone build tools workspace.
+// Standalone build tools workspace. For modifying the build system itself.
 static const char* g_sln_tools_targets[] = {
     "build_tool", "build_reflect", NULL
 };
 
+// Map solutions to their target lists and navigation scope.
 solution_info_t g_solutions[] = {
     {
      .name         = "orb_make",
      .target_names = g_sln_main_targets,
-     .nav_dir      = "source", // Includes everything in source/ for navigation.
+     .nav_dir      = "source", // Includes everything in source/ for IDE navigation.
      },
     {
      .name         = "orb_build",
      .target_names = g_sln_tools_targets,
-     .nav_dir      = NULL, // No extra navigation project needed for tools.
+     .nav_dir      = NULL, // Minimal standalone tool solution.
      },
 };
 

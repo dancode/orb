@@ -6,6 +6,12 @@
     logic of *how* to build (build_tool.c) from the data of *what* to build 
     (build_tool_targets.c).
 
+    Architectural Goals:
+    - High Performance: Minimal filesystem overhead and direct tool invocation.
+    - Simplicity: A flat, unified target pool with explicit dependencies.
+    - Flexibility: Support for multiple standalone IDE solutions sharing common targets.
+    - Automation: Recursive dependency resolution and automatic tool bootstrapping.
+
 ==============================================================================================*/
 #ifndef BUILD_TOOL_H
 #define BUILD_TOOL_H
@@ -15,7 +21,8 @@
 // --- Configuration ---
 
 // Standard build configurations. These map to compiler optimization levels 
-// and debug symbol generation.
+// and debug symbol generation. The enum values are used to index configuration
+// specific settings in the orchestrator.
 typedef enum
 {
     CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
@@ -40,7 +47,7 @@ typedef enum
 
 // A target_info_t represents a single buildable unit in the ORB ecosystem.
 // It contains all metadata required to compile and link the target.
-
+// Targets are shared across different IDE solutions.
 typedef struct
 {
     const char*   name;             // Unique name (e.g., "base", "core", "app").
@@ -49,14 +56,18 @@ typedef struct
     const char*   sln_folder;       // Virtual folder in the Visual Studio solution.
     const char*   units[ 16 ];      // Translation units (.c files) to compile.
     int           unit_count;
-    const char*   deps[ 16 ];   // Names of other targets this target depends on.
+    
+    // Link Dependencies: Other targets that produce .libs this target must link against.
+    const char*   deps[ 16 ];   
     int           dep_count;
-    const char*   tool_deps[ 16 ]; // Tools that must be built before this target (e.g. build_reflect).
+
+    // Tool Dependencies: Standalone utilities that must exist to build this target.
+    // These are built recursively but NOT linked into the final binary.
+    const char*   tool_deps[ 16 ]; 
     int           tool_dep_count;
 
     // Reflection metadata: If true, the build tool runs build_reflect.exe 
     // on this target's root_dir before compilation.
-
     bool          has_reflect;
     const char*   reflect_name;     // Base name for generated .c/.h files.
 
@@ -73,7 +84,7 @@ extern int           g_target_count;
 // State passed through the build process to maintain consistency.
 typedef struct
 {
-    config_t config;        // Selected build config.
+    config_t config;        // Selected build config (Debug/Release).
     bool     is_monolithic; // Reserved: for building everything into one binary.
     bool     is_clang;      // If true, uses clang-cl instead of cl.
 
@@ -82,6 +93,8 @@ typedef struct
 // --- Solution Descriptor ---
 
 // Defines a Visual Studio solution and which targets from the pool it contains.
+// This allows the build system to generate specialized workspaces (e.g. orb_build.sln)
+// without polluting the main engine workspace.
 typedef struct
 {
     const char*  name;         // Name of the .sln file (e.g. "orb_make").
@@ -100,16 +113,17 @@ extern int             g_solution_count;
 // Automatically handles Visual Studio environment (vcvarsall) if necessary.
 int build_run_cmd( const char* cmd );
 
-// The core worker function. Handles directory creation, reflection generation,
-// compilation of all units, and the final link/archive step for a target.
+// The core worker function. Handles recursive dependency resolution, 
+// incremental build timestamp checks, reflection generation, 
+// and the final compile/link steps for a target.
 bool build_target( build_context_t* ctx, target_info_t* target );
 
 // Deletes build artifacts from bin/ and obj/. 
 // Surgically avoids deleting the build_tool.exe itself to prevent locking.
 void build_clean( void );
 
-// Generates the .sln and .vcxproj files for Visual Studio.
-// Enables "F5 debugging" and IDE navigation while keeping the build custom.
+// Generates all .sln and .vcxproj files defined in the Solution Registry.
+// This maps our custom build system into the Visual Studio IDE.
 void build_gen_projects( void );
 
 /*============================================================================================*/

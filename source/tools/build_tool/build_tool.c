@@ -9,9 +9,16 @@
     Key Responsibilities:
     1. Locating Visual Studio and setting up the shell environment (vcvarsall).
     2. Managing build artifacts (bin/ and obj/ directories).
-    3. Coordinating reflection generation via build_reflect.exe.
-    4. Constructing and executing compiler/linker command lines for all targets.
-    5. Generating Visual Studio solution files for developer ergonomics.
+    3. Performing recursive dependency resolution (building required libs/tools).
+    4. Implementing timestamp-based incremental builds (only rebuild what changed).
+    5. Coordinating reflection generation via build_reflect.exe.
+    6. Constructing and executing compiler/linker command lines for all targets.
+    7. Generating Visual Studio solution files for developer ergonomics.
+
+    Architecture Note:
+    This tool is designed to be a "Unity Build" — all supporting files (.c) are 
+    directly included here. This makes bootstrapping the build tool itself 
+    instantaneous (see bootstrap_build_tool.bat).
 
 ==============================================================================================*/
 // clang-format off
@@ -150,7 +157,8 @@ build_setup_vc_env( void )
  * build_run_cmd()
  * 
  * A wrapper around system() that automatically injects the VC environment prefix
- * if the command is a compiler/linker call.
+ * if the command is a compiler/linker call. This allows the build tool to work
+ * even when run from a standard PowerShell/CMD prompt.
  */
 int
 build_run_cmd( const char* cmd )
@@ -180,6 +188,12 @@ typedef struct
 
 } cmd_buf_t;
 
+/**
+ * cmd_append()
+ * 
+ * Appends a formatted string to a command buffer. 
+ * High-performance alternative to repeated strcat/sprintf calls.
+ */
 static void
 cmd_append( cmd_buf_t* b, const char* fmt, ... )
 {
@@ -239,6 +253,7 @@ build_clean( void )
  * build_get_mtime()
  * 
  * Returns the last modification time of a file. Returns 0 if the file doesn't exist.
+ * This is the foundation of our incremental build system.
  */
 static __time64_t
 build_get_mtime( const char* path )
@@ -252,6 +267,15 @@ build_get_mtime( const char* path )
  * build_target()
  * 
  * The main worker function for building a single artifact.
+ * 
+ * Execution Flow:
+ * 1. Dependency Check: Recursively builds any deps or tool_deps.
+ * 2. Incremental Check: Compares output timestamp against all sources/deps.
+ * 3. Environment Setup: Ensures output directories exist.
+ * 4. Locked File Management: Renames existing EXEs/PDBs to allow overwriting.
+ * 5. Reflection Phase: Runs build_reflect.exe if required.
+ * 6. Compilation Phase: Invokes cl.exe for all translation units.
+ * 7. Linking/Archiving Phase: Invokes link.exe or lib.exe.
  */
 bool
 build_target( build_context_t* ctx, target_info_t* target )
@@ -277,7 +301,8 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
     }
 
-    // Build Tool Dependencies (exes).
+    // Build Tool Dependencies (exes). 
+    // These must exist to build the current target (e.g. build_reflect.exe).
     for ( int i = 0; i < target->tool_dep_count; ++i )
     {
         target_info_t* tool = NULL;
@@ -309,7 +334,7 @@ build_target( build_context_t* ctx, target_info_t* target )
     char out_path[ 256 ];
     sprintf( out_path, "bin\\%s%s", target->name, ext );
 
-    // --- 2. Up-to-Date Check ---
+    // --- 2. Up-to-Date Check (Incremental Building) ---
 
     __time64_t out_mtime = build_get_mtime( out_path );
     bool is_up_to_date = ( out_mtime != 0 );
@@ -332,6 +357,7 @@ build_target( build_context_t* ctx, target_info_t* target )
     if ( is_up_to_date )
     {
         // Check if any link dependencies are newer than the output.
+        // This ensures that if base.lib changes, sb_base_custom.exe is re-linked.
         for ( int i = 0; i < target->dep_count; ++i )
         {
             char dep_path[ 256 ];
@@ -605,7 +631,8 @@ main( int argc, char** argv )
 
     if ( target_name )
     {
-        // Build a specific target requested by the user.
+        // Build a specific target requested by the user. 
+        // Recursive logic handles all dependencies.
         target_info_t* target = NULL;
         for ( int i = 0; i < g_target_count; ++i )
         {
@@ -635,7 +662,6 @@ main( int argc, char** argv )
         // Default behavior: Build all targets in the registry sequentially.
         for ( int i = 0; i < g_target_count; ++i )
         {
-            printf( "Building target: %s\n", g_targets[ i ].name );
             if ( !build_target( &ctx, &g_targets[ i ] ) )
             {
                 printf( "\nFAILED on target '%s'!\n", g_targets[ i ].name );

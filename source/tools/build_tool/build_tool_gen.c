@@ -10,12 +10,16 @@
     1. Full IDE features (IntelliSense, F5 Debugging, Navigation).
     2. Absolute control over the build process via C code.
 
+    The generator creates a dedicated .sln for each entry in the Solution Registry,
+    allowing developers to work in focused workspaces without IDE clutter.
+
 ==============================================================================================*/
 
 #define MAX_FILES 1024
 #define MAX_FILTERS 512
 
-// Metadata for a single source file in the solution.
+// Metadata for a single source file in the solution. 
+// Used during the recursive directory scan to build virtual filters.
 typedef struct
 {
     char path[ 256 ];   // Relative path from project root.
@@ -30,7 +34,7 @@ static int         g_file_count = 0;
 static char g_filters[ MAX_FILTERS ][ 256 ];
 static int  g_filter_count = 0;
 
-// Stable GUID used for the primary "Navigation" project.
+// Stable GUID used for the primary "Navigation" project in every solution.
 static const char* g_guid_engine = "{DE231EAC-9C33-B4FA-8440-E3A81E12CA86}";
 
 /**
@@ -57,6 +61,7 @@ add_filter( const char* filter )
  * 
  * Ensures all parent folders of a filter path are also registered.
  * e.g. "engine\\core\\win" -> adds "engine", "engine\\core", and "engine\\core\\win".
+ * This is necessary for VS to display the nested folder structure correctly.
  */
 static void
 add_filters_recursive( const char* filter )
@@ -107,7 +112,7 @@ get_filter_for_path( const char* path, char* out_filter )
  * scan_directory_recursive()
  * 
  * Traverses the source tree and collects all .c and .h files to be
- * included in the master navigation project.
+ * included in the navigation project.
  */
 static void
 scan_directory_recursive( const char* dir )
@@ -161,6 +166,7 @@ scan_directory_recursive( const char* dir )
  * 
  * Writes the boilerplate XML required for a Visual Studio Makefile project.
  * This sets up the build/clean command lines that VS will call.
+ * Note: LanguageStandard tags are avoided here to let NMake settings prevail.
  */
 static void
 write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, target_type_t type )
@@ -195,12 +201,12 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, ta
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
     
-    // The "Hook": Tell VS to call our build_tool.exe
+    // The "Hook": Tell VS to call our build_tool.exe with the specific target.
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
     
-    // IntelliSense setup
+    // IntelliSense setup: Definitions and paths needed for the IDE parser.
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
@@ -270,7 +276,8 @@ build_gen_proj_target( target_info_t* target, int index )
  * build_gen_proj_engine_navigation()
  * 
  * Generates a "Mega" navigation project that contains every source file 
- * in a directory hierarchy.
+ * in a directory hierarchy. This project is what developers use for 
+ * global search and browsing.
  */
 static void
 build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target )
@@ -288,8 +295,6 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
         return;
     }
 
-    // Use a deterministic GUID for navigation projects based on the solution name hash or similar.
-    // For now, we'll use the solution name as part of the label.
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
     fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
@@ -309,6 +314,8 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
+    
+    // Pressing 'Build' on the Nav project builds the solution's primary target.
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s.exe</NMakeOutput>\n", default_target );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
@@ -316,6 +323,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
+    // Add all files found in the recursive directory scan.
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
@@ -328,7 +336,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "</Project>\n" );
     fclose( f );
 
-    // Generate the .filters file.
+    // Generate the .filters file to mirror the folder structure in Solution Explorer.
     char filters_path[ 256 ];
     sprintf( filters_path, "%s/%s_nav.vcxproj.filters", g_build_dir, sln_name );
     f = fopen( filters_path, "w" );
@@ -336,6 +344,8 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     {
         fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
         fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+        
+        // Write virtual filter definitions.
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_filter_count; ++i )
         {
@@ -344,6 +354,8 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
             fprintf( f, "    </Filter>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
+        
+        // Map each file to its virtual filter.
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_file_count; ++i )
         {
@@ -362,6 +374,12 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
  * build_gen_solution()
  * 
  * Writes a .sln file for a specific solution descriptor.
+ * 
+ * Logic:
+ * 1. Navigation Project: Scans and adds all files in the solution's scope.
+ * 2. Target Projects: Adds .vcxproj files for all targets assigned to this solution.
+ * 3. Project Dependencies: Crucial step! Tells MSBuild the build order for parallel execution.
+ * 4. SLN Folders: Adds virtual nesting for cleaner IDE presentation.
  */
 static void
 build_gen_solution( solution_info_t* sln )
@@ -414,14 +432,15 @@ build_gen_solution( solution_info_t* sln )
             fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", 
                     cpp_type_guid, target->name, target->name, guid );
             
-            // --- NEW: Project Dependencies ---
+            // --- Project Dependencies ---
             // This section tells Visual Studio's scheduler exactly which projects 
-            // must be finished before starting this one.
+            // must be finished before starting this one. This prevents race conditions 
+            // where multiple cl.exe instances try to write to the same PDB.
             if ( target->dep_count > 0 || target->tool_dep_count > 0 )
             {
                 fprintf( f, "\tProjectSection(ProjectDependencies) = postProject\n" );
                 
-                // Add Link Dependencies
+                // Add Link Dependencies (libs).
                 for ( int i = 0; i < target->dep_count; ++i )
                 {
                     for ( int j = 0; j < g_target_count; ++j )
@@ -434,7 +453,7 @@ build_gen_solution( solution_info_t* sln )
                     }
                 }
                 
-                // Add Tool Dependencies (e.g., core depends on build_reflect)
+                // Add Tool Dependencies (exes). e.g. core depends on build_reflect.
                 for ( int i = 0; i < target->tool_dep_count; ++i )
                 {
                     for ( int j = 0; j < g_target_count; ++j )
@@ -452,7 +471,7 @@ build_gen_solution( solution_info_t* sln )
 
             fprintf( f, "EndProject\n" );
 
-            // Collect folders for nesting.
+            // Collect and track SLN folders for nesting later.
             bool found = false;
             for ( int j = 0; j < folder_count; ++j )
             {
@@ -467,7 +486,7 @@ build_gen_solution( solution_info_t* sln )
         }
     }
 
-    // 3. Add SLN Folders.
+    // 3. Add Virtual SLN Folders.
     for ( int i = 0; i < folder_count; ++i )
     {
         fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", 
@@ -475,7 +494,7 @@ build_gen_solution( solution_info_t* sln )
         fprintf( f, "EndProject\n" );
     }
 
-    // 4. Global Section.
+    // 4. Global Section (Configuration Mapping and Project Nesting).
     fprintf( f, "Global\n" );
     fprintf( f, "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n" );
     fprintf( f, "\t\tDebug|x64 = Debug|x64\n" );
@@ -508,6 +527,7 @@ build_gen_solution( solution_info_t* sln )
     }
     fprintf( f, "\tEndGlobalSection\n" );
 
+    // Nest projects into the virtual SLN folders we created.
     fprintf( f, "\tGlobalSection(NestedProjects) = preSolution\n" );
     for ( const char** tn = sln->target_names; *tn; ++tn )
     {
@@ -559,14 +579,14 @@ build_gen_projects( void )
 #endif
 
     // 1. Generate ALL target projects.
-    // We generate every .vcxproj defined in the pool to ensure they are available
-    // for use in any solution or via CLI.
+    // We generate every .vcxproj defined in the pool once. They are then 
+    // shared across different solutions as needed.
     for ( int i = 0; i < g_target_count; ++i )
     {
         build_gen_proj_target( &g_targets[ i ], i );
     }
 
-    // 2. Generate each Solution from the registry.
+    // 2. Generate each Solution defined in the registry.
     for ( int i = 0; i < g_solution_count; ++i )
     {
         printf( "Generating Solution: %s.sln\n", g_solutions[ i ].name );
@@ -575,7 +595,5 @@ build_gen_projects( void )
 
     printf( "\nProjects generated successfully in %s/.\n", g_build_dir );
 }
-
-/*============================================================================================*/
 
 /*============================================================================================*/
