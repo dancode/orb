@@ -5,6 +5,6 @@
   Compiler: MSVC
   
   
-  [CMD] cl.exe /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Foobj/ /Fdobj/ /Zi /Od /MDd /D_DEBUG source/base/base_main.c /Fe:bin/orb_base.exe /link /DEBUG /PDB:bin/orb_base.pdb 
+  [CMD] cl.exe /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Foobj/ /Fdobj/ /Zi /Od /MDd /D_DEBUG source/base/base_main.c /Fe:bin/sb_base_custom.exe /link /DEBUG /PDB:bin/sb_base_custom.pdb 
   
   SUCCESS!
