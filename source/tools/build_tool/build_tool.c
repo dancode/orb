@@ -185,13 +185,10 @@ build_target( build_context_t* ctx, target_info_t* target )
         if ( rename( exe_path, old_path ) == 0 ) renamed = true;
     }
 
-    if ( target->type == TARGET_EXECUTABLE || target->type == TARGET_DYNAMIC_LIB )
-    {
-        char pdb_path[ 256 ], old_pdb[ 256 ];
-        sprintf( pdb_path, "bin/%s.pdb", target->name );
-        sprintf( old_pdb, "bin/%s.pdb.old", target->name );
-        if ( _access( pdb_path, 0 ) == 0 ) { remove( old_pdb ); rename( pdb_path, old_pdb ); }
-    }
+    // PDB rotation is handled at link time: each link writes a uniquely-named
+    // bin/<name>_<timestamp>.pdb, so the linker never has to touch a PDB that
+    // an attached debugger may hold open. See cleanup_stale_pdbs() in
+    // build_tool_cc.c for the garbage-collection of unlocked leftovers.
 
     // --- 5. Reflection ---
 

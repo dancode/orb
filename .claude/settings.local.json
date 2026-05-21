@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\engine\\\\rs\" -Recurse -File)",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "PowerShell(cmd /c \"call .\\\\vc_vars_setup.bat && call .\\\\bootstrap_build_tool.bat < nul\")",
+      "PowerShell(cmd /c \"call .\\\\vc_vars_setup.bat >nul && bin\\\\build_tool.exe -target example\" 2>&1 | Select-Object -Last 25)"
     ]
   }
 }
