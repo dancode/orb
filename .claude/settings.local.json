@@ -21,7 +21,12 @@
       "Bash(time ./bin/build_tool.exe -j 1)",
       "Bash(time ./bin/build_tool.exe)",
       "Bash(./bin/build_tool.exe)",
-      "Bash(./bin/build_tool.exe -j 1 -target sys)"
+      "Bash(./bin/build_tool.exe -j 1 -target sys)",
+      "Bash(cmd //c \"call .\\\\vc_vars_setup.bat && build_hot.bat core Debug\")",
+      "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat core Debug\")",
+      "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat sys\")",
+      "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat sys Debug\")",
+      "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat build_dynamic sys Debug\")"
     ]
   }
 }

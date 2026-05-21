@@ -206,13 +206,30 @@ scan_directory_recursive( const char* dir, const char* root_dir )
 
 /**
  * write_vcxproj_common_header()
- * 
+ *
  * Writes the boilerplate XML required for a Visual Studio Makefile project.
- * This sets up the build/clean command lines that VS will call.
- * Note: LanguageStandard tags are avoided here to let NMake settings prevail.
+ * Two layers of <PropertyGroup>:
+ *
+ *  1. An unconditional group with OutDir/IntDir and the NMake build, clean,
+ *     and run commands that drive build_tool.exe.
+ *  2. Per-configuration groups (Debug|x64, Release|x64) for the fields that
+ *     actually feed IntelliSense — preprocessor defines, include paths, and
+ *     AdditionalOptions. IntelliSense reads these to construct the TU
+ *     context for headers and source. Splitting them per-config lets _DEBUG
+ *     vs NDEBUG, and any future config-specific defines, diverge without
+ *     re-emitting the rest of the property block.
+ *
+ * /std:c11 and /Zc:preprocessor are passed via AdditionalOptions so the
+ * IntelliSense parser matches what cl.exe actually does for the build. We
+ * also project the target's <NAME>_STATIC define here so APIs guarded by
+ * the static-link symbol resolve correctly while editing.
+ *
+ * `static_def`: NULL for the nav project (no _STATIC). Else the upper-cased
+ * target name, e.g. "CORE" → emits CORE_STATIC.
  */
 static void
-write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, target_type_t type )
+write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
+                             target_type_t type, const char* static_def )
 {
     const char* ext = ".exe";
     if ( type == TARGET_STATIC_LIB ) ext = ".lib";
@@ -220,43 +237,55 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, ta
 
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-    
+
     // Configurations (Debug/Release)
     fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
     fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
     fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
     fprintf( f, "  </ItemGroup>\n" );
-    
+
     fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
     fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", guid );
     fprintf( f, "  </PropertyGroup>\n" );
-    
+
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
-    fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" ); // Important: Makefile type
+    fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );   // Makefile type
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
-    
+
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
-    
-    // Commands used by VS when you press Build/Clean or run the executable.
+
+    // --- Unconditional: build commands and paths ---
+    //
+    // The "Hook": tell VS to call our build_tool.exe with the specific
+    // target. -no-deps lets MSBuild's scheduler (which honors the .sln's
+    // ProjectDependencies) own build order; each project builds only
+    // itself, so parallel solution builds never race shared dep outputs.
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
-    
-    // The "Hook": Tell VS to call our build_tool.exe with the specific target.
-    // -no-deps lets MSBuild's scheduler (which honors ProjectDependencies in
-    // the .sln) be the sole authority on build order; each project builds
-    // only itself, so parallel solution builds never have two build_tool.exe
-    // instances racing on a shared dep's outputs.
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakeCompileFile>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeCompileFile>\n", out_name );
-    
-    // IntelliSense setup: Definitions and paths needed for the IDE parser.
-    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+
+    // --- Debug|x64 IntelliSense context ---
+    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;%s%s_DEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+             static_def ? static_def : "",
+             static_def ? "_STATIC;" : "" );
+    fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+
+    // --- Release|x64 IntelliSense context ---
+    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;%s%sNDEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+             static_def ? static_def : "",
+             static_def ? "_STATIC;" : "" );
+    fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 }
 
@@ -284,7 +313,11 @@ build_gen_proj_target( target_info_t* target, int index )
         return;
     }
 
-    write_vcxproj_common_header( f, guid, target->name, target->type );
+    // Upper-case the target name for the _STATIC define IntelliSense uses
+    // (matches what build_tool_cc.c emits for cl.exe at build time).
+    char target_upper[ 128 ];
+    get_target_upper( target->name, target_upper );
+    write_vcxproj_common_header( f, guid, target->name, target->type, target_upper );
 
     // Scan the target's source tree recursively so unity sub-files appear in VS.
     g_file_count   = 0;
@@ -411,26 +444,44 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
-    
+
+    // Unconditional: build commands and shared paths.
+    // Pressing 'Build' on the nav project builds the solution's primary target.
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
-    
-    // Pressing 'Build' on the Nav project builds the solution's primary target.
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s.exe</NMakeOutput>\n", default_target );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakeCompileFile>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeCompileFile>\n" );
-    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
-    // Add all files found in the recursive directory scan.
+    // Per-config IntelliSense context. No _STATIC define here on purpose:
+    // every file in the nav project is listed as ClInclude (see below), so
+    // VS does NOT use this project's TU context for any .c file's headers.
+    // The per-target .vcxproj's IntelliSense context wins for editing, with
+    // the correct <TARGET>_STATIC define for that translation unit.
+    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;_DEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
+    fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;NDEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
+    fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+
+    // Every file is listed as ClInclude regardless of extension. This is
+    // deliberate: the nav project exists for global search and navigation,
+    // not for compilation. Listing .c files here as ClCompile would create
+    // a competing TU context, and VS picks last-loaded-wins per file —
+    // headers would resolve under this empty context instead of the real
+    // target's context (wrong defines, wrong API visible). ClInclude has
+    // no TU semantics, so the per-target .vcxproj wins cleanly.
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
-        const char* tag = g_files[ i ].is_header ? "ClInclude" : "ClCompile";
-        fprintf( f, "    <%s Include=\"..\\%s\" />\n", tag, g_files[ i ].path );
+        fprintf( f, "    <ClInclude Include=\"..\\%s\" />\n", g_files[ i ].path );
     }
     fprintf( f, "  </ItemGroup>\n" );
 
@@ -457,14 +508,14 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
         }
         fprintf( f, "  </ItemGroup>\n" );
         
-        // Map each file to its virtual filter.
+        // Map each file to its virtual filter. ClInclude regardless of
+        // extension — see comment in the nav .vcxproj writer above.
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_file_count; ++i )
         {
-            const char* tag = g_files[ i ].is_header ? "ClInclude" : "ClCompile";
-            fprintf( f, "    <%s Include=\"..\\%s\">\n", tag, g_files[ i ].path );
+            fprintf( f, "    <ClInclude Include=\"..\\%s\">\n", g_files[ i ].path );
             if ( g_files[ i ].filter[ 0 ] != '\0' ) fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
-            fprintf( f, "    </%s>\n", tag );
+            fprintf( f, "    </ClInclude>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
         fprintf( f, "</Project>\n" );
