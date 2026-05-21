@@ -1,0 +1,10 @@
+﻿  build_tool.c
+  LINK : bin\build_tool.exe not found or not built by the last incremental link; performing full link
+  --- ORB Build Starting ---
+  
+  Config: Debug
+  Compiler: MSVC
+  
+  [CMD] cl.exe /nologo /W4 /WX /Zc:preprocessor /std:c11 /I source /Fobuild_new/obj/ /Fdbuild_new/obj/ /Zi /Od /MDd /D_DEBUG source/tools/build_tool/build_tool.c /Fe:bin/build_tool.exe /link /DEBUG /PDB:bin/build_tool.pdb 
+  
+  SUCCESS!

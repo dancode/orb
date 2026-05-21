@@ -141,7 +141,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, bo
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
-    fprintf( f, "    <IntDir>$(ProjectDir)..\\obj\\$(ProjectName)\\$(Configuration)\\</IntDir>\n" );
+    fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, is_lib ? ".lib" : ".exe" );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
@@ -247,7 +247,7 @@ build_gen_proj_engine_navigation( void )
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
-    fprintf( f, "    <IntDir>$(ProjectDir)..\\obj\\$(ProjectName)\\$(Configuration)\\</IntDir>\n" );
+    fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
     fprintf( f, "    <NMakeOutput>..\\bin\\%s.exe</NMakeOutput>\n", g_out_name );
     fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );

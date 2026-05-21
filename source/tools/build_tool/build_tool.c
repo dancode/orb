@@ -18,6 +18,7 @@ static const char* g_proj_name       = "orb_make";
 static const char* g_out_name        = "sb_base_custom";
 static const char* g_build_proj_name = "orb_build";
 static const char* g_build_dir       = "build_new";
+static const char* g_int_dir         = "obj";
 
 // Unity Includes
 #include "build_tool_targets.c"
@@ -170,14 +171,20 @@ build_clean( void )
 #if defined( _WIN32 )
     // We avoid rmdir /s /q bin because the build_tool.exe itself is likely running from there.
     // Instead, we surgically delete files we can, and ignore the rest.
-    build_run_cmd( "del /s /q obj\\* >nul 2>nul" );
+    char cmd[ 256 ];
+    sprintf( cmd, "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
+    build_run_cmd( cmd );
     build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
     build_run_cmd( "del /s /q bin\\*.exe >nul 2>nul" ); 
 #else
-    build_run_cmd( "rm -rf bin obj" );
-    build_run_cmd( "mkdir bin obj" );
+    char cmd[ 256 ];
+    sprintf( cmd, "rm -rf bin %s/%s", g_build_dir, g_int_dir );
+    build_run_cmd( cmd );
+    build_run_cmd( "mkdir bin" );
+    sprintf( cmd, "mkdir -p %s/%s", g_build_dir, g_int_dir );
+    build_run_cmd( cmd );
 #endif
     printf( "Clean complete.\n" );
 }
@@ -190,9 +197,26 @@ build_target( build_context_t* ctx, target_info_t* target )
     // Ensure directories exist
 #if defined( _WIN32 )
     if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
-    if ( _access( "obj", 0 ) != 0 ) system( "mkdir obj" );
+    
+    char obj_dir[ 256 ];
+    sprintf( obj_dir, "%s\\%s", g_build_dir, g_int_dir );
+    if ( _access( g_build_dir, 0 ) != 0 )
+    {
+        char cmd[ 256 ];
+        sprintf( cmd, "mkdir %s", g_build_dir );
+        system( cmd );
+    }
+    if ( _access( obj_dir, 0 ) != 0 )
+    {
+        char cmd[ 256 ];
+        sprintf( cmd, "mkdir %s", obj_dir );
+        system( cmd );
+    }
 #else
-    system( "mkdir -p bin obj" );
+    system( "mkdir -p bin" );
+    char cmd[ 256 ];
+    sprintf( cmd, "mkdir -p %s/%s", g_build_dir, g_int_dir );
+    system( cmd );
 #endif
 
     // Self-rebuild protection: If we are building ourselves, rename the running exe
@@ -222,7 +246,7 @@ build_target( build_context_t* ctx, target_info_t* target )
     cmd_append( &cmd, "/I source " );
     
     // Intermediate files
-    cmd_append( &cmd, "/Foobj/ /Fdobj/ " );
+    cmd_append( &cmd, "/Fo%s/%s/ /Fd%s/%s/ ", g_build_dir, g_int_dir, g_build_dir, g_int_dir );
 
     // 3. Config Flags
     if ( ctx->config == CONFIG_DEBUG )
@@ -243,7 +267,7 @@ build_target( build_context_t* ctx, target_info_t* target )
     // 5. Output
     if ( target->type == TARGET_STATIC_LIB )
     {
-        cmd_append( &cmd, "/c /Foobj/%s.obj ", target->name );
+        cmd_append( &cmd, "/c /Fo%s/%s/%s.obj ", g_build_dir, g_int_dir, target->name );
         // NOTE: Static libraries require a separate link step (lib.exe)
         // We'll just compile to obj for now or add lib.exe support.
     }
