@@ -77,18 +77,19 @@ target_info_t g_targets[] = {
     // Core Engine Services (Logging, Memory Arenas).
     // Note: This target uses 'has_reflect' which triggers the reflection generator.
     {
-     .name         = "core",
-     .type         = TARGET_STATIC_LIB,
-     .root_dir     = "source/engine/core",
-     .sln_folder   = "02_ENGINE",
-     .units        = { "core.c" },
-     .unit_count   = 1,
-     .deps         = { "sys", "rs" },
-     .dep_count    = 2,
-     .has_reflect  = true,
-     .reflect_name = "engine_core",
+     .name           = "core",
+     .type           = TARGET_STATIC_LIB,
+     .root_dir       = "source/engine/core",
+     .sln_folder     = "02_ENGINE",
+     .units          = { "core.c" },
+     .unit_count     = 1,
+     .deps           = { "sys", "rs" },
+     .dep_count      = 2,
+     .tool_deps      = { "build_reflect" },
+     .tool_dep_count = 1,
+     .has_reflect    = true,
+     .reflect_name   = "engine_core",
      },
-
     // --- 03_RUNTIME_MODULES (Hot-Reloadable DLLs) ---
     
     // An example module to verify hot-reloading.
@@ -128,7 +129,7 @@ target_info_t g_targets[] = {
      .units      = { "build_tool.c" },
      .unit_count = 1,
      .deps       = {},
-     .dep_count  = 0,
+     .dep_count  = 0,     
      },
 
     // The reflection generator. Must be built first!

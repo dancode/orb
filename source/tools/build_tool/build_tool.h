@@ -40,21 +40,25 @@ typedef enum
 
 // A target_info_t represents a single buildable unit in the ORB ecosystem.
 // It contains all metadata required to compile and link the target.
+
 typedef struct
 {
-    const char*   name;         // Unique name (e.g., "base", "core", "app").
-    target_type_t type;         // Artifact type (Lib, DLL, Exe).
-    const char*   root_dir;     // Base path for source files relative to project root.
-    const char*   sln_folder;   // Virtual folder in the Visual Studio solution.
-    const char*   units[ 16 ];  // Translation units (.c files) to compile.
+    const char*   name;             // Unique name (e.g., "base", "core", "app").
+    target_type_t type;             // Artifact type (Lib, DLL, Exe).
+    const char*   root_dir;         // Base path for source files relative to project root.
+    const char*   sln_folder;       // Virtual folder in the Visual Studio solution.
+    const char*   units[ 16 ];      // Translation units (.c files) to compile.
     int           unit_count;
     const char*   deps[ 16 ];   // Names of other targets this target depends on.
     int           dep_count;
+    const char*   tool_deps[ 16 ]; // Tools that must be built before this target (e.g. build_reflect).
+    int           tool_dep_count;
 
     // Reflection metadata: If true, the build tool runs build_reflect.exe 
     // on this target's root_dir before compilation.
+
     bool          has_reflect;
-    const char*   reflect_name; // Base name for generated .c/.h files.
+    const char*   reflect_name;     // Base name for generated .c/.h files.
 
 } target_info_t;
 

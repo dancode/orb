@@ -28,6 +28,8 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <io.h>
+#include <sys/stat.h>
+#include <time.h>
 
 // --- Project Constants ---
 
@@ -234,25 +236,121 @@ build_clean( void )
 /*============================================================================================*/
 
 /**
+ * build_get_mtime()
+ * 
+ * Returns the last modification time of a file. Returns 0 if the file doesn't exist.
+ */
+static __time64_t
+build_get_mtime( const char* path )
+{
+    struct __stat64 s;
+    if ( _stat64( path, &s ) == 0 ) return s.st_mtime;
+    return 0;
+}
+
+/**
  * build_target()
  * 
  * The main worker function for building a single artifact.
- * 
- * Orchestration Flow:
- * 1. Directory Setup: Creates bin/, obj/, and generated/ folders for the target.
- * 2. Self-Rebuild Protection: Renames the existing .exe/.pdb if they are locked.
- * 3. Reflection: Runs build_reflect.exe if required by the target.
- * 4. Phase 1 (Compile): Constructs and runs a cl.exe command for all .c files.
- * 5. Phase 2 (Link/Archive): Constructs and runs link.exe or lib.exe.
  */
 bool
 build_target( build_context_t* ctx, target_info_t* target )
 {
+    // --- 0. Dependency Resolution ---
+    
+    // Build Link Dependencies (libs).
+    for ( int i = 0; i < target->dep_count; ++i )
+    {
+        target_info_t* dep = NULL;
+        for ( int j = 0; j < g_target_count; ++j )
+        {
+            if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 )
+            {
+                dep = &g_targets[ j ];
+                break;
+            }
+        }
+        if ( dep )
+        {
+            // Recursive call. If it returns true, it might have been rebuilt or skipped.
+            if ( !build_target( ctx, dep ) ) return false;
+        }
+    }
+
+    // Build Tool Dependencies (exes).
+    for ( int i = 0; i < target->tool_dep_count; ++i )
+    {
+        target_info_t* tool = NULL;
+        for ( int j = 0; j < g_target_count; ++j )
+        {
+            if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 )
+            {
+                tool = &g_targets[ j ];
+                break;
+            }
+        }
+        if ( tool )
+        {
+            if ( !build_target( ctx, tool ) ) return false;
+        }
+    }
+
     // --- 1. Path Preparation ---
     char target_obj_dir[ 256 ];
     sprintf( target_obj_dir, "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
     char target_gen_dir[ 256 ];
     sprintf( target_gen_dir, "%s\\%s", g_build_dir, g_gen_dir );
+
+    char ext[ 8 ];
+    if ( target->type == TARGET_STATIC_LIB ) strcpy( ext, ".lib" );
+    else if ( target->type == TARGET_DYNAMIC_LIB ) strcpy( ext, ".dll" );
+    else strcpy( ext, ".exe" );
+
+    char out_path[ 256 ];
+    sprintf( out_path, "bin\\%s%s", target->name, ext );
+
+    // --- 2. Up-to-Date Check ---
+
+    __time64_t out_mtime = build_get_mtime( out_path );
+    bool is_up_to_date = ( out_mtime != 0 );
+
+    if ( is_up_to_date )
+    {
+        // Check if any source files are newer than the output.
+        for ( int i = 0; i < target->unit_count; ++i )
+        {
+            char src_path[ 512 ];
+            sprintf( src_path, "%s/%s", target->root_dir, target->units[ i ] );
+            if ( build_get_mtime( src_path ) > out_mtime )
+            {
+                is_up_to_date = false;
+                break;
+            }
+        }
+    }
+
+    if ( is_up_to_date )
+    {
+        // Check if any link dependencies are newer than the output.
+        for ( int i = 0; i < target->dep_count; ++i )
+        {
+            char dep_path[ 256 ];
+            sprintf( dep_path, "bin\\%s.lib", target->deps[ i ] );
+            if ( build_get_mtime( dep_path ) > out_mtime )
+            {
+                is_up_to_date = false;
+                break;
+            }
+        }
+    }
+
+    if ( is_up_to_date )
+    {
+        // Target is up to date, skip building.
+        return true;
+    }
+
+    printf( "Building target: %s\n", target->name );
 
     char exe_path[ 256 ];
     char old_path[ 256 ];
@@ -298,7 +396,7 @@ build_target( build_context_t* ctx, target_info_t* target )
     system( cmd_mkdir );
 #endif
 
-    // --- 2. Locked File Management ---
+    // --- 3. Locked File Management ---
 
     // Self-rebuild protection: On Windows, you can't overwrite a running .exe, 
     // but you CAN rename it. This allows the build_tool to rebuild itself 
@@ -327,7 +425,7 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
     }
 
-    // --- 3. Reflection Generation ---
+    // --- 4. Reflection Generation ---
 
     // If the target has the has_reflect flag, we invoke the specialized
     // build_reflect.exe tool. It parses the target's source code and
@@ -503,29 +601,7 @@ main( int argc, char** argv )
     printf( "Compiler: %s\n", ctx.is_clang ? "Clang" : "MSVC" );
     printf( "\n" );
 
-    // --- 5. Bootstrapping (Reflection Tool) ---
-
-    // The reflection tool is a dependency for many other targets.
-    // We try to build it first every time to ensure the generator is up to date.
-    target_info_t* refl_tool = NULL;
-    for ( int i = 0; i < g_target_count; ++i )
-    {
-        if ( strcmp( g_targets[ i ].name, "build_reflect" ) == 0 )
-        {
-            refl_tool = &g_targets[ i ];
-            break;
-        }
-    }
-    if ( refl_tool )
-    {
-        if ( !build_target( &ctx, refl_tool ) )
-        {
-            printf( "Error: Failed to build reflection tool!\n" );
-            return 1;
-        }
-    }
-
-    // --- 6. Target Execution ---
+    // --- 5. Target Execution ---
 
     if ( target_name )
     {
@@ -535,7 +611,6 @@ main( int argc, char** argv )
         {
             if ( _stricmp( g_targets[ i ].name, target_name ) == 0 )
             {
-                if ( &g_targets[ i ] == refl_tool ) return 0; // Already built.
                 target = &g_targets[ i ];
                 break;
             }

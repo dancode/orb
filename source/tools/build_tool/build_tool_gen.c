@@ -413,6 +413,43 @@ build_gen_solution( solution_info_t* sln )
             sprintf( guid, "{DE231EAC-9C33-B4FA-8440-E3A81E12%04X}", 0xB000 + target_index );
             fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", 
                     cpp_type_guid, target->name, target->name, guid );
+            
+            // --- NEW: Project Dependencies ---
+            // This section tells Visual Studio's scheduler exactly which projects 
+            // must be finished before starting this one.
+            if ( target->dep_count > 0 || target->tool_dep_count > 0 )
+            {
+                fprintf( f, "\tProjectSection(ProjectDependencies) = postProject\n" );
+                
+                // Add Link Dependencies
+                for ( int i = 0; i < target->dep_count; ++i )
+                {
+                    for ( int j = 0; j < g_target_count; ++j )
+                    {
+                        if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 )
+                        {
+                            fprintf( f, "\t\t{DE231EAC-9C33-B4FA-8440-E3A81E12%04X} = {DE231EAC-9C33-B4FA-8440-E3A81E12%04X}\n", 0xB000 + j, 0xB000 + j );
+                            break;
+                        }
+                    }
+                }
+                
+                // Add Tool Dependencies (e.g., core depends on build_reflect)
+                for ( int i = 0; i < target->tool_dep_count; ++i )
+                {
+                    for ( int j = 0; j < g_target_count; ++j )
+                    {
+                        if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 )
+                        {
+                            fprintf( f, "\t\t{DE231EAC-9C33-B4FA-8440-E3A81E12%04X} = {DE231EAC-9C33-B4FA-8440-E3A81E12%04X}\n", 0xB000 + j, 0xB000 + j );
+                            break;
+                        }
+                    }
+                }
+                
+                fprintf( f, "\tEndProjectSection\n" );
+            }
+
             fprintf( f, "EndProject\n" );
 
             // Collect folders for nesting.
