@@ -11,6 +11,24 @@
 /*============================================================================================*/
 
 /**
+ * del_q()
+ *
+ * Format a "del /q ... >nul 2>nul" command and run it silently. build_clean()
+ * invokes this for every artifact category (bin/<name>.lib, .dll, .exe, .pdb,
+ * .exp, .generated.{c,h}, ...); the wrapper keeps each call site to one line.
+ */
+static void
+del_q( const char* fmt, ... )
+{
+    char    cmd[ BT_PATH_MAX * 2 ];
+    va_list args;
+    va_start( args, fmt );
+    vsnprintf( cmd, sizeof( cmd ), fmt, args );
+    va_end( args );
+    build_run_cmd_quiet( cmd );
+}
+
+/**
  * build_clean()
  *
  * Two modes:
@@ -29,8 +47,9 @@
 void
 build_clean( target_info_t* target )
 {
-#if defined( _WIN32 )
-    char cmd[ BT_PATH_MAX * 2 ];
+#if !defined( _WIN32 )
+#error "build_tool only supports Windows (MSVC)"
+#endif
 
     if ( target )
     {
@@ -38,35 +57,26 @@ build_clean( target_info_t* target )
         // single summary at the end so MSBuild output stays parseable.
         const char* ext = ( target->type == TARGET_STATIC_LIB ) ? "lib" :
                           ( target->type == TARGET_DYNAMIC_LIB ) ? "dll" : "exe";
-        snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.%s >nul 2>nul", target->name, ext );
-        build_run_cmd_quiet( cmd );
+        del_q( "del /q bin\\%s.%s >nul 2>nul", target->name, ext );
 
         if ( target->type == TARGET_DYNAMIC_LIB )
         {
-            // Also delete .lib — in monolithic mode this is the primary artifact.
-            // Also delete .dll — in dynamic mode this is the primary artifact.
-            // del /q is a no-op when the file doesn't exist, so both are always safe.
-            snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.lib >nul 2>nul", target->name );
-            build_run_cmd_quiet( cmd );
-            snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.dll >nul 2>nul", target->name );
-            build_run_cmd_quiet( cmd );
-            snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.exp >nul 2>nul", target->name );
-            build_run_cmd_quiet( cmd );
+            // Cover both monolithic (.lib primary) and dynamic (.dll primary)
+            // outputs plus the import .exp. del /q is a no-op when the file
+            // doesn't exist, so listing all three is always safe.
+            del_q( "del /q bin\\%s.lib >nul 2>nul", target->name );
+            del_q( "del /q bin\\%s.dll >nul 2>nul", target->name );
+            del_q( "del /q bin\\%s.exp >nul 2>nul", target->name );
         }
 
-        snprintf( cmd, sizeof( cmd ), "del /q bin\\%s_*.pdb >nul 2>nul", target->name );
-        build_run_cmd_quiet( cmd );
-
-        snprintf( cmd, sizeof( cmd ), "rd /s /q %s\\%s\\%s >nul 2>nul", g_build_dir, g_int_dir, target->name );
-        build_run_cmd_quiet( cmd );
+        del_q( "del /q bin\\%s_*.pdb >nul 2>nul", target->name );
+        del_q( "rd /s /q %s\\%s\\%s >nul 2>nul", g_build_dir, g_int_dir, target->name );
 
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
-            snprintf( cmd, sizeof( cmd ), "del /q %s\\%s\\%s.generated.c >nul 2>nul", g_build_dir, g_gen_dir, rname );
-            build_run_cmd_quiet( cmd );
-            snprintf( cmd, sizeof( cmd ), "del /q %s\\%s\\%s.generated.h >nul 2>nul", g_build_dir, g_gen_dir, rname );
-            build_run_cmd_quiet( cmd );
+            del_q( "del /q %s\\%s\\%s.generated.c >nul 2>nul", g_build_dir, g_gen_dir, rname );
+            del_q( "del /q %s\\%s\\%s.generated.h >nul 2>nul", g_build_dir, g_gen_dir, rname );
         }
 
         printf( ORB_INDENT "[orb clean] %s -- bin\\%s.%s, %s\\%s\\%s%s\n",
@@ -77,10 +87,8 @@ build_clean( target_info_t* target )
     {
         // Global wipe. Same noise-suppression pattern: every del runs silently,
         // one summary line at the end.
-        snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
-        build_run_cmd_quiet( cmd );
-        snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
-        build_run_cmd_quiet( cmd );
+        del_q( "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
+        del_q( "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
 
         build_run_cmd_quiet( "del /s /q bin\\*.pdb >nul 2>nul" );
         build_run_cmd_quiet( "del /s /q bin\\*.lib >nul 2>nul" );
@@ -93,19 +101,12 @@ build_clean( target_info_t* target )
         for ( int i = 0; i < g_target_count; ++i )
         {
             if ( g_targets[ i ].type == TARGET_EXECUTABLE && !g_targets[ i ].is_tool )
-            {
-                snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
-                build_run_cmd_quiet( cmd );
-            }
+                del_q( "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
         }
 
         printf( ORB_INDENT "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n",
                 g_build_dir, g_int_dir, g_gen_dir );
     }
-    return;
-#else
-#error "build_tool only supports Windows (MSVC)"
-#endif
 }
 
 /*============================================================================================*/
@@ -285,8 +286,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
             char stored[ 16 ] = { 0 };
             fgets( stored, sizeof( stored ), cf );
             fclose( cf );
-            size_t l = strlen( stored );
-            while ( l > 0 && ( stored[ l - 1 ] == '\n' || stored[ l - 1 ] == '\r' ) ) stored[ --l ] = '\0';
+            strip_eol( stored );
             if ( strcmp( stored, current_config ) != 0 ) up_to_date = false;
         }
     }
@@ -314,12 +314,10 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
             char header_path[ BT_PATH_MAX ];
             while ( fgets( header_path, sizeof( header_path ), deps ) )
             {
-                // Strip trailing CR/LF from fgets so the path round-trips
+                // Strip the newline fgets leaves on the path so it round-trips
                 // through build_get_mtime cleanly.
-                size_t l = strlen( header_path );
-                while ( l > 0 && ( header_path[ l - 1 ] == '\n' || header_path[ l - 1 ] == '\r' ) )
-                    header_path[ --l ] = '\0';
-                if ( l == 0 ) continue;
+                strip_eol( header_path );
+                if ( header_path[ 0 ] == '\0' ) continue;
 
                 if ( build_get_mtime( header_path ) > out_mtime )
                 {

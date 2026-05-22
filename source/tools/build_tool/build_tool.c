@@ -208,13 +208,7 @@ main( int argc, char** argv )
     // Single-file mode shows the filename; full-build mode shows the target name.
 
     char target_upper[ 64 ] = "ALL";
-    if ( target_name )
-    {
-        int k = 0;
-        for ( ; target_name[ k ] && k < (int)sizeof( target_upper ) - 1; ++k )
-            target_upper[ k ] = (char)toupper( (unsigned char)target_name[ k ] );
-        target_upper[ k ] = '\0';
-    }
+    if ( target_name ) get_target_upper( target_name, target_upper );
 
     if ( compile_only )
     {
@@ -229,7 +223,7 @@ main( int argc, char** argv )
         printf( ORB_BANNER "[orb file] %s/%s %s\n", target_upper,
                 basename, ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release" );
     }
-    else
+    else 
     {
         printf( ORB_BANNER "[orb build] %s ", target_upper );
         printf( "%s%s%s |", ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release",

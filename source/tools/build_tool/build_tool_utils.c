@@ -143,6 +143,20 @@ build_get_mtime( const char* path )
 }
 
 /**
+ * strip_eol()
+ *
+ * Trim trailing CR/LF (and any combination thereof) in place. fgets() preserves
+ * the newline it consumed; callers reading paths or config lines back out need
+ * a clean string for strcmp / _stat64 / etc.
+ */
+static void
+strip_eol( char* s )
+{
+    size_t l = strlen( s );
+    while ( l > 0 && ( s[ l - 1 ] == '\n' || s[ l - 1 ] == '\r' ) ) s[ --l ] = '\0';
+}
+
+/**
  * ensure_dir()
  *
  * Idempotent "mkdir if missing" used by every code path that needs to write

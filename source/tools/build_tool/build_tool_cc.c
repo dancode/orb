@@ -29,24 +29,24 @@
 
 typedef struct
 {
-    char exe     [ 64         ]; // cl.exe or clang-cl.exe
-    char flags   [ 512        ]; // /c /nologo /W4 /WX /Zi /Od /MDd ...
-    char includes[ 512        ]; // /I source /I gen_dir
-    char defines [ 1024       ]; // /DOS_WINDOWS /DCOMPILER_MSVC /D_DEBUG ...
-    char output  [ 512        ]; // /FoobjDir/ /FdobjDir/
-    char sources [ CMD_BUF_MAX]; // absolute .c paths
-
-} compile_cmd_t;
-
-typedef struct
-{
-    char exe     [ 32         ]; // lib.exe or link.exe
-    char artifact[ BT_PATH_MAX]; // final output path (summary display only)
-    char flags   [ 256        ]; // /nologo /DLL ...
-    char output  [ 512        ]; // /OUT:... /IMPLIB:...
-    char pdb     [ 256        ]; // /DEBUG /PDB:... (empty for lib.exe)
-    char inputs  [ 512        ]; // objDir/*.obj
-    char libs    [ 1024       ]; // dep.lib ... user32.lib ...
+    char exe     [ 64          ]; // cl.exe or clang-cl.exe
+    char flags   [ 512         ]; // /c /nologo /W4 /WX /Zi /Od /MDd ...
+    char includes[ 512         ]; // /I source /I gen_dir
+    char defines [ 1024        ]; // /DOS_WINDOWS /DCOMPILER_MSVC /D_DEBUG ...
+    char output  [ 512         ]; // /FoobjDir/ /FdobjDir/
+    char sources [ CMD_BUF_MAX ]; // absolute .c paths
+                               
+} compile_cmd_t;               
+                               
+typedef struct                 
+{                              
+    char exe     [ 32          ]; // lib.exe or link.exe
+    char artifact[ BT_PATH_MAX ]; // final output path (summary display only)
+    char flags   [ 256         ]; // /nologo /DLL ...
+    char output  [ 512         ]; // /OUT:... /IMPLIB:...
+    char pdb     [ 256         ]; // /DEBUG /PDB:... (empty for lib.exe)
+    char inputs  [ 512         ]; // objDir/*.obj
+    char libs    [ 1024        ]; // dep.lib ... user32.lib ...
 
 } link_cmd_t;
 
@@ -72,6 +72,10 @@ cc_field( char* dst, size_t dst_size, const char* fmt, ... )
     if ( written < 0 || ( size_t )written >= remaining )
         printf( ORB_INDENT "[orb error] cc_field truncated (needed %d, had %zu)\n", written, remaining );
 }
+
+// Convenience wrapper around cc_field(): infers the destination capacity from
+// the field's declared size, removing the need for callers to pass sizeof().
+#define CC_APPEND( field, ... ) cc_field( ( field ), sizeof( field ), __VA_ARGS__ )
 
 // get_target_upper() -- derive <TARGET>_STATIC from a target name.
 // Must match the IntelliSense defines emitted by build_tool_gen.c (unity build).
@@ -317,25 +321,24 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     // Flags: compiler settings common to all targets.
     // /showIncludes drives the dep-capture path in build_run_cmd_capture_deps;
     // it produces a "Note: including file:" line for every resolved header.
-    cc_field( cc.flags, sizeof( cc.flags ),
+    CC_APPEND( cc.flags,
               "/c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes" );
     if ( ctx->config == BT_CONFIG_DEBUG )
-        cc_field( cc.flags, sizeof( cc.flags ), " /Zi /Od /MDd" );
+        CC_APPEND( cc.flags, " /Zi /Od /MDd" );
     else
-        cc_field( cc.flags, sizeof( cc.flags ), " /O2 /MD" );
+        CC_APPEND( cc.flags, " /O2 /MD" );
 
     // Includes: header search paths.
     // Trailing space intentional — fields are space-joined at assembly time.
-    cc_field( cc.includes, sizeof( cc.includes ), "/I source /I %s", gen_dir );
+    CC_APPEND( cc.includes, "/I source /I %s", gen_dir );
 
     // Defines: preprocessor symbols every TU sees.
     // Must stay in lockstep with the IntelliSense defines in build_tool_gen.c.
-    cc_field( cc.defines, sizeof( cc.defines ),
-              "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
+    CC_APPEND( cc.defines, "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
     {
         char upper[ 128 ];
         get_target_upper( target->name, upper );
-        cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", upper );
+        CC_APPEND( cc.defines, " /D%s_STATIC", upper );
     }
     // Propagate _STATIC for each dep so API gateways resolve correctly.
     // Static lib deps are always static; dynamic lib deps become static in monolithic mode.
@@ -349,15 +352,15 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         {
             char dep_upper[ 128 ];
             get_target_upper( dep->name, dep_upper );
-            cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", dep_upper );
+            CC_APPEND( cc.defines, " /D%s_STATIC", dep_upper );
         }
     }
     if ( ctx->is_monolithic )
-        cc_field( cc.defines, sizeof( cc.defines ), " /DBUILD_STATIC" );
+        CC_APPEND( cc.defines, " /DBUILD_STATIC" );
     if ( ctx->config == BT_CONFIG_DEBUG )
-        cc_field( cc.defines, sizeof( cc.defines ), " /D_DEBUG" );
+        CC_APPEND( cc.defines, " /D_DEBUG" );
     else
-        cc_field( cc.defines, sizeof( cc.defines ), " /DNDEBUG" );
+        CC_APPEND( cc.defines, " /DNDEBUG" );
 
     // Warning suppressions: filter g_warn_suppressions[] by active config and compiler.
     {
@@ -366,14 +369,14 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
             warn_suppress_t* s = &g_warn_suppressions[ i ];
             if ( ( s->config == ctx->config || s->config == BT_CONFIG_COUNT ) &&
                  ( s->compiler_mask & (unsigned int)ctx->compiler ) )
-                cc_field( cc.flags, sizeof( cc.flags ), " %s", s->flag );
+                CC_APPEND( cc.flags, " %s", s->flag );
         }
     }
 
     // Output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
     // Trailing slash is required — without it cl treats the path as a
     // filename prefix instead of a directory.
-    cc_field( cc.output, sizeof( cc.output ), "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
+    CC_APPEND( cc.output, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
 
     // Sources: absolute paths so MSVC error messages are navigable from any
     // context (terminal, log file, IDE) regardless of the viewer's CWD.
@@ -384,7 +387,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
             snprintf( rel, sizeof( rel ), "%s/%s", target->root_dir, target->units[ i ] );
             if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
-            cc_field( cc.sources, sizeof( cc.sources ), "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
+            CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
         // Reflection-generated TU (written by build_reflect.exe in step 5).
         if ( target->has_reflect )
@@ -393,7 +396,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
             snprintf( rel, sizeof( rel ), "%s/%s.generated.c", gen_dir, rname );
             if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
-            cc_field( cc.sources, sizeof( cc.sources ), "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
+            CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
     }
 
@@ -437,21 +440,21 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
     snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == BT_COMPILER_CLANG ? "clang-cl.exe" : "cl.exe" );
 
     // Flags: same as full compile, but no /showIncludes (dep tracking not needed).
-    cc_field( cc.flags, sizeof( cc.flags ), "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
+    CC_APPEND( cc.flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
     if ( ctx->config == BT_CONFIG_DEBUG )
-        cc_field( cc.flags, sizeof( cc.flags ), " /Zi /Od /MDd" );
+        CC_APPEND( cc.flags, " /Zi /Od /MDd" );
     else
-        cc_field( cc.flags, sizeof( cc.flags ), " /O2 /MD" );
+        CC_APPEND( cc.flags, " /O2 /MD" );
 
     // Includes, defines: identical to build_target_compile().
-    cc_field( cc.includes, sizeof( cc.includes ), "/I source /I %s", gen_dir );
+    CC_APPEND( cc.includes, "/I source /I %s", gen_dir );
 
-    cc_field( cc.defines, sizeof( cc.defines ),
+    CC_APPEND( cc.defines,
               "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
     {
         char upper[ 128 ];
         get_target_upper( target->name, upper );
-        cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", upper );
+        CC_APPEND( cc.defines, " /D%s_STATIC", upper );
     }
     for ( int i = 0; target->deps[ i ]; ++i )
     {
@@ -463,15 +466,15 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
         {
             char dep_upper[ 128 ];
             get_target_upper( dep->name, dep_upper );
-            cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", dep_upper );
+            CC_APPEND( cc.defines, " /D%s_STATIC", dep_upper );
         }
     }
     if ( ctx->is_monolithic )
-        cc_field( cc.defines, sizeof( cc.defines ), " /DBUILD_STATIC" );
+        CC_APPEND( cc.defines, " /DBUILD_STATIC" );
     if ( ctx->config == BT_CONFIG_DEBUG )
-        cc_field( cc.defines, sizeof( cc.defines ), " /D_DEBUG" );
+        CC_APPEND( cc.defines, " /D_DEBUG" );
     else
-        cc_field( cc.defines, sizeof( cc.defines ), " /DNDEBUG" );
+        CC_APPEND( cc.defines, " /DNDEBUG" );
 
     // Warning suppressions: same table, same logic as build_target_compile().
     {
@@ -480,15 +483,15 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
             warn_suppress_t* s = &g_warn_suppressions[ i ];
             if ( ( s->config == ctx->config || s->config == BT_CONFIG_COUNT ) &&
                  ( s->compiler_mask & (unsigned int)ctx->compiler ) )
-                cc_field( cc.flags, sizeof( cc.flags ), " %s", s->flag );
+                CC_APPEND( cc.flags, " %s", s->flag );
         }
     }
 
     // Output into the same obj_dir as a full build so the .obj lands where the linker expects it.
-    cc_field( cc.output, sizeof( cc.output ), "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
+    CC_APPEND( cc.output, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
 
     // Source: just the one file VS handed us.
-    cc_field( cc.sources, sizeof( cc.sources ), "%s", file_path );
+    CC_APPEND( cc.sources, "%s", file_path );
 
     // Print active sections; single-file runs are always serial so stdout is fine.
     FILE* log_out = cc_open_log();
@@ -566,9 +569,9 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
 
         // Libs: declared dep .libs + Windows system libs every target uses.
         for ( int i = 0; target->deps[ i ]; ++i )
-            cc_field( lk.libs, sizeof( lk.libs ), "%sbin/%s.lib",
+            CC_APPEND( lk.libs, "%sbin/%s.lib",
                       lk.libs[ 0 ] ? " " : "", target->deps[ i ] );
-        cc_field( lk.libs, sizeof( lk.libs ), "%suser32.lib shell32.lib gdi32.lib advapi32.lib",
+        CC_APPEND( lk.libs, "%suser32.lib shell32.lib gdi32.lib advapi32.lib",
                   lk.libs[ 0 ] ? " " : "" );
     }
 
