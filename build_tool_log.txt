@@ -1,3 +1,1 @@
-argc=2  [0]=bin\build_tool.exe  [1]=-gen
-argc=4  [0]=bin\build_tool.exe  [1]=-clean  [2]=-target  [3]=build_tool
-argc=6  [0]=bin\build_tool.exe  [1]=-no-deps  [2]=-config  [3]=Debug  [4]=-target  [5]=build_tool
+argc=7  [0]=bin\build_tool.exe  [1]=-no-deps  [2]=-compile-only  [3]=-config  [4]=Debug  [5]=-target  [6]=build_tool

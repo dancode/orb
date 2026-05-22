@@ -292,6 +292,19 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
+    // --- Single-file compile (Ctrl+F7) ---
+    //
+    // NMakeCompileSelectedFiles in Microsoft.MakeFile.Targets creates a NMakeCompile item
+    // at runtime and reads %(NMakeCompile.NMakeCompileFileCommandLine) as the command to run.
+    // VS does NOT inject the selected file path into any accessible property or env var,
+    // so the command runs -compile-only (all unity units, no link) for the whole target.
+    // ItemDefinitionGroup applies this metadata to the dynamically created NMakeCompile item.
+    fprintf( f, "  <ItemDefinitionGroup>\n" );
+    fprintf( f, "    <NMakeCompile>\n" );
+    fprintf( f, "      <NMakeCompileFileCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s</NMakeCompileFileCommandLine>\n",out_name );
+    fprintf( f, "    </NMakeCompile>\n" );
+    fprintf( f, "  </ItemDefinitionGroup>\n" );
+
     // --- Debug|x64 IntelliSense context ---
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
     fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;%s%s_DEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
@@ -374,11 +387,10 @@ build_gen_proj_target( target_info_t* target, int index )
 
         if ( is_unit )
         {
-            // ClCompile items get NMakeCompileFileCommandLine metadata so VS single-file
-            // compile (Ctrl+F7) passes %(FullPath) to build_tool.exe via -file.
-            // This is what NMakeCompileSelectedFiles in Microsoft.MakeFile.Targets reads.
+            // ClCompile items carry NMakeCompileFileCommandLine as a fallback for VS versions
+            // that read per-item metadata instead of the ItemDefinitionGroup above.
             fprintf( f, "    <ClCompile Include=\"..\\%s\">\n", g_files[ i ].path );
-            fprintf( f, "      <NMakeCompileFileCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s -file \"%%(FullPath)\"</NMakeCompileFileCommandLine>\n", target->name );
+            fprintf( f, "      <NMakeCompileFileCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s</NMakeCompileFileCommandLine>\n",target->name );
             fprintf( f, "    </ClCompile>\n" );
         }
         else

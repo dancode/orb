@@ -301,10 +301,14 @@ extern out_flags_t g_out_flags;
 bool build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir );
 
 // Compiles a single source file with the target's full flag/define/include set.
-// No /showIncludes, no link step, no dep tracking — intended for VS Ctrl+F7
-// single-file compile (NMakeCompileFile hook). file_path must be absolute.
+// No /showIncludes, no link step, no dep tracking. CLI tool for targeted error
+// checking (-file flag). file_path must be absolute.
 bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
                                   const char* obj_dir, const char* gen_dir, const char* file_path );
+
+// Compiles all unity units for a target with no link step.
+// Used by -compile-only (VS Ctrl+F7 via NMakeCompileFileCommandLine).
+bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 
 // Links or archives the target's objects into the final artifact: lib.exe
 // for static libs, link.exe (with /DLL or as an exe) for the rest. PDB paths

@@ -84,8 +84,11 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 //   -clean / clean          Wipe build outputs and exit.
 //   -gen   / gen            Regenerate .sln/.vcxproj and exit.
 //   -target <name>          Restrict the build to one target's closure.
+//   -compile-only           Compile all unity units for the target, no link step.
+//                           Used by VS Ctrl+F7 via NMakeCompileFileCommandLine.
+//                           Requires -target.
 //   -file <path>            Compile a single file with the target's full flag set.
-//                           No link step. VS Ctrl+F7 passes this via NMakeCompileFile.
+//                           No link step. CLI tool for targeted error checking.
 //                           Requires -target.
 //   -no-deps                Build only the target itself, no dep recursion
 //                           (set by VS .vcxproj files; do not use on the CLI
@@ -99,27 +102,27 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 int
 main( int argc, char** argv )
 {
-    // Dump every invocation to build_tool_log.txt in the working directory.
-    // Useful for diagnosing what VS actually passes on Ctrl+F7.
-    {
-        FILE* log = fopen( "build_tool_log.txt", "a" );
-        if ( log )
-        {
-            fprintf( log, "argc=%d", argc );
-            for ( int i = 0; i < argc; ++i ) fprintf( log, "  [%d]=%s", i, argv[ i ] );
-            fprintf( log, "\n" );
-            fclose( log );
-        }
-    }
+    // Uncomment to log every invocation to build_tool_log.txt (useful for debugging VS integration).
+    // {
+    //     FILE* log = fopen( "build_tool_log.txt", "a" );
+    //     if ( log )
+    //     {
+    //         fprintf( log, "argc=%d", argc );
+    //         for ( int i = 0; i < argc; ++i ) fprintf( log, "  [%d]=%s", i, argv[ i ] );
+    //         fprintf( log, "\n" );
+    //         fclose( log );
+    //     }
+    // }
 
     build_context_t ctx = { 0 };
     ctx.config = CONFIG_DEBUG;
 
-    bool  should_clean = false;
-    bool  should_gen   = false;
-    char* target_name  = NULL;
-    char* file_path    = NULL;  // Non-NULL when VS triggers a single-file compile (Ctrl+F7).
-    int   j_threads    = 0;   // 0 → auto-detect from CPU count.
+    bool  should_clean   = false;
+    bool  should_gen     = false;
+    bool  compile_only   = false;  // -compile-only: compile all units, no link (VS Ctrl+F7).
+    char* target_name    = NULL;
+    char* file_path      = NULL;   // -file <path>: compile one file (CLI use).
+    int   j_threads      = 0;     // 0 → auto-detect from CPU count.
 
     // --- Arg parsing ---
     // Order-independent; the loop just sets flags. Unknown args are silently
@@ -133,8 +136,9 @@ main( int argc, char** argv )
         if ( strcmp( argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
         if ( strcmp( argv[ i ], "-no-deps" ) == 0 ) ctx.skip_deps = true;
         if ( strcmp( argv[ i ], "-monolithic" ) == 0 || strcmp( argv[ i ], "monolithic" ) == 0 ) ctx.is_monolithic = true;
-        if ( strcmp( argv[ i ], "-target" ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
-        if ( strcmp( argv[ i ], "-file"   ) == 0 && i + 1 < argc ) file_path   = argv[ ++i ];
+        if ( strcmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) target_name  = argv[ ++i ];
+        if ( strcmp( argv[ i ], "-file"         ) == 0 && i + 1 < argc ) file_path    = argv[ ++i ];
+        if ( strcmp( argv[ i ], "-compile-only" ) == 0 ) compile_only = true;
         if ( strcmp( argv[ i ], "-j" ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
         if ( strcmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
         {
@@ -191,9 +195,13 @@ main( int argc, char** argv )
         target_upper[ k ] = '\0';
     }
 
-    if ( file_path )
+    if ( compile_only )
     {
-        // Derive just the filename portion for a concise single-file banner.
+        printf( ORB_BANNER "[orb compile] %s %s\n", target_upper,
+                ctx.config == CONFIG_DEBUG ? "Debug" : "Release" );
+    }
+    else if ( file_path )
+    {
         const char* basename = file_path;
         for ( const char* p = file_path; *p; ++p )
             if ( *p == '\\' || *p == '/' ) basename = p + 1;
@@ -216,8 +224,8 @@ main( int argc, char** argv )
     build_setup_vc_env();
 
     // Dispatch:
-    //  -file <path>       → single-file compile with the target's full flag set.
-    //                       VS Ctrl+F7 invokes this via NMakeCompileFile; no link step.
+    //  -file <path>       → compile one file with the target's full flag set, no link.
+    //                       CLI tool for targeted error checking; not used by VS.
     //  -no-deps           → serial in-process build of exactly one target.
     //                       VS uses this so MSBuild's scheduler stays the sole
     //                       authority on solution-level parallelism.
@@ -228,6 +236,21 @@ main( int argc, char** argv )
     {
         target = find_target_icase( target_name );
         if ( !target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); return 1; }
+    }
+
+    if ( compile_only )
+    {
+        // VS Ctrl+F7 path: compile all unity units for the target, no link step.
+        // VS does not inject the selected file path via any env/property mechanism,
+        // so we compile the full unity TU instead — correct for unity-build targets.
+        if ( !target ) { printf( ORB_INDENT "[orb error] -compile-only requires -target\n" ); return 1; }
+        if ( !build_target_compile_only( &ctx, target ) )
+        {
+            printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
+            return 1;
+        }
+        printf( "\n" );
+        return 0;
     }
 
     if ( file_path )

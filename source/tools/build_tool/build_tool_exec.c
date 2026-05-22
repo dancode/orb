@@ -115,6 +115,35 @@ build_clean( target_info_t* target )
 /*============================================================================================*/
 
 /**
+ * build_target_compile_only()
+ *
+ * Compile all unity units for a target without running the link/archive step.
+ * Called from the VS Ctrl+F7 path (-compile-only flag) via NMakeCompileFileCommandLine.
+ * For unity builds, "compile single file" is semantically "compile the whole unity TU
+ * with no link" — there is no meaningful per-file granularity below the unity root.
+ */
+bool
+build_target_compile_only( build_context_t* ctx, target_info_t* target )
+{
+    char obj_dir[ BT_PATH_MAX ];
+    snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+    char gen_dir[ BT_PATH_MAX ];
+    snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
+
+    // Ensure intermediate directories exist; bin/ is not needed (no artifact produced).
+    char int_root[ BT_PATH_MAX ];
+    snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
+    if ( _access( g_build_dir, 0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", g_build_dir ); system( c ); }
+    if ( _access( int_root,    0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", int_root    ); system( c ); }
+    if ( _access( gen_dir,     0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", gen_dir     ); system( c ); }
+    if ( _access( obj_dir,     0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", obj_dir     ); system( c ); }
+
+    return build_target_compile( ctx, target, obj_dir, gen_dir );
+}
+
+/*============================================================================================*/
+
+/**
  * build_target()
  *
  * The main worker function. Builds one target, optionally recursing into
