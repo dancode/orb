@@ -26,7 +26,8 @@
       "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat core Debug\")",
       "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat sys\")",
       "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat sys Debug\")",
-      "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat build_dynamic sys Debug\")"
+      "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat build_dynamic sys Debug\")",
+      "PowerShell(& .\\\\bootstrap_build_tool.bat 2>&1 | Select-Object -Last 30)"
     ]
   }
 }

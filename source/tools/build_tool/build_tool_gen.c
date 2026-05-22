@@ -479,14 +479,18 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
 
     // Unconditional: build commands and shared paths.
-    // Pressing 'Build' on the nav project builds the solution's primary target.
+    // The nav project exists for IntelliSense / Solution Explorer navigation only.
+    // Its Build/Clean are deliberate no-ops: the per-target .vcxproj projects already
+    // own their own build and clean, and running a global build_tool.exe here in
+    // parallel with them races on shared dirs (e.g. build_new\generated\*).
+    ( void )default_target;
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
-    fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeBuildCommandLine>\n" );
-    fprintf( f, "    <NMakeOutput>..\\bin\\%s.exe</NMakeOutput>\n", default_target );
-    fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean</NMakeCleanCommandLine>\n" );
-    fprintf( f, "    <NMakeCompileFile>cd .. &amp;&amp; bin\\build_tool.exe -config $(Configuration)</NMakeCompileFile>\n" );
+    fprintf( f, "    <NMakeBuildCommandLine>echo [nav] navigation-only project, nothing to build.</NMakeBuildCommandLine>\n" );
+    fprintf( f, "    <NMakeOutput>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\nav.stamp</NMakeOutput>\n", g_int_dir );
+    fprintf( f, "    <NMakeCleanCommandLine>echo [nav] navigation-only project, nothing to clean.</NMakeCleanCommandLine>\n" );
+    fprintf( f, "    <NMakeCompileFile>echo [nav] navigation-only project.</NMakeCompileFile>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 

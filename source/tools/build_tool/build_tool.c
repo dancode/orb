@@ -50,6 +50,20 @@ static const char* g_int_dir         = "obj";            // Sub-folder for .obj 
 static const char* g_gen_dir         = "generated";      // Sub-folder for reflection-generated .c/.h.
 
 
+// --- Output Format ---
+//
+// ORB_BANNER: indent for top-level orb lines  e.g.  "      [ orb build: X ]"
+// ORB_INDENT: indent for sub-lines            e.g.  "          [build] foo ..."
+// Defined here (before unity includes) so build_tool_sched.c can use them.
+#define ORB_BANNER  "      "
+#define ORB_INDENT  "          "
+
+// --- Output flags ---
+//
+// Process-global verbosity mask. Set once in main() from CLI args; all
+// unity-included modules read it via the extern declared in build_tool.h.
+out_flags_t g_out_flags = ORB_OUT_DEFAULT;
+
 // --- Unity Includes ---
 //
 // Order matters: each file may reference statics defined in earlier files.
@@ -88,55 +102,53 @@ build_clean( target_info_t* target )
 
     if ( target )
     {
-        printf( "Cleaning target: %s\n", target->name );
-
-        // Primary artifact.
+        // One-line per-target clean. Sub-commands run silently; we print a
+        // single summary at the end so MSBuild output stays parseable.
         const char* ext = ( target->type == TARGET_STATIC_LIB )  ? "lib" :
                           ( target->type == TARGET_DYNAMIC_LIB ) ? "dll" : "exe";
         snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.%s >nul 2>nul", target->name, ext );
-        build_run_cmd( cmd );
+        build_run_cmd_quiet( cmd );
 
-        // DLL side products: import lib and export file.
         if ( target->type == TARGET_DYNAMIC_LIB )
         {
             snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.lib >nul 2>nul", target->name );
-            build_run_cmd( cmd );
+            build_run_cmd_quiet( cmd );
             snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.exp >nul 2>nul", target->name );
-            build_run_cmd( cmd );
+            build_run_cmd_quiet( cmd );
         }
 
-        // Rotated PDBs.
         snprintf( cmd, sizeof( cmd ), "del /q bin\\%s_*.pdb >nul 2>nul", target->name );
-        build_run_cmd( cmd );
+        build_run_cmd_quiet( cmd );
 
-        // Intermediate obj tree.
         snprintf( cmd, sizeof( cmd ), "rd /s /q %s\\%s\\%s >nul 2>nul", g_build_dir, g_int_dir, target->name );
-        build_run_cmd( cmd );
+        build_run_cmd_quiet( cmd );
 
-        // Reflection-generated sources.
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
             snprintf( cmd, sizeof( cmd ), "del /q %s\\%s\\%s.generated.c >nul 2>nul", g_build_dir, g_gen_dir, rname );
-            build_run_cmd( cmd );
+            build_run_cmd_quiet( cmd );
             snprintf( cmd, sizeof( cmd ), "del /q %s\\%s\\%s.generated.h >nul 2>nul", g_build_dir, g_gen_dir, rname );
-            build_run_cmd( cmd );
+            build_run_cmd_quiet( cmd );
         }
+
+        printf( ORB_INDENT "[orb clean] %s -- bin\\%s.%s, %s\\%s\\%s%s\n",
+                target->name, target->name, ext, g_build_dir, g_int_dir, target->name,
+                target->has_reflect ? " (+reflect)" : "" );
     }
     else
     {
-        printf( "Cleaning all build artifacts...\n" );
-
-        // Wipe entire obj and generated trees.
+        // Global wipe. Same noise-suppression pattern: every del runs silently,
+        // one summary line at the end.
         snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
-        build_run_cmd( cmd );
+        build_run_cmd_quiet( cmd );
         snprintf( cmd, sizeof( cmd ), "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
-        build_run_cmd( cmd );
+        build_run_cmd_quiet( cmd );
 
-        build_run_cmd( "del /s /q bin\\*.pdb >nul 2>nul" );
-        build_run_cmd( "del /s /q bin\\*.lib >nul 2>nul" );
-        build_run_cmd( "del /s /q bin\\*.dll >nul 2>nul" );
-        build_run_cmd( "del /s /q bin\\*.exp >nul 2>nul" );
+        build_run_cmd_quiet( "del /s /q bin\\*.pdb >nul 2>nul" );
+        build_run_cmd_quiet( "del /s /q bin\\*.lib >nul 2>nul" );
+        build_run_cmd_quiet( "del /s /q bin\\*.dll >nul 2>nul" );
+        build_run_cmd_quiet( "del /s /q bin\\*.exp >nul 2>nul" );
 
         // Delete executables only for non-tool targets. is_tool executables
         // (build_reflect, build_tool) are rebuilt by our dep resolution and
@@ -146,10 +158,14 @@ build_clean( target_info_t* target )
             if ( g_targets[ i ].type == TARGET_EXECUTABLE && !g_targets[ i ].is_tool )
             {
                 snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
-                build_run_cmd( cmd );
+                build_run_cmd_quiet( cmd );
             }
         }
+
+        printf( ORB_INDENT "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n",
+                g_build_dir, g_int_dir, g_gen_dir );
     }
+    return;
 #else
     char cmd[ BT_PATH_MAX ];
     if ( target )
@@ -172,7 +188,7 @@ build_clean( target_info_t* target )
         build_run_cmd( cmd );
     }
 #endif
-    printf( "Clean complete.\n" );
+    // printf( "Clean complete.\n" );
 }
 
 /*============================================================================================*/
@@ -222,7 +238,7 @@ build_target( build_context_t* ctx, target_info_t* target )
             {
                 if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 ) { dep = &g_targets[ j ]; break; }
             }
-            if ( !dep ) { printf( "Error: '%s' depends on unknown target '%s'\n", target->name, target->deps[ i ] ); return false; }
+            if ( !dep ) { printf( ORB_INDENT "[orb error] '%s' depends on unknown target '%s'\n", target->name, target->deps[ i ] ); return false; }
             if ( !build_target( ctx, dep ) ) return false;
         }
     }
@@ -238,7 +254,7 @@ build_target( build_context_t* ctx, target_info_t* target )
         {
             if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
         }
-        if ( !tool ) { printf( "Error: '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] ); return false; }
+        if ( !tool ) { printf( ORB_INDENT "[orb error] '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] ); return false; }
         if ( !build_target( ctx, tool ) ) return false;
     }
 
@@ -250,7 +266,7 @@ build_target( build_context_t* ctx, target_info_t* target )
         {
             if ( g_targets[ j ].is_reflect_tool ) { refl_tool = &g_targets[ j ]; break; }
         }
-        if ( !refl_tool ) { printf( "Error: '%s' needs reflection but no is_reflect_tool target is registered\n", target->name ); return false; }
+        if ( !refl_tool ) { printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n", target->name ); return false; }
         if ( !build_target( ctx, refl_tool ) ) return false;
     }
 
@@ -356,8 +372,6 @@ build_target( build_context_t* ctx, target_info_t* target )
     // and observed the artifact as fully written.
     if ( up_to_date ) { result = true; goto cleanup; }
 
-    printf( "Building target: %s\n", target->name );
-
     // --- 3. Directory Creation ---
     //
     // Make sure every directory we're about to write into exists. _access()
@@ -422,13 +436,21 @@ build_target( build_context_t* ctx, target_info_t* target )
         }
         if ( !refl_tool )
         {
-            printf( "Error: no is_reflect_tool target registered — cannot generate reflection for '%s'\n", target->name );
+            printf( ORB_INDENT "[orb error] no is_reflect_tool target registered — cannot generate reflection for '%s'\n", target->name );
             if ( renamed ) rename( old_path, exe_path );
             result = false;
             goto cleanup;
         }
         const char* rname = target->reflect_name ? target->reflect_name : target->name;
-        printf( "[REFL] Generating reflection for %s...\n", rname );
+        if ( g_out_flags & ORB_OUT_REFLECT )
+        {
+            // Route to the per-target log when inside a parallel worker so the
+            // reflect line lands with the rest of the target's output.
+            const char* _lp = sched_log_path();
+            FILE* _lf = _lp ? fopen( _lp, "a" ) : NULL;
+            fprintf( _lf ? _lf : stdout, ORB_INDENT "[orb reflect] %s\n", rname );
+            if ( _lf ) fclose( _lf );
+        }
         char refl_cmd[ BT_PATH_MAX * 2 ];
         snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s", refl_tool->name, target->root_dir, gen_dir, rname );
         if ( build_run_cmd( refl_cmd ) != 0 )
@@ -511,6 +533,12 @@ main( int argc, char** argv )
         {
             if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
+        // Output verbosity. -q / -v are preset shorthands; --out takes a hex
+        // mask so individual sections can be toggled without recompiling.
+        if ( strcmp( argv[ i ], "-q" ) == 0 ) g_out_flags = ORB_OUT_QUIET;
+        if ( strcmp( argv[ i ], "-v" ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
+        if ( strcmp( argv[ i ], "--out" ) == 0 && i + 1 < argc )
+            g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
     }
 
     // --- Worker count ---
@@ -539,21 +567,33 @@ main( int argc, char** argv )
             {
                 if ( _stricmp( g_targets[ i ].name, target_name ) == 0 ) { clean_target = &g_targets[ i ]; break; }
             }
-            if ( !clean_target ) { printf( "Error: Unknown target '%s'\n", target_name ); return 1; }
+            if ( !clean_target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); return 1; }
         }
         build_clean( clean_target );
         return 0;
     }
     if ( should_gen ) { build_gen_projects(); return 0; }
 
-    printf( "--- ORB Build Starting ---\n\n" );
+    // Startup banner — target is the headline; sub-line carries config + args.
+    char target_upper[ 64 ] = "ALL";
+    if ( target_name )
+    {
+        int k = 0;
+        for ( ; target_name[ k ] && k < (int)sizeof( target_upper ) - 1; ++k )
+            target_upper[ k ] = (char)toupper( (unsigned char)target_name[ k ] );
+        target_upper[ k ] = '\0';
+    }
+    printf( ORB_BANNER "[ orb build: %s ]\n", target_upper );
+    printf( ORB_INDENT "%s | %s | args:",
+            ctx.config == CONFIG_DEBUG ? "Debug" : "Release",
+            ctx.is_clang ? "Clang" : "MSVC" );
+    for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
+    printf( "\n\n" );
+
 
     // Make cl.exe / link.exe / lib.exe callable. Idempotent fast-path when
     // we're already inside a Developer Command Prompt (or VS-launched shell).
     build_setup_vc_env();
-
-    printf( "Config: %s\n", ctx.config == CONFIG_DEBUG ? "Debug" : "Release" );
-    printf( "Compiler: %s\n\n", ctx.is_clang ? "Clang" : "MSVC" );
 
     // Dispatch:
     //  -no-deps           → serial in-process build of exactly one target.
@@ -568,24 +608,28 @@ main( int argc, char** argv )
         {
             if ( _stricmp( g_targets[ i ].name, target_name ) == 0 ) { target = &g_targets[ i ]; break; }
         }
-        if ( !target ) { printf( "Error: Unknown target '%s'\n", target_name ); return 1; }
+        if ( !target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); return 1; }
     }
 
     if ( ctx.skip_deps )
     {
-        if ( !target ) { printf( "Error: -no-deps requires -target.\n" ); return 1; }
-        if ( !build_target( &ctx, target ) ) { printf( "\nFAILED!\n" ); return 1; }
+        if ( !target ) { printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); return 1; }
+        if ( !build_target( &ctx, target ) )
+        {
+            printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
+            return 1;
+        }
     }
     else
     {
         if ( !build_run_parallel( &ctx, target, j_threads ) )
         {
-            printf( "\nFAILED!\n" );
+            printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
             return 1;
         }
     }
 
-    printf( "\nSUCCESS!\n" );
+    // printf( ORB_BANNER "[ orb done: %s ]\n", target_upper );
     return 0;
 }
 

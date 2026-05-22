@@ -2,44 +2,75 @@
 
     build_tool_cc.c -- Compiler and linker command generation.
 
-    Builds the cl.exe / link.exe / lib.exe command lines for a single target
-    using cmd_buf_t (see build_tool_utils.c) and dispatches them through
-    build_run_cmd / build_run_cmd_capture_deps (see build_tool_vcvars.c).
+    Builds the cl.exe / link.exe / lib.exe command lines for a single target.
+    Commands are assembled section-by-section into compile_cmd_t / link_cmd_t
+    structs so each logical group (flags, defines, includes, sources, output)
+    can be printed independently under g_out_flags control, then joined into
+    one string for actual execution.
 
     Two public entry points, both called from build_target():
       build_target_compile() -- cl.exe with /showIncludes for dep capture.
       build_target_link()    -- lib.exe for static libs, link.exe otherwise.
 
-    Flag philosophy:
-      - The same defines we emit here must match the per-config IntelliSense
-        defines emitted by build_tool_gen.c. Drift between the two surfaces
-        as IDE squigglies that don't reproduce at build time, which is
-        exactly the kind of bug that wastes hours to chase.
-      - Response-file spill is wired in unconditionally at the end of each
-        path so any future target growth past the cmd.exe arg limit is
-        handled transparently.
+    Flag/define lockstep:
+      The defines emitted here must match the IntelliSense defines in
+      build_tool_gen.c. Drift surfaces as IDE squigglies that don't reproduce
+      at build time.
 
 ==============================================================================================*/
 #include "build_tool.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include <ctype.h>
 #include <io.h>
 #include <time.h>
 
 /*============================================================================================*/
-// --- Internal Helpers ---
+// --- Structured command types ---
+//
+// Each field holds the raw fragment that goes into the final cl/link/lib
+// command. Assembled in order via cc_assemble() / lk_assemble(); printed
+// selectively via cc_print() / lk_print() based on g_out_flags.
 
-/**
- * get_target_upper()
- *
- * Copy `name` to `out`, ASCII-uppercasing as we go. Used to derive the
- * <TARGET>_STATIC preprocessor symbol from a target's lower-case registry
- * name. The same helper is reached from build_tool_gen.c (unity build)
- * so IntelliSense and compile-time defines emit the exact same identifier.
- *
- * Caller must size `out` >= strlen(name)+1.
- */
+typedef struct
+{
+    char exe     [ 64         ]; // cl.exe or clang-cl.exe
+    char flags   [ 512        ]; // /c /nologo /W4 /WX /Zi /Od /MDd ...
+    char includes[ 512        ]; // /I source /I gen_dir
+    char defines [ 1024       ]; // /DOS_WINDOWS /DCOMPILER_MSVC /D_DEBUG ...
+    char output  [ 512        ]; // /FoobjDir/ /FdobjDir/
+    char sources [ CMD_BUF_MAX]; // absolute .c paths
+} compile_cmd_t;
+
+typedef struct
+{
+    char exe     [ 32         ]; // lib.exe or link.exe
+    char artifact[ BT_PATH_MAX]; // final output path (summary display only)
+    char flags   [ 256        ]; // /nologo /DLL ...
+    char output  [ 512        ]; // /OUT:... /IMPLIB:...
+    char pdb     [ 256        ]; // /DEBUG /PDB:... (empty for lib.exe)
+    char inputs  [ 512        ]; // objDir/*.obj
+    char libs    [ 1024       ]; // dep.lib ... user32.lib ...
+} link_cmd_t;
+
+/*============================================================================================*/
+// --- Internal helpers ---
+
+// Append a formatted string to a fixed-size field (safe, truncates silently).
+static void
+cc_field( char* dst, size_t dst_size, const char* fmt, ... )
+{
+    size_t used = strlen( dst );
+    if ( used >= dst_size - 1 ) return;
+    va_list args;
+    va_start( args, fmt );
+    vsnprintf( dst + used, dst_size - used, fmt, args );
+    va_end( args );
+}
+
+// get_target_upper() -- derive <TARGET>_STATIC from a target name.
+// Must match the IntelliSense defines emitted by build_tool_gen.c (unity build).
 static void
 get_target_upper( const char* name, char* out )
 {
@@ -47,20 +78,9 @@ get_target_upper( const char* name, char* out )
     for ( char* p = out; *p; ++p ) *p = ( char )toupper( *p );
 }
 
-/**
- * cleanup_stale_pdbs()
- *
- * Garbage-collect PDB files left over from previous links. Each link
- * writes bin/<name>_<unix_timestamp>.pdb (see build_target_link below);
- * over time that accumulates one file per rebuild. This function sweeps
- * bin/<name>_*.pdb and removes whatever it can.
- *
- * Files held open by an attached debugger fail `remove()` with sharing-
- * violation, which is silently ignored — exactly the behavior we want:
- * the live debug session keeps the PDB it needs, and only the unlocked
- * stale leftovers are cleaned up. The new link will write a fresh,
- * uniquely-named PDB regardless, so there is never a collision.
- */
+// cleanup_stale_pdbs() -- remove PDB files from previous links.
+// Files held by an attached debugger fail remove() silently; the new link
+// writes a fresh uniquely-named PDB so there is never a collision.
 static void
 cleanup_stale_pdbs( const char* target_name )
 {
@@ -80,89 +100,266 @@ cleanup_stale_pdbs( const char* target_name )
     _findclose( h );
 }
 
+// Return the active output sink: per-thread log when inside a parallel worker
+// (so section output lands with child-process output), stdout otherwise.
+// Caller is responsible for fclose() if the returned FILE* != stdout.
+static FILE*
+cc_open_log( void )
+{
+    const char* log = sched_log_path();
+    if ( log )
+    {
+        FILE* f = fopen( log, "a" );
+        if ( f ) return f;
+    }
+    return stdout;
+}
+
+/*============================================================================================*/
+// --- Section printers ---
+
+// Print space-separated tokens from `raw`, stripping the leading `prefix`
+// from each token when non-NULL (e.g. "/D" strips preprocessor flag chars).
+static void
+print_tokens( FILE* out, const char* raw, const char* prefix )
+{
+    size_t      plen  = prefix ? strlen( prefix ) : 0;
+    const char* p     = raw;
+    bool        first = true;
+    while ( *p )
+    {
+        while ( *p == ' ' ) ++p;
+        if ( !*p ) break;
+        const char* s   = p;
+        while ( *p && *p != ' ' ) ++p;
+        int         len = (int)( p - s );
+        if ( plen && (size_t)len > plen && strncmp( s, prefix, plen ) == 0 )
+        {
+            s   += plen;
+            len -= (int)plen;
+        }
+        if ( !first ) fputc( ' ', out );
+        fwrite( s, 1, len, out );
+        first = false;
+    }
+    fputc( '\n', out );
+}
+
+// Print a labeled section line: "  <label>  <content>".
+// `strip` is forwarded to print_tokens — pass NULL for no stripping.
+#define SECTION_FMT  "            %-10s"
+
+static void
+print_section( FILE* out, const char* label, const char* content, const char* strip )
+{
+    fprintf( out, SECTION_FMT, label );
+    print_tokens( out, content, strip );
+}
+
+// Print the compile output section: /FoobjDir/ /FdobjDir/ → "obj=... pdb=..."
+static void
+print_compile_output( FILE* out, const char* raw )
+{
+    fprintf( out, SECTION_FMT, "output:" );
+    const char* p     = raw;
+    bool        first = true;
+    while ( *p )
+    {
+        while ( *p == ' ' ) ++p;
+        if ( !*p ) break;
+        const char* s   = p;
+        while ( *p && *p != ' ' ) ++p;
+        int         len = (int)( p - s );
+        // /Fo prefix → obj label; /Fd prefix → pdb label.
+        const char* label = NULL;
+        if ( len > 3 && s[ 0 ] == '/' && s[ 1 ] == 'F' )
+        {
+            if ( s[ 2 ] == 'o' ) { label = "obj=";  s += 3; len -= 3; }
+            if ( s[ 2 ] == 'd' ) { label = "  pdb="; s += 3; len -= 3; }
+        }
+        if ( !first && !label ) fputc( ' ', out );
+        if ( label ) fputs( label, out );
+        fwrite( s, 1, len, out );
+        first = false;
+    }
+    fputc( '\n', out );
+}
+
+// Print compile command sections to `out` according to g_out_flags.
+static void
+cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const char* config )
+{
+    if ( g_out_flags & ORB_OUT_COMPILE_SUMMARY )
+        fprintf( out, ORB_INDENT "[orb compile] %s (%s)\n\n", target->name, config );
+    if ( g_out_flags & ORB_OUT_COMPILE_SOURCES  ) print_section( out, "sources:",  cc->sources,  NULL );
+    if ( g_out_flags & ORB_OUT_COMPILE_FLAGS    ) print_section( out, "flags:",    cc->flags,    NULL );
+    if ( g_out_flags & ORB_OUT_COMPILE_DEFINES  ) print_section( out, "defines:",  cc->defines,  "/D" );
+    if ( g_out_flags & ORB_OUT_COMPILE_INCLUDES ) print_section( out, "includes:", cc->includes, "/I" );
+    if ( g_out_flags & ORB_OUT_COMPILE_OUTPUT   ) print_compile_output( out, cc->output );
+}
+
+// Print link command sections to `out` according to g_out_flags.
+static void
+lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
+{
+    if ( g_out_flags & ORB_OUT_LINK_SUMMARY )
+        fprintf( out, ORB_INDENT "[orb link] %s -> %s\n\n", target->name, lk->artifact );
+    if ( g_out_flags & ORB_OUT_LINK_INPUTS  ) print_section( out, "inputs:",  lk->inputs,  NULL );
+    if ( g_out_flags & ORB_OUT_LINK_LIBS    ) print_section( out, "libs:",    lk->libs,    NULL );
+    if ( g_out_flags & ORB_OUT_LINK_FLAGS   ) print_section( out, "flags:",   lk->flags,   NULL );
+    if ( g_out_flags & ORB_OUT_LINK_OUTPUT  ) print_section( out, "output:",  lk->output,  "/OUT:" );
+    if ( g_out_flags & ORB_OUT_LINK_PDB     ) print_section( out, "pdb:",     lk->pdb,     "/PDB:" );
+}
+
+/*============================================================================================*/
+// --- Command assembly ---
+//
+// Join the struct fields into a single string for the actual cl/link/lib call.
+// Response-file spill happens here when the assembled string exceeds the shell
+// arg limit — same mechanism as before, now operating on the joined result.
+
+static void
+cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
+{
+    cmd_append( cmd, "%s %s %s %s %s %s",
+                cc->exe, cc->flags, cc->includes, cc->defines, cc->output, cc->sources );
+    cmd_spill_to_response_file( cmd, rsp_path );
+}
+
+static void
+lk_assemble( const link_cmd_t* lk, cmd_buf_t* cmd, const char* rsp_path )
+{
+    if ( lk->pdb[ 0 ] )
+        cmd_append( cmd, "%s %s %s %s %s %s", lk->exe, lk->flags, lk->output, lk->pdb, lk->inputs, lk->libs );
+    else
+        cmd_append( cmd, "%s %s %s %s %s",    lk->exe, lk->flags, lk->output, lk->inputs, lk->libs );
+    cmd_spill_to_response_file( cmd, rsp_path );
+}
+
+/*============================================================================================*/
+// --- Raw-command echo (ORB_OUT_*_CMD) ---
+
+// Print the assembled command to `out` when the caller's CMD flag is set.
+// Wraps at 100 columns after the first token so long lines stay readable.
+static void
+print_raw_cmd( FILE* out, const char* cmd )
+{
+    static const int k_wrap = 100;
+    static const int k_cont = 20;  // continuation indent width
+    fprintf( out, ORB_INDENT "[orb cmd]   " );
+    int col = 0;
+    const char* p = cmd;
+    while ( *p )
+    {
+        const char* w = p;
+        while ( *p && *p != ' ' ) ++p;
+        int wlen = (int)( p - w );
+        if ( col > 0 && col + 1 + wlen > k_wrap )
+        {
+            fprintf( out, "\n%*s", k_cont, "" );
+            col = 0;
+        }
+        else if ( col > 0 ) { fputc( ' ', out ); ++col; }
+        fwrite( w, 1, wlen, out );
+        col += wlen;
+        while ( *p == ' ' ) ++p;
+    }
+    fputc( '\n', out );
+}
+
 /*============================================================================================*/
 // --- Compilation ---
 
 /**
  * build_target_compile()
  *
- * Assemble and run the cl.exe (or clang-cl.exe) command line for one
- * target. Returns true iff the compiler exited with 0.
- *
- * The function builds up the command incrementally via cmd_append so the
- * truncation logic in cmd_buf_t can flag overflow and the response-file
- * spill at the end can kick in for very large targets.
+ * Fill a compile_cmd_t section-by-section, print the active sections to the
+ * build log (or stdout in serial mode), assemble the full cl.exe command, and
+ * run it via build_run_cmd_capture_deps so /showIncludes output is parsed into
+ * a per-target dep file for the next incremental check.
  */
 bool
-build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir )
+build_target_compile( build_context_t* ctx, target_info_t* target,
+                      const char* obj_dir, const char* gen_dir )
 {
-    cmd_buf_t cmd = { 0 };
-    const char* cc = ctx->is_clang ? "clang-cl.exe" : "cl.exe";
+    compile_cmd_t cc = { 0 };
+    const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
-    // Base flags. /showIncludes emits a "Note: including file:" line for every
-    // header pulled in, which build_run_cmd_capture_deps strips out into a
-    // per-target dep file so the incremental rebuild logic in build_target's
-    // step-2 check can detect header edits. Essential for unity builds where
-    // the listed .units are just umbrella TUs and the real source surface is
-    // hidden behind their #includes.
-    cmd_append( &cmd, "%s /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes ", cc );
+    // Exe
+    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->is_clang ? "clang-cl.exe" : "cl.exe" );
 
-    // Include paths and output directories. /Fo = object output dir, /Fd =
-    // PDB output dir. Trailing slash matters — without it cl treats the path
-    // as a filename prefix instead of a directory.
-    cmd_append( &cmd, "/I source /I %s /Fo%s/ /Fd%s/ ", gen_dir, obj_dir, obj_dir );
-
-    // Architectural defines that every TU sees. Must stay in lockstep with
-    // the IntelliSense defines emitted by build_tool_gen.c.
-    cmd_append( &cmd, "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS " );
-
-    // Target-specific static define (e.g. /DBASE_STATIC). Allows public APIs
-    // declared in this target to flip between dllexport/dllimport depending
-    // on whether the consumer is the same translation unit or a sibling DLL.
-    char target_upper[ 128 ];
-    get_target_upper( target->name, target_upper );
-    cmd_append( &cmd, "/D%s_STATIC ", target_upper );
-
-    // BUILD_STATIC fully disables hot-reload — the whole engine links into
-    // one image. Only set when an external caller chose monolithic mode.
-    if ( ctx->is_monolithic )
-        cmd_append( &cmd, "/DBUILD_STATIC " );
-
-    // Config-specific flags. Debug = full symbols, no optimization, debug
-    // CRT. Release = /O2 and the retail CRT. _DEBUG / NDEBUG are the
-    // canonical guards downstream code reads to gate assertions etc.
+    // Flags: compiler settings common to all targets.
+    // /showIncludes drives the dep-capture path in build_run_cmd_capture_deps;
+    // it produces a "Note: including file:" line for every resolved header.
+    cc_field( cc.flags, sizeof( cc.flags ),
+              "/c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes" );
     if ( ctx->config == CONFIG_DEBUG )
-        cmd_append( &cmd, "/Zi /Od /MDd /D_DEBUG " );
+        cc_field( cc.flags, sizeof( cc.flags ), " /Zi /Od /MDd" );
     else
-        cmd_append( &cmd, "/O2 /MD /DNDEBUG " );
+        cc_field( cc.flags, sizeof( cc.flags ), " /O2 /MD" );
 
-    // Add the explicit translation units listed in target_info_t.units[].
-    for ( int i = 0; target->units[ i ]; ++i )
-        cmd_append( &cmd, "%s/%s ", target->root_dir, target->units[ i ] );
+    // Includes: header search paths.
+    // Trailing space intentional — fields are space-joined at assembly time.
+    cc_field( cc.includes, sizeof( cc.includes ), "/I source /I %s", gen_dir );
 
-    // Add the reflection-generated translation unit (step 5 of build_target
-    // wrote it under <gen_dir>/<rname>.generated.c).
-    if ( target->has_reflect )
+    // Defines: preprocessor symbols every TU sees.
+    // Must stay in lockstep with the IntelliSense defines in build_tool_gen.c.
+    cc_field( cc.defines, sizeof( cc.defines ),
+              "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
     {
-        const char* rname = target->reflect_name ? target->reflect_name : target->name;
-        cmd_append( &cmd, "%s/%s.generated.c ", gen_dir, rname );
+        char upper[ 128 ];
+        get_target_upper( target->name, upper );
+        cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", upper );
+    }
+    if ( ctx->is_monolithic )
+        cc_field( cc.defines, sizeof( cc.defines ), " /DBUILD_STATIC" );
+    if ( ctx->config == CONFIG_DEBUG )
+        cc_field( cc.defines, sizeof( cc.defines ), " /D_DEBUG" );
+    else
+        cc_field( cc.defines, sizeof( cc.defines ), " /DNDEBUG" );
+
+    // Output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
+    // Trailing slash is required — without it cl treats the path as a
+    // filename prefix instead of a directory.
+    cc_field( cc.output, sizeof( cc.output ), "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
+
+    // Sources: absolute paths so MSVC error messages are navigable from any
+    // context (terminal, log file, IDE) regardless of the viewer's CWD.
+    {
+        char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
+        for ( int i = 0; target->units[ i ]; ++i )
+        {
+            snprintf( rel, sizeof( rel ), "%s/%s", target->root_dir, target->units[ i ] );
+            if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
+                snprintf( abs_p, sizeof( abs_p ), "%s", rel );
+            cc_field( cc.sources, sizeof( cc.sources ), "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
+        }
+        // Reflection-generated TU (written by build_reflect.exe in step 5).
+        if ( target->has_reflect )
+        {
+            const char* rname = target->reflect_name ? target->reflect_name : target->name;
+            snprintf( rel, sizeof( rel ), "%s/%s.generated.c", gen_dir, rname );
+            if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
+                snprintf( abs_p, sizeof( abs_p ), "%s", rel );
+            cc_field( cc.sources, sizeof( cc.sources ), "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
+        }
     }
 
-    // Spill to a cl.rsp response file if the assembled command crossed the
-    // shell threshold (or got flagged truncated). The buffer is rewritten
-    // to "cl.exe @<path>" form in-place; cl.exe reads the file like a
-    // continuation of its argv.
-    char rsp_path[ BT_PATH_MAX ];
-    snprintf( rsp_path, sizeof( rsp_path ), "%s/cl.rsp", obj_dir );
-    cmd_spill_to_response_file( &cmd, rsp_path );
+    // Print the requested sections. Routes to the per-target log when called
+    // from a parallel worker so the output lands with child-process output.
+    FILE* log_out = cc_open_log();
+    cc_print( log_out, &cc, target, config );
 
-    // Write the captured header list to <obj_dir>/_deps.txt for the next
-    // incremental check to read. Coarse-grained (one file per target) which
-    // matches the unity-build pattern: any header change forces a target
-    // recompile, but headers in OTHER targets don't trigger spurious rebuilds.
+    // Assemble the full command, optionally echo the raw line, then run.
+    char      rsp_path[ BT_PATH_MAX ];
+    cmd_buf_t cmd = { 0 };
+    snprintf( rsp_path, sizeof( rsp_path ), "%s/cl.rsp", obj_dir );
+    cc_assemble( &cc, &cmd, rsp_path );
+    if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
+    if ( log_out != stdout ) fclose( log_out );
+
     char deps_path[ BT_PATH_MAX ];
     snprintf( deps_path, sizeof( deps_path ), "%s/_deps.txt", obj_dir );
-
     return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
 }
 
@@ -172,77 +369,73 @@ build_target_compile( build_context_t* ctx, target_info_t* target, const char* o
 /**
  * build_target_link()
  *
- * Assemble and run the final-stage command for one target:
- *  - TARGET_STATIC_LIB  → lib.exe (archive .obj files into a .lib).
- *  - TARGET_DYNAMIC_LIB → link.exe /DLL with /IMPLIB so consumers can
- *                         link against the import lib at compile time.
- *  - TARGET_EXECUTABLE  → link.exe straight, producing a .exe.
- *
- * The DLL and EXE paths share a single linker invocation because the only
- * differences (the /DLL switch and the /IMPLIB output) are additive.
- * Returns true iff the tool exited with 0.
+ * Fill a link_cmd_t, print the active sections, assemble the command, and run
+ * it via build_run_cmd.
+ *  - TARGET_STATIC_LIB  -> lib.exe
+ *  - TARGET_DYNAMIC_LIB -> link.exe /DLL /IMPLIB
+ *  - TARGET_EXECUTABLE  -> link.exe
  */
 bool
 build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir )
 {
     ( void )ctx;
-    cmd_buf_t cmd = { 0 };
+    link_cmd_t lk = { 0 };
 
     if ( target->type == TARGET_STATIC_LIB )
     {
-        // lib.exe simply globs every .obj in the target's obj dir into the
-        // archive — no link-time codegen, no per-symbol dep resolution.
-        cmd_append( &cmd, "lib.exe /nologo /OUT:bin/%s.lib %s/*.obj", target->name, obj_dir );
-
-        // Static libs can grow large too (many TUs over time), so spill if needed.
-        char rsp_path[ BT_PATH_MAX ];
-        snprintf( rsp_path, sizeof( rsp_path ), "%s/lib.rsp", obj_dir );
-        cmd_spill_to_response_file( &cmd, rsp_path );
+        snprintf( lk.exe,      sizeof( lk.exe ),      "lib.exe" );
+        snprintf( lk.artifact, sizeof( lk.artifact ),  "bin/%s.lib", target->name );
+        snprintf( lk.flags,    sizeof( lk.flags ),     "/nologo" );
+        snprintf( lk.output,   sizeof( lk.output ),    "/OUT:bin/%s.lib", target->name );
+        snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s/*.obj", obj_dir );
+        // lib.exe has no PDB and no dep libs — lk.pdb and lk.libs stay empty.
     }
     else
     {
-        // Shared start of the link.exe command for both DLL and EXE.
-        const char* linker = "link.exe";
-        cmd_append( &cmd, "%s /nologo ", linker );
+        const char* ext = ( target->type == TARGET_DYNAMIC_LIB ) ? ".dll" : ".exe";
 
-        // DLL extras: tell the linker to produce a side-by-side .lib so other
-        // targets can /LINK against it without needing the .dll at compile time.
+        snprintf( lk.exe,      sizeof( lk.exe ),      "link.exe" );
+        snprintf( lk.artifact, sizeof( lk.artifact ),  "bin/%s%s", target->name, ext );
+        snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s/*.obj", obj_dir );
+
+        // Flags: /DLL only for shared libs.
         if ( target->type == TARGET_DYNAMIC_LIB )
-        {
-            cmd_append( &cmd, "/DLL " );
-            cmd_append( &cmd, "/IMPLIB:bin/%s.lib ", target->name );
-        }
+            snprintf( lk.flags, sizeof( lk.flags ), "/nologo /DLL" );
+        else
+            snprintf( lk.flags, sizeof( lk.flags ), "/nologo" );
 
-        // Pick the artifact extension based on target type. Both consume the
-        // same `*.obj` glob in the target's obj dir.
-        cmd_append( &cmd, "/OUT:bin/%s%s %s/*.obj ", target->name,
-                    (target->type == TARGET_EXECUTABLE) ? ".exe" : ".dll", obj_dir );
+        // Output: artifact + optional import lib for DLLs.
+        if ( target->type == TARGET_DYNAMIC_LIB )
+            snprintf( lk.output, sizeof( lk.output ),
+                      "/OUT:bin/%s.dll /IMPLIB:bin/%s.lib", target->name, target->name );
+        else
+            snprintf( lk.output, sizeof( lk.output ), "/OUT:bin/%s.exe", target->name );
 
-        // PDB rotation: each link writes a uniquely-named PDB so an attached
-        // debugger can never collide with the linker over the previous
-        // build's symbol file. cleanup_stale_pdbs() above garbage-collects
-        // the leftover files that aren't currently locked by a debugger.
+        // PDB: rotated per-link so a held-open debugger session never blocks
+        // the linker. Stale leftovers are garbage-collected before each link.
         cleanup_stale_pdbs( target->name );
-        cmd_append( &cmd, "/DEBUG /PDB:bin/%s_%lld.pdb ",
-                    target->name, ( long long )time( NULL ) );
+        snprintf( lk.pdb, sizeof( lk.pdb ),
+                  "/DEBUG /PDB:bin/%s_%lld.pdb", target->name, ( long long )time( NULL ) );
 
-        // Link against the target's declared dep .libs. The scheduler / dep
-        // resolver guarantees these exist by the time we get here.
+        // Libs: declared dep .libs + Windows system libs every target uses.
         for ( int i = 0; target->deps[ i ]; ++i )
-        {
-            cmd_append( &cmd, "bin/%s.lib ", target->deps[ i ] );
-        }
-
-        // Windows system libs every binary in the project happens to want.
-        // Hard-coded here because every target so far uses at least one of
-        // these — keeping them per-target metadata would be ceremony with
-        // zero benefit.
-        cmd_append( &cmd, "user32.lib shell32.lib gdi32.lib advapi32.lib " );
-
-        char rsp_path[ BT_PATH_MAX ];
-        snprintf( rsp_path, sizeof( rsp_path ), "%s/link.rsp", obj_dir );
-        cmd_spill_to_response_file( &cmd, rsp_path );
+            cc_field( lk.libs, sizeof( lk.libs ), "%sbin/%s.lib",
+                      lk.libs[ 0 ] ? " " : "", target->deps[ i ] );
+        cc_field( lk.libs, sizeof( lk.libs ), "%suser32.lib shell32.lib gdi32.lib advapi32.lib",
+                  lk.libs[ 0 ] ? " " : "" );
     }
+
+    // Print sections, assemble, optionally echo raw command, then run.
+    FILE* log_out = cc_open_log();
+    lk_print( log_out, &lk, target );
+
+    char      rsp_path[ BT_PATH_MAX ];
+    cmd_buf_t cmd = { 0 };
+    snprintf( rsp_path, sizeof( rsp_path ), "%s/%s.rsp", obj_dir,
+              target->type == TARGET_STATIC_LIB ? "lib" : "link" );
+    lk_assemble( &lk, &cmd, rsp_path );
+    if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
+    if ( log_out != stdout ) fclose( log_out );
 
     return build_run_cmd( cmd.buf ) == 0;
 }

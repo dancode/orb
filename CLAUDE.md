@@ -52,6 +52,25 @@ Build and run the relevant sandbox target in Visual Studio, or via:
 cmake --build build_dynamic --target sb_engine_mod --config Debug
 build_dynamic\bin\sb_engine_mod.exe
 ```
+## Custom Build System
+ORB uses a self-contained, high-performance C-based build orchestrator to replace traditional CMake or complex batch scripts.
+
+- **Bootstrapper**: `bootstrap_build_tool.bat` compiles the build tool from source using a minimal `cl.exe` call.
+- **Orchestrator**: `source/tools/build_tool/build_tool.c` manages compiler/linker flags, environment detection (via `vswhere.exe`), and target orchestration.
+- **Project Generator**: `source/tools/build_tool/build_tool_gen.c` (included as a unity fragment in `build_tool.c`) generates Visual Studio `.sln` and `.vcxproj` files.
+- **Artifacts**: All binaries land in `bin/` and all intermediate objects/PDBs land in `obj/`.
+- **Interface**:
+  - `build_tool.exe -gen`: Generates/updates IDE project files.
+  - `build_tool.exe -clean`: Wipes `bin/` and `obj/` for a fresh start.
+  - `build_tool.exe -config <Debug|Release>`: Performs the actual build. Case-insensitive to match VS macros.
+
+## Build & Execution
+- **Bootstrap**: Run `bootstrap_build_tool.bat` if `bin/build_tool.exe` is missing or needs an update. 
+  - **CRITICAL**: This requires an MSVC environment. Use `vc_vars_setup.bat` to find the path to `vcvarsall.bat` and run it in the same shell session before bootstrapping.
+  - **Command**: `cmd /c 'call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 && bootstrap_build_tool.bat'` (Adjust path based on `vc_vars_setup.bat`).
+- **Generate Solution**: Run `bin/build_tool.exe -gen` to create `orb_make.sln` and `orb_build.sln`.
+- **Hot-Rebuild**: Use `build_hot.bat <build_dir> <target> <config>` to rebuild a module while the debugger is attached.
+- **Verification**: Use relevant sandbox targets (e.g., `sb_base_custom.exe`) to verify changes.
 
 ## Architecture
 

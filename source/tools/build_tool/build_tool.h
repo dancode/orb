@@ -24,6 +24,31 @@
       functions are visible across the whole tool while still compiling in a
       single cl.exe invocation — and bootstrapping needs just one command line.
 
+    Build Outout Format:
+    ┌─────────────────────────┬──────────────────────────┐
+    │           Tag           │         Meaning          │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb build]             │ per-target compile start │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb ok] / [orb FAILED] │ per-target result        │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb parallel]          │ scheduler start          │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb clean]             │ clean summary            │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb reflect]           │ codegen step             │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb cmd]               │ raw command echo         │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb src]               │ source files             │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb vcvars]            │ VS env discovery         │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb warn]              │ non-fatal warning        │
+    ├─────────────────────────┼──────────────────────────┤
+    │ [orb error]             │ fatal error              │
+    └─────────────────────────┴──────────────────────────┘
+
 ==============================================================================================*/
 #ifndef BUILD_TOOL_H
 #define BUILD_TOOL_H
@@ -52,7 +77,7 @@
 // append cannot fit, `truncated` is set so the caller can decide whether to
 // spill the tail into a response file (see cmd_spill_to_response_file).
 
-typedef struct
+typedef struct cmd_buf_s
 {
     char   buf[ CMD_BUF_MAX ];
     size_t size;
@@ -136,7 +161,7 @@ typedef struct target_info_s
     bool          is_tool;
 
     // If true, this is the reflection code-generator tool. Targets with
-    // has_reflect=true automatically depend on whichever target carries
+    // has_reflect = true automatically depend on whichever target carries
     // this flag — no hardcoded name needed anywhere in the build logic.
     bool          is_reflect_tool;
 
@@ -183,6 +208,63 @@ typedef struct
 // These are defined in build_tool_targets.c.
 extern solution_info_t g_solutions[];
 extern int             g_solution_count;
+
+// =============================================================================
+// --- Output Flags ------------------------------------------------------------
+// =============================================================================
+
+// Bitfield controlling which sections of the build log are printed.
+// Set once at startup via CLI flags (-q / -v / --out <hex>); read by all
+// build_tool modules directly as g_out_flags. No need to thread it through
+// build_context_t since output verbosity is a process-global setting.
+
+typedef unsigned int out_flags_t;
+
+// Compile-step sections — each bit enables one category of cl.exe output.
+#define ORB_OUT_COMPILE_SUMMARY  ( 1u << 0  )  // [orb compile] target (config)
+#define ORB_OUT_COMPILE_SOURCES  ( 1u << 1  )  // sources: <absolute paths>
+#define ORB_OUT_COMPILE_FLAGS    ( 1u << 2  )  // flags:   /W4 /WX /Zi /Od ...
+#define ORB_OUT_COMPILE_DEFINES  ( 1u << 3  )  // defines: OS_WINDOWS ARCH_X64 ...
+#define ORB_OUT_COMPILE_INCLUDES ( 1u << 4  )  // includes: source gen_dir ...
+#define ORB_OUT_COMPILE_OUTPUT   ( 1u << 5  )  // output:  obj=... pdb=...
+#define ORB_OUT_COMPILE_CMD      ( 1u << 6  )  // raw cl.exe command line
+
+// Link / archive-step sections.
+#define ORB_OUT_LINK_SUMMARY     ( 1u << 7  )  // [orb link] target -> artifact
+#define ORB_OUT_LINK_INPUTS      ( 1u << 8  )  // inputs:  objDir/*.obj
+#define ORB_OUT_LINK_LIBS        ( 1u << 9  )  // libs:    dep.lib user32.lib ...
+#define ORB_OUT_LINK_FLAGS       ( 1u << 10 )  // flags:   /nologo /DLL ...
+#define ORB_OUT_LINK_OUTPUT      ( 1u << 11 )  // output:  bin/target.lib
+#define ORB_OUT_LINK_PDB         ( 1u << 12 )  // pdb:     bin/target_xxx.pdb
+#define ORB_OUT_LINK_CMD         ( 1u << 13 )  // raw link.exe / lib.exe command line
+
+// General sections.
+#define ORB_OUT_SCHEDULER        ( 1u << 14 )  // [orb parallel] N targets, M threads
+#define ORB_OUT_TARGET_RESULT    ( 1u << 15 )  // [orb ok] per-target pass result
+#define ORB_OUT_REFLECT          ( 1u << 16 )  // [orb reflect] codegen steps
+#define ORB_OUT_VCVARS           ( 1u << 17 )  // [orb vcvars] VS env discovery
+
+// Convenience masks: any compile or link detail flag set.
+#define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SUMMARY | ORB_OUT_COMPILE_SOURCES  | \
+                               ORB_OUT_COMPILE_FLAGS   | ORB_OUT_COMPILE_DEFINES  | \
+                               ORB_OUT_COMPILE_INCLUDES| ORB_OUT_COMPILE_OUTPUT   | \
+                               ORB_OUT_COMPILE_CMD )
+
+#define ORB_OUT_ANY_LINK     ( ORB_OUT_LINK_SUMMARY | ORB_OUT_LINK_INPUTS | \
+                               ORB_OUT_LINK_LIBS    | ORB_OUT_LINK_FLAGS  | \
+                               ORB_OUT_LINK_OUTPUT  | ORB_OUT_LINK_PDB   | \
+                               ORB_OUT_LINK_CMD )
+
+// Preset combinations — pass as --out <hex> or use -q / -v shorthands.
+#define ORB_OUT_QUIET   ( ORB_OUT_TARGET_RESULT | ORB_OUT_SCHEDULER )
+#define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_COMPILE_SUMMARY | ORB_OUT_COMPILE_SOURCES | \
+                          ORB_OUT_LINK_SUMMARY | ORB_OUT_REFLECT | ORB_OUT_VCVARS )
+
+#define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
+#define ORB_OUT_DEFAULT   ORB_OUT_QUIET
+
+// Defined in build_tool.c; all other translation units read this directly.
+extern out_flags_t g_out_flags;
 
 // =============================================================================
 // --- Orchestration API -------------------------------------------------------
@@ -238,6 +320,11 @@ void  build_unlock_target( void* lock );
 // a parallel worker is active (see sched_log_path), otherwise inherits the
 // parent's stdout/stderr.
 int build_run_cmd( const char* cmd );
+
+// Same as build_run_cmd but suppresses the "[cmd] ..." echo. Use for trivial
+// housekeeping invocations (e.g. del/rd during clean) where the caller will
+// print a single human-readable summary itself instead of one line per call.
+int build_run_cmd_quiet( const char* cmd );
 
 // Like build_run_cmd, but pipes the child's stdout+stderr back through us
 // so /showIncludes lines can be parsed out and written to deps_path. All

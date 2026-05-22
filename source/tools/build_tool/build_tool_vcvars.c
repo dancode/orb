@@ -136,7 +136,7 @@ import_vcvars_env( const char* vcvars_path )
     FILE* pipe = _popen( run_cmd, "rt" );
     if ( !pipe )
     {
-        printf( "Warning: could not spawn sub-shell for vcvars import.\n" );
+        printf( ORB_INDENT "[orb warn] could not spawn sub-shell for vcvars import\n" );
         return 0;
     }
 
@@ -183,18 +183,21 @@ build_setup_vc_env( void )
     // with no args prints its banner and exits 0.
     if ( system( "cl.exe >nul 2>nul" ) == 0 ) return;
 
-    printf( "cl.exe not in PATH. Locating Visual Studio...\n" );
+    if ( g_out_flags & ORB_OUT_VCVARS )
+        printf( ORB_INDENT "[orb vcvars] cl.exe not in PATH, locating Visual Studio...\n" );
 
     char vcvars_path[ 512 ] = { 0 };
     if ( !locate_vcvarsall( vcvars_path, sizeof( vcvars_path ) ) )
     {
-        printf( "Warning: Could not locate vcvarsall.bat. Compiler calls will fail.\n" );
+        printf( ORB_INDENT "[orb warn] could not locate vcvarsall.bat, compiler calls will fail\n" );
         return;
     }
 
-    printf( "Importing VC environment from %s\n", vcvars_path );
+    if ( g_out_flags & ORB_OUT_VCVARS )
+        printf( ORB_INDENT "[orb vcvars] importing from %s\n", vcvars_path );
     int n = import_vcvars_env( vcvars_path );
-    printf( "Imported %d environment variables (in-process).\n", n );
+    if ( g_out_flags & ORB_OUT_VCVARS )
+        printf( ORB_INDENT "[orb vcvars] imported %d environment variables\n", n );
 #endif
 }
 
@@ -244,7 +247,7 @@ spawn_cmd( const char* cmd, const char* log_path )
                             &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL );
         if ( hout == INVALID_HANDLE_VALUE )
         {
-            printf( "Error: could not open log file %s (err %lu)\n",
+            printf( ORB_INDENT "[orb error] could not open log file %s (err %lu)\n",
                     log_path, GetLastError() );
             return -1;
         }
@@ -271,7 +274,7 @@ spawn_cmd( const char* cmd, const char* log_path )
     {
         DWORD err = GetLastError();
         if ( hout ) CloseHandle( hout );
-        printf( "Error: CreateProcess failed (err %lu): %s\n", err, cmd );
+        printf( ORB_INDENT "[orb error] CreateProcess failed (err %lu): %s\n", err, cmd );
         return -1;
     }
 
@@ -290,8 +293,9 @@ spawn_cmd( const char* cmd, const char* log_path )
  * build_run_cmd()
  *
  * Public entry point for one-shot command execution. Routes to spawn_cmd()
- * with the active worker's log path (if any) and prefixes the log/console
- * with "[CMD] ..." so the build trace is auditable.
+ * with the active worker's log path (if any) so child output is captured
+ * into the per-target log during parallel builds. On failure the exit code
+ * is also written to the log so post-mortem inspection has a clear marker.
  */
 int
 build_run_cmd( const char* cmd )
@@ -299,27 +303,31 @@ build_run_cmd( const char* cmd )
     const char* log = sched_log_path();
     if ( log )
     {
-        // Worker thread: redirect stdout+stderr into this target's log file
-        // so parallel workers don't interleave on the shared console. The
-        // log gets flushed in one atomic block when the target completes.
-        FILE* lf = fopen( log, "a" );
-        if ( lf )
-        {
-            fprintf( lf, "[CMD] %s\n", cmd );
-            fclose( lf );
-        }
         int rc = spawn_cmd( cmd, log );
         // Surface non-zero exit in the log so post-mortem inspection sees
         // a clear failure marker even when the child wrote nothing to stderr.
         if ( rc != 0 )
         {
-            FILE* lf2 = fopen( log, "a" );
-            if ( lf2 ) { fprintf( lf2, "[CMD exit=%d]\n", rc ); fclose( lf2 ); }
+            FILE* lf = fopen( log, "a" );
+            if ( lf ) { fprintf( lf, ORB_INDENT "[orb exit=%d]\n", rc ); fclose( lf ); }
         }
         return rc;
     }
-    printf( "[CMD] %s\n", cmd );
     return spawn_cmd( cmd, NULL );
+}
+
+/**
+ * build_run_cmd_quiet()
+ *
+ * Identical to build_run_cmd but does not write an exit-code marker to the
+ * log on failure. Used by build_clean() for trivial del/rd operations where
+ * the caller prints a single summarized header instead of one line per call.
+ */
+int
+build_run_cmd_quiet( const char* cmd )
+{
+    const char* log = sched_log_path();
+    return spawn_cmd( cmd, log );
 }
 
 /**
@@ -426,7 +434,6 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
         owned_log = fopen( log_path, "a" );
         if ( owned_log ) out = owned_log;
     }
-    fprintf( out, "[CMD] %s\n", cmd );
 
     FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
 

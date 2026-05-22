@@ -146,7 +146,7 @@ add_job( target_info_t* t )
     if ( existing >= 0 ) return existing;
     if ( g_sched.job_count >= MAX_JOBS )
     {
-        printf( "Error: scheduler job table full (MAX_JOBS=%d)\n", MAX_JOBS );
+        printf( ORB_INDENT "[orb error] scheduler job table full (MAX_JOBS=%d)\n", MAX_JOBS );
         return -1;
     }
 
@@ -243,6 +243,28 @@ add_job( target_info_t* t )
  * Termination: returns 0 when total_remaining hits 0, or when any_failed
  * is sticky-set and the ready queue has drained.
  */
+// Returns true for lines like "rs_gen.c" that cl.exe echoes to stdout when
+// compiling — bare basename, no spaces or path separators, .c/.cpp extension.
+// We already print [orb src] before the command, so these are redundant noise.
+static bool
+is_msvc_source_echo( const char* line )
+{
+    // Trim leading whitespace and trailing CR/LF/space.
+    while ( *line == ' ' || *line == '\t' ) ++line;
+    int len = (int)strlen( line );
+    while ( len > 0 && ( line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' ' ) ) --len;
+    if ( len == 0 ) return false;
+    // No spaces or path separators — must be a plain filename.
+    for ( int i = 0; i < len; ++i )
+        if ( line[i] == ' ' || line[i] == '/' || line[i] == '\\' ) return false;
+    // Extension must be .c or .cpp.
+    int dot = -1;
+    for ( int i = len - 1; i >= 0; --i ) { if ( line[i] == '.' ) { dot = i; break; } }
+    if ( dot < 0 ) return false;
+    const char* ext = line + dot + 1;
+    return ( _stricmp( ext, "c" ) == 0 || _stricmp( ext, "cpp" ) == 0 );
+}
+
 static unsigned __stdcall
 worker_main( void* arg )
 {
@@ -263,7 +285,7 @@ worker_main( void* arg )
             // the exit branch below carry us out.
             if ( g_sched.in_flight == 0 )
             {
-                printf( "Error: dependency cycle detected in build graph (%d targets stuck).\n",
+                printf( ORB_INDENT "[orb error] dependency cycle detected in build graph (%d targets stuck)\n",
                         g_sched.total_remaining );
                 g_sched.any_failed = true;
                 WakeAllConditionVariable( &g_sched.cv );
@@ -309,14 +331,27 @@ worker_main( void* arg )
         // --- 4. Atomically dump this target's full log to the console ---
         // The print lock guarantees no other worker's dump can interleave
         // between our header and the last line of our log.
+        //
+        // [orb FAILED] is always printed (never gated) — you always need to
+        // know something broke. [orb ok] is gated on ORB_OUT_TARGET_RESULT.
+        //
+        // The log is dumped when the target failed (to show errors/warnings)
+        // OR when any compile/link detail flag is active (the log contains the
+        // section output printed by build_target_compile/link).
         EnterCriticalSection( &g_print_lock );
-        printf( "\n=== %s : %s ===\n", j->target->name, ok ? "OK" : "FAILED" );
-        FILE* lf = fopen( j->log_path, "r" );
-        if ( lf )
+        if ( !ok || ( g_out_flags & ORB_OUT_TARGET_RESULT ) )
+            printf( ORB_INDENT "[orb %s] %s\n", ok ? "ok" : "FAILED", j->target->name );
+        bool dump_log = !ok || ( g_out_flags & ( ORB_OUT_ANY_COMPILE | ORB_OUT_ANY_LINK ) );
+        if ( dump_log )
         {
-            char line[ 4096 ];
-            while ( fgets( line, sizeof( line ), lf ) ) fputs( line, stdout );
-            fclose( lf );
+            FILE* lf = fopen( j->log_path, "r" );
+            if ( lf )
+            {
+                char line[ 4096 ];
+                while ( fgets( line, sizeof( line ), lf ) )
+                    if ( !is_msvc_source_echo( line ) ) fputs( line, stdout );
+                fclose( lf );
+            }
         }
         fflush( stdout );
         LeaveCriticalSection( &g_print_lock );
@@ -377,7 +412,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
         g_sched_log_tls = TlsAlloc();
         if ( g_sched_log_tls == TLS_OUT_OF_INDEXES )
         {
-            printf( "Error: TlsAlloc failed.\n" );
+            printf( ORB_INDENT "[orb error] TlsAlloc failed\n" );
             DeleteCriticalSection( &g_sched.lock );
             return false;
         }
@@ -424,8 +459,9 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     if ( thread_count < 1 ) thread_count = 1;
     if ( thread_count > MAX_THREADS ) thread_count = MAX_THREADS;
 
-    printf( "\n--- Parallel build: %d targets, %d worker threads ---\n",
-            g_sched.job_count, thread_count );
+    if ( g_out_flags & ORB_OUT_SCHEDULER )
+        printf( ORB_INDENT "[orb parallel] %d targets, %d worker threads\n",
+                g_sched.job_count, thread_count );
 
     HANDLE threads[ MAX_THREADS ];
     int    spawned = 0;
