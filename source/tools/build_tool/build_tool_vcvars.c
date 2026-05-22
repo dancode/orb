@@ -179,9 +179,10 @@ void
 build_setup_vc_env( void )
 {
 #if defined( _WIN32 )
-    // Fast path: cl.exe already on PATH. system() returns 0 because cl.exe
-    // with no args prints its banner and exits 0.
-    if ( system( "cl.exe >nul 2>nul" ) == 0 ) return;
+    // Fast path: cl.exe already on PATH. SearchPathA walks PATH without
+    // spawning a child process, so this is free compared to system().
+    char cl_path[ MAX_PATH ];
+    if ( SearchPathA( NULL, "cl.exe", NULL, MAX_PATH, cl_path, NULL ) != 0 ) return;
 
     if ( g_out_flags & ORB_OUT_VCVARS )
         printf( ORB_INDENT "[orb vcvars] cl.exe not in PATH, locating Visual Studio...\n" );

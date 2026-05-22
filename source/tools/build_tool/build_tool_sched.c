@@ -167,26 +167,20 @@ add_job( target_info_t* t )
 
     for ( int i = 0; t->deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
-        for ( int k = 0; k < g_target_count; ++k )
+        target_info_t* dep = find_target( t->deps[ i ] );
+        if ( dep )
         {
-            if ( strcmp( g_targets[ k ].name, t->deps[ i ] ) == 0 )
-            {
-                int di = add_job( &g_targets[ k ] );
-                if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
-                break;
-            }
+            int di = add_job( dep );
+            if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
         }
     }
     for ( int i = 0; t->tool_deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
-        for ( int k = 0; k < g_target_count; ++k )
+        target_info_t* tool = find_target( t->tool_deps[ i ] );
+        if ( tool )
         {
-            if ( strcmp( g_targets[ k ].name, t->tool_deps[ i ] ) == 0 )
-            {
-                int di = add_job( &g_targets[ k ] );
-                if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
-                break;
-            }
+            int di = add_job( tool );
+            if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
         }
     }
 
@@ -195,18 +189,15 @@ add_job( target_info_t* t )
     // and leave the job permanently stuck in the ready queue.
     if ( t->has_reflect && dep_count < MAX_LOCAL_DEPS )
     {
-        for ( int k = 0; k < g_target_count; ++k )
+        target_info_t* rt = find_reflect_tool();
+        if ( rt )
         {
-            if ( g_targets[ k ].is_reflect_tool )
+            int di = add_job( rt );
+            if ( di >= 0 )
             {
-                int di = add_job( &g_targets[ k ] );
-                if ( di >= 0 )
-                {
-                    bool dup = false;
-                    for ( int d = 0; d < dep_count; ++d ) if ( dep_indices[ d ] == di ) { dup = true; break; }
-                    if ( !dup ) dep_indices[ dep_count++ ] = di;
-                }
-                break;
+                bool dup = false;
+                for ( int d = 0; d < dep_count; ++d ) if ( dep_indices[ d ] == di ) { dup = true; break; }
+                if ( !dup ) dep_indices[ dep_count++ ] = di;
             }
         }
     }
@@ -244,28 +235,6 @@ add_job( target_info_t* t )
  * Termination: returns 0 when total_remaining hits 0, or when any_failed
  * is sticky-set and the ready queue has drained.
  */
-// Returns true for lines like "rs_gen.c" that cl.exe echoes to stdout when
-// compiling — bare basename, no spaces or path separators, .c/.cpp extension.
-// We already print [orb src] before the command, so these are redundant noise.
-static bool
-is_msvc_source_echo( const char* line )
-{
-    // Trim leading whitespace and trailing CR/LF/space.
-    while ( *line == ' ' || *line == '\t' ) ++line;
-    int len = (int)strlen( line );
-    while ( len > 0 && ( line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' ' ) ) --len;
-    if ( len == 0 ) return false;
-    // No spaces or path separators — must be a plain filename.
-    for ( int i = 0; i < len; ++i )
-        if ( line[i] == ' ' || line[i] == '/' || line[i] == '\\' ) return false;
-    // Extension must be .c or .cpp.
-    int dot = -1;
-    for ( int i = len - 1; i >= 0; --i ) { if ( line[i] == '.' ) { dot = i; break; } }
-    if ( dot < 0 ) return false;
-    const char* ext = line + dot + 1;
-    return ( _stricmp( ext, "c" ) == 0 || _stricmp( ext, "cpp" ) == 0 );
-}
-
 static unsigned __stdcall
 worker_main( void* arg )
 {

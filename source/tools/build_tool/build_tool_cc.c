@@ -57,16 +57,24 @@ typedef struct
 /*============================================================================================*/
 // --- Internal helpers ---
 
-// Append a formatted string to a fixed-size field (safe, truncates silently).
+// Append a formatted string to a fixed-size field.
+// Reports overflow via printf so it's never a silent data loss.
 static void
 cc_field( char* dst, size_t dst_size, const char* fmt, ... )
 {
     size_t used = strlen( dst );
-    if ( used >= dst_size - 1 ) return;
+    if ( used >= dst_size - 1 )
+    {
+        printf( ORB_INDENT "[orb error] cc_field overflow (capacity %zu)\n", dst_size );
+        return;
+    }
+    size_t  remaining = dst_size - used;
     va_list args;
     va_start( args, fmt );
-    vsnprintf( dst + used, dst_size - used, fmt, args );
+    int written = vsnprintf( dst + used, remaining, fmt, args );
     va_end( args );
+    if ( written < 0 || ( size_t )written >= remaining )
+        printf( ORB_INDENT "[orb error] cc_field truncated (needed %d, had %zu)\n", written, remaining );
 }
 
 // get_target_upper() -- derive <TARGET>_STATIC from a target name.
@@ -268,6 +276,28 @@ print_raw_cmd( FILE* out, const char* cmd )
 }
 
 /*============================================================================================*/
+// --- MSVC output classification ---
+
+// Returns true for bare source-file echo lines cl.exe emits per compiled TU
+// (e.g. "rs_gen.c") — plain filename, no spaces or separators, .c/.cpp extension.
+// Filtered out of log dumps since the orb build log already shows sources.
+static bool
+is_msvc_source_echo( const char* line )
+{
+    while ( *line == ' ' || *line == '\t' ) ++line;
+    int len = ( int )strlen( line );
+    while ( len > 0 && ( line[ len - 1 ] == '\n' || line[ len - 1 ] == '\r' || line[ len - 1 ] == ' ' ) ) --len;
+    if ( len == 0 ) return false;
+    for ( int i = 0; i < len; ++i )
+        if ( line[ i ] == ' ' || line[ i ] == '/' || line[ i ] == '\\' ) return false;
+    int dot = -1;
+    for ( int i = len - 1; i >= 0; --i ) { if ( line[ i ] == '.' ) { dot = i; break; } }
+    if ( dot < 0 ) return false;
+    const char* ext = line + dot + 1;
+    return ( _stricmp( ext, "c" ) == 0 || _stricmp( ext, "cpp" ) == 0 );
+}
+
+/*============================================================================================*/
 // --- Compilation ---
 
 /**
@@ -310,6 +340,21 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         char upper[ 128 ];
         get_target_upper( target->name, upper );
         cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", upper );
+    }
+    // Propagate _STATIC for each dep so API gateways resolve correctly.
+    // Static lib deps are always static; dynamic lib deps become static in monolithic mode.
+    for ( int i = 0; target->deps[ i ]; ++i )
+    {
+        target_info_t* dep = find_target( target->deps[ i ] );
+        if ( !dep ) continue;
+        bool dep_is_static = ( dep->type == TARGET_STATIC_LIB ) ||
+                             ( dep->type == TARGET_DYNAMIC_LIB && ctx->is_monolithic );
+        if ( dep_is_static )
+        {
+            char dep_upper[ 128 ];
+            get_target_upper( dep->name, dep_upper );
+            cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", dep_upper );
+        }
     }
     if ( ctx->is_monolithic )
         cc_field( cc.defines, sizeof( cc.defines ), " /DBUILD_STATIC" );
@@ -378,10 +423,15 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 bool
 build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir )
 {
-    ( void )ctx;
     link_cmd_t lk = { 0 };
 
-    if ( target->type == TARGET_STATIC_LIB )
+    // In monolithic mode, dynamic modules are archived as static libs instead of DLLs.
+    // This lets host executables link them directly with no hot-reload overhead.
+    target_type_t effective_type = target->type;
+    if ( ctx->is_monolithic && effective_type == TARGET_DYNAMIC_LIB )
+        effective_type = TARGET_STATIC_LIB;
+
+    if ( effective_type == TARGET_STATIC_LIB )
     {
         snprintf( lk.exe,      sizeof( lk.exe ),      "lib.exe" );
         snprintf( lk.artifact, sizeof( lk.artifact ),  "bin/%s.lib", target->name );
@@ -392,20 +442,20 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     }
     else
     {
-        const char* ext = ( target->type == TARGET_DYNAMIC_LIB ) ? ".dll" : ".exe";
+        const char* ext = ( effective_type == TARGET_DYNAMIC_LIB ) ? ".dll" : ".exe";
 
         snprintf( lk.exe,      sizeof( lk.exe ),      "link.exe" );
         snprintf( lk.artifact, sizeof( lk.artifact ),  "bin/%s%s", target->name, ext );
         snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s/*.obj", obj_dir );
 
         // Flags: /DLL only for shared libs.
-        if ( target->type == TARGET_DYNAMIC_LIB )
+        if ( effective_type == TARGET_DYNAMIC_LIB )
             snprintf( lk.flags, sizeof( lk.flags ), "/nologo /DLL" );
         else
             snprintf( lk.flags, sizeof( lk.flags ), "/nologo" );
 
         // Output: artifact + optional import lib for DLLs.
-        if ( target->type == TARGET_DYNAMIC_LIB )
+        if ( effective_type == TARGET_DYNAMIC_LIB )
             snprintf( lk.output, sizeof( lk.output ),
                       "/OUT:bin/%s.dll /IMPLIB:bin/%s.lib", target->name, target->name );
         else

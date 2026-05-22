@@ -27,7 +27,10 @@
       "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat sys\")",
       "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat sys Debug\")",
       "Bash(cmd //c \".\\\\vc_vars_setup.bat && .\\\\build_hot.bat build_dynamic sys Debug\")",
-      "PowerShell(& .\\\\bootstrap_build_tool.bat 2>&1 | Select-Object -Last 30)"
+      "PowerShell(& .\\\\bootstrap_build_tool.bat 2>&1 | Select-Object -Last 30)",
+      "Bash(cmd /c \"call \\\\\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\\\\\" x64 >nul 2>&1 && bootstrap_build_tool.bat\")",
+      "Bash(echo \"EXIT: $?\")",
+      "PowerShell(cd F:\\\\orb; $result = cmd /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bootstrap_build_tool.bat 2>&1'; $result; \"EXIT: $LASTEXITCODE\")"
     ]
   }
 }

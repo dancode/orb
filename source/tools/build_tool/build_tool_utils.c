@@ -200,3 +200,34 @@ build_unlock_target( void* lock )
     ( void )lock;
 #endif
 }
+
+/*============================================================================================*/
+// --- Target Registry Helpers ---
+
+// Linear search through the global target pool by exact name.
+// Used for internal dep resolution where names are always lowercase literals from g_targets[].
+static target_info_t*
+find_target( const char* name )
+{
+    for ( int i = 0; i < g_target_count; ++i )
+        if ( strcmp( g_targets[ i ].name, name ) == 0 ) return &g_targets[ i ];
+    return NULL;
+}
+
+// Case-insensitive variant for user-facing CLI lookups (target_name from argv).
+static target_info_t*
+find_target_icase( const char* name )
+{
+    for ( int i = 0; i < g_target_count; ++i )
+        if ( _stricmp( g_targets[ i ].name, name ) == 0 ) return &g_targets[ i ];
+    return NULL;
+}
+
+// Find the singleton target marked is_reflect_tool.
+static target_info_t*
+find_reflect_tool( void )
+{
+    for ( int i = 0; i < g_target_count; ++i )
+        if ( g_targets[ i ].is_reflect_tool ) return &g_targets[ i ];
+    return NULL;
+}

@@ -104,14 +104,19 @@ build_clean( target_info_t* target )
     {
         // One-line per-target clean. Sub-commands run silently; we print a
         // single summary at the end so MSBuild output stays parseable.
-        const char* ext = ( target->type == TARGET_STATIC_LIB )  ? "lib" :
+        const char* ext = ( target->type == TARGET_STATIC_LIB ) ? "lib" :
                           ( target->type == TARGET_DYNAMIC_LIB ) ? "dll" : "exe";
         snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.%s >nul 2>nul", target->name, ext );
         build_run_cmd_quiet( cmd );
 
         if ( target->type == TARGET_DYNAMIC_LIB )
         {
+            // Also delete .lib — in monolithic mode this is the primary artifact.
+            // Also delete .dll — in dynamic mode this is the primary artifact.
+            // del /q is a no-op when the file doesn't exist, so both are always safe.
             snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.lib >nul 2>nul", target->name );
+            build_run_cmd_quiet( cmd );
+            snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.dll >nul 2>nul", target->name );
             build_run_cmd_quiet( cmd );
             snprintf( cmd, sizeof( cmd ), "del /q bin\\%s.exp >nul 2>nul", target->name );
             build_run_cmd_quiet( cmd );
@@ -167,26 +172,7 @@ build_clean( target_info_t* target )
     }
     return;
 #else
-    char cmd[ BT_PATH_MAX ];
-    if ( target )
-    {
-        const char* ext = ( target->type == TARGET_STATIC_LIB )  ? "lib" :
-                          ( target->type == TARGET_DYNAMIC_LIB ) ? "so"  : "";
-        snprintf( cmd, sizeof( cmd ), "rm -f bin/%s.%s", target->name, ext );
-        build_run_cmd( cmd );
-        snprintf( cmd, sizeof( cmd ), "rm -rf %s/%s/%s", g_build_dir, g_int_dir, target->name );
-        build_run_cmd( cmd );
-    }
-    else
-    {
-        snprintf( cmd, sizeof( cmd ), "rm -rf bin %s/%s %s/%s", g_build_dir, g_int_dir, g_build_dir, g_gen_dir );
-        build_run_cmd( cmd );
-        build_run_cmd( "mkdir bin" );
-        snprintf( cmd, sizeof( cmd ), "mkdir -p %s/%s", g_build_dir, g_int_dir );
-        build_run_cmd( cmd );
-        snprintf( cmd, sizeof( cmd ), "mkdir -p %s/%s", g_build_dir, g_gen_dir );
-        build_run_cmd( cmd );
-    }
+#error "build_tool only supports Windows (MSVC)"
 #endif
     // printf( "Clean complete.\n" );
 }
@@ -217,6 +203,8 @@ bool
 build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 {
     if ( out_skipped ) *out_skipped = false;
+    target_info_t* refl_tool = NULL;   // Located in step 0; reused in step 5.
+
     // --- 0. Dependency Resolution ---
     //
     // Recurse into link deps and tool deps before building this target.
@@ -234,11 +222,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         // -no-deps is set. Skip here to avoid racing VS's parallel scheduler.
         for ( int i = 0; target->deps[ i ]; ++i )
         {
-            target_info_t* dep = NULL;
-            for ( int j = 0; j < g_target_count; ++j )
-            {
-                if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 ) { dep = &g_targets[ j ]; break; }
-            }
+            target_info_t* dep = find_target( target->deps[ i ] );
             if ( !dep ) { printf( ORB_INDENT "[orb error] '%s' depends on unknown target '%s'\n", target->name, target->deps[ i ] ); return false; }
             if ( !build_target( ctx, dep, NULL ) ) return false;
         }
@@ -250,11 +234,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // idempotent; the up-to-date check short-circuits when nothing changed.
     for ( int i = 0; target->tool_deps[ i ]; ++i )
     {
-        target_info_t* tool = NULL;
-        for ( int j = 0; j < g_target_count; ++j )
-        {
-            if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
-        }
+        target_info_t* tool = find_target( target->tool_deps[ i ] );
         if ( !tool ) { printf( ORB_INDENT "[orb error] '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] ); return false; }
         if ( !build_target( ctx, tool, NULL ) ) return false;
     }
@@ -262,11 +242,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // Implicit reflect tool dep — same always-rebuild guarantee.
     if ( target->has_reflect )
     {
-        target_info_t* refl_tool = NULL;
-        for ( int j = 0; j < g_target_count; ++j )
-        {
-            if ( g_targets[ j ].is_reflect_tool ) { refl_tool = &g_targets[ j ]; break; }
-        }
+        refl_tool = find_reflect_tool();
         if ( !refl_tool ) { printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n", target->name ); return false; }
         if ( !build_target( ctx, refl_tool, NULL ) ) return false;
     }
@@ -394,9 +370,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     if ( _access( gen_dir, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", gen_dir); system(c); }
     if ( _access( obj_dir, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", obj_dir); system(c); }
 #else
-    char cmd_mkdir[ BT_PATH_MAX ];
-    snprintf( cmd_mkdir, sizeof( cmd_mkdir ), "mkdir -p bin %s/%s/%s %s/%s", g_build_dir, g_int_dir, target->name, g_build_dir, g_gen_dir );
-    system( cmd_mkdir );
+#error "build_tool only supports Windows (MSVC)"
 #endif
 
     // --- 4. Locked File Management ---
@@ -408,16 +382,19 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // or link fails we restore it; if everything succeeds the .old file is
     // overwritten on the next build cycle.
 
-    char exe_path[ BT_PATH_MAX ];
-    char old_path[ BT_PATH_MAX ];
+    char exe_path[ BT_PATH_MAX ] = { 0 };
+    char old_path[ BT_PATH_MAX ] = { 0 };
     bool renamed = false;
-    snprintf( exe_path, sizeof( exe_path ), "bin\\%s.exe", target->name );
-    snprintf( old_path, sizeof( old_path ), "bin\\%s.exe.old", target->name );
 
-    if ( target->type == TARGET_EXECUTABLE && _access( exe_path, 0 ) == 0 )
+    if ( target->type == TARGET_EXECUTABLE )
     {
-        remove( old_path );
-        if ( rename( exe_path, old_path ) == 0 ) renamed = true;
+        snprintf( exe_path, sizeof( exe_path ), "bin\\%s.exe", target->name );
+        snprintf( old_path, sizeof( old_path ), "bin\\%s.exe.old", target->name );
+        if ( _access( exe_path, 0 ) == 0 )
+        {
+            remove( old_path );
+            if ( rename( exe_path, old_path ) == 0 ) renamed = true;
+        }
     }
 
     // PDB rotation is handled at link time: each link writes a uniquely-named
@@ -435,18 +412,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
     if ( target->has_reflect )
     {
-        target_info_t* refl_tool = NULL;
-        for ( int j = 0; j < g_target_count; ++j )
-        {
-            if ( g_targets[ j ].is_reflect_tool ) { refl_tool = &g_targets[ j ]; break; }
-        }
-        if ( !refl_tool )
-        {
-            printf( ORB_INDENT "[orb error] no is_reflect_tool target registered — cannot generate reflection for '%s'\n", target->name );
-            if ( renamed ) rename( old_path, exe_path );
-            result = false;
-            goto cleanup;
-        }
+        // refl_tool was located and built in step 0; NULL is impossible here
+        // because step 0 returned false when no reflect tool was registered.
         const char* rname = target->reflect_name ? target->reflect_name : target->name;
         if ( g_out_flags & ORB_OUT_REFLECT )
         {
@@ -506,6 +473,7 @@ cleanup:
 //   -no-deps                Build only the target itself, no dep recursion
 //                           (set by VS .vcxproj files; do not use on the CLI
 //                           unless you know exactly what you're doing).
+//   -monolithic             Build DLL modules as static libs; defines BUILD_STATIC globally.
 //   -config <Debug|Release> Pick build config (default Debug).
 //   release                 Shortcut for -config Release.
 //   clang                   Use clang-cl instead of cl.exe.
@@ -533,6 +501,7 @@ main( int argc, char** argv )
         if ( _stricmp( argv[ i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         if ( strcmp( argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
         if ( strcmp( argv[ i ], "-no-deps" ) == 0 ) ctx.skip_deps = true;
+        if ( strcmp( argv[ i ], "-monolithic" ) == 0 || strcmp( argv[ i ], "monolithic" ) == 0 ) ctx.is_monolithic = true;
         if ( strcmp( argv[ i ], "-target" ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
         if ( strcmp( argv[ i ], "-j" ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
         if ( strcmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
@@ -569,10 +538,7 @@ main( int argc, char** argv )
         target_info_t* clean_target = NULL;
         if ( target_name )
         {
-            for ( int i = 0; i < g_target_count; ++i )
-            {
-                if ( _stricmp( g_targets[ i ].name, target_name ) == 0 ) { clean_target = &g_targets[ i ]; break; }
-            }
+            clean_target = find_target_icase( target_name );
             if ( !clean_target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); return 1; }
         }
         build_clean( clean_target );
@@ -594,8 +560,9 @@ main( int argc, char** argv )
     }
 
     printf( ORB_BANNER "[orb build] %s ", target_upper );
-    printf( "%s%s |", ctx.config == CONFIG_DEBUG ? "Debug" : "Release",
-                      ctx.is_clang ? "| Clang" : "" ); // MSVC is expected
+    printf( "%s%s%s |", ctx.config == CONFIG_DEBUG ? "Debug" : "Release",
+                        ctx.is_monolithic ? " | Monolithic" : " | Dynamic",
+                        ctx.is_clang ? " | Clang" : "" );
     for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
     printf( "\n" );
 
@@ -613,10 +580,7 @@ main( int argc, char** argv )
     target_info_t* target = NULL;
     if ( target_name )
     {
-        for ( int i = 0; i < g_target_count; ++i )
-        {
-            if ( _stricmp( g_targets[ i ].name, target_name ) == 0 ) { target = &g_targets[ i ]; break; }
-        }
+        target = find_target_icase( target_name );
         if ( !target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); return 1; }
     }
 
