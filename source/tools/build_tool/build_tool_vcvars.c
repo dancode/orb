@@ -13,11 +13,6 @@
     the modified environment for free — no per-invocation prefix needed.
 
 ==============================================================================================*/
-#include "build_tool.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <io.h>
 
 // Forward decl from build_tool_sched.c (later in the unity build). Returns
 // NULL outside a parallel worker — in that case we write to stdout directly.

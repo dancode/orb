@@ -18,13 +18,6 @@
       at build time.
 
 ==============================================================================================*/
-#include "build_tool.h"
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
-#include <ctype.h>
-#include <io.h>
-#include <time.h>
 
 /*============================================================================================*/
 // --- Structured command types ---

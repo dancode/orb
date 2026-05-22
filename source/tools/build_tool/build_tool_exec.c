@@ -7,10 +7,6 @@
       build_target()  -- Dep resolution, up-to-date check, reflect codegen, compile + link.
 
 ==============================================================================================*/
-#include "build_tool.h"
-#include <stdio.h>
-#include <string.h>
-#include <io.h>
 
 /*============================================================================================*/
 
@@ -270,7 +266,32 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         }
     }
 
-    // Test C: header dependency check. The previous successful compile
+    // Test C: config change check. If the last successful build used a different
+    // config (Debug vs Release), the artifact is stale even though no source
+    // file changed. _config.txt is written after every successful compile+link.
+    // Missing file = first build or post-clean = must rebuild.
+    if ( up_to_date )
+    {
+        const char* current_config = ( ctx->config == BT_CONFIG_DEBUG ) ? "Debug" : "Release";
+        char        config_marker[ BT_PATH_MAX ];
+        snprintf( config_marker, sizeof( config_marker ), "%s\\_config.txt", obj_dir );
+        FILE* cf = fopen( config_marker, "r" );
+        if ( !cf )
+        {
+            up_to_date = false;
+        }
+        else
+        {
+            char stored[ 16 ] = { 0 };
+            fgets( stored, sizeof( stored ), cf );
+            fclose( cf );
+            size_t l = strlen( stored );
+            while ( l > 0 && ( stored[ l - 1 ] == '\n' || stored[ l - 1 ] == '\r' ) ) stored[ --l ] = '\0';
+            if ( strcmp( stored, current_config ) != 0 ) up_to_date = false;
+        }
+    }
+
+    // Test D: header dependency check. The previous successful compile
     // wrote every #included header path into <obj_dir>/_deps.txt (parsed out
     // of cl.exe's /showIncludes output — see build_target_compile and
     // build_run_cmd_capture_deps). On this pass we replay that list and
@@ -420,6 +441,19 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         if ( renamed ) rename( old_path, exe_path );
         result = false;
         goto cleanup;
+    }
+
+    // Record the config used for this build so the next incremental check can
+    // detect a Debug<->Release switch even when no source file has changed.
+    {
+        char config_marker[ BT_PATH_MAX ];
+        snprintf( config_marker, sizeof( config_marker ), "%s\\_config.txt", obj_dir );
+        FILE* cf = fopen( config_marker, "w" );
+        if ( cf )
+        {
+            fprintf( cf, "%s\n", ctx->config == BT_CONFIG_DEBUG ? "Debug" : "Release" );
+            fclose( cf );
+        }
     }
 
 cleanup:

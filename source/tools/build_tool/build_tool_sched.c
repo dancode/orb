@@ -28,7 +28,6 @@
       a cycle. We abort instead of deadlocking on the condition variable.
 
 ==============================================================================================*/
-#include <process.h>
 
 // Fixed upper bounds. Picked generously vs. the project's actual scale so
 // we never have to grow these dynamically. Hitting either MAX_JOBS or

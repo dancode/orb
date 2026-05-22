@@ -33,14 +33,24 @@
 
 #include "build_tool.h"
 
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-// #include <stdarg.h>
-// #include <ctype.h>
-// #include <io.h>
-// #include <sys/stat.h>
-// #include <time.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <stdlib.h>
+#include <io.h>
+#include <ctype.h>
+#include <time.h>
+#include <process.h>
+#if defined( _WIN32 )
+    #define NOMINMAX
+    #define WIN32_LEAN_AND_MEAN
+    #define WIN32_EXTRA_LEAN
+    #define VC_EXTRALEAN
+    #include <windows.h>
+#endif
+
+// =============================================================================
 
 // --- Project Constants ---
 //
