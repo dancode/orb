@@ -25,29 +25,33 @@
       single cl.exe invocation — and bootstrapping needs just one command line.
 
     Build Outout Format:
-    ┌─────────────────────────┬──────────────────────────┐
-    │           Tag           │         Meaning          │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb build]             │ per-target compile start │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb ok] / [orb FAILED] │ per-target result        │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb parallel]          │ scheduler start          │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb clean]             │ clean summary            │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb reflect]           │ codegen step             │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb cmd]               │ raw command echo         │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb src]               │ source files             │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb vcvars]            │ VS env discovery         │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb warn]              │ non-fatal warning        │
-    ├─────────────────────────┼──────────────────────────┤
-    │ [orb error]             │ fatal error              │
-    └─────────────────────────┴──────────────────────────┘
+    ┌─────────────────────────┬──────────────────────────────┐
+    │           Tag           │         Meaning              │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb build]             │ per-target compile start     │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb compiled]          │ target built successfully    │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb skipped]           │ target already up to date    │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb FAILED]            │ per-target failure           │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb parallel]          │ scheduler start              │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb clean]             │ clean summary                │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb reflect]           │ codegen step                 │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb cmd]               │ raw command echo             │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb src]               │ source files                 │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb vcvars]            │ VS env discovery             │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb warn]              │ non-fatal warning            │
+    ├─────────────────────────┼──────────────────────────────┤
+    │ [orb error]             │ fatal error                  │
+    └─────────────────────────┴──────────────────────────────┘
 
 ==============================================================================================*/
 #ifndef BUILD_TOOL_H
@@ -240,9 +244,10 @@ typedef unsigned int out_flags_t;
 
 // General sections.
 #define ORB_OUT_SCHEDULER        ( 1u << 14 )  // [orb parallel] N targets, M threads
-#define ORB_OUT_TARGET_RESULT    ( 1u << 15 )  // [orb ok] per-target pass result
+#define ORB_OUT_TARGET_RESULT    ( 1u << 15 )  // [orb compiled] / [orb skipped] per-target result
 #define ORB_OUT_REFLECT          ( 1u << 16 )  // [orb reflect] codegen steps
 #define ORB_OUT_VCVARS           ( 1u << 17 )  // [orb vcvars] VS env discovery
+#define ORB_OUT_MSVC_OUTPUT      ( 1u << 18 )  // [MSVC] raw cl/link/lib passthrough lines
 
 // Convenience masks: any compile or link detail flag set.
 #define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SUMMARY | ORB_OUT_COMPILE_SOURCES  | \
@@ -258,10 +263,11 @@ typedef unsigned int out_flags_t;
 // Preset combinations — pass as --out <hex> or use -q / -v shorthands.
 #define ORB_OUT_QUIET   ( ORB_OUT_TARGET_RESULT | ORB_OUT_SCHEDULER )
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_COMPILE_SUMMARY | ORB_OUT_COMPILE_SOURCES | \
-                          ORB_OUT_LINK_SUMMARY | ORB_OUT_REFLECT | ORB_OUT_VCVARS )
+                          ORB_OUT_LINK_SUMMARY | ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
-#define ORB_OUT_DEFAULT   ORB_OUT_QUIET
+#define ORB_OUT_DEFAULT   ORB_OUT_QUIET | ORB_OUT_REFLECT
+
 
 // Defined in build_tool.c; all other translation units read this directly.
 extern out_flags_t g_out_flags;
@@ -326,11 +332,12 @@ int build_run_cmd( const char* cmd );
 // print a single human-readable summary itself instead of one line per call.
 int build_run_cmd_quiet( const char* cmd );
 
-// Like build_run_cmd, but pipes the child's stdout+stderr back through us
-// so /showIncludes lines can be parsed out and written to deps_path. All
-// other lines are forwarded to the active sink (worker log or stdout).
-// System headers from the VC toolchain and Windows SDK are filtered from
-// the deps file (they cannot be invalidated by project edits).
+// Pipes the child's stdout+stderr back line-by-line through us. When
+// deps_path is non-NULL, /showIncludes lines are parsed out and written
+// there (system headers filtered); used for compile steps. When NULL, no
+// deps file is written; used for link/lib steps. All non-deps lines are
+// forwarded to the active sink (worker log or stdout) prefixed with [MSVC]
+// when ORB_OUT_MSVC_OUTPUT is set, or silently dropped when not.
 int build_run_cmd_capture_deps( const char* cmd, const char* deps_path );
 
 // The core worker function. Handles recursive dependency resolution
@@ -338,7 +345,9 @@ int build_run_cmd_capture_deps( const char* cmd, const char* deps_path );
 // timestamp check (artifact mtime vs. each unit, link dep, and recorded
 // header), reflection codegen, then compile + link. Idempotent: a fully
 // up-to-date target short-circuits before any cl.exe spawn.
-bool build_target( build_context_t* ctx, target_info_t* target );
+// out_skipped may be NULL; when non-NULL it is set to true if the target was
+// skipped because all artifacts were already up to date, false otherwise.
+bool build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped );
 
 // Parallel scheduler. Builds the transitive closure of `root` (or every
 // target in g_targets[] if `root` is NULL) using up to `thread_count`

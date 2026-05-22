@@ -214,8 +214,9 @@ build_clean( target_info_t* target )
  * Independent targets run fully in parallel because their mutex names differ.
  */
 bool
-build_target( build_context_t* ctx, target_info_t* target )
+build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 {
+    if ( out_skipped ) *out_skipped = false;
     // --- 0. Dependency Resolution ---
     //
     // Recurse into link deps and tool deps before building this target.
@@ -239,7 +240,7 @@ build_target( build_context_t* ctx, target_info_t* target )
                 if ( strcmp( g_targets[ j ].name, target->deps[ i ] ) == 0 ) { dep = &g_targets[ j ]; break; }
             }
             if ( !dep ) { printf( ORB_INDENT "[orb error] '%s' depends on unknown target '%s'\n", target->name, target->deps[ i ] ); return false; }
-            if ( !build_target( ctx, dep ) ) return false;
+            if ( !build_target( ctx, dep, NULL ) ) return false;
         }
     }
 
@@ -255,7 +256,7 @@ build_target( build_context_t* ctx, target_info_t* target )
             if ( strcmp( g_targets[ j ].name, target->tool_deps[ i ] ) == 0 ) { tool = &g_targets[ j ]; break; }
         }
         if ( !tool ) { printf( ORB_INDENT "[orb error] '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] ); return false; }
-        if ( !build_target( ctx, tool ) ) return false;
+        if ( !build_target( ctx, tool, NULL ) ) return false;
     }
 
     // Implicit reflect tool dep — same always-rebuild guarantee.
@@ -267,7 +268,7 @@ build_target( build_context_t* ctx, target_info_t* target )
             if ( g_targets[ j ].is_reflect_tool ) { refl_tool = &g_targets[ j ]; break; }
         }
         if ( !refl_tool ) { printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n", target->name ); return false; }
-        if ( !build_target( ctx, refl_tool ) ) return false;
+        if ( !build_target( ctx, refl_tool, NULL ) ) return false;
     }
 
     // --- Critical section ---
@@ -370,7 +371,12 @@ build_target( build_context_t* ctx, target_info_t* target )
     // All three tests passed → skip compile + link entirely. We still ran
     // through the lock-and-prepare phase so concurrent callers got serialized
     // and observed the artifact as fully written.
-    if ( up_to_date ) { result = true; goto cleanup; }
+    if ( up_to_date )
+    {
+        if ( out_skipped ) *out_skipped = true;
+        result = true;
+        goto cleanup;
+    }
 
     // --- 3. Directory Creation ---
     //
@@ -574,7 +580,10 @@ main( int argc, char** argv )
     }
     if ( should_gen ) { build_gen_projects(); return 0; }
 
-    // Startup banner — target is the headline; sub-line carries config + args.
+
+    // --- Startup Banner ---    
+    // The target is the bold headline + config + args.
+
     char target_upper[ 64 ] = "ALL";
     if ( target_name )
     {
@@ -583,12 +592,12 @@ main( int argc, char** argv )
             target_upper[ k ] = (char)toupper( (unsigned char)target_name[ k ] );
         target_upper[ k ] = '\0';
     }
-    printf( ORB_BANNER "[ orb build: %s ]\n", target_upper );
-    printf( ORB_INDENT "%s | %s | args:",
-            ctx.config == CONFIG_DEBUG ? "Debug" : "Release",
-            ctx.is_clang ? "Clang" : "MSVC" );
+
+    printf( ORB_BANNER "[orb build] %s ", target_upper );
+    printf( "%s%s |", ctx.config == CONFIG_DEBUG ? "Debug" : "Release",
+                      ctx.is_clang ? "| Clang" : "" ); // MSVC is expected
     for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
-    printf( "\n\n" );
+    printf( "\n" );
 
 
     // Make cl.exe / link.exe / lib.exe callable. Idempotent fast-path when
@@ -614,11 +623,14 @@ main( int argc, char** argv )
     if ( ctx.skip_deps )
     {
         if ( !target ) { printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); return 1; }
-        if ( !build_target( &ctx, target ) )
+        bool was_skipped = false;
+        if ( !build_target( &ctx, target, &was_skipped ) )
         {
             printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
             return 1;
         }
+        if ( g_out_flags & ORB_OUT_TARGET_RESULT )
+            printf( ORB_INDENT "[orb %s] %s\n", was_skipped ? "skipped" : "compiled", target->name );
     }
     else
     {
@@ -630,6 +642,7 @@ main( int argc, char** argv )
     }
 
     // printf( ORB_BANNER "[ orb done: %s ]\n", target_upper );
+    printf( "\n" );
     return 0;
 }
 

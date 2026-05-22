@@ -437,7 +437,9 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
     if ( log_out != stdout ) fclose( log_out );
 
-    return build_run_cmd( cmd.buf ) == 0;
+    // NULL deps_path: no /showIncludes parsing needed for link/lib, but we still
+    // want line-by-line capture so [MSVC] prefixing and ORB_OUT_MSVC_OUTPUT gating apply.
+    return build_run_cmd_capture_deps( cmd.buf, NULL ) == 0;
 }
 
 /*============================================================================================*/

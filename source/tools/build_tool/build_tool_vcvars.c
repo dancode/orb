@@ -370,13 +370,9 @@ process_deps_line( char* line, FILE* deps, FILE* out )
                          || strstr( path, "/Windows Kits/" ) != NULL;
         if ( deps && !is_system ) fprintf( deps, "%s\n", path );
     }
-    else
+    else if ( g_out_flags & ORB_OUT_MSVC_OUTPUT )
     {
-        fputs( line, out );
-        // line may not have a trailing newline (we may have flushed mid-line
-        // due to a long line). Add one so the log stays readable.
-        size_t l = strlen( line );
-        if ( l == 0 || line[ l - 1 ] != '\n' ) fputc( '\n', out );
+        fprintf( out, ORB_INDENT "[MSVC] %s\n", line );
     }
 }
 

@@ -49,6 +49,7 @@ typedef struct
     char           log_path[ BT_PATH_MAX ];    // Per-target build log (cl/link output).
     bool           done;
     bool           failed;
+    bool           skipped;   // True when build_target short-circuited (up to date).
 
 } sched_job_t;
 
@@ -324,7 +325,7 @@ worker_main( void* arg )
 
         build_context_t local_ctx = *g_sched.ctx;
         local_ctx.skip_deps       = true;
-        bool ok                   = build_target( &local_ctx, j->target );
+        bool ok                   = build_target( &local_ctx, j->target, &j->skipped );
 
         TlsSetValue( g_sched_log_tls, NULL );
 
@@ -333,14 +334,14 @@ worker_main( void* arg )
         // between our header and the last line of our log.
         //
         // [orb FAILED] is always printed (never gated) — you always need to
-        // know something broke. [orb ok] is gated on ORB_OUT_TARGET_RESULT.
+        // know something broke. [orb compiled] / [orb skipped] are gated on ORB_OUT_TARGET_RESULT.
         //
         // The log is dumped when the target failed (to show errors/warnings)
         // OR when any compile/link detail flag is active (the log contains the
         // section output printed by build_target_compile/link).
         EnterCriticalSection( &g_print_lock );
         if ( !ok || ( g_out_flags & ORB_OUT_TARGET_RESULT ) )
-            printf( ORB_INDENT "[orb %s] %s\n", ok ? "ok" : "FAILED", j->target->name );
+            printf( ORB_INDENT "[orb %s] %s\n", !ok ? "FAILED" : j->skipped ? "skipped" : "compiled", j->target->name );
         bool dump_log = !ok || ( g_out_flags & ( ORB_OUT_ANY_COMPILE | ORB_OUT_ANY_LINK ) );
         if ( dump_log )
         {
