@@ -13,6 +13,7 @@
     the modified environment for free — no per-invocation prefix needed.
 
 ==============================================================================================*/
+// clang-format off
 
 // Forward decl from build_tool_sched.c (later in the unity build). Returns
 // NULL outside a parallel worker — in that case we write to stdout directly.
@@ -343,6 +344,8 @@ build_run_cmd_quiet( const char* cmd )
  * NOTE: The "Note: including file:" prefix is English-only. For other
  * locales, set VSLANG=1033 in the environment before launching the build.
  */
+static bool is_msvc_source_echo( const char* line );
+
 static void
 process_deps_line( char* line, FILE* deps, FILE* out )
 {
@@ -366,9 +369,25 @@ process_deps_line( char* line, FILE* deps, FILE* out )
                          || strstr( path, "/Windows Kits/" ) != NULL;
         if ( deps && !is_system ) fprintf( deps, "%s\n", path );
     }
-    else if ( g_out_flags & ORB_OUT_MSVC_OUTPUT )
+    else
     {
-        fprintf( out, ORB_INDENT "[MSVC] %s\n", line );
+        // Always forward diagnostic lines so errors/warnings surface even in quiet mode.
+        // Source-file echo lines ("foo.c") are noise — drop them unconditionally.
+        bool is_diagnostic = ( strstr( line, ": error"   ) != NULL )
+                          || ( strstr( line, ": warning" ) != NULL )
+                          || ( strstr( line, ": note"    ) != NULL )
+                          || ( strstr( line, ": fatal error" ) != NULL );
+
+        if ( is_diagnostic || ( g_out_flags & ORB_OUT_MSVC_OUTPUT ) )
+        {
+            static int issue_count = 0;
+            if ( is_diagnostic && issue_count == 0 ) {
+                fprintf( out, "\n" );
+                issue_count++;
+            }
+            if ( !is_msvc_source_echo( line ) )
+                fprintf( out, ORB_INDENT "%s\n", line );
+        }
     }
 }
 
@@ -478,3 +497,6 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
     if ( owned_log ) fclose( owned_log );
     return ( int )ec;
 }
+
+// clang-format off
+/*============================================================================================*/

@@ -310,7 +310,7 @@ typedef unsigned int out_flags_t;
                           ORB_OUT_LINK_SUMMARY | ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
-#define ORB_OUT_DEFAULT ( ORB_OUT_NORMAL ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
+#define ORB_OUT_DEFAULT ( ORB_OUT_QUIET ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
 
 // Defined in build_tool.c; all other translation units read this directly.
 

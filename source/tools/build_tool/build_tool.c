@@ -34,14 +34,11 @@
 #include "build_tool.h"
 
 #include <stdio.h>
-#include <stdarg.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <io.h>
-#include <ctype.h>
-#include <time.h>
 #include <process.h>
+
 #if defined( _WIN32 )
     #define NOMINMAX
     #define WIN32_LEAN_AND_MEAN
@@ -80,6 +77,7 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 //
 // Order matters: each file may reference statics defined in earlier files.
 // utils -> vcvars -> cc -> targets (pure data) -> gen -> sched.
+
 #include "build_tool_utils.c"
 #include "build_tool_vcvars.c"
 #include "build_tool_cc.c"
@@ -127,9 +125,9 @@ main( int argc, char** argv )
 
     build_context_t ctx = { 0 };
     ctx.config   = BT_CONFIG_DEBUG;
-    ctx.compiler = BT_COMPILER_MSVC;
+    ctx.compiler = BT_COMPILER_MSVC; 
 
-    bool  should_clean   = false;
+    bool  should_clean   = false; 
     bool  should_gen     = false;
     bool  compile_only   = false;  // -compile-only: compile all units, no link (VS Ctrl+F7).
     char* target_name    = NULL;
