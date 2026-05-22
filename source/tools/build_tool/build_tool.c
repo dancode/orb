@@ -87,7 +87,7 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
     utils -> vcvars -> cc -> targets (pure data) -> gen -> sched.
 ==============================================================================================*/
 
-#include "build_tool_str.c"
+#include "build_str.c"
 #include "build_tool_utils.c"
 #include "build_tool_vcvars.c"
 #include "build_tool_cc.c"

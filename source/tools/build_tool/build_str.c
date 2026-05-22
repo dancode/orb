@@ -7,7 +7,7 @@
 ==============================================================================================*/
 // clang-format off
 
-#include "build_tool_str.h"
+#include "build_str.h"
 
 #include <string.h>  /* memcpy, memcmp, strlen */
 #include <stdio.h>   /* vsnprintf */
