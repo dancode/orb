@@ -30,7 +30,11 @@
       "PowerShell(& .\\\\bootstrap_build_tool.bat 2>&1 | Select-Object -Last 30)",
       "Bash(cmd /c \"call \\\\\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\\\\\" x64 >nul 2>&1 && bootstrap_build_tool.bat\")",
       "Bash(echo \"EXIT: $?\")",
-      "PowerShell(cd F:\\\\orb; $result = cmd /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bootstrap_build_tool.bat 2>&1'; $result; \"EXIT: $LASTEXITCODE\")"
+      "PowerShell(cd F:\\\\orb; $result = cmd /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bootstrap_build_tool.bat 2>&1'; $result; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd F:\\\\orb; $result = cmd /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && \"F:\\\\orb\\\\bootstrap_build_tool.bat\" 2>&1'; $result; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd F:\\\\orb; $result = cmd /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -monolithic -v 2>&1'; $result; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd F:\\\\orb; $result = cmd /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -clean 2>&1'; $result; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd F:\\\\orb; $result = cmd /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -monolithic 2>&1'; $result; \"EXIT: $LASTEXITCODE\")"
     ]
   }
 }
