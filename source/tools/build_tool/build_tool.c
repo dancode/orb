@@ -94,26 +94,26 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 #include "build_tool_exec.c"
 
 /*==============================================================================================
-    --- Main Entry ---    
-                              Recognized arguments:
+    --- Main Entry ---
+                                Recognized arguments: (all case insensitive)
 
-      -clean / clean          Wipe build outputs and exit.
-      -gen   / gen            Regenerate .sln/.vcxproj and exit.
-      -target <name>          Restrict the build to one target's closure.
-      -compile-only           Compile all unity units for the target, no link step.
-                              Used by VS Ctrl+F7 via NMakeCompileFileCommandLine.
-                              Requires -target.
-      -file <path>            Compile a single file with the target's full flag set.
-                              No link step. CLI tool for targeted error checking.
-                              Requires -target.
-      -no-deps                Build only the target itself, no dep recursion
-                              (set by VS .vcxproj files; manages deps itself. 
-                              (do not use on the CLI unless you know what you're doing).
-      -monolithic             Build DLL modules as static libs; defines BUILD_STATIC globally.
-      -config <Debug|Release> Pick build config (default Debug).
-      release                 Shortcut for -config Release.
-      clang                   Use clang-cl instead of cl.exe.
-      -j N                    Worker thread count; 0/unset = auto-detect.
+      -clean                    Wipe build outputs and exit.
+      -gen                      Regenerate .sln/.vcxproj and exit.
+      -target <name>            Restrict the build to one target's closure.
+      -compile-only             Compile all unity units for the target, no link step.
+                                Used by VS Ctrl+F7 via NMakeCompileFileCommandLine.
+                                Requires -target.
+      -file <path>              Compile a single file with the target's full flag set.
+                                No link step. CLI tool for targeted error checking.
+                                Requires -target.
+      -no-deps                  Build only the target itself, no dep recursion
+                                (set by VS .vcxproj files; manages deps itself.
+                                (do not use on the CLI unless you know what you're doing).
+      -monolithic               Build DLL modules as static libs; defines BUILD_STATIC globally.
+      -config <Debug|Release>   Pick build config (default Debug)
+      -release                  Shortcut for -config Release.
+      -clang                    Use clang-cl instead of cl.exe.
+      -j N                      Worker thread count; 0/unset = auto-detect.
 
 ==============================================================================================*/
 
@@ -134,7 +134,7 @@ main( int argc, char** argv )
 
     build_context_t ctx = { 0 };
     ctx.config   = BT_CONFIG_DEBUG;
-    ctx.compiler = BT_COMPILER_MSVC; 
+    ctx.compiler = BT_COMPILER_MSVC;
 
     bool  should_clean   = false;  // -clean: delete all build outputs and exit, no build.
     bool  should_gen     = false;  // -gen: generate .sln/.vcxproj files and exit, no build.
@@ -144,19 +144,18 @@ main( int argc, char** argv )
     int   j_threads      = 0;      // 0 → auto-detect from CPU count.
 
     // --- Arg parsing ---
-    // Order-independent; the loop just sets flags. Unknown args are silently ignored 
-    // (intentional — keeps backward compat with VS External Tools
-    // call sites that might pass legacy positional args).
+    // Order-independent; the loop just sets flags. Unknown args are silently ignored.
+    // NOTE: Hyphens are now mandatory for all flags. Dash-less legacy positional args are ignored.
     for ( int i = 1; i < argc; ++i )
     {
         // Simple flags that just set a bool or enum field. Case-insensitive for user-friendliness.
-        if ( _stricmp( argv[ i ], "-clean"        ) == 0 || _stricmp( argv[ i ], "clean" ) == 0 ) should_clean = true;
-        if ( _stricmp( argv[ i ], "-gen"          ) == 0 || _stricmp( argv[ i ], "gen" ) == 0 ) should_gen = true;
-        if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 || _stricmp( argv[ i ], "monolithic" ) == 0 ) ctx.is_monolithic = true;
+        if ( _stricmp( argv[ i ], "-clean"        ) == 0 ) should_clean = true;
+        if ( _stricmp( argv[ i ], "-gen"          ) == 0 ) should_gen = true;
+        if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 ) ctx.is_monolithic = true;
+        if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
+        if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = BT_COMPILER_CLANG;
         if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) compile_only = true;
-        if ( _stricmp( argv[ i ], "release"       ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
-        if ( _stricmp( argv[ i ], "clang"         ) == 0 ) ctx.compiler = BT_COMPILER_CLANG;
-        if ( _stricmp( argv[ i ], "-no-deps"      ) == 0 ) ctx.skip_deps = true;      
+        if ( _stricmp( argv[ i ], "-no-deps"      ) == 0 ) ctx.skip_deps = true;
         if ( _stricmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
         if ( _stricmp( argv[ i ], "-file"         ) == 0 && i + 1 < argc ) file_path = argv[ ++i ];        
         if ( _stricmp( argv[ i ], "-j"            ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
@@ -164,11 +163,11 @@ main( int argc, char** argv )
         {
             if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
         }
-        // Output verbosity. -q / -v are presets; --out takes a hex mask for fine-control.
         if ( _stricmp( argv[ i ], "-q"            ) == 0 ) g_out_flags = ORB_OUT_QUIET;
         if ( _stricmp( argv[ i ], "-v"            ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
         if ( _stricmp( argv[ i ], "--out"         ) == 0 && i + 1 < argc )
         {
+            // --out takes a hex mask for fine-control (see build_tool.h). 
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
         }
     }
