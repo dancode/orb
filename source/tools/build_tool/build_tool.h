@@ -7,7 +7,7 @@
     build (build_tool_targets.c).
 
     Architectural Goals:
-    - High Performance: Minimal filesystem overhead, direct tool invocation, 
+    - High Performance: Minimal filesystem overhead, direct tool invocation,
       no shell-out indirection beyond what cmd.exe requires for builtins/globs.
     - Simplicity: A flat, unified target pool with explicit dependencies. No
       Makefile / CMake DSL — everything is described as plain C structs.
@@ -62,7 +62,9 @@
 #include <stdbool.h>
 #include <time.h>
 
+// =============================================================================
 // --- Project Constants ---
+// =============================================================================
 
 // Max size for any single compiler/linker command line.
 
@@ -74,44 +76,39 @@
 
 #define BT_PATH_MAX 512
 
+// =============================================================================
 // --- Helper Types ---
+// =============================================================================
 
-// Reusable command-line buffer for assembling cl.exe / link.exe / lib.exe
-// invocations. cmd_append() formats into `buf` and updates `size`; if an
-// append cannot fit, `truncated` is set so the caller can decide whether to
-// spill the tail into a response file (see cmd_spill_to_response_file).
+// Reused cmd-line buffer for assembling cl.exe / link.exe / lib.exe invocations.
+// cmd_append() formats into `buf` and updates `size`; if an append cannot fit.
+// `truncated` is set so the caller can decide whether to spill the tail into 
+// a response file (see cmd_spill_to_response_file).
 
 typedef struct cmd_buf_s
 {
-    char   buf[ CMD_BUF_MAX ];
-    size_t size;
-    bool   truncated; // Set by cmd_append() when an append could not fit.
-
+    size_t size;                // Current length of the command line.
+    bool   truncated;           // Set by cmd_append() when an append could not fit.
+    char   buf[ CMD_BUF_MAX ];  // The actual command line fragment.                                
+       
 } cmd_buf_t;
 
-// Safe threshold below cmd.exe's 8191-char command line limit. Leaves room
-// for the vcvars prefix that build_run_cmd() prepends to compiler calls.
+// Safe threshold below cmd.exe's 8191-char command line limit. 
+// Leaves room for the vcvars prefix that build_run_cmd() prepends.
 
 #define CMD_RSP_THRESHOLD 7000
 
-// --- Configuration ---
-
-// Standard build configurations. These map to compiler optimization levels
-// and debug symbol generation. The enum values are used to index configuration
-// specific settings in the orchestrator 
+// =============================================================================
+// --- Build Configuration ---
+// =============================================================================
 
 typedef enum
 {
-    CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
-    CONFIG_RELEASE, // Full optimizations, minimal debug symbols, MD runtime.
-    CONFIG_COUNT
+    CONFIG_DEBUG,       // No optimizations, full debug symbols, MDd runtime.
+    CONFIG_RELEASE,     // Full optimizations, minimal debug symbols, MD runtime.
+    CONFIG_COUNT 
 
 } config_t;
-
-// --- Target Types ---
-
-// Defines the artifact type, determining which toolchain (cl, link, lib)
-// is used in the final phase of building a target.
 
 typedef enum
 {
@@ -121,57 +118,61 @@ typedef enum
 
 } target_type_t;
 
+// =============================================================================
 // --- Target Descriptor ---
+// =============================================================================
 
-// Represents a single buildable unit in the ORB ecosystem. It contains all
-// metadata required to compile and link the target. 
-
+// Represents a single buildable unit in the ORB ecosystem. 
+// It contains all metadata required to compile and link the target. 
+//
 // Targets are pooled in g_targets[] (see build_tool_targets.c).
-// Shared across every IDE solution that references them by name. 
+// Shared across every IDE solution that references them by name. */
 
 typedef struct target_info_s
 {
-    const char*   name;             // Unique name (e.g., "base", "core", "app").
-    target_type_t type;             // Artifact type (LIB, DLL, or EXE).
-    const char*   root_dir;         // Base path for source files relative to project root.
-    const char*   sln_folder;       // Virtual folder in the Visual Studio solution.
+    const char*     name;           // Unique name (e.g., "base", "core", "app").
+    target_type_t   type;           // Artifact type (LIB, DLL, or EXE).
+    const char*     root_dir;       // Base path for source files relative to project root.
+    const char*     sln_folder;     // Virtual folder in the Visual Studio solution.
 
     // Translation Units (Unity Build Fragments)
     // Each entry is typically an umbrella .c file that includes other sources.
     // Multiple units allow the scheduler to parallelize cl.exe calls.
-    const char*   units[ 16 ];
+    const char*     units[ 16 ];
 
     // Link Dependencies: Other targets that produce .libs this target must link against.
     // Drives both the linker's input list and the parallel scheduler's topological order.
-    const char*   deps[ 16 ];
+    const char*     deps[ 16 ];
 
     // Tool Dependencies: Standalone utilities that must exist to build this target.
     // These are built recursively but NOT linked into the final binary. 
     // Ex: any target with 'has_reflect' depends on build_reflect.exe as a tool dep.
-    const char*   tool_deps[ 16 ];
+    const char*     tool_deps[ 16 ];
 
     // Reflection metadata: if true, build_reflect.exe is invoked on root_dir
     // before compilation. Generated files land in <build_dir>/generated/ and
     // are appended to the cl.exe command line for this target.
-    bool          has_reflect;
+    bool            has_reflect;
 
     // Base name for generated .c/.h files. Default is NULL, which means the
     // files are named after the target (e.g. "core" -> "core.generated.c/h").
-    const char*   reflect_name;
+    const char*     reflect_name;
 
     // If true, this is a build-time tool executable (e.g. build_reflect).
     // Tool targets survive global clean and are always rebuilt by our own
     // dep resolution — never delegated to VS ProjectDependencies.
-    bool          is_tool;
+    bool            is_tool;
 
     // If true, this is the reflection code-generator tool. Targets with
     // has_reflect = true automatically depend on whichever target carries
     // this flag — no hardcoded name needed anywhere in the build logic.
-    bool          is_reflect_tool;
+    bool            is_reflect_tool;
 
 } target_info_t;
 
-// --- Global Registry ---
+// =============================================================================
+// --- Global Target Registry ---
+// =============================================================================
 
 // The list of all targets defined in build_tool_targets.c and used by
 // the orchestrator and solution generator.
@@ -179,37 +180,52 @@ typedef struct target_info_s
 extern target_info_t g_targets[];
 extern int           g_target_count;
 
-// --- Execution Context ---
+// =============================================================================
+// --- Build Execution Context ---
+// =============================================================================
 
 // State passed through the build process to maintain consistency.
+
 typedef struct build_context_s
 {
-    config_t config;        // Selected build config (Debug/Release).
-    bool     is_monolithic; // Reserved: for building everything into one binary.
-    bool     is_clang;      // If true, uses clang-cl instead of cl.
-    bool     skip_deps;     // If true, build_target() does NOT recurse into
-                            // its dependencies. The VS solution generator
-                            // emits this flag so MSBuild's own scheduler is
-                            // the single authority on dep order — preventing
-                            // multiple build_tool.exe instances from racing
-                            // on shared dep outputs during a parallel build.
+    config_t        config;         // Selected build config (Debug/Release).
+    bool            is_monolithic;  // Reserved: for building everything into one binary.
+    bool            is_clang;       // If true, uses clang-cl instead of cl.
+    bool            skip_deps;      // skip recurse into dependencies. See build_target().
+                            
+/*  skip_deps: If true, build_target() does NOT recurse into its dependencies.
+    The VS solution generator emits this flag so MSBuild's own scheduler is 
+    the single authority on dep order — preventing multiple build_tool.exe
+    instances from racing on shared dep outputs during a parallel build  */
 
 } build_context_t;
 
+// =============================================================================
 // --- Solution Descriptor ---
+// =============================================================================
 
-// Defines a Visual Studio solution and which targets from the pool it contains.
-// This allows the build system to generate specialized workspaces (e.g. orb_build.sln)
-// without polluting the main engine workspace.
+// Defines a Visual Studio solution, an array of targets from the target pool.
+// This allows the build system to generate specialized workspaces such
+// as "orb_build.sln" without polluting the full main engine workspace.
+
 typedef struct
 {
-    const char*  name;         // Name of the .sln file (e.g. "orb_make").
-    const char** target_names; // NULL-terminated list of target names to include.
-    const char*  nav_dir;      // If non-NULL, generate a "Mega" navigation project for this directory.
+    // Name of the .sln file (e.g. "orb_make").
+    const char*     name;
+
+    // A NULL-terminated list of target names to include.
+    // The generator looks up these names in g_targets[].
+    const char**    target_names;
+
+    // If non-NULL it will generate a "mega" source directory folder 
+    // navigation project as "name"_nav" in the .sln file.
+    // just a browesable directory that does not compile.
+    const char*     nav_dir;
 
 } solution_info_t;
 
 // These are defined in build_tool_targets.c.
+
 extern solution_info_t g_solutions[];
 extern int             g_solution_count;
 
@@ -367,4 +383,4 @@ void build_gen_projects( void );
 
 // clang-format on
 /*============================================================================================*/
-#endif // BUILD_TOOL_H
+#endif    // BUILD_TOOL_H
