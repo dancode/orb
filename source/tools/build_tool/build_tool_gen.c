@@ -372,8 +372,19 @@ build_gen_proj_target( target_info_t* target, int index )
             }
         }
 
-        const char* tag = is_unit ? "ClCompile" : "ClInclude";
-        fprintf( f, "    <%s Include=\"..\\%s\" />\n", tag, g_files[ i ].path );
+        if ( is_unit )
+        {
+            // ClCompile items get NMakeCompileFileCommandLine metadata so VS single-file
+            // compile (Ctrl+F7) passes %(FullPath) to build_tool.exe via -file.
+            // This is what NMakeCompileSelectedFiles in Microsoft.MakeFile.Targets reads.
+            fprintf( f, "    <ClCompile Include=\"..\\%s\">\n", g_files[ i ].path );
+            fprintf( f, "      <NMakeCompileFileCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s -file \"%%(FullPath)\"</NMakeCompileFileCommandLine>\n", target->name );
+            fprintf( f, "    </ClCompile>\n" );
+        }
+        else
+        {
+            fprintf( f, "    <ClInclude Include=\"..\\%s\" />\n", g_files[ i ].path );
+        }
     }
     fprintf( f, "  </ItemGroup>\n" );
 

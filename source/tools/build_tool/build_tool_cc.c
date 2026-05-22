@@ -409,6 +409,85 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 }
 
 /*============================================================================================*/
+// --- Single-file Compilation ---
+
+/**
+ * build_target_compile_single()
+ *
+ * Compiles one source file with the target's full flag/define/include set.
+ * Mirrors build_target_compile() but omits /showIncludes (no dep tracking)
+ * and replaces the full unity source list with the single file path VS passes
+ * via $(NMakeCompileFile). No link step — this is for error feedback only.
+ */
+bool
+build_target_compile_single( build_context_t* ctx, target_info_t* target,
+                             const char* obj_dir, const char* gen_dir, const char* file_path )
+{
+    compile_cmd_t cc      = { 0 };
+    const char*   config  = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
+
+    // Exe
+    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->is_clang ? "clang-cl.exe" : "cl.exe" );
+
+    // Flags: same as full compile, but no /showIncludes (dep tracking not needed).
+    cc_field( cc.flags, sizeof( cc.flags ), "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
+    if ( ctx->config == CONFIG_DEBUG )
+        cc_field( cc.flags, sizeof( cc.flags ), " /Zi /Od /MDd" );
+    else
+        cc_field( cc.flags, sizeof( cc.flags ), " /O2 /MD" );
+
+    // Includes, defines: identical to build_target_compile().
+    cc_field( cc.includes, sizeof( cc.includes ), "/I source /I %s", gen_dir );
+
+    cc_field( cc.defines, sizeof( cc.defines ),
+              "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
+    {
+        char upper[ 128 ];
+        get_target_upper( target->name, upper );
+        cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", upper );
+    }
+    for ( int i = 0; target->deps[ i ]; ++i )
+    {
+        target_info_t* dep = find_target( target->deps[ i ] );
+        if ( !dep ) continue;
+        bool dep_is_static = ( dep->type == TARGET_STATIC_LIB ) ||
+                             ( dep->type == TARGET_DYNAMIC_LIB && ctx->is_monolithic );
+        if ( dep_is_static )
+        {
+            char dep_upper[ 128 ];
+            get_target_upper( dep->name, dep_upper );
+            cc_field( cc.defines, sizeof( cc.defines ), " /D%s_STATIC", dep_upper );
+        }
+    }
+    if ( ctx->is_monolithic )
+        cc_field( cc.defines, sizeof( cc.defines ), " /DBUILD_STATIC" );
+    if ( ctx->config == CONFIG_DEBUG )
+        cc_field( cc.defines, sizeof( cc.defines ), " /D_DEBUG" );
+    else
+        cc_field( cc.defines, sizeof( cc.defines ), " /DNDEBUG" );
+
+    // Output into the same obj_dir as a full build so the .obj lands where the linker expects it.
+    cc_field( cc.output, sizeof( cc.output ), "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
+
+    // Source: just the one file VS handed us.
+    cc_field( cc.sources, sizeof( cc.sources ), "%s", file_path );
+
+    // Print active sections; single-file runs are always serial so stdout is fine.
+    FILE* log_out = cc_open_log();
+    cc_print( log_out, &cc, target, config );
+
+    char      rsp_path[ BT_PATH_MAX ];
+    cmd_buf_t cmd = { 0 };
+    snprintf( rsp_path, sizeof( rsp_path ), "%s/cl_file.rsp", obj_dir );
+    cc_assemble( &cc, &cmd, rsp_path );
+    if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
+    if ( log_out != stdout ) fclose( log_out );
+
+    // No deps_path: single-file compiles are not tracked incrementally.
+    return build_run_cmd_capture_deps( cmd.buf, NULL ) == 0;
+}
+
+/*============================================================================================*/
 // --- Linking / Archiving ---
 
 /**

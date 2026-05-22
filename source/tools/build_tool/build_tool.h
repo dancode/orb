@@ -230,7 +230,7 @@ extern solution_info_t g_solutions[];
 extern int             g_solution_count;
 
 // =============================================================================
-// --- Output Flags ------------------------------------------------------------
+// --- Output Flags ---
 // =============================================================================
 
 // Bitfield controlling which sections of the build log are printed.
@@ -282,14 +282,13 @@ typedef unsigned int out_flags_t;
                           ORB_OUT_LINK_SUMMARY | ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
-#define ORB_OUT_DEFAULT   ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
-
+#define ORB_OUT_DEFAULT ( ORB_OUT_VERBOSE ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
 
 // Defined in build_tool.c; all other translation units read this directly.
 extern out_flags_t g_out_flags;
 
 // =============================================================================
-// --- Orchestration API -------------------------------------------------------
+// --- Orchestration API ---
 // =============================================================================
 
 // Everything below is the public surface for the unity-built build_tool.exe.
@@ -300,6 +299,12 @@ extern out_flags_t g_out_flags;
 // with /showIncludes so build_run_cmd_capture_deps can record the header set
 // into <obj_dir>/_deps.txt for the next incremental check.
 bool build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir );
+
+// Compiles a single source file with the target's full flag/define/include set.
+// No /showIncludes, no link step, no dep tracking — intended for VS Ctrl+F7
+// single-file compile (NMakeCompileFile hook). file_path must be absolute.
+bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
+                                  const char* obj_dir, const char* gen_dir, const char* file_path );
 
 // Links or archives the target's objects into the final artifact: lib.exe
 // for static libs, link.exe (with /DLL or as an exe) for the rest. PDB paths
