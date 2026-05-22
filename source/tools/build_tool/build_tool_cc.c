@@ -41,6 +41,7 @@ typedef struct
     char defines [ 1024       ]; // /DOS_WINDOWS /DCOMPILER_MSVC /D_DEBUG ...
     char output  [ 512        ]; // /FoobjDir/ /FdobjDir/
     char sources [ CMD_BUF_MAX]; // absolute .c paths
+
 } compile_cmd_t;
 
 typedef struct
@@ -52,6 +53,7 @@ typedef struct
     char pdb     [ 256        ]; // /DEBUG /PDB:... (empty for lib.exe)
     char inputs  [ 512        ]; // objDir/*.obj
     char libs    [ 1024       ]; // dep.lib ... user32.lib ...
+
 } link_cmd_t;
 
 /*============================================================================================*/
@@ -313,17 +315,17 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
                       const char* obj_dir, const char* gen_dir )
 {
     compile_cmd_t cc = { 0 };
-    const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
+    const char*   config = ( ctx->config == BT_CONFIG_DEBUG ) ? "Debug" : "Release";
 
     // Exe
-    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->is_clang ? "clang-cl.exe" : "cl.exe" );
+    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == BT_COMPILER_CLANG ? "clang-cl.exe" : "cl.exe" );
 
     // Flags: compiler settings common to all targets.
     // /showIncludes drives the dep-capture path in build_run_cmd_capture_deps;
     // it produces a "Note: including file:" line for every resolved header.
     cc_field( cc.flags, sizeof( cc.flags ),
               "/c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes" );
-    if ( ctx->config == CONFIG_DEBUG )
+    if ( ctx->config == BT_CONFIG_DEBUG )
         cc_field( cc.flags, sizeof( cc.flags ), " /Zi /Od /MDd" );
     else
         cc_field( cc.flags, sizeof( cc.flags ), " /O2 /MD" );
@@ -358,10 +360,21 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     }
     if ( ctx->is_monolithic )
         cc_field( cc.defines, sizeof( cc.defines ), " /DBUILD_STATIC" );
-    if ( ctx->config == CONFIG_DEBUG )
+    if ( ctx->config == BT_CONFIG_DEBUG )
         cc_field( cc.defines, sizeof( cc.defines ), " /D_DEBUG" );
     else
         cc_field( cc.defines, sizeof( cc.defines ), " /DNDEBUG" );
+
+    // Warning suppressions: filter g_warn_suppressions[] by active config and compiler.
+    {
+        for ( int i = 0; i < g_warn_suppression_count; ++i )
+        {
+            warn_suppress_t* s = &g_warn_suppressions[ i ];
+            if ( ( s->config == ctx->config || s->config == BT_CONFIG_COUNT ) &&
+                 ( s->compiler_mask & (unsigned int)ctx->compiler ) )
+                cc_field( cc.flags, sizeof( cc.flags ), " %s", s->flag );
+        }
+    }
 
     // Output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
     // Trailing slash is required — without it cl treats the path as a
@@ -424,14 +437,14 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
                              const char* obj_dir, const char* gen_dir, const char* file_path )
 {
     compile_cmd_t cc      = { 0 };
-    const char*   config  = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
+    const char*   config  = ( ctx->config == BT_CONFIG_DEBUG ) ? "Debug" : "Release";
 
     // Exe
-    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->is_clang ? "clang-cl.exe" : "cl.exe" );
+    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == BT_COMPILER_CLANG ? "clang-cl.exe" : "cl.exe" );
 
     // Flags: same as full compile, but no /showIncludes (dep tracking not needed).
     cc_field( cc.flags, sizeof( cc.flags ), "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
-    if ( ctx->config == CONFIG_DEBUG )
+    if ( ctx->config == BT_CONFIG_DEBUG )
         cc_field( cc.flags, sizeof( cc.flags ), " /Zi /Od /MDd" );
     else
         cc_field( cc.flags, sizeof( cc.flags ), " /O2 /MD" );
@@ -461,10 +474,21 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
     }
     if ( ctx->is_monolithic )
         cc_field( cc.defines, sizeof( cc.defines ), " /DBUILD_STATIC" );
-    if ( ctx->config == CONFIG_DEBUG )
+    if ( ctx->config == BT_CONFIG_DEBUG )
         cc_field( cc.defines, sizeof( cc.defines ), " /D_DEBUG" );
     else
         cc_field( cc.defines, sizeof( cc.defines ), " /DNDEBUG" );
+
+    // Warning suppressions: same table, same logic as build_target_compile().
+    {
+        for ( int i = 0; i < g_warn_suppression_count; ++i )
+        {
+            warn_suppress_t* s = &g_warn_suppressions[ i ];
+            if ( ( s->config == ctx->config || s->config == BT_CONFIG_COUNT ) &&
+                 ( s->compiler_mask & (unsigned int)ctx->compiler ) )
+                cc_field( cc.flags, sizeof( cc.flags ), " %s", s->flag );
+        }
+    }
 
     // Output into the same obj_dir as a full build so the .obj lands where the linker expects it.
     cc_field( cc.output, sizeof( cc.output ), "/Fo%s/ /Fd%s/", obj_dir, obj_dir );

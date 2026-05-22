@@ -32,24 +32,25 @@
 #endif
 
 #include "build_tool.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <ctype.h>
-#include <io.h>
-#include <sys/stat.h>
-#include <time.h>
+
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <string.h>
+// #include <stdarg.h>
+// #include <ctype.h>
+// #include <io.h>
+// #include <sys/stat.h>
+// #include <time.h>
 
 // --- Project Constants ---
 //
 // All build outputs land under <g_build_dir>/. The .sln/.vcxproj files also
 // live here (see build_tool_gen.c) so VS treats the directory as the
 // project root for its IntelliSense and intermediate caches.
-static const char* g_build_dir       = "build_new";      // Root for intermediate/generated files.
-static const char* g_int_dir         = "obj";            // Sub-folder for .obj files (per-target).
-static const char* g_gen_dir         = "generated";      // Sub-folder for reflection-generated .c/.h.
 
+static const char* g_build_dir  = "build_new";      // Root for intermediate/generated files.
+static const char* g_int_dir    = "obj";            // Sub-folder for .obj files (per-target).
+static const char* g_gen_dir    = "generated";      // Sub-folder for reflection-generated .c/.h.
 
 // --- Output Format ---
 //
@@ -115,7 +116,8 @@ main( int argc, char** argv )
     // }
 
     build_context_t ctx = { 0 };
-    ctx.config = CONFIG_DEBUG;
+    ctx.config   = BT_CONFIG_DEBUG;
+    ctx.compiler = BT_COMPILER_MSVC;
 
     bool  should_clean   = false;
     bool  should_gen     = false;
@@ -132,8 +134,8 @@ main( int argc, char** argv )
     {
         if ( strcmp( argv[ i ], "-clean" ) == 0 || strcmp( argv[ i ], "clean" ) == 0 ) should_clean = true;
         if ( strcmp( argv[ i ], "-gen" ) == 0 || strcmp( argv[ i ], "gen" ) == 0 ) should_gen = true;
-        if ( _stricmp( argv[ i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
-        if ( strcmp( argv[ i ], "clang" ) == 0 ) ctx.is_clang = true;
+        if ( _stricmp( argv[ i ], "release" ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
+        if ( strcmp( argv[ i ], "clang" ) == 0 ) ctx.compiler = BT_COMPILER_CLANG;
         if ( strcmp( argv[ i ], "-no-deps" ) == 0 ) ctx.skip_deps = true;
         if ( strcmp( argv[ i ], "-monolithic" ) == 0 || strcmp( argv[ i ], "monolithic" ) == 0 ) ctx.is_monolithic = true;
         if ( strcmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) target_name  = argv[ ++i ];
@@ -142,7 +144,7 @@ main( int argc, char** argv )
         if ( strcmp( argv[ i ], "-j" ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
         if ( strcmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
         {
-            if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
+            if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
         }
         // Output verbosity. -q / -v are preset shorthands; --out takes a hex
         // mask so individual sections can be toggled without recompiling.
@@ -198,7 +200,7 @@ main( int argc, char** argv )
     if ( compile_only )
     {
         printf( ORB_BANNER "[orb compile] %s %s\n", target_upper,
-                ctx.config == CONFIG_DEBUG ? "Debug" : "Release" );
+                ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release" );
     }
     else if ( file_path )
     {
@@ -206,14 +208,14 @@ main( int argc, char** argv )
         for ( const char* p = file_path; *p; ++p )
             if ( *p == '\\' || *p == '/' ) basename = p + 1;
         printf( ORB_BANNER "[orb file] %s/%s %s\n", target_upper,
-                basename, ctx.config == CONFIG_DEBUG ? "Debug" : "Release" );
+                basename, ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release" );
     }
     else
     {
         printf( ORB_BANNER "[orb build] %s ", target_upper );
-        printf( "%s%s%s |", ctx.config == CONFIG_DEBUG ? "Debug" : "Release",
+        printf( "%s%s%s |", ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release",
                             ctx.is_monolithic ? " | Monolithic" : " | Dynamic",
-                            ctx.is_clang ? " | Clang" : "" );
+                            ctx.compiler == BT_COMPILER_CLANG ? " | Clang" : "" );
         for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
         printf( "\n" );
     }
@@ -300,7 +302,6 @@ main( int argc, char** argv )
         }
     }
 
-    // printf( ORB_BANNER "[ orb done: %s ]\n", target_upper );
     printf( "\n" );
     return 0;
 }

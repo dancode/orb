@@ -104,11 +104,39 @@ typedef struct cmd_buf_s
 
 typedef enum
 {
-    CONFIG_DEBUG,       // No optimizations, full debug symbols, MDd runtime.
-    CONFIG_RELEASE,     // Full optimizations, minimal debug symbols, MD runtime.
-    CONFIG_COUNT 
+    BT_CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
+    BT_CONFIG_RELEASE, // Full optimizations, minimal debug symbols, MD runtime.
+    BT_CONFIG_COUNT,   // Sentinel — used as "all configs" in warn_suppress_t.
 
 } config_t;
+
+// Compiler identity bitmask for warn_suppress_t.compiler_mask.
+
+typedef enum
+{
+    BT_COMPILER_MSVC  = ( 1u << 0 ),  // cl.exe (native MSVC)
+    BT_COMPILER_CLANG = ( 1u << 1 ),  // clang-cl.exe
+    BT_COMPILER_ALL   = ( BT_COMPILER_MSVC | BT_COMPILER_CLANG ),
+
+} compiler_flag_t;
+
+// One entry in g_warn_suppressions[]. A suppression fires when:
+//   config   == ctx->config  OR  config == BT_CONFIG_COUNT  (matches all)
+//   compiler bit is set in compiler_mask
+
+typedef struct
+{
+    const char*   flag;           // e.g. "/wd4101" or "-Wno-unused-variable"
+    config_t      config;         // BT_CONFIG_DEBUG, BT_CONFIG_RELEASE, or BT_CONFIG_COUNT for all
+    unsigned int  compiler_mask;  // BT_COMPILER_MSVC | BT_COMPILER_CLANG
+
+} warn_suppress_t;
+
+// These are defined in build_tool_targets.c. a list of all active warning suppressions
+// that build_target_compile() iterates over.
+
+extern warn_suppress_t g_warn_suppressions[];
+extern int             g_warn_suppression_count;
 
 typedef enum
 {
@@ -190,7 +218,7 @@ typedef struct build_context_s
 {
     config_t        config;         // Selected build config (Debug/Release).
     bool            is_monolithic;  // If true, TARGET_DYNAMIC_LIB targets build as static libs with BUILD_STATIC defined globally.
-    bool            is_clang;       // If true, uses clang-cl instead of cl.
+    compiler_flag_t compiler;       // Active compiler (BT_COMPILER_MSVC or BT_COMPILER_CLANG).
     bool            skip_deps;      // skip recurse into dependencies. See build_target().
                             
 /*  skip_deps: If true, build_target() does NOT recurse into its dependencies.
@@ -266,9 +294,9 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_MSVC_OUTPUT      ( 1u << 18 )  // [MSVC] raw cl/link/lib passthrough lines
 
 // Convenience masks: any compile or link detail flag set.
-#define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SUMMARY | ORB_OUT_COMPILE_SOURCES  | \
-                               ORB_OUT_COMPILE_FLAGS   | ORB_OUT_COMPILE_DEFINES  | \
-                               ORB_OUT_COMPILE_INCLUDES| ORB_OUT_COMPILE_OUTPUT   | \
+#define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SUMMARY  | ORB_OUT_COMPILE_SOURCES  | \
+                               ORB_OUT_COMPILE_FLAGS    | ORB_OUT_COMPILE_DEFINES  | \
+                               ORB_OUT_COMPILE_INCLUDES | ORB_OUT_COMPILE_OUTPUT   | \
                                ORB_OUT_COMPILE_CMD )
 
 #define ORB_OUT_ANY_LINK     ( ORB_OUT_LINK_SUMMARY | ORB_OUT_LINK_INPUTS | \
@@ -282,9 +310,10 @@ typedef unsigned int out_flags_t;
                           ORB_OUT_LINK_SUMMARY | ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
-#define ORB_OUT_DEFAULT ( ORB_OUT_VERBOSE ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
+#define ORB_OUT_DEFAULT ( ORB_OUT_NORMAL ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
 
 // Defined in build_tool.c; all other translation units read this directly.
+
 extern out_flags_t g_out_flags;
 
 // =============================================================================

@@ -2,7 +2,7 @@
 
     build_tool_targets.c -- Central registry for all buildable artifacts.
 
-    This file contains the "data" portion of the build system. It defines the 
+    This file contains the "data" portion of the build system. It defines the
     entire dependency graph, source layout, and IDE solution mappings.
 
     Structure:
@@ -16,9 +16,9 @@
 ==============================================================================================*/
 
 target_info_t g_targets[] = {
-    
+
     // --- 01_BASE (Foundation) ---
-    
+
     // The lowest layer. Stateless and dependency-free.
     // Produces bin/base.lib.
     {
@@ -75,15 +75,15 @@ target_info_t g_targets[] = {
     // Core Engine Services (Logging, Memory Arenas).
     // This target requires build_reflect.exe to run before it can compile.
     {
-     .name           = "core",
-     .type           = TARGET_STATIC_LIB,
-     .root_dir       = "source/engine/core",
-     .sln_folder     = "02_ENGINE",
-     .units          = { "core.c" },
-     .deps           = { "sys", "rs" },
-     .has_reflect    = true,
+     .name        = "core",
+     .type        = TARGET_STATIC_LIB,
+     .root_dir    = "source/engine/core",
+     .sln_folder  = "02_ENGINE",
+     .units       = { "core.c" },
+     .deps        = { "sys", "rs" },
+     .has_reflect = true,
      // .reflect_name   = "engine_core",
-     },
+    },
 
     // --- 03_RUNTIME_MODULES (Hot-Reloadable DLLs) ---
 
@@ -133,38 +133,57 @@ target_info_t g_targets[] = {
      .deps            = {},
      .is_tool         = true,
      .is_reflect_tool = true,
-     },};
+     },
+};
 
 int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );
 
-// --- Solution Registry ---
-
-// These lists are NULL-terminated.
+// =============================================================================
+// --- Solution Registry --- These lists are NULL-terminated.
+// =============================================================================
 
 // Main engine workspace. Includes core libraries and sandboxes.
-static const char* g_sln_main_targets[] = {
-    "base", "sys", "rs", "mod", "app", "core", "example", "sb_base_custom", NULL
-};
+static const char* g_sln_main_targets[] = { "base",           "sys", "rs", "mod", "app", "core", "example",
+                                            "sb_base_custom", NULL };
 
 // Standalone build tools workspace. For modifying the build system itself.
-static const char* g_sln_tools_targets[] = {
-    "build_tool", "build_reflect", NULL
-};
+static const char* g_sln_tools_targets[] = { "build_tool", "build_reflect", NULL };
 
 // Map solutions to their target lists and navigation scope.
 solution_info_t g_solutions[] = {
     {
      .name         = "orb_make",
      .target_names = g_sln_main_targets,
-     .nav_dir      = "source", // Includes everything in source/ for IDE navigation.
-     },
+     .nav_dir      = "source",            // Includes everything in source/ for IDE navigation.
+    },
     {
      .name         = "orb_build",
      .target_names = g_sln_tools_targets,
-     .nav_dir      = NULL, // Minimal standalone tool solution.
-     },
+     .nav_dir      = NULL,    // Minimal standalone tool solution.
+    },
 };
 
 int g_solution_count = sizeof( g_solutions ) / sizeof( g_solutions[ 0 ] );
+
+// =============================================================================
+// --- Warning Suppression Table ---
+// =============================================================================
+
+// Applied globally after the base flag set in build_target_compile().
+// Each entry fires only when the active config AND compiler match the masks.
+// Platform specificity is implicit in compiler_mask: MSVC flags are Windows-only
+// by definition; add BT_COMPILER_CLANG entries for clang-cl variants as needed.
+
+warn_suppress_t g_warn_suppressions[] = {
+
+    // Release: assert() and similar macros compile out, leaving unreferenced
+    // locals and parameters that were only referenced in the debug expression.
+
+    {"/wd4101", BT_CONFIG_COUNT, BT_COMPILER_MSVC}, // C4101: unreferenced local variable
+    {"/wd4189", BT_CONFIG_COUNT, BT_COMPILER_MSVC}, // C4189: local variable initialized but not  referenced
+    {"/wd4100", BT_CONFIG_COUNT, BT_COMPILER_MSVC}, // C4100: unreferenced formal parameter
+};
+
+int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_suppressions[ 0 ] );
 
 /*============================================================================================*/
