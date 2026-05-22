@@ -50,10 +50,9 @@
 /*==============================================================================================
     --- Project Constants ---
 
-    All build outputs land under <g_build_dir>/. The .sln/.vcxproj files also
-    live here (see build_tool_gen.c) so VS treats the directory as the
-    project root for its IntelliSense and intermediate caches.
-
+    All build outputs land under <g_build_dir>/. The .sln/.vcxproj files also live
+    here (see build_tool_gen.c) so VS treats the directory as the project root for 
+    its IntelliSense and intermediate caches.
 ==============================================================================================*/
 
 static const char* g_build_dir  = "build_new";      // Root for intermediate/generated files.
@@ -61,11 +60,10 @@ static const char* g_int_dir    = "obj";            // Sub-folder for .obj files
 static const char* g_gen_dir    = "generated";      // Sub-folder for reflection-generated .c/.h.
 
 /*==============================================================================================
-    --- Output Format + Output Flags ---
+    --- Output Format ---
 
     ORB_BANNER: indent for top-level orb lines  e.g.  "      [ orb build: X ]"
-    ORB_INDENT: indent for sub-lines            e.g.  "          [build] foo ..."
-    Defined here (before unity includes) so build_tool_sched.c can use them.
+    ORB_INDENT: indent for sub-lines            e.g.  "          [build] foo ..."    
 ==============================================================================================*/
 
 #define ORB_BANNER  "      "
@@ -109,8 +107,8 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
                               No link step. CLI tool for targeted error checking.
                               Requires -target.
       -no-deps                Build only the target itself, no dep recursion
-                              (set by VS .vcxproj files; do not use on the CLI
-                              unless you know exactly what you're doing).
+                              (set by VS .vcxproj files; manages deps itself. 
+                              (do not use on the CLI unless you know what you're doing).
       -monolithic             Build DLL modules as static libs; defines BUILD_STATIC globally.
       -config <Debug|Release> Pick build config (default Debug).
       release                 Shortcut for -config Release.
@@ -138,39 +136,41 @@ main( int argc, char** argv )
     ctx.config   = BT_CONFIG_DEBUG;
     ctx.compiler = BT_COMPILER_MSVC; 
 
-    bool  should_clean   = false; 
-    bool  should_gen     = false;
+    bool  should_clean   = false;  // -clean: delete all build outputs and exit, no build.
+    bool  should_gen     = false;  // -gen: generate .sln/.vcxproj files and exit, no build.
     bool  compile_only   = false;  // -compile-only: compile all units, no link (VS Ctrl+F7).
-    char* target_name    = NULL;
+    char* target_name    = NULL;   // -target <name>: restrict the build to one target's closure (VS and CLI).
     char* file_path      = NULL;   // -file <path>: compile one file (CLI use).
-    int   j_threads      = 0;     // 0 → auto-detect from CPU count.
+    int   j_threads      = 0;      // 0 → auto-detect from CPU count.
 
     // --- Arg parsing ---
-    // Order-independent; the loop just sets flags. Unknown args are silently
-    // ignored (intentional — keeps backward compat with VS External Tools
+    // Order-independent; the loop just sets flags. Unknown args are silently ignored 
+    // (intentional — keeps backward compat with VS External Tools
     // call sites that might pass legacy positional args).
     for ( int i = 1; i < argc; ++i )
     {
-        if ( _stricmp( argv[ i ], "-clean" ) == 0 || _stricmp( argv[ i ], "clean" ) == 0 ) should_clean = true;
-        if ( _stricmp( argv[ i ], "-gen" ) == 0 || _stricmp( argv[ i ], "gen" ) == 0 ) should_gen = true;
-        if ( _stricmp( argv[ i ], "release" ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
-        if ( _stricmp( argv[ i ], "clang" ) == 0 ) ctx.compiler = BT_COMPILER_CLANG;
-        if ( _stricmp( argv[ i ], "-no-deps" ) == 0 ) ctx.skip_deps = true;
-        if ( _stricmp( argv[ i ], "-monolithic" ) == 0 || _stricmp( argv[ i ], "monolithic" ) == 0 ) ctx.is_monolithic = true;
-        if ( _stricmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) target_name  = argv[ ++i ];
-        if ( _stricmp( argv[ i ], "-file"         ) == 0 && i + 1 < argc ) file_path    = argv[ ++i ];
+        // Simple flags that just set a bool or enum field. Case-insensitive for user-friendliness.
+        if ( _stricmp( argv[ i ], "-clean"        ) == 0 || _stricmp( argv[ i ], "clean" ) == 0 ) should_clean = true;
+        if ( _stricmp( argv[ i ], "-gen"          ) == 0 || _stricmp( argv[ i ], "gen" ) == 0 ) should_gen = true;
+        if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 || _stricmp( argv[ i ], "monolithic" ) == 0 ) ctx.is_monolithic = true;
         if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) compile_only = true;
-        if ( _stricmp( argv[ i ], "-j" ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
-        if ( _stricmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
+        if ( _stricmp( argv[ i ], "release"       ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
+        if ( _stricmp( argv[ i ], "clang"         ) == 0 ) ctx.compiler = BT_COMPILER_CLANG;
+        if ( _stricmp( argv[ i ], "-no-deps"      ) == 0 ) ctx.skip_deps = true;      
+        if ( _stricmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
+        if ( _stricmp( argv[ i ], "-file"         ) == 0 && i + 1 < argc ) file_path = argv[ ++i ];        
+        if ( _stricmp( argv[ i ], "-j"            ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
+        if ( _stricmp( argv[ i ], "-config"       ) == 0 && i + 1 < argc )
         {
             if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
         }
-        // Output verbosity. -q / -v are preset shorthands; --out takes a hex
-        // mask so individual sections can be toggled without recompiling.
-        if ( _stricmp( argv[ i ], "-q" ) == 0 ) g_out_flags = ORB_OUT_QUIET;
-        if ( _stricmp( argv[ i ], "-v" ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
-        if ( _stricmp( argv[ i ], "--out" ) == 0 && i + 1 < argc )
+        // Output verbosity. -q / -v are presets; --out takes a hex mask for fine-control.
+        if ( _stricmp( argv[ i ], "-q"            ) == 0 ) g_out_flags = ORB_OUT_QUIET;
+        if ( _stricmp( argv[ i ], "-v"            ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
+        if ( _stricmp( argv[ i ], "--out"         ) == 0 && i + 1 < argc )
+        {
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
+        }
     }
 
     // --- Worker count ---

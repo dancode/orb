@@ -79,27 +79,42 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
 bool
 cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
 {
-    // Nothing to do if the buffer is comfortably under the shell limit and
-    // hasn't been flagged truncated. The common case for small targets.
+    // Fast path: small command, fits comfortably under the shell limit AND
+    // not flagged truncated → leave the buffer alone, no rsp file needed.
     if ( !b->truncated && b->size < CMD_RSP_THRESHOLD ) return false;
 
-    // Find the end of the first token (the tool exe). Whatever follows that
-    // whitespace boundary is the argument list we'll write to the rsp file.
+    // We need to split the buffer into "<exe>" + "<everything else>" so we
+    // can write the args to a .rsp file and rebuild the buffer as
+    // "<exe> @<rsp_path>". Anchor: the very first whitespace separates the
+    // exe from its first argument.
+    //
+    //   "cl.exe /c /nologo ..."
+    //          ^
+    //          args points here when the loop below stops.
     const char* args = b->buf;
     while ( *args && *args != ' ' && *args != '\t' ) ++args;
-    if ( !*args ) return false;   // No args present; nothing useful to spill.
+    if ( !*args ) return false;   // Single-token buffer; no args to spill.
 
+    // Range b->buf .. args is the exe. Validate the length is plausible —
+    // anything 64+ bytes is almost certainly a malformed buffer, in which
+    // case bailing out is safer than scribbling.
     size_t exe_len = ( size_t )( args - b->buf );
-    if ( exe_len == 0 || exe_len >= 64 ) return false;   // Exe name implausibly large.
+    if ( exe_len == 0 || exe_len >= 64 ) return false;
 
+    // Copy the exe into a local buffer so we can safely use it after we
+    // reset b->buf below. memcpy + manual null because b->buf is not
+    // null-terminated at the exe boundary.
     char exe[ 64 ];
     memcpy( exe, b->buf, exe_len );
     exe[ exe_len ] = '\0';
 
-    // Skip whitespace between exe and first arg so the rsp file starts
-    // cleanly on the first real argument.
+    // Advance `args` past the whitespace gap so the rsp file content begins
+    // on the first real argument character (no leading space).
     while ( *args == ' ' || *args == '\t' ) ++args;
 
+    // Write everything after the exe to the response file. cl/link/lib will
+    // read this file when invoked with "@<rsp_path>"; quoting and backslashes
+    // pass through verbatim, so our path strings need no extra escaping.
     FILE* f = fopen( rsp_path, "w" );
     if ( !f )
     {
@@ -109,9 +124,10 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
     fputs( args, f );
     fclose( f );
 
-    // Rewrite the buffer to the short "<exe> @<rsp_path>" form. Clear
-    // truncated so the (now short) buffer is treated as valid by downstream
-    // callers; cmd_append below has the room to rebuild it safely.
+    // Rewrite the in-memory buffer to the short "<exe> @<rsp_path>" form so
+    // downstream code (spawn, echo) sees a short, valid command. We also
+    // clear the truncated flag because the rebuilt buffer is comfortably
+    // small — leaving it set would cause a second spill attempt next time.
     b->size      = 0;
     b->truncated = false;
     cmd_append( b, "%s @%s", exe, rsp_path );

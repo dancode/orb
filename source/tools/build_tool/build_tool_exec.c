@@ -235,11 +235,16 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
     // --- 2. Up-to-Date Check ---
     //
-    // Three independent freshness tests, each guarded by the running
-    // `up_to_date` flag so we short-circuit out of expensive walks. A miss
-    // on ANY test forces a full rebuild; we don't try to be clever about
-    // partial recompilation because unity builds make per-file rebuilds
-    // meaningless anyway (one TU touches everything).
+    // Four independent freshness tests (A, B, C, D below), each guarded by
+    // the running `up_to_date` flag so we short-circuit out of expensive
+    // walks. A miss on ANY test forces a full rebuild; we don't try to be
+    // clever about partial recompilation because unity builds make per-file
+    // rebuilds meaningless anyway (one TU touches everything).
+    //
+    //   A. any unit's source file newer than the artifact?
+    //   B. any link-dep's .lib newer than the artifact?
+    //   C. did the build config (Debug/Release) flip since last build?
+    //   D. any tracked header newer than the artifact?
 
     __time64_t out_mtime = build_get_mtime( out_path );
     bool up_to_date = ( out_mtime != 0 );  // No artifact = first build = rebuild.

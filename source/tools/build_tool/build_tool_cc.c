@@ -87,17 +87,32 @@ get_target_upper( const char* name, char* out )
 }
 
 // cleanup_stale_pdbs() -- remove PDB files from previous links.
-// Files held by an attached debugger fail remove() silently; the new link
-// writes a fresh uniquely-named PDB so there is never a collision.
+//
+// Each link emits a uniquely-named bin/<target>_<timestamp>.pdb so the linker
+// never has to overwrite a PDB that a debugger may still hold open. Across
+// many builds those uniquely-named files accumulate; this routine sweeps the
+// unlocked ones away at the start of each link.
+//
+// remove() silently fails for any PDB still locked by an attached debugger,
+// which is exactly what we want — we keep going, the held file survives, and
+// the new link goes to a fresh name with a newer timestamp.
 static void
 cleanup_stale_pdbs( const char* target_name )
 {
+    // Build a wildcard pattern like "bin/foo_*.pdb" that _findfirst will
+    // expand against the filesystem. Note: backslashes also work, but we use
+    // forward slashes for consistency with the rest of the codebase.
     char pattern[ BT_PATH_MAX ];
     snprintf( pattern, sizeof( pattern ), "bin/%s_*.pdb", target_name );
 
     struct _finddata_t fd;
     intptr_t h = _findfirst( pattern, &fd );
-    if ( h == -1 ) return;
+    if ( h == -1 ) return;          // No matches → nothing to do.
+
+    // Walk every match. _findfirst returns the FIRST entry implicitly; we
+    // do-while so we process that first hit before calling _findnext.
+    // fd.name is just the basename ("foo_12345.pdb"), so we rebuild the
+    // full path with the "bin/" prefix before calling remove().
     do
     {
         char path[ BT_PATH_MAX ];
@@ -128,24 +143,45 @@ cc_open_log( void )
 
 // Print space-separated tokens from `raw`, stripping the leading `prefix`
 // from each token when non-NULL (e.g. "/D" strips preprocessor flag chars).
+//
+// Example: raw = "/DOS_WINDOWS /DARCH_X64", prefix = "/D"
+//          prints: "OS_WINDOWS ARCH_X64\n"
+//
+// This is the workhorse that renders the human-readable section view of
+// flags / defines / includes / etc. We can't just printf(raw) because the
+// caller wants per-token prefix-stripping and a final newline.
 static void
 print_tokens( FILE* out, const char* raw, const char* prefix )
 {
     size_t      plen  = prefix ? strlen( prefix ) : 0;
-    const char* p     = raw;
-    bool        first = true;
+    const char* p     = raw;          // running cursor through `raw`
+    bool        first = true;         // controls whether to emit a separating space
+
     while ( *p )
     {
+        // Skip any run of spaces between tokens (and leading whitespace).
         while ( *p == ' ' ) ++p;
-        if ( !*p ) break;
+        if ( !*p ) break;             // ran off the end inside the gap → done
+
+        // Record token start, then advance to the next space (or end-of-string).
+        // `s` ... `p` now bracket exactly one token.
         const char* s   = p;
         while ( *p && *p != ' ' ) ++p;
         int         len = (int)( p - s );
+
+        // Strip the caller's prefix from this token IF: a prefix was provided,
+        // the token is longer than the prefix (so something remains after the
+        // strip), and the token's leading bytes match. The `len > plen` guard
+        // is the reason "/D" alone (no symbol after it) is left untouched.
         if ( plen && (size_t)len > plen && strncmp( s, prefix, plen ) == 0 )
         {
             s   += plen;
             len -= (int)plen;
         }
+
+        // Emit a single space between tokens, then the (possibly-stripped) token.
+        // fwrite is used instead of fputs because `s` is NOT null-terminated —
+        // it points into the middle of `raw`.
         if ( !first ) fputc( ' ', out );
         fwrite( s, 1, len, out );
         first = false;
@@ -165,26 +201,45 @@ print_section( FILE* out, const char* label, const char* content, const char* st
 }
 
 // Print the compile output section: /FoobjDir/ /FdobjDir/ → "obj=... pdb=..."
+//
+// Specialised version of print_tokens(): instead of just stripping one fixed
+// prefix, it inspects each token's prefix character to decide which human
+// label ("obj=" or "pdb=") to print in front of the stripped path.
+//
+// Example: raw = "/Fobuild\\obj\\foo/ /Fdbuild\\obj\\foo/"
+//          prints: "obj=build\obj\foo/  pdb=build\obj\foo/\n"
 static void
 print_compile_output( FILE* out, const char* raw )
 {
     fprintf( out, SECTION_FMT, "output:" );
     const char* p     = raw;
     bool        first = true;
+
     while ( *p )
     {
+        // Skip whitespace, find the token bounds — same scan loop as print_tokens.
         while ( *p == ' ' ) ++p;
         if ( !*p ) break;
         const char* s   = p;
         while ( *p && *p != ' ' ) ++p;
         int         len = (int)( p - s );
-        // /Fo prefix → obj label; /Fd prefix → pdb label.
+
+        // Decide which prefix this token uses, if any. The MSVC flags are
+        // "/Foxxx" (object output dir) and "/Fdxxx" (compile-PDB output dir).
+        // `len > 3` ensures there is at least one character after "/Fo" or
+        // "/Fd" to print — empty flags would just produce noise.
         const char* label = NULL;
         if ( len > 3 && s[ 0 ] == '/' && s[ 1 ] == 'F' )
         {
-            if ( s[ 2 ] == 'o' ) { label = "obj=";  s += 3; len -= 3; }
+            if ( s[ 2 ] == 'o' ) { label = "obj=";   s += 3; len -= 3; }
             if ( s[ 2 ] == 'd' ) { label = "  pdb="; s += 3; len -= 3; }
         }
+
+        // Spacing rules:
+        //   - For an UNLABELED token, emit a separating space if it's not first.
+        //   - For a LABELED token, the label itself already starts with the
+        //     visual separation we want ("  pdb=" has two leading spaces), so
+        //     no extra space needed.
         if ( !first && !label ) fputc( ' ', out );
         if ( label ) fputs( label, out );
         fwrite( s, 1, len, out );
@@ -226,6 +281,10 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 // Response-file spill happens here when the assembled string exceeds the shell
 // arg limit — same mechanism as before, now operating on the joined result.
 
+// Join the compile fields in a fixed order into one command line:
+//   <exe> <flags> <includes> <defines> <output> <sources>
+// then run the spill check, which rewrites the buffer into "<exe> @rsp" form
+// if the joined string is at risk of exceeding the shell's arg-length limit.
 static void
 cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
 {
@@ -234,6 +293,9 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
     cmd_spill_to_response_file( cmd, rsp_path );
 }
 
+// Same idea for the link/archive side. The PDB section is optional: lib.exe
+// doesn't take a /DEBUG /PDB pair, so we omit that field when lk->pdb is
+// empty rather than emitting a stray pair of spaces.
 static void
 lk_assemble( const link_cmd_t* lk, cmd_buf_t* cmd, const char* rsp_path )
 {
@@ -249,27 +311,44 @@ lk_assemble( const link_cmd_t* lk, cmd_buf_t* cmd, const char* rsp_path )
 
 // Print the assembled command to `out` when the caller's CMD flag is set.
 // Wraps at 100 columns after the first token so long lines stay readable.
+//
+// Each token is kept intact (no mid-token line breaks). If appending the next
+// token would push past k_wrap, we line-break first and indent the new line
+// by k_cont spaces so the continuation visually nests under the command.
 static void
 print_raw_cmd( FILE* out, const char* cmd )
 {
-    static const int k_wrap = 100;
-    static const int k_cont = 20;  // continuation indent width
+    static const int k_wrap = 100;  // soft line width target
+    static const int k_cont = 20;   // continuation indent width
+
     fprintf( out, ORB_INDENT "[orb cmd]   " );
-    int col = 0;
+    int col = 0;                    // current column within the current line
     const char* p = cmd;
+
     while ( *p )
     {
+        // Find the next whitespace-delimited token: w ... p brackets it.
         const char* w = p;
         while ( *p && *p != ' ' ) ++p;
         int wlen = (int)( p - w );
+
+        // Two layout cases:
+        //   (a) The token would push the line past k_wrap → wrap to a new
+        //       indented line. col == 0 after wrap, no leading space needed.
+        //   (b) Token fits on the current line → emit a single separator
+        //       space (skipped on the very first token, when col == 0).
         if ( col > 0 && col + 1 + wlen > k_wrap )
         {
             fprintf( out, "\n%*s", k_cont, "" );
             col = 0;
         }
         else if ( col > 0 ) { fputc( ' ', out ); ++col; }
+
         fwrite( w, 1, wlen, out );
         col += wlen;
+
+        // Eat any run of spaces after the token so the next iteration picks up
+        // the start of the following token (or hits the end-of-string).
         while ( *p == ' ' ) ++p;
     }
     fputc( '\n', out );
@@ -278,23 +357,58 @@ print_raw_cmd( FILE* out, const char* cmd )
 /*============================================================================================*/
 // --- MSVC output classification ---
 
-// Returns true for bare source-file echo lines cl.exe emits per compiled TU
-// (e.g. "rs_gen.c") — plain filename, no spaces or separators, .c/.cpp extension.
-// Filtered out of log dumps since the orb build log already shows sources.
+// Returns true for the bare source-file banner cl.exe prints once per compiled
+// translation unit (e.g. it prints "rs_gen.c" on its own line before emitting
+// any diagnostics for that TU). We filter these out of our log dumps because
+// the orb build log already shows the source list in the [orb compile] section
+// — leaving cl's echo in just creates duplicate noise.
+//
+// A line qualifies as a source echo iff (after trimming whitespace) it is:
+//   - non-empty
+//   - contains no internal spaces or path separators (so "src/foo.c" doesn't
+//     match — that's a diagnostic, not a banner)
+//   - has a '.' producing an extension equal to "c" or "cpp" (case-insensitive)
+//
+// Implementation walks the line in three passes for readability over speed:
+// the volume here is tiny (a few hundred lines per build at worst).
 static bool
 is_msvc_source_echo( const char* line )
 {
+    // 1. Skip any leading whitespace so " foo.c" matches just like "foo.c".
     while ( *line == ' ' || *line == '\t' ) ++line;
+
+    // 2. Compute the effective length, ignoring any trailing CR / LF / space
+    //    that survived the line-buffer split. We work with a length rather
+    //    than mutating the buffer because the caller may want the line again.
     int len = ( int )strlen( line );
-    while ( len > 0 && ( line[ len - 1 ] == '\n' || line[ len - 1 ] == '\r' || line[ len - 1 ] == ' ' ) ) --len;
+    while ( len > 0 && ( line[ len - 1 ] == '\n'
+                      || line[ len - 1 ] == '\r'
+                      || line[ len - 1 ] == ' ' ) ) --len;
     if ( len == 0 ) return false;
+
+    // 3. Reject anything that contains an interior space or a path separator —
+    //    cl's TU banner is a bare filename, never a path. This is what
+    //    distinguishes "foo.c" (echo) from "F:\orb\src\foo.c(12): error C..."
+    //    (diagnostic — keep!).
     for ( int i = 0; i < len; ++i )
         if ( line[ i ] == ' ' || line[ i ] == '/' || line[ i ] == '\\' ) return false;
+
+    // 4. Find the last '.' so we can look at the extension. No dot = no
+    //    extension = not a source banner.
     int dot = -1;
     for ( int i = len - 1; i >= 0; --i ) { if ( line[ i ] == '.' ) { dot = i; break; } }
     if ( dot < 0 ) return false;
-    const char* ext = line + dot + 1;
-    return ( _stricmp( ext, "c" ) == 0 || _stricmp( ext, "cpp" ) == 0 );
+
+    // 5. Compare the extension (case-insensitive). We use _strnicmp + an
+    //    explicit length check rather than _stricmp because `line` may still
+    //    have trailing CR/LF/spaces past `len` (we trimmed by adjusting len
+    //    only, not by null-terminating). E.g. "foo.c\n" gives ext = "c\n"
+    //    and _stricmp("c\n", "c") would mismatch — losing the filter.
+    const char* ext     = line + dot + 1;
+    int         ext_len = len - ( dot + 1 );
+    if ( ext_len == 1 && _strnicmp( ext, "c",   1 ) == 0 ) return true;
+    if ( ext_len == 3 && _strnicmp( ext, "cpp", 3 ) == 0 ) return true;
+    return false;
 }
 
 /*============================================================================================*/
@@ -380,16 +494,26 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 
     // Sources: absolute paths so MSVC error messages are navigable from any
     // context (terminal, log file, IDE) regardless of the viewer's CWD.
+    //
+    // For each unit: build the relative path, run it through _fullpath() to
+    // canonicalize to an absolute path, and append it to the sources field
+    // separated by a single space. The `cc.sources[ 0 ] ? " " : ""` trick
+    // suppresses the leading space on the first entry — the field starts
+    // out as an empty string, so the test is "is anything here yet?".
     {
         char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
         for ( int i = 0; target->units[ i ]; ++i )
         {
             snprintf( rel, sizeof( rel ), "%s/%s", target->root_dir, target->units[ i ] );
+            // _fullpath returns NULL only on truly broken paths; fall back to
+            // the relative form so the build still proceeds and the user
+            // sees a recognisable error from cl rather than a silent skip.
             if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
-        // Reflection-generated TU (written by build_reflect.exe in step 5).
+        // Reflection-generated TU (written by build_reflect.exe in step 5
+        // of build_target). Same absolute-path treatment as the user units.
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
@@ -525,49 +649,65 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
 {
     link_cmd_t lk = { 0 };
 
-    // In monolithic mode, dynamic modules are archived as static libs instead of DLLs.
-    // This lets host executables link them directly with no hot-reload overhead.
+    // In monolithic mode, dynamic modules are archived as static libs instead
+    // of DLLs. This lets host executables link them directly with no
+    // hot-reload overhead. We compute an "effective" type once so the rest of
+    // the function can branch on lib-vs-exe behaviour without re-checking the
+    // monolithic flag everywhere.
     target_type_t effective_type = target->type;
     if ( ctx->is_monolithic && effective_type == TARGET_DYNAMIC_LIB )
         effective_type = TARGET_STATIC_LIB;
 
     if ( effective_type == TARGET_STATIC_LIB )
     {
+        // --- Static library (lib.exe) ----------------------------------
+        // lib.exe is the archiver: it bundles obj files into a .lib. No
+        // linking, no PDB, no dep resolution — just a flat archive of
+        // every *.obj in obj_dir.
         snprintf( lk.exe,      sizeof( lk.exe ),      "lib.exe" );
         snprintf( lk.artifact, sizeof( lk.artifact ),  "bin/%s.lib", target->name );
         snprintf( lk.flags,    sizeof( lk.flags ),     "/nologo" );
         snprintf( lk.output,   sizeof( lk.output ),    "/OUT:bin/%s.lib", target->name );
         snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s/*.obj", obj_dir );
-        // lib.exe has no PDB and no dep libs — lk.pdb and lk.libs stay empty.
+        // lk.pdb and lk.libs stay empty by zero-init — lib.exe ignores both.
     }
     else
     {
+        // --- Executable or DLL (link.exe) ------------------------------
+        // Same tool, two output shapes selected via /DLL.
         const char* ext = ( effective_type == TARGET_DYNAMIC_LIB ) ? ".dll" : ".exe";
 
         snprintf( lk.exe,      sizeof( lk.exe ),      "link.exe" );
         snprintf( lk.artifact, sizeof( lk.artifact ),  "bin/%s%s", target->name, ext );
         snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s/*.obj", obj_dir );
 
-        // Flags: /DLL only for shared libs.
+        // Flags: /DLL flips link.exe from "build EXE" into "build DLL" mode.
         if ( effective_type == TARGET_DYNAMIC_LIB )
             snprintf( lk.flags, sizeof( lk.flags ), "/nologo /DLL" );
         else
             snprintf( lk.flags, sizeof( lk.flags ), "/nologo" );
 
-        // Output: artifact + optional import lib for DLLs.
+        // Output: DLLs also produce an "import library" — the .lib that
+        // dependents link against to bind to the DLL's exports. /IMPLIB
+        // tells link.exe to emit it alongside the .dll.
         if ( effective_type == TARGET_DYNAMIC_LIB )
             snprintf( lk.output, sizeof( lk.output ),
                       "/OUT:bin/%s.dll /IMPLIB:bin/%s.lib", target->name, target->name );
         else
             snprintf( lk.output, sizeof( lk.output ), "/OUT:bin/%s.exe", target->name );
 
-        // PDB: rotated per-link so a held-open debugger session never blocks
-        // the linker. Stale leftovers are garbage-collected before each link.
+        // PDB: every link produces a uniquely-timestamped PDB so a debugger
+        // holding the previous one open can never block the linker. Stale
+        // (unlocked) leftovers from earlier builds are garbage-collected
+        // by cleanup_stale_pdbs() before we emit the new name.
         cleanup_stale_pdbs( target->name );
         snprintf( lk.pdb, sizeof( lk.pdb ),
                   "/DEBUG /PDB:bin/%s_%lld.pdb", target->name, ( long long )time( NULL ) );
 
-        // Libs: declared dep .libs + Windows system libs every target uses.
+        // Libs to feed link.exe: every declared dep's .lib, plus the four
+        // Windows system libs every target uses. The `[0] ? " " : ""` trick
+        // suppresses a leading space when lk.libs is still empty — same
+        // pattern as the sources list above.
         for ( int i = 0; target->deps[ i ]; ++i )
             CC_APPEND( lk.libs, "%sbin/%s.lib",
                       lk.libs[ 0 ] ? " " : "", target->deps[ i ] );

@@ -160,10 +160,14 @@ add_job( target_info_t* t )
     snprintf( j->log_path, sizeof( j->log_path ),
               "%s\\%s\\%s\\_build.log", g_build_dir, g_int_dir, t->name );
 
-    // Collect dep indices first; wire reverse edges in a second pass below.
+    // We do this in two passes so that during dep recursion (which may call
+    // back into add_job) we don't have to keep `j` consistent — easier to
+    // collect indices first, then wire edges once everyone exists.
     int dep_indices[ MAX_LOCAL_DEPS ];
     int dep_count = 0;
 
+    // Link deps (the .libs this target needs to link against).
+    // Recurse first so the dep is fully registered before we record its index.
     for ( int i = 0; t->deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
         target_info_t* dep = find_target( t->deps[ i ] );
@@ -173,6 +177,8 @@ add_job( target_info_t* t )
             if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
         }
     }
+    // Tool deps (helper executables that must exist before this target compiles,
+    // but that aren't linked in — e.g. a codegen utility).
     for ( int i = 0; t->tool_deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
         target_info_t* tool = find_target( t->tool_deps[ i ] );
@@ -183,9 +189,11 @@ add_job( target_info_t* t )
         }
     }
 
-    // Implicit dep: has_reflect targets always depend on the is_reflect_tool target.
-    // Deduplicate before adding — a double entry would inflate remaining_deps
-    // and leave the job permanently stuck in the ready queue.
+    // Implicit dep: every has_reflect target needs the registered reflection
+    // tool before it can be compiled. We *also* deduplicate here because the
+    // user may have already listed the reflect tool explicitly under deps or
+    // tool_deps. A double entry would inflate remaining_deps and the job
+    // would never reach 0 → would never become ready → indefinite wait.
     if ( t->has_reflect && dep_count < MAX_LOCAL_DEPS )
     {
         target_info_t* rt = find_reflect_tool();
@@ -201,11 +209,18 @@ add_job( target_info_t* t )
         }
     }
 
-    // Re-fetch j: the array is fixed-size so the pointer is still valid, but
-    // be explicit about the index-vs-pointer dance to avoid surprises later.
+    // Re-fetch j: nested add_job() calls above may have appended to
+    // g_sched.jobs[] but the array is fixed-size, so &g_sched.jobs[idx] is
+    // still valid. Re-assigning here makes the index/pointer relationship
+    // explicit and survives future changes that might move the array.
     j = &g_sched.jobs[ idx ];
     j->remaining_deps = dep_count;
 
+    // Wire the reverse-dep edges: for each dep, record THIS job's index in
+    // the dep's rev_deps list. When the dep finishes, worker_main walks that
+    // list and decrements each dependent's remaining_deps counter. The job
+    // becomes ready exactly when its last dep finishes — no global toposort
+    // needed.
     for ( int i = 0; i < dep_count; ++i )
     {
         sched_job_t* dj = &g_sched.jobs[ dep_indices[ i ] ];

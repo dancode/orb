@@ -72,6 +72,15 @@ static int  g_filter_count = 0;
 static void
 guid_from_name( const char* name, char* out )
 {
+    // Two independent FNV-1a hashes. FNV-1a iterates byte-by-byte over the
+    // input, XOR-ing the byte into the accumulator and then multiplying by a
+    // large prime. Using two different (seed, prime) pairs produces 128 bits
+    // of independent output — enough spread for our few-dozen project names.
+    //
+    // The exact constants are the standard 64-bit FNV-1a values (h1) and an
+    // arbitrary second pair (h2) chosen for being prime and distinct. The
+    // specific values don't matter as long as they stay stable across runs;
+    // changing them would re-roll every GUID and detach VS user state.
     unsigned long long h1 = 0xcbf29ce484222325ULL;
     unsigned long long h2 = 0x9ae16a3b2f90404fULL;
     for ( const unsigned char* p = ( const unsigned char* )name; *p; ++p )
@@ -79,8 +88,18 @@ guid_from_name( const char* name, char* out )
         h1 = ( h1 ^ *p ) * 0x100000001b3ULL;
         h2 = ( h2 ^ *p ) * 0x880355f21e6d1965ULL;
     }
-    // 38-byte fixed output (32 hex + 4 dashes + 2 braces + NUL); caller passes
-    // a 64-byte buffer. Use snprintf with a conservative cap for safety.
+
+    // Format the two 64-bit accumulators into the canonical 8-4-4-4-12
+    // GUID layout VS expects: {AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFFFFFF}.
+    // Output is exactly 38 bytes + NUL; caller's buffer is 64.
+    //
+    // Bit layout — we slice h1 and h2 to fill each field:
+    //   h1[63:32] → AAAAAAAA  (top half of h1)
+    //   h1[31:16] → BBBB
+    //   h1[15:0]  → CCCC      (bottom half of h1)
+    //   h2[63:48] → DDDD      (top of h2)
+    //   h2[47:32] → EEEE
+    //   h2[31:0]  → FFFFFFFF  (bottom half of h2)
     snprintf( out, 64, "{%08X-%04X-%04X-%04X-%04X%08X}",
               ( unsigned int )( h1 >> 32 ),
               ( unsigned int )( ( h1 >> 16 ) & 0xFFFFu ),
@@ -116,10 +135,17 @@ add_filter( const char* filter )
 
 /**
  * add_filters_recursive()
- * 
+ *
  * Ensures all parent folders of a filter path are also registered.
- * e.g. "engine\\core\\win" -> adds "engine", "engine\\core", and "engine\\core\\win".
- * This is necessary for VS to display the nested folder structure correctly.
+ * e.g. "engine\\core\\win" → adds "engine", "engine\\core", and "engine\\core\\win".
+ * This is necessary for VS to display the nested folder structure correctly:
+ * if only the leaf folder is registered, Solution Explorer skips the parent
+ * tiers and the hierarchy collapses.
+ *
+ * Trick: instead of building each prefix in a fresh buffer, we walk the path
+ * in place and temporarily null-terminate at each backslash to "fake" the
+ * prefix string, register it, then restore the backslash. Cheap and avoids
+ * any extra copies.
  */
 static void
 add_filters_recursive( const char* filter )
@@ -127,96 +153,136 @@ add_filters_recursive( const char* filter )
     char  tmp[ BT_PATH_MAX ];
     char* p = tmp;
     snprintf( tmp, sizeof( tmp ), "%s", filter );
+
     while ( *p )
     {
         if ( *p == '\\' )
         {
+            // Pretend the path ends here, register the prefix as a filter,
+            // then put the separator back so we keep walking the full path.
             *p = '\0';
             add_filter( tmp );
             *p = '\\';
         }
         p++;
     }
+    // Don't forget the leaf — the loop above only registered prefixes ending
+    // in a separator, not the final segment.
     add_filter( tmp );
 }
 
 /**
  * get_filter_for_path()
- * 
+ *
  * Maps a physical file path to a virtual VS filter path.
- * e.g. "source/engine/core/core.c" -> "engine\\core"
+ * Example: path = "source/engine/core/core.c", root_dir = "source/engine"
+ *          → out_filter = "core"
+ * Example: path = "source/engine/core/win/io.c", root_dir = "source/engine"
+ *          → out_filter = "core\\win"
+ *
+ * Strategy: strip the project root prefix, drop the final filename, and
+ * normalize the surviving directory portion to use backslashes (which is
+ * what VS uses inside its filter XML).
+ *
+ * Files that sit directly under root_dir produce an empty filter ("") —
+ * those go in the project's root with no virtual folder.
  */
 static void
 get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
 {
     out_filter[ 0 ] = '\0';
+
+    // Reject anything that does not start with root_dir; we have no meaningful
+    // filter to compute for it.
     size_t root_len = strlen( root_dir );
-    if ( strncmp( path, root_dir, root_len ) == 0 )
-    {
-        const char* sub = path + root_len;
-        if ( *sub == '/' || *sub == '\\' ) sub++;
+    if ( strncmp( path, root_dir, root_len ) != 0 ) return;
 
-        const char* last_slash = strrchr( sub, '/' );
-        if ( !last_slash ) last_slash = strrchr( sub, '\\' );
+    // Step past the root prefix and any single separator that follows it, so
+    // `sub` points to the relative tail we want to project into a filter.
+    // E.g. for path "source/engine/core/io.c" and root "source/engine",
+    // sub now points at "core/io.c".
+    const char* sub = path + root_len;
+    if ( *sub == '/' || *sub == '\\' ) sub++;
 
-        if ( last_slash )
-        {
-            size_t len = last_slash - sub;
-            strncpy( out_filter, sub, len );
-            out_filter[ len ] = '\0';
-            // VS uses backslashes for filters.
-            for ( char* p = out_filter; *p; ++p )
-                if ( *p == '/' ) *p = '\\';
-        }
-    }
+    // Find the last separator — everything before it is the directory portion
+    // (which becomes the filter), everything after is the filename (discarded).
+    // We check '/' first since our paths are mostly forward-slash, but fall
+    // back to '\\' for paths that came from the Win32 _findfirst APIs.
+    const char* last_slash = strrchr( sub, '/' );
+    if ( !last_slash ) last_slash = strrchr( sub, '\\' );
+
+    // No separator after the root means the file lives directly under
+    // root_dir → empty filter (already set above), nothing more to do.
+    if ( !last_slash ) return;
+
+    // Copy the directory portion into out_filter, then convert to backslashes
+    // for the VS filter convention. strncpy doesn't null-terminate when it
+    // hits its cap, so the explicit `out_filter[len] = '\0'` is required.
+    size_t len = last_slash - sub;
+    strncpy( out_filter, sub, len );
+    out_filter[ len ] = '\0';
+    for ( char* p = out_filter; *p; ++p )
+        if ( *p == '/' ) *p = '\\';
 }
 
 /**
  * scan_directory_recursive()
- * 
- * Traverses the source tree and collects all .c and .h files to be
- * included in the navigation project.
+ *
+ * Walks a directory tree starting at `dir` and accumulates every .c and .h
+ * file it finds into the shared g_files[] buffer, computing each file's VS
+ * filter (virtual folder) relative to `root_dir`.
+ *
+ * `dir` advances as we recurse into subdirectories; `root_dir` stays fixed
+ * so the filter calculation is always relative to the original scan root.
  */
 static void
 scan_directory_recursive( const char* dir, const char* root_dir )
 {
+    // _findfirst expects a wildcard pattern; "<dir>/*" matches everything in
+    // this directory (files + subdirectories + the . / .. specials).
     char search_path[ BT_PATH_MAX ];
     snprintf( search_path, sizeof( search_path ), "%s/*", dir );
 
     struct _finddata_t find_data;
     intptr_t           handle = _findfirst( search_path, &find_data );
-
-    if ( handle == -1 ) return;
+    if ( handle == -1 ) return;        // Empty / nonexistent directory.
 
     do
     {
-        // Skip hidden/special directories.
+        // _findfirst always includes the current ("." ) and parent ("..")
+        // directory entries — skip them or we'd recurse infinitely.
         if ( strcmp( find_data.name, "." ) == 0 || strcmp( find_data.name, ".." ) == 0 ) continue;
 
+        // Reconstruct the full path so we can either recurse into it or store it.
         char path[ BT_PATH_MAX ];
         snprintf( path, sizeof( path ), "%s/%s", dir, find_data.name );
 
         if ( find_data.attrib & _A_SUBDIR )
         {
+            // Subdirectory → recurse. root_dir stays the same.
             scan_directory_recursive( path, root_dir );
         }
         else
         {
+            // File → only care about .c and .h. strrchr finds the LAST dot,
+            // which is the extension marker. Files with no dot (e.g.
+            // "Makefile") get ext == NULL and are silently skipped.
             const char* ext = strrchr( find_data.name, '.' );
-            if ( ext )
-            {
-                bool is_c = _stricmp( ext, ".c" ) == 0;
-                bool is_h = _stricmp( ext, ".h" ) == 0;
+            if ( !ext ) continue;
 
-                if ( ( is_c || is_h ) && g_file_count < MAX_FILES )
-                {
-                    file_info_t* f = &g_files[ g_file_count++ ];
-                    strcpy( f->path, path );
-                    f->is_header = is_h;
-                    get_filter_for_path( path, root_dir, f->filter );
-                    if ( f->filter[ 0 ] != '\0' ) add_filters_recursive( f->filter );
-                }
-            }
+            bool is_c = _stricmp( ext, ".c" ) == 0;
+            bool is_h = _stricmp( ext, ".h" ) == 0;
+            if ( !( is_c || is_h ) ) continue;
+            if ( g_file_count >= MAX_FILES ) continue;   // Hard cap; bigger trees would silently drop.
+
+            // Record the file plus its filter (virtual folder). Register every
+            // ancestor filter too so the nesting renders cleanly in Solution
+            // Explorer (see add_filters_recursive for why).
+            file_info_t* f = &g_files[ g_file_count++ ];
+            strcpy( f->path, path );
+            f->is_header = is_h;
+            get_filter_for_path( path, root_dir, f->filter );
+            if ( f->filter[ 0 ] != '\0' ) add_filters_recursive( f->filter );
         }
     }
     while ( _findnext( handle, &find_data ) == 0 );
@@ -619,6 +685,10 @@ build_gen_solution( solution_info_t* sln )
     fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
     fprintf( f, "# Visual Studio Version 17\n" );
 
+    // Microsoft-defined "kind" GUIDs that .sln entries use as a discriminator.
+    // These are FIXED by Visual Studio — do not regenerate them.
+    //   folder_type_guid → declares an entry as a virtual solution folder.
+    //   cpp_type_guid    → declares an entry as a C/C++ project (.vcxproj).
     const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
     const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
 

@@ -349,20 +349,34 @@ static bool is_msvc_source_echo( const char* line );
 static void
 process_deps_line( char* line, FILE* deps, FILE* out )
 {
+    // cl prints header lookups as:  "Note: including file: <path>"
+    // We anchor on that exact prefix to split paths from diagnostic output.
     static const char   k_prefix[] = "Note: including file:";
     static const size_t k_prefix_n = sizeof( k_prefix ) - 1;
 
+    // Skip any leading whitespace so prefix matching works even when cl
+    // emits the line indented (which it does for indirect includes — each
+    // nesting level adds a leading space).
     char* p = line;
     while ( *p == ' ' || *p == '\t' ) ++p;
 
     if ( strncmp( p, k_prefix, k_prefix_n ) == 0 )
     {
+        // ---- Header-path branch -------------------------------------------
+        // Step over the prefix and any whitespace before the actual path.
         char* path = p + k_prefix_n;
         while ( *path == ' ' || *path == '\t' ) ++path;
+
+        // Trim trailing CR/LF; the pipe-feed loop strips \r on the fly but
+        // we still see \n here, plus any older \r-terminated input.
         size_t l = strlen( path );
         while ( l > 0 && ( path[ l - 1 ] == '\r' || path[ l - 1 ] == '\n' ) ) path[ --l ] = '\0';
         if ( l == 0 ) return;
 
+        // Filter out VC toolchain and Windows SDK headers: those can never
+        // be invalidated by a project source edit, so tracking them as deps
+        // is just wasted I/O on every incremental build. We check both
+        // slash conventions because cl emits whatever the include used.
         bool is_system = strstr( path, "\\VC\\Tools\\" ) != NULL
                          || strstr( path, "\\Windows Kits\\" ) != NULL
                          || strstr( path, "/VC/Tools/" ) != NULL
@@ -371,8 +385,12 @@ process_deps_line( char* line, FILE* deps, FILE* out )
     }
     else
     {
-        // Always forward diagnostic lines so errors/warnings surface even in quiet mode.
-        // Source-file echo lines ("foo.c") are noise — drop them unconditionally.
+        // ---- Diagnostic / banner branch ----------------------------------
+        // Anything that isn't a header path is either a real diagnostic
+        // (error / warning / note / fatal error) or noise (cl's per-TU
+        // source banner). We want diagnostics to always reach the user,
+        // even in quiet mode — losing an error is much worse than printing
+        // an extra line. Other lines only print when the verbose flag is set.
         bool is_diagnostic = ( strstr( line, ": error"   ) != NULL )
                           || ( strstr( line, ": warning" ) != NULL )
                           || ( strstr( line, ": note"    ) != NULL )
@@ -380,11 +398,17 @@ process_deps_line( char* line, FILE* deps, FILE* out )
 
         if ( is_diagnostic || ( g_out_flags & ORB_OUT_MSVC_OUTPUT ) )
         {
+            // The first diagnostic prints a blank line first so it visually
+            // separates from any preceding banner-noise — easier to spot.
+            // `static` is fine here because parallel workers serialize at
+            // the print lock anyway.
             static int issue_count = 0;
             if ( is_diagnostic && issue_count == 0 ) {
                 fprintf( out, "\n" );
                 issue_count++;
             }
+            // Drop bare source-file echoes ("foo.c"); the orb log already
+            // shows the source list, so cl's echo just adds duplicate noise.
             if ( !is_msvc_source_echo( line ) )
                 fprintf( out, ORB_INDENT "%s\n", line );
         }
@@ -449,11 +473,18 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
     FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
 
     // Stream the pipe into a line buffer; classify each full line via
-    // process_deps_line(). \r is dropped on the fly so the line buffer
-    // contains only the Unix-style content even on Windows console pipes.
-    // Any line longer than sizeof(line)-1 is flushed mid-way; that's
-    // acceptable because the only "interesting" lines we parse (the
-    // "Note: including file:" markers) are well under 4KB in practice.
+    // process_deps_line(). The child writes whatever-sized chunks it likes;
+    // we accumulate bytes into `line` until we see a newline OR run out of
+    // room, then ship the assembled line off for parsing.
+    //
+    //  `line` ............ the per-line accumulator we hand to process_deps_line.
+    //  `buf`  ............ the per-read scratch we pull from the pipe.
+    //  `\r` is dropped on the fly so the assembled line contains only the
+    //  Unix-style content even when the child emits CRLF.
+    //
+    // Any line longer than sizeof(line)-1 is force-flushed mid-way — fine
+    // because the only "interesting" lines (the "Note: including file:"
+    // markers) are well under 4KB in practice.
     char  line[ 4096 ];
     size_t line_len = 0;
     char  buf[ 4096 ];
@@ -463,13 +494,19 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
         for ( DWORD i = 0; i < br; ++i )
         {
             char c = buf[ i ];
-            if ( c == '\r' ) continue;
+            if ( c == '\r' ) continue;          // Drop CR; we only care about LF.
+
             if ( c == '\n' || line_len >= sizeof( line ) - 1 )
             {
+                // Either a real line end, or the buffer is full and we have
+                // to flush. Either way, null-terminate and dispatch.
                 line[ line_len ] = '\0';
                 process_deps_line( line, deps, out );
                 line_len = 0;
-                // Re-append the non-newline overflow character so it is not dropped.
+
+                // If we flushed due to overflow (not a true newline), the
+                // current character is real content — append it to the
+                // freshly emptied buffer so we don't lose it.
                 if ( c != '\n' ) line[ line_len++ ] = c;
             }
             else
@@ -478,8 +515,9 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
             }
         }
     }
-    // Flush any trailing partial line — last line of cl output may not have
-    // a trailing newline if the child exits without flushing.
+    // Flush any trailing partial line. The child may exit without writing a
+    // terminating newline (cl does this on the last line of its banner
+    // output), and we'd lose that final line without this catch.
     if ( line_len > 0 )
     {
         line[ line_len ] = '\0';
