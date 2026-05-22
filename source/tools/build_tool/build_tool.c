@@ -87,7 +87,6 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
     utils -> vcvars -> cc -> targets (pure data) -> gen -> sched.
 ==============================================================================================*/
 
-#include "build_str.c"
 #include "build_tool_utils.c"
 #include "build_tool_vcvars.c"
 #include "build_tool_cc.c"
@@ -288,9 +287,9 @@ main( int argc, char** argv )
 
         // Ensure the obj dir exists (normally created by a prior full build, but
         // be defensive so the first-ever single-file compile doesn't silently fail).
-        if ( _access( "bin",       0 ) != 0 ) system( "mkdir bin" );
-        if ( _access( g_build_dir, 0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s",          g_build_dir ); system( c ); }
-        if ( _access( obj_dir,     0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", obj_dir );              system( c ); }
+        ensure_dir( "bin" );
+        ensure_dir( g_build_dir );
+        ensure_dir( obj_dir );
 
         if ( !build_target_compile_single( &ctx, target, obj_dir, gen_dir, file_path ) )
         {

@@ -816,20 +816,8 @@ build_gen_projects( void )
 {
     printf( "Generating Visual Studio projects in %s/...\n", g_build_dir );
 
-    // Make sure the output directory exists. _access first so the mkdir
-    // child spawn is skipped in the common (already-exists) case.
-#if defined( _WIN32 )
-    if ( _access( g_build_dir, 0 ) != 0 )
-    {
-        char cmd[ BT_PATH_MAX ];
-        snprintf( cmd, sizeof( cmd ), "mkdir %s", g_build_dir );
-        system( cmd );
-    }
-#else
-    char cmd[ BT_PATH_MAX ];
-    snprintf( cmd, sizeof( cmd ), "mkdir -p %s", g_build_dir );
-    system( cmd );
-#endif
+    // Make sure the output directory exists.
+    ensure_dir( g_build_dir );
 
     // 1. Generate every target's .vcxproj once. They're shared across
     //    solutions by name — a single base.vcxproj is referenced by

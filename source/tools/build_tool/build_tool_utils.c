@@ -142,6 +142,26 @@ build_get_mtime( const char* path )
     return 0;
 }
 
+/**
+ * ensure_dir()
+ *
+ * Idempotent "mkdir if missing" used by every code path that needs to write
+ * into bin/, the build dir, an obj dir, or the generated dir. _access() probes
+ * are cheap, so the common (already-exists) case skips the system() spawn.
+ */
+static void
+ensure_dir( const char* dir )
+{
+#if defined( _WIN32 )
+    if ( _access( dir, 0 ) == 0 ) return;
+    char cmd[ BT_PATH_MAX ];
+    snprintf( cmd, sizeof( cmd ), "mkdir %s >nul 2>nul", dir );
+    system( cmd );
+#else
+#error "build_tool only supports Windows (MSVC)"
+#endif
+}
+
 /*============================================================================================*/
 // --- Cross-Process Target Locking ---
 

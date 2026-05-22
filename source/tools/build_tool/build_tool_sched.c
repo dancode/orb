@@ -417,12 +417,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
         char dir_path[ BT_PATH_MAX ];
         snprintf( dir_path, sizeof( dir_path ), "%s\\%s\\%s",
                   g_build_dir, g_int_dir, g_sched.jobs[ i ].target->name );
-        if ( _access( dir_path, 0 ) != 0 )
-        {
-            char mk[ BT_PATH_MAX ];
-            snprintf( mk, sizeof( mk ), "mkdir %s >nul 2>nul", dir_path );
-            system( mk );
-        }
+        ensure_dir( dir_path );
     }
 
     if ( thread_count < 1 ) thread_count = 1;

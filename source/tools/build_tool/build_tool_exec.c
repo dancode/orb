@@ -129,10 +129,10 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
     // Ensure intermediate directories exist; bin/ is not needed (no artifact produced).
     char int_root[ BT_PATH_MAX ];
     snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
-    if ( _access( g_build_dir, 0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", g_build_dir ); system( c ); }
-    if ( _access( int_root,    0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", int_root    ); system( c ); }
-    if ( _access( gen_dir,     0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", gen_dir     ); system( c ); }
-    if ( _access( obj_dir,     0 ) != 0 ) { char c[ BT_PATH_MAX ]; snprintf( c, sizeof(c), "mkdir %s", obj_dir     ); system( c ); }
+    ensure_dir( g_build_dir );
+    ensure_dir( int_root    );
+    ensure_dir( gen_dir     );
+    ensure_dir( obj_dir     );
 
     return build_target_compile( ctx, target, obj_dir, gen_dir );
 }
@@ -347,18 +347,14 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // probes are cheap and let us skip the mkdir spawn when the dir is
     // already present (the common case after the first build).
 
-#if defined( _WIN32 )
-    if ( _access( "bin", 0 ) != 0 ) system( "mkdir bin" );
-    if ( _access( g_build_dir, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", g_build_dir); system(c); }
-
     char int_root[ BT_PATH_MAX ];
     snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
-    if ( _access( int_root, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", int_root); system(c); }
-    if ( _access( gen_dir, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", gen_dir); system(c); }
-    if ( _access( obj_dir, 0 ) != 0 ) { char c[BT_PATH_MAX]; snprintf(c, sizeof(c), "mkdir %s", obj_dir); system(c); }
-#else
-#error "build_tool only supports Windows (MSVC)"
-#endif
+
+    ensure_dir( "bin"       );
+    ensure_dir( g_build_dir );
+    ensure_dir( int_root    );
+    ensure_dir( gen_dir     );
+    ensure_dir( obj_dir     );
 
     // --- 4. Locked File Management ---
     //
