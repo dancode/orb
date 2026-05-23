@@ -220,9 +220,10 @@ typedef struct build_context_s
     bool            is_monolithic;  // If true, TARGET_DYNAMIC_LIB targets build as static libs with BUILD_STATIC defined globally.
     compiler_flag_t compiler;       // Active compiler (BT_COMPILER_MSVC or BT_COMPILER_CLANG).
     bool            skip_deps;      // skip recurse into dependencies. See build_target().
-                            
+    bool            force_rebuild;  // bypass the up-to-date check; always compile + link.
+
 /*  skip_deps: If true, build_target() does NOT recurse into its dependencies.
-    The VS solution generator emits this flag so MSBuild's own scheduler is 
+    The VS solution generator emits this flag so MSBuild's own scheduler is
     the single authority on dep order — preventing multiple build_tool.exe
     instances from racing on shared dep outputs during a parallel build  */
 
@@ -275,7 +276,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_COMPILE_DEFINES  ( 1u << 3  )  // defines: OS_WINDOWS ARCH_X64 ...
 #define ORB_OUT_COMPILE_INCLUDES ( 1u << 4  )  // includes: source gen_dir ...
 #define ORB_OUT_COMPILE_OUTPUT   ( 1u << 5  )  // output:  obj=... pdb=...
-#define ORB_OUT_COMPILE_CMD      ( 1u << 6  )  // raw cl.exe command line
+#define ORB_OUT_COMPILE_CMD      ( 1u << 6  )  // raw cl.exe command line (long string)
 
 // Link / archive-step sections.
 #define ORB_OUT_LINK_SUMMARY     ( 1u << 7  )  // [orb link] target -> artifact
@@ -309,8 +310,11 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_COMPILE_SUMMARY | ORB_OUT_COMPILE_SOURCES | \
                           ORB_OUT_LINK_SUMMARY | ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
+#define OBB_OUT_TESTING ( ORB_OUT_TARGET_RESULT | ORB_OUT_MSVC_OUTPUT | \
+                          ORB_OUT_COMPILE_SUMMARY )
+
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
-#define ORB_OUT_DEFAULT ( ORB_OUT_QUIET ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
+#define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
 
 // Defined in build_tool.c; all other translation units read this directly.
 

@@ -3,60 +3,71 @@
     build_tool_exec.c -- Build execution: artifact cleanup and per-target build driver.
 
     Two public entry points called from main() and the parallel scheduler:
-      build_clean()   -- Wipe artifacts for one target or all non-tool targets.
-      build_target()  -- Dep resolution, up-to-date check, reflect codegen, compile + link.
+
+        build_clean()  -- Wipe artifacts for one target or all non-tool targets.
+        build_target() -- Dep resolution, up-to-date check, reflect codegen, compile + link.
 
 ==============================================================================================*/
+// clang-format off
 
-/*============================================================================================*/
+/*==============================================================================================
+    -- Quiet Delete Helper -- 
+    
+    Designed to keep the build_clean code readable and the terminal output tidy. 
+    
+        Ex: format a "del /q ... >nul 2>nul" command and run it silently.
+    
+    Appending >nul 2>nul to the shell command tells the Windows shell to discard 
+    both standard output and error messages.
 
-/**
- * del_q()
- *
- * Format a "del /q ... >nul 2>nul" command and run it silently. build_clean()
- * invokes this for every artifact category (bin/<name>.lib, .dll, .exe, .pdb,
- * .exp, .generated.{c,h}, ...); the wrapper keeps each call site to one line.
- */
+    It calls build_run_cmd_quiet, so even if the del command returns a "file not found" 
+    error code, the build tool doesn't log it.
+    
+    build_clean() invokes this for every artifact category it deletes.
+    e.g. (bin/<name>.lib, .dll, .exe, .pdb, .exp, .generated.{c,h}, ...); 
+==============================================================================================*/
+
 static void
 del_q( const char* fmt, ... )
 {
-    char    cmd[ BT_PATH_MAX * 2 ];
-    va_list args;
-    va_start( args, fmt );
-    vsnprintf( cmd, sizeof( cmd ), fmt, args );
+    char cmd[ BT_PATH_MAX * 2 ];
+    va_list args; va_start( args, fmt ); 
+    vsnprintf( cmd, sizeof( cmd ), fmt, args ); 
     va_end( args );
-    build_run_cmd_quiet( cmd );
+
+    build_run_cmd_quiet( cmd );    
 }
 
-/**
- * build_clean()
- *
- * Two modes:
- *
- *   Per-target (target != NULL): removes only that target's artifacts —
- *   bin/<name>.{lib,dll,exe,exp,pdb}, obj/<name>/, and any generated
- *   reflection files. Called from each VS .vcxproj's NMakeCleanCommandLine
- *   so a solution rebuild cleans each project independently rather than
- *   wiping the whole bin/ tree before every project.
- *
- *   Global (target == NULL): wipes all intermediates and artifacts. Skips
- *   is_tool executables (build_reflect, build_tool) so tools survive a
- *   full clean — they are rebuilt on demand by our dep resolution, not
- *   by VS, so deleting them would leave no path to recreate them.
- */
+/*==============================================================================================
+    --- Build Clean ---
+   
+    Two modes: per-target + global.
+
+    Per-target (target != NULL): removes only that target's artifacts — bin/<name>.
+    {lib,dll,exe,exp,pdb}, obj/<name>/, and any generated reflection files. 
+
+    Called from each VS .vcxproj's invoke of NMakeCleanCommandLine so a solution 
+    rebuild cleans each project independently rather than wiping the whole 
+    bin/ tree before every project.
+
+    Global (target == NULL): wipes all intermediates and artifacts. 
+
+    Skips "is_tool" executables (build_reflect, build_tool) so tools survive a 
+    full clean — they are rebuilt on demand by our dep resolution, not by VS, 
+    so deleting them would leave no path to recreate them.
+
+==============================================================================================*/
 void
 build_clean( target_info_t* target )
 {
-#if !defined( _WIN32 )
-#error "build_tool only supports Windows (MSVC)"
-#endif
-
     if ( target )
     {
         // One-line per-target clean. Sub-commands run silently; we print a
         // single summary at the end so MSBuild output stays parseable.
-        const char* ext = ( target->type == TARGET_STATIC_LIB ) ? "lib" :
-                          ( target->type == TARGET_DYNAMIC_LIB ) ? "dll" : "exe";
+        const char* ext = ( target->type == TARGET_STATIC_LIB )  ? "lib"
+                        : ( target->type == TARGET_DYNAMIC_LIB ) ? "dll" 
+                        :                                          "exe";
+
         del_q( "del /q bin\\%s.%s >nul 2>nul", target->name, ext );
 
         if ( target->type == TARGET_DYNAMIC_LIB )
@@ -79,9 +90,8 @@ build_clean( target_info_t* target )
             del_q( "del /q %s\\%s\\%s.generated.h >nul 2>nul", g_build_dir, g_gen_dir, rname );
         }
 
-        printf( ORB_INDENT "[orb clean] %s -- bin\\%s.%s, %s\\%s\\%s%s\n",
-                target->name, target->name, ext, g_build_dir, g_int_dir, target->name,
-                target->has_reflect ? " (+reflect)" : "" );
+        printf( ORB_INDENT "[orb clean] %s -- bin\\%s.%s, %s\\%s\\%s%s\n", target->name, target->name, ext,
+                g_build_dir, g_int_dir, target->name, target->has_reflect ? " (+reflect)" : "" );
     }
     else
     {
@@ -104,8 +114,7 @@ build_clean( target_info_t* target )
                 del_q( "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
         }
 
-        printf( ORB_INDENT "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n",
-                g_build_dir, g_int_dir, g_gen_dir );
+        printf( ORB_INDENT "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n", g_build_dir, g_int_dir, g_gen_dir );
     }
 }
 
@@ -131,9 +140,9 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
     char int_root[ BT_PATH_MAX ];
     snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
     ensure_dir( g_build_dir );
-    ensure_dir( int_root    );
-    ensure_dir( gen_dir     );
-    ensure_dir( obj_dir     );
+    ensure_dir( int_root );
+    ensure_dir( gen_dir );
+    ensure_dir( obj_dir );
 
     return build_target_compile( ctx, target, obj_dir, gen_dir );
 }
@@ -163,8 +172,9 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
 bool
 build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 {
-    if ( out_skipped ) *out_skipped = false;
-    target_info_t* refl_tool = NULL;   // Located in step 0; reused in step 5.
+    if ( out_skipped )
+        *out_skipped = false;
+    target_info_t* refl_tool = NULL;    // Located in step 0; reused in step 5.
 
     // --- 0. Dependency Resolution ---
     //
@@ -184,8 +194,14 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         for ( int i = 0; target->deps[ i ]; ++i )
         {
             target_info_t* dep = find_target( target->deps[ i ] );
-            if ( !dep ) { printf( ORB_INDENT "[orb error] '%s' depends on unknown target '%s'\n", target->name, target->deps[ i ] ); return false; }
-            if ( !build_target( ctx, dep, NULL ) ) return false;
+            if ( !dep )
+            {
+                printf( ORB_INDENT "[orb error] '%s' depends on unknown target '%s'\n", target->name,
+                        target->deps[ i ] );
+                return false;
+            }
+            if ( !build_target( ctx, dep, NULL ) )
+                return false;
         }
     }
 
@@ -196,16 +212,27 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     for ( int i = 0; target->tool_deps[ i ]; ++i )
     {
         target_info_t* tool = find_target( target->tool_deps[ i ] );
-        if ( !tool ) { printf( ORB_INDENT "[orb error] '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] ); return false; }
-        if ( !build_target( ctx, tool, NULL ) ) return false;
+        if ( !tool )
+        {
+            printf( ORB_INDENT "[orb error] '%s' has unknown tool dep '%s'\n", target->name, target->tool_deps[ i ] );
+            return false;
+        }
+        if ( !build_target( ctx, tool, NULL ) )
+            return false;
     }
 
     // Implicit reflect tool dep — same always-rebuild guarantee.
     if ( target->has_reflect )
     {
         refl_tool = find_reflect_tool();
-        if ( !refl_tool ) { printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n", target->name ); return false; }
-        if ( !build_target( ctx, refl_tool, NULL ) ) return false;
+        if ( !refl_tool )
+        {
+            printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n",
+                    target->name );
+            return false;
+        }
+        if ( !build_target( ctx, refl_tool, NULL ) )
+            return false;
     }
 
     // --- Critical section ---
@@ -226,11 +253,11 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
 
     // In monolithic mode a dynamic lib produces a .lib, not a .dll.
-    const char* ext = ( target->type == TARGET_STATIC_LIB )  ? ".lib" :
-                      ( target->type == TARGET_DYNAMIC_LIB ) ? ( ctx->is_monolithic ? ".lib" : ".dll" )
-                                                              : ".exe";
+    const char* ext = ( target->type == TARGET_STATIC_LIB )    ? ".lib"
+                      : ( target->type == TARGET_DYNAMIC_LIB ) ? ( ctx->is_monolithic ? ".lib" : ".dll" )
+                                                               : ".exe";
 
-    char out_path[ BT_PATH_MAX ];
+    char        out_path[ BT_PATH_MAX ];
     snprintf( out_path, sizeof( out_path ), "bin\\%s%s", target->name, ext );
 
     // --- 2. Up-to-Date Check ---
@@ -246,8 +273,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     //   C. did the build config (Debug/Release) flip since last build?
     //   D. any tracked header newer than the artifact?
 
-    __time64_t out_mtime = build_get_mtime( out_path );
-    bool up_to_date = ( out_mtime != 0 );  // No artifact = first build = rebuild.
+    __time64_t out_mtime  = build_get_mtime( out_path );
+    bool       up_to_date = ( out_mtime != 0 ) && !ctx->force_rebuild;    // No artifact = first build = rebuild.
 
     // Test A: any explicit translation unit newer than the artifact?
     if ( up_to_date )
@@ -256,7 +283,11 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         {
             char src_path[ BT_PATH_MAX ];
             snprintf( src_path, sizeof( src_path ), "%s/%s", target->root_dir, target->units[ i ] );
-            if ( build_get_mtime( src_path ) > out_mtime ) { up_to_date = false; break; }
+            if ( build_get_mtime( src_path ) > out_mtime )
+            {
+                up_to_date = false;
+                break;
+            }
         }
     }
 
@@ -268,7 +299,11 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         {
             char dep_path[ BT_PATH_MAX ];
             snprintf( dep_path, sizeof( dep_path ), "bin\\%s.lib", target->deps[ i ] );
-            if ( build_get_mtime( dep_path ) > out_mtime ) { up_to_date = false; break; }
+            if ( build_get_mtime( dep_path ) > out_mtime )
+            {
+                up_to_date = false;
+                break;
+            }
         }
     }
 
@@ -292,7 +327,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
             fgets( stored, sizeof( stored ), cf );
             fclose( cf );
             strip_eol( stored );
-            if ( strcmp( stored, current_config ) != 0 ) up_to_date = false;
+            if ( strcmp( stored, current_config ) != 0 )
+                up_to_date = false;
         }
     }
 
@@ -322,7 +358,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
                 // Strip the newline fgets leaves on the path so it round-trips
                 // through build_get_mtime cleanly.
                 strip_eol( header_path );
-                if ( header_path[ 0 ] == '\0' ) continue;
+                if ( header_path[ 0 ] == '\0' )
+                    continue;
 
                 if ( build_get_mtime( header_path ) > out_mtime )
                 {
@@ -339,7 +376,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // and observed the artifact as fully written.
     if ( up_to_date )
     {
-        if ( out_skipped ) *out_skipped = true;
+        if ( out_skipped )
+            *out_skipped = true;
         result = true;
         goto cleanup;
     }
@@ -353,11 +391,11 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     char int_root[ BT_PATH_MAX ];
     snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
 
-    ensure_dir( "bin"       );
+    ensure_dir( "bin" );
     ensure_dir( g_build_dir );
-    ensure_dir( int_root    );
-    ensure_dir( gen_dir     );
-    ensure_dir( obj_dir     );
+    ensure_dir( int_root );
+    ensure_dir( gen_dir );
+    ensure_dir( obj_dir );
 
     // --- 4. Locked File Management ---
     //
@@ -370,7 +408,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
     char exe_path[ BT_PATH_MAX ] = { 0 };
     char old_path[ BT_PATH_MAX ] = { 0 };
-    bool renamed = false;
+    bool renamed                 = false;
 
     if ( target->type == TARGET_EXECUTABLE )
     {
@@ -379,7 +417,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         if ( _access( exe_path, 0 ) == 0 )
         {
             remove( old_path );
-            if ( rename( exe_path, old_path ) == 0 ) renamed = true;
+            if ( rename( exe_path, old_path ) == 0 )
+                renamed = true;
         }
     }
 
@@ -406,15 +445,18 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
             // Route to the per-target log when inside a parallel worker so the
             // reflect line lands with the rest of the target's output.
             const char* _lp = sched_log_path();
-            FILE* _lf = _lp ? fopen( _lp, "a" ) : NULL;
+            FILE*       _lf = _lp ? fopen( _lp, "a" ) : NULL;
             fprintf( _lf ? _lf : stdout, ORB_INDENT "[orb reflect] %s\n", rname );
-            if ( _lf ) fclose( _lf );
+            if ( _lf )
+                fclose( _lf );
         }
         char refl_cmd[ BT_PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s", refl_tool->name, target->root_dir, gen_dir, rname );
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s", refl_tool->name, target->root_dir,
+                  gen_dir, rname );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
-            if ( renamed ) rename( old_path, exe_path );
+            if ( renamed )
+                rename( old_path, exe_path );
             result = false;
             goto cleanup;
         }
@@ -430,14 +472,16 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
     if ( !build_target_compile( ctx, target, obj_dir, gen_dir ) )
     {
-        if ( renamed ) rename( old_path, exe_path );
+        if ( renamed )
+            rename( old_path, exe_path );
         result = false;
         goto cleanup;
     }
 
     if ( !build_target_link( ctx, target, obj_dir ) )
     {
-        if ( renamed ) rename( old_path, exe_path );
+        if ( renamed )
+            rename( old_path, exe_path );
         result = false;
         goto cleanup;
     }
@@ -463,3 +507,4 @@ cleanup:
 }
 
 /*============================================================================================*/
+// clang-format on

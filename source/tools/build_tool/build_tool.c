@@ -45,6 +45,8 @@
     #define WIN32_EXTRA_LEAN
     #define VC_EXTRALEAN
     #include <windows.h>
+#else 
+    #error "build_tool only supports Windows (MSVC)"
 #endif
 
 /*==============================================================================================
@@ -87,6 +89,7 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 
 #include "build_tool_utils.c"
 #include "build_tool_vcvars.c"
+#include "build_tool_cmd.c"
 #include "build_tool_cc.c"
 #include "build_tool_targets.c"
 #include "build_tool_gen.c"
@@ -106,6 +109,9 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
       -file <path>              Compile a single file with the target's full flag set.
                                 No link step. CLI tool for targeted error checking.
                                 Requires -target.
+      -force                    Skip the up-to-date check and always compile + link.
+                                Useful for testing recompilation without touching timestamps.
+                                Does not wipe obj/ — use -clean for a full scrub.
       -no-deps                  Build only the target itself, no dep recursion
                                 (set by VS .vcxproj files; manages deps itself.
                                 (do not use on the CLI unless you know what you're doing).
@@ -133,17 +139,18 @@ main( int argc, char** argv )
     // }
 
     build_context_t ctx = { 0 };
-    ctx.config   = BT_CONFIG_DEBUG;
-    ctx.compiler = BT_COMPILER_MSVC;
-
-    bool  should_clean   = false;  // -clean: delete all build outputs and exit, no build.
-    bool  should_gen     = false;  // -gen: generate .sln/.vcxproj files and exit, no build.
-    bool  compile_only   = false;  // -compile-only: compile all units, no link (VS Ctrl+F7).
-    char* target_name    = NULL;   // -target <name>: restrict the build to one target's closure (VS and CLI).
-    char* file_path      = NULL;   // -file <path>: compile one file (CLI use).
-    int   j_threads      = 0;      // 0 → auto-detect from CPU count.
+    ctx.config   = BT_CONFIG_DEBUG;     // default to debug; override with -config or -release.
+    ctx.compiler = BT_COMPILER_MSVC;    // default to cl.exe; override with -clang.
 
     // --- Arg parsing ---
+    
+    bool  should_clean   = false;       // -clean: delete all build outputs and exit, no build.
+    bool  should_gen     = false;       // -gen: generate .sln/.vcxproj files and exit, no build.
+    bool  compile_only   = false;       // -compile-only: compile all units, no link (VS Ctrl+F7).
+    char* target_name    = NULL;        // -target <name>: restrict the build to one target (VS and CLI).
+    char* file_path      = NULL;        // -file <path>: compile one file (CLI use).
+    int   j_threads      = 0;           // 0 → auto-detect from CPU count.
+
     // Order-independent; the loop just sets flags. Unknown args are silently ignored.
     // NOTE: Hyphens are now mandatory for all flags. Dash-less legacy positional args are ignored.
     for ( int i = 1; i < argc; ++i )
@@ -155,6 +162,7 @@ main( int argc, char** argv )
         if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
         if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = BT_COMPILER_CLANG;
         if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) compile_only = true;
+        if ( _stricmp( argv[ i ], "-force"        ) == 0 ) ctx.force_rebuild = true;
         if ( _stricmp( argv[ i ], "-no-deps"      ) == 0 ) ctx.skip_deps = true;
         if ( _stricmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
         if ( _stricmp( argv[ i ], "-file"         ) == 0 && i + 1 < argc ) file_path = argv[ ++i ];        
@@ -173,29 +181,31 @@ main( int argc, char** argv )
     }
 
     // --- Worker count ---
-    // Auto-pick = logical processor count, clamped to [1, 16]. The upper
-    // cap matches diminishing returns once we exceed the dep graph's
-    // critical-path width; more threads past that just trade memory for
-    // wall time wins that don't materialize.
+    // Auto-pick = logical processor count, clamped to [1, 16]. The upper cap matches
+    // diminishing returns once we exceed the dep graph's critical-path width; more
+    // threads past that just trade memory for wall time wins that don't materialize.
     if ( j_threads <= 0 )
     {
-        SYSTEM_INFO si;
-        GetSystemInfo( &si );
-        j_threads = ( int )si.dwNumberOfProcessors;
-        if ( j_threads < 1 ) j_threads = 1;
+        SYSTEM_INFO si; GetSystemInfo( &si );
+             j_threads = ( int )si.dwNumberOfProcessors;
+        if ( j_threads < 1 )  j_threads = 1;
         if ( j_threads > 16 ) j_threads = 16;
     }
 
     // --- Standalone subcommands ---
-    // clean and gen are bookkeeping passes — no need to set up the toolchain
-    // env. Returning early skips the vcvars import below.
+    // 'clean' and 'gen' are bookkeeping passes - so we can skip toolchain env. 
+    // Returning early skips the vcvars import below.
     if ( should_clean )
     {
         target_info_t* clean_target = NULL;
         if ( target_name )
         {
             clean_target = find_target_icase( target_name );
-            if ( !clean_target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); return 1; }
+            if ( clean_target == NULL ) 
+            { 
+                printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); 
+                return 1; 
+            }
         }
         build_clean( clean_target );
         return 0;

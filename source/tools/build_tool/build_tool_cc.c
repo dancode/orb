@@ -253,12 +253,20 @@ static void
 cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const char* config )
 {
     if ( g_out_flags & ORB_OUT_COMPILE_SUMMARY )
-        fprintf( out, ORB_INDENT "[orb compile] %s (%s)\n\n", target->name, config );
+        fprintf( out, ORB_INDENT "[orb compile] %s (%s)\n", target->name, config );
+
+    const out_flags_t cc_detail = ORB_OUT_COMPILE_SOURCES | ORB_OUT_COMPILE_FLAGS | ORB_OUT_COMPILE_DEFINES |
+                                  ORB_OUT_COMPILE_INCLUDES | ORB_OUT_COMPILE_OUTPUT;
+
+    if ( g_out_flags & cc_detail ) fprintf( out, "\n" );
+
     if ( g_out_flags & ORB_OUT_COMPILE_SOURCES  ) print_section( out, "sources:",  cc->sources,  NULL );
     if ( g_out_flags & ORB_OUT_COMPILE_FLAGS    ) print_section( out, "flags:",    cc->flags,    NULL );
     if ( g_out_flags & ORB_OUT_COMPILE_DEFINES  ) print_section( out, "defines:",  cc->defines,  "/D" );
     if ( g_out_flags & ORB_OUT_COMPILE_INCLUDES ) print_section( out, "includes:", cc->includes, "/I" );
     if ( g_out_flags & ORB_OUT_COMPILE_OUTPUT   ) print_compile_output( out, cc->output );
+
+    if ( g_out_flags & cc_detail ) fprintf( out, "\n" );
 }
 
 // Print link command sections to `out` according to g_out_flags.
@@ -266,12 +274,20 @@ static void
 lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 {
     if ( g_out_flags & ORB_OUT_LINK_SUMMARY )
-        fprintf( out, ORB_INDENT "[orb link] %s -> %s\n\n", target->name, lk->artifact );
+        fprintf( out, ORB_INDENT "[orb link] %s -> %s\n", target->name, lk->artifact );
+
+    const out_flags_t lk_detail = ORB_OUT_LINK_INPUTS | ORB_OUT_LINK_LIBS | ORB_OUT_LINK_FLAGS |
+                                  ORB_OUT_LINK_OUTPUT | ORB_OUT_LINK_PDB;
+
+    if ( g_out_flags & lk_detail ) fprintf( out, "\n" );
+
     if ( g_out_flags & ORB_OUT_LINK_INPUTS  ) print_section( out, "inputs:",  lk->inputs,  NULL );
     if ( g_out_flags & ORB_OUT_LINK_LIBS    ) print_section( out, "libs:",    lk->libs,    NULL );
     if ( g_out_flags & ORB_OUT_LINK_FLAGS   ) print_section( out, "flags:",   lk->flags,   NULL );
     if ( g_out_flags & ORB_OUT_LINK_OUTPUT  ) print_section( out, "output:",  lk->output,  "/OUT:" );
     if ( g_out_flags & ORB_OUT_LINK_PDB     ) print_section( out, "pdb:",     lk->pdb,     "/PDB:" );
+
+    if ( g_out_flags & lk_detail ) fprintf( out, "\n" );
 }
 
 /*============================================================================================*/
@@ -319,7 +335,7 @@ static void
 print_raw_cmd( FILE* out, const char* cmd )
 {
     static const int k_wrap = 100;  // soft line width target
-    static const int k_cont = 20;   // continuation indent width
+    static const int k_cont = 22;   // continuation indent width — matches ORB_INDENT(10) + "[orb cmd]   "(12)
 
     fprintf( out, ORB_INDENT "[orb cmd]   " );
     int col = 0;                    // current column within the current line
@@ -351,7 +367,7 @@ print_raw_cmd( FILE* out, const char* cmd )
         // the start of the following token (or hits the end-of-string).
         while ( *p == ' ' ) ++p;
     }
-    fputc( '\n', out );
+    fprintf( out, "\n\n" );
 }
 
 /*============================================================================================*/

@@ -323,8 +323,8 @@ worker_main( void* arg )
         // OR when any compile/link detail flag is active (the log contains the
         // section output printed by build_target_compile/link).
         EnterCriticalSection( &g_print_lock );
-        if ( !ok || ( g_out_flags & ORB_OUT_TARGET_RESULT ) )
-            printf( ORB_INDENT "[orb %s] %s\n", !ok ? "FAILED" : j->skipped ? "skipped" : "compiled", j->target->name );
+        // Dump the per-target log before printing the result tag so the detail
+        // sections (compile/link/cmd) appear first and the result reads as a footer.
         bool dump_log = !ok || ( g_out_flags & ( ORB_OUT_ANY_COMPILE | ORB_OUT_ANY_LINK ) );
         if ( dump_log )
         {
@@ -337,6 +337,8 @@ worker_main( void* arg )
                 fclose( lf );
             }
         }
+        if ( !ok || ( g_out_flags & ORB_OUT_TARGET_RESULT ) )
+            printf( ORB_INDENT "[orb %s] %s\n", !ok ? "FAILED" : j->skipped ? "skipped" : "compiled", j->target->name );
         fflush( stdout );
         LeaveCriticalSection( &g_print_lock );
 
