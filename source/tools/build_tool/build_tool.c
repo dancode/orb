@@ -109,6 +109,60 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
     One early check here is cleaner than guarding every loop individually.
 ==============================================================================================*/
 
+static void
+print_startup_banner( const build_context_t* ctx )
+{
+    // All modes share the format:  [orb <mode>] SUBJECT  [ <special> | modular | debug | msvc ]
+    // Each branch sets label/subject/special; props and the final printf are assembled once below.
+
+    char target_upper[ 64 ] = "ALL";
+    if ( ctx->target_name ) get_target_upper( ctx->target_name, target_upper, sizeof( target_upper ) );
+
+    // base_name is the filename from -file with path stripped.
+    const char* base_name = ctx->file_path;
+    if ( base_name ) {
+        for ( const char* p = ctx->file_path; *p; ++p )
+            if ( *p == '\\' || *p == '/' ) base_name = p + 1;
+    }
+
+    char subject[ BT_PATH_MAX ];
+    snprintf( subject, sizeof( subject ), "%s", target_upper );
+
+    const char* config_str   = ctx->config == CONFIG_DEBUG ? "debug" : "release";
+    const char* mode_str     = ctx->is_monolithic ? "monolithic" : "modular";
+    const char* compiler_str = ctx->compiler == COMPILE_CLANG ? "clang" : "msvc";
+
+    const char* label   = NULL; // [orb ...]
+    const char* special = NULL; // first props slot, or NULL
+
+    if ( ctx->compile_only )
+    {
+        label   = "[orb compile-only]";
+        special = "no-link";
+    }
+    else if ( ctx->file_path )
+    {
+        label   = "[orb single-file]";
+        special = "file";
+
+        // adds the filename next to the target label.
+        snprintf( subject, sizeof( subject ), "%s %s", target_upper, base_name );
+    }
+    else
+    {
+        label   = "[orb build]";
+        special = ctx->skip_deps ? "no-deps" : NULL;
+    }
+
+    // Assemble the property bracket (special slot is mode-specific and optional).
+    char props[ 128 ];
+    if ( special ) snprintf( props, sizeof( props ), "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str );
+    else           snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str );
+
+    printf( ORB_BANNER "----------------------------------------------------------------\n" );
+    printf( ORB_BANNER "%s %s %s\n", label, subject, props );
+}
+
 static bool
 validate_targets( void )
 {
@@ -184,9 +238,6 @@ main( int argc, char** argv )
     
     bool  should_clean   = false;       // -clean: delete all build outputs and exit, no build.
     bool  should_gen     = false;       // -gen: generate .sln/.vcxproj files and exit, no build.
-    bool  compile_only   = false;       // -compile-only: compile all units, no link (VS Ctrl+F7).
-    char* target_name    = NULL;        // -target <name>: restrict the build to one target (VS and CLI).
-    char* file_path      = NULL;        // -file <path>: compile one file (CLI use) no link.
     int   j_threads      = 0;           // 0 → auto-detect from CPU count.
 
     // Order-independent; the loop just sets flags. Unknown args are silently ignored.
@@ -199,11 +250,11 @@ main( int argc, char** argv )
         if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 ) ctx.is_monolithic = true;
         if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = CONFIG_RELEASE;
         if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = COMPILE_CLANG;
-        if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) compile_only = true;
+        if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) ctx.compile_only = true;
         if ( _stricmp( argv[ i ], "-force"        ) == 0 ) ctx.force_rebuild = true;
         if ( _stricmp( argv[ i ], "-no-deps"      ) == 0 ) ctx.skip_deps = true;
-        if ( _stricmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) target_name = argv[ ++i ];
-        if ( _stricmp( argv[ i ], "-file"         ) == 0 && i + 1 < argc ) file_path = argv[ ++i ];        
+        if ( _stricmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
+        if ( _stricmp( argv[ i ], "-file"         ) == 0 && i + 1 < argc ) ctx.file_path = argv[ ++i ];
         if ( _stricmp( argv[ i ], "-j"            ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
         if ( _stricmp( argv[ i ], "-config"       ) == 0 && i + 1 < argc )
         {
@@ -233,7 +284,7 @@ main( int argc, char** argv )
     // --- Arg Validation ---
     // -file and -compile-only are mutually exclusive: -file compiles one specific file (CLI only),
     // -compile-only compiles the whole target with no link step (VS Ctrl+F7). They can never combine.
-    if ( file_path && compile_only )
+    if ( ctx.file_path && ctx.compile_only )
     {
         printf( ORB_INDENT "[orb error] -file and -compile-only are mutually exclusive\n" );
         return 1;
@@ -248,11 +299,11 @@ main( int argc, char** argv )
     if ( should_clean )
     {
         target_info_t* clean_target = NULL;
-        if ( target_name ) {
-            clean_target = find_target_icase( target_name );
-            if ( clean_target == NULL ) { 
-                printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); 
-                return 1; 
+        if ( ctx.target_name ) {
+            clean_target = find_target_icase( ctx.target_name );
+            if ( clean_target == NULL ) {
+                printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name );
+                return 1;
             }
         }
         build_clean( clean_target );
@@ -268,67 +319,15 @@ main( int argc, char** argv )
     }
 
     // --- Begin Startup Banner ---
-    
-    // All modes share the format:  [orb <mode>] SUBJECT  [ <special> | modular | debug | msvc ]
-    // Each branch sets label/subject/special; props and the final printf are assembled once below.
-    // ORB_OUT_ARGS appends a second line echoing the raw argv (off by default).
 
-    char target_upper[ 64 ] = "ALL";
-    if ( target_name ) get_target_upper( target_name, target_upper, sizeof( target_upper ) );
+    print_startup_banner( &ctx );
 
-    // base_name is filename acquired via -file with path stripped.
-    const char* base_name = file_path ? file_path : NULL;
-    if ( base_name ) {
-        for ( const char* p = file_path; *p; ++p )
-            if ( *p == '\\' || *p == '/' ) base_name = p + 1;
-    }
-
-    if ( 1 ) // (nested for scoping working variables)
+    // ORB_OUT_ARGS: echo the raw command line on a second line (off by default).
+    if ( g_out_flags & ORB_OUT_ARGS )
     {
-        char subject[ BT_PATH_MAX ]; 
-        snprintf( subject, sizeof( subject ), "%s", target_upper );
-
-        const char* config_str   = ctx.config == CONFIG_DEBUG ? "debug" : "release";
-        const char* mode_str     = ctx.is_monolithic ? "monolithic" : "modular";
-        const char* compiler_str = ctx.compiler == COMPILE_CLANG ? "clang" : "msvc";
-
-        const char* label        = NULL; // [orb ...]
-        const char* special      = NULL; // first props slot, or NULL
-
-        if ( compile_only )  
-        {
-            label   = "[orb compile-only]";
-            special = "no-link";
-        }
-        else if ( file_path )
-        {
-            label   = "[orb single-file]";
-            special = "file";
-
-            // adds the filename next to the target label.
-            snprintf( subject, sizeof( subject ), "%s %s", target_upper, base_name );
-        }
-        else
-        {
-            label   = "[orb build]";
-            special = ctx.skip_deps ? "no-deps" : NULL;
-        }
-
-        // Assemble the property bracket (special slot is mode-specific and optional).
-        char props[ 128 ];
-        if ( special ) snprintf( props, sizeof( props ), "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str );
-        else           snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str ); 
-
-        printf( ORB_BANNER "----------------------------------------------------------------\n" );
-        printf( ORB_BANNER "%s %s %s\n", label, subject, props );
-
-        // ORB_OUT_ARGS: echo the raw command line on a second line (off by default).
-        if ( g_out_flags & ORB_OUT_ARGS )
-        {
-            printf( ORB_INDENT "[orb args]" );
-            for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
-            printf( "\n" );
-        }
+        printf( ORB_INDENT "[orb args]" );
+        for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
+        printf( "\n" );
     }
     
     // --- Setup Visual Studio Environment ---    
@@ -345,14 +344,18 @@ main( int argc, char** argv )
     //                       authority on solution-level parallelism.
     //  -target X          → parallel scheduler over X's dependency closure.
     //  no -target         → parallel scheduler over every registered target.
+    // Uppercase target name used in FAILED/completed output lines.
+    char target_upper[ 64 ] = "ALL";
+    if ( ctx.target_name ) get_target_upper( ctx.target_name, target_upper, sizeof( target_upper ) );
+
     target_info_t* target = NULL;
-    if ( target_name )
+    if ( ctx.target_name )
     {
-        target = find_target_icase( target_name );
-        if ( !target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); return 1; }
+        target = find_target_icase( ctx.target_name );
+        if ( !target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name ); return 1; }
     }
 
-    if ( compile_only )
+    if ( ctx.compile_only )
     {
         // VS Ctrl+F7 path: compile all unity units for the target, no link step.
         // VS does not inject the selected file path via any env/property mechanism,
@@ -369,7 +372,7 @@ main( int argc, char** argv )
         return 0;
     }
 
-    if ( file_path )
+    if ( ctx.file_path )
     {
         // Single-file compile: build_target_compile_single() with the target's full
         // flag/define/include set, but only the one file VS handed us.
@@ -377,16 +380,22 @@ main( int argc, char** argv )
 
         // If the path is not absolute, resolve it relative to the target's root_dir
         // so callers can pass bare filenames or subdir-relative paths like sub/file.c.
+        const char* effective_file = ctx.file_path;
         char resolved_file[ BT_PATH_MAX ];
-        bool is_abs = ( file_path[ 0 ] == '\\' ) || ( file_path[ 1 ] == ':' );
+        bool is_abs = ( ctx.file_path[ 0 ] == '\\' ) || ( ctx.file_path[ 1 ] == ':' );
         if ( !is_abs && target->root_dir )
         {
             char combined[ BT_PATH_MAX ];
-            snprintf( combined, sizeof( combined ), "%s\\%s", target->root_dir, file_path );
+            snprintf( combined, sizeof( combined ), "%s\\%s", target->root_dir, ctx.file_path );
             if ( !_fullpath( resolved_file, combined, sizeof( resolved_file ) ) )
                 snprintf( resolved_file, sizeof( resolved_file ), "%s", combined );
-            file_path = resolved_file;
+            effective_file = resolved_file;
         }
+
+        // Strip path from base_name for the completed output line.
+        const char* base_name = effective_file;
+        for ( const char* p = effective_file; *p; ++p )
+            if ( *p == '\\' || *p == '/' ) base_name = p + 1;
 
         char obj_dir[ BT_PATH_MAX ];
         snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
@@ -399,13 +408,13 @@ main( int argc, char** argv )
         ensure_dir( g_build_dir );
         ensure_dir( obj_dir );
 
-        if ( !build_target_compile_single( &ctx, target, obj_dir, gen_dir, file_path ) )
+        if ( !build_target_compile_single( &ctx, target, obj_dir, gen_dir, effective_file ) )
         {
             printf( ORB_BANNER "[ %s: FAILED ]\n", target_upper );
             return 1;
         }
         if ( g_out_flags & ORB_OUT_TARGET_RESULT )
-            printf( ORB_INDENT "[orb completed] %s\n", base_name ); 
+            printf( ORB_INDENT "[orb completed] %s\n", base_name );
         printf( "\n" );
         return 0;
     }

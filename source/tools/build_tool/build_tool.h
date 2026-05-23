@@ -232,6 +232,9 @@ typedef struct build_context_s
     compiler_flag_t compiler;       // Active compiler (COMPILE_MSVC or COMPILE_CLANG).
     bool            skip_deps;      // skip recurse into dependencies. See build_target().
     bool            force_rebuild;  // bypass the up-to-date check; always compile + link.
+    bool            compile_only;   // -compile-only: compile all units, no link (VS Ctrl+F7).
+    char*           target_name;    // -target <name>: restrict the build to one target (VS and CLI).
+    char*           file_path;      // -file <path>: compile one file (CLI use), no link.
 
 /*  skip_deps: If true, build_target() does NOT recurse into its dependencies.
     The VS solution generator emits this flag so MSBuild's own scheduler is
