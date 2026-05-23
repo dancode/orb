@@ -100,13 +100,9 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 #include "build_tool_exec.c"
 
 /*==============================================================================================
-    --- Target Table Validation ---
+    --- Startup Banner ---
 
-    Checks every target in g_targets[] for slot-array overflow before any build
-    work begins. units/deps/tool_deps are null-terminated arrays of fixed size
-    TARGET_MAX_SLOTS; if a developer fills every slot, the null terminator is
-    missing and every loop that walks the array will read into the next field.
-    One early check here is cleaner than guarding every loop individually.
+    Prints a standardized banner at the start of every build with the active configuration
 ==============================================================================================*/
 
 static void
@@ -115,8 +111,10 @@ print_startup_banner( const build_context_t* ctx )
     // All modes share the format:  [orb <mode>] SUBJECT  [ <special> | modular | debug | msvc ]
     // Each branch sets label/subject/special; props and the final printf are assembled once below.
 
-    char target_upper[ 64 ] = "ALL";
-    if ( ctx->target_name ) get_target_upper( ctx->target_name, target_upper, sizeof( target_upper ) );
+    // By default if a target isn't set we compile everything.
+    char target_upper[ 64 ] = "ALL"; 
+    if ( ctx->target_name ) 
+        get_target_upper( ctx->target_name, target_upper, sizeof( target_upper ) );
 
     // base_name is the filename from -file with path stripped.
     const char* base_name = ctx->file_path;
@@ -125,15 +123,14 @@ print_startup_banner( const build_context_t* ctx )
             if ( *p == '\\' || *p == '/' ) base_name = p + 1;
     }
 
-    char subject[ BT_PATH_MAX ];
-    snprintf( subject, sizeof( subject ), "%s", target_upper );
-
     const char* config_str   = ctx->config == CONFIG_DEBUG ? "debug" : "release";
     const char* mode_str     = ctx->is_monolithic ? "monolithic" : "modular";
     const char* compiler_str = ctx->compiler == COMPILE_CLANG ? "clang" : "msvc";
+    const char* label        = NULL;
+    const char* special      = NULL;
 
-    const char* label   = NULL; // [orb ...]
-    const char* special = NULL; // first props slot, or NULL
+    char subject[ BT_PATH_MAX ];
+    snprintf( subject, sizeof( subject ), "%s", target_upper );
 
     if ( ctx->compile_only )
     {
@@ -145,7 +142,6 @@ print_startup_banner( const build_context_t* ctx )
         label   = "[orb single-file]";
         special = "file";
 
-        // adds the filename next to the target label.
         snprintf( subject, sizeof( subject ), "%s %s", target_upper, base_name );
     }
     else
@@ -154,24 +150,30 @@ print_startup_banner( const build_context_t* ctx )
         special = ctx->skip_deps ? "no-deps" : NULL;
     }
 
-    // Assemble the property bracket (special slot is mode-specific and optional).
     char props[ 128 ];
-    if ( special ) snprintf( props, sizeof( props ), "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str );
-    else           snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str );
+    if ( special ) { snprintf( props, sizeof( props ), 
+                            "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str ); }
+    else           { snprintf( props, sizeof( props ), 
+                            "[ %s | %s | %s ]", mode_str, config_str, compiler_str ); }
 
     printf( ORB_BANNER "----------------------------------------------------------------\n" );
     printf( ORB_BANNER "%s %s %s\n", label, subject, props );
 }
 
+/*============================================================================================*/
+/* Function to ensure our data is good inside the user targets and solutions array */
+
 static bool
 validate_targets( void )
-{
+{ 
     bool ok = true;
+
+    // Check each target's slot arrays don't overflow.
     for ( int i = 0; i < g_target_count; ++i )
     {
         const target_info_t* t = &g_targets[ i ];
 
-        if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL || 
+        if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ||
              t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ||
              t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL )
         {
@@ -180,6 +182,27 @@ validate_targets( void )
             ok = false;
         }
     }
+
+    // Check every solution's target list resolves to a known target.
+    for ( int i = 0; i < g_solution_count; ++i )
+    {
+        const solution_info_t* sln = &g_solutions[ i ];
+        for ( const char** tn = sln->target_names; *tn; ++tn )
+        {
+            bool found = false;
+            for ( int j = 0; j < g_target_count; ++j )
+            {
+                if ( strcmp( g_targets[ j ].name, *tn ) == 0 ) { found = true; break; }
+            }
+            if ( !found )
+            {
+                printf( ORB_INDENT "[orb error] solution '%s' references unknown target '%s'\n",
+                        sln->name, *tn );
+                ok = false;
+            }
+        }
+    }
+
     return ok;
 }
 
@@ -312,7 +335,7 @@ main( int argc, char** argv )
 
     // --- Command : GENERATE ---
 
-    if ( should_gen ) 
+    if ( should_gen )
     { 
         build_gen_projects(); 
         return 0; 
@@ -322,7 +345,8 @@ main( int argc, char** argv )
 
     print_startup_banner( &ctx );
 
-    // ORB_OUT_ARGS: echo the raw command line on a second line (off by default).
+    // --- ORB_OUT_ARGS ---
+
     if ( g_out_flags & ORB_OUT_ARGS )
     {
         printf( ORB_INDENT "[orb args]" );
@@ -336,15 +360,19 @@ main( int argc, char** argv )
 
     build_setup_vc_env();
 
-    // Dispatch:
-    //  -file <path>       → compile one file with the target's full flag set, no link.
-    //                       CLI tool for targeted error checking; not used by VS.
-    //  -no-deps           → serial in-process build of exactly one target.
-    //                       VS uses this so MSBuild's scheduler stays the sole
-    //                       authority on solution-level parallelism.
-    //  -target X          → parallel scheduler over X's dependency closure.
-    //  no -target         → parallel scheduler over every registered target.
-    // Uppercase target name used in FAILED/completed output lines.
+    /* --- Build Tool Dispatch ---  
+
+      -file <path>  |   Compile one file with the target's full flag set, no link.
+                        CLI tool for targeted error checking; not used by VS.
+      -no-deps      |   serial in-process build of exactly one target.
+                        VS uses this so MSBuild's scheduler stays the sole
+                          authority on solution-level parallelism.
+      -target X     |   parallel scheduler over X's dependency closure.
+      no -target    |   parallel scheduler over every registered target.
+
+    Uppercase target name used in FAILED/completed output lines.
+    */
+
     char target_upper[ 64 ] = "ALL";
     if ( ctx.target_name ) get_target_upper( ctx.target_name, target_upper, sizeof( target_upper ) );
 
