@@ -13,7 +13,7 @@ Only create the MSVC Win64 implementation and stub in #error messages for other 
 Generate the Visual Studio solution (run once, or after CMakeLists changes):
 
 ```bat
-REM Dynamic build — hot-reload enabled (default for development)
+REM Modular build — hot-reload enabled (default for development)
 "build_vs_2022 - MSVC (DYNAMIC).bat"
 
 REM Monolithic build — static linking, no hot-reload (for shipping)
@@ -32,7 +32,7 @@ After generating, open the `.sln` in `build/` or `build_monolithic/` and build f
 
 ```bat
 build_hot.bat <build_dir> <target> <config>
-REM Example: build_hot.bat build_dynamic render Debug
+REM Example: build_hot.bat build_modular render Debug
 ```
 
 ## Testing
@@ -49,8 +49,8 @@ There is no automated test framework. Validation is done by running sandbox exec
 Build and run the relevant sandbox target in Visual Studio, or via:
 
 ```bat
-cmake --build build_dynamic --target sb_engine_mod --config Debug
-build_dynamic\bin\sb_engine_mod.exe
+cmake --build build_modular --target sb_engine_mod --config Debug
+build_modular\bin\sb_engine_mod.exe
 ```
 ## Custom Build System
 ORB uses a self-contained, high-performance C-based build orchestrator to replace traditional CMake or complex batch scripts.
@@ -201,7 +201,7 @@ Controlled by the `ENGINE_MONOLITHIC` CMake option:
 
 | Mode | Define | Modules | Hot-reload |
 |------|--------|---------|------------|
-| Dynamic (default) | *(none)* | `.dll` | Yes |
+| Modular (default) | *(none)* | `.dll` | Yes |
 | Monolithic | `BUILD_STATIC` | `.lib` | No |
 
 `MOD_GATEWAY_STATIC` / `MOD_GATEWAY_DYNAMIC` macros in module API headers switch the accessor implementation automatically. Call sites (`render_api()->fn()`) are identical in both modes.

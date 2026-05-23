@@ -9,11 +9,11 @@ set ARCH=x64
 set SLN_NAME=orb.sln
 
 echo ========================================
-echo ORB Engine Project Generator (Dynamic)
+echo ORB Engine Project Generator (Modular)
 echo ========================================
 echo.
 
-:: Automatically selecting the Dynamic Build configuration
+:: Automatically selecting the Modular Build configuration
 set BUILD_DIR=build
 set MONO_FLAG=-DENGINE_MONOLITHIC=OFF
 

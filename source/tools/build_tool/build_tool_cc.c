@@ -32,7 +32,7 @@ typedef struct
     char exe     [ 64          ]; // cl.exe or clang-cl.exe
     char flags   [ 512         ]; // /c /nologo /W4 /WX /Zi /Od /MDd ...
     char includes[ 512         ]; // /I source /I gen_dir
-    char defines [ 1024        ]; // /DOS_WINDOWS /DCOMPILER_MSVC /D_DEBUG ...
+    char defines [ 1024        ]; // /DOS_WINDOWS /DCOMPILE_MSVC /D_DEBUG ...
     char output  [ 512         ]; // /FoobjDir/ /FdobjDir/
     char sources [ CMD_BUF_MAX ]; // absolute .c paths
                                
@@ -256,7 +256,11 @@ static void
 cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const char* config )
 {
     if ( g_out_flags & ORB_OUT_COMPILE_SUMMARY )
-        fprintf( out, ORB_INDENT "[orb compile] %s (%s)\n", target->name, config );
+        fprintf( out, ORB_INDENT "[orb compiling] %s (%s)\n", target->name, config );
+
+    if ( g_out_flags & ORB_OUT_ANY_COMPILE ) {
+        fprintf( out, "\n" );
+    };
 
     bool any = false;
     if ( g_out_flags & ORB_OUT_COMPILE_SOURCES  ) any |= print_section( out, "sources:",  cc->sources,  NULL );
@@ -273,6 +277,10 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 {
     if ( g_out_flags & ORB_OUT_LINK_SUMMARY )
         fprintf( out, ORB_INDENT "[orb link] %s -> %s\n", target->name, lk->artifact );
+
+    if ( g_out_flags & ORB_OUT_ANY_LINK ) {
+        fprintf( out, "\n" );
+    };
 
     bool any = false;
     if ( g_out_flags & ORB_OUT_LINK_INPUTS  ) any |= print_section( out, "inputs:",  lk->inputs,  NULL );
@@ -369,7 +377,7 @@ print_raw_cmd( FILE* out, const char* cmd )
 // Returns true for the bare source-file banner cl.exe prints once per compiled
 // translation unit (e.g. it prints "rs_gen.c" on its own line before emitting
 // any diagnostics for that TU). We filter these out of our log dumps because
-// the orb build log already shows the source list in the [orb compile] section
+// the orb build log already shows the source list in the [orb compiling] section
 // — leaving cl's echo in just creates duplicate noise.
 //
 // A line qualifies as a source echo iff (after trimming whitespace) it is:
@@ -436,17 +444,17 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
                       const char* obj_dir, const char* gen_dir )
 {
     compile_cmd_t cc = { 0 };
-    const char*   config = ( ctx->config == BT_CONFIG_DEBUG ) ? "Debug" : "Release";
+    const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
     // Exe
-    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == BT_COMPILER_CLANG ? "clang-cl.exe" : "cl.exe" );
+    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
 
     // Flags: compiler settings common to all targets.
     // /showIncludes drives the dep-capture path in build_run_cmd_capture_deps;
     // it produces a "Note: including file:" line for every resolved header.
     CC_APPEND( cc.flags,
               "/c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes" );
-    if ( ctx->config == BT_CONFIG_DEBUG )
+    if ( ctx->config == CONFIG_DEBUG )
         CC_APPEND( cc.flags, " /Zi /Od /MDd" );
     else
         CC_APPEND( cc.flags, " /O2 /MD" );
@@ -457,7 +465,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 
     // Defines: preprocessor symbols every TU sees.
     // Must stay in lockstep with the IntelliSense defines in build_tool_gen.c.
-    CC_APPEND( cc.defines, "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
+    CC_APPEND( cc.defines, "/D_CRT_SECURE_NO_WARNINGS" );
     {
         char upper[ 128 ];
         get_target_upper( target->name, upper );
@@ -480,7 +488,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     }
     if ( ctx->is_monolithic )
         CC_APPEND( cc.defines, " /DBUILD_STATIC" );
-    if ( ctx->config == BT_CONFIG_DEBUG )
+    if ( ctx->config == CONFIG_DEBUG )
         CC_APPEND( cc.defines, " /D_DEBUG" );
     else
         CC_APPEND( cc.defines, " /DNDEBUG" );
@@ -490,7 +498,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         for ( int i = 0; i < g_warn_suppression_count; ++i )
         {
             warn_suppress_t* s = &g_warn_suppressions[ i ];
-            if ( ( s->config == ctx->config || s->config == BT_CONFIG_COUNT ) &&
+            if ( ( s->config == ctx->config || s->config == CONFIG_COUNT ) &&
                  ( s->compiler_mask & (unsigned int)ctx->compiler ) )
                 CC_APPEND( cc.flags, " %s", s->flag );
         }
@@ -567,14 +575,14 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
                              const char* obj_dir, const char* gen_dir, const char* file_path )
 {
     compile_cmd_t cc      = { 0 };
-    const char*   config  = ( ctx->config == BT_CONFIG_DEBUG ) ? "Debug" : "Release";
+    const char*   config  = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
     // Exe
-    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == BT_COMPILER_CLANG ? "clang-cl.exe" : "cl.exe" );
+    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
 
     // Flags: same as full compile, but no /showIncludes (dep tracking not needed).
     CC_APPEND( cc.flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
-    if ( ctx->config == BT_CONFIG_DEBUG )
+    if ( ctx->config == CONFIG_DEBUG )
         CC_APPEND( cc.flags, " /Zi /Od /MDd" );
     else
         CC_APPEND( cc.flags, " /O2 /MD" );
@@ -583,7 +591,7 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
     CC_APPEND( cc.includes, "/I source /I %s", gen_dir );
 
     CC_APPEND( cc.defines,
-              "/DOS_WINDOWS /DCOMPILER_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
+              "/DOS_WINDOWS /DCOMPILE_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
     {
         char upper[ 128 ];
         get_target_upper( target->name, upper );
@@ -604,7 +612,7 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
     }
     if ( ctx->is_monolithic )
         CC_APPEND( cc.defines, " /DBUILD_STATIC" );
-    if ( ctx->config == BT_CONFIG_DEBUG )
+    if ( ctx->config == CONFIG_DEBUG )
         CC_APPEND( cc.defines, " /D_DEBUG" );
     else
         CC_APPEND( cc.defines, " /DNDEBUG" );
@@ -614,7 +622,7 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
         for ( int i = 0; i < g_warn_suppression_count; ++i )
         {
             warn_suppress_t* s = &g_warn_suppressions[ i ];
-            if ( ( s->config == ctx->config || s->config == BT_CONFIG_COUNT ) &&
+            if ( ( s->config == ctx->config || s->config == CONFIG_COUNT ) &&
                  ( s->compiler_mask & (unsigned int)ctx->compiler ) )
                 CC_APPEND( cc.flags, " %s", s->flag );
         }

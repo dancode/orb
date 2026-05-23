@@ -129,21 +129,33 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 int
 main( int argc, char** argv )
 {
-    // Uncomment to log every invocation to build_tool_log.txt (useful for debugging VS integration).
-    // {
-    //     FILE* log = fopen( "build_tool_log.txt", "a" );
-    //     if ( log )
-    //     {
-    //         fprintf( log, "argc=%d", argc );
-    //         for ( int i = 0; i < argc; ++i ) fprintf( log, "  [%d]=%s", i, argv[ i ] );
-    //         fprintf( log, "\n" );
-    //         fclose( log );
-    //     }
-    // }
+    // -- - Debug Arg Print ---
+    // debug print args to file so we can read even if not debugging with a console attached.
+    // This is invaluable for verifying that the bootstrap script is passing args correctly,
+    // and for diagnosing arg parsing bugs in general.
+
+    if ( 0 )
+    {
+        FILE* log = fopen( "build_tool_log.txt", "a" );
+        if ( log )
+        {
+            fprintf( log, "argc=%d", argc );
+            for ( int i = 0; i < argc; ++i ) fprintf( log, "  [%d]=%s", i, argv[ i ] );
+            fprintf( log, "\n" );
+            fclose( log );
+    
+            // debug output as another sanity check.
+            printf( "build_tool.exe: [%d] ", argc );
+            for ( int i = 1; i < argc; ++i ) { printf( "%s ", argv[ i ] ); }
+            printf( "\n\n" );
+        }
+    }
+
+    // -- Build Tool Defaults -- 
 
     build_context_t ctx = { 0 };
-    ctx.config   = BT_CONFIG_DEBUG;     // default to debug; override with -config or -release.
-    ctx.compiler = BT_COMPILER_MSVC;    // default to cl.exe; override with -clang.
+    ctx.config   = CONFIG_DEBUG;        // default to debug; override with -config or -release.
+    ctx.compiler = COMPILE_MSVC;        // default to cl.exe; override with -clang.
 
     // --- Arg parsing ---
     
@@ -151,7 +163,7 @@ main( int argc, char** argv )
     bool  should_gen     = false;       // -gen: generate .sln/.vcxproj files and exit, no build.
     bool  compile_only   = false;       // -compile-only: compile all units, no link (VS Ctrl+F7).
     char* target_name    = NULL;        // -target <name>: restrict the build to one target (VS and CLI).
-    char* file_path      = NULL;        // -file <path>: compile one file (CLI use).
+    char* file_path      = NULL;        // -file <path>: compile one file (CLI use) no link.
     int   j_threads      = 0;           // 0 → auto-detect from CPU count.
 
     // Order-independent; the loop just sets flags. Unknown args are silently ignored.
@@ -162,8 +174,8 @@ main( int argc, char** argv )
         if ( _stricmp( argv[ i ], "-clean"        ) == 0 ) should_clean = true;
         if ( _stricmp( argv[ i ], "-gen"          ) == 0 ) should_gen = true;
         if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 ) ctx.is_monolithic = true;
-        if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
-        if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = BT_COMPILER_CLANG;
+        if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = CONFIG_RELEASE;
+        if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = COMPILE_CLANG;
         if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) compile_only = true;
         if ( _stricmp( argv[ i ], "-force"        ) == 0 ) ctx.force_rebuild = true;
         if ( _stricmp( argv[ i ], "-no-deps"      ) == 0 ) ctx.skip_deps = true;
@@ -172,7 +184,7 @@ main( int argc, char** argv )
         if ( _stricmp( argv[ i ], "-j"            ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
         if ( _stricmp( argv[ i ], "-config"       ) == 0 && i + 1 < argc )
         {
-            if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = BT_CONFIG_RELEASE;
+            if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
         if ( _stricmp( argv[ i ], "-q"            ) == 0 ) g_out_flags = ORB_OUT_QUIET;
         if ( _stricmp( argv[ i ], "-v"            ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
@@ -195,8 +207,17 @@ main( int argc, char** argv )
         if ( j_threads > 16 ) j_threads = 16;
     }
 
-    // --- Standalone Sub-Commands ---    
-    // 'clean' and 'gen' are bookkeeping passes - so we can skip toolchain env. 
+    // --- Arg Validation ---
+    // -file and -compile-only are mutually exclusive: -file compiles one specific file (CLI only),
+    // -compile-only compiles the whole target with no link step (VS Ctrl+F7). They can never combine.
+    if ( file_path && compile_only )
+    {
+        printf( ORB_INDENT "[orb error] -file and -compile-only are mutually exclusive\n" );
+        return 1;
+    }
+
+    // --- Standalone Sub-Commands ---
+    // 'clean' and 'gen' are bookkeeping passes - so we can skip toolchain env.
     // Returning early skips the vcvars import below.
     if ( should_clean )
     {
@@ -220,40 +241,78 @@ main( int argc, char** argv )
     }
 
     // --- Startup Banner ---
-    // Single-file mode shows the filename; full-build mode shows the target name.
+    // All modes share the format:  [orb <mode>] SUBJECT  [ <special> | modular | debug | msvc ]
+    // Each branch sets label/subject/special; props and the final printf are assembled once below.
+    // ORB_OUT_ARGS appends a second line echoing the raw argv (off by default).
 
     char target_upper[ 64 ] = "ALL";
     if ( target_name ) get_target_upper( target_name, target_upper );
 
-    if ( compile_only )
-    {
-        // Ex: build_tool.exe -target build_reflect -file F:\orb\source\tools\rs_gen\rs_gen.c -compile-only
-        // Ex: [orb compile] BUILD_REFLECT Debug
-        printf( ORB_BANNER "[orb compile] %s %s\n", target_upper,
-                ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release" );
-    }
-    else if ( file_path )
-    {
-        // Ex: build_tool.exe -target build_reflect -file F:\orb\source\tools\rs_gen\rs_gen.c
-        // Ex: build_tool.exe -target build_reflect -file rs_gen.c
-        // [orb file] BUILD_REFLECT/rs_gen.c Debug
-        const char* basename = file_path;
+    const char* base_name = file_path ? file_path : NULL;
+    if ( base_name ) {
         for ( const char* p = file_path; *p; ++p )
-            if ( *p == '\\' || *p == '/' ) basename = p + 1;
-        printf( ORB_BANNER "[orb file] %s/%s %s\n", target_upper,
-                basename, ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release" );
-    }
-    else 
-    {
-        // Ex: build_tool.exe -target build_reflect
-        printf( ORB_BANNER "[orb build] %s ", target_upper );
-        printf( "%s%s%s |", ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release",
-                            ctx.is_monolithic ? " | Monolithic" : " | Dynamic",
-                            ctx.compiler == BT_COMPILER_CLANG ? " | Clang" : "" );
-        for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
-        printf( "\n" );
+            if ( *p == '\\' || *p == '/' ) base_name = p + 1;
     }
 
+    if ( 1 )
+    {
+        char subject[ BT_PATH_MAX ]; 
+        snprintf( subject, sizeof( subject ), "%s", target_upper );
+
+        const char* config_str   = ctx.config == CONFIG_DEBUG ? "debug" : "release";
+        const char* mode_str     = ctx.is_monolithic ? "monolithic" : "modular";
+        const char* compiler_str = ctx.compiler == COMPILE_CLANG ? "clang" : "msvc";
+
+        const char* label        = NULL; // [orb ...]
+        const char* special      = NULL; // first props slot, or NULL
+
+        if ( compile_only )
+        {
+            // -- MODE: compile-only (VS Ctrl+F7 -- compile all unity units, no link step) --
+            // Ex: build_tool.exe -target sb_engine_reflect -compile-only
+            //     [orb compile-only] SB_ENGINE_REFLECT  [ no-link | modular | debug | msvc ]
+            label   = "[orb compile-only]";
+            special = "no-link";
+        }
+        else if ( file_path )
+        {
+            // -- MODE: single-file (compile one file with the target's full flag set, no link step) --
+            // Ex: build_tool.exe -target sb_engine_reflect -file rs_gen.c
+            // Ex: build_tool.exe -target sb_engine_reflect -file F:\orb\source\tools\rs_gen\rs_gen.c
+            //     [orb single-file] SB_ENGINE_REFLECT / rs_gen.c  [ file | modular | debug | msvc ]
+            label   = "[orb single-file]";
+            special = "file";
+            snprintf( subject, sizeof( subject ), "%s %s", target_upper, base_name );
+        }
+        else
+        {
+            // -- MODE: build (full compile + link, parallel scheduler over dep closure) --
+            // Ex: build_tool.exe -target sb_engine_reflect -config Debug
+            // Ex: build_tool.exe -no-deps -config Debug -target build_tool
+            //     [orb target build] SB_ENGINE_REFLECT  [ no-deps | modular | debug | msvc ]
+            label   = "[orb target]";
+            special = ctx.skip_deps ? "no-deps" : NULL;
+        }
+
+        // Assemble the property bracket (special slot is mode-specific and optional).
+        char props[ 128 ];
+        if ( special )
+            snprintf( props, sizeof( props ), "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str );
+        else
+            snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str );
+
+        printf( ORB_BANNER "%s %s %s\n", label, subject, props );
+
+        // ORB_OUT_ARGS: echo the raw command line on a second line (off by default).
+        // Ex: build_tool.exe -target sb_engine_reflect -config Release
+        //         args:  -target sb_engine_reflect  -config Release
+        if ( g_out_flags & ORB_OUT_ARGS )
+        {
+            printf( ORB_INDENT "[orb args]" );
+            for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
+            printf( "\n" );
+        }
+    }
 
     // Make cl.exe / link.exe / lib.exe callable. Idempotent fast-path when
     // we're already inside a Developer Command Prompt (or VS-launched shell).
@@ -286,7 +345,7 @@ main( int argc, char** argv )
             return 1;
         }
         if ( g_out_flags & ORB_OUT_TARGET_RESULT )
-            printf( ORB_INDENT "[orb compiled] %s\n", target->name );
+            printf( ORB_INDENT "[orb completed] %s\n", target->name );
         printf( "\n" );
         return 0;
     }
@@ -326,6 +385,8 @@ main( int argc, char** argv )
             printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
             return 1;
         }
+        if ( g_out_flags & ORB_OUT_TARGET_RESULT )
+            printf( ORB_INDENT "[orb completed] %s\n", base_name );
         printf( "\n" );
         return 0;
     }
@@ -336,17 +397,17 @@ main( int argc, char** argv )
         bool was_skipped = false;
         if ( !build_target( &ctx, target, &was_skipped ) )
         {
-            printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
+            printf( ORB_BANNER "\n[ FAILED: %s ]\n", target_upper );
             return 1;
         }
         if ( g_out_flags & ORB_OUT_TARGET_RESULT )
-            printf( ORB_INDENT "[orb %s] %s\n", was_skipped ? "skipped" : "compiled", target->name );
+            printf( ORB_INDENT "[orb %s] %s\n", was_skipped ? "skipped" : "completed", target->name );
     }
     else
     {
         if ( !build_run_parallel( &ctx, target, j_threads ) )
         {
-            printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
+            printf( ORB_BANNER "\n[ FAILED: %s ]\n", target_upper );
             return 1;
         }
     }

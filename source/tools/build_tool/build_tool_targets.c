@@ -172,16 +172,16 @@ int g_solution_count = sizeof( g_solutions ) / sizeof( g_solutions[ 0 ] );
 // Applied globally after the base flag set in build_target_compile().
 // Each entry fires only when the active config AND compiler match the masks.
 // Platform specificity is implicit in compiler_mask: MSVC flags are Windows-only
-// by definition; add BT_COMPILER_CLANG entries for clang-cl variants as needed.
+// by definition; add COMPILE_CLANG entries for clang-cl variants as needed.
 
 warn_suppress_t g_warn_suppressions[] = {
 
     // Release: assert() and similar macros compile out, leaving unreferenced
     // locals and parameters that were only referenced in the debug expression.
 
-    {"/wd4101", BT_CONFIG_COUNT, BT_COMPILER_MSVC}, // C4101: unreferenced local variable
-    {"/wd4189", BT_CONFIG_COUNT, BT_COMPILER_MSVC}, // C4189: local variable initialized but not  referenced
-    {"/wd4100", BT_CONFIG_COUNT, BT_COMPILER_MSVC}, // C4100: unreferenced formal parameter
+    {"/wd4101", CONFIG_COUNT, COMPILE_MSVC}, // C4101: unreferenced local variable
+    {"/wd4189", CONFIG_COUNT, COMPILE_MSVC}, // C4189: local variable initialized but not  referenced
+    {"/wd4100", CONFIG_COUNT, COMPILE_MSVC}, // C4100: unreferenced formal parameter
 };
 
 int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_suppressions[ 0 ] );

@@ -354,7 +354,7 @@ worker_main( void* arg )
         }
         if ( !ok || ( g_out_flags & ORB_OUT_TARGET_RESULT ) )
         {
-            printf( ORB_INDENT "[orb %s] %s\n", !ok ? "FAILED" : j->skipped ? "skipped" : "compiled", j->target->name );
+            printf( ORB_INDENT "[orb %s] %s\n", !ok ? "FAILED" : j->skipped ? "skipped" : "completed", j->target->name );
             printf( "\n" );
         }
         fflush( stdout );

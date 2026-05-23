@@ -315,7 +315,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // Missing file = first build or post-clean = must rebuild.
     if ( up_to_date )
     {
-        const char* current_config = ( ctx->config == BT_CONFIG_DEBUG ) ? "Debug" : "Release";
+        const char* current_config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
         char        config_marker[ BT_PATH_MAX ];
         snprintf( config_marker, sizeof( config_marker ), "%s\\_config.txt", obj_dir );
         FILE* cf = fopen( config_marker, "r" );
@@ -496,7 +496,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         FILE* cf = fopen( config_marker, "w" );
         if ( cf )
         {
-            fprintf( cf, "%s\n", ctx->config == BT_CONFIG_DEBUG ? "Debug" : "Release" );
+            fprintf( cf, "%s\n", ctx->config == CONFIG_DEBUG ? "Debug" : "Release" );
             fclose( cf );
         }
     }

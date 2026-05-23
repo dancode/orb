@@ -11,7 +11,7 @@ echo ========================================
 echo ORB Engine Project Generator
 echo ========================================
 echo.
-echo [1] Dynamic Build (DLLs / Hot-Reload)
+echo [1] Modular Build (DLLs / Hot-Reload)
 echo [2] Monolithic Build (Static / Shipping)
 echo.
 
@@ -21,7 +21,7 @@ if errorlevel 2 (
     set BUILD_DIR=build_monolithic
     set MONO_FLAG=-DENGINE_MONOLITHIC=ON
 ) else (
-    set BUILD_DIR=build_dynamic
+    set BUILD_DIR=build_modular
     set MONO_FLAG=-DENGINE_MONOLITHIC=OFF
 )
 

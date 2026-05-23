@@ -30,7 +30,7 @@
     ├─────────────────────────┼──────────────────────────────┤
     │ [orb build]             │ per-target compile start     │
     ├─────────────────────────┼──────────────────────────────┤
-    │ [orb compiled]          │ target built successfully    │
+    │ [orb completed]         │ target built successfully    │
     ├─────────────────────────┼──────────────────────────────┤
     │ [orb skipped]           │ target already up to date    │
     ├─────────────────────────┼──────────────────────────────┤
@@ -104,9 +104,9 @@ typedef struct cmd_buf_s
 
 typedef enum
 {
-    BT_CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
-    BT_CONFIG_RELEASE, // Full optimizations, minimal debug symbols, MD runtime.
-    BT_CONFIG_COUNT,   // Sentinel — used as "all configs" in warn_suppress_t.
+    CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
+    CONFIG_RELEASE, // Full optimizations, minimal debug symbols, MD runtime.
+    CONFIG_COUNT,   // Sentinel — used as "all configs" in warn_suppress_t.
 
 } config_t;
 
@@ -114,21 +114,21 @@ typedef enum
 
 typedef enum
 {
-    BT_COMPILER_MSVC  = ( 1u << 0 ),  // cl.exe (native MSVC)
-    BT_COMPILER_CLANG = ( 1u << 1 ),  // clang-cl.exe
-    BT_COMPILER_ALL   = ( BT_COMPILER_MSVC | BT_COMPILER_CLANG ),
+    COMPILE_MSVC  = ( 1u << 0 ),  // cl.exe (native MSVC)
+    COMPILE_CLANG = ( 1u << 1 ),  // clang-cl.exe
+    COMPILE_ALL   = ( COMPILE_MSVC | COMPILE_CLANG ),
 
 } compiler_flag_t;
 
 // One entry in g_warn_suppressions[]. A suppression fires when:
-//   config   == ctx->config  OR  config == BT_CONFIG_COUNT  (matches all)
+//   config   == ctx->config  OR  config == CONFIG_COUNT  (matches all)
 //   compiler bit is set in compiler_mask
 
 typedef struct
 {
     const char*   flag;           // e.g. "/wd4101" or "-Wno-unused-variable"
-    config_t      config;         // BT_CONFIG_DEBUG, BT_CONFIG_RELEASE, or BT_CONFIG_COUNT for all
-    unsigned int  compiler_mask;  // BT_COMPILER_MSVC | BT_COMPILER_CLANG
+    config_t      config;         // CONFIG_DEBUG, CONFIG_RELEASE, or CONFIG_COUNT for all
+    unsigned int  compiler_mask;  // COMPILE_MSVC | COMPILE_CLANG
 
 } warn_suppress_t;
 
@@ -218,7 +218,7 @@ typedef struct build_context_s
 {
     config_t        config;         // Selected build config (Debug/Release).
     bool            is_monolithic;  // If true, TARGET_DYNAMIC_LIB targets build as static libs with BUILD_STATIC defined globally.
-    compiler_flag_t compiler;       // Active compiler (BT_COMPILER_MSVC or BT_COMPILER_CLANG).
+    compiler_flag_t compiler;       // Active compiler (COMPILE_MSVC or COMPILE_CLANG).
     bool            skip_deps;      // skip recurse into dependencies. See build_target().
     bool            force_rebuild;  // bypass the up-to-date check; always compile + link.
 
@@ -270,7 +270,7 @@ extern int             g_solution_count;
 typedef unsigned int out_flags_t;
 
 // Compile-step sections — each bit enables one category of cl.exe output.
-#define ORB_OUT_COMPILE_SUMMARY  ( 1u << 0  )  // [orb compile] target (config)
+#define ORB_OUT_COMPILE_SUMMARY  ( 1u << 0  )  // [orb compiling] target (config)
 #define ORB_OUT_COMPILE_SOURCES  ( 1u << 1  )  // sources: <absolute paths>
 #define ORB_OUT_COMPILE_FLAGS    ( 1u << 2  )  // flags:   /W4 /WX /Zi /Od ...
 #define ORB_OUT_COMPILE_DEFINES  ( 1u << 3  )  // defines: OS_WINDOWS ARCH_X64 ...
@@ -289,10 +289,11 @@ typedef unsigned int out_flags_t;
 
 // General sections.
 #define ORB_OUT_SCHEDULER        ( 1u << 14 )  // [orb parallel] N targets, M threads
-#define ORB_OUT_TARGET_RESULT    ( 1u << 15 )  // [orb compiled] / [orb skipped] per-target result
+#define ORB_OUT_TARGET_RESULT    ( 1u << 15 )  // [orb completed] / [orb skipped] per-target result
 #define ORB_OUT_REFLECT          ( 1u << 16 )  // [orb reflect] codegen steps
 #define ORB_OUT_VCVARS           ( 1u << 17 )  // [orb vcvars] VS env discovery
 #define ORB_OUT_MSVC_OUTPUT      ( 1u << 18 )  // [MSVC] raw cl/link/lib passthrough lines
+#define ORB_OUT_ARGS             ( 1u << 19 )  // startup banner: echo raw argv on a second line
 
 // Convenience masks: any compile or link detail flag set.
 #define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SUMMARY  | ORB_OUT_COMPILE_SOURCES  | \
@@ -310,8 +311,8 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_COMPILE_SUMMARY | ORB_OUT_COMPILE_SOURCES | \
                           ORB_OUT_LINK_SUMMARY | ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
-#define OBB_OUT_TESTING ( ORB_OUT_TARGET_RESULT | ORB_OUT_MSVC_OUTPUT | \
-                          ORB_OUT_COMPILE_SUMMARY )
+#define OBB_OUT_TESTING ( ORB_OUT_TARGET_RESULT | \
+                          ORB_OUT_COMPILE_SUMMARY  )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
