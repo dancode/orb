@@ -470,6 +470,27 @@ build_gen_proj_target( target_info_t* target, int index )
     fprintf( f, "</Project>\n" );
     fclose( f );
 
+    // Emit a .vcxproj.user so the VS debugger launches from the repo root.
+    // $(ProjectDir) resolves to <build_dir>\ so ..\ steps back to the workspace root.
+    char user_path[ BT_PATH_MAX ];
+    snprintf( user_path, sizeof( user_path ), "%s\\%s.vcxproj.user", g_build_dir, target->name );
+    FILE* fu = fopen( user_path, "w" );
+    if ( fu )
+    {
+        fprintf( fu, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
+        fprintf( fu, "<Project ToolsVersion=\"Current\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+        fprintf( fu, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+        fprintf( fu, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)..</LocalDebuggerWorkingDirectory>\n" );
+        fprintf( fu, "    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>\n" );
+        fprintf( fu, "  </PropertyGroup>\n" );
+        fprintf( fu, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+        fprintf( fu, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)..</LocalDebuggerWorkingDirectory>\n" );
+        fprintf( fu, "    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>\n" );
+        fprintf( fu, "  </PropertyGroup>\n" );
+        fprintf( fu, "</Project>\n" );
+        fclose( fu );
+    }
+
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
     char filters_path[ BT_PATH_MAX ];
     snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", g_build_dir, target->name );
