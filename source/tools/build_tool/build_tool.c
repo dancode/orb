@@ -112,27 +112,27 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 static bool
 validate_targets( void )
 {
-    bool ok = true;
-    for ( int i = 0; i < g_target_count; ++i )
-    {
-        const target_info_t* t = &g_targets[ i ];
-        if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ) {
-            printf( ORB_INDENT "[orb error] target '%s' units[] is full with no NULL terminator "
-                    "(raise TARGET_MAX_SLOTS or reduce unit count)\n", t->name );
-            ok = false;
-        }
-        if ( t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ) {
-            printf( ORB_INDENT "[orb error] target '%s' deps[] is full with no NULL terminator "
-                    "(raise TARGET_MAX_SLOTS or reduce dep count)\n", t->name );
-            ok = false;
-        }
-        if ( t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ) {
-            printf( ORB_INDENT "[orb error] target '%s' tool_deps[] is full with no NULL terminator "
-                    "(raise TARGET_MAX_SLOTS or reduce tool dep count)\n", t->name );
-            ok = false;
-        }
-    }
-    return ok;
+   bool ok = true;
+   for ( int i = 0; i < g_target_count; ++i )
+   {
+       const target_info_t* t = &g_targets[ i ];
+       if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ) {
+           printf( ORB_INDENT "[orb error] target '%s' units[] is full with no NULL terminator "
+                   "(raise TARGET_MAX_SLOTS or reduce unit count)\n", t->name );
+           ok = false;
+       }
+       if ( t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ) {
+           printf( ORB_INDENT "[orb error] target '%s' deps[] is full with no NULL terminator "
+                   "(raise TARGET_MAX_SLOTS or reduce dep count)\n", t->name );
+           ok = false;
+       }
+       if ( t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ) {
+           printf( ORB_INDENT "[orb error] target '%s' tool_deps[] is full with no NULL terminator "
+                   "(raise TARGET_MAX_SLOTS or reduce tool dep count)\n", t->name );
+           ok = false;
+       }
+   }
+   return ok;
 }
 
 /*==============================================================================================
