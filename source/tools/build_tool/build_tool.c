@@ -227,11 +227,16 @@ main( int argc, char** argv )
 
     if ( compile_only )
     {
+        // Ex: build_tool.exe -target build_reflect -file F:\orb\source\tools\rs_gen\rs_gen.c -compile-only
+        // Ex: [orb compile] BUILD_REFLECT Debug
         printf( ORB_BANNER "[orb compile] %s %s\n", target_upper,
                 ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release" );
     }
     else if ( file_path )
     {
+        // Ex: build_tool.exe -target build_reflect -file F:\orb\source\tools\rs_gen\rs_gen.c
+        // Ex: build_tool.exe -target build_reflect -file rs_gen.c
+        // [orb file] BUILD_REFLECT/rs_gen.c Debug
         const char* basename = file_path;
         for ( const char* p = file_path; *p; ++p )
             if ( *p == '\\' || *p == '/' ) basename = p + 1;
@@ -240,6 +245,7 @@ main( int argc, char** argv )
     }
     else 
     {
+        // Ex: build_tool.exe -target build_reflect
         printf( ORB_BANNER "[orb build] %s ", target_upper );
         printf( "%s%s%s |", ctx.config == BT_CONFIG_DEBUG ? "Debug" : "Release",
                             ctx.is_monolithic ? " | Monolithic" : " | Dynamic",
@@ -290,6 +296,19 @@ main( int argc, char** argv )
         // Single-file compile: build_target_compile_single() with the target's full
         // flag/define/include set, but only the one file VS handed us.
         if ( !target ) { printf( ORB_INDENT "[orb error] -file requires -target\n" ); return 1; }
+
+        // If the path is not absolute, resolve it relative to the target's root_dir
+        // so callers can pass bare filenames or subdir-relative paths like sub/file.c.
+        char resolved_file[ BT_PATH_MAX ];
+        bool is_abs = ( file_path[ 0 ] == '\\' ) || ( file_path[ 1 ] == ':' );
+        if ( !is_abs && target->root_dir )
+        {
+            char combined[ BT_PATH_MAX ];
+            snprintf( combined, sizeof( combined ), "%s\\%s", target->root_dir, file_path );
+            if ( !_fullpath( resolved_file, combined, sizeof( resolved_file ) ) )
+                snprintf( resolved_file, sizeof( resolved_file ), "%s", combined );
+            file_path = resolved_file;
+        }
 
         char obj_dir[ BT_PATH_MAX ];
         snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
