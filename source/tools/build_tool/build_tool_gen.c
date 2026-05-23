@@ -386,6 +386,16 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
              static_def ? "_STATIC;" : "" );
     fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
+
+    // --- Debugger working directory ---
+    // Isolated in their own PropertyGroups so VS does not conflate these with
+    // IntelliSense or build settings, which would grey out per-file compile.
+    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)..</LocalDebuggerWorkingDirectory>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)..</LocalDebuggerWorkingDirectory>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
 }
 
 /**
@@ -435,12 +445,11 @@ build_gen_proj_target( target_info_t* target, int index )
     for ( int i = 0; i < g_file_count; ++i )
     {
         // Check whether this file is a named compilation unit.
+        // Scan for the last separator of either kind to handle mixed-slash paths.
         bool        is_unit  = false;
-        const char* filename = strrchr( g_files[ i ].path, '/' );
-        if ( !filename ) filename = strrchr( g_files[ i ].path, '\\' );
-
-        if ( filename ) filename++;   // skip past the final slash
-        else filename = g_files[ i ].path;
+        const char* filename = g_files[ i ].path;
+        for ( const char* p = g_files[ i ].path; *p; ++p )
+            if ( *p == '/' || *p == '\\' ) filename = p + 1;
 
         for ( int j = 0; target->units[ j ]; ++j )
         {
@@ -469,27 +478,6 @@ build_gen_proj_target( target_info_t* target, int index )
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
     fprintf( f, "</Project>\n" );
     fclose( f );
-
-    // Emit a .vcxproj.user so the VS debugger launches from the repo root.
-    // $(ProjectDir) resolves to <build_dir>\ so ..\ steps back to the workspace root.
-    char user_path[ BT_PATH_MAX ];
-    snprintf( user_path, sizeof( user_path ), "%s\\%s.vcxproj.user", g_build_dir, target->name );
-    FILE* fu = fopen( user_path, "w" );
-    if ( fu )
-    {
-        fprintf( fu, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
-        fprintf( fu, "<Project ToolsVersion=\"Current\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-        fprintf( fu, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-        fprintf( fu, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)..</LocalDebuggerWorkingDirectory>\n" );
-        fprintf( fu, "    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>\n" );
-        fprintf( fu, "  </PropertyGroup>\n" );
-        fprintf( fu, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-        fprintf( fu, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)..</LocalDebuggerWorkingDirectory>\n" );
-        fprintf( fu, "    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>\n" );
-        fprintf( fu, "  </PropertyGroup>\n" );
-        fprintf( fu, "</Project>\n" );
-        fclose( fu );
-    }
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
     char filters_path[ BT_PATH_MAX ];

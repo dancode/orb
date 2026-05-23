@@ -99,7 +99,6 @@ target_info_t g_targets[] = {
      },
 
     // --- 02_SANDBOX (Verification Targets) ---
-
     // A minimal executable to test the base library.
     {
      .name       = "sb_base_main",
@@ -111,7 +110,6 @@ target_info_t g_targets[] = {
      },
 
     // --- 08_TOOL (Development Utilities) ---
-
     // The build tool itself (this program!).
     {
      .name          = "build_tool",
@@ -120,8 +118,8 @@ target_info_t g_targets[] = {
      .sln_folder    = "08_TOOL",
      .units         = { "build_tool.c" },
      .is_build_tool = true,
-     .deps       = {},
-     .is_tool    = true,
+     .deps          = {},
+     .is_tool       = true,
      },
 
     // The reflection generator. Scans source and writes generated .c/.h files.
@@ -144,8 +142,8 @@ int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );
 // =============================================================================
 
 // Main engine workspace. Includes core libraries and sandboxes.
-static const char* g_sln_main_targets[] = { "base",           "sys", "rs", "mod", "app", "core", "example",
-                                            "sb_base_custom", NULL };
+static const char* g_sln_main_targets[] = { "base",        "sys", "rs", "mod", "app", "core", "example",
+                                            "sb_base_main", NULL };
 
 // Standalone build tools workspace. For modifying the build system itself.
 static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL };
