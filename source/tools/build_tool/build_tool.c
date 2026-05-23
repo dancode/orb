@@ -112,27 +112,21 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 static bool
 validate_targets( void )
 {
-   bool ok = true;
-   for ( int i = 0; i < g_target_count; ++i )
-   {
-       const target_info_t* t = &g_targets[ i ];
-       if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ) {
-           printf( ORB_INDENT "[orb error] target '%s' units[] is full with no NULL terminator "
-                   "(raise TARGET_MAX_SLOTS or reduce unit count)\n", t->name );
-           ok = false;
-       }
-       if ( t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ) {
-           printf( ORB_INDENT "[orb error] target '%s' deps[] is full with no NULL terminator "
-                   "(raise TARGET_MAX_SLOTS or reduce dep count)\n", t->name );
-           ok = false;
-       }
-       if ( t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ) {
-           printf( ORB_INDENT "[orb error] target '%s' tool_deps[] is full with no NULL terminator "
-                   "(raise TARGET_MAX_SLOTS or reduce tool dep count)\n", t->name );
-           ok = false;
-       }
-   }
-   return ok;
+    bool ok = true;
+    for ( int i = 0; i < g_target_count; ++i )
+    {
+        const target_info_t* t = &g_targets[ i ];
+
+        if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL || 
+             t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ||
+             t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL )
+        {
+            printf( ORB_INDENT "[orb error] target '%s' has too many units or dependencies "
+                               "(raise TARGET_MAX_SLOTS)\n", t->name );
+            ok = false;
+        }
+    }
+    return ok;
 }
 
 /*==============================================================================================
@@ -165,25 +159,18 @@ validate_targets( void )
 int
 main( int argc, char** argv )
 {
-    // -- - Debug Arg Print ---
-    // debug print args to file so we can read even if not debugging with a console attached.
-    // This is invaluable for verifying that the bootstrap script is passing args correctly,
-    // and for diagnosing arg parsing bugs in general.
-
+    // -- - Debug Arg Print ---    
+    // debug print args to file so we can read even if not debugging.
+    
     if ( 0 )
     {
         FILE* log = fopen( "build_tool_log.txt", "a" );
-        if ( log )
+        if ( log ) 
         {
-            fprintf( log, "argc=%d", argc );
-            for ( int i = 0; i < argc; ++i ) fprintf( log, "  [%d]=%s", i, argv[ i ] );
+            fprintf( log, "build_tool.exe: p%d]", argc );
+            for ( int i = 0; i < argc; ++i ) fprintf( log, " [%d]=%s", i, argv[ i ] );
             fprintf( log, "\n" );
             fclose( log );
-    
-            // debug output as another sanity check.
-            printf( "build_tool.exe: [%d] ", argc );
-            for ( int i = 1; i < argc; ++i ) { printf( "%s ", argv[ i ] ); }
-            printf( "\n\n" );
         }
     }
 
@@ -253,9 +240,11 @@ main( int argc, char** argv )
     }
 
     // --- Target Table Validation ---
+
     if ( !validate_targets() ) return 1;
 
     // --- Command : CLEAN ---
+
     if ( should_clean )
     {
         target_info_t* clean_target = NULL;
@@ -271,6 +260,7 @@ main( int argc, char** argv )
     }
 
     // --- Command : GENERATE ---
+
     if ( should_gen ) 
     { 
         build_gen_projects(); 
