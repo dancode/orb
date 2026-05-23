@@ -396,7 +396,10 @@ main( int argc, char** argv )
             printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;
         }
-        if ( g_out_flags & ORB_OUT_TARGET_RESULT )
+
+        bool show_output  = ( g_out_flags & ORB_OUT_TARGET_RESULT );
+        bool show_skipped = was_skipped && ( g_out_flags & ORB_OUT_SUMMARY_COMPILE );
+        if ( show_output || show_skipped )
             printf( ORB_INDENT "[orb %s] %s\n", was_skipped ? "skipped" : "completed", target->name );
     }
     else
