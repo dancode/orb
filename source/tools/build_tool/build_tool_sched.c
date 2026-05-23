@@ -165,10 +165,11 @@ add_job( target_info_t* t )
     // collect indices first, then wire edges once everyone exists.
     int dep_indices[ MAX_LOCAL_DEPS ];
     int dep_count = 0;
+    int i         = 0;
 
     // Link deps (the .libs this target needs to link against).
     // Recurse first so the dep is fully registered before we record its index.
-    for ( int i = 0; t->deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
+    for ( i = 0; t->deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
         target_info_t* dep = find_target( t->deps[ i ] );
         if ( dep )
@@ -177,9 +178,20 @@ add_job( target_info_t* t )
             if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
         }
     }
+    // If the loop exited early because the table filled before deps were exhausted,
+    // the remaining deps would be silently dropped. The job would then be scheduled
+    // before those deps finish, causing race conditions and random link failures.
+    if ( t->deps[ i ] )
+    {
+        printf( ORB_INDENT "[orb error] '%s' has too many link deps (MAX_LOCAL_DEPS=%d); "
+                "raise MAX_LOCAL_DEPS to avoid scheduler race conditions\n",
+                t->name, MAX_LOCAL_DEPS );
+        return -1;
+    }
+
     // Tool deps (helper executables that must exist before this target compiles,
     // but that aren't linked in — e.g. a codegen utility).
-    for ( int i = 0; t->tool_deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
+    for ( i = 0; t->tool_deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
         target_info_t* tool = find_target( t->tool_deps[ i ] );
         if ( tool )
@@ -188,12 +200,26 @@ add_job( target_info_t* t )
             if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
         }
     }
+    if ( t->tool_deps[ i ] )
+    {
+        printf( ORB_INDENT "[orb error] '%s' has too many combined deps (MAX_LOCAL_DEPS=%d); "
+                "raise MAX_LOCAL_DEPS to avoid scheduler race conditions\n",
+                t->name, MAX_LOCAL_DEPS );
+        return -1;
+    }
 
     // Implicit dep: every has_reflect target needs the registered reflection
     // tool before it can be compiled. We *also* deduplicate here because the
     // user may have already listed the reflect tool explicitly under deps or
     // tool_deps. A double entry would inflate remaining_deps and the job
     // would never reach 0 → would never become ready → indefinite wait.
+    if ( t->has_reflect && dep_count >= MAX_LOCAL_DEPS )
+    {
+        printf( ORB_INDENT "[orb error] '%s' dep table full (MAX_LOCAL_DEPS=%d); "
+                "reflect tool dep cannot be registered — raise MAX_LOCAL_DEPS\n",
+                t->name, MAX_LOCAL_DEPS );
+        return -1;
+    }
     if ( t->has_reflect && dep_count < MAX_LOCAL_DEPS )
     {
         target_info_t* rt = find_reflect_tool();
@@ -221,9 +247,9 @@ add_job( target_info_t* t )
     // list and decrements each dependent's remaining_deps counter. The job
     // becomes ready exactly when its last dep finishes — no global toposort
     // needed.
-    for ( int i = 0; i < dep_count; ++i )
+    for ( int d = 0; d < dep_count; ++d )
     {
-        sched_job_t* dj = &g_sched.jobs[ dep_indices[ i ] ];
+        sched_job_t* dj = &g_sched.jobs[ dep_indices[ d ] ];
         if ( dj->rev_dep_count < MAX_REV_DEPS )
             dj->rev_deps[ dj->rev_dep_count++ ] = idx;
     }

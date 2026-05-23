@@ -80,9 +80,10 @@ cc_field( char* dst, size_t dst_size, const char* fmt, ... )
 // get_target_upper() -- derive <TARGET>_STATIC from a target name.
 // Must match the IntelliSense defines emitted by build_tool_gen.c (unity build).
 static void
-get_target_upper( const char* name, char* out )
+get_target_upper( const char* name, char* out, size_t out_size )
 {
-    strcpy( out, name );
+    strncpy( out, name, out_size - 1 );
+    out[ out_size - 1 ] = '\0';
     for ( char* p = out; *p; ++p ) *p = ( char )toupper( *p );
 }
 
@@ -493,7 +494,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     CC_APPEND( cc.defines, "/D_CRT_SECURE_NO_WARNINGS" );
     {
         char upper[ 128 ];
-        get_target_upper( target->name, upper );
+        get_target_upper( target->name, upper, sizeof( upper ) );
         CC_APPEND( cc.defines, " /D%s_STATIC", upper );
     }
     // Propagate _STATIC for each dep so API gateways resolve correctly.
@@ -507,7 +508,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         if ( dep_is_static )
         {
             char dep_upper[ 128 ];
-            get_target_upper( dep->name, dep_upper );
+            get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
             CC_APPEND( cc.defines, " /D%s_STATIC", dep_upper );
         }
     }
@@ -619,7 +620,7 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
               "/DOS_WINDOWS /DCOMPILE_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
     {
         char upper[ 128 ];
-        get_target_upper( target->name, upper );
+        get_target_upper( target->name, upper, sizeof( upper ) );
         CC_APPEND( cc.defines, " /D%s_STATIC", upper );
     }
     for ( int i = 0; target->deps[ i ]; ++i )
@@ -631,7 +632,7 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
         if ( dep_is_static )
         {
             char dep_upper[ 128 ];
-            get_target_upper( dep->name, dep_upper );
+            get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
             CC_APPEND( cc.defines, " /D%s_STATIC", dep_upper );
         }
     }

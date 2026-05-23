@@ -159,14 +159,16 @@ import_vcvars_env( const char* vcvars_path )
     return imported;
 }
 
-/**
- * build_setup_vc_env()
- *
- * Idempotent one-time setup. If cl.exe is already discoverable in PATH
- * (Developer Command Prompt or pre-sourced vcvars), do nothing. Otherwise
- * locate vcvarsall.bat and import its environment into THIS process so
- * every subsequent child invocation runs with the VC toolchain visible.
- */
+/*==============================================================================================
+    --- Build Setup VC Environment ---
+
+    Idempotent one-time setup. If cl.exe is already discoverable in PATH
+    (Developer Command Prompt or pre-sourced vcvars), do nothing. Otherwise
+    locate vcvarsall.bat and import its environment into THIS process so
+    every subsequent child invocation runs with the VC toolchain visible.
+ 
+==============================================================================================*/
+
 void
 build_setup_vc_env( void )
 {

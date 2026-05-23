@@ -238,16 +238,14 @@ main( int argc, char** argv )
         return 0; 
     }
 
-    // Note: commands return early to skip the vcvars import below.
-
-
-    // --- Startup Banner ---
+    // --- Begin Startup Banner ---
+    
     // All modes share the format:  [orb <mode>] SUBJECT  [ <special> | modular | debug | msvc ]
     // Each branch sets label/subject/special; props and the final printf are assembled once below.
     // ORB_OUT_ARGS appends a second line echoing the raw argv (off by default).
 
     char target_upper[ 64 ] = "ALL";
-    if ( target_name ) get_target_upper( target_name, target_upper );
+    if ( target_name ) get_target_upper( target_name, target_upper, sizeof( target_upper ) );
 
     // base_name is filename acquired via -file with path stripped.
     const char* base_name = file_path ? file_path : NULL;
@@ -256,7 +254,7 @@ main( int argc, char** argv )
             if ( *p == '\\' || *p == '/' ) base_name = p + 1;
     }
 
-    if ( 1 )
+    if ( 1 ) // (nested for scoping working variables)
     {
         char subject[ BT_PATH_MAX ]; 
         snprintf( subject, sizeof( subject ), "%s", target_upper );
@@ -278,28 +276,24 @@ main( int argc, char** argv )
             label   = "[orb single-file]";
             special = "file";
 
-            // add the filename next to the target label.
+            // adds the filename next to the target label.
             snprintf( subject, sizeof( subject ), "%s %s", target_upper, base_name );
         }
         else
         {
-            label   = "[orb target]";
+            label   = "[orb build]";
             special = ctx.skip_deps ? "no-deps" : NULL;
         }
 
         // Assemble the property bracket (special slot is mode-specific and optional).
         char props[ 128 ];
-        if ( special )
-            snprintf( props, sizeof( props ), "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str );
-        else
-            snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str );
+        if ( special ) snprintf( props, sizeof( props ), "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str );
+        else           snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str ); 
 
         printf( ORB_BANNER "----------------------------------------------------------------\n" );
         printf( ORB_BANNER "%s %s %s\n", label, subject, props );
 
         // ORB_OUT_ARGS: echo the raw command line on a second line (off by default).
-        // Ex: build_tool.exe -target sb_engine_reflect -config Release
-        //         args:  -target sb_engine_reflect  -config Release
         if ( g_out_flags & ORB_OUT_ARGS )
         {
             printf( ORB_INDENT "[orb args]" );
@@ -307,10 +301,14 @@ main( int argc, char** argv )
             printf( "\n" );
         }
     }
-
+    
+    // --- Setup Visual Studio Environment ---    
     // Make cl.exe / link.exe / lib.exe callable. Idempotent fast-path when
     // we're already inside a Developer Command Prompt (or VS-launched shell).
+
     build_setup_vc_env();
+
+
 
     // Dispatch:
     //  -file <path>       → compile one file with the target's full flag set, no link.

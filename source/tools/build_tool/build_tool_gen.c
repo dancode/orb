@@ -421,7 +421,7 @@ build_gen_proj_target( target_info_t* target, int index )
     // Upper-case the target name for the _STATIC define IntelliSense uses
     // (matches what build_tool_cc.c emits for cl.exe at build time).
     char target_upper[ 128 ];
-    get_target_upper( target->name, target_upper );
+    get_target_upper( target->name, target_upper, sizeof( target_upper ) );
     write_vcxproj_common_header( f, guid, target->name, target->type, target_upper );
 
     // Scan the target's source tree recursively so unity sub-files appear in VS.
