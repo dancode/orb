@@ -102,7 +102,7 @@ target_info_t g_targets[] = {
 
     // A minimal executable to test the base library.
     {
-     .name       = "sb_base_custom",
+     .name       = "sb_base_main",
      .type       = TARGET_EXECUTABLE,
      .root_dir   = "source/base",
      .sln_folder = "02_SANDBOX",

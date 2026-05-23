@@ -867,20 +867,22 @@ build_gen_solution( solution_info_t* sln )
     fclose( f );
 }
 
-/**
- * build_gen_projects()
- *
- * Top-level entry point invoked by `build_tool.exe -gen`. Regenerates
- * every .vcxproj and every .sln from the current target/solution registry.
- *
- * Two-phase emission:
- *   1. One .vcxproj per target (shared across solutions that reference it).
- *   2. One .sln per solution descriptor in g_solutions[].
- *
- * Safe to re-run anytime; the generated XML is fully deterministic given
- * the registry contents, so VS user state survives regen as long as the
- * target name doesn't change (see guid_from_name).
- */
+/*==============================================================================================
+    --- Build Generate Projects ---
+
+    Top-level entry point invoked by `build_tool.exe -gen`. Regenerates every 
+    .vcxproj and every .sln from the current target/solution registry.
+    
+    Two-phase emission:
+
+        1. One .vcxproj per target (shared across solutions that reference it).
+        2. One .sln per solution descriptor in g_solutions[].
+ 
+    Safe to re-run anytime; the generated XML is fully deterministic given
+    the registry contents, so VS user state survives regen as long as the
+    target name doesn't change (see guid_from_name).
+==============================================================================================*/
+
 void
 build_gen_projects( void )
 {

@@ -64,6 +64,8 @@ build_clean( target_info_t* target )
     {
         // One-line per-target clean. Sub-commands run silently; we print a
         // single summary at the end so MSBuild output stays parseable.
+
+        // delete the main target type artifact:
         const char* ext = ( target->type == TARGET_STATIC_LIB )  ? "lib"
                         : ( target->type == TARGET_DYNAMIC_LIB ) ? "dll" 
                         :                                          "exe";
@@ -79,10 +81,10 @@ build_clean( target_info_t* target )
             del_q( "del /q bin\\%s.dll >nul 2>nul", target->name );
             del_q( "del /q bin\\%s.exp >nul 2>nul", target->name );
         }
-
+         
         del_q( "del /q bin\\%s_*.pdb >nul 2>nul", target->name );
         del_q( "rd /s /q %s\\%s\\%s >nul 2>nul", g_build_dir, g_int_dir, target->name );
-
+        
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
@@ -95,8 +97,8 @@ build_clean( target_info_t* target )
     }
     else
     {
-        // Global wipe. Same noise-suppression pattern: every del runs silently,
-        // one summary line at the end.
+        // Global wipe with the same noise-suppression pattern: every del runs silently,
+        // we supress the noise and output one summary line at the end.
         del_q( "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
         del_q( "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
 
@@ -113,8 +115,8 @@ build_clean( target_info_t* target )
             if ( g_targets[ i ].type == TARGET_EXECUTABLE && !g_targets[ i ].is_tool )
                 del_q( "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
         }
-
-        printf( ORB_INDENT "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n", g_build_dir, g_int_dir, g_gen_dir );
+        printf( ORB_INDENT "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n", 
+                g_build_dir, g_int_dir, g_gen_dir );
     }
 }
 

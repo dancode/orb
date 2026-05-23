@@ -55,9 +55,12 @@
     All build outputs land under <g_build_dir>/. The .sln/.vcxproj files also live
     here (see build_tool_gen.c) so VS treats the directory as the project root for 
     its IntelliSense and intermediate caches.
+
+    REMEMBER: Update bootstrap_build_tool.bat if you change these!
+
 ==============================================================================================*/
 
-static const char* g_build_dir  = "build_new";      // Root for intermediate/generated files.
+static const char* g_build_dir  = "build";          // Root for intermediate/generated files.
 static const char* g_int_dir    = "obj";            // Sub-folder for .obj files (per-target).
 static const char* g_gen_dir    = "generated";      // Sub-folder for reflection-generated .c/.h.
 
@@ -192,7 +195,7 @@ main( int argc, char** argv )
         if ( j_threads > 16 ) j_threads = 16;
     }
 
-    // --- Standalone subcommands ---
+    // --- Standalone Sub-Commands ---    
     // 'clean' and 'gen' are bookkeeping passes - so we can skip toolchain env. 
     // Returning early skips the vcvars import below.
     if ( should_clean )
@@ -210,8 +213,11 @@ main( int argc, char** argv )
         build_clean( clean_target );
         return 0;
     }
-    if ( should_gen ) { build_gen_projects(); return 0; }
-
+    if ( should_gen ) 
+    { 
+        build_gen_projects(); 
+        return 0; 
+    }
 
     // --- Startup Banner ---
     // Single-file mode shows the filename; full-build mode shows the target name.
@@ -273,6 +279,8 @@ main( int argc, char** argv )
             printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
             return 1;
         }
+        if ( g_out_flags & ORB_OUT_TARGET_RESULT )
+            printf( ORB_INDENT "[orb compiled] %s\n", target->name );
         printf( "\n" );
         return 0;
     }

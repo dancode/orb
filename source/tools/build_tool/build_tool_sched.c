@@ -325,20 +325,38 @@ worker_main( void* arg )
         EnterCriticalSection( &g_print_lock );
         // Dump the per-target log before printing the result tag so the detail
         // sections (compile/link/cmd) appear first and the result reads as a footer.
-        bool dump_log = !ok || ( g_out_flags & ( ORB_OUT_ANY_COMPILE | ORB_OUT_ANY_LINK ) );
+        // Blank lines are buffered as "pending" and only flushed when a following
+        // non-blank line arrives — this preserves intentional mid-block spacing
+        // (e.g. between sections and [orb cmd]) while silently dropping trailing
+        // blank lines from MSVC output so [orb compiled] runs right after content.
+        bool dump_log  = !ok || ( g_out_flags & ( ORB_OUT_ANY_COMPILE | ORB_OUT_ANY_LINK ) );
+        bool had_output = false;
         if ( dump_log )
         {
             FILE* lf = fopen( j->log_path, "r" );
             if ( lf )
             {
                 char line[ 4096 ];
+                int  pending_blanks = 0;
                 while ( fgets( line, sizeof( line ), lf ) )
-                    if ( !is_msvc_source_echo( line ) ) fputs( line, stdout );
+                {
+                    if ( is_msvc_source_echo( line ) ) continue;
+                    bool is_blank = ( line[ 0 ] == '\n' || ( line[ 0 ] == '\r' && line[ 1 ] == '\n' ) );
+                    if ( is_blank ) { if ( had_output ) pending_blanks++; continue; }
+                    for ( int b = 0; b < pending_blanks; b++ ) fputc( '\n', stdout );
+                    pending_blanks = 0;
+                    fputs( line, stdout );
+                    had_output = true;
+                }
+                // pending_blanks discarded here — trailing blanks are suppressed.
                 fclose( lf );
             }
         }
         if ( !ok || ( g_out_flags & ORB_OUT_TARGET_RESULT ) )
+        {
             printf( ORB_INDENT "[orb %s] %s\n", !ok ? "FAILED" : j->skipped ? "skipped" : "compiled", j->target->name );
+            printf( "\n" );
+        }
         fflush( stdout );
         LeaveCriticalSection( &g_print_lock );
 

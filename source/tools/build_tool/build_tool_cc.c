@@ -150,7 +150,8 @@ cc_open_log( void )
 // This is the workhorse that renders the human-readable section view of
 // flags / defines / includes / etc. We can't just printf(raw) because the
 // caller wants per-token prefix-stripping and a final newline.
-static void
+// Returns true if at least one token was written (content was non-empty).
+static bool
 print_tokens( FILE* out, const char* raw, const char* prefix )
 {
     size_t      plen  = prefix ? strlen( prefix ) : 0;
@@ -187,17 +188,18 @@ print_tokens( FILE* out, const char* raw, const char* prefix )
         first = false;
     }
     fputc( '\n', out );
+    return !first;  // first stayed true → no tokens → empty content
 }
 
 // Print a labeled section line: "  <label>  <content>".
-// `strip` is forwarded to print_tokens — pass NULL for no stripping.
+// Returns true if content had tokens (non-empty). `strip` is forwarded to print_tokens.
 #define SECTION_FMT  "            %-10s"
 
-static void
+static bool
 print_section( FILE* out, const char* label, const char* content, const char* strip )
 {
     fprintf( out, SECTION_FMT, label );
-    print_tokens( out, content, strip );
+    return print_tokens( out, content, strip );
 }
 
 // Print the compile output section: /FoobjDir/ /FdobjDir/ → "obj=... pdb=..."
@@ -208,7 +210,7 @@ print_section( FILE* out, const char* label, const char* content, const char* st
 //
 // Example: raw = "/Fobuild\\obj\\foo/ /Fdbuild\\obj\\foo/"
 //          prints: "obj=build\obj\foo/  pdb=build\obj\foo/\n"
-static void
+static bool
 print_compile_output( FILE* out, const char* raw )
 {
     fprintf( out, SECTION_FMT, "output:" );
@@ -246,6 +248,7 @@ print_compile_output( FILE* out, const char* raw )
         first = false;
     }
     fputc( '\n', out );
+    return !first;
 }
 
 // Print compile command sections to `out` according to g_out_flags.
@@ -255,18 +258,13 @@ cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const
     if ( g_out_flags & ORB_OUT_COMPILE_SUMMARY )
         fprintf( out, ORB_INDENT "[orb compile] %s (%s)\n", target->name, config );
 
-    const out_flags_t cc_detail = ORB_OUT_COMPILE_SOURCES | ORB_OUT_COMPILE_FLAGS | ORB_OUT_COMPILE_DEFINES |
-                                  ORB_OUT_COMPILE_INCLUDES | ORB_OUT_COMPILE_OUTPUT;
-
-    if ( g_out_flags & cc_detail ) fprintf( out, "\n" );
-
-    if ( g_out_flags & ORB_OUT_COMPILE_SOURCES  ) print_section( out, "sources:",  cc->sources,  NULL );
-    if ( g_out_flags & ORB_OUT_COMPILE_FLAGS    ) print_section( out, "flags:",    cc->flags,    NULL );
-    if ( g_out_flags & ORB_OUT_COMPILE_DEFINES  ) print_section( out, "defines:",  cc->defines,  "/D" );
-    if ( g_out_flags & ORB_OUT_COMPILE_INCLUDES ) print_section( out, "includes:", cc->includes, "/I" );
-    if ( g_out_flags & ORB_OUT_COMPILE_OUTPUT   ) print_compile_output( out, cc->output );
-
-    if ( g_out_flags & cc_detail ) fprintf( out, "\n" );
+    bool any = false;
+    if ( g_out_flags & ORB_OUT_COMPILE_SOURCES  ) any |= print_section( out, "sources:",  cc->sources,  NULL );
+    if ( g_out_flags & ORB_OUT_COMPILE_FLAGS    ) any |= print_section( out, "flags:",    cc->flags,    NULL );
+    if ( g_out_flags & ORB_OUT_COMPILE_DEFINES  ) any |= print_section( out, "defines:",  cc->defines,  "/D" );
+    if ( g_out_flags & ORB_OUT_COMPILE_INCLUDES ) any |= print_section( out, "includes:", cc->includes, "/I" );
+    if ( g_out_flags & ORB_OUT_COMPILE_OUTPUT   ) any |= print_compile_output( out, cc->output );
+    if ( any ) fprintf( out, "\n" );
 }
 
 // Print link command sections to `out` according to g_out_flags.
@@ -276,18 +274,13 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
     if ( g_out_flags & ORB_OUT_LINK_SUMMARY )
         fprintf( out, ORB_INDENT "[orb link] %s -> %s\n", target->name, lk->artifact );
 
-    const out_flags_t lk_detail = ORB_OUT_LINK_INPUTS | ORB_OUT_LINK_LIBS | ORB_OUT_LINK_FLAGS |
-                                  ORB_OUT_LINK_OUTPUT | ORB_OUT_LINK_PDB;
-
-    if ( g_out_flags & lk_detail ) fprintf( out, "\n" );
-
-    if ( g_out_flags & ORB_OUT_LINK_INPUTS  ) print_section( out, "inputs:",  lk->inputs,  NULL );
-    if ( g_out_flags & ORB_OUT_LINK_LIBS    ) print_section( out, "libs:",    lk->libs,    NULL );
-    if ( g_out_flags & ORB_OUT_LINK_FLAGS   ) print_section( out, "flags:",   lk->flags,   NULL );
-    if ( g_out_flags & ORB_OUT_LINK_OUTPUT  ) print_section( out, "output:",  lk->output,  "/OUT:" );
-    if ( g_out_flags & ORB_OUT_LINK_PDB     ) print_section( out, "pdb:",     lk->pdb,     "/PDB:" );
-
-    if ( g_out_flags & lk_detail ) fprintf( out, "\n" );
+    bool any = false;
+    if ( g_out_flags & ORB_OUT_LINK_INPUTS  ) any |= print_section( out, "inputs:",  lk->inputs,  NULL );
+    if ( g_out_flags & ORB_OUT_LINK_LIBS    ) any |= print_section( out, "libs:",    lk->libs,    NULL );
+    if ( g_out_flags & ORB_OUT_LINK_FLAGS   ) any |= print_section( out, "flags:",   lk->flags,   NULL );
+    if ( g_out_flags & ORB_OUT_LINK_OUTPUT  ) any |= print_section( out, "output:",  lk->output,  "/OUT:" );
+    if ( g_out_flags & ORB_OUT_LINK_PDB     ) any |= print_section( out, "pdb:",     lk->pdb,     "/PDB:" );
+    if ( any ) fprintf( out, "\n" );
 }
 
 /*============================================================================================*/
