@@ -68,7 +68,13 @@
 
 // Max size for any single compiler/linker command line.
 
-#define CMD_BUF_MAX 16384    
+#define CMD_BUF_MAX 16384
+
+// Max entries in each NULL-terminated slot array on target_info_t (units/deps/tool_deps).
+// Loops iterate with an `i < TARGET_MAX_SLOTS` bound so a fully-filled array
+// (no NULL terminator) cannot read into adjacent struct fields.
+
+#define TARGET_MAX_SLOTS 16
 
 // Path buffer size for every filesystem path the build tool constructs.
 // Windows MAX_PATH is 260; 512 gives generous headroom for composite paths.
@@ -166,16 +172,16 @@ typedef struct target_info_s
     // Translation Units (Unity Build Fragments)
     // Each entry is typically an umbrella .c file that includes other sources.
     // Multiple units allow the scheduler to parallelize cl.exe calls.
-    const char*     units[ 16 ];
+    const char*     units[ TARGET_MAX_SLOTS ];
 
     // Link Dependencies: Other targets that produce .libs this target must link against.
     // Drives both the linker's input list and the parallel scheduler's topological order.
-    const char*     deps[ 16 ];
+    const char*     deps[ TARGET_MAX_SLOTS ];
 
     // Tool Dependencies: Standalone utilities that must exist to build this target.
-    // These are built recursively but NOT linked into the final binary. 
+    // These are built recursively but NOT linked into the final binary.
     // Ex: any target with 'has_reflect' depends on build_reflect.exe as a tool dep.
-    const char*     tool_deps[ 16 ];
+    const char*     tool_deps[ TARGET_MAX_SLOTS ];
 
     // Reflection metadata: if true, build_reflect.exe is invoked on root_dir
     // before compilation. Generated files land in <build_dir>/generated/ and
@@ -316,7 +322,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | \
                           ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
-#define OBB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE )
+#define OBB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS)
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )

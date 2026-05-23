@@ -15,31 +15,32 @@
 ==============================================================================================*/
 // clang-format off
 
-/*============================================================================================*/
-// --- VC Environment Import ---
+/*==============================================================================================
+    --- VC Environment Locate ---
 
-/**
- * locate_vcvarsall()
- *
- * Find a usable vcvarsall.bat on this machine and write its absolute path
- * to `out`. Two-stage lookup:
- *
- *   1. Ask vswhere.exe (the Microsoft-blessed VS discovery tool) for the
- *      latest installation, then derive the vcvarsall path from it. This
- *      tracks per-machine installs, side-by-side VS versions, and the
- *      Preview / Build Tools SKUs without us hard-coding anything.
- *   2. If vswhere is missing or returned nothing usable, fall back to
- *      probing a small list of well-known install locations.
- *
- * Returns true and fills `out` on success. False means no VS install was
- * discovered -- caller should print a warning and let cl.exe lookups fail
- * naturally so the error is easy to diagnose.
- *
- * vswhere paths are double-quoted because the default install location
- * lives under "Program Files (x86)" with a space; cmd.exe needs the quotes
- * to treat the whole executable path as a single token. _popen wraps it in
- * cmd.exe automatically.
- */
+    Find a usable vcvarsall.bat on this machine and write its absolute path
+    to `out`. Two-stage lookup:
+
+  1. Ask vswhere.exe (the Microsoft-blessed VS discovery tool) for the
+     latest installation, then derive the vcvarsall path from it. 
+     
+     This tracks per-machine installs, side-by-side VS versions, and the
+     Preview / Build Tools SKUs without us hard-coding anything.
+
+  2. If vswhere is missing or returned nothing usable, fall back to
+     probing a small list of well-known install locations.
+
+    Returns true and fills `out` on success. False means no VS install was
+    discovered -- caller should print a warning and let cl.exe lookups fail
+    naturally so the error is easy to diagnose.
+
+    vswhere paths are double-quoted because the default install location
+    lives under "Program Files (x86)" with a space; cmd.exe needs the quotes
+    to treat the whole executable path as a single token. _popen wraps it in
+    cmd.exe automatically.
+ 
+==============================================================================================*/
+
 static bool
 locate_vcvarsall( char* out, size_t out_size )
 {
@@ -52,26 +53,32 @@ locate_vcvarsall( char* out, size_t out_size )
     };
 
     for ( int i = 0; i < ( int )( sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ) ); ++i )
-    {
-        // Ask for the latest install, any product (Community / Pro / Build
-        // Tools / Preview), and print just the install path on stdout.
+    {        
+        // Ask for the latest install, any product (Community / Pro / Build Tools / Preview), 
+        // and print just the install path on stdout.
+
         char cmd[ 1024 ];
-        snprintf( cmd, sizeof( cmd ),
+        snprintf( cmd, sizeof( cmd ), 
                   "%s -latest -products * -property installationPath",
                   vswhere_paths[ i ] );
 
-        FILE* pipe = _popen( cmd, "rt" );
-        if ( !pipe ) continue;
+        // Runtime (CRT) function used in Windows console apps to create a pipe and 
+        // execute a command. We are trying to run vswhere.exe and capture its output. 
+        // The "rt" mode means we want to read text output from the command.
 
         char inst[ 512 ] = { 0 };
-        if ( fgets( inst, sizeof( inst ), pipe ) )
         {
-            // Strip the trailing newline that fgets keeps.
-            char* nl = strpbrk( inst, "\r\n" );
-            if ( nl ) *nl = '\0';
+            FILE* pipe = _popen( cmd, "rt" );
+            if ( !pipe ) continue;        
+            if ( fgets( inst, sizeof( inst ), pipe ) )
+            {
+                // The install path output by vswhere, or empty.
+                // Strip the trailing newline that fgets keeps.                        
+                char* nl = strpbrk( inst, "\r\n" );
+                if ( nl ) *nl = '\0';
+            }
+            _pclose( pipe );
         }
-        _pclose( pipe );
-
         if ( inst[ 0 ] )
         {
             // vcvarsall.bat is always at <install>\VC\Auxiliary\Build\.
@@ -80,9 +87,8 @@ locate_vcvarsall( char* out, size_t out_size )
         }
     }
 
-    // Fallback: probe a few common, hard-coded install paths. Catches the
-    // case where vswhere is missing (rare but possible on Build-Tools-only
-    // installs) or unreachable for whatever reason.
+    // Fallback: probe a few common, hard-coded install paths.
+
     const char* common[] = {
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat",
@@ -97,7 +103,6 @@ locate_vcvarsall( char* out, size_t out_size )
             return true;
         }
     }
-
     return false;
 }
 
@@ -163,8 +168,9 @@ import_vcvars_env( const char* vcvars_path )
     --- Build Setup VC Environment ---
 
     Idempotent one-time setup. If cl.exe is already discoverable in PATH
-    (Developer Command Prompt or pre-sourced vcvars), do nothing. Otherwise
-    locate vcvarsall.bat and import its environment into THIS process so
+    (Developer Command Prompt or pre-sourced vcvars), do nothing. 
+    
+    Otherwise locate vcvarsall.bat and import its environment into THIS process so
     every subsequent child invocation runs with the VC toolchain visible.
  
 ==============================================================================================*/
@@ -173,10 +179,12 @@ void
 build_setup_vc_env( void )
 {
 #if defined( _WIN32 )
+
     // Fast path: cl.exe already on PATH. SearchPathA walks PATH without
     // spawning a child process, so this is free compared to system().
     char cl_path[ MAX_PATH ];
-    if ( SearchPathA( NULL, "cl.exe", NULL, MAX_PATH, cl_path, NULL ) != 0 ) return;
+    if ( SearchPathA( NULL, "cl.exe", NULL, MAX_PATH, cl_path, NULL ) != 0 ) 
+        return;
 
     if ( g_out_flags & ORB_OUT_VCVARS )
         printf( ORB_INDENT "[orb vcvars] cl.exe not in PATH, locating Visual Studio...\n" );
@@ -193,6 +201,7 @@ build_setup_vc_env( void )
     int n = import_vcvars_env( vcvars_path );
     if ( g_out_flags & ORB_OUT_VCVARS )
         printf( ORB_INDENT "[orb vcvars] imported %d environment variables\n", n );
+
 #endif
 }
 

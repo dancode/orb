@@ -54,15 +54,16 @@ typedef struct
 // --- Internal helpers ---
 
 // Append a formatted string to a fixed-size field.
-// Reports overflow via printf so it's never a silent data loss.
+// Halts the process on overflow — a truncated compiler flag would produce
+// cryptic cl.exe errors that obscure the real cause.
 static void
 cc_field( char* dst, size_t dst_size, const char* fmt, ... )
 {
     size_t used = strlen( dst );
     if ( used >= dst_size - 1 )
     {
-        printf( ORB_INDENT "[orb error] cc_field overflow (capacity %zu)\n", dst_size );
-        return;
+        printf( ORB_INDENT "[orb error] cc_field overflow (capacity %zu) -- raise field size in compile_cmd_t\n", dst_size );
+        exit( 1 );
     }
     size_t  remaining = dst_size - used;
     va_list args;
@@ -70,7 +71,10 @@ cc_field( char* dst, size_t dst_size, const char* fmt, ... )
     int written = vsnprintf( dst + used, remaining, fmt, args );
     va_end( args );
     if ( written < 0 || ( size_t )written >= remaining )
-        printf( ORB_INDENT "[orb error] cc_field truncated (needed %d, had %zu)\n", written, remaining );
+    {
+        printf( ORB_INDENT "[orb error] cc_field truncated (needed %d, had %zu) -- raise field size in compile_cmd_t\n", written, remaining );
+        exit( 1 );
+    }
 }
 
 // Convenience wrapper around cc_field(): infers the destination capacity from

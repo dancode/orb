@@ -100,6 +100,42 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 #include "build_tool_exec.c"
 
 /*==============================================================================================
+    --- Target Table Validation ---
+
+    Checks every target in g_targets[] for slot-array overflow before any build
+    work begins. units/deps/tool_deps are null-terminated arrays of fixed size
+    TARGET_MAX_SLOTS; if a developer fills every slot, the null terminator is
+    missing and every loop that walks the array will read into the next field.
+    One early check here is cleaner than guarding every loop individually.
+==============================================================================================*/
+
+static bool
+validate_targets( void )
+{
+    bool ok = true;
+    for ( int i = 0; i < g_target_count; ++i )
+    {
+        const target_info_t* t = &g_targets[ i ];
+        if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ) {
+            printf( ORB_INDENT "[orb error] target '%s' units[] is full with no NULL terminator "
+                    "(raise TARGET_MAX_SLOTS or reduce unit count)\n", t->name );
+            ok = false;
+        }
+        if ( t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ) {
+            printf( ORB_INDENT "[orb error] target '%s' deps[] is full with no NULL terminator "
+                    "(raise TARGET_MAX_SLOTS or reduce dep count)\n", t->name );
+            ok = false;
+        }
+        if ( t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ) {
+            printf( ORB_INDENT "[orb error] target '%s' tool_deps[] is full with no NULL terminator "
+                    "(raise TARGET_MAX_SLOTS or reduce tool dep count)\n", t->name );
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+/*==============================================================================================
     --- Main Entry ---
                                 Recognized arguments: (all case insensitive)
 
@@ -216,6 +252,9 @@ main( int argc, char** argv )
         return 1;
     }
 
+    // --- Target Table Validation ---
+    if ( !validate_targets() ) return 1;
+
     // --- Command : CLEAN ---
     if ( should_clean )
     {
@@ -307,8 +346,6 @@ main( int argc, char** argv )
     // we're already inside a Developer Command Prompt (or VS-launched shell).
 
     build_setup_vc_env();
-
-
 
     // Dispatch:
     //  -file <path>       → compile one file with the target's full flag set, no link.
