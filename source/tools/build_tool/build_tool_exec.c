@@ -11,20 +11,20 @@
 // clang-format off
 
 /*==============================================================================================
-    -- Quiet Delete Helper -- 
     
-    Designed to keep the build_clean code readable and the terminal output tidy. 
-    
-        Ex: format a "del /q ... >nul 2>nul" command and run it silently.
-    
-    Appending >nul 2>nul to the shell command tells the Windows shell to discard 
-    both standard output and error messages.
+        Designed to keep the build_clean code readable and the terminal output tidy. 
+        
+            Ex: format a "del /q ... >nul 2>nul" command and run it silently.
+        
+        Appending >nul 2>nul to the shell command tells the Windows shell to discard 
+        both standard output and error messages.
 
-    It calls build_run_cmd_quiet, so even if the del command returns a "file not found" 
-    error code, the build tool doesn't log it.
-    
-    build_clean() invokes this for every artifact category it deletes.
-    e.g. (bin/<name>.lib, .dll, .exe, .pdb, .exp, .generated.{c,h}, ...); 
+        It calls build_run_cmd_quiet, so even if the del command returns a "file not found" 
+        error code, the build tool doesn't log it.
+        
+        build_clean() invokes this for every artifact category it deletes.
+        e.g. (bin/<name>.lib, .dll, .exe, .pdb, .exp, .generated.{c,h}, ...); 
+
 ==============================================================================================*/
 
 static void
@@ -120,17 +120,14 @@ build_clean( target_info_t* target )
     }
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+    
+        Compile all units for a target without running the link/archive step.
+        Called from the VS Ctrl+F7 path (-compile-only flag) via NMakeCompileFileCommandLine.
 
-/**
- * build_target_compile_only()
- *
- * Compile all unity units for a target without running the link/archive step.
- * Called from the VS Ctrl+F7 path (-compile-only flag) via NMakeCompileFileCommandLine.
- * For unity builds, "compile single file" is semantically "compile the whole unity TU
- * with no link" — there is no meaningful per-file granularity below the unity root.
- */
-bool
+==============================================================================================*/
+
+bool 
 build_target_compile_only( build_context_t* ctx, target_info_t* target )
 {
     char obj_dir[ BT_PATH_MAX ];
@@ -138,11 +135,12 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
     char gen_dir[ BT_PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
 
-    // Ensure intermediate directories exist; bin/ is not needed (no artifact produced).
-    char int_root[ BT_PATH_MAX ];
-    snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
+    // Ensure intermediate directories exist  (bin/ is not needed)
+
+    char int_dir[ BT_PATH_MAX ];
+    snprintf( int_dir, sizeof( int_dir ), "%s\\%s", g_build_dir, g_int_dir );
     ensure_dir( g_build_dir );
-    ensure_dir( int_root );
+    ensure_dir( int_dir );
     ensure_dir( gen_dir );
     ensure_dir( obj_dir );
 

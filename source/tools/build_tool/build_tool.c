@@ -1,25 +1,23 @@
 /*==============================================================================================
 
-    build_tool.c -- The "Boss" build orchestrator.
+    build_tool.c -- ORB build orchestrator.
 
-    This tool is the heart of ORB's custom build system. It replaces Makefiles /
-    CMake / MSBuild with a small C program that directly invokes the compiler
-    (cl.exe), linker (link.exe), and archiver (lib.exe), and that also generates
-    .sln/.vcxproj files so Visual Studio can attach a debugger and provide
-    IntelliSense without taking over the build itself.
+    Replaces Makefiles / CMake / MSBuild with a small C program that directly
+    invokes cl.exe, link.exe, and lib.exe. Also generates .sln/.vcxproj files so
+    Visual Studio can attach a debugger and provide IntelliSense without owning
+    the build itself.
 
     Unity build layout:
         This file #includes every other .c in the directory in dependency order.
-        The whole tool compiles in one cl.exe invocation. That keeps the
-        bootstrap script (bootstrap_build_tool.bat) to a single command line
-        and lets later files use static helpers declared in earlier files
-        without having to expose them in the header.
+        The whole tool compiles in one cl.exe invocation -- keeps the bootstrap
+        script to a single command line and lets later files call static helpers
+        from earlier files without header exposure.
 
-    Module roles (in the include order below):
+    Module roles (in include order):
         build_tool_utils.c   -- cmd_buf, mtime, per-target named-mutex lock.
-        build_tool_vcvars.c  -- VS env discovery + CreateProcess child spawn.
+        build_tool_vcvars.c  -- VS env discovery + one-time vcvars import.
         build_tool_cc.c      -- cl.exe / link.exe / lib.exe command emission.
-        build_tool_targets.c -- The actual g_targets[] / g_solutions[] data.
+        build_tool_targets.c -- g_targets[] / g_solutions[] data tables.
         build_tool_gen.c     -- .sln / .vcxproj / .filters generation.
         build_tool_sched.c   -- Topological worker-pool parallel scheduler.
         build_tool_exec.c    -- Build execution: artifact clean + build_target driver.
@@ -52,17 +50,16 @@
 /*==============================================================================================
     --- Project Constants ---
 
-    All build outputs land under <g_build_dir>/. The .sln/.vcxproj files also live
-    here (see build_tool_gen.c) so VS treats the directory as the project root for 
-    its IntelliSense and intermediate caches.
+    All build outputs land under <g_build_dir>/. The .sln/.vcxproj files live here
+    too so VS treats it as the project root for IntelliSense and intermediate caches.
 
-    REMEMBER: Update bootstrap_build_tool.bat if you change these!
+    NOTE: Update bootstrap_build_tool.bat if you change these paths.
 
 ==============================================================================================*/
 
-static const char* g_build_dir  = "build";          // Root for intermediate/generated files.
-static const char* g_int_dir    = "obj";            // Sub-folder for .obj files (per-target).
-static const char* g_gen_dir    = "generated";      // Sub-folder for reflection-generated .c/.h.
+static const char* g_build_dir  = "build";      // Root for intermediate/generated files.
+static const char* g_int_dir    = "obj";        // Sub-folder for .obj files (per-target).
+static const char* g_gen_dir    = "generated";  // Sub-folder for reflection-generated .c/.h.
 
 /*==============================================================================================
     --- Output Format ---
@@ -98,6 +95,7 @@ out_flags_t g_out_flags = ORB_OUT_DEFAULT;
 #include "build_tool_gen.c"
 #include "build_tool_sched.c"
 #include "build_tool_exec.c"
+#include "build_tool_test.c"
 
 /*==============================================================================================
     --- Startup Banner ---
@@ -109,18 +107,16 @@ static void
 print_startup_banner( const build_context_t* ctx )
 {
     // All modes share the format:  [orb <mode>] SUBJECT  [ <special> | modular | debug | msvc ]
-    // Each branch sets label/subject/special; props and the final printf are assembled once below.
-
-    // By default if a target isn't set we compile everything.
-    char target_upper[ 64 ] = "ALL"; 
+    // Each branch sets label/subject/special; the final printf is assembled once at the bottom.
+    char target_upper[ 64 ] = "ALL";
     if ( ctx->target_name ) 
         get_target_upper( ctx->target_name, target_upper, sizeof( target_upper ) );
 
     // base_name is the filename from -file with path stripped.
-    const char* base_name = ctx->file_path;
-    if ( base_name ) {
+    const char* file_name = ctx->file_path;
+    if ( file_name ) {
         for ( const char* p = ctx->file_path; *p; ++p )
-            if ( *p == '\\' || *p == '/' ) base_name = p + 1;
+            if ( *p == '\\' || *p == '/' ) file_name = p + 1;
     }
 
     const char* config_str   = ctx->config == CONFIG_DEBUG ? "debug" : "release";
@@ -142,7 +138,7 @@ print_startup_banner( const build_context_t* ctx )
         label   = "[orb single-file]";
         special = "file";
 
-        snprintf( subject, sizeof( subject ), "%s %s", target_upper, base_name );
+        snprintf( subject, sizeof( subject ), "%s %s", target_upper, file_name );
     }
     else
     {
@@ -160,8 +156,13 @@ print_startup_banner( const build_context_t* ctx )
     printf( ORB_BANNER "%s %s %s\n", label, subject, props );
 }
 
-/*============================================================================================*/
-/* Function to ensure our data is good inside the user targets and solutions array */
+/*==============================================================================================
+    --- validate_targets ---
+
+    Sanity-check the target and solution tables before any build work begins.
+    Catches slot-array overflows and unresolved solution-to-target name references.
+
+==============================================================================================*/
 
 static bool
 validate_targets( void )
@@ -236,9 +237,12 @@ validate_targets( void )
 int
 main( int argc, char** argv )
 {
-    // -- - Debug Arg Print ---    
-    // debug print args to file so we can read even if not debugging.
-    
+    // Inject debug args when BUILD_TOOL_DEBUG_OVERRIDE is set (see build_tool_test.c).
+    // No-op in Release and when the override flag is 0.
+    build_tool_debug_inject( &argc, &argv );
+
+    // --- Debug Arg Log ---
+
     if ( 0 )
     {
         FILE* log = fopen( "build_tool_log.txt", "a" );
@@ -251,11 +255,11 @@ main( int argc, char** argv )
         }
     }
 
-    // -- Build Tool Defaults -- 
+    // --- Build Tool Defaults ---
 
     build_context_t ctx = { 0 };
-    ctx.config   = CONFIG_DEBUG;        // default to debug; override with -config or -release.
-    ctx.compiler = COMPILE_MSVC;        // default to cl.exe; override with -clang.
+    ctx.config   = CONFIG_DEBUG;        // override with -config or -release.
+    ctx.compiler = COMPILE_MSVC;        // override with -clang.
 
     // --- Arg parsing ---
     
@@ -263,11 +267,10 @@ main( int argc, char** argv )
     bool  should_gen     = false;       // -gen: generate .sln/.vcxproj files and exit, no build.
     int   j_threads      = 0;           // 0 → auto-detect from CPU count.
 
-    // Order-independent; the loop just sets flags. Unknown args are silently ignored.
-    // NOTE: Hyphens are now mandatory for all flags. Dash-less legacy positional args are ignored.
+    // Order-independent flag scan. All flags require a leading hyphen; unknown args are ignored.
+
     for ( int i = 1; i < argc; ++i )
     {
-        // Simple flags that just set a bool or enum field. Case-insensitive for user-friendliness.
         if ( _stricmp( argv[ i ], "-clean"        ) == 0 ) should_clean = true;
         if ( _stricmp( argv[ i ], "-gen"          ) == 0 ) should_gen = true;
         if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 ) ctx.is_monolithic = true;
@@ -293,9 +296,8 @@ main( int argc, char** argv )
     }
 
     // --- Worker count ---
-    // Auto-pick = logical processor count, clamped to [1, 16]. The upper cap matches
-    // diminishing returns once we exceed the dep graph's critical-path width; more
-    // threads past that just trade memory for wall time wins that don't materialize.
+    // Default to logical processor count, clamped to [1, 16]. Beyond ~16, the
+    // dep-graph critical-path width limits further wall-time gains.
     if ( j_threads <= 0 )
     {
         SYSTEM_INFO si; GetSystemInfo( &si );
@@ -305,8 +307,7 @@ main( int argc, char** argv )
     }
 
     // --- Arg Validation ---
-    // -file and -compile-only are mutually exclusive: -file compiles one specific file (CLI only),
-    // -compile-only compiles the whole target with no link step (VS Ctrl+F7). They can never combine.
+    // -file (single file, no link) and -compile-only (all units, no link) are mutually exclusive.
     if ( ctx.file_path && ctx.compile_only )
     {
         printf( ORB_INDENT "[orb error] -file and -compile-only are mutually exclusive\n" );
@@ -360,18 +361,13 @@ main( int argc, char** argv )
 
     build_setup_vc_env();
 
-    /* --- Build Tool Dispatch ---  
-
-      -file <path>  |   Compile one file with the target's full flag set, no link.
-                        CLI tool for targeted error checking; not used by VS.
-      -no-deps      |   serial in-process build of exactly one target.
-                        VS uses this so MSBuild's scheduler stays the sole
-                          authority on solution-level parallelism.
-      -target X     |   parallel scheduler over X's dependency closure.
-      no -target    |   parallel scheduler over every registered target.
-
-    Uppercase target name used in FAILED/completed output lines.
-    */
+    // --- Build Dispatch ---
+    //   -file <path>  compile one file with the target's full flag set, no link.
+    //   -compile-only compile all unity units for the target, no link (VS Ctrl+F7).
+    //   -no-deps      serial single-target build; VS uses this so MSBuild stays
+    //                 the sole authority on solution-level dep ordering.
+    //   -target X     parallel scheduler over X's dependency closure.
+    //   (none)        parallel scheduler over all registered targets.
 
     char target_upper[ 64 ] = "ALL";
     if ( ctx.target_name ) get_target_upper( ctx.target_name, target_upper, sizeof( target_upper ) );
@@ -380,7 +376,10 @@ main( int argc, char** argv )
     if ( ctx.target_name )
     {
         target = find_target_icase( ctx.target_name );
-        if ( !target ) { printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name ); return 1; }
+        if ( !target ) { 
+            printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name ); 
+            return 1; 
+        }
     }
 
     if ( ctx.compile_only )

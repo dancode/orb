@@ -34,9 +34,13 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
     // Early-out if a prior append already filled the buffer; flagging
     // truncated again is harmless and lets the caller bail without
     // continuing to format unused arguments.
-    if ( b->size >= CMD_BUF_MAX ) { b->truncated = true; return; }
+    if ( b->size >= CMD_BUF_MAX )
+    {
+        b->truncated = true;
+        return;
+    }
 
-    size_t remaining = CMD_BUF_MAX - b->size;
+    size_t  remaining = CMD_BUF_MAX - b->size;
 
     va_list args;
     va_start( args, fmt );
@@ -46,16 +50,20 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
     // vsnprintf returns < 0 on encoding errors. We can't tell how much (if
     // any) was written, so the safe move is to treat the buffer as toast
     // and force a response-file spill on the next caller check.
-    if ( written < 0 ) { b->truncated = true; return; }
+    if ( written < 0 )
+    {
+        b->truncated = true;
+        return;
+    }
 
     if ( ( size_t )written >= remaining )
     {
         // Did not fit. Mark truncated and pin size at the null-terminator
         // so subsequent reads see a valid C string and so the "remaining"
         // computation above can never underflow on the next append.
-        b->size                  = CMD_BUF_MAX - 1;
+        b->size                   = CMD_BUF_MAX - 1;
         b->buf[ CMD_BUF_MAX - 1 ] = '\0';
-        b->truncated             = true;
+        b->truncated              = true;
     }
     else
     {
@@ -81,7 +89,8 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
 {
     // Fast path: small command, fits comfortably under the shell limit AND
     // not flagged truncated → leave the buffer alone, no rsp file needed.
-    if ( !b->truncated && b->size < CMD_RSP_THRESHOLD ) return false;
+    if ( !b->truncated && b->size < CMD_RSP_THRESHOLD )
+        return false;
 
     // We need to split the buffer into "<exe>" + "<everything else>" so we
     // can write the args to a .rsp file and rebuild the buffer as
@@ -93,13 +102,15 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
     //          args points here when the loop below stops.
     const char* args = b->buf;
     while ( *args && *args != ' ' && *args != '\t' ) ++args;
-    if ( !*args ) return false;   // Single-token buffer; no args to spill.
+    if ( !*args )
+        return false;    // Single-token buffer; no args to spill.
 
     // Range b->buf .. args is the exe. Validate the length is plausible —
     // anything 64+ bytes is almost certainly a malformed buffer, in which
     // case bailing out is safer than scribbling.
     size_t exe_len = ( size_t )( args - b->buf );
-    if ( exe_len == 0 || exe_len >= 64 ) return false;
+    if ( exe_len == 0 || exe_len >= 64 )
+        return false;
 
     // Copy the exe into a local buffer so we can safely use it after we
     // reset b->buf below. memcpy + manual null because b->buf is not
@@ -134,37 +145,38 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
     return true;
 }
 
-/*============================================================================================*/
-// --- File System Helpers ---
+/*==============================================================================================
 
-/**
- * build_get_mtime()
- *
- * Returns the last modification time of `path`, or 0 if the file is missing
- * or unreadable. 0 is a deliberately unambiguous "never modified" sentinel
- * — using `(out_mtime != 0)` as the "artifact exists" predicate lets the
- * up-to-date check in build_target collapse missing-output and stale-output
- * into a single rebuild branch.
- *
- * Resolution is 1 second (NTFS) or coarser; back-to-back rebuilds within
- * the same second can therefore falsely look "up to date". Not addressed
- * here; production projects tend to be slow enough that this never bites.
- */
+        Returns the last modification time of a file, or 0 if the file is missing
+        or unreadable. Used for the incremental rebuild check in build_target.
+
+        Using (out_mtime != 0) as the "artifact exists" predicate lets the
+        up-to-date check in build_target collapse missing-output and stale-output
+        into a single rebuild branch.
+        
+        Resolution is 1 second (NTFS) or coarser; back-to-back rebuilds within
+        the same second can therefore falsely look "up to date". Not addressed
+        here; production projects tend to be slow enough that this never bites.
+
+==============================================================================================*/
+
 __time64_t
 build_get_mtime( const char* path )
 {
     struct __stat64 s;
-    if ( _stat64( path, &s ) == 0 ) return s.st_mtime;
+    if ( _stat64( path, &s ) == 0 )
+        return s.st_mtime;
     return 0;
 }
 
-/**
- * strip_eol()
- *
- * Trim trailing CR/LF (and any combination thereof) in place. fgets() preserves
- * the newline it consumed; callers reading paths or config lines back out need
- * a clean string for strcmp / _stat64 / etc.
- */
+/*==============================================================================================
+
+        Trim trailing CR/LF (and any combination thereof) in place. fgets() preserves
+        the newline it consumed; callers reading paths or config lines back out need
+        a clean string for strcmp / _stat64 / etc.
+
+==============================================================================================*/
+
 static void
 strip_eol( char* s )
 {
@@ -172,24 +184,25 @@ strip_eol( char* s )
     while ( l > 0 && ( s[ l - 1 ] == '\n' || s[ l - 1 ] == '\r' ) ) s[ --l ] = '\0';
 }
 
-/**
- * ensure_dir()
- *
- * Idempotent "mkdir if missing" used by every code path that needs to write
- * into bin/, the build dir, an obj dir, or the generated dir. _access() probes
- * are cheap, so the common (already-exists) case skips the system() spawn.
- */
+/*==============================================================================================
+
+        Make a directory if it is missing. Used for intermediate directories.
+
+==============================================================================================*/
+
 static void
 ensure_dir( const char* dir )
 {
-#if defined( _WIN32 )
-    if ( _access( dir, 0 ) == 0 ) return;
+    // Fast path: directory already exists, no mkdir needed. _access() is a thin
+    // libc wrapper around the cheap Win32 GetFileAttributes call, so this check 
+    // is effectively free.
+
+    if ( _access( dir, 0 ) == 0 )
+        return;
+
     char cmd[ BT_PATH_MAX ];
     snprintf( cmd, sizeof( cmd ), "mkdir %s >nul 2>nul", dir );
     system( cmd );
-#else
-#error "build_tool only supports Windows (MSVC)"
-#endif
 }
 
 /*============================================================================================*/
@@ -209,19 +222,16 @@ ensure_dir( const char* dir )
 void*
 build_lock_target( const char* target_name )
 {
-#if defined( _WIN32 )
     char name[ 256 ];
     snprintf( name, sizeof( name ), "orb_build_tool_%s", target_name );
 
     HANDLE h = CreateMutexA( NULL, FALSE, name );
-    if ( !h ) return NULL;
+    if ( !h )
+        return NULL;
 
     WaitForSingleObject( h, INFINITE );
     return ( void* )h;
-#else
-    ( void )target_name;
-    return NULL;
-#endif
+
 }
 
 /**
@@ -233,7 +243,8 @@ void
 build_unlock_target( void* lock )
 {
 #if defined( _WIN32 )
-    if ( !lock ) return;
+    if ( !lock )
+        return;
     ReleaseMutex( ( HANDLE )lock );
     CloseHandle( ( HANDLE )lock );
 #else
@@ -250,7 +261,8 @@ static target_info_t*
 find_target( const char* name )
 {
     for ( int i = 0; i < g_target_count; ++i )
-        if ( strcmp( g_targets[ i ].name, name ) == 0 ) return &g_targets[ i ];
+        if ( strcmp( g_targets[ i ].name, name ) == 0 )
+            return &g_targets[ i ];
     return NULL;
 }
 
@@ -259,7 +271,8 @@ static target_info_t*
 find_target_icase( const char* name )
 {
     for ( int i = 0; i < g_target_count; ++i )
-        if ( _stricmp( g_targets[ i ].name, name ) == 0 ) return &g_targets[ i ];
+        if ( _stricmp( g_targets[ i ].name, name ) == 0 )
+            return &g_targets[ i ];
     return NULL;
 }
 
@@ -268,7 +281,7 @@ static target_info_t*
 find_reflect_tool( void )
 {
     for ( int i = 0; i < g_target_count; ++i )
-        if ( g_targets[ i ].is_reflect_tool ) return &g_targets[ i ];
+        if ( g_targets[ i ].is_reflect_tool )
+            return &g_targets[ i ];
     return NULL;
 }
-
