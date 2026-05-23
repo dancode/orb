@@ -1,6 +1,6 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
-    rs_gen_attr.c - attribute argument parser for RS_STRUCT / RS_PROP annotation args
+    reflect_tool_attr.c - attribute argument parser for RS_STRUCT / RS_PROP annotation args
 
     Grammar (comma-separated entries):
 
@@ -10,11 +10,11 @@
     Continuation: for `name=v1, v2, v3` the v2, v3 are emitted as repeated entries under
     the same `name`, matching rs_attrib multi-value runs (e.g. `range=0, 100`).
 
-    All functions are static; compiled only as part of the rs_gen unity build.
+    All functions are static; compiled only as part of the reflect_tool unity build.
 
 ==============================================================================================*/
 
-#include "rs_gen_internal.h"
+#include "reflect_tool_internal.h"
 
 /*----------------------------------------------------------------------------------------------
     Literal classification
@@ -25,7 +25,7 @@ classify_literal( const char* s )
 {
     /* Starts with double-quote? It's a string. */
     if ( s[ 0 ] == '"' )
-        return RG_ATTR_STRING;
+        return RT_ATTR_STRING;
 
     int has_digit = 0;
     int has_dot   = 0;
@@ -44,15 +44,15 @@ classify_literal( const char* s )
         else if ( c == 'f' || c == 'F' )
             has_dot = 1; /* Treat 'f' suffix (e.g. 1.0f) as a float indicator. */
         else
-            return RG_ATTR_TAG; /* Found non-numeric character; treat as identifier/tag. */
+            return RT_ATTR_TAG; /* Found non-numeric character; treat as identifier/tag. */
     }
 
     /* If it had no digits, it's not a number (e.g. just a dot or sign). */
     if ( !has_digit )
-        return RG_ATTR_TAG;
+        return RT_ATTR_TAG;
 
     /* Distinction based on presence of decimal or 'f' suffix. */
-    return has_dot ? RG_ATTR_FLOAT : RG_ATTR_INT;
+    return has_dot ? RT_ATTR_FLOAT : RT_ATTR_INT;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -62,7 +62,7 @@ classify_literal( const char* s )
 static void
 unquote_string( char* s )
 {
-    int n = rg_str_len( s );
+    int n = str_len( s );
     if ( n >= 2 && s[ 0 ] == '"' && s[ n - 1 ] == '"' )
     {
         memmove( s, s + 1, ( size_t )( n - 2 ) );
@@ -77,7 +77,7 @@ unquote_string( char* s )
     For strings like: `name = "MyStruct", flags = 1, range = 0, 100`
 
     This function processes the text inside the parentheses of macros like RS_PROP(...).
-    It breaks the string into a list of rg_attr_t structs. It handles:
+    It breaks the string into a list of attr_t structs. It handles:
 
         1. key = value pairs    (e.g. flags = 1).
         2. bare tags            (e.g. hidden).
@@ -85,15 +85,15 @@ unquote_string( char* s )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-parse_attr_args( const char* args, rg_attr_t* out, int max, int* out_count )
+parse_attr_args( const char* args, attr_t* out, int max, int* out_count )
 {
     *out_count = 0;
     if ( !args || !*args )
         return;
 
-    char current_name[ RG_MAX_NAME ] = { 0 };   // Keeps track of the key for multi-value args.
+    char current_name[ RT_MAX_NAME ] = { 0 };   // Keeps track of the key for multi-value args.
     int  in_value = 0;                          // 0 if parsing key/tag, 1 if parsing value.
-    char token[ RG_MAX_NAME ] = { 0 };          // Accumulates characters for the current fragment.
+    char token[ RT_MAX_NAME ] = { 0 };          // Accumulates characters for the current fragment.
     int  token_length = 0;                      // token length
     int  depth  = 0;                            // Tracks nesting level of brackets/parens.
 
@@ -115,11 +115,11 @@ parse_attr_args( const char* args, rg_attr_t* out, int max, int* out_count )
                     /* No '=' seen yet; this is a "Tag" attribute (e.g. `read_only`). */
                     if ( *out_count < max )
                     {
-                        rg_attr_t* a = &out[ ( *out_count )++ ];
-                        rg_str_copy( a->name, token, RG_MAX_NAME );
-                        a->kind       = RG_ATTR_TAG;
+                        attr_t* a = &out[ ( *out_count )++ ];
+                        str_copy( a->name, token, RT_MAX_NAME );
+                        a->kind       = RT_ATTR_TAG;
                         a->value[ 0 ] = '\0';
-                        rg_str_copy( current_name, token, RG_MAX_NAME );
+                        str_copy( current_name, token, RT_MAX_NAME );
                     }
                 }
                 else
@@ -127,12 +127,12 @@ parse_attr_args( const char* args, rg_attr_t* out, int max, int* out_count )
                     /* We are after an '='; this token is the value. */
                     if ( *out_count < max )
                     {
-                        rg_attr_t* a = &out[ ( *out_count )++ ];
+                        attr_t* a = &out[ ( *out_count )++ ];
                         /* Reuse the name found before the '='. */
-                        rg_str_copy( a->name, current_name, RG_MAX_NAME );
+                        str_copy( a->name, current_name, RT_MAX_NAME );
                         a->kind = classify_literal( token );
-                        rg_str_copy( a->value, token, RG_MAX_NAME );
-                        if ( a->kind == RG_ATTR_STRING )
+                        str_copy( a->value, token, RT_MAX_NAME );
+                        if ( a->kind == RT_ATTR_STRING )
                             unquote_string( a->value );
                     }
                 }
@@ -156,7 +156,7 @@ parse_attr_args( const char* args, rg_attr_t* out, int max, int* out_count )
             token[ token_length ] = '\0';
             trim( token );
             /* The token we just finished is the name of the attribute. */
-            rg_str_copy( current_name, token, RG_MAX_NAME );
+            str_copy( current_name, token, RT_MAX_NAME );
             in_value   = 1;
             token_length = 0;
             token[ 0 ] = '\0';
@@ -173,7 +173,7 @@ parse_attr_args( const char* args, rg_attr_t* out, int max, int* out_count )
         /* Special handling for quoted strings to ensure commas inside quotes are ignored. */
         if ( c == '"' )
         {
-            if ( token_length < RG_MAX_NAME - 1 )
+            if ( token_length < RT_MAX_NAME - 1 )
                 token[ token_length++ ] = c;
             p++;
             while ( *p && *p != '"' )
@@ -181,17 +181,17 @@ parse_attr_args( const char* args, rg_attr_t* out, int max, int* out_count )
                 /* Handle escaped quotes: \" */
                 if ( *p == '\\' && p[ 1 ] )
                 {
-                    if ( token_length < RG_MAX_NAME - 1 )
+                    if ( token_length < RT_MAX_NAME - 1 )
                         token[ token_length++ ] = *p;
                     p++;
                 }
-                if ( token_length < RG_MAX_NAME - 1 )
+                if ( token_length < RT_MAX_NAME - 1 )
                     token[ token_length++ ] = *p;
                 p++;
             }
             if ( *p == '"' )
             {
-                if ( token_length < RG_MAX_NAME - 1 )
+                if ( token_length < RT_MAX_NAME - 1 )
                     token[ token_length++ ] = *p;
                 p++;
             }
@@ -199,7 +199,7 @@ parse_attr_args( const char* args, rg_attr_t* out, int max, int* out_count )
         }
 
         /* Normal character accumulation. */
-        if ( token_length < RG_MAX_NAME - 1 )
+        if ( token_length < RT_MAX_NAME - 1 )
             token[ token_length++ ] = c;
         p++;
     }

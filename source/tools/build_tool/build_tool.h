@@ -180,10 +180,10 @@ typedef struct target_info_s
 
     // Tool Dependencies: Standalone utilities that must exist to build this target.
     // These are built recursively but NOT linked into the final binary.
-    // Ex: any target with 'has_reflect' depends on build_reflect.exe as a tool dep.
+    // Ex: any target with 'has_reflect' depends on reflect_tool.exe as a tool dep.
     const char*     tool_deps[ TARGET_MAX_SLOTS ];
 
-    // Reflection metadata: if true, build_reflect.exe is invoked on root_dir
+    // Reflection metadata: if true, reflect_tool.exe is invoked on root_dir
     // before compilation. Generated files land in <build_dir>/generated/ and
     // are appended to the cl.exe command line for this target.
     bool            has_reflect;
@@ -192,7 +192,7 @@ typedef struct target_info_s
     // files are named after the target (e.g. "core" -> "core.generated.c/h").
     const char*     reflect_name;
 
-    // If true, this is a build-time tool executable (e.g. build_reflect).
+    // If true, this is a build-time tool executable (e.g. reflect_tool).
     // Tool targets survive global clean and are always rebuilt by our own
     // dep resolution — never delegated to VS ProjectDependencies.
     bool            is_tool;
@@ -322,7 +322,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | \
                           ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
-#define OBB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS)
+#define OBB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS | ORB_OUT_REFLECT)
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )

@@ -256,10 +256,14 @@ print_compile_output( FILE* out, const char* raw )
     return !first;
 }
 
+#define UNUSED(x) (void)(x)
+
 // Print compile command sections to `out` according to g_out_flags.
 static void
 cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const char* config )
 {
+    UNUSED( config );
+
     if ( g_out_flags & ORB_OUT_SUMMARY_COMPILE ) {
         fprintf( out, ORB_INDENT "[orb compiling] %s\n", target->name );
     }
@@ -405,7 +409,7 @@ print_raw_cmd( FILE* out, const char* cmd )
 // --- MSVC output classification ---
 
 // Returns true for the bare source-file banner cl.exe prints once per compiled
-// translation unit (e.g. it prints "rs_gen.c" on its own line before emitting
+// translation unit (e.g. it prints "reflect_tool.c" on its own line before emitting
 // any diagnostics for that TU). We filter these out of our log dumps because
 // the orb build log already shows the source list in the [orb compiling] section
 // — leaving cl's echo in just creates duplicate noise.
@@ -559,7 +563,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
-        // Reflection-generated TU (written by build_reflect.exe in step 5
+        // Reflection-generated TU (written by reflect_tool.exe in step 5
         // of build_target). Same absolute-path treatment as the user units.
         if ( target->has_reflect )
         {

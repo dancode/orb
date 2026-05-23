@@ -1,9 +1,9 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
-    rs_gen.c - Reflection code generation tool (unity build root)
+    reflect_tool.c - Reflection code generation tool (unity build root)
 
     Usage:
-        build_reflect <source_dir> <output_dir> <module_name>
+        reflect_tool <source_dir> <output_dir> <module_name>
 
     Scans <source_dir> for RS_STRUCT / RS_ENUM / RS_BITSET annotated headers and
     writes <output_dir>/<module_name>.generated.h/c with rs_ registration stubs.
@@ -16,26 +16,28 @@
 
     NOTE: This tool is standalone C11. It does NOT include orb.h or any engine headers.
 
+    Example: F:\orb\source\engine\core F:\orb\build\generated core
+
 ==============================================================================================*/
 #include "orb.h"
-#include "rs_gen_internal.h"
+#include "reflect_tool_internal.h"
 
-#include "rs_gen_std.c"
-#include "rs_gen_platform.c"
-#include "rs_gen_scan.c"
-#include "rs_gen_lex.c"
-#include "rs_gen_attr.c"
-#include "rs_gen_parse.c"
-#include "rs_gen_output.c"
+#include "reflect_tool_std.c"
+#include "reflect_tool_platform.c"
+#include "reflect_tool_scan.c"
+#include "reflect_tool_lex.c"
+#include "reflect_tool_attr.c"
+#include "reflect_tool_parse.c"
+#include "reflect_tool_output.c"
 
 /*----------------------------------------------------------------------------------------------
-    Debug overrides - used when running build_reflect directly from the IDE with no args.
-    Set RG_DEBUG_MODULE and RG_DEBUG_SOURCE_SUB to the module you want to step through.
-    Paths are resolved relative to the executable directory (e.g. build/bin/build_reflect.exe).
+    Debug overrides - used when running reflect_tool directly from the IDE with no args.
+    Set RT_DEBUG_MODULE and RT_DEBUG_SOURCE_SUB to the module you want to step through.
+    Paths are resolved relative to the executable directory (e.g. build/bin/reflect_tool.exe).
 ----------------------------------------------------------------------------------------------*/
 
-#define RG_DEBUG_MODULE     "engine_core"
-#define RG_DEBUG_SOURCE_SUB "source/engine/core"
+#define RT_DEBUG_MODULE     "core"
+#define RT_DEBUG_SOURCE_SUB "source/engine/core"
 
 /*----------------------------------------------------------------------------------------------
     Entry point
@@ -49,14 +51,14 @@ main( int argc, char** argv )
     const char* module_name;
 
     // Storage for debug paths - lives for the duration of main
-    char dbg_src[ RG_MAX_PATH ];
-    char dbg_out[ RG_MAX_PATH ];
+    char dbg_src[ RT_MAX_PATH ];
+    char dbg_out[ RT_MAX_PATH ];
 
     if ( argc < 4 )
     {
         if ( RELEASE )
         {
-            fprintf( stderr, "usage: build_reflect <source_dir> <output_dir> <module_name>\n" );
+            fprintf( stderr, "usage: reflect_tool <source_dir> <output_dir> <module_name>\n" );
             return 1;
         }
         else
@@ -65,20 +67,20 @@ main( int argc, char** argv )
             // exe lives at  <root>/build/bin/  so:
             //   source  ->  <exedir>/../../<source_sub>
             //   output  ->  <exedir>/../generated
-            char exe_dir[ RG_MAX_PATH ];
-            rg_platform_exe_dir( exe_dir, RG_MAX_PATH );
+            char exe_dir[ RT_MAX_PATH ];
+            platform_exe_dir( exe_dir, RT_MAX_PATH );
 
-            rg_str_copy( dbg_src, exe_dir, RG_MAX_PATH );
-            rg_str_cat( dbg_src, "/../../" RG_DEBUG_SOURCE_SUB, RG_MAX_PATH );
+            str_copy( dbg_src, exe_dir, RT_MAX_PATH );
+            str_cat( dbg_src, "/../" RT_DEBUG_SOURCE_SUB, RT_MAX_PATH );
 
-            rg_str_copy( dbg_out, exe_dir, RG_MAX_PATH );
-            rg_str_cat( dbg_out, "/../generated", RG_MAX_PATH );
+            str_copy( dbg_out, exe_dir, RT_MAX_PATH );
+            str_cat( dbg_out, "/../build/generated", RT_MAX_PATH );
 
             source_dir  = dbg_src;
             output_dir  = dbg_out;
-            module_name = RG_DEBUG_MODULE;
+            module_name = RT_DEBUG_MODULE;
 
-            printf( "[build_reflect] no args -- debug: %s\n  src: %s\n  out: %s\n", module_name, source_dir,
+            printf( "[reflect_tool] no args -- debug: %s\n  src: %s\n  out: %s\n", module_name, source_dir,
                     output_dir );
         }
     }
@@ -89,26 +91,26 @@ main( int argc, char** argv )
         module_name = argv[ 3 ];
     }
 
-    rg_platform_mkdir( output_dir );
+    platform_mkdir( output_dir );
 
     /* Parse data is large (worst-case ~12MB); keep it out of the stack. */
 
-    static rg_file_list_t  files;
-    static rg_parse_data_t data;
+    static file_list_t  files;
+    static parse_data_t data;
     memset( &files, 0, sizeof files );
     memset( &data, 0, sizeof data );
 
     /* Scan the source directory for files */
 
-    rg_scan( source_dir, &files );
+    scan( source_dir, &files );
 
     /* Parse each file for RS_STRUCT / RS_ENUM / RS_BITSET declarations and build the AST. */
 
-    rg_parse( &files, &data );
+    parse( &files, &data );
 
     /* Generate the .h/.c files with rs_ registration code. */
 
-    if ( rg_output( output_dir, module_name, &data ) == false )
+    if ( output( output_dir, module_name, &data ) == false )
     {
         return 1;
     }
@@ -116,10 +118,10 @@ main( int argc, char** argv )
     /* Show results and exit. In release, this is the only output on success. */
 
     if ( data.module_api.has_module )
-        printf( "[build_reflect] %s: %d struct(s), %d enum(s), module API: %d fn(s)\n",
+        printf( "[reflect_tool] %s: %d struct(s), %d enum(s), module API: %d fn(s)\n",
                 module_name, data.struct_count, data.enum_count, data.module_api.func_count );
     else
-        printf( "[build_reflect] %s: %d struct(s), %d enum(s)\n",
+        printf( "[reflect_tool] %s: %d struct(s), %d enum(s)\n",
                 module_name, data.struct_count, data.enum_count );
 
     return 0; /* Success */

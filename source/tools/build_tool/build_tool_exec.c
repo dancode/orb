@@ -52,7 +52,7 @@ del_q( const char* fmt, ... )
 
     Global (target == NULL): wipes all intermediates and artifacts. 
 
-    Skips "is_tool" executables (build_reflect, build_tool) so tools survive a 
+    Skips "is_tool" executables (reflect_tool, build_tool) so tools survive a
     full clean — they are rebuilt on demand by our dep resolution, not by VS, 
     so deleting them would leave no path to recreate them.
 
@@ -108,7 +108,7 @@ build_clean( target_info_t* target )
         build_run_cmd_quiet( "del /s /q bin\\*.exp >nul 2>nul" );
 
         // Delete executables only for non-tool targets. is_tool executables
-        // (build_reflect, build_tool) are rebuilt by our dep resolution and
+        // (reflect_tool, build_tool) are rebuilt by our dep resolution and
         // have no VS project to rebuild them after a clean, so leave them.
         for ( int i = 0; i < g_target_count; ++i )
         {
@@ -437,7 +437,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // --- 5. Reflection ---
     //
     // Generate the rs_-system codegen for targets that opt in via
-    // has_reflect=true. build_reflect.exe scans root_dir for annotated
+    // has_reflect=true. reflect_tool.exe scans root_dir for annotated
     // types and writes <gen_dir>/<rname>.generated.{c,h}; the
     // generated .c is then appended to the compile step's input list.
     // reflect_name overrides the stem; falls back to target->name when NULL.

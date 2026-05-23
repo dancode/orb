@@ -2,10 +2,10 @@
 
 #include "orb.h"
 #include "engine/rs/rs_import.h"
-#include "engine_core.generated.h"
+#include "core.generated.h"
 
 void
-engine_core_rs_register( const rs_reg_api_t* api )
+core_rs_register( const rs_reg_api_t* api )
 {
     UNUSED( api );
 }

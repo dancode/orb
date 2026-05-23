@@ -265,7 +265,7 @@ endfunction()
 
 # target_add_reflect_gen( TARGET_NAME SOURCE_DIR MODULE_NAME )
 #
-#   Wires build_reflect as a pre-compile step for TARGET_NAME. Generated files
+#   Wires reflect_tool as a pre-compile step for TARGET_NAME. Generated files
 #   land in ${CMAKE_BINARY_DIR}/generated/ and are added as sources so the IDE
 #   shows them and MSBuild rebuilds when headers change.
 
@@ -282,12 +282,12 @@ function( target_add_reflect_gen TARGET_NAME SOURCE_DIR MODULE_NAME )
 
     add_custom_command(
         OUTPUT  "${GEN_H}" "${GEN_C}" "${GEN_INC}"
-        COMMAND $<TARGET_FILE:build_reflect>
+        COMMAND $<TARGET_FILE:reflect_tool>
                 "${CMAKE_SOURCE_DIR}/${SOURCE_DIR}"
                 "${GEN_DIR}"
                 "${MODULE_NAME}"
-        DEPENDS build_reflect ${RS_HEADERS} ${RS_SOURCES}
-        COMMENT "[build_reflect] generating reflection for ${MODULE_NAME}"
+        DEPENDS reflect_tool ${RS_HEADERS} ${RS_SOURCES}
+        COMMENT "[reflect_tool] generating reflection for ${MODULE_NAME}"
         VERBATIM
     )
 
@@ -306,24 +306,24 @@ endfunction()
 # ------------------------------------------------------------------------------
 # 10 TOOLS
 #
-# Declared before all other targets: build_reflect is a pre-build dependency
+# Declared before all other targets: reflect_tool is a pre-build dependency
 # for any target that calls target_add_reflect_gen.
 # ------------------------------------------------------------------------------
 
-set( BUILD_REFLECT_ROOT  "${CMAKE_SOURCE_DIR}/source/tools/rs_gen" )
-set( BUILD_REFLECT_UNITY "${BUILD_REFLECT_ROOT}/rs_gen.c" )
+set( REFLECT_TOOL_ROOT  "${CMAKE_SOURCE_DIR}/source/tools/reflect_tool" )
+set( REFLECT_TOOL_UNITY "${REFLECT_TOOL_ROOT}/reflect_tool.c" )
 
-file( GLOB_RECURSE BUILD_REFLECT_FILES
-    "${BUILD_REFLECT_ROOT}/*.c"
-    "${BUILD_REFLECT_ROOT}/*.h"
+file( GLOB_RECURSE REFLECT_TOOL_FILES
+    "${REFLECT_TOOL_ROOT}/*.c"
+    "${REFLECT_TOOL_ROOT}/*.h"
 )
 
-set_source_files_properties( ${BUILD_REFLECT_FILES}   PROPERTIES HEADER_FILE_ONLY ON  )
-set_source_files_properties( "${BUILD_REFLECT_UNITY}" PROPERTIES HEADER_FILE_ONLY OFF )
+set_source_files_properties( ${REFLECT_TOOL_FILES}   PROPERTIES HEADER_FILE_ONLY ON  )
+set_source_files_properties( "${REFLECT_TOOL_UNITY}" PROPERTIES HEADER_FILE_ONLY OFF )
 
-add_executable( build_reflect ${BUILD_REFLECT_FILES} )
-set_target_properties( build_reflect PROPERTIES FOLDER "10_Tools" )
-source_group( TREE "${BUILD_REFLECT_ROOT}" FILES ${BUILD_REFLECT_FILES} )
+add_executable( reflect_tool ${REFLECT_TOOL_FILES} )
+set_target_properties( reflect_tool PROPERTIES FOLDER "10_Tools" )
+source_group( TREE "${REFLECT_TOOL_ROOT}" FILES ${REFLECT_TOOL_FILES} )
 
 # ------------------------------------------------------------------------------
 # 00 ROOT

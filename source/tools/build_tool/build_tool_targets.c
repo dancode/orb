@@ -73,7 +73,7 @@ target_info_t g_targets[] = {
      },
 
     // Core Engine Services (Logging, Memory Arenas).
-    // This target requires build_reflect.exe to run before it can compile.
+    // This target requires reflect_tool.exe to run before it can compile.
     {
      .name        = "core",
      .type        = TARGET_STATIC_LIB,
@@ -126,11 +126,11 @@ target_info_t g_targets[] = {
 
     // The reflection generator. Scans source and writes generated .c/.h files.
     {
-     .name            = "build_reflect",
+     .name            = "reflect_tool",
      .type            = TARGET_EXECUTABLE,
-     .root_dir        = "source/tools/rs_gen",
+     .root_dir        = "source/tools/reflect_tool",
      .sln_folder      = "08_TOOL",
-     .units           = { "rs_gen.c" },
+     .units           = { "reflect_tool.c" },
      .deps            = {},
      .is_tool         = true,
      .is_reflect_tool = true,
@@ -148,7 +148,7 @@ static const char* g_sln_main_targets[] = { "base",           "sys", "rs", "mod"
                                             "sb_base_custom", NULL };
 
 // Standalone build tools workspace. For modifying the build system itself.
-static const char* g_sln_tools_targets[] = { "build_tool", "build_reflect", NULL };
+static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL };
 
 // Map solutions to their target lists and navigation scope.
 solution_info_t g_solutions[] = {

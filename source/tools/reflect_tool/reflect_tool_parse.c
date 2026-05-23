@@ -1,9 +1,9 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
-    rs_gen_parse.c - field/body parsers and top-level file dispatcher
+    reflect_tool_parse.c - field/body parsers and top-level file dispatcher
 
     Hand-written recursive-descent declarator parser. No regex, no external libs.
-    Lexer helpers live in rs_gen_lex.c; attribute parsing lives in rs_gen_attr.c.
+    Lexer helpers live in reflect_tool_lex.c; attribute parsing lives in reflect_tool_attr.c.
 
     Field declarations supported (one declarator per RS_PROP):
 
@@ -21,15 +21,15 @@
 
 ==============================================================================================*/
 
-#include "rs_gen_internal.h"
+#include "reflect_tool_internal.h"
 
 /* mirror of rs_mods_t bit encoding (kept local so the tool has zero engine deps) */
 
-#define RG_MOD_NONE        0x00
-#define RG_MOD_PTR         0x01
-#define RG_MOD_ARRAY       0x02
-#define RG_MOD_CONST       0x08   /* const on the pointer itself (T* const) */
-#define RG_MOD_CONST_BASE  0x10   /* const on the base type (const T, const T*) */
+#define RT_MOD_NONE        0x00
+#define RT_MOD_PTR         0x01
+#define RT_MOD_ARRAY       0x02
+#define RT_MOD_CONST       0x08   /* const on the pointer itself (T* const) */
+#define RT_MOD_CONST_BASE  0x10   /* const on the base type (const T, const T*) */
 
 // clang-format off
 /*----------------------------------------------------------------------------------------------
@@ -40,12 +40,12 @@
    Stops at the terminating ';'. Returns position after ';' (or '\0'). */
 
 static const char*
-parse_field_decl( const char* p, rg_decl_field_t* out )
+parse_field_decl( const char* p, decl_field_t* out )
 {
     int      base_const                = 0;
-    char     base_type[ RG_MAX_NAME ]  = { 0 };
+    char     base_type[ RT_MAX_NAME ]  = { 0 };
     int      have_base                 = 0;
-    char     field_name[ RG_MAX_NAME ] = { 0 };
+    char     field_name[ RT_MAX_NAME ] = { 0 };
     uint8_t  slots[ 2 ]                = { 0, 0 };
     int      slot_count                = 0;
     uint16_t array_count               = 0;
@@ -65,15 +65,15 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
         if ( *p == '*' )
         {
             if ( slot_count < 2 )
-                slots[ slot_count++ ] = RG_MOD_PTR;
+                slots[ slot_count++ ] = RT_MOD_PTR;
             seen_star = 1;
             p++;
             continue;
         }
         if ( is_ident_start( ( unsigned char )*p ) )
         {
-            char        tok[ RG_MAX_NAME ];
-            const char* np = read_ident( p, tok, RG_MAX_NAME );
+            char        tok[ RT_MAX_NAME ];
+            const char* np = read_ident( p, tok, RT_MAX_NAME );
 
             if ( strcmp( tok, "const" ) == 0 )
             {
@@ -82,7 +82,7 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
                 else if ( seen_star && slot_count > 0 )
                 {
                     /* T* const -> set CONST bit on the last PTR slot */
-                    slots[ slot_count - 1 ] |= RG_MOD_CONST;
+                    slots[ slot_count - 1 ] |= RT_MOD_CONST;
                 }
                 else
                     base_const = 1;
@@ -99,7 +99,7 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
             {
                 if ( !have_base )
                 {
-                    rg_str_copy( base_type, tok, RG_MAX_NAME );
+                    str_copy( base_type, tok, RT_MAX_NAME );
                     have_base = 1;
                 }
                 p = np;
@@ -108,14 +108,14 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
 
             if ( !have_base )
             {
-                rg_str_copy( base_type, tok, RG_MAX_NAME );
+                str_copy( base_type, tok, RT_MAX_NAME );
                 have_base = 1;
                 p         = np;
                 continue;
             }
 
             /* second identifier = field name */
-            rg_str_copy( field_name, tok, RG_MAX_NAME );
+            str_copy( field_name, tok, RT_MAX_NAME );
             p = np;
 
             /* optional [N] */
@@ -139,7 +139,7 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
                     q++;
                 p = q;
                 if ( slot_count < 2 )
-                    slots[ slot_count++ ] = RG_MOD_ARRAY;
+                    slots[ slot_count++ ] = RT_MOD_ARRAY;
             }
             continue;
         }
@@ -149,12 +149,12 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
     if ( *p == ';' )
         p++;
 
-    rg_str_copy( out->name, field_name, RG_MAX_NAME );
-    rg_str_copy( out->base_type, base_type, RG_MAX_NAME );
+    str_copy( out->name, field_name, RT_MAX_NAME );
+    str_copy( out->base_type, base_type, RT_MAX_NAME );
     out->array_count = array_count;
 
     if ( base_const )
-        slots[ 0 ] |= RG_MOD_CONST_BASE;
+        slots[ 0 ] |= RT_MOD_CONST_BASE;
     out->mods = ( uint16_t )( slots[ 0 ] | ( ( uint16_t )slots[ 1 ] << 8 ) );
 
     return p;
@@ -169,9 +169,9 @@ parse_field_decl( const char* p, rg_decl_field_t* out )
    already skipped by the caller).  Returns a pointer past the closing ')' of the param list. */
 
 static const char*
-parse_api_func( const char* p, rg_module_api_t* mod )
+parse_api_func( const char* p, module_api_t* mod )
 {
-    if ( mod->func_count >= RG_MAX_API_FUNCS )
+    if ( mod->func_count >= RT_MAX_API_FUNCS )
         return p;
 
     p = skip_ws( p );
@@ -181,8 +181,8 @@ parse_api_func( const char* p, rg_module_api_t* mod )
     {
         if ( !is_ident_start( (unsigned char)*p ) )
             break;
-        char        tok[ RG_MAX_NAME ];
-        const char* np = read_ident( p, tok, RG_MAX_NAME );
+        char        tok[ RT_MAX_NAME ];
+        const char* np = read_ident( p, tok, RT_MAX_NAME );
         if ( strcmp( tok, "static"        ) == 0 ||
              strcmp( tok, "extern"        ) == 0 ||
              strcmp( tok, "inline"        ) == 0 ||
@@ -211,7 +211,7 @@ parse_api_func( const char* p, rg_module_api_t* mod )
         return p;
 
     /* copy everything before '(' to extract "ret_type func_name" */
-    char pre[ RG_MAX_NAME * 4 ] = { 0 };
+    char pre[ RT_MAX_NAME * 4 ] = { 0 };
     int  pre_len = (int)( paren - sig_start );
     if ( pre_len <= 0 || pre_len >= (int)sizeof( pre ) )
         return p;
@@ -220,7 +220,7 @@ parse_api_func( const char* p, rg_module_api_t* mod )
     trim( pre );
 
     /* walk backwards to isolate the function name (the last identifier) */
-    int end = rg_str_len( pre );
+    int end = str_len( pre );
     while ( end > 0 && !is_ident_char( (unsigned char)pre[ end - 1 ] ) ) end--;
     int name_end = end;
     while ( end > 0 && is_ident_char( (unsigned char)pre[ end - 1 ] ) ) end--;
@@ -229,15 +229,15 @@ parse_api_func( const char* p, rg_module_api_t* mod )
     if ( name_start >= name_end )
         return p;
 
-    char func_name[ RG_MAX_NAME ] = { 0 };
+    char func_name[ RT_MAX_NAME ] = { 0 };
     {
         int len = name_end - name_start;
-        if ( len >= RG_MAX_NAME ) len = RG_MAX_NAME - 1;
+        if ( len >= RT_MAX_NAME ) len = RT_MAX_NAME - 1;
         memcpy( func_name, pre + name_start, (size_t)len );
         func_name[ len ] = '\0';
     }
 
-    char ret_type[ RG_MAX_NAME * 2 ] = { 0 };
+    char ret_type[ RT_MAX_NAME * 2 ] = { 0 };
     {
         if ( name_start > 0 && name_start < (int)sizeof( ret_type ) )
         {
@@ -248,28 +248,28 @@ parse_api_func( const char* p, rg_module_api_t* mod )
     }
 
     /* read the parameter list */
-    char        params[ RG_MAX_PARAM_STR ] = { 0 };
-    const char* after = read_paren_block( paren, params, RG_MAX_PARAM_STR );
+    char        params[ RT_MAX_PARAM_STR ] = { 0 };
+    const char* after = read_paren_block( paren, params, RT_MAX_PARAM_STR );
     trim( params );
 
     /* derive field_name by stripping the "<module>_" prefix */
-    char field_name[ RG_MAX_NAME ] = { 0 };
+    char field_name[ RT_MAX_NAME ] = { 0 };
     if ( mod->name[ 0 ] )
     {
-        int mlen = rg_str_len( mod->name );
+        int mlen = str_len( mod->name );
         if ( strncmp( func_name, mod->name, (size_t)mlen ) == 0 && func_name[ mlen ] == '_' )
-            rg_str_copy( field_name, func_name + mlen + 1, RG_MAX_NAME );
+            str_copy( field_name, func_name + mlen + 1, RT_MAX_NAME );
     }
     if ( !field_name[ 0 ] )
-        rg_str_copy( field_name, func_name, RG_MAX_NAME );
+        str_copy( field_name, func_name, RT_MAX_NAME );
 
     /* store */
-    rg_api_func_t* f = &mod->funcs[ mod->func_count++ ];
+    api_func_t* f = &mod->funcs[ mod->func_count++ ];
     memset( f, 0, sizeof *f );
-    rg_str_copy( f->ret_type,   ret_type,   sizeof f->ret_type );
-    rg_str_copy( f->name,       func_name,  RG_MAX_NAME );
-    rg_str_copy( f->field_name, field_name, RG_MAX_NAME );
-    rg_str_copy( f->params,     params,     RG_MAX_PARAM_STR );
+    str_copy( f->ret_type,   ret_type,   sizeof f->ret_type );
+    str_copy( f->name,       func_name,  RT_MAX_NAME );
+    str_copy( f->field_name, field_name, RT_MAX_NAME );
+    str_copy( f->params,     params,     RT_MAX_PARAM_STR );
 
     return after;
 }
@@ -279,7 +279,7 @@ parse_api_func( const char* p, rg_module_api_t* mod )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-parse_struct_body( const char* body_start, const char* body_end, const char* buf_start, rg_decl_type_t* type )
+parse_struct_body( const char* body_start, const char* body_end, const char* buf_start, decl_type_t* type )
 {
     const char* p = body_start;
     while ( p < body_end && ( p = (const char*)memchr( p, 'R', (size_t)( body_end - p ) ) ) != NULL )
@@ -292,7 +292,7 @@ parse_struct_body( const char* body_start, const char* body_end, const char* buf
         if ( *p == '(' )
             p = read_paren_block( p, args, sizeof args );
 
-        if ( type->field_count >= RG_MAX_FIELDS_PER_TYPE )
+        if ( type->field_count >= RT_MAX_FIELDS_PER_TYPE )
         {
             while ( p < body_end && *p && *p != ';' ) p++;
             if ( *p == ';' )
@@ -300,9 +300,9 @@ parse_struct_body( const char* body_start, const char* body_end, const char* buf
             continue;
         }
 
-        rg_decl_field_t* f = &type->fields[ type->field_count ];
+        decl_field_t* f = &type->fields[ type->field_count ];
         memset( f, 0, sizeof *f );
-        parse_attr_args( args, f->attrs, RG_MAX_ATTRS_PER_ITEM, &f->attr_count );
+        parse_attr_args( args, f->attrs, RT_MAX_ATTRS_PER_ITEM, &f->attr_count );
         p = parse_field_decl( p, f );
 
         if ( f->name[ 0 ] && f->base_type[ 0 ] )
@@ -314,7 +314,7 @@ parse_struct_body( const char* body_start, const char* body_end, const char* buf
 /* Parse a RS_ENUM / RS_BITSET body. Extract `NAME [= VALUE]` pairs.                          */
 
 static void
-parse_enum_body( const char* body_start, const char* body_end, rg_decl_type_t* type )
+parse_enum_body( const char* body_start, const char* body_end, decl_type_t* type )
 {
     const char* p = body_start;
     while ( p < body_end )
@@ -326,11 +326,11 @@ parse_enum_body( const char* body_start, const char* body_end, rg_decl_type_t* t
             continue;
         }
 
-        char name[ RG_MAX_NAME ];
-        p                         = read_ident( p, name, RG_MAX_NAME );
+        char name[ RT_MAX_NAME ];
+        p                         = read_ident( p, name, RT_MAX_NAME );
         p                         = skip_ws( p );
 
-        char value[ RG_MAX_NAME ] = { 0 };
+        char value[ RT_MAX_NAME ] = { 0 };
         int  has_value            = 0;
         if ( *p == '=' )
         {
@@ -343,7 +343,7 @@ parse_enum_body( const char* body_start, const char* body_end, rg_decl_type_t* t
                     depth++;
                 else if ( *p == ')' )
                     depth--;
-                if ( vn < RG_MAX_NAME - 1 )
+                if ( vn < RT_MAX_NAME - 1 )
                     value[ vn++ ] = *p;
                 p++;
             }
@@ -356,11 +356,11 @@ parse_enum_body( const char* body_start, const char* body_end, rg_decl_type_t* t
         if ( *p == ',' )
             p++;
 
-        if ( type->enum_count < RG_MAX_ENUMS_PER_TYPE && name[ 0 ] )
+        if ( type->enum_count < RT_MAX_ENUMS_PER_TYPE && name[ 0 ] )
         {
-            rg_enum_t* e = &type->enums[ type->enum_count++ ];
-            rg_str_copy( e->name, name, RG_MAX_NAME );
-            rg_str_copy( e->value_expr, value, RG_MAX_NAME );
+            enum_t* e = &type->enums[ type->enum_count++ ];
+            str_copy( e->name, name, RT_MAX_NAME );
+            str_copy( e->value_expr, value, RT_MAX_NAME );
             e->has_value = has_value;
         }
     }
@@ -374,28 +374,28 @@ parse_enum_body( const char* body_start, const char* body_end, rg_decl_type_t* t
    Used for .c file passes to avoid double-counting RS_STRUCT/RS_ENUM types
    that also appear in the module's .h through #include. */
 static void
-parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
+parse_buffer( const char* buf, parse_data_t* out, int api_only )
 {
     const char* p = buf;
     while ( ( p = strchr( p, 'R' ) ) != NULL )
     {
         int kind = -1;
 
-        if      ( !api_only && match_word( p, buf, "RS_STRUCT" ) ) kind = RG_KIND_STRUCT;
-        else if ( !api_only && match_word( p, buf, "RS_BITSET" ) ) kind = RG_KIND_BITSET;
-        else if ( !api_only && match_word( p, buf, "RS_UNION"  ) ) kind = RG_KIND_UNION;
-        else if ( !api_only && match_word( p, buf, "RS_ENUM"   ) ) kind = RG_KIND_ENUM;
+        if      ( !api_only && match_word( p, buf, "RS_STRUCT" ) ) kind = RT_KIND_STRUCT;
+        else if ( !api_only && match_word( p, buf, "RS_BITSET" ) ) kind = RT_KIND_BITSET;
+        else if ( !api_only && match_word( p, buf, "RS_UNION"  ) ) kind = RT_KIND_UNION;
+        else if ( !api_only && match_word( p, buf, "RS_ENUM"   ) ) kind = RT_KIND_ENUM;
         else if ( match_word( p, buf, "RS_MODULE" ) )
         {
             p += (int)( sizeof( "RS_MODULE" ) - 1 );
             p = skip_ws( p );
-            char mod_name[ RG_MAX_NAME ] = { 0 };
+            char mod_name[ RT_MAX_NAME ] = { 0 };
             if ( *p == '(' )
-                p = read_paren_block( p, mod_name, RG_MAX_NAME );
+                p = read_paren_block( p, mod_name, RT_MAX_NAME );
             trim( mod_name );
             if ( mod_name[ 0 ] )
             {
-                rg_str_copy( out->module_api.name, mod_name, RG_MAX_NAME );
+                str_copy( out->module_api.name, mod_name, RT_MAX_NAME );
                 out->module_api.has_module = 1;
             }
             continue;
@@ -414,8 +414,8 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
 
         if ( kind < 0 ) { p++; continue; }
 
-        p += ( kind == RG_KIND_ENUM  ) ? (int)( sizeof( "RS_ENUM"   ) - 1 )
-           : ( kind == RG_KIND_UNION ) ? (int)( sizeof( "RS_UNION"  ) - 1 )
+        p += ( kind == RT_KIND_ENUM  ) ? (int)( sizeof( "RS_ENUM"   ) - 1 )
+           : ( kind == RT_KIND_UNION ) ? (int)( sizeof( "RS_UNION"  ) - 1 )
            :                            (int)( sizeof( "RS_STRUCT" ) - 1 );
         p  = skip_ws( p );
 
@@ -425,13 +425,13 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
         if ( *p == '(' )
             p = read_paren_block( p, args, sizeof( args ));
 
-        if ( out->type_count >= RG_MAX_TYPES )
+        if ( out->type_count >= RT_MAX_TYPES )
             continue;
 
-        rg_decl_type_t* t = &out->types[ out->type_count ];
+        decl_type_t* t = &out->types[ out->type_count ];
         memset( t, 0, sizeof *t );
         t->kind = kind;
-        parse_attr_args( args, t->attrs, RG_MAX_ATTRS_PER_ITEM, &t->attr_count );
+        parse_attr_args( args, t->attrs, RT_MAX_ATTRS_PER_ITEM, &t->attr_count );
 
         /* Walk past optional 'typedef struct tag' preamble to '{'.
            RS_ENUM(); on its own line emits a trailing ';' we also skip. */
@@ -439,8 +439,8 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
         if ( *p == ';' ) { p++; p = skip_ws( p ); }
         while ( is_ident_start( ( unsigned char )*p ) )
         {
-            char tmp[ RG_MAX_NAME ];
-            p = read_ident( p, tmp, RG_MAX_NAME );
+            char tmp[ RT_MAX_NAME ];
+            p = read_ident( p, tmp, RT_MAX_NAME );
             p = skip_ws( p );
             if ( *p == '{' )
                 break;
@@ -451,8 +451,8 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
                 p = skip_ws( p );
                 while ( is_ident_start( ( unsigned char )*p ) )
                 {
-                    char tmp2[ RG_MAX_NAME ];
-                    p = read_ident( p, tmp2, RG_MAX_NAME );
+                    char tmp2[ RT_MAX_NAME ];
+                    p = read_ident( p, tmp2, RT_MAX_NAME );
                     p = skip_ws( p );
                 }
                 if ( *p == '{' )
@@ -468,13 +468,13 @@ parse_buffer( const char* buf, rg_parse_data_t* out, int api_only )
         if ( body_close == body_open )
             continue;
 
-        if ( !read_typedef_name( body_close, t->name, RG_MAX_NAME ) )
+        if ( !read_typedef_name( body_close, t->name, RT_MAX_NAME ) )
             continue;
 
         const char* body_start = body_open + 1;
         const char* body_end   = body_close;
 
-        if ( kind == RG_KIND_STRUCT || kind == RG_KIND_UNION )
+        if ( kind == RT_KIND_STRUCT || kind == RT_KIND_UNION )
         {
             parse_struct_body( body_start, body_end, buf, t );
             out->struct_count++;
@@ -527,7 +527,7 @@ load_file( const char* path, char* buf, size_t max )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-parse_file_headers( const char* path, rg_parse_data_t* out, char* buf, size_t buf_max )
+parse_file_headers( const char* path, parse_data_t* out, char* buf, size_t buf_max )
 {
     if ( !load_file( path, buf, buf_max ) )
         return;
@@ -540,15 +540,15 @@ parse_file_headers( const char* path, rg_parse_data_t* out, char* buf, size_t bu
     parse_buffer( buf, out, 0 );
 
     if ( ( out->type_count > before_types || out->module_api.func_count > before_funcs )
-         && out->header_count < RG_MAX_FILES )
+         && out->header_count < RT_MAX_FILES )
     {
-        make_include_path( path, out->headers[ out->header_count++ ], RG_MAX_PATH );
+        make_include_path( path, out->headers[ out->header_count++ ], RT_MAX_PATH );
     }
 }
 
 /* API-only parse pass (.c): collects RS_MODULE/RS_API and marks found funcs as C-sourced. */
 static void
-parse_file_api( const char* path, rg_parse_data_t* out, char* buf, size_t buf_max )
+parse_file_api( const char* path, parse_data_t* out, char* buf, size_t buf_max )
 {
     if ( !load_file( path, buf, buf_max ) )
         return;
@@ -565,7 +565,7 @@ parse_file_api( const char* path, rg_parse_data_t* out, char* buf, size_t buf_ma
 ----------------------------------------------------------------------------------------------*/
 
 void
-rg_parse( const rg_file_list_t* files, rg_parse_data_t* out )
+parse( const file_list_t* files, parse_data_t* out )
 {
     out->type_count            = 0;
     out->struct_count          = 0;
@@ -577,15 +577,15 @@ rg_parse( const rg_file_list_t* files, rg_parse_data_t* out )
 
     static char s_buf[ 8 * 1024 * 1024 + 1 ];
 
-    /* Header pass: types + API from .h files collected by rg_scan. */
+    /* Header pass: types + API from .h files collected by scan. */
     for ( int i = 0; i < files->count; i++ )
         parse_file_headers( files->paths[ i ], out, s_buf, sizeof s_buf );
 
     /* Source pass: API-only from .c files; found functions get forward-decls in the generated .c. */
-    static char s_c_paths[ RG_MAX_FILES ][ RG_MAX_PATH ];
-    int c_count = rg_platform_scan_dir( files->source_dir, s_c_paths, RG_MAX_FILES );
+    static char s_c_paths[ RT_MAX_FILES ][ RT_MAX_PATH ];
+    int c_count = platform_scan_dir( files->source_dir, s_c_paths, RT_MAX_FILES );
     for ( int i = 0; i < c_count; i++ )
-        if ( rg_str_ends_with( s_c_paths[ i ], ".c" ) )
+        if ( str_ends_with( s_c_paths[ i ], ".c" ) )
             parse_file_api( s_c_paths[ i ], out, s_buf, sizeof s_buf );
 }
 

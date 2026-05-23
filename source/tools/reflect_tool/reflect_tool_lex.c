@@ -1,14 +1,14 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
-    rs_gen_lex.c - character predicates, tokenizer, and source navigation helpers
+    reflect_tool_lex.c - character predicates, tokenizer, and source navigation helpers
 
-    All functions here are static; this file is compiled only as part of the rs_gen unity
-    build (via rs_gen.c). Include order: lex -> attr -> parse, so statics defined here are
+    All functions here are static; this file is compiled only as part of the reflect_tool unity
+    build (via reflect_tool.c). Include order: lex -> attr -> parse, so statics defined here are
     visible to subsequent translation units in the same TU.
 
 ==============================================================================================*/
 
-#include "rs_gen_internal.h"
+#include "reflect_tool_internal.h"
 
 /*----------------------------------------------------------------------------------------------
     Character predicates
@@ -49,12 +49,12 @@ is_ident_char( int c )
 static void
 trim( char* s )
 {
-    int n = rg_str_len( s );
+    int n = str_len( s );
     while ( n > 0 && is_space( ( unsigned char )s[ n - 1 ] ) ) s[ --n ] = '\0';
     int i = 0;
     while ( s[ i ] && is_space( ( unsigned char )s[ i ] ) ) i++;
     if ( i > 0 )
-        memmove( s, s + i, ( size_t )( rg_str_len( s + i ) + 1 ) );
+        memmove( s, s + i, ( size_t )( str_len( s + i ) + 1 ) );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -166,7 +166,7 @@ strip_comments( char* p )
 static int
 match_word( const char* p, const char* buf_start, const char* kw )
 {
-    int kl = rg_str_len( kw );
+    int kl = str_len( kw );
 
     /* Check previous character to ensure we aren't in the middle of a word. */
     if ( p > buf_start && is_ident_char( ( unsigned char )p[ -1 ] ) )
@@ -336,8 +336,8 @@ read_typedef_name( const char* close_brace, char* out, int max )
     /* Look for an identifier. */
     while ( is_ident_start( ( unsigned char )*p ) )
     {
-        char tmp[ RG_MAX_NAME ];
-        p             = read_ident( p, tmp, RG_MAX_NAME );
+        char tmp[ RT_MAX_NAME ];
+        p             = read_ident( p, tmp, RT_MAX_NAME );
         const char* q = skip_ws( p );
 
         /* If followed by '(', it's likely a macro/attribute (e.g. __attribute__), so skip it. */
@@ -349,7 +349,7 @@ read_typedef_name( const char* close_brace, char* out, int max )
         }
 
         /* Found the actual type name. */
-        rg_str_copy( out, tmp, max );
+        str_copy( out, tmp, max );
         return 1;
     }
     out[ 0 ] = '\0';
@@ -367,11 +367,11 @@ read_typedef_name( const char* close_brace, char* out, int max )
 static void
 make_include_path( const char* abs_path, char* out, int max )
 {
-    char tmp[ RG_MAX_PATH ] = { 0 };
+    char tmp[ RT_MAX_PATH ] = { 0 };
     int  n = 0;
 
     /* normalize backslashes to forward slashes, and copy up to max. */
-    for ( int i = 0; abs_path[ i ] && n < RG_MAX_PATH - 1; i++ )
+    for ( int i = 0; abs_path[ i ] && n < RT_MAX_PATH - 1; i++ )
     {
         tmp[ n++ ] = ( abs_path[ i ] == '\\' ) ? '/' : abs_path[ i ];
     }
@@ -380,15 +380,15 @@ make_include_path( const char* abs_path, char* out, int max )
     const char* sep = strstr( tmp, "/source/" );
     if ( sep )
     {
-        rg_str_copy( out, sep + 8, max );
+        str_copy( out, sep + 8, max );
     }
     else if ( strncmp( tmp, "source/", 7 ) == 0 )
     {
-        rg_str_copy( out, tmp + 7, max );
+        str_copy( out, tmp + 7, max );
     }
     else
     {
-        rg_str_copy( out, tmp, max );
+        str_copy( out, tmp, max );
     }
 }
 

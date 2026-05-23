@@ -1,19 +1,19 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
-    rs_gen_std.c - minimal string helpers for the rs_gen tool
+    reflect_tool_std.c - minimal string helpers for the reflect_tool tool
 
     Avoids any engine dependency; wraps only what the tool actually needs.
 
 ==============================================================================================*/
 
-#include "rs_gen_internal.h"
+#include "reflect_tool_internal.h"
 
 /*----------------------------------------------------------------------------------------------
     String helpers
 ----------------------------------------------------------------------------------------------*/
 
 void
-rg_str_copy( char* dst, const char* src, int max )
+str_copy( char* dst, const char* src, int max )
 {
     int i = 0;
     while ( i < max - 1 && src[ i ] )
@@ -25,7 +25,7 @@ rg_str_copy( char* dst, const char* src, int max )
 }
 
 int
-rg_str_len( const char* s )
+str_len( const char* s )
 {
     int n = 0;
     while ( s[ n ] )
@@ -34,17 +34,17 @@ rg_str_len( const char* s )
 }
 
 void
-rg_str_cat( char* dst, const char* src, int max )
+str_cat( char* dst, const char* src, int max )
 {
-    int n = rg_str_len( dst );
-    rg_str_copy( dst + n, src, max - n );
+    int n = str_len( dst );
+    str_copy( dst + n, src, max - n );
 }
 
 int
-rg_str_ends_with( const char* s, const char* suffix )
+str_ends_with( const char* s, const char* suffix )
 {
-    int sl = rg_str_len( s );
-    int xl = rg_str_len( suffix );
+    int sl = str_len( s );
+    int xl = str_len( suffix );
     if ( xl > sl )
         return 0;
     return memcmp( s + sl - xl, suffix, (size_t)xl ) == 0;

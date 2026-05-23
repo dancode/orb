@@ -258,7 +258,7 @@ typedef void ( *log_fn_t )( int level, const char* tag, const char* msg );
 /*==============================================================================================
     Reflection annotation macros
 
-    Parsed by rs_gen at build time; compile out to nothing at runtime.
+    Parsed by reflect_tool at build time; compile out to nothing at runtime.
     Defined here so any annotated header needs only orb.h — no rs.h dependency.
 
         RS_STRUCT()           typedef struct foo_s { ... } foo_t;

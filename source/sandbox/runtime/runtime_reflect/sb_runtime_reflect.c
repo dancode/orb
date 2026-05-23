@@ -6,7 +6,7 @@
 
     The reflection system (rs_) lets you inspect C structs and enums at runtime — their
     field names, types, offsets, and attributes — without writing any parsing code.
-    You annotate your types with RS_STRUCT / RS_PROP / RS_ENUM, run the build_reflect
+    You annotate your types with RS_STRUCT / RS_PROP / RS_ENUM, run the reflect_tool
     tool, and it generates the registration code automatically.
 
     BOOT ORDER

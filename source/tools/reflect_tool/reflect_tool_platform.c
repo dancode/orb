@@ -1,10 +1,10 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
-    rs_gen_platform.c - platform abstractions for rs_gen (mkdir + directory scan + exe path)
+    reflect_tool_platform.c - platform abstractions for reflect_tool (mkdir + directory scan + exe path)
 
 ==============================================================================================*/
 
-#include "rs_gen_internal.h"
+#include "reflect_tool_internal.h"
 
 /*----------------------------------------------------------------------------------------------
     Windows
@@ -23,14 +23,14 @@
 /* Create a directory if it doesn't already exist.                                            */
 
 void
-rg_platform_mkdir( const char* path )
+platform_mkdir( const char* path )
 {
     if ( !CreateDirectoryA( path, NULL ) )
     {
         /* returns failure if the directory already exists, so ignore that case. */
         DWORD err = GetLastError();
         if ( err != ERROR_ALREADY_EXISTS )
-            fprintf( stderr, "[build_reflect] warning: cannot create directory '%s' (err %lu)\n", path,
+            fprintf( stderr, "[reflect_tool] warning: cannot create directory '%s' (err %lu)\n", path,
                      ( unsigned long )err );
     }
 }
@@ -40,11 +40,11 @@ rg_platform_mkdir( const char* path )
    full paths into out_paths. Paths are normalized to use forward slashes.                    */
 
 int
-rg_platform_scan_dir( const char* dir, char out_paths[][ RG_MAX_PATH ], int max_files )
+platform_scan_dir( const char* dir, char out_paths[][ RT_MAX_PATH ], int max_files )
 {
-    char pattern[ RG_MAX_PATH ];
-    rg_str_copy( pattern, dir, RG_MAX_PATH );
-    rg_str_cat( pattern, "/*", RG_MAX_PATH );
+    char pattern[ RT_MAX_PATH ];
+    str_copy( pattern, dir, RT_MAX_PATH );
+    str_cat( pattern, "/*", RT_MAX_PATH );
 
     WIN32_FIND_DATAA fd;
 
@@ -60,9 +60,9 @@ rg_platform_scan_dir( const char* dir, char out_paths[][ RG_MAX_PATH ], int max_
             continue;
         if ( count >= max_files )
             break;
-        rg_str_copy( out_paths[ count ], dir, RG_MAX_PATH );
-        rg_str_cat( out_paths[ count ], "/", RG_MAX_PATH );
-        rg_str_cat( out_paths[ count ], fd.cFileName, RG_MAX_PATH );
+        str_copy( out_paths[ count ], dir, RT_MAX_PATH );
+        str_cat( out_paths[ count ], "/", RT_MAX_PATH );
+        str_cat( out_paths[ count ], fd.cFileName, RT_MAX_PATH );
         count++;
     }
     while ( FindNextFileA( h, &fd ) );
@@ -75,7 +75,7 @@ rg_platform_scan_dir( const char* dir, char out_paths[][ RG_MAX_PATH ], int max_
 /* Get the directory of the executable. Paths are normalized to use forward slashes.          */
 
 void
-rg_platform_exe_dir( char* out, int max )
+platform_exe_dir( char* out, int max )
 {
     GetModuleFileNameA( NULL, out, ( DWORD )max );
     /* Normalize backslashes and strip filename in a single pass. */
@@ -97,7 +97,7 @@ rg_platform_exe_dir( char* out, int max )
 
 #else
 
-    #error "rs_gen: platform not implemented"
+    #error "reflect_tool: platform not implemented"
 
 /*--------------------------------------------------------------------------------------------*/
 #endif
