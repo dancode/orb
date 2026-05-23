@@ -271,3 +271,4 @@ find_reflect_tool( void )
         if ( g_targets[ i ].is_reflect_tool ) return &g_targets[ i ];
     return NULL;
 }
+

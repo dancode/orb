@@ -301,14 +301,38 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 
 // Join the compile fields in a fixed order into one command line:
 //   <exe> <flags> <includes> <defines> <output> <sources>
-// then run the spill check, which rewrites the buffer into "<exe> @rsp" form
-// if the joined string is at risk of exceeding the shell's arg-length limit.
+// The sources field alone can be CMD_BUF_MAX bytes; joining everything through
+// cmd_buf_t (also CMD_BUF_MAX) would silently truncate the sources before the
+// spill check ever runs. Instead, format args into a dedicated oversize buffer,
+// measure the total, then write the rsp file directly from that buffer while
+// the data is still complete.
 static void
 cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
 {
-    cmd_append( cmd, "%s %s %s %s %s %s",
-                cc->exe, cc->flags, cc->includes, cc->defines, cc->output, cc->sources );
-    cmd_spill_to_response_file( cmd, rsp_path );
+    // ARGS_BUF covers the maximum: sources (CMD_BUF_MAX) + all other fields
+    // (flags 512 + includes 512 + defines 1024 + output 512 + 4 spaces).
+    enum { ARGS_BUF = CMD_BUF_MAX + 3200 };
+    char args[ ARGS_BUF ];
+    int  written = snprintf( args, sizeof( args ), "%s %s %s %s %s",
+                             cc->flags, cc->includes, cc->defines, cc->output, cc->sources );
+    if ( written < 0 || ( size_t )written >= sizeof( args ) )
+        printf( ORB_INDENT "[orb error] cc_assemble args truncated (needed %d)\n", written );
+
+    size_t total = strlen( cc->exe ) + 1 + ( size_t )( written < 0 ? 0 : written );
+    if ( total >= CMD_RSP_THRESHOLD )
+    {
+        // Write the full args to the response file before any truncation can occur.
+        FILE* f = fopen( rsp_path, "w" );
+        if ( f ) { fputs( args, f ); fclose( f ); }
+        else printf( ORB_INDENT "[orb error] could not open response file %s\n", rsp_path );
+        cmd->size      = 0;
+        cmd->truncated = false;
+        cmd_append( cmd, "%s @%s", cc->exe, rsp_path );
+    }
+    else
+    {
+        cmd_append( cmd, "%s %s", cc->exe, args );
+    }
 }
 
 // Same idea for the link/archive side. The PDB section is optional: lib.exe

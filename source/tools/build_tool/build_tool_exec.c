@@ -363,7 +363,12 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
                 if ( header_path[ 0 ] == '\0' )
                     continue;
 
-                if ( build_get_mtime( header_path ) > out_mtime )
+                // A deleted header returns mtime 0, which is < out_mtime, so
+                // the naive ">" check would silently skip it. Treat mtime 0 as
+                // a forced rebuild: the compiler will surface the missing include
+                // as an error, which is the correct outcome.
+                __time64_t h_mtime = build_get_mtime( header_path );
+                if ( h_mtime == 0 || h_mtime > out_mtime )
                 {
                     up_to_date = false;
                     break;
@@ -501,6 +506,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
             fclose( cf );
         }
     }
+
 
 cleanup:
     // Always release the per-target mutex on the way out, regardless of

@@ -219,13 +219,10 @@ main( int argc, char** argv )
     // --- Command : CLEAN ---
     if ( should_clean )
     {
-
         target_info_t* clean_target = NULL;
-        if ( target_name )
-        {
+        if ( target_name ) {
             clean_target = find_target_icase( target_name );
-            if ( clean_target == NULL ) 
-            { 
+            if ( clean_target == NULL ) { 
                 printf( ORB_INDENT "[orb error] unknown target '%s'\n", target_name ); 
                 return 1; 
             }
@@ -252,6 +249,7 @@ main( int argc, char** argv )
     char target_upper[ 64 ] = "ALL";
     if ( target_name ) get_target_upper( target_name, target_upper );
 
+    // base_name is filename acquired via -file with path stripped.
     const char* base_name = file_path ? file_path : NULL;
     if ( base_name ) {
         for ( const char* p = file_path; *p; ++p )
