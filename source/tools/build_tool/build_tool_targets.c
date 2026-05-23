@@ -114,11 +114,12 @@ target_info_t g_targets[] = {
 
     // The build tool itself (this program!).
     {
-     .name       = "build_tool",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/tools/build_tool",
-     .sln_folder = "08_TOOL",
-     .units      = { "build_tool.c" },
+     .name          = "build_tool",
+     .type          = TARGET_EXECUTABLE,
+     .root_dir      = "source/tools/build_tool",
+     .sln_folder    = "08_TOOL",
+     .units         = { "build_tool.c" },
+     .is_build_tool = true,
      .deps       = {},
      .is_tool    = true,
      },

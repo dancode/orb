@@ -241,7 +241,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
     // _findfirst expects a wildcard pattern; "<dir>/*" matches everything in
     // this directory (files + subdirectories + the . / .. specials).
     char search_path[ BT_PATH_MAX ];
-    snprintf( search_path, sizeof( search_path ), "%s/*", dir );
+    snprintf( search_path, sizeof( search_path ), "%s\\*", dir );
 
     struct _finddata_t find_data;
     intptr_t           handle = _findfirst( search_path, &find_data );
@@ -255,7 +255,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
 
         // Reconstruct the full path so we can either recurse into it or store it.
         char path[ BT_PATH_MAX ];
-        snprintf( path, sizeof( path ), "%s/%s", dir, find_data.name );
+        snprintf( path, sizeof( path ), "%s\\%s", dir, find_data.name );
 
         if ( find_data.attrib & _A_SUBDIR )
         {
@@ -404,7 +404,7 @@ static void
 build_gen_proj_target( target_info_t* target, int index )
 {
     char vcxproj_path[ BT_PATH_MAX ];
-    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s/%s.vcxproj", g_build_dir, target->name );
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", g_build_dir, target->name );
 
     // Generate a deterministic GUID for this project from its name.
     char guid[ 64 ];
@@ -472,7 +472,7 @@ build_gen_proj_target( target_info_t* target, int index )
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
     char filters_path[ BT_PATH_MAX ];
-    snprintf( filters_path, sizeof( filters_path ), "%s/%s.vcxproj.filters", g_build_dir, target->name );
+    snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", g_build_dir, target->name );
     f = fopen( filters_path, "w" );
     if ( f )
     {
@@ -543,7 +543,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     scan_directory_recursive( nav_dir, nav_dir );
 
     char vcxproj_path[ BT_PATH_MAX ];
-    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s/%s_nav.vcxproj", g_build_dir, sln_name );
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s_nav.vcxproj", g_build_dir, sln_name );
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
     {
@@ -576,10 +576,10 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
     fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
-    fprintf( f, "    <NMakeBuildCommandLine>echo [nav] navigation-only project, nothing to build.</NMakeBuildCommandLine>\n" );
+    fprintf( f, "    <NMakeBuildCommandLine>echo       [nav] navigation-only project, nothing to build.</NMakeBuildCommandLine>\n" );
     fprintf( f, "    <NMakeOutput>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\nav.stamp</NMakeOutput>\n", g_int_dir );
-    fprintf( f, "    <NMakeCleanCommandLine>echo [nav] navigation-only project, nothing to clean.</NMakeCleanCommandLine>\n" );
-    fprintf( f, "    <NMakeCompileFile>echo [nav] navigation-only project.</NMakeCompileFile>\n" );
+    fprintf( f, "    <NMakeCleanCommandLine>echo       [nav] navigation-only project, nothing to clean.</NMakeCleanCommandLine>\n" );
+    fprintf( f, "    <NMakeCompileFile>echo       [nav] navigation-only project.</NMakeCompileFile>\n" );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
@@ -617,7 +617,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
     char filters_path[ BT_PATH_MAX ];
-    snprintf( filters_path, sizeof( filters_path ), "%s/%s_nav.vcxproj.filters", g_build_dir, sln_name );
+    snprintf( filters_path, sizeof( filters_path ), "%s\\%s_nav.vcxproj.filters", g_build_dir, sln_name );
     f = fopen( filters_path, "w" );
     if ( f )
     {
@@ -678,7 +678,7 @@ static void
 build_gen_solution( solution_info_t* sln )
 {
     char sln_path[ BT_PATH_MAX ];
-    snprintf( sln_path, sizeof( sln_path ), "%s/%s.sln", g_build_dir, sln->name );
+    snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", g_build_dir, sln->name );
     FILE* f = fopen( sln_path, "w" );
     if ( !f ) return;
 
@@ -740,7 +740,7 @@ build_gen_solution( solution_info_t* sln )
             // This section tells Visual Studio's scheduler exactly which projects
             // must be finished before starting this one. This prevents race conditions
             // where multiple cl.exe instances try to write to the same PDB.
-            if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect )
+            if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect || !target->is_build_tool )
             {
                 fprintf( f, "\tProjectSection(ProjectDependencies) = postProject\n" );
 
@@ -758,6 +758,32 @@ build_gen_solution( solution_info_t* sln )
                     char tool_guid[ 64 ];
                     guid_from_name( target->tool_deps[ i ], tool_guid );
                     fprintf( f, "\t\t%s = %s\n", tool_guid, tool_guid );
+                }
+
+                // Implicit dep: if build_tool is in this solution, every other target
+                // depends on it — its NMake command invokes bin\build_tool.exe, so a
+                // parallel Rebuild All would race if build_tool hasn't linked yet.
+                // Only injected when build_tool is actually a project in this solution
+                // (e.g. orb_build.sln) so other solutions (orb_make.sln) are unaffected.
+                if ( !target->is_build_tool )
+                {
+                    bool bt_in_sln = false;
+                    for ( const char** tn2 = sln->target_names; *tn2; ++tn2 )
+                        if ( strcmp( *tn2, "build_tool" ) == 0 ) { bt_in_sln = true; break; }
+
+                    if ( bt_in_sln )
+                    {
+                        for ( int k = 0; k < g_target_count; ++k )
+                        {
+                            if ( g_targets[ k ].is_build_tool )
+                            {
+                                char bt_guid[ 64 ];
+                                guid_from_name( g_targets[ k ].name, bt_guid );
+                                fprintf( f, "\t\t%s = %s\n", bt_guid, bt_guid );
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 // Implicit dep: has_reflect targets always depend on the reflect tool.

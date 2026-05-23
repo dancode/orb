@@ -323,13 +323,15 @@ worker_main( void* arg )
         // OR when any compile/link detail flag is active (the log contains the
         // section output printed by build_target_compile/link).
         EnterCriticalSection( &g_print_lock );
+
         // Dump the per-target log before printing the result tag so the detail
         // sections (compile/link/cmd) appear first and the result reads as a footer.
         // Blank lines are buffered as "pending" and only flushed when a following
         // non-blank line arrives — this preserves intentional mid-block spacing
         // (e.g. between sections and [orb cmd]) while silently dropping trailing
         // blank lines from MSVC output so [orb compiled] runs right after content.
-        bool dump_log  = !ok || ( g_out_flags & ( ORB_OUT_ANY_COMPILE | ORB_OUT_ANY_LINK ) );
+
+        bool dump_log  = !ok || ( g_out_flags & ( ORB_OUT_ANY_COMPILE | ORB_OUT_ANY_LINK | ORB_OUT_SUMMARY ) );
         bool had_output = false;
         if ( dump_log )
         {
@@ -352,10 +354,12 @@ worker_main( void* arg )
                 fclose( lf );
             }
         }
-        if ( !ok || ( g_out_flags & ORB_OUT_TARGET_RESULT ) )
+
+        bool show_output = ( g_out_flags & ORB_OUT_TARGET_RESULT );
+        bool show_skipped = j->skipped && ( g_out_flags & ORB_OUT_SUMMARY_COMPILE );
+        if ( !ok || ( show_output || show_skipped ))
         {
             printf( ORB_INDENT "[orb %s] %s\n", !ok ? "FAILED" : j->skipped ? "skipped" : "completed", j->target->name );
-            printf( "\n" );
         }
         fflush( stdout );
         LeaveCriticalSection( &g_print_lock );

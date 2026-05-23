@@ -216,11 +216,10 @@ main( int argc, char** argv )
         return 1;
     }
 
-    // --- Standalone Sub-Commands ---
-    // 'clean' and 'gen' are bookkeeping passes - so we can skip toolchain env.
-    // Returning early skips the vcvars import below.
+    // --- Command : CLEAN ---
     if ( should_clean )
     {
+
         target_info_t* clean_target = NULL;
         if ( target_name )
         {
@@ -234,11 +233,16 @@ main( int argc, char** argv )
         build_clean( clean_target );
         return 0;
     }
+
+    // --- Command : GENERATE ---
     if ( should_gen ) 
     { 
         build_gen_projects(); 
         return 0; 
     }
+
+    // Note: commands return early to skip the vcvars import below.
+
 
     // --- Startup Banner ---
     // All modes share the format:  [orb <mode>] SUBJECT  [ <special> | modular | debug | msvc ]
@@ -266,30 +270,21 @@ main( int argc, char** argv )
         const char* label        = NULL; // [orb ...]
         const char* special      = NULL; // first props slot, or NULL
 
-        if ( compile_only )
+        if ( compile_only )  
         {
-            // -- MODE: compile-only (VS Ctrl+F7 -- compile all unity units, no link step) --
-            // Ex: build_tool.exe -target sb_engine_reflect -compile-only
-            //     [orb compile-only] SB_ENGINE_REFLECT  [ no-link | modular | debug | msvc ]
             label   = "[orb compile-only]";
             special = "no-link";
         }
         else if ( file_path )
         {
-            // -- MODE: single-file (compile one file with the target's full flag set, no link step) --
-            // Ex: build_tool.exe -target sb_engine_reflect -file rs_gen.c
-            // Ex: build_tool.exe -target sb_engine_reflect -file F:\orb\source\tools\rs_gen\rs_gen.c
-            //     [orb single-file] SB_ENGINE_REFLECT / rs_gen.c  [ file | modular | debug | msvc ]
             label   = "[orb single-file]";
             special = "file";
+
+            // add the filename next to the target label.
             snprintf( subject, sizeof( subject ), "%s %s", target_upper, base_name );
         }
         else
         {
-            // -- MODE: build (full compile + link, parallel scheduler over dep closure) --
-            // Ex: build_tool.exe -target sb_engine_reflect -config Debug
-            // Ex: build_tool.exe -no-deps -config Debug -target build_tool
-            //     [orb target build] SB_ENGINE_REFLECT  [ no-deps | modular | debug | msvc ]
             label   = "[orb target]";
             special = ctx.skip_deps ? "no-deps" : NULL;
         }
@@ -301,6 +296,7 @@ main( int argc, char** argv )
         else
             snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str );
 
+        printf( ORB_BANNER "----------------------------------------------------------------\n" );
         printf( ORB_BANNER "%s %s %s\n", label, subject, props );
 
         // ORB_OUT_ARGS: echo the raw command line on a second line (off by default).
@@ -341,7 +337,7 @@ main( int argc, char** argv )
         if ( !target ) { printf( ORB_INDENT "[orb error] -compile-only requires -target\n" ); return 1; }
         if ( !build_target_compile_only( &ctx, target ) )
         {
-            printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
+            printf( ORB_BANNER "[ %s: FAILED ]\n", target_upper );
             return 1;
         }
         if ( g_out_flags & ORB_OUT_TARGET_RESULT )
@@ -382,11 +378,11 @@ main( int argc, char** argv )
 
         if ( !build_target_compile_single( &ctx, target, obj_dir, gen_dir, file_path ) )
         {
-            printf( ORB_BANNER "[ FAILED: %s ]\n", target_upper );
+            printf( ORB_BANNER "[ %s: FAILED ]\n", target_upper );
             return 1;
         }
         if ( g_out_flags & ORB_OUT_TARGET_RESULT )
-            printf( ORB_INDENT "[orb completed] %s\n", base_name );
+            printf( ORB_INDENT "[orb completed] %s\n", base_name ); 
         printf( "\n" );
         return 0;
     }
@@ -397,7 +393,7 @@ main( int argc, char** argv )
         bool was_skipped = false;
         if ( !build_target( &ctx, target, &was_skipped ) )
         {
-            printf( ORB_BANNER "\n[ FAILED: %s ]\n", target_upper );
+            printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;
         }
         if ( g_out_flags & ORB_OUT_TARGET_RESULT )
@@ -405,9 +401,10 @@ main( int argc, char** argv )
     }
     else
     {
+        // --- Build All Targets In Parallel ---
         if ( !build_run_parallel( &ctx, target, j_threads ) )
         {
-            printf( ORB_BANNER "\n[ FAILED: %s ]\n", target_upper );
+            printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;
         }
     }

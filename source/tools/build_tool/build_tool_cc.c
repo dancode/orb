@@ -103,7 +103,7 @@ cleanup_stale_pdbs( const char* target_name )
     // expand against the filesystem. Note: backslashes also work, but we use
     // forward slashes for consistency with the rest of the codebase.
     char pattern[ BT_PATH_MAX ];
-    snprintf( pattern, sizeof( pattern ), "bin/%s_*.pdb", target_name );
+    snprintf( pattern, sizeof( pattern ), "bin\\%s_*.pdb", target_name );
 
     struct _finddata_t fd;
     intptr_t h = _findfirst( pattern, &fd );
@@ -116,7 +116,7 @@ cleanup_stale_pdbs( const char* target_name )
     do
     {
         char path[ BT_PATH_MAX ];
-        snprintf( path, sizeof( path ), "bin/%s", fd.name );
+        snprintf( path, sizeof( path ), "bin\\%s", fd.name );
         remove( path );
     }
     while ( _findnext( h, &fd ) == 0 );
@@ -255,8 +255,9 @@ print_compile_output( FILE* out, const char* raw )
 static void
 cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const char* config )
 {
-    if ( g_out_flags & ORB_OUT_COMPILE_SUMMARY )
-        fprintf( out, ORB_INDENT "[orb compiling] %s (%s)\n", target->name, config );
+    if ( g_out_flags & ORB_OUT_SUMMARY_COMPILE ) {
+        fprintf( out, ORB_INDENT "[orb compiling] %s\n", target->name );
+    }
 
     if ( g_out_flags & ORB_OUT_ANY_COMPILE ) {
         fprintf( out, "\n" );
@@ -275,7 +276,7 @@ cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const
 static void
 lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 {
-    if ( g_out_flags & ORB_OUT_LINK_SUMMARY )
+    if ( g_out_flags & ORB_OUT_SUMMARY_LINK )
         fprintf( out, ORB_INDENT "[orb link] %s -> %s\n", target->name, lk->artifact );
 
     if ( g_out_flags & ORB_OUT_ANY_LINK ) {
@@ -521,7 +522,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
         for ( int i = 0; target->units[ i ]; ++i )
         {
-            snprintf( rel, sizeof( rel ), "%s/%s", target->root_dir, target->units[ i ] );
+            snprintf( rel, sizeof( rel ), "%s\\%s", target->root_dir, target->units[ i ] );
             // _fullpath returns NULL only on truly broken paths; fall back to
             // the relative form so the build still proceeds and the user
             // sees a recognisable error from cl rather than a silent skip.
@@ -534,7 +535,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
-            snprintf( rel, sizeof( rel ), "%s/%s.generated.c", gen_dir, rname );
+            snprintf( rel, sizeof( rel ), "%s\\%s.generated.c", gen_dir, rname );
             if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
@@ -549,13 +550,13 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     // Assemble the full command, optionally echo the raw line, then run.
     char      rsp_path[ BT_PATH_MAX ];
     cmd_buf_t cmd = { 0 };
-    snprintf( rsp_path, sizeof( rsp_path ), "%s/cl.rsp", obj_dir );
+    snprintf( rsp_path, sizeof( rsp_path ), "%s\\cl.rsp", obj_dir );
     cc_assemble( &cc, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
     if ( log_out != stdout ) fclose( log_out );
 
     char deps_path[ BT_PATH_MAX ];
-    snprintf( deps_path, sizeof( deps_path ), "%s/_deps.txt", obj_dir );
+    snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );
     return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
 }
 
@@ -640,7 +641,7 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
 
     char      rsp_path[ BT_PATH_MAX ];
     cmd_buf_t cmd = { 0 };
-    snprintf( rsp_path, sizeof( rsp_path ), "%s/cl_file.rsp", obj_dir );
+    snprintf( rsp_path, sizeof( rsp_path ), "%s\\cl_file.rsp", obj_dir );
     cc_assemble( &cc, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
     if ( log_out != stdout ) fclose( log_out );
@@ -682,10 +683,10 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
         // linking, no PDB, no dep resolution — just a flat archive of
         // every *.obj in obj_dir.
         snprintf( lk.exe,      sizeof( lk.exe ),      "lib.exe" );
-        snprintf( lk.artifact, sizeof( lk.artifact ),  "bin/%s.lib", target->name );
+        snprintf( lk.artifact, sizeof( lk.artifact ),  "bin\\%s.lib", target->name );
         snprintf( lk.flags,    sizeof( lk.flags ),     "/nologo" );
-        snprintf( lk.output,   sizeof( lk.output ),    "/OUT:bin/%s.lib", target->name );
-        snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s/*.obj", obj_dir );
+        snprintf( lk.output,   sizeof( lk.output ),    "/OUT:bin\\%s.lib", target->name );
+        snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s\\*.obj", obj_dir );
         // lk.pdb and lk.libs stay empty by zero-init — lib.exe ignores both.
     }
     else
@@ -695,8 +696,8 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
         const char* ext = ( effective_type == TARGET_DYNAMIC_LIB ) ? ".dll" : ".exe";
 
         snprintf( lk.exe,      sizeof( lk.exe ),      "link.exe" );
-        snprintf( lk.artifact, sizeof( lk.artifact ),  "bin/%s%s", target->name, ext );
-        snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s/*.obj", obj_dir );
+        snprintf( lk.artifact, sizeof( lk.artifact ),  "bin\\%s%s", target->name, ext );
+        snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s\\*.obj", obj_dir );
 
         // Flags: /DLL flips link.exe from "build EXE" into "build DLL" mode.
         if ( effective_type == TARGET_DYNAMIC_LIB )
@@ -711,7 +712,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
             snprintf( lk.output, sizeof( lk.output ),
                       "/OUT:bin/%s.dll /IMPLIB:bin/%s.lib", target->name, target->name );
         else
-            snprintf( lk.output, sizeof( lk.output ), "/OUT:bin/%s.exe", target->name );
+            snprintf( lk.output, sizeof( lk.output ), "/OUT:bin\\%s.exe", target->name );
 
         // PDB: every link produces a uniquely-timestamped PDB so a debugger
         // holding the previous one open can never block the linker. Stale
@@ -738,7 +739,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
 
     char      rsp_path[ BT_PATH_MAX ];
     cmd_buf_t cmd = { 0 };
-    snprintf( rsp_path, sizeof( rsp_path ), "%s/%s.rsp", obj_dir,
+    snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s.rsp", obj_dir,
               target->type == TARGET_STATIC_LIB ? "lib" : "link" );
     lk_assemble( &lk, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );

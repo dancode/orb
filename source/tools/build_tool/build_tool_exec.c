@@ -92,7 +92,7 @@ build_clean( target_info_t* target )
             del_q( "del /q %s\\%s\\%s.generated.h >nul 2>nul", g_build_dir, g_gen_dir, rname );
         }
 
-        printf( ORB_INDENT "[orb clean] %s -- bin\\%s.%s, %s\\%s\\%s%s\n", target->name, target->name, ext,
+        printf( ORB_BANNER "[orb clean] %s -- bin\\%s.%s, %s\\%s\\%s%s\n", target->name, target->name, ext,
                 g_build_dir, g_int_dir, target->name, target->has_reflect ? " (+reflect)" : "" );
     }
     else
@@ -115,7 +115,7 @@ build_clean( target_info_t* target )
             if ( g_targets[ i ].type == TARGET_EXECUTABLE && !g_targets[ i ].is_tool )
                 del_q( "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
         }
-        printf( ORB_INDENT "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n", 
+        printf( ORB_BANNER "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n", 
                 g_build_dir, g_int_dir, g_gen_dir );
     }
 }
@@ -284,7 +284,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         for ( int i = 0; target->units[ i ]; ++i )
         {
             char src_path[ BT_PATH_MAX ];
-            snprintf( src_path, sizeof( src_path ), "%s/%s", target->root_dir, target->units[ i ] );
+            snprintf( src_path, sizeof( src_path ), "%s\\%s", target->root_dir, target->units[ i ] );
             if ( build_get_mtime( src_path ) > out_mtime )
             {
                 up_to_date = false;
@@ -472,6 +472,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // restores the renamed-aside .exe.old so the user is not left with a
     // gap where the binary used to be.
 
+    
     if ( !build_target_compile( ctx, target, obj_dir, gen_dir ) )
     {
         if ( renamed )
