@@ -130,6 +130,8 @@ build_clean( target_info_t* target )
 bool 
 build_target_compile_only( build_context_t* ctx, target_info_t* target )
 {
+    /* build paths and ensure they exist for build target compilation */
+
     char obj_dir[ BT_PATH_MAX ];
     snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
     char gen_dir[ BT_PATH_MAX ];
@@ -330,16 +332,17 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         }
     }
 
-    // Test D: header dependency check. The previous successful compile
-    // wrote every #included header path into <obj_dir>/_deps.txt (parsed out
-    // of cl.exe's /showIncludes output -- see build_target_compile and
-    // build_run_cmd_capture_deps). On this pass we replay that list and
-    // rebuild if any listed header is newer than the artifact.
+    // Test D: header dependency check. Skipped when -no-dep-track is set --
+    // header changes will not trigger a rebuild; only tests A-C apply.
+    // When active, the previous successful compile wrote every #included header
+    // path into <obj_dir>/_deps.txt (parsed from cl.exe's /showIncludes output).
+    // On this pass we replay that list and rebuild if any header is newer than
+    // the artifact.
     //
     // No _deps.txt = no recorded header set = we have to assume the worst
     // and rebuild. This is correct on the very first build and after a
     // clean; it auto-recovers on the next pass.
-    if ( up_to_date )
+    if ( up_to_date && g_dep_track )
     {
         char deps_path[ BT_PATH_MAX ];
         snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );

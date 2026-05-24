@@ -78,8 +78,9 @@ static const char* g_gen_dir    = "generated";  // Sub-folder for reflection-gen
     unity-included modules read it via the extern declared in build_tool.h.
 ==============================================================================================*/
 
-out_flags_t g_out_flags = ORB_OUT_DEFAULT;
-bool        g_use_rsp   = true;
+out_flags_t g_out_flags  = ORB_OUT_DEFAULT;
+bool        g_use_rsp    = true;
+bool        g_dep_track  = true;
 
 /*==============================================================================================
     --- Unity Include ---
@@ -230,6 +231,9 @@ validate_targets( void )
       -monolithic               Build DLL modules as static libs; defines BUILD_STATIC globally.
       -no-rsp                   Pass full command lines directly; skip response file (.rsp) creation.
                                 Safe on small projects. Default: rsp enabled (required at ~7000 chars).
+      -no-dep-track             Skip /showIncludes parsing and _deps.txt read/write.
+                                Up-to-date check falls back to artifact mtime vs source files only.
+                                Header changes will not trigger rebuilds.
       -config <Debug|Release>   Pick build config (default Debug)
       -release                  Shortcut for -config Release.
       -clang                    Use clang-cl instead of cl.exe.
@@ -277,7 +281,8 @@ main( int argc, char** argv )
         if ( _stricmp( argv[ i ], "-clean"        ) == 0 ) should_clean = true;
         if ( _stricmp( argv[ i ], "-gen"          ) == 0 ) should_gen = true;
         if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 ) ctx.is_monolithic = true;
-        if ( _stricmp( argv[ i ], "-no-rsp"       ) == 0 ) g_use_rsp = false;
+        if ( _stricmp( argv[ i ], "-no-rsp"       ) == 0 ) g_use_rsp   = false;
+        if ( _stricmp( argv[ i ], "-no-dep-track" ) == 0 ) g_dep_track = false;
         if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = CONFIG_RELEASE;
         if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = COMPILE_CLANG;
         if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) ctx.compile_only = true;

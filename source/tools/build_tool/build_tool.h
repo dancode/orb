@@ -334,6 +334,7 @@ typedef unsigned int out_flags_t;
 
 extern out_flags_t g_out_flags;
 extern bool        g_use_rsp;    // -no-rsp disables response file (.rsp) creation
+extern bool        g_dep_track;  // -no-dep-track disables /showIncludes parsing and _deps.txt read/write
 
 // =============================================================================
 // --- Orchestration API ---

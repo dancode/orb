@@ -565,7 +565,8 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 
     /* flags: standard + config-specific debug/release flags. */
 
-    CC_APPEND( cc.flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes" );
+    CC_APPEND( cc.flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
+    if ( g_dep_track )                 CC_APPEND( cc.flags, " /showIncludes" );
     if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc.flags, " /Zi /Od /MDd" );
     else                               CC_APPEND( cc.flags, " /O2 /MD" );
 
@@ -631,6 +632,8 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
        separated by a single space. The `cc.sources[ 0 ] ? " " : ""` trick
        suppresses the leading space on the first entry -- the field starts
        out as an empty string, so the test is "is anything here yet?". */
+
+    if ( 1 )
     {
         char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
         for ( int i = 0; target->units[ i ]; ++i )
@@ -647,11 +650,13 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
 
-        /* sources: reflection-generated TU (written by reflect_tool.exe in build_target.
-                    sSame absolute-path treatment as the user units. */
+        /* sources: include reflection-generated code  */
 
         if ( target->has_reflect )
         {
+            /* written by reflect_tool.exe in build_target and gets
+               the same absolute-path treatment as the user units. */
+
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
             snprintf( rel, sizeof( rel ), "%s\\%s.generated.c", gen_dir, rname );
             if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
@@ -660,8 +665,8 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         }
     }
 
-    /* Print the requested sections. Routes to the per-target log when called
-       from a parallel worker so the output lands with child-process output. */    
+    /* Print the requested sections to the per-target log when called from a 
+       parallel worker so the output lands with child-process output. */    
 
     cmd_buf_t cmd = { 0 };
     {
@@ -685,9 +690,15 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     /* Run the command, capturing /showIncludes output into a per-target dep file
        for the next incremental check. */
 
-    char deps_path[ BT_PATH_MAX ];
-    snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );
-    return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
+    char  deps_path[ BT_PATH_MAX ];
+    char* deps_out = NULL;
+
+    if ( g_dep_track )
+    {
+        snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );
+        deps_out = deps_path;
+    }
+    return build_run_cmd_capture_deps( cmd.buf, deps_out ) == 0;
 }
 
 /*==============================================================================================
