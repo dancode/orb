@@ -291,6 +291,70 @@ scan_directory_recursive( const char* dir, const char* root_dir )
 }
 
 /**
+ * build_intellisense_defines()
+ *
+ * Builds the semicolon-separated NMakePreprocessorDefinitions value from the
+ * shared define tables in build_tool_targets.c. Both the per-target and the
+ * nav project vcxproj callers use this so neither can silently diverge from
+ * what cc_fill_compile_cmd passes to cl.exe.
+ *
+ * target: the target being projected, or NULL for the nav project (no _STATIC
+ *         chain -- the nav project lists every file as ClInclude and never
+ *         claims TU ownership, so the per-target vcxproj's defines win).
+ */
+static void
+build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_info_t* target )
+{
+    buf[ 0 ] = '\0';
+    size_t used = 0;
+
+#define ISDEF_APPEND( s )                                               \
+    do {                                                                \
+        size_t slen = strlen( s );                                      \
+        if ( used + slen + 2 < buf_size ) {                            \
+            if ( used ) buf[ used++ ] = ';';                            \
+            memcpy( buf + used, s, slen );                              \
+            used += slen;                                               \
+            buf[ used ] = '\0';                                         \
+        }                                                               \
+    } while ( 0 )
+
+    for ( int i = 0; g_defines_always[ i ]; ++i )
+        ISDEF_APPEND( g_defines_always[ i ] );
+
+    const char** cfg = ( config == CONFIG_DEBUG ) ? g_defines_debug : g_defines_release;
+    for ( int i = 0; cfg[ i ]; ++i )
+        ISDEF_APPEND( cfg[ i ] );
+
+    if ( target )
+    {
+        // <TARGET>_STATIC: same derivation as cc_fill_compile_cmd.
+        char upper[ 128 ];
+        get_target_upper( target->name, upper, sizeof( upper ) );
+        char define[ 160 ];
+        snprintf( define, sizeof( define ), "%s_STATIC", upper );
+        ISDEF_APPEND( define );
+
+        // <DEP>_STATIC for each static dep -- mirrors the dep loop in cc_fill_compile_cmd
+        // so the IntelliSense API gateway selection matches the actual build.
+        for ( int i = 0; target->deps[ i ]; ++i )
+        {
+            target_info_t* dep = find_target( target->deps[ i ] );
+            if ( !dep ) continue;
+            if ( dep->type == TARGET_STATIC_LIB )
+            {
+                char dep_upper[ 128 ];
+                get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
+                snprintf( define, sizeof( define ), "%s_STATIC", dep_upper );
+                ISDEF_APPEND( define );
+            }
+        }
+    }
+
+#undef ISDEF_APPEND
+}
+
+/**
  * write_vcxproj_common_header()
  *
  * Writes the boilerplate XML required for a Visual Studio Makefile project.
@@ -306,16 +370,14 @@ scan_directory_recursive( const char* dir, const char* root_dir )
  *     re-emitting the rest of the property block.
  *
  * /std:c11 and /Zc:preprocessor are passed via AdditionalOptions so the
- * IntelliSense parser matches what cl.exe actually does for the build. We
- * also project the target's <NAME>_STATIC define here so APIs guarded by
- * the static-link symbol resolve correctly while editing.
+ * IntelliSense parser matches what cl.exe actually does for the build.
  *
- * `static_def`: NULL for the nav project (no _STATIC). Else the upper-cased
- * target name, e.g. "CORE" -> emits CORE_STATIC.
+ * target: the target being projected. Drives the _STATIC define chain via
+ *         build_intellisense_defines(). NULL for the nav project.
  */
 static void
 write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
-                             target_type_t type, const char* static_def )
+                             target_type_t type, target_info_t* target )
 {
     const char* ext = ".exe";
     if ( type == TARGET_STATIC_LIB ) ext = ".lib";
@@ -371,21 +433,34 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
-    // --- Debug|x64 IntelliSense context ---
-    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;%s%s_DEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
-             static_def ? static_def : "",
-             static_def ? "_STATIC;" : "" );
-    fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
-    fprintf( f, "  </PropertyGroup>\n" );
+    // --- IntelliSense context (Debug|x64 and Release|x64) ---
+    // Defines and AdditionalOptions are derived from the shared tables in
+    // build_tool_targets.c -- the same source cc_fill_compile_cmd uses.
+    {
+        char  additional_opts[ 256 ] = { 0 };
+        for ( int i = 0; g_intellisense_flags[ i ]; ++i )
+        {
+            if ( i ) strcat( additional_opts, " " );
+            strcat( additional_opts, g_intellisense_flags[ i ] );
+        }
 
-    // --- Release|x64 IntelliSense context ---
-    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;%s%sNDEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
-             static_def ? static_def : "",
-             static_def ? "_STATIC;" : "" );
-    fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
-    fprintf( f, "  </PropertyGroup>\n" );
+        char dbg_defines[ 1024 ];
+        char rel_defines[ 1024 ];
+        build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG,   target );
+        build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, target );
+
+        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 dbg_defines );
+        fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
+        fprintf( f, "  </PropertyGroup>\n" );
+
+        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 rel_defines );
+        fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
+        fprintf( f, "  </PropertyGroup>\n" );
+    }
 
     // --- Debugger working directory ---
     // Isolated in their own PropertyGroups so VS does not conflate these with
@@ -428,11 +503,7 @@ build_gen_proj_target( target_info_t* target, int index )
         return;
     }
 
-    // Upper-case the target name for the _STATIC define IntelliSense uses
-    // (matches what build_tool_cc.c emits for cl.exe at build time).
-    char target_upper[ 128 ];
-    get_target_upper( target->name, target_upper, sizeof( target_upper ) );
-    write_vcxproj_common_header( f, guid, target->name, target->type, target_upper );
+    write_vcxproj_common_header( f, guid, target->name, target->type, target );
 
     // Scan the target's source tree recursively so unity sub-files appear in VS.
     g_file_count   = 0;
@@ -592,19 +663,33 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
-    // Per-config IntelliSense context. No _STATIC define here on purpose:
-    // every file in the nav project is listed as ClInclude (see below), so
-    // VS does NOT use this project's TU context for any .c file's headers.
-    // The per-target .vcxproj's IntelliSense context wins for editing, with
-    // the correct <TARGET>_STATIC define for that translation unit.
-    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;_DEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
-    fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
-    fprintf( f, "  </PropertyGroup>\n" );
-    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-    fprintf( f, "    <NMakePreprocessorDefinitions>OS_WINDOWS;COMPILER_MSVC;ARCH_X64;_CRT_SECURE_NO_WARNINGS;NDEBUG;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n" );
-    fprintf( f, "    <AdditionalOptions>/std:c11 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
-    fprintf( f, "  </PropertyGroup>\n" );
+    // Per-config IntelliSense context. NULL target: nav lists all files as
+    // ClInclude so the per-target vcxproj's defines win for editing -- no
+    // _STATIC chain needed here.
+    {
+        char additional_opts[ 256 ] = { 0 };
+        for ( int i = 0; g_intellisense_flags[ i ]; ++i )
+        {
+            if ( i ) strcat( additional_opts, " " );
+            strcat( additional_opts, g_intellisense_flags[ i ] );
+        }
+
+        char dbg_defines[ 1024 ];
+        char rel_defines[ 1024 ];
+        build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG,   NULL );
+        build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, NULL );
+
+        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 dbg_defines );
+        fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
+        fprintf( f, "  </PropertyGroup>\n" );
+        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 rel_defines );
+        fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
+        fprintf( f, "  </PropertyGroup>\n" );
+    }
 
     // Every file is listed as ClInclude regardless of extension. This is
     // deliberate: the nav project exists for global search and navigation,

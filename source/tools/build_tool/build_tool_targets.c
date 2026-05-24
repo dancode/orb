@@ -185,4 +185,41 @@ warn_suppress_t g_warn_suppressions[] = {
 
 int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_suppressions[ 0 ] );
 
+// =============================================================================
+// --- Compile Define Tables ---
+//
+// Single source of truth for preprocessor defines. Both build_tool_cc.c
+// (cl.exe invocation) and build_tool_gen.c (IntelliSense vcxproj emission)
+// iterate these arrays so the two consumers can never silently diverge.
+//
+// Do NOT put platform/compiler identity defines here (OS_WINDOWS, COMPILER_MSVC,
+// ARCH_X64). Those are owned by source/orb.h and detected at compile time via
+// MSVC predefined macros. They belong in source, not in the build tool.
+// =============================================================================
+
+const char* g_defines_always[] = {
+    "_CRT_SECURE_NO_WARNINGS",
+    NULL,
+};
+
+const char* g_defines_debug[] = {
+    "_DEBUG",
+    NULL,
+};
+
+const char* g_defines_release[] = {
+    "NDEBUG",
+    NULL,
+};
+
+// Subset of compile flags that the IntelliSense parser needs to match cl.exe's
+// language and conformance behavior. Excludes pure-build flags (/c /nologo /W4
+// /WX /Zi /Od /O2 /MD etc.) that have no effect on IntelliSense parsing.
+
+const char* g_intellisense_flags[] = {
+    "/std:c11",
+    "/Zc:preprocessor",
+    NULL,
+};
+
 /*============================================================================================*/

@@ -606,11 +606,13 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
 
     CC_APPEND( cc->includes, "/I source /I %s", gen_dir );
 
-    /* defines: must stay in lockstep with the IntelliSense defines in build_tool_gen.c.
-       Propagate _STATIC for each dep so API gateways resolve correctly:
-       static lib deps are always static; dynamic lib deps become static in monolithic mode. */
+    /* defines: consumed from shared tables in build_tool_targets.c so gen.c
+       IntelliSense output is guaranteed to match. Dynamic per-target defines
+       (the _STATIC chain) stay procedural -- they depend on runtime target state. */
 
-    CC_APPEND( cc->defines, "/D_CRT_SECURE_NO_WARNINGS" );
+    for ( int i = 0; g_defines_always[ i ]; ++i )
+        CC_APPEND( cc->defines, "%s/D%s", cc->defines[ 0 ] ? " " : "", g_defines_always[ i ] );
+
     {
         char upper[ 128 ];
         get_target_upper( target->name, upper, sizeof( upper ) );
@@ -629,9 +631,13 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
             CC_APPEND( cc->defines, " /D%s_STATIC", dep_upper );
         }
     }
-    if ( ctx->is_monolithic )          CC_APPEND( cc->defines, " /DBUILD_STATIC" );
-    if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc->defines, " /D_DEBUG" );
-    else                               CC_APPEND( cc->defines, " /DNDEBUG" );
+    if ( ctx->is_monolithic ) CC_APPEND( cc->defines, " /DBUILD_STATIC" );
+
+    {
+        const char** cfg_defines = ( ctx->config == CONFIG_DEBUG ) ? g_defines_debug : g_defines_release;
+        for ( int i = 0; cfg_defines[ i ]; ++i )
+            CC_APPEND( cc->defines, " /D%s", cfg_defines[ i ] );
+    }
 
     /* output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
        Trailing slash required -- without it cl treats the path as a filename prefix. */

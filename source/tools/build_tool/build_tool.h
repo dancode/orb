@@ -144,6 +144,14 @@ typedef struct
 extern warn_suppress_t g_warn_suppressions[];
 extern int             g_warn_suppression_count;
 
+// Shared define tables -- single source of truth consumed by both
+// build_tool_cc.c (cl.exe args) and build_tool_gen.c (IntelliSense vcxproj).
+
+extern const char* g_defines_always[];    // Always-on preprocessor defines.
+extern const char* g_defines_debug[];     // Added only in CONFIG_DEBUG.
+extern const char* g_defines_release[];   // Added only in CONFIG_RELEASE.
+extern const char* g_intellisense_flags[]; // Compile flags the IntelliSense parser needs.
+
 typedef enum
 {
     TARGET_STATIC_LIB,  // Compiles to a .lib archive via lib.exe.
