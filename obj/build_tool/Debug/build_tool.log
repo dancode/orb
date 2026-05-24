@@ -1,7 +1,4 @@
-﻿  [reflect_tool] core: 0 struct(s), 2 enum(s)
-            [orb debug] override: 5 arg(s) from build_tool_debug.args
-        ----------------------------------------------------------------
-        [orb compile-only] CORE [ no-link | modular | debug | msvc ]
-            [orb reflect] core
-            [orb compiling] core
+﻿        ----------------------------------------------------------------
+        [orb build] BUILD_TOOL [ no-deps | modular | debug | msvc ]
+            [orb compiling] build_tool
   

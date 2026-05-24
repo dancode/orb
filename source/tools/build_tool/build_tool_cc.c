@@ -9,8 +9,8 @@
     one string for actual execution.
 
     Two public entry points, both called from build_target():
-      build_target_compile()        -- full unity compile; dep tracking via /showIncludes + _deps.txt.
-      build_target_compile_single() -- single-file compile for VS Ctrl+F7; no dep tracking.
+      build_target_compile()        -- full unity compile; include tracking via /showIncludes + _includes.txt.
+      build_target_compile_single() -- single-file compile for VS Ctrl+F7; no include tracking.
       build_target_link()           -- lib.exe for static libs, link.exe otherwise.
 
     Define source of truth:
@@ -604,7 +604,7 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
     snprintf( cc->exe, sizeof( cc->exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
 
     /* flags: standard + config-specific + warning suppressions.
-       /showIncludes is added by the caller when dep tracking is active. */
+       /showIncludes is added by the caller when include tracking is active. */
 
     CC_APPEND( cc->flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
     if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc->flags, " /Zi /Od /MDd" );
@@ -667,16 +667,18 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
     : Shared tail for both compile entry points: print sections, assemble, echo raw command
       if requested, then run. (writing an rsp file under obj_dir/<rsp_name> when needed), 
     
-    : deps_path is forwarded to build_run_cmd_capture_deps; NULL means no dep file written.
+    : includes_path is forwarded to build_run_cmd_capture_includes; NULL means no includes file written.
 
 ==============================================================================================*/
 
 static bool
 cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config,
-                    const char* obj_dir, const char* rsp_name, const char* deps_path )
+                    const char* obj_dir, const char* rsp_name, const char* includes_path )
 {
     cmd_buf_t cmd = { 0 };
     {
+        /* -- Assemble the command -- */
+
         FILE* log_out = cc_open_log();
         cc_print( log_out, cc, target, config );
 
@@ -689,7 +691,7 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
 
         if ( !ok ) return false;
     }
-    return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
+    return build_run_cmd_capture_includes( cmd.buf, includes_path ) == 0;
 }
 
 /*==============================================================================================
@@ -697,7 +699,7 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
     build_target_compile()
 
     Full unity compile: all target units + generated reflect file. Adds /showIncludes
-    when dep tracking is active so the captured output feeds _deps.txt for the next
+    when include tracking is active so the captured output feeds _includes.txt for the next
     incremental check.
 
 ==============================================================================================*/
@@ -711,18 +713,17 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 
     cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc );
 
-    /* showInludes: cl.exe emits a line for each included header with the format:
-       "Note: including file: <path>". We capture those lines into the .deps.txt
-       file so we can track header dependencies incrementally. When a header
-       changes, we know to recompile any target that includes it directly or
-       indirectly.
+    /* /showIncludes: cl.exe emits a line for each included header with the format:
+       "Note: including file: <path>". We capture those lines into _includes.txt
+       so we can track header includes incrementally. When a header changes, we
+       know to recompile any target that includes it directly or indirectly.
 
-       We only add this flag when dep tracking is active because it produces a
+       We only add this flag when include tracking is active because it produces a
        lot of extra output -- every included header, even from the CRT and
-       third-party deps -- which would be noisy in the logs when we're not
-       actually using it for deps. */
+       third-party libs -- which would be noisy in the logs when we're not
+       actually using it. */
 
-    if ( g_dep_track ) CC_APPEND( cc.flags, " /showIncludes" );
+    if ( g_include_track ) CC_APPEND( cc.flags, " /showIncludes" );
 
     /* sources: Create absolute paths so MSVC error messages are navigable from any CWD.
        _fullpath returns NULL only on truly broken paths; fall back to relative so
@@ -749,19 +750,19 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         }
     }
 
-    /* deps_path: when dep tracking is active, we write a .deps.txt file alongside 
-       the .obj files with the list of headers included by this target. The 
-       incremental check reads that file to determine which targets need 
-       recompilation when a header changes. */
+    /* includes_path: when include tracking is active, we write _includes.txt alongside
+       the .obj files with the list of headers included by this target. The incremental
+       check reads that file to determine which targets need recompilation when a header changes. */
 
-    char  deps_path[ BT_PATH_MAX ];
-    char* deps_out = NULL;
-    if ( g_dep_track )
+    char  includes_path[ BT_PATH_MAX ];
+    char* includes_out = NULL;
+    if ( g_include_track )
     {
-        snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );
-        deps_out = deps_path;
+        snprintf( includes_path, sizeof( includes_path ), "%s\\_includes.txt", obj_dir );
+        includes_out = includes_path;
     }
-    return cc_run_compile_cmd( &cc, target, config, obj_dir, "cl.rsp", deps_out );
+
+    return cc_run_compile_cmd( &cc, target, config, obj_dir, "cl.rsp", includes_out );
 }
 
 /*==============================================================================================
@@ -769,7 +770,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     build_target_compile_single()
 
     Compiles one source file with the target's full flag/define/include set.
-    Used by the VS Ctrl+F7 path (NMakeCompileFile). No /showIncludes, no dep
+    Used by the VS Ctrl+F7 path (NMakeCompileFile). No /showIncludes, no includes
     file -- single-file compiles are not tracked incrementally.
 
 ==============================================================================================*/
@@ -884,9 +885,9 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
     cc_close_log( log_out );
 
-    // NULL deps_path: no /showIncludes parsing needed for link/lib, but we still
+    // NULL includes_path: no /showIncludes parsing needed for link/lib, but we still
     // want line-by-line capture so [MSVC] prefixing and ORB_OUT_MSVC_OUTPUT gating apply.
-    return build_run_cmd_capture_deps( cmd.buf, NULL ) == 0;
+    return build_run_cmd_capture_includes( cmd.buf, NULL ) == 0;
 }
 
 /*============================================================================================*/

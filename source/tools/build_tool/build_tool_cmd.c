@@ -5,7 +5,7 @@
     All child-process invocations route through one of two helpers:
 
         spawn_cmd()                  -- run + wait, output to log_path or stdout.
-        build_run_cmd_capture_deps() -- run + wait, parse /showIncludes lines.
+        build_run_cmd_capture_includes() -- run + wait, parse /showIncludes lines.
 
     Both deliberately avoid system() / _popen / _pclose, which the legacy
     implementation used. Those CRT wrappers internally manipulate (dup) the
@@ -144,14 +144,14 @@ build_run_cmd_quiet( const char* cmd )
 }
 
 /*==============================================================================================  
-    --- Process Dependency (Source File) Lines ---
-    
+    --- Process Include Lines ---
+
     Classify one line of cl.exe stdout/stderr output:
-    
+
      - "Note: including file: <path>" -- header path of a #include cl just
        resolved. Strip whitespace + CR/LF, filter out paths from the VC
        toolchain / Windows SDK (project source can't invalidate those), and
-       record what remains into the per-target _deps.txt file.
+       record what remains into the per-target _includes.txt file.
     
      - Anything else -- forward to the build sink (worker log file or stdout)
        so compile warnings, errors, and the source-file banner cl emits are
@@ -162,7 +162,7 @@ build_run_cmd_quiet( const char* cmd )
 ==============================================================================================*/
 
 static void
-process_deps_line( char* line, FILE* deps, FILE* out )
+process_includes_line( char* line, FILE* includes, FILE* out )
 {
     /*  cl.exe prints header lookups as: "Note: including file: <path>"
         we anchor on that exact prefix to split paths from diagnostic output. */
@@ -201,7 +201,7 @@ process_deps_line( char* line, FILE* deps, FILE* out )
                          || strstr( path, "\\Windows Kits\\" )  != NULL
                          || strstr( path, "/VC/Tools/" )        != NULL
                          || strstr( path, "/Windows Kits/" )    != NULL;
-        if ( deps && !is_system ) fprintf( deps, "%s\n", path );
+        if ( includes && !is_system ) fprintf( includes, "%s\n", path );
     }
     else
     {
@@ -229,30 +229,31 @@ process_deps_line( char* line, FILE* deps, FILE* out )
                 issue_count++;
             }
 
-            /* Drop bare source-file echoes ("foo.c"); the orb log already
-               shows the source list, so cl's echo just adds duplicate noise. */
+            /*  Drop bare source-file echoes ("foo.c"); the orb log already
+                shows the source list, so cl's echo just adds duplicate noise. */
 
-            if ( !is_msvc_source_echo( line ) )
+            if ( is_msvc_source_echo( line ) == false )
                 fprintf( out, ORB_INDENT "%s\n", line );
         }
     }
 }
+
 /*==============================================================================================
-    --- Capture Dependencies ---
+    --- Capture Includes ---
 
     Run cl.exe (the compiler), intercept every line it prints, and sort those lines
-    into two buckets — "header file paths" go to a deps file, everything else such as
+    into two buckets -- "header file paths" go to an includes file, everything else
     (errors, warnings) goes to the log.
 
     Same role as build_run_cmd(), but additionally pipes the child's
     stdout + stderr back through us so /showIncludes lines can be parsed out
-    into deps_path. Used exclusively by the compile step.
+    into includes_path. Used exclusively by the compile step.
 
     Returns 0 on success, non-zero on failure.
  ==============================================================================================*/
 
 int
-build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
+build_run_cmd_capture_includes( const char* cmd, const char* includes_path )
 {
     /*  CreatePipe + CreateProcess instead of _popen/_pclose, for the same
         thread-safety reason explained in spawn_cmd() above.
@@ -267,8 +268,9 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
     if ( !CreatePipe( &rd, &wr, &sa, 65536 ) ) return -1;
     SetHandleInformation( rd, HANDLE_FLAG_INHERIT, 0 );
 
-    char wrapped[ CMD_BUF_MAX ];
-    snprintf( wrapped, sizeof( wrapped ), "cmd.exe /C %s", cmd );
+    /* write out the command to run */
+    char compile_command[ CMD_BUF_MAX ];
+    snprintf( compile_command, sizeof( compile_command ), "cmd.exe /C %s", cmd );
 
     STARTUPINFOA si = { 0 };
     si.cb         = sizeof( si );
@@ -277,8 +279,10 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
     si.hStdOutput = wr;
     si.hStdError  = wr;
 
+    /* this starts the cl.exe build process */
+
     PROCESS_INFORMATION pi = { 0 };
-    if ( !CreateProcessA( NULL, wrapped, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi ) )
+    if ( !CreateProcessA( NULL, compile_command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi ) )
     {
         CloseHandle( rd );
         CloseHandle( wr );
@@ -303,14 +307,14 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
         if ( owned_log ) out = owned_log;
     }
 
-    FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
+    FILE* includes = includes_path ? fopen( includes_path, "w" ) : NULL;
 
-    /*  Stream the pipe into a line buffer; classify each full line via 
-        process_deps_line(). The child writes whatever-sized chunks it likes;
+    /*  Stream the pipe into a line buffer; classify each full line via
+        process_includes_line(). The child writes whatever-sized chunks it likes;
         we accumulate bytes into `line` until we see a newline OR run out of
         room, then ship the assembled line off for parsing.
-        
-        line ............ the per-line accumulator we hand to process_deps_line.
+
+        line ............ the per-line accumulator we hand to process_includes_line.
         buf  ............ the per-read scratch we pull from the pipe.
         \r   is dropped on the fly so the assembled line contains only the
              Unix-style content even when the child emits CRLF.
@@ -331,14 +335,14 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
             char c = buf[ i ];
             if ( c == '\r' ) continue;  // Drop CR; we only care about LF.
 
-            /* process the next line for dependencies */
+            /* process the next line for includes */
             if ( c == '\n' || line_len >= sizeof( line ) - 1 )
             {
-                /* could either a real line end or our buffer is full, 
+                /* could either a real line end or our buffer is full,
                    then we flush -- we still null-terminate and dispatch. */
 
                 line[ line_len ] = '\0';
-                process_deps_line( line, deps, out );
+                process_includes_line( line, includes, out );
                 line_len = 0;
 
                 /* If we flushed due to overflow (not a true newline), the
@@ -361,7 +365,7 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
     if ( line_len > 0 )
     {
         line[ line_len ] = '\0';
-        process_deps_line( line, deps, out );
+        process_includes_line( line, includes, out );
     }
 
     /* wait for the child to exit and get its exit code. */
@@ -373,7 +377,7 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
     CloseHandle( pi.hProcess );
     CloseHandle( pi.hThread );
 
-    if ( deps )      fclose( deps );
+    if ( includes )  fclose( includes );
     if ( owned_log ) fclose( owned_log );
 
     return ( int )error_code; /* 9 == success */

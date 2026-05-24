@@ -358,7 +358,7 @@ typedef unsigned int out_flags_t;
 
 extern out_flags_t g_out_flags;
 extern bool        g_use_rsp;    // -no-rsp disables response file (.rsp) creation
-extern bool        g_dep_track;  // -no-dep-track disables /showIncludes parsing and _deps.txt read/write
+extern bool        g_include_track;  // -no-include-track disables /showIncludes parsing and _includes.txt read/write
 
 /*==============================================================================================
     --- Orchestration API ---
@@ -369,12 +369,12 @@ extern bool        g_dep_track;  // -no-dep-track disables /showIncludes parsing
 // translation units that build_tool.c #includes.
 
 // Compiles all translation units for a target. Emits the cl.exe command line
-// with /showIncludes so build_run_cmd_capture_deps can record the header set
-// into <obj_dir>/_deps.txt for the next incremental check.
+// with /showIncludes so build_run_cmd_capture_includes can record the header set
+// into <obj_dir>/_includes.txt for the next incremental check.
 bool build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir );
 
 // Compiles a single source file with the target's full flag/define/include set.
-// No /showIncludes, no link step, no dep tracking. CLI tool for targeted error
+// No /showIncludes, no link step, no include tracking. CLI tool for targeted error
 // checking (-file flag). file_path must be absolute.
 bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
                                   const char* obj_dir, const char* gen_dir, const char* file_path );
@@ -431,12 +431,12 @@ int build_run_cmd( const char* cmd );
 int build_run_cmd_quiet( const char* cmd );
 
 // Pipes the child's stdout+stderr back line-by-line through us. When
-// deps_path is non-NULL, /showIncludes lines are parsed out and written
+// includes_path is non-NULL, /showIncludes lines are parsed out and written
 // there (system headers filtered); used for compile steps. When NULL, no
-// deps file is written; used for link/lib steps. All non-deps lines are
+// includes file is written; used for link/lib steps. All non-include lines are
 // forwarded to the active sink (worker log or stdout) prefixed with [MSVC]
 // when ORB_OUT_MSVC_OUTPUT is set, or silently dropped when not.
-int build_run_cmd_capture_deps( const char* cmd, const char* deps_path );
+int build_run_cmd_capture_includes( const char* cmd, const char* includes_path );
 
 // The core worker function. Handles recursive dependency resolution
 // (unless ctx->skip_deps), per-target locking, the incremental-build

@@ -18,7 +18,7 @@
 
     Output handling:
     - Each worker writes a per-target log file under the obj dir. While the
-      worker is active, every build_run_cmd / build_run_cmd_capture_deps call
+      worker is active, every build_run_cmd / build_run_cmd_capture_includes call
       it makes redirects to that file (via a TLS-stored path read by the
       vcvars module). When the target finishes, the worker dumps its log to
       stdout in one atomic block under a global print lock. No interleaving.
@@ -96,7 +96,7 @@ static bool              g_print_lock_inited = false;
 
     Returns the active per-thread log path, or NULL if the calling thread is
     not inside a scheduler worker. The vcvars module reads this in
-    build_run_cmd / build_run_cmd_capture_deps to redirect child-process
+    build_run_cmd / build_run_cmd_capture_includes to redirect child-process
     output away from the shared stdout.
 
 ==============================================================================================*/
@@ -414,25 +414,26 @@ worker_main( void* arg )
     }
 }
 
-/*============================================================================================*/
-// --- Public entry ---
+/*==============================================================================================
 
-/**
- * build_run_parallel()
- *
- * Builds the transitive closure of `root` (or all g_targets if NULL) using
- * up to thread_count concurrent workers. Returns true if every target
- * finished successfully.
- *
- * The closure is constructed via add_job() recursion before any workers
- * spawn; after that the scheduler is purely event-driven (ready set +
- * reverse-dep edges).
- */
+    -- Build Target(s) Parallel (CLI) --
+
+    Builds the transitive closure of `root` (or all g_targets if NULL) using
+    up to thread_count concurrent workers. Returns true if every target
+    finished successfully.
+ 
+    The closure is constructed via add_job() recursion before any workers
+    spawn; after that the scheduler is purely event-driven (ready set +
+    reverse-dep edges).
+
+==============================================================================================*/
+
 bool
 build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count )
 {
     memset( &g_sched, 0, sizeof( g_sched ) );
     g_sched.ctx = ctx;
+
     InitializeCriticalSection( &g_sched.lock );
     InitializeConditionVariable( &g_sched.cv );
 

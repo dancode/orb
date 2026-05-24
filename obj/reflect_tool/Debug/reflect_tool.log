@@ -1,1 +1,5 @@
 ﻿        [orb clean] reflect_tool -- bin\reflect_tool.exe, build\obj\reflect_tool
+        ----------------------------------------------------------------
+        [orb build] REFLECT_TOOL [ no-deps | modular | debug | msvc ]
+            [orb compiling] reflect_tool
+  

@@ -23,4 +23,5 @@
 Debug
 -target
 core
--compile-only
+-force
+

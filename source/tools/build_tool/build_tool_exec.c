@@ -121,6 +121,8 @@ build_clean( target_info_t* target )
 
 /*==============================================================================================
     
+    --- Build Target And Compile (No Link )-- 
+
     Compile all units for a target without running the link/archive step.
     Called from the VS Ctrl+F7 path (-compile-only flag) via NMakeCompileFileCommandLine.
     Ensures intermediate directories exist (bin/ is not needed)
@@ -365,29 +367,29 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         }
     }
 
-    // Test D: header dependency check. Skipped when -no-dep-track is set --
+    // Test D: header include check. Skipped when -no-include-track is set --
     // header changes will not trigger a rebuild; only tests A-C apply.
     // When active, the previous successful compile wrote every #included header
-    // path into <obj_dir>/_deps.txt (parsed from cl.exe's /showIncludes output).
+    // path into <obj_dir>/_includes.txt (parsed from cl.exe's /showIncludes output).
     // On this pass we replay that list and rebuild if any header is newer than
     // the artifact.
     //
-    // No _deps.txt = no recorded header set = we have to assume the worst
+    // No _includes.txt = no recorded header set = we have to assume the worst
     // and rebuild. This is correct on the very first build and after a
     // clean; it auto-recovers on the next pass.
-    if ( up_to_date && g_dep_track )
+    if ( up_to_date && g_include_track )
     {
-        char deps_path[ BT_PATH_MAX ];
-        snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );
-        FILE* deps = fopen( deps_path, "r" );
-        if ( !deps )
+        char includes_path[ BT_PATH_MAX ];
+        snprintf( includes_path, sizeof( includes_path ), "%s\\_includes.txt", obj_dir );
+        FILE* includes = fopen( includes_path, "r" );
+        if ( !includes )
         {
             up_to_date = false;
         }
         else
         {
             char header_path[ BT_PATH_MAX ];
-            while ( fgets( header_path, sizeof( header_path ), deps ) )
+            while ( fgets( header_path, sizeof( header_path ), includes ) )
             {
                 // Strip the newline fgets leaves on the path so it round-trips
                 // through build_get_mtime cleanly.
@@ -406,7 +408,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
                     break;
                 }
             }
-            fclose( deps );
+            fclose( includes );
         }
     }
 
@@ -504,7 +506,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // --- 6. Compile & Link ---
     //
     // Two phases. Compile emits .obj files into obj_dir and records the
-    // header dependency set into _deps.txt. Link/archive ties the .obj
+    // header include set into _includes.txt. Link/archive ties the .obj
     // files into the final .lib/.dll/.exe artifact. Either failing
     // restores the renamed-aside .exe.old so the user is not left with a
     // gap where the binary used to be.

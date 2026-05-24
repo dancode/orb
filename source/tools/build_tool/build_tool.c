@@ -80,7 +80,7 @@ static const char* g_gen_dir    = "generated";  // Sub-folder for reflection-gen
 
 out_flags_t g_out_flags  = ORB_OUT_DEFAULT;
 bool        g_use_rsp    = false;
-bool        g_dep_track  = true;
+bool        g_include_track  = true;
 
 /*==============================================================================================
     --- Unity Include ---
@@ -231,7 +231,7 @@ validate_targets( void )
       -monolithic, -mono        Build DLL modules as static libs; defines BUILD_STATIC globally.
       -no-rsp                   Pass full command lines directly; skip response file (.rsp) creation.
                                 Safe on small projects. Default: rsp enabled (required at ~7000 chars).
-      -no-dep-track             Skip /showIncludes parsing and _deps.txt read/write.
+      -no-include-track         Skip /showIncludes parsing and _includes.txt read/write.
                                 Up-to-date check falls back to artifact mtime vs source files only.
                                 Header changes will not trigger rebuilds.
       -config <Debug|Release>   Pick build config (default Debug)
@@ -283,7 +283,7 @@ main( int argc, char** argv )
         if ( _stricmp( argv[ i ], "-monolithic" ) == 0 ) ctx.is_monolithic = true;
         if ( _stricmp( argv[ i ], "-mono"       ) == 0 ) ctx.is_monolithic = true;
         if ( _stricmp( argv[ i ], "-no-rsp"       ) == 0 ) g_use_rsp   = false;
-        if ( _stricmp( argv[ i ], "-no-dep-track" ) == 0 ) g_dep_track = false;
+        if ( _stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
         if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = CONFIG_RELEASE;
         if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = COMPILE_CLANG;
         if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) ctx.compile_only = true;
@@ -471,7 +471,7 @@ main( int argc, char** argv )
 
         if ( !target ) { printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); return 1; }
         bool was_skipped = false;
-        if ( !build_target( &ctx, target, &was_skipped ) )
+        if ( build_target( &ctx, target, &was_skipped ) == false )
         {
             printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;
@@ -486,7 +486,7 @@ main( int argc, char** argv )
     {
         // --- Build All Targets In Parallel (CLI) ---
 
-        if ( !build_run_parallel( &ctx, target, j_threads ) )
+        if ( build_run_parallel( &ctx, target, j_threads ) == false )
         {
             printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;
