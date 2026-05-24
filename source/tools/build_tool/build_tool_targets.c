@@ -151,14 +151,14 @@ static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL 
 // Map solutions to their target lists and navigation scope.
 solution_info_t g_solutions[] = {
     {
-     .name          = "orb_make",
+     .name          = "orb",
      .target_names  = g_sln_main_targets,
      .nav_dir       = "source",
      .out_dir       = "build\\proj",
      .is_monolithic = false,
     },
     {
-     .name          = "orb_make_mono",
+     .name          = "orb_mono",
      .target_names  = g_sln_main_targets,
      .nav_dir       = "source",
      .out_dir       = "build\\proj_mono",
