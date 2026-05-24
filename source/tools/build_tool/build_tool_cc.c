@@ -55,7 +55,7 @@ typedef struct
 } link_cmd_t;
 
 /*==============================================================================================
-    --- Sentinel checks -- 
+    --- Overflow Sentinel checks -- 
 
     Verify the last byte of every field is still '\0' before the structs are
     assembled into a command string. cc_field() aborts on detected overflow, but
@@ -63,7 +63,7 @@ typedef struct
 ==============================================================================================*/
 
 static void
-cc_check_sentinels( const compile_cmd_t* cc )
+cc_check_overflow( const compile_cmd_t* cc )
 {
     if ( cc->exe     [ 64          - 1 ] || cc->flags   [ 512         - 1 ] ||
          cc->includes[ 512         - 1 ] || cc->defines [ 1024        - 1 ] ||
@@ -75,7 +75,7 @@ cc_check_sentinels( const compile_cmd_t* cc )
 }
 
 static void
-lk_check_sentinels( const link_cmd_t* lk )
+lk_check_overflow( const link_cmd_t* lk )
 {
     if ( lk->exe     [ 32          - 1 ] || lk->artifact[ BT_PATH_MAX - 1 ] ||
          lk->flags   [ 256         - 1 ] || lk->output  [ 512         - 1 ] ||
@@ -396,11 +396,7 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 static bool
 cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
 {
-    /* ARGS_BUF covers the maximum: sources (CMD_BUF_MAX) + all other fields
-       (flags 512 + includes 512 + defines 1024 + output 512 + 4 spaces). */
-
-    enum { ARGS_BUF = CMD_BUF_MAX + 3200 };
-    char args[ ARGS_BUF ];
+    char args[ CMD_BUF_MAX ];
 
     int  written = snprintf( args, sizeof( args ), "%s %s %s %s %s",
                              cc->flags, cc->includes, cc->defines, cc->output, cc->sources );
@@ -441,8 +437,7 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
         // fatal error
         printf( ORB_INDENT "[orb error] command length %zu exceeds threshold;" 
                 "enable -rsp to use a response file\n", total );
-        return false;
-        
+        return false;        
     }
     else
     {
@@ -544,40 +539,49 @@ print_raw_cmd( FILE* out, const char* cmd )
 static bool
 is_msvc_source_echo( const char* line )
 {
-    // 1. Skip any leading whitespace so " foo.c" matches just like "foo.c".
+    /*  1.  Skip any leading whitespace so " foo.c" matches just like "foo.c". */
+
     while ( *line == ' ' || *line == '\t' ) ++line;
 
-    // 2. Compute the effective length, ignoring any trailing CR / LF / space
-    //    that survived the line-buffer split. We work with a length rather
-    //    than mutating the buffer because the caller may want the line again.
+    /*  2.  Compute the effective length, ignoring any trailing CR / LF / space
+            that survived the line-buffer split. We work with a length rather
+            than mutating the buffer because the caller may want the line again. */
+
     int len = ( int )strlen( line );
     while ( len > 0 && ( line[ len - 1 ] == '\n'
                       || line[ len - 1 ] == '\r'
                       || line[ len - 1 ] == ' ' ) ) --len;
-    if ( len == 0 ) return false;
+    if ( len == 0 ) 
+        return false;
 
-    // 3. Reject anything that contains an interior space or a path separator --
-    //    cl's TU banner is a bare filename, never a path. This is what
-    //    distinguishes "foo.c" (echo) from "F:\orb\src\foo.c(12): error C..."
-    //    (diagnostic -- keep!).
+    /*  3.  Reject anything that contains an interior space or a path separator --
+            cl's TU banner is a bare filename, never a path. This is what
+            distinguishes "foo.c" (echo) from "F:\orb\src\foo.c(12): error C..."
+            (diagnostic -- keep!). */
+
     for ( int i = 0; i < len; ++i )
-        if ( line[ i ] == ' ' || line[ i ] == '/' || line[ i ] == '\\' ) return false;
+        if ( line[ i ] == ' ' || line[ i ] == '/' || line[ i ] == '\\' ) 
+            return false;
 
-    // 4. Find the last '.' so we can look at the extension. No dot = no
-    //    extension = not a source banner.
+    /* 4.   Find the last '.' so we can look at the extension. No dot = no
+            extension = not a source banner. */
+
     int dot = -1;
     for ( int i = len - 1; i >= 0; --i ) { if ( line[ i ] == '.' ) { dot = i; break; } }
-    if ( dot < 0 ) return false;
+    if ( dot < 0 ) 
+        return false;
 
-    // 5. Compare the extension (case-insensitive). We use _strnicmp + an
-    //    explicit length check rather than _stricmp because `line` may still
-    //    have trailing CR/LF/spaces past `len` (we trimmed by adjusting len
-    //    only, not by null-terminating). E.g. "foo.c\n" gives ext = "c\n"
-    //    and _stricmp("c\n", "c") would mismatch -- losing the filter.
+    /* 5.   Compare the extension (case-insensitive). We use _strnicmp + an
+            explicit length check rather than _stricmp because `line` may still
+            have trailing CR/LF/spaces past `len` (we trimmed by adjusting len
+            only, not by null-terminating). E.g. "foo.c\n" gives ext = "c\n"
+            and _stricmp("c\n", "c") would mismatch -- losing the filter. */
+
     const char* ext     = line + dot + 1;
     int         ext_len = len - ( dot + 1 );
     if ( ext_len == 1 && _strnicmp( ext, "c",   1 ) == 0 ) return true;
     if ( ext_len == 3 && _strnicmp( ext, "cpp", 3 ) == 0 ) return true;
+
     return false;
 }
 
@@ -678,7 +682,7 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
 
         char rsp_path[ BT_PATH_MAX ];
         snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s", obj_dir, rsp_name );
-        cc_check_sentinels( cc );
+        cc_check_overflow( cc );
         bool ok = cc_assemble( cc, &cmd, rsp_path );
         if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
         cc_close_log( log_out );
@@ -875,7 +879,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     cmd_buf_t cmd = { 0 };
     snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s.rsp", obj_dir,
               target->type == TARGET_STATIC_LIB ? "lib" : "link" );
-    lk_check_sentinels( &lk );
+    lk_check_overflow( &lk );
     lk_assemble( &lk, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
     cc_close_log( log_out );

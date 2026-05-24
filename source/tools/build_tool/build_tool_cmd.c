@@ -6,7 +6,7 @@
 
         spawn_cmd()                  -- run + wait, output to log_path or stdout.
         build_run_cmd_capture_deps() -- run + wait, parse /showIncludes lines.
-    
+
     Both deliberately avoid system() / _popen / _pclose, which the legacy
     implementation used. Those CRT wrappers internally manipulate (dup) the
     parent's stdio descriptors as a side effect of setting up the child's
@@ -23,6 +23,7 @@ const char* sched_log_path( void );                     // forward declaration
 static bool is_msvc_source_echo( const char* line );    // forward declaration
 
 /*==============================================================================================
+    --- Child Process Spawning ---
 
     spawn_cmd() -- Spawn a child via CreateProcessA, wait for it, return exit code.
 
@@ -35,7 +36,6 @@ static bool is_msvc_source_echo( const char* line );    // forward declaration
 
     cmd is wrapped in "cmd.exe /C" so shell builtins (del, for) and tool-side glob
     expansion (*.obj) keep working unchanged.
-
 ==============================================================================================*/
 
 static int
@@ -58,10 +58,7 @@ spawn_cmd( const char* cmd, const char* log_path )
         }
     }
 
-    /* Wrap in cmd.exe /C. Buffer is CMD_BUF_MAX + 64 to accommodate the
-      "cmd.exe /C " prefix on top of any maximum-length compile/link line.*/
-
-    char wrapped[ CMD_BUF_MAX + 64 ];
+    char wrapped[ CMD_BUF_MAX ];
     snprintf( wrapped, sizeof( wrapped ), "cmd.exe /C %s", cmd );
 
     /* Fully populate STARTUPINFO so the child gets explicit, inheritable
@@ -99,6 +96,7 @@ spawn_cmd( const char* cmd, const char* log_path )
 }
 
 /*==============================================================================================  
+    -- One-Shot Command Execution --
 
     Public entry point for one-shot command execution. Routes to spawn_cmd() with 
     the active worker's log path (if any) so child output is captured
@@ -106,9 +104,7 @@ spawn_cmd( const char* cmd, const char* log_path )
     is also written to the log so post-mortem inspection has a clear marker.
     
     Used if a failure should stop the build immediately (e.g. compile/link step)
-
     This is a blocking command -- the caller waits for it to finish before proceeding.
-
  ==============================================================================================*/
 
 int build_run_cmd( const char* cmd )
@@ -133,22 +129,22 @@ int build_run_cmd( const char* cmd )
 }
 
 /*==============================================================================================
+    --- Quiet Command Execution ---
 
     build_run_cmd_quiet() -- Like build_run_cmd() but suppresses the exit-code marker
     on failure. Used by build_clean() for del/rd operations where failures are expected
     and the caller prints a single summarized header rather than one line per call.
-
 ==============================================================================================*/
 
-int build_run_cmd_quiet( const char* cmd )
+int 
+build_run_cmd_quiet( const char* cmd )
 {
     const char* log = sched_log_path();
     return spawn_cmd( cmd, log );
 }
 
 /*==============================================================================================  
-
-    -- Process Dependency File Lines --
+    --- Process Dependency (Source File) Lines ---
     
     Classify one line of cl.exe stdout/stderr output:
     
@@ -163,79 +159,85 @@ int build_run_cmd_quiet( const char* cmd )
     
     NOTE: The "Note: including file:" prefix is English-only. For other
     locales, set VSLANG=1033 in the environment before launching the build.
-
- ==============================================================================================*/
+==============================================================================================*/
 
 static void
 process_deps_line( char* line, FILE* deps, FILE* out )
 {
-    // cl prints header lookups as:  "Note: including file: <path>"
-    // We anchor on that exact prefix to split paths from diagnostic output.
+    /*  cl.exe prints header lookups as: "Note: including file: <path>"
+        we anchor on that exact prefix to split paths from diagnostic output. */
+
     static const char   k_prefix[] = "Note: including file:";
     static const size_t k_prefix_n = sizeof( k_prefix ) - 1;
 
-    // Skip any leading whitespace so prefix matching works even when cl
-    // emits the line indented (which it does for indirect includes -- each
-    // nesting level adds a leading space).
+    /*  skip any leading whitespace so prefix matching works even when cl.exe
+        emits the line indented (which it does for indirect includes */
+
     char* p = line;
     while ( *p == ' ' || *p == '\t' ) ++p;
 
+    /* did we find out header? */
     if ( strncmp( p, k_prefix, k_prefix_n ) == 0 )
     {
-        // ---- Header-path branch -------------------------------------------
-        // Step over the prefix and any whitespace before the actual path.
+        /* --- Header Extraction For Dependencies --- */
+        /* Step over the prefix and any whitespace before the actual path. */
+
         char* path = p + k_prefix_n;
         while ( *path == ' ' || *path == '\t' ) ++path;
 
-        // Trim trailing CR/LF; the pipe-feed loop strips \r on the fly but
-        // we still see \n here, plus any older \r-terminated input.
+        /* Trim trailing CR/LF; the pipe-feed loop strips \r on the fly but
+           we still see \n here, plus any older \r-terminated input. */
+
         size_t l = strlen( path );
         while ( l > 0 && ( path[ l - 1 ] == '\r' || path[ l - 1 ] == '\n' ) ) path[ --l ] = '\0';
         if ( l == 0 ) return;
 
-        // Filter out VC toolchain and Windows SDK headers: those can never
-        // be invalidated by a project source edit, so tracking them as deps
-        // is just wasted I/O on every incremental build. We check both
-        // slash conventions because cl emits whatever the include used.
-        bool is_system = strstr( path, "\\VC\\Tools\\" ) != NULL
-                         || strstr( path, "\\Windows Kits\\" ) != NULL
-                         || strstr( path, "/VC/Tools/" ) != NULL
-                         || strstr( path, "/Windows Kits/" ) != NULL;
+        /* Filter out VC toolchain and Windows SDK headers: those can never
+           be invalidated by a project source edit, so tracking them as deps
+           is just wasted I/O on every incremental build. We check both
+           slash conventions because cl emits whatever the include used. */
+
+        bool is_system =    strstr( path, "\\VC\\Tools\\" )     != NULL
+                         || strstr( path, "\\Windows Kits\\" )  != NULL
+                         || strstr( path, "/VC/Tools/" )        != NULL
+                         || strstr( path, "/Windows Kits/" )    != NULL;
         if ( deps && !is_system ) fprintf( deps, "%s\n", path );
     }
     else
     {
-        // ---- Diagnostic / banner branch ----------------------------------
-        // Anything that isn't a header path is either a real diagnostic
-        // (error / warning / note / fatal error) or noise (cl's per-TU
-        // source banner). We want diagnostics to always reach the user,
-        // even in quiet mode -- losing an error is much worse than printing
-        // an extra line. Other lines only print when the verbose flag is set.
+        /* ---- Diagnostic / Banner Branch ---------------------------------- */
+        /* Anything that isn't a header path is either a real diagnostic
+           (error / warning / note / fatal error) or noise (cl's per-TU banners). 
+           
+           We want diagnostics to always reach the user,
+           even in quiet mode -- losing an error is much worse than printing
+           an extra line. Other lines only print when the verbose flag is set. */
         bool is_diagnostic = ( strstr( line, ": error"   ) != NULL )
                           || ( strstr( line, ": warning" ) != NULL )
                           || ( strstr( line, ": note"    ) != NULL )
                           || ( strstr( line, ": fatal error" ) != NULL );
 
-        if ( is_diagnostic || ( g_out_flags & ORB_OUT_MSVC_OUTPUT ) )
+        if ( is_diagnostic || ( g_out_flags & ORB_OUT_MSVC_OUTPUT ))
         {
-            // The first diagnostic prints a blank line first so it visually
-            // separates from any preceding banner-noise -- easier to spot.
-            // `static` is fine here because parallel workers serialize at
-            // the print lock anyway.
+            /*  The first diagnostic prints a blank line first so it visually separates 
+                from any preceding banner-noise -- easier to spot. `static` is fine 
+                here because parallel workers serialize at the print lock anyway. */
+
             static int issue_count = 0;
             if ( is_diagnostic && issue_count == 0 ) {
                 fprintf( out, "\n" );
                 issue_count++;
             }
-            // Drop bare source-file echoes ("foo.c"); the orb log already
-            // shows the source list, so cl's echo just adds duplicate noise.
+
+            /* Drop bare source-file echoes ("foo.c"); the orb log already
+               shows the source list, so cl's echo just adds duplicate noise. */
+
             if ( !is_msvc_source_echo( line ) )
                 fprintf( out, ORB_INDENT "%s\n", line );
         }
     }
 }
 /*==============================================================================================
-
     --- Capture Dependencies ---
 
     Run cl.exe (the compiler), intercept every line it prints, and sort those lines
@@ -247,7 +249,6 @@ process_deps_line( char* line, FILE* deps, FILE* out )
     into deps_path. Used exclusively by the compile step.
 
     Returns 0 on success, non-zero on failure.
-
  ==============================================================================================*/
 
 int
@@ -266,8 +267,7 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
     if ( !CreatePipe( &rd, &wr, &sa, 65536 ) ) return -1;
     SetHandleInformation( rd, HANDLE_FLAG_INHERIT, 0 );
 
-    /* pad buffer for prefix command */
-    char wrapped[ CMD_BUF_MAX + 64 ];
+    char wrapped[ CMD_BUF_MAX ];
     snprintf( wrapped, sizeof( wrapped ), "cmd.exe /C %s", cmd );
 
     STARTUPINFOA si = { 0 };
@@ -284,15 +284,19 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
         CloseHandle( wr );
         return -1;
     }
-    // Close OUR copy of the write end. Once the child also closes it
-    // (process exit), ReadFile on rd will return EOF. Without this, the
-    // ReadFile loop below would block forever.
+
+    /* close OUR copy of the write end. Once the child also closes it
+       (process exit), ReadFile on rd will return EOF. Without this, the
+       ReadFile loop below would block forever. */
+
     CloseHandle( wr );
 
-    // Output sink: per-worker log if active, otherwise stdout.
+    /* Output sink: per-worker log if active, otherwise stdout. */
+
+    FILE* owned_log = NULL;
+    FILE* out       = stdout;
+
     const char* log_path  = sched_log_path();
-    FILE*       owned_log = NULL;
-    FILE*       out       = stdout;
     if ( log_path )
     {
         owned_log = fopen( log_path, "a" );
@@ -301,41 +305,46 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
 
     FILE* deps = deps_path ? fopen( deps_path, "w" ) : NULL;
 
-    // Stream the pipe into a line buffer; classify each full line via
-    // process_deps_line(). The child writes whatever-sized chunks it likes;
-    // we accumulate bytes into `line` until we see a newline OR run out of
-    // room, then ship the assembled line off for parsing.
-    //
-    //  `line` ............ the per-line accumulator we hand to process_deps_line.
-    //  `buf`  ............ the per-read scratch we pull from the pipe.
-    //  `\r` is dropped on the fly so the assembled line contains only the
-    //  Unix-style content even when the child emits CRLF.
-    //
-    // Any line longer than sizeof(line)-1 is force-flushed mid-way -- fine
-    // because the only "interesting" lines (the "Note: including file:"
-    // markers) are well under 4KB in practice.
-    char  line[ 4096 ];
-    size_t line_len = 0;
-    char  buf[ 4096 ];
-    DWORD br = 0;
-    while ( ReadFile( rd, buf, sizeof( buf ), &br, NULL ) && br > 0 )
+    /*  Stream the pipe into a line buffer; classify each full line via 
+        process_deps_line(). The child writes whatever-sized chunks it likes;
+        we accumulate bytes into `line` until we see a newline OR run out of
+        room, then ship the assembled line off for parsing.
+        
+        line ............ the per-line accumulator we hand to process_deps_line.
+        buf  ............ the per-read scratch we pull from the pipe.
+        \r   is dropped on the fly so the assembled line contains only the
+             Unix-style content even when the child emits CRLF.
+        
+        Any line longer than sizeof(line)-1 is force-flushed mid-way -- fine
+        because the only "interesting" lines (the "Note: including file:"
+        markers) are well under 4KB in practice.*/
+
+    char    line        [ 4096 ];
+    char    buf         [ 4096 ];
+    size_t  line_len    = 0;
+    DWORD   bytes_read  = 0;
+    
+    while ( ReadFile( rd, buf, sizeof( buf ), &bytes_read, NULL ) && bytes_read > 0 )
     {
-        for ( DWORD i = 0; i < br; ++i )
+        for ( DWORD i = 0; i < bytes_read; ++i )
         {
             char c = buf[ i ];
-            if ( c == '\r' ) continue;          // Drop CR; we only care about LF.
+            if ( c == '\r' ) continue;  // Drop CR; we only care about LF.
 
+            /* process the next line for dependencies */
             if ( c == '\n' || line_len >= sizeof( line ) - 1 )
             {
-                // Either a real line end, or the buffer is full and we have
-                // to flush. Either way, null-terminate and dispatch.
+                /* could either a real line end or our buffer is full, 
+                   then we flush -- we still null-terminate and dispatch. */
+
                 line[ line_len ] = '\0';
                 process_deps_line( line, deps, out );
                 line_len = 0;
 
-                // If we flushed due to overflow (not a true newline), the
-                // current character is real content -- append it to the
-                // freshly emptied buffer so we don't lose it.
+                /* If we flushed due to overflow (not a true newline), the
+                   current character is real content -- append it to the
+                   freshly emptied buffer so we don't lose it. */
+
                 if ( c != '\n' ) line[ line_len++ ] = c;
             }
             else
@@ -344,14 +353,18 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
             }
         }
     }
-    // Flush any trailing partial line. The child may exit without writing a
-    // terminating newline (cl does this on the last line of its banner
-    // output), and we'd lose that final line without this catch.
+
+    /* Flush any trailing partial line. The child may exit without writing a
+       terminating newline (cl does this on the last line of its banner output), 
+       and we'd lose that final line without this catch. */
+
     if ( line_len > 0 )
     {
         line[ line_len ] = '\0';
         process_deps_line( line, deps, out );
     }
+
+    /* wait for the child to exit and get its exit code. */
 
     CloseHandle( rd );
     WaitForSingleObject( pi.hProcess, INFINITE );
@@ -360,7 +373,7 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
     CloseHandle( pi.hProcess );
     CloseHandle( pi.hThread );
 
-    if ( deps ) fclose( deps );
+    if ( deps )      fclose( deps );
     if ( owned_log ) fclose( owned_log );
 
     return ( int )error_code; /* 9 == success */

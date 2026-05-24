@@ -62,13 +62,17 @@
 #include <stdbool.h>
 #include <time.h>
 
-// =============================================================================
-// --- Project Constants ---
-// =============================================================================
+/*==============================================================================================
+    --- Project Constants ---
+==============================================================================================*/
 
-// Max size for any single compiler/linker command line.
+// Physical allocation for all command line buffers. CMD_BUF_WORK_MAX is the
+// soft write limit enforced by cmd_append(); the 4096-byte gap absorbs any
+// per-call-site overhead (prefixes, staging concatenation) so callers never
+// need +N adjustments on local buffer declarations.
 
-#define CMD_BUF_MAX 16384
+#define CMD_BUF_MAX      16384
+#define CMD_BUF_WORK_MAX 12288
 
 // Max entries in each NULL-terminated slot array on target_info_t (units/deps/tool_deps).
 // Loops iterate with an `i < TARGET_MAX_SLOTS` bound so a fully-filled array
@@ -82,21 +86,23 @@
 
 #define BT_PATH_MAX 512
 
-// =============================================================================
-// --- Helper Types ---
-// =============================================================================
+/*==============================================================================================
+    --- Helper Types ---
+==============================================================================================*/
 
 /*  Reused cmd-line buffer for assembling cl.exe / link.exe / lib.exe invocations.
-    cmd_append() formats into `buf` and updates `size`; if an append cannot fit.
-    `truncated` is set so the caller can decide whether to spill the tail into 
-    a response file (see cmd_spill_to_response_file). */ 
+    cmd_append() writes into buf up to CMD_BUF_WORK_MAX bytes; the remaining
+    headroom to CMD_BUF_MAX is available for any wrapping a call site does
+    (e.g. prepending "cmd.exe /C ") without needing a separate oversized buffer.
+    truncated is set when the work limit is hit so the caller can spill to an
+    RSP file (see cmd_spill_to_response_file). */
 
 typedef struct cmd_buf_s
 {
     size_t size;                // Current length of the command line.
-    bool   truncated;           // Set by cmd_append() when an append could not fit.
-    char   buf[ CMD_BUF_MAX ];  // The actual command line fragment.                                
-       
+    bool   truncated;           // Set by cmd_append() when CMD_BUF_WORK_MAX is hit.
+    char   buf[ CMD_BUF_MAX ];  // Physical buffer; write limit is CMD_BUF_WORK_MAX.
+
 } cmd_buf_t;
 
 // Safe threshold below cmd.exe's 8191-char command line limit. 
@@ -104,9 +110,9 @@ typedef struct cmd_buf_s
 
 #define CMD_RSP_THRESHOLD 7000
 
-// =============================================================================
-// --- Build Configuration ---
-// =============================================================================
+/*==============================================================================================
+    --- Build Configuration ---
+==============================================================================================*/
 
 typedef enum
 {
@@ -160,9 +166,9 @@ typedef enum
 
 } target_type_t;
 
-// =============================================================================
-// --- Target Descriptor ---
-// =============================================================================
+/*==============================================================================================
+    --- Target Descriptor ---
+==============================================================================================*/
 
 // Represents a single buildable unit in the ORB ecosystem. 
 // It contains all metadata required to compile and link the target. 
@@ -217,9 +223,9 @@ typedef struct target_info_s
 
 } target_info_t;
 
-// =============================================================================
-// --- Global Target Registry ---
-// =============================================================================
+/*==============================================================================================
+    --- Global Target Registry ---
+==============================================================================================*/
 
 // The list of all targets defined in build_tool_targets.c and used by
 // the orchestrator and solution generator.
@@ -227,9 +233,9 @@ typedef struct target_info_s
 extern target_info_t g_targets[];
 extern int           g_target_count;
 
-// =============================================================================
-// --- Build Execution Context ---
-// =============================================================================
+/*==============================================================================================
+    --- Build Execution Context ---
+==============================================================================================*/
 
 // State passed through the build process to maintain consistency.
 
@@ -251,9 +257,9 @@ typedef struct build_context_s
 
 } build_context_t;
 
-// =============================================================================
-// --- Solution Descriptor ---
-// =============================================================================
+/*==============================================================================================
+    --- Solution Descriptor ---
+==============================================================================================*/
 
 // Defines a Visual Studio solution, an array of targets from the target pool.
 // This allows the build system to generate specialized workspaces such
@@ -290,9 +296,9 @@ typedef struct
 extern solution_info_t g_solutions[];
 extern int             g_solution_count;
 
-// =============================================================================
-// --- Output Flags ---
-// =============================================================================
+/*==============================================================================================
+    --- Output Flags ---
+==============================================================================================*/
 
 // Bitfield controlling which sections of the build log are printed.
 // Set once at startup via CLI flags (-q / -v / --out <hex>); read by all
@@ -354,9 +360,9 @@ extern out_flags_t g_out_flags;
 extern bool        g_use_rsp;    // -no-rsp disables response file (.rsp) creation
 extern bool        g_dep_track;  // -no-dep-track disables /showIncludes parsing and _deps.txt read/write
 
-// =============================================================================
-// --- Orchestration API ---
-// =============================================================================
+/*==============================================================================================
+    --- Orchestration API ---
+==============================================================================================*/
 
 // Everything below is the public surface for the unity-built build_tool.exe.
 // Implementations live in the corresponding _cc / _utils / _vcvars / _sched

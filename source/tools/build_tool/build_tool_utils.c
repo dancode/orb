@@ -22,13 +22,13 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
     /*  If a prior append already filled the buffer; flagging truncated again is 
         harmless and lets the caller bail without continuing  */
 
-    if ( b->size >= CMD_BUF_MAX )
+    if ( b->size >= CMD_BUF_WORK_MAX )
     {
         b->truncated = true;
         return;
     }
 
-    size_t  remaining = CMD_BUF_MAX - b->size;
+    size_t  remaining = CMD_BUF_WORK_MAX - b->size;
 
     va_list args;
     va_start( args, fmt );
@@ -51,9 +51,9 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
             so subsequent reads see a valid C string and so the "remaining"
             computation above can never underflow on the next append.  */
 
-        b->size                   = CMD_BUF_MAX - 1;
-        b->buf[ CMD_BUF_MAX - 1 ] = '\0';
-        b->truncated              = true;
+        b->size                        = CMD_BUF_WORK_MAX - 1;
+        b->buf[ CMD_BUF_WORK_MAX - 1 ] = '\0';
+        b->truncated                   = true;
     }
     else
     {
