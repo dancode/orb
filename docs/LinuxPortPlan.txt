@@ -1,0 +1,270 @@
+GEMINI OUTPUT
+
+ To develop and test a Linux port of your ORB engine while staying on Windows, the
+  industry-standard approach is to use WSL 2 (Windows Subsystem for Linux). It provides
+  a real Linux kernel running alongside Windows, allowing you to compile and run your
+  engine with near-native performance without leaving your desktop.
+
+  1. Environment Setup
+
+   * Install WSL 2: Open PowerShell as Administrator and run:
+
+   1     wsl --install -d Ubuntu
+   * Install Toolchain: Inside your new Ubuntu terminal, install the necessary build
+     tools:
+   1     sudo apt update
+   2     sudo apt install build-essential gcc clang gdb
+   * VS Code Integration: Use VS Code with the "WSL" extension.
+       * Click the green button in the bottom-left corner of VS Code and select "Connect
+         to WSL".
+       * This lets you edit code on Windows, but the terminal, compiler, and debugger
+         will run natively inside Linux.
+
+  ---
+
+  2. Adapting the Custom Build Tool
+
+  Your current build_tool.c is hardcoded for MSVC. You'll need to update it to support a
+  Linux environment.
+
+  A. Detect the Platform
+  In build_tool.c, update the platform check:
+
+   1 #if defined( _WIN32 )
+   2     #include <windows.h>
+   3 #elif defined( __linux__ )
+   4     #include <unistd.h>
+   5     #include <sys/wait.h>
+   6     #include <dirent.h>
+   7 #else
+   8     #error "Unsupported platform"
+   9 #endif
+
+  B. Support GCC/Clang in build_tool_cc.c
+  You need to map your MSVC flags to Linux equivalents.
+   * Flags: /O2 → -O3, /Zi → -g, /MD → (not needed, default), /W4 → -Wall.
+   * Extensions: .exe → (none), .dll → .so, .lib → .a.
+   * Shared Libraries: Use -fPIC during compilation and -shared during linking for
+     modules.
+
+  C. Linux Bootstrapper
+  Create bootstrap_build_tool.sh to compile the tool on Linux:
+
+   1 #!/bin/bash
+   2 mkdir -p bin
+   3 gcc source/tools/build_tool/build_tool.c -o bin/build_tool -I source -D_GNU_SOURCE
+
+  ---
+
+  3. Implementing the Engine Port
+
+  Your engine architecture already separates OS-specific code. You will need to mirror
+  the win implementation for Linux:
+
+   1. Create Directory: source/engine/sys/linux/
+   2. Implement sys_host.h surface:
+       * Dynamic Loading: Use <dlfcn.h> (dlopen, dlsym).
+       * Threading/Sync: Use <pthread.h> (pthread_create, pthread_mutex_lock).
+       * Timers: Use clock_gettime(CLOCK_MONOTONIC, ...) for high-res timing.
+       * File Watching: Use inotify (the Linux equivalent of Windows directory changes).
+
+  How would you like to proceed?
+  I can help with any of the following:
+   1. Modify build_tool.c to add basic Linux/GCC support.
+   2. Create the linux subdirectory in sys and start stubbing out the Posix
+      implementations.
+   3. Draft the bootstrap_build_tool.sh script for you.
+   
+   
+   CLAUDE OUTPUT
+   
+    ---
+  Platform Layer Work Breakdown for build_tool
+
+  1. MSVC-specific stdlib wrappers to replace
+
+  These are scattered mainly in build_tool_utils.c and build_tool_cc.c. Most have a direct POSIX
+  substitute; a thin #ifdef _WIN32 shim layer in one header would cover them all.
+
+  ┌───────────────────────────────┬─────────────────────────────────┬───────────────────────────┐
+  │           MSVC call           │        POSIX equivalent         │        Where used         │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ _stat64 / __stat64 /          │ stat / time_t                   │ build_get_mtime()         │
+  │ __time64_t                    │                                 │                           │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ _access                       │ access                          │ vcvars.c, ensure_dir()    │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ _stricmp / _strnicmp          │ strcasecmp / strncasecmp        │ target lookup (icase)     │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ _fullpath                     │ realpath                        │ absolute path in compile  │
+  │                               │                                 │ cmd                       │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ _putenv_s                     │ setenv                          │ vcvars env import         │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ _popen / _pclose              │ popen / pclose (identical API)  │ vcvars only               │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ _findfirst / _findnext /      │ opendir / readdir / closedir +  │ cleanup_stale_pdbs()      │
+  │ _findclose                    │ fnmatch                         │                           │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ _beginthreadex                │ pthread_create                  │ scheduler                 │
+  ├───────────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+  │ MAX_PATH                      │ PATH_MAX                        │ path buffers              │
+  └───────────────────────────────┴─────────────────────────────────┴───────────────────────────┘
+
+  This is the lightest lift. About half a day to write and verify the shim layer.
+
+  ---
+  2. Win32 platform services to port
+
+  These are the real work. Each has a POSIX equivalent but the API shapes differ enough to need real
+   code.
+
+  Process spawning (build_tool_cmd.c — spawn_cmd and build_run_cmd_capture_deps)
+
+  The entire CreateProcess / STARTUPINFO / WaitForSingleObject / GetExitCodeProcess block gets
+  replaced with posix_spawn or fork + exec. The pipe-based capture (CreatePipe / ReadFile /
+  SetHandleInformation) maps to pipe() + dup2 + read(). The cmd.exe /C wrapper becomes /bin/sh -c.
+  This is the largest single block — probably 1.5 days to get right and thread-safe.
+
+  Thread synchronization (build_tool_sched.c)
+
+  ┌───────────────────────────────────────────────┬─────────────────────────────────────────────┐
+  │                     Win32                     │                    POSIX                    │
+  ├───────────────────────────────────────────────┼─────────────────────────────────────────────┤
+  │ CRITICAL_SECTION + Init/Enter/Leave           │ pthread_mutex_t                             │
+  ├───────────────────────────────────────────────┼─────────────────────────────────────────────┤
+  │ CONDITION_VARIABLE + SleepConditionVariableCS │ pthread_cond_t + pthread_cond_wait /        │
+  │  / WakeAllConditionVariable                   │ pthread_cond_broadcast                      │
+  ├───────────────────────────────────────────────┼─────────────────────────────────────────────┤
+  │ DWORD g_sched_log_tls = TLS_OUT_OF_INDEXES /  │ pthread_key_t + pthread_key_create /        │
+  │ TlsAlloc / TlsGetValue / TlsSetValue          │ pthread_getspecific / pthread_setspecific   │
+  ├───────────────────────────────────────────────┼─────────────────────────────────────────────┤
+  │ _beginthreadex + HANDLE threads[] +           │ pthread_create + pthread_t threads[] +      │
+  │ WaitForMultipleObjects                        │ pthread_join loop                           │
+  └───────────────────────────────────────────────┴─────────────────────────────────────────────┘
+
+  Straightforward 1:1 mapping but verbose. About 1 day.
+
+  Named cross-process mutex (build_tool_utils.c — build_lock_target)
+
+  CreateMutexA / WaitForSingleObject / ReleaseMutex / CloseHandle maps to sem_open / sem_wait /
+  sem_post / sem_close / sem_unlink. Behavior is equivalent. About half a day.
+
+  vcvars equivalent (build_tool_vcvars.c)
+
+  The entire file is Win32-only and #ifdef-guarded already. On Linux/Mac the equivalent is just
+  checking that cc / clang is on PATH via access against each PATH entry, or a which-style search.
+  No env import needed because GCC/Clang don't require a bat-file setup. The function becomes a
+  near-stub. About a quarter day.
+
+  ensure_dir (build_tool_utils.c)
+
+  system("mkdir %s >nul 2>nul") → mkdir(dir, 0755) (POSIX syscall, no shell needed). Trivial.
+
+  cleanup_stale_pdbs (build_tool_cc.c)
+
+  No PDB concept on POSIX. The function just becomes a no-op stub. Two lines.
+
+  ---
+  3. Major functional differences for Linux vs Mac
+
+  Compiler flags — this is the biggest functional difference in build_tool_cc.c. The entire
+  cc_fill_compile_cmd() function is built around MSVC flags:
+
+  ┌────────────────┬───────────────────────────┬─────────────────────────────────────────┐
+  │    Concept     │           MSVC            │               GCC / Clang               │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ Compile only   │ /c                        │ -c                                      │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ Warning level  │ /W4 /WX                   │ -Wall -Wextra -Werror                   │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ C standard     │ /Zc:preprocessor /std:c11 │ -std=c11                                │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ Debug          │ /Zi /Od /MDd              │ -g -O0                                  │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ Release        │ /O2 /MD                   │ -O2                                     │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ PDB output     │ /Fd<dir>/                 │ n/a (DWARF is embedded in .o)           │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ Obj output dir │ /Fo<dir>/                 │ -o <dir>/name.o (per-file, not per-dir) │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ Defines        │ /DFOO                     │ -DFOO                                   │
+  ├────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+  │ Includes       │ /I<path>                  │ -I<path>                                │
+  └────────────────┴───────────────────────────┴─────────────────────────────────────────┘
+
+  The /Fo → -o gap is actually a meaningful architectural difference. MSVC can target a directory
+  and name the .obj automatically; GCC/Clang require an explicit output path per file, so the
+  unity-build "one .c compiles to one .obj in the obj dir" still works but the command has to name
+  the output explicitly.
+
+  Dependency tracking — /showIncludes is MSVC-only. The entire process_deps_line() function and its
+  streaming pipe parser in build_run_cmd_capture_deps becomes dead code. GCC/Clang use -MMD -MF
+  <depfile> to write a Makefile .d file after compilation. Reading deps becomes a simple
+  post-compile parse of that file rather than a live line-by-line pipe stream. The scheduler and
+  incremental logic stay the same; only the collection mechanism changes.
+
+  Linker / archiver commands (build_target_link):
+
+  ┌────────────┬──────────────────────────────┬────────────────────┬──────────────────────────┐
+  │  Target    │             MSVC             │       Linux        │          macOS           │
+  │    type    │                              │                    │                          │
+  ├────────────┼──────────────────────────────┼────────────────────┼──────────────────────────┤
+  │ Static lib │ lib.exe /OUT:foo.lib *.obj   │ ar rcs libfoo.a    │ same                     │
+  │            │                              │ *.o                │                          │
+  ├────────────┼──────────────────────────────┼────────────────────┼──────────────────────────┤
+  │ Shared lib │ link.exe /DLL                │ gcc -shared -o     │ clang -dynamiclib -o     │
+  │            │ /IMPLIB:foo.lib /OUT:foo.dll │ libfoo.so *.o      │ libfoo.dylib *.o         │
+  ├────────────┼──────────────────────────────┼────────────────────┼──────────────────────────┤
+  │ Executable │ link.exe /OUT:foo.exe        │ gcc -o foo *.o     │ same                     │
+  └────────────┴──────────────────────────────┴────────────────────┴──────────────────────────┘
+
+  No import lib concept on POSIX — dependents link directly against the .so / .dylib. The _STATIC /
+  MOD_GATEWAY_DYNAMIC macro pattern in the engine still applies but the build side has no implib
+  step.
+
+  Linux vs Mac specific delta (after the POSIX layer is done):
+
+  - Shared lib extension: .so vs .dylib — one #ifdef __APPLE__ check.
+  - -fPIC: Required on Linux for shared libs; on macOS it is default on x86-64 and required on
+  arm64.
+  - rpath: macOS uses @rpath / @loader_path; Linux uses $ORIGIN in the RUNPATH. Only relevant if the
+   engine's mod loader uses the build tool's output paths for DLL loading.
+  - ar vs libtool: macOS ar works the same as Linux ar for static libs; libtool -static is sometimes
+   preferred but not necessary.
+  - System headers filter in dep tracking: The Windows filter (\\VC\\Tools\\, \\Windows Kits\\)
+  needs a POSIX equivalent — filter /usr/include, /usr/lib/clang/, /Library/Developer/ (macOS) out
+  of the .d file parse.
+  - Thread stack size: _beginthreadex defaults to the exe's stack size; pthread_create defaults to 8
+   MB on Linux, 8 MB on macOS. No practical difference here.
+
+  ---
+  Rough total estimate
+
+  ┌────────────────────────────────────────────────────────────────────┬──────────┐
+  │                                Area                                │  Effort  │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Stdlib shims (_stricmp, _stat64, _access, etc.)                    │ 0.5 day  │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Process spawning + pipe capture (posix_spawn / fork+exec)          │ 1.5 days │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Thread/sync layer (pthreads replacing Win32 CS/CV/TLS)             │ 1 day    │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Named semaphore for cross-process locking                          │ 0.5 day  │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Compiler flag tables (GCC/Clang equivalent of cc_fill_compile_cmd) │ 1 day    │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Dep tracking (switch from /showIncludes to -MMD .d file)           │ 0.5 day  │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Linker/archiver commands (ar, gcc -shared)                         │ 0.5 day  │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ vcvars stub, ensure_dir, PDB cleanup removal                       │ 0.25 day │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Linux vs macOS delta (extensions, rpath, PIC)                      │ 0.25 day │
+  ├────────────────────────────────────────────────────────────────────┼──────────┤
+  │ Total                                                              │ ~6 days  │
+  └────────────────────────────────────────────────────────────────────┴──────────┘
+
+  The biggest single risk is the process-spawning rewrite — getting thread-safe non-interleaved
+  output capture right with fork/exec and pipes is where the subtle bugs tend to live, same as the
+  reason the current code moved off _popen in the first place.
