@@ -4,98 +4,108 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**ORB "The Glowing Orb"** — a C11 game engine with a modular, hot-reload-first architecture. Primary target is Windows with Visual Studio 2022 or higher;
+**ORB "The Glowing Orb"** -- a C11 game engine with a modular, hot-reload-first architecture.
+Primary target is Windows with Visual Studio 2022 or higher.
 
-Only create the MSVC Win64 implementation and stub in #error messages for other platforms.
+Only create the MSVC Win64 implementation. Stub all other platforms with `#error`.
 
-## Build
+---
 
-Generate the Visual Studio solution (run once, or after CMakeLists changes):
+## IMPORTANT: ASCII Only
 
-```bat
-REM Modular build — hot-reload enabled (default for development)
-"build_vs_2022 - MSVC (DYNAMIC).bat"
+**Do NOT use Unicode, UTF-8 special characters, smart quotes, em-dashes, or any non-ASCII
+symbol in source files, comments, or generated code. Use only standard 7-bit ASCII.**
 
-REM Monolithic build — static linking, no hot-reload (for shipping)
-"build_vs_2022 - MSVC (STATIC).bat"
+---
 
-REM Clang-CL variant
-"build_vs_2022 - CLANG.bat"
+## Build System
 
-REM Clean all build outputs
-clean_build.bat
-```
+ORB uses a self-contained C build orchestrator (`build_tool.exe`) instead of CMake or MSBuild.
+It directly invokes `cl.exe`/`link.exe`/`lib.exe` and generates the Visual Studio solution files.
 
-After generating, open the `.sln` in `build/` or `build_monolithic/` and build from Visual Studio. Build outputs land flat in `<build_dir>/bin/` (no Release/Debug subdirectories).
+### First-time setup / after modifying build_tool source
 
-**Hot-rebuild a single module** (keeps debugger attached):
+Run from a **Developer Command Prompt** (vcvarsall must be loaded):
 
 ```bat
-build_hot.bat <build_dir> <target> <config>
-REM Example: build_hot.bat build_modular render Debug
+bootstrap_build_tool.bat    :: compile build_tool.exe only
+bootstrap_gen.bat           :: compile build_tool.exe + immediately run -gen
 ```
+
+`vc_vars_setup.bat` will print the correct `vcvarsall.bat` path if you need it.
+
+### Daily workflow
+
+```bat
+bin\build_tool.exe -gen                         :: regenerate .sln/.vcxproj files
+bin\build_tool.exe -config Debug                :: CLI build (all targets)
+bin\build_tool.exe -config Debug -target core   :: CLI build (one target)
+bin\build_tool.exe -clean                       :: wipe bin/ and obj/
+```
+
+Open `build\orb_make.sln` in Visual Studio to build and debug normally.
+All outputs land flat in `bin/` and intermediates in `obj/<target>/`.
+
+### Hot-rebuild (keeps debugger attached)
+
+```bat
+build_hot.bat <target> [Debug|Release]
+REM Example: build_hot.bat render Debug
+```
+
+### Build modes
+
+| Mode | Flag | Modules | Hot-reload |
+|------|------|---------|------------|
+| Modular (default) | *(none)* | `.dll` | Yes |
+| Monolithic | `-monolithic` | `.lib` | No |
+
+The `-monolithic` flag defines `BUILD_STATIC` globally. `MOD_GATEWAY_STATIC` /
+`MOD_GATEWAY_DYNAMIC` macros in module API headers switch behavior automatically.
+Call sites (`render_api()->fn()`) are identical in both modes.
 
 ## Testing
 
-There is no automated test framework. Validation is done by running sandbox executables:
+No automated test framework. Validate by running sandbox executables:
 
-- `sb_engine_sys` — sys layer (OS abstractions)
-- `sb_engine_core` — core layer (memory, logging, cvars)
-- `sb_engine_reflect` — rs_ reflection system (registration, lookup, hot-reload simulation)
-- `sb_engine_mod` — module system / hot-reload
-- `sb_engine_app` — application / windowing
-- `sb_tool_modinfo` — standalone module descriptor inspector (loads a DLL and prints its `mod_api_t`)
+- `sb_engine_sys` -- sys layer (OS abstractions)
+- `sb_engine_core` -- core layer (memory, logging, cvars)
+- `sb_engine_reflect` -- rs_ reflection system
+- `sb_engine_mod` -- module system / hot-reload
+- `sb_engine_app` -- application / windowing
+- `sb_tool_modinfo` -- loads a DLL and prints its `mod_api_t`
 
 Build and run the relevant sandbox target in Visual Studio, or via:
 
 ```bat
-cmake --build build_modular --target sb_engine_mod --config Debug
-build_modular\bin\sb_engine_mod.exe
+bin\build_tool.exe -config Debug -target sb_engine_mod
+bin\sb_engine_mod.exe
 ```
-## Custom Build System
-ORB uses a self-contained, high-performance C-based build orchestrator to replace traditional CMake or complex batch scripts.
-
-- **Bootstrapper**: `bootstrap_build_tool.bat` compiles the build tool from source using a minimal `cl.exe` call.
-- **Orchestrator**: `source/tools/build_tool/build_tool.c` manages compiler/linker flags, environment detection (via `vswhere.exe`), and target orchestration.
-- **Project Generator**: `source/tools/build_tool/build_tool_gen.c` (included as a unity fragment in `build_tool.c`) generates Visual Studio `.sln` and `.vcxproj` files.
-- **Artifacts**: All binaries land in `bin/` and all intermediate objects/PDBs land in `obj/`.
-- **Interface**:
-  - `build_tool.exe -gen`: Generates/updates IDE project files.
-  - `build_tool.exe -clean`: Wipes `bin/` and `obj/` for a fresh start.
-  - `build_tool.exe -config <Debug|Release>`: Performs the actual build. Case-insensitive to match VS macros.
-
-## Build & Execution
-- **Bootstrap**: Run `bootstrap_build_tool.bat` if `bin/build_tool.exe` is missing or needs an update. 
-  - **CRITICAL**: This requires an MSVC environment. Use `vc_vars_setup.bat` to find the path to `vcvarsall.bat` and run it in the same shell session before bootstrapping.
-  - **Command**: `cmd /c 'call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 && bootstrap_build_tool.bat'` (Adjust path based on `vc_vars_setup.bat`).
-- **Generate Solution**: Run `bin/build_tool.exe -gen` to create `orb_make.sln` and `orb_build.sln`.
-- **Hot-Rebuild**: Use `build_hot.bat <build_dir> <target> <config>` to rebuild a module while the debugger is attached.
-- **Verification**: Use relevant sandbox targets (e.g., `sb_base_custom.exe`) to verify changes.
 
 ## Architecture
 
-The engine is organized as a strict dependency hierarchy. Lower layers never depend on higher ones.
+Strict dependency hierarchy -- lower layers never depend on higher ones.
 
 ```
-source/base/          — stateless stdlib (math, strings, memory, logging)
+source/base/          -- stateless stdlib (math, strings, memory, logging)
 source/engine/
-  sys/                — OS abstractions: files, threads, time, DLL loading, paths
-  core/               — stateful systems: memory arenas, logging, cvars, rs_ reflection, SIDs
-  mod/                — module registry: dynamic loading, hot-reload, dependency graph
-  app/                — windowing, events, main-loop lifecycle
-source/runtime/       — simulation scaffolding: host loop + services (jobs, input, timing, assets) + hot-reload DLLs (render, audio, physics, animation, asset)
-source/developer/     — dev-only services not shipped: in-engine CMake invoker, hot-reload wrapper
-source/game/          — game framework: world, entity, component, actor (hot-reload DLLs)
-source/editor/        — editor framework: windows, panels, tools (hot-reload DLLs)
-source/tools/         — standalone exe utilities: asset pipeline, shader compiler, launcher
-source/host/          — executable entry points: game, editor, tool, sandbox
-source/sandbox/       — test executables for each engine layer
-source/project/       — game-specific code (sample_game)
+  sys/                -- OS abstractions: files, threads, time, DLL loading, paths
+  core/               -- stateful systems: memory arenas, logging, cvars, rs_ reflection, SIDs
+  mod/                -- module registry: dynamic loading, hot-reload, dependency graph
+  app/                -- windowing, events, main-loop lifecycle
+source/runtime/       -- simulation scaffolding: host loop + services + hot-reload DLLs
+source/developer/     -- dev-only services not shipped: hot-reload wrapper
+source/game/          -- game framework: world, entity, component, actor (hot-reload DLLs)
+source/editor/        -- editor framework: windows, panels, tools (hot-reload DLLs)
+source/tools/         -- standalone exe utilities: asset pipeline, shader compiler, launcher
+source/host/          -- executable entry points: game, editor, tool, sandbox
+source/sandbox/       -- test executables for each engine layer
+source/project/       -- game-specific code (sample_game)
 ```
 
-**`source/base/`** must remain stateless (no globals) because it links into both the host exe and DLLs. Any state lives in `engine/core/` or higher.
+**`source/base/`** must remain stateless (no globals) -- it links into both the host exe and DLLs.
 
-**Engine libraries** (`sys`, `core`, `mod`, `app`) are always statically linked into the host. They are never inside a DLL.
+**Engine libraries** (`sys`, `core`, `mod`, `app`) are always statically linked into the host. Never in a DLL.
 
 ## Header Conventions
 
@@ -103,118 +113,98 @@ Every engine library uses a three-header split:
 
 | Header | Who includes it | What it contains |
 |--------|----------------|-----------------|
-| `<module>.h` | Other headers needing only types | Pure types, enums, structs, constants, callback typedefs, helper macros. No vtable. No function declarations. No downstream includes. |
-| `<module>_api.h` | DLL module `.c` files calling through the vtable | Includes `<module>.h` and `mod_import.h`. Adds `<module>_api_t` function-pointer struct, `MOD_GATEWAY_*` macro, `MOD_USE_*` / `MOD_FETCH_*` macros. |
-| `<module>_host.h` | Host executables, unity build entries, test sandboxes | Includes `<module>_api.h`. Adds direct-call function declarations, `<module>_get_mod_desc()`. |
+| `<module>.h` | Headers needing only types | Pure types, enums, structs, constants, callback typedefs, macros. No vtable, no function decls, no downstream includes. |
+| `<module>_api.h` | DLL `.c` files calling through the vtable | Includes `<module>.h` + `mod_import.h`. Adds `<module>_api_t`, `MOD_GATEWAY_*`, `MOD_USE_*` / `MOD_FETCH_*`. |
+| `<module>_host.h` | Host exes, unity build entries, test sandboxes | Includes `<module>_api.h`. Adds direct-call function declarations, `<module>_get_mod_desc()`. |
 
-Include chain: `module_host.h` → `module_api.h` → `module.h`
+Include chain: `module_host.h` -> `module_api.h` -> `module.h`
 
-**The rule:** headers that only need a type include `<module>.h`. DLL `.c` files that call `module()->fn()` include `<module>_api.h`. Code that calls `module_fn()` directly (hosts, unity builds, tests) includes `<module>_host.h`.
+**mod is self-hosting** -- four files instead of three:
+- `mod_import.h` -- infrastructure macros (`MOD_GATEWAY_*`, `MOD_FETCH_API`, `MOD_DEFINE_API_PTR`). Include only in `_api.h` files.
+- `mod_api.h` -- mod's own vtable (`mod_api_t`, `MOD_USE_MOD`/`MOD_FETCH_MOD`). Includes `mod_import.h`.
+- `mod_host.h` -- direct-call mod functions. Includes `mod_api.h`.
+- `mod_export.h` -- module implementation header (`.c` files only). Defines `mod_desc_t`, lifecycle typedefs, `MOD_DEFINE_EXPORTS`.
 
-**mod is self-hosting** — it ships four files instead of three:
-- `mod_import.h` — pure infrastructure macros (`MOD_GATEWAY_*`, `MOD_FETCH_API`, `MOD_DEFINE_API_PTR`) that every other `_api.h` depends on. Also `mod_visitor_fn` and the `mod_desc_t` forward decl. Include only in `_api.h` files.
-- `mod_api.h` — mod's own vtable (`mod_api_t`, gateway, `MOD_USE_MOD`/`MOD_FETCH_MOD`). Includes `mod_import.h`.
-- `mod_host.h` — direct-call mod system functions. Includes `mod_api.h`.
-- `mod_export.h` — module implementation header (include only in `.c` files). Defines `mod_desc_t`, lifecycle typedefs, `MOD_DEFINE_EXPORTS`. Includes `mod_import.h`.
-
-Existing sets: `mod_import.h/mod_api.h/mod_host.h/mod_export.h`, `rs.h/rs_api.h/rs_host.h`, `sys.h/sys_api.h/sys_host.h`, `app.h/app_api.h/app_host.h`, `core.h/core_api.h/core_host.h`.
-
-When adding a new engine library, follow the same split.
+Existing sets: `mod_import.h/mod_api.h/mod_host.h/mod_export.h`, `rs.h/rs_api.h/rs_host.h`,
+`sys.h/sys_api.h/sys_host.h`, `app.h/app_api.h/app_host.h`, `core.h/core_api.h/core_host.h`.
 
 ## Reflection System (rs_)
 
-Located in `source/engine/rs/`. The unity build entry is `rs.c`, which defines the internal string pool, the shared `rs_registry_t`, and includes all `rs/*.c` translation units. It is a proper engine module loaded via `mod_static_load("rs", rs_get_mod_api())` — see `rs_host.h` for host integration.
+Located in `source/engine/rs/`. Unity build entry is `rs.c`. Loaded via
+`mod_static_load("rs", rs_get_mod_api())` -- see `rs_host.h` for host integration.
 
 Key design points:
-- **Module pattern**: rs is a leaf module (no deps) that inits before core. core declares `"rs"` as a dependency so the mod system inits rs first. Hosts include `engine/rs/rs_host.h` and call `rs_wire_mod_callbacks()` to connect DLL load events automatically — no boilerplate callbacks needed.
-- **Internal string pool**: rs owns a 16 KB flat string pool; `rs_init()` (no args) sets it up. No sid or external interner needed.
-- **Stack-frame registry**: each module pushes a frame on DLL load and pops it on unload; registration and teardown are O(1) with no tombstones or validity flags.
-- **Lazy resolution**: fields reference base types by hash during registration; `rs_finalize_frame()` resolves hashes to stable type IDs, so cross-type forward references work regardless of registration order.
-- **Packed modifier chain**: up to four declarator modifiers (pointer, array, const, etc.) encoded in a single 16-bit value per field, preserving exact C declaration order.
-- **Schema hash**: every registered type gets a deterministic hash of its reflected layout; used to detect hot-reload ABI breaks.
+- **Module pattern**: leaf module (no deps), inits before core. Hosts call `rs_wire_mod_callbacks()` to connect DLL load events -- no boilerplate needed.
+- **Internal string pool**: 16 KB flat pool; `rs_init()` sets it up.
+- **Stack-frame registry**: each module pushes a frame on load and pops on unload; O(1) registration and teardown.
+- **Lazy resolution**: fields reference base types by hash; `rs_finalize_frame()` resolves to stable type IDs after all registrations.
+- **Packed modifier chain**: up to four declarator modifiers encoded in a single 16-bit value per field.
+- **Schema hash**: deterministic hash of the reflected layout, used to detect hot-reload ABI breaks.
 
-Follows the project header convention (see above). Include `rs.h` in DLL modules and generated registration code; include `rs_host.h` in host executables, unity build entries, and test sandboxes.
+Include `rs.h` in DLL modules; include `rs_host.h` in hosts, unity entries, and sandboxes.
 
-Implementation files: `rs_registry.c`, `rs_access.c`, `rs_walk.c`, `rs_serialize.c`, `rs_print.c`, `rs_test.c`.
+Implementation: `rs_registry.c`, `rs_access.c`, `rs_walk.c`, `rs_serialize.c`, `rs_print.c`, `rs_test.c`.
 
 ## Module System
 
-Every hot-reloadable `.dll` implements a `mod_api_t` descriptor. Module authors include only `engine/mod/mod_export.h`; consumers include `engine/mod/mod_api.h`.
+Every hot-reloadable `.dll` implements a `mod_api_t` descriptor.
 
-**Implementing a module** (in the module's `.c`):
+**Implementing a module:**
 
 ```c
-// Declare the module's API accessor via the static/dynamic gateway macro
-// (placed in the module's public .h, not here)
-
 static bool render_init( void* state, get_api_fn get_api )
 {
     if ( !MOD_FETCH_API( core_api_t, core ) ) return false;
-    // one-time setup — not called again on hot-reload
-    return true;
+    return true;  // one-time setup
 }
 
 static bool render_reload( void* state, get_api_fn get_api )
 {
     if ( !MOD_FETCH_API( core_api_t, core ) ) return false;
-    // re-cache sibling API pointers after a DLL swap
-    return true;
+    return true;  // re-cache sibling API pointers after DLL swap
 }
 
 static mod_api_t s_render_mod_api = {
-    .version      = 1,
-    .state_size   = sizeof( render_state_t ),
+    .version       = 1,
+    .state_size    = sizeof( render_state_t ),
     .func_api_size = sizeof( render_api_t ),
-    .func_api     = &g_render_api_struct,
-    .deps         = { "core" },
-    .dep_count    = 1,
-    .init         = render_init,
-    .reload       = render_reload,
-    .exit         = render_exit,
+    .func_api      = &g_render_api_struct,
+    .deps          = { "core" },
+    .dep_count     = 1,
+    .init          = render_init,
+    .reload        = render_reload,
+    .exit          = render_exit,
 };
 
 mod_api_t* render_get_mod_api( void ) { return &s_render_mod_api; }
-MOD_DEFINE_EXPORTS( render )   // emits the undecorated DLL entry point
+MOD_DEFINE_EXPORTS( render )
 ```
 
 Key invariants:
-- `func_api_size` **must not change** across a hot-reload — adding/removing API functions requires a full host restart.
+- `func_api_size` **must not change** across a hot-reload. Adding/removing API functions requires a full host restart.
 - `state` is allocated and zeroed by the system on first load and preserved across reloads. Modules must not free it.
 - `init()` runs once; `reload()` runs on every subsequent hot-swap.
 
-**Consuming a module API** (in a `.c` that calls into a sibling module):
+**Consuming a module API:**
 
 ```c
-// File scope: allocate the cached pointer (no-op in monolithic builds)
-MOD_DEFINE_API_PTR( render_api_t, render );
+MOD_DEFINE_API_PTR( render_api_t, render );   // file scope
 
 // In init() / reload():
 if ( !MOD_FETCH_API( render_api_t, render ) ) return false;
 
-// Call site is identical in dynamic and static builds:
+// Call site -- identical in modular and monolithic builds:
 render_api()->begin_frame( dt );
 ```
-
-## Build Modes
-
-Controlled by the `ENGINE_MONOLITHIC` CMake option:
-
-| Mode | Define | Modules | Hot-reload |
-|------|--------|---------|------------|
-| Modular (default) | *(none)* | `.dll` | Yes |
-| Monolithic | `BUILD_STATIC` | `.lib` | No |
-
-`MOD_GATEWAY_STATIC` / `MOD_GATEWAY_DYNAMIC` macros in module API headers switch the accessor implementation automatically. Call sites (`render_api()->fn()`) are identical in both modes.
 
 ## Code Style
 
 Governed by `.clang-format` (Google base, customized):
 - 4-space indentation, spaces only, 110-column limit
-- All braces on their own line (`BreakBeforeBraces: Custom` with wrapping on everything)
+- All braces on their own line (`BreakBeforeBraces: Custom`)
 - Pointer alignment left: `int* ptr`
 - Spaces inside parentheses: `func( arg1, arg2 )`
-- `SortIncludes: false` — keep include order as written
-- Comments should be added to show intention concisely at every block to make it easy to read through in english. 
-- DO NOT USED UNICODE characters in source generation, just use standard ascii
-The root header `source/orb.h` must be included in every source file. 
+- `SortIncludes: false` -- keep include order as written
+- Add comments showing intent in a concise way at each block.
 
+The root header `source/orb.h` must be included in every source file.

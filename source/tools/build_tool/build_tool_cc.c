@@ -29,33 +29,66 @@
 
 typedef struct
 {
-    char exe     [ 64          ]; // cl.exe or clang-cl.exe
-    char flags   [ 512         ]; // /c /nologo /W4 /WX /Zi /Od /MDd ...
-    char includes[ 512         ]; // /I source /I gen_dir
-    char defines [ 1024        ]; // /DOS_WINDOWS /DCOMPILE_MSVC /D_DEBUG ...
-    char output  [ 512         ]; // /FoobjDir/ /FdobjDir/
-    char sources [ CMD_BUF_MAX ]; // absolute .c paths
-                               
-} compile_cmd_t;               
-                               
-typedef struct                 
-{                              
-    char exe     [ 32          ]; // lib.exe or link.exe
-    char artifact[ BT_PATH_MAX ]; // final output path (summary display only)
-    char flags   [ 256         ]; // /nologo /DLL ...
-    char output  [ 512         ]; // /OUT:... /IMPLIB:...
-    char pdb     [ 256         ]; // /DEBUG /PDB:... (empty for lib.exe)
-    char inputs  [ 512         ]; // objDir/*.obj
-    char libs    [ 1024        ]; // dep.lib ... user32.lib ...
+    char exe      [ 64          ];  // cl.exe or clang-cl.exe
+    char flags    [ 512         ];  // /c /nologo /W4 /WX /Zi /Od /MDd ...
+    char includes [ 512         ];  // /I source /I gen_dir
+    char defines  [ 1024        ];  // /DOS_WINDOWS /DCOMPILE_MSVC /D_DEBUG ...
+    char output   [ 512         ];  // /FoobjDir/ /FdobjDir/
+    char sources  [ CMD_BUF_MAX ];  // absolute .c paths
+                                
+} compile_cmd_t;                
+                                
+typedef struct                  
+{                               
+    char exe      [ 32          ];  // lib.exe or link.exe
+    char artifact [ BT_PATH_MAX ];  // final output path (summary display only)
+    char flags    [ 256         ];  // /nologo /DLL ...
+    char output   [ 512         ];  // /OUT:... /IMPLIB:...
+    char pdb      [ 256         ];  // /DEBUG /PDB:... (empty for lib.exe)
+    char inputs   [ 512         ];  // objDir/*.obj
+    char libs     [ 1024        ];  // dep.lib ... user32.lib ...
 
 } link_cmd_t;
 
 /*============================================================================================*/
-// --- Internal helpers ---
+// --- Sentinel checks ---
+//
+// Verify the last byte of every field is still '\0' before the structs are
+// assembled into a command string. cc_field() aborts on detected overflow, but
+// these catch any silent corruption that bypassed it.
 
+static void
+cc_check_sentinels( const compile_cmd_t* cc )
+{
+    if ( cc->exe     [ 64          - 1 ] || cc->flags   [ 512         - 1 ] ||
+         cc->includes[ 512         - 1 ] || cc->defines [ 1024        - 1 ] ||
+         cc->output  [ 512         - 1 ] || cc->sources [ CMD_BUF_MAX - 1 ] )
+    {
+        printf( ORB_INDENT "[orb error] compile_cmd_t sentinel overwritten -- field overflow\n" );
+        exit( 1 );
+    }
+}
+
+static void
+lk_check_sentinels( const link_cmd_t* lk )
+{
+    if ( lk->exe     [ 32          - 1 ] || lk->artifact[ BT_PATH_MAX - 1 ] ||
+         lk->flags   [ 256         - 1 ] || lk->output  [ 512         - 1 ] ||
+         lk->pdb     [ 256         - 1 ] || lk->inputs  [ 512         - 1 ] ||
+         lk->libs    [ 1024        - 1 ] )
+    {
+        printf( ORB_INDENT "[orb error] link_cmd_t sentinel overwritten -- field overflow\n" );
+        exit( 1 );
+    }
+}
+
+/*============================================================================================*/
+// --- Internal helpers ---
+//
 // Append a formatted string to a fixed-size field.
-// Halts the process on overflow — a truncated compiler flag would produce
+// Halts the process on overflow -- a truncated compiler flag would produce
 // cryptic cl.exe errors that obscure the real cause.
+
 static void
 cc_field( char* dst, size_t dst_size, const char* fmt, ... )
 {
@@ -99,8 +132,9 @@ get_target_upper( const char* name, char* out, size_t out_size )
 // unlocked ones away at the start of each link.
 //
 // remove() silently fails for any PDB still locked by an attached debugger,
-// which is exactly what we want — we keep going, the held file survives, and
+// which is exactly what we want -- we keep going, the held file survives, and
 // the new link goes to a fresh name with a newer timestamp.
+
 static void
 cleanup_stale_pdbs( const char* target_name )
 {
@@ -112,7 +146,7 @@ cleanup_stale_pdbs( const char* target_name )
 
     struct _finddata_t fd;
     intptr_t h = _findfirst( pattern, &fd );
-    if ( h == -1 ) return;          // No matches → nothing to do.
+    if ( h == -1 ) return;          // No matches -> nothing to do.
 
     // Walk every match. _findfirst returns the FIRST entry implicitly; we
     // do-while so we process that first hit before calling _findnext.
@@ -156,6 +190,7 @@ cc_open_log( void )
 // flags / defines / includes / etc. We can't just printf(raw) because the
 // caller wants per-token prefix-stripping and a final newline.
 // Returns true if at least one token was written (content was non-empty).
+
 static bool
 print_tokens( FILE* out, const char* raw, const char* prefix )
 {
@@ -167,7 +202,7 @@ print_tokens( FILE* out, const char* raw, const char* prefix )
     {
         // Skip any run of spaces between tokens (and leading whitespace).
         while ( *p == ' ' ) ++p;
-        if ( !*p ) break;             // ran off the end inside the gap → done
+        if ( !*p ) break;             // ran off the end inside the gap -> done
 
         // Record token start, then advance to the next space (or end-of-string).
         // `s` ... `p` now bracket exactly one token.
@@ -186,14 +221,14 @@ print_tokens( FILE* out, const char* raw, const char* prefix )
         }
 
         // Emit a single space between tokens, then the (possibly-stripped) token.
-        // fwrite is used instead of fputs because `s` is NOT null-terminated —
+        // fwrite is used instead of fputs because `s` is NOT null-terminated --
         // it points into the middle of `raw`.
         if ( !first ) fputc( ' ', out );
         fwrite( s, 1, len, out );
         first = false;
     }
     fputc( '\n', out );
-    return !first;  // first stayed true → no tokens → empty content
+    return !first;  // first stayed true -> no tokens -> empty content
 }
 
 // Print a labeled section line: "  <label>  <content>".
@@ -207,7 +242,7 @@ print_section( FILE* out, const char* label, const char* content, const char* st
     return print_tokens( out, content, strip );
 }
 
-// Print the compile output section: /FoobjDir/ /FdobjDir/ → "obj=... pdb=..."
+// Print the compile output section: /FoobjDir/ /FdobjDir/ -> "obj=... pdb=..."
 //
 // Specialised version of print_tokens(): instead of just stripping one fixed
 // prefix, it inspects each token's prefix character to decide which human
@@ -224,7 +259,7 @@ print_compile_output( FILE* out, const char* raw )
 
     while ( *p )
     {
-        // Skip whitespace, find the token bounds — same scan loop as print_tokens.
+        // Skip whitespace, find the token bounds -- same scan loop as print_tokens.
         while ( *p == ' ' ) ++p;
         if ( !*p ) break;
         const char* s   = p;
@@ -234,7 +269,7 @@ print_compile_output( FILE* out, const char* raw )
         // Decide which prefix this token uses, if any. The MSVC flags are
         // "/Foxxx" (object output dir) and "/Fdxxx" (compile-PDB output dir).
         // `len > 3` ensures there is at least one character after "/Fo" or
-        // "/Fd" to print — empty flags would just produce noise.
+        // "/Fd" to print -- empty flags would just produce noise.
         const char* label = NULL;
         if ( len > 3 && s[ 0 ] == '/' && s[ 1 ] == 'F' )
         {
@@ -306,7 +341,7 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 //
 // Join the struct fields into a single string for the actual cl/link/lib call.
 // Response-file spill happens here when the assembled string exceeds the shell
-// arg limit — same mechanism as before, now operating on the joined result.
+// arg limit -- same mechanism as before, now operating on the joined result.
 
 // Join the compile fields in a fixed order into one command line:
 //   <exe> <flags> <includes> <defines> <output> <sources>
@@ -370,7 +405,7 @@ static void
 print_raw_cmd( FILE* out, const char* cmd )
 {
     static const int k_wrap = 100;  // soft line width target
-    static const int k_cont = 22;   // continuation indent width — matches ORB_INDENT(10) + "[orb cmd]   "(12)
+    static const int k_cont = 22;   // continuation indent width -- matches ORB_INDENT(10) + "[orb cmd]   "(12)
 
     fprintf( out, ORB_INDENT "[orb cmd]   " );
     int col = 0;                    // current column within the current line
@@ -384,9 +419,9 @@ print_raw_cmd( FILE* out, const char* cmd )
         int wlen = (int)( p - w );
 
         // Two layout cases:
-        //   (a) The token would push the line past k_wrap → wrap to a new
+        //   (a) The token would push the line past k_wrap -> wrap to a new
         //       indented line. col == 0 after wrap, no leading space needed.
-        //   (b) Token fits on the current line → emit a single separator
+        //   (b) Token fits on the current line -> emit a single separator
         //       space (skipped on the very first token, when col == 0).
         if ( col > 0 && col + 1 + wlen > k_wrap )
         {
@@ -412,12 +447,12 @@ print_raw_cmd( FILE* out, const char* cmd )
 // translation unit (e.g. it prints "reflect_tool.c" on its own line before emitting
 // any diagnostics for that TU). We filter these out of our log dumps because
 // the orb build log already shows the source list in the [orb compiling] section
-// — leaving cl's echo in just creates duplicate noise.
+// -- leaving cl's echo in just creates duplicate noise.
 //
 // A line qualifies as a source echo iff (after trimming whitespace) it is:
 //   - non-empty
 //   - contains no internal spaces or path separators (so "src/foo.c" doesn't
-//     match — that's a diagnostic, not a banner)
+//     match -- that's a diagnostic, not a banner)
 //   - has a '.' producing an extension equal to "c" or "cpp" (case-insensitive)
 //
 // Implementation walks the line in three passes for readability over speed:
@@ -437,10 +472,10 @@ is_msvc_source_echo( const char* line )
                       || line[ len - 1 ] == ' ' ) ) --len;
     if ( len == 0 ) return false;
 
-    // 3. Reject anything that contains an interior space or a path separator —
+    // 3. Reject anything that contains an interior space or a path separator --
     //    cl's TU banner is a bare filename, never a path. This is what
     //    distinguishes "foo.c" (echo) from "F:\orb\src\foo.c(12): error C..."
-    //    (diagnostic — keep!).
+    //    (diagnostic -- keep!).
     for ( int i = 0; i < len; ++i )
         if ( line[ i ] == ' ' || line[ i ] == '/' || line[ i ] == '\\' ) return false;
 
@@ -454,7 +489,7 @@ is_msvc_source_echo( const char* line )
     //    explicit length check rather than _stricmp because `line` may still
     //    have trailing CR/LF/spaces past `len` (we trimmed by adjusting len
     //    only, not by null-terminating). E.g. "foo.c\n" gives ext = "c\n"
-    //    and _stricmp("c\n", "c") would mismatch — losing the filter.
+    //    and _stricmp("c\n", "c") would mismatch -- losing the filter.
     const char* ext     = line + dot + 1;
     int         ext_len = len - ( dot + 1 );
     if ( ext_len == 1 && _strnicmp( ext, "c",   1 ) == 0 ) return true;
@@ -463,42 +498,32 @@ is_msvc_source_echo( const char* line )
 }
 
 /*============================================================================================*/
-// --- Compilation ---
+// --- build_target_compile() ---
+//
+// Fill a compile_cmd_t section-by-section then run it. Prints the active sections to 
+// the build log (or stdout in serial mode), assembles the full cl.exe command, and runs
+// it via build_run_cmd_capture_deps so /showIncludes output is parsed into a per-target
+// dep file for the next incremental check. (e.g. build\obj\core\_deps.txt)
 
-/**
- * build_target_compile()
- *
- * Fill a compile_cmd_t section-by-section, print the active sections to the
- * build log (or stdout in serial mode), assemble the full cl.exe command, and
- * run it via build_run_cmd_capture_deps so /showIncludes output is parsed into
- * a per-target dep file for the next incremental check.
- */
 bool
 build_target_compile( build_context_t* ctx, target_info_t* target,
                       const char* obj_dir, const char* gen_dir )
 {
     compile_cmd_t cc = { 0 };
-    const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
+    const char* config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
-    // Exe
     snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
 
-    // Flags: compiler settings common to all targets.
-    // /showIncludes drives the dep-capture path in build_run_cmd_capture_deps;
-    // it produces a "Note: including file:" line for every resolved header.
-    CC_APPEND( cc.flags,
-              "/c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes" );
+    CC_APPEND( cc.flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes" );
     if ( ctx->config == CONFIG_DEBUG )
         CC_APPEND( cc.flags, " /Zi /Od /MDd" );
     else
         CC_APPEND( cc.flags, " /O2 /MD" );
 
-    // Includes: header search paths.
-    // Trailing space intentional — fields are space-joined at assembly time.
     CC_APPEND( cc.includes, "/I source /I %s", gen_dir );
 
-    // Defines: preprocessor symbols every TU sees.
-    // Must stay in lockstep with the IntelliSense defines in build_tool_gen.c.
+    // Note: Must stay in lockstep with the IntelliSense defines in build_tool_gen.c.
+
     CC_APPEND( cc.defines, "/D_CRT_SECURE_NO_WARNINGS" );
     {
         char upper[ 128 ];
@@ -539,7 +564,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     }
 
     // Output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
-    // Trailing slash is required — without it cl treats the path as a
+    // Trailing slash is required -- without it cl treats the path as a
     // filename prefix instead of a directory.
     CC_APPEND( cc.output, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
 
@@ -549,7 +574,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     // For each unit: build the relative path, run it through _fullpath() to
     // canonicalize to an absolute path, and append it to the sources field
     // separated by a single space. The `cc.sources[ 0 ] ? " " : ""` trick
-    // suppresses the leading space on the first entry — the field starts
+    // suppresses the leading space on the first entry -- the field starts
     // out as an empty string, so the test is "is anything here yet?".
     {
         char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
@@ -584,6 +609,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     char      rsp_path[ BT_PATH_MAX ];
     cmd_buf_t cmd = { 0 };
     snprintf( rsp_path, sizeof( rsp_path ), "%s\\cl.rsp", obj_dir );
+    cc_check_sentinels( &cc );
     cc_assemble( &cc, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
     if ( log_out != stdout ) fclose( log_out );
@@ -594,16 +620,13 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 }
 
 /*============================================================================================*/
-// --- Single-file Compilation ---
+// --- build_target_compile_single() ---
+//
+// Compiles one source file with the target's full flag/define/include set.
+// Mirrors build_target_compile() but omits /showIncludes (no dep tracking)
+// and replaces the full unity source list with the single file path VS passes
+// via $(NMakeCompileFile). No link step -- this is for error feedback only.
 
-/**
- * build_target_compile_single()
- *
- * Compiles one source file with the target's full flag/define/include set.
- * Mirrors build_target_compile() but omits /showIncludes (no dep tracking)
- * and replaces the full unity source list with the single file path VS passes
- * via $(NMakeCompileFile). No link step — this is for error feedback only.
- */
 bool
 build_target_compile_single( build_context_t* ctx, target_info_t* target,
                              const char* obj_dir, const char* gen_dir, const char* file_path )
@@ -684,17 +707,13 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
 }
 
 /*============================================================================================*/
-// --- Linking / Archiving ---
+// --- build_target_link() ---
+//
+// Fill a link_cmd_t, print the active sections, assemble the command, and run it.
+//   TARGET_STATIC_LIB  -> lib.exe
+//   TARGET_DYNAMIC_LIB -> link.exe /DLL /IMPLIB
+//   TARGET_EXECUTABLE  -> link.exe
 
-/**
- * build_target_link()
- *
- * Fill a link_cmd_t, print the active sections, assemble the command, and run
- * it via build_run_cmd.
- *  - TARGET_STATIC_LIB  -> lib.exe
- *  - TARGET_DYNAMIC_LIB -> link.exe /DLL /IMPLIB
- *  - TARGET_EXECUTABLE  -> link.exe
- */
 bool
 build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir )
 {
@@ -713,14 +732,14 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     {
         // --- Static library (lib.exe) ----------------------------------
         // lib.exe is the archiver: it bundles obj files into a .lib. No
-        // linking, no PDB, no dep resolution — just a flat archive of
+        // linking, no PDB, no dep resolution -- just a flat archive of
         // every *.obj in obj_dir.
         snprintf( lk.exe,      sizeof( lk.exe ),      "lib.exe" );
         snprintf( lk.artifact, sizeof( lk.artifact ),  "bin\\%s.lib", target->name );
         snprintf( lk.flags,    sizeof( lk.flags ),     "/nologo" );
         snprintf( lk.output,   sizeof( lk.output ),    "/OUT:bin\\%s.lib", target->name );
         snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s\\*.obj", obj_dir );
-        // lk.pdb and lk.libs stay empty by zero-init — lib.exe ignores both.
+        // lk.pdb and lk.libs stay empty by zero-init -- lib.exe ignores both.
     }
     else
     {
@@ -738,7 +757,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
         else
             snprintf( lk.flags, sizeof( lk.flags ), "/nologo" );
 
-        // Output: DLLs also produce an "import library" — the .lib that
+        // Output: DLLs also produce an "import library" -- the .lib that
         // dependents link against to bind to the DLL's exports. /IMPLIB
         // tells link.exe to emit it alongside the .dll.
         if ( effective_type == TARGET_DYNAMIC_LIB )
@@ -757,7 +776,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
 
         // Libs to feed link.exe: every declared dep's .lib, plus the four
         // Windows system libs every target uses. The `[0] ? " " : ""` trick
-        // suppresses a leading space when lk.libs is still empty — same
+        // suppresses a leading space when lk.libs is still empty -- same
         // pattern as the sources list above.
         for ( int i = 0; target->deps[ i ]; ++i )
             CC_APPEND( lk.libs, "%sbin/%s.lib",
@@ -774,6 +793,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     cmd_buf_t cmd = { 0 };
     snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s.rsp", obj_dir,
               target->type == TARGET_STATIC_LIB ? "lib" : "link" );
+    lk_check_sentinels( &lk );
     lk_assemble( &lk, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
     if ( log_out != stdout ) fclose( log_out );

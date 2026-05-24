@@ -222,7 +222,7 @@ validate_targets( void )
                                 Requires -target.
       -force                    Skip the up-to-date check and always compile + link.
                                 Useful for testing recompilation without touching timestamps.
-                                Does not wipe obj/ — use -clean for a full scrub.
+                                Does not wipe obj/ -- use -clean for a full scrub.
       -no-deps                  Build only the target itself, no dep recursion
                                 (set by VS .vcxproj files; manages deps itself.
                                 (do not use on the CLI unless you know what you're doing).
@@ -237,8 +237,8 @@ validate_targets( void )
 int
 main( int argc, char** argv )
 {
-    // Inject debug args when BUILD_TOOL_DEBUG_OVERRIDE is set (see build_tool_test.c).
-    // No-op in Release and when the override flag is 0.
+    // Inject debug args from build_tool_debug.args (see build_tool_test.c).
+    // No-op in Release builds and when compiled with /DBUILD_TOOL_NO_DEBUG_INJECT.
     build_tool_debug_inject( &argc, &argv );
 
     // --- Debug Arg Log ---
@@ -265,7 +265,7 @@ main( int argc, char** argv )
     
     bool  should_clean   = false;       // -clean: delete all build outputs and exit, no build.
     bool  should_gen     = false;       // -gen: generate .sln/.vcxproj files and exit, no build.
-    int   j_threads      = 0;           // 0 → auto-detect from CPU count.
+    int   j_threads      = 0;           // 0 -> auto-detect from CPU count.
 
     // Order-independent flag scan. All flags require a leading hyphen; unknown args are ignored.
 
@@ -386,7 +386,7 @@ main( int argc, char** argv )
     {
         // VS Ctrl+F7 path: compile all unity units for the target, no link step.
         // VS does not inject the selected file path via any env/property mechanism,
-        // so we compile the full unity TU instead — correct for unity-build targets.
+        // so we compile the full unity TU instead -- correct for unity-build targets.
         if ( !target ) { printf( ORB_INDENT "[orb error] -compile-only requires -target\n" ); return 1; }
         if ( !build_target_compile_only( &ctx, target ) )
         {

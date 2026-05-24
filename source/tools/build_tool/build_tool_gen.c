@@ -40,7 +40,7 @@ typedef struct
 } file_info_t;
 
 // Per-scan buffers. Reset (g_file_count = 0, g_filter_count = 0) at the
-// start of every project emission — they are reusable scratch, not state.
+// start of every project emission -- they are reusable scratch, not state.
 static file_info_t g_files[ MAX_FILES ];
 static int         g_file_count = 0;
 
@@ -61,12 +61,12 @@ static int  g_filter_count = 0;
  * cross-references, source-control mappings, anything CMake/MSBuild cached.
  *
  * Hashing the project's name instead means the GUID is stable for the life
- * of the name — registry reorderings cost nothing, renames cost only their
+ * of the name -- registry reorderings cost nothing, renames cost only their
  * own project's identity (which is correct: a rename is a new project).
  *
  * Two FNV-1a passes with different seeds and primes fill the 16 bytes.
  * FNV is not cryptographic, but we are not defending against collisions
- * from an adversary — we just need 2^128 worth of spread across the few
+ * from an adversary -- we just need 2^128 worth of spread across the few
  * dozen names this tool will ever see.
  */
 static void
@@ -75,7 +75,7 @@ guid_from_name( const char* name, char* out )
     // Two independent FNV-1a hashes. FNV-1a iterates byte-by-byte over the
     // input, XOR-ing the byte into the accumulator and then multiplying by a
     // large prime. Using two different (seed, prime) pairs produces 128 bits
-    // of independent output — enough spread for our few-dozen project names.
+    // of independent output -- enough spread for our few-dozen project names.
     //
     // The exact constants are the standard 64-bit FNV-1a values (h1) and an
     // arbitrary second pair (h2) chosen for being prime and distinct. The
@@ -93,13 +93,13 @@ guid_from_name( const char* name, char* out )
     // GUID layout VS expects: {AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFFFFFF}.
     // Output is exactly 38 bytes + NUL; caller's buffer is 64.
     //
-    // Bit layout — we slice h1 and h2 to fill each field:
-    //   h1[63:32] → AAAAAAAA  (top half of h1)
-    //   h1[31:16] → BBBB
-    //   h1[15:0]  → CCCC      (bottom half of h1)
-    //   h2[63:48] → DDDD      (top of h2)
-    //   h2[47:32] → EEEE
-    //   h2[31:0]  → FFFFFFFF  (bottom half of h2)
+    // Bit layout -- we slice h1 and h2 to fill each field:
+    //   h1[63:32] -> AAAAAAAA  (top half of h1)
+    //   h1[31:16] -> BBBB
+    //   h1[15:0]  -> CCCC      (bottom half of h1)
+    //   h2[63:48] -> DDDD      (top of h2)
+    //   h2[47:32] -> EEEE
+    //   h2[31:0]  -> FFFFFFFF  (bottom half of h2)
     snprintf( out, 64, "{%08X-%04X-%04X-%04X-%04X%08X}",
               ( unsigned int )( h1 >> 32 ),
               ( unsigned int )( ( h1 >> 16 ) & 0xFFFFu ),
@@ -114,7 +114,7 @@ guid_from_name( const char* name, char* out )
  *
  * Registers a virtual folder ("Filter" in VS terminology) for this scan.
  * Filters are how the Solution Explorer renders nested folders that don't
- * exist on disk — or, in our case, that mirror disk layout but live in a
+ * exist on disk -- or, in our case, that mirror disk layout but live in a
  * separate XML namespace from the source files.
  *
  * Idempotent: a no-op if `filter` is empty or already present.
@@ -137,7 +137,7 @@ add_filter( const char* filter )
  * add_filters_recursive()
  *
  * Ensures all parent folders of a filter path are also registered.
- * e.g. "engine\\core\\win" → adds "engine", "engine\\core", and "engine\\core\\win".
+ * e.g. "engine\\core\\win" -> adds "engine", "engine\\core", and "engine\\core\\win".
  * This is necessary for VS to display the nested folder structure correctly:
  * if only the leaf folder is registered, Solution Explorer skips the parent
  * tiers and the hierarchy collapses.
@@ -166,7 +166,7 @@ add_filters_recursive( const char* filter )
         }
         p++;
     }
-    // Don't forget the leaf — the loop above only registered prefixes ending
+    // Don't forget the leaf -- the loop above only registered prefixes ending
     // in a separator, not the final segment.
     add_filter( tmp );
 }
@@ -176,15 +176,15 @@ add_filters_recursive( const char* filter )
  *
  * Maps a physical file path to a virtual VS filter path.
  * Example: path = "source/engine/core/core.c", root_dir = "source/engine"
- *          → out_filter = "core"
+ *          -> out_filter = "core"
  * Example: path = "source/engine/core/win/io.c", root_dir = "source/engine"
- *          → out_filter = "core\\win"
+ *          -> out_filter = "core\\win"
  *
  * Strategy: strip the project root prefix, drop the final filename, and
  * normalize the surviving directory portion to use backslashes (which is
  * what VS uses inside its filter XML).
  *
- * Files that sit directly under root_dir produce an empty filter ("") —
+ * Files that sit directly under root_dir produce an empty filter ("") --
  * those go in the project's root with no virtual folder.
  */
 static void
@@ -204,7 +204,7 @@ get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
     const char* sub = path + root_len;
     if ( *sub == '/' || *sub == '\\' ) sub++;
 
-    // Find the last separator — everything before it is the directory portion
+    // Find the last separator -- everything before it is the directory portion
     // (which becomes the filter), everything after is the filename (discarded).
     // We check '/' first since our paths are mostly forward-slash, but fall
     // back to '\\' for paths that came from the Win32 _findfirst APIs.
@@ -212,7 +212,7 @@ get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
     if ( !last_slash ) last_slash = strrchr( sub, '\\' );
 
     // No separator after the root means the file lives directly under
-    // root_dir → empty filter (already set above), nothing more to do.
+    // root_dir -> empty filter (already set above), nothing more to do.
     if ( !last_slash ) return;
 
     // Copy the directory portion into out_filter, then convert to backslashes
@@ -250,7 +250,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
     do
     {
         // _findfirst always includes the current ("." ) and parent ("..")
-        // directory entries — skip them or we'd recurse infinitely.
+        // directory entries -- skip them or we'd recurse infinitely.
         if ( strcmp( find_data.name, "." ) == 0 || strcmp( find_data.name, ".." ) == 0 ) continue;
 
         // Reconstruct the full path so we can either recurse into it or store it.
@@ -259,12 +259,12 @@ scan_directory_recursive( const char* dir, const char* root_dir )
 
         if ( find_data.attrib & _A_SUBDIR )
         {
-            // Subdirectory → recurse. root_dir stays the same.
+            // Subdirectory -> recurse. root_dir stays the same.
             scan_directory_recursive( path, root_dir );
         }
         else
         {
-            // File → only care about .c and .h. strrchr finds the LAST dot,
+            // File -> only care about .c and .h. strrchr finds the LAST dot,
             // which is the extension marker. Files with no dot (e.g.
             // "Makefile") get ext == NULL and are silently skipped.
             const char* ext = strrchr( find_data.name, '.' );
@@ -299,7 +299,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
  *  1. An unconditional group with OutDir/IntDir and the NMake build, clean,
  *     and run commands that drive build_tool.exe.
  *  2. Per-configuration groups (Debug|x64, Release|x64) for the fields that
- *     actually feed IntelliSense — preprocessor defines, include paths, and
+ *     actually feed IntelliSense -- preprocessor defines, include paths, and
  *     AdditionalOptions. IntelliSense reads these to construct the TU
  *     context for headers and source. Splitting them per-config lets _DEBUG
  *     vs NDEBUG, and any future config-specific defines, diverge without
@@ -311,7 +311,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
  * the static-link symbol resolve correctly while editing.
  *
  * `static_def`: NULL for the nav project (no _STATIC). Else the upper-cased
- * target name, e.g. "CORE" → emits CORE_STATIC.
+ * target name, e.g. "CORE" -> emits CORE_STATIC.
  */
 static void
 write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
@@ -408,7 +408,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
  * index it, without claiming compile ownership.
  *
  * `index` is preserved in the signature for backwards compat with earlier
- * call sites — the GUID derivation no longer uses it (see guid_from_name).
+ * call sites -- the GUID derivation no longer uses it (see guid_from_name).
  */
 static void
 build_gen_proj_target( target_info_t* target, int index )
@@ -609,7 +609,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     // Every file is listed as ClInclude regardless of extension. This is
     // deliberate: the nav project exists for global search and navigation,
     // not for compilation. Listing .c files here as ClCompile would create
-    // a competing TU context, and VS picks last-loaded-wins per file —
+    // a competing TU context, and VS picks last-loaded-wins per file --
     // headers would resolve under this empty context instead of the real
     // target's context (wrong defines, wrong API visible). ClInclude has
     // no TU semantics, so the per-target .vcxproj wins cleanly.
@@ -644,7 +644,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
         fprintf( f, "  </ItemGroup>\n" );
         
         // Map each file to its virtual filter. ClInclude regardless of
-        // extension — see comment in the nav .vcxproj writer above.
+        // extension -- see comment in the nav .vcxproj writer above.
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_file_count; ++i )
         {
@@ -680,7 +680,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
  *        below can nest the project under the right virtual folder.
  *   4. Emit virtual SLN folders ("01_BASE", "02_ENGINE", ...) as separate
  *      Project entries.
- *   5. Emit GlobalSection blocks: configuration mapping (Debug/Release ×
+ *   5. Emit GlobalSection blocks: configuration mapping (Debug/Release x
  *      x64) + NestedProjects (puts each target under its folder).
  */
 static void
@@ -695,9 +695,9 @@ build_gen_solution( solution_info_t* sln )
     fprintf( f, "# Visual Studio Version 17\n" );
 
     // Microsoft-defined "kind" GUIDs that .sln entries use as a discriminator.
-    // These are FIXED by Visual Studio — do not regenerate them.
-    //   folder_type_guid → declares an entry as a virtual solution folder.
-    //   cpp_type_guid    → declares an entry as a C/C++ project (.vcxproj).
+    // These are FIXED by Visual Studio -- do not regenerate them.
+    //   folder_type_guid -> declares an entry as a virtual solution folder.
+    //   cpp_type_guid    -> declares an entry as a C/C++ project (.vcxproj).
     const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
     const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
 
@@ -770,7 +770,7 @@ build_gen_solution( solution_info_t* sln )
                 }
 
                 // Implicit dep: if build_tool is in this solution, every other target
-                // depends on it — its NMake command invokes bin\build_tool.exe, so a
+                // depends on it -- its NMake command invokes bin\build_tool.exe, so a
                 // parallel Rebuild All would race if build_tool hasn't linked yet.
                 // Only injected when build_tool is actually a project in this solution
                 // (e.g. orb_build.sln) so other solutions (orb_make.sln) are unaffected.
@@ -824,7 +824,7 @@ build_gen_solution( solution_info_t* sln )
             if ( !found && folder_count < 16 )
             {
                 snprintf( folders[ folder_count ], BT_PATH_MAX, "%s", target->sln_folder );
-                // Folder GUID is per-(solution, folder) — same folder name in a
+                // Folder GUID is per-(solution, folder) -- same folder name in a
                 // different solution stays distinct, but is stable across regens.
                 char key[ 192 ];
                 snprintf( key, sizeof( key ), "folder:%s:%s", sln->name, target->sln_folder );
@@ -927,7 +927,7 @@ build_gen_projects( void )
     ensure_dir( g_build_dir );
 
     // 1. Generate every target's .vcxproj once. They're shared across
-    //    solutions by name — a single base.vcxproj is referenced by
+    //    solutions by name -- a single base.vcxproj is referenced by
     //    every .sln that lists "base" in its target_names.
     for ( int i = 0; i < g_target_count; ++i )
     {

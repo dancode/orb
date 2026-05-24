@@ -31,7 +31,7 @@
 
 // Fixed upper bounds. Picked generously vs. the project's actual scale so
 // we never have to grow these dynamically. Hitting either MAX_JOBS or
-// MAX_REV_DEPS is a hard error — preferable to silently dropping deps.
+// MAX_REV_DEPS is a hard error -- preferable to silently dropping deps.
 #define MAX_JOBS       64   // Distinct targets in any single closure.
 #define MAX_THREADS    32   // Worker thread cap (build_run_parallel further clamps to logical CPUs).
 #define MAX_REV_DEPS   32   // Dependents per target. Inverse fan-out limit.
@@ -42,7 +42,7 @@
 typedef struct
 {
     target_info_t* target;          // The thing to build.
-    int            remaining_deps;  // Unfinished deps; reaches 0 → ready to run.
+    int            remaining_deps;  // Unfinished deps; reaches 0 -> ready to run.
     int            rev_dep_count;
     int            rev_deps[ MAX_REV_DEPS ];   // Indices of jobs that depend on us.
     char           log_path[ BT_PATH_MAX ];    // Per-target build log (cl/link output).
@@ -81,7 +81,7 @@ static sched_t           g_sched;
 
 // TLS slot holding the active worker's log_path pointer. Read by the vcvars
 // module (via sched_log_path()) to redirect child stdio. TLS_OUT_OF_INDEXES
-// sentinels "scheduler not initialized yet" — sched_log_path() returns NULL
+// sentinels "scheduler not initialized yet" -- sched_log_path() returns NULL
 // in that case, which is exactly the "no redirection" path.
 static DWORD             g_sched_log_tls    = TLS_OUT_OF_INDEXES;
 
@@ -116,7 +116,7 @@ sched_log_path( void )
  *
  * Linear search g_sched.jobs[] for an existing job with this target name.
  * Returns -1 if not yet registered. Used by add_job() to make recursive
- * insertion idempotent — a diamond dep graph still produces exactly one
+ * insertion idempotent -- a diamond dep graph still produces exactly one
  * job per target.
  */
 static int
@@ -161,7 +161,7 @@ add_job( target_info_t* t )
               "%s\\%s\\%s\\_build.log", g_build_dir, g_int_dir, t->name );
 
     // We do this in two passes so that during dep recursion (which may call
-    // back into add_job) we don't have to keep `j` consistent — easier to
+    // back into add_job) we don't have to keep `j` consistent -- easier to
     // collect indices first, then wire edges once everyone exists.
     int dep_indices[ MAX_LOCAL_DEPS ];
     int dep_count = 0;
@@ -190,7 +190,7 @@ add_job( target_info_t* t )
     }
 
     // Tool deps (helper executables that must exist before this target compiles,
-    // but that aren't linked in — e.g. a codegen utility).
+    // but that aren't linked in -- e.g. a codegen utility).
     for ( i = 0; t->tool_deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
         target_info_t* tool = find_target( t->tool_deps[ i ] );
@@ -212,11 +212,11 @@ add_job( target_info_t* t )
     // tool before it can be compiled. We *also* deduplicate here because the
     // user may have already listed the reflect tool explicitly under deps or
     // tool_deps. A double entry would inflate remaining_deps and the job
-    // would never reach 0 → would never become ready → indefinite wait.
+    // would never reach 0 -> would never become ready -> indefinite wait.
     if ( t->has_reflect && dep_count >= MAX_LOCAL_DEPS )
     {
         printf( ORB_INDENT "[orb error] '%s' dep table full (MAX_LOCAL_DEPS=%d); "
-                "reflect tool dep cannot be registered — raise MAX_LOCAL_DEPS\n",
+                "reflect tool dep cannot be registered -- raise MAX_LOCAL_DEPS\n",
                 t->name, MAX_LOCAL_DEPS );
         return -1;
     }
@@ -245,7 +245,7 @@ add_job( target_info_t* t )
     // Wire the reverse-dep edges: for each dep, record THIS job's index in
     // the dep's rev_deps list. When the dep finishes, worker_main walks that
     // list and decrements each dependent's remaining_deps counter. The job
-    // becomes ready exactly when its last dep finishes — no global toposort
+    // becomes ready exactly when its last dep finishes -- no global toposort
     // needed.
     for ( int d = 0; d < dep_count; ++d )
     {
@@ -291,7 +291,7 @@ worker_main( void* arg )
         {
             // Cycle detection: nothing in flight, nothing ready, work left
             // means no job will ever produce a wakeup that satisfies the
-            // predicate above → deadlock. Set the failure flag and let
+            // predicate above -> deadlock. Set the failure flag and let
             // the exit branch below carry us out.
             if ( g_sched.in_flight == 0 )
             {
@@ -329,7 +329,7 @@ worker_main( void* arg )
         if ( clr ) fclose( clr );
 
         // Install this thread's log redirect, force skip_deps so build_target
-        // doesn't try to recurse — the scheduler is the sole dep authority.
+        // doesn't try to recurse -- the scheduler is the sole dep authority.
         TlsSetValue( g_sched_log_tls, ( void* )j->log_path );
 
         build_context_t local_ctx = *g_sched.ctx;
@@ -342,7 +342,7 @@ worker_main( void* arg )
         // The print lock guarantees no other worker's dump can interleave
         // between our header and the last line of our log.
         //
-        // [orb FAILED] is always printed (never gated) — you always need to
+        // [orb FAILED] is always printed (never gated) -- you always need to
         // know something broke. [orb compiled] / [orb skipped] are gated on ORB_OUT_TARGET_RESULT.
         //
         // The log is dumped when the target failed (to show errors/warnings)
@@ -353,7 +353,7 @@ worker_main( void* arg )
         // Dump the per-target log before printing the result tag so the detail
         // sections (compile/link/cmd) appear first and the result reads as a footer.
         // Blank lines are buffered as "pending" and only flushed when a following
-        // non-blank line arrives — this preserves intentional mid-block spacing
+        // non-blank line arrives -- this preserves intentional mid-block spacing
         // (e.g. between sections and [orb cmd]) while silently dropping trailing
         // blank lines from MSVC output so [orb compiled] runs right after content.
 
@@ -376,7 +376,7 @@ worker_main( void* arg )
                     fputs( line, stdout );
                     had_output = true;
                 }
-                // pending_blanks discarded here — trailing blanks are suppressed.
+                // pending_blanks discarded here -- trailing blanks are suppressed.
                 fclose( lf );
             }
         }

@@ -12,18 +12,18 @@
 
 /*==============================================================================================
     
-        Designed to keep the build_clean code readable and the terminal output tidy. 
-        
-            Ex: format a "del /q ... >nul 2>nul" command and run it silently.
-        
-        Appending >nul 2>nul to the shell command tells the Windows shell to discard 
-        both standard output and error messages.
-
-        It calls build_run_cmd_quiet, so even if the del command returns a "file not found" 
-        error code, the build tool doesn't log it.
-        
-        build_clean() invokes this for every artifact category it deletes.
-        e.g. (bin/<name>.lib, .dll, .exe, .pdb, .exp, .generated.{c,h}, ...); 
+    Designed to keep the build_clean code readable and the terminal output tidy. 
+    
+        Ex: format a "del /q ... >nul 2>nul" command and run it silently.
+    
+    Appending >nul 2>nul to the shell command tells the Windows shell to discard 
+    both standard output and error messages.
+    
+    It calls build_run_cmd_quiet(), so even if the del command returns a 
+    "file not found" error code, the build tool doesn't log it.
+    
+    build_clean() invokes this for every artifact category it deletes.
+    e.g. (bin/<name>.lib, .dll, .exe, .pdb, .exp, .generated.{c,h}, ...); 
 
 ==============================================================================================*/
 
@@ -39,11 +39,10 @@ del_q( const char* fmt, ... )
 }
 
 /*==============================================================================================
-    --- Build Clean ---
    
-    Two modes: per-target + global.
+    build_clean(): Two clean modes: per-target or global.
 
-    Per-target (target != NULL): removes only that target's artifacts — bin/<name>.
+    Per-target (target != NULL): removes only that target's artifacts -- bin/<name>.
     {lib,dll,exe,exp,pdb}, obj/<name>/, and any generated reflection files. 
 
     Called from each VS .vcxproj's invoke of NMakeCleanCommandLine so a solution 
@@ -53,7 +52,7 @@ del_q( const char* fmt, ... )
     Global (target == NULL): wipes all intermediates and artifacts. 
 
     Skips "is_tool" executables (reflect_tool, build_tool) so tools survive a
-    full clean — they are rebuilt on demand by our dep resolution, not by VS, 
+    full clean -- they are rebuilt on demand by our dep resolution, not by VS, 
     so deleting them would leave no path to recreate them.
 
 ==============================================================================================*/
@@ -122,8 +121,9 @@ build_clean( target_info_t* target )
 
 /*==============================================================================================
     
-        Compile all units for a target without running the link/archive step.
-        Called from the VS Ctrl+F7 path (-compile-only flag) via NMakeCompileFileCommandLine.
+    Compile all units for a target without running the link/archive step.
+    Called from the VS Ctrl+F7 path (-compile-only flag) via NMakeCompileFileCommandLine.
+    Ensures intermediate directories exist (bin/ is not needed)
 
 ==============================================================================================*/
 
@@ -134,11 +134,9 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
     snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
     char gen_dir[ BT_PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
-
-    // Ensure intermediate directories exist  (bin/ is not needed)
-
     char int_dir[ BT_PATH_MAX ];
     snprintf( int_dir, sizeof( int_dir ), "%s\\%s", g_build_dir, g_int_dir );
+
     ensure_dir( g_build_dir );
     ensure_dir( int_dir );
     ensure_dir( gen_dir );
@@ -147,11 +145,8 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
     return build_target_compile( ctx, target, obj_dir, gen_dir );
 }
 
-/*============================================================================================*/
+/*==============================================================================================
 
-/**
- * build_target()
- *
  * The main worker function. Builds one target, optionally recursing into
  * its dependencies first. Idempotent: a fully up-to-date target returns
  * true without invoking any compiler. Phases run in this order:
@@ -165,10 +160,12 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
  *   6. Compile + link
  *
  * Concurrency: from step 1 onward a per-target named mutex is held, so
- * two build_tool.exe invocations (or two scheduler workers — see
+ * two build_tool.exe invocations (or two scheduler workers -- see
  * build_tool_sched.c) targeting the same name will serialize here.
  * Independent targets run fully in parallel because their mutex names differ.
- */
+
+==============================================================================================*/
+
 bool
 build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 {
@@ -189,7 +186,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
     if ( !ctx->skip_deps )
     {
-        // Link Dependencies — VS manages these via ProjectDependencies when
+        // Link Dependencies -- VS manages these via ProjectDependencies when
         // -no-deps is set. Skip here to avoid racing VS's parallel scheduler.
         for ( int i = 0; target->deps[ i ]; ++i )
         {
@@ -205,7 +202,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         }
     }
 
-    // Tool Dependencies — always our responsibility regardless of -no-deps.
+    // Tool Dependencies -- always our responsibility regardless of -no-deps.
     // VS has no visibility into tool executables not listed in the solution,
     // so we must always check and rebuild them ourselves. build_target is
     // idempotent; the up-to-date check short-circuits when nothing changed.
@@ -221,7 +218,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
             return false;
     }
 
-    // Implicit reflect tool dep — same always-rebuild guarantee.
+    // Implicit reflect tool dep -- same always-rebuild guarantee.
     if ( target->has_reflect )
     {
         refl_tool = find_reflect_tool();
@@ -241,7 +238,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // build_tool.exe invocations of the SAME target will serialize here; two
     // invocations of independent targets run in parallel (different mutex
     // names). Acquired BEFORE the up-to-date check so a second invocation
-    // observes the post-build artifact mtimes — never a half-written .obj/.lib.
+    // observes the post-build artifact mtimes -- never a half-written .obj/.lib.
 
     void* target_lock = build_lock_target( target->name );
     bool  result      = true;
@@ -334,7 +331,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
     // Test D: header dependency check. The previous successful compile
     // wrote every #included header path into <obj_dir>/_deps.txt (parsed out
-    // of cl.exe's /showIncludes output — see build_target_compile and
+    // of cl.exe's /showIncludes output -- see build_target_compile and
     // build_run_cmd_capture_deps). On this pass we replay that list and
     // rebuild if any listed header is newer than the artifact.
     //
@@ -376,7 +373,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         }
     }
 
-    // All three tests passed → skip compile + link entirely. We still ran
+    // All three tests passed -> skip compile + link entirely. We still ran
     // through the lock-and-prepare phase so concurrent callers got serialized
     // and observed the artifact as fully written.
     if ( up_to_date )

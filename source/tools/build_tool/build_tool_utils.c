@@ -82,13 +82,13 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
  *
  * cl/link/lib all consume "@file" arguments where the file contains the
  * remaining tokens separated by whitespace. Quoting and backslashes pass
- * through literally — no escaping needed for our paths.
+ * through literally -- no escaping needed for our paths.
  */
 bool
 cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
 {
     // Fast path: small command, fits comfortably under the shell limit AND
-    // not flagged truncated → leave the buffer alone, no rsp file needed.
+    // not flagged truncated -> leave the buffer alone, no rsp file needed.
     if ( !b->truncated && b->size < CMD_RSP_THRESHOLD )
         return false;
 
@@ -105,7 +105,7 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
     if ( !*args )
         return false;    // Single-token buffer; no args to spill.
 
-    // Range b->buf .. args is the exe. Validate the length is plausible —
+    // Range b->buf .. args is the exe. Validate the length is plausible --
     // anything 64+ bytes is almost certainly a malformed buffer, in which
     // case bailing out is safer than scribbling.
     size_t exe_len = ( size_t )( args - b->buf );
@@ -138,7 +138,7 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
     // Rewrite the in-memory buffer to the short "<exe> @<rsp_path>" form so
     // downstream code (spawn, echo) sees a short, valid command. We also
     // clear the truncated flag because the rebuilt buffer is comfortably
-    // small — leaving it set would cause a second spill attempt next time.
+    // small -- leaving it set would cause a second spill attempt next time.
     b->size      = 0;
     b->truncated = false;
     cmd_append( b, "%s @%s", exe, rsp_path );

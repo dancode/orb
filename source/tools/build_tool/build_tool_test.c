@@ -27,7 +27,7 @@
 ==============================================================================================*/
 // clang-format off
 
-#if defined( _DEBUG )
+#if defined( _DEBUG ) && !defined( BUILD_TOOL_NO_DEBUG_INJECT )
 
 #define DEBUG_ARGS_FILE  "build_tool_debug.args"
 #define DEBUG_ARGS_MAX   32

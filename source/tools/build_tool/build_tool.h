@@ -10,7 +10,7 @@
     - High Performance: Minimal filesystem overhead, direct tool invocation,
       no shell-out indirection beyond what cmd.exe requires for builtins/globs.
     - Simplicity: A flat, unified target pool with explicit dependencies. No
-      Makefile / CMake DSL — everything is described as plain C structs.
+      Makefile / CMake DSL -- everything is described as plain C structs.
     - Flexibility: Multiple standalone IDE solutions share the same target pool.
     - Automation: Recursive dependency resolution, automatic vcvars env setup,
       and self-hosting bootstrap from a single .bat file.
@@ -22,36 +22,36 @@
     - build_tool.exe is itself a unity build. build_tool.c #includes every other
       .c file in this directory in dependency order. This means all "static"
       functions are visible across the whole tool while still compiling in a
-      single cl.exe invocation — and bootstrapping needs just one command line.
+      single cl.exe invocation -- and bootstrapping needs just one command line.
 
     Build Outout Format:
-    ┌─────────────────────────┬──────────────────────────────┐
-    │           Tag           │         Meaning              │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb build]             │ per-target compile start     │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb completed]         │ target built successfully    │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb skipped]           │ target already up to date    │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb FAILED]            │ per-target failure           │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb parallel]          │ scheduler start              │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb clean]             │ clean summary                │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb reflect]           │ codegen step                 │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb cmd]               │ raw command echo             │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb src]               │ source files                 │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb vcvars]            │ VS env discovery             │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb warn]              │ non-fatal warning            │
-    ├─────────────────────────┼──────────────────────────────┤
-    │ [orb error]             │ fatal error                  │
-    └─────────────────────────┴──────────────────────────────┘
+    +-------------------------+------------------------------+
+    |           Tag           |         Meaning              |
+    +-------------------------+------------------------------+
+    | [orb build]             | per-target compile start     |
+    +-------------------------+------------------------------+
+    | [orb completed]         | target built successfully    |
+    +-------------------------+------------------------------+
+    | [orb skipped]           | target already up to date    |
+    +-------------------------+------------------------------+
+    | [orb FAILED]            | per-target failure           |
+    +-------------------------+------------------------------+
+    | [orb parallel]          | scheduler start              |
+    +-------------------------+------------------------------+
+    | [orb clean]             | clean summary                |
+    +-------------------------+------------------------------+
+    | [orb reflect]           | codegen step                 |
+    +-------------------------+------------------------------+
+    | [orb cmd]               | raw command echo             |
+    +-------------------------+------------------------------+
+    | [orb src]               | source files                 |
+    +-------------------------+------------------------------+
+    | [orb vcvars]            | VS env discovery             |
+    +-------------------------+------------------------------+
+    | [orb warn]              | non-fatal warning            |
+    +-------------------------+------------------------------+
+    | [orb error]             | fatal error                  |
+    +-------------------------+------------------------------+
 
 ==============================================================================================*/
 #ifndef BUILD_TOOL_H
@@ -112,7 +112,7 @@ typedef enum
 {
     CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
     CONFIG_RELEASE, // Full optimizations, minimal debug symbols, MD runtime.
-    CONFIG_COUNT,   // Sentinel — used as "all configs" in warn_suppress_t.
+    CONFIG_COUNT,   // Sentinel -- used as "all configs" in warn_suppress_t.
 
 } config_t;
 
@@ -194,17 +194,17 @@ typedef struct target_info_s
 
     // If true, this is a build-time tool executable (e.g. reflect_tool).
     // Tool targets survive global clean and are always rebuilt by our own
-    // dep resolution — never delegated to VS ProjectDependencies.
+    // dep resolution -- never delegated to VS ProjectDependencies.
     bool            is_tool;
 
     // If true, this is the build orchestrator itself. Every other target in the
-    // solution implicitly depends on it — no target can run its NMake command
+    // solution implicitly depends on it -- no target can run its NMake command
     // until bin\build_tool.exe exists.
     bool            is_build_tool;
 
     // If true, this is the reflection code-generator tool. Targets with
     // has_reflect = true automatically depend on whichever target carries
-    // this flag — no hardcoded name needed anywhere in the build logic.
+    // this flag -- no hardcoded name needed anywhere in the build logic.
     bool            is_reflect_tool;
 
 } target_info_t;
@@ -238,7 +238,7 @@ typedef struct build_context_s
 
 /*  skip_deps: If true, build_target() does NOT recurse into its dependencies.
     The VS solution generator emits this flag so MSBuild's own scheduler is
-    the single authority on dep order — preventing multiple build_tool.exe
+    the single authority on dep order -- preventing multiple build_tool.exe
     instances from racing on shared dep outputs during a parallel build  */
 
 } build_context_t;
@@ -309,7 +309,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_MSVC_OUTPUT      ( 1u << 18 )  // [MSVC] raw cl/link/lib passthrough lines
 #define ORB_OUT_ARGS             ( 1u << 19 )  // startup banner: echo raw argv on a second line
 
-// Convenience masks — verbose detail only, summaries excluded.
+// Convenience masks -- verbose detail only, summaries excluded.
 #define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SOURCES  | ORB_OUT_COMPILE_FLAGS    | \
                                ORB_OUT_COMPILE_DEFINES  | ORB_OUT_COMPILE_INCLUDES | \
                                ORB_OUT_COMPILE_OUTPUT   | ORB_OUT_COMPILE_CMD )
@@ -320,7 +320,7 @@ typedef unsigned int out_flags_t;
 
 #define ORB_OUT_SUMMARY      ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK )
 
-// Preset combinations — pass as --out <hex> or use -q / -v shorthands.
+// Preset combinations -- pass as --out <hex> or use -q / -v shorthands.
 #define ORB_OUT_QUIET   ( ORB_OUT_TARGET_RESULT | ORB_OUT_SCHEDULER )
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | \
                           ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
@@ -365,7 +365,7 @@ bool build_target_link( build_context_t* ctx, target_info_t* target, const char*
 
 // Locates the Visual Studio installation (via vswhere or hard-coded probes)
 // and imports vcvarsall.bat's environment into THIS process via _putenv_s.
-// Idempotent — fast-paths out if cl.exe is already on PATH (Dev Cmd Prompt
+// Idempotent -- fast-paths out if cl.exe is already on PATH (Dev Cmd Prompt
 // or VS-launched terminal). One-time cost, ~2.5s; saves ~50s across a full
 // rebuild that would otherwise pay vcvars-prefix overhead per cl invocation.
 void build_setup_vc_env( void );
@@ -385,7 +385,7 @@ __time64_t build_get_mtime( const char* path );
 // Acquire a Windows named mutex scoped to a single target, blocking until
 // granted. Used to serialize concurrent invocations of build_tool.exe that
 // would otherwise both compile/link the same target's outputs. Returns an
-// opaque handle that must be passed to build_unlock_target() — or NULL on
+// opaque handle that must be passed to build_unlock_target() -- or NULL on
 // failure (in which case the caller proceeds without locking).
 void* build_lock_target( const char* target_name );
 
@@ -429,7 +429,7 @@ bool build_target( build_context_t* ctx, target_info_t* target, bool* out_skippe
 bool build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count );
 
 // Deletes build artifacts. If target is non-NULL, only that target's artifacts
-// are removed (bin/<name>.*, obj/<name>/). If NULL, a global wipe runs —
+// are removed (bin/<name>.*, obj/<name>/). If NULL, a global wipe runs --
 // is_tool executables are excluded so tools survive a full clean.
 void build_clean( target_info_t* target );
 
