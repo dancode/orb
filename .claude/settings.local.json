@@ -39,7 +39,11 @@
       "PowerShell(cmd /c bootstrap_build_tool.bat 2>&1)",
       "PowerShell(cmd /c \"F:\\\\orb\\\\bootstrap_build_tool.bat\" 2>&1)",
       "PowerShell(cmd /c `\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat`\" x64 `&`& F:\\\\orb\\\\bootstrap_build_tool.bat 2>&1)",
-      "PowerShell(cmd /c `\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat`\" x64 `&`& F:\\\\orb\\\\bin\\\\build_tool.exe -gen 2>&1)"
+      "PowerShell(cmd /c `\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat`\" x64 `&`& F:\\\\orb\\\\bin\\\\build_tool.exe -gen 2>&1)",
+      "PowerShell(cmd /c `\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat`\" x64 `&`& F:\\\\orb\\\\bootstrap_build_tool.bat)",
+      "PowerShell(cmd /c \"F:\\\\orb\\\\bin\\\\build_tool.exe\" -gen)",
+      "PowerShell(Select-String -Path \"F:\\\\orb\\\\build\\\\proj_mono\\\\example.vcxproj\" -Pattern \"NMake|STATIC|BUILD_STATIC\" | Select-Object -First 20 | ForEach-Object { $_.Line.Trim\\(\\) })",
+      "PowerShell(Select-String -Path \"F:\\\\orb\\\\build\\\\proj\\\\example.vcxproj\" -Pattern \"NMakeOutput|NMakeBuildCommand|BUILD_STATIC\" | ForEach-Object { $_.Line.Trim\\(\\) })"
     ]
   }
 }

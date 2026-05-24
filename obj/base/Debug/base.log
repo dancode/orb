@@ -1,4 +1,4 @@
 ﻿        ----------------------------------------------------------------
-        [orb build] BASE [ no-deps | modular | debug | msvc ]
+        [orb build] BASE [ no-deps | monolithic | debug | msvc ]
             [orb skipped] base
   

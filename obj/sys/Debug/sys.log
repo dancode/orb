@@ -1,5 +1,4 @@
-﻿        [orb clean] sys -- bin\sys.lib, build\obj\sys
-        ----------------------------------------------------------------
-        [orb build] SYS [ no-deps | modular | debug | msvc ]
-            [orb compiling] sys
+﻿        ----------------------------------------------------------------
+        [orb build] SYS [ no-deps | monolithic | debug | msvc ]
+            [orb skipped] sys
   

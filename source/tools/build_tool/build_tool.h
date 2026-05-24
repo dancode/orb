@@ -278,6 +278,11 @@ typedef struct
     // so all solutions stay at a consistent distance from the project root.
     const char*     out_dir;
 
+    // If true, DLL targets are built as static libs (BUILD_STATIC defined globally).
+    // NMake commands get -monolithic; IntelliSense defines include BUILD_STATIC and
+    // _STATIC for all deps (including dynamic-lib ones).
+    bool            is_monolithic;
+
 } solution_info_t;
 
 // These are defined in build_tool_targets.c.

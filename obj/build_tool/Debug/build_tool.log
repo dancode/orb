@@ -1,4 +1,5 @@
-﻿        ----------------------------------------------------------------
+﻿        [orb clean] build_tool -- bin\build_tool.exe, build\obj\build_tool
+        ----------------------------------------------------------------
         [orb build] BUILD_TOOL [ no-deps | modular | debug | msvc ]
-            [orb skipped] build_tool
+            [orb compiling] build_tool
   

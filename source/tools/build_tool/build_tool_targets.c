@@ -151,16 +151,25 @@ static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL 
 // Map solutions to their target lists and navigation scope.
 solution_info_t g_solutions[] = {
     {
-     .name         = "orb_make",
-     .target_names = g_sln_main_targets,
-     .nav_dir      = "source",       // Includes everything in source/ for IDE navigation.
-     .out_dir      = "build\\proj",  // Standard modular build.
+     .name          = "orb_make",
+     .target_names  = g_sln_main_targets,
+     .nav_dir       = "source",
+     .out_dir       = "build\\proj",
+     .is_monolithic = false,
     },
     {
-     .name         = "orb_build",
-     .target_names = g_sln_tools_targets,
-     .nav_dir      = NULL,           // Minimal standalone tool solution.
-     .out_dir      = "build\\proj",  // Standard modular build.
+     .name          = "orb_make_mono",
+     .target_names  = g_sln_main_targets,
+     .nav_dir       = "source",
+     .out_dir       = "build\\proj_mono",
+     .is_monolithic = true,
+    },
+    {
+     .name          = "orb_build",
+     .target_names  = g_sln_tools_targets,
+     .nav_dir       = NULL,
+     .out_dir       = "build\\proj",
+     .is_monolithic = false,
     },
 };
 

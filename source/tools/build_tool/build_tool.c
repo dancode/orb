@@ -228,7 +228,7 @@ validate_targets( void )
       -no-deps                  Build only the target itself, no dep recursion
                                 (set by VS .vcxproj files; manages deps itself.
                                 (do not use on the CLI unless you know what you're doing).
-      -monolithic               Build DLL modules as static libs; defines BUILD_STATIC globally.
+      -monolithic, -mono        Build DLL modules as static libs; defines BUILD_STATIC globally.
       -no-rsp                   Pass full command lines directly; skip response file (.rsp) creation.
                                 Safe on small projects. Default: rsp enabled (required at ~7000 chars).
       -no-dep-track             Skip /showIncludes parsing and _deps.txt read/write.
@@ -280,7 +280,8 @@ main( int argc, char** argv )
     {
         if ( _stricmp( argv[ i ], "-clean"        ) == 0 ) should_clean = true;
         if ( _stricmp( argv[ i ], "-gen"          ) == 0 ) should_gen = true;
-        if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 ) ctx.is_monolithic = true;
+        if ( _stricmp( argv[ i ], "-monolithic" ) == 0 ) ctx.is_monolithic = true;
+        if ( _stricmp( argv[ i ], "-mono"       ) == 0 ) ctx.is_monolithic = true;
         if ( _stricmp( argv[ i ], "-no-rsp"       ) == 0 ) g_use_rsp   = false;
         if ( _stricmp( argv[ i ], "-no-dep-track" ) == 0 ) g_dep_track = false;
         if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = CONFIG_RELEASE;

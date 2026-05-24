@@ -42,9 +42,10 @@
     s_cd_root     -- "cd ..\\.." for NMake commands       (e.g. "..\\..")
 ==============================================================================================*/
 
-static const char* s_out_dir     = "build";
+static const char* s_out_dir      = "build";
 static char        s_root_prefix[ 32 ] = "..\\";
 static char        s_cd_root     [ 32 ] = "..";
+static bool        s_is_monolithic     = false;
 
 static void
 compute_path_parts( const char* out_dir )
@@ -374,13 +375,14 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
         snprintf( define, sizeof( define ), "%s_STATIC", upper );
         ISDEF_APPEND( define );
 
-        // <DEP>_STATIC for each static dep -- mirrors the dep loop in cc_fill_compile_cmd
-        // so the IntelliSense API gateway selection matches the actual build.
+        // <DEP>_STATIC for each static dep (and DLL deps in monolithic mode) --
+        // mirrors the dep loop in cc_fill_compile_cmd so the IntelliSense API
+        // gateway selection matches the actual build.
         for ( int i = 0; target->deps[ i ]; ++i )
         {
             target_info_t* dep = find_target( target->deps[ i ] );
             if ( !dep ) continue;
-            if ( dep->type == TARGET_STATIC_LIB )
+            if ( dep->type == TARGET_STATIC_LIB || ( dep->type == TARGET_DYNAMIC_LIB && s_is_monolithic ) )
             {
                 char dep_upper[ 128 ];
                 get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
@@ -388,6 +390,7 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
                 ISDEF_APPEND( define );
             }
         }
+        if ( s_is_monolithic ) ISDEF_APPEND( "BUILD_STATIC" );
     }
 
 #undef ISDEF_APPEND
@@ -420,7 +423,11 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 {
     const char* ext = ".exe";
     if ( type == TARGET_STATIC_LIB ) ext = ".lib";
-    if ( type == TARGET_DYNAMIC_LIB ) ext = ".dll";
+    if ( type == TARGET_DYNAMIC_LIB ) ext = s_is_monolithic ? ".lib" : ".dll";
+
+    // Appended to build/compile commands so VS drives the correct mode.
+    // Clean is mode-agnostic: it wipes all artifacts regardless of how they were built.
+    const char* mono_flag = s_is_monolithic ? " -monolithic" : "";
 
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
@@ -452,10 +459,10 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
     fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", s_root_prefix, g_int_dir );
-    fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", s_cd_root, out_name );
+    fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeBuildCommandLine>\n", s_cd_root, out_name, mono_flag );
     fprintf( f, "    <NMakeOutput>%sbin\\%s%s</NMakeOutput>\n", s_root_prefix, out_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -clean -target %s</NMakeCleanCommandLine>\n", s_cd_root, out_name );
-    fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeCompileFile>\n", s_cd_root, out_name );
+    fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n", s_cd_root, out_name, mono_flag );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n", s_root_prefix );
     fprintf( f, "  </PropertyGroup>\n" );
 
@@ -468,7 +475,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     // ItemDefinitionGroup applies this metadata to the dynamically created NMakeCompile item.
     fprintf( f, "  <ItemDefinitionGroup>\n" );
     fprintf( f, "    <NMakeCompile>\n" );
-    fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s</NMakeCompileFileCommandLine>\n", s_cd_root, out_name );
+    fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n", s_cd_root, out_name, mono_flag );
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
@@ -574,8 +581,9 @@ build_gen_proj_target( target_info_t* target, int index )
         {
             // ClCompile items carry NMakeCompileFileCommandLine as a fallback for VS versions
             // that read per-item metadata instead of the ItemDefinitionGroup above.
+            const char* item_mono = s_is_monolithic ? " -monolithic" : "";
             fprintf( f, "    <ClCompile Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
-            fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s</NMakeCompileFileCommandLine>\n", s_cd_root, target->name );
+            fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n", s_cd_root, target->name, item_mono );
             fprintf( f, "    </ClCompile>\n" );
         }
         else
@@ -1051,11 +1059,10 @@ build_gen_projects( void )
     {
         solution_info_t* sln = &g_solutions[ i ];
 
-        // Set file-scope path state for this solution's output directory.
-        // All emitter functions (write_vcxproj_common_header, build_gen_proj_target,
-        // build_gen_proj_engine_navigation) read s_out_dir / s_root_prefix / s_cd_root
-        // directly so every emitted path is correct for this solution's depth.
+        // Set file-scope state for this solution. All emitter functions read
+        // these directly so paths and build flags are correct for this pass.
         compute_path_parts( sln->out_dir );
+        s_is_monolithic = sln->is_monolithic;
         ensure_dir( sln->out_dir );
 
         printf( "Generating Solution '%s' in %s/...\n", sln->name, sln->out_dir );
