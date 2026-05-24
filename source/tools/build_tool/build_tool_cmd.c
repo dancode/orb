@@ -16,60 +16,59 @@
     CreateProcess sets the child's stdio via STARTUPINFO, with NO mutation
     of the parent's fds, so concurrent calls from N threads are safe.
 
-
-
 ==============================================================================================*/
 // clang-format off
 
-// Forward decl from build_tool_sched.c (later in the unity build). Returns
-// NULL outside a parallel worker -- in that case we write to stdout directly.
-const char* sched_log_path( void );
+const char* sched_log_path( void );                     // forward declaration 
+static bool is_msvc_source_echo( const char* line );    // forward declaration
 
-/**
- * spawn_cmd()
- *
- * Spawn a child via CreateProcessA, wait for it, and return its exit code.
- *
- * If `log_path` is non-NULL the child's stdout AND stderr are appended to
- * that file. NULL routes them to whatever stdout/stderr the parent
- * currently owns (the shared console). Workers pass their per-target log
- * path so parallel output never interleaves on screen -- the log is dumped
- * atomically by the scheduler when the target finishes.
- *
- * `cmd` is wrapped with "cmd.exe /C" so shell builtins (del, for) and
- * tool-side glob expansion (`*.obj`) keep working unchanged.
- */
+/*==============================================================================================
+
+    spawn_cmd() -- Spawn a child via CreateProcessA, wait for it, return exit code.
+
+    If log_path is non-NULL, the child's stdout and stderr are appended to that file
+    (opened with FILE_SHARE_WRITE so concurrent workers hitting different logs never
+    block each other). NULL falls through to the parent's console handles.
+
+    Workers pass their per-target log path so parallel output never interleaves on
+    screen -- the scheduler dumps each log atomically when the target finishes.
+
+    cmd is wrapped in "cmd.exe /C" so shell builtins (del, for) and tool-side glob
+    expansion (*.obj) keep working unchanged.
+
+==============================================================================================*/
+
 static int
 spawn_cmd( const char* cmd, const char* log_path )
 {
     SECURITY_ATTRIBUTES sa = { sizeof( sa ), NULL, TRUE };
-    HANDLE              hout = NULL;
+    HANDLE hout = NULL;
 
-    // If a log path was given, open it for append with SHARE_WRITE so two
-    // workers writing to DIFFERENT log paths can never block each other,
-    // and so that we can pass the HANDLE to the child for inheritance.
-    if ( log_path )
+    /* open the log (file) for append so the child's HANDLE is inheritable. */
+
+    if ( log_path ) 
     {
-        hout = CreateFileA( log_path, FILE_APPEND_DATA,
-                            FILE_SHARE_READ | FILE_SHARE_WRITE,
-                            &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL );
-        if ( hout == INVALID_HANDLE_VALUE )
-        {
-            printf( ORB_INDENT "[orb error] could not open log file %s (err %lu)\n",
-                    log_path, GetLastError() );
+        hout = CreateFileA( log_path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                 &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL );
+
+        if ( hout == INVALID_HANDLE_VALUE ) {
+            printf( ORB_INDENT "[orb error] could not open log file %s (err %lu)\n", 
+                                log_path, GetLastError() ); 
             return -1;
         }
     }
 
-    // Wrap in cmd.exe /C. Buffer is CMD_BUF_MAX + 64 to accommodate the
-    // "cmd.exe /C " prefix on top of any maximum-length compile/link line.
+    /* Wrap in cmd.exe /C. Buffer is CMD_BUF_MAX + 64 to accommodate the
+      "cmd.exe /C " prefix on top of any maximum-length compile/link line.*/
+
     char wrapped[ CMD_BUF_MAX + 64 ];
     snprintf( wrapped, sizeof( wrapped ), "cmd.exe /C %s", cmd );
 
-    // Fully populate STARTUPINFO so the child gets explicit, inheritable
-    // handles for stdio. Without STARTF_USESTDHANDLES, CreateProcess would
-    // give the child whatever default fds it computes -- usually fine, but
-    // we need to guarantee the log-file handle is what the child sees.
+    /* Fully populate STARTUPINFO so the child gets explicit, inheritable
+        handles for stdio. Without STARTF_USESTDHANDLES, CreateProcess would
+        give the child whatever default fds it computes -- usually fine, but
+        we need to guarantee the log-file handle is what the child sees. */
+
     STARTUPINFOA si = { 0 };
     si.cb         = sizeof( si );
     si.dwFlags    = STARTF_USESTDHANDLES;
@@ -86,8 +85,8 @@ spawn_cmd( const char* cmd, const char* log_path )
         return -1;
     }
 
-    // Block until the child exits. INFINITE is fine -- none of our tools
-    // hang indefinitely, and if they do the build is broken anyway.
+    /* Block until the child exits. INFINITE is fine -- none of our tools
+     hang indefinitely, and if they do the build is broken anyway.*/
     WaitForSingleObject( pi.hProcess, INFINITE );
     DWORD ec = 1;
     GetExitCodeProcess( pi.hProcess, &ec );
@@ -97,13 +96,15 @@ spawn_cmd( const char* cmd, const char* log_path )
     return ( int )ec;
 }
 
-/*==============================================================================================        
+/*==============================================================================================  
+
     Public entry point for one-shot command execution. Routes to spawn_cmd() with 
     the active worker's log path (if any) so child output is captured
     into the per-target log during parallel builds. On failure the exit code
     is also written to the log so post-mortem inspection has a clear marker.
     
     Used if a failure should stop the build immediately (e.g. compile/link step)
+
  ==============================================================================================*/
 
 int build_run_cmd( const char* cmd )
@@ -125,12 +126,11 @@ int build_run_cmd( const char* cmd )
 }
 
 /*==============================================================================================
-    Identical to build_run_cmd but does not write an exit-code marker to the log 
-    on failure. Used by build_clean() for trivial del/rd operations where
-    the caller prints a single summarized header instead of one line per call.
-    
-    Used if a failure is silent and expected to avoid spamming the log with 
-    expected (delete) failures when cleaning.
+
+    build_run_cmd_quiet() -- Like build_run_cmd() but suppresses the exit-code marker
+    on failure. Used by build_clean() for del/rd operations where failures are expected
+    and the caller prints a single summarized header rather than one line per call.
+
 ==============================================================================================*/
 
 int build_run_cmd_quiet( const char* cmd )
@@ -139,24 +139,25 @@ int build_run_cmd_quiet( const char* cmd )
     return spawn_cmd( cmd, log );
 }
 
-/**
- * process_deps_line()
- *
- * Classify one line of cl.exe stdout/stderr output:
- *
- *  - "Note: including file: <path>" -- header path of a #include cl just
- *    resolved. Strip whitespace + CR/LF, filter out paths from the VC
- *    toolchain / Windows SDK (project source can't invalidate those), and
- *    record what remains into the per-target _deps.txt file.
- *
- *  - Anything else -- forward to the build sink (worker log file or stdout)
- *    so compile warnings, errors, and the source-file banner cl emits are
- *    still visible to the user.
- *
- * NOTE: The "Note: including file:" prefix is English-only. For other
- * locales, set VSLANG=1033 in the environment before launching the build.
- */
-static bool is_msvc_source_echo( const char* line );
+/*==============================================================================================  
+
+    process_deps_line()
+    
+    Classify one line of cl.exe stdout/stderr output:
+    
+     - "Note: including file: <path>" -- header path of a #include cl just
+       resolved. Strip whitespace + CR/LF, filter out paths from the VC
+       toolchain / Windows SDK (project source can't invalidate those), and
+       record what remains into the per-target _deps.txt file.
+    
+     - Anything else -- forward to the build sink (worker log file or stdout)
+       so compile warnings, errors, and the source-file banner cl emits are
+       still visible to the user.
+    
+    NOTE: The "Note: including file:" prefix is English-only. For other
+    locales, set VSLANG=1033 in the environment before launching the build.
+
+ ==============================================================================================*/
 
 static void
 process_deps_line( char* line, FILE* deps, FILE* out )
@@ -227,14 +228,17 @@ process_deps_line( char* line, FILE* deps, FILE* out )
     }
 }
 
-/**
- * build_run_cmd_capture_deps()
- *
- * Same role as build_run_cmd(), but additionally pipes the child's
- * stdout+stderr back through us so /showIncludes lines can be parsed out
- * into deps_path. Used exclusively by the compile step -- see
- * build_target_compile() in build_tool_cc.c.
- */
+/*==============================================================================================
+
+    build_run_cmd_capture_deps() -- 
+
+    Same role as build_run_cmd(), but additionally pipes the child's
+    stdout+stderr back through us so /showIncludes lines can be parsed out
+    into deps_path. Used exclusively by the compile step -- see
+    build_target_compile() in build_tool_cc.c.
+
+ ==============================================================================================*/
+
 int
 build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
 {

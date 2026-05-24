@@ -22,11 +22,13 @@
 // clang-format off
 
 /*==============================================================================================
-    Structured command types
+    --- Structured command types --- 
 
-    Each field holds the raw fragment that goes into the final cl/link/lib
-    command. Assembled in order via cc_assemble() / lk_assemble(); printed
-    selectively via cc_print() / lk_print() based on g_out_flags.
+    Holds the raw fragment that goes into the final cl/link/lib command. 
+    Assembled in order via cc_assemble() / lk_assemble(); 
+    
+    Printing of these values is filetered selectively via cc_print() / lk_print() 
+    based on g_out_flags.
 ==============================================================================================*/
 
 typedef struct
@@ -53,7 +55,7 @@ typedef struct
 } link_cmd_t;
 
 /*==============================================================================================
-    Sentinel checks
+    --- Sentinel checks -- 
 
     Verify the last byte of every field is still '\0' before the structs are
     assembled into a command string. cc_field() aborts on detected overflow, but
@@ -86,11 +88,9 @@ lk_check_sentinels( const link_cmd_t* lk )
 }
 
 /*==============================================================================================
-    Internal helpers
+    --- Internal helpers ---
 
-    Append a formatted string to a fixed-size field.
-    Halts the process on overflow -- a truncated compiler flag would produce
-    cryptic cl.exe errors that obscure the real cause.
+    Append a formatted string to a fixed-size field. Halts the process on overflow.
 ==============================================================================================*/
 
 static void
@@ -99,17 +99,21 @@ cc_field( char* dst, size_t dst_size, const char* fmt, ... )
     size_t used = strlen( dst );
     if ( used >= dst_size - 1 )
     {
-        printf( ORB_INDENT "[orb error] cc_field overflow (capacity %zu) -- raise field size in compile_cmd_t\n", dst_size );
+        printf( ORB_INDENT "[orb error] cc_field overflow (capacity %zu)"
+               "-- raise field size in compile_cmd_t\n", dst_size );
         exit( 1 );
     }
     size_t  remaining = dst_size - used;
+
     va_list args;
     va_start( args, fmt );
     int written = vsnprintf( dst + used, remaining, fmt, args );
     va_end( args );
+
     if ( written < 0 || ( size_t )written >= remaining )
     {
-        printf( ORB_INDENT "[orb error] cc_field truncated (needed %d, had %zu) -- raise field size in compile_cmd_t\n", written, remaining );
+        printf( ORB_INDENT "[orb error] cc_field truncated (needed %d, had %zu)"
+               "-- raise field size in compile_cmd_t\n", written, remaining );
         exit( 1 );
     }
 }
@@ -274,10 +278,12 @@ print_section( FILE* out, const char* label, const char* content, const char* st
     Specialised version of print_tokens(): instead of just stripping one fixed
     prefix, it inspects each token's prefix character to decide which human
     label ("obj=" or "pdb=") to print in front of the stripped path.
+
+    // Example: raw = "/Fobuild\\obj\\foo/ /Fdbuild\\obj\\foo/"
+    //          prints: "obj=build\obj\foo/  pdb=build\obj\foo/\n"
+
 ==============================================================================================*/
 
-// Example: raw = "/Fobuild\\obj\\foo/ /Fdbuild\\obj\\foo/"
-//          prints: "obj=build\obj\foo/  pdb=build\obj\foo/\n"
 static bool
 print_compile_output( FILE* out, const char* raw )
 {
@@ -319,8 +325,6 @@ print_compile_output( FILE* out, const char* raw )
     return !first;
 }
 
-#define UNUSED(x) (void)(x)
-
 /*==============================================================================================
     Print compile command sections to `out` according to g_out_flags.
 ==============================================================================================*/
@@ -328,8 +332,6 @@ print_compile_output( FILE* out, const char* raw )
 static void
 cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const char* config )
 {
-    UNUSED( config );
-
     if ( g_out_flags & ORB_OUT_SUMMARY_COMPILE ) {
         fprintf( out, ORB_INDENT "[orb compiling] %s\n", target->name );
     }
@@ -372,54 +374,77 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 
 /*==============================================================================================
 
-    Command assembly
+    -- Command Assembly -- 
 
     Join the struct fields into a single string for the actual cl/link/lib call.
     Response-file spill happens here when the assembled string exceeds the shell
     arg limit -- same mechanism as before, now operating on the joined result.
 
+    order: <exe> <flags> <includes> <defines> <output> <sources>
+
+    Spillover: rsp_file
+
+    The sources field alone can be CMD_BUF_MAX bytes; joining everything through
+    cmd_buf_t (also CMD_BUF_MAX) would silently truncate the sources before the
+    spill check ever runs. 
+    
+    Instead, format args into a dedicated oversize buffer, measure the total, 
+    then write the rsp file from that buffer while the data is still complete.
+
 ==============================================================================================*/
 
-// Join the compile fields in a fixed order into one command line:
-//   <exe> <flags> <includes> <defines> <output> <sources>
-// The sources field alone can be CMD_BUF_MAX bytes; joining everything through
-// cmd_buf_t (also CMD_BUF_MAX) would silently truncate the sources before the
-// spill check ever runs. Instead, format args into a dedicated oversize buffer,
-// measure the total, then write the rsp file directly from that buffer while
-// the data is still complete.
-static void
+static bool
 cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
 {
     // ARGS_BUF covers the maximum: sources (CMD_BUF_MAX) + all other fields
     // (flags 512 + includes 512 + defines 1024 + output 512 + 4 spaces).
+
     enum { ARGS_BUF = CMD_BUF_MAX + 3200 };
     char args[ ARGS_BUF ];
+
     int  written = snprintf( args, sizeof( args ), "%s %s %s %s %s",
                              cc->flags, cc->includes, cc->defines, cc->output, cc->sources );
+
     if ( written < 0 || ( size_t )written >= sizeof( args ) )
+    {
         printf( ORB_INDENT "[orb error] cc_assemble args truncated (needed %d)\n", written );
+        return false;
+    }
 
     size_t total = strlen( cc->exe ) + 1 + ( size_t )( written < 0 ? 0 : written );
 
-    if ( g_use_rsp && total >= CMD_RSP_THRESHOLD )
+    if ( total >= CMD_RSP_THRESHOLD )
     {
-        // Write the full args to the response file before any truncation can occur.
-        FILE* f = fopen( rsp_path, "w" );
-        if ( f ) { fputs( args, f ); fclose( f ); }
-        else printf( ORB_INDENT "[orb error] could not open response file %s\n", rsp_path );
-        cmd->size      = 0;
-        cmd->truncated = false;
-        cmd_append( cmd, "%s @%s", cc->exe, rsp_path );
+        if ( g_use_rsp )
+        {
+            // Write the full args to the response file before any truncation can occur.
+            FILE* f = fopen( rsp_path, "w" );
+            if ( f ) { fputs( args, f ); fclose( f ); }
+            else printf( ORB_INDENT "[orb error] could not open response file %s\n", rsp_path );
+            cmd->size      = 0;
+            cmd->truncated = false;
+            cmd_append( cmd, "%s @%s", cc->exe, rsp_path );
+        }
+        else
+        {
+            printf( ORB_INDENT "[orb warn] command length %zu exceeds threshold;"
+                   "enable -rsp to use a response file\n", total );
+            cmd_append( cmd, "%s %s", cc->exe, args );
+        }
     }
     else
     {
         cmd_append( cmd, "%s %s", cc->exe, args );
     }
+    return true;
 }
 
-// Same idea for the link/archive side. The PDB section is optional: lib.exe
-// doesn't take a /DEBUG /PDB pair, so we omit that field when lk->pdb is
-// empty rather than emitting a stray pair of spaces.
+/*==============================================================================================
+    Same idea for the link/archive side. The PDB section is optional: lib.exe
+    doesn't take a /DEBUG /PDB pair, so we omit that field when lk->pdb is
+    empty rather than emitting a stray pair of spaces.
+==============================================================================================*/
+
 static void
 lk_assemble( const link_cmd_t* lk, cmd_buf_t* cmd, const char* rsp_path )
 {
@@ -427,12 +452,13 @@ lk_assemble( const link_cmd_t* lk, cmd_buf_t* cmd, const char* rsp_path )
         cmd_append( cmd, "%s %s %s %s %s %s", lk->exe, lk->flags, lk->output, lk->pdb, lk->inputs, lk->libs );
     else
         cmd_append( cmd, "%s %s %s %s %s",    lk->exe, lk->flags, lk->output, lk->inputs, lk->libs );
+
     cmd_spill_to_response_file( cmd, rsp_path );
 }
 
 /*==============================================================================================
 
-    Raw-command echo (ORB_OUT_*_CMD)
+    -- Raw-command echo (ORB_OUT_*_CMD) ---
 
     Print the assembled command to `out` when the caller's CMD flag is set.
     Wraps at 100 columns after the first token so long lines stay readable.
@@ -484,7 +510,7 @@ print_raw_cmd( FILE* out, const char* cmd )
 
 /*==============================================================================================
 
-    MSVC output classification
+    == MSVC output classification --
 
     Returns true for the bare source-file banner cl.exe prints once per compiled
     translation unit (e.g. it prints "reflect_tool.c" on its own line before emitting
@@ -545,7 +571,7 @@ is_msvc_source_echo( const char* line )
 
 /*==============================================================================================
 
-    cc_fill_compile_cmd()
+    -- Fill Compile Command --
 
     Shared setup for both compile entry points. Fills exe, flags, includes, defines,
     and output. Sources are left empty -- the caller appends them. /showIncludes is
@@ -557,7 +583,7 @@ static void
 cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
                      const char* obj_dir, const char* gen_dir, compile_cmd_t* cc )
 {
-    /* exe */
+    /* exe: which compiler is invoked */
 
     snprintf( cc->exe, sizeof( cc->exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
 
@@ -614,11 +640,14 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
 }
 
 /*==============================================================================================
-    cc_run_compile_cmd()
+    
+    -- Run Compile Command -- 
 
-    Shared tail for both compile entry points: print sections, assemble (writing an rsp
-    file under obj_dir/<rsp_name> when needed), echo raw command if requested, then run.
-    deps_path is forwarded to build_run_cmd_capture_deps; NULL means no dep file written.
+    : Shared tail for both compile entry points: print sections, assemble, echo raw command
+      if requested, then run. (writing an rsp file under obj_dir/<rsp_name> when needed), 
+    
+    : deps_path is forwarded to build_run_cmd_capture_deps; NULL means no dep file written.
+
 ==============================================================================================*/
 
 static bool
@@ -633,9 +662,11 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
         char rsp_path[ BT_PATH_MAX ];
         snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s", obj_dir, rsp_name );
         cc_check_sentinels( cc );
-        cc_assemble( cc, &cmd, rsp_path );
+        bool ok = cc_assemble( cc, &cmd, rsp_path );
         if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
         cc_close_log( log_out );
+
+        if ( !ok ) return false;
     }
     return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
 }
@@ -658,6 +689,18 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
     cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc );
+
+    /* showInludes: cl.exe emits a line for each included header with the format:
+       "Note: including file: <path>". We capture those lines into the .deps.txt
+       file so we can track header dependencies incrementally. When a header
+       changes, we know to recompile any target that includes it directly or
+       indirectly.
+
+       We only add this flag when dep tracking is active because it produces a
+       lot of extra output -- every included header, even from the CRT and
+       third-party deps -- which would be noisy in the logs when we're not
+       actually using it for deps.
+    */
     if ( g_dep_track ) CC_APPEND( cc.flags, " /showIncludes" );
 
     /* sources: absolute paths so MSVC error messages are navigable from any CWD.
@@ -665,7 +708,6 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
        the build still proceeds and cl surfaces a recognisable error instead of a
        silent skip. The `cc.sources[0] ? " " : ""` trick suppresses a leading space
        on the first entry. */
-
     {
         char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
         for ( int i = 0; target->units[ i ]; ++i )
@@ -685,6 +727,11 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
     }
+
+    /* deps_path: when dep tracking is active, we write a .deps.txt file alongside 
+       the .obj files with the list of headers included by this target. The 
+       incremental check reads that file to determine which targets need 
+       recompilation when a header changes. */
 
     char  deps_path[ BT_PATH_MAX ];
     char* deps_out = NULL;

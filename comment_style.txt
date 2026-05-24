@@ -1,0 +1,144 @@
+  1. File Header
+
+  Every .c or .h file opens with a 94-char /*===*/ banner. One-liner description after
+  the filename dash, then an optional paragraph for non-obvious design constraints.
+
+  /*==============================================================================================
+
+      render.c -- Surface and swapchain management for the render module.
+
+      Owns the DXGI factory and swap chain. The device is created once in render_init()
+      and shared across hot-reloads via the preserved state pointer -- do not release it
+      in render_exit().
+
+  ==============================================================================================*/
+
+  2. Section Separators
+
+  Use the full-width banner to divide a file into named logical sections. No inline
+  label needed — the comment IS the separator.
+
+  /*==============================================================================================
+      Vertex buffer management
+  ==============================================================================================*/
+
+  Use a short 30-char rule for minor groupings within a section (sub-groups, not
+  sub-systems):
+
+  /*==============================================================================================*/
+
+  3. Function Comments
+
+  No comment on self-evident functions. Add one only when the why is non-obvious — a
+  constraint, an invariant, a workaround. Keep it to a single line above the signature.
+
+  /* Must run before core_init() -- seeds the SID table used by cvar registration. */
+  static void
+  sid_bootstrap( void )
+
+  Never describe what the function does by restating its name.
+
+  4. Block / Algorithm Comments
+
+  For non-trivial logic inside a function, a short /* */ block above the relevant lines.
+   No trailing decoration.
+
+  /* Walk backward from the null terminator to find the last separator.
+     We do not canonicalize the path first, so both / and \ are accepted. */
+  const char* p = path + strlen( path );
+  while ( p > path && *p != '\\' && *p != '/' ) --p;
+
+  Inline // for single brief annotations on one line:
+
+  h *= 16777619u;    // FNV-1a prime
+
+  5. Struct Field Comments
+
+  End-of-line // aligned to a consistent column. Group related fields visually; comment
+  the group, not every field.
+
+  typedef struct arena_s
+  {
+      u8*    base;        // committed memory start
+      size_t used;        // bytes allocated so far
+      size_t capacity;    // total committed bytes
+
+      u32    flags;       // ARENA_* bitmask
+      u32    align;       // default alignment for push calls
+
+  } arena_t;
+
+  6. #define / Constant Comments
+
+  End-of-line // aligned to a consistent column for groups of related constants.
+
+  #define ARENA_FLAG_ZERO     (1u << 0)   // zero memory on push
+  #define ARENA_FLAG_NOFAIL   (1u << 1)   // abort on OOM instead of returning null
+
+  End-of-line // aligned to a consistent column for groups of related constants.
+
+  #define ARENA_FLAG_ZERO     (1u << 0)   // zero memory on push
+  
+      u32    align;       // default alignment for push calls
+
+  } arena_t;
+
+  6. #define / Constant Comments
+
+  End-of-line // aligned to a consistent column for groups of related constants.
+
+  #define ARENA_FLAG_ZERO     (1u << 0)   // zero memory on push
+  #define ARENA_FLAG_NOFAIL   (1u << 1)   // abort on OOM instead of returning null
+  #define ARENA_FLAG_TEMP     (1u << 2)   // released as a unit at frame end
+
+
+  } arena_t;
+
+  6. #define / Constant Comments
+
+  End-of-line // aligned to a consistent column for groups of related constants.
+
+  End-of-line // aligned to a consistent column for groups of related constants.
+
+  #define ARENA_FLAG_ZERO     (1u << 0)   // zero memory on push
+      u32    align;       // default alignment for push calls
+
+  } arena_t;
+
+  6. #define / Constant Comments
+
+  End-of-line // aligned to a consistent column for groups of related constants.
+
+  End-of-line // aligned to a consistent column for groups of related constants.
+
+  #define ARENA_FLAG_ZERO     (1u << 0)   // zero memory on push
+  #define ARENA_FLAG_NOFAIL   (1u << 1)   // abort on OOM instead of returning null
+  #define ARENA_FLAG_TEMP     (1u << 2)   // released as a unit at frame end
+
+  7. TODOs
+
+  Single-line // TODO: with a short imperative note. No owner tags, no issue numbers in source.
+
+  // TODO: replace linear scan with hash lookup once cvar count exceeds 256.
+
+  ---
+  What Not To Do
+
+  // ❌ Restating the name
+  // Initializes the renderer.
+  void render_init( ... )
+
+  // ❌ Multi-line box borders
+  /******************************************
+   * Vertex Buffer                          *
+   ******************************************/
+
+  // ❌ Obvious field comment
+  int count;    // the count
+
+  // ❌ Tracking history in comments
+  // Added 2025-03-01 to fix crash in DX12 path
+
+  ---
+  The core rule: a comment earns its place only when removing it would cost a future reader time. If
+   the code already says it, silence is better.

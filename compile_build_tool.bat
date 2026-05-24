@@ -11,7 +11,7 @@ if not exist build mkdir build
 if not exist build\obj mkdir build\obj
 
 echo Compiling build_tool.exe (no debug inject)...
-cl.exe /nologo /W4 /WX /Zi /std:c11 /DBUILD_TOOL_NO_DEBUG_INJECT ^
+cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 /DBUILD_TOOL_NO_DEBUG_INJECT ^
     source/tools/build_tool/build_tool.c ^
     /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe
 

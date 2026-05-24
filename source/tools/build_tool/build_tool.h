@@ -86,10 +86,10 @@
 // --- Helper Types ---
 // =============================================================================
 
-// Reused cmd-line buffer for assembling cl.exe / link.exe / lib.exe invocations.
-// cmd_append() formats into `buf` and updates `size`; if an append cannot fit.
-// `truncated` is set so the caller can decide whether to spill the tail into 
-// a response file (see cmd_spill_to_response_file).
+/*  Reused cmd-line buffer for assembling cl.exe / link.exe / lib.exe invocations.
+    cmd_append() formats into `buf` and updates `size`; if an append cannot fit.
+    `truncated` is set so the caller can decide whether to spill the tail into 
+    a response file (see cmd_spill_to_response_file). */ 
 
 typedef struct cmd_buf_s
 {

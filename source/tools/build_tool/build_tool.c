@@ -79,7 +79,7 @@ static const char* g_gen_dir    = "generated";  // Sub-folder for reflection-gen
 ==============================================================================================*/
 
 out_flags_t g_out_flags  = ORB_OUT_DEFAULT;
-bool        g_use_rsp    = true;
+bool        g_use_rsp    = false;
 bool        g_dep_track  = true;
 
 /*==============================================================================================
