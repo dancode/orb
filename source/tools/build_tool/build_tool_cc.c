@@ -9,8 +9,9 @@
     one string for actual execution.
 
     Two public entry points, both called from build_target():
-      build_target_compile() -- cl.exe with /showIncludes for dep capture.
-      build_target_link()    -- lib.exe for static libs, link.exe otherwise.
+      build_target_compile()        -- full unity compile; dep tracking via /showIncludes + _deps.txt.
+      build_target_compile_single() -- single-file compile for VS Ctrl+F7; no dep tracking.
+      build_target_link()           -- lib.exe for static libs, link.exe otherwise.
 
     Flag/define lockstep:
       The defines emitted here must match the IntelliSense defines in
@@ -399,6 +400,7 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
         printf( ORB_INDENT "[orb error] cc_assemble args truncated (needed %d)\n", written );
 
     size_t total = strlen( cc->exe ) + 1 + ( size_t )( written < 0 ? 0 : written );
+
     if ( g_use_rsp && total >= CMD_RSP_THRESHOLD )
     {
         // Write the full args to the response file before any truncation can occur.
@@ -543,12 +545,108 @@ is_msvc_source_echo( const char* line )
 
 /*==============================================================================================
 
-    Build Target Command Generation & Compile
+    cc_fill_compile_cmd()
 
-    Fill a compile_cmd_t section-by-section then run it. Prints the active sections to
-    the build log (or stdout in serial mode), assembles the full cl.exe command, and runs
-    it via build_run_cmd_capture_deps so /showIncludes output is parsed into a per-target
-    dep file for the next incremental check. (e.g. build\obj\core\_deps.txt)
+    Shared setup for both compile entry points. Fills exe, flags, includes, defines,
+    and output. Sources are left empty -- the caller appends them. /showIncludes is
+    also left to the caller so each entry point can opt in independently.
+
+==============================================================================================*/
+
+static void
+cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
+                     const char* obj_dir, const char* gen_dir, compile_cmd_t* cc )
+{
+    /* exe */
+
+    snprintf( cc->exe, sizeof( cc->exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
+
+    /* flags: standard + config-specific + warning suppressions.
+       /showIncludes is added by the caller when dep tracking is active. */
+
+    CC_APPEND( cc->flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
+    if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc->flags, " /Zi /Od /MDd" );
+    else                               CC_APPEND( cc->flags, " /O2 /MD" );
+
+    for ( int i = 0; i < g_warn_suppression_count; ++i )
+    {
+        warn_suppress_t* s = &g_warn_suppressions[ i ];
+        if ( ( s->config == ctx->config || s->config == CONFIG_COUNT ) &&
+             ( s->compiler_mask & (unsigned int)ctx->compiler ) )
+            CC_APPEND( cc->flags, " %s", s->flag );
+    }
+
+    /* includes: ensure generated headers are in include path */
+
+    CC_APPEND( cc->includes, "/I source /I %s", gen_dir );
+
+    /* defines: must stay in lockstep with the IntelliSense defines in build_tool_gen.c.
+       Propagate _STATIC for each dep so API gateways resolve correctly:
+       static lib deps are always static; dynamic lib deps become static in monolithic mode. */
+
+    CC_APPEND( cc->defines, "/D_CRT_SECURE_NO_WARNINGS" );
+    {
+        char upper[ 128 ];
+        get_target_upper( target->name, upper, sizeof( upper ) );
+        CC_APPEND( cc->defines, " /D%s_STATIC", upper );
+    }
+    for ( int i = 0; target->deps[ i ]; ++i )
+    {
+        target_info_t* dep = find_target( target->deps[ i ] );
+        if ( !dep ) continue;
+        bool dep_is_static = ( dep->type == TARGET_STATIC_LIB ) ||
+                             ( dep->type == TARGET_DYNAMIC_LIB && ctx->is_monolithic );
+        if ( dep_is_static )
+        {
+            char dep_upper[ 128 ];
+            get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
+            CC_APPEND( cc->defines, " /D%s_STATIC", dep_upper );
+        }
+    }
+    if ( ctx->is_monolithic )          CC_APPEND( cc->defines, " /DBUILD_STATIC" );
+    if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc->defines, " /D_DEBUG" );
+    else                               CC_APPEND( cc->defines, " /DNDEBUG" );
+
+    /* output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
+       Trailing slash required -- without it cl treats the path as a filename prefix. */
+
+    CC_APPEND( cc->output, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
+}
+
+/*==============================================================================================
+    cc_run_compile_cmd()
+
+    Shared tail for both compile entry points: print sections, assemble (writing an rsp
+    file under obj_dir/<rsp_name> when needed), echo raw command if requested, then run.
+    deps_path is forwarded to build_run_cmd_capture_deps; NULL means no dep file written.
+==============================================================================================*/
+
+static bool
+cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config,
+                    const char* obj_dir, const char* rsp_name, const char* deps_path )
+{
+    cmd_buf_t cmd = { 0 };
+    {
+        FILE* log_out = cc_open_log();
+        cc_print( log_out, cc, target, config );
+
+        char rsp_path[ BT_PATH_MAX ];
+        snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s", obj_dir, rsp_name );
+        cc_check_sentinels( cc );
+        cc_assemble( cc, &cmd, rsp_path );
+        if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
+        cc_close_log( log_out );
+    }
+    return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
+}
+
+/*==============================================================================================
+
+    build_target_compile()
+
+    Full unity compile: all target units + generated reflect file. Adds /showIncludes
+    when dep tracking is active so the captured output feeds _deps.txt for the next
+    incremental check.
 
 ==============================================================================================*/
 
@@ -556,107 +654,30 @@ bool
 build_target_compile( build_context_t* ctx, target_info_t* target,
                       const char* obj_dir, const char* gen_dir )
 {
-    compile_cmd_t cc = { 0 };
-    const char* config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
+    compile_cmd_t cc     = { 0 };
+    const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
-    /* cl.exe + command line are always the same per build type. */
+    cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc );
+    if ( g_dep_track ) CC_APPEND( cc.flags, " /showIncludes" );
 
-    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
+    /* sources: absolute paths so MSVC error messages are navigable from any CWD.
+       _fullpath returns NULL only on truly broken paths; fall back to relative so
+       the build still proceeds and cl surfaces a recognisable error instead of a
+       silent skip. The `cc.sources[0] ? " " : ""` trick suppresses a leading space
+       on the first entry. */
 
-    /* flags: standard + config-specific debug/release flags. */
-
-    CC_APPEND( cc.flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
-    if ( g_dep_track )                 CC_APPEND( cc.flags, " /showIncludes" );
-    if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc.flags, " /Zi /Od /MDd" );
-    else                               CC_APPEND( cc.flags, " /O2 /MD" );
-
-    /* includes: ensure generated headers are in include path */
-
-    CC_APPEND( cc.includes, "/I source /I %s", gen_dir );
-
-    /* defines: must stay in lockstep with the IntelliSense defines in build_tool_gen.c. */
-
-    CC_APPEND( cc.defines, "/D_CRT_SECURE_NO_WARNINGS" );
-    {
-        char upper[ 128 ];
-        get_target_upper( target->name, upper, sizeof( upper ) );
-        CC_APPEND( cc.defines, " /D%s_STATIC", upper );
-    }
-
-    /* defines: Propagate _STATIC for each dep so API gateways resolve correctly.
-       Static lib deps are always static (every build mode)
-       Dynamic lib deps become static in monolithic mode. */
-
-    for ( int i = 0; target->deps[ i ]; ++i )
-    {
-        target_info_t* dep = find_target( target->deps[ i ] );
-        if ( !dep ) continue;
-
-        bool dep_is_static = ( dep->type == TARGET_STATIC_LIB ) ||
-                             ( dep->type == TARGET_DYNAMIC_LIB && ctx->is_monolithic );
-        if ( dep_is_static )
-        {
-            char dep_upper[ 128 ];
-            get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
-            CC_APPEND( cc.defines, " /D%s_STATIC", dep_upper );
-        }
-    }
-
-    /* define: build type and debug flags */
-
-    if ( ctx->is_monolithic )          CC_APPEND( cc.defines, " /DBUILD_STATIC" );
-    if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc.defines, " /D_DEBUG" );
-    else /* release */                 CC_APPEND( cc.defines, " /DNDEBUG" );
-
-    /* flags: warning suppressions */
-    {
-        for ( int i = 0; i < g_warn_suppression_count; ++i )
-        {
-            warn_suppress_t* s = &g_warn_suppressions[ i ];
-            if ( ( s->config == ctx->config || s->config == CONFIG_COUNT ) &&
-                 ( s->compiler_mask & (unsigned int)ctx->compiler ) )
-                CC_APPEND( cc.flags, " %s", s->flag );
-        }
-    }
-
-    /* output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
-       Trailing slash is required -- without it cl treats the path as a
-       filename prefix instead of a directory. */
-
-    CC_APPEND( cc.output, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
-
-    /* sources: absolute paths so MSVC error messages are navigable from any
-       context (terminal, log file, IDE) regardless of the viewer's CWD.
-       For each unit: build the relative path, run it through _fullpath() to
-       canonicalize to an absolute path, and append it to the sources field
-       separated by a single space. The `cc.sources[ 0 ] ? " " : ""` trick
-       suppresses the leading space on the first entry -- the field starts
-       out as an empty string, so the test is "is anything here yet?". */
-
-    if ( 1 )
     {
         char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
         for ( int i = 0; target->units[ i ]; ++i )
         {
             snprintf( rel, sizeof( rel ), "%s\\%s", target->root_dir, target->units[ i ] );
-
-            /* _fullpath returns NULL only on truly broken paths; fall back to
-               the relative form so the build still proceeds and the user
-               sees a recognisable error from cl rather than a silent skip. */
-
             if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
-
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
 
-        /* sources: include reflection-generated code  */
-
         if ( target->has_reflect )
         {
-            /* written by reflect_tool.exe in build_target and gets
-               the same absolute-path treatment as the user units. */
-
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
             snprintf( rel, sizeof( rel ), "%s\\%s.generated.c", gen_dir, rname );
             if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
@@ -665,40 +686,14 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         }
     }
 
-    /* Print the requested sections to the per-target log when called from a 
-       parallel worker so the output lands with child-process output. */    
-
-    cmd_buf_t cmd = { 0 };
-    {
-        FILE* log_out = cc_open_log();
-        cc_print( log_out, &cc, target, config );
-
-        /* Assemble the full command, optionally echo the raw line, then run. */
-
-        char      rsp_path[ BT_PATH_MAX ];        
-        snprintf( rsp_path, sizeof( rsp_path ), "%s\\cl.rsp", obj_dir );
-
-        cc_check_sentinels( &cc );
-        cc_assemble( &cc, &cmd, rsp_path );
-
-        if ( g_out_flags & ORB_OUT_COMPILE_CMD ) 
-            print_raw_cmd( log_out, cmd.buf );
-
-        cc_close_log( log_out );
-    }
-
-    /* Run the command, capturing /showIncludes output into a per-target dep file
-       for the next incremental check. */
-
     char  deps_path[ BT_PATH_MAX ];
     char* deps_out = NULL;
-
     if ( g_dep_track )
     {
         snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );
         deps_out = deps_path;
     }
-    return build_run_cmd_capture_deps( cmd.buf, deps_out ) == 0;
+    return cc_run_compile_cmd( &cc, target, config, obj_dir, "cl.rsp", deps_out );
 }
 
 /*==============================================================================================
@@ -706,9 +701,8 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     build_target_compile_single()
 
     Compiles one source file with the target's full flag/define/include set.
-    Mirrors build_target_compile() but omits /showIncludes (no dep tracking)
-    and replaces the full unity source list with the single file path VS passes
-    via $(NMakeCompileFile). No link step -- this is for error feedback only.
+    Used by the VS Ctrl+F7 path (NMakeCompileFile). No /showIncludes, no dep
+    file -- single-file compiles are not tracked incrementally.
 
 ==============================================================================================*/
 
@@ -716,79 +710,15 @@ bool
 build_target_compile_single( build_context_t* ctx, target_info_t* target,
                              const char* obj_dir, const char* gen_dir, const char* file_path )
 {
-    compile_cmd_t cc      = { 0 };
-    const char*   config  = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
+    compile_cmd_t cc     = { 0 };
+    const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
-    // Exe
-    snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
+    cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc );
 
-    // Flags: same as full compile, but no /showIncludes (dep tracking not needed).
-    CC_APPEND( cc.flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
-    if ( ctx->config == CONFIG_DEBUG )
-        CC_APPEND( cc.flags, " /Zi /Od /MDd" );
-    else
-        CC_APPEND( cc.flags, " /O2 /MD" );
-
-    // Includes, defines: identical to build_target_compile().
-    CC_APPEND( cc.includes, "/I source /I %s", gen_dir );
-
-    CC_APPEND( cc.defines,
-              "/DOS_WINDOWS /DCOMPILE_MSVC /DARCH_X64 /D_CRT_SECURE_NO_WARNINGS" );
-    {
-        char upper[ 128 ];
-        get_target_upper( target->name, upper, sizeof( upper ) );
-        CC_APPEND( cc.defines, " /D%s_STATIC", upper );
-    }
-    for ( int i = 0; target->deps[ i ]; ++i )
-    {
-        target_info_t* dep = find_target( target->deps[ i ] );
-        if ( !dep ) continue;
-        bool dep_is_static = ( dep->type == TARGET_STATIC_LIB ) ||
-                             ( dep->type == TARGET_DYNAMIC_LIB && ctx->is_monolithic );
-        if ( dep_is_static )
-        {
-            char dep_upper[ 128 ];
-            get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
-            CC_APPEND( cc.defines, " /D%s_STATIC", dep_upper );
-        }
-    }
-    if ( ctx->is_monolithic )
-        CC_APPEND( cc.defines, " /DBUILD_STATIC" );
-    if ( ctx->config == CONFIG_DEBUG )
-        CC_APPEND( cc.defines, " /D_DEBUG" );
-    else
-        CC_APPEND( cc.defines, " /DNDEBUG" );
-
-    // Warning suppressions: same table, same logic as build_target_compile().
-    {
-        for ( int i = 0; i < g_warn_suppression_count; ++i )
-        {
-            warn_suppress_t* s = &g_warn_suppressions[ i ];
-            if ( ( s->config == ctx->config || s->config == CONFIG_COUNT ) &&
-                 ( s->compiler_mask & (unsigned int)ctx->compiler ) )
-                CC_APPEND( cc.flags, " %s", s->flag );
-        }
-    }
-
-    // Output into the same obj_dir as a full build so the .obj lands where the linker expects it.
-    CC_APPEND( cc.output, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
-
-    // Source: just the one file VS handed us.
+    /* source: the single file VS handed us */
     CC_APPEND( cc.sources, "%s", file_path );
 
-    // Print active sections; single-file runs are always serial so stdout is fine.
-    FILE* log_out = cc_open_log();
-    cc_print( log_out, &cc, target, config );
-
-    char      rsp_path[ BT_PATH_MAX ];
-    cmd_buf_t cmd = { 0 };
-    snprintf( rsp_path, sizeof( rsp_path ), "%s\\cl_file.rsp", obj_dir );
-    cc_assemble( &cc, &cmd, rsp_path );
-    if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
-    cc_close_log( log_out );
-
-    // No deps_path: single-file compiles are not tracked incrementally.
-    return build_run_cmd_capture_deps( cmd.buf, NULL ) == 0;
+    return cc_run_compile_cmd( &cc, target, config, obj_dir, "cl_file.rsp", NULL );
 }
 
 /*==============================================================================================
