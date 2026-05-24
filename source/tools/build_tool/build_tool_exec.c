@@ -30,7 +30,7 @@
 static void
 del_q( const char* fmt, ... )
 {
-    char cmd[ BT_PATH_MAX * 2 ];
+    char cmd[ PATH_MAX * 2 ];
     va_list args; va_start( args, fmt ); 
     vsnprintf( cmd, sizeof( cmd ), fmt, args ); 
     va_end( args );
@@ -134,11 +134,11 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
 {
     /* build paths and ensure they exist for build target compilation */
 
-    char obj_dir[ BT_PATH_MAX ];
+    char obj_dir[ PATH_MAX ];
     snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
-    char gen_dir[ BT_PATH_MAX ];
+    char gen_dir[ PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
-    char int_dir[ BT_PATH_MAX ];
+    char int_dir[ PATH_MAX ];
     snprintf( int_dir, sizeof( int_dir ), "%s\\%s", g_build_dir, g_int_dir );
 
     ensure_dir( g_build_dir );
@@ -167,7 +167,7 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
         const char* rname = target->reflect_name ? target->reflect_name : target->name;
         printf( ORB_INDENT "[orb reflect] %s\n", rname );
 
-        char refl_cmd[ BT_PATH_MAX * 2 ];
+        char refl_cmd[ PATH_MAX * 2 ];
         snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s", 
                   refl_tool->name, target->root_dir, gen_dir, rname );
 
@@ -282,9 +282,9 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     bool  result      = true;
 
     // --- 1. Path Preparation ---
-    char obj_dir[ BT_PATH_MAX ];
+    char obj_dir[ PATH_MAX ];
     snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
-    char gen_dir[ BT_PATH_MAX ];
+    char gen_dir[ PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
 
     // In monolithic mode a dynamic lib produces a .lib, not a .dll.
@@ -292,7 +292,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
                       : ( target->type == TARGET_DYNAMIC_LIB ) ? ( ctx->is_monolithic ? ".lib" : ".dll" )
                                                                : ".exe";
 
-    char        out_path[ BT_PATH_MAX ];
+    char        out_path[ PATH_MAX ];
     snprintf( out_path, sizeof( out_path ), "bin\\%s%s", target->name, ext );
 
     // --- 2. Up-to-Date Check ---
@@ -316,7 +316,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     {
         for ( int i = 0; target->units[ i ]; ++i )
         {
-            char src_path[ BT_PATH_MAX ];
+            char src_path[ PATH_MAX ];
             snprintf( src_path, sizeof( src_path ), "%s\\%s", target->root_dir, target->units[ i ] );
             if ( build_get_mtime( src_path ) > out_mtime )
             {
@@ -332,7 +332,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     {
         for ( int i = 0; target->deps[ i ]; ++i )
         {
-            char dep_path[ BT_PATH_MAX ];
+            char dep_path[ PATH_MAX ];
             snprintf( dep_path, sizeof( dep_path ), "bin\\%s.lib", target->deps[ i ] );
             if ( build_get_mtime( dep_path ) > out_mtime )
             {
@@ -349,7 +349,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     if ( up_to_date )
     {
         const char* current_config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
-        char        config_marker[ BT_PATH_MAX ];
+        char        config_marker[ PATH_MAX ];
         snprintf( config_marker, sizeof( config_marker ), "%s\\_config.txt", obj_dir );
         FILE* cf = fopen( config_marker, "r" );
         if ( !cf )
@@ -379,7 +379,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // clean; it auto-recovers on the next pass.
     if ( up_to_date && g_include_track )
     {
-        char includes_path[ BT_PATH_MAX ];
+        char includes_path[ PATH_MAX ];
         snprintf( includes_path, sizeof( includes_path ), "%s\\_includes.txt", obj_dir );
         FILE* includes = fopen( includes_path, "r" );
         if ( !includes )
@@ -388,7 +388,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         }
         else
         {
-            char header_path[ BT_PATH_MAX ];
+            char header_path[ PATH_MAX ];
             while ( fgets( header_path, sizeof( header_path ), includes ) )
             {
                 // Strip the newline fgets leaves on the path so it round-trips
@@ -429,7 +429,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // probes are cheap and let us skip the mkdir spawn when the dir is
     // already present (the common case after the first build).
 
-    char int_root[ BT_PATH_MAX ];
+    char int_root[ PATH_MAX ];
     snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
 
     ensure_dir( "bin" );
@@ -447,8 +447,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // or link fails we restore it; if everything succeeds the .old file is
     // overwritten on the next build cycle.
 
-    char exe_path[ BT_PATH_MAX ] = { 0 };
-    char old_path[ BT_PATH_MAX ] = { 0 };
+    char exe_path[ PATH_MAX ] = { 0 };
+    char old_path[ PATH_MAX ] = { 0 };
     bool renamed                 = false;
 
     if ( target->type == TARGET_EXECUTABLE )
@@ -491,7 +491,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
             if ( _lf )
                 fclose( _lf );
         }
-        char refl_cmd[ BT_PATH_MAX * 2 ];
+        char refl_cmd[ PATH_MAX * 2 ];
         snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s", refl_tool->name, target->root_dir,
                   gen_dir, rname );
         if ( build_run_cmd( refl_cmd ) != 0 )
@@ -531,7 +531,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // Record the config used for this build so the next incremental check can
     // detect a Debug<->Release switch even when no source file has changed.
     {
-        char config_marker[ BT_PATH_MAX ];
+        char config_marker[ PATH_MAX ];
         snprintf( config_marker, sizeof( config_marker ), "%s\\_config.txt", obj_dir );
         FILE* cf = fopen( config_marker, "w" );
         if ( cf )

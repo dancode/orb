@@ -192,7 +192,7 @@ ensure_dir( const char* dir )
     if ( _access( dir, 0 ) == 0 )
         return;
 
-    char cmd[ BT_PATH_MAX ];
+    char cmd[ PATH_MAX ];
     snprintf( cmd, sizeof( cmd ), "mkdir %s >nul 2>nul", dir );
     system( cmd );
 }

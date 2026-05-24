@@ -74,8 +74,8 @@ compute_path_parts( const char* out_dir )
 // <Filter> mappings in the .filters file.
 typedef struct
 {
-    char path[ BT_PATH_MAX ];   // Relative path from project root.
-    char filter[ BT_PATH_MAX ]; // Virtual folder path in VS (e.g. "engine\\core").
+    char path[ PATH_MAX ];   // Relative path from project root.
+    char filter[ PATH_MAX ]; // Virtual folder path in VS (e.g. "engine\\core").
     bool is_header;             // True for .h files; influences ClInclude vs ClCompile choice.
 } file_info_t;
 
@@ -84,7 +84,7 @@ typedef struct
 static file_info_t g_files[ MAX_FILES ];
 static int         g_file_count = 0;
 
-static char g_filters[ MAX_FILTERS ][ BT_PATH_MAX ];
+static char g_filters[ MAX_FILTERS ][ PATH_MAX ];
 static int  g_filter_count = 0;
 
 /**
@@ -190,7 +190,7 @@ add_filter( const char* filter )
 static void
 add_filters_recursive( const char* filter )
 {
-    char  tmp[ BT_PATH_MAX ];
+    char  tmp[ PATH_MAX ];
     char* p = tmp;
     snprintf( tmp, sizeof( tmp ), "%s", filter );
 
@@ -280,7 +280,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
 {
     // _findfirst expects a wildcard pattern; "<dir>/*" matches everything in
     // this directory (files + subdirectories + the . / .. specials).
-    char search_path[ BT_PATH_MAX ];
+    char search_path[ PATH_MAX ];
     snprintf( search_path, sizeof( search_path ), "%s\\*", dir );
 
     struct _finddata_t find_data;
@@ -294,7 +294,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
         if ( strcmp( find_data.name, "." ) == 0 || strcmp( find_data.name, ".." ) == 0 ) continue;
 
         // Reconstruct the full path so we can either recurse into it or store it.
-        char path[ BT_PATH_MAX ];
+        char path[ PATH_MAX ];
         snprintf( path, sizeof( path ), "%s\\%s", dir, find_data.name );
 
         if ( find_data.attrib & _A_SUBDIR )
@@ -534,7 +534,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 static void
 build_gen_proj_target( target_info_t* target, int index )
 {
-    char vcxproj_path[ BT_PATH_MAX ];
+    char vcxproj_path[ PATH_MAX ];
     snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_out_dir, target->name );
 
     // Generate a deterministic GUID for this project from its name.
@@ -598,7 +598,7 @@ build_gen_proj_target( target_info_t* target, int index )
     fclose( f );
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
-    char filters_path[ BT_PATH_MAX ];
+    char filters_path[ PATH_MAX ];
     snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", s_out_dir, target->name );
     f = fopen( filters_path, "w" );
     if ( f )
@@ -669,7 +669,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     g_filter_count = 0;
     scan_directory_recursive( nav_dir, nav_dir );
 
-    char vcxproj_path[ BT_PATH_MAX ];
+    char vcxproj_path[ PATH_MAX ];
     snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s_nav.vcxproj", s_out_dir, sln_name );
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
@@ -757,7 +757,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fclose( f );
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
-    char filters_path[ BT_PATH_MAX ];
+    char filters_path[ PATH_MAX ];
     snprintf( filters_path, sizeof( filters_path ), "%s\\%s_nav.vcxproj.filters", s_out_dir, sln_name );
     f = fopen( filters_path, "w" );
     if ( f )
@@ -818,7 +818,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
 static void
 build_gen_solution( solution_info_t* sln )
 {
-    char sln_path[ BT_PATH_MAX ];
+    char sln_path[ PATH_MAX ];
     snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", s_out_dir, sln->name );
     FILE* f = fopen( sln_path, "w" );
     if ( !f ) return;
@@ -854,7 +854,7 @@ build_gen_solution( solution_info_t* sln )
     }
 
     // 2. Add Target Projects.
-    char  folders[ 16 ][ BT_PATH_MAX ];
+    char  folders[ 16 ][ PATH_MAX ];
     char  folder_guids[ 16 ][ 64 ];
     int   folder_count = 0;
 
@@ -955,7 +955,7 @@ build_gen_solution( solution_info_t* sln )
             }
             if ( !found && folder_count < 16 )
             {
-                snprintf( folders[ folder_count ], BT_PATH_MAX, "%s", target->sln_folder );
+                snprintf( folders[ folder_count ], PATH_MAX, "%s", target->sln_folder );
                 // Folder GUID is per-(solution, folder) -- same folder name in a
                 // different solution stays distinct, but is stable across regens.
                 char key[ 192 ];

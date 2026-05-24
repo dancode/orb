@@ -45,7 +45,7 @@ typedef struct
     int            remaining_deps;  // Unfinished deps; reaches 0 -> ready to run.
     int            rev_dep_count;
     int            rev_deps[ MAX_REV_DEPS ];   // Indices of jobs that depend on us.
-    char           log_path[ BT_PATH_MAX ];    // Per-target build log (cl/link output).
+    char           log_path[ PATH_MAX ];    // Per-target build log (cl/link output).
     bool           done;
     bool           failed;
     bool           skipped;   // True when build_target short-circuited (up to date).
@@ -422,9 +422,8 @@ worker_main( void* arg )
     up to thread_count concurrent workers. Returns true if every target
     finished successfully.
  
-    The closure is constructed via add_job() recursion before any workers
-    spawn; after that the scheduler is purely event-driven (ready set +
-    reverse-dep edges).
+    The closure is constructed via add_job() recursion before any workers spawn; 
+    after that the scheduler is purely event-driven (ready set + reverse-dep edges).
 
 ==============================================================================================*/
 
@@ -480,7 +479,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     // would otherwise race on mkdir.
     for ( int i = 0; i < g_sched.job_count; ++i )
     {
-        char dir_path[ BT_PATH_MAX ];
+        char dir_path[ PATH_MAX ];
         snprintf( dir_path, sizeof( dir_path ), "%s\\%s\\%s",
                   g_build_dir, g_int_dir, g_sched.jobs[ i ].target->name );
         ensure_dir( dir_path );

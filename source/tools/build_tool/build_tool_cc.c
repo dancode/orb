@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_cc.c -- Compiler and linker command generation.
+    build_tool_cc.c -- Compiler command and linker command generation.
 
     Builds the cl.exe / link.exe / lib.exe command lines for a single target.
     Commands are assembled section-by-section into compile_cmd_t / link_cmd_t
@@ -45,7 +45,7 @@ typedef struct
 typedef struct
 {
     char exe      [ 32          ];  // lib.exe or link.exe
-    char artifact [ BT_PATH_MAX ];  // final output path (summary display only)
+    char artifact [ PATH_MAX ];  // final output path (summary display only)
     char flags    [ 256         ];  // /nologo /DLL ...
     char output   [ 512         ];  // /OUT:... /IMPLIB:...
     char pdb      [ 256         ];  // /DEBUG /PDB:... (empty for lib.exe)
@@ -77,7 +77,7 @@ cc_check_overflow( const compile_cmd_t* cc )
 static void
 lk_check_overflow( const link_cmd_t* lk )
 {
-    if ( lk->exe     [ 32          - 1 ] || lk->artifact[ BT_PATH_MAX - 1 ] ||
+    if ( lk->exe     [ 32          - 1 ] || lk->artifact[ PATH_MAX - 1 ] ||
          lk->flags   [ 256         - 1 ] || lk->output  [ 512         - 1 ] ||
          lk->pdb     [ 256         - 1 ] || lk->inputs  [ 512         - 1 ] ||
          lk->libs    [ 1024        - 1 ] )
@@ -157,7 +157,7 @@ cleanup_stale_pdbs( const char* target_name )
     // Build a wildcard pattern like "bin/foo_*.pdb" that _findfirst will
     // expand against the filesystem. Note: backslashes also work, but we use
     // forward slashes for consistency with the rest of the codebase.
-    char pattern[ BT_PATH_MAX ];
+    char pattern[ PATH_MAX ];
     snprintf( pattern, sizeof( pattern ), "bin\\%s_*.pdb", target_name );
 
     struct _finddata_t fd;
@@ -170,7 +170,7 @@ cleanup_stale_pdbs( const char* target_name )
     // full path with the "bin/" prefix before calling remove().
     do
     {
-        char path[ BT_PATH_MAX ];
+        char path[ PATH_MAX ];
         snprintf( path, sizeof( path ), "bin\\%s", fd.name );
         remove( path );
     }
@@ -682,7 +682,7 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
         FILE* log_out = cc_open_log();
         cc_print( log_out, cc, target, config );
 
-        char rsp_path[ BT_PATH_MAX ];
+        char rsp_path[ PATH_MAX ];
         snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s", obj_dir, rsp_name );
         cc_check_overflow( cc );
         bool ok = cc_assemble( cc, &cmd, rsp_path );
@@ -731,7 +731,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
        silent skip. The `cc.sources[0] ? " " : ""` trick suppresses a leading space
        on the first entry. */
     {
-        char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
+        char rel[ PATH_MAX ], abs_p[ PATH_MAX ];
         for ( int i = 0; target->units[ i ]; ++i )
         {
             snprintf( rel, sizeof( rel ), "%s\\%s", target->root_dir, target->units[ i ] );
@@ -754,7 +754,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
        the .obj files with the list of headers included by this target. The incremental
        check reads that file to determine which targets need recompilation when a header changes. */
 
-    char  includes_path[ BT_PATH_MAX ];
+    char  includes_path[ PATH_MAX ];
     char* includes_out = NULL;
     if ( g_include_track )
     {
@@ -876,7 +876,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     FILE* log_out = cc_open_log();
     lk_print( log_out, &lk, target );
 
-    char      rsp_path[ BT_PATH_MAX ];
+    char      rsp_path[ PATH_MAX ];
     cmd_buf_t cmd = { 0 };
     snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s.rsp", obj_dir,
               target->type == TARGET_STATIC_LIB ? "lib" : "link" );

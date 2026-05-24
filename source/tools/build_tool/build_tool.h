@@ -66,36 +66,35 @@
     --- Project Constants ---
 ==============================================================================================*/
 
-// Physical allocation for all command line buffers. CMD_BUF_WORK_MAX is the
-// soft write limit enforced by cmd_append(); the 4096-byte gap absorbs any
-// per-call-site overhead (prefixes, staging concatenation) so callers never
-// need +N adjustments on local buffer declarations.
+/*  Physical allocation for all command line buffers. 
+    CMD_BUF_WORK_MAX is the soft write limit enforced by cmd_append(); 
+    The 4096-byte gap absorbs appending text not part of command */
 
 #define CMD_BUF_MAX      16384
 #define CMD_BUF_WORK_MAX 12288
 
-// Max entries in each NULL-terminated slot array on target_info_t (units/deps/tool_deps).
-// Loops iterate with an `i < TARGET_MAX_SLOTS` bound so a fully-filled array
-// (no NULL terminator) cannot read into adjacent struct fields.
+/*  Max entries in each NULL-terminated slot array on target_info_t (units/deps/tool_deps).
+    Loops iterate with an `i < TARGET_MAX_SLOTS` bound so a fully-filled array
+    (no NULL terminator) cannot read into adjacent struct fields. */
 
 #define TARGET_MAX_SLOTS 16
 
-// Path buffer size for every filesystem path the build tool constructs.
-// Windows MAX_PATH is 260; 512 gives generous headroom for composite paths.
-// <obj_dir>\<filename> without forcing us to opt into long-path support
+/*  Path buffer size for every filesystem path the build tool constructs.
+    Windows MAX_PATH is 260; 512 gives generous headroom for composite paths.
+    <obj_dir>\<filename> without forcing us to opt into long-path support */
 
-#define BT_PATH_MAX 512
+#define PATH_MAX 512
 
 /*==============================================================================================
-    --- Helper Types ---
-==============================================================================================*/
+    --- Command Helper Types ---
 
-/*  Reused cmd-line buffer for assembling cl.exe / link.exe / lib.exe invocations.
-    cmd_append() writes into buf up to CMD_BUF_WORK_MAX bytes; the remaining
-    headroom to CMD_BUF_MAX is available for any wrapping a call site does
-    (e.g. prepending "cmd.exe /C ") without needing a separate oversized buffer.
-    truncated is set when the work limit is hit so the caller can spill to an
-    RSP file (see cmd_spill_to_response_file). */
+    -   Reused cmd-line buffer for assembling cl.exe / link.exe / lib.exe invocations.
+    -   cmd_append() writes into buf up to CMD_BUF_WORK_MAX bytes.
+    -   The remaining headroom to CMD_BUF_MAX is for padding (e.g. prepending "cmd.exe /C ")
+    -   Truncated is set when the work limit is hit so the caller can spill to an
+        RSP file (see cmd_spill_to_response_file).
+
+==============================================================================================*/
 
 typedef struct cmd_buf_s
 {
@@ -105,8 +104,8 @@ typedef struct cmd_buf_s
 
 } cmd_buf_t;
 
-// Safe threshold below cmd.exe's 8191-char command line limit. 
-// Leaves room for the vcvars prefix that build_run_cmd() prepends.
+/* Safe threshold below cmd.exe's 8191-char command line limit. 
+    Leaves room for the vcvars prefix that build_run_cmd() prepends. */
 
 #define CMD_RSP_THRESHOLD 7000
 
@@ -116,47 +115,47 @@ typedef struct cmd_buf_s
 
 typedef enum
 {
-    CONFIG_DEBUG,   // No optimizations, full debug symbols, MDd runtime.
-    CONFIG_RELEASE, // Full optimizations, minimal debug symbols, MD runtime.
-    CONFIG_COUNT,   // Sentinel -- used as "all configs" in warn_suppress_t.
+    CONFIG_DEBUG,                   // No optimizations, full debug symbols, MDd runtime.
+    CONFIG_RELEASE,                 // Full optimizations, minimal debug symbols, MD runtime.
+    CONFIG_COUNT,                   // Sentinel -- used as "all configs" in warn_suppress_t.
 
 } config_t;
 
-// Compiler identity bitmask for warn_suppress_t.compiler_mask.
+/* Compiler identity bitmask for warn_suppress_t.compiler_mask. */
 
 typedef enum
 {
-    COMPILE_MSVC  = ( 1u << 0 ),  // cl.exe (native MSVC)
-    COMPILE_CLANG = ( 1u << 1 ),  // clang-cl.exe
+    COMPILE_MSVC  = ( 1u << 0 ),
+    COMPILE_CLANG = ( 1u << 1 ),
     COMPILE_ALL   = ( COMPILE_MSVC | COMPILE_CLANG ),
 
 } compiler_flag_t;
 
-// One entry in g_warn_suppressions[]. A suppression fires when:
-//   config   == ctx->config  OR  config == CONFIG_COUNT  (matches all)
-//   compiler bit is set in compiler_mask
+/*  One entry in g_warn_suppressions[]. A suppression fires when:
+    config   == ctx->config  OR  config == CONFIG_COUNT  (matches all)
+    compiler bit is set in compiler_mask */
 
 typedef struct
 {
-    const char*   flag;           // e.g. "/wd4101" or "-Wno-unused-variable"
-    config_t      config;         // CONFIG_DEBUG, CONFIG_RELEASE, or CONFIG_COUNT for all
-    unsigned int  compiler_mask;  // COMPILE_MSVC | COMPILE_CLANG
+    const char*   flag;             // e.g. "/wd4101" or "-Wno-unused-variable"
+    config_t      config;           // CONFIG_DEBUG, CONFIG_RELEASE, or CONFIG_COUNT for all
+    unsigned int  compiler_mask;    // COMPILE_MSVC | COMPILE_CLANG
 
 } warn_suppress_t;
 
-// These are defined in build_tool_targets.c. a list of all active warning suppressions
-// that build_target_compile() iterates over.
+/*  These are defined in build_tool_targets.c. A list of all active warning suppressions
+    that build_target_compile() iterates over. */
 
 extern warn_suppress_t g_warn_suppressions[];
 extern int             g_warn_suppression_count;
 
-// Shared define tables -- single source of truth consumed by both
-// build_tool_cc.c (cl.exe args) and build_tool_gen.c (IntelliSense vcxproj).
+/*  Shared define tables -- single source of truth consumed by both
+    build_tool_cc.c (cl.exe args) and build_tool_gen.c (IntelliSense vcxproj). */
 
-extern const char* g_defines_always[];    // Always-on preprocessor defines.
-extern const char* g_defines_debug[];     // Added only in CONFIG_DEBUG.
-extern const char* g_defines_release[];   // Added only in CONFIG_RELEASE.
-extern const char* g_intellisense_flags[]; // Compile flags the IntelliSense parser needs.
+extern const char* g_defines_always[];      // Always-on preprocessor defines.
+extern const char* g_defines_debug[];       // Added only in CONFIG_DEBUG.
+extern const char* g_defines_release[];     // Added only in CONFIG_RELEASE.
+extern const char* g_intellisense_flags[];  // Compile flags the IntelliSense parser needs.
 
 typedef enum
 {
@@ -170,11 +169,11 @@ typedef enum
     --- Target Descriptor ---
 ==============================================================================================*/
 
-// Represents a single buildable unit in the ORB ecosystem. 
-// It contains all metadata required to compile and link the target. 
-//
-// Targets are pooled in g_targets[] (see build_tool_targets.c).
-// Shared across every IDE solution that references them by name. */
+/*  Represents a single buildable unit in the ORB ecosystem. 
+    It contains all metadata required to compile and link the target. 
+    
+    Targets are pooled in g_targets[] (see build_tool_targets.c).
+    Shared across every IDE solution that references them by name. */
 
 typedef struct target_info_s
 {
@@ -183,42 +182,42 @@ typedef struct target_info_s
     const char*     root_dir;       // Base path for source files relative to project root.
     const char*     sln_folder;     // Virtual folder in the Visual Studio solution.
 
-    // Translation Units (Unity Build Fragments)
-    // Each entry is typically an umbrella .c file that includes other sources.
-    // Multiple units allow the scheduler to parallelize cl.exe calls.
+    /*  Translation Units (Unity Build Fragments)
+        Each entry is typically an umbrella .c file that includes other sources.
+        Multiple units allow the scheduler to parallelize cl.exe calls. */
     const char*     units[ TARGET_MAX_SLOTS ];
 
-    // Link Dependencies: Other targets that produce .libs this target must link against.
-    // Drives both the linker's input list and the parallel scheduler's topological order.
+    /*  Link Dependencies: Other targets that produce .libs this target must link against. */
+    /*  Drives both the linker's input list and the parallel scheduler's topological order. */
     const char*     deps[ TARGET_MAX_SLOTS ];
 
-    // Tool Dependencies: Standalone utilities that must exist to build this target.
-    // These are built recursively but NOT linked into the final binary.
-    // Ex: any target with 'has_reflect' depends on reflect_tool.exe as a tool dep.
+    /*  Tool Dependencies: Standalone utilities that must exist to build this target.
+        These are built recursively but NOT linked into the final binary.
+        Ex: any target with 'has_reflect' depends on reflect_tool.exe as a tool dep. */
     const char*     tool_deps[ TARGET_MAX_SLOTS ];
 
-    // Reflection metadata: if true, reflect_tool.exe is invoked on root_dir
-    // before compilation. Generated files land in <build_dir>/generated/ and
-    // are appended to the cl.exe command line for this target.
+    /*  Reflection metadata: if true, reflect_tool.exe is invoked on root_dir
+        before compilation. Generated files land in <build_dir>/generated/ and
+        are appended to the cl.exe command line for this target. */
     bool            has_reflect;
 
-    // Base name for generated .c/.h files. Default is NULL, which means the
-    // files are named after the target (e.g. "core" -> "core.generated.c/h").
+    /*  Base name for generated .c/.h files. Default is NULL, which means the
+        files are named after the target (e.g. "core" -> "core.generated.c/h"). */
     const char*     reflect_name;
 
-    // If true, this is a build-time tool executable (e.g. reflect_tool).
-    // Tool targets survive global clean and are always rebuilt by our own
-    // dep resolution -- never delegated to VS ProjectDependencies.
+    /*  If true, this is a build-time tool executable (e.g. reflect_tool).
+        Tool targets survive global clean and are always rebuilt by our own
+        dep resolution -- never delegated to VS ProjectDependencies. */
     bool            is_tool;
 
-    // If true, this is the build orchestrator itself. Every other target in the
-    // solution implicitly depends on it -- no target can run its NMake command
-    // until bin\build_tool.exe exists.
+    /*  If true, this is the build orchestrator itself. Every other target in the
+        solution implicitly depends on it -- no target can run its NMake command
+        until bin\build_tool.exe exists. */
     bool            is_build_tool;
 
-    // If true, this is the reflection code-generator tool. Targets with
-    // has_reflect = true automatically depend on whichever target carries
-    // this flag -- no hardcoded name needed anywhere in the build logic.
+    /*  If true, this is the reflection code-generator tool. Targets with
+        has_reflect = true automatically depend on whichever target carries
+        this flag -- no hardcoded name needed anywhere in the build logic. */
     bool            is_reflect_tool;
 
 } target_info_t;
@@ -227,8 +226,8 @@ typedef struct target_info_s
     --- Global Target Registry ---
 ==============================================================================================*/
 
-// The list of all targets defined in build_tool_targets.c and used by
-// the orchestrator and solution generator.
+/*  The list of all targets defined in build_tool_targets.c and used by
+    the orchestrator and solution generator. */
 
 extern target_info_t g_targets[];
 extern int           g_target_count;
@@ -237,7 +236,7 @@ extern int           g_target_count;
     --- Build Execution Context ---
 ==============================================================================================*/
 
-// State passed through the build process to maintain consistency.
+/*  State passed through the build process to maintain consistency. */
 
 typedef struct build_context_s
 {
@@ -261,9 +260,9 @@ typedef struct build_context_s
     --- Solution Descriptor ---
 ==============================================================================================*/
 
-// Defines a Visual Studio solution, an array of targets from the target pool.
-// This allows the build system to generate specialized workspaces such
-// as "orb_build.sln" without polluting the full main engine workspace.
+/*  Defines a Visual Studio solution, an array of targets from the target pool.
+    This allows the build system to generate specialized workspaces such
+    as "orb_build.sln" without polluting the full main engine workspace. */
 
 typedef struct
 {
@@ -291,7 +290,7 @@ typedef struct
 
 } solution_info_t;
 
-// These are defined in build_tool_targets.c.
+/*  These are defined in build_tool_targets.c. */
 
 extern solution_info_t g_solutions[];
 extern int             g_solution_count;
@@ -300,10 +299,10 @@ extern int             g_solution_count;
     --- Output Flags ---
 ==============================================================================================*/
 
-// Bitfield controlling which sections of the build log are printed.
-// Set once at startup via CLI flags (-q / -v / --out <hex>); read by all
-// build_tool modules directly as g_out_flags. No need to thread it through
-// build_context_t since output verbosity is a process-global setting.
+/*  Bitfield controlling which sections of the build log are printed.
+    Set once at startup via CLI flags (-q / -v / --out <hex>); read by all
+    build_tool modules directly as g_out_flags. No need to thread it through
+    build_context_t since output verbosity is a process-global setting. */
 
 typedef unsigned int out_flags_t;
 
@@ -354,113 +353,113 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
 
-// Defined in build_tool.c; all other translation units read these directly.
+/*  Defined in build_tool.c; all other translation units read these directly. */
 
 extern out_flags_t g_out_flags;
-extern bool        g_use_rsp;    // -no-rsp disables response file (.rsp) creation
-extern bool        g_include_track;  // -no-include-track disables /showIncludes parsing and _includes.txt read/write
+extern bool        g_use_rsp;           // -no-rsp disables response file (.rsp) creation
+extern bool        g_include_track;     // -no-include-track disables /showIncludes parsing and _includes.txt read/write
 
 /*==============================================================================================
     --- Orchestration API ---
 ==============================================================================================*/
 
-// Everything below is the public surface for the unity-built build_tool.exe.
-// Implementations live in the corresponding _cc / _utils / _vcvars / _sched
-// translation units that build_tool.c #includes.
+/*  Everything below is the public surface for the unity-built build_tool.exe.
+    Implementations live in the corresponding _cc / _utils / _vcvars / _sched
+    translation units that build_tool.c #includes. */
 
-// Compiles all translation units for a target. Emits the cl.exe command line
-// with /showIncludes so build_run_cmd_capture_includes can record the header set
-// into <obj_dir>/_includes.txt for the next incremental check.
+/*  Compiles all translation units for a target. Emits the cl.exe command line
+    with /showIncludes so build_run_cmd_capture_includes can record the header set
+    into <obj_dir>/_includes.txt for the next incremental check. */
 bool build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir );
 
-// Compiles a single source file with the target's full flag/define/include set.
-// No /showIncludes, no link step, no include tracking. CLI tool for targeted error
-// checking (-file flag). file_path must be absolute.
+/*  Compiles a single source file with the target's full flag/define/include set.
+    No /showIncludes, no link step, no include tracking. CLI tool for targeted error
+    checking (-file flag). file_path must be absolute. */
 bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
                                   const char* obj_dir, const char* gen_dir, const char* file_path );
 
-// Compiles all unity units for a target with no link step.
-// Used by -compile-only (VS Ctrl+F7 via NMakeCompileFileCommandLine).
+/*  Compiles all unity units for a target with no link step.
+    Used by -compile-only (VS Ctrl+F7 via NMakeCompileFileCommandLine). */
 bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 
-// Links or archives the target's objects into the final artifact: lib.exe
-// for static libs, link.exe (with /DLL or as an exe) for the rest. PDB paths
-// are rotated per-link so an attached debugger never collides with the
-// linker over a held-open symbol file.
+/*  Links or archives the target's objects into the final artifact: lib.exe
+    for static libs, link.exe (with /DLL or as an exe) for the rest. PDB paths
+    are rotated per-link so an attached debugger never collides with the
+    linker over a held-open symbol file. */
 bool build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir );
 
-// Locates the Visual Studio installation (via vswhere or hard-coded probes)
-// and imports vcvarsall.bat's environment into THIS process via _putenv_s.
-// Idempotent -- fast-paths out if cl.exe is already on PATH (Dev Cmd Prompt
-// or VS-launched terminal). One-time cost, ~2.5s; saves ~50s across a full
-// rebuild that would otherwise pay vcvars-prefix overhead per cl invocation.
+/*  Locates the Visual Studio installation (via vswhere or hard-coded probes)
+    and imports vcvarsall.bat's environment into THIS process via _putenv_s.
+    Idempotent -- fast-paths out if cl.exe is already on PATH (Dev Cmd Prompt
+    or VS-launched terminal). One-time cost, ~2.5s; saves ~50s across a full
+    rebuild that would otherwise pay vcvars-prefix overhead per cl invocation. */
 void build_setup_vc_env( void );
 
-// Appends a formatted string to a command buffer.
+/*  Appends a formatted string to a command buffer. */
 void cmd_append( cmd_buf_t* b, const char* fmt, ... );
 
-// If the command buffer is near the shell limit (or already truncated),
-// spill everything after the first token (the tool exe name) to a response
-// file at rsp_path and rewrite the buffer to "<exe> @<rsp_path>". Returns
-// true if a response file was created.
+/*  If the command buffer is near the shell limit (or already truncated), 
+    spill everything after the first token (the tool exe name) to a response
+    file at rsp_path and rewrite the buffer to "<exe> @<rsp_path>". Returns
+    true if a response file was created. */
 bool cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path );
 
-// Returns the last modification time of a file. Returns 0 if not found.
+/*  Returns the last modification time of a file. Returns 0 if not found. */
 __time64_t build_get_mtime( const char* path );
 
-// Acquire a Windows named mutex scoped to a single target, blocking until
-// granted. Used to serialize concurrent invocations of build_tool.exe that
-// would otherwise both compile/link the same target's outputs. Returns an
-// opaque handle that must be passed to build_unlock_target() -- or NULL on
-// failure (in which case the caller proceeds without locking).
+/*  Acquire a Windows named mutex scoped to a single target, blocking until
+    granted. Used to serialize concurrent invocations of build_tool.exe that
+    would otherwise both compile/link the same target's outputs. Returns an
+    opaque handle that must be passed to build_unlock_target() -- or NULL on
+    failure (in which case the caller proceeds without locking). */
 void* build_lock_target( const char* target_name );
 
-// Release a lock acquired by build_lock_target(). NULL is a safe no-op.
+/*  Release a lock acquired by build_lock_target(). NULL is a safe no-op. */
 void  build_unlock_target( void* lock );
 
-// Run a shell command via CreateProcess and return its exit code. cmd is
-// wrapped with "cmd.exe /C" so shell builtins (del, for) and glob args
-// (*.obj) keep working. Output is redirected to the per-thread log file if
-// a parallel worker is active (see sched_log_path), otherwise inherits the
-// parent's stdout/stderr.
+/*  Run a shell command via CreateProcess and return its exit code. cmd is
+    wrapped with "cmd.exe /C" so shell builtins (del, for) and glob args
+    (*.obj) keep working. Output is redirected to the per-thread log file if
+    a parallel worker is active (see sched_log_path), otherwise inherits the
+    parent's stdout/stderr. */
 int build_run_cmd( const char* cmd );
 
-// Same as build_run_cmd but suppresses the "[cmd] ..." echo. Use for trivial
-// housekeeping invocations (e.g. del/rd during clean) where the caller will
-// print a single human-readable summary itself instead of one line per call.
+/*  Same as build_run_cmd but suppresses the "[cmd] ..." echo. Use for trivial
+    housekeeping invocations (e.g. del/rd during clean) where the caller will
+    print a single human-readable summary itself instead of one line per call. */
 int build_run_cmd_quiet( const char* cmd );
 
-// Pipes the child's stdout+stderr back line-by-line through us. When
-// includes_path is non-NULL, /showIncludes lines are parsed out and written
-// there (system headers filtered); used for compile steps. When NULL, no
-// includes file is written; used for link/lib steps. All non-include lines are
-// forwarded to the active sink (worker log or stdout) prefixed with [MSVC]
-// when ORB_OUT_MSVC_OUTPUT is set, or silently dropped when not.
+/*  Pipes the child's stdout+stderr back line-by-line through us. When
+    includes_path is non-NULL, /showIncludes lines are parsed out and written
+    there (system headers filtered); used for compile steps. When NULL, no
+    includes file is written; used for link/lib steps. All non-include lines are
+    forwarded to the active sink (worker log or stdout) prefixed with [MSVC]
+    when ORB_OUT_MSVC_OUTPUT is set, or silently dropped when not. */
 int build_run_cmd_capture_includes( const char* cmd, const char* includes_path );
 
-// The core worker function. Handles recursive dependency resolution
-// (unless ctx->skip_deps), per-target locking, the incremental-build
-// timestamp check (artifact mtime vs. each unit, link dep, and recorded
-// header), reflection codegen, then compile + link. Idempotent: a fully
-// up-to-date target short-circuits before any cl.exe spawn.
-// out_skipped may be NULL; when non-NULL it is set to true if the target was
-// skipped because all artifacts were already up to date, false otherwise.
+/*  The core worker function. Handles recursive dependency resolution
+    (unless ctx->skip_deps), per-target locking, the incremental-build
+    timestamp check (artifact mtime vs. each unit, link dep, and recorded
+    header), reflection codegen, then compile + link. Idempotent: a fully
+    up-to-date target short-circuits before any cl.exe spawn.
+    out_skipped may be NULL; when non-NULL it is set to true if the target was
+    skipped because all artifacts were already up to date, false otherwise. */
 bool build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped );
 
-// Parallel scheduler. Builds the transitive closure of `root` (or every
-// target in g_targets[] if `root` is NULL) using up to `thread_count`
-// concurrent workers. Each worker calls build_target() with skip_deps=true;
-// the scheduler itself owns dep ordering. Returns true iff all targets
-// finished successfully.
+/*  Parallel scheduler. Builds the transitive closure of `root` (or every
+    target in g_targets[] if `root` is NULL) using up to `thread_count`
+    concurrent workers. Each worker calls build_target() with skip_deps=true;
+    the scheduler itself owns dep ordering. Returns true iff all targets
+    finished successfully. */
 bool build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count );
 
-// Deletes build artifacts. If target is non-NULL, only that target's artifacts
-// are removed (bin/<name>.*, obj/<name>/). If NULL, a global wipe runs --
-// is_tool executables are excluded so tools survive a full clean.
+/*  Deletes build artifacts. If target is non-NULL, only that target's artifacts
+    are removed (bin/<name>.*, obj/<name>/). If NULL, a global wipe runs --
+    is_tool executables are excluded so tools survive a full clean. */
 void build_clean( target_info_t* target );
 
-// Generates all .sln and .vcxproj files defined in the Solution Registry.
-// This maps our custom build system into the Visual Studio IDE.
+/*  Generates all .sln and .vcxproj files defined in the Solution Registry.
+    This maps our custom build system into the Visual Studio IDE. */
 void build_gen_projects( void );
 
 // clang-format on

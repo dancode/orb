@@ -127,7 +127,7 @@ print_startup_banner( const build_context_t* ctx )
     const char* label        = NULL;
     const char* special      = NULL;
 
-    char subject[ BT_PATH_MAX ];
+    char subject[ PATH_MAX ];
     snprintf( subject, sizeof( subject ), "%s", target_upper );
 
     if ( ctx->compile_only )
@@ -422,11 +422,11 @@ main( int argc, char** argv )
         // so callers can pass bare filenames or subdir-relative paths like sub/file.c.
 
         const char* effective_file = ctx.file_path;
-        char resolved_file[ BT_PATH_MAX ];
+        char resolved_file[ PATH_MAX ];
         bool is_abs = ( ctx.file_path[ 0 ] == '\\' ) || ( ctx.file_path[ 1 ] == ':' );
         if ( !is_abs && target->root_dir )
         {
-            char combined[ BT_PATH_MAX ];
+            char combined[ PATH_MAX ];
             snprintf( combined, sizeof( combined ), "%s\\%s", target->root_dir, ctx.file_path );
             if ( !_fullpath( resolved_file, combined, sizeof( resolved_file ) ) )
                 snprintf( resolved_file, sizeof( resolved_file ), "%s", combined );
@@ -439,9 +439,9 @@ main( int argc, char** argv )
         for ( const char* p = effective_file; *p; ++p )
             if ( *p == '\\' || *p == '/' ) base_name = p + 1;
 
-        char obj_dir[ BT_PATH_MAX ];
+        char obj_dir[ PATH_MAX ];
         snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
-        char gen_dir[ BT_PATH_MAX ];
+        char gen_dir[ PATH_MAX ];
         snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
 
         // Ensure the obj dir exists (normally created by a prior full build, but
@@ -466,10 +466,14 @@ main( int argc, char** argv )
 
     if ( ctx.skip_deps )
     {
-        /* visual studio invokes build_tool.exe with -no-deps to manage the dep ordering itself via MSBuild, so
-           if we see that flag we skip the scheduler and just build the one target. */
+        /* visual studio invokes build_tool.exe with -no-deps to manage the dep ordering 
+           itself via MSBuild, that flag we skip the scheduler and just build the one target. */
 
-        if ( !target ) { printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); return 1; }
+        if ( !target ) { 
+            printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); 
+            return 1; 
+        }
+
         bool was_skipped = false;
         if ( build_target( &ctx, target, &was_skipped ) == false )
         {
