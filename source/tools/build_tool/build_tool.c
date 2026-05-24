@@ -372,6 +372,7 @@ main( int argc, char** argv )
     build_setup_vc_env();
 
     // --- Build Dispatch ---
+    // 
     //   -file <path>  compile one file with the target's full flag set, no link.
     //   -compile-only compile all unity units for the target, no link (VS Ctrl+F7).
     //   -no-deps      serial single-target build; VS uses this so MSBuild stays
@@ -397,6 +398,7 @@ main( int argc, char** argv )
         // VS Ctrl+F7 path: compile all unity units for the target, no link step.
         // VS does not inject the selected file path via any env/property mechanism,
         // so we compile the full unity TU instead -- correct for unity-build targets.
+
         if ( !target ) { printf( ORB_INDENT "[orb error] -compile-only requires -target\n" ); return 1; }
         if ( !build_target_compile_only( &ctx, target ) )
         {
@@ -413,10 +415,12 @@ main( int argc, char** argv )
     {
         // Single-file compile: build_target_compile_single() with the target's full
         // flag/define/include set, but only the one file VS handed us.
+
         if ( !target ) { printf( ORB_INDENT "[orb error] -file requires -target\n" ); return 1; }
 
         // If the path is not absolute, resolve it relative to the target's root_dir
         // so callers can pass bare filenames or subdir-relative paths like sub/file.c.
+
         const char* effective_file = ctx.file_path;
         char resolved_file[ BT_PATH_MAX ];
         bool is_abs = ( ctx.file_path[ 0 ] == '\\' ) || ( ctx.file_path[ 1 ] == ':' );
@@ -430,6 +434,7 @@ main( int argc, char** argv )
         }
 
         // Strip path from base_name for the completed output line.
+
         const char* base_name = effective_file;
         for ( const char* p = effective_file; *p; ++p )
             if ( *p == '\\' || *p == '/' ) base_name = p + 1;
@@ -441,6 +446,7 @@ main( int argc, char** argv )
 
         // Ensure the obj dir exists (normally created by a prior full build, but
         // be defensive so the first-ever single-file compile doesn't silently fail).
+
         ensure_dir( "bin" );
         ensure_dir( g_build_dir );
         ensure_dir( obj_dir );
@@ -456,8 +462,13 @@ main( int argc, char** argv )
         return 0;
     }
 
+    /* -- Build Target(s) Visual Studio (skip deps) or CLI -- */
+
     if ( ctx.skip_deps )
     {
+        /* visual studio invokes build_tool.exe with -no-deps to manage the dep ordering itself via MSBuild, so
+           if we see that flag we skip the scheduler and just build the one target. */
+
         if ( !target ) { printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); return 1; }
         bool was_skipped = false;
         if ( !build_target( &ctx, target, &was_skipped ) )
@@ -473,7 +484,8 @@ main( int argc, char** argv )
     }
     else
     {
-        // --- Build All Targets In Parallel ---
+        // --- Build All Targets In Parallel (CLI) ---
+
         if ( !build_run_parallel( &ctx, target, j_threads ) )
         {
             printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );

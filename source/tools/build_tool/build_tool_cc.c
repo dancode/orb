@@ -396,8 +396,8 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 static bool
 cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
 {
-    // ARGS_BUF covers the maximum: sources (CMD_BUF_MAX) + all other fields
-    // (flags 512 + includes 512 + defines 1024 + output 512 + 4 spaces).
+    /* ARGS_BUF covers the maximum: sources (CMD_BUF_MAX) + all other fields
+       (flags 512 + includes 512 + defines 1024 + output 512 + 4 spaces). */
 
     enum { ARGS_BUF = CMD_BUF_MAX + 3200 };
     char args[ ARGS_BUF ];
@@ -405,6 +405,9 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
     int  written = snprintf( args, sizeof( args ), "%s %s %s %s %s",
                              cc->flags, cc->includes, cc->defines, cc->output, cc->sources );
 
+    /* sanity check: ensure the fields were big enough to hold their content without
+       overflow before we even get to the spill logic. If this fires, the fix is
+       to increase the relevant field size in compile_cmd_t, not ARGS_BUF. */
     if ( written < 0 || ( size_t )written >= sizeof( args ) )
     {
         printf( ORB_INDENT "[orb error] cc_assemble args truncated (needed %d)\n", written );
@@ -419,18 +422,27 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
         {
             // Write the full args to the response file before any truncation can occur.
             FILE* f = fopen( rsp_path, "w" );
-            if ( f ) { fputs( args, f ); fclose( f ); }
-            else printf( ORB_INDENT "[orb error] could not open response file %s\n", rsp_path );
+            if ( f ) 
+            { 
+                fputs( args, f ); 
+                fclose( f ); 
+            }
+            else 
+            {
+                printf( ORB_INDENT "[orb error] could not open response file %s\n", rsp_path );
+                return false;
+            }
             cmd->size      = 0;
             cmd->truncated = false;
             cmd_append( cmd, "%s @%s", cc->exe, rsp_path );
+            return true;
         }
-        else
-        {
-            printf( ORB_INDENT "[orb warn] command length %zu exceeds threshold;"
-                   "enable -rsp to use a response file\n", total );
-            cmd_append( cmd, "%s %s", cc->exe, args );
-        }
+        
+        // fatal error
+        printf( ORB_INDENT "[orb error] command length %zu exceeds threshold;" 
+                "enable -rsp to use a response file\n", total );
+        return false;
+        
     }
     else
     {
@@ -704,11 +716,11 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
        We only add this flag when dep tracking is active because it produces a
        lot of extra output -- every included header, even from the CRT and
        third-party deps -- which would be noisy in the logs when we're not
-       actually using it for deps.
-    */
+       actually using it for deps. */
+
     if ( g_dep_track ) CC_APPEND( cc.flags, " /showIncludes" );
 
-    /* sources: absolute paths so MSVC error messages are navigable from any CWD.
+    /* sources: Create absolute paths so MSVC error messages are navigable from any CWD.
        _fullpath returns NULL only on truly broken paths; fall back to relative so
        the build still proceeds and cl surfaces a recognisable error instead of a
        silent skip. The `cc.sources[0] ? " " : ""` trick suppresses a leading space

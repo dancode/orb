@@ -86,14 +86,16 @@ spawn_cmd( const char* cmd, const char* log_path )
     }
 
     /* Block until the child exits. INFINITE is fine -- none of our tools
-     hang indefinitely, and if they do the build is broken anyway.*/
+       hang indefinitely, and if they do the build is broken anyway.*/
+
     WaitForSingleObject( pi.hProcess, INFINITE );
-    DWORD ec = 1;
-    GetExitCodeProcess( pi.hProcess, &ec );
+    DWORD error_code = 1;
+    GetExitCodeProcess( pi.hProcess, &error_code );
     CloseHandle( pi.hProcess );
     CloseHandle( pi.hThread );
     if ( hout ) CloseHandle( hout );
-    return ( int )ec;
+
+    return ( int )error_code;
 }
 
 /*==============================================================================================  
@@ -105,6 +107,8 @@ spawn_cmd( const char* cmd, const char* log_path )
     
     Used if a failure should stop the build immediately (e.g. compile/link step)
 
+    This is a blocking command -- the caller waits for it to finish before proceeding.
+
  ==============================================================================================*/
 
 int build_run_cmd( const char* cmd )
@@ -112,13 +116,16 @@ int build_run_cmd( const char* cmd )
     const char* log = sched_log_path();
     if ( log )
     {
+        /* this is blocking -- */
         int rc = spawn_cmd( cmd, log );
-        // Surface non-zero exit in the log so post-mortem inspection sees
-        // a clear failure marker even when the child wrote nothing to stderr.
+
+        /* Surface non-zero exit in the log so post-mortem inspection sees
+           a clear failure marker even when the child wrote nothing to stderr. */
+
         if ( rc != 0 )
         {
             FILE* lf = fopen( log, "a" );
-            if ( lf ) { fprintf( lf, ORB_INDENT "[orb exit=%d]\n", rc ); fclose( lf ); }
+            if ( lf ) { fprintf( lf, ORB_INDENT "[orb exit = %d]\n", rc ); fclose( lf ); }
         }
         return rc;
     }
@@ -141,7 +148,7 @@ int build_run_cmd_quiet( const char* cmd )
 
 /*==============================================================================================  
 
-    process_deps_line()
+    -- Process Dependency File Lines --
     
     Classify one line of cl.exe stdout/stderr output:
     
@@ -227,33 +234,39 @@ process_deps_line( char* line, FILE* deps, FILE* out )
         }
     }
 }
-
 /*==============================================================================================
 
-    build_run_cmd_capture_deps() -- 
+    --- Capture Dependencies ---
+
+    Run cl.exe (the compiler), intercept every line it prints, and sort those lines
+    into two buckets — "header file paths" go to a deps file, everything else such as
+    (errors, warnings) goes to the log.
 
     Same role as build_run_cmd(), but additionally pipes the child's
-    stdout+stderr back through us so /showIncludes lines can be parsed out
-    into deps_path. Used exclusively by the compile step -- see
-    build_target_compile() in build_tool_cc.c.
+    stdout + stderr back through us so /showIncludes lines can be parsed out
+    into deps_path. Used exclusively by the compile step.
+
+    Returns 0 on success, non-zero on failure.
 
  ==============================================================================================*/
 
 int
 build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
 {
-    // CreatePipe + CreateProcess instead of _popen/_pclose, for the same
-    // thread-safety reason explained in spawn_cmd() above.
-    //
-    // Pipe layout: write end (wr) goes to the child; read end (rd) stays
-    // with us and we stream it line-by-line below. SetHandleInformation
-    // turns OFF inheritance on the read end so the child can never see it
-    // (which would prevent the pipe from EOF'ing when the child exits).
+    /*  CreatePipe + CreateProcess instead of _popen/_pclose, for the same
+        thread-safety reason explained in spawn_cmd() above.
+        
+        Pipe layout: write end (wr) goes to the child; read end (rd) stays
+        with us and we stream it line-by-line below. SetHandleInformation
+        turns OFF inheritance on the read end so the child can never see it
+        (which would prevent the pipe from EOF'ing when the child exits). */
+
     SECURITY_ATTRIBUTES sa = { sizeof( sa ), NULL, TRUE };
     HANDLE              rd = NULL, wr = NULL;
     if ( !CreatePipe( &rd, &wr, &sa, 65536 ) ) return -1;
     SetHandleInformation( rd, HANDLE_FLAG_INHERIT, 0 );
 
+    /* pad buffer for prefix command */
     char wrapped[ CMD_BUF_MAX + 64 ];
     snprintf( wrapped, sizeof( wrapped ), "cmd.exe /C %s", cmd );
 
@@ -342,14 +355,15 @@ build_run_cmd_capture_deps( const char* cmd, const char* deps_path )
 
     CloseHandle( rd );
     WaitForSingleObject( pi.hProcess, INFINITE );
-    DWORD ec = 1;
-    GetExitCodeProcess( pi.hProcess, &ec );
+    DWORD error_code = 1;
+    GetExitCodeProcess( pi.hProcess, &error_code );
     CloseHandle( pi.hProcess );
     CloseHandle( pi.hThread );
 
     if ( deps ) fclose( deps );
     if ( owned_log ) fclose( owned_log );
-    return ( int )ec;
+
+    return ( int )error_code; /* 9 == success */
 }
 
 // clang-format on

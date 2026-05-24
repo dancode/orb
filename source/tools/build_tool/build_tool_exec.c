@@ -127,7 +127,7 @@ build_clean( target_info_t* target )
 
 ==============================================================================================*/
 
-bool 
+bool
 build_target_compile_only( build_context_t* ctx, target_info_t* target )
 {
     /* build paths and ensure they exist for build target compilation */
@@ -144,6 +144,39 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
     ensure_dir( gen_dir );
     ensure_dir( obj_dir );
 
+    /* --- Reflection Codegen --- */
+
+    if ( target->has_reflect )
+    {
+        /*  Reflection must run before the compiler so <name>.generated.{c,h} exist.
+            Tool deps are always our responsibility even under -no-deps.
+            (VS has no knowledge of them) so we always build if needed. */
+
+        target_info_t* refl_tool = find_reflect_tool();
+        if ( !refl_tool )  
+        {
+            printf( ORB_INDENT "[orb error] '%s' no reflect_tool tool is registered\n", target->name );
+            return false;
+        }
+        if ( build_target( ctx, refl_tool, NULL ) == false )
+            return false;
+
+        /* select standard or custom generated root file name */
+        const char* rname = target->reflect_name ? target->reflect_name : target->name;
+        printf( ORB_INDENT "[orb reflect] %s\n", rname );
+
+        char refl_cmd[ BT_PATH_MAX * 2 ];
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s", 
+                  refl_tool->name, target->root_dir, gen_dir, rname );
+
+        /* run + wait on the reflection tool as a separate process, it gets
+           its own console output to not mess with the build tool's stdout parsing. */
+
+        if ( build_run_cmd( refl_cmd ) != 0 )
+            return false;
+    }
+
+    /* compile our target -- no link */
     return build_target_compile( ctx, target, obj_dir, gen_dir );
 }
 
