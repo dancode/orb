@@ -268,10 +268,15 @@ typedef struct
     // The generator looks up these names in g_targets[].
     const char**    target_names;
 
-    // If non-NULL it will generate a "mega" source directory folder 
+    // If non-NULL it will generate a "mega" source directory folder
     // navigation project as "name"_nav" in the .sln file.
     // just a browesable directory that does not compile.
     const char*     nav_dir;
+
+    // Output directory for .sln and .vcxproj files (e.g. "build\\proj").
+    // Relative paths inside the emitted XML are computed from this depth
+    // so all solutions stay at a consistent distance from the project root.
+    const char*     out_dir;
 
 } solution_info_t;
 

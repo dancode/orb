@@ -1,0 +1,5 @@
+﻿        [orb clean] rs -- bin\rs.lib, build\obj\rs
+        ----------------------------------------------------------------
+        [orb build] RS [ no-deps | modular | debug | msvc ]
+            [orb compiling] rs
+  

@@ -1,0 +1,7 @@
+﻿        [orb clean] core -- bin\core.lib, build\obj\core (+reflect)
+  [reflect_tool] core: 0 struct(s), 2 enum(s)
+        ----------------------------------------------------------------
+        [orb build] CORE [ no-deps | modular | debug | msvc ]
+            [orb reflect] core
+            [orb compiling] core
+  

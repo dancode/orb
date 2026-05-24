@@ -153,12 +153,14 @@ solution_info_t g_solutions[] = {
     {
      .name         = "orb_make",
      .target_names = g_sln_main_targets,
-     .nav_dir      = "source",            // Includes everything in source/ for IDE navigation.
+     .nav_dir      = "source",       // Includes everything in source/ for IDE navigation.
+     .out_dir      = "build\\proj",  // Standard modular build.
     },
     {
      .name         = "orb_build",
      .target_names = g_sln_tools_targets,
-     .nav_dir      = NULL,    // Minimal standalone tool solution.
+     .nav_dir      = NULL,           // Minimal standalone tool solution.
+     .out_dir      = "build\\proj",  // Standard modular build.
     },
 };
 

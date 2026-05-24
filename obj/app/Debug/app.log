@@ -1,0 +1,5 @@
+﻿        [orb clean] app -- bin\app.lib, build\obj\app
+        ----------------------------------------------------------------
+        [orb build] APP [ no-deps | modular | debug | msvc ]
+            [orb compiling] app
+  

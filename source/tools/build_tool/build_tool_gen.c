@@ -29,6 +29,45 @@
 #define MAX_FILES   1024   // Max source files scanned per vcxproj.
 #define MAX_FILTERS  512   // Max virtual filter folders per vcxproj.
 
+/*==============================================================================================
+    --- Per-Solution Path State ---
+
+    Set once at the top of each solution's generation pass in build_gen_projects().
+    All emitter functions read these instead of hardcoding depth-1 relative paths,
+    so moving a solution's output directory only requires changing out_dir in the
+    solution descriptor -- no string edits anywhere else in this file.
+
+    s_out_dir     -- where .sln and .vcxproj files land  (e.g. "build\\proj")
+    s_root_prefix -- "../..\\" back to the project root   (e.g. "..\\..\\")
+    s_cd_root     -- "cd ..\\.." for NMake commands       (e.g. "..\\..")
+==============================================================================================*/
+
+static const char* s_out_dir     = "build";
+static char        s_root_prefix[ 32 ] = "..\\";
+static char        s_cd_root     [ 32 ] = "..";
+
+static void
+compute_path_parts( const char* out_dir )
+{
+    // Count directory components: "build\\proj" has one separator -> depth 2.
+    int depth = 1;
+    for ( const char* p = out_dir; *p; ++p )
+        if ( *p == '\\' || *p == '/' ) depth++;
+
+    s_out_dir = out_dir;
+
+    s_root_prefix[ 0 ] = '\0';
+    for ( int i = 0; i < depth; ++i )
+        strcat( s_root_prefix, "..\\" );
+
+    // cd_root is the same path without the trailing backslash, used in
+    // NMake commands: "cd ..\\.." rather than "cd ..\\..\\"
+    s_cd_root[ 0 ] = '\0';
+    strcat( s_cd_root, ".." );
+    for ( int i = 1; i < depth; ++i )
+        strcat( s_cd_root, "\\.." );
+}
+
 // Metadata for one source file picked up by scan_directory_recursive().
 // Drives both the <ItemGroup> entries in the .vcxproj and the matching
 // <Filter> mappings in the .filters file.
@@ -411,13 +450,13 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     // ProjectDependencies) own build order; each project builds only
     // itself, so parallel solution builds never race shared dep outputs.
     fprintf( f, "  <PropertyGroup>\n" );
-    fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
-    fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
-    fprintf( f, "    <NMakeBuildCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", out_name );
-    fprintf( f, "    <NMakeOutput>..\\bin\\%s%s</NMakeOutput>\n", out_name, ext );
-    fprintf( f, "    <NMakeCleanCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -clean -target %s</NMakeCleanCommandLine>\n", out_name );
-    fprintf( f, "    <NMakeCompileFile>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeCompileFile>\n", out_name );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
+    fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
+    fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", s_root_prefix, g_int_dir );
+    fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeBuildCommandLine>\n", s_cd_root, out_name );
+    fprintf( f, "    <NMakeOutput>%sbin\\%s%s</NMakeOutput>\n", s_root_prefix, out_name, ext );
+    fprintf( f, "    <NMakeCleanCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -clean -target %s</NMakeCleanCommandLine>\n", s_cd_root, out_name );
+    fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s</NMakeCompileFile>\n", s_cd_root, out_name );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n", s_root_prefix );
     fprintf( f, "  </PropertyGroup>\n" );
 
     // --- Single-file compile (Ctrl+F7) ---
@@ -429,7 +468,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     // ItemDefinitionGroup applies this metadata to the dynamically created NMakeCompile item.
     fprintf( f, "  <ItemDefinitionGroup>\n" );
     fprintf( f, "    <NMakeCompile>\n" );
-    fprintf( f, "      <NMakeCompileFileCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s</NMakeCompileFileCommandLine>\n",out_name );
+    fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s</NMakeCompileFileCommandLine>\n", s_cd_root, out_name );
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
@@ -466,10 +505,10 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     // Isolated in their own PropertyGroups so VS does not conflate these with
     // IntelliSense or build settings, which would grey out per-file compile.
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)..</LocalDebuggerWorkingDirectory>\n" );
+    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_cd_root );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)..</LocalDebuggerWorkingDirectory>\n" );
+    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_cd_root );
     fprintf( f, "  </PropertyGroup>\n" );
 }
 
@@ -489,7 +528,7 @@ static void
 build_gen_proj_target( target_info_t* target, int index )
 {
     char vcxproj_path[ BT_PATH_MAX ];
-    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", g_build_dir, target->name );
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_out_dir, target->name );
 
     // Generate a deterministic GUID for this project from its name.
     char guid[ 64 ];
@@ -535,13 +574,13 @@ build_gen_proj_target( target_info_t* target, int index )
         {
             // ClCompile items carry NMakeCompileFileCommandLine as a fallback for VS versions
             // that read per-item metadata instead of the ItemDefinitionGroup above.
-            fprintf( f, "    <ClCompile Include=\"..\\%s\">\n", g_files[ i ].path );
-            fprintf( f, "      <NMakeCompileFileCommandLine>cd .. &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s</NMakeCompileFileCommandLine>\n",target->name );
+            fprintf( f, "    <ClCompile Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
+            fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s</NMakeCompileFileCommandLine>\n", s_cd_root, target->name );
             fprintf( f, "    </ClCompile>\n" );
         }
         else
         {
-            fprintf( f, "    <ClInclude Include=\"..\\%s\" />\n", g_files[ i ].path );
+            fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
         }
     }
     fprintf( f, "  </ItemGroup>\n" );
@@ -552,7 +591,7 @@ build_gen_proj_target( target_info_t* target, int index )
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
     char filters_path[ BT_PATH_MAX ];
-    snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", g_build_dir, target->name );
+    snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", s_out_dir, target->name );
     f = fopen( filters_path, "w" );
     if ( f )
     {
@@ -590,7 +629,7 @@ build_gen_proj_target( target_info_t* target, int index )
             }
 
             const char* tag = is_unit ? "ClCompile" : "ClInclude";
-            fprintf( f, "    <%s Include=\"..\\%s\">\n", tag, g_files[ i ].path );
+            fprintf( f, "    <%s Include=\"%s%s\">\n", tag, s_root_prefix, g_files[ i ].path );
             if ( g_files[ i ].filter[ 0 ] != '\0' ) fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
             fprintf( f, "    </%s>\n", tag );
         }
@@ -623,7 +662,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     scan_directory_recursive( nav_dir, nav_dir );
 
     char vcxproj_path[ BT_PATH_MAX ];
-    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s_nav.vcxproj", g_build_dir, sln_name );
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s_nav.vcxproj", s_out_dir, sln_name );
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
     {
@@ -654,13 +693,13 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     // parallel with them races on shared dirs (e.g. build_new\generated\*).
     ( void )default_target;
     fprintf( f, "  <PropertyGroup>\n" );
-    fprintf( f, "    <OutDir>$(ProjectDir)..\\bin\\</OutDir>\n" );
-    fprintf( f, "    <IntDir>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", g_int_dir );
+    fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
+    fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", s_root_prefix, g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>echo       [nav] navigation-only project, nothing to build.</NMakeBuildCommandLine>\n" );
-    fprintf( f, "    <NMakeOutput>$(ProjectDir)%s\\$(ProjectName)\\$(Configuration)\\nav.stamp</NMakeOutput>\n", g_int_dir );
+    fprintf( f, "    <NMakeOutput>$(ProjectDir)%s%s\\$(ProjectName)\\$(Configuration)\\nav.stamp</NMakeOutput>\n", s_root_prefix, g_int_dir );
     fprintf( f, "    <NMakeCleanCommandLine>echo       [nav] navigation-only project, nothing to clean.</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakeCompileFile>echo       [nav] navigation-only project.</NMakeCompileFile>\n" );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)..\\source;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n" );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n", s_root_prefix );
     fprintf( f, "  </PropertyGroup>\n" );
 
     // Per-config IntelliSense context. NULL target: nav lists all files as
@@ -701,7 +740,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
-        fprintf( f, "    <ClInclude Include=\"..\\%s\" />\n", g_files[ i ].path );
+        fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
     }
     fprintf( f, "  </ItemGroup>\n" );
 
@@ -711,7 +750,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
 
     // Generate the .filters file to mirror the folder structure in Solution Explorer.
     char filters_path[ BT_PATH_MAX ];
-    snprintf( filters_path, sizeof( filters_path ), "%s\\%s_nav.vcxproj.filters", g_build_dir, sln_name );
+    snprintf( filters_path, sizeof( filters_path ), "%s\\%s_nav.vcxproj.filters", s_out_dir, sln_name );
     f = fopen( filters_path, "w" );
     if ( f )
     {
@@ -733,7 +772,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_file_count; ++i )
         {
-            fprintf( f, "    <ClInclude Include=\"..\\%s\">\n", g_files[ i ].path );
+            fprintf( f, "    <ClInclude Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
             if ( g_files[ i ].filter[ 0 ] != '\0' ) fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
             fprintf( f, "    </ClInclude>\n" );
         }
@@ -772,7 +811,7 @@ static void
 build_gen_solution( solution_info_t* sln )
 {
     char sln_path[ BT_PATH_MAX ];
-    snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", g_build_dir, sln->name );
+    snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", s_out_dir, sln->name );
     FILE* f = fopen( sln_path, "w" );
     if ( !f ) return;
 
@@ -990,14 +1029,16 @@ build_gen_solution( solution_info_t* sln )
 /*==============================================================================================
     --- Build Generate Projects ---
 
-    Top-level entry point invoked by `build_tool.exe -gen`. Regenerates every 
+    Top-level entry point invoked by `build_tool.exe -gen`. Regenerates every
     .vcxproj and every .sln from the current target/solution registry.
-    
-    Two-phase emission:
 
-        1. One .vcxproj per target (shared across solutions that reference it).
-        2. One .sln per solution descriptor in g_solutions[].
- 
+    Per-solution emission: each solution owns its output directory (sln->out_dir)
+    and gets its own set of .vcxproj files generated there. This allows different
+    solutions to have different IntelliSense defines (e.g. modular vs monolithic)
+    without sharing project files. The file-scope path state (s_out_dir,
+    s_root_prefix, s_cd_root) is set per-solution so all emitter functions
+    produce correct relative paths without receiving extra parameters.
+
     Safe to re-run anytime; the generated XML is fully deterministic given
     the registry contents, so VS user state survives regen as long as the
     target name doesn't change (see guid_from_name).
@@ -1006,28 +1047,38 @@ build_gen_solution( solution_info_t* sln )
 void
 build_gen_projects( void )
 {
-    printf( "Generating Visual Studio projects in %s/...\n", g_build_dir );
-
-    // Make sure the output directory exists.
-    ensure_dir( g_build_dir );
-
-    // 1. Generate every target's .vcxproj once. They're shared across
-    //    solutions by name -- a single base.vcxproj is referenced by
-    //    every .sln that lists "base" in its target_names.
-    for ( int i = 0; i < g_target_count; ++i )
-    {
-        build_gen_proj_target( &g_targets[ i ], i );
-    }
-
-    // 2. Generate each .sln in the registry. Each call also writes its
-    //    own nav .vcxproj if nav_dir is set on the descriptor.
     for ( int i = 0; i < g_solution_count; ++i )
     {
-        printf( "Generating Solution: %s.sln\n", g_solutions[ i ].name );
-        build_gen_solution( &g_solutions[ i ] );
+        solution_info_t* sln = &g_solutions[ i ];
+
+        // Set file-scope path state for this solution's output directory.
+        // All emitter functions (write_vcxproj_common_header, build_gen_proj_target,
+        // build_gen_proj_engine_navigation) read s_out_dir / s_root_prefix / s_cd_root
+        // directly so every emitted path is correct for this solution's depth.
+        compute_path_parts( sln->out_dir );
+        ensure_dir( sln->out_dir );
+
+        printf( "Generating Solution '%s' in %s/...\n", sln->name, sln->out_dir );
+
+        // Generate a .vcxproj for each target in this solution.
+        // Each solution owns its vcxproj files -- they are NOT shared across solutions
+        // so that per-solution IntelliSense properties (defines, flags) can differ.
+        for ( const char** tn = sln->target_names; *tn; ++tn )
+        {
+            for ( int j = 0; j < g_target_count; ++j )
+            {
+                if ( strcmp( g_targets[ j ].name, *tn ) == 0 )
+                {
+                    build_gen_proj_target( &g_targets[ j ], j );
+                    break;
+                }
+            }
+        }
+
+        build_gen_solution( sln );
     }
 
-    printf( "\nProjects generated successfully in %s/.\n", g_build_dir );
+    printf( "\nProjects generated successfully.\n" );
 }
 
 /*============================================================================================*/

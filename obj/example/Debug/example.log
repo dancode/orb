@@ -1,0 +1,5 @@
+﻿        [orb clean] example -- bin\example.dll, build\obj\example
+        ----------------------------------------------------------------
+        [orb build] EXAMPLE [ no-deps | modular | debug | msvc ]
+            [orb compiling] example
+  

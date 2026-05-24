@@ -1,0 +1,5 @@
+﻿        [orb clean] mod -- bin\mod.lib, build\obj\mod
+        ----------------------------------------------------------------
+        [orb build] MOD [ no-deps | modular | debug | msvc ]
+            [orb compiling] mod
+  

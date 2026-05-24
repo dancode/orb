@@ -13,10 +13,10 @@
       build_target_compile_single() -- single-file compile for VS Ctrl+F7; no dep tracking.
       build_target_link()           -- lib.exe for static libs, link.exe otherwise.
 
-    Flag/define lockstep:
-      The defines emitted here must match the IntelliSense defines in
-      build_tool_gen.c. Drift surfaces as IDE squigglies that don't reproduce
-      at build time.
+    Define source of truth:
+      Preprocessor defines are driven from the shared tables in build_tool_targets.c
+      (g_defines_always, g_defines_debug, g_defines_release). build_tool_gen.c
+      reads the same tables for IntelliSense vcxproj emission -- no manual lockstep.
 
 ==============================================================================================*/
 // clang-format off
@@ -411,8 +411,8 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
         return false;
     }
 
+    /* handle response file spillover if enabled, if not emit a warning but continue */
     size_t total = strlen( cc->exe ) + 1 + ( size_t )( written < 0 ? 0 : written );
-
     if ( total >= CMD_RSP_THRESHOLD )
     {
         if ( g_use_rsp )
@@ -632,7 +632,6 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
         }
     }
     if ( ctx->is_monolithic ) CC_APPEND( cc->defines, " /DBUILD_STATIC" );
-
     {
         const char** cfg_defines = ( ctx->config == CONFIG_DEBUG ) ? g_defines_debug : g_defines_release;
         for ( int i = 0; cfg_defines[ i ]; ++i )
