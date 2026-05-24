@@ -87,6 +87,7 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
 bool
 cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
 {
+    if ( !g_use_rsp ) return false;
     // Fast path: small command, fits comfortably under the shell limit AND
     // not flagged truncated -> leave the buffer alone, no rsp file needed.
     if ( !b->truncated && b->size < CMD_RSP_THRESHOLD )

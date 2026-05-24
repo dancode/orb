@@ -330,9 +330,10 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
 
-// Defined in build_tool.c; all other translation units read this directly.
+// Defined in build_tool.c; all other translation units read these directly.
 
 extern out_flags_t g_out_flags;
+extern bool        g_use_rsp;    // -no-rsp disables response file (.rsp) creation
 
 // =============================================================================
 // --- Orchestration API ---

@@ -90,17 +90,17 @@ static DWORD             g_sched_log_tls    = TLS_OUT_OF_INDEXES;
 static CRITICAL_SECTION  g_print_lock;
 static bool              g_print_lock_inited = false;
 
-/*============================================================================================*/
-// --- TLS log path hook (consumed by build_tool_vcvars.c) ---
+/*==============================================================================================
 
-/**
- * sched_log_path()
- *
- * Returns the active per-thread log path, or NULL if the calling thread is
- * not inside a scheduler worker. The vcvars module reads this in
- * build_run_cmd / build_run_cmd_capture_deps to redirect child-process
- * output away from the shared stdout.
- */
+    --- TLS log path hook (consumed by build_tool_vcvars.c) ---
+
+    Returns the active per-thread log path, or NULL if the calling thread is
+    not inside a scheduler worker. The vcvars module reads this in
+    build_run_cmd / build_run_cmd_capture_deps to redirect child-process
+    output away from the shared stdout.
+
+==============================================================================================*/
+
 const char*
 sched_log_path( void )
 {

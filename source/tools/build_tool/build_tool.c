@@ -79,6 +79,7 @@ static const char* g_gen_dir    = "generated";  // Sub-folder for reflection-gen
 ==============================================================================================*/
 
 out_flags_t g_out_flags = ORB_OUT_DEFAULT;
+bool        g_use_rsp   = true;
 
 /*==============================================================================================
     --- Unity Include ---
@@ -227,6 +228,8 @@ validate_targets( void )
                                 (set by VS .vcxproj files; manages deps itself.
                                 (do not use on the CLI unless you know what you're doing).
       -monolithic               Build DLL modules as static libs; defines BUILD_STATIC globally.
+      -no-rsp                   Pass full command lines directly; skip response file (.rsp) creation.
+                                Safe on small projects. Default: rsp enabled (required at ~7000 chars).
       -config <Debug|Release>   Pick build config (default Debug)
       -release                  Shortcut for -config Release.
       -clang                    Use clang-cl instead of cl.exe.
@@ -274,6 +277,7 @@ main( int argc, char** argv )
         if ( _stricmp( argv[ i ], "-clean"        ) == 0 ) should_clean = true;
         if ( _stricmp( argv[ i ], "-gen"          ) == 0 ) should_gen = true;
         if ( _stricmp( argv[ i ], "-monolithic"   ) == 0 ) ctx.is_monolithic = true;
+        if ( _stricmp( argv[ i ], "-no-rsp"       ) == 0 ) g_use_rsp = false;
         if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = CONFIG_RELEASE;
         if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = COMPILE_CLANG;
         if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) ctx.compile_only = true;

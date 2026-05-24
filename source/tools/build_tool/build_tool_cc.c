@@ -20,12 +20,13 @@
 ==============================================================================================*/
 // clang-format off
 
-/*============================================================================================*/
-// --- Structured command types ---
-//
-// Each field holds the raw fragment that goes into the final cl/link/lib
-// command. Assembled in order via cc_assemble() / lk_assemble(); printed
-// selectively via cc_print() / lk_print() based on g_out_flags.
+/*==============================================================================================
+    Structured command types
+
+    Each field holds the raw fragment that goes into the final cl/link/lib
+    command. Assembled in order via cc_assemble() / lk_assemble(); printed
+    selectively via cc_print() / lk_print() based on g_out_flags.
+==============================================================================================*/
 
 typedef struct
 {
@@ -36,10 +37,10 @@ typedef struct
     char output   [ 512         ];  // /FoobjDir/ /FdobjDir/
     char sources  [ CMD_BUF_MAX ];  // absolute .c paths
                                 
-} compile_cmd_t;                
-                                
-typedef struct                  
-{                               
+} compile_cmd_t;
+
+typedef struct
+{
     char exe      [ 32          ];  // lib.exe or link.exe
     char artifact [ BT_PATH_MAX ];  // final output path (summary display only)
     char flags    [ 256         ];  // /nologo /DLL ...
@@ -50,12 +51,13 @@ typedef struct
 
 } link_cmd_t;
 
-/*============================================================================================*/
-// --- Sentinel checks ---
-//
-// Verify the last byte of every field is still '\0' before the structs are
-// assembled into a command string. cc_field() aborts on detected overflow, but
-// these catch any silent corruption that bypassed it.
+/*==============================================================================================
+    Sentinel checks
+
+    Verify the last byte of every field is still '\0' before the structs are
+    assembled into a command string. cc_field() aborts on detected overflow, but
+    these catch any silent corruption that bypassed it.
+==============================================================================================*/
 
 static void
 cc_check_sentinels( const compile_cmd_t* cc )
@@ -82,12 +84,13 @@ lk_check_sentinels( const link_cmd_t* lk )
     }
 }
 
-/*============================================================================================*/
-// --- Internal helpers ---
-//
-// Append a formatted string to a fixed-size field.
-// Halts the process on overflow -- a truncated compiler flag would produce
-// cryptic cl.exe errors that obscure the real cause.
+/*==============================================================================================
+    Internal helpers
+
+    Append a formatted string to a fixed-size field.
+    Halts the process on overflow -- a truncated compiler flag would produce
+    cryptic cl.exe errors that obscure the real cause.
+==============================================================================================*/
 
 static void
 cc_field( char* dst, size_t dst_size, const char* fmt, ... )
@@ -110,12 +113,18 @@ cc_field( char* dst, size_t dst_size, const char* fmt, ... )
     }
 }
 
-// Convenience wrapper around cc_field(): infers the destination capacity from
-// the field's declared size, removing the need for callers to pass sizeof().
+/*==============================================================================================
+    Convenience wrapper around cc_field(): infers the destination capacity from
+    the field's declared size, removing the need for callers to pass sizeof().
+==============================================================================================*/
+
 #define CC_APPEND( field, ... ) cc_field( ( field ), sizeof( field ), __VA_ARGS__ )
 
-// get_target_upper() -- derive <TARGET>_STATIC from a target name.
-// Must match the IntelliSense defines emitted by build_tool_gen.c (unity build).
+/*==============================================================================================
+    get_target_upper() -- derive <TARGET>_STATIC from a target name.
+    Must match the IntelliSense defines emitted by build_tool_gen.c (unity build).
+==============================================================================================*/
+
 static void
 get_target_upper( const char* name, char* out, size_t out_size )
 {
@@ -124,16 +133,18 @@ get_target_upper( const char* name, char* out, size_t out_size )
     for ( char* p = out; *p; ++p ) *p = ( char )toupper( *p );
 }
 
-// cleanup_stale_pdbs() -- remove PDB files from previous links.
-//
-// Each link emits a uniquely-named bin/<target>_<timestamp>.pdb so the linker
-// never has to overwrite a PDB that a debugger may still hold open. Across
-// many builds those uniquely-named files accumulate; this routine sweeps the
-// unlocked ones away at the start of each link.
-//
-// remove() silently fails for any PDB still locked by an attached debugger,
-// which is exactly what we want -- we keep going, the held file survives, and
-// the new link goes to a fresh name with a newer timestamp.
+/*==============================================================================================
+    cleanup_stale_pdbs() -- remove PDB files from previous links.
+
+    Each link emits a uniquely-named bin/<target>_<timestamp>.pdb so the linker
+    never has to overwrite a PDB that a debugger may still hold open. Across
+    many builds those uniquely-named files accumulate; this routine sweeps the
+    unlocked ones away at the start of each link.
+    
+    remove() silently fails for any PDB still locked by an attached debugger,
+    which is exactly what we want -- we keep going, the held file survives, and
+    the new link goes to a fresh name with a newer timestamp.
+==============================================================================================*/
 
 static void
 cleanup_stale_pdbs( const char* target_name )
@@ -162,9 +173,13 @@ cleanup_stale_pdbs( const char* target_name )
     _findclose( h );
 }
 
-// Return the active output sink: per-thread log when inside a parallel worker
-// (so section output lands with child-process output), stdout otherwise.
-// Caller is responsible for fclose() if the returned FILE* != stdout.
+/*==============================================================================================
+    Return the active output sink: per-thread log when inside a parallel worker, 
+    (so section output lands with child-process output), stdout otherwise. 
+    
+    Caller must close with cc_close_log().
+==============================================================================================*/
+
 static FILE*
 cc_open_log( void )
 {
@@ -177,19 +192,26 @@ cc_open_log( void )
     return stdout;
 }
 
-/*============================================================================================*/
-// --- Section printers ---
+static void
+cc_close_log( FILE* f )
+{
+    if ( f != stdout ) fclose( f );
+}
 
-// Print space-separated tokens from `raw`, stripping the leading `prefix`
-// from each token when non-NULL (e.g. "/D" strips preprocessor flag chars).
-//
-// Example: raw = "/DOS_WINDOWS /DARCH_X64", prefix = "/D"
-//          prints: "OS_WINDOWS ARCH_X64\n"
-//
-// This is the workhorse that renders the human-readable section view of
-// flags / defines / includes / etc. We can't just printf(raw) because the
-// caller wants per-token prefix-stripping and a final newline.
-// Returns true if at least one token was written (content was non-empty).
+/*==============================================================================================
+    Section Printers
+
+    Print space-separated tokens from `raw`, stripping the leading `prefix`
+    from each token when non-NULL (e.g. "/D" strips preprocessor flag chars).
+
+    Example: raw = "/DOS_WINDOWS /DARCH_X64", prefix = "/D"
+             prints: "OS_WINDOWS ARCH_X64\n"
+
+    This is the workhorse that renders the human-readable section view of
+    flags / defines / includes / etc. We can't just printf(raw) because the
+    caller wants per-token prefix-stripping and a final newline.
+    Returns true if at least one token was written (content was non-empty).
+==============================================================================================*/
 
 static bool
 print_tokens( FILE* out, const char* raw, const char* prefix )
@@ -231,8 +253,11 @@ print_tokens( FILE* out, const char* raw, const char* prefix )
     return !first;  // first stayed true -> no tokens -> empty content
 }
 
-// Print a labeled section line: "  <label>  <content>".
-// Returns true if content had tokens (non-empty). `strip` is forwarded to print_tokens.
+/*==============================================================================================
+    Print a labeled section line: "  <label>  <content>".
+    Returns true if content had tokens (non-empty). `strip` is forwarded to print_tokens.
+==============================================================================================*/
+
 #define SECTION_FMT  "            %-10s"
 
 static bool
@@ -242,12 +267,14 @@ print_section( FILE* out, const char* label, const char* content, const char* st
     return print_tokens( out, content, strip );
 }
 
-// Print the compile output section: /FoobjDir/ /FdobjDir/ -> "obj=... pdb=..."
-//
-// Specialised version of print_tokens(): instead of just stripping one fixed
-// prefix, it inspects each token's prefix character to decide which human
-// label ("obj=" or "pdb=") to print in front of the stripped path.
-//
+/*==============================================================================================
+    Print the compile output section: /FoobjDir/ /FdobjDir/ -> "obj=... pdb=..."
+    
+    Specialised version of print_tokens(): instead of just stripping one fixed
+    prefix, it inspects each token's prefix character to decide which human
+    label ("obj=" or "pdb=") to print in front of the stripped path.
+==============================================================================================*/
+
 // Example: raw = "/Fobuild\\obj\\foo/ /Fdbuild\\obj\\foo/"
 //          prints: "obj=build\obj\foo/  pdb=build\obj\foo/\n"
 static bool
@@ -293,7 +320,10 @@ print_compile_output( FILE* out, const char* raw )
 
 #define UNUSED(x) (void)(x)
 
-// Print compile command sections to `out` according to g_out_flags.
+/*==============================================================================================
+    Print compile command sections to `out` according to g_out_flags.
+==============================================================================================*/
+
 static void
 cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const char* config )
 {
@@ -316,7 +346,10 @@ cc_print( FILE* out, const compile_cmd_t* cc, const target_info_t* target, const
     if ( any ) fprintf( out, "\n" );
 }
 
-// Print link command sections to `out` according to g_out_flags.
+/*==============================================================================================
+    Print link command sections to `out` according to g_out_flags.
+==============================================================================================*/
+
 static void
 lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 {
@@ -336,12 +369,15 @@ lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
     if ( any ) fprintf( out, "\n" );
 }
 
-/*============================================================================================*/
-// --- Command assembly ---
-//
-// Join the struct fields into a single string for the actual cl/link/lib call.
-// Response-file spill happens here when the assembled string exceeds the shell
-// arg limit -- same mechanism as before, now operating on the joined result.
+/*==============================================================================================
+
+    Command assembly
+
+    Join the struct fields into a single string for the actual cl/link/lib call.
+    Response-file spill happens here when the assembled string exceeds the shell
+    arg limit -- same mechanism as before, now operating on the joined result.
+
+==============================================================================================*/
 
 // Join the compile fields in a fixed order into one command line:
 //   <exe> <flags> <includes> <defines> <output> <sources>
@@ -363,7 +399,7 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
         printf( ORB_INDENT "[orb error] cc_assemble args truncated (needed %d)\n", written );
 
     size_t total = strlen( cc->exe ) + 1 + ( size_t )( written < 0 ? 0 : written );
-    if ( total >= CMD_RSP_THRESHOLD )
+    if ( g_use_rsp && total >= CMD_RSP_THRESHOLD )
     {
         // Write the full args to the response file before any truncation can occur.
         FILE* f = fopen( rsp_path, "w" );
@@ -392,15 +428,19 @@ lk_assemble( const link_cmd_t* lk, cmd_buf_t* cmd, const char* rsp_path )
     cmd_spill_to_response_file( cmd, rsp_path );
 }
 
-/*============================================================================================*/
-// --- Raw-command echo (ORB_OUT_*_CMD) ---
+/*==============================================================================================
 
-// Print the assembled command to `out` when the caller's CMD flag is set.
-// Wraps at 100 columns after the first token so long lines stay readable.
-//
-// Each token is kept intact (no mid-token line breaks). If appending the next
-// token would push past k_wrap, we line-break first and indent the new line
-// by k_cont spaces so the continuation visually nests under the command.
+    Raw-command echo (ORB_OUT_*_CMD)
+
+    Print the assembled command to `out` when the caller's CMD flag is set.
+    Wraps at 100 columns after the first token so long lines stay readable.
+
+    Each token is kept intact (no mid-token line breaks). If appending the next
+    token would push past k_wrap, we line-break first and indent the new line
+    by k_cont spaces so the continuation visually nests under the command.
+
+==============================================================================================*/
+
 static void
 print_raw_cmd( FILE* out, const char* cmd )
 {
@@ -440,23 +480,27 @@ print_raw_cmd( FILE* out, const char* cmd )
     fprintf( out, "\n\n" );
 }
 
-/*============================================================================================*/
-// --- MSVC output classification ---
+/*==============================================================================================
 
-// Returns true for the bare source-file banner cl.exe prints once per compiled
-// translation unit (e.g. it prints "reflect_tool.c" on its own line before emitting
-// any diagnostics for that TU). We filter these out of our log dumps because
-// the orb build log already shows the source list in the [orb compiling] section
-// -- leaving cl's echo in just creates duplicate noise.
-//
-// A line qualifies as a source echo iff (after trimming whitespace) it is:
-//   - non-empty
-//   - contains no internal spaces or path separators (so "src/foo.c" doesn't
-//     match -- that's a diagnostic, not a banner)
-//   - has a '.' producing an extension equal to "c" or "cpp" (case-insensitive)
-//
-// Implementation walks the line in three passes for readability over speed:
-// the volume here is tiny (a few hundred lines per build at worst).
+    MSVC output classification
+
+    Returns true for the bare source-file banner cl.exe prints once per compiled
+    translation unit (e.g. it prints "reflect_tool.c" on its own line before emitting
+    any diagnostics for that TU). We filter these out of our log dumps because
+    the orb build log already shows the source list in the [orb compiling] section
+    -- leaving cl's echo in just creates duplicate noise.
+
+    A line qualifies as a source echo iff (after trimming whitespace) it is:
+      - non-empty
+      - contains no internal spaces or path separators (so "src/foo.c" doesn't
+        match -- that's a diagnostic, not a banner)
+      - has a '.' producing an extension equal to "c" or "cpp" (case-insensitive)
+
+    Implementation walks the line in three passes for readability over speed:
+    the volume here is tiny (a few hundred lines per build at worst).
+
+==============================================================================================*/
+
 static bool
 is_msvc_source_echo( const char* line )
 {
@@ -497,13 +541,16 @@ is_msvc_source_echo( const char* line )
     return false;
 }
 
-/*============================================================================================*/
-// --- build_target_compile() ---
-//
-// Fill a compile_cmd_t section-by-section then run it. Prints the active sections to 
-// the build log (or stdout in serial mode), assembles the full cl.exe command, and runs
-// it via build_run_cmd_capture_deps so /showIncludes output is parsed into a per-target
-// dep file for the next incremental check. (e.g. build\obj\core\_deps.txt)
+/*==============================================================================================
+
+    Build Target Command Generation & Compile
+
+    Fill a compile_cmd_t section-by-section then run it. Prints the active sections to
+    the build log (or stdout in serial mode), assembles the full cl.exe command, and runs
+    it via build_run_cmd_capture_deps so /showIncludes output is parsed into a per-target
+    dep file for the next incremental check. (e.g. build\obj\core\_deps.txt)
+
+==============================================================================================*/
 
 bool
 build_target_compile( build_context_t* ctx, target_info_t* target,
@@ -512,17 +559,21 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     compile_cmd_t cc = { 0 };
     const char* config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
+    /* cl.exe + command line are always the same per build type. */
+
     snprintf( cc.exe, sizeof( cc.exe ), "%s", ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
 
+    /* flags: standard + config-specific debug/release flags. */
+
     CC_APPEND( cc.flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11 /showIncludes" );
-    if ( ctx->config == CONFIG_DEBUG )
-        CC_APPEND( cc.flags, " /Zi /Od /MDd" );
-    else
-        CC_APPEND( cc.flags, " /O2 /MD" );
+    if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc.flags, " /Zi /Od /MDd" );
+    else                               CC_APPEND( cc.flags, " /O2 /MD" );
+
+    /* includes: ensure generated headers are in include path */
 
     CC_APPEND( cc.includes, "/I source /I %s", gen_dir );
 
-    // Note: Must stay in lockstep with the IntelliSense defines in build_tool_gen.c.
+    /* defines: must stay in lockstep with the IntelliSense defines in build_tool_gen.c. */
 
     CC_APPEND( cc.defines, "/D_CRT_SECURE_NO_WARNINGS" );
     {
@@ -530,12 +581,16 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         get_target_upper( target->name, upper, sizeof( upper ) );
         CC_APPEND( cc.defines, " /D%s_STATIC", upper );
     }
-    // Propagate _STATIC for each dep so API gateways resolve correctly.
-    // Static lib deps are always static; dynamic lib deps become static in monolithic mode.
+
+    /* defines: Propagate _STATIC for each dep so API gateways resolve correctly.
+       Static lib deps are always static (every build mode)
+       Dynamic lib deps become static in monolithic mode. */
+
     for ( int i = 0; target->deps[ i ]; ++i )
     {
         target_info_t* dep = find_target( target->deps[ i ] );
         if ( !dep ) continue;
+
         bool dep_is_static = ( dep->type == TARGET_STATIC_LIB ) ||
                              ( dep->type == TARGET_DYNAMIC_LIB && ctx->is_monolithic );
         if ( dep_is_static )
@@ -545,14 +600,14 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
             CC_APPEND( cc.defines, " /D%s_STATIC", dep_upper );
         }
     }
-    if ( ctx->is_monolithic )
-        CC_APPEND( cc.defines, " /DBUILD_STATIC" );
-    if ( ctx->config == CONFIG_DEBUG )
-        CC_APPEND( cc.defines, " /D_DEBUG" );
-    else
-        CC_APPEND( cc.defines, " /DNDEBUG" );
 
-    // Warning suppressions: filter g_warn_suppressions[] by active config and compiler.
+    /* define: build type and debug flags */
+
+    if ( ctx->is_monolithic )          CC_APPEND( cc.defines, " /DBUILD_STATIC" );
+    if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc.defines, " /D_DEBUG" );
+    else /* release */                 CC_APPEND( cc.defines, " /DNDEBUG" );
+
+    /* flags: warning suppressions */
     {
         for ( int i = 0; i < g_warn_suppression_count; ++i )
         {
@@ -563,33 +618,38 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         }
     }
 
-    // Output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
-    // Trailing slash is required -- without it cl treats the path as a
-    // filename prefix instead of a directory.
+    /* output dirs: /Fo = .obj destination, /Fd = compile-PDB destination.
+       Trailing slash is required -- without it cl treats the path as a
+       filename prefix instead of a directory. */
+
     CC_APPEND( cc.output, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
 
-    // Sources: absolute paths so MSVC error messages are navigable from any
-    // context (terminal, log file, IDE) regardless of the viewer's CWD.
-    //
-    // For each unit: build the relative path, run it through _fullpath() to
-    // canonicalize to an absolute path, and append it to the sources field
-    // separated by a single space. The `cc.sources[ 0 ] ? " " : ""` trick
-    // suppresses the leading space on the first entry -- the field starts
-    // out as an empty string, so the test is "is anything here yet?".
+    /* sources: absolute paths so MSVC error messages are navigable from any
+       context (terminal, log file, IDE) regardless of the viewer's CWD.
+       For each unit: build the relative path, run it through _fullpath() to
+       canonicalize to an absolute path, and append it to the sources field
+       separated by a single space. The `cc.sources[ 0 ] ? " " : ""` trick
+       suppresses the leading space on the first entry -- the field starts
+       out as an empty string, so the test is "is anything here yet?". */
     {
         char rel[ BT_PATH_MAX ], abs_p[ BT_PATH_MAX ];
         for ( int i = 0; target->units[ i ]; ++i )
         {
             snprintf( rel, sizeof( rel ), "%s\\%s", target->root_dir, target->units[ i ] );
-            // _fullpath returns NULL only on truly broken paths; fall back to
-            // the relative form so the build still proceeds and the user
-            // sees a recognisable error from cl rather than a silent skip.
+
+            /* _fullpath returns NULL only on truly broken paths; fall back to
+               the relative form so the build still proceeds and the user
+               sees a recognisable error from cl rather than a silent skip. */
+
             if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
+
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
-        // Reflection-generated TU (written by reflect_tool.exe in step 5
-        // of build_target). Same absolute-path treatment as the user units.
+
+        /* sources: reflection-generated TU (written by reflect_tool.exe in build_target.
+                    sSame absolute-path treatment as the user units. */
+
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
@@ -600,32 +660,46 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         }
     }
 
-    // Print the requested sections. Routes to the per-target log when called
-    // from a parallel worker so the output lands with child-process output.
-    FILE* log_out = cc_open_log();
-    cc_print( log_out, &cc, target, config );
+    /* Print the requested sections. Routes to the per-target log when called
+       from a parallel worker so the output lands with child-process output. */    
 
-    // Assemble the full command, optionally echo the raw line, then run.
-    char      rsp_path[ BT_PATH_MAX ];
     cmd_buf_t cmd = { 0 };
-    snprintf( rsp_path, sizeof( rsp_path ), "%s\\cl.rsp", obj_dir );
-    cc_check_sentinels( &cc );
-    cc_assemble( &cc, &cmd, rsp_path );
-    if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
-    if ( log_out != stdout ) fclose( log_out );
+    {
+        FILE* log_out = cc_open_log();
+        cc_print( log_out, &cc, target, config );
+
+        /* Assemble the full command, optionally echo the raw line, then run. */
+
+        char      rsp_path[ BT_PATH_MAX ];        
+        snprintf( rsp_path, sizeof( rsp_path ), "%s\\cl.rsp", obj_dir );
+
+        cc_check_sentinels( &cc );
+        cc_assemble( &cc, &cmd, rsp_path );
+
+        if ( g_out_flags & ORB_OUT_COMPILE_CMD ) 
+            print_raw_cmd( log_out, cmd.buf );
+
+        cc_close_log( log_out );
+    }
+
+    /* Run the command, capturing /showIncludes output into a per-target dep file
+       for the next incremental check. */
 
     char deps_path[ BT_PATH_MAX ];
     snprintf( deps_path, sizeof( deps_path ), "%s\\_deps.txt", obj_dir );
     return build_run_cmd_capture_deps( cmd.buf, deps_path ) == 0;
 }
 
-/*============================================================================================*/
-// --- build_target_compile_single() ---
-//
-// Compiles one source file with the target's full flag/define/include set.
-// Mirrors build_target_compile() but omits /showIncludes (no dep tracking)
-// and replaces the full unity source list with the single file path VS passes
-// via $(NMakeCompileFile). No link step -- this is for error feedback only.
+/*==============================================================================================
+
+    build_target_compile_single()
+
+    Compiles one source file with the target's full flag/define/include set.
+    Mirrors build_target_compile() but omits /showIncludes (no dep tracking)
+    and replaces the full unity source list with the single file path VS passes
+    via $(NMakeCompileFile). No link step -- this is for error feedback only.
+
+==============================================================================================*/
 
 bool
 build_target_compile_single( build_context_t* ctx, target_info_t* target,
@@ -700,19 +774,22 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
     snprintf( rsp_path, sizeof( rsp_path ), "%s\\cl_file.rsp", obj_dir );
     cc_assemble( &cc, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
-    if ( log_out != stdout ) fclose( log_out );
+    cc_close_log( log_out );
 
     // No deps_path: single-file compiles are not tracked incrementally.
     return build_run_cmd_capture_deps( cmd.buf, NULL ) == 0;
 }
 
-/*============================================================================================*/
-// --- build_target_link() ---
-//
-// Fill a link_cmd_t, print the active sections, assemble the command, and run it.
-//   TARGET_STATIC_LIB  -> lib.exe
-//   TARGET_DYNAMIC_LIB -> link.exe /DLL /IMPLIB
-//   TARGET_EXECUTABLE  -> link.exe
+/*==============================================================================================
+
+    build_target_link()
+
+    Fill a link_cmd_t, print the active sections, assemble the command, and run it.
+      TARGET_STATIC_LIB  -> lib.exe
+      TARGET_DYNAMIC_LIB -> link.exe /DLL /IMPLIB
+      TARGET_EXECUTABLE  -> link.exe
+
+==============================================================================================*/
 
 bool
 build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir )
@@ -796,7 +873,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     lk_check_sentinels( &lk );
     lk_assemble( &lk, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
-    if ( log_out != stdout ) fclose( log_out );
+    cc_close_log( log_out );
 
     // NULL deps_path: no /showIncludes parsing needed for link/lib, but we still
     // want line-by-line capture so [MSVC] prefixing and ORB_OUT_MSVC_OUTPUT gating apply.

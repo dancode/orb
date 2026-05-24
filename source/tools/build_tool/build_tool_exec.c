@@ -147,22 +147,22 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
 
 /*==============================================================================================
 
- * The main worker function. Builds one target, optionally recursing into
- * its dependencies first. Idempotent: a fully up-to-date target returns
- * true without invoking any compiler. Phases run in this order:
- *
- *   0. Dependency resolution (skipped if ctx->skip_deps)
- *   1. Path preparation (obj_dir, out_path, etc.)
- *   2. Up-to-date check (artifact mtime vs unit / dep-lib / header mtimes)
- *   3. Output directory creation
- *   4. Locked-file management (.exe -> .exe.old rename trick)
- *   5. Reflection codegen (only if target->has_reflect)
- *   6. Compile + link
- *
- * Concurrency: from step 1 onward a per-target named mutex is held, so
- * two build_tool.exe invocations (or two scheduler workers -- see
- * build_tool_sched.c) targeting the same name will serialize here.
- * Independent targets run fully in parallel because their mutex names differ.
+    The main worker function. Builds one target, optionally recursing into
+    its dependencies first. Idempotent: a fully up-to-date target returns
+    true without invoking any compiler. Phases run in this order:
+    
+      0. Dependency resolution (skipped if ctx->skip_deps)
+      1. Path preparation (obj_dir, out_path, etc.)
+      2. Up-to-date check (artifact mtime vs unit / dep-lib / header mtimes)
+      3. Output directory creation
+      4. Locked-file management (.exe -> .exe.old rename trick)
+      5. Reflection codegen (only if target->has_reflect)
+      6. Compile + link
+    
+    Concurrency: from step 1 onward a per-target named mutex is held, so
+    two build_tool.exe invocations (or two scheduler workers -- see
+    build_tool_sched.c) targeting the same name will serialize here.
+    Independent targets run fully in parallel because their mutex names differ.
 
 ==============================================================================================*/
 
@@ -171,6 +171,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 {
     if ( out_skipped )
         *out_skipped = false;
+
     target_info_t* refl_tool = NULL;    // Located in step 0; reused in step 5.
 
     // --- 0. Dependency Resolution ---
