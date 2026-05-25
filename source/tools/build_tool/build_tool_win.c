@@ -129,7 +129,7 @@ platform_cpu_count( void )
     GetSystemInfo( &si );
     int n = (int)si.dwNumberOfProcessors;
     if ( n < 1  ) n = 1;
-    if ( n > 16 ) n = 16;
+    if ( n > 32 ) n = 32;
     return n;
 }
 

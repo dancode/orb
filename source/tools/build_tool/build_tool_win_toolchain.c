@@ -113,11 +113,15 @@ platform_cc_output_flags( const char* obj_dir, const char* unit_path, char* buf,
 }
 
 /*==============================================================================================
-    --- Compiler: Batch Compilation Flag ---
+    --- Compiler: Batch vs Per-Unit Compilation Model ---
 
     Win32: cl.exe accepts multiple source files in one invocation and writes all
     .obj files into the /Fo<dir>/ directory -- platform_cc_per_unit returns false.
-    POSIX: GCC/Clang require a separate -o <dir>/<stem>.o per source file.
+    POSIX: GCC/Clang require a separate -o <dir>/<stem>.o per source file and return true.
+
+    Dep file collection is also model-dependent: MSVC streams /showIncludes inline (handled
+    by build_run_cmd_capture_includes), so platform_cc_collect_dep_files is a no-op here.
+    POSIX writes per-unit .d files after compilation that must be read and merged.
 ==============================================================================================*/
 
 static bool
@@ -125,8 +129,6 @@ platform_cc_per_unit( void )
 {
     return false;
 }
-
-/* No-op on Win32: dep tracking uses /showIncludes inline, no .d files to collect. */
 
 static void
 platform_cc_collect_dep_files( const char* obj_dir, const char* includes_path )
@@ -256,7 +258,7 @@ platform_lk_fill_static( const char* target_name, link_cmd_t* lk )
 static void
 platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_t* lk )
 {
-    ( void )ctx;
+    ( void )ctx;  // Reserved for POSIX counterpart (config selects -g vs -O2 in the pdb-equivalent step).
     const bool  is_dll = ( target->type == TARGET_DYNAMIC_LIB );
     const char* ext    = is_dll ? ".dll" : ".exe";
 
@@ -266,7 +268,7 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
 
     if ( is_dll )
         snprintf( lk->output, sizeof( lk->output ),
-                  "/OUT:bin/%s.dll /IMPLIB:bin/%s.lib", target->name, target->name );
+                  "/OUT:bin\\%s.dll /IMPLIB:bin\\%s.lib", target->name, target->name );
     else
         snprintf( lk->output, sizeof( lk->output ), "/OUT:bin\\%s.exe", target->name );
 

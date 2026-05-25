@@ -25,7 +25,7 @@
       11_gen -> 12_test). All "static" functions are visible across the whole
       tool while still compiling in a single cl.exe invocation.
 
-    Build Outout Format:
+    Build Output Format:
     +-------------------------+------------------------------+
     |           Tag           |         Meaning              |
     +-------------------------+------------------------------+
@@ -362,10 +362,10 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | \
                           ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
-#define OBB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | ORB_OUT_VCVARS | ORB_OUT_REFLECT )
+#define ORB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | ORB_OUT_VCVARS | ORB_OUT_REFLECT )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
-#define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
+#define ORB_OUT_DEFAULT ( ORB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
 
 /*==============================================================================================
     --- Compiler Command Type ---
