@@ -71,7 +71,7 @@ typedef struct
     platform_mutex_t    lock;                       // Guards every field below jobs[].
     platform_cond_t     cv;                         // Signaled on state changes.
 
-    build_context_t*    ctx;                        // Shared base context; workers clone with skip_deps=true.
+    build_context_t*    ctx;                        // Shared base context; workers clone with skip_deps+skip_tool_deps=true.
 
 } sched_t;
 
@@ -290,9 +290,10 @@ worker_main( void* arg )
 
         platform_tls_set( g_sched_log_tls, ( void* )j->log_path );
 
-        build_context_t local_ctx = *g_sched.ctx;
-        local_ctx.skip_deps       = true;
-        bool ok                   = build_target( &local_ctx, j->target, &j->skipped );
+        build_context_t local_ctx      = *g_sched.ctx;
+        local_ctx.skip_deps            = true;
+        local_ctx.skip_tool_deps       = true;
+        bool ok                        = build_target( &local_ctx, j->target, &j->skipped );
 
         platform_tls_set( g_sched_log_tls, NULL );
 

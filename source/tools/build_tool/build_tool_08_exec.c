@@ -24,6 +24,10 @@
       step 0 because the scheduler itself owns dep ordering -- re-recursing would
       visit every dep once per dependent and race shared outputs.
 
+      skip_tool_deps=true (set by the scheduler only) additionally skips the
+      tool_deps loop and implicit reflect tool dep in step 0. VS -no-deps still
+      needs those built; the scheduler pre-wires them as graph deps via add_job().
+
 ==============================================================================================*/
 // clang-format off
 
@@ -54,33 +58,42 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         }
     }
 
-    // Tool dependencies -- always our responsibility regardless of -no-deps.
-    // VS has no visibility into tool executables not listed in the solution.
-    for ( int i = 0; target->tool_deps[ i ]; ++i )
+    // Tool dependencies -- skipped when the scheduler already owns dep ordering.
+    // VS -no-deps sets skip_deps but not skip_tool_deps; it still needs tools built.
+    if ( !ctx->skip_tool_deps )
     {
-        target_info_t* tool = find_target( target->tool_deps[ i ] );
-        if ( !tool )
+        for ( int i = 0; target->tool_deps[ i ]; ++i )
         {
-            printf( ORB_INDENT "[orb error] '%s' has unknown tool dep '%s'\n",
-                    target->name, target->tool_deps[ i ] );
-            return false;
+            target_info_t* tool = find_target( target->tool_deps[ i ] );
+            if ( !tool )
+            {
+                printf( ORB_INDENT "[orb error] '%s' has unknown tool dep '%s'\n",
+                        target->name, target->tool_deps[ i ] );
+                return false;
+            }
+            if ( !build_target( ctx, tool, NULL ) )
+                return false;
         }
-        if ( !build_target( ctx, tool, NULL ) )
-            return false;
-    }
 
-    // Implicit reflect tool dep -- same always-rebuild guarantee.
-    if ( target->has_reflect )
-    {
-        refl_tool = find_reflect_tool();
-        if ( !refl_tool )
+        // Implicit reflect tool dep -- same always-rebuild guarantee as tool_deps.
+        if ( target->has_reflect )
         {
-            printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n",
-                    target->name );
-            return false;
+            refl_tool = find_reflect_tool();
+            if ( !refl_tool )
+            {
+                printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n",
+                        target->name );
+                return false;
+            }
+            if ( !build_target( ctx, refl_tool, NULL ) )
+                return false;
         }
-        if ( !build_target( ctx, refl_tool, NULL ) )
-            return false;
+    }
+    else if ( target->has_reflect )
+    {
+        // Scheduler path: reflect tool was already built as a graph dep.
+        // We still need refl_tool for the codegen invocation in step 6.
+        refl_tool = find_reflect_tool();
     }
 
     // --- 2. Per-Target Mutex Lock ---

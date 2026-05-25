@@ -297,10 +297,10 @@ main( int argc, char** argv )
         }
     }
 
-    // --- Worker count: clamp logical CPU count to [1, 16] ---
+    // --- Worker count: clamp logical CPU count to [1, MAX_THREADS] ---
 
     if ( j_threads <= 0 )
-        j_threads = platform_cpu_count();
+         j_threads = platform_cpu_count();
 
     // --- Arg validation ---
 

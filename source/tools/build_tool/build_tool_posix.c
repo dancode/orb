@@ -130,7 +130,7 @@ platform_pclose( FILE* pipe )
     --- CPU Count ---
 ==============================================================================================*/
 
-/* Returns the number of logical processors available to the process, clamped to [1, 16]. */
+/* Returns the number of logical processors available to the process, clamped to [1, 32]. */
 
 static int
 platform_cpu_count( void )

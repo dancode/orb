@@ -256,7 +256,8 @@ typedef struct build_context_s
     config_t        config;         // Selected build config (Debug/Release).
     compiler_t      compiler;       // Active compiler (COMPILE_MSVC or COMPILE_CLANG).
     bool            is_monolithic;  // DLL's build as LIB's and BUILD_STATIC defined globally.    
-    bool            skip_deps;      // skip recurse into dependencies. See build_target().
+    bool            skip_deps;      // skip link dep resolution. Set by -no-deps (VS) and scheduler.
+    bool            skip_tool_deps; // skip tool dep + implicit reflect dep. Set by scheduler only.
     bool            force_rebuild;  // bypass the up-to-date check; always compile + link.
     bool            compile_only;   // -compile-only: compile all units, no link (VS Ctrl+F7).
     char*           target_name;    // -target <name>: restrict the build to one target (VS and CLI).
@@ -361,7 +362,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | \
                           ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
-#define OBB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS | ORB_OUT_REFLECT )
+#define OBB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | ORB_OUT_VCVARS | ORB_OUT_REFLECT )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
