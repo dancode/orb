@@ -88,7 +88,6 @@ run_get_mod_desc( void )
         .state_size    = 0,
         .func_api_size = sizeof( run_api_t ),
         .func_api      = &g_run_api_struct,
-        .deps          = NULL,
         .dep_count     = 0,
         .init          = run_mod_init,
         .exit          = run_mod_exit,

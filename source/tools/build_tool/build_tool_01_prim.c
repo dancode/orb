@@ -4,7 +4,7 @@
 
     Three stateless utility families:
       - cmd_buf_t management   : safe append + response-file overflow spill.
-      - Filesystem helpers     : mtime probe, strip_eol, ensure_dir.
+      - Filesystem helpers     : mtime probe, ensure_dir.
       - Per-target named mutex : cross-process serialization of same-target builds.
 
     No dependencies on any other build_tool module.
@@ -111,16 +111,6 @@ platform_mtime_t
 build_get_mtime( const char* path )
 {
     return platform_get_mtime( path );
-}
-
-/* Trim trailing CR/LF in place. fgets() preserves the consumed newline;
-   callers reading paths or config strings back need a clean C string. */
-
-static void
-strip_eol( char* s )
-{
-    size_t l = strlen( s );
-    while ( l > 0 && ( s[ l - 1 ] == '\n' || s[ l - 1 ] == '\r' ) ) s[ --l ] = '\0';
 }
 
 /* Create a directory and all missing parent components (mkdir -p semantics).

@@ -15,7 +15,7 @@
         platform_lk_fill_static()    -- "ar rcs bin/lib<name>.a ..."
         platform_lk_fill_dynamic()   -- "gcc -shared -o bin/lib<name>.so ..." /
                                         "clang -dynamiclib -o bin/lib<name>.dylib ..."
-        platform_lk_obj_pattern()    -- "<obj_dir>/*.o"
+        platform_lk_obj_pattern()    -- "<obj_dir>/ *.o" (glob pattern)
         platform_lk_append_dep_lib() -- "bin/<name>.so" or "-l<name>"
         platform_lk_append_sys_libs()-- (empty on POSIX for these abstractions)
         platform_lk_pre_link()       -- no-op on POSIX
