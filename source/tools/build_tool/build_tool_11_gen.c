@@ -401,17 +401,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 
     // Per-config IntelliSense context. All NMake* properties must live here (not in
     // the unconditional group) -- VS only picks them up for IntelliSense in per-config groups.
-    // NMakeAdditionalOptions is the correct tag for Makefile projects; <AdditionalOptions>
-    // is the MSBuild ClCompile property and is ignored by the IntelliSense engine here.
     {
-        char additional_opts[ 256 ] = { 0 };
-        for ( int i = 0; g_intellisense_flags[ i ]; ++i )
-        {
-            if ( i )
-                strcat( additional_opts, " " );
-            strcat( additional_opts, g_intellisense_flags[ i ] );
-        }
-
         char dbg_defines[ 1024 ];
         char rel_defines[ 1024 ];
         build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, target );
@@ -422,15 +412,9 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
                  dbg_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-
-        /* FORCE C11 IntelliSense */
         fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-
-        /* FORCE parser into C mode */
-        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", additional_opts );
-
-
+        fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
         fprintf( f, "  </PropertyGroup>\n" );
 
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
@@ -438,14 +422,9 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
                  rel_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-
-        /* FORCE C11 IntelliSense */
         fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-
-        /* FORCE parser into C mode */
-        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", additional_opts );
-
+        fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
         fprintf( f, "  </PropertyGroup>\n" );
     }
 
@@ -681,14 +660,6 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "  </PropertyGroup>\n" );
 
     {
-        char additional_opts[ 256 ] = { 0 };
-        for ( int i = 0; g_intellisense_flags[ i ]; ++i )
-        {
-            if ( i )
-                strcat( additional_opts, " " );
-            strcat( additional_opts, g_intellisense_flags[ i ] );
-        }
-
         char dbg_defines[ 1024 ];
         char rel_defines[ 1024 ];
         build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, NULL );
@@ -699,28 +670,19 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
                  dbg_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-
-        /* FORCE C11 IntelliSense */
         fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-
-        /* FORCE parser into C mode */
-        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", additional_opts );
-
+        fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
         fprintf( f, "  </PropertyGroup>\n" );
+
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
         fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
                  rel_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-
-        /* FORCE C11 IntelliSense */
         fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-
-        /* FORCE parser into C mode */
-        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", additional_opts );
-
+        fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
         fprintf( f, "  </PropertyGroup>\n" );
     }
 
