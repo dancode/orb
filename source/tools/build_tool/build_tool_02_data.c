@@ -496,11 +496,8 @@ const char* g_defines_release[] = {
 // language and conformance behavior. Excludes pure-build flags (/c /nologo /W4
 // /WX /Zi /Od /O2 /MD etc.) that have no effect on IntelliSense parsing.
 
-// /std:c++20 is intentional for IntelliSense only -- C++20 has official designated
-// initializer support so the EDG parser accepts them without squiggles. Actual
-// compilation uses /std:c11 (set in build_target_compile, not here).
 const char* g_intellisense_flags[] = {
-    "/std:c++20",
+    "/std:c17",
     "/Zc:preprocessor",
     NULL,
 };

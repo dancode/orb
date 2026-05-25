@@ -368,8 +368,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
-    fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-    fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+    fprintf( f, "    <LanguageStandard_C>stdc17</LanguageStandard_C>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
@@ -513,7 +512,7 @@ build_gen_proj_target( target_info_t* target, int index )
             {
                 fprintf( f, "    <ClCompile Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
                 fprintf( f, "      <ExcludedFromBuild>true</ExcludedFromBuild>\n" );
-                fprintf( f, "      <AdditionalOptions>/std:c++20 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
+                fprintf( f, "      <AdditionalOptions>/std:c17 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
                 fprintf( f, "    </ClCompile>\n" );
             }
             else
@@ -657,8 +656,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
-    fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-    fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+    fprintf( f, "    <LanguageStandard_C>stdc17</LanguageStandard_C>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
 
