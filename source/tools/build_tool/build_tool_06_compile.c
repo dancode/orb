@@ -238,8 +238,10 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
             platform_cc_append_define( cfg_defines[ i ], cc->defines, sizeof( cc->defines ) );
     }
 
-    // output -- platform (MSVC: /Fo<dir>/ /Fd<dir>/; GCC: -o <dir>/<unit>.o per file).
-    platform_cc_output_flags( obj_dir, cc->output, sizeof( cc->output ) );
+    // output -- set by the caller after cc_fill_compile_cmd returns.
+    //   Batch (Win32): platform_cc_output_flags( obj_dir, NULL, ... ) once for all sources.
+    //   Per-unit (POSIX): platform_cc_output_flags( obj_dir, source_path, ... ) per source.
+    ( void )obj_dir;
 }
 
 /*==============================================================================================
@@ -260,7 +262,7 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
     cc_print( log_out, cc, target, config );
 
     char rsp_path[ PATH_MAX ];
-    snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s", obj_dir, rsp_name );
+    snprintf( rsp_path, sizeof( rsp_path ), "%s/%s", obj_dir, rsp_name );
     cc_check_overflow( cc );
     bool ok = cc_assemble( cc, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
@@ -284,33 +286,34 @@ bool
 build_target_compile( build_context_t* ctx, target_info_t* target,
                       const char* obj_dir, const char* gen_dir )
 {
-    compile_cmd_t cc     = { 0 };
-    const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
+    compile_cmd_t cc_base = { 0 };
+    const char*   config  = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
-    cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc );
+    cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc_base );
 
-    // Dep-tracking flag: on MSVC /showIncludes streams header paths inline; on GCC/Clang
-    // -MMD -MF writes a .d file post-compile. The platform layer returns the right string.
-    if ( g_include_track ) CC_APPEND( cc.flags, " %s", platform_cc_dep_flag() );
+    // Dep-tracking flag: /showIncludes (MSVC inline stream) or -MMD (GCC .d file).
+    if ( g_include_track ) CC_APPEND( cc_base.flags, " %s", platform_cc_dep_flag() );
 
-    // sources: absolute paths so MSVC error messages are navigable from any CWD.
+    // Collect all source paths first -- common to both the per-unit and batch paths.
+    // Use '/' as separator: accepted by cl.exe, link.exe, gcc, and clang on all platforms.
+    char sources[ TARGET_MAX_SLOTS + 1 ][ PATH_MAX ];
+    int  n_sources = 0;
     {
         char rel[ PATH_MAX ], abs_p[ PATH_MAX ];
-        for ( int i = 0; target->units[ i ]; ++i )
+        for ( int i = 0; target->units[ i ] && n_sources < TARGET_MAX_SLOTS; ++i )
         {
-            snprintf( rel, sizeof( rel ), "%s\\%s", target->root_dir, target->units[ i ] );
+            snprintf( rel, sizeof( rel ), "%s/%s", target->root_dir, target->units[ i ] );
             if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
-            CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
+            snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
         }
-
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
-            snprintf( rel, sizeof( rel ), "%s\\%s.generated.c", gen_dir, rname );
+            snprintf( rel, sizeof( rel ), "%s/%s.generated.c", gen_dir, rname );
             if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
-            CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
+            snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
         }
     }
 
@@ -318,11 +321,35 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     char* includes_out = NULL;
     if ( g_include_track )
     {
-        snprintf( includes_path, sizeof( includes_path ), "%s\\_includes.txt", obj_dir );
+        snprintf( includes_path, sizeof( includes_path ), "%s/_includes.txt", obj_dir );
         includes_out = includes_path;
     }
 
-    return cc_run_compile_cmd( &cc, target, config, obj_dir, "cl.rsp", includes_out );
+    if ( platform_cc_per_unit() )
+    {
+        // POSIX: compile each source separately with its own -o <dir>/<stem>.o flag.
+        // Dep files (.d) are collected into _includes.txt after all units succeed.
+        for ( int i = 0; i < n_sources; ++i )
+        {
+            compile_cmd_t cc = cc_base;
+            cc.sources[ 0 ]  = '\0';
+            cc.output[ 0 ]   = '\0';
+            CC_APPEND( cc.sources, "%s", sources[ i ] );
+            platform_cc_output_flags( obj_dir, sources[ i ], cc.output, sizeof( cc.output ) );
+            if ( !cc_run_compile_cmd( &cc, target, config, obj_dir, "cc.rsp", NULL ) )
+                return false;
+        }
+        if ( g_include_track ) build_collect_dep_files( obj_dir, includes_out );
+        return true;
+    }
+    else
+    {
+        // Win32: batch all sources into one cl.exe invocation.
+        platform_cc_output_flags( obj_dir, NULL, cc_base.output, sizeof( cc_base.output ) );
+        for ( int i = 0; i < n_sources; ++i )
+            CC_APPEND( cc_base.sources, "%s%s", cc_base.sources[ 0 ] ? " " : "", sources[ i ] );
+        return cc_run_compile_cmd( &cc_base, target, config, obj_dir, "cl.rsp", includes_out );
+    }
 }
 
 /*==============================================================================================
@@ -343,6 +370,9 @@ build_target_compile_single( build_context_t* ctx, target_info_t* target,
     const char*   config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
 
     cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc );
+
+    // Output: per-unit on all platforms (single-file mode is always per-file).
+    platform_cc_output_flags( obj_dir, file_path, cc.output, sizeof( cc.output ) );
 
     // Source: the single file passed via -file.
     CC_APPEND( cc.sources, "%s", file_path );
@@ -365,11 +395,11 @@ bool
 build_target_compile_only( build_context_t* ctx, target_info_t* target )
 {
     char obj_dir[ PATH_MAX ];
-    snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+    snprintf( obj_dir, sizeof( obj_dir ), "%s/%s/%s", g_build_dir, g_int_dir, target->name );
     char gen_dir[ PATH_MAX ];
-    snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
+    snprintf( gen_dir, sizeof( gen_dir ), "%s/%s", g_build_dir, g_gen_dir );
     char int_dir[ PATH_MAX ];
-    snprintf( int_dir, sizeof( int_dir ), "%s\\%s", g_build_dir, g_int_dir );
+    snprintf( int_dir, sizeof( int_dir ), "%s/%s", g_build_dir, g_int_dir );
 
     ensure_dir( g_build_dir );
     ensure_dir( int_dir );

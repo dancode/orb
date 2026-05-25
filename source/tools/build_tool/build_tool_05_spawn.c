@@ -177,5 +177,79 @@ build_run_cmd_capture_includes( const char* cmd, const char* includes_path )
     return rc;
 }
 
+/*==============================================================================================
+    --- .d File Parser ---
+
+    Reads a single Makefile .d file produced by GCC/Clang -MMD and writes each
+    dependency path (one per line) to out. The .d format is:
+        obj/target/unit.o: source/unit.c source/dep.h \
+            source/other.h
+    Everything before the first ':' is the make target (skipped). The backslash
+    continuation marker '\' is skipped; all other whitespace-separated tokens are
+    written as dependency paths.
+==============================================================================================*/
+
+static void
+parse_dep_file( const char* dep_path, FILE* out )
+{
+    FILE* f = fopen( dep_path, "r" );
+    if ( !f ) return;
+
+    char buf[ CMD_BUF_MAX ];
+    size_t n = fread( buf, 1, sizeof( buf ) - 1, f );
+    fclose( f );
+    buf[ n ] = '\0';
+
+    // Skip the make target (everything up to and including the first ':').
+    char* p = strchr( buf, ':' );
+    if ( !p ) return;
+    ++p;
+
+    // Each space/newline-separated token is a dependency path.
+    // '\' alone is a line-continuation marker -- skip it.
+    char* tok = strtok( p, " \t\r\n" );
+    while ( tok )
+    {
+        if ( tok[ 0 ] != '\\' && tok[ 0 ] != '\0' )
+            fprintf( out, "%s\n", tok );
+        tok = strtok( NULL, " \t\r\n" );
+    }
+}
+
+/*==============================================================================================
+    --- Collect Dep Files ---
+
+    Scans obj_dir for all .d files emitted by -MMD and writes their header
+    dependencies to includes_path (_includes.txt). Called after a per-unit POSIX
+    compile loop to populate the file that the next incremental check reads.
+==============================================================================================*/
+
+static void
+build_collect_dep_files( const char* obj_dir, const char* includes_path )
+{
+    FILE* out = fopen( includes_path, "w" );
+    if ( !out ) return;
+
+    char pattern[ PATH_MAX ];
+    snprintf( pattern, sizeof( pattern ), "%s/*.d", obj_dir );
+
+    platform_find_data_t fd;
+    platform_find_t h = platform_find_first( pattern, &fd );
+    if ( h != PLATFORM_FIND_INVALID )
+    {
+        do
+        {
+            if ( fd.is_dir ) continue;
+            char dep_path[ PATH_MAX ];
+            snprintf( dep_path, sizeof( dep_path ), "%s/%s", obj_dir, fd.name );
+            parse_dep_file( dep_path, out );
+        }
+        while ( platform_find_next( h, &fd ) );
+        platform_find_close( h );
+    }
+
+    fclose( out );
+}
+
 // clang-format on
 /*============================================================================================*/

@@ -102,31 +102,56 @@ platform_cc_append_define( const char* name, char* buf, size_t size )
 /*==============================================================================================
     --- Compiler: Output Flags ---
 
-    No-op on POSIX -- GCC/Clang require per-file -o <dir>/<stem>.o rather than a
-    directory target. 06_compile.c will need a per-unit loop to build this flag.
-    Until then, objects land in the current working directory under <stem>.o.
+    GCC/Clang require a per-file -o <dir>/<stem>.o flag.
+    unit_path is used to extract the filename stem (e.g. "core.c" -> "core.o").
+    Called once per source file from the per-unit compile loop in 06_compile.c.
 ==============================================================================================*/
 
 static void
-platform_cc_output_flags( const char* obj_dir, char* buf, size_t size )
+platform_cc_output_flags( const char* obj_dir, const char* unit_path, char* buf, size_t size )
 {
-    ( void )obj_dir;
-    ( void )buf;
-    ( void )size;
+    if ( !unit_path || !unit_path[ 0 ] ) return;
+
+    // Extract the filename from the path, then strip the last extension.
+    const char* fname = strrchr( unit_path, '/' );
+    if ( !fname ) fname = strrchr( unit_path, '\\' );
+    fname = fname ? fname + 1 : unit_path;
+
+    char stem[ 256 ];
+    snprintf( stem, sizeof( stem ), "%s", fname );
+    char* dot = strrchr( stem, '.' );
+    if ( dot ) *dot = '\0';
+
+    size_t used = strlen( buf );
+    snprintf( buf + used, size - used, "%s-o %s/%s.o", used ? " " : "", obj_dir, stem );
+}
+
+/*==============================================================================================
+    --- Compiler: Batch Compilation Flag ---
+
+    POSIX: GCC/Clang require a separate -o <dir>/<stem>.o per source file --
+    platform_cc_per_unit returns true so 06_compile.c runs the per-unit loop.
+    Win32: cl.exe accepts all sources in one invocation via /Fo<dir>/.
+==============================================================================================*/
+
+static bool
+platform_cc_per_unit( void )
+{
+    return true;
 }
 
 /*==============================================================================================
     --- Compiler: Dependency Tracking Flag ---
 
-    Returns an empty string -- GCC -MMD writes .d files after compilation, but
-    the inline-stream parser in 05_spawn.c expects the MSVC /showIncludes format.
-    When a POSIX .d-file parser is added, this should return "-MMD".
+    GCC/Clang: -MMD writes a Makefile .d file alongside each .o after compilation.
+    build_collect_dep_files() in 05_spawn.c reads those .d files into _includes.txt
+    after the per-unit compile loop for the next incremental header-change check.
 ==============================================================================================*/
 
 static const char*
 platform_cc_dep_flag( void )
 {
-    return "";
+    return "-MMD";
 }
 
 /*==============================================================================================

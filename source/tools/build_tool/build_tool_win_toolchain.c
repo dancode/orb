@@ -100,17 +100,30 @@ platform_cc_append_define( const char* name, char* buf, size_t size )
     /Fo<dir>/ directs all .obj files into obj_dir (trailing slash required; without it
     cl.exe treats the path as a filename prefix, not a directory).
     /Fd<dir>/ co-locates the per-target compiler PDB with the .obj files.
-
-    GCC/Clang cannot target a directory -- they require an explicit -o per output file.
-    The posix toolchain will need a different approach here (per-unit compilation loop).
+    unit_path is unused on Win32 -- cl.exe resolves per-file names inside the directory.
 ==============================================================================================*/
 
 static void
-platform_cc_output_flags( const char* obj_dir, char* buf, size_t size )
+platform_cc_output_flags( const char* obj_dir, const char* unit_path, char* buf, size_t size )
 {
+    ( void )unit_path;  // Win32 uses a directory target; the unit path is not needed.
     size_t used = strlen( buf );
     snprintf( buf + used, size - used,
               "%s/Fo%s/ /Fd%s/", used ? " " : "", obj_dir, obj_dir );
+}
+
+/*==============================================================================================
+    --- Compiler: Batch Compilation Flag ---
+
+    Win32: cl.exe accepts multiple source files in one invocation and writes all
+    .obj files into the /Fo<dir>/ directory -- platform_cc_per_unit returns false.
+    POSIX: GCC/Clang require a separate -o <dir>/<stem>.o per source file.
+==============================================================================================*/
+
+static bool
+platform_cc_per_unit( void )
+{
+    return false;
 }
 
 /*==============================================================================================
@@ -120,9 +133,9 @@ platform_cc_output_flags( const char* obj_dir, char* buf, size_t size )
     header visited. build_run_cmd_capture_includes() streams and parses this output
     into _includes.txt for the incremental header-change check.
 
-    GCC/Clang: -MMD -MF <depfile> writes a Makefile .d file after compilation.
-    The posix toolchain returns a different flag string, and 06_compile.c will need
-    a post-compile .d parse path instead of the inline stream parser.
+    GCC/Clang: -MMD writes a Makefile .d file after compilation.
+    The posix toolchain returns "-MMD"; build_collect_dep_files() in 05_spawn.c
+    reads those .d files into _includes.txt after the per-unit compile loop.
 ==============================================================================================*/
 
 static const char*
