@@ -349,6 +349,20 @@ target_info_t g_targets[] = {
      .units      = { "base_main.c" },
      .deps       = { "base" },
      },
+
+    // --- 10_C11 (C11 Language Feature Tests) ---
+
+    // Zero-dependency executable. Tests C11 designated initializers and other
+    // language features in isolation to distinguish compiler rejects from VS
+    // IntelliSense parse artifacts.
+    {
+     .name       = "c11_test",
+     .type       = TARGET_EXECUTABLE,
+     .root_dir   = "source/c11",
+     .sln_folder = "10_C11",
+     .units      = { "c11_test.c" },
+     .deps       = {},
+     },
 };
 
 int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );
@@ -371,11 +385,15 @@ static const char* g_sln_main_targets[] = {
     "dev_build", "dev_hot",
     "host_common", 
     "sb_engine_mod", "sb_engine_sys", "sb_engine_core", "sb_engine_reflect",
-    "sb_runtime_reflect", "sb_runtime_gen",    
-    "sb_base_main", 
+    "sb_runtime_reflect", "sb_runtime_gen",
+    "sb_base_main",
+    "c11_test",
     NULL };
 
 // clang-format on
+
+// C11 language feature isolation workspace. One target, no engine deps.
+static const char* g_sln_c11_targets[]   = { "c11_test", NULL };
 
 // Standalone build tools workspace. For modifying the build system itself.
 static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL };
@@ -411,6 +429,13 @@ solution_info_t    g_solutions[]         = {
     {
      .name          = "orb_core",
      .target_names  = g_sln_core_targets,
+     .nav_dir       = NULL,
+     .out_dir       = BUILD_DIR PATH_SEP "proj",
+     .is_monolithic = false,
+     },
+    {
+     .name          = "c11",
+     .target_names  = g_sln_c11_targets,
      .nav_dir       = NULL,
      .out_dir       = BUILD_DIR PATH_SEP "proj",
      .is_monolithic = false,
@@ -471,10 +496,12 @@ const char* g_defines_release[] = {
 // language and conformance behavior. Excludes pure-build flags (/c /nologo /W4
 // /WX /Zi /Od /O2 /MD etc.) that have no effect on IntelliSense parsing.
 
+// /std:c++20 is intentional for IntelliSense only -- C++20 has official designated
+// initializer support so the EDG parser accepts them without squiggles. Actual
+// compilation uses /std:c11 (set in build_target_compile, not here).
 const char* g_intellisense_flags[] = {
-    "/std:c11",
+    "/std:c++20",
     "/Zc:preprocessor",
-    "/TC",    // Force C parsing -- VS otherwise heuristically parses .h as C++.
     NULL,
 };
 

@@ -368,7 +368,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
-    fprintf( f, "    <LanguageStandard>stdcpp17</LanguageStandard>\n" );
+    fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
     fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
@@ -505,15 +505,15 @@ build_gen_proj_target( target_info_t* target, int index )
         {
             // Non-unity .c files: ExcludedFromBuild so VS gives them IntelliSense
             // context as a TU without compiling them. Per-file AdditionalOptions
-            // forces C11 because the project-level AdditionalOptions is only
-            // picked up for files with an explicit NMakeCompileFileCommandLine.
+            // sets /std:c11 explicitly; /TC is omitted because it can cause the
+            // IntelliSense EDG parser to use a legacy C mode that ignores /std:c11.
             // .h and other files are plain ClInclude for navigation only.
             const char* dot = strrchr( g_files[ i ].path, '.' );
             if ( dot && platform_stricmp( dot, ".c" ) == 0 )
             {
                 fprintf( f, "    <ClCompile Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
                 fprintf( f, "      <ExcludedFromBuild>true</ExcludedFromBuild>\n" );
-                fprintf( f, "      <AdditionalOptions>/std:c11 /Zc:preprocessor /TC %%(AdditionalOptions)</AdditionalOptions>\n" );
+                fprintf( f, "      <AdditionalOptions>/std:c++20 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
                 fprintf( f, "    </ClCompile>\n" );
             }
             else
@@ -657,7 +657,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
-    fprintf( f, "    <LanguageStandard>stdcpp17</LanguageStandard>\n" );
+    fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
     fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
