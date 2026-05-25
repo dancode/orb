@@ -188,32 +188,43 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     {
         char includes_path[ PATH_MAX ];
         snprintf( includes_path, sizeof( includes_path ), "%s" PATH_SEP "_includes.txt", obj_dir );
-        FILE* includes = fopen( includes_path, "r" );
-        if ( !includes )
+
+        platform_mapped_file_t inc_map;
+        if ( !platform_map_file( includes_path, &inc_map ) )
         {
             // No file = no recorded header set = assume stale.
             up_to_date = false;
         }
-        else
+        else if ( inc_map.size > 0 )
         {
-            char header_path[ PATH_MAX ];
-            while ( fgets( header_path, sizeof( header_path ), includes ) )
+            // Walk mapped bytes directly; no fgets buffering or CRT overhead.
+            const char* p   = inc_map.data;
+            const char* end = inc_map.data + inc_map.size;
+            while ( up_to_date && p < end )
             {
-                strip_eol( header_path );
-                if ( header_path[ 0 ] == '\0' )
-                    continue;
+                // Each line is a header path, 
+                // e.g. "C:\path\to\header.h\n" or "C:\path\to\header.h\r\n".
+                const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
+                size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
+                if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
 
-                // mtime 0 means the header was deleted -- treat as forced rebuild
-                // so the compiler surfaces the missing include as an error.
-                platform_mtime_t h_mtime = build_get_mtime( header_path );
-                if ( h_mtime == 0 || h_mtime > out_mtime )
+                if ( len > 0 && len < PATH_MAX )
                 {
-                    up_to_date = false;
-                    break;
+                    char header_path[ PATH_MAX ];
+                    memcpy( header_path, p, len );
+                    header_path[ len ] = '\0';
+
+                    // mtime 0 means the header was deleted -- treat as forced rebuild
+                    // so the compiler surfaces the missing include as an error.
+                    platform_mtime_t h_mtime = build_get_mtime( header_path );
+                    if ( h_mtime == 0 || h_mtime > out_mtime )
+                        up_to_date = false;
                 }
+                p = nl ? nl + 1 : end;
             }
-            fclose( includes );
+            platform_unmap_file( &inc_map );
         }
+        // Empty file (size == 0): no headers recorded, nothing to check, stay up to date.
     }
 
     if ( up_to_date )

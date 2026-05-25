@@ -181,5 +181,77 @@ platform_find_close( platform_find_t handle )
     _findclose( handle );
 }
 
+/*==============================================================================================
+    --- Memory-Mapped File ---
+==============================================================================================*/
+
+/* Maps path into the process address space for read-only pointer access.
+   Returns true on success. On false the file does not exist or could not be mapped.
+   Empty files return true with data=NULL and size=0 -- no mapping is created.
+   Call platform_unmap_file() to release resources when done. */
+
+static bool
+platform_map_file( const char* path, platform_mapped_file_t* out )
+{
+    out->data  = NULL;
+    out->size  = 0;
+    out->_file = NULL;
+    out->_map  = NULL;
+
+    HANDLE hFile = CreateFileA( path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
+    if ( hFile == INVALID_HANDLE_VALUE )
+        return false;
+
+    LARGE_INTEGER sz;
+    if ( !GetFileSizeEx( hFile, &sz ) )
+    {
+        CloseHandle( hFile );
+        return false;
+    }
+
+    if ( sz.QuadPart == 0 )
+    {
+        // Empty file: valid, nothing to iterate.
+        CloseHandle( hFile );
+        return true;
+    }
+
+    HANDLE hMap = CreateFileMappingA( hFile, NULL, PAGE_READONLY, 0, 0, NULL );
+    if ( !hMap )
+    {
+        CloseHandle( hFile );
+        return false;
+    }
+
+    const char* data = (const char*)MapViewOfFile( hMap, FILE_MAP_READ, 0, 0, 0 );
+    if ( !data )
+    {
+        CloseHandle( hMap );
+        CloseHandle( hFile );
+        return false;
+    }
+
+    out->data  = data;
+    out->size  = (size_t)sz.QuadPart;
+    out->_file = (void*)hFile;
+    out->_map  = (void*)hMap;
+    return true;
+}
+
+/* Releases handles acquired by platform_map_file(). Safe to call on a zeroed struct. */
+
+static void
+platform_unmap_file( platform_mapped_file_t* m )
+{
+    if ( m->data  ) UnmapViewOfFile( (void*)m->data );
+    if ( m->_map  ) CloseHandle( (HANDLE)m->_map );
+    if ( m->_file ) CloseHandle( (HANDLE)m->_file );
+    m->data  = NULL;
+    m->size  = 0;
+    m->_file = NULL;
+    m->_map  = NULL;
+}
+
 // clang-format on
 /*============================================================================================*/

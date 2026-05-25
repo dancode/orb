@@ -93,6 +93,19 @@ typedef struct
 typedef intptr_t platform_find_t;
 #define PLATFORM_FIND_INVALID  ( ( platform_find_t )( -1 ) )
 
+/*  Memory-mapped file view. Filled by platform_map_file(); released by platform_unmap_file().
+    data is NULL and size is 0 when the file exists but is empty (valid; no entries to check).
+    Both handles are NULL in the empty-file case. */
+
+typedef struct
+{
+    const char* data;   // read-only pointer to mapped bytes, NULL if file is empty
+    size_t      size;   // file size in bytes (0 for an empty file)
+    void*       _file;  // opaque file handle (platform_unmap_file closes it)
+    void*       _map;   // opaque mapping handle (platform_unmap_file closes it)
+
+} platform_mapped_file_t;
+
 /*  Callback type for platform_spawn_capture().
     Called once per complete output line; line is null-terminated, no trailing newline. */
 

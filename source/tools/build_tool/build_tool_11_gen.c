@@ -9,6 +9,7 @@
     control over the actual compile/link pipeline.
 
     What gets emitted, per solution in g_solutions[]:
+
       <name>.sln                           -- references all member projects
       <name>_nav.vcxproj  (if nav_dir set) -- "Mega" navigation project,
                                               every file as ClInclude so it
@@ -37,14 +38,14 @@
     so moving a solution's output directory only requires changing out_dir in the
     solution descriptor -- no string edits anywhere else in this file.
 
-    s_out_dir     -- where .sln and .vcxproj files land   (e.g. "build\\proj")
-    s_root_prefix -- "../..\\" back to the project root   (e.g. "..\\..\\")
-    s_cd_root     -- "cd ..\\.." for NMake commands       (e.g. "..\\..")
+    s_out_dir     -- where .sln and .vcxproj files land     (e.g. "build\\proj")
+    s_root_prefix -- "../..\\" go back to the project root  (e.g. "..\\..\\")
+    s_cd_root     -- "cd ..\\.." for NMake commands         (e.g. "..\\..")
 ==============================================================================================*/
 
 static const char* s_out_dir            = BUILD_DIR;
 static char        s_root_prefix[ 32 ]  = "..\\";
-static char        s_cd_root     [ 32 ] = "..";
+static char        s_cd_root[ 32 ]      = "..";
 static bool        s_is_monolithic      = false;
 
 static void
@@ -375,7 +376,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 }
 
 /*==============================================================================================
-    build_gen_proj_target()
+    gen_proj_target()
 
     Emit one .vcxproj + matching .vcxproj.filters for a specific engine target.
     The vcxproj's <ClCompile> entry is the target's unity TU; every other file
@@ -384,7 +385,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 ==============================================================================================*/
 
 static void
-build_gen_proj_target( target_info_t* target, int index )
+gen_proj_target( target_info_t* target, int index )
 {
     char vcxproj_path[ PATH_MAX ];
     snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_out_dir, target->name );
@@ -482,7 +483,7 @@ build_gen_proj_target( target_info_t* target, int index )
 }
 
 /*==============================================================================================
-    build_gen_proj_engine_navigation()
+    gen_proj_engine_navigation()
 
     Emit the "Mega" navigation .vcxproj for a solution. Scans nav_dir recursively
     and lists EVERY .c/.h as <ClInclude> (never ClCompile) so the developer gets a
@@ -491,7 +492,7 @@ build_gen_proj_target( target_info_t* target, int index )
 ==============================================================================================*/
 
 static void
-build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target,
+gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target,
                                   const char* nav_guid )
 {
     g_file_count   = 0;
@@ -615,7 +616,7 @@ build_gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, con
 ==============================================================================================*/
 
 static void
-build_gen_solution( solution_info_t* sln )
+gen_solution( solution_info_t* sln )
 {
     char sln_path[ PATH_MAX ];
     snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", s_out_dir, sln->name );
@@ -640,7 +641,7 @@ build_gen_solution( solution_info_t* sln )
     if ( sln->nav_dir )
     {
         const char* default_target = ( sln->target_names && sln->target_names[ 0 ] ) ? sln->target_names[ 0 ] : "unknown";
-        build_gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target, nav_guid );
+        gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target, nav_guid );
         fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n",
                 cpp_type_guid, sln->name, sln->name, nav_guid );
         fprintf( f, "EndProject\n" );
@@ -840,13 +841,13 @@ build_gen_projects( void )
             {
                 if ( strcmp( g_targets[ j ].name, *tn ) == 0 )
                 {
-                    build_gen_proj_target( &g_targets[ j ], j );
+                    gen_proj_target( &g_targets[ j ], j );
                     break;
                 }
             }
         }
 
-        build_gen_solution( sln );
+        gen_solution( sln );
     }
 
     printf( "\nProjects generated successfully.\n" );
