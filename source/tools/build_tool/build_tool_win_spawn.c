@@ -9,9 +9,14 @@
     silent exit-code-1 failures with empty output. CreateProcess sets child stdio via
     STARTUPINFO with NO mutation of the parent's fds; N concurrent calls are safe.
 
+    The cmd string is passed directly to CreateProcess as lpCommandLine with no cmd.exe
+    wrapper. All callers pass fully-formed compiler/linker command lines with no shell
+    metacharacters, so the shell layer is unnecessary and would only introduce quoting
+    ambiguity. vcvars detection (build_tool_03_env.c) uses platform_popen which still
+    goes through cmd.exe because it needs shell builtins and output redirection.
+
     A future build_tool_posix_spawn.c would provide identical symbols using:
         platform_spawn()         -- open(O_WRONLY|O_APPEND|O_CREAT) + posix_spawn / fork+exec
-                                    + "/bin/sh -c" wrapper + waitpid
         platform_spawn_capture() -- pipe() + fork+exec + dup2 + read() loop
 
     Functions implemented:
@@ -28,7 +33,7 @@
 /*==============================================================================================
     --- platform_spawn ---
 
-    Runs cmd under "cmd.exe /C" and waits for it to finish.
+    Runs cmd directly via CreateProcess and waits for it to finish.
 
     If log_path is non-NULL, both stdout and stderr are appended to that file
     (FILE_SHARE_WRITE so concurrent workers never block each other on the same log).
@@ -55,8 +60,9 @@ platform_spawn( const char* cmd, const char* log_path )
         }
     }
 
+    /* CreateProcessA mutates lpCommandLine, so copy it. */
     char command_string[ CMD_BUF_MAX ];
-    snprintf( command_string, sizeof( command_string ), "cmd.exe /C %s", cmd );
+    snprintf( command_string, sizeof( command_string ), "%s", cmd );
 
     STARTUPINFOA si = { 0 };
     si.cb         = sizeof( si );
@@ -87,7 +93,7 @@ platform_spawn( const char* cmd, const char* log_path )
 /*==============================================================================================
     --- platform_spawn_capture ---
 
-    Runs cmd under "cmd.exe /C", captures both stdout and stderr via an anonymous
+    Runs cmd directly via CreateProcess, captures both stdout and stderr via an anonymous
     pipe, and calls fn( line, userdata ) once per complete output line.
 
     Lines are null-terminated with no trailing newline. CRLF is normalized to LF
@@ -108,8 +114,9 @@ platform_spawn_capture( const char* cmd, platform_line_fn_t fn, void* userdata )
     // Mark the read end non-inheritable so the child does not hold it open.
     SetHandleInformation( rd, HANDLE_FLAG_INHERIT, 0 );
 
+    /* CreateProcessA mutates lpCommandLine, so copy it. */
     char command_string[ CMD_BUF_MAX ];
-    snprintf( command_string, sizeof( command_string ), "cmd.exe /C %s", cmd );
+    snprintf( command_string, sizeof( command_string ), "%s", cmd );
 
     STARTUPINFOA si = { 0 };
     si.cb         = sizeof( si );
