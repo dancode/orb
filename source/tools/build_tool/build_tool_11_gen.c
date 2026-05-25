@@ -333,6 +333,32 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
 }
 
 /*==============================================================================================
+    build_intellisense_nmake_options()
+
+    Build the space-separated NMakeAdditionalOptions value from g_intellisense_flags[].
+    Single source of truth: changing g_intellisense_flags[] in 02_data.c updates both
+    the NMake PropertyGroup and any future toolchain consumers automatically.
+==============================================================================================*/
+
+static void
+build_intellisense_nmake_options( char* buf, size_t buf_size )
+{
+    buf[ 0 ]    = '\0';
+    size_t used = 0;
+    for ( int i = 0; g_intellisense_flags[ i ]; ++i )
+    {
+        size_t slen = strlen( g_intellisense_flags[ i ] );
+        if ( used + slen + 2 < buf_size )
+        {
+            if ( used ) buf[ used++ ] = ' ';
+            memcpy( buf + used, g_intellisense_flags[ i ], slen );
+            used += slen;
+            buf[ used ] = '\0';
+        }
+    }
+}
+
+/*==============================================================================================
     write_vcxproj_common_header()
 
     Writes the boilerplate XML required for a Visual Studio Makefile project.
@@ -413,8 +439,10 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     {
         char dbg_defines[ 1024 ];
         char rel_defines[ 1024 ];
+        char nmake_opts[ 256 ];
         build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, target );
         build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, target );
+        build_intellisense_nmake_options( nmake_opts, sizeof( nmake_opts ) );
 
         fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
         fprintf( f, "    <ClCompile>\n" );
@@ -449,7 +477,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-        fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
         fprintf( f, "  </PropertyGroup>\n" );
 
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
@@ -459,7 +487,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-        fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
         fprintf( f, "  </PropertyGroup>\n" );
     }
 
@@ -697,8 +725,10 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     {
         char dbg_defines[ 1024 ];
         char rel_defines[ 1024 ];
+        char nmake_opts[ 256 ];
         build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, NULL );
         build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, NULL );
+        build_intellisense_nmake_options( nmake_opts, sizeof( nmake_opts ) );
 
         fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
         fprintf( f, "    <ClCompile>\n" );
@@ -728,7 +758,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-        fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
         fprintf( f, "  </PropertyGroup>\n" );
 
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
@@ -737,7 +767,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-        fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
         fprintf( f, "  </PropertyGroup>\n" );
     }
 

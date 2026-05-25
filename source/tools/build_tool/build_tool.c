@@ -122,7 +122,8 @@ bool        g_use_rsp           = false; /* until we hit overflow this will rema
 #include "build_tool_08_exec.c"         // 08 build_target orchestration
 #include "build_tool_09_sched.c"        // 09 parallel scheduler
 #include "build_tool_10_clean.c"        // 10 -clean command
-#include "build_tool_11_gen.c"          // 11 -gen command
+#include "build_tool_11_gen.c"          // 11 -gen command (NMake/Makefile projects)
+#include "build_tool_gen_msbuild.c"     // 11b -gen-msbuild command (MSBuild projects)
 #include "build_tool_12_test.c"         // 12 debug arg injection
 
 /*==============================================================================================
@@ -231,7 +232,8 @@ print_startup_banner( const build_context_t* ctx )
     Recognized arguments (all case-insensitive):
 
       -clean                  Wipe build outputs and exit.
-      -gen                    Regenerate .sln/.vcxproj and exit.
+      -gen                    Regenerate NMake .sln/.vcxproj and exit.
+      -gen-msbuild            Regenerate MSBuild .sln/.vcxproj and exit (better IntelliSense).
       -target <name>          Restrict build to one target's closure.
       -compile-only           Compile all unity units; no link. (VS Ctrl+F7)
       -file <path>            Compile one file with the target's full flag set; no link.
@@ -263,9 +265,10 @@ main( int argc, char** argv )
     ctx.config   = CONFIG_DEBUG;
     ctx.compiler = COMPILE_MSVC;
 
-    bool should_clean = false;
-    bool should_gen   = false;
-    int  j_threads    = 0;          // 0 -> auto-detect from CPU count.
+    bool should_clean        = false;
+    bool should_gen          = false;
+    bool should_gen_msbuild  = false;
+    int  j_threads           = 0;   // 0 -> auto-detect from CPU count.
 
     // --- Arg parsing (order-independent flag scan) ---
 
@@ -273,6 +276,7 @@ main( int argc, char** argv )
     {
         if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
         if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
+        if ( platform_stricmp( argv[ i ], "-gen-msbuild"      ) == 0 ) should_gen_msbuild = true;
         if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
         if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
         if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
@@ -330,11 +334,19 @@ main( int argc, char** argv )
         return 0;
     }
 
-    // --- Command: GENERATE ---
+    // --- Command: GENERATE (NMake/Makefile projects) ---
 
     if ( should_gen )
     {
         build_gen_projects();
+        return 0;
+    }
+
+    // --- Command: GENERATE MSBUILD (StaticLibrary/DLL/Application projects) ---
+
+    if ( should_gen_msbuild )
+    {
+        build_gen_projects_msbuild();
         return 0;
     }
 
