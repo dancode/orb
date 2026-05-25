@@ -280,13 +280,7 @@ main( int argc, char** argv )
     // --- Worker count: clamp logical CPU count to [1, 16] ---
 
     if ( j_threads <= 0 )
-    {
-        SYSTEM_INFO si;
-        GetSystemInfo( &si );
-        j_threads = (int)si.dwNumberOfProcessors;
-        if ( j_threads < 1  ) j_threads = 1;
-        if ( j_threads > 16 ) j_threads = 16;
-    }
+        j_threads = platform_cpu_count();
 
     // --- Arg validation ---
 

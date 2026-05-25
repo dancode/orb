@@ -43,7 +43,12 @@
       "PowerShell(cmd /c `\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat`\" x64 `&`& F:\\\\orb\\\\bootstrap_build_tool.bat)",
       "PowerShell(cmd /c \"F:\\\\orb\\\\bin\\\\build_tool.exe\" -gen)",
       "PowerShell(Select-String -Path \"F:\\\\orb\\\\build\\\\proj_mono\\\\example.vcxproj\" -Pattern \"NMake|STATIC|BUILD_STATIC\" | Select-Object -First 20 | ForEach-Object { $_.Line.Trim\\(\\) })",
-      "PowerShell(Select-String -Path \"F:\\\\orb\\\\build\\\\proj\\\\example.vcxproj\" -Pattern \"NMakeOutput|NMakeBuildCommand|BUILD_STATIC\" | ForEach-Object { $_.Line.Trim\\(\\) })"
+      "PowerShell(Select-String -Path \"F:\\\\orb\\\\build\\\\proj\\\\example.vcxproj\" -Pattern \"NMakeOutput|NMakeBuildCommand|BUILD_STATIC\" | ForEach-Object { $_.Line.Trim\\(\\) })",
+      "Bash(cmd.exe /C \"bootstrap_build_tool.bat\")",
+      "Bash(cmd.exe *)",
+      "Bash(where cl.exe)",
+      "Bash(where vswhere.exe)",
+      "PowerShell($vcvars = 'C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat'; cmd /c \"`\"$vcvars`\" x64 && cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 source/tools/build_tool/build_tool.c /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe\" 2>&1)"
     ]
   }
 }

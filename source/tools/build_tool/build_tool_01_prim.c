@@ -128,12 +128,8 @@ strip_eol( char* s )
 static void
 ensure_dir( const char* dir )
 {
-    if ( platform_file_exists( dir ) )
-        return;
-
-    char cmd[ PATH_MAX ];
-    snprintf( cmd, sizeof( cmd ), "mkdir %s >nul 2>nul", dir );
-    system( cmd );
+    if ( !platform_file_exists( dir ) )
+        platform_mkdir( dir );
 }
 
 /*==============================================================================================
@@ -150,26 +146,13 @@ build_lock_target( const char* target_name )
 {
     char name[ 256 ];
     snprintf( name, sizeof( name ), "orb_build_tool_%s", target_name );
-
-    HANDLE h = CreateMutexA( NULL, FALSE, name );
-    if ( !h )
-        return NULL;
-
-    WaitForSingleObject( h, INFINITE );
-    return ( void* )h;
+    return platform_lock_create( name );
 }
 
 void
 build_unlock_target( void* lock )
 {
-#if defined( _WIN32 )
-    if ( !lock )
-        return;
-    ReleaseMutex( ( HANDLE )lock );
-    CloseHandle( ( HANDLE )lock );
-#else
-    ( void )lock;
-#endif
+    platform_lock_release( lock );
 }
 
 // clang-format on

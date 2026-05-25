@@ -29,6 +29,8 @@
         platform_tls_set()          -- TlsSetValue
         platform_thread_create()    -- _beginthreadex
         platform_threads_join()     -- WaitForMultipleObjects + CloseHandle loop
+        platform_lock_create()      -- named cross-process mutex  (CreateMutexA + WaitForSingleObject)
+        platform_lock_release()     -- release named mutex        (ReleaseMutex + CloseHandle)
 
 ==============================================================================================*/
 // clang-format off
@@ -163,6 +165,34 @@ platform_threads_join( platform_thread_t* threads, int count )
     if ( count <= 0 ) return;
     WaitForMultipleObjects( ( DWORD )count, ( HANDLE* )threads, TRUE, INFINITE );
     for ( int i = 0; i < count; ++i ) CloseHandle( ( HANDLE )threads[ i ] );
+}
+
+/*==============================================================================================
+    --- Named Cross-Process Mutex ---
+
+    Serializes concurrent build_tool.exe invocations targeting the same artifact.
+    Lives in the unprivileged local-session namespace; failure is non-fatal.
+==============================================================================================*/
+
+/* Acquires a named mutex, blocking until granted. Returns opaque handle, or NULL on failure. */
+
+static void*
+platform_lock_create( const char* name )
+{
+    HANDLE h = CreateMutexA( NULL, FALSE, name );
+    if ( !h ) return NULL;
+    WaitForSingleObject( h, INFINITE );
+    return ( void* )h;
+}
+
+/* Releases and closes a lock returned by platform_lock_create(). NULL is a safe no-op. */
+
+static void
+platform_lock_release( void* lock )
+{
+    if ( !lock ) return;
+    ReleaseMutex( ( HANDLE )lock );
+    CloseHandle( ( HANDLE )lock );
 }
 
 // clang-format on

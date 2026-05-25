@@ -16,6 +16,8 @@
         platform_putenv()        -- set environment variable       (_putenv_s)
         platform_popen()         -- open a pipe to a command       (_popen)
         platform_pclose()        -- close a pipe                   (_pclose)
+        platform_cpu_count()     -- logical processor count         (GetSystemInfo)
+        platform_mkdir()         -- create a directory             (CreateDirectoryA)
         platform_find_first()    -- begin directory enumeration    (_findfirst)
         platform_find_next()     -- advance directory enumeration  (_findnext)
         platform_find_close()    -- end directory enumeration      (_findclose)
@@ -112,6 +114,35 @@ static int
 platform_pclose( FILE* pipe )
 {
     return _pclose( pipe );
+}
+
+/*==============================================================================================
+    --- CPU Count ---
+==============================================================================================*/
+
+/* Returns the number of logical processors available to the process, clamped to [1, 16]. */
+
+static int
+platform_cpu_count( void )
+{
+    SYSTEM_INFO si;
+    GetSystemInfo( &si );
+    int n = (int)si.dwNumberOfProcessors;
+    if ( n < 1  ) n = 1;
+    if ( n > 16 ) n = 16;
+    return n;
+}
+
+/*==============================================================================================
+    --- Make Directory ---
+==============================================================================================*/
+
+/* Creates a directory at path. No-op if it already exists. */
+
+static void
+platform_mkdir( const char* path )
+{
+    CreateDirectoryA( path, NULL );
 }
 
 /*==============================================================================================
