@@ -287,7 +287,56 @@ target_info_t g_targets[] = {
      .sln_folder = "09_SANDBOX/ENGINE",
      .units      = { "sb_engine_mod.c" },
      .deps       = { "sys", "mod", "dev_build", "dev_hot" },
-    },
+     },
+    {
+     .name       = "sb_engine_sys",
+     .type       = TARGET_EXECUTABLE,
+     .root_dir   = "source/sandbox/engine/engine_sys",
+     .sln_folder = "09_SANDBOX/ENGINE",
+     .units      = { "sb_engine_sys.c" },
+     .deps       = { "sys" },
+     },
+    {
+     .name       = "sb_engine_app",
+     .type       = TARGET_EXECUTABLE,
+     .root_dir   = "source/sandbox/engine/engine_sys",
+     .sln_folder = "09_SANDBOX/ENGINE",
+     .units      = { "sb_engine_app.c" },
+     .deps       = { "sys", "mod", "app" },
+     },
+    {
+     .name       = "sb_engine_core",
+     .type       = TARGET_EXECUTABLE,
+     .root_dir   = "source/sandbox/engine/engine_core",
+     .sln_folder = "09_SANDBOX/ENGINE",
+     .units      = { "sb_engine_core.c" },
+     .deps       = { "core" },
+     },
+    {
+     .name       = "sb_engine_reflect",
+     .type       = TARGET_EXECUTABLE,
+     .root_dir   = "source/sandbox/engine/engine_reflect",
+     .sln_folder = "09_SANDBOX/ENGINE",
+     .units      = { "sb_engine_reflect.c" },
+     .deps       = { "core", "rs" },
+     },
+    {
+     .name       = "sb_runtime_reflect",
+     .type       = TARGET_EXECUTABLE,
+     .root_dir   = "source/sandbox/runtime/runtime_reflect",
+     .sln_folder = "09_SANDBOX/RUNTIME",
+     .units      = { "sb_runtime_reflect.c" },
+     .deps       = { "sys", "mod", "core", "rs" },
+     },
+    {
+     .name       = "sb_runtime_gen",
+     .type       = TARGET_EXECUTABLE,
+     .root_dir   = "source/sandbox/runtime/runtime_gen",
+     .sln_folder = "09_SANDBOX/RUNTIME",
+     .units      = { "sb_runtime_gen.c" },
+     .deps       = { "sys", "mod", "core", "rs" },
+     .has_reflect = true,
+     },
 
     // --- 06_SANDBOX (Verification Targets) ---
 
@@ -320,27 +369,32 @@ static const char* g_sln_main_targets[] = {
     "example", "example_reflect", "example_gen", 
     "game", "nav", "game_example",
     "dev_build", "dev_hot",
-    "host_common", "sb_engine_mod",
-    "sb_base_main", NULL };
+    "host_common", 
+    "sb_engine_mod", "sb_engine_sys", "sb_engine_core", "sb_engine_reflect",
+    "sb_runtime_reflect", "sb_runtime_gen",    
+    "sb_base_main", 
+    NULL };
 
 // clang-format on
 
 // Standalone build tools workspace. For modifying the build system itself.
 static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL };
 
+// .nav_dir = "source",
+
 solution_info_t    g_solutions[]         = {
     {
      .name          = "orb",
-     .target_names  = g_sln_main_targets,
-     .nav_dir       = NULL,       // "source",
-        .out_dir       = BUILD_DIR PATH_SEP "proj",
+     .target_names  = g_sln_main_targets, 
+     .nav_dir       = NULL,
+     .out_dir       = BUILD_DIR PATH_SEP "proj",
      .is_monolithic = false,
      },
     {
      .name          = "orb_mono",
      .target_names  = g_sln_main_targets,
-     .nav_dir       = NULL, // "source",
-        .out_dir       = BUILD_DIR PATH_SEP "proj_mono",
+     .nav_dir       = NULL,
+     .out_dir       = BUILD_DIR PATH_SEP "proj_mono",
      .is_monolithic = true,
      },
     {

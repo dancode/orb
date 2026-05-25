@@ -14,7 +14,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod_export.h" /* mod_desc_t, get_api_fn */
-#include "engine/core/core_host.h"      /* Public types (no function declarations) */
+#include "engine/core/core_host.h" /* Public types (no function declarations) */
 
 /*==============================================================================================
     API Start / Shutdown

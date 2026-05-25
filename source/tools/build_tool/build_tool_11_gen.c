@@ -504,6 +504,24 @@ build_gen_proj_target( target_info_t* target, int index )
             fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
         }
     }
+
+    // For has_reflect targets, list the reflection-generated files explicitly.
+    // The .c is a compile unit; the .h is a header for F12 navigation.
+    // Both live in <build_dir>\<gen_dir>\ and are not under root_dir, so the
+    // directory scan above misses them. They may not exist until the first build.
+    if ( target->has_reflect )
+    {
+        const char* rname     = target->reflect_name ? target->reflect_name : target->name;
+        const char* item_mono = s_is_monolithic ? " -monolithic" : "";
+        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n", s_root_prefix, g_build_dir,
+                 g_gen_dir, rname );
+        fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
+                 s_cd_root, target->name, item_mono );
+        fprintf( f, "    </ClCompile>\n" );
+        fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n", s_root_prefix, g_build_dir,
+                 g_gen_dir, rname );
+    }
+
     fprintf( f, "  </ItemGroup>\n" );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
@@ -525,6 +543,13 @@ build_gen_proj_target( target_info_t* target, int index )
             fprintf( f, "    <Filter Include=\"%s\">\n", g_filters[ i ] );
             fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
                      ( unsigned int )i );
+            fprintf( f, "    </Filter>\n" );
+        }
+        if ( target->has_reflect )
+        {
+            fprintf( f, "    <Filter Include=\"generated\">\n" );
+            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
+                     ( unsigned int )g_filter_count );
             fprintf( f, "    </Filter>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
@@ -555,6 +580,18 @@ build_gen_proj_target( target_info_t* target, int index )
             if ( g_files[ i ].filter[ 0 ] != '\0' )
                 fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
             fprintf( f, "    </%s>\n", tag );
+        }
+        if ( target->has_reflect )
+        {
+            const char* rname = target->reflect_name ? target->reflect_name : target->name;
+            fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n", s_root_prefix, g_build_dir,
+                     g_gen_dir, rname );
+            fprintf( f, "      <Filter>generated</Filter>\n" );
+            fprintf( f, "    </ClCompile>\n" );
+            fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\">\n", s_root_prefix, g_build_dir,
+                     g_gen_dir, rname );
+            fprintf( f, "      <Filter>generated</Filter>\n" );
+            fprintf( f, "    </ClInclude>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
         fprintf( f, "</Project>\n" );
@@ -739,8 +776,8 @@ build_gen_solution( solution_info_t* sln )
     }
 
     // 2. Target projects.
-    char folders[ 16 ][ PATH_MAX ];
-    char folder_guids[ 16 ][ 64 ];
+    char folders[ 64 ][ PATH_MAX ];
+    char folder_guids[ 64 ][ 64 ];
     int  folder_count = 0;
 
     for ( const char** tn = sln->target_names; *tn; ++tn )
@@ -827,20 +864,46 @@ build_gen_solution( solution_info_t* sln )
             fprintf( f, "EndProject\n" );
 
             // Collect SLN folders for nesting.
-            bool found = false;
-            for ( int j = 0; j < folder_count; ++j )
-                if ( strcmp( folders[ j ], target->sln_folder ) == 0 )
-                {
-                    found = true;
-                    break;
-                }
-            if ( !found && folder_count < 16 )
+            // Register every path segment so "A/B" creates both "A" and "A/B" folders.
             {
-                snprintf( folders[ folder_count ], PATH_MAX, "%s", target->sln_folder );
-                char key[ 192 ];
-                snprintf( key, sizeof( key ), "folder:%s:%s", sln->name, target->sln_folder );
-                guid_from_name( key, folder_guids[ folder_count ] );
-                folder_count++;
+                char tmp[ PATH_MAX ];
+                snprintf( tmp, sizeof( tmp ), "%s", target->sln_folder );
+                for ( char* p = tmp; *p; p++ )
+                    if ( *p == '\\' ) *p = '/';
+
+                char* p = tmp;
+                while ( *p )
+                {
+                    if ( *p == '/' )
+                    {
+                        *p = '\0';
+                        bool found = false;
+                        for ( int j = 0; j < folder_count; ++j )
+                            if ( strcmp( folders[ j ], tmp ) == 0 ) { found = true; break; }
+                        if ( !found && folder_count < 64 )
+                        {
+                            snprintf( folders[ folder_count ], PATH_MAX, "%s", tmp );
+                            char key[ 192 ];
+                            snprintf( key, sizeof( key ), "folder:%s:%s", sln->name, tmp );
+                            guid_from_name( key, folder_guids[ folder_count ] );
+                            folder_count++;
+                        }
+                        *p = '/';
+                    }
+                    p++;
+                }
+                // Register the leaf (full path).
+                bool found = false;
+                for ( int j = 0; j < folder_count; ++j )
+                    if ( strcmp( folders[ j ], tmp ) == 0 ) { found = true; break; }
+                if ( !found && folder_count < 64 )
+                {
+                    snprintf( folders[ folder_count ], PATH_MAX, "%s", tmp );
+                    char key[ 192 ];
+                    snprintf( key, sizeof( key ), "folder:%s:%s", sln->name, tmp );
+                    guid_from_name( key, folder_guids[ folder_count ] );
+                    folder_count++;
+                }
             }
         }
     }
@@ -855,10 +918,13 @@ build_gen_solution( solution_info_t* sln )
     }
 
     // 4. Virtual SLN folders.
+    // Display name is the leaf segment only; nesting is expressed via NestedProjects below.
     for ( int i = 0; i < folder_count; ++i )
     {
-        fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", folder_type_guid, folders[ i ],
-                 folders[ i ], folder_guids[ i ] );
+        const char* leaf = strrchr( folders[ i ], '/' );
+        const char* display = leaf ? leaf + 1 : folders[ i ];
+        fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", folder_type_guid, display, display,
+                 folder_guids[ i ] );
         fprintf( f, "EndProject\n" );
     }
 
@@ -897,17 +963,25 @@ build_gen_solution( solution_info_t* sln )
     fprintf( f, "\tEndGlobalSection\n" );
 
     fprintf( f, "\tGlobalSection(NestedProjects) = preSolution\n" );
+
+    // Map each project to its leaf folder.
     for ( const char** tn = sln->target_names; *tn; ++tn )
     {
         for ( int i = 0; i < g_target_count; ++i )
         {
             if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
             {
+                // Normalize sln_folder to forward slashes for comparison.
+                char norm[ PATH_MAX ];
+                snprintf( norm, sizeof( norm ), "%s", g_targets[ i ].sln_folder );
+                for ( char* p = norm; *p; p++ )
+                    if ( *p == '\\' ) *p = '/';
+
                 char proj_guid[ 64 ];
                 guid_from_name( g_targets[ i ].name, proj_guid );
                 for ( int j = 0; j < folder_count; ++j )
                 {
-                    if ( strcmp( folders[ j ], g_targets[ i ].sln_folder ) == 0 )
+                    if ( strcmp( folders[ j ], norm ) == 0 )
                     {
                         fprintf( f, "\t\t%s = %s\n", proj_guid, folder_guids[ j ] );
                         break;
@@ -917,6 +991,27 @@ build_gen_solution( solution_info_t* sln )
             }
         }
     }
+
+    // Map each non-root folder to its parent folder.
+    for ( int i = 0; i < folder_count; ++i )
+    {
+        const char* slash = strrchr( folders[ i ], '/' );
+        if ( !slash )
+            continue;
+        char parent[ PATH_MAX ];
+        int  parent_len = ( int )( slash - folders[ i ] );
+        strncpy( parent, folders[ i ], parent_len );
+        parent[ parent_len ] = '\0';
+        for ( int j = 0; j < folder_count; ++j )
+        {
+            if ( strcmp( folders[ j ], parent ) == 0 )
+            {
+                fprintf( f, "\t\t%s = %s\n", folder_guids[ i ], folder_guids[ j ] );
+                break;
+            }
+        }
+    }
+
     fprintf( f, "\tEndGlobalSection\n" );
     fprintf( f, "EndGlobal\n" );
     fclose( f );
