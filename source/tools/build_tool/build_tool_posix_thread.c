@@ -28,8 +28,8 @@
         platform_tls_set()          -- pthread_setspecific
         platform_thread_create()    -- pthread_create  (pthread_t heap-allocated)
         platform_threads_join()     -- pthread_join loop + free
-        platform_lock_create()      -- named cross-process semaphore (sem_open + sem_wait)
-        platform_lock_release()     -- release named semaphore       (sem_post + sem_close)
+        platform_lock_create()      -- flock on /tmp/orb_lock_<name>  (open + flock LOCK_EX)
+        platform_lock_release()     -- release flock                  (flock LOCK_UN + close)
 
 ==============================================================================================*/
 // clang-format off
@@ -39,11 +39,12 @@
 #endif
 
 #include <pthread.h>
-#include <semaphore.h>
 #include <fcntl.h>
+#include <sys/file.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 /*==============================================================================================
     --- Platform Threading Types ---
@@ -192,26 +193,31 @@ platform_threads_join( platform_thread_t* threads, int count )
 }
 
 /*==============================================================================================
-    --- Named Cross-Process Semaphore ---
+    --- Named Cross-Process File Lock ---
 
-    Serializes concurrent build_tool invocations targeting the same artifact.
-    POSIX named semaphores require a leading '/'; the Win32 mutex name is used
-    as-is with one prepended. sem_close releases the open handle without destroying
-    the semaphore, mirroring Win32 CloseHandle semantics.
+    Serializes concurrent build_tool invocations targeting the same artifact using
+    flock() on a per-target file in /tmp. Unlike POSIX named semaphores, flock() locks
+    are kernel-tracked per file descriptor: if the process dies for any reason (crash,
+    OOM kill, SIGKILL) the OS releases all locks automatically. Named semaphores have no
+    abandoned state -- a crash after sem_wait leaves the semaphore locked forever.
+
+    The lockfile persists in /tmp between runs (one empty file per target name) but is
+    reused on subsequent builds; it is never truncated and carries no content.
 ==============================================================================================*/
 
-/* Acquires a named semaphore, blocking until granted. Returns opaque handle, or NULL on failure. */
+/* Acquires a flock on /tmp/orb_lock_<name>, blocking until granted.
+   Returns the open fd cast to void*, or NULL on failure. */
 
 static void*
 platform_lock_create( const char* name )
 {
-    char sem_name[ 512 ];
-    snprintf( sem_name, sizeof( sem_name ), "/%s", name );
+    char lock_path[ PATH_MAX ];
+    snprintf( lock_path, sizeof( lock_path ), "/tmp/orb_lock_%s", name );
 
-    sem_t* s = sem_open( sem_name, O_CREAT, 0600, 1 );
-    if ( s == SEM_FAILED ) return NULL;
-    sem_wait( s );
-    return ( void* )s;
+    int fd = open( lock_path, O_CREAT | O_RDWR, 0600 );
+    if ( fd < 0 ) return NULL;
+    if ( flock( fd, LOCK_EX ) != 0 ) { close( fd ); return NULL; }
+    return ( void* )( intptr_t )fd;
 }
 
 /* Releases and closes a lock returned by platform_lock_create(). NULL is a safe no-op. */
@@ -220,8 +226,9 @@ static void
 platform_lock_release( void* lock )
 {
     if ( !lock ) return;
-    sem_post(  ( sem_t* )lock );
-    sem_close( ( sem_t* )lock );
+    int fd = ( int )( intptr_t )lock;
+    flock( fd, LOCK_UN );
+    close( fd );
 }
 
 // clang-format on
