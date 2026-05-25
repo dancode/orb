@@ -312,8 +312,10 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
     }
     else
     {
-        // Nav project: add _STATIC for every static lib so IntelliSense resolves
-        // the correct ABI path (direct-call decls) across all engine headers.
+        // Nav project: add _STATIC only for always-static libs (TARGET_STATIC_LIB).
+        // These are PUBLIC in the CMake sense -- they propagate to all consumers.
+        // PRIVATE module defines (RENDER_STATIC, AUDIO_STATIC, etc.) are excluded
+        // because those are only for the module compiling itself (TARGET_DYNAMIC_LIB).
         for ( int i = 0; i < g_target_count; ++i )
         {
             if ( g_targets[ i ].type == TARGET_STATIC_LIB )
