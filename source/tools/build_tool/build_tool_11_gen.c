@@ -336,10 +336,14 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
     write_vcxproj_common_header()
 
     Writes the boilerplate XML required for a Visual Studio Makefile project.
-    Two layers of PropertyGroup:
-      1. Unconditional: OutDir/IntDir and the NMake build/clean/compile commands.
-      2. Per-configuration (Debug|x64, Release|x64): preprocessor defines, include
-         paths, and AdditionalOptions that feed IntelliSense.
+    Three layers of config data:
+      1. Unconditional PropertyGroup: OutDir/IntDir and the NMake build/clean commands.
+      2. Per-config ItemDefinitionGroup/ClCompile: LanguageStandard_C, UseStandardPreprocessor,
+         AdditionalIncludeDirectories, PreprocessorDefinitions. These are where the EDG
+         IntelliSense front-end reads language and preprocessor mode -- NOT from NMake*
+         PropertyGroup entries. Mirrors what CMake's StaticLibrary generator emits.
+      3. Per-config PropertyGroup: NMake* properties for the Makefile build mechanism and
+         IntelliSenseMode for the project panel.
 ==============================================================================================*/
 
 static void
@@ -360,8 +364,12 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
     fprintf( f, "  </ItemGroup>\n" );
 
+    fprintf( f, "  <PropertyGroup>\n" );
+    fprintf( f, "    <PreferredToolArchitecture>x64</PreferredToolArchitecture>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
     fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", guid );
+    fprintf( f, "    <Keyword>Win32Proj</Keyword>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
@@ -389,9 +397,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
              s_cd_root, out_name, mono_flag );
     fprintf( f, "  </PropertyGroup>\n" );
 
-    // Single-file compile (Ctrl+F7). NMakeCompileSelectedFiles creates a NMakeCompile
-    // item at runtime and reads %(NMakeCompile.NMakeCompileFileCommandLine) as the command.
-    // VS does not inject the selected file path, so we compile all unity units (-compile-only).
+    // Single-file compile (Ctrl+F7). Unconditional so the command is available
+    // regardless of active configuration.
     fprintf( f, "  <ItemDefinitionGroup>\n" );
     fprintf( f, "    <NMakeCompile>\n" );
     fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
@@ -399,14 +406,42 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
-    // Per-config IntelliSense context. All NMake* properties must live here (not in
-    // the unconditional group) -- VS only picks them up for IntelliSense in per-config groups.
+    // Per-config ItemDefinitionGroup/ClCompile: the EDG IntelliSense front-end reads
+    // LanguageStandard_C and UseStandardPreprocessor from here (not from NMake* PropertyGroup
+    // entries). Mirrors what CMake's StaticLibrary generator emits so designated initializers
+    // and compound literals are accepted.
     {
         char dbg_defines[ 1024 ];
         char rel_defines[ 1024 ];
         build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, target );
         build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, target );
 
+        fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+        fprintf( f, "    <ClCompile>\n" );
+        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
+        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
+                 dbg_defines );
+        fprintf( f, "    </ClCompile>\n" );
+        fprintf( f, "  </ItemDefinitionGroup>\n" );
+
+        fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+        fprintf( f, "    <ClCompile>\n" );
+        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
+        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
+                 rel_defines );
+        fprintf( f, "    </ClCompile>\n" );
+        fprintf( f, "  </ItemDefinitionGroup>\n" );
+
+        // NMake* PropertyGroup entries: used by the Makefile build mechanism.
+        // LanguageStandard_C here is read by the Makefile IntelliSense provider
+        // (separate from ItemDefinitionGroup/ClCompile which the StaticLibrary
+        // provider reads). Both are needed to cover both code paths.
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
         fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
                  dbg_defines );
@@ -665,12 +700,33 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
         build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, NULL );
         build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, NULL );
 
+        fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+        fprintf( f, "    <ClCompile>\n" );
+        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
+        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
+                 dbg_defines );
+        fprintf( f, "    </ClCompile>\n" );
+        fprintf( f, "  </ItemDefinitionGroup>\n" );
+
+        fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+        fprintf( f, "    <ClCompile>\n" );
+        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
+        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
+                 rel_defines );
+        fprintf( f, "    </ClCompile>\n" );
+        fprintf( f, "  </ItemDefinitionGroup>\n" );
+
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
         fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
                  dbg_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
         fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
         fprintf( f, "  </PropertyGroup>\n" );
@@ -680,7 +736,6 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
                  rel_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
         fprintf( f, "    <NMakeAdditionalOptions>/TC /std:c11 /Zc:preprocessor</NMakeAdditionalOptions>\n" );
         fprintf( f, "  </PropertyGroup>\n" );
