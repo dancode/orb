@@ -69,7 +69,7 @@ platform_cc_exe( compiler_t compiler )
 ==============================================================================================*/
 
 static void
-platform_cc_base_flags( config_t config, char* buf, size_t size )
+platform_cc_base_flags( compiler_t compiler, config_t config, char* buf, size_t size )
 {
     size_t used = strlen( buf );
     const char* sep = used ? " " : "";

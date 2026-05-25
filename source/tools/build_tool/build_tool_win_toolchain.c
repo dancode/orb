@@ -64,13 +64,15 @@ platform_cc_exe( compiler_t compiler )
 ==============================================================================================*/
 
 static void
-platform_cc_base_flags( config_t config, char* buf, size_t size )
+platform_cc_base_flags( compiler_t compiler, config_t config, char* buf, size_t size )
 {
     size_t used = strlen( buf );
     const char* sep = used ? " " : "";
     const char* cfg = ( config == CONFIG_DEBUG ) ? "/Zi /Od /MDd" : "/O2 /MD";
+    // /Zc:preprocessor is MSVC-only; clang-cl defaults to conforming preprocessor already.
+    const char* zc = ( compiler == COMPILE_CLANG ) ? "" : " /Zc:preprocessor";
     snprintf( buf + used, size - used,
-              "%s/c /nologo /W4 /WX /Zc:preprocessor /std:c11 %s", sep, cfg );
+              "%s/c /nologo /W4 /WX%s /std:c11 %s", sep, zc, cfg );
 }
 
 /*==============================================================================================

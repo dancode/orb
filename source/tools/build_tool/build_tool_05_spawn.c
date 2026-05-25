@@ -44,14 +44,16 @@ build_run_cmd( const char* cmd )
     return rc;
 }
 
-/* Like build_run_cmd() but suppresses the exit-code marker on failure.
-   Used by build_clean() for del/rd where errors are expected (file not found)
-   and the caller prints a single summarized line instead of one per call. */
+/* Like build_run_cmd() but routes through cmd.exe /c so shell built-ins (del, rd)
+   and output redirections (>nul 2>nul) work. Errors are suppressed -- used by
+   build_clean() where "file not found" is expected and the caller prints a summary. */
 
 int
 build_run_cmd_quiet( const char* cmd )
 {
-    return platform_spawn( cmd, sched_log_path() );
+    char shell_cmd[ PATH_MAX * 2 ];
+    snprintf( shell_cmd, sizeof( shell_cmd ), "cmd.exe /c %s", cmd );
+    return platform_spawn( shell_cmd, sched_log_path() );
 }
 
 /*==============================================================================================
