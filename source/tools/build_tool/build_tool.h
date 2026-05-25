@@ -369,7 +369,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | ORB_OUT_VCVARS | ORB_OUT_REFLECT )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
-#define ORB_OUT_DEFAULT ( ORB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
+#define ORB_OUT_DEFAULT ( ORB_OUT_TESTING )
 
 /*==============================================================================================
     --- Compiler Command Type ---

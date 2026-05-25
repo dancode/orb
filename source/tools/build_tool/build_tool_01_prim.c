@@ -123,13 +123,26 @@ strip_eol( char* s )
     while ( l > 0 && ( s[ l - 1 ] == '\n' || s[ l - 1 ] == '\r' ) ) s[ --l ] = '\0';
 }
 
-/* Create a directory if it does not already exist. */
+/* Create a directory and all missing parent components (mkdir -p semantics).
+   platform_mkdir is a no-op on existing directories so redundant calls are safe. */
 
 static void
 ensure_dir( const char* dir )
 {
-    if ( !platform_file_exists( dir ) )
-        platform_mkdir( dir );
+    char tmp[ PATH_MAX ];
+    snprintf( tmp, sizeof( tmp ), "%s", dir );
+
+    for ( char* p = tmp + 1; *p; ++p )
+    {
+        if ( *p == '/' || *p == '\\' )
+        {
+            char saved = *p;
+            *p = '\0';
+            platform_mkdir( tmp );
+            *p = saved;
+        }
+    }
+    platform_mkdir( tmp );
 }
 
 /*==============================================================================================

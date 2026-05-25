@@ -91,8 +91,8 @@ static const char* g_gen_dir   = "generated";   // sub-folder: reflection-genera
 ==============================================================================================*/
 
 out_flags_t g_out_flags         = ORB_OUT_DEFAULT;
-bool        g_use_rsp           = false;
 bool        g_include_track     = true;
+bool        g_use_rsp           = false; /* until we hit overflow this will remain off */
 
 /*==============================================================================================
     --- Unity Include Chain ---

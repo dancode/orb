@@ -178,16 +178,23 @@ platform_lk_obj_pattern( const char* obj_dir, char* buf, size_t size )
 /*==============================================================================================
     --- Linker: Dependency Library ---
 
-    Appends the static archive path for a declared dependency. Using the full path
-    (bin/libname.a) rather than -l flags avoids needing -Lbin before the -l tokens
-    and works for both static archives and direct .so paths.
+    Appends the correct artifact path for a declared dependency. Using the full path
+    (bin/libname.a or bin/libname.so) rather than -l flags avoids needing -Lbin before
+    -l tokens and works for both static archives and shared libraries.
+
+    dep_type drives the extension: TARGET_DYNAMIC_LIB -> .so, anything else -> .a.
+    Callers are responsible for mapping TARGET_DYNAMIC_LIB -> TARGET_STATIC_LIB when
+    in monolithic mode before calling here.
 ==============================================================================================*/
 
 static void
-platform_lk_append_dep_lib( const char* dep_name, char* buf, size_t size )
+platform_lk_append_dep_lib( const char* dep_name, target_type_t dep_type, char* buf, size_t size )
 {
     size_t used = strlen( buf );
-    snprintf( buf + used, size - used, "%sbin/lib%s.a", used ? " " : "", dep_name );
+    if ( dep_type == TARGET_DYNAMIC_LIB )
+        snprintf( buf + used, size - used, "%sbin/lib%s.so", used ? " " : "", dep_name );
+    else
+        snprintf( buf + used, size - used, "%sbin/lib%s.a",  used ? " " : "", dep_name );
 }
 
 /*==============================================================================================

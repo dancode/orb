@@ -116,7 +116,14 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
         platform_lk_fill_dynamic( ctx, target, &lk );
 
         for ( int i = 0; target->deps[ i ]; ++i )
-            platform_lk_append_dep_lib( target->deps[ i ], lk.libs, sizeof( lk.libs ) );
+        {
+            target_info_t* dep      = find_target( target->deps[ i ] );
+            target_type_t  dep_type = dep ? dep->type : TARGET_STATIC_LIB;
+            // In monolithic mode every DLL dep was built as a static lib.
+            if ( ctx->is_monolithic && dep_type == TARGET_DYNAMIC_LIB )
+                dep_type = TARGET_STATIC_LIB;
+            platform_lk_append_dep_lib( target->deps[ i ], dep_type, lk.libs, sizeof( lk.libs ) );
+        }
         platform_lk_append_sys_libs( lk.libs, sizeof( lk.libs ) );
     }
 

@@ -172,13 +172,15 @@ platform_lk_obj_pattern( const char* obj_dir, char* buf, size_t size )
     --- Linker: Dependency Library ---
 
     Appends the import lib path for a declared dependency. Both static libs and DLLs
-    produce a .lib that dependents link against -- the name is the same in both cases.
-    On POSIX there is no import lib; dependents link directly against .so / .dylib.
+    produce a .lib that dependents link against -- the extension is always .lib on Win32.
+    dep_type is accepted for API symmetry with the POSIX counterpart (which branches on
+    it to choose .a vs .so) but is unused here.
 ==============================================================================================*/
 
 static void
-platform_lk_append_dep_lib( const char* dep_name, char* buf, size_t size )
+platform_lk_append_dep_lib( const char* dep_name, target_type_t dep_type, char* buf, size_t size )
 {
+    ( void )dep_type;  // Win32: both static and DLL import libs use .lib.
     size_t used = strlen( buf );
     snprintf( buf + used, size - used, "%sbin/%s.lib", used ? " " : "", dep_name );
 }

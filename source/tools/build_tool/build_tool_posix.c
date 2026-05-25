@@ -137,7 +137,7 @@ platform_cpu_count( void )
 {
     long n = sysconf( _SC_NPROCESSORS_ONLN );
     if ( n < 1  ) n = 1;
-    if ( n > 16 ) n = 16;
+    if ( n > 32 ) n = 32;
     return ( int )n;
 }
 
@@ -160,6 +160,9 @@ platform_mkdir( const char* path )
     POSIX opendir/readdir iterates all entries; fnmatch selects matching names.
     A heap-allocated context struct carries the open DIR* and filename pattern
     between calls so the opaque platform_find_t handle stays a plain intptr_t.
+
+    is_dir uses d_type when the filesystem populates it (O(1) -- no extra syscall).
+    DT_UNKNOWN (returned by NFS, some tmpfs variants) falls back to stat().
 ==============================================================================================*/
 
 typedef struct
@@ -169,6 +172,19 @@ typedef struct
     char pat[ 256 ];
 
 } posix_find_ctx_t;
+
+/* Returns true when the entry is a directory, using d_type when available. */
+
+static bool
+posix_dirent_is_dir( struct dirent* ent, const char* dir )
+{
+    if ( ent->d_type != DT_UNKNOWN )
+        return ent->d_type == DT_DIR;
+    char full[ PATH_MAX ];
+    snprintf( full, sizeof( full ), "%s/%s", dir, ent->d_name );
+    struct stat st;
+    return ( stat( full, &st ) == 0 ) && S_ISDIR( st.st_mode );
+}
 
 /* Begins enumeration matching pattern (e.g. "bin/*.pdb").
    Fills data and returns a valid handle, or PLATFORM_FIND_INVALID if no match. */
@@ -210,12 +226,8 @@ platform_find_first( const char* pattern, platform_find_data_t* data )
     while ( ( ent = readdir( d ) ) != NULL )
     {
         if ( fnmatch( pat, ent->d_name, 0 ) != 0 ) continue;
-
         snprintf( data->name, sizeof( data->name ), "%s", ent->d_name );
-        char full[ PATH_MAX ];
-        snprintf( full, sizeof( full ), "%s/%s", dir, ent->d_name );
-        struct stat st;
-        data->is_dir = ( stat( full, &st ) == 0 ) && S_ISDIR( st.st_mode );
+        data->is_dir = posix_dirent_is_dir( ent, dir );
         return ( platform_find_t )ctx;
     }
 
@@ -235,12 +247,8 @@ platform_find_next( platform_find_t handle, platform_find_data_t* data )
     while ( ( ent = readdir( ctx->d ) ) != NULL )
     {
         if ( fnmatch( ctx->pat, ent->d_name, 0 ) != 0 ) continue;
-
         snprintf( data->name, sizeof( data->name ), "%s", ent->d_name );
-        char full[ PATH_MAX ];
-        snprintf( full, sizeof( full ), "%s/%s", ctx->dir, ent->d_name );
-        struct stat st;
-        data->is_dir = ( stat( full, &st ) == 0 ) && S_ISDIR( st.st_mode );
+        data->is_dir = posix_dirent_is_dir( ent, ctx->dir );
         return true;
     }
 
