@@ -185,6 +185,14 @@ get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
             *p = '\\';
 }
 
+// Normalize all forward slashes to backslashes in place (vcxproj paths must be consistent).
+static void
+normalize_slashes( char* s )
+{
+    for ( ; *s; ++s )
+        if ( *s == '/' ) *s = '\\';
+}
+
 // Walk a directory tree and accumulate every .c and .h file into g_files[].
 static void
 scan_directory_recursive( const char* dir, const char* root_dir )
@@ -204,6 +212,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
 
         char path[ PATH_MAX ];
         snprintf( path, sizeof( path ), "%s\\%s", dir, find_data.name );
+        normalize_slashes( path );
 
         if ( find_data.is_dir )
         {
@@ -354,8 +363,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
              s_cd_root, out_name );
     fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n",
              s_cd_root, out_name, mono_flag );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_root_prefix );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
     fprintf( f, "  </PropertyGroup>\n" );
 
     // Single-file compile (Ctrl+F7). NMakeCompileSelectedFiles creates a NMakeCompile
@@ -580,8 +589,8 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
              s_root_prefix, g_int_dir );
     fprintf( f, "    <NMakeCleanCommandLine>echo       [nav] navigation-only project, nothing to clean.</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakeCompileFile>echo       [nav] navigation-only project.</NMakeCompileFile>\n" );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_root_prefix );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
     fprintf( f, "  </PropertyGroup>\n" );
 
     {
