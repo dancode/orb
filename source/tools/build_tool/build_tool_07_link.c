@@ -112,7 +112,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     {
         // Executable or DLL: run pre-link cleanup, fill command fields, then
         // append dep libs and system libs.
-        platform_lk_pre_link( target->name );
+        platform_lk_pre_link( target->name, ctx->config );
         platform_lk_fill_dynamic( ctx, target, &lk );
 
         for ( int i = 0; target->deps[ i ]; ++i )

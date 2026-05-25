@@ -1,4 +1,0 @@
-﻿        ----------------------------------------------------------------
-        [orb build] BUILD_TOOL [ no-deps | modular | debug | msvc ]
-            [orb compiling] build_tool
-  

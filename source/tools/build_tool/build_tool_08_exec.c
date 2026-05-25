@@ -13,7 +13,7 @@
       5. Locked-file management -- rename any in-use .exe aside before relinking.
       6. Reflection codegen     -- invoke reflect_tool if has_reflect is set.
       7. Compile + link         -- call 06_compile and 07_link; restore .exe on failure.
-      8. Config stamp           -- write _config.txt so the next check detects mode flips.
+      8. Config stamp           -- touch _debug.stamp or _release.stamp; delete the other.
 
     Concurrency:
       From step 2 onward a per-target named mutex is held so two build_tool.exe
@@ -157,27 +157,16 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         }
     }
 
-    // C. Config change check. _config.txt is written after every successful
-    //    compile+link. Missing = first build or post-clean = must rebuild.
+    // C. Config change check. A per-config stamp file (_debug.stamp / _release.stamp)
+    //    is created after every successful compile+link. Presence of the correct one
+    //    is the signal -- no file content to read or compare.
     if ( up_to_date )
     {
-        const char* current_config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
-        char        config_marker[ PATH_MAX ];
-        snprintf( config_marker, sizeof( config_marker ), "%s" PATH_SEP "_config.txt", obj_dir );
-        FILE* cf = fopen( config_marker, "r" );
-        if ( !cf )
-        {
+        char config_stamp[ PATH_MAX ];
+        snprintf( config_stamp, sizeof( config_stamp ), "%s" PATH_SEP "_%s.stamp", obj_dir,
+                  ctx->config == CONFIG_DEBUG ? "debug" : "release" );
+        if ( !platform_file_exists( config_stamp ) )
             up_to_date = false;
-        }
-        else
-        {
-            char stored[ 16 ] = { 0 };
-            fgets( stored, sizeof( stored ), cf );
-            fclose( cf );
-            strip_eol( stored );
-            if ( strcmp( stored, current_config ) != 0 )
-                up_to_date = false;
-        }
     }
 
     // D. Header include check. The previous compile wrote every #included header
@@ -310,17 +299,17 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     }
 
     // --- 8. Config Stamp ---
-    // Record the config used so the next incremental check detects a
-    // Debug<->Release switch even when no source file changed.
+    // Create the stamp for the config just built; delete the opposite so a
+    // Debug<->Release switch is detected as a miss on the next check.
     {
-        char config_marker[ PATH_MAX ];
-        snprintf( config_marker, sizeof( config_marker ), "%s" PATH_SEP "_config.txt", obj_dir );
-        FILE* cf = fopen( config_marker, "w" );
-        if ( cf )
-        {
-            fprintf( cf, "%s\n", ctx->config == CONFIG_DEBUG ? "Debug" : "Release" );
-            fclose( cf );
-        }
+        const char* built   = ctx->config == CONFIG_DEBUG ? "debug"   : "release";
+        const char* dropped = ctx->config == CONFIG_DEBUG ? "release" : "debug";
+        char good_stamp[ PATH_MAX ];
+        char bad_stamp [ PATH_MAX ];
+        snprintf( good_stamp, sizeof( good_stamp ), "%s" PATH_SEP "_%s.stamp", obj_dir, built   );
+        snprintf( bad_stamp,  sizeof( bad_stamp  ), "%s" PATH_SEP "_%s.stamp", obj_dir, dropped );
+        platform_touch_file( good_stamp );
+        platform_delete_file( bad_stamp );
     }
 
 cleanup:

@@ -212,10 +212,14 @@ platform_lk_append_sys_libs( char* buf, size_t size )
 ==============================================================================================*/
 
 static void
-platform_lk_pre_link( const char* target_name )
+platform_lk_pre_link( const char* target_name, config_t config )
 {
+    // Sweep only THIS config's stale PDBs. The other config's PDB may be held
+    // open by an attached debugger -- sweeping across configs would silently
+    // fail on that file and leave both around, confusing VS symbol loading.
+    const char* cfg_str = ( config == CONFIG_DEBUG ) ? "debug" : "release";
     char pattern[ PATH_MAX ];
-    snprintf( pattern, sizeof( pattern ), "bin\\%s_*.pdb", target_name );
+    snprintf( pattern, sizeof( pattern ), "bin\\%s_%s_*.pdb", target_name, cfg_str );
 
     platform_find_data_t fd;
     platform_find_t h = platform_find_first( pattern, &fd );
@@ -274,8 +278,9 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
     else
         snprintf( lk->output, sizeof( lk->output ), "/OUT:bin\\%s.exe", target->name );
 
+    const char* cfg_str = ( ctx->config == CONFIG_DEBUG ) ? "debug" : "release";
     snprintf( lk->pdb, sizeof( lk->pdb ),
-              "/DEBUG /PDB:bin/%s_%lld.pdb", target->name, ( long long )time( NULL ) );
+              "/DEBUG /PDB:bin/%s_%s_%lld.pdb", target->name, cfg_str, ( long long )time( NULL ) );
 }
 
 // clang-format on

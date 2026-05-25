@@ -40,6 +40,10 @@ static int   s_debug_argc = 0;
 static void
 build_tool_debug_inject( int* argc, char*** argv )
 {
+    // Only inject when launched with no arguments (F5 from VS without a command line
+    // configured). Real NMake invocations supply their own args -- don't clobber them.
+    if ( *argc > 1 ) return;
+
     FILE* f = fopen( DEBUG_ARGS_FILE, "r" );
     if ( !f ) return;
 

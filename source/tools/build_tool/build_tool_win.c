@@ -185,6 +185,25 @@ platform_find_close( platform_find_t handle )
     --- Memory-Mapped File ---
 ==============================================================================================*/
 
+/* Creates or truncates a zero-byte file at path. Used to write config stamp files. */
+
+static void
+platform_touch_file( const char* path )
+{
+    HANDLE h = CreateFileA( path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                            FILE_ATTRIBUTE_NORMAL, NULL );
+    if ( h != INVALID_HANDLE_VALUE )
+        CloseHandle( h );
+}
+
+/* Deletes a file at path. Silent no-op if the file does not exist. */
+
+static void
+platform_delete_file( const char* path )
+{
+    DeleteFileA( path );
+}
+
 /* Maps path into the process address space for read-only pointer access.
    Returns true on success. On false the file does not exist or could not be mapped.
    Empty files return true with data=NULL and size=0 -- no mapping is created.
