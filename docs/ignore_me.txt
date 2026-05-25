@@ -1,0 +1,52 @@
+Process spawning platform layer (build_tool_posix.c)       │ 1.5 days   │
+  ├────────────────────────────────────────────────────────────┼────────────┤
+  │ Compiler/linker flag alternate path                        │ 1.5–2 days │
+  ├────────────────────────────────────────────────────────────┼────────────┤
+  │ Linux vs macOS delta (.so/.dylib, -fPIC, rpath, .d filter) │ half day 
+  
+  add [ dll/static ] to output banner.
+  
+   Structural Clarity in the Unity Build
+   * Namespace Visibility: In a Unity build, every static function in an early file is
+     visible to all later files.
+   * Recommendation: While the numbering system handles this, you might consider a
+     naming convention for "Module Internal" vs "System Global" functions. For example,
+     cc_* for compiler-internal functions and build_* for functions intended to be
+     called by main or exec. You've mostly done this, but a stricter enforcement would
+     improve clarity for future contributors.
+	 
+
+// unified error handling?
+
+ Error Handling Centralization:
+       * The code currently uses a mix of printf("[orb error]...") and exit(1).
+       * Recommendation: A fatal_error(fmt, ...) helper would provide a single point to
+         handle cleanup (like releasing the global print lock or deleting partial
+         artifacts) before exiting.
+		 
+		 
+Project Generation (11_gen.c)
+   * This module is significantly larger and more complex than the others due to the
+     XML/GUID logic.
+   * Recommendation: It is currently the only module that feels like it could be its own
+     standalone tool. If it continues to grow, splitting the "Scanners" (recursive
+     directory walking) from the "Emitters" (XML generation) would help maintain the 1:1
+     module-to-responsibility ratio seen in the rest of the project.
+	 
+ Xcode (macOS / POSIX-compliant)
+  If you ever expand to Mac, the benefit of a generator is high.
+   * The Benefit: You would want to generate a .xcodeproj (similar to your .vcxproj
+     logic). This is the only way to get a first-class debugging experience on Apple
+     platforms.
+
+	 
+TODO: make clangd work with Visual Studio code outout gen.
+	 
+1. Visual Studio Code (VS Code) — Most Common
+  While not a full IDE, it is the most popular choice for Linux development.
+   * The Benefit: It does not use a "solution file." Instead, it relies on the JSON
+     Compilation Database (compile_commands.json).
+   * How it works: Nearly every Linux tool (VS Code, Vim/Neovim, Emacs) uses a Language
+     Server (specifically clangd). If your build_tool generates a compile_commands.json
+     file in the root directory, VS Code instantly gets perfect IntelliSense, "Go to
+     Definition," and error squigglies that match your compiler perfectly.
