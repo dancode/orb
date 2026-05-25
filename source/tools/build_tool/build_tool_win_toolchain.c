@@ -126,6 +126,15 @@ platform_cc_per_unit( void )
     return false;
 }
 
+/* No-op on Win32: dep tracking uses /showIncludes inline, no .d files to collect. */
+
+static void
+platform_cc_collect_dep_files( const char* obj_dir, const char* includes_path )
+{
+    ( void )obj_dir;
+    ( void )includes_path;
+}
+
 /*==============================================================================================
     --- Compiler: Dependency Tracking Flag ---
 

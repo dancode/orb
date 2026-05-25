@@ -339,7 +339,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
             if ( !cc_run_compile_cmd( &cc, target, config, obj_dir, "cc.rsp", NULL ) )
                 return false;
         }
-        if ( g_include_track ) build_collect_dep_files( obj_dir, includes_out );
+        if ( g_include_track ) platform_cc_collect_dep_files( obj_dir, includes_out );
         return true;
     }
     else

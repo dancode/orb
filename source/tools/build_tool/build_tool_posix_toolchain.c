@@ -140,6 +140,14 @@ platform_cc_per_unit( void )
     return true;
 }
 
+/* Delegates to posix_collect_dep_files() in build_tool_posix_spawn.c. */
+
+static void
+platform_cc_collect_dep_files( const char* obj_dir, const char* includes_path )
+{
+    posix_collect_dep_files( obj_dir, includes_path );
+}
+
 /*==============================================================================================
     --- Compiler: Dependency Tracking Flag ---
 

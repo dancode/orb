@@ -167,5 +167,80 @@ platform_spawn_capture( const char* cmd, platform_line_fn_t fn, void* userdata )
     return WIFEXITED( status ) ? WEXITSTATUS( status ) : 1;
 }
 
+/*==============================================================================================
+    --- posix_parse_dep_file ---
+
+    Reads a single Makefile .d file produced by GCC/Clang -MMD and writes each
+    dependency path (one per line) to out. The .d format is:
+        obj/target/unit.o: source/unit.c source/dep.h \
+            source/other.h
+    Everything before the first ':' is the make target (skipped). The backslash
+    continuation token '\' is skipped; all other whitespace-separated tokens are
+    written as dependency paths.
+==============================================================================================*/
+
+static void
+posix_parse_dep_file( const char* dep_path, FILE* out )
+{
+    FILE* f = fopen( dep_path, "r" );
+    if ( !f ) return;
+
+    char   buf[ CMD_BUF_MAX ];
+    size_t n = fread( buf, 1, sizeof( buf ) - 1, f );
+    fclose( f );
+    buf[ n ] = '\0';
+
+    // Skip the make target (everything up to and including the first ':').
+    char* p = strchr( buf, ':' );
+    if ( !p ) return;
+    ++p;
+
+    // Each space/newline-separated token is a dependency path.
+    // '\' alone is a line-continuation marker -- skip it.
+    char* tok = strtok( p, " \t\r\n" );
+    while ( tok )
+    {
+        if ( tok[ 0 ] != '\\' && tok[ 0 ] != '\0' )
+            fprintf( out, "%s\n", tok );
+        tok = strtok( NULL, " \t\r\n" );
+    }
+}
+
+/*==============================================================================================
+    --- posix_collect_dep_files ---
+
+    Scans obj_dir for all .d files emitted by -MMD and writes their header
+    dependencies to includes_path (_includes.txt). Called after the per-unit
+    compile loop in build_target_compile() to populate the file the next
+    incremental header-change check reads.
+==============================================================================================*/
+
+static void
+posix_collect_dep_files( const char* obj_dir, const char* includes_path )
+{
+    FILE* out = fopen( includes_path, "w" );
+    if ( !out ) return;
+
+    char pattern[ PATH_MAX ];
+    snprintf( pattern, sizeof( pattern ), "%s/*.d", obj_dir );
+
+    platform_find_data_t fd;
+    platform_find_t h = platform_find_first( pattern, &fd );
+    if ( h != PLATFORM_FIND_INVALID )
+    {
+        do
+        {
+            if ( fd.is_dir ) continue;
+            char dep_path[ PATH_MAX ];
+            snprintf( dep_path, sizeof( dep_path ), "%s/%s", obj_dir, fd.name );
+            posix_parse_dep_file( dep_path, out );
+        }
+        while ( platform_find_next( h, &fd ) );
+        platform_find_close( h );
+    }
+
+    fclose( out );
+}
+
 // clang-format on
 /*============================================================================================*/
