@@ -253,7 +253,7 @@ print_startup_banner( const build_context_t* ctx )
 int
 main( int argc, char** argv )
 {
-    // --- Debug arg injection -- 
+    // --- Debug arg injection --- 
     
     build_tool_debug_inject( &argc, &argv );
 

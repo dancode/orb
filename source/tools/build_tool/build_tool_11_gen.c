@@ -27,26 +27,28 @@
 
 ==============================================================================================*/
 
-#define MAX_FILES   1024   // Max source files scanned per vcxproj.
-#define MAX_FILTERS  512   // Max virtual filter folders per vcxproj.
+#define MAX_FILES   1024    // Max source files scanned per vcxproj.
+#define MAX_FILTERS 512     // Max virtual filter folders per vcxproj.
 
 /*==============================================================================================
     --- Per-Solution Path State ---
 
     Set once at the top of each solution's generation pass in build_gen_projects().
-    All emitter functions read these instead of hardcoding depth-1 relative paths,
-    so moving a solution's output directory only requires changing out_dir in the
+    All emitter functions read these instead of hardcoding depth relative paths.
+    Moving a solution's output directory only requires changing out_dir in the
     solution descriptor -- no string edits anywhere else in this file.
+
+    TLDR: we calculate the depth and escape string manually before generating.
 
     s_out_dir     -- where .sln and .vcxproj files land     (e.g. "build\\proj")
     s_root_prefix -- "../..\\" go back to the project root  (e.g. "..\\..\\")
     s_cd_root     -- "cd ..\\.." for NMake commands         (e.g. "..\\..")
 ==============================================================================================*/
 
-static const char* s_out_dir            = BUILD_DIR;
-static char        s_root_prefix[ 32 ]  = "..\\";
-static char        s_cd_root[ 32 ]      = "..";
-static bool        s_is_monolithic      = false;
+static const char* s_out_dir           = NULL;
+static char        s_root_prefix[ 32 ] = { 0 };
+static char        s_cd_root[ 32 ]     = { 0 };
+static bool        s_is_monolithic     = false;
 
 static void
 compute_path_parts( const char* out_dir )
@@ -54,36 +56,37 @@ compute_path_parts( const char* out_dir )
     // Count directory components: "build\\proj" has one separator -> depth 2.
     int depth = 1;
     for ( const char* p = out_dir; *p; ++p )
-        if ( *p == '\\' || *p == '/' ) depth++;
+        if ( *p == '\\' || *p == '/' )
+            depth++;
 
-    s_out_dir = out_dir;
+    s_out_dir          = out_dir;
 
     s_root_prefix[ 0 ] = '\0';
-    for ( int i = 0; i < depth; ++i )
-        strcat( s_root_prefix, "..\\" );
+    for ( int i = 0; i < depth; ++i ) strcat( s_root_prefix, "..\\" );
 
     // cd_root is the same path without the trailing backslash.
     s_cd_root[ 0 ] = '\0';
     strcat( s_cd_root, ".." );
-    for ( int i = 1; i < depth; ++i )
-        strcat( s_cd_root, "\\.." );
+    for ( int i = 1; i < depth; ++i ) strcat( s_cd_root, "\\.." );
 }
 
 // Metadata for one source file picked up by scan_directory_recursive().
 typedef struct
 {
-    char path[ PATH_MAX ];    // Relative path from project root.
-    char filter[ PATH_MAX ];  // Virtual folder path in VS (e.g. "engine\\core").
-    bool is_header;           // True for .h files.
+    char path[ PATH_MAX ];      // Relative path from project root.
+    char filter[ PATH_MAX ];    // Virtual folder path in VS (e.g. "engine\\core").
+    bool is_header;             // True for .h files.
+
 } file_info_t;
 
 // Per-scan buffers. Reset (g_file_count = 0, g_filter_count = 0) at the
 // start of every project emission -- reusable scratch, not persistent state.
+
 static file_info_t g_files[ MAX_FILES ];
 static int         g_file_count = 0;
 
-static char g_filters[ MAX_FILTERS ][ PATH_MAX ];
-static int  g_filter_count = 0;
+static char        g_filters[ MAX_FILTERS ][ PATH_MAX ];
+static int         g_filter_count = 0;
 
 /*==============================================================================================
     guid_from_name()
@@ -100,6 +103,7 @@ static int  g_filter_count = 0;
 static void
 guid_from_name( const char* name, char* out )
 {
+    // FNV-1a 64-bit variant
     unsigned long long h1 = 0xcbf29ce484222325ULL;
     unsigned long long h2 = 0x9ae16a3b2f90404fULL;
     for ( const unsigned char* p = ( const unsigned char* )name; *p; ++p )
@@ -108,12 +112,9 @@ guid_from_name( const char* name, char* out )
         h2 = ( h2 ^ *p ) * 0x880355f21e6d1965ULL;
     }
 
-    snprintf( out, 64, "{%08X-%04X-%04X-%04X-%04X%08X}",
-              ( unsigned int )( h1 >> 32 ),
-              ( unsigned int )( ( h1 >> 16 ) & 0xFFFFu ),
-              ( unsigned int )( h1 & 0xFFFFu ),
-              ( unsigned int )( h2 >> 48 ),
-              ( unsigned int )( ( h2 >> 32 ) & 0xFFFFu ),
+    snprintf( out, 64, "{%08X-%04X-%04X-%04X-%04X%08X}", ( unsigned int )( h1 >> 32 ),
+              ( unsigned int )( ( h1 >> 16 ) & 0xFFFFu ), ( unsigned int )( h1 & 0xFFFFu ),
+              ( unsigned int )( h2 >> 48 ), ( unsigned int )( ( h2 >> 32 ) & 0xFFFFu ),
               ( unsigned int )( h2 & 0xFFFFFFFFu ) );
 }
 
@@ -121,10 +122,12 @@ guid_from_name( const char* name, char* out )
 static void
 add_filter( const char* filter )
 {
-    if ( filter[ 0 ] == '\0' ) return;
+    if ( filter[ 0 ] == '\0' )
+        return;
     for ( int i = 0; i < g_filter_count; ++i )
     {
-        if ( platform_stricmp( g_filters[ i ], filter ) == 0 ) return;
+        if ( platform_stricmp( g_filters[ i ], filter ) == 0 )
+            return;
     }
     if ( g_filter_count < MAX_FILTERS )
         strcpy( g_filters[ g_filter_count++ ], filter );
@@ -150,7 +153,7 @@ add_filters_recursive( const char* filter )
         }
         p++;
     }
-    add_filter( tmp );  // Register the leaf segment.
+    add_filter( tmp );    // Register the leaf segment.
 }
 
 // Map a physical file path to a virtual VS filter path relative to root_dir.
@@ -161,20 +164,25 @@ get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
     out_filter[ 0 ] = '\0';
 
     size_t root_len = strlen( root_dir );
-    if ( strncmp( path, root_dir, root_len ) != 0 ) return;
+    if ( strncmp( path, root_dir, root_len ) != 0 )
+        return;
 
     const char* sub = path + root_len;
-    if ( *sub == '/' || *sub == '\\' ) sub++;
+    if ( *sub == '/' || *sub == '\\' )
+        sub++;
 
     const char* last_slash = strrchr( sub, '/' );
-    if ( !last_slash ) last_slash = strrchr( sub, '\\' );
-    if ( !last_slash ) return;  // File is directly under root_dir -> empty filter.
+    if ( !last_slash )
+        last_slash = strrchr( sub, '\\' );
+    if ( !last_slash )
+        return;    // File is directly under root_dir -> empty filter.
 
     size_t len = last_slash - sub;
     strncpy( out_filter, sub, len );
     out_filter[ len ] = '\0';
     for ( char* p = out_filter; *p; ++p )
-        if ( *p == '/' ) *p = '\\';
+        if ( *p == '/' )
+            *p = '\\';
 }
 
 // Walk a directory tree and accumulate every .c and .h file into g_files[].
@@ -185,12 +193,14 @@ scan_directory_recursive( const char* dir, const char* root_dir )
     snprintf( search_path, sizeof( search_path ), "%s\\*", dir );
 
     platform_find_data_t find_data;
-    platform_find_t      handle = platform_find_first( search_path, &find_data );
-    if ( handle == PLATFORM_FIND_INVALID ) return;
+    platform_find_t handle = platform_find_first( search_path, &find_data );
+    if ( handle == PLATFORM_FIND_INVALID )
+        return;
 
     do
     {
-        if ( strcmp( find_data.name, "." ) == 0 || strcmp( find_data.name, ".." ) == 0 ) continue;
+        if ( strcmp( find_data.name, "." ) == 0 || strcmp( find_data.name, ".." ) == 0 )
+            continue;
 
         char path[ PATH_MAX ];
         snprintf( path, sizeof( path ), "%s\\%s", dir, find_data.name );
@@ -202,18 +212,22 @@ scan_directory_recursive( const char* dir, const char* root_dir )
         else
         {
             const char* ext = strrchr( find_data.name, '.' );
-            if ( !ext ) continue;
+            if ( !ext )
+                continue;
 
             bool is_c = platform_stricmp( ext, ".c" ) == 0;
             bool is_h = platform_stricmp( ext, ".h" ) == 0;
-            if ( !( is_c || is_h ) ) continue;
-            if ( g_file_count >= MAX_FILES ) continue;
+            if ( !( is_c || is_h ) )
+                continue;
+            if ( g_file_count >= MAX_FILES )
+                continue;
 
             file_info_t* f = &g_files[ g_file_count++ ];
             strcpy( f->path, path );
             f->is_header = is_h;
             get_filter_for_path( path, root_dir, f->filter );
-            if ( f->filter[ 0 ] != '\0' ) add_filters_recursive( f->filter );
+            if ( f->filter[ 0 ] != '\0' )
+                add_filters_recursive( f->filter );
         }
     }
     while ( platform_find_next( handle, &find_data ) );
@@ -233,26 +247,28 @@ scan_directory_recursive( const char* dir, const char* root_dir )
 static void
 build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_info_t* target )
 {
-    buf[ 0 ] = '\0';
+    buf[ 0 ]    = '\0';
     size_t used = 0;
 
-#define ISDEF_APPEND( s )                                               \
-    do {                                                                \
-        size_t slen = strlen( s );                                      \
-        if ( used + slen + 2 < buf_size ) {                            \
-            if ( used ) buf[ used++ ] = ';';                            \
-            memcpy( buf + used, s, slen );                              \
-            used += slen;                                               \
-            buf[ used ] = '\0';                                         \
-        }                                                               \
-    } while ( 0 )
+#define ISDEF_APPEND( s )                  \
+    do                                     \
+    {                                      \
+        size_t slen = strlen( s );         \
+        if ( used + slen + 2 < buf_size )  \
+        {                                  \
+            if ( used )                    \
+                buf[ used++ ] = ';';       \
+            memcpy( buf + used, s, slen ); \
+            used += slen;                  \
+            buf[ used ] = '\0';            \
+        }                                  \
+    }                                      \
+    while ( 0 )
 
-    for ( int i = 0; g_defines_always[ i ]; ++i )
-        ISDEF_APPEND( g_defines_always[ i ] );
+    for ( int i = 0; g_defines_always[ i ]; ++i ) ISDEF_APPEND( g_defines_always[ i ] );
 
     const char** cfg = ( config == CONFIG_DEBUG ) ? g_defines_debug : g_defines_release;
-    for ( int i = 0; cfg[ i ]; ++i )
-        ISDEF_APPEND( cfg[ i ] );
+    for ( int i = 0; cfg[ i ]; ++i ) ISDEF_APPEND( cfg[ i ] );
 
     if ( target )
     {
@@ -265,7 +281,8 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
         for ( int i = 0; target->deps[ i ]; ++i )
         {
             target_info_t* dep = find_target( target->deps[ i ] );
-            if ( !dep ) continue;
+            if ( !dep )
+                continue;
             if ( dep->type == TARGET_STATIC_LIB || ( dep->type == TARGET_DYNAMIC_LIB && s_is_monolithic ) )
             {
                 char dep_upper[ 128 ];
@@ -274,7 +291,8 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
                 ISDEF_APPEND( define );
             }
         }
-        if ( s_is_monolithic ) ISDEF_APPEND( "BUILD_STATIC" );
+        if ( s_is_monolithic )
+            ISDEF_APPEND( "BUILD_STATIC" );
     }
 
 #undef ISDEF_APPEND
@@ -291,12 +309,12 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
 ==============================================================================================*/
 
 static void
-write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
+write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, 
                              target_type_t type, target_info_t* target )
 {
     const char* ext = ".exe";
-    if ( type == TARGET_STATIC_LIB ) ext = ".lib";
-    if ( type == TARGET_DYNAMIC_LIB ) ext = s_is_monolithic ? ".lib" : ".dll";
+    if ( type == TARGET_STATIC_LIB )    ext = ".lib";
+    if ( type == TARGET_DYNAMIC_LIB )   ext = s_is_monolithic ? ".lib" : ".dll";
 
     const char* mono_flag = s_is_monolithic ? " -monolithic" : "";
 
@@ -325,12 +343,17 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     // never race on shared dep outputs.
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
-    fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", s_root_prefix, g_build_dir, g_int_dir );
-    fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeBuildCommandLine>\n", s_cd_root, out_name, mono_flag );
+    fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
+             s_root_prefix, g_build_dir, g_int_dir );
+    fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeBuildCommandLine>\n",
+             s_cd_root, out_name, mono_flag );
     fprintf( f, "    <NMakeOutput>%sbin\\%s%s</NMakeOutput>\n", s_root_prefix, out_name, ext );
-    fprintf( f, "    <NMakeCleanCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -clean -target %s</NMakeCleanCommandLine>\n", s_cd_root, out_name );
-    fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n", s_cd_root, out_name, mono_flag );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n", s_root_prefix );
+    fprintf( f, "    <NMakeCleanCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -clean -target %s</NMakeCleanCommandLine>\n",
+             s_cd_root, out_name );
+    fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n",
+             s_cd_root, out_name, mono_flag );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+             s_root_prefix );
     fprintf( f, "  </PropertyGroup>\n" );
 
     // Single-file compile (Ctrl+F7). NMakeCompileSelectedFiles creates a NMakeCompile
@@ -338,7 +361,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     // VS does not inject the selected file path, so we compile all unity units (-compile-only).
     fprintf( f, "  <ItemDefinitionGroup>\n" );
     fprintf( f, "    <NMakeCompile>\n" );
-    fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n", s_cd_root, out_name, mono_flag );
+    fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
+             s_cd_root, out_name, mono_flag );
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
@@ -347,22 +371,25 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
         char additional_opts[ 256 ] = { 0 };
         for ( int i = 0; g_intellisense_flags[ i ]; ++i )
         {
-            if ( i ) strcat( additional_opts, " " );
+            if ( i )
+                strcat( additional_opts, " " );
             strcat( additional_opts, g_intellisense_flags[ i ] );
         }
 
         char dbg_defines[ 1024 ];
         char rel_defines[ 1024 ];
-        build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG,   target );
+        build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, target );
         build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, target );
 
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n", dbg_defines );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 dbg_defines );
         fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
         fprintf( f, "  </PropertyGroup>\n" );
 
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n", rel_defines );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 rel_defines );
         fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
         fprintf( f, "  </PropertyGroup>\n" );
     }
@@ -376,7 +403,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 }
 
 /*==============================================================================================
-    gen_proj_target()
+    build_gen_proj_target()
 
     Emit one .vcxproj + matching .vcxproj.filters for a specific engine target.
     The vcxproj's <ClCompile> entry is the target's unity TU; every other file
@@ -385,7 +412,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 ==============================================================================================*/
 
 static void
-gen_proj_target( target_info_t* target, int index )
+build_gen_proj_target( target_info_t* target, int index )
 {
     char vcxproj_path[ PATH_MAX ];
     snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_out_dir, target->name );
@@ -413,18 +440,24 @@ gen_proj_target( target_info_t* target, int index )
         bool        is_unit  = false;
         const char* filename = g_files[ i ].path;
         for ( const char* p = g_files[ i ].path; *p; ++p )
-            if ( *p == '/' || *p == '\\' ) filename = p + 1;
+            if ( *p == '/' || *p == '\\' )
+                filename = p + 1;
 
         for ( int j = 0; target->units[ j ]; ++j )
         {
-            if ( platform_stricmp( filename, target->units[ j ] ) == 0 ) { is_unit = true; break; }
+            if ( platform_stricmp( filename, target->units[ j ] ) == 0 )
+            {
+                is_unit = true;
+                break;
+            }
         }
 
         if ( is_unit )
         {
             const char* item_mono = s_is_monolithic ? " -monolithic" : "";
             fprintf( f, "    <ClCompile Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
-            fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n", s_cd_root, target->name, item_mono );
+            fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
+                     s_cd_root, target->name, item_mono );
             fprintf( f, "    </ClCompile>\n" );
         }
         else
@@ -451,7 +484,8 @@ gen_proj_target( target_info_t* target, int index )
         for ( int i = 0; i < g_filter_count; ++i )
         {
             fprintf( f, "    <Filter Include=\"%s\">\n", g_filters[ i ] );
-            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n", (unsigned int)i );
+            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
+                     ( unsigned int )i );
             fprintf( f, "    </Filter>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
@@ -461,13 +495,20 @@ gen_proj_target( target_info_t* target, int index )
         {
             bool        is_unit  = false;
             const char* filename = strrchr( g_files[ i ].path, '/' );
-            if ( !filename ) filename = strrchr( g_files[ i ].path, '\\' );
-            if ( filename ) filename++;
-            else filename = g_files[ i ].path;
+            if ( !filename )
+                filename = strrchr( g_files[ i ].path, '\\' );
+            if ( filename )
+                filename++;
+            else
+                filename = g_files[ i ].path;
 
             for ( int j = 0; target->units[ j ]; ++j )
             {
-                if ( platform_stricmp( filename, target->units[ j ] ) == 0 ) { is_unit = true; break; }
+                if ( platform_stricmp( filename, target->units[ j ] ) == 0 )
+                {
+                    is_unit = true;
+                    break;
+                }
             }
 
             const char* tag = is_unit ? "ClCompile" : "ClInclude";
@@ -492,8 +533,7 @@ gen_proj_target( target_info_t* target, int index )
 ==============================================================================================*/
 
 static void
-gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target,
-                                  const char* nav_guid )
+gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target, const char* nav_guid )
 {
     g_file_count   = 0;
     g_filter_count = 0;
@@ -530,33 +570,39 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     ( void )default_target;
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
-    fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n", s_root_prefix, g_build_dir, g_int_dir );
+    fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
+             s_root_prefix, g_build_dir, g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>echo       [nav] navigation-only project, nothing to build.</NMakeBuildCommandLine>\n" );
-    fprintf( f, "    <NMakeOutput>$(ProjectDir)%s%s\\$(ProjectName)\\$(Configuration)\\nav.stamp</NMakeOutput>\n", s_root_prefix, g_int_dir );
+    fprintf( f, "    <NMakeOutput>$(ProjectDir)%s%s\\$(ProjectName)\\$(Configuration)\\nav.stamp</NMakeOutput>\n",
+             s_root_prefix, g_int_dir );
     fprintf( f, "    <NMakeCleanCommandLine>echo       [nav] navigation-only project, nothing to clean.</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakeCompileFile>echo       [nav] navigation-only project.</NMakeCompileFile>\n" );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n", s_root_prefix );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+             s_root_prefix );
     fprintf( f, "  </PropertyGroup>\n" );
 
     {
         char additional_opts[ 256 ] = { 0 };
         for ( int i = 0; g_intellisense_flags[ i ]; ++i )
         {
-            if ( i ) strcat( additional_opts, " " );
+            if ( i )
+                strcat( additional_opts, " " );
             strcat( additional_opts, g_intellisense_flags[ i ] );
         }
 
         char dbg_defines[ 1024 ];
         char rel_defines[ 1024 ];
-        build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG,   NULL );
+        build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, NULL );
         build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, NULL );
 
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n", dbg_defines );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 dbg_defines );
         fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
         fprintf( f, "  </PropertyGroup>\n" );
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n", rel_defines );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 rel_defines );
         fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
         fprintf( f, "  </PropertyGroup>\n" );
     }
@@ -586,7 +632,8 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
         for ( int i = 0; i < g_filter_count; ++i )
         {
             fprintf( f, "    <Filter Include=\"%s\">\n", g_filters[ i ] );
-            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n", (unsigned int)i );
+            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
+                     ( unsigned int )i );
             fprintf( f, "    </Filter>\n" );
         }
         fprintf( f, "  </ItemGroup>\n" );
@@ -616,12 +663,13 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
 ==============================================================================================*/
 
 static void
-gen_solution( solution_info_t* sln )
+build_gen_solution( solution_info_t* sln )
 {
     char sln_path[ PATH_MAX ];
     snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", s_out_dir, sln->name );
     FILE* f = fopen( sln_path, "w" );
-    if ( !f ) return;
+    if ( !f )
+        return;
 
     fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
     fprintf( f, "# Visual Studio Version 17\n" );
@@ -630,7 +678,7 @@ gen_solution( solution_info_t* sln )
     const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
     const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
 
-    char nav_guid[ 64 ] = { 0 };
+    char        nav_guid[ 64 ]   = { 0 };
     {
         char key[ 128 ];
         snprintf( key, sizeof( key ), "nav:%s", sln->name );
@@ -640,32 +688,37 @@ gen_solution( solution_info_t* sln )
     // 1. Navigation project.
     if ( sln->nav_dir )
     {
-        const char* default_target = ( sln->target_names && sln->target_names[ 0 ] ) ? sln->target_names[ 0 ] : "unknown";
+        const char* default_target =
+            ( sln->target_names && sln->target_names[ 0 ] ) ? sln->target_names[ 0 ] : "unknown";
         gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target, nav_guid );
-        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n",
-                cpp_type_guid, sln->name, sln->name, nav_guid );
+        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n", cpp_type_guid, sln->name,
+                 sln->name, nav_guid );
         fprintf( f, "EndProject\n" );
     }
 
     // 2. Target projects.
-    char  folders[ 16 ][ PATH_MAX ];
-    char  folder_guids[ 16 ][ 64 ];
-    int   folder_count = 0;
+    char folders[ 16 ][ PATH_MAX ];
+    char folder_guids[ 16 ][ 64 ];
+    int  folder_count = 0;
 
     for ( const char** tn = sln->target_names; *tn; ++tn )
     {
         target_info_t* target = NULL;
         for ( int i = 0; i < g_target_count; ++i )
         {
-            if ( strcmp( g_targets[ i ].name, *tn ) == 0 ) { target = &g_targets[ i ]; break; }
+            if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
+            {
+                target = &g_targets[ i ];
+                break;
+            }
         }
 
         if ( target )
         {
             char guid[ 64 ];
             guid_from_name( target->name, guid );
-            fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n",
-                    cpp_type_guid, target->name, target->name, guid );
+            fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, target->name,
+                     target->name, guid );
 
             if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect || !target->is_build_tool )
             {
@@ -690,7 +743,11 @@ gen_solution( solution_info_t* sln )
                 {
                     bool bt_in_sln = false;
                     for ( const char** tn2 = sln->target_names; *tn2; ++tn2 )
-                        if ( strcmp( *tn2, "build_tool" ) == 0 ) { bt_in_sln = true; break; }
+                        if ( strcmp( *tn2, "build_tool" ) == 0 )
+                        {
+                            bt_in_sln = true;
+                            break;
+                        }
 
                     if ( bt_in_sln )
                     {
@@ -730,7 +787,11 @@ gen_solution( solution_info_t* sln )
             // Collect SLN folders for nesting.
             bool found = false;
             for ( int j = 0; j < folder_count; ++j )
-                if ( strcmp( folders[ j ], target->sln_folder ) == 0 ) { found = true; break; }
+                if ( strcmp( folders[ j ], target->sln_folder ) == 0 )
+                {
+                    found = true;
+                    break;
+                }
             if ( !found && folder_count < 16 )
             {
                 snprintf( folders[ folder_count ], PATH_MAX, "%s", target->sln_folder );
@@ -745,8 +806,8 @@ gen_solution( solution_info_t* sln )
     // 3. Virtual SLN folders.
     for ( int i = 0; i < folder_count; ++i )
     {
-        fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n",
-                folder_type_guid, folders[ i ], folders[ i ], folder_guids[ i ] );
+        fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", folder_type_guid, folders[ i ],
+                 folders[ i ], folder_guids[ i ] );
         fprintf( f, "EndProject\n" );
     }
 
@@ -828,9 +889,9 @@ build_gen_projects( void )
     for ( int i = 0; i < g_solution_count; ++i )
     {
         solution_info_t* sln = &g_solutions[ i ];
+        s_is_monolithic = sln->is_monolithic;
 
         compute_path_parts( sln->out_dir );
-        s_is_monolithic = sln->is_monolithic;
         ensure_dir( sln->out_dir );
 
         printf( "Generating Solution '%s' in %s/...\n", sln->name, sln->out_dir );
@@ -841,13 +902,13 @@ build_gen_projects( void )
             {
                 if ( strcmp( g_targets[ j ].name, *tn ) == 0 )
                 {
-                    gen_proj_target( &g_targets[ j ], j );
+                    build_gen_proj_target( &g_targets[ j ], j );
                     break;
                 }
             }
         }
 
-        gen_solution( sln );
+        build_gen_solution( sln );
     }
 
     printf( "\nProjects generated successfully.\n" );
