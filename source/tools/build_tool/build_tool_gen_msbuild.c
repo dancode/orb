@@ -193,8 +193,15 @@ build_gen_proj_target_msbuild( target_info_t* target )
 
     // Reflection codegen pre-build event. Mirrors step 6 in build_tool_08_exec.c:
     //   bin\reflect_tool.exe <root_dir> <gen_dir> <reflect_name>
-    // cd /d changes drive letter too, so the project can live on any drive.
-    // reflect_tool.exe must already be built (it is a dep of the target in the sln).
+    // Two-step command:
+    //   1. build_tool.exe builds reflect_tool if missing or stale (incremental,
+    //      nearly instant when already up to date). This handles fresh checkouts
+    //      where reflect_tool.exe hasn't been compiled yet. reflect_tool is not
+    //      included in the solution's project list, so VS won't build it on its own.
+    //   2. reflect_tool.exe generates the .generated.c/.h files.
+    // cd /d also changes drive letter so projects on any drive work correctly.
+    // NOTE: avoid "if not exist ... (cmd) && next" -- cmd.exe absorbs the && into
+    // the if clause. Using build_tool.exe unconditionally avoids that trap entirely.
     if ( target->has_reflect )
     {
         const char* rname = target->reflect_name ? target->reflect_name : target->name;
@@ -206,9 +213,12 @@ build_gen_proj_target_msbuild( target_info_t* target )
 
         fprintf( f, "  <ItemDefinitionGroup>\n" );
         fprintf( f, "    <PreBuildEvent>\n" );
-        fprintf( f, "      <Message>reflect_tool: generating %s.generated.c/.h</Message>\n", rname );
-        fprintf( f, "      <Command>cd /d \"$(ProjectDir)%s\" &amp;&amp; bin\\reflect_tool.exe %s %s\\%s %s</Command>\n",
-                 s_cd_root, root_dir_norm, g_build_dir, g_gen_dir, rname );
+        fprintf( f, "      <Message>reflect_tool: building tool and generating %s.generated.c/.h</Message>\n", rname );
+        fprintf( f, "      <Command>" );
+        fprintf( f, "cd /d \"$(ProjectDir)%s\"", s_cd_root );
+        fprintf( f, " &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target reflect_tool" );
+        fprintf( f, " &amp;&amp; bin\\reflect_tool.exe %s %s\\%s %s", root_dir_norm, g_build_dir, g_gen_dir, rname );
+        fprintf( f, "</Command>\n" );
         fprintf( f, "    </PreBuildEvent>\n" );
         fprintf( f, "  </ItemDefinitionGroup>\n" );
     }
