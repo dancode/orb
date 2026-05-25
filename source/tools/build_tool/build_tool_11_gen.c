@@ -368,7 +368,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
-    fprintf( f, "    <LanguageStandard_C>stdc17</LanguageStandard_C>\n" );
+    // LanguageStandard_C and IntelliSenseMode are emitted per-config below.
     fprintf( f, "  </PropertyGroup>\n" );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
@@ -399,8 +399,10 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
-    // Per-config IntelliSense context. NMakeIncludeSearchPath must live here (not in
-    // the unconditional group) -- VS only picks it up for IntelliSense in per-config groups.
+    // Per-config IntelliSense context. All NMake* properties must live here (not in
+    // the unconditional group) -- VS only picks them up for IntelliSense in per-config groups.
+    // NMakeAdditionalOptions is the correct tag for Makefile projects; <AdditionalOptions>
+    // is the MSBuild ClCompile property and is ignored by the IntelliSense engine here.
     {
         char additional_opts[ 256 ] = { 0 };
         for ( int i = 0; g_intellisense_flags[ i ]; ++i )
@@ -420,7 +422,15 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
                  dbg_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
+
+        /* FORCE C11 IntelliSense */
+        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
+
+        /* FORCE parser into C mode */
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", additional_opts );
+
+
         fprintf( f, "  </PropertyGroup>\n" );
 
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
@@ -428,7 +438,14 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
                  rel_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
+
+        /* FORCE C11 IntelliSense */
+        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
+
+        /* FORCE parser into C mode */
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", additional_opts );
+
         fprintf( f, "  </PropertyGroup>\n" );
     }
 
@@ -445,9 +462,11 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 
     Emit one .vcxproj + matching .vcxproj.filters for a specific engine target.
     The vcxproj's <ClCompile> entry is the target's unity TU. Non-unity .c files
-    are emitted as <ClCompile ExcludedFromBuild="true"> so VS IntelliSense parses
-    them as compilation units (with correct includes/defines), matching CMake's
-    HEADER_FILE_ONLY behavior. Pure header files are emitted as <ClInclude>.
+    are emitted as <ClInclude> (same as CMake) so IntelliSense context flows from
+    the unity TU rather than per-file overrides. Per-file <ClCompile ExcludedFromBuild>
+    with AdditionalOptions bypasses NMakeAdditionalOptions (/TC /std:c11) and causes
+    the EDG parser to reject designated initializers and compound literals. Pure
+    header files are also <ClInclude> for navigation.
 ==============================================================================================*/
 
 static void
@@ -502,23 +521,11 @@ build_gen_proj_target( target_info_t* target, int index )
         }
         else
         {
-            // Non-unity .c files: ExcludedFromBuild so VS gives them IntelliSense
-            // context as a TU without compiling them. Per-file AdditionalOptions
-            // sets /std:c11 explicitly; /TC is omitted because it can cause the
-            // IntelliSense EDG parser to use a legacy C mode that ignores /std:c11.
-            // .h and other files are plain ClInclude for navigation only.
-            const char* dot = strrchr( g_files[ i ].path, '.' );
-            if ( dot && platform_stricmp( dot, ".c" ) == 0 )
-            {
-                fprintf( f, "    <ClCompile Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
-                fprintf( f, "      <ExcludedFromBuild>true</ExcludedFromBuild>\n" );
-                fprintf( f, "      <AdditionalOptions>/std:c17 /Zc:preprocessor %%(AdditionalOptions)</AdditionalOptions>\n" );
-                fprintf( f, "    </ClCompile>\n" );
-            }
-            else
-            {
-                fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
-            }
+            // All non-unity files (both .c and .h) are <ClInclude>. IntelliSense
+            // context flows from the unity TU, inheriting NMakeAdditionalOptions
+            // (/TC /std:c11 /Zc:preprocessor) without per-file overrides that
+            // bypass the C mode and break designated initializers.
+            fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
         }
     }
 
@@ -592,9 +599,7 @@ build_gen_proj_target( target_info_t* target, int index )
                 }
             }
 
-            const char* dot     = strrchr( g_files[ i ].path, '.' );
-            bool        is_c    = dot && platform_stricmp( dot, ".c" ) == 0;
-            const char* tag     = ( is_unit || is_c ) ? "ClCompile" : "ClInclude";
+            const char* tag     = is_unit ? "ClCompile" : "ClInclude";
             fprintf( f, "    <%s Include=\"%s%s\">\n", tag, s_root_prefix, g_files[ i ].path );
             if ( g_files[ i ].filter[ 0 ] != '\0' )
                 fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
@@ -656,7 +661,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
-    fprintf( f, "    <LanguageStandard_C>stdc17</LanguageStandard_C>\n" );
+    // LanguageStandard_C and IntelliSenseMode are emitted per-config below.
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
 
@@ -694,14 +699,28 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
                  dbg_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
+
+        /* FORCE C11 IntelliSense */
+        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
+
+        /* FORCE parser into C mode */
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", additional_opts );
+
         fprintf( f, "  </PropertyGroup>\n" );
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
         fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
                  rel_defines );
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
+
+        /* FORCE C11 IntelliSense */
+        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
+
+        /* FORCE parser into C mode */
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", additional_opts );
+
         fprintf( f, "  </PropertyGroup>\n" );
     }
 

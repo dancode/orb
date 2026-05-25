@@ -10,6 +10,22 @@
 
 #include "c11_di.c"
 
+typedef struct
+{
+    int   x;
+    int   y;
+    float z;
+} vec3X_t;
+
+static void
+test_basic_X( void )
+{
+    /* Basic designated initializer -- C99/C11 standard, should always compile. */
+    vec3X_t v = { .x = 1, .y = 2, .z = 3.0f };
+    printf( "test_basic_X: x=%d y=%d z=%.1f\n", v.x, v.y, v.z );
+}
+
+
 int
 main( void )
 {

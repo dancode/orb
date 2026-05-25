@@ -497,8 +497,9 @@ const char* g_defines_release[] = {
 // /WX /Zi /Od /O2 /MD etc.) that have no effect on IntelliSense parsing.
 
 const char* g_intellisense_flags[] = {
-    "/std:c17",
-    "/Zc:preprocessor",
+    "/TC",
+    "/std:c11",
+    "/Zc:preprocessor",    
     NULL,
 };
 
