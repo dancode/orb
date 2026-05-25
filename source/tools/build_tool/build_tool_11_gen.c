@@ -203,7 +203,7 @@ static void
 scan_directory_recursive( const char* dir, const char* root_dir )
 {
     char search_path[ PATH_MAX ];
-    snprintf( search_path, sizeof( search_path ), "%s\\*", dir );
+    snprintf( search_path, sizeof( search_path ), "%s" PATH_SEP "*", dir );
 
     platform_find_data_t find_data;
     platform_find_t handle = platform_find_first( search_path, &find_data );
@@ -216,7 +216,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
             continue;
 
         char path[ PATH_MAX ];
-        snprintf( path, sizeof( path ), "%s\\%s", dir, find_data.name );
+        snprintf( path, sizeof( path ), "%s" PATH_SEP "%s", dir, find_data.name );
         normalize_slashes( path );
 
         if ( find_data.is_dir )
@@ -368,6 +368,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
+    fprintf( f, "    <LanguageStandard>stdcpp17</LanguageStandard>\n" );
     fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
@@ -444,9 +445,10 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     build_gen_proj_target()
 
     Emit one .vcxproj + matching .vcxproj.filters for a specific engine target.
-    The vcxproj's <ClCompile> entry is the target's unity TU; every other file
-    under target->root_dir is added as <ClInclude> for Solution Explorer visibility
-    without claiming compile ownership.
+    The vcxproj's <ClCompile> entry is the target's unity TU. Non-unity .c files
+    are emitted as <ClCompile ExcludedFromBuild="true"> so VS IntelliSense parses
+    them as compilation units (with correct includes/defines), matching CMake's
+    HEADER_FILE_ONLY behavior. Pure header files are emitted as <ClInclude>.
 ==============================================================================================*/
 
 static void
@@ -501,7 +503,23 @@ build_gen_proj_target( target_info_t* target, int index )
         }
         else
         {
-            fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
+            // Non-unity .c files: ExcludedFromBuild so VS gives them IntelliSense
+            // context as a TU without compiling them. Per-file AdditionalOptions
+            // forces C11 because the project-level AdditionalOptions is only
+            // picked up for files with an explicit NMakeCompileFileCommandLine.
+            // .h and other files are plain ClInclude for navigation only.
+            const char* dot = strrchr( g_files[ i ].path, '.' );
+            if ( dot && platform_stricmp( dot, ".c" ) == 0 )
+            {
+                fprintf( f, "    <ClCompile Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
+                fprintf( f, "      <ExcludedFromBuild>true</ExcludedFromBuild>\n" );
+                fprintf( f, "      <AdditionalOptions>/std:c11 /Zc:preprocessor /TC %%(AdditionalOptions)</AdditionalOptions>\n" );
+                fprintf( f, "    </ClCompile>\n" );
+            }
+            else
+            {
+                fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
+            }
         }
     }
 
@@ -575,7 +593,9 @@ build_gen_proj_target( target_info_t* target, int index )
                 }
             }
 
-            const char* tag = is_unit ? "ClCompile" : "ClInclude";
+            const char* dot     = strrchr( g_files[ i ].path, '.' );
+            bool        is_c    = dot && platform_stricmp( dot, ".c" ) == 0;
+            const char* tag     = ( is_unit || is_c ) ? "ClCompile" : "ClInclude";
             fprintf( f, "    <%s Include=\"%s%s\">\n", tag, s_root_prefix, g_files[ i ].path );
             if ( g_files[ i ].filter[ 0 ] != '\0' )
                 fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
@@ -637,6 +657,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
+    fprintf( f, "    <LanguageStandard>stdcpp17</LanguageStandard>\n" );
     fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );

@@ -39,3 +39,20 @@ GEMINI OUTPUT
   3. Implementing the Engine Port
 
   
+   Build System Feature Gaps
+   * Post-Build Steps: There is no mechanism to run commands after a build (e.g.,
+     copying assets to bin/, running unit tests, or triggering a deployment script).
+	 
+   * External Dependencies: Currently, the tool only knows about engine targets and a
+     few system libs. There is no infrastructure for linking against 3rd-party libraries
+     (headers or .lib/.a files).
+  
+   * Linux IDE Generation: While -gen creates Visual Studio solutions, there is no
+     support for generating Linux-friendly project files like VS Code tasks.json or a
+     simple Makefile.
+  
+   * Self-Hosting Bootstrap: The bootstrap_build_tool.bat is separate. The build tool
+     could have a -self-update or -bootstrap flag to recompile itself from within.
+	 
+	* Extra Flags: No way to specify extra_compile_flags or extra_link_flags for a
+     specific target (e.g., to set a custom entry point or increase stack size).

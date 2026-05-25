@@ -46,6 +46,9 @@ typedef struct log_entry_s      /* 256 bytes */
 /* Sink callback — called once per log_write that passes the runtime level filter. */
 typedef void ( *log_sink_fn )( const log_entry_t* entry, void* userdata );
 
+// TEMP TO TEST
+void log_add_sink( log_sink_fn fn, void* userdata );
+
 /*==============================================================================================
 
     engine/core/core_memory.c

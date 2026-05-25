@@ -12,7 +12,7 @@
 #include "orb.h"
 #include "engine/core/core_api.h"
 
-void rs_run_tests( void );
+// void rs_run_tests( void );
 
 /*============================================================================================*/
 
@@ -22,7 +22,7 @@ main( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
 
-    rs_run_tests();
+    // rs_run_tests();
 
     
     return 0;

@@ -59,3 +59,12 @@ TODO: make clangd work with Visual Studio code outout gen.
      Server (specifically clangd). If your build_tool generates a compile_commands.json
      file in the root directory, VS Code instantly gets perfect IntelliSense, "Go to
      Definition," and error squigglies that match your compiler perfectly.
+	 
+	 
+	 
+	  OK, take your time. When you're back, I have a different theory worth discussing — the squiggles
+  may not be a C standard issue at all. core_api.c doesn't include core.h, so when VS parses it as a
+   standalone TU, core_api_t is simply undefined. VS squiggles the . in { .field = value } when the
+  struct type is unknown — it looks like a C89 error but the root cause is the missing type. We
+  should talk about whether the fix belongs in the source file or the generator before trying
+  another approach.

@@ -13,6 +13,7 @@
 #include "core.generated.h"    
 // #define HAS_GENERATED_FILE 1
 // #endif
+#include "engine/core/core.h"
 
 /*==============================================================================================
     API Start / Shutdown

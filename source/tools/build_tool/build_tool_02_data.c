@@ -299,7 +299,7 @@ target_info_t g_targets[] = {
     {
      .name       = "sb_engine_app",
      .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/sandbox/engine/engine_sys",
+     .root_dir   = "source/sandbox/engine/engine_app",
      .sln_folder = "09_SANDBOX/ENGINE",
      .units      = { "sb_engine_app.c" },
      .deps       = { "sys", "mod", "app" },
@@ -334,7 +334,7 @@ target_info_t g_targets[] = {
      .root_dir   = "source/sandbox/runtime/runtime_gen",
      .sln_folder = "09_SANDBOX/RUNTIME",
      .units      = { "sb_runtime_gen.c" },
-     .deps       = { "sys", "mod", "core", "rs" },
+     .deps        = { "sys", "mod", "core", "rs" },
      .has_reflect = true,
      },
 
@@ -380,6 +380,10 @@ static const char* g_sln_main_targets[] = {
 // Standalone build tools workspace. For modifying the build system itself.
 static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL };
 
+
+// Standalone build tools workspace. For modifying the build system itself.
+static const char* g_sln_core_targets[] = { "core", NULL };
+
 // .nav_dir = "source",
 
 solution_info_t    g_solutions[]         = {
@@ -400,6 +404,13 @@ solution_info_t    g_solutions[]         = {
     {
      .name          = "orb_build",
      .target_names  = g_sln_tools_targets,
+     .nav_dir       = NULL,
+     .out_dir       = BUILD_DIR PATH_SEP "proj",
+     .is_monolithic = false,
+     },
+    {
+     .name          = "orb_core",
+     .target_names  = g_sln_core_targets,
      .nav_dir       = NULL,
      .out_dir       = BUILD_DIR PATH_SEP "proj",
      .is_monolithic = false,
