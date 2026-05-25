@@ -244,26 +244,28 @@ scan_directory_recursive( const char* dir, const char* root_dir )
     passes to cl.exe.
 ==============================================================================================*/
 
+static inline void
+isdef_append( char* buf, size_t buf_size, size_t* used, const char* s )
+{
+    size_t slen = strlen( s );
+    if ( *used + slen + 2 < buf_size )
+    {
+        if ( *used )
+            buf[ ( *used )++ ] = ';';
+        memcpy( buf + *used, s, slen );
+        *used += slen;
+        buf[ *used ] = '\0';
+    }
+}
+
 static void
 build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_info_t* target )
 {
     buf[ 0 ]    = '\0';
     size_t used = 0;
 
-#define ISDEF_APPEND( s )                  \
-    do                                     \
-    {                                      \
-        size_t slen = strlen( s );         \
-        if ( used + slen + 2 < buf_size )  \
-        {                                  \
-            if ( used )                    \
-                buf[ used++ ] = ';';       \
-            memcpy( buf + used, s, slen ); \
-            used += slen;                  \
-            buf[ used ] = '\0';            \
-        }                                  \
-    }                                      \
-    while ( 0 )
+    // Bind closure vars so call sites read identically to the old local macro.
+    #define ISDEF_APPEND( s ) isdef_append( buf, buf_size, &used, s )
 
     for ( int i = 0; g_defines_always[ i ]; ++i ) ISDEF_APPEND( g_defines_always[ i ] );
 
@@ -295,7 +297,7 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
             ISDEF_APPEND( "BUILD_STATIC" );
     }
 
-#undef ISDEF_APPEND
+    #undef ISDEF_APPEND
 }
 
 /*==============================================================================================
@@ -432,6 +434,7 @@ build_gen_proj_target( target_info_t* target, int index )
 
     g_file_count   = 0;
     g_filter_count = 0;
+
     scan_directory_recursive( target->root_dir, target->root_dir );
 
     fprintf( f, "  <ItemGroup>\n" );
