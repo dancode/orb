@@ -89,6 +89,11 @@ typedef struct
 typedef intptr_t platform_find_t;
 #define PLATFORM_FIND_INVALID  ( ( platform_find_t )( -1 ) )
 
+/*  Callback type for platform_spawn_capture().
+    Called once per complete output line; line is null-terminated, no trailing newline. */
+
+typedef void ( *platform_line_fn_t )( char* line, void* userdata );
+
 /*==============================================================================================
     --- Project Constants ---
 ==============================================================================================*/
@@ -360,6 +365,45 @@ typedef unsigned int out_flags_t;
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( OBB_OUT_TESTING ) // ( ORB_OUT_NORMAL | ORB_OUT_REFLECT )
+
+/*==============================================================================================
+    --- Compiler Command Type ---
+
+    Holds each logical fragment of the final compiler command line.
+    Assembled section-by-section by cc_fill_compile_cmd() in 06_compile.c;
+    printed selectively by cc_print(); joined for execution by cc_assemble().
+==============================================================================================*/
+
+typedef struct
+{
+    char exe      [ 64          ];  // cl.exe / clang-cl.exe / gcc / clang
+    char flags    [ 512         ];  // /c /nologo /W4 ... or -c -Wall ...
+    char includes [ 512         ];  // /I source /I gen_dir  or  -I source -I gen_dir
+    char defines  [ 1024        ];  // /DOS_WINDOWS ...  or  -DOS_WINDOWS ...
+    char output   [ 512         ];  // /Fo<dir>/ /Fd<dir>/  or  -o <dir>/<unit>.o
+    char sources  [ CMD_BUF_MAX ];  // absolute .c paths
+
+} compile_cmd_t;
+
+/*==============================================================================================
+    --- Linker Command Type ---
+
+    Holds each logical fragment of the final linker / archiver command line.
+    Filled by build_target_link() in 07_link.c via the platform_lk_* helpers.
+    lib.exe leaves pdb empty; link.exe fills all fields.
+==============================================================================================*/
+
+typedef struct
+{
+    char exe      [ 32       ];  // lib.exe / link.exe / ar / gcc / clang
+    char artifact [ PATH_MAX ];  // final output path (display only)
+    char flags    [ 256      ];  // /nologo /DLL ...  or  -shared ...
+    char output   [ 512      ];  // /OUT:... /IMPLIB:...  or  -o ...
+    char pdb      [ 256      ];  // /DEBUG /PDB:...  (empty on POSIX / for lib.exe)
+    char inputs   [ 512      ];  // objDir\*.obj  or  objDir/*.o
+    char libs     [ 1024     ];  // dep.lib ... user32.lib ...  or  -lm ...
+
+} link_cmd_t;
 
 /*==============================================================================================
     --- Orchestration API ---

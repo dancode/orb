@@ -21,25 +21,6 @@
 // clang-format off
 
 /*==============================================================================================
-    --- Compile Command Struct ---
-
-    Holds each logical fragment of the final cl.exe command line.
-    Assembled in order via cc_fill_compile_cmd(); printed selectively via
-    cc_print(); joined into one string by cc_assemble() for execution.
-==============================================================================================*/
-
-typedef struct
-{
-    char exe      [ 64          ];  // cl.exe or clang-cl.exe
-    char flags    [ 512         ];  // /c /nologo /W4 /WX /Zi /Od /MDd ...
-    char includes [ 512         ];  // /I source /I gen_dir
-    char defines  [ 1024        ];  // /DOS_WINDOWS /DCOMPILE_MSVC /D_DEBUG ...
-    char output   [ 512         ];  // /FoobjDir/ /FdobjDir/
-    char sources  [ CMD_BUF_MAX ];  // absolute .c paths
-
-} compile_cmd_t;
-
-/*==============================================================================================
     --- Field Append ---
 
     Append a formatted string to a fixed-size field inside compile_cmd_t.
@@ -84,9 +65,9 @@ cc_field( char* dst, size_t dst_size, const char* fmt, ... )
 static void
 cc_check_overflow( const compile_cmd_t* cc )
 {
-    if ( cc->exe     [ 64          - 1 ] || cc->flags   [ 512         - 1 ] ||
-         cc->includes[ 512         - 1 ] || cc->defines [ 1024        - 1 ] ||
-         cc->output  [ 512         - 1 ] || cc->sources [ CMD_BUF_MAX - 1 ] )
+    if ( cc->exe     [ sizeof( cc->exe      ) - 1 ] || cc->flags   [ sizeof( cc->flags   ) - 1 ] ||
+         cc->includes[ sizeof( cc->includes ) - 1 ] || cc->defines [ sizeof( cc->defines ) - 1 ] ||
+         cc->output  [ sizeof( cc->output   ) - 1 ] || cc->sources [ sizeof( cc->sources ) - 1 ] )
     {
         printf( ORB_INDENT "[orb error] compile_cmd_t sentinel overwritten -- field overflow\n" );
         exit( 1 );
@@ -203,14 +184,11 @@ static void
 cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
                      const char* obj_dir, const char* gen_dir, compile_cmd_t* cc )
 {
-    // exe
-    snprintf( cc->exe, sizeof( cc->exe ), "%s",
-              ctx->compiler == COMPILE_CLANG ? "clang-cl.exe" : "cl.exe" );
+    // exe -- platform
+    snprintf( cc->exe, sizeof( cc->exe ), "%s", platform_cc_exe( ctx->compiler ) );
 
-    // flags: standard + config-specific + active warning suppressions.
-    CC_APPEND( cc->flags, "/c /nologo /W4 /WX /Zc:preprocessor /std:c11" );
-    if ( ctx->config == CONFIG_DEBUG ) CC_APPEND( cc->flags, " /Zi /Od /MDd" );
-    else                               CC_APPEND( cc->flags, " /O2 /MD" );
+    // flags: platform base flags + active warning suppressions from 02_data.c tables.
+    platform_cc_base_flags( ctx->config, cc->flags, sizeof( cc->flags ) );
 
     for ( int i = 0; i < g_warn_suppression_count; ++i )
     {
@@ -220,19 +198,22 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
             CC_APPEND( cc->flags, " %s", s->flag );
     }
 
-    // includes: generated headers are always in the search path.
-    CC_APPEND( cc->includes, "/I source /I %s", gen_dir );
+    // includes: source root + generated header dir -- platform prefix.
+    platform_cc_append_include( "source", cc->includes, sizeof( cc->includes ) );
+    platform_cc_append_include( gen_dir,  cc->includes, sizeof( cc->includes ) );
 
     // defines: consumed from shared tables in 02_data.c so the IntelliSense
     // output in 11_gen.c is guaranteed to match. Per-target _STATIC chain
     // is procedural -- it depends on runtime target state.
     for ( int i = 0; g_defines_always[ i ]; ++i )
-        CC_APPEND( cc->defines, "%s/D%s", cc->defines[ 0 ] ? " " : "", g_defines_always[ i ] );
+        platform_cc_append_define( g_defines_always[ i ], cc->defines, sizeof( cc->defines ) );
 
     {
         char upper[ 128 ];
         get_target_upper( target->name, upper, sizeof( upper ) );
-        CC_APPEND( cc->defines, " /D%s_STATIC", upper );
+        char static_define[ 128 + 8 ];
+        snprintf( static_define, sizeof( static_define ), "%s_STATIC", upper );
+        platform_cc_append_define( static_define, cc->defines, sizeof( cc->defines ) );
     }
     for ( int i = 0; target->deps[ i ]; ++i )
     {
@@ -244,18 +225,21 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
         {
             char dep_upper[ 128 ];
             get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
-            CC_APPEND( cc->defines, " /D%s_STATIC", dep_upper );
+            char static_define[ 128 + 8 ];
+            snprintf( static_define, sizeof( static_define ), "%s_STATIC", dep_upper );
+            platform_cc_append_define( static_define, cc->defines, sizeof( cc->defines ) );
         }
     }
-    if ( ctx->is_monolithic ) CC_APPEND( cc->defines, " /DBUILD_STATIC" );
+    if ( ctx->is_monolithic )
+        platform_cc_append_define( "BUILD_STATIC", cc->defines, sizeof( cc->defines ) );
     {
         const char** cfg_defines = ( ctx->config == CONFIG_DEBUG ) ? g_defines_debug : g_defines_release;
         for ( int i = 0; cfg_defines[ i ]; ++i )
-            CC_APPEND( cc->defines, " /D%s", cfg_defines[ i ] );
+            platform_cc_append_define( cfg_defines[ i ], cc->defines, sizeof( cc->defines ) );
     }
 
-    // output dirs: trailing slash required -- without it cl treats the path as a filename prefix.
-    CC_APPEND( cc->output, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
+    // output -- platform (MSVC: /Fo<dir>/ /Fd<dir>/; GCC: -o <dir>/<unit>.o per file).
+    platform_cc_output_flags( obj_dir, cc->output, sizeof( cc->output ) );
 }
 
 /*==============================================================================================
@@ -305,10 +289,9 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 
     cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc );
 
-    // /showIncludes: cl.exe emits "Note: including file: <path>" for each header.
-    // We capture those lines into _includes.txt so header changes trigger rebuilds.
-    // Only added when include tracking is active -- the output is verbose.
-    if ( g_include_track ) CC_APPEND( cc.flags, " /showIncludes" );
+    // Dep-tracking flag: on MSVC /showIncludes streams header paths inline; on GCC/Clang
+    // -MMD -MF writes a .d file post-compile. The platform layer returns the right string.
+    if ( g_include_track ) CC_APPEND( cc.flags, " %s", platform_cc_dep_flag() );
 
     // sources: absolute paths so MSVC error messages are navigable from any CWD.
     {

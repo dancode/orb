@@ -7,13 +7,11 @@
         build_run_cmd()                     -- run + wait, output to log or stdout.
         build_run_cmd_capture_includes()    -- run + wait, parse /showIncludes lines.
 
-    Both use CreateProcess directly rather than system() / _popen / _pclose. The
-    CRT wrappers internally dup the parent's stdio descriptors as a side effect of
-    setting up the child's handles. When the parallel scheduler calls them from N
-    worker threads at once, the dups race and children inherit clobbered handles --
-    observable as silent exit-code-1 failures with empty output. CreateProcess sets
-    child stdio via STARTUPINFO with NO mutation of the parent's fds; N concurrent
-    calls are safe.
+    Both delegate to the platform layer (build_tool_win_spawn.c / build_tool_posix_spawn.c)
+    rather than calling system() / _popen / _pclose directly. The platform layer uses
+    OS-native spawning APIs (CreateProcess on Win32, posix_spawn on POSIX) that set child
+    stdio without mutating the parent's file descriptors. This makes N concurrent worker
+    threads safe -- CRT wrappers race on descriptor duplication and produce silent failures.
 
 ==============================================================================================*/
 // clang-format off
@@ -23,89 +21,27 @@
 const char* sched_log_path( void );
 
 /*==============================================================================================
-    --- Child Process Spawning ---
-
-    Spawn a child via CreateProcessA, wait for exit, return the exit code.
-
-    If log_path is non-NULL the child's stdout and stderr are appended to that
-    file (FILE_SHARE_WRITE so concurrent workers never block each other).
-    NULL falls through to the parent's console handles.
-
-    cmd is wrapped in "cmd.exe /C" so shell builtins (del, for) and
-    tool-side glob expansion (*.obj) keep working unchanged.
-==============================================================================================*/
-
-static int
-spawn_cmd( const char* cmd, const char* log_path )
-{
-    SECURITY_ATTRIBUTES sa = { sizeof( sa ), NULL, TRUE };
-    HANDLE hout = NULL;
-
-    if ( log_path )
-    {
-        hout = CreateFileA( log_path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                            &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL );
-
-        if ( hout == INVALID_HANDLE_VALUE ) {
-            printf( ORB_INDENT "[orb error] could not open log file %s (err %lu)\n",
-                    log_path, GetLastError() );
-            return -1;
-        }
-    }
-
-    char command_string[ CMD_BUF_MAX ];
-    snprintf( command_string, sizeof( command_string ), "cmd.exe /C %s", cmd );
-
-    STARTUPINFOA si = { 0 };
-    si.cb         = sizeof( si );
-    si.dwFlags    = STARTF_USESTDHANDLES;
-    si.hStdInput  = GetStdHandle( STD_INPUT_HANDLE );
-    si.hStdOutput = hout ? hout : GetStdHandle( STD_OUTPUT_HANDLE );
-    si.hStdError  = hout ? hout : GetStdHandle( STD_ERROR_HANDLE );
-
-    PROCESS_INFORMATION pi = { 0 };
-    if ( !CreateProcessA( NULL, command_string, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi ) )
-    {
-        DWORD err = GetLastError();
-        if ( hout ) CloseHandle( hout );
-        printf( ORB_INDENT "[orb error] CreateProcess failed (err %lu): %s\n", err, cmd );
-        return -1;
-    }
-
-    WaitForSingleObject( pi.hProcess, INFINITE );
-    DWORD error_code = 1;
-    GetExitCodeProcess( pi.hProcess, &error_code );
-    CloseHandle( pi.hProcess );
-    CloseHandle( pi.hThread );
-    if ( hout ) CloseHandle( hout );
-
-    return ( int )error_code;
-}
-
-/*==============================================================================================
     --- One-Shot Command Execution ---
 
-    Routes to spawn_cmd() with the active worker's log path so child output is
-    captured into the per-target log during parallel builds. On failure the exit
-    code is also written to the log so post-mortem inspection has a clear marker.
+    Delegates to platform_spawn(). When a worker log is active the child's output is
+    appended there; otherwise it inherits the parent's console handles.
+
+    build_run_cmd() also appends an exit-code marker on failure so post-mortem log
+    inspection always has a clear terminal line.
 ==============================================================================================*/
 
 int
 build_run_cmd( const char* cmd )
 {
     const char* log = sched_log_path();
-    if ( log )
-    {
-        int rc = spawn_cmd( cmd, log );
+    int rc = platform_spawn( cmd, log );
 
-        if ( rc != 0 )
-        {
-            FILE* lf = fopen( log, "a" );
-            if ( lf ) { fprintf( lf, ORB_INDENT "[orb exit = %d]\n", rc ); fclose( lf ); }
-        }
-        return rc;
+    if ( log && rc != 0 )
+    {
+        FILE* lf = fopen( log, "a" );
+        if ( lf ) { fprintf( lf, ORB_INDENT "[orb exit = %d]\n", rc ); fclose( lf ); }
     }
-    return spawn_cmd( cmd, NULL );
+    return rc;
 }
 
 /* Like build_run_cmd() but suppresses the exit-code marker on failure.
@@ -115,8 +51,7 @@ build_run_cmd( const char* cmd )
 int
 build_run_cmd_quiet( const char* cmd )
 {
-    const char* log = sched_log_path();
-    return spawn_cmd( cmd, log );
+    return platform_spawn( cmd, sched_log_path() );
 }
 
 /*==============================================================================================
@@ -195,48 +130,31 @@ process_includes_line( char* line, FILE* includes, FILE* out )
 /*==============================================================================================
     --- Capture Includes ---
 
-    Run a compile command, intercept every output line, and route each line to
-    either the header-path list (includes_path) or the build log. Used exclusively
-    by the compile step. Also serves as the general-purpose capture path for
-    link/lib where includes_path is NULL (no /showIncludes parsing needed, but
-    we still want line-by-line capture so [MSVC] prefixing and ORB_OUT_MSVC_OUTPUT
-    gating apply).
+    Run a compile command and route each output line through process_includes_line().
+    Used exclusively by the compile step. Also serves as the general-purpose line-capture
+    path for link/lib where includes_path is NULL (no /showIncludes parsing needed, but
+    we still want per-line routing so [MSVC] prefixing and ORB_OUT_MSVC_OUTPUT gating apply).
 
-    Uses CreatePipe + CreateProcess instead of _popen/_pclose for the same
-    thread-safety reason as spawn_cmd().
+    Delegates to platform_spawn_capture() which owns the pipe and line assembly.
 ==============================================================================================*/
+
+typedef struct
+{
+    FILE* includes;
+    FILE* out;
+
+} includes_ctx_t;
+
+static void
+on_includes_line( char* line, void* userdata )
+{
+    includes_ctx_t* ctx = ( includes_ctx_t* )userdata;
+    process_includes_line( line, ctx->includes, ctx->out );
+}
 
 int
 build_run_cmd_capture_includes( const char* cmd, const char* includes_path )
 {
-    SECURITY_ATTRIBUTES sa = { sizeof( sa ), NULL, TRUE };
-    HANDLE              rd = NULL, wr = NULL;
-    if ( !CreatePipe( &rd, &wr, &sa, 65536 ) ) return -1;
-    SetHandleInformation( rd, HANDLE_FLAG_INHERIT, 0 );
-
-    char compile_command[ CMD_BUF_MAX ];
-    snprintf( compile_command, sizeof( compile_command ), "cmd.exe /C %s", cmd );
-
-    STARTUPINFOA si = { 0 };
-    si.cb         = sizeof( si );
-    si.dwFlags    = STARTF_USESTDHANDLES;
-    si.hStdInput  = GetStdHandle( STD_INPUT_HANDLE );
-    si.hStdOutput = wr;
-    si.hStdError  = wr;
-
-    // Submit the CL.exe compile command
-
-    PROCESS_INFORMATION pi = { 0 };
-    if ( !CreateProcessA( NULL, compile_command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi ) )
-    {
-        CloseHandle( rd );
-        CloseHandle( wr );
-        return -1;
-    }
-
-    // Close our copy of the write end so ReadFile reaches EOF when the child exits.
-    CloseHandle( wr );
-
     // Output sink: per-worker log if active, otherwise stdout.
     FILE* owned_log = NULL;
     FILE* out       = stdout;
@@ -250,54 +168,13 @@ build_run_cmd_capture_includes( const char* cmd, const char* includes_path )
 
     FILE* includes = includes_path ? fopen( includes_path, "w" ) : NULL;
 
-    // Stream the pipe into a line buffer; classify each full line.
-    char   line     [ 4096 ];
-    char   buf      [ 4096 ];
-    size_t line_len  = 0;
-    DWORD  bytes_read = 0;
-
-    while ( ReadFile( rd, buf, sizeof( buf ), &bytes_read, NULL ) && bytes_read > 0 )
-    {
-        for ( DWORD i = 0; i < bytes_read; ++i )
-        {
-            char c = buf[ i ];
-            if ( c == '\r' ) continue;
-
-            if ( c == '\n' || line_len >= sizeof( line ) - 1 )
-            {
-                line[ line_len ] = '\0';
-                process_includes_line( line, includes, out );
-                line_len = 0;
-
-                // If flushed due to buffer overflow (not a true newline), the
-                // current character is real content -- don't lose it.
-                if ( c != '\n' ) line[ line_len++ ] = c;
-            }
-            else
-            {
-                line[ line_len++ ] = c;
-            }
-        }
-    }
-
-    // Flush any trailing partial line (cl may exit without a final newline).
-    if ( line_len > 0 )
-    {
-        line[ line_len ] = '\0';
-        process_includes_line( line, includes, out );
-    }
-
-    CloseHandle( rd );
-    WaitForSingleObject( pi.hProcess, INFINITE );
-    DWORD error_code = 1;
-    GetExitCodeProcess( pi.hProcess, &error_code );
-    CloseHandle( pi.hProcess );
-    CloseHandle( pi.hThread );
+    includes_ctx_t ctx = { includes, out };
+    int rc = platform_spawn_capture( cmd, on_includes_line, &ctx );
 
     if ( includes  ) fclose( includes );
     if ( owned_log ) fclose( owned_log );
 
-    return ( int )error_code;
+    return rc;
 }
 
 // clang-format on

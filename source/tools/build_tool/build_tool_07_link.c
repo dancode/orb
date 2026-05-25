@@ -17,66 +17,20 @@
 // clang-format off
 
 /*==============================================================================================
-    --- Link Command Struct ---
-==============================================================================================*/
-
-typedef struct
-{
-    char exe      [ 32       ];  // lib.exe or link.exe
-    char artifact [ PATH_MAX ];  // final output path (for the summary display line)
-    char flags    [ 256      ];  // /nologo /DLL ...
-    char output   [ 512      ];  // /OUT:... /IMPLIB:...
-    char pdb      [ 256      ];  // /DEBUG /PDB:... (empty for lib.exe)
-    char inputs   [ 512      ];  // objDir/*.obj
-    char libs     [ 1024     ];  // dep.lib ... user32.lib ...
-
-} link_cmd_t;
-
-/*==============================================================================================
     Verify the last byte of every link_cmd_t field is still '\0' before assembly.
 ==============================================================================================*/
 
 static void
 lk_check_overflow( const link_cmd_t* lk )
 {
-    if ( lk->exe     [ 32       - 1 ] || lk->artifact[ PATH_MAX - 1 ] ||
-         lk->flags   [ 256      - 1 ] || lk->output  [ 512      - 1 ] ||
-         lk->pdb     [ 256      - 1 ] || lk->inputs  [ 512      - 1 ] ||
-         lk->libs    [ 1024     - 1 ] )
+    if ( lk->exe     [ sizeof( lk->exe      ) - 1 ] || lk->artifact[ sizeof( lk->artifact ) - 1 ] ||
+         lk->flags   [ sizeof( lk->flags    ) - 1 ] || lk->output  [ sizeof( lk->output   ) - 1 ] ||
+         lk->pdb     [ sizeof( lk->pdb      ) - 1 ] || lk->inputs  [ sizeof( lk->inputs   ) - 1 ] ||
+         lk->libs    [ sizeof( lk->libs     ) - 1 ] )
     {
         printf( ORB_INDENT "[orb error] link_cmd_t sentinel overwritten -- field overflow\n" );
         exit( 1 );
     }
-}
-
-/*==============================================================================================
-    cleanup_stale_pdbs() -- remove PDB files from previous links.
-
-    Each link emits a uniquely-named bin/<target>_<timestamp>.pdb so the linker
-    never has to overwrite a PDB an attached debugger may hold open. This routine
-    sweeps away unlocked leftovers at the start of each link.
-    remove() silently fails for any PDB still locked by a debugger, which is
-    correct -- the held file survives, the new link goes to a fresh name.
-==============================================================================================*/
-
-static void
-cleanup_stale_pdbs( const char* target_name )
-{
-    char pattern[ PATH_MAX ];
-    snprintf( pattern, sizeof( pattern ), "bin\\%s_*.pdb", target_name );
-
-    platform_find_data_t fd;
-    platform_find_t h = platform_find_first( pattern, &fd );
-    if ( h == PLATFORM_FIND_INVALID ) return;
-
-    do
-    {
-        char path[ PATH_MAX ];
-        snprintf( path, sizeof( path ), "bin\\%s", fd.name );
-        remove( path );
-    }
-    while ( platform_find_next( h, &fd ) );
-    platform_find_close( h );
 }
 
 /*==============================================================================================
@@ -146,50 +100,24 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     if ( ctx->is_monolithic && effective_type == TARGET_DYNAMIC_LIB )
         effective_type = TARGET_STATIC_LIB;
 
+    // Inputs: all compiled objects in the target's obj dir -- platform glob.
+    platform_lk_obj_pattern( obj_dir, lk.inputs, sizeof( lk.inputs ) );
+
     if ( effective_type == TARGET_STATIC_LIB )
     {
-        // --- Static library (lib.exe) ---
-        // lib.exe bundles .obj files into a flat .lib archive. No linking,
-        // no PDB, no dep resolution needed.
-        snprintf( lk.exe,      sizeof( lk.exe ),      "lib.exe" );
-        snprintf( lk.artifact, sizeof( lk.artifact ),  "bin\\%s.lib", target->name );
-        snprintf( lk.flags,    sizeof( lk.flags ),     "/nologo" );
-        snprintf( lk.output,   sizeof( lk.output ),    "/OUT:bin\\%s.lib", target->name );
-        snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s\\*.obj", obj_dir );
-        // lk.pdb and lk.libs stay empty by zero-init -- lib.exe ignores both.
+        // Static library: archive only, no PDB, no dep libs.
+        platform_lk_fill_static( target->name, &lk );
     }
     else
     {
-        // --- Executable or DLL (link.exe) ---
-        const char* ext = ( effective_type == TARGET_DYNAMIC_LIB ) ? ".dll" : ".exe";
+        // Executable or DLL: run pre-link cleanup, fill command fields, then
+        // append dep libs and system libs.
+        platform_lk_pre_link( target->name );
+        platform_lk_fill_dynamic( ctx, target, &lk );
 
-        snprintf( lk.exe,      sizeof( lk.exe ),      "link.exe" );
-        snprintf( lk.artifact, sizeof( lk.artifact ),  "bin\\%s%s", target->name, ext );
-        snprintf( lk.inputs,   sizeof( lk.inputs ),    "%s\\*.obj", obj_dir );
-
-        if ( effective_type == TARGET_DYNAMIC_LIB )
-            snprintf( lk.flags, sizeof( lk.flags ), "/nologo /DLL" );
-        else
-            snprintf( lk.flags, sizeof( lk.flags ), "/nologo" );
-
-        // DLLs also produce an import library (.lib) that dependents link against.
-        if ( effective_type == TARGET_DYNAMIC_LIB )
-            snprintf( lk.output, sizeof( lk.output ),
-                      "/OUT:bin/%s.dll /IMPLIB:bin/%s.lib", target->name, target->name );
-        else
-            snprintf( lk.output, sizeof( lk.output ), "/OUT:bin\\%s.exe", target->name );
-
-        // Uniquely-timestamped PDB so a debugger holding the previous one can
-        // never block the linker. Stale unlocked leftovers are collected first.
-        cleanup_stale_pdbs( target->name );
-        snprintf( lk.pdb, sizeof( lk.pdb ),
-                  "/DEBUG /PDB:bin/%s_%lld.pdb", target->name, ( long long )time( NULL ) );
-
-        // Libraries: each declared dep's .lib, plus the four Windows system libs.
         for ( int i = 0; target->deps[ i ]; ++i )
-            CC_APPEND( lk.libs, "%sbin/%s.lib", lk.libs[ 0 ] ? " " : "", target->deps[ i ] );
-        CC_APPEND( lk.libs, "%suser32.lib shell32.lib gdi32.lib advapi32.lib",
-                  lk.libs[ 0 ] ? " " : "" );
+            platform_lk_append_dep_lib( target->deps[ i ], lk.libs, sizeof( lk.libs ) );
+        platform_lk_append_sys_libs( lk.libs, sizeof( lk.libs ) );
     }
 
     // Print sections, assemble, optionally echo raw command, then run.
@@ -199,14 +127,14 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     char      rsp_path[ PATH_MAX ];
     cmd_buf_t cmd = { 0 };
     snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s.rsp", obj_dir,
-              target->type == TARGET_STATIC_LIB ? "lib" : "link" );
+              effective_type == TARGET_STATIC_LIB ? "lib" : "link" );
     lk_check_overflow( &lk );
     lk_assemble( &lk, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
     cc_close_log( log_out );
 
-    // NULL includes_path: no /showIncludes parsing for link/lib, but line-by-line
-    // capture still applies so [MSVC] prefixing and ORB_OUT_MSVC_OUTPUT gating work.
+    // NULL includes_path: no dep-tracking parse for link/lib, but line-by-line
+    // capture still applies so compiler-output prefixing and gating work.
     return build_run_cmd_capture_includes( cmd.buf, NULL ) == 0;
 }
 

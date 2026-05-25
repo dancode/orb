@@ -90,20 +90,22 @@ bool        g_include_track     = true;
     from startup through each command to the terminal dispatch in main().
 ==============================================================================================*/
 
-#include "build_tool_win.c"         // 00a platform layer (MSVC / Win32 CRT wrappers)
-#include "build_tool_win_thread.c"  // 00b platform threading (mutex / cond / TLS / threads)
-#include "build_tool_01_prim.c"     // 01 foundation primitives
-#include "build_tool_02_data.c"     // 02 target schema + lookup
-#include "build_tool_03_env.c"      // 03 vcvars setup
-#include "build_tool_04_log.c"      // 04 output formatting
-#include "build_tool_05_spawn.c"    // 05 child process spawning
-#include "build_tool_06_compile.c"  // 06 compile command
-#include "build_tool_07_link.c"     // 07 link command
-#include "build_tool_08_exec.c"     // 08 build_target orchestration
-#include "build_tool_09_sched.c"    // 09 parallel scheduler
-#include "build_tool_10_clean.c"    // 10 -clean command
-#include "build_tool_11_gen.c"      // 11 -gen command
-#include "build_tool_12_test.c"     // 12 debug arg injection
+#include "build_tool_win.c"             // 00a platform layer (MSVC / Win32 CRT wrappers)
+#include "build_tool_win_thread.c"      // 00b platform threading (mutex / cond / TLS / threads)
+#include "build_tool_win_spawn.c"       // 00c platform process spawning
+#include "build_tool_win_toolchain.c"   // 00d compiler and linker flags (MSVC / clang-cl)
+#include "build_tool_01_prim.c"         // 01 foundation primitives
+#include "build_tool_02_data.c"         // 02 target schema + lookup
+#include "build_tool_03_env.c"          // 03 vcvars setup
+#include "build_tool_04_log.c"          // 04 output formatting
+#include "build_tool_05_spawn.c"        // 05 child process spawning
+#include "build_tool_06_compile.c"      // 06 compile command
+#include "build_tool_07_link.c"         // 07 link command
+#include "build_tool_08_exec.c"         // 08 build_target orchestration
+#include "build_tool_09_sched.c"        // 09 parallel scheduler
+#include "build_tool_10_clean.c"        // 10 -clean command
+#include "build_tool_11_gen.c"          // 11 -gen command
+#include "build_tool_12_test.c"         // 12 debug arg injection
 
 /*==============================================================================================
     --- validate_targets ---
