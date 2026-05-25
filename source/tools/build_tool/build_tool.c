@@ -79,7 +79,7 @@
     too so VS treats it as the project root for IntelliSense and intermediate caches.
 ==============================================================================================*/
 
-static const char* g_build_dir = BUILD_DIR;    // root for VS project files + intermediates.
+static const char* g_build_dir = BUILD_DIR;     // root for VS project files + intermediates.
 static const char* g_int_dir   = "obj";         // sub-folder: per-target .obj files.
 static const char* g_gen_dir   = "generated";   // sub-folder: reflection-generated .c/.h.
 
@@ -400,11 +400,11 @@ main( int argc, char** argv )
 
         const char* effective_file = ctx.file_path;
         char resolved_file[ PATH_MAX ];
-        bool is_abs = ( ctx.file_path[ 0 ] == '\\' ) || ( ctx.file_path[ 1 ] == ':' );
+        bool is_abs = platform_is_abs_path( ctx.file_path );
         if ( !is_abs && target->root_dir )
         {
             char combined[ PATH_MAX ];
-            snprintf( combined, sizeof( combined ), "%s\\%s", target->root_dir, ctx.file_path );
+            snprintf( combined, sizeof( combined ), "%s" PATH_SEP "%s", target->root_dir, ctx.file_path );
             if ( !platform_fullpath( resolved_file, combined, sizeof( resolved_file ) ) )
                 snprintf( resolved_file, sizeof( resolved_file ), "%s", combined );
             effective_file = resolved_file;
@@ -415,9 +415,9 @@ main( int argc, char** argv )
             if ( *p == '\\' || *p == '/' ) base_name = p + 1;
 
         char obj_dir[ PATH_MAX ];
-        snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+        snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
         char gen_dir[ PATH_MAX ];
-        snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
+        snprintf( gen_dir, sizeof( gen_dir ), "%s" PATH_SEP "%s", g_build_dir, g_gen_dir );
 
         ensure_dir( "bin" );
         ensure_dir( g_build_dir );

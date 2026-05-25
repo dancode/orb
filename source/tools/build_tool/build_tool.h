@@ -74,9 +74,13 @@
 ==============================================================================================*/
 
 #if defined( _WIN32 )
-    typedef int64_t  platform_mtime_t;      // file last-modified timestamp (FILETIME epoch)
+    typedef int64_t platform_mtime_t;   // file last-modified timestamp (FILETIME epoch)
+    #define PATH_SEP                    "\\"
+    #define platform_is_abs_path( p )   ( (p)[0] == '\\' || (p)[0] == '/' || (p)[1] == ':' )
 #else
-    typedef int64_t  platform_mtime_t;      // st_mtime is int64_t on 64-bit POSIX
+    typedef int64_t platform_mtime_t;   // st_mtime is int64_t on 64-bit POSIX
+    #define PATH_SEP                    "/"
+    #define platform_is_abs_path( p )   ( (p)[0] == '/' )
 #endif
 
 typedef struct

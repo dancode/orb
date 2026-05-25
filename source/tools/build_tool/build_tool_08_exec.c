@@ -107,15 +107,15 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // --- 1. Path Preparation ---
 
     char obj_dir[ PATH_MAX ];
-    snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+    snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
     char gen_dir[ PATH_MAX ];
-    snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
+    snprintf( gen_dir, sizeof( gen_dir ), "%s" PATH_SEP "%s", g_build_dir, g_gen_dir );
 
     const char* ext = ( target->type == TARGET_STATIC_LIB )    ? ".lib"
                     : ( target->type == TARGET_DYNAMIC_LIB )   ? ( ctx->is_monolithic ? ".lib" : ".dll" )
                                                                : ".exe";
     char out_path[ PATH_MAX ];
-    snprintf( out_path, sizeof( out_path ), "bin\\%s%s", target->name, ext );
+    snprintf( out_path, sizeof( out_path ), "bin" PATH_SEP "%s%s", target->name, ext );
 
     // --- 3. Up-to-Date Check ---
     //
@@ -132,7 +132,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         for ( int i = 0; target->units[ i ]; ++i )
         {
             char src_path[ PATH_MAX ];
-            snprintf( src_path, sizeof( src_path ), "%s\\%s", target->root_dir, target->units[ i ] );
+            snprintf( src_path, sizeof( src_path ), "%s" PATH_SEP "%s", target->root_dir, target->units[ i ] );
             if ( build_get_mtime( src_path ) > out_mtime )
             {
                 up_to_date = false;
@@ -148,7 +148,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         for ( int i = 0; target->deps[ i ]; ++i )
         {
             char dep_path[ PATH_MAX ];
-            snprintf( dep_path, sizeof( dep_path ), "bin\\%s.lib", target->deps[ i ] );
+            snprintf( dep_path, sizeof( dep_path ), "bin" PATH_SEP "%s.lib", target->deps[ i ] );
             if ( build_get_mtime( dep_path ) > out_mtime )
             {
                 up_to_date = false;
@@ -163,7 +163,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     {
         const char* current_config = ( ctx->config == CONFIG_DEBUG ) ? "Debug" : "Release";
         char        config_marker[ PATH_MAX ];
-        snprintf( config_marker, sizeof( config_marker ), "%s\\_config.txt", obj_dir );
+        snprintf( config_marker, sizeof( config_marker ), "%s" PATH_SEP "_config.txt", obj_dir );
         FILE* cf = fopen( config_marker, "r" );
         if ( !cf )
         {
@@ -187,7 +187,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     if ( up_to_date && g_include_track )
     {
         char includes_path[ PATH_MAX ];
-        snprintf( includes_path, sizeof( includes_path ), "%s\\_includes.txt", obj_dir );
+        snprintf( includes_path, sizeof( includes_path ), "%s" PATH_SEP "_includes.txt", obj_dir );
         FILE* includes = fopen( includes_path, "r" );
         if ( !includes )
         {
@@ -228,7 +228,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
     {
         char int_root[ PATH_MAX ];
-        snprintf( int_root, sizeof( int_root ), "%s\\%s", g_build_dir, g_int_dir );
+        snprintf( int_root, sizeof( int_root ), "%s" PATH_SEP "%s", g_build_dir, g_int_dir );
         ensure_dir( "bin" );
         ensure_dir( g_build_dir );
         ensure_dir( int_root );
@@ -248,8 +248,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
     if ( target->type == TARGET_EXECUTABLE )
     {
-        snprintf( exe_path, sizeof( exe_path ), "bin\\%s.exe", target->name );
-        snprintf( old_path, sizeof( old_path ), "bin\\%s.exe.old", target->name );
+        snprintf( exe_path, sizeof( exe_path ), "bin" PATH_SEP "%s.exe", target->name );
+        snprintf( old_path, sizeof( old_path ), "bin" PATH_SEP "%s.exe.old", target->name );
         if ( platform_file_exists( exe_path ) )
         {
             remove( old_path );
@@ -272,7 +272,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
             if ( _lf ) fclose( _lf );
         }
         char refl_cmd[ PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s",
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe %s %s %s",
                   refl_tool->name, target->root_dir, gen_dir, rname );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
@@ -303,7 +303,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // Debug<->Release switch even when no source file changed.
     {
         char config_marker[ PATH_MAX ];
-        snprintf( config_marker, sizeof( config_marker ), "%s\\_config.txt", obj_dir );
+        snprintf( config_marker, sizeof( config_marker ), "%s" PATH_SEP "_config.txt", obj_dir );
         FILE* cf = fopen( config_marker, "w" );
         if ( cf )
         {

@@ -126,7 +126,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
 
     char      rsp_path[ PATH_MAX ];
     cmd_buf_t cmd = { 0 };
-    snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s.rsp", obj_dir,
+    snprintf( rsp_path, sizeof( rsp_path ), "%s" PATH_SEP "%s.rsp", obj_dir,
               effective_type == TARGET_STATIC_LIB ? "lib" : "link" );
 
     lk_check_overflow( &lk );

@@ -425,7 +425,7 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
         printf( ORB_INDENT "[orb reflect] %s\n", rname );
 
         char refl_cmd[ PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin\\%s.exe %s %s %s",
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe %s %s %s",
                   refl_tool->name, target->root_dir, gen_dir, rname );
 
         if ( build_run_cmd( refl_cmd ) != 0 )
