@@ -239,8 +239,8 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
     const char* ext    = is_dll ? ".dll" : ".exe";
 
     snprintf( lk->exe,      sizeof( lk->exe ),      "link.exe" );
-    snprintf( lk->artifact, sizeof( lk->artifact ),  "bin\\%s%s", target->name, ext );
-    snprintf( lk->flags,    sizeof( lk->flags ),     "/nologo%s", is_dll ? " /DLL" : "" );
+    snprintf( lk->artifact, sizeof( lk->artifact ), "bin\\%s%s", target->name, ext );
+    snprintf( lk->flags,    sizeof( lk->flags ),    "/nologo%s", is_dll ? " /DLL" : "" );
 
     if ( is_dll )
         snprintf( lk->output, sizeof( lk->output ),

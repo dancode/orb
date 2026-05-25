@@ -46,7 +46,18 @@
     #define VC_EXTRALEAN
     #include <windows.h>
 #else
-    #error "build_tool only supports Windows (MSVC)"
+    #include <unistd.h>
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    #include <sys/wait.h>
+    #include <pthread.h>
+    #include <semaphore.h>
+    #include <spawn.h>
+    #include <fcntl.h>
+    #include <dirent.h>
+    #include <fnmatch.h>
+    #include <strings.h>
+    #include <time.h>
 #endif
 
 /*==============================================================================================
@@ -90,10 +101,17 @@ bool        g_include_track     = true;
     from startup through each command to the terminal dispatch in main().
 ==============================================================================================*/
 
-#include "build_tool_win.c"             // 00a platform layer (MSVC / Win32 CRT wrappers)
-#include "build_tool_win_thread.c"      // 00b platform threading (mutex / cond / TLS / threads)
-#include "build_tool_win_spawn.c"       // 00c platform process spawning
-#include "build_tool_win_toolchain.c"   // 00d compiler and linker flags (MSVC / clang-cl)
+#if defined( _WIN32 )
+    #include "build_tool_win.c"             // 00a platform layer (MSVC / Win32 CRT wrappers)
+    #include "build_tool_win_thread.c"      // 00b platform threading (mutex / cond / TLS / threads)
+    #include "build_tool_win_spawn.c"       // 00c platform process spawning
+    #include "build_tool_win_toolchain.c"   // 00d compiler and linker flags (MSVC / clang-cl)
+#else
+    #include "build_tool_posix.c"           // 00a platform layer (POSIX / libc wrappers)
+    #include "build_tool_posix_thread.c"    // 00b platform threading (pthreads / semaphores)
+    #include "build_tool_posix_spawn.c"     // 00c platform process spawning
+    #include "build_tool_posix_toolchain.c" // 00d compiler and linker flags (GCC / Clang)
+#endif
 #include "build_tool_01_prim.c"         // 01 foundation primitives
 #include "build_tool_02_data.c"         // 02 target schema + lookup
 #include "build_tool_03_env.c"          // 03 vcvars setup

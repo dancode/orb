@@ -74,9 +74,9 @@
 ==============================================================================================*/
 
 #if defined( _WIN32 )
-    typedef int64_t  platform_mtime_t;      // file last-modified timestamp
+    typedef int64_t  platform_mtime_t;      // file last-modified timestamp (FILETIME epoch)
 #else
-    #error "build_tool only supports Windows (MSVC)"
+    typedef int64_t  platform_mtime_t;      // st_mtime is int64_t on 64-bit POSIX
 #endif
 
 typedef struct

@@ -128,6 +128,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     cmd_buf_t cmd = { 0 };
     snprintf( rsp_path, sizeof( rsp_path ), "%s\\%s.rsp", obj_dir,
               effective_type == TARGET_STATIC_LIB ? "lib" : "link" );
+
     lk_check_overflow( &lk );
     lk_assemble( &lk, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
