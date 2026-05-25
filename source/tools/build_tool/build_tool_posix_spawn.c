@@ -197,12 +197,14 @@ posix_parse_dep_file( const char* dep_path, FILE* out )
 
     // Each space/newline-separated token is a dependency path.
     // '\' alone is a line-continuation marker -- skip it.
-    char* tok = strtok( p, " \t\r\n" );
+    // strtok_r keeps state in a local saveptr so concurrent workers are safe.
+    char* saveptr = NULL;
+    char* tok = strtok_r( p, " \t\r\n", &saveptr );
     while ( tok )
     {
         if ( tok[ 0 ] != '\\' && tok[ 0 ] != '\0' )
             fprintf( out, "%s\n", tok );
-        tok = strtok( NULL, " \t\r\n" );
+        tok = strtok_r( NULL, " \t\r\n", &saveptr );
     }
 }
 
