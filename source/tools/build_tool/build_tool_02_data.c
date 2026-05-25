@@ -23,6 +23,32 @@
 
 target_info_t g_targets[] = {
 
+    // --- 08_TOOL (Development Utilities) ---
+
+    // The build tool itself (this program!).
+    {
+     .name          = "build_tool",
+     .type          = TARGET_EXECUTABLE,
+     .root_dir      = "source/tools/build_tool",
+     .sln_folder    = "08_TOOL",
+     .units         = { "build_tool.c" },
+     .is_build_tool = true,
+     .deps          = {},
+     .is_tool       = true,
+     },
+
+    // The reflection generator. Scans source and writes generated .c/.h files.
+    {
+     .name            = "reflect_tool",
+     .type            = TARGET_EXECUTABLE,
+     .root_dir        = "source/tools/reflect_tool",
+     .sln_folder      = "08_TOOL",
+     .units           = { "reflect_tool.c" },
+     .deps            = {},
+     .is_tool         = true,
+     .is_reflect_tool = true,
+     },
+
     // --- 01_BASE (Foundation) ---
 
     // The lowest layer. Stateless and dependency-free.
@@ -88,8 +114,37 @@ target_info_t g_targets[] = {
      .units       = { "core.c" },
      .deps        = { "sys", "rs" },
      .has_reflect = true,
-     // .reflect_name = "engine_core",
-    },
+     },
+
+    // --- 03_RUNTIME_HOST (host library) ---
+
+    {
+     .name        = "runtime_host",
+     .type        = TARGET_STATIC_LIB,
+     .root_dir    = "source/runtime",
+     .sln_folder  = "03_RUNTIME",
+     .units       = { "runtime.c" },
+     .deps        = { "mod", "sys", "rs", "core", "app" },
+     .has_reflect = false,
+     },
+
+    // --- 03_RUNTIME_SERVIES (Static For Runtime) ---
+    {
+     .name       = "rhi",
+     .type       = TARGET_STATIC_LIB,
+     .root_dir   = "source/runtime_service/rhi",
+     .sln_folder = "03_RUNTIME_SERVICE",
+     .units      = { "rhi.c" },
+     .deps       = { "app" },
+     },
+    {
+     .name       = "jobs",
+     .type       = TARGET_STATIC_LIB,
+     .root_dir   = "source/runtime_service/jobs",
+     .sln_folder = "03_RUNTIME_SERVICE",
+     .units      = { "jobs.c" },
+     .deps       = {},
+     },
 
     // --- 03_RUNTIME_MODULES (Hot-Reloadable DLLs) ---
 
@@ -103,43 +158,147 @@ target_info_t g_targets[] = {
      .units      = { "example.c" },
      .deps       = {},
      },
+    {
+     .name       = "render",
+     .type       = TARGET_DYNAMIC_LIB,
+     .root_dir   = "source/runtime_modules/render",
+     .sln_folder = "03_RUNTIME_MODULES",
+     .units      = { "render.c" },
+     .deps       = {},
+     },
+    {
+     .name       = "audio",
+     .type       = TARGET_DYNAMIC_LIB,
+     .root_dir   = "source/runtime_modules/audio",
+     .sln_folder = "03_RUNTIME_MODULES",
+     .units      = { "audio.c" },
+     .deps       = {},
+     },
+    {
+     .name       = "physics",
+     .type       = TARGET_DYNAMIC_LIB,
+     .root_dir   = "source/runtime_modules/physics",
+     .sln_folder = "03_RUNTIME_MODULES",
+     .units      = { "physics.c" },
+     .deps       = {},
+     },
 
-    // --- 02_SANDBOX (Verification Targets) ---
+    // --- 03_RUNTIME_MODULES (Hot-Reloadable DLLs) ---
+
+    {
+     .name        = "example_reflect",
+     .type        = TARGET_DYNAMIC_LIB,
+     .root_dir    = "source/runtime_modules/example_reflect",
+     .sln_folder  = "03_RUNTIME_EXAMPLES",
+     .units       = { "example_reflect.c" },
+     .deps        = {},
+     .has_reflect = true,
+     },
+    {
+     .name        = "example_gen",
+     .type        = TARGET_DYNAMIC_LIB,
+     .root_dir    = "source/runtime_modules/example_gen",
+     .sln_folder  = "03_RUNTIME_EXAMPLES",
+     .units       = { "example_gen.c" },
+     .deps        = {},
+     .has_reflect = true,
+     },
+
+    // --- 04_GAME (Static Library) ---
+    {
+     .name       = "game",
+     .type       = TARGET_STATIC_LIB,
+     .root_dir   = "source/game",
+     .sln_folder = "04_GAME",
+     .units      = { "game.c" },
+     .deps       = {},
+     },
+
+    // --- 04_GAME_SERVICE () ---
+    {
+     .name       = "nav",
+     .type       = TARGET_STATIC_LIB,
+     .root_dir   = "source/game_service/nav",
+     .sln_folder = "04_GAME_SERVICE",
+     .units      = { "nav.c" },
+     .deps       = {},
+     },
+
+    // --- 04_GAME_MODULE () ---
+    {
+     .name       = "game_example",
+     .type       = TARGET_DYNAMIC_LIB,
+     .root_dir   = "source/game_modules/game_example",
+     .sln_folder = "04_GAME_SERVICE",
+     .units      = { "game_example.c" },
+     .deps       = {},
+     },
+
+    // ------------------------------------------------------------------------------
+    // 06 PROJECT
+    // ------------------------------------------------------------------------------
+
+    // ------------------------------------------------------------------------------
+    // 07 DEVELOPER
+    // ------------------------------------------------------------------------------
+    {
+     .name       = "dev_build",
+     .type       = TARGET_STATIC_LIB,
+     .root_dir   = "source/developer/dev_build",
+     .sln_folder = "07_Developer",
+     .units      = { "dev_build.c" },
+     .deps       = { "sys" },
+     },
+    {
+     .name       = "dev_hot",
+     .type       = TARGET_STATIC_LIB,
+     .root_dir   = "source/developer/dev_hot",
+     .sln_folder = "07_Developer",
+     .units      = { "dev_hot.c" },
+     .deps       = { "sys", "dev_build" },
+     },
+
+    // ------------------------------------------------------------------------------
+    // 08 HOST
+    // ------------------------------------------------------------------------------
+    {
+     .name       = "host_common",
+     .type       = TARGET_STATIC_LIB,
+     .root_dir   = "source/host/common",
+     .sln_folder = "08_Host",
+     .units      = { "source/host/common" },
+     .deps       = {},
+     },
+    // ------------------------------------------------------------------------------
+    // 09 SANDBOX
+    // ------------------------------------------------------------------------------
+    // {
+    //  .name       = "sb_base",
+    //  .type       = TARGET_EXECUTABLE,
+    //  .root_dir   = "source/sandbox/base/",
+    //  .sln_folder = "09_SANDBOX_BASE",
+    //  .units      = { "sb_base.c" },
+    //  .deps       = { "base" },
+    //  },
+    {
+     .name       = "sb_engine_mod",
+     .type       = TARGET_EXECUTABLE,
+     .root_dir   = "source/sandbox/engine/engine_mod",
+     .sln_folder = "09_SANDBOX/ENGINE",
+     .units      = { "sb_engine_mod.c" },
+     .deps       = { "sys", "mod", "dev_build", "dev_hot" },
+    },
+
+    // --- 06_SANDBOX (Verification Targets) ---
 
     // A minimal executable to test the base library.
     {
      .name       = "sb_base_main",
      .type       = TARGET_EXECUTABLE,
      .root_dir   = "source/base",
-     .sln_folder = "02_SANDBOX",
+     .sln_folder = "09_SANDBOX",
      .units      = { "base_main.c" },
      .deps       = { "base" },
-     },
-
-    // --- 08_TOOL (Development Utilities) ---
-
-    // The build tool itself (this program!).
-    {
-     .name          = "build_tool",
-     .type          = TARGET_EXECUTABLE,
-     .root_dir      = "source/tools/build_tool",
-     .sln_folder    = "08_TOOL",
-     .units         = { "build_tool.c" },
-     .is_build_tool = true,
-     .deps          = {},
-     .is_tool       = true,
-     },
-
-    // The reflection generator. Scans source and writes generated .c/.h files.
-    {
-     .name            = "reflect_tool",
-     .type            = TARGET_EXECUTABLE,
-     .root_dir        = "source/tools/reflect_tool",
-     .sln_folder      = "08_TOOL",
-     .units           = { "reflect_tool.c" },
-     .deps            = {},
-     .is_tool         = true,
-     .is_reflect_tool = true,
      },
 };
 
@@ -150,36 +309,47 @@ int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );
 
     NULL-terminated target name lists, each mapped to a .sln output.
 ==============================================================================================*/
+// clang-format off
 
 // Main engine workspace. Includes core libraries and sandboxes.
-static const char* g_sln_main_targets[] = { "base", "sys", "rs", "mod", "app", "core", "example",
-                                             "sb_base_main", NULL };
+static const char* g_sln_main_targets[] = {
+    "base", "sys", "rs", "mod", "app", "core", 
+    "runtime_host", 
+    "rhi", "jobs", 
+    "render", "audio", "physics", 
+    "example", "example_reflect", "example_gen", 
+    "game", "nav", "game_example",
+    "dev_build", "dev_hot",
+    "host_common", "sb_engine_mod",
+    "sb_base_main", NULL };
+
+// clang-format on
 
 // Standalone build tools workspace. For modifying the build system itself.
 static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL };
 
-solution_info_t g_solutions[] = {
+solution_info_t    g_solutions[]         = {
     {
      .name          = "orb",
      .target_names  = g_sln_main_targets,
-     .nav_dir       = "source",
-     .out_dir       = BUILD_DIR PATH_SEP "proj",
+     .nav_dir       = NULL,       // "source",
+        .out_dir       = BUILD_DIR PATH_SEP "proj",
      .is_monolithic = false,
-    },
+     },
     {
      .name          = "orb_mono",
      .target_names  = g_sln_main_targets,
-     .nav_dir       = "source",
-     .out_dir       = BUILD_DIR PATH_SEP "proj_mono",
+     .nav_dir       = NULL, // "source",
+        .out_dir       = BUILD_DIR PATH_SEP "proj_mono",
      .is_monolithic = true,
-    },
+     },
     {
      .name          = "orb_build",
      .target_names  = g_sln_tools_targets,
      .nav_dir       = NULL,
      .out_dir       = BUILD_DIR PATH_SEP "proj",
      .is_monolithic = false,
-    },
+     },
 };
 
 int g_solution_count = sizeof( g_solutions ) / sizeof( g_solutions[ 0 ] );
@@ -198,9 +368,9 @@ warn_suppress_t g_warn_suppressions[] = {
     // Release: assert() and similar macros compile out, leaving unreferenced
     // locals and parameters that were only referenced in the debug expression.
 
-    { "/wd4101", CONFIG_COUNT, COMPILE_MSVC },  // C4101: unreferenced local variable
-    { "/wd4189", CONFIG_COUNT, COMPILE_MSVC },  // C4189: local variable initialized but not referenced
-    { "/wd4100", CONFIG_COUNT, COMPILE_MSVC },  // C4100: unreferenced formal parameter
+    {"/wd4101", CONFIG_COUNT, COMPILE_MSVC}, // C4101: unreferenced local variable
+    {"/wd4189", CONFIG_COUNT, COMPILE_MSVC}, // C4189: local variable initialized but not referenced
+    {"/wd4100", CONFIG_COUNT, COMPILE_MSVC}, // C4100: unreferenced formal parameter
 };
 
 int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_suppressions[ 0 ] );
@@ -239,6 +409,7 @@ const char* g_defines_release[] = {
 const char* g_intellisense_flags[] = {
     "/std:c11",
     "/Zc:preprocessor",
+    "/TC",    // Force C parsing -- VS otherwise heuristically parses .h as C++.
     NULL,
 };
 

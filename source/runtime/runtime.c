@@ -41,12 +41,13 @@
     Unity Build (The Host Entry Point)
 ==============================================================================================*/
 
+#include "runtime/host/host_api.c"    // Host API definition (exported to modules).
 #include "runtime/host/host_main.c"    // The main() entry point and boot sequence.
 
 /*==============================================================================================
     Unity API Definition
 ==============================================================================================*/
 
-#include "runtime/host/host_api.c"    // Host API definition (exported to modules).
+
 
 /*============================================================================================*/

@@ -16,6 +16,15 @@ Process spawning platform layer (build_tool_posix.c)       │ 1.5 days   │
      improve clarity for future contributors.
 	 
 
+ :: From a Developer Command Prompt for VS 2022:
+  devenv build\orb_make.sln
+
+  You can make this the default by creating a shortcut that runs:
+
+  cmd /k "vcvarsall.bat x64 && devenv build\orb_make.sln"
+  
+  
+  
 // unified error handling?
 
  Error Handling Centralization:

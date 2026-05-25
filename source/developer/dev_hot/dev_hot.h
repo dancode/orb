@@ -9,7 +9,7 @@
 
     Typical host setup:
 
-        dev_hot_init( NULL, NULL );                 // auto-detect cmake + build dir
+        dev_hot_init( NULL, NULL );                 // auto-detect build_tool + build dir
 
     Typical input loop:
 
@@ -35,12 +35,12 @@
 #include "orb.h"
 
 /* Boot the service.
-   build_dir  : absolute path to the cmake build directory, or NULL to auto-detect.
-   cmake_path : absolute path to cmake.exe, or NULL to use "cmake" on PATH.
+   build_dir       : absolute path to the repo root, or NULL to auto-detect.
+   build_tool_path : absolute path to build_tool.exe, or NULL to auto-locate.
    Both NULL is the normal case. */
-bool dev_hot_init( const char* build_dir, const char* cmake_path );
+bool dev_hot_init( const char* build_dir, const char* build_tool_path );
 
-/* Build a module with cmake, then enqueue a hot-reload.
+/* Build a module with build_tool, then enqueue a hot-reload.
    The actual DLL swap happens at the next mod_system_flush_reloads() call —
    typically the end of the host's main-loop iteration. */
 bool dev_hot_recompile( const char* module_name );

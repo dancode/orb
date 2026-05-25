@@ -34,13 +34,13 @@
 ==============================================================================================*/
 
 bool
-dev_hot_init( const char* build_dir, const char* cmake_path )
+dev_hot_init( const char* build_dir, const char* build_tool_path )
 {
     dev_build_settings_t s = {
-        .build_dir      = build_dir,  /* NULL  auto-detects from exe location */
-        .cmake_path     = cmake_path, /* NULL  uses "cmake" on PATH           */
-        .config         = DEV_HOT_BUILD_CONFIG,
-        .capture_output = true,
+        .build_dir       = build_dir,        /* NULL  auto-detects from exe location */
+        .build_tool_path = build_tool_path,  /* NULL  auto-locates at bin/build_tool.exe */
+        .config          = DEV_HOT_BUILD_CONFIG,
+        .capture_output  = true,
     };
 
     if ( !dev_build_init( &s ) )
@@ -80,7 +80,7 @@ dev_hot_recompile( const char* module_name )
         return false;
     }
 
-    printf( "[dev_hot] '%s': built in %.2fs — reload queued for next frame\n", module_name, r.elapsed_seconds );
+    printf( "[dev_hot] '%s': built in %.2fs - reload queued for next frame\n", module_name, r.elapsed_seconds );
 
     if ( !mod_reload( module_name ) )
     {

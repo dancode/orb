@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    dev_build.c : Implementation. Spawns cmake via sys_process_run_capture.
+    dev_build.c : Implementation. Spawns build_tool.exe via sys_process_run_capture.
 
 ==============================================================================================*/
 
@@ -22,11 +22,11 @@
 
 static struct
 {
-    char               build_dir[ MAX_PATH ];  /* full absolute path to cmake build dir */
-    char               cmake_path[ MAX_PATH ]; /* full path to cmake.exe; defaults to "cmake" on PATH */
-    dev_build_config_t config;                 /* DEV_BUILD_DEBUG or DEV_BUILD_RELEASE */
-    bool               capture_output;         /* if true, fills result->log on each build */
-    bool               initialized;            /* whether dev_build_init() has been called successfully */
+    char               build_dir[ MAX_PATH ];        /* full absolute path to the repo root */
+    char               build_tool_path[ MAX_PATH ];  /* full path to build_tool.exe */
+    dev_build_config_t config;                        /* DEV_BUILD_DEBUG or DEV_BUILD_RELEASE */
+    bool               capture_output;                /* if true, fills result->log on each build */
+    bool               initialized;                   /* whether dev_build_init() has been called successfully */
 
 } g_rt;
 
@@ -54,10 +54,10 @@ dev_build_last_error( void )
     debugger holds an open handle on the module's PDB file. The next link will fail
     with LNK1201 because it can't overwrite the PDB.
 
-    Fix: just before invoking cmake, rename <bin>/<target>.pdb to a unique name. The
+    Fix: just before invoking build_tool, rename <bin>/<target>.pdb to a unique name. The
     debugger's handle stays valid (Windows lets you rename open files), and the
     linker writes a fresh PDB at the original name. Old renamed files accumulate
-    until process exit; we sweep them up on rt_build_init().
+    until process exit; we sweep them up on dev_build_init().
 ==============================================================================================*/
 
 #if OS_WINDOWS
@@ -79,7 +79,7 @@ unlock_target_pdb( const char* target )
     snprintf( dst, sizeof( dst ), "%s\\bin\\%s.pdb.locked.%u", g_rt.build_dir, target, g_pdb_lock_counter++ );
 
     /* MoveFileA fails silently if the source doesn't exist (first build, or already
-       moved by a previous attempt) — both cases are fine, the linker will just create
+       moved by a previous attempt) -- both cases are fine, the linker will just create
        the PDB fresh. We don't need to know whether it succeeded. */
     MoveFileA( src, dst );
 }
@@ -112,8 +112,8 @@ purge_locked_pdbs( void )
 
 /*==============================================================================================
     Build-dir auto-detection
-    The host exe lives at <build_dir>/bin/<exe>.exe (per CMAKE_RUNTIME_OUTPUT_DIRECTORY),
-    so build_dir is the parent of the exe's directory.
+    The host exe lives at <build_dir>/bin/<exe>.exe, so build_dir is the parent of
+    the exe's directory.
 ==============================================================================================*/
 
 static void
@@ -150,24 +150,26 @@ dev_build_init( const dev_build_settings_t* settings )
     else
         auto_detect_build_dir( g_rt.build_dir, sizeof( g_rt.build_dir ) );
 
-    if ( settings && settings->cmake_path && *settings->cmake_path )
-        snprintf( g_rt.cmake_path, sizeof( g_rt.cmake_path ), "%s", settings->cmake_path );
+    /* build_tool.exe lives in bin/ under the build root; allow an override for edge cases */
+    if ( settings && settings->build_tool_path && *settings->build_tool_path )
+        snprintf( g_rt.build_tool_path, sizeof( g_rt.build_tool_path ), "%s", settings->build_tool_path );
     else
-        snprintf( g_rt.cmake_path, sizeof( g_rt.cmake_path ), "cmake" );
+        snprintf( g_rt.build_tool_path, sizeof( g_rt.build_tool_path ), "%s\\bin\\build_tool.exe",
+                  g_rt.build_dir );
 
     g_rt.config         = settings ? settings->config : DEV_BUILD_DEBUG;
     g_rt.capture_output = settings ? settings->capture_output : true;
     g_rt.initialized    = true;
 
-    purge_locked_pdbs(); /* <-- add this line at the end */
+    purge_locked_pdbs();
 
-    printf( "[dev_build] init  build=%s  cmake=%s  config=%s\n", g_rt.build_dir, g_rt.cmake_path,
+    printf( "[dev_build] init  build=%s  tool=%s  config=%s\n", g_rt.build_dir, g_rt.build_tool_path,
             g_rt.config == DEV_BUILD_RELEASE ? "Release" : "Debug" );
     return true;
 }
 
 /*==============================================================================================
-    Internal: run a cmake invocation, populate result
+    Internal: invoke build_tool.exe, populate result
 ==============================================================================================*/
 
 static const char*
@@ -177,7 +179,7 @@ config_str( dev_build_config_t c )
 }
 
 static bool
-run_cmake( const char* target_or_null, dev_build_result_t* result )
+run_build_tool( const char* target_or_null, dev_build_result_t* result )
 {
     if ( !g_rt.initialized )
     {
@@ -194,13 +196,12 @@ run_cmake( const char* target_or_null, dev_build_result_t* result )
     char cmd[ 1024 ];
     if ( target_or_null )
     {
-        snprintf( cmd, sizeof( cmd ), "\"%s\" --build \"%s\" --target %s --config %s", g_rt.cmake_path,
-                  g_rt.build_dir, target_or_null, config_str( g_rt.config ) );
+        snprintf( cmd, sizeof( cmd ), "\"%s\" -config %s -target %s", g_rt.build_tool_path,
+                  config_str( g_rt.config ), target_or_null );
     }
     else
     {
-        snprintf( cmd, sizeof( cmd ), "\"%s\" --build \"%s\" --config %s", g_rt.cmake_path, g_rt.build_dir,
-                  config_str( g_rt.config ) );
+        snprintf( cmd, sizeof( cmd ), "\"%s\" -config %s", g_rt.build_tool_path, config_str( g_rt.config ) );
     }
 
     printf( "[dev_build] %s\n", cmd );
@@ -220,7 +221,7 @@ run_cmake( const char* target_or_null, dev_build_result_t* result )
 
     if ( !launched )
     {
-        set_error( "failed to launch cmake (is '%s' on PATH?)", g_rt.cmake_path );
+        set_error( "failed to launch build_tool (path: '%s')", g_rt.build_tool_path );
         return false;
     }
 
@@ -248,13 +249,13 @@ dev_build_module( const char* target, dev_build_result_t* result )
 
     unlock_target_pdb( target );
 
-    return run_cmake( target, result );
+    return run_build_tool( target, result );
 }
 
 bool
 dev_build_all( dev_build_result_t* result )
 {
-    return run_cmake( NULL, result );
+    return run_build_tool( NULL, result );
 }
 
 /*============================================================================================*/
