@@ -37,10 +37,7 @@
 #include "build_tool.h"
 
 #include <stdio.h>
-#include <sys/stat.h>
 #include <stdlib.h>
-#include <io.h>
-#include <process.h>
 
 #if defined( _WIN32 )
     #define NOMINMAX
@@ -93,6 +90,8 @@ bool        g_include_track     = true;
     from startup through each command to the terminal dispatch in main().
 ==============================================================================================*/
 
+#include "build_tool_win.c"         // 00a platform layer (MSVC / Win32 CRT wrappers)
+#include "build_tool_win_thread.c"  // 00b platform threading (mutex / cond / TLS / threads)
 #include "build_tool_01_prim.c"     // 01 foundation primitives
 #include "build_tool_02_data.c"     // 02 target schema + lookup
 #include "build_tool_03_env.c"      // 03 vcvars setup
@@ -252,27 +251,27 @@ main( int argc, char** argv )
 
     for ( int i = 1; i < argc; ++i )
     {
-        if ( _stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
-        if ( _stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
-        if ( _stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
-        if ( _stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
-        if ( _stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
-        if ( _stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
-        if ( _stricmp( argv[ i ], "-release"          ) == 0 ) ctx.config = CONFIG_RELEASE;
-        if ( _stricmp( argv[ i ], "-clang"            ) == 0 ) ctx.compiler = COMPILE_CLANG;
-        if ( _stricmp( argv[ i ], "-compile-only"     ) == 0 ) ctx.compile_only = true;
-        if ( _stricmp( argv[ i ], "-force"            ) == 0 ) ctx.force_rebuild = true;
-        if ( _stricmp( argv[ i ], "-no-deps"          ) == 0 ) ctx.skip_deps = true;
-        if ( _stricmp( argv[ i ], "-q"                ) == 0 ) g_out_flags = ORB_OUT_QUIET;
-        if ( _stricmp( argv[ i ], "-v"                ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
-        if ( _stricmp( argv[ i ], "-target"  ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
-        if ( _stricmp( argv[ i ], "-file"    ) == 0 && i + 1 < argc ) ctx.file_path   = argv[ ++i ];
-        if ( _stricmp( argv[ i ], "-j"       ) == 0 && i + 1 < argc ) j_threads       = atoi( argv[ ++i ] );
-        if ( _stricmp( argv[ i ], "-config"  ) == 0 && i + 1 < argc )
+        if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
+        if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
+        if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
+        if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
+        if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
+        if ( platform_stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
+        if ( platform_stricmp( argv[ i ], "-release"          ) == 0 ) ctx.config = CONFIG_RELEASE;
+        if ( platform_stricmp( argv[ i ], "-clang"            ) == 0 ) ctx.compiler = COMPILE_CLANG;
+        if ( platform_stricmp( argv[ i ], "-compile-only"     ) == 0 ) ctx.compile_only = true;
+        if ( platform_stricmp( argv[ i ], "-force"            ) == 0 ) ctx.force_rebuild = true;
+        if ( platform_stricmp( argv[ i ], "-no-deps"          ) == 0 ) ctx.skip_deps = true;
+        if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) g_out_flags = ORB_OUT_QUIET;
+        if ( platform_stricmp( argv[ i ], "-v"                ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
+        if ( platform_stricmp( argv[ i ], "-target"  ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
+        if ( platform_stricmp( argv[ i ], "-file"    ) == 0 && i + 1 < argc ) ctx.file_path   = argv[ ++i ];
+        if ( platform_stricmp( argv[ i ], "-j"       ) == 0 && i + 1 < argc ) j_threads       = atoi( argv[ ++i ] );
+        if ( platform_stricmp( argv[ i ], "-config"  ) == 0 && i + 1 < argc )
         {
-            if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
+            if ( platform_stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
-        if ( _stricmp( argv[ i ], "--out" ) == 0 && i + 1 < argc )
+        if ( platform_stricmp( argv[ i ], "--out" ) == 0 && i + 1 < argc )
         {
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
         }
@@ -392,7 +391,7 @@ main( int argc, char** argv )
         {
             char combined[ PATH_MAX ];
             snprintf( combined, sizeof( combined ), "%s\\%s", target->root_dir, ctx.file_path );
-            if ( !_fullpath( resolved_file, combined, sizeof( resolved_file ) ) )
+            if ( !platform_fullpath( resolved_file, combined, sizeof( resolved_file ) ) )
                 snprintf( resolved_file, sizeof( resolved_file ), "%s", combined );
             effective_file = resolved_file;
         }

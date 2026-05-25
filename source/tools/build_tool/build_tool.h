@@ -61,7 +61,33 @@
 // clang-format off
 
 #include <stdbool.h>
-#include <time.h>
+#include <stddef.h>
+#include <stdint.h>
+
+/*==============================================================================================
+    --- Platform Abstraction Types ---
+
+    These types are defined here so build_tool.h (and every module that includes
+    it) can use them in function signatures and local variables without depending
+    on MSVC-specific headers. The platform layer (build_tool_win.c) provides the
+    concrete implementations named platform_*().
+==============================================================================================*/
+
+#if defined( _WIN32 )
+    typedef int64_t  platform_mtime_t;      // file last-modified timestamp
+#else
+    #error "build_tool only supports Windows (MSVC)"
+#endif
+
+typedef struct
+{
+    char name[ 512 ];   // entry file name (no directory prefix)
+    bool is_dir;        // true when the entry is a subdirectory
+
+} platform_find_data_t;
+
+typedef intptr_t platform_find_t;
+#define PLATFORM_FIND_INVALID  ( ( platform_find_t )( -1 ) )
 
 /*==============================================================================================
     --- Project Constants ---
@@ -367,7 +393,7 @@ bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 bool build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir );
 
 /*  Locates the Visual Studio installation (via vswhere or hard-coded probes)
-    and imports vcvarsall.bat's environment into THIS process via _putenv_s.
+    and imports vcvarsall.bat's environment into THIS process via platform_putenv().
     Idempotent -- fast-paths out if cl.exe is already on PATH (Dev Cmd Prompt
     or VS-launched terminal). One-time cost, ~2.5s; saves ~50s across a full
     rebuild that would otherwise pay vcvars-prefix overhead per cl invocation. */
@@ -387,7 +413,7 @@ bool cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path );
 
 /*  Returns the last modification time of a file. Returns 0 if not found. */
 
-__time64_t build_get_mtime( const char* path );
+platform_mtime_t build_get_mtime( const char* path );
 
 /*  Acquire a Windows named mutex scoped to a single target, blocking until
     granted. Used to serialize concurrent invocations of build_tool.exe that

@@ -65,9 +65,9 @@ cleanup_stale_pdbs( const char* target_name )
     char pattern[ PATH_MAX ];
     snprintf( pattern, sizeof( pattern ), "bin\\%s_*.pdb", target_name );
 
-    struct _finddata_t fd;
-    intptr_t h = _findfirst( pattern, &fd );
-    if ( h == -1 ) return;
+    platform_find_data_t fd;
+    platform_find_t h = platform_find_first( pattern, &fd );
+    if ( h == PLATFORM_FIND_INVALID ) return;
 
     do
     {
@@ -75,8 +75,8 @@ cleanup_stale_pdbs( const char* target_name )
         snprintf( path, sizeof( path ), "bin\\%s", fd.name );
         remove( path );
     }
-    while ( _findnext( h, &fd ) == 0 );
-    _findclose( h );
+    while ( platform_find_next( h, &fd ) );
+    platform_find_close( h );
 }
 
 /*==============================================================================================

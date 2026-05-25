@@ -110,7 +110,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // up_to_date flag so we short-circuit out of expensive walks. A miss on
     // ANY test forces a full rebuild.
 
-    __time64_t out_mtime  = build_get_mtime( out_path );
+    platform_mtime_t out_mtime  = build_get_mtime( out_path );
     bool       up_to_date = ( out_mtime != 0 ) && !ctx->force_rebuild;
 
     // A. Any explicit translation unit newer than the artifact?
@@ -192,7 +192,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
 
                 // mtime 0 means the header was deleted -- treat as forced rebuild
                 // so the compiler surfaces the missing include as an error.
-                __time64_t h_mtime = build_get_mtime( header_path );
+                platform_mtime_t h_mtime = build_get_mtime( header_path );
                 if ( h_mtime == 0 || h_mtime > out_mtime )
                 {
                     up_to_date = false;
@@ -237,7 +237,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     {
         snprintf( exe_path, sizeof( exe_path ), "bin\\%s.exe", target->name );
         snprintf( old_path, sizeof( old_path ), "bin\\%s.exe.old", target->name );
-        if ( _access( exe_path, 0 ) == 0 )
+        if ( platform_file_exists( exe_path ) )
         {
             remove( old_path );
             if ( rename( exe_path, old_path ) == 0 )

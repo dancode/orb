@@ -123,7 +123,7 @@ add_filter( const char* filter )
     if ( filter[ 0 ] == '\0' ) return;
     for ( int i = 0; i < g_filter_count; ++i )
     {
-        if ( _stricmp( g_filters[ i ], filter ) == 0 ) return;
+        if ( platform_stricmp( g_filters[ i ], filter ) == 0 ) return;
     }
     if ( g_filter_count < MAX_FILTERS )
         strcpy( g_filters[ g_filter_count++ ], filter );
@@ -183,9 +183,9 @@ scan_directory_recursive( const char* dir, const char* root_dir )
     char search_path[ PATH_MAX ];
     snprintf( search_path, sizeof( search_path ), "%s\\*", dir );
 
-    struct _finddata_t find_data;
-    intptr_t           handle = _findfirst( search_path, &find_data );
-    if ( handle == -1 ) return;
+    platform_find_data_t find_data;
+    platform_find_t      handle = platform_find_first( search_path, &find_data );
+    if ( handle == PLATFORM_FIND_INVALID ) return;
 
     do
     {
@@ -194,7 +194,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
         char path[ PATH_MAX ];
         snprintf( path, sizeof( path ), "%s\\%s", dir, find_data.name );
 
-        if ( find_data.attrib & _A_SUBDIR )
+        if ( find_data.is_dir )
         {
             scan_directory_recursive( path, root_dir );
         }
@@ -203,8 +203,8 @@ scan_directory_recursive( const char* dir, const char* root_dir )
             const char* ext = strrchr( find_data.name, '.' );
             if ( !ext ) continue;
 
-            bool is_c = _stricmp( ext, ".c" ) == 0;
-            bool is_h = _stricmp( ext, ".h" ) == 0;
+            bool is_c = platform_stricmp( ext, ".c" ) == 0;
+            bool is_h = platform_stricmp( ext, ".h" ) == 0;
             if ( !( is_c || is_h ) ) continue;
             if ( g_file_count >= MAX_FILES ) continue;
 
@@ -215,9 +215,9 @@ scan_directory_recursive( const char* dir, const char* root_dir )
             if ( f->filter[ 0 ] != '\0' ) add_filters_recursive( f->filter );
         }
     }
-    while ( _findnext( handle, &find_data ) == 0 );
+    while ( platform_find_next( handle, &find_data ) );
 
-    _findclose( handle );
+    platform_find_close( handle );
 }
 
 /*==============================================================================================
@@ -416,7 +416,7 @@ build_gen_proj_target( target_info_t* target, int index )
 
         for ( int j = 0; target->units[ j ]; ++j )
         {
-            if ( _stricmp( filename, target->units[ j ] ) == 0 ) { is_unit = true; break; }
+            if ( platform_stricmp( filename, target->units[ j ] ) == 0 ) { is_unit = true; break; }
         }
 
         if ( is_unit )
@@ -466,7 +466,7 @@ build_gen_proj_target( target_info_t* target, int index )
 
             for ( int j = 0; target->units[ j ]; ++j )
             {
-                if ( _stricmp( filename, target->units[ j ] ) == 0 ) { is_unit = true; break; }
+                if ( platform_stricmp( filename, target->units[ j ] ) == 0 ) { is_unit = true; break; }
             }
 
             const char* tag = is_unit ? "ClCompile" : "ClInclude";

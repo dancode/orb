@@ -10,7 +10,7 @@
 
     Instead, we run vcvarsall ONCE at startup, capture every variable it sets by
     running "&& set" in the same sub-shell, and inject them into our own process via
-    _putenv_s(). Every child process we spawn afterward inherits the modified
+    platform_putenv(). Every child process we spawn afterward inherits the modified
     environment automatically -- no per-invocation prefix needed.
 
 ==============================================================================================*/
@@ -45,20 +45,20 @@ locate_vcvarsall( char* out, size_t out_size )
         // Pipe vswhere's stdout and read the install path it prints.
         char inst[ 512 ] = { 0 };
         {
-            FILE* pipe = _popen( cmd, "rt" );
+            FILE* pipe = platform_popen( cmd, "rt" );
             if ( !pipe ) continue;
             if ( fgets( inst, sizeof( inst ), pipe ) )
             {
                 char* nl = strpbrk( inst, "\r\n" );
                 if ( nl ) *nl = '\0';
             }
-            _pclose( pipe );
+            platform_pclose( pipe );
         }
         if ( inst[ 0 ] )
         {
             // vcvarsall.bat is always at <install>\VC\Auxiliary\Build\.
             snprintf( out, out_size, "%s\\VC\\Auxiliary\\Build\\vcvarsall.bat", inst );
-            if ( _access( out, 0 ) == 0 ) return true;
+            if ( platform_file_exists( out ) ) return true;
         }
     }
 
@@ -71,7 +71,7 @@ locate_vcvarsall( char* out, size_t out_size )
     };
     for ( int i = 0; i < ( int )( sizeof( common ) / sizeof( common[ 0 ] ) ); ++i )
     {
-        if ( _access( common[ i ], 0 ) == 0 )
+        if ( platform_file_exists( common[ i ] ) )
         {
             snprintf( out, out_size, "%s", common[ i ] );
             return true;
@@ -85,7 +85,7 @@ locate_vcvarsall( char* out, size_t out_size )
 
     Run "vcvarsall x64 && set" in a sub-shell. vcvarsall mutates the sub-shell's
     environment, then set dumps every KEY=VALUE pair to stdout. We read those pairs
-    and call _putenv_s() for each one, injecting the VC toolchain env into our own
+    and call platform_putenv() for each one, injecting the VC toolchain env into our own
     process. All child processes spawned after this point inherit it automatically.
 
     The double-quote idiom `cmd /c "" "<path>" args ""` is required because
@@ -100,7 +100,7 @@ import_vcvars_env( const char* vcvars_path )
     snprintf( run_cmd, sizeof( run_cmd ),
               "cmd /c \"\"%s\" x64 >nul 2>nul && set\"", vcvars_path );
 
-    FILE* pipe = _popen( run_cmd, "rt" );
+    FILE* pipe = platform_popen( run_cmd, "rt" );
     if ( !pipe )
     {
         printf( ORB_INDENT "[orb warn] could not spawn sub-shell for vcvars import\n" );
@@ -125,10 +125,10 @@ import_vcvars_env( const char* vcvars_path )
 
         const char* key   = line;
         const char* value = eq + 1;
-        if ( _putenv_s( key, value ) == 0 ) ++imported;
+        if ( platform_putenv( key, value ) == 0 ) ++imported;
     }
 
-    _pclose( pipe );
+    platform_pclose( pipe );
     return imported;
 }
 
@@ -147,8 +147,8 @@ build_setup_vc_env( void )
 #if defined( _WIN32 )
 
     // Fast path: cl.exe already on PATH (Developer Command Prompt or VS-launched shell).
-    char cl_path[ MAX_PATH ];
-    if ( SearchPathA( NULL, "cl.exe", NULL, MAX_PATH, cl_path, NULL ) != 0 )
+    char cl_path[ PATH_MAX ];
+    if ( SearchPathA( NULL, "cl.exe", NULL, PATH_MAX, cl_path, NULL ) != 0 )
         return;
 
     if ( g_out_flags & ORB_OUT_VCVARS )

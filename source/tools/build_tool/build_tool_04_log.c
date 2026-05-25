@@ -100,8 +100,8 @@ is_msvc_source_echo( const char* line )
     //    matching trailing CR/LF bytes that weren't trimmed by a prior pass).
     const char* ext     = line + dot + 1;
     int         ext_len = len - ( dot + 1 );
-    if ( ext_len == 1 && _strnicmp( ext, "c",   1 ) == 0 ) return true;
-    if ( ext_len == 3 && _strnicmp( ext, "cpp", 3 ) == 0 ) return true;
+    if ( ext_len == 1 && platform_strnicmp( ext, "c",   1 ) == 0 ) return true;
+    if ( ext_len == 3 && platform_strnicmp( ext, "cpp", 3 ) == 0 ) return true;
 
     return false;
 }

@@ -316,7 +316,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         for ( int i = 0; target->units[ i ]; ++i )
         {
             snprintf( rel, sizeof( rel ), "%s\\%s", target->root_dir, target->units[ i ] );
-            if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
+            if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }
@@ -325,7 +325,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
             snprintf( rel, sizeof( rel ), "%s\\%s.generated.c", gen_dir, rname );
-            if ( !_fullpath( abs_p, rel, sizeof( abs_p ) ) )
+            if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
             CC_APPEND( cc.sources, "%s%s", cc.sources[ 0 ] ? " " : "", abs_p );
         }

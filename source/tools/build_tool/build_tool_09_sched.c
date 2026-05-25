@@ -68,8 +68,8 @@ typedef struct
     int                 total_remaining;            // Jobs not yet completed.
     bool                any_failed;                 // Sticky: one failure stops new dispatches.
 
-    CRITICAL_SECTION    lock;                       // Guards every field below jobs[].
-    CONDITION_VARIABLE  cv;                         // Signaled on state changes.
+    platform_mutex_t    lock;                       // Guards every field below jobs[].
+    platform_cond_t     cv;                         // Signaled on state changes.
 
     build_context_t*    ctx;                        // Shared base context; workers clone with skip_deps=true.
 
@@ -81,15 +81,15 @@ typedef struct
 static sched_t           g_sched;
 
 // TLS slot holding the active worker's log_path pointer. Read by sched_log_path()
-// to redirect child stdio. TLS_OUT_OF_INDEXES sentinels "not initialized" --
+// to redirect child stdio. PLATFORM_TLS_INVALID sentinels "not initialized" --
 // sched_log_path() returns NULL in that case, which is the "no redirection" path.
 
-static DWORD             g_sched_log_tls    = TLS_OUT_OF_INDEXES;
+static platform_tls_t    g_sched_log_tls    = PLATFORM_TLS_INVALID;
 
 // Print lock for atomic per-target log dumps. Initialized lazily on first
 // build_run_parallel() call so the serial path doesn't pay for it.
 
-static CRITICAL_SECTION  g_print_lock;
+static platform_mutex_t  g_print_lock;
 static bool              g_print_lock_inited = false;
 
 /*==============================================================================================
@@ -103,8 +103,8 @@ static bool              g_print_lock_inited = false;
 const char*
 sched_log_path( void )
 {
-    if ( g_sched_log_tls == TLS_OUT_OF_INDEXES ) return NULL;
-    return ( const char* )TlsGetValue( g_sched_log_tls );
+    if ( !platform_tls_is_valid( g_sched_log_tls ) ) return NULL;
+    return ( const char* )platform_tls_get( g_sched_log_tls );
 }
 
 /*==============================================================================================
@@ -243,14 +243,14 @@ add_job( target_info_t* t )
          dependents whose final dep just finished, broadcast on the CV.
 ==============================================================================================*/
 
-static unsigned __stdcall
+static PLATFORM_THREAD_ENTRY
 worker_main( void* arg )
 {
     ( void )arg;
 
     for ( ;; )
     {
-        EnterCriticalSection( &g_sched.lock );
+        platform_mutex_lock( &g_sched.lock );
 
         // 1. Wait for work, or for the build to wind down.
         while ( g_sched.ready_count == 0 && g_sched.total_remaining > 0 && !g_sched.any_failed )
@@ -262,18 +262,18 @@ worker_main( void* arg )
                 printf( ORB_INDENT "[orb error] dependency cycle detected in build graph (%d targets stuck)\n",
                         g_sched.total_remaining );
                 g_sched.any_failed = true;
-                WakeAllConditionVariable( &g_sched.cv );
+                platform_cond_broadcast( &g_sched.cv );
                 break;
             }
-            SleepConditionVariableCS( &g_sched.cv, &g_sched.lock, INFINITE );
+            platform_cond_wait( &g_sched.cv, &g_sched.lock );
         }
 
         // Exit when done or after a failure has drained the ready queue.
         if ( g_sched.total_remaining == 0
              || ( g_sched.any_failed && g_sched.ready_count == 0 ) )
         {
-            LeaveCriticalSection( &g_sched.lock );
-            WakeAllConditionVariable( &g_sched.cv );
+            platform_mutex_unlock( &g_sched.lock );
+            platform_cond_broadcast( &g_sched.cv );
             return 0;
         }
 
@@ -281,25 +281,25 @@ worker_main( void* arg )
         int idx = g_sched.ready[ --g_sched.ready_count ];
         g_sched.in_flight++;
         sched_job_t* j = &g_sched.jobs[ idx ];
-        LeaveCriticalSection( &g_sched.lock );
+        platform_mutex_unlock( &g_sched.lock );
 
         // 3. Run the build under per-target output redirection.
         // Truncate any stale log from a previous run first.
         FILE* clr = fopen( j->log_path, "w" );
         if ( clr ) fclose( clr );
 
-        TlsSetValue( g_sched_log_tls, ( void* )j->log_path );
+        platform_tls_set( g_sched_log_tls, ( void* )j->log_path );
 
         build_context_t local_ctx = *g_sched.ctx;
         local_ctx.skip_deps       = true;
         bool ok                   = build_target( &local_ctx, j->target, &j->skipped );
 
-        TlsSetValue( g_sched_log_tls, NULL );
+        platform_tls_set( g_sched_log_tls, NULL );
 
         // 4. Atomically dump this target's full log to the console.
         // The print lock guarantees no other worker's dump can interleave
         // between our header and the last line of our log.
-        EnterCriticalSection( &g_print_lock );
+        platform_mutex_lock( &g_print_lock );
 
         // Dump the per-target log before the result tag so detail sections
         // (compile/link/cmd) appear first and the result reads as a footer.
@@ -337,10 +337,10 @@ worker_main( void* arg )
                     j->target->name );
         }
         fflush( stdout );
-        LeaveCriticalSection( &g_print_lock );
+        platform_mutex_unlock( &g_print_lock );
 
         // 5. Mark completion and unblock dependents.
-        EnterCriticalSection( &g_sched.lock );
+        platform_mutex_lock( &g_sched.lock );
         j->done   = true;
         j->failed = !ok;
         g_sched.in_flight--;
@@ -355,8 +355,8 @@ worker_main( void* arg )
                     g_sched.ready[ g_sched.ready_count++ ] = rj;
             }
         }
-        WakeAllConditionVariable( &g_sched.cv );
-        LeaveCriticalSection( &g_sched.lock );
+        platform_cond_broadcast( &g_sched.cv );
+        platform_mutex_unlock( &g_sched.lock );
     }
 }
 
@@ -380,21 +380,20 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
 
     // Initialize the threading primitives
 
-    InitializeCriticalSection( &g_sched.lock );
-    InitializeConditionVariable( &g_sched.cv );
+    platform_mutex_init( &g_sched.lock );
+    platform_cond_init( &g_sched.cv );
 
     if ( !g_print_lock_inited )
     {
-        InitializeCriticalSection( &g_print_lock );
+        platform_mutex_init( &g_print_lock );
         g_print_lock_inited = true;
     }
-    if ( g_sched_log_tls == TLS_OUT_OF_INDEXES )
+    if ( !platform_tls_is_valid( g_sched_log_tls ) )
     {
-        g_sched_log_tls = TlsAlloc();
-        if ( g_sched_log_tls == TLS_OUT_OF_INDEXES )
+        if ( !platform_tls_alloc( &g_sched_log_tls ) )
         {
-            printf( ORB_INDENT "[orb error] TlsAlloc failed\n" );
-            DeleteCriticalSection( &g_sched.lock );
+            printf( ORB_INDENT "[orb error] TLS allocation failed\n" );
+            platform_mutex_destroy( &g_sched.lock );
             return false;
         }
     }
@@ -407,7 +406,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
 
         if ( add_job( root ) < 0 )
         {
-            DeleteCriticalSection( &g_sched.lock );
+            platform_mutex_destroy( &g_sched.lock );
             return false;
         }
     }
@@ -448,20 +447,17 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     /* Spin up worker threads and wait for completion. Workers run until the ready queue is
        empty and all in-flight jobs finish, or any job fails. */
 
-    HANDLE threads[ MAX_THREADS ];
-    int    spawned = 0;
+    platform_thread_t threads[ MAX_THREADS ];
+    int               spawned = 0;
     for ( int i = 0; i < thread_count; ++i )
     {
-        HANDLE h = ( HANDLE )_beginthreadex( NULL, 0, worker_main, NULL, 0, NULL );
+        platform_thread_t h = platform_thread_create( worker_main, NULL );
         if ( h ) threads[ spawned++ ] = h;
     }
 
-    /* Wait for all compilers workers to exit */
+    platform_threads_join( threads, spawned );
 
-    WaitForMultipleObjects( spawned, threads, TRUE, INFINITE );
-    for ( int i = 0; i < spawned; ++i ) CloseHandle( threads[ i ] );
-
-    DeleteCriticalSection( &g_sched.lock );
+    platform_mutex_destroy( &g_sched.lock );
 
     return !g_sched.any_failed;
 }

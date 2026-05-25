@@ -107,13 +107,10 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
 /* Returns the last-modified time of a file, or 0 if missing/unreadable.
    Used as the "artifact exists" predicate: mtime 0 == needs rebuild. */
 
-__time64_t
+platform_mtime_t
 build_get_mtime( const char* path )
 {
-    struct __stat64 s;
-    if ( _stat64( path, &s ) == 0 )
-        return s.st_mtime;
-    return 0;
+    return platform_get_mtime( path );
 }
 
 /* Trim trailing CR/LF in place. fgets() preserves the consumed newline;
@@ -126,14 +123,12 @@ strip_eol( char* s )
     while ( l > 0 && ( s[ l - 1 ] == '\n' || s[ l - 1 ] == '\r' ) ) s[ --l ] = '\0';
 }
 
-/* Create a directory if it does not already exist.
-   _access() is cheap (thin wrapper over GetFileAttributes), so the common
-   case (directory already exists after the first build) costs almost nothing. */
+/* Create a directory if it does not already exist. */
 
 static void
 ensure_dir( const char* dir )
 {
-    if ( _access( dir, 0 ) == 0 )
+    if ( platform_file_exists( dir ) )
         return;
 
     char cmd[ PATH_MAX ];
