@@ -156,6 +156,14 @@ add_filters_recursive( const char* filter )
     add_filter( tmp );    // Register the leaf segment.
 }
 
+// Normalize all forward slashes to backslashes in place (vcxproj paths must be consistent).
+static void
+normalize_slashes( char* s )
+{
+    for ( ; *s; ++s )
+        if ( *s == '/' ) *s = '\\';
+}
+
 // Map a physical file path to a virtual VS filter path relative to root_dir.
 // Example: path "source/engine/core/core.c", root_dir "source/engine" -> "core"
 static void
@@ -163,8 +171,13 @@ get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
 {
     out_filter[ 0 ] = '\0';
 
-    size_t root_len = strlen( root_dir );
-    if ( strncmp( path, root_dir, root_len ) != 0 )
+    // Normalize root_dir to backslashes so it matches the already-normalized path.
+    char norm_root[ PATH_MAX ];
+    snprintf( norm_root, sizeof( norm_root ), "%s", root_dir );
+    normalize_slashes( norm_root );
+
+    size_t root_len = strlen( norm_root );
+    if ( strncmp( path, norm_root, root_len ) != 0 )
         return;
 
     const char* sub = path + root_len;
@@ -183,14 +196,6 @@ get_filter_for_path( const char* path, const char* root_dir, char* out_filter )
     for ( char* p = out_filter; *p; ++p )
         if ( *p == '/' )
             *p = '\\';
-}
-
-// Normalize all forward slashes to backslashes in place (vcxproj paths must be consistent).
-static void
-normalize_slashes( char* s )
-{
-    for ( ; *s; ++s )
-        if ( *s == '/' ) *s = '\\';
 }
 
 // Walk a directory tree and accumulate every .c and .h file into g_files[].
@@ -305,6 +310,22 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
         if ( s_is_monolithic )
             ISDEF_APPEND( "BUILD_STATIC" );
     }
+    else
+    {
+        // Nav project: add _STATIC for every static lib so IntelliSense resolves
+        // the correct ABI path (direct-call decls) across all engine headers.
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( g_targets[ i ].type == TARGET_STATIC_LIB )
+            {
+                char upper[ 128 ];
+                get_target_upper( g_targets[ i ].name, upper, sizeof( upper ) );
+                char define[ 160 ];
+                snprintf( define, sizeof( define ), "%s_STATIC", upper );
+                ISDEF_APPEND( define );
+            }
+        }
+    }
 
     #undef ISDEF_APPEND
 }
@@ -345,6 +366,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
+    fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
@@ -363,8 +385,6 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
              s_cd_root, out_name );
     fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n",
              s_cd_root, out_name, mono_flag );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
     fprintf( f, "  </PropertyGroup>\n" );
 
     // Single-file compile (Ctrl+F7). NMakeCompileSelectedFiles creates a NMakeCompile
@@ -377,7 +397,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
-    // Per-config IntelliSense context.
+    // Per-config IntelliSense context. NMakeIncludeSearchPath must live here (not in
+    // the unconditional group) -- VS only picks it up for IntelliSense in per-config groups.
     {
         char additional_opts[ 256 ] = { 0 };
         for ( int i = 0; g_intellisense_flags[ i ]; ++i )
@@ -395,12 +416,16 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
         fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
                  dbg_defines );
+        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
         fprintf( f, "  </PropertyGroup>\n" );
 
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
         fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
                  rel_defines );
+        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
         fprintf( f, "  </PropertyGroup>\n" );
     }
@@ -573,6 +598,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
     fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
+    fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
 
@@ -589,8 +615,6 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
              s_root_prefix, g_int_dir );
     fprintf( f, "    <NMakeCleanCommandLine>echo       [nav] navigation-only project, nothing to clean.</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakeCompileFile>echo       [nav] navigation-only project.</NMakeCompileFile>\n" );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
     fprintf( f, "  </PropertyGroup>\n" );
 
     {
@@ -610,11 +634,15 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
         fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
                  dbg_defines );
+        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
         fprintf( f, "  </PropertyGroup>\n" );
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
         fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
                  rel_defines );
+        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", additional_opts );
         fprintf( f, "  </PropertyGroup>\n" );
     }
@@ -668,10 +696,11 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     build_gen_solution()
 
     Write the .sln descriptor for one entry of g_solutions[]. Pipeline:
-      1. Compute nav_guid and emit the nav .vcxproj if nav_dir is set.
+      1. Generate the nav .vcxproj file (if nav_dir is set) -- deferred .sln entry.
       2. For each target: emit Project entry + ProjectDependencies cross-references.
-      3. Emit virtual SLN folder entries.
-      4. Emit GlobalSection blocks: configuration mapping + NestedProjects.
+      3. Emit nav Project entry last (so targets win first-project IntelliSense priority).
+      4. Emit virtual SLN folder entries.
+      5. Emit GlobalSection blocks: configuration mapping + NestedProjects.
 ==============================================================================================*/
 
 static void
@@ -697,15 +726,14 @@ build_gen_solution( solution_info_t* sln )
         guid_from_name( key, nav_guid );
     }
 
-    // 1. Navigation project.
+    // 1. Generate the nav .vcxproj file now so the file exists when VS opens the .sln,
+    //    but defer writing the nav Project() entry until after all target entries so that
+    //    VS gives target projects first-project priority for IntelliSense ownership.
     if ( sln->nav_dir )
     {
         const char* default_target =
             ( sln->target_names && sln->target_names[ 0 ] ) ? sln->target_names[ 0 ] : "unknown";
         gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target, nav_guid );
-        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n", cpp_type_guid, sln->name,
-                 sln->name, nav_guid );
-        fprintf( f, "EndProject\n" );
     }
 
     // 2. Target projects.
@@ -815,7 +843,16 @@ build_gen_solution( solution_info_t* sln )
         }
     }
 
-    // 3. Virtual SLN folders.
+    // 3. Navigation project entry (listed last so target projects get first-project
+    //    priority for IntelliSense ownership when VS opens a file).
+    if ( sln->nav_dir )
+    {
+        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n", cpp_type_guid, sln->name,
+                 sln->name, nav_guid );
+        fprintf( f, "EndProject\n" );
+    }
+
+    // 4. Virtual SLN folders.
     for ( int i = 0; i < folder_count; ++i )
     {
         fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", folder_type_guid, folders[ i ],
@@ -823,7 +860,7 @@ build_gen_solution( solution_info_t* sln )
         fprintf( f, "EndProject\n" );
     }
 
-    // 4. Global sections.
+    // 5. Global sections.
     fprintf( f, "Global\n" );
     fprintf( f, "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n" );
     fprintf( f, "\t\tDebug|x64 = Debug|x64\n" );
@@ -831,13 +868,6 @@ build_gen_solution( solution_info_t* sln )
     fprintf( f, "\tEndGlobalSection\n" );
 
     fprintf( f, "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n" );
-    if ( sln->nav_dir )
-    {
-        fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", nav_guid );
-        fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", nav_guid );
-        fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", nav_guid );
-        fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", nav_guid );
-    }
     for ( const char** tn = sln->target_names; *tn; ++tn )
     {
         for ( int i = 0; i < g_target_count; ++i )
@@ -853,6 +883,14 @@ build_gen_solution( solution_info_t* sln )
                 break;
             }
         }
+    }
+    // Nav project config listed last, consistent with its Project() entry ordering.
+    if ( sln->nav_dir )
+    {
+        fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", nav_guid );
+        fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", nav_guid );
+        fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", nav_guid );
+        fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", nav_guid );
     }
     fprintf( f, "\tEndGlobalSection\n" );
 
