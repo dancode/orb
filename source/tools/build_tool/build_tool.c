@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool.c -- ORB build orchestrator.
+    build_tool.c -- ORB build orchestrator entry point.
 
     Replaces Makefiles / CMake / MSBuild with a small C program that directly
     invokes cl.exe, link.exe, and lib.exe. Also generates .sln/.vcxproj files so
@@ -8,19 +8,24 @@
     the build itself.
 
     Unity build layout:
-        This file #includes every other .c in the directory in dependency order.
-        The whole tool compiles in one cl.exe invocation -- keeps the bootstrap
-        script to a single command line and lets later files call static helpers
-        from earlier files without header exposure.
+        This file #includes every other .c in execution order. The whole tool
+        compiles in one cl.exe invocation -- keeps the bootstrap script to a
+        single command line and lets later files call static helpers from earlier
+        files without header exposure.
 
     Module roles (in include order):
-        build_tool_utils.c   -- cmd_buf, mtime, per-target named-mutex lock.
-        build_tool_vcvars.c  -- VS env discovery + one-time vcvars import.
-        build_tool_cc.c      -- cl.exe / link.exe / lib.exe command emission.
-        build_tool_targets.c -- g_targets[] / g_solutions[] data tables.
-        build_tool_gen.c     -- .sln / .vcxproj / .filters generation.
-        build_tool_sched.c   -- Topological worker-pool parallel scheduler.
-        build_tool_exec.c    -- Build execution: artifact clean + build_target driver.
+        01_prim.c    -- cmd_buf, mtime, file locks (pure primitives, no deps)
+        02_data.c    -- g_targets[] / g_solutions[] tables + lookup helpers
+        03_env.c     -- VS environment discovery and vcvars import
+        04_log.c     -- stateless output formatters (print_section, etc.)
+        05_spawn.c   -- child process spawning, /showIncludes capture
+        06_compile.c -- cl.exe command assembly and execution
+        07_link.c    -- link.exe / lib.exe command assembly and execution
+        08_exec.c    -- build_target() 8-phase orchestration
+        09_sched.c   -- topological worker-pool parallel scheduler
+        10_clean.c   -- -clean command: per-target or global artifact wipe
+        11_gen.c     -- -gen command: .sln / .vcxproj / .filters generation
+        12_test.c    -- debug arg injection from build_tool_debug.args
 
 ==============================================================================================*/
 // clang-format off
@@ -43,33 +48,32 @@
     #define WIN32_EXTRA_LEAN
     #define VC_EXTRALEAN
     #include <windows.h>
-#else 
+#else
     #error "build_tool only supports Windows (MSVC)"
 #endif
+
+/*==============================================================================================
+    --- Output Format ---
+
+    ORB_BANNER: indent for top-level orb lines  e.g.  "      [ orb build: X ]"
+    ORB_INDENT: indent for sub-lines            e.g.  "          [build] foo ..."
+
+    Defined here -- before the unity #includes -- so every module sees them.
+==============================================================================================*/
+
+#define ORB_BANNER  "      "
+#define ORB_INDENT  "          "
 
 /*==============================================================================================
     --- Project Constants ---
 
     All build outputs land under <g_build_dir>/. The .sln/.vcxproj files live here
     too so VS treats it as the project root for IntelliSense and intermediate caches.
-
-    NOTE: Update bootstrap_build_tool.bat if you change these paths.
-
 ==============================================================================================*/
 
-static const char* g_build_dir  = "build";      // Root for intermediate/generated files.
-static const char* g_int_dir    = "obj";        // Sub-folder for .obj files (per-target).
-static const char* g_gen_dir    = "generated";  // Sub-folder for reflection-generated .c/.h.
-
-/*==============================================================================================
-    --- Output Format ---
-
-    ORB_BANNER: indent for top-level orb lines  e.g.  "      [ orb build: X ]"
-    ORB_INDENT: indent for sub-lines            e.g.  "          [build] foo ..."    
-==============================================================================================*/
-
-#define ORB_BANNER  "      "
-#define ORB_INDENT  "          "
+static const char* g_build_dir = BUILD_DIR;    // root for VS project files + intermediates.
+static const char* g_int_dir   = "obj";         // sub-folder: per-target .obj files.
+static const char* g_gen_dir   = "generated";   // sub-folder: reflection-generated .c/.h.
 
 /*==============================================================================================
     --- Output Flags ---
@@ -78,52 +82,97 @@ static const char* g_gen_dir    = "generated";  // Sub-folder for reflection-gen
     unity-included modules read it via the extern declared in build_tool.h.
 ==============================================================================================*/
 
-out_flags_t g_out_flags  = ORB_OUT_DEFAULT;
-bool        g_use_rsp    = false;
-bool        g_include_track  = true;
+out_flags_t g_out_flags         = ORB_OUT_DEFAULT;
+bool        g_use_rsp           = false;
+bool        g_include_track     = true;
 
 /*==============================================================================================
-    --- Unity Include ---
+    --- Unity Include Chain ---
 
-    Order matters: each file may reference statics defined in earlier files.
-    utils -> vcvars -> cc -> targets (pure data) -> gen -> sched.
+    Execution order == include order. Reading top-to-bottom traces the program
+    from startup through each command to the terminal dispatch in main().
 ==============================================================================================*/
 
-#include "build_tool_utils.c"
-#include "build_tool_vcvars.c"
-#include "build_tool_cmd.c"
-#include "build_tool_cc.c"
-#include "build_tool_targets.c"
-#include "build_tool_gen.c"
-#include "build_tool_sched.c"
-#include "build_tool_exec.c"
-#include "build_tool_test.c"
+#include "build_tool_01_prim.c"     // 01 foundation primitives
+#include "build_tool_02_data.c"     // 02 target schema + lookup
+#include "build_tool_03_env.c"      // 03 vcvars setup
+#include "build_tool_04_log.c"      // 04 output formatting
+#include "build_tool_05_spawn.c"    // 05 child process spawning
+#include "build_tool_06_compile.c"  // 06 compile command
+#include "build_tool_07_link.c"     // 07 link command
+#include "build_tool_08_exec.c"     // 08 build_target orchestration
+#include "build_tool_09_sched.c"    // 09 parallel scheduler
+#include "build_tool_10_clean.c"    // 10 -clean command
+#include "build_tool_11_gen.c"      // 11 -gen command
+#include "build_tool_12_test.c"     // 12 debug arg injection
 
 /*==============================================================================================
-    --- Startup Banner ---
+    --- validate_targets ---
 
-    Prints a standardized banner at the start of every build with the active configuration
+    Sanity-check the target and solution tables before any build work begins.
+    Catches slot-array overflows and unresolved solution-to-target name references.
+==============================================================================================*/
+
+static bool
+validate_targets( void )
+{
+    bool ok = true;
+    for ( int i = 0; i < g_target_count; ++i )
+    {
+        const target_info_t* t = &g_targets[ i ];
+        if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ||
+             t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ||
+             t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ) 
+        {
+            printf( ORB_INDENT "[orb error] target '%s' has too many units or dependencies "
+                               "(raise TARGET_MAX_SLOTS)\n", t->name );
+            ok = false;
+        }
+    }
+    for ( int i = 0; i < g_solution_count; ++i )
+    {
+        const solution_info_t* sln = &g_solutions[ i ];
+        for ( const char** tn = sln->target_names; *tn; ++tn )
+        {
+            bool found = false;
+            for ( int j = 0; j < g_target_count; ++j )
+                if ( strcmp( g_targets[ j ].name, *tn ) == 0 ) { found = true; break; }
+            if ( !found )
+            {
+                printf( ORB_INDENT "[orb error] solution '%s' references unknown target '%s'\n",
+                        sln->name, *tn );
+                ok = false;
+            }
+        }
+    }
+    return ok;
+}
+
+/*==============================================================================================
+    --- print_startup_banner ---
+
+    Prints a standardized header at the start of every build with the active
+    configuration. Calls get_target_upper() from 06_compile.c (visible: 06 is
+    included before main() is reached).
 ==============================================================================================*/
 
 static void
 print_startup_banner( const build_context_t* ctx )
 {
-    // All modes share the format:  [orb <mode>] SUBJECT  [ <special> | modular | debug | msvc ]
-    // Each branch sets label/subject/special; the final printf is assembled once at the bottom.
     char target_upper[ 64 ] = "ALL";
-    if ( ctx->target_name ) 
+    if ( ctx->target_name )
         get_target_upper( ctx->target_name, target_upper, sizeof( target_upper ) );
 
-    // base_name is the filename from -file with path stripped.
+    /* truncate file path to just the file name. */
+
     const char* file_name = ctx->file_path;
-    if ( file_name ) {
+    if ( file_name )
         for ( const char* p = ctx->file_path; *p; ++p )
             if ( *p == '\\' || *p == '/' ) file_name = p + 1;
-    }
 
     const char* config_str   = ctx->config == CONFIG_DEBUG ? "debug" : "release";
-    const char* mode_str     = ctx->is_monolithic ? "monolithic" : "modular";
     const char* compiler_str = ctx->compiler == COMPILE_CLANG ? "clang" : "msvc";
+    const char* mode_str     = ctx->is_monolithic ? "monolithic" : "modular";
     const char* label        = NULL;
     const char* special      = NULL;
 
@@ -139,7 +188,6 @@ print_startup_banner( const build_context_t* ctx )
     {
         label   = "[orb single-file]";
         special = "file";
-
         snprintf( subject, sizeof( subject ), "%s %s", target_upper, file_name );
     }
     else
@@ -149,193 +197,118 @@ print_startup_banner( const build_context_t* ctx )
     }
 
     char props[ 128 ];
-    if ( special ) { snprintf( props, sizeof( props ), 
-                            "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str ); }
-    else           { snprintf( props, sizeof( props ), 
-                            "[ %s | %s | %s ]", mode_str, config_str, compiler_str ); }
+    if ( special )
+        snprintf( props, sizeof( props ), "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str );
+    else
+        snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str );
 
     printf( ORB_BANNER "----------------------------------------------------------------\n" );
     printf( ORB_BANNER "%s %s %s\n", label, subject, props );
 }
 
 /*==============================================================================================
-    --- validate_targets ---
-
-    Sanity-check the target and solution tables before any build work begins.
-    Catches slot-array overflows and unresolved solution-to-target name references.
-
-==============================================================================================*/
-
-static bool
-validate_targets( void )
-{ 
-    bool ok = true;
-
-    // Check each target's slot arrays don't overflow.
-    for ( int i = 0; i < g_target_count; ++i )
-    {
-        const target_info_t* t = &g_targets[ i ];
-
-        if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ||
-             t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ||
-             t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL )
-        {
-            printf( ORB_INDENT "[orb error] target '%s' has too many units or dependencies "
-                               "(raise TARGET_MAX_SLOTS)\n", t->name );
-            ok = false;
-        }
-    }
-
-    // Check every solution's target list resolves to a known target.
-    for ( int i = 0; i < g_solution_count; ++i )
-    {
-        const solution_info_t* sln = &g_solutions[ i ];
-        for ( const char** tn = sln->target_names; *tn; ++tn )
-        {
-            bool found = false;
-            for ( int j = 0; j < g_target_count; ++j )
-            {
-                if ( strcmp( g_targets[ j ].name, *tn ) == 0 ) { found = true; break; }
-            }
-            if ( !found )
-            {
-                printf( ORB_INDENT "[orb error] solution '%s' references unknown target '%s'\n",
-                        sln->name, *tn );
-                ok = false;
-            }
-        }
-    }
-
-    return ok;
-}
-
-/*==============================================================================================
     --- Main Entry ---
-                                Recognized arguments: (all case insensitive)
 
-      -clean                    Wipe build outputs and exit.
-      -gen                      Regenerate .sln/.vcxproj and exit.
-      -target <name>            Restrict the build to one target's closure.
-      -compile-only             Compile all unity units for the target, no link step.
-                                Used by VS Ctrl+F7 via NMakeCompileFileCommandLine.
-                                Requires -target.
-      -file <path>              Compile a single file with the target's full flag set.
-                                No link step. CLI tool for targeted error checking.
-                                Requires -target.
-      -force                    Skip the up-to-date check and always compile + link.
-                                Useful for testing recompilation without touching timestamps.
-                                Does not wipe obj/ -- use -clean for a full scrub.
-      -no-deps                  Build only the target itself, no dep recursion
-                                (set by VS .vcxproj files; manages deps itself.
-                                (do not use on the CLI unless you know what you're doing).
-      -monolithic, -mono        Build DLL modules as static libs; defines BUILD_STATIC globally.
-      -no-rsp                   Pass full command lines directly; skip response file (.rsp) creation.
-                                Safe on small projects. Default: rsp enabled (required at ~7000 chars).
-      -no-include-track         Skip /showIncludes parsing and _includes.txt read/write.
-                                Up-to-date check falls back to artifact mtime vs source files only.
-                                Header changes will not trigger rebuilds.
-      -config <Debug|Release>   Pick build config (default Debug)
-      -release                  Shortcut for -config Release.
-      -clang                    Use clang-cl instead of cl.exe.
-      -j N                      Worker thread count; 0/unset = auto-detect.
+    Recognized arguments (all case-insensitive):
+
+      -clean                  Wipe build outputs and exit.
+      -gen                    Regenerate .sln/.vcxproj and exit.
+      -target <name>          Restrict build to one target's closure.
+      -compile-only           Compile all unity units; no link. (VS Ctrl+F7)
+      -file <path>            Compile one file with the target's full flag set; no link.
+      -force                  Skip the up-to-date check; always compile + link.
+      -no-deps                Build only this target; no dep recursion. (VS -managed)
+      -monolithic, -mono      Build DLL modules as static libs; defines BUILD_STATIC.
+      -no-rsp                 Pass full command lines directly; skip .rsp creation.
+      -no-include-track       Skip /showIncludes parsing; header changes won't trigger rebuild.
+      -config <Debug|Release> Pick build configuration (default: Debug).
+      -release                Shortcut for -config Release.
+      -clang                  Use clang-cl instead of cl.exe.
+      -j N                    Worker thread count; 0/unset = auto-detect.
+      -q                      Quiet: suppress most output.
+      -v                      Verbose: enable all output sections.
+      --out <hex>             Fine-grained output mask (see out_flags_t in build_tool.h).
 
 ==============================================================================================*/
 
 int
 main( int argc, char** argv )
 {
-    // Inject debug args from build_tool_debug.args (see build_tool_test.c).
-    // No-op in Release builds and when compiled with /DBUILD_TOOL_NO_DEBUG_INJECT.
+    // --- Debug arg injection -- 
+    
     build_tool_debug_inject( &argc, &argv );
 
-    // --- Debug Arg Log ---
-
-    if ( 0 )
-    {
-        FILE* log = fopen( "build_tool_log.txt", "a" );
-        if ( log ) 
-        {
-            fprintf( log, "build_tool.exe: p%d]", argc );
-            for ( int i = 0; i < argc; ++i ) fprintf( log, " [%d]=%s", i, argv[ i ] );
-            fprintf( log, "\n" );
-            fclose( log );
-        }
-    }
-
-    // --- Build Tool Defaults ---
+    // --- Context defaults ---
 
     build_context_t ctx = { 0 };
-    ctx.config   = CONFIG_DEBUG;        // override with -config or -release.
-    ctx.compiler = COMPILE_MSVC;        // override with -clang.
+    ctx.config   = CONFIG_DEBUG;
+    ctx.compiler = COMPILE_MSVC;
 
-    // --- Arg parsing ---
-    
-    bool  should_clean   = false;       // -clean: delete all build outputs and exit, no build.
-    bool  should_gen     = false;       // -gen: generate .sln/.vcxproj files and exit, no build.
-    int   j_threads      = 0;           // 0 -> auto-detect from CPU count.
+    bool should_clean = false;
+    bool should_gen   = false;
+    int  j_threads    = 0;          // 0 -> auto-detect from CPU count.
 
-    // Order-independent flag scan. All flags require a leading hyphen; unknown args are ignored.
+    // --- Arg parsing (order-independent flag scan) ---
 
     for ( int i = 1; i < argc; ++i )
     {
-        if ( _stricmp( argv[ i ], "-clean"        ) == 0 ) should_clean = true;
-        if ( _stricmp( argv[ i ], "-gen"          ) == 0 ) should_gen = true;
-        if ( _stricmp( argv[ i ], "-monolithic" ) == 0 ) ctx.is_monolithic = true;
-        if ( _stricmp( argv[ i ], "-mono"       ) == 0 ) ctx.is_monolithic = true;
-        if ( _stricmp( argv[ i ], "-no-rsp"       ) == 0 ) g_use_rsp   = false;
+        if ( _stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
+        if ( _stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
+        if ( _stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
+        if ( _stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
+        if ( _stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
         if ( _stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
-        if ( _stricmp( argv[ i ], "-release"      ) == 0 ) ctx.config = CONFIG_RELEASE;
-        if ( _stricmp( argv[ i ], "-clang"        ) == 0 ) ctx.compiler = COMPILE_CLANG;
-        if ( _stricmp( argv[ i ], "-compile-only" ) == 0 ) ctx.compile_only = true;
-        if ( _stricmp( argv[ i ], "-force"        ) == 0 ) ctx.force_rebuild = true;
-        if ( _stricmp( argv[ i ], "-no-deps"      ) == 0 ) ctx.skip_deps = true;
-        if ( _stricmp( argv[ i ], "-target"       ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
-        if ( _stricmp( argv[ i ], "-file"         ) == 0 && i + 1 < argc ) ctx.file_path = argv[ ++i ];
-        if ( _stricmp( argv[ i ], "-j"            ) == 0 && i + 1 < argc ) j_threads = atoi( argv[ ++i ] );
-        if ( _stricmp( argv[ i ], "-config"       ) == 0 && i + 1 < argc )
+        if ( _stricmp( argv[ i ], "-release"          ) == 0 ) ctx.config = CONFIG_RELEASE;
+        if ( _stricmp( argv[ i ], "-clang"            ) == 0 ) ctx.compiler = COMPILE_CLANG;
+        if ( _stricmp( argv[ i ], "-compile-only"     ) == 0 ) ctx.compile_only = true;
+        if ( _stricmp( argv[ i ], "-force"            ) == 0 ) ctx.force_rebuild = true;
+        if ( _stricmp( argv[ i ], "-no-deps"          ) == 0 ) ctx.skip_deps = true;
+        if ( _stricmp( argv[ i ], "-q"                ) == 0 ) g_out_flags = ORB_OUT_QUIET;
+        if ( _stricmp( argv[ i ], "-v"                ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
+        if ( _stricmp( argv[ i ], "-target"  ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
+        if ( _stricmp( argv[ i ], "-file"    ) == 0 && i + 1 < argc ) ctx.file_path   = argv[ ++i ];
+        if ( _stricmp( argv[ i ], "-j"       ) == 0 && i + 1 < argc ) j_threads       = atoi( argv[ ++i ] );
+        if ( _stricmp( argv[ i ], "-config"  ) == 0 && i + 1 < argc )
         {
             if ( _stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
-        if ( _stricmp( argv[ i ], "-q"            ) == 0 ) g_out_flags = ORB_OUT_QUIET;
-        if ( _stricmp( argv[ i ], "-v"            ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
-        if ( _stricmp( argv[ i ], "--out"         ) == 0 && i + 1 < argc )
+        if ( _stricmp( argv[ i ], "--out" ) == 0 && i + 1 < argc )
         {
-            // --out takes a hex mask for fine-control (see build_tool.h). 
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
         }
     }
 
-    // --- Worker count ---
-    // Default to logical processor count, clamped to [1, 16]. Beyond ~16, the
-    // dep-graph critical-path width limits further wall-time gains.
+    // --- Worker count: clamp logical CPU count to [1, 16] ---
+
     if ( j_threads <= 0 )
     {
-        SYSTEM_INFO si; GetSystemInfo( &si );
-             j_threads = ( int )si.dwNumberOfProcessors;
-        if ( j_threads < 1 )  j_threads = 1;
+        SYSTEM_INFO si;
+        GetSystemInfo( &si );
+        j_threads = (int)si.dwNumberOfProcessors;
+        if ( j_threads < 1  ) j_threads = 1;
         if ( j_threads > 16 ) j_threads = 16;
     }
 
-    // --- Arg Validation ---
-    // -file (single file, no link) and -compile-only (all units, no link) are mutually exclusive.
+    // --- Arg validation ---
+
     if ( ctx.file_path && ctx.compile_only )
     {
         printf( ORB_INDENT "[orb error] -file and -compile-only are mutually exclusive\n" );
         return 1;
     }
 
-    // --- Target Table Validation ---
-
     if ( !validate_targets() ) return 1;
 
-    // --- Command : CLEAN ---
+    // --- Command: CLEAN ---
 
     if ( should_clean )
     {
         target_info_t* clean_target = NULL;
-        if ( ctx.target_name ) {
+        if ( ctx.target_name )
+        {
             clean_target = find_target_icase( ctx.target_name );
-            if ( clean_target == NULL ) {
+            if ( !clean_target )
+            {
                 printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name );
                 return 1;
             }
@@ -344,19 +317,17 @@ main( int argc, char** argv )
         return 0;
     }
 
-    // --- Command : GENERATE ---
+    // --- Command: GENERATE ---
 
     if ( should_gen )
-    { 
-        build_gen_projects(); 
-        return 0; 
+    {
+        build_gen_projects();
+        return 0;
     }
 
-    // --- Begin Startup Banner ---
+    // --- Banner + VC env ---
 
     print_startup_banner( &ctx );
-
-    // --- ORB_OUT_ARGS ---
 
     if ( g_out_flags & ORB_OUT_ARGS )
     {
@@ -364,41 +335,35 @@ main( int argc, char** argv )
         for ( int i = 1; i < argc; ++i ) printf( " %s", argv[ i ] );
         printf( "\n" );
     }
-    
-    // --- Setup Visual Studio Environment ---    
-    // Make cl.exe / link.exe / lib.exe callable. Idempotent fast-path when
-    // we're already inside a Developer Command Prompt (or VS-launched shell).
 
+    // Make cl.exe / link.exe / lib.exe callable. Idempotent when already inside
+    // a Developer Command Prompt.
     build_setup_vc_env();
 
-    // --- Build Dispatch ---
-    // 
-    //   -file <path>  compile one file with the target's full flag set, no link.
-    //   -compile-only compile all unity units for the target, no link (VS Ctrl+F7).
-    //   -no-deps      serial single-target build; VS uses this so MSBuild stays
-    //                 the sole authority on solution-level dep ordering.
-    //   -target X     parallel scheduler over X's dependency closure.
-    //   (none)        parallel scheduler over all registered targets.
+    // --- Resolve target (if named) ---
 
     char target_upper[ 64 ] = "ALL";
-    if ( ctx.target_name ) get_target_upper( ctx.target_name, target_upper, sizeof( target_upper ) );
+    if ( ctx.target_name )
+        get_target_upper( ctx.target_name, target_upper, sizeof( target_upper ) );
 
     target_info_t* target = NULL;
     if ( ctx.target_name )
     {
         target = find_target_icase( ctx.target_name );
-        if ( !target ) { 
-            printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name ); 
-            return 1; 
+        if ( !target )
+        {
+            printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name );
+            return 1;
         }
     }
 
+    // --- Command: COMPILE-ONLY (VS Ctrl+F7) ---
+    //
+    // Compiles all unity units for the target; no link step. VS does not inject the
+    // selected file path, so we compile the full unity TU -- correct for unity targets.
+
     if ( ctx.compile_only )
     {
-        // VS Ctrl+F7 path: compile all unity units for the target, no link step.
-        // VS does not inject the selected file path via any env/property mechanism,
-        // so we compile the full unity TU instead -- correct for unity-build targets.
-
         if ( !target ) { printf( ORB_INDENT "[orb error] -compile-only requires -target\n" ); return 1; }
         if ( !build_target_compile_only( &ctx, target ) )
         {
@@ -411,15 +376,14 @@ main( int argc, char** argv )
         return 0;
     }
 
+    // --- Command: SINGLE-FILE COMPILE ---
+    //
+    // Compile one file with the target's full flag set; no link. Resolves relative
+    // paths against the target's root_dir so callers can pass bare filenames.
+
     if ( ctx.file_path )
     {
-        // Single-file compile: build_target_compile_single() with the target's full
-        // flag/define/include set, but only the one file VS handed us.
-
         if ( !target ) { printf( ORB_INDENT "[orb error] -file requires -target\n" ); return 1; }
-
-        // If the path is not absolute, resolve it relative to the target's root_dir
-        // so callers can pass bare filenames or subdir-relative paths like sub/file.c.
 
         const char* effective_file = ctx.file_path;
         char resolved_file[ PATH_MAX ];
@@ -433,8 +397,6 @@ main( int argc, char** argv )
             effective_file = resolved_file;
         }
 
-        // Strip path from base_name for the completed output line.
-
         const char* base_name = effective_file;
         for ( const char* p = effective_file; *p; ++p )
             if ( *p == '\\' || *p == '/' ) base_name = p + 1;
@@ -443,9 +405,6 @@ main( int argc, char** argv )
         snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
         char gen_dir[ PATH_MAX ];
         snprintf( gen_dir, sizeof( gen_dir ), "%s\\%s", g_build_dir, g_gen_dir );
-
-        // Ensure the obj dir exists (normally created by a prior full build, but
-        // be defensive so the first-ever single-file compile doesn't silently fail).
 
         ensure_dir( "bin" );
         ensure_dir( g_build_dir );
@@ -462,35 +421,31 @@ main( int argc, char** argv )
         return 0;
     }
 
-    /* -- Build Target(s) Visual Studio (skip deps) or CLI -- */
+    // --- Command: BUILD (serial single-target via VS, or parallel via CLI) ---
+    //
+    // -no-deps: VS invokes build_tool.exe per-project with MSBuild managing dep ordering.
+    //           Skip the scheduler; build only the named target.
+    // otherwise: parallel scheduler over the full target closure.
 
     if ( ctx.skip_deps )
     {
-        /* visual studio invokes build_tool.exe with -no-deps to manage the dep ordering 
-           itself via MSBuild, that flag we skip the scheduler and just build the one target. */
-
-        if ( !target ) { 
-            printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); 
-            return 1; 
-        }
+        if ( !target ) { printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); return 1; }
 
         bool was_skipped = false;
-        if ( build_target( &ctx, target, &was_skipped ) == false )
+        if ( !build_target( &ctx, target, &was_skipped ) )
         {
             printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;
         }
 
-        bool show_output  = ( g_out_flags & ORB_OUT_TARGET_RESULT );
+        bool show_result  = ( g_out_flags & ORB_OUT_TARGET_RESULT );
         bool show_skipped = was_skipped && ( g_out_flags & ORB_OUT_SUMMARY_COMPILE );
-        if ( show_output || show_skipped )
+        if ( show_result || show_skipped )
             printf( ORB_INDENT "[orb %s] %s\n", was_skipped ? "skipped" : "completed", target->name );
     }
     else
     {
-        // --- Build All Targets In Parallel (CLI) ---
-
-        if ( build_run_parallel( &ctx, target, j_threads ) == false )
+        if ( !build_run_parallel( &ctx, target, j_threads ) )
         {
             printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;

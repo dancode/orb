@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_test.c -- Debug frontend for stepping through build_tool.exe in VS.
+    build_tool_12_test.c -- Debug frontend for stepping through build_tool.exe in VS.
 
     Reads args from "build_tool_debug.args" in the working directory at startup.
     If the file exists, its contents replace argc/argv before main() parses flags.
