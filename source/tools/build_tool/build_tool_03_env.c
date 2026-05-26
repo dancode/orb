@@ -135,8 +135,9 @@ import_vcvars_env( const char* vcvars_path )
 /*==============================================================================================
     build_setup_vc_env()
 
-    Idempotent entry point. SearchPathA checks whether cl.exe is already visible on
-    PATH -- if so, we're inside a Developer Command Prompt and do nothing. Otherwise,
+    Idempotent entry point. Checks VSCMD_ARG_TGT_ARCH -- the environment variable
+    vcvarsall.bat sets to identify the target architecture. If it is already "x64"
+    this process inherited a correct VC environment and we do nothing. Otherwise,
     locate vcvarsall.bat and import its environment into this process so every
     subsequent compiler spawn works without any per-invocation setup overhead.
 ==============================================================================================*/
@@ -146,13 +147,16 @@ build_setup_vc_env( void )
 {
 #if defined( _WIN32 )
 
-    // Fast path: cl.exe already on PATH (Developer Command Prompt or VS-launched shell).
-    char cl_path[ PATH_MAX ];
-    if ( SearchPathA( NULL, "cl.exe", NULL, PATH_MAX, cl_path, NULL ) != 0 )
+    // Fast path: vcvarsall has already been loaded for x64 in this process or its parent.
+    // VSCMD_ARG_TGT_ARCH is set by vcvarsall.bat to the target architecture ("x64", "x86", etc.).
+    // Checking this is more reliable than just searching for cl.exe in PATH -- cl.exe may be
+    // present as x86 from a default VS install layout before vcvars runs.
+    const char* tgt_arch = getenv( "VSCMD_ARG_TGT_ARCH" );
+    if ( tgt_arch && strcmp( tgt_arch, "x64" ) == 0 )
         return;
 
     if ( g_out_flags & ORB_OUT_VCVARS )
-        printf( ORB_INDENT "[orb vcvars] cl.exe not in PATH, locating Visual Studio...\n" );
+        printf( ORB_INDENT "[orb vcvars] VSCMD_ARG_TGT_ARCH != x64, locating Visual Studio...\n" );
 
     char vcvars_path[ 512 ] = { 0 };
     if ( locate_vcvarsall( vcvars_path, sizeof( vcvars_path ) ) == false )

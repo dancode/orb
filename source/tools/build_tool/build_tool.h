@@ -58,6 +58,11 @@
 #ifndef BUILD_TOOL_H
 #define BUILD_TOOL_H
 
+#ifdef _WIN64               // 64-bit Windows code
+#elif defined( _WIN32 )     // 32-bit Windows code
+    #error 32bit windows
+#endif
+
 // clang-format off
 
 #include <stdbool.h>

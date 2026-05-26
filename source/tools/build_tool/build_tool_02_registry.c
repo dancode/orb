@@ -19,10 +19,10 @@
             type    static | dynamic | exe
             root    <source directory relative to project root>
             folder  <VS solution virtual folder>
-            unit    <unity entry .c filename>     (one per line; multiple allowed)
-            dep     <dependency target name>       (one per line; multiple allowed)
-            tdep    <tool dependency name>         (one per line; multiple allowed)
-            reflect [<custom reflect output name>] (flag; optional name override)
+            unit    <unity entry .c filename>           (one per line; multiple allowed)
+            dep     <dependency target name>            (one per line; multiple allowed)
+            tdep    <tool dependency name>              (one per line; multiple allowed)
+            reflect [<custom reflect output name>]      (flag; optional name override)
             flag    is_tool | is_build_tool | is_reflect_tool
 
     SOLUTION BLOCK:
@@ -199,9 +199,9 @@ registry_load( const char* path )
         {
             if ( strcmp( key, "type" ) == 0 && val )
             {
-                if ( strcmp( val, "static"  ) == 0 ) cur_t->type = TARGET_STATIC_LIB;
+                     if ( strcmp( val, "static"  ) == 0 ) cur_t->type = TARGET_STATIC_LIB;
                 else if ( strcmp( val, "dynamic" ) == 0 ) cur_t->type = TARGET_DYNAMIC_LIB;
-                else                                       cur_t->type = TARGET_EXECUTABLE;
+                else                                      cur_t->type = TARGET_EXECUTABLE;
             }
             else if ( strcmp( key, "root"   ) == 0 && val ) cur_t->root_dir   = pool_str( val );
             else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->sln_folder = pool_str( val );

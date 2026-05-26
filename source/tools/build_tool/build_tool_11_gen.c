@@ -396,6 +396,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
     fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", guid );
     fprintf( f, "    <Keyword>Win32Proj</Keyword>\n" );
+    fprintf( f, "    <Platform Condition=\"'$(Platform)'==''\">x64</Platform>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
@@ -698,6 +699,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "  </ItemGroup>\n" );
     fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
     fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", nav_guid );
+    fprintf( f, "    <Platform Condition=\"'$(Platform)'==''\">x64</Platform>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
