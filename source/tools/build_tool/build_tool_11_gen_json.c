@@ -221,21 +221,30 @@ build_gen_compile_commands( void )
 
         /* Build command skeleton: exe, flags, includes, defines.
            obj_dir is unused inside cc_fill_compile_cmd; "obj" is a placeholder. */
-        compile_cmd_t cc = { 0 };
-        cc_fill_compile_cmd( &ctx, target, "obj", gen_dir, &cc );
+        compile_cmd_t cc_entry = { 0 };
+        cc_fill_compile_cmd( &ctx, target, "obj", gen_dir, &cc_entry );
 
-        /* Inject the prelude as a force-include using /FI (MSVC/clang-cl flag).
-           Do NOT use -include here: in --driver-mode=cl clangd does not recognise
-           -include as taking an argument, so the path token gets dropped silently.
-           /FI is the correct clang-cl force-include flag and clangd parses it
-           correctly.  Path is relative to root_abs (the "directory" field). */
+        /* Constituent command adds the prelude as a force-include via /FI.
+           Unity entries do NOT get /FI: they already contain their own full preamble,
+           and injecting it would cause duplicate definitions for any statics declared
+           there.  Do NOT use -include: in --driver-mode=cl clangd drops the path
+           token silently.  /FI is the correct clang-cl force-include flag. */
+        compile_cmd_t cc_constituent = cc_entry;
         {
-            size_t used = strlen( cc.includes );
-            snprintf( cc.includes + used, sizeof( cc.includes ) - used,
+            size_t used = strlen( cc_constituent.includes );
+            snprintf( cc_constituent.includes + used, sizeof( cc_constituent.includes ) - used,
                       " /FI %s/%s.prelude.h", gen_dir, target->name );
         }
+        {
+            /* Constituent files are always called from their unity entry after the
+               #include -- callers and definitions in sibling constituents are never
+               visible in standalone view.  Suppress the resulting false positives. */
+            size_t used = strlen( cc_constituent.flags );
+            snprintf( cc_constituent.flags + used, sizeof( cc_constituent.flags ) - used,
+                      " -Wno-unused-function -Wno-undefined-internal" );
+        }
 
-        /* --- Unity entry: one entry per compilation unit --- */
+        /* --- Unity entry: one entry per compilation unit (no prelude /FI) --- */
         for ( int j = 0; target->units[ j ]; ++j )
         {
             char rel[ PATH_MAX ];
@@ -248,7 +257,7 @@ build_gen_compile_commands( void )
 
             if ( !first ) fprintf( fp, ",\n" );
             first = false;
-            compdb_emit_entry( fp, root_abs, &cc, abs_src );
+            compdb_emit_entry( fp, root_abs, &cc_entry, abs_src );
             entry_count++;
         }
 
@@ -256,7 +265,7 @@ build_gen_compile_commands( void )
            Explicit entries give clangd direct per-file context without relying on
            context propagation, which fails for includes resolved via -I paths. */
         for ( int j = 0; target->units[ j ]; ++j )
-            compdb_emit_constituents( fp, &first, root_abs, &cc,
+            compdb_emit_constituents( fp, &first, root_abs, &cc_constituent,
                                       target->root_dir, target->units[ j ],
                                       &entry_count );
 
@@ -278,7 +287,7 @@ build_gen_compile_commands( void )
 
             if ( !first ) fprintf( fp, ",\n" );
             first = false;
-            compdb_emit_entry( fp, root_abs, &cc, abs_src );
+            compdb_emit_entry( fp, root_abs, &cc_constituent, abs_src );
             entry_count++;
         }
     }

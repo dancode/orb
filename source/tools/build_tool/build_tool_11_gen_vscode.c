@@ -142,17 +142,18 @@ build_gen_vscode( void )
     }
 
     // clangd config:
-    //   UnusedIncludes: None  -- suppresses false positives from MSVC internal headers
-    //   CompileFlags.Add      -- fallback include paths for files not in compile_commands.json
-    //                           (unity build entry points are the only entries in the db;
-    //                            constituent .c files and headers need this to find orb.h)
+    //   UnusedIncludes: None    -- suppresses false positives from MSVC internal headers
+    //   CompileFlags.Add        -- fallback flags for files not in compile_commands.json
+    //   -Wno-unused-function    -- static inline helpers in headers appear unused when the
+    //                             including TU doesn't call every overload; always false positive
     fp = fopen( ".clangd", "w" );
     if ( fp )
     {
         fprintf( fp, "Diagnostics:\n" );
         fprintf( fp, "  UnusedIncludes: None\n" );
         fprintf( fp, "CompileFlags:\n" );
-        fprintf( fp, "  Add: [--target=x86_64-pc-windows-msvc, -std=c11, -Isource, -Ibuild/generated, -D_CRT_SECURE_NO_WARNINGS, -D_DEBUG]\n" );
+        fprintf( fp, "  Add: [--target=x86_64-pc-windows-msvc, -std=c11, -Isource, -Ibuild/generated,\n" );
+        fprintf( fp, "        -D_CRT_SECURE_NO_WARNINGS, -D_DEBUG, -Wno-unused-function]\n" );
         fclose( fp );
         printf( "Generated .clangd\n" );
     }
