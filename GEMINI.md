@@ -61,7 +61,6 @@ The `-monolithic` flag defines `BUILD_STATIC` globally. `MOD_GATEWAY_STATIC` / `
 
 ## Coding Standards
 - **Language**: C11.
-- **Root Header**: `source/orb.h` MUST be included in every source file.
 - **Aggregator**: Include engine APIs via `source/engine_api.h` when needed.
 - **Style**: Adhere to `.clang-format` (Google-based).
   - 4-space indentation (spaces only).

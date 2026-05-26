@@ -2,736 +2,181 @@
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/tools/build_tool/build_tool.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_01_prim.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_01_prim.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_02_data.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_02_data.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_02_registry.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_02_registry.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_03_env.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_03_env.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_04_log.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_04_log.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_05_spawn.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_05_spawn.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_06_compile.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_06_compile.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_07_link.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_07_link.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_08_exec.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_08_exec.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_09_sched.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_09_sched.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_10_clean.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_10_clean.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen_json.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen_json.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen_msbuild.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen_msbuild.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen_vscode.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen_vscode.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_12_test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_12_test.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_posix.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_posix.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_posix_spawn.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_posix_spawn.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_posix_thread.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_posix_thread.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_posix_toolchain.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_posix_toolchain.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_win.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_win.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_win_spawn.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_win_spawn.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_win_thread.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_win_thread.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_win_toolchain.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_win_toolchain.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/tools/reflect_tool/reflect_tool.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/reflect_tool/reflect_tool_attr.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool_attr.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/reflect_tool/reflect_tool_lex.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool_lex.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/reflect_tool/reflect_tool_output.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool_output.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/reflect_tool/reflect_tool_parse.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool_parse.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/reflect_tool/reflect_tool_platform.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool_platform.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/reflect_tool/reflect_tool_scan.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool_scan.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/tools/reflect_tool/reflect_tool_std.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool_std.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DREFLECT_TOOL_STATIC /D_DEBUG F:/orb/source/tools/reflect_tool/reflect_tool.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/base/base.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/base.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/base_main.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/base_main.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/base_test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/base_test.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/bit.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/bit.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/char.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/char.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/math.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/math.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/mem.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/mem.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/str.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/str.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/str_arena.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/str_arena.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/str_buf.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/str_buf.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/str_test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/str_test.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/test.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DBASE_STATIC /D_DEBUG F:/orb/source/base/base.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/engine/sys/sys.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/sys.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/sys_api.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/sys_api.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_console_input.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_console_input.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_file.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_file.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_file_watch.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_file_watch.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_library.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_library.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_memory.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_memory.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_process.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_process.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_sys.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_sys.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_thread.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_thread.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_thread_mutex.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_thread_mutex.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_thread_sema.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_thread_sema.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/sys/win/win_tick.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/win/win_tick.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSYS_STATIC /D_DEBUG F:/orb/source/engine/sys/sys.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/engine/rs/rs.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRS_STATIC /D_DEBUG F:/orb/source/engine/rs/rs.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/rs/rs_access.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRS_STATIC /D_DEBUG F:/orb/source/engine/rs/rs_access.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/rs/rs_print.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRS_STATIC /D_DEBUG F:/orb/source/engine/rs/rs_print.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/rs/rs_registry.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRS_STATIC /D_DEBUG F:/orb/source/engine/rs/rs_registry.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/rs/rs_serialize.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRS_STATIC /D_DEBUG F:/orb/source/engine/rs/rs_serialize.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/rs/rs_test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRS_STATIC /D_DEBUG F:/orb/source/engine/rs/rs_test.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/rs/rs_walk.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRS_STATIC /D_DEBUG F:/orb/source/engine/rs/rs_walk.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRS_STATIC /D_DEBUG F:/orb/source/engine/rs/rs.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/engine/mod/mod.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DMOD_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/mod/mod.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/mod/mod_internal.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DMOD_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/mod/mod_internal.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DMOD_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/mod/mod.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/engine/app/app.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/app.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/app/app_api.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/app_api.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/app/win/win_events.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/win/win_events.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/app/win/win_fiber.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/win/win_fiber.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/app/win/win_input.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/win/win_input.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/app/win/win_lifecycle.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/win/win_lifecycle.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/app/win/win_window.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/win/win_window.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/app/win/win_window_proc.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/win/win_window_proc.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAPP_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/engine/app/app.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/engine/core/core.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/core_api.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core_api.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/core_config.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core_config.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/core_cvar.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core_cvar.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/core_debug.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core_debug.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/core_file.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core_file.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/core_log.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core_log.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/core_memory.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core_memory.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/core_sid.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core_sid.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/cvar/cmd.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/cvar/cmd.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/cvar/cmd_buffer.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/cvar/cmd_buffer.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/cvar/cmd_parse.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/cvar/cmd_parse.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/cvar/cvar.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/cvar/cvar.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/cvar/cvar_cmd.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/cvar/cvar_cmd.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/cvar/cvar_config.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/cvar/cvar_config.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/cvar/string_pool.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/cvar/string_pool.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/debug/assert.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/debug/assert.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/memory/memory.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/memory/memory.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/sid/sid.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/sid/sid.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/test/test_core_cvar.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/test/test_core_cvar.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/engine/core/test/test_core_sid.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/test/test_core_sid.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/engine/core/core.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/build/generated/core.generated.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/build/generated/core.generated.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime/host/host_api.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRUNTIME_HOST_STATIC /DMOD_STATIC /DSYS_STATIC /DRS_STATIC /DCORE_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime/host/host_api.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime/host/host_main.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRUNTIME_HOST_STATIC /DMOD_STATIC /DSYS_STATIC /DRS_STATIC /DCORE_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime/host/host_main.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DCORE_STATIC /DSYS_STATIC /DRS_STATIC /D_DEBUG F:/orb/build/generated/core.generated.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime/runtime.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRUNTIME_HOST_STATIC /DMOD_STATIC /DSYS_STATIC /DRS_STATIC /DCORE_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime/runtime.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRUNTIME_HOST_STATIC /DMOD_STATIC /DSYS_STATIC /DRS_STATIC /DCORE_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime/runtime.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime_service/rhi/rhi.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/rhi.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_service/rhi/rhi_api.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/rhi_api.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_service/rhi/vk_command.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/vk_command.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_service/rhi/vk_device.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/vk_device.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_service/rhi/vk_frame.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/vk_frame.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_service/rhi/vk_instance.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/vk_instance.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_service/rhi/vk_state.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/vk_state.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_service/rhi/vk_swapchain.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/vk_swapchain.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_service/rhi/vk_sync.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/vk_sync.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRHI_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/runtime_service/rhi/rhi.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime_service/jobs/jobs.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DJOBS_STATIC /D_DEBUG F:/orb/source/runtime_service/jobs/jobs.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DJOBS_STATIC /D_DEBUG F:/orb/source/runtime_service/jobs/jobs.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime_modules/example/example.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_STATIC /D_DEBUG F:/orb/source/runtime_modules/example/example.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_STATIC /D_DEBUG F:/orb/source/runtime_modules/example/example.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime_modules/render/render.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRENDER_STATIC /D_DEBUG F:/orb/source/runtime_modules/render/render.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DRENDER_STATIC /D_DEBUG F:/orb/source/runtime_modules/render/render.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime_modules/audio/audio.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAUDIO_STATIC /D_DEBUG F:/orb/source/runtime_modules/audio/audio.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/runtime_modules/audio/audio_api.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAUDIO_STATIC /D_DEBUG F:/orb/source/runtime_modules/audio/audio_api.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DAUDIO_STATIC /D_DEBUG F:/orb/source/runtime_modules/audio/audio.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime_modules/physics/physics.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DPHYSICS_STATIC /D_DEBUG F:/orb/source/runtime_modules/physics/physics.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DPHYSICS_STATIC /D_DEBUG F:/orb/source/runtime_modules/physics/physics.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime_modules/example_reflect/example_reflect.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_REFLECT_STATIC /D_DEBUG F:/orb/source/runtime_modules/example_reflect/example_reflect.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_REFLECT_STATIC /D_DEBUG F:/orb/source/runtime_modules/example_reflect/example_reflect.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/build/generated/example_reflect.generated.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_REFLECT_STATIC /D_DEBUG F:/orb/build/generated/example_reflect.generated.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_REFLECT_STATIC /D_DEBUG F:/orb/build/generated/example_reflect.generated.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/runtime_modules/example_gen/example_gen.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_GEN_STATIC /D_DEBUG F:/orb/source/runtime_modules/example_gen/example_gen.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_GEN_STATIC /D_DEBUG F:/orb/source/runtime_modules/example_gen/example_gen.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/build/generated/example_gen.generated.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_GEN_STATIC /D_DEBUG F:/orb/build/generated/example_gen.generated.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DEXAMPLE_GEN_STATIC /D_DEBUG F:/orb/build/generated/example_gen.generated.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/game/game.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DGAME_STATIC /D_DEBUG F:/orb/source/game/game.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DGAME_STATIC /D_DEBUG F:/orb/source/game/game.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/game_service/nav/nav.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DNAV_STATIC /D_DEBUG F:/orb/source/game_service/nav/nav.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DNAV_STATIC /D_DEBUG F:/orb/source/game_service/nav/nav.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/game_modules/game_example/game_example.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DGAME_EXAMPLE_STATIC /D_DEBUG F:/orb/source/game_modules/game_example/game_example.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DGAME_EXAMPLE_STATIC /D_DEBUG F:/orb/source/game_modules/game_example/game_example.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/developer/dev_build/dev_build.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DDEV_BUILD_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/developer/dev_build/dev_build.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DDEV_BUILD_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/developer/dev_build/dev_build.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/developer/dev_hot/dev_hot.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DDEV_HOT_STATIC /DSYS_STATIC /DDEV_BUILD_STATIC /D_DEBUG F:/orb/source/developer/dev_hot/dev_hot.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DDEV_HOT_STATIC /DSYS_STATIC /DDEV_BUILD_STATIC /D_DEBUG F:/orb/source/developer/dev_hot/dev_hot.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/host/common/host_common.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DHOST_COMMON_STATIC /D_DEBUG F:/orb/source/host/common/host_common.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DHOST_COMMON_STATIC /D_DEBUG F:/orb/source/host/common/host_common.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/sandbox/engine/engine_mod/sb_engine_mod.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_MOD_STATIC /DSYS_STATIC /DMOD_STATIC /DDEV_BUILD_STATIC /DDEV_HOT_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_mod/sb_engine_mod.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_MOD_STATIC /DSYS_STATIC /DMOD_STATIC /DDEV_BUILD_STATIC /DDEV_HOT_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_mod/sb_engine_mod.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/sandbox/engine/engine_sys/sb_engine_sys.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_SYS_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_sys/sb_engine_sys.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_SYS_STATIC /DSYS_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_sys/sb_engine_sys.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/sandbox/engine/engine_app/sb_engine_app.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_APP_STATIC /DSYS_STATIC /DMOD_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_app/sb_engine_app.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_APP_STATIC /DSYS_STATIC /DMOD_STATIC /DAPP_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_app/sb_engine_app.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/sandbox/engine/engine_core/sb_engine_core.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_CORE_STATIC /DCORE_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_core/sb_engine_core.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_CORE_STATIC /DCORE_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_core/sb_engine_core.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/sandbox/engine/engine_reflect/sb_engine_reflect.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_REFLECT_STATIC /DRS_STATIC /DCORE_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_reflect/sb_engine_reflect.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_ENGINE_REFLECT_STATIC /DRS_STATIC /DCORE_STATIC /D_DEBUG F:/orb/source/sandbox/engine/engine_reflect/sb_engine_reflect.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/sandbox/runtime/runtime_reflect/sb_runtime_reflect.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_RUNTIME_REFLECT_STATIC /DSYS_STATIC /DMOD_STATIC /DCORE_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/sandbox/runtime/runtime_reflect/sb_runtime_reflect.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_RUNTIME_REFLECT_STATIC /DSYS_STATIC /DMOD_STATIC /DCORE_STATIC /DRS_STATIC /D_DEBUG F:/orb/source/sandbox/runtime/runtime_reflect/sb_runtime_reflect.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/sandbox/runtime/runtime_gen/sb_runtime_gen.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_RUNTIME_GEN_STATIC /DSYS_STATIC /DRS_STATIC /DMOD_STATIC /DCORE_STATIC /D_DEBUG F:/orb/source/sandbox/runtime/runtime_gen/sb_runtime_gen.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_RUNTIME_GEN_STATIC /DSYS_STATIC /DRS_STATIC /DMOD_STATIC /DCORE_STATIC /D_DEBUG F:/orb/source/sandbox/runtime/runtime_gen/sb_runtime_gen.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/build/generated/sb_runtime_gen.generated.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_RUNTIME_GEN_STATIC /DSYS_STATIC /DRS_STATIC /DMOD_STATIC /DCORE_STATIC /D_DEBUG F:/orb/build/generated/sb_runtime_gen.generated.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/base.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/base.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_RUNTIME_GEN_STATIC /DSYS_STATIC /DRS_STATIC /DMOD_STATIC /DCORE_STATIC /D_DEBUG F:/orb/build/generated/sb_runtime_gen.generated.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/base/base_main.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/base_main.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/base_test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/base_test.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/bit.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/bit.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/char.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/char.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/math.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/math.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/mem.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/mem.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/str.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/str.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/str_arena.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/str_arena.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/str_buf.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/str_buf.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/str_test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/str_test.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/base/test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/test.c"
-  },
-  {
-    "directory": "F:/orb",
-    "file": "F:/orb/source/c11/c11_di.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DC11_TEST_STATIC /D_DEBUG F:/orb/source/c11/c11_di.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DSB_BASE_MAIN_STATIC /DBASE_STATIC /D_DEBUG F:/orb/source/base/base_main.c"
   },
   {
     "directory": "F:/orb",
     "file": "F:/orb/source/c11/c11_test.c",
-    "command": "cl.exe /c /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /wd4100 /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DC11_TEST_STATIC /D_DEBUG F:/orb/source/c11/c11_test.c"
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument /I source /I build/generated /D_CRT_SECURE_NO_WARNINGS /DC11_TEST_STATIC /D_DEBUG F:/orb/source/c11/c11_test.c"
   }
 ]

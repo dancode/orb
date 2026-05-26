@@ -65,7 +65,6 @@ compdb_fwd_slashes( char* s )
     The /Fo /Fd output flags are intentionally absent (cc->output is empty here).
 ==============================================================================================*/
 
-
 static void
 compdb_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, const char* abs_src )
 {
@@ -79,60 +78,6 @@ compdb_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, cons
     fprintf( fp, "    \"file\": "      ); compdb_json_str( fp, abs_src  ); fprintf( fp, ",\n" );
     fprintf( fp, "    \"command\": "   ); compdb_json_str( fp, cmd       ); fprintf( fp, "\n" );
     fprintf( fp, "  }" );
-}
-
-/*==============================================================================================
-    compdb_scan_dir()
-
-    Recursively walk dir and emit one compile_commands.json entry for every .c
-    file found, using the pre-built compile_cmd_t for the owning target.
-    This covers both unity entry points and all constituent .c files so clangd
-    has exact flags (includes, defines) for every file it opens.
-==============================================================================================*/
-
-static void
-compdb_scan_dir( FILE* fp, const char* root_abs, const compile_cmd_t* cc,
-                 const char* dir, bool* first, int* count )
-{
-    char search_path[ PATH_MAX ];
-    snprintf( search_path, sizeof( search_path ), "%s" PATH_SEP "*", dir );
-
-    platform_find_data_t fd;
-    platform_find_t h = platform_find_first( search_path, &fd );
-    if ( h == PLATFORM_FIND_INVALID )
-        return;
-
-    do
-    {
-        if ( strcmp( fd.name, "." ) == 0 || strcmp( fd.name, ".." ) == 0 )
-            continue;
-
-        char path[ PATH_MAX ];
-        snprintf( path, sizeof( path ), "%s" PATH_SEP "%s", dir, fd.name );
-
-        if ( fd.is_dir )
-        {
-            compdb_scan_dir( fp, root_abs, cc, path, first, count );
-            continue;
-        }
-
-        const char* ext = strrchr( fd.name, '.' );
-        if ( !ext || platform_stricmp( ext, ".c" ) != 0 )
-            continue;
-
-        char abs_src[ PATH_MAX ];
-        if ( !platform_fullpath( abs_src, path, sizeof( abs_src ) ) )
-            snprintf( abs_src, sizeof( abs_src ), "%s", path );
-        compdb_fwd_slashes( abs_src );
-
-        if ( !*first ) fprintf( fp, ",\n" );
-        *first = false;
-        compdb_emit_entry( fp, root_abs, cc, abs_src );
-        ( *count )++;
-    }
-    while ( platform_find_next( h, &fd ) );
-
-    platform_find_close( h );
 }
 
 /*==============================================================================================
@@ -164,10 +109,16 @@ build_gen_compile_commands( void )
     char gen_dir[ PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s/%s", g_build_dir, g_gen_dir );
 
-    // Debug context: _DEBUG defined, /Od, most relevant for development IntelliSense.
+    // Use clang-cl for the database: clangd has native support for clang-cl.exe commands
+    // whereas cl.exe goes through an imperfect translation layer that can break hub
+    // indexing and prevent include-context propagation to constituent .c files.
+    // clang-cl.exe accepts all MSVC-style flags (/I, /D, /std:c11) and adds
+    // --target=x86_64-pc-windows-msvc so _MSC_VER and MSVC extensions are defined.
+    // clangd reads the command but does not execute it, so clang-cl.exe need not be
+    // installed -- only the flags matter for IntelliSense.
     build_context_t ctx = { 0 };
     ctx.config   = CONFIG_DEBUG;
-    ctx.compiler = COMPILE_MSVC;
+    ctx.compiler = COMPILE_CLANG;
 
     int  entry_count = 0;
     bool first       = true;
@@ -184,10 +135,24 @@ build_gen_compile_commands( void )
         compile_cmd_t cc = { 0 };
         cc_fill_compile_cmd( &ctx, target, "obj", gen_dir, &cc );
 
-        // Scan root_dir recursively -- every .c file gets an entry with this target's
-        // exact flags so clangd has full context for unity entry points and all
-        // constituent files that are #included into them.
-        compdb_scan_dir( fp, root_abs, &cc, target->root_dir, &first, &entry_count );
+        // One entry per unity unit. Constituent .c files that are #included by the
+        // hub are not listed -- clangd finds the hub that includes them and transfers
+        // its compilation context (includes, defines) automatically.
+        for ( int j = 0; target->units[ j ]; ++j )
+        {
+            char rel[ PATH_MAX ];
+            snprintf( rel, sizeof( rel ), "%s/%s", target->root_dir, target->units[ j ] );
+
+            char abs_src[ PATH_MAX ];
+            if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
+                snprintf( abs_src, sizeof( abs_src ), "%s", rel );
+            compdb_fwd_slashes( abs_src );
+
+            if ( !first ) fprintf( fp, ",\n" );
+            first = false;
+            compdb_emit_entry( fp, root_abs, &cc, abs_src );
+            entry_count++;
+        }
 
         // Entry for the reflection-generated .c. May not exist until the first build;
         // clangd silently skips missing files and indexes them once they appear.

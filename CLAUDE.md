@@ -207,4 +207,3 @@ Governed by `.clang-format` (Google base, customized):
 - `SortIncludes: false` -- keep include order as written
 - Add comments showing intent in a concise way at each block.
 
-The root header `source/orb.h` must be included in every source file.
