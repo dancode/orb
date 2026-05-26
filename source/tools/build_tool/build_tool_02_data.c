@@ -111,9 +111,14 @@ init_builtin_targets( void )
 ==============================================================================================*/
 
 warn_suppress_t g_warn_suppressions[] = {
-    {"/wd4101", CONFIG_COUNT, COMPILE_MSVC},    // C4101: unreferenced local variable
-    {"/wd4189", CONFIG_COUNT, COMPILE_MSVC},    // C4189: local variable initialized but not referenced
-    {"/wd4100", CONFIG_COUNT, COMPILE_MSVC},    // C4100: unreferenced formal parameter
+    // Unused parameters: suppressed in both compilers. Use UNUSED() at each call site
+    // when a parameter is intentionally unused -- don't rely on this global suppression.
+    { "/wd4100",                CONFIG_COUNT, COMPILE_MSVC  },  // C4100: unreferenced formal parameter
+    { "-Wno-unused-parameter",  CONFIG_COUNT, COMPILE_CLANG },  // clang equivalent of C4100
+
+    // clang-cl: suppress spurious "linker input unused" when the toolchain passes extra
+    // arguments that clang doesn't consume (e.g. response-file edge cases).
+    { "-Wno-unused-command-line-argument", CONFIG_COUNT, COMPILE_CLANG },
 };
 
 int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_suppressions[ 0 ] );

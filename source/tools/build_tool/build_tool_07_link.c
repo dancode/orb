@@ -43,6 +43,7 @@ lk_check_overflow( const link_cmd_t* lk )
 static void
 lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 {
+    ( void )target;
     if ( g_out_flags & ORB_OUT_SUMMARY_LINK )
         fprintf( out, ORB_INDENT "[orb link] %s\n", lk->artifact );
 

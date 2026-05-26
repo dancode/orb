@@ -200,7 +200,7 @@ target host_common
     type        static
     root        source/host/common
     folder      08_Host
-    unit        source/host/common
+    unit        host_common.c
 
 # ==============================================================================
 # 09_SANDBOX/ENGINE

@@ -560,6 +560,19 @@ void build_clean( target_info_t* target );
 
 void build_gen_projects( void );
 
+/*  Generates compile_commands.json at the project root. Each target contributes
+    one entry per unity compilation unit (supports multi-unit targets). Targets
+    with has_reflect=true also get an entry for the generated .c file. Debug
+    config is always used. Called alongside build_gen_projects() during -gen. */
+
+void build_gen_compile_commands( void );
+
+/*  Generates .vscode/tasks.json with build, clean, and regen tasks wired to
+    build_tool.exe. The "build target" task includes a pickString dropdown
+    populated from g_targets[]. Called during -gen. */
+
+void build_gen_vscode( void );
+
 // clang-format on
 /*============================================================================================*/
 #endif    // BUILD_TOOL_H

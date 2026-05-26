@@ -9,6 +9,8 @@
 
 ==============================================================================================*/
 
+static bool vk_swapchain_recreate( void );  /* forward -- referenced in vk_swapchain_destroy */
+
 static bool
 vk_surface_create( void )
 {
@@ -69,6 +71,10 @@ vk_swapchain_destroy( void )
        - vkDeviceWaitIdle
        - For each image view: vkDestroyImageView
        - vkDestroySwapchainKHR */
+
+    /* vk_swapchain_recreate composes destroy+create; referenced here to satisfy
+       the compiler until the resize path calls it. */
+    ( void )vk_swapchain_recreate;
 }
 
 static bool

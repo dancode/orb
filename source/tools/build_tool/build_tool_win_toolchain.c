@@ -70,9 +70,12 @@ platform_cc_base_flags( compiler_t compiler, config_t config, char* buf, size_t 
     const char* sep = used ? " " : "";
     const char* cfg = ( config == CONFIG_DEBUG ) ? "/Zi /Od /MDd" : "/O2 /MD";
     // /Zc:preprocessor is MSVC-only; clang-cl defaults to conforming preprocessor already.
-    const char* zc = ( compiler == COMPILE_CLANG ) ? "" : " /Zc:preprocessor";
+    // --target is required for standalone LLVM clang-cl: without it the default triple may
+    // not define _M_X64 / __x86_64__, causing the architecture detection in orb.h to fail.
+    const char* zc     = ( compiler == COMPILE_CLANG ) ? "" : " /Zc:preprocessor";
+    const char* target = ( compiler == COMPILE_CLANG ) ? " --target=x86_64-pc-windows-msvc" : "";
     snprintf( buf + used, size - used,
-              "%s/c /nologo /W4 /WX%s /std:c11 %s", sep, zc, cfg );
+              "%s/c /nologo /W4 /WX%s%s /std:c11 %s", sep, zc, target, cfg );
 }
 
 /*==============================================================================================

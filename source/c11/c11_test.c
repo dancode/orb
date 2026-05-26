@@ -29,6 +29,7 @@ test_basic_X( void )
 int
 main( void )
 {
+    test_basic_X();
     c11_di_run();
     return 0;
 }

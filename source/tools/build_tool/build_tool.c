@@ -25,6 +25,8 @@
         09_sched.c   -- topological worker-pool parallel scheduler
         10_clean.c   -- -clean command: per-target or global artifact wipe
         11_gen.c     -- -gen command: .sln / .vcxproj / .filters generation
+        11_gen_json.c    -- -gen command: compile_commands.json (clangd / LSP tools)
+        11_gen_vscode.c  -- -gen command: .vscode/tasks.json (VS Code build tasks)
         12_test.c    -- debug arg injection from build_tool_debug.args
 
 ==============================================================================================*/
@@ -124,7 +126,9 @@ bool        g_use_rsp           = false; /* until we hit overflow this will rema
 #include "build_tool_09_sched.c"            // 09 parallel scheduler
 #include "build_tool_10_clean.c"            // 10 -clean command
 #include "build_tool_11_gen.c"              // 11 -gen command (NMake/Makefile projects)
-#include "build_tool_gen_msbuild.c"         // 11b -gen_ms command (MSBuild projects)
+#include "build_tool_11_gen_json.c"          // 11c -gen command (compile_commands.json)
+#include "build_tool_11_gen_vscode.c"       // 11d -gen command (.vscode/tasks.json)
+#include "build_tool_11_gen_msbuild.c"      // 11e -gen_ms command (MSBuild projects)
 #include "build_tool_12_test.c"             // 12 debug arg injection
 
 /*==============================================================================================
@@ -234,7 +238,7 @@ print_startup_banner( const build_context_t* ctx )
 
       -clean                  Wipe build outputs and exit.
       -bootstrap              Recompile build_tool.exe itself (self-hosting).
-      -gen                    Regenerate NMake .sln/.vcxproj and exit.
+      -gen                    Regenerate NMake .sln/.vcxproj and compile_commands.json; exit.
       -gen_ms                 Regenerate MSBuild .sln/.vcxproj and exit (better IntelliSense).
       -target <name>          Restrict build to one target's closure.
       -compile-only           Compile all unity units; no link. (VS Ctrl+F7)
@@ -363,11 +367,13 @@ main( int argc, char** argv )
         return 0;
     }
 
-    // --- Command: GENERATE (NMake/Makefile projects) ---
+    // --- Command: GENERATE (NMake/Makefile projects + compile_commands.json) ---
 
     if ( should_gen )
     {
         build_gen_projects();
+        build_gen_compile_commands();
+        build_gen_vscode();
         return 0;
     }
 

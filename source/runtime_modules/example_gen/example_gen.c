@@ -28,8 +28,6 @@ typedef struct example_gen_state_s
 
 } example_gen_state_t;
 
-static example_gen_state_t* s = NULL;
-
 bool
 example_gen_mod_init( void* state, get_api_fn get_api )
 {

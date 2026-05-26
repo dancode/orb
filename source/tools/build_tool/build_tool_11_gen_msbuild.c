@@ -10,8 +10,8 @@
     Invoked by:  build_tool.exe -gen_ms
     Output dir:  <solution.out_dir>_msbuild  (e.g. build/proj_msbuild)
 
-    Build model: VS presses Build -> MSBuild -> cl.exe directly (no build_tool.exe
-    involved). Actual CLI builds still use build_tool.exe -config.
+    Build model: VS presses Build -> MSBuild -> cl.exe directly 
+    (no build_tool.exe involved). CLI builds still use build_tool.exe -config.
 
     Shares all infrastructure from build_tool_11_gen.c (included first in unity build):
       guid_from_name(), scan_directory_recursive(), build_intellisense_defines(),

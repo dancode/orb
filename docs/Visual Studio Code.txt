@@ -1,0 +1,31 @@
+ After bootstrapping and running -gen, you'll get .vscode/tasks.json with:
+
+  - Ctrl+Shift+B → full debug build
+  - orb: build release → release build
+  - orb: build target → dropdown of every registered target, builds that one in
+  
+  debug
+  
+  - orb: clean → wipe artifacts
+  - orb: regen → re-runs -gen from within VS Code
+
+  The dropdown is generated from g_targets[] at gen time, so it stays current
+  whenever you re-run -gen after adding new targets to orb.targets.
+  
+
+Press Ctrl+Shift+B.
+
+  This triggers the orb: build debug task which runs bin\build_tool.exe -config
+  Debug. The output appears in the Terminal panel at the bottom. A successful
+  build ends with the orb completed lines you'd see in the regular terminal.
+
+  
+  Press Ctrl+Shift+P and type Run Task. Select it, then you'll see all the orb
+  tasks listed:
+
+  orb: build debug
+  orb: build release
+  orb: build target
+  orb: clean
+  orb: regen
+  
