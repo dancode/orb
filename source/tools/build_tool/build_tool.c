@@ -112,19 +112,20 @@ bool        g_use_rsp           = false; /* until we hit overflow this will rema
     #include "build_tool_posix_spawn.c"     // 00c platform process spawning
     #include "build_tool_posix_toolchain.c" // 00d compiler and linker flags (GCC / Clang)
 #endif
-#include "build_tool_01_prim.c"         // 01 foundation primitives
-#include "build_tool_02_data.c"         // 02 target schema + lookup
-#include "build_tool_03_env.c"          // 03 vcvars setup
-#include "build_tool_04_log.c"          // 04 output formatting
-#include "build_tool_05_spawn.c"        // 05 child process spawning
-#include "build_tool_06_compile.c"      // 06 compile command
-#include "build_tool_07_link.c"         // 07 link command
-#include "build_tool_08_exec.c"         // 08 build_target orchestration
-#include "build_tool_09_sched.c"        // 09 parallel scheduler
-#include "build_tool_10_clean.c"        // 10 -clean command
-#include "build_tool_11_gen.c"          // 11 -gen command (NMake/Makefile projects)
-#include "build_tool_gen_msbuild.c"     // 11b -gen-msbuild command (MSBuild projects)
-#include "build_tool_12_test.c"         // 12 debug arg injection
+#include "build_tool_01_prim.c"             // 01 foundation primitives
+#include "build_tool_02_data.c"             // 02 target/solution pools + built-in registrations
+#include "build_tool_02_registry.c"         // 02b orb.targets text-file parser
+#include "build_tool_03_env.c"              // 03 vcvars setup
+#include "build_tool_04_log.c"              // 04 output formatting
+#include "build_tool_05_spawn.c"            // 05 child process spawning
+#include "build_tool_06_compile.c"          // 06 compile command
+#include "build_tool_07_link.c"             // 07 link command
+#include "build_tool_08_exec.c"             // 08 build_target orchestration
+#include "build_tool_09_sched.c"            // 09 parallel scheduler
+#include "build_tool_10_clean.c"            // 10 -clean command
+#include "build_tool_11_gen.c"              // 11 -gen command (NMake/Makefile projects)
+#include "build_tool_gen_msbuild.c"         // 11b -gen_ms command (MSBuild projects)
+#include "build_tool_12_test.c"             // 12 debug arg injection
 
 /*==============================================================================================
     --- validate_targets ---
@@ -152,7 +153,7 @@ validate_targets( void )
     for ( int i = 0; i < g_solution_count; ++i )
     {
         const solution_info_t* sln = &g_solutions[ i ];
-        for ( const char** tn = sln->target_names; *tn; ++tn )
+        for ( const char* const* tn = sln->target_names; *tn; ++tn )
         {
             bool found = false;
             for ( int j = 0; j < g_target_count; ++j )
@@ -190,7 +191,7 @@ print_startup_banner( const build_context_t* ctx )
         for ( const char* p = ctx->file_path; *p; ++p )
             if ( *p == '\\' || *p == '/' ) file_name = p + 1;
 
-    const char* config_str   = ctx->config == CONFIG_DEBUG ? "debug" : "release";
+    const char* config_str   = ctx->config   == CONFIG_DEBUG  ? "debug" : "release";
     const char* compiler_str = ctx->compiler == COMPILE_CLANG ? "clang" : "msvc";
     const char* mode_str     = ctx->is_monolithic ? "monolithic" : "modular";
     const char* label        = NULL;
@@ -232,8 +233,9 @@ print_startup_banner( const build_context_t* ctx )
     Recognized arguments (all case-insensitive):
 
       -clean                  Wipe build outputs and exit.
+      -bootstrap              Recompile build_tool.exe itself (self-hosting).
       -gen                    Regenerate NMake .sln/.vcxproj and exit.
-      -gen-msbuild            Regenerate MSBuild .sln/.vcxproj and exit (better IntelliSense).
+      -gen_ms                 Regenerate MSBuild .sln/.vcxproj and exit (better IntelliSense).
       -target <name>          Restrict build to one target's closure.
       -compile-only           Compile all unity units; no link. (VS Ctrl+F7)
       -file <path>            Compile one file with the target's full flag set; no link.
@@ -268,6 +270,7 @@ main( int argc, char** argv )
     bool should_clean        = false;
     bool should_gen          = false;
     bool should_gen_msbuild  = false;
+    bool should_bootstrap    = false;
     int  j_threads           = 0;   // 0 -> auto-detect from CPU count.
 
     // --- Arg parsing (order-independent flag scan) ---
@@ -276,7 +279,8 @@ main( int argc, char** argv )
     {
         if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
         if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
-        if ( platform_stricmp( argv[ i ], "-gen-msbuild"      ) == 0 ) should_gen_msbuild = true;
+        if ( platform_stricmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
+        if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
         if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
         if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
         if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
@@ -314,7 +318,32 @@ main( int argc, char** argv )
         return 1;
     }
 
+    // --- Target registry: built-ins first, then orb.targets ---
+
+    init_builtin_targets();
+    registry_load( "orb.targets" );
+
     if ( !validate_targets() ) return 1;
+
+    // --- Command: BOOTSTRAP (recompile build_tool.exe itself) ---
+
+    if ( should_bootstrap )
+    {
+        build_setup_vc_env();
+        target_info_t* bt = NULL;
+        for ( int i = 0; i < g_target_count; ++i )
+            if ( g_targets[ i ].is_build_tool ) { bt = &g_targets[ i ]; break; }
+        if ( !bt ) { printf( ORB_INDENT "[orb error] build_tool target not found\n" ); return 1; }
+        ctx.force_rebuild = true;
+        bool skipped = false;
+        if ( !build_target( &ctx, bt, &skipped ) )
+        {
+            printf( ORB_BANNER "[ BOOTSTRAP: FAILED ]\n" );
+            return 1;
+        }
+        printf( ORB_BANNER "[ BOOTSTRAP: OK ]\n" );
+        return 0;
+    }
 
     // --- Command: CLEAN ---
 

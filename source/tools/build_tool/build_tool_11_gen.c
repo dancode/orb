@@ -856,7 +856,7 @@ build_gen_solution( solution_info_t* sln )
     if ( sln->nav_dir )
     {
         const char* default_target =
-            ( sln->target_names && sln->target_names[ 0 ] ) ? sln->target_names[ 0 ] : "unknown";
+            sln->target_names[ 0 ] ? sln->target_names[ 0 ] : "unknown";
         gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target, nav_guid );
     }
 
@@ -865,7 +865,7 @@ build_gen_solution( solution_info_t* sln )
     char folder_guids[ 64 ][ 64 ];
     int  folder_count = 0;
 
-    for ( const char** tn = sln->target_names; *tn; ++tn )
+    for ( const char* const* tn = sln->target_names; *tn; ++tn )
     {
         target_info_t* target = NULL;
         for ( int i = 0; i < g_target_count; ++i )
@@ -1021,7 +1021,7 @@ build_gen_solution( solution_info_t* sln )
     fprintf( f, "\tEndGlobalSection\n" );
 
     fprintf( f, "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n" );
-    for ( const char** tn = sln->target_names; *tn; ++tn )
+    for ( const char* const* tn = sln->target_names; *tn; ++tn )
     {
         for ( int i = 0; i < g_target_count; ++i )
         {
@@ -1050,7 +1050,7 @@ build_gen_solution( solution_info_t* sln )
     fprintf( f, "\tGlobalSection(NestedProjects) = preSolution\n" );
 
     // Map each project to its leaf folder.
-    for ( const char** tn = sln->target_names; *tn; ++tn )
+    for ( const char* const* tn = sln->target_names; *tn; ++tn )
     {
         for ( int i = 0; i < g_target_count; ++i )
         {
@@ -1128,7 +1128,7 @@ build_gen_projects( void )
 
         printf( "Generating Solution '%s' in %s/...\n", sln->name, sln->out_dir );
 
-        for ( const char** tn = sln->target_names; *tn; ++tn )
+        for ( const char* const* tn = sln->target_names; *tn; ++tn )
         {
             for ( int j = 0; j < g_target_count; ++j )
             {

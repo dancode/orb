@@ -7,7 +7,7 @@
     UseStandardPreprocessor from ItemDefinitionGroup/ClCompile, which the NMake/Makefile
     provider ignores. This is the same project type CMake generates.
 
-    Invoked by:  build_tool.exe -gen-msbuild
+    Invoked by:  build_tool.exe -gen_ms
     Output dir:  <solution.out_dir>_msbuild  (e.g. build/proj_msbuild)
 
     Build model: VS presses Build -> MSBuild -> cl.exe directly (no build_tool.exe
@@ -351,7 +351,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
 
     build_gen_projects_msbuild()
 
-    Top-level entry point invoked by `build_tool.exe -gen-msbuild`. Mirrors
+    Top-level entry point invoked by `build_tool.exe -gen_ms`. Mirrors
     build_gen_projects() but generates MSBuild StaticLibrary/DLL/Application projects
     instead of NMake/Makefile projects. Output lands in <sln.out_dir>_msbuild.
 
@@ -378,7 +378,7 @@ build_gen_projects_msbuild( void )
 
         printf( "Generating MSBuild Solution '%s' in %s/...\n", sln->name, msbuild_out_dir );
 
-        for ( const char** tn = sln->target_names; *tn; ++tn )
+        for ( const char* const* tn = sln->target_names; *tn; ++tn )
         {
             for ( int j = 0; j < g_target_count; ++j )
             {

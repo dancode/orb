@@ -1,466 +1,119 @@
 /*==============================================================================================
 
-    build_tool_02_data.c -- Target and solution registry; target lookup helpers.
+    build_tool_02_data.c -- Dynamic target/solution pool, built-in registrations,
+                            shared define tables, and target lookup helpers.
 
-    Everything the build system knows about what to build lives here:
-      - Target pool (g_targets[])          : every buildable artifact.
-      - Solution registry (g_solutions[])  : groups of targets mapped to .sln files.
-      - Warning suppression table          : per-compiler, per-config flag overrides.
-      - Shared define tables               : single source of truth for preprocessor defines.
-                                             used by compiler + IntelliSense vcxproj emitter.
-      - Target lookup helpers              : find_target, find_target_icase, find_reflect_tool.
-      - validate_targets()                 : startup integrity check called from main().
+    At startup, main() calls:
 
-    How to add a new library:
-      - Add an entry to g_targets[].
-      - Add its name to the relevant solution target list (e.g. g_sln_main_targets).
+        init_builtin_targets()       -- registers build_tool and reflect_tool into
+                                        g_targets[]. These two are always available
+                                        regardless of whether orb.targets exists.
+
+        registry_load("orb.targets") -- appended by build_tool_02_registry.c;
+                                        all project targets and solutions live there.
+
+    Why build_tool and reflect_tool are hard-coded here and not in orb.targets:
+
+        - build_tool.exe needs to be able to bootstrap itself (-bootstrap flag) even
+          if orb.targets is missing or malformed.
+        - reflect_tool is an immediate dependency of the bootstrap path (core etc.
+          need it), so it must always be resolvable.
+        - Every other target can be added or edited in orb.targets without touching
+          or recompiling build_tool.c.
 
 ==============================================================================================*/
 
 /*==============================================================================================
-    --- Target Pool ---
+    --- Dynamic Target and Solution Pools ---
 ==============================================================================================*/
 
-target_info_t g_targets[] = {
+target_info_t   g_targets[ MAX_TARGETS ];
+int             g_target_count = 0;
 
-    // --- 08_TOOL (Development Utilities) ---
-
-    // The build tool itself (this program!).
-    {
-     .name          = "build_tool",
-     .type          = TARGET_EXECUTABLE,
-     .root_dir      = "source/tools/build_tool",
-     .sln_folder    = "08_TOOL",
-     .units         = { "build_tool.c" },
-     .is_build_tool = true,
-     .deps          = {},
-     .is_tool       = true,
-     },
-
-    // The reflection generator. Scans source and writes generated .c/.h files.
-    {
-     .name            = "reflect_tool",
-     .type            = TARGET_EXECUTABLE,
-     .root_dir        = "source/tools/reflect_tool",
-     .sln_folder      = "08_TOOL",
-     .units           = { "reflect_tool.c" },
-     .deps            = {},
-     .is_tool         = true,
-     .is_reflect_tool = true,
-     },
-
-    // --- 01_BASE (Foundation) ---
-
-    // The lowest layer. Stateless and dependency-free.
-    // Produces bin/base.lib.
-    {
-     .name       = "base",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/base",
-     .sln_folder = "01_BASE",
-     .units      = { "base.c" },
-     .deps       = {},
-     },
-
-    // --- 02_ENGINE (Stateful Systems) ---
-
-    // OS Abstractions (Files, Threads, DLLs).
-    {
-     .name       = "sys",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/engine/sys",
-     .sln_folder = "02_ENGINE",
-     .units      = { "sys.c" },
-     .deps       = {},
-     },
-
-    // Reflection System (Metadata registry).
-    {
-     .name       = "rs",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/engine/rs",
-     .sln_folder = "02_ENGINE",
-     .units      = { "rs.c" },
-     .deps       = {},
-     },
-
-    // Module System (Hot-reloading).
-    {
-     .name       = "mod",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/engine/mod",
-     .sln_folder = "02_ENGINE",
-     .units      = { "mod.c" },
-     .deps       = { "sys" },
-     },
-
-    // Application Layer (Windows, Events).
-    {
-     .name       = "app",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/engine/app",
-     .sln_folder = "02_ENGINE",
-     .units      = { "app.c" },
-     .deps       = { "sys" },
-     },
-
-    // Core Engine Services (Logging, Memory Arenas).
-    // This target requires reflect_tool.exe to run before it can compile.
-    {
-     .name        = "core",
-     .type        = TARGET_STATIC_LIB,
-     .root_dir    = "source/engine/core",
-     .sln_folder  = "02_ENGINE",
-     .units       = { "core.c" },
-     .deps        = { "sys", "rs" },
-     .has_reflect = true,
-     },
-
-    // --- 03_RUNTIME_HOST (host library) ---
-
-    {
-     .name        = "runtime_host",
-     .type        = TARGET_STATIC_LIB,
-     .root_dir    = "source/runtime",
-     .sln_folder  = "03_RUNTIME",
-     .units       = { "runtime.c" },
-     .deps        = { "mod", "sys", "rs", "core", "app" },
-     .has_reflect = false,
-     },
-
-    // --- 03_RUNTIME_SERVIES (Static For Runtime) ---
-    {
-     .name       = "rhi",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/runtime_service/rhi",
-     .sln_folder = "03_RUNTIME_SERVICE",
-     .units      = { "rhi.c" },
-     .deps       = { "app" },
-     },
-    {
-     .name       = "jobs",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/runtime_service/jobs",
-     .sln_folder = "03_RUNTIME_SERVICE",
-     .units      = { "jobs.c" },
-     .deps       = {},
-     },
-
-    // --- 03_RUNTIME_MODULES (Hot-Reloadable DLLs) ---
-
-    // An example module to verify hot-reloading.
-    // Produces bin/example.dll and bin/example.lib (implib).
-    {
-     .name       = "example",
-     .type       = TARGET_DYNAMIC_LIB,
-     .root_dir   = "source/runtime_modules/example",
-     .sln_folder = "03_RUNTIME_MODULES",
-     .units      = { "example.c" },
-     .deps       = {},
-     },
-    {
-     .name       = "render",
-     .type       = TARGET_DYNAMIC_LIB,
-     .root_dir   = "source/runtime_modules/render",
-     .sln_folder = "03_RUNTIME_MODULES",
-     .units      = { "render.c" },
-     .deps       = {},
-     },
-    {
-     .name       = "audio",
-     .type       = TARGET_DYNAMIC_LIB,
-     .root_dir   = "source/runtime_modules/audio",
-     .sln_folder = "03_RUNTIME_MODULES",
-     .units      = { "audio.c" },
-     .deps       = {},
-     },
-    {
-     .name       = "physics",
-     .type       = TARGET_DYNAMIC_LIB,
-     .root_dir   = "source/runtime_modules/physics",
-     .sln_folder = "03_RUNTIME_MODULES",
-     .units      = { "physics.c" },
-     .deps       = {},
-     },
-
-    // --- 03_RUNTIME_MODULES (Hot-Reloadable DLLs) ---
-
-    {
-     .name        = "example_reflect",
-     .type        = TARGET_DYNAMIC_LIB,
-     .root_dir    = "source/runtime_modules/example_reflect",
-     .sln_folder  = "03_RUNTIME_EXAMPLES",
-     .units       = { "example_reflect.c" },
-     .deps        = {},
-     .has_reflect = true,
-     },
-    {
-     .name        = "example_gen",
-     .type        = TARGET_DYNAMIC_LIB,
-     .root_dir    = "source/runtime_modules/example_gen",
-     .sln_folder  = "03_RUNTIME_EXAMPLES",
-     .units       = { "example_gen.c" },
-     .deps        = {},
-     .has_reflect = true,
-     },
-
-    // --- 04_GAME (Static Library) ---
-    {
-     .name       = "game",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/game",
-     .sln_folder = "04_GAME",
-     .units      = { "game.c" },
-     .deps       = {},
-     },
-
-    // --- 04_GAME_SERVICE () ---
-    {
-     .name       = "nav",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/game_service/nav",
-     .sln_folder = "04_GAME_SERVICE",
-     .units      = { "nav.c" },
-     .deps       = {},
-     },
-
-    // --- 04_GAME_MODULE () ---
-    {
-     .name       = "game_example",
-     .type       = TARGET_DYNAMIC_LIB,
-     .root_dir   = "source/game_modules/game_example",
-     .sln_folder = "04_GAME_SERVICE",
-     .units      = { "game_example.c" },
-     .deps       = {},
-     },
-
-    // ------------------------------------------------------------------------------
-    // 06 PROJECT
-    // ------------------------------------------------------------------------------
-
-    // ------------------------------------------------------------------------------
-    // 07 DEVELOPER
-    // ------------------------------------------------------------------------------
-    {
-     .name       = "dev_build",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/developer/dev_build",
-     .sln_folder = "07_Developer",
-     .units      = { "dev_build.c" },
-     .deps       = { "sys" },
-     },
-    {
-     .name       = "dev_hot",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/developer/dev_hot",
-     .sln_folder = "07_Developer",
-     .units      = { "dev_hot.c" },
-     .deps       = { "sys", "dev_build" },
-     },
-
-    // ------------------------------------------------------------------------------
-    // 08 HOST
-    // ------------------------------------------------------------------------------
-    {
-     .name       = "host_common",
-     .type       = TARGET_STATIC_LIB,
-     .root_dir   = "source/host/common",
-     .sln_folder = "08_Host",
-     .units      = { "source/host/common" },
-     .deps       = {},
-     },
-    // ------------------------------------------------------------------------------
-    // 09 SANDBOX
-    // ------------------------------------------------------------------------------
-    // {
-    //  .name       = "sb_base",
-    //  .type       = TARGET_EXECUTABLE,
-    //  .root_dir   = "source/sandbox/base/",
-    //  .sln_folder = "09_SANDBOX_BASE",
-    //  .units      = { "sb_base.c" },
-    //  .deps       = { "base" },
-    //  },
-    {
-     .name       = "sb_engine_mod",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/sandbox/engine/engine_mod",
-     .sln_folder = "09_SANDBOX/ENGINE",
-     .units      = { "sb_engine_mod.c" },
-     .deps       = { "sys", "mod", "dev_build", "dev_hot" },
-     },
-    {
-     .name       = "sb_engine_sys",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/sandbox/engine/engine_sys",
-     .sln_folder = "09_SANDBOX/ENGINE",
-     .units      = { "sb_engine_sys.c" },
-     .deps       = { "sys" },
-     },
-    {
-     .name       = "sb_engine_app",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/sandbox/engine/engine_app",
-     .sln_folder = "09_SANDBOX/ENGINE",
-     .units      = { "sb_engine_app.c" },
-     .deps       = { "sys", "mod", "app" },
-     },
-    {
-     .name       = "sb_engine_core",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/sandbox/engine/engine_core",
-     .sln_folder = "09_SANDBOX/ENGINE",
-     .units      = { "sb_engine_core.c" },
-     .deps       = { "core" },
-     },
-    {
-     .name       = "sb_engine_reflect",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/sandbox/engine/engine_reflect",
-     .sln_folder = "09_SANDBOX/ENGINE",
-     .units      = { "sb_engine_reflect.c" },
-     .deps       = { "core", "rs" },
-     },
-    {
-     .name       = "sb_runtime_reflect",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/sandbox/runtime/runtime_reflect",
-     .sln_folder = "09_SANDBOX/RUNTIME",
-     .units      = { "sb_runtime_reflect.c" },
-     .deps       = { "sys", "mod", "core", "rs" },
-     },
-    {
-     .name       = "sb_runtime_gen",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/sandbox/runtime/runtime_gen",
-     .sln_folder = "09_SANDBOX/RUNTIME",
-     .units      = { "sb_runtime_gen.c" },
-     .deps        = { "sys", "mod", "core", "rs" },
-     .has_reflect = true,
-     },
-
-    // --- 06_SANDBOX (Verification Targets) ---
-
-    // A minimal executable to test the base library.
-    {
-     .name       = "sb_base_main",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/base",
-     .sln_folder = "09_SANDBOX",
-     .units      = { "base_main.c" },
-     .deps       = { "base" },
-     },
-
-    // --- 10_C11 (C11 Language Feature Tests) ---
-
-    // Zero-dependency executable. Tests C11 designated initializers and other
-    // language features in isolation to distinguish compiler rejects from VS
-    // IntelliSense parse artifacts.
-    {
-     .name       = "c11_test",
-     .type       = TARGET_EXECUTABLE,
-     .root_dir   = "source/c11",
-     .sln_folder = "10_C11",
-     .units      = { "c11_test.c" },
-     .deps       = {},
-     },
-};
-
-int g_target_count = sizeof( g_targets ) / sizeof( g_targets[ 0 ] );
+solution_info_t g_solutions[ MAX_SOLUTIONS ];
+int             g_solution_count = 0;
 
 /*==============================================================================================
-    --- Solution Registry ---
+    --- String Pool ---
 
-    NULL-terminated target name lists, each mapped to a .sln output.
+    Bump-allocator for strings parsed from orb.targets. Lives for the process
+    lifetime -- no free() needed. Built-in target strings are C literals and do
+    not consume pool space.
 ==============================================================================================*/
-// clang-format off
 
-// Main engine workspace. Includes core libraries and sandboxes.
-static const char* g_sln_main_targets[] = {
-    "base", "sys", "rs", "mod", "app", "core", 
-    "runtime_host", 
-    "rhi", "jobs", 
-    "render", "audio", "physics", 
-    "example", "example_reflect", "example_gen", 
-    "game", "nav", "game_example",
-    "dev_build", "dev_hot",
-    "host_common", 
-    "sb_engine_mod", "sb_engine_sys", "sb_engine_core", "sb_engine_reflect",
-    "sb_runtime_reflect", "sb_runtime_gen",
-    "sb_base_main",
-    "c11_test",
-    NULL };
+#define STR_POOL_SIZE ( 32 * 1024 )
 
-// clang-format on
+static char g_str_pool[ STR_POOL_SIZE ];
+static int  g_str_pool_used = 0;
 
-// C11 language feature isolation workspace. One target, no engine deps.
-static const char* g_sln_c11_targets[]   = { "c11_test", NULL };
-
-// Standalone build tools workspace. For modifying the build system itself.
-static const char* g_sln_tools_targets[] = { "build_tool", "reflect_tool", NULL };
-
-
-// Standalone build tools workspace. For modifying the build system itself.
-static const char* g_sln_core_targets[] = { "core", NULL };
-
-// .nav_dir = "source",
-
-solution_info_t    g_solutions[]         = {
+static const char*
+pool_str( const char* s )
+{
+    if ( !s || !s[ 0 ] )
+        return NULL;
+    int len = (int)strlen( s ) + 1;
+    if ( g_str_pool_used + len > STR_POOL_SIZE )
     {
-     .name          = "orb",
-     .target_names  = g_sln_main_targets, 
-     .nav_dir       = NULL,
-     .out_dir       = BUILD_DIR PATH_SEP "proj",
-     .is_monolithic = false,
-     },
-    {
-     .name          = "orb_mono",
-     .target_names  = g_sln_main_targets,
-     .nav_dir       = NULL,
-     .out_dir       = BUILD_DIR PATH_SEP "proj_mono",
-     .is_monolithic = true,
-     },
-    {
-     .name          = "orb_build",
-     .target_names  = g_sln_tools_targets,
-     .nav_dir       = NULL,
-     .out_dir       = BUILD_DIR PATH_SEP "proj",
-     .is_monolithic = false,
-     },
-    {
-     .name          = "orb_core",
-     .target_names  = g_sln_core_targets,
-     .nav_dir       = NULL,
-     .out_dir       = BUILD_DIR PATH_SEP "proj",
-     .is_monolithic = false,
-     },
-    {
-     .name          = "c11",
-     .target_names  = g_sln_c11_targets,
-     .nav_dir       = NULL,
-     .out_dir       = BUILD_DIR PATH_SEP "proj",
-     .is_monolithic = false,
-     },
-};
+        printf( ORB_INDENT "[orb error] string pool exhausted; raise STR_POOL_SIZE\n" );
+        return s;    // Unsafe fallback; caller's pointer may not persist.
+    }
+    char* out = g_str_pool + g_str_pool_used;
+    memcpy( out, s, (size_t)len );
+    g_str_pool_used += len;
+    return out;
+}
 
-int g_solution_count = sizeof( g_solutions ) / sizeof( g_solutions[ 0 ] );
+/*==============================================================================================
+    --- Built-in Target Registration ---
+
+    Registers the two targets that must always be present:
+        build_tool   -- the build orchestrator (this executable).
+        reflect_tool -- the reflection code-generator.
+
+    Called once at the very start of main(), before registry_load().
+==============================================================================================*/
+
+static void
+init_builtin_targets( void )
+{
+    // build_tool: the build orchestrator itself.
+    {
+        target_info_t* t = &g_targets[ g_target_count++ ];
+        memset( t, 0, sizeof( *t ) );
+        t->name          = "build_tool";
+        t->type          = TARGET_EXECUTABLE;
+        t->root_dir      = "source/tools/build_tool";
+        t->sln_folder    = "08_TOOL";
+        t->units[ 0 ]    = "build_tool.c";
+        t->is_build_tool = true;
+        t->is_tool       = true;
+    }
+
+    // reflect_tool: the reflection code generator.
+    {
+        target_info_t* t = &g_targets[ g_target_count++ ];
+        memset( t, 0, sizeof( *t ) );
+        t->name            = "reflect_tool";
+        t->type            = TARGET_EXECUTABLE;
+        t->root_dir        = "source/tools/reflect_tool";
+        t->sln_folder      = "08_TOOL";
+        t->units[ 0 ]      = "reflect_tool.c";
+        t->is_tool         = true;
+        t->is_reflect_tool = true;
+    }
+}
 
 /*==============================================================================================
     --- Warning Suppression Table ---
 
     Applied globally after the base flag set in build_target_compile().
     Each entry fires only when the active config AND compiler match.
-    MSVC flags are Windows-only by definition; add COMPILE_CLANG entries for
-    clang-cl variants as needed.
 ==============================================================================================*/
 
 warn_suppress_t g_warn_suppressions[] = {
-
-    // Release: assert() and similar macros compile out, leaving unreferenced
-    // locals and parameters that were only referenced in the debug expression.
-
-    {"/wd4101", CONFIG_COUNT, COMPILE_MSVC}, // C4101: unreferenced local variable
-    {"/wd4189", CONFIG_COUNT, COMPILE_MSVC}, // C4189: local variable initialized but not referenced
-    {"/wd4100", CONFIG_COUNT, COMPILE_MSVC}, // C4100: unreferenced formal parameter
+    {"/wd4101", CONFIG_COUNT, COMPILE_MSVC},    // C4101: unreferenced local variable
+    {"/wd4189", CONFIG_COUNT, COMPILE_MSVC},    // C4189: local variable initialized but not referenced
+    {"/wd4100", CONFIG_COUNT, COMPILE_MSVC},    // C4100: unreferenced formal parameter
 };
 
 int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_suppressions[ 0 ] );
@@ -471,10 +124,6 @@ int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_su
     Single source of truth for preprocessor defines. Both 06_compile.c
     (cl.exe invocation) and 11_gen.c (IntelliSense vcxproj emission) iterate
     these arrays so the two consumers can never silently diverge.
-
-    Do NOT put platform/compiler identity defines here (OS_WINDOWS, COMPILER_MSVC,
-    ARCH_X64). Those are owned by source/orb.h and detected at compile time via
-    MSVC predefined macros. They belong in source, not in the build tool.
 ==============================================================================================*/
 
 const char* g_defines_always[] = {
@@ -493,26 +142,18 @@ const char* g_defines_release[] = {
 };
 
 // Subset of compile flags the IntelliSense parser needs to match cl.exe's
-// language and conformance behavior. Excludes pure-build flags (/c /nologo /W4
-// /WX /Zi /Od /O2 /MD etc.) that have no effect on IntelliSense parsing.
-
+// language and conformance behavior.
 const char* g_intellisense_flags[] = {
     "/TC",
     "/std:c11",
-    "/Zc:preprocessor",    
+    "/Zc:preprocessor",
     NULL,
 };
 
 /*==============================================================================================
     --- Target Lookup Helpers ---
-
-    Linear search through the global target pool. Linear is fine -- the pool
-    has tens of entries and lookups happen at startup or in the scheduler, not
-    on the hot path of every compile invocation.
 ==============================================================================================*/
 
-// Exact-match lookup. Used for internal dep resolution where names are always
-// lowercase literals from g_targets[].
 static target_info_t*
 find_target( const char* name )
 {
@@ -522,7 +163,6 @@ find_target( const char* name )
     return NULL;
 }
 
-// Case-insensitive lookup for user-facing CLI input (target_name from argv).
 static target_info_t*
 find_target_icase( const char* name )
 {
@@ -532,7 +172,6 @@ find_target_icase( const char* name )
     return NULL;
 }
 
-// Find the singleton target marked is_reflect_tool.
 static target_info_t*
 find_reflect_tool( void )
 {

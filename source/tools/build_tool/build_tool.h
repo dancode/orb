@@ -128,6 +128,13 @@ typedef void ( *platform_line_fn_t )( char* line, void* userdata );
 
 #define TARGET_MAX_SLOTS 16
 
+/*  Capacity of the dynamic target and solution pools in build_tool_02_data.c.
+    build_tool and reflect_tool are hardcoded; all others are loaded from orb.targets. */
+
+#define MAX_TARGETS     256
+#define MAX_SOLUTIONS    32
+#define MAX_SLN_TARGETS 128
+
 /*  Path buffer size for every filesystem path the build tool constructs.
     Windows MAX_PATH is 260; 512 gives generous headroom for composite paths.
     <obj_dir>\<filename> without forcing us to opt into long-path support */
@@ -296,10 +303,12 @@ typedef struct
 
     const char*     name;
 
-    /*  A NULL-terminated list of target names to include.
-        The generator looks up these names in g_targets[]. */
+    /*  NULL-terminated list of target names to include (embedded, no heap alloc).
+        Populated by registry_load() from orb.targets; the generator looks each
+        name up in g_targets[]. Embedded array decays to const char** so all
+        existing for(*tn = sln->target_names; *tn; ++tn) loops are unchanged. */
 
-    const char**    target_names;
+    const char*     target_names[ MAX_SLN_TARGETS ];
 
     /* If non-NULL it will generate a "mega" source directory folder
        navigation project as "name"_nav" in the .sln file.
@@ -321,7 +330,11 @@ typedef struct
 
 } solution_info_t;
 
-/*  These are defined in build_tool_targets.c. */
+/*  Dynamic target and solution pools. Populated at startup by init_builtin_targets()
+    (hardcoded build_tool + reflect_tool) then extended by registry_load("orb.targets"). */
+
+extern target_info_t   g_targets[];
+extern int             g_target_count;
 
 extern solution_info_t g_solutions[];
 extern int             g_solution_count;
