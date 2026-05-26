@@ -135,11 +135,12 @@ import_vcvars_env( const char* vcvars_path )
 /*==============================================================================================
     build_setup_vc_env()
 
-    Idempotent entry point. Checks VSCMD_ARG_TGT_ARCH -- the environment variable
-    vcvarsall.bat sets to identify the target architecture. If it is already "x64"
-    this process inherited a correct VC environment and we do nothing. Otherwise,
-    locate vcvarsall.bat and import its environment into this process so every
-    subsequent compiler spawn works without any per-invocation setup overhead.
+    Idempotent entry point. Two fast paths avoid the 200-500ms vcvarsall cost:
+      1. VSCMD_ARG_TGT_ARCH == "x64": vcvarsall was already run for x64.
+      2. cl.exe is in PATH under a \x64\ directory: VS has wired up an x64
+         compiler without running vcvarsall (some NMake launch contexts do this).
+    If neither fast path fires, locate vcvarsall.bat and import its environment
+    into this process so every subsequent compiler spawn works correctly.
 ==============================================================================================*/
 
 void
@@ -147,13 +148,22 @@ build_setup_vc_env( void )
 {
 #if defined( _WIN32 )
 
-    // Fast path: vcvarsall has already been loaded for x64 in this process or its parent.
-    // VSCMD_ARG_TGT_ARCH is set by vcvarsall.bat to the target architecture ("x64", "x86", etc.).
-    // Checking this is more reliable than just searching for cl.exe in PATH -- cl.exe may be
-    // present as x86 from a default VS install layout before vcvars runs.
+    // Fast path 1: vcvarsall already loaded for x64 -- VSCMD_ARG_TGT_ARCH is set by
+    // vcvarsall.bat to the target architecture ("x64", "x86", etc.).
     const char* tgt_arch = getenv( "VSCMD_ARG_TGT_ARCH" );
     if ( tgt_arch && strcmp( tgt_arch, "x64" ) == 0 )
         return;
+
+    // Fast path 2: cl.exe is in PATH and lives under a \x64\ directory, meaning VS has
+    // already wired up an x64 target compiler without setting VSCMD_ARG_TGT_ARCH.
+    // A path check is necessary because VS may also inject HostX86\x86\cl.exe into
+    // PATH without vcvars -- accepting that one silently produces 32-bit output.
+    char cl_path[ PATH_MAX ];
+    if ( SearchPathA( NULL, "cl.exe", NULL, PATH_MAX, cl_path, NULL ) != 0 )
+    {
+        if ( strstr( cl_path, "\\x64\\" ) )
+            return;
+    }
 
     if ( g_out_flags & ORB_OUT_VCVARS )
         printf( ORB_INDENT "[orb vcvars] VSCMD_ARG_TGT_ARCH != x64, locating Visual Studio...\n" );
