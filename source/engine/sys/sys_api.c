@@ -31,7 +31,7 @@ typedef struct sys_state_s
 
 } sys_state_t;
 
-static sys_state_t* s = NULL;
+// static sys_state_t* s = NULL;
 
 /*==============================================================================================
     API Struct

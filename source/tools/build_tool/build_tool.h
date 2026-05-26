@@ -573,6 +573,15 @@ void build_gen_compile_commands( void );
 
 void build_gen_vscode( void );
 
+/*  For each registered target with unity units, writes
+    build/generated/<name>.prelude.h containing the preprocessor setup lines
+    from the unity entry (everything before the first constituent .c include).
+    Delivered exclusively via -include flags injected into compile_commands.json
+    entries by build_gen_compile_commands().
+    Controlled by s_gen_preludes in build_tool_11_gen_prelude.c. */
+
+void build_gen_preludes( void );
+
 // clang-format on
 /*============================================================================================*/
 #endif    // BUILD_TOOL_H

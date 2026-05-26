@@ -6,17 +6,29 @@
     Tools that speak clangd -- VS Code, Vim/Neovim, Emacs, JetBrains CLion -- use
     this file for accurate IntelliSense, completion, and cross-reference navigation.
 
-    One entry is emitted per unity compilation unit (each entry in target->units[]).
-    Targets with multiple unity modules each contribute one entry per module.
-    Targets with has_reflect=true also get an entry for the reflection-generated .c
-    file; that file may not exist until the first build, but clangd picks it up once
-    it does.
+    IMPORTANT: the commands in this file are NEVER executed.  Clangd reads only
+    the flags (includes, defines, target triple) to model the compilation.  The
+    executable does not need to exist; we use clang-cl format because clangd has
+    native support for it and avoids an imperfect cl.exe translation layer.
+
+    Entries emitted per target:
+      - One per unity compilation unit (target->units[]).
+      - One per constituent .c file found via #include "*.c" in each unity unit.
+        This gives clangd a direct per-file context without relying on context
+        propagation, which can fail for files included via -I-resolved paths
+        (e.g. #include "engine/sys/sys_api.c" from source/engine/sys/sys.c).
+      - One for the reflection-generated .c (if target->has_reflect).
 
     The compile command reuses the same flag/define/include tables as 06_compile.c
-    and 11_gen.c, so the database always matches actual build behavior. Debug config
-    is always used (most useful for development IntelliSense). The output flags
-    (/Fo /Fd) are omitted because cc_fill_compile_cmd() leaves cc->output empty
-    -- those are set by the compile entry points, not by the shared fill function.
+    and 11_gen.c, so the database always matches actual build behavior.  Debug
+    config is always used (most useful for development IntelliSense).  The output
+    flags (/Fo /Fd) are omitted -- cc->output is empty in this context.
+
+    Constituent file path resolution (compdb_emit_constituents):
+      For each #include "path.c" found in a unity file, tries:
+        1. root_dir/path   -- include relative to the unity file's directory
+        2. source/path     -- include resolved through the -Isource search path
+      Skips silently if neither resolves to an existing file.
 
 ==============================================================================================*/
 
@@ -81,6 +93,85 @@ compdb_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, cons
 }
 
 /*==============================================================================================
+    compdb_emit_constituents()
+
+    Scan a unity entry file for every #include "*.c" directive and emit a
+    compile_commands.json entry for each constituent .c file found.  Each
+    entry gets the same compile command as the unity hub (including the prelude
+    force-include) so clangd has direct per-file context with no propagation.
+
+    Two-step path resolution for each include path:
+      1. root_dir/path  (relative to the unity file's directory)
+      2. source/path    (resolved through the -Isource search path)
+
+    Both patterns appear in the codebase:
+      "win/win_tick.c"          -- relative, resolves at step 1
+      "engine/sys/sys_api.c"    -- source-relative, resolves at step 2
+==============================================================================================*/
+
+static void
+compdb_emit_constituents( FILE* fp, bool* first,
+                          const char* root_abs, const compile_cmd_t* cc,
+                          const char* root_dir, const char* unit,
+                          int* entry_count )
+{
+    char unity_path[ PATH_MAX ];
+    snprintf( unity_path, sizeof( unity_path ), "%s/%s", root_dir, unit );
+
+    FILE* in = fopen( unity_path, "r" );
+    if ( !in ) return;
+
+    char line[ 1024 ];
+    while ( fgets( line, sizeof( line ), in ) )
+    {
+        /* detect #include "*.c" with arbitrary whitespace after # */
+        const char* p = line;
+        while ( *p == ' ' || *p == '\t' ) p++;
+        if ( *p != '#' ) continue;
+        p++;
+        while ( *p == ' ' || *p == '\t' ) p++;
+        if ( strncmp( p, "include", 7 ) != 0 ) continue;
+        p += 7;
+        while ( *p == ' ' || *p == '\t' ) p++;
+        if ( *p != '"' ) continue;                  /* skip angle-bracket system includes */
+        const char* q = p + 1;
+        while ( *q && *q != '"' ) q++;
+        if ( *q != '"' || q == p + 1 ) continue;
+        if ( !( q >= p + 3 && q[ -1 ] == 'c' && q[ -2 ] == '.' ) ) continue;
+
+        /* extract the bare include path */
+        size_t path_len = (size_t)( q - ( p + 1 ) );
+        if ( path_len == 0 || path_len >= PATH_MAX - 1 ) continue;
+        char inc_path[ PATH_MAX ];
+        memcpy( inc_path, p + 1, path_len );
+        inc_path[ path_len ] = '\0';
+
+        /* step 1: resolve relative to root_dir (unity file's directory) */
+        char rel[ PATH_MAX ];
+        snprintf( rel, sizeof( rel ), "%s/%s", root_dir, inc_path );
+        if ( build_get_mtime( rel ) == 0 )
+        {
+            /* step 2: resolve relative to the source root (via -Isource) */
+            snprintf( rel, sizeof( rel ), "source/%s", inc_path );
+            if ( build_get_mtime( rel ) == 0 )
+                continue;   /* unresolvable -- skip */
+        }
+
+        char abs_src[ PATH_MAX ];
+        if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
+            snprintf( abs_src, sizeof( abs_src ), "%s", rel );
+        compdb_fwd_slashes( abs_src );
+
+        if ( !*first ) fprintf( fp, ",\n" );
+        *first = false;
+        compdb_emit_entry( fp, root_abs, cc, abs_src );
+        ( *entry_count )++;
+    }
+
+    fclose( in );
+}
+
+/*==============================================================================================
     build_gen_compile_commands()
 
     Write compile_commands.json to the project root. Called from main() as part
@@ -98,24 +189,22 @@ build_gen_compile_commands( void )
         return;
     }
 
-    // Absolute project root for the "directory" field in every entry.
-    // GetFullPathNameA (via platform_fullpath) resolves "." without requiring it to exist.
+    /* Absolute project root for the "directory" field in every entry.
+       All relative paths in compile commands (like -Isource) are resolved from here. */
     char root_abs[ PATH_MAX ];
     if ( !platform_fullpath( root_abs, ".", sizeof( root_abs ) ) )
         snprintf( root_abs, sizeof( root_abs ), "." );
     compdb_fwd_slashes( root_abs );
 
-    // Include path for generated headers: "build/generated".
+    /* Include path for generated headers: "build/generated". */
     char gen_dir[ PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s/%s", g_build_dir, g_gen_dir );
 
-    // Use clang-cl for the database: clangd has native support for clang-cl.exe commands
-    // whereas cl.exe goes through an imperfect translation layer that can break hub
-    // indexing and prevent include-context propagation to constituent .c files.
-    // clang-cl.exe accepts all MSVC-style flags (/I, /D, /std:c11) and adds
-    // --target=x86_64-pc-windows-msvc so _MSC_VER and MSVC extensions are defined.
-    // clangd reads the command but does not execute it, so clang-cl.exe need not be
-    // installed -- only the flags matter for IntelliSense.
+    /* Use clang-cl for the database: clangd has native support for clang-cl.exe commands
+       whereas cl.exe goes through an imperfect translation layer that can break indexing.
+       clang-cl.exe accepts all MSVC-style flags and adds --target=x86_64-pc-windows-msvc
+       so _MSC_VER and MSVC extensions are defined.  The commands are never executed --
+       clangd reads the flags only. */
     build_context_t ctx = { 0 };
     ctx.config   = CONFIG_DEBUG;
     ctx.compiler = COMPILE_CLANG;
@@ -130,14 +219,23 @@ build_gen_compile_commands( void )
         target_info_t* target = &g_targets[ i ];
         if ( !target->units[ 0 ] ) continue;
 
-        // Build command skeleton: exe, flags, includes, defines.
-        // obj_dir is unused inside cc_fill_compile_cmd (output is caller-set); "obj" is a placeholder.
+        /* Build command skeleton: exe, flags, includes, defines.
+           obj_dir is unused inside cc_fill_compile_cmd; "obj" is a placeholder. */
         compile_cmd_t cc = { 0 };
         cc_fill_compile_cmd( &ctx, target, "obj", gen_dir, &cc );
 
-        // One entry per unity unit. Constituent .c files that are #included by the
-        // hub are not listed -- clangd finds the hub that includes them and transfers
-        // its compilation context (includes, defines) automatically.
+        /* Inject the prelude as a force-include using /FI (MSVC/clang-cl flag).
+           Do NOT use -include here: in --driver-mode=cl clangd does not recognise
+           -include as taking an argument, so the path token gets dropped silently.
+           /FI is the correct clang-cl force-include flag and clangd parses it
+           correctly.  Path is relative to root_abs (the "directory" field). */
+        {
+            size_t used = strlen( cc.includes );
+            snprintf( cc.includes + used, sizeof( cc.includes ) - used,
+                      " /FI %s/%s.prelude.h", gen_dir, target->name );
+        }
+
+        /* --- Unity entry: one entry per compilation unit --- */
         for ( int j = 0; target->units[ j ]; ++j )
         {
             char rel[ PATH_MAX ];
@@ -154,8 +252,17 @@ build_gen_compile_commands( void )
             entry_count++;
         }
 
-        // Entry for the reflection-generated .c. May not exist until the first build;
-        // clangd silently skips missing files and indexes them once they appear.
+        /* --- Constituent entries: one per #included .c file in each unit ---
+           Explicit entries give clangd direct per-file context without relying on
+           context propagation, which fails for includes resolved via -I paths. */
+        for ( int j = 0; target->units[ j ]; ++j )
+            compdb_emit_constituents( fp, &first, root_abs, &cc,
+                                      target->root_dir, target->units[ j ],
+                                      &entry_count );
+
+        /* --- Reflection-generated .c ---
+           May not exist until the first build; clangd silently skips missing files
+           and indexes them once they appear. */
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
