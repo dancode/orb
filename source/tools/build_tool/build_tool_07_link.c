@@ -44,7 +44,7 @@ static void
 lk_print( FILE* out, const link_cmd_t* lk, const target_info_t* target )
 {
     if ( g_out_flags & ORB_OUT_SUMMARY_LINK )
-        fprintf( out, ORB_INDENT "[orb link] %s -> %s\n", target->name, lk->artifact );
+        fprintf( out, ORB_INDENT "[orb link] %s\n", lk->artifact );
 
     if ( g_out_flags & ORB_OUT_ANY_LINK )
         fprintf( out, "\n" );

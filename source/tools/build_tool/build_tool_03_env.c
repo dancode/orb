@@ -13,8 +13,20 @@
     platform_putenv(). Every child process we spawn afterward inherits the modified
     environment automatically -- no per-invocation prefix needed.
 
+    Cache (s_vcvars_cache_enabled):
+    When enabled, the KEY=VALUE pairs captured from vcvarsall are written to
+    VCVARS_CACHE_PATH. On subsequent cold launches the cache is read directly --
+    no subprocess needed (~microseconds vs. 200-500ms). The cache is invalidated
+    automatically whenever vcvarsall.bat is newer than the cache file (i.e. after
+    a VS update).
+
 ==============================================================================================*/
 // clang-format off
+
+/* Set to false to always run the full vcvarsall import and never read or write the cache. */
+static bool s_vcvars_cache_enabled = true;
+
+#define VCVARS_CACHE_PATH  BUILD_DIR "\\.vcvars_x64"
 
 /*==============================================================================================
     locate_vcvarsall()
@@ -81,6 +93,60 @@ locate_vcvarsall( char* out, size_t out_size )
 }
 
 /*==============================================================================================
+    vcvars_cache_load()
+
+    Read KEY=VALUE lines from the cache file and inject each pair into the process
+    environment via platform_putenv(). Uses memory-mapped I/O.
+    Returns the number of variables imported, or -1 if the file could not be opened.
+==============================================================================================*/
+
+static int
+vcvars_cache_load( const char* path )
+{
+    platform_mapped_file_t mf;
+    if ( !platform_map_file( path, &mf ) )
+        return -1;
+
+    if ( !mf.data )
+    {
+        platform_unmap_file( &mf );
+        return 0;
+    }
+
+    // PATH/INCLUDE/LIB can be very long under a full VS install -- 16KB gives safe headroom.
+    char line[ 16384 ];
+
+    int         imported = 0;
+    const char* p        = mf.data;
+    const char* end      = mf.data + mf.size;
+
+    while ( p < end )
+    {
+        // Copy one line from the mapped view into the mutable line buffer.
+        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
+        size_t len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
+        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
+        memcpy( line, p, len );
+        line[ len ] = '\0';
+        p = nl ? nl + 1 : end;
+
+        // Strip CR.
+        if ( len > 0 && line[ len - 1 ] == '\r' ) line[ --len ] = '\0';
+        if ( len == 0 ) continue;
+
+        // Split KEY=VALUE on the first '='. Skip lines with no key.
+        char* eq = strchr( line, '=' );
+        if ( !eq || eq == line ) continue;
+        *eq = '\0';
+
+        if ( platform_putenv( line, eq + 1 ) == 0 ) ++imported;
+    }
+
+    platform_unmap_file( &mf );
+    return imported;
+}
+
+/*==============================================================================================
     import_vcvars_env()
 
     Run "vcvarsall x64 && set" in a sub-shell. vcvarsall mutates the sub-shell's
@@ -88,13 +154,16 @@ locate_vcvarsall( char* out, size_t out_size )
     and call platform_putenv() for each one, injecting the VC toolchain env into our own
     process. All child processes spawned after this point inherit it automatically.
 
+    If cache_path is non-NULL each imported pair is also written to that file so
+    vcvars_cache_load() can replay them on the next cold launch without a subprocess.
+
     The double-quote idiom `cmd /c "" "<path>" args ""` is required because
     vcvarsall.bat always lives under "Program Files" (a path with spaces). The outer
     empty-string pair prevents cmd from stripping the inner quotes around the path.
 ==============================================================================================*/
 
 static int
-import_vcvars_env( const char* vcvars_path )
+import_vcvars_env( const char* vcvars_path, const char* cache_path )
 {
     char run_cmd[ 1024 ];
     snprintf( run_cmd, sizeof( run_cmd ),
@@ -105,6 +174,16 @@ import_vcvars_env( const char* vcvars_path )
     {
         printf( ORB_INDENT "[orb warn] could not spawn sub-shell for vcvars import\n" );
         return 0;
+    }
+
+    // Open cache file for writing if caching is requested.
+    FILE* cache = NULL;
+    if ( cache_path )
+    {
+        ensure_dir( BUILD_DIR );
+        cache = fopen( cache_path, "w" );
+        if ( !cache && ( g_out_flags & ORB_OUT_VCVARS ) )
+            printf( ORB_INDENT "[orb vcvars] could not write cache: %s\n", cache_path );
     }
 
     // PATH/INCLUDE/LIB can be very long under a full VS install -- 16KB gives safe headroom.
@@ -125,9 +204,14 @@ import_vcvars_env( const char* vcvars_path )
 
         const char* key   = line;
         const char* value = eq + 1;
-        if ( platform_putenv( key, value ) == 0 ) ++imported;
+        if ( platform_putenv( key, value ) == 0 )
+        {
+            ++imported;
+            if ( cache ) fprintf( cache, "%s=%s\n", key, value );
+        }
     }
 
+    if ( cache  ) fclose( cache );
     platform_pclose( pipe );
     return imported;
 }
@@ -135,12 +219,14 @@ import_vcvars_env( const char* vcvars_path )
 /*==============================================================================================
     build_setup_vc_env()
 
-    Idempotent entry point. Two fast paths avoid the 200-500ms vcvarsall cost:
+    Idempotent entry point. Three fast paths avoid the 200-500ms vcvarsall cost:
       1. VSCMD_ARG_TGT_ARCH == "x64": vcvarsall was already run for x64.
       2. cl.exe is in PATH under a \x64\ directory: VS has wired up an x64
          compiler without running vcvarsall (some NMake launch contexts do this).
-    If neither fast path fires, locate vcvarsall.bat and import its environment
-    into this process so every subsequent compiler spawn works correctly.
+      3. Cache hit (s_vcvars_cache_enabled): cache file is newer than vcvarsall.bat,
+         so the saved KEY=VALUE pairs are loaded directly -- no subprocess needed.
+    If no fast path fires, locate vcvarsall.bat, run the full import, and write
+    the cache (when enabled) so the next cold launch hits fast path 3.
 ==============================================================================================*/
 
 void
@@ -175,12 +261,37 @@ build_setup_vc_env( void )
         return;
     }
 
+    // Fast path 3: valid cache -- skip the vcvarsall subprocess entirely.
+    if ( s_vcvars_cache_enabled )
+    {
+        // If VS updates and touches vcvarsall.bat, the cache is stale and 
+        // the next run does a full re-import and rewrites it
+        platform_mtime_t cache_mtime  = platform_get_mtime( VCVARS_CACHE_PATH );
+        platform_mtime_t vcvars_mtime = platform_get_mtime( vcvars_path );
+        if ( cache_mtime > 0 && cache_mtime >= vcvars_mtime )
+        {
+            int n = vcvars_cache_load( VCVARS_CACHE_PATH );
+            if ( n > 0 )
+            {
+                if ( g_out_flags & ORB_OUT_VCVARS )
+                    printf( ORB_INDENT "[orb vcvars] loaded %d variables from cache\n", n );
+                return;
+            }
+            // Cache unreadable or empty -- fall through to full import.
+        }
+    }
+
     if ( g_out_flags & ORB_OUT_VCVARS )
         printf( ORB_INDENT "[orb vcvars] importing from %s\n", vcvars_path );
 
-    int n = import_vcvars_env( vcvars_path );
+    const char* write_cache = s_vcvars_cache_enabled ? VCVARS_CACHE_PATH : NULL;
+    int n = import_vcvars_env( vcvars_path, write_cache );
     if ( g_out_flags & ORB_OUT_VCVARS )
+    {
         printf( ORB_INDENT "[orb vcvars] imported %d environment variables\n", n );
+        if ( write_cache )
+            printf( ORB_INDENT "[orb vcvars] cache written: %s\n", write_cache );
+    }
 
 #endif
 }

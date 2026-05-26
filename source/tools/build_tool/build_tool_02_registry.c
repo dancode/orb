@@ -21,7 +21,7 @@
             folder  <VS solution virtual folder>
             unit    <unity entry .c filename>           (one per line; multiple allowed)
             dep     <dependency target name>            (one per line; multiple allowed)
-            tdep    <tool dependency name>              (one per line; multiple allowed)
+            tool_dep <tool dependency name>             (one per line; multiple allowed)
             reflect [<custom reflect output name>]      (flag; optional name override)
             flag    is_tool | is_build_tool | is_reflect_tool
 
@@ -130,8 +130,8 @@ reg_sln_add( solution_info_t* sln, const char* name )
 static bool
 registry_load( const char* path )
 {
-    FILE* f = fopen( path, "r" );
-    if ( !f )
+    platform_mapped_file_t mf;
+    if ( !platform_map_file( path, &mf ) )
     {
         printf( ORB_INDENT "[orb warn] '%s' not found -- only built-in targets (build_tool, reflect_tool) available.\n", path );
         return true;
@@ -146,8 +146,19 @@ registry_load( const char* path )
     int  lineno = 0;
     bool ok     = true;
 
-    while ( fgets( line, sizeof( line ), f ) )
+    const char* p   = mf.data;
+    const char* end = mf.data ? mf.data + mf.size : NULL;
+
+    while ( p && p < end )
     {
+        /* Copy one line from the mapped view into the mutable line buffer. */
+        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
+        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
+        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
+        memcpy( line, p, len );
+        line[ len ] = '\0';
+        p = nl ? nl + 1 : end;
+
         ++lineno;
         reg_strip( line );
         if ( !line[ 0 ] || line[ 0 ] == '#' )
@@ -205,9 +216,20 @@ registry_load( const char* path )
             }
             else if ( strcmp( key, "root"   ) == 0 && val ) cur_t->root_dir   = pool_str( val );
             else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->sln_folder = pool_str( val );
-            else if ( strcmp( key, "unit"   ) == 0 && val ) reg_append_slot( cur_t->units,     TARGET_MAX_SLOTS, val );
-            else if ( strcmp( key, "dep"    ) == 0 && val ) reg_append_slot( cur_t->deps,      TARGET_MAX_SLOTS, val );
-            else if ( strcmp( key, "tdep"   ) == 0 && val ) reg_append_slot( cur_t->tool_deps, TARGET_MAX_SLOTS, val );
+            else if ( strcmp( key, "unit"   ) == 0 && val ) reg_append_slot( cur_t->units, TARGET_MAX_SLOTS, val );
+            else if ( ( strcmp( key, "dep" ) == 0 || strcmp( key, "tool_dep" ) == 0 ) && val )
+            {
+                /* dep/tool_dep accept space-separated lists: dep sys mod core */
+                const char** slots = ( key[ 0 ] == 'd' && key[ 1 ] == 'e' ) ? cur_t->deps : cur_t->tool_deps;
+                char tmp[ 1024 ];
+                snprintf( tmp, sizeof( tmp ), "%s", val );
+                char* tok = strtok( tmp, " \t" );
+                while ( tok )
+                {
+                    reg_append_slot( slots, TARGET_MAX_SLOTS, tok );
+                    tok = strtok( NULL, " \t" );
+                }
+            }
             else if ( strcmp( key, "reflect" ) == 0 )
             {
                 cur_t->has_reflect  = true;
@@ -248,7 +270,7 @@ registry_load( const char* path )
         }
     }
 
-    fclose( f );
+    platform_unmap_file( &mf );
     return ok;
 }
 

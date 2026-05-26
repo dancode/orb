@@ -13,8 +13,8 @@
 #     root    <source dir relative to project root>
 #     folder  <VS solution virtual folder>
 #     unit    <unity entry .c file>      (one per line; multiple allowed)
-#     dep     <dependency target name>   (one per line; multiple allowed)
-#     tdep    <tool dependency name>     (one per line; multiple allowed)
+#     dep     <dep1> [dep2] ...          (space-separated; multiple lines allowed)
+#     tool_dep <dep1> [dep2] ...         (space-separated; multiple lines allowed)
 #     reflect [<output name override>]   (flag; optional name override)
 #     flag    is_tool | is_build_tool | is_reflect_tool
 #
@@ -29,48 +29,48 @@
 # ==============================================================================
 
 target base
-    type    static
-    root    source/base
-    folder  01_BASE
-    unit    base.c
+    type        static
+    root        source/base
+    folder      01_BASE
+    unit        base.c
 
 # ==============================================================================
 # 02_ENGINE
 # ==============================================================================
 
 target sys
-    type    static
-    root    source/engine/sys
-    folder  02_ENGINE
-    unit    sys.c
+    type        static
+    root        source/engine/sys
+    folder      02_ENGINE
+    unit        sys.c
 
 target rs
-    type    static
-    root    source/engine/rs
-    folder  02_ENGINE
-    unit    rs.c
+    type        static
+    root        source/engine/rs
+    folder      02_ENGINE
+    unit        rs.c
 
 target mod
-    type    static
-    root    source/engine/mod
-    folder  02_ENGINE
-    unit    mod.c
-    dep     sys
+    type        static
+    root        source/engine/mod
+    folder      02_ENGINE
+    unit        mod.c
+    dep         sys
 
 target app
-    type    static
-    root    source/engine/app
-    folder  02_ENGINE
-    unit    app.c
-    dep     sys
+    type        static
+    root        source/engine/app
+    folder      02_ENGINE
+    unit        app.c
+    dep         sys
 
 target core
-    type    static
-    root    source/engine/core
-    folder  02_ENGINE
-    unit    core.c
-    dep     sys
-    dep     rs
+    type        static
+    root        source/engine/core
+    folder      02_ENGINE
+    unit        core.c
+    dep         sys 
+    dep         rs
     reflect
 
 # ==============================================================================
@@ -78,77 +78,73 @@ target core
 # ==============================================================================
 
 target runtime_host
-    type    static
-    root    source/runtime
-    folder  03_RUNTIME
-    unit    runtime.c
-    dep     mod
-    dep     sys
-    dep     rs
-    dep     core
-    dep     app
+    type        static
+    root        source/runtime
+    folder      03_RUNTIME
+    unit        runtime.c
+    dep         mod sys rs core app
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
 # ==============================================================================
 
 target rhi
-    type    static
-    root    source/runtime_service/rhi
-    folder  03_RUNTIME_SERVICE
-    unit    rhi.c
-    dep     app
+    type        static
+    root        source/runtime_service/rhi
+    folder      03_RUNTIME_SERVICE
+    unit        rhi.c
+    dep         app
 
 target jobs
-    type    static
-    root    source/runtime_service/jobs
-    folder  03_RUNTIME_SERVICE
-    unit    jobs.c
+    type        static
+    root        source/runtime_service/jobs
+    folder      03_RUNTIME_SERVICE
+    unit        jobs.c
 
 # ==============================================================================
 # 03_RUNTIME_MODULES
 # ==============================================================================
 
 target example
-    type    dynamic
-    root    source/runtime_modules/example
-    folder  03_RUNTIME_MODULES
-    unit    example.c
+    type        dynamic
+    root        source/runtime_modules/example
+    folder      03_RUNTIME_MODULES
+    unit        example.c
 
 target render
-    type    dynamic
-    root    source/runtime_modules/render
-    folder  03_RUNTIME_MODULES
-    unit    render.c
+    type        dynamic
+    root        source/runtime_modules/render
+    folder      03_RUNTIME_MODULES
+    unit        render.c
 
 target audio
-    type    dynamic
-    root    source/runtime_modules/audio
-    folder  03_RUNTIME_MODULES
-    unit    audio.c
+    type        dynamic
+    root        source/runtime_modules/audio
+    folder      03_RUNTIME_MODULES
+    unit        audio.c
 
 target physics
-    type    dynamic
-    root    source/runtime_modules/physics
-    folder  03_RUNTIME_MODULES
-    unit    physics.c
+    type        dynamic
+    root        source/runtime_modules/physics
+    folder      03_RUNTIME_MODULES
+    unit        physics.c
 
 # ==============================================================================
 # 03_RUNTIME_EXAMPLES
 # ==============================================================================
 
 target example_reflect
-    type    dynamic
-    root    source/runtime_modules/example_reflect
-    folder  03_RUNTIME_EXAMPLES
-    unit    example_reflect.c
+    type        dynamic
+    root        source/runtime_modules/example_reflect
+    folder      03_RUNTIME_EXAMPLES
+    unit        example_reflect.c
     reflect
 
 target example_gen
-    type    dynamic
-    root    source/runtime_modules/example_gen
-    folder  03_RUNTIME_EXAMPLES
-    unit    example_gen.c
+    type        dynamic
+    root        source/runtime_modules/example_gen
+    folder      03_RUNTIME_EXAMPLES
+    unit        example_gen.c
     reflect
 
 # ==============================================================================
@@ -156,124 +152,113 @@ target example_gen
 # ==============================================================================
 
 target game
-    type    static
-    root    source/game
-    folder  04_GAME
-    unit    game.c
+    type        static
+    root        source/game
+    folder      04_GAME
+    unit        game.c
 
 # ==============================================================================
 # 04_GAME_SERVICE
 # ==============================================================================
 
 target nav
-    type    static
-    root    source/game_service/nav
-    folder  04_GAME_SERVICE
-    unit    nav.c
+    type        static
+    root        source/game_service/nav
+    folder      04_GAME_SERVICE
+    unit        nav.c
 
 target game_example
-    type    dynamic
-    root    source/game_modules/game_example
-    folder  04_GAME_SERVICE
-    unit    game_example.c
+    type        dynamic
+    root        source/game_modules/game_example
+    folder      04_GAME_SERVICE
+    unit        game_example.c
 
 # ==============================================================================
 # 07_Developer
 # ==============================================================================
 
 target dev_build
-    type    static
-    root    source/developer/dev_build
-    folder  07_Developer
-    unit    dev_build.c
-    dep     sys
+    type        static
+    root        source/developer/dev_build
+    folder      07_Developer
+    unit        dev_build.c
+    dep         sys
 
 target dev_hot
-    type    static
-    root    source/developer/dev_hot
-    folder  07_Developer
-    unit    dev_hot.c
-    dep     sys
-    dep     dev_build
+    type        static
+    root        source/developer/dev_hot
+    folder      07_Developer
+    unit        dev_hot.c
+    dep         sys
+    dep         dev_build
 
 # ==============================================================================
 # 08_Host
 # ==============================================================================
 
 target host_common
-    type    static
-    root    source/host/common
-    folder  08_Host
-    unit    source/host/common
+    type        static
+    root        source/host/common
+    folder      08_Host
+    unit        source/host/common
 
 # ==============================================================================
 # 09_SANDBOX/ENGINE
 # ==============================================================================
 
 target sb_engine_mod
-    type    exe
-    root    source/sandbox/engine/engine_mod
-    folder  09_SANDBOX/ENGINE
-    unit    sb_engine_mod.c
-    dep     sys
-    dep     mod
-    dep     dev_build
-    dep     dev_hot
+    type        exe
+    root        source/sandbox/engine/engine_mod
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_mod.c
+    dep         sys mod
+    dep         dev_build dev_hot
 
 target sb_engine_sys
-    type    exe
-    root    source/sandbox/engine/engine_sys
-    folder  09_SANDBOX/ENGINE
-    unit    sb_engine_sys.c
-    dep     sys
+    type        exe
+    root        source/sandbox/engine/engine_sys
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_sys.c
+    dep         sys
 
 target sb_engine_app
-    type    exe
-    root    source/sandbox/engine/engine_app
-    folder  09_SANDBOX/ENGINE
-    unit    sb_engine_app.c
-    dep     sys
-    dep     mod
-    dep     app
+    type        exe
+    root        source/sandbox/engine/engine_app
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_app.c
+    dep         sys mod app
 
 target sb_engine_core
-    type    exe
-    root    source/sandbox/engine/engine_core
-    folder  09_SANDBOX/ENGINE
-    unit    sb_engine_core.c
-    dep     core
+    type        exe
+    root        source/sandbox/engine/engine_core
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_core.c
+    dep         core
 
 target sb_engine_reflect
-    type    exe
-    root    source/sandbox/engine/engine_reflect
-    folder  09_SANDBOX/ENGINE
-    unit    sb_engine_reflect.c
-    dep     core
-    dep     rs
+    type        exe
+    root        source/sandbox/engine/engine_reflect
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_reflect.c
+    dep         rs core
 
 # ==============================================================================
 # 09_SANDBOX/RUNTIME
 # ==============================================================================
 
 target sb_runtime_reflect
-    type    exe
-    root    source/sandbox/runtime/runtime_reflect
-    folder  09_SANDBOX/RUNTIME
-    unit    sb_runtime_reflect.c
-    dep     sys
-    dep     mod
-    dep     core
-    dep     rs
-
+    type        exe
+    root        source/sandbox/runtime/runtime_reflect
+    folder      09_SANDBOX/RUNTIME
+    unit        sb_runtime_reflect.c
+    dep         sys mod core rs
+	
 target sb_runtime_gen
-    type    exe
-    root    source/sandbox/runtime/runtime_gen
-    folder  09_SANDBOX/RUNTIME
-    unit    sb_runtime_gen.c
-    dep     sys
-    dep     mod
-    dep     core
-    dep     rs
+    type        exe
+    root        source/sandbox/runtime/runtime_gen
+    folder      09_SANDBOX/RUNTIME
+    unit        sb_runtime_gen.c
+    dep         sys rs mod core 
     reflect
 
 # ==============================================================================
@@ -281,67 +266,77 @@ target sb_runtime_gen
 # ==============================================================================
 
 target sb_base_main
-    type    exe
-    root    source/base
-    folder  09_SANDBOX
-    unit    base_main.c
-    dep     base
+    type        exe
+    root        source/base
+    folder      09_SANDBOX
+    unit        base_main.c
+    dep         base
 
 # ==============================================================================
 # 10_C11
 # ==============================================================================
 
 target c11_test
-    type    exe
-    root    source/c11
-    folder  10_C11
-    unit    c11_test.c
+    type        exe
+    root        source/c11
+    folder      10_C11
+    unit        c11_test.c
 
 # ==============================================================================
 # SOLUTIONS
 # ==============================================================================
 
+solution orb_build
+    out         build/proj
+    add         build_tool reflect_tool
+
 solution orb
-    out     build/proj
-    add     base sys rs mod app core
-    add     runtime_host
-    add     rhi jobs
-    add     render audio physics
-    add     example example_reflect example_gen
-    add     game nav game_example
-    add     dev_build dev_hot
-    add     host_common
-    add     sb_engine_mod sb_engine_sys sb_engine_core sb_engine_reflect sb_engine_app
-    add     sb_runtime_reflect sb_runtime_gen
-    add     sb_base_main
-    add     c11_test
+    out         build/proj
+    add         base sys rs mod app core
+    add         runtime_host
+
+    add         rhi jobs
+    add         render audio physics
+
+    add         example example_reflect example_gen
+    add         game nav game_example
+
+    add         dev_build dev_hot
+
+    add         host_common
+
+    add         sb_engine_mod sb_engine_sys sb_engine_core sb_engine_reflect sb_engine_app
+    add         sb_runtime_reflect sb_runtime_gen
+    add         sb_base_main
 
 solution orb_mono
-    out     build/proj_mono
-    flag    monolithic
-    add     base sys rs mod app core
-    add     runtime_host
-    add     rhi jobs
-    add     render audio physics
-    add     example example_reflect example_gen
-    add     game nav game_example
-    add     dev_build dev_hot
-    add     host_common
-    add     sb_engine_mod sb_engine_sys sb_engine_core sb_engine_reflect sb_engine_app
-    add     sb_runtime_reflect sb_runtime_gen
-    add     sb_base_main
-    add     c11_test
+    out         build/proj_mono
+    flag        monolithic
+    add         base sys rs mod app core
+    add         runtime_host
 
-solution orb_build
-    out     build/proj
-    add     build_tool reflect_tool
+    add         rhi jobs
+    add         render audio physics
+
+    add         example example_reflect example_gen
+
+    add         game nav game_example
+
+    add         dev_build dev_hot
+
+    add         host_common
+
+    add         sb_engine_mod sb_engine_sys sb_engine_core sb_engine_reflect sb_engine_app
+    add         sb_runtime_reflect sb_runtime_gen
+    add         sb_base_main
+
 
 solution orb_core
-    out     build/proj
-    add     core
+    out         build/proj
+    add         core
 
 solution c11
-    out     build/proj
-    add     c11_test
+    out         build/proj
+    add         c11_test
 	
 
