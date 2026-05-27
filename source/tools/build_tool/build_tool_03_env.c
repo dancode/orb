@@ -120,19 +120,9 @@ vcvars_cache_load( const char* path )
     const char* p        = mf.data;
     const char* end      = mf.data + mf.size;
 
-    while ( p < end )
+    while ( mmap_next_line( &p, end, line, sizeof( line ) ) )
     {
-        // Copy one line from the mapped view into the mutable line buffer.
-        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
-        size_t len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
-        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
-        memcpy( line, p, len );
-        line[ len ] = '\0';
-        p = nl ? nl + 1 : end;
-
-        // Strip CR.
-        if ( len > 0 && line[ len - 1 ] == '\r' ) line[ --len ] = '\0';
-        if ( len == 0 ) continue;
+        if ( !line[ 0 ] ) continue;
 
         // Split KEY=VALUE on the first '='. Skip lines with no key.
         char* eq = strchr( line, '=' );

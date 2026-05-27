@@ -292,6 +292,7 @@ solution orb_build
 
 solution orb
     out         build/proj
+# 	nav 		source
     add         base sys rs mod app core
     add         runtime_host
 
@@ -308,6 +309,7 @@ solution orb
     add         sb_engine_mod sb_engine_sys sb_engine_core sb_engine_reflect sb_engine_app
     add         sb_runtime_reflect sb_runtime_gen
     add         sb_base_main
+	
 
 solution orb_mono
     out         build/proj_mono

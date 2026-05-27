@@ -16,35 +16,35 @@
 
     TARGET BLOCK:
         target <name>
-            type    static | dynamic | exe
-            root    <source directory relative to project root>
-            folder  <VS solution virtual folder>
-            unit    <unity entry .c filename>           (one per line; multiple allowed)
-            dep     <dependency target name>            (one per line; multiple allowed)
-            tool_dep <tool dependency name>             (one per line; multiple allowed)
-            reflect [<custom reflect output name>]      (flag; optional name override)
-            flag    is_tool | is_build_tool | is_reflect_tool
+            type        static | dynamic | exe
+            root        <source directory relative to project root>
+            folder      <VS solution virtual folder>
+            unit        <unity entry .c filename>           (one per line; multiple allowed)
+            dep         <dependency target name>            (one per line; multiple allowed)
+            tool_dep     <tool dependency name>             (one per line; multiple allowed)
+            reflect     [<custom reflect output name>]      (flag; optional name override)
+            flag        is_tool | is_build_tool | is_reflect_tool
 
     SOLUTION BLOCK:
         solution <name>
-            out     <output directory for .sln/.vcxproj files>
-            add     <target1> [target2] ...   (space-separated; line repeatable)
-            nav     <navigation source directory> (optional)
-            flag    monolithic
+            out         <output directory for .sln/.vcxproj files>
+            add         <target1> [target2] ...   (space-separated; line repeatable)
+            nav         <navigation source directory> (optional)
+            flag        monolithic
 
     EXAMPLE:
         target core
-            type    static
-            root    source/engine/core
-            folder  02_ENGINE
-            unit    core.c
-            dep     sys
-            dep     rs
+            type        static
+            root        source/engine/core
+            folder      02_ENGINE
+            unit        core.c
+            dep         sys
+            dep         rs
             reflect
 
         solution orb_core
-            out     build/proj
-            add     core
+            out         build/proj
+            add         core
 
 ==============================================================================================*/
 // clang-format off
@@ -149,16 +149,8 @@ registry_load( const char* path )
     const char* p   = mf.data;
     const char* end = mf.data ? mf.data + mf.size : NULL;
 
-    while ( p && p < end )
+    while ( mmap_next_line( &p, end, line, sizeof( line ) ) )
     {
-        /* Copy one line from the mapped view into the mutable line buffer. */
-        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
-        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
-        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
-        memcpy( line, p, len );
-        line[ len ] = '\0';
-        p = nl ? nl + 1 : end;
-
         ++lineno;
         reg_strip( line );
         if ( !line[ 0 ] || line[ 0 ] == '#' )

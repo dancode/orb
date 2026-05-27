@@ -359,17 +359,89 @@ build_intellisense_nmake_options( char* buf, size_t buf_size )
 }
 
 /*==============================================================================================
+    emit_intellisense_config_groups()
+
+    Emit the four per-config XML groups shared by every Makefile project (target and nav):
+      - Two ItemDefinitionGroup/ClCompile blocks (Debug + Release): LanguageStandard_C,
+        UseStandardPreprocessor, AdditionalIncludeDirectories, PreprocessorDefinitions.
+        The EDG IntelliSense front-end reads these -- NOT the NMake* PropertyGroup entries.
+      - Two NMake PropertyGroup blocks (Debug + Release): NMakePreprocessorDefinitions,
+        NMakeIncludeSearchPath, IntelliSenseMode, NMakeAdditionalOptions.
+
+    target -- the engine target whose _STATIC define chain is used; NULL for nav projects
+              (which use only the always-static-lib defines).
+==============================================================================================*/
+
+static void
+emit_intellisense_config_groups( FILE* f, target_info_t* target )
+{
+    char dbg_defines[ 1024 ];
+    char rel_defines[ 1024 ];
+    char nmake_opts[ 256 ];
+    build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG,   target );
+    build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, target );
+    build_intellisense_nmake_options( nmake_opts, sizeof( nmake_opts ) );
+
+    fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+    fprintf( f, "    <ClCompile>\n" );
+    fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+    if ( g_gen_fwd_compat )
+        fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
+    fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
+    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+    fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n", 
+             dbg_defines );
+    fprintf( f, "    </ClCompile>\n" );
+    fprintf( f, "  </ItemDefinitionGroup>\n" );
+
+    fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+    fprintf( f, "    <ClCompile>\n" );
+    fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+    if ( g_gen_fwd_compat )
+        fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
+    fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
+    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+    fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
+             rel_defines );
+    fprintf( f, "    </ClCompile>\n" );
+    fprintf( f, "  </ItemDefinitionGroup>\n" );
+
+    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
+    fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+             dbg_defines );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+    fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+    if ( g_gen_fwd_compat )
+        fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
+    fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
+    fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
+    fprintf( f, "  </PropertyGroup>\n" );
+
+    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
+    fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+             rel_defines );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+    fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+    if ( g_gen_fwd_compat )
+        fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
+    fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
+    fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
+    fprintf( f, "  </PropertyGroup>\n" );
+}
+
+/*==============================================================================================
     write_vcxproj_common_header()
 
     Writes the boilerplate XML required for a Visual Studio Makefile project.
     Three layers of config data:
       1. Unconditional PropertyGroup: OutDir/IntDir and the NMake build/clean commands.
-      2. Per-config ItemDefinitionGroup/ClCompile: LanguageStandard_C, UseStandardPreprocessor,
-         AdditionalIncludeDirectories, PreprocessorDefinitions. These are where the EDG
-         IntelliSense front-end reads language and preprocessor mode -- NOT from NMake*
-         PropertyGroup entries. Mirrors what CMake's StaticLibrary generator emits.
-      3. Per-config PropertyGroup: NMake* properties for the Makefile build mechanism and
-         IntelliSenseMode for the project panel.
+      2. Per-config IntelliSense groups (ItemDefinitionGroup + NMake PropertyGroup):
+         see emit_intellisense_config_groups() above.
+      3. Per-config LocalDebuggerWorkingDirectory so F5 launches from the project root.
 ==============================================================================================*/
 
 static void
@@ -433,72 +505,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
-    // Per-config ItemDefinitionGroup/ClCompile: the EDG IntelliSense front-end reads
-    // LanguageStandard_C and UseStandardPreprocessor from here (not from NMake* PropertyGroup
-    // entries). Mirrors what CMake's StaticLibrary generator emits so designated initializers
-    // and compound literals are accepted.
-    {
-        char dbg_defines[ 1024 ];
-        char rel_defines[ 1024 ];
-        char nmake_opts[ 256 ];
-        build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, target );
-        build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, target );
-        build_intellisense_nmake_options( nmake_opts, sizeof( nmake_opts ) );
-
-        fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-        fprintf( f, "    <ClCompile>\n" );
-        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-        if ( g_gen_fwd_compat )
-            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
-        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
-                 dbg_defines );
-        fprintf( f, "    </ClCompile>\n" );
-        fprintf( f, "  </ItemDefinitionGroup>\n" );
-
-        fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-        fprintf( f, "    <ClCompile>\n" );
-        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-        if ( g_gen_fwd_compat )
-            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
-        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
-                 rel_defines );
-        fprintf( f, "    </ClCompile>\n" );
-        fprintf( f, "  </ItemDefinitionGroup>\n" );
-
-        // NMake* PropertyGroup entries: used by the Makefile build mechanism.
-        // LanguageStandard_C here is read by the Makefile IntelliSense provider
-        // (separate from ItemDefinitionGroup/ClCompile which the StaticLibrary
-        // provider reads). Both are needed to cover both code paths.
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
-                 dbg_defines );
-        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-        if ( g_gen_fwd_compat )
-            fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
-        fprintf( f, "  </PropertyGroup>\n" );
-
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
-                 rel_defines );
-        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-        if ( g_gen_fwd_compat )
-            fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
-        fprintf( f, "  </PropertyGroup>\n" );
-    }
+    emit_intellisense_config_groups( f, target );
 
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
     fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_cd_root );
@@ -506,6 +513,18 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
     fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_cd_root );
     fprintf( f, "  </PropertyGroup>\n" );
+}
+
+// Returns true if path's filename component matches one of target's unity units.
+static bool
+is_unit_file( const target_info_t* target, const char* path )
+{
+    const char* filename = path;
+    for ( const char* p = path; *p; ++p )
+        if ( *p == '/' || *p == '\\' ) filename = p + 1;
+    for ( int j = 0; target->units[ j ]; ++j )
+        if ( platform_stricmp( filename, target->units[ j ] ) == 0 ) return true;
+    return false;
 }
 
 /*==============================================================================================
@@ -547,20 +566,7 @@ build_gen_proj_target( target_info_t* target, int index )
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
-        bool        is_unit  = false;
-        const char* filename = g_files[ i ].path;
-        for ( const char* p = g_files[ i ].path; *p; ++p )
-            if ( *p == '/' || *p == '\\' )
-                filename = p + 1;
-
-        for ( int j = 0; target->units[ j ]; ++j )
-        {
-            if ( platform_stricmp( filename, target->units[ j ] ) == 0 )
-            {
-                is_unit = true;
-                break;
-            }
-        }
+        bool is_unit = is_unit_file( target, g_files[ i ].path );
 
         if ( is_unit )
         {
@@ -632,24 +638,7 @@ build_gen_proj_target( target_info_t* target, int index )
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_file_count; ++i )
         {
-            bool        is_unit  = false;
-            const char* filename = strrchr( g_files[ i ].path, '/' );
-            if ( !filename )
-                filename = strrchr( g_files[ i ].path, '\\' );
-            if ( filename )
-                filename++;
-            else
-                filename = g_files[ i ].path;
-
-            for ( int j = 0; target->units[ j ]; ++j )
-            {
-                if ( platform_stricmp( filename, target->units[ j ] ) == 0 )
-                {
-                    is_unit = true;
-                    break;
-                }
-            }
-
+            bool        is_unit = is_unit_file( target, g_files[ i ].path );
             const char* tag     = is_unit ? "ClCompile" : "ClInclude";
             fprintf( f, "    <%s Include=\"%s%s\">\n", tag, s_root_prefix, g_files[ i ].path );
             if ( g_files[ i ].filter[ 0 ] != '\0' )
@@ -732,58 +721,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "    <NMakeCompileFile>echo       [nav] navigation-only project.</NMakeCompileFile>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
 
-    {
-        char dbg_defines[ 1024 ];
-        char rel_defines[ 1024 ];
-        char nmake_opts[ 256 ];
-        build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG, NULL );
-        build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, NULL );
-        build_intellisense_nmake_options( nmake_opts, sizeof( nmake_opts ) );
-
-        fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-        fprintf( f, "    <ClCompile>\n" );
-        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-        if ( g_gen_fwd_compat )
-            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
-        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
-                 dbg_defines );
-        fprintf( f, "    </ClCompile>\n" );
-        fprintf( f, "  </ItemDefinitionGroup>\n" );
-
-        fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-        fprintf( f, "    <ClCompile>\n" );
-        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-        if ( g_gen_fwd_compat )
-            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
-        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
-                 rel_defines );
-        fprintf( f, "    </ClCompile>\n" );
-        fprintf( f, "  </ItemDefinitionGroup>\n" );
-
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
-                 dbg_defines );
-        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
-        fprintf( f, "  </PropertyGroup>\n" );
-
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
-                 rel_defines );
-        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-                 s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
-        fprintf( f, "  </PropertyGroup>\n" );
-    }
+    emit_intellisense_config_groups( f, NULL );
 
     // All files as ClInclude regardless of extension. Listing .c files as ClCompile
     // would create a competing TU context; VS picks last-loaded-wins per file, so

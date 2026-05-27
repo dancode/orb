@@ -135,6 +135,24 @@ ensure_dir( const char* dir )
     platform_mkdir( tmp );
 }
 
+// Advance *p by one line from the mapped view [*p, end), stripping trailing CR.
+// Writes the line into buf (clamped to buf_size-1) and NUL-terminates. Returns false
+// when the view is exhausted. Handles NULL *p or NULL end (empty/missing file).
+
+static bool
+mmap_next_line( const char** p, const char* end, char* buf, size_t buf_size )
+{
+    if ( !*p || *p >= end ) return false;
+    const char* nl  = (const char*)memchr( *p, '\n', (size_t)( end - *p ) );
+    size_t      len = nl ? (size_t)( nl - *p ) : (size_t)( end - *p );
+    if ( len > 0 && (*p)[ len - 1 ] == '\r' ) len--;
+    if ( len >= buf_size ) len = buf_size - 1;
+    memcpy( buf, *p, len );
+    buf[ len ] = '\0';
+    *p = nl ? nl + 1 : end;
+    return true;
+}
+
 /*==============================================================================================
     --- Per-Target Named Mutex ---
 
