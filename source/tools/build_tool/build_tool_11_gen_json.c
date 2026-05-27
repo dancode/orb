@@ -215,10 +215,6 @@ build_gen_compile_commands( void )
     char gen_dir[ PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s/%s", g_build_dir, g_gen_dir );
 
-    /* Force-include path for IntelliSense prelude headers: "build/prelude". */
-    char prelude_dir[ PATH_MAX ];
-    snprintf( prelude_dir, sizeof( prelude_dir ), "%s/%s", g_build_dir, g_prelude_dir );
-
     /* Use clang-cl for the database: clangd has native support for clang-cl.exe commands
        whereas cl.exe goes through an imperfect translation layer that can break indexing.
        clang-cl.exe accepts all MSVC-style flags and adds --target=x86_64-pc-windows-msvc
@@ -243,21 +239,23 @@ build_gen_compile_commands( void )
         compile_cmd_t cc_entry = { 0 };
         cc_fill_compile_cmd( &ctx, target, "obj", gen_dir, &cc_entry );
 
-        /* Constituent command adds the prelude as a force-include via /FI.
-           Unity entries do NOT get /FI: they already contain their own full preamble,
-           and injecting it would cause duplicate definitions for any statics declared
-           there.  Do NOT use -include: in --driver-mode=cl clangd drops the path
-           token silently.  /FI is the correct clang-cl force-include flag. */
+        /* Constituent command force-includes the unity entry via /FI.
+           This gives clangd the full preamble and all sibling constituent definitions
+           before compiling the constituent as the main file -- F12 and go-to-
+           implementation resolve correctly because every static is genuinely in scope.
+           Do NOT use -include: in --driver-mode=cl clangd drops the path token silently. */
         compile_cmd_t cc_constituent = cc_entry;
         {
+            char unity_path[ PATH_MAX ];
+            snprintf( unity_path, sizeof( unity_path ), "%s/%s",
+                      target->root_dir, target->units[ 0 ] );
+            compdb_fwd_slashes( unity_path );
+
             size_t used = strlen( cc_constituent.includes );
             snprintf( cc_constituent.includes + used, sizeof( cc_constituent.includes ) - used,
-                      " /FI %s/%s.prelude.h", prelude_dir, target->name );
+                      " /FI %s", unity_path );
         }
         {
-            /* Constituent files are always called from their unity entry after the
-               #include -- callers and definitions in sibling constituents are never
-               visible in standalone view.  Suppress the resulting false positives. */
             size_t used = strlen( cc_constituent.flags );
             snprintf( cc_constituent.flags + used, sizeof( cc_constituent.flags ) - used,
                       " -Wno-unused-function -Wno-undefined-internal" );
