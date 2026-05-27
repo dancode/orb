@@ -86,7 +86,7 @@ prelude_opens_if( const char* line )
     if ( strncmp( p, "ifdef",  5 ) == 0 ) return true;
     if ( strncmp( p, "ifndef", 6 ) == 0 ) return true;
     return strncmp( p, "if", 2 ) == 0 && ( p[ 2 ] == ' ' || p[ 2 ] == '\t' ||
-                                            p[ 2 ] == '\r' || p[ 2 ] == '\n' );
+                                           p[ 2 ] == '\r' || p[ 2 ] == '\n' );
 }
 
 /* Return true if line closes a conditional block: #endif. */
