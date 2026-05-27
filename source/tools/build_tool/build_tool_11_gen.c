@@ -448,6 +448,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
         fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
         fprintf( f, "    <ClCompile>\n" );
         fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        if ( g_gen_fwd_compat )
+            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
         fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
         fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
@@ -459,6 +461,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
         fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
         fprintf( f, "    <ClCompile>\n" );
         fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        if ( g_gen_fwd_compat )
+            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
         fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
         fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
@@ -477,6 +481,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        if ( g_gen_fwd_compat )
+            fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
         fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
         fprintf( f, "  </PropertyGroup>\n" );
@@ -487,6 +493,8 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
         fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
         fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        if ( g_gen_fwd_compat )
+            fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
         fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
         fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
         fprintf( f, "  </PropertyGroup>\n" );
@@ -735,6 +743,8 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
         fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
         fprintf( f, "    <ClCompile>\n" );
         fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        if ( g_gen_fwd_compat )
+            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
         fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
         fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
@@ -746,6 +756,8 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
         fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
         fprintf( f, "    <ClCompile>\n" );
         fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        if ( g_gen_fwd_compat )
+            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
         fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
         fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
                  s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );

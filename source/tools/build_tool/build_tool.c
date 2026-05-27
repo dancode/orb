@@ -104,6 +104,8 @@ static const char* g_gen_dir      = "generated";  // sub-folder: reflection-gene
 out_flags_t g_out_flags         = ORB_OUT_DEFAULT;
 bool        g_include_track     = true;
 bool        g_use_rsp           = false; /* until we hit overflow this will remain off */
+bool        g_gen_fwd_compat    = true;  /* -gen: emit stdcpp20 alongside stdc11 to
+                                             suppress designated-initializer squiggles */
 
 /*==============================================================================================
     --- Unity Include Chain ---
@@ -249,6 +251,7 @@ print_startup_banner( const build_context_t* ctx )
       -bootstrap              Recompile build_tool.exe itself (self-hosting).
       -gen                    Regenerate NMake .sln/.vcxproj and compile_commands.json; exit.
       -gen_ms                 Regenerate MSBuild .sln/.vcxproj and exit (better IntelliSense).
+      -no-fwd-compat          -gen only: omit stdcpp20 alongside stdc11; use strict C11 IntelliSense.
       -target <name>          Restrict build to one target's closure.
       -compile-only           Compile all unity units; no link. (VS Ctrl+F7)
       -file <path>            Compile one file with the target's full flag set; no link.
@@ -296,13 +299,14 @@ main( int argc, char** argv )
         if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
         if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
         if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
-        if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
-        if ( platform_stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
         if ( platform_stricmp( argv[ i ], "-release"          ) == 0 ) ctx.config = CONFIG_RELEASE;
         if ( platform_stricmp( argv[ i ], "-clang"            ) == 0 ) ctx.compiler = COMPILE_CLANG;
         if ( platform_stricmp( argv[ i ], "-compile-only"     ) == 0 ) ctx.compile_only = true;
         if ( platform_stricmp( argv[ i ], "-force"            ) == 0 ) ctx.force_rebuild = true;
         if ( platform_stricmp( argv[ i ], "-no-deps"          ) == 0 ) ctx.skip_deps = true;
+        if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
+        if ( platform_stricmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;
+        if ( platform_stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
         if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) g_out_flags = ORB_OUT_QUIET;
         if ( platform_stricmp( argv[ i ], "-v"                ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
         if ( platform_stricmp( argv[ i ], "-target"  ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];

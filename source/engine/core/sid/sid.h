@@ -14,10 +14,6 @@
 
 /*============================================================================================*/
 
-#define SID_INVALID     ((sid_t){ 0u })
-
-/*============================================================================================*/
-
 typedef struct sid_s                    // string ID: offset into string arena
 { 
     uint32_t        off; 
@@ -53,6 +49,10 @@ typedef struct intern_state_s
     uint32_t        rehash_count;       // statistics: number of rehashes (resizes)
 
 } intern_state_t;
+
+/*============================================================================================*/
+
+static const sid_t SID_INVALID = { 0u };
 
 /*==============================================================================================
     SID : INLINE HELPERS (stateless - callable from any TU, no link dependency)                

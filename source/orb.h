@@ -201,7 +201,11 @@ typedef ptrdiff_t isize;
         while ( 0 )
 #endif
 
-#define ORB_STATIC_ASSERT( cond, msg ) _Static_assert( cond, msg )
+#ifdef __cplusplus // for intellisense (cpp20 in NMake)
+    #define ORB_STATIC_ASSERT( cond, msg ) static_assert( cond, msg )
+#else
+    #define ORB_STATIC_ASSERT( cond, msg ) _Static_assert( cond, msg )
+#endif
 
 /* Redirect standard assert to ORB_ASSERT so any file including orb.h gets our handler.
    core/debug/assert.h will undef and re-define again once core is wired up. */
