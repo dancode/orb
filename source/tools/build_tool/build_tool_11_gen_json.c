@@ -93,32 +93,31 @@ compdb_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, cons
 }
 
 /*==============================================================================================
-    compdb_emit_constituents()
+    compdb_emit_constituents_from()
 
-    Scan a unity entry file for every #include "*.c" directive and emit a
-    compile_commands.json entry for each constituent .c file found.  Each
-    entry gets the same compile command as the unity hub (including the prelude
-    force-include) so clangd has direct per-file context with no propagation.
+    Scan scan_path for every #include "*.c" directive, emit a compile_commands.json
+    entry for each constituent found, then recurse into that constituent to pick up
+    any further nested .c includes (sub-unity files like core_sid.c -> sid/sid.c).
 
-    Two-step path resolution for each include path:
-      1. root_dir/path  (relative to the unity file's directory)
-      2. source/path    (resolved through the -Isource search path)
+    root_dir stays fixed at the target root throughout recursion; all include paths
+    are resolved against it first, then against source/ as a fallback.
 
-    Both patterns appear in the codebase:
-      "win/win_tick.c"          -- relative, resolves at step 1
-      "engine/sys/sys_api.c"    -- source-relative, resolves at step 2
+    depth guards against cycles; unity nesting in this codebase is at most 2 levels
+    deep, so a limit of 8 is generous.
+
+    compdb_emit_constituents() is a thin wrapper that builds the initial scan_path
+    from root_dir + unit and calls this function at depth 0.
 ==============================================================================================*/
 
 static void
-compdb_emit_constituents( FILE* fp, bool* first,
-                          const char* root_abs, const compile_cmd_t* cc,
-                          const char* root_dir, const char* unit,
-                          int* entry_count )
+compdb_emit_constituents_from( FILE* fp, bool* first,
+                                const char* root_abs, const compile_cmd_t* cc,
+                                const char* root_dir, const char* scan_path,
+                                int* entry_count, int depth )
 {
-    char unity_path[ PATH_MAX ];
-    snprintf( unity_path, sizeof( unity_path ), "%s/%s", root_dir, unit );
+    if ( depth > 8 ) return;
 
-    FILE* in = fopen( unity_path, "r" );
+    FILE* in = fopen( scan_path, "r" );
     if ( !in ) return;
 
     char line[ 1024 ];
@@ -146,7 +145,7 @@ compdb_emit_constituents( FILE* fp, bool* first,
         memcpy( inc_path, p + 1, path_len );
         inc_path[ path_len ] = '\0';
 
-        /* step 1: resolve relative to root_dir (unity file's directory) */
+        /* step 1: resolve relative to root_dir (target root, fixed across recursion) */
         char rel[ PATH_MAX ];
         snprintf( rel, sizeof( rel ), "%s/%s", root_dir, inc_path );
         if ( build_get_mtime( rel ) == 0 )
@@ -166,9 +165,25 @@ compdb_emit_constituents( FILE* fp, bool* first,
         *first = false;
         compdb_emit_entry( fp, root_abs, cc, abs_src );
         ( *entry_count )++;
+
+        /* Recurse: if this constituent is itself a sub-unity, emit its children too. */
+        compdb_emit_constituents_from( fp, first, root_abs, cc, root_dir, rel,
+                                       entry_count, depth + 1 );
     }
 
     fclose( in );
+}
+
+static void
+compdb_emit_constituents( FILE* fp, bool* first,
+                          const char* root_abs, const compile_cmd_t* cc,
+                          const char* root_dir, const char* unit,
+                          int* entry_count )
+{
+    char unity_path[ PATH_MAX ];
+    snprintf( unity_path, sizeof( unity_path ), "%s/%s", root_dir, unit );
+    compdb_emit_constituents_from( fp, first, root_abs, cc, root_dir, unity_path,
+                                   entry_count, 0 );
 }
 
 /*==============================================================================================

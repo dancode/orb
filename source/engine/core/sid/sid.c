@@ -210,7 +210,7 @@ table_ensure_capacity( intern_state_t* state )
 
 ==============================================================================================*/
 
-const char*
+static const char*
 sid_cstr( sid_t sid )
 {
     // canonical empty string for invalid IDs
@@ -221,7 +221,7 @@ sid_cstr( sid_t sid )
     return &g_intern.arena.base[ sid.off ];
 }
 
-uint8_t
+static uint8_t
 sid_length( sid_t sid )
 {
     // canonical zero legnth for invalid IDs
@@ -232,7 +232,7 @@ sid_length( sid_t sid )
     return ( uint8_t )g_intern.arena.base[ sid.off - 1 ];
 }
 
-bool
+static bool
 sid_is_canonical( sid_t sid, const char* str, size_t len )
 {
     assert( !sid_equals( sid, SID_INVALID ));
@@ -251,7 +251,7 @@ sid_is_canonical( sid_t sid, const char* str, size_t len )
     return memcmp( sid_cstr( sid ), str, len ) == 0;
 }
 
-uint32_t
+static uint32_t
 sid_get_hash( sid_t sid )
 {
     assert( !sid_equals( sid, SID_INVALID ) );
@@ -273,7 +273,7 @@ sid_get_hash( sid_t sid )
 
 static bool sid_is_init = false;
 
-void
+static void
 sid_init( void )
 {
     sid_is_init = true;
@@ -308,7 +308,7 @@ sid_init( void )
     g_intern.rehash_count     = 0;
 }
 
-void
+static void
 sid_exit( void )
 {
     assert( sid_is_init == true );
@@ -348,7 +348,7 @@ probe_distance( uint32_t hash, uint32_t slot, uint32_t mask )
     return ( slot - ideal ) & mask;     // wraps around correctly
 }
 
-sid_t
+static sid_t
 sid_intern( const char* str, int32_t len )
 {
     assert( sid_is_init == true );
@@ -437,7 +437,7 @@ sid_intern( const char* str, int32_t len )
     return new_sid;
 }
 
-sid_t
+static sid_t
 sid_intern_cstr( const char* str )
 {
     assert( sid_is_init == true );
@@ -448,7 +448,7 @@ sid_intern_cstr( const char* str )
     return sid_intern( str, ( int32_t )strlen( str ) );
 }
 
-sid_t 
+static sid_t 
 sid_find_cstr( const char* str )
 {
     assert( sid_is_init == true );
@@ -541,7 +541,7 @@ sid_get_stats( void )
     return stats;
 }
 
-void
+static void
 sid_print_stats( void* fp )
 {
     /* print current statistics to given file pointer */
@@ -567,7 +567,7 @@ sid_print_stats( void* fp )
     fprintf( f, "===================================\n" );
 }
 
-void
+static void
 sid_reset_stats( void )
 {
     /* reset period statistics counters */
@@ -585,7 +585,8 @@ sid_reset_stats( void )
     SID : Test linear probing performance.
 
 ==============================================================================================*/
-void
+
+static void
 hash_perf_test()
 {
     /**************************************************************/

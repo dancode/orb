@@ -210,9 +210,88 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
     platform_unmap_file( &mf );
 }
 
+/* Extract the bare path from a #include "path.c" line into out[out_size].
+   Caller must verify prelude_is_c_include() first.  Returns true on success. */
+static bool
+prelude_extract_c_include_path( const char* line, char* out, size_t out_size )
+{
+    const char* q = line;
+    while ( *q == ' ' || *q == '\t' ) q++;
+    q++;                                    /* skip # */
+    while ( *q == ' ' || *q == '\t' ) q++;
+    q += 7;                                 /* skip "include" */
+    while ( *q == ' ' || *q == '\t' ) q++;
+    q++;                                    /* skip opening " */
+    const char* r = q;
+    while ( *r && *r != '"' ) r++;
+    if ( *r != '"' ) return false;
+
+    size_t path_len = (size_t)( r - q );
+    if ( path_len == 0 || path_len >= out_size ) return false;
+    memcpy( out, q, path_len );
+    out[ path_len ] = '\0';
+    return true;
+}
+
+/* Resolve inc_path: try root_dir-relative first, then source/-relative.
+   Returns true and fills resolved[resolved_size] on success. */
+static bool
+prelude_resolve_include( const char* root_dir, const char* inc_path,
+                         char* resolved, size_t resolved_size )
+{
+    snprintf( resolved, resolved_size, "%s/%s", root_dir, inc_path );
+    if ( build_get_mtime( resolved ) != 0 ) return true;
+    snprintf( resolved, resolved_size, "source/%s", inc_path );
+    return build_get_mtime( resolved ) != 0;
+}
+
+/* Emit forward declarations for all static functions in resolved_path, then
+   recurse into any .c files that resolved_path itself includes.  depth guards
+   against cycles; sub-unity files (e.g. sid/sid.c included by core_sid.c) are
+   processed at depth 1, so a limit of 8 is generous. */
+static void
+prelude_fwd_decl_recursive( FILE* out_fp, const char* root_dir, const char* resolved_path, int depth )
+{
+    if ( depth > 8 ) return;
+
+    /* Forward-declare statics defined directly in this file. */
+    prelude_fwd_decl_file( out_fp, resolved_path );
+
+    /* Descend into any .c files this file includes (sub-unity includes). */
+    platform_mapped_file_t mf;
+    if ( !platform_map_file( resolved_path, &mf ) ) return;
+
+    char        line[ 1024 ];
+    const char* p   = mf.data;
+    const char* end = mf.data ? mf.data + mf.size : NULL;
+
+    while ( p && p < end )
+    {
+        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
+        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
+        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
+        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
+        memcpy( line, p, len );
+        line[ len ] = '\0';
+        p = nl ? nl + 1 : end;
+
+        if ( !prelude_is_c_include( line ) ) continue;
+
+        char inc_path[ PATH_MAX ];
+        if ( !prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) ) continue;
+
+        char resolved[ PATH_MAX ];
+        if ( !prelude_resolve_include( root_dir, inc_path, resolved, sizeof( resolved ) ) ) continue;
+
+        prelude_fwd_decl_recursive( out_fp, root_dir, resolved, depth + 1 );
+    }
+
+    platform_unmap_file( &mf );
+}
+
 /* Scan unity_path for every #include "*.c" constituent, resolve each path
    (root_dir-relative then source/-relative), and emit forward declarations
-   for all static functions found in those files. */
+   for all static functions found in those files and their sub-includes. */
 static void
 prelude_fwd_decl_constituents( FILE* out_fp, const char* root_dir, const char* unit )
 {
@@ -239,32 +318,11 @@ prelude_fwd_decl_constituents( FILE* out_fp, const char* root_dir, const char* u
 
         if ( !prelude_is_c_include( line ) ) continue;
 
-        /* Extract the bare include path from #include "path.c" */
-        const char* q = line;
-        while ( *q == ' ' || *q == '\t' ) q++;
-        q++;                                    /* skip # */
-        while ( *q == ' ' || *q == '\t' ) q++;
-        q += 7;                                 /* skip "include" */
-        while ( *q == ' ' || *q == '\t' ) q++;
-        q++;                                    /* skip opening " */
-        const char* r = q;
-        while ( *r && *r != '"' ) r++;
-        if ( *r != '"' ) continue;
-
-        size_t path_len = (size_t)( r - q );
-        if ( path_len == 0 || path_len >= PATH_MAX - 1 ) continue;
         char inc_path[ PATH_MAX ];
-        memcpy( inc_path, q, path_len );
-        inc_path[ path_len ] = '\0';
+        if ( !prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) ) continue;
 
-        /* Two-step resolution: root_dir-relative then source/-relative */
         char resolved[ PATH_MAX ];
-        snprintf( resolved, sizeof( resolved ), "%s/%s", root_dir, inc_path );
-        if ( build_get_mtime( resolved ) == 0 )
-        {
-            snprintf( resolved, sizeof( resolved ), "source/%s", inc_path );
-            if ( build_get_mtime( resolved ) == 0 ) continue;
-        }
+        if ( !prelude_resolve_include( root_dir, inc_path, resolved, sizeof( resolved ) ) ) continue;
 
         if ( !emitted_header )
         {
@@ -272,7 +330,7 @@ prelude_fwd_decl_constituents( FILE* out_fp, const char* root_dir, const char* u
             emitted_header = true;
         }
 
-        prelude_fwd_decl_file( out_fp, resolved );
+        prelude_fwd_decl_recursive( out_fp, root_dir, resolved, 0 );
     }
 
     platform_unmap_file( &mf );
@@ -339,6 +397,115 @@ prelude_write_preamble( FILE* out_fp, const char* unity_path )
 }
 
 /*==============================================================================================
+    --- Constituent Header Helpers ---
+
+    Sub-unity files (e.g. core_sid.c) include headers (e.g. sid/sid.h) that their
+    own leaf constituents (sid/sid.c) depend on.  prelude_write_preamble only reads
+    the top-level unity entry, so those headers never reach the prelude.
+
+    prelude_write_sub_headers walks resolved_path, emits every #include line that
+    is not a .c file, and recurses into any .c includes it finds.  depth guards
+    against cycles.
+
+    prelude_write_constituent_headers drives the scan from the top-level unity
+    entry: it iterates over the direct .c constituents and calls
+    prelude_write_sub_headers on each, so the top-level file's own includes (which
+    prelude_write_preamble already emitted) are not duplicated.
+==============================================================================================*/
+
+/* Emit all #include lines (non-.c) from resolved_path and recurse into .c includes. */
+static void
+prelude_write_sub_headers( FILE* out_fp, const char* root_dir,
+                           const char* resolved_path, int depth )
+{
+    if ( depth > 8 ) return;
+
+    platform_mapped_file_t mf;
+    if ( !platform_map_file( resolved_path, &mf ) ) return;
+
+    char        line[ 1024 ];
+    const char* p   = mf.data;
+    const char* end = mf.data ? mf.data + mf.size : NULL;
+
+    while ( p && p < end )
+    {
+        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
+        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
+        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
+        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
+        memcpy( line, p, len );
+        line[ len ] = '\0';
+        p = nl ? nl + 1 : end;
+
+        const char* q = line;
+        while ( *q == ' ' || *q == '\t' ) q++;
+        if ( *q != '#' ) continue;
+
+        if ( prelude_is_c_include( line ) )
+        {
+            /* Descend into sub-unity .c constituents */
+            char inc_path[ PATH_MAX ];
+            if ( !prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) ) continue;
+            char resolved[ PATH_MAX ];
+            if ( !prelude_resolve_include( root_dir, inc_path, resolved, sizeof( resolved ) ) ) continue;
+            prelude_write_sub_headers( out_fp, root_dir, resolved, depth + 1 );
+        }
+        else if ( !prelude_is_pragma_comment( line ) )
+        {
+            /* Emit header #include lines; skip other directives (#define etc.)
+               which are local to the sub-unity and not needed globally. */
+            const char* r = q + 1;
+            while ( *r == ' ' || *r == '\t' ) r++;
+            if ( strncmp( r, "include", 7 ) == 0 )
+                fprintf( out_fp, "%s\n", line );
+        }
+    }
+
+    platform_unmap_file( &mf );
+}
+
+/* Scan the top-level unity entry for direct .c constituents, then call
+   prelude_write_sub_headers on each one so their sub-unity headers reach
+   the prelude.  Starts from the constituent level (not the unity entry itself)
+   to avoid duplicating includes already emitted by prelude_write_preamble. */
+static void
+prelude_write_constituent_headers( FILE* out_fp, const char* root_dir, const char* unit )
+{
+    char unity_path[ PATH_MAX ];
+    snprintf( unity_path, sizeof( unity_path ), "%s/%s", root_dir, unit );
+
+    platform_mapped_file_t mf;
+    if ( !platform_map_file( unity_path, &mf ) ) return;
+
+    char        line[ 1024 ];
+    const char* p   = mf.data;
+    const char* end = mf.data ? mf.data + mf.size : NULL;
+
+    while ( p && p < end )
+    {
+        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
+        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
+        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
+        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
+        memcpy( line, p, len );
+        line[ len ] = '\0';
+        p = nl ? nl + 1 : end;
+
+        if ( !prelude_is_c_include( line ) ) continue;
+
+        char inc_path[ PATH_MAX ];
+        if ( !prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) ) continue;
+
+        char resolved[ PATH_MAX ];
+        if ( !prelude_resolve_include( root_dir, inc_path, resolved, sizeof( resolved ) ) ) continue;
+
+        prelude_write_sub_headers( out_fp, root_dir, resolved, 0 );
+    }
+
+    platform_unmap_file( &mf );
+}
+
+/*==============================================================================================
     build_gen_preludes()
 
     For every registered target with at least one unity unit, writes
@@ -388,6 +555,7 @@ build_gen_preludes( void )
         fprintf( fp, "/* force-included via compile_commands.json /FI flag */\n" );
         fprintf( fp, "#pragma once\n\n" );
         prelude_write_preamble( fp, unity_path );
+        prelude_write_constituent_headers( fp, t->root_dir, t->units[ 0 ] );
         prelude_fwd_decl_constituents( fp, t->root_dir, t->units[ 0 ] );
 
         fclose( fp );

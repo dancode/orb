@@ -47,7 +47,7 @@ log_console_sink( const log_entry_t* entry, void* userdata )
     Sink management
 ==============================================================================================*/
 
-void
+static void
 log_add_sink( log_sink_fn fn, void* userdata )
 {
     if ( g_sink_count >= LOG_MAX_SINKS )
@@ -57,7 +57,7 @@ log_add_sink( log_sink_fn fn, void* userdata )
     g_sink_count++;
 }
 
-void
+static void
 log_remove_sink( log_sink_fn fn )
 {
     for ( int i = 0; i < g_sink_count; i++ )
@@ -74,7 +74,7 @@ log_remove_sink( log_sink_fn fn )
     Configuration
 ==============================================================================================*/
 
-void
+static void
 log_set_min_level( log_level_t level )
 {
     g_min_level = level;
@@ -84,19 +84,19 @@ log_set_min_level( log_level_t level )
     Ring buffer access  (read path for editor/tools)
 ==============================================================================================*/
 
-const log_entry_t*
+static const log_entry_t*
 log_ring_entries( void )
 {
     return g_ring;
 }
 
-u32
+static u32
 log_ring_capacity( void )
 {
     return LOG_RING_CAPACITY;
 }
 
-u32
+static u32
 log_ring_seq( void )
 {
     return g_ring_seq;
@@ -106,7 +106,7 @@ log_ring_seq( void )
     Core write path
 ==============================================================================================*/
 
-void
+static void
 log_write( log_level_t level, const char* channel, const char* fmt, ... )
 {
     if ( level < g_min_level )
@@ -132,7 +132,7 @@ log_write( log_level_t level, const char* channel, const char* fmt, ... )
     Lifecycle
 ==============================================================================================*/
 
-void
+static void
 log_init( void )
 {
     g_min_level  = LOG_LEVEL_INFO;
@@ -141,7 +141,7 @@ log_init( void )
     log_add_sink( log_console_sink, NULL );
 }
 
-void
+static void
 log_exit( void )
 {
     g_sink_count = 0;

@@ -55,7 +55,7 @@ typedef struct intern_state_s
 } intern_state_t;
 
 /*============================================================================================*/
-/* SID : INLINE HELPERS (stateless - callable from any TU, no link dependency)               */
+/* SID : INLINE HELPERS (stateless - callable from any TU, no link dependency)                */
 /*============================================================================================*/
 
 // case-insensitive FNV-1a: DLLs and codegen call this directly

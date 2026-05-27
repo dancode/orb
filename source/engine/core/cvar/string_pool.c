@@ -11,10 +11,11 @@
     * Returns offsets into the pool.
     * No per-string malloc overhead.
     * Offsets remain valid even if pool reallocates (like vector growth).
-    * Supports hot reload — since the offsets will stay valid.
+    * Supports hot reload ï¿½ since the offsets will stay valid.
 
 ==============================================================================================*/
 /* Align value up to STRING_POOL_ALIGN boundary */
+#include "string_pool.h"
 
 u32
 string_pool_align_up( u32 value )
