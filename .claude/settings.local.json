@@ -51,7 +51,9 @@
       "PowerShell($vcvars = 'C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat'; cmd /c \"`\"$vcvars`\" x64 && cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 source/tools/build_tool/build_tool.c /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe\" 2>&1)",
       "PowerShell(cd F:\\\\orb; $vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$vcvars`\" x64 2>nul && cl.exe /nologo /W4 /WX /Zc:preprocessor /std:c11 /Zi /Od /MDd /Fobin\\\\ source\\\\tools\\\\build_tool\\\\build_tool.c /link /OUT:bin\\\\build_tool.exe /DEBUG /PDB:bin\\\\build_tool.pdb 2>&1\")",
       "Bash(cd /d F:\\\\orb)",
-      "Bash(bootstrap_build_tool.bat)"
+      "Bash(bootstrap_build_tool.bat)",
+      "Bash(Get-ChildItem -Path \"F:\\\\orb\" -Filter \"*.bat\" -File)",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

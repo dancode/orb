@@ -881,16 +881,7 @@ build_gen_solution( solution_info_t* sln )
 
     for ( const char* const* tn = sln->target_names; *tn; ++tn )
     {
-        target_info_t* target = NULL;
-        for ( int i = 0; i < g_target_count; ++i )
-        {
-            if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
-            {
-                target = &g_targets[ i ];
-                break;
-            }
-        }
-
+        target_info_t* target = find_target( *tn );
         if ( target )
         {
             char guid[ 64 ];
@@ -1037,18 +1028,15 @@ build_gen_solution( solution_info_t* sln )
     fprintf( f, "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n" );
     for ( const char* const* tn = sln->target_names; *tn; ++tn )
     {
-        for ( int i = 0; i < g_target_count; ++i )
+        target_info_t* t = find_target( *tn );
+        if ( t )
         {
-            if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
-            {
-                char guid[ 64 ];
-                guid_from_name( g_targets[ i ].name, guid );
-                fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", guid );
-                fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", guid );
-                fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", guid );
-                fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", guid );
-                break;
-            }
+            char guid[ 64 ];
+            guid_from_name( t->name, guid );
+            fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", guid );
+            fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", guid );
+            fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", guid );
+            fprintf( f, "\t\t%s.Release|x64.Build.0 = Release|x64\n", guid );
         }
     }
     // Nav project config listed last, consistent with its Project() entry ordering.
@@ -1066,27 +1054,24 @@ build_gen_solution( solution_info_t* sln )
     // Map each project to its leaf folder.
     for ( const char* const* tn = sln->target_names; *tn; ++tn )
     {
-        for ( int i = 0; i < g_target_count; ++i )
+        target_info_t* t = find_target( *tn );
+        if ( t )
         {
-            if ( strcmp( g_targets[ i ].name, *tn ) == 0 )
-            {
-                // Normalize sln_folder to forward slashes for comparison.
-                char norm[ PATH_MAX ];
-                snprintf( norm, sizeof( norm ), "%s", g_targets[ i ].sln_folder );
-                for ( char* p = norm; *p; p++ )
-                    if ( *p == '\\' ) *p = '/';
+            // Normalize sln_folder to forward slashes for comparison.
+            char norm[ PATH_MAX ];
+            snprintf( norm, sizeof( norm ), "%s", t->sln_folder );
+            for ( char* p = norm; *p; p++ )
+                if ( *p == '\\' ) *p = '/';
 
-                char proj_guid[ 64 ];
-                guid_from_name( g_targets[ i ].name, proj_guid );
-                for ( int j = 0; j < folder_count; ++j )
+            char proj_guid[ 64 ];
+            guid_from_name( t->name, proj_guid );
+            for ( int j = 0; j < folder_count; ++j )
+            {
+                if ( strcmp( folders[ j ], norm ) == 0 )
                 {
-                    if ( strcmp( folders[ j ], norm ) == 0 )
-                    {
-                        fprintf( f, "\t\t%s = %s\n", proj_guid, folder_guids[ j ] );
-                        break;
-                    }
+                    fprintf( f, "\t\t%s = %s\n", proj_guid, folder_guids[ j ] );
+                    break;
                 }
-                break;
             }
         }
     }
@@ -1144,14 +1129,8 @@ build_gen_projects( void )
 
         for ( const char* const* tn = sln->target_names; *tn; ++tn )
         {
-            for ( int j = 0; j < g_target_count; ++j )
-            {
-                if ( strcmp( g_targets[ j ].name, *tn ) == 0 )
-                {
-                    build_gen_proj_target( &g_targets[ j ], j );
-                    break;
-                }
-            }
+            target_info_t* t = find_target( *tn );
+            if ( t ) build_gen_proj_target( t, 0 );
         }
 
         build_gen_solution( sln );
