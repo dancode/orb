@@ -24,7 +24,7 @@
     config is always used (most useful for development IntelliSense).  The output
     flags (/Fo /Fd) are omitted -- cc->output is empty in this context.
 
-    Constituent file path resolution (compdb_emit_constituents):
+    Constituent file path resolution (json_emit_constituents):
       For each #include "path.c" found in a unity file, tries:
         1. root_dir/path   -- include relative to the unity file's directory
         2. source/path     -- include resolved through the -Isource search path
@@ -33,7 +33,7 @@
 ==============================================================================================*/
 
 /*==============================================================================================
-    compdb_json_str()
+    json_str()
 
     Write a JSON-encoded string with surrounding quotes to fp.
     Escapes backslashes and double-quotes; all other characters pass through unchanged
@@ -41,7 +41,7 @@
 ==============================================================================================*/
 
 static void
-compdb_json_str( FILE* fp, const char* s )
+json_str( FILE* fp, const char* s )
 {
     fputc( '"', fp );
     for ( ; *s; ++s )
@@ -54,21 +54,21 @@ compdb_json_str( FILE* fp, const char* s )
 }
 
 /*==============================================================================================
-    compdb_fwd_slashes()
+    json_fwd_slashes()
 
     Convert backslashes to forward slashes in a path buffer in-place.
     cl.exe accepts both; forward slashes avoid backslash double-escaping in JSON.
 ==============================================================================================*/
 
 static void
-compdb_fwd_slashes( char* s )
+json_fwd_slashes( char* s )
 {
     for ( ; *s; ++s )
         if ( *s == '\\' ) *s = '/';
 }
 
 /*==============================================================================================
-    compdb_emit_entry()
+    json_emit_entry()
 
     Write one compile_commands.json entry to fp using the "command" string form.
     No trailing comma or newline -- the caller manages entry separation.
@@ -78,22 +78,22 @@ compdb_fwd_slashes( char* s )
 ==============================================================================================*/
 
 static void
-compdb_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, const char* abs_src )
+json_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, const char* abs_src )
 {
     char cmd[ 4096 ];
     snprintf( cmd, sizeof( cmd ), "%s %s %s %s %s",
               cc->exe, cc->flags, cc->includes, cc->defines, abs_src );
-    compdb_fwd_slashes( cmd );
+    json_fwd_slashes( cmd );
 
     fprintf( fp, "  {\n" );
-    fprintf( fp, "    \"directory\": " ); compdb_json_str( fp, root_abs ); fprintf( fp, ",\n" );
-    fprintf( fp, "    \"file\": "      ); compdb_json_str( fp, abs_src  ); fprintf( fp, ",\n" );
-    fprintf( fp, "    \"command\": "   ); compdb_json_str( fp, cmd       ); fprintf( fp, "\n" );
+    fprintf( fp, "    \"directory\": " ); json_str( fp, root_abs ); fprintf( fp, ",\n" );
+    fprintf( fp, "    \"file\": "      ); json_str( fp, abs_src  ); fprintf( fp, ",\n" );
+    fprintf( fp, "    \"command\": "   ); json_str( fp, cmd       ); fprintf( fp, "\n" );
     fprintf( fp, "  }" );
 }
 
 /*==============================================================================================
-    compdb_emit_constituents_from()
+    json_emit_constituents_from()
 
     Scan scan_path for every #include "*.c" directive, emit a compile_commands.json
     entry for each constituent found, then recurse into that constituent to pick up
@@ -105,12 +105,12 @@ compdb_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, cons
     depth guards against cycles; unity nesting in this codebase is at most 2 levels
     deep, so a limit of 8 is generous.
 
-    compdb_emit_constituents() is a thin wrapper that builds the initial scan_path
+    json_emit_constituents() is a thin wrapper that builds the initial scan_path
     from root_dir + unit and calls this function at depth 0.
 ==============================================================================================*/
 
 static void
-compdb_emit_constituents_from( FILE* fp, bool* first,
+json_emit_constituents_from( FILE* fp, bool* first,
                                 const char* root_abs, const compile_cmd_t* cc,
                                 const char* root_dir, const char* scan_path,
                                 int* entry_count, int depth )
@@ -159,31 +159,31 @@ compdb_emit_constituents_from( FILE* fp, bool* first,
         char abs_src[ PATH_MAX ];
         if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
             snprintf( abs_src, sizeof( abs_src ), "%s", rel );
-        compdb_fwd_slashes( abs_src );
+        json_fwd_slashes( abs_src );
 
         if ( !*first ) fprintf( fp, ",\n" );
         *first = false;
-        compdb_emit_entry( fp, root_abs, cc, abs_src );
+        json_emit_entry( fp, root_abs, cc, abs_src );
         ( *entry_count )++;
 
         /* Recurse: if this constituent is itself a sub-unity, emit its children too. */
-        compdb_emit_constituents_from( fp, first, root_abs, cc, root_dir, rel,
-                                       entry_count, depth + 1 );
+        json_emit_constituents_from( fp, first, root_abs, cc, root_dir, rel,
+                                     entry_count, depth + 1 );
     }
 
     fclose( in );
 }
 
 static void
-compdb_emit_constituents( FILE* fp, bool* first,
-                          const char* root_abs, const compile_cmd_t* cc,
-                          const char* root_dir, const char* unit,
-                          int* entry_count )
+json_emit_constituents( FILE* fp, bool* first,
+                        const char* root_abs, const compile_cmd_t* cc,
+                        const char* root_dir, const char* unit,
+                        int* entry_count )
 {
     char unity_path[ PATH_MAX ];
     snprintf( unity_path, sizeof( unity_path ), "%s/%s", root_dir, unit );
-    compdb_emit_constituents_from( fp, first, root_abs, cc, root_dir, unity_path,
-                                   entry_count, 0 );
+    json_emit_constituents_from( fp, first, root_abs, cc, root_dir, unity_path,
+                                 entry_count, 0 );
 }
 
 /*==============================================================================================
@@ -195,7 +195,7 @@ compdb_emit_constituents( FILE* fp, bool* first,
 
 void
 build_gen_compile_commands( void )
-{
+{    
     const char* out_path = "compile_commands.json";
     FILE* fp = fopen( out_path, "w" );
     if ( !fp )
@@ -209,7 +209,7 @@ build_gen_compile_commands( void )
     char root_abs[ PATH_MAX ];
     if ( !platform_fullpath( root_abs, ".", sizeof( root_abs ) ) )
         snprintf( root_abs, sizeof( root_abs ), "." );
-    compdb_fwd_slashes( root_abs );
+    json_fwd_slashes( root_abs );
 
     /* Include path for reflection-generated headers: "build/generated". */
     char gen_dir[ PATH_MAX ];
@@ -220,6 +220,7 @@ build_gen_compile_commands( void )
        clang-cl.exe accepts all MSVC-style flags and adds --target=x86_64-pc-windows-msvc
        so _MSC_VER and MSVC extensions are defined.  The commands are never executed --
        clangd reads the flags only. */
+       
     build_context_t ctx = { 0 };
     ctx.config   = CONFIG_DEBUG;
     ctx.compiler = COMPILE_CLANG;
@@ -249,7 +250,7 @@ build_gen_compile_commands( void )
             char unity_path[ PATH_MAX ];
             snprintf( unity_path, sizeof( unity_path ), "%s/%s",
                       target->root_dir, target->units[ 0 ] );
-            compdb_fwd_slashes( unity_path );
+            json_fwd_slashes( unity_path );
 
             size_t used = strlen( cc_constituent.includes );
             snprintf( cc_constituent.includes + used, sizeof( cc_constituent.includes ) - used,
@@ -270,11 +271,11 @@ build_gen_compile_commands( void )
             char abs_src[ PATH_MAX ];
             if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
                 snprintf( abs_src, sizeof( abs_src ), "%s", rel );
-            compdb_fwd_slashes( abs_src );
+            json_fwd_slashes( abs_src );
 
             if ( !first ) fprintf( fp, ",\n" );
             first = false;
-            compdb_emit_entry( fp, root_abs, &cc_entry, abs_src );
+            json_emit_entry( fp, root_abs, &cc_entry, abs_src );
             entry_count++;
         }
 
@@ -282,9 +283,9 @@ build_gen_compile_commands( void )
            Explicit entries give clangd direct per-file context without relying on
            context propagation, which fails for includes resolved via -I paths. */
         for ( int j = 0; target->units[ j ]; ++j )
-            compdb_emit_constituents( fp, &first, root_abs, &cc_constituent,
-                                      target->root_dir, target->units[ j ],
-                                      &entry_count );
+            json_emit_constituents( fp, &first, root_abs, &cc_constituent,
+                                    target->root_dir, target->units[ j ],
+                                    &entry_count );
 
         /* --- Reflection-generated .c ---
            May not exist until the first build; clangd silently skips missing files
@@ -300,11 +301,11 @@ build_gen_compile_commands( void )
             char abs_src[ PATH_MAX ];
             if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
                 snprintf( abs_src, sizeof( abs_src ), "%s", rel );
-            compdb_fwd_slashes( abs_src );
+            json_fwd_slashes( abs_src );
 
             if ( !first ) fprintf( fp, ",\n" );
             first = false;
-            compdb_emit_entry( fp, root_abs, &cc_constituent, abs_src );
+            json_emit_entry( fp, root_abs, &cc_constituent, abs_src );
             entry_count++;
         }
     }
