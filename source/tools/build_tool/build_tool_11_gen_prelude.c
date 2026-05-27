@@ -7,7 +7,7 @@
     constituent .c #include) into build/prelude/<target>.prelude.h.
 
     Delivery is exclusively through compile_commands.json: each entry in that
-    database has -include <name>.prelude.h injected by build_tool_11_gen_json.c.
+    database has /FI <name>.prelude.h injected by build_tool_11_gen_json.c.
     This gives every constituent .c file the correct compilation context without
     any reliance on .clangd, VS Code settings, or file associations -- all of
     which are UI-layer configuration that cannot model compilation context.
@@ -32,112 +32,319 @@
     --- Feature Control ---
 
     Set s_gen_preludes = false to skip all prelude generation during -gen.
-    The boundary of this feature is this file plus the -include injection in
+    The boundary of this feature is this file plus the /FI injection in
     build_tool_11_gen_json.c.  Nothing else participates.
 ==============================================================================================*/
 
 static bool s_gen_preludes = true;
 
 /*==============================================================================================
-    --- Preamble Extraction Helpers ---
+    --- Line Cursor ---
+
+    Iterates over a memory-mapped file line by line.  Strips CRLF; null-terminates
+    into the caller-supplied buf.  One definition replaces six copies of the same
+    memchr/memcpy/advance pattern that previously appeared in every function.
 ==============================================================================================*/
 
-/* Return true if line is a #include of a .c source file -- a unity constituent include. */
-static bool
-prelude_is_c_include( const char* line )
+typedef struct
 {
-    const char* p = line;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    if ( *p != '#' ) return false;
-    p++;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    if ( strncmp( p, "include", 7 ) != 0 ) return false;
-    p += 7;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    if ( *p != '"' ) return false;
-    const char* q = p + 1;
-    while ( *q && *q != '"' ) q++;
-    if ( *q != '"' || q == p + 1 ) return false;
-    return q >= p + 3 && q[ -1 ] == 'c' && q[ -2 ] == '.';
-}
+    const char* p;
+    const char* end;
+} prelude_cursor_t;
 
-/* Return true if line is a #pragma comment(lib, ...) linker directive. */
 static bool
-prelude_is_pragma_comment( const char* line )
+prelude_advance( prelude_cursor_t* cur, char* buf, int cap, int* out_len )
 {
-    const char* p = line;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    if ( *p != '#' ) return false;
-    p++;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    if ( strncmp( p, "pragma", 6 ) != 0 ) return false;
-    return strstr( p + 6, "comment" ) != NULL;
-}
-
-/* Return true if line opens a new conditional block: #if, #ifdef, #ifndef. */
-static bool
-prelude_opens_if( const char* line )
-{
-    const char* p = line;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    if ( *p != '#' ) return false;
-    p++;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    if ( strncmp( p, "ifdef",  5 ) == 0 ) return true;
-    if ( strncmp( p, "ifndef", 6 ) == 0 ) return true;
-    return strncmp( p, "if", 2 ) == 0 && ( p[ 2 ] == ' ' || p[ 2 ] == '\t' ||
-                                           p[ 2 ] == '\r' || p[ 2 ] == '\n' );
-}
-
-/* Return true if line closes a conditional block: #endif. */
-static bool
-prelude_closes_if( const char* line )
-{
-    const char* p = line;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    if ( *p != '#' ) return false;
-    p++;
-    while ( *p == ' ' || *p == '\t' ) p++;
-    return strncmp( p, "endif", 5 ) == 0;
+    if ( cur->p >= cur->end ) return false;
+    const char* nl  = (const char*)memchr( cur->p, '\n', (size_t)( cur->end - cur->p ) );
+    int         len = (int)( nl ? nl - cur->p : cur->end - cur->p );
+    if ( len > 0 && cur->p[ len - 1 ] == '\r' ) len--;
+    if ( len >= cap ) len = cap - 1;
+    memcpy( buf, cur->p, (size_t)len );
+    buf[ len ] = '\0';
+    cur->p     = nl ? nl + 1 : cur->end;
+    if ( out_len ) *out_len = len;
+    return true;
 }
 
 /*==============================================================================================
-    --- Forward Declaration Helpers ---
+    --- Line Classifier ---
+
+    Classifies a line into one of the directive kinds that matter for prelude
+    generation.  A single call replaces the four sequential predicate calls that
+    previously re-scanned from the start of each line.
 ==============================================================================================*/
 
-/* Scan src_path for static function definitions and emit a forward declaration
-   for each one found.  Relies on BreakBeforeBraces: lone { on its own line
-   marks the start of a function body.
+typedef enum
+{
+    PLINE_OTHER,           /* blank line, code, or // comment */
+    PLINE_C_INCLUDE,       /* #include "...c"  -- unity constituent */
+    PLINE_H_INCLUDE,       /* #include "...h" or #include <...> */
+    PLINE_PRAGMA_COMMENT,  /* #pragma comment(lib, ...) -- linker directive */
+    PLINE_OPEN_IF,         /* #if / #ifdef / #ifndef */
+    PLINE_CLOSE_IF,        /* #endif */
+    PLINE_DIRECTIVE,       /* any other # directive (#define, #undef, etc.) */
+} pline_t;
 
-   Rejection rules (variable, not function):
-     - = appears before first ( on any accumulated line
-     - ; terminates a line while paren_depth == 0 and before a lone { is seen  */
-static void
-prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
+static pline_t
+prelude_classify( const char* line )
+{
+    const char* p = line;
+    while ( *p == ' ' || *p == '\t' ) p++;
+    if ( *p != '#' ) return PLINE_OTHER;
+    p++;
+    while ( *p == ' ' || *p == '\t' ) p++;
+
+    if ( strncmp( p, "include", 7 ) == 0 )
+    {
+        const char* q = p + 7;
+        while ( *q == ' ' || *q == '\t' ) q++;
+        if ( *q != '"' ) return PLINE_H_INCLUDE;     /* angle-bracket include */
+        const char* s = q + 1;
+        while ( *s && *s != '"' ) s++;
+        if ( *s == '"' && s >= q + 3 && s[ -1 ] == 'c' && s[ -2 ] == '.' )
+            return PLINE_C_INCLUDE;
+        return PLINE_H_INCLUDE;
+    }
+    if ( strncmp( p, "pragma", 6 ) == 0 && strstr( p + 6, "comment" ) )
+        return PLINE_PRAGMA_COMMENT;
+    if ( strncmp( p, "ifdef",  5 ) == 0 ) return PLINE_OPEN_IF;
+    if ( strncmp( p, "ifndef", 6 ) == 0 ) return PLINE_OPEN_IF;
+    if ( strncmp( p, "if", 2 ) == 0 &&
+         ( p[ 2 ] == ' ' || p[ 2 ] == '\t' || p[ 2 ] == '\r' || p[ 2 ] == '\n' ) )
+        return PLINE_OPEN_IF;
+    if ( strncmp( p, "endif", 5 ) == 0 ) return PLINE_CLOSE_IF;
+    return PLINE_DIRECTIVE;
+}
+
+/*==============================================================================================
+    --- Path Helpers ---
+==============================================================================================*/
+
+/* Extract the bare path from a #include "path.c" line into out[out_size].
+   Caller must verify PLINE_C_INCLUDE first.  Returns true on success. */
+static bool
+prelude_extract_c_include_path( const char* line, char* out, size_t out_size )
+{
+    const char* q = line;
+    while ( *q == ' ' || *q == '\t' ) q++;
+    q++;                                    /* skip # */
+    while ( *q == ' ' || *q == '\t' ) q++;
+    q += 7;                                 /* skip "include" */
+    while ( *q == ' ' || *q == '\t' ) q++;
+    q++;                                    /* skip opening " */
+    const char* r = q;
+    while ( *r && *r != '"' ) r++;
+    if ( *r != '"' ) return false;
+
+    size_t path_len = (size_t)( r - q );
+    if ( path_len == 0 || path_len >= out_size ) return false;
+    memcpy( out, q, path_len );
+    out[ path_len ] = '\0';
+    return true;
+}
+
+/* Resolve inc_path: try root_dir-relative first, then source/-relative.
+   Returns true and fills resolved[PATH_MAX] on success. */
+static bool
+prelude_resolve_include( const char* root_dir, const char* inc_path,
+                         char* resolved, size_t resolved_size )
+{
+    snprintf( resolved, resolved_size, "%s/%s", root_dir, inc_path );
+    if ( build_get_mtime( resolved ) != 0 ) return true;
+    snprintf( resolved, resolved_size, "source/%s", inc_path );
+    return build_get_mtime( resolved ) != 0;
+}
+
+/*==============================================================================================
+    --- Unity Entry Scan ---
+
+    Single pass over the unity entry: writes preamble lines to fp AND collects
+    the resolved paths of all constituent .c includes into the caller's array.
+    Previously three separate functions each opened the same unity file:
+    prelude_write_preamble, prelude_write_constituent_headers, and
+    prelude_fwd_decl_constituents.  This replaces all three with one map.
+
+    Returns the number of constituent paths written into constituents[].
+==============================================================================================*/
+
+#define PRELUDE_MAX_CONSTITUENTS 64
+
+static int
+prelude_scan_unity( FILE* fp, const char* unity_path, const char* root_dir,
+                    char constituents[][ PATH_MAX ], int max_c )
 {
     platform_mapped_file_t mf;
-    if ( !platform_map_file( src_path, &mf ) ) return;
-
-    char        line[ 1024 ];
-    char        sig[ 4096 ];
-    int         sig_len          = 0;
-    bool        collecting       = false;
-    bool        seen_paren       = false;
-    int         paren_depth      = 0;
-    bool        in_block_comment = false;
-    const char* p                = mf.data;
-    const char* end              = mf.data ? mf.data + mf.size : NULL;
-
-    while ( p && p < end )
+    if ( !platform_map_file( unity_path, &mf ) )
     {
-        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
-        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
-        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
-        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
-        memcpy( line, p, len );
-        line[ len ] = '\0';
-        p = nl ? nl + 1 : end;
+        printf( ORB_INDENT "[orb warn] prelude: could not open %s\n", unity_path );
+        return 0;
+    }
 
+    prelude_cursor_t cur = { mf.data, mf.data ? mf.data + mf.size : NULL };
+
+    char             line[ 1024 ];
+    int              len;
+    bool             past_header   = false;
+    bool             preamble_done = false;
+    int              if_depth      = 0;
+    int              n_c           = 0;
+
+    while ( prelude_advance( &cur, line, sizeof( line ), &len ) )
+    {
+        pline_t kind = prelude_classify( line );
+
+        /* Skip everything before the first preprocessor directive (#). */
+        if ( !past_header )
+        {
+            if ( kind == PLINE_OTHER ) continue;
+            past_header = true;
+        }
+
+        if ( kind == PLINE_C_INCLUDE )
+        {
+            /* First .c include ends the preamble; close any still-open #if blocks. */
+            if ( !preamble_done )
+            {
+                preamble_done = true;
+                for ( int d = 0; d < if_depth; d++ )
+                    fprintf( fp, "#endif\n" );
+            }
+            /* Collect resolved path. */
+            if ( n_c < max_c )
+            {
+                char inc_path[ PATH_MAX ];
+                if ( prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) )
+                {
+                    if ( prelude_resolve_include( root_dir, inc_path, constituents[ n_c ], PATH_MAX ) )
+                        n_c++;
+                }
+            }
+            continue;
+        }
+
+        /* After preamble, only .c includes matter. */
+        if ( preamble_done ) continue;
+
+        /* Emit preamble lines; skip linker pragmas. */
+        if ( kind == PLINE_PRAGMA_COMMENT ) continue;
+        if ( kind == PLINE_OPEN_IF  ) if_depth++;
+        if ( kind == PLINE_CLOSE_IF ) if_depth--;
+        fwrite( line, 1, (size_t)len, fp );
+        fputc( '\n', fp );
+    }
+
+    /* Handle unity entries with no constituents (if_depth may still be open). */
+    if ( !preamble_done )
+    {
+        for ( int d = 0; d < if_depth; d++ )
+            fprintf( fp, "#endif\n" );
+    }
+
+    platform_unmap_file( &mf );
+    return n_c;
+}
+
+/*==============================================================================================
+    --- Sub-header Emitter ---
+
+    Walks resolved_path, emits every non-.c #include line, and recurses into
+    any .c includes it finds.  Collects sub-paths before unmapping to avoid
+    nested file mappings; recurses after the unmap.
+==============================================================================================*/
+
+#define PRELUDE_MAX_SUB 32
+
+static void
+prelude_write_sub_headers( FILE* out_fp, const char* root_dir,
+                           const char* resolved_path, int depth )
+{
+    if ( depth > 8 ) return;
+
+    platform_mapped_file_t mf;
+    if ( !platform_map_file( resolved_path, &mf ) ) return;
+
+    prelude_cursor_t cur = { mf.data, mf.data ? mf.data + mf.size : NULL };
+    char             line[ 1024 ];
+    int              len;
+    char             sub_paths[ PRELUDE_MAX_SUB ][ PATH_MAX ];
+    int              n_sub = 0;
+
+    while ( prelude_advance( &cur, line, sizeof( line ), &len ) )
+    {
+        pline_t kind = prelude_classify( line );
+        if ( kind == PLINE_C_INCLUDE )
+        {
+            /* Collect .c sub-includes for recursion after unmap. */
+            if ( n_sub < PRELUDE_MAX_SUB )
+            {
+                char inc_path[ PATH_MAX ];
+                if ( prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) )
+                {
+                    if ( prelude_resolve_include( root_dir, inc_path, sub_paths[ n_sub ], PATH_MAX ) )
+                        n_sub++;
+                }
+            }
+        }
+        else if ( kind == PLINE_H_INCLUDE )
+        {
+            /* Emit header includes directly. */
+            fwrite( line, 1, (size_t)len, out_fp );
+            fputc( '\n', out_fp );
+        }
+        /* All other kinds (defines, pragmas, code) are local to the sub-unity -- skip. */
+    }
+
+    platform_unmap_file( &mf );
+
+    /* Recurse after unmap to avoid nested mappings. */
+    for ( int i = 0; i < n_sub; i++ )
+        prelude_write_sub_headers( out_fp, root_dir, sub_paths[ i ], depth + 1 );
+}
+
+/*==============================================================================================
+    --- Forward Declaration Emitter ---
+
+    Single pass over resolved_path: emits forward declarations for every static
+    function defined in the file AND collects .c sub-includes for recursion.
+    Previously two separate maps of the same file (prelude_fwd_decl_file +
+    the scan loop inside prelude_fwd_decl_recursive).  Now one map, one pass.
+
+    Heuristic: relies on BreakBeforeBraces so lone { on its own line marks the
+    opening of a function body.  Block comments and line comments are skipped so
+    "static" in comment text cannot trigger collection.
+
+    Sub-paths are collected while the file is mapped, then recursed into after
+    the unmap to prevent nested mappings.
+==============================================================================================*/
+
+static void
+prelude_fwd_decl_recursive( FILE* out_fp, const char* root_dir,
+                             const char* resolved_path, int depth )
+{
+    if ( depth > 8 ) return;
+
+    platform_mapped_file_t mf;
+    if ( !platform_map_file( resolved_path, &mf ) ) return;
+
+    prelude_cursor_t cur             = { mf.data, mf.data ? mf.data + mf.size : NULL };
+    char             line[ 1024 ];
+    int              len;
+
+    /* Forward-declaration state machine. */
+    char sig[ 4096 ];
+    int  sig_len          = 0;
+    bool collecting       = false;
+    bool seen_paren       = false;
+    int  paren_depth      = 0;
+    bool in_block_comment = false;
+
+    /* Sub-include accumulator -- collected here, recursed into after unmap. */
+    char sub_paths[ PRELUDE_MAX_SUB ][ PATH_MAX ];
+    int  n_sub = 0;
+
+    while ( prelude_advance( &cur, line, sizeof( line ), &len ) )
+    {
         const char* q = line;
         while ( *q == ' ' || *q == '\t' ) q++;
 
@@ -162,6 +369,25 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
         /* Skip line comments. */
         if ( q[ 0 ] == '/' && q[ 1 ] == '/' ) { collecting = false; continue; }
 
+        /* Collect .c sub-includes for recursion; reset fwd-decl state. */
+        if ( prelude_classify( line ) == PLINE_C_INCLUDE )
+        {
+            collecting = false;
+            if ( n_sub < PRELUDE_MAX_SUB )
+            {
+                char inc_path[ PATH_MAX ];
+                if ( prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) )
+                {
+                    if ( prelude_resolve_include( root_dir, inc_path,
+                                                  sub_paths[ n_sub ], PATH_MAX ) )
+                        n_sub++;
+                }
+            }
+            continue;
+        }
+
+        /* --- Forward-declaration state machine --- */
+
         if ( !collecting )
         {
             /* Accept "static " at the start, or after leading qualifiers like
@@ -176,7 +402,7 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
             sig[ 0 ]    = '\0';
         }
 
-        /* = before first ( means variable initializer -- abandon */
+        /* = before first ( means variable initializer -- abandon. */
         if ( !seen_paren )
         {
             const char* eq = strchr( q, '=' );
@@ -184,7 +410,7 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
             if ( eq && ( !lp || eq < lp ) ) { collecting = false; continue; }
         }
 
-        /* ; at paren_depth 0 (before any lone {) means variable decl -- abandon */
+        /* ; at paren_depth 0 before any lone { means variable declaration -- abandon. */
         if ( paren_depth == 0 )
         {
             bool has_semi = false;
@@ -196,7 +422,7 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
             if ( has_semi ) { collecting = false; continue; }
         }
 
-        /* Lone { confirms function definition -- emit forward declaration */
+        /* Lone { confirms function definition -- emit forward declaration. */
         if ( q[ 0 ] == '{' && q[ 1 ] == '\0' )
         {
             if ( seen_paren && paren_depth == 0 )
@@ -211,9 +437,9 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
             continue;
         }
 
-        /* Accumulate line into sig (with newline so multi-line sigs stay readable) */
+        /* Accumulate line into sig (newline-separated for readable multi-line sigs). */
         {
-            int n    = (int)len + 1;   /* +1 for the \n we append */
+            int n    = len + 1;
             int room = (int)sizeof( sig ) - sig_len - 1;
             if ( n > room ) n = room;
             if ( n > 0 )
@@ -225,7 +451,7 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
             }
         }
 
-        /* Track paren depth */
+        /* Track paren depth for multi-line parameter lists. */
         for ( const char* r = line; *r; r++ )
         {
             if      ( *r == '(' ) { paren_depth++; seen_paren = true; }
@@ -234,301 +460,10 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
     }
 
     platform_unmap_file( &mf );
-}
 
-/* Extract the bare path from a #include "path.c" line into out[out_size].
-   Caller must verify prelude_is_c_include() first.  Returns true on success. */
-static bool
-prelude_extract_c_include_path( const char* line, char* out, size_t out_size )
-{
-    const char* q = line;
-    while ( *q == ' ' || *q == '\t' ) q++;
-    q++;                                    /* skip # */
-    while ( *q == ' ' || *q == '\t' ) q++;
-    q += 7;                                 /* skip "include" */
-    while ( *q == ' ' || *q == '\t' ) q++;
-    q++;                                    /* skip opening " */
-    const char* r = q;
-    while ( *r && *r != '"' ) r++;
-    if ( *r != '"' ) return false;
-
-    size_t path_len = (size_t)( r - q );
-    if ( path_len == 0 || path_len >= out_size ) return false;
-    memcpy( out, q, path_len );
-    out[ path_len ] = '\0';
-    return true;
-}
-
-/* Resolve inc_path: try root_dir-relative first, then source/-relative.
-   Returns true and fills resolved[resolved_size] on success. */
-static bool
-prelude_resolve_include( const char* root_dir, const char* inc_path,
-                         char* resolved, size_t resolved_size )
-{
-    snprintf( resolved, resolved_size, "%s/%s", root_dir, inc_path );
-    if ( build_get_mtime( resolved ) != 0 ) return true;
-    snprintf( resolved, resolved_size, "source/%s", inc_path );
-    return build_get_mtime( resolved ) != 0;
-}
-
-/* Emit forward declarations for all static functions in resolved_path, then
-   recurse into any .c files that resolved_path itself includes.  depth guards
-   against cycles; sub-unity files (e.g. sid/sid.c included by core_sid.c) are
-   processed at depth 1, so a limit of 8 is generous. */
-static void
-prelude_fwd_decl_recursive( FILE* out_fp, const char* root_dir, const char* resolved_path, int depth )
-{
-    if ( depth > 8 ) return;
-
-    /* Forward-declare statics defined directly in this file. */
-    prelude_fwd_decl_file( out_fp, resolved_path );
-
-    /* Descend into any .c files this file includes (sub-unity includes). */
-    platform_mapped_file_t mf;
-    if ( !platform_map_file( resolved_path, &mf ) ) return;
-
-    char        line[ 1024 ];
-    const char* p   = mf.data;
-    const char* end = mf.data ? mf.data + mf.size : NULL;
-
-    while ( p && p < end )
-    {
-        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
-        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
-        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
-        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
-        memcpy( line, p, len );
-        line[ len ] = '\0';
-        p = nl ? nl + 1 : end;
-
-        if ( !prelude_is_c_include( line ) ) continue;
-
-        char inc_path[ PATH_MAX ];
-        if ( !prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) ) continue;
-
-        char resolved[ PATH_MAX ];
-        if ( !prelude_resolve_include( root_dir, inc_path, resolved, sizeof( resolved ) ) ) continue;
-
-        prelude_fwd_decl_recursive( out_fp, root_dir, resolved, depth + 1 );
-    }
-
-    platform_unmap_file( &mf );
-}
-
-/* Scan unity_path for every #include "*.c" constituent, resolve each path
-   (root_dir-relative then source/-relative), and emit forward declarations
-   for all static functions found in those files and their sub-includes. */
-static void
-prelude_fwd_decl_constituents( FILE* out_fp, const char* root_dir, const char* unit )
-{
-    char unity_path[ PATH_MAX ];
-    snprintf( unity_path, sizeof( unity_path ), "%s/%s", root_dir, unit );
-
-    platform_mapped_file_t mf;
-    if ( !platform_map_file( unity_path, &mf ) ) return;
-
-    bool        emitted_header = false;
-    char        line[ 1024 ];
-    const char* p              = mf.data;
-    const char* end            = mf.data ? mf.data + mf.size : NULL;
-
-    while ( p && p < end )
-    {
-        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
-        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
-        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
-        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
-        memcpy( line, p, len );
-        line[ len ] = '\0';
-        p = nl ? nl + 1 : end;
-
-        if ( !prelude_is_c_include( line ) ) continue;
-
-        char inc_path[ PATH_MAX ];
-        if ( !prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) ) continue;
-
-        char resolved[ PATH_MAX ];
-        if ( !prelude_resolve_include( root_dir, inc_path, resolved, sizeof( resolved ) ) ) continue;
-
-        if ( !emitted_header )
-        {
-            fprintf( out_fp, "\n/* forward declarations of static functions in constituent files */\n" );
-            emitted_header = true;
-        }
-
-        prelude_fwd_decl_recursive( out_fp, root_dir, resolved, 0 );
-    }
-
-    platform_unmap_file( &mf );
-}
-
-/*==============================================================================================
-    prelude_write_preamble()
-
-    Open the unity entry at unity_path and copy every line from the first
-    preprocessor directive (#) up to, but not including, the first constituent
-    .c #include.  The opening file-header block comment is skipped.
-
-    Tracks #if nesting depth; emits closing #endif lines for any blocks that
-    were opened in the preamble but not yet closed at the stop boundary.
-==============================================================================================*/
-
-static void
-prelude_write_preamble( FILE* out_fp, const char* unity_path )
-{
-    platform_mapped_file_t mf;
-    if ( !platform_map_file( unity_path, &mf ) )
-    {
-        printf( ORB_INDENT "[orb warn] prelude: could not open %s\n", unity_path );
-        return;
-    }
-
-    char        line[ 1024 ];
-    bool        past_header = false;
-    int         if_depth    = 0;
-    const char* p           = mf.data;
-    const char* end         = mf.data ? mf.data + mf.size : NULL;
-
-    while ( p && p < end )
-    {
-        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
-        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
-        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
-        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
-        memcpy( line, p, len );
-        line[ len ] = '\0';
-        p = nl ? nl + 1 : end;
-
-        if ( !past_header )
-        {
-            const char* q = line;
-            while ( *q == ' ' || *q == '\t' ) q++;
-            if ( *q != '#' ) continue;
-            past_header = true;
-        }
-
-        if ( prelude_is_c_include( line ) ) break;
-        if ( prelude_is_pragma_comment( line ) ) continue;
-
-        if      ( prelude_opens_if( line )  ) if_depth++;
-        else if ( prelude_closes_if( line ) ) if_depth--;
-
-        fprintf( out_fp, "%s\n", line );
-    }
-
-    for ( int d = 0; d < if_depth; d++ )
-        fprintf( out_fp, "#endif\n" );
-
-    platform_unmap_file( &mf );
-}
-
-/*==============================================================================================
-    --- Constituent Header Helpers ---
-
-    Sub-unity files (e.g. core_sid.c) include headers (e.g. sid/sid.h) that their
-    own leaf constituents (sid/sid.c) depend on.  prelude_write_preamble only reads
-    the top-level unity entry, so those headers never reach the prelude.
-
-    prelude_write_sub_headers walks resolved_path, emits every #include line that
-    is not a .c file, and recurses into any .c includes it finds.  depth guards
-    against cycles.
-
-    prelude_write_constituent_headers drives the scan from the top-level unity
-    entry: it iterates over the direct .c constituents and calls
-    prelude_write_sub_headers on each, so the top-level file's own includes (which
-    prelude_write_preamble already emitted) are not duplicated.
-==============================================================================================*/
-
-/* Emit all #include lines (non-.c) from resolved_path and recurse into .c includes. */
-static void
-prelude_write_sub_headers( FILE* out_fp, const char* root_dir,
-                           const char* resolved_path, int depth )
-{
-    if ( depth > 8 ) return;
-
-    platform_mapped_file_t mf;
-    if ( !platform_map_file( resolved_path, &mf ) ) return;
-
-    char        line[ 1024 ];
-    const char* p   = mf.data;
-    const char* end = mf.data ? mf.data + mf.size : NULL;
-
-    while ( p && p < end )
-    {
-        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
-        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
-        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
-        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
-        memcpy( line, p, len );
-        line[ len ] = '\0';
-        p = nl ? nl + 1 : end;
-
-        const char* q = line;
-        while ( *q == ' ' || *q == '\t' ) q++;
-        if ( *q != '#' ) continue;
-
-        if ( prelude_is_c_include( line ) )
-        {
-            /* Descend into sub-unity .c constituents */
-            char inc_path[ PATH_MAX ];
-            if ( !prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) ) continue;
-            char resolved[ PATH_MAX ];
-            if ( !prelude_resolve_include( root_dir, inc_path, resolved, sizeof( resolved ) ) ) continue;
-            prelude_write_sub_headers( out_fp, root_dir, resolved, depth + 1 );
-        }
-        else if ( !prelude_is_pragma_comment( line ) )
-        {
-            /* Emit header #include lines; skip other directives (#define etc.)
-               which are local to the sub-unity and not needed globally. */
-            const char* r = q + 1;
-            while ( *r == ' ' || *r == '\t' ) r++;
-            if ( strncmp( r, "include", 7 ) == 0 )
-                fprintf( out_fp, "%s\n", line );
-        }
-    }
-
-    platform_unmap_file( &mf );
-}
-
-/* Scan the top-level unity entry for direct .c constituents, then call
-   prelude_write_sub_headers on each one so their sub-unity headers reach
-   the prelude.  Starts from the constituent level (not the unity entry itself)
-   to avoid duplicating includes already emitted by prelude_write_preamble. */
-static void
-prelude_write_constituent_headers( FILE* out_fp, const char* root_dir, const char* unit )
-{
-    char unity_path[ PATH_MAX ];
-    snprintf( unity_path, sizeof( unity_path ), "%s/%s", root_dir, unit );
-
-    platform_mapped_file_t mf;
-    if ( !platform_map_file( unity_path, &mf ) ) return;
-
-    char        line[ 1024 ];
-    const char* p   = mf.data;
-    const char* end = mf.data ? mf.data + mf.size : NULL;
-
-    while ( p && p < end )
-    {
-        const char* nl  = (const char*)memchr( p, '\n', (size_t)( end - p ) );
-        size_t      len = nl ? (size_t)( nl - p ) : (size_t)( end - p );
-        if ( len > 0 && p[ len - 1 ] == '\r' ) len--;
-        if ( len >= sizeof( line ) ) len = sizeof( line ) - 1;
-        memcpy( line, p, len );
-        line[ len ] = '\0';
-        p = nl ? nl + 1 : end;
-
-        if ( !prelude_is_c_include( line ) ) continue;
-
-        char inc_path[ PATH_MAX ];
-        if ( !prelude_extract_c_include_path( line, inc_path, sizeof( inc_path ) ) ) continue;
-
-        char resolved[ PATH_MAX ];
-        if ( !prelude_resolve_include( root_dir, inc_path, resolved, sizeof( resolved ) ) ) continue;
-
-        prelude_write_sub_headers( out_fp, root_dir, resolved, 0 );
-    }
-
-    platform_unmap_file( &mf );
+    /* Recurse into sub-includes after unmap to avoid nested mappings. */
+    for ( int i = 0; i < n_sub; i++ )
+        prelude_fwd_decl_recursive( out_fp, root_dir, sub_paths[ i ], depth + 1 );
 }
 
 /*==============================================================================================
@@ -537,9 +472,9 @@ prelude_write_constituent_headers( FILE* out_fp, const char* root_dir, const cha
     For every registered target with at least one unity unit, writes
     build/prelude/<name>.prelude.h.
 
-    The prelude is delivered to constituent .c files via -include flags injected
-    into compile_commands.json entries by build_tool_11_gen_json.c -- not through
-    .clangd or any other UI-layer mechanism.
+    Per-target work: one unity scan (preamble + constituent paths), then one
+    sub-header pass and one fwd-decl pass per constituent.  Each constituent file
+    is mapped once per pass; sub-paths are deferred so no nested mappings occur.
 ==============================================================================================*/
 
 void
@@ -576,13 +511,29 @@ build_gen_preludes( void )
             continue;
         }
 
-        fprintf( fp, "/* %s.prelude.h  AUTO-GENERATED by build_tool -gen -- do not edit */\n",
-                 t->name );
-        fprintf( fp, "/* force-included via compile_commands.json /FI flag */\n" );
-        fprintf( fp, "#pragma once\n\n" );
-        prelude_write_preamble( fp, unity_path );
-        prelude_write_constituent_headers( fp, t->root_dir, t->units[ 0 ] );
-        prelude_fwd_decl_constituents( fp, t->root_dir, t->units[ 0 ] );
+        fwrite( "/* ", 1, 3, fp );
+        fputs( t->name, fp );
+        fputs( ".prelude.h  AUTO-GENERATED by build_tool -gen -- do not edit */\n", fp );
+        fputs( "/* force-included via compile_commands.json /FI flag */\n", fp );
+        fputs( "#pragma once\n\n", fp );
+
+        /* One unity scan: write preamble + collect constituent resolved paths. */
+        char constituents[ PRELUDE_MAX_CONSTITUENTS ][ PATH_MAX ];
+        int  n = prelude_scan_unity( fp, unity_path, t->root_dir,
+                                     constituents, PRELUDE_MAX_CONSTITUENTS );
+
+        /* Sub-unity headers: one pass per constituent. */
+        for ( int j = 0; j < n; j++ )
+            prelude_write_sub_headers( fp, t->root_dir, constituents[ j ], 0 );
+
+        /* Forward declarations: one pass per constituent. */
+        if ( n > 0 )
+        {
+            fputs( "\n/* forward declarations of static functions in constituent files */\n",
+                   fp );
+            for ( int j = 0; j < n; j++ )
+                prelude_fwd_decl_recursive( fp, t->root_dir, constituents[ j ], 0 );
+        }
 
         fclose( fp );
         generated++;
