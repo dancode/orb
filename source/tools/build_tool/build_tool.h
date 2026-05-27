@@ -409,7 +409,6 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_VCVARS           ( 1u << 17 )  // [orb vcvars] VS env discovery
 #define ORB_OUT_MSVC_OUTPUT      ( 1u << 18 )  // [MSVC] raw cl/link/lib passthrough lines
 #define ORB_OUT_ARGS             ( 1u << 19 )  // startup banner: echo raw argv on a second line
-#define ORB_OUT_GEN_PRELUDES     ( 1u << 20 )  // per-file prelude path during -gen (verbose only)
 
 // Convenience masks -- verbose detail only, summaries excluded.
 #define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SOURCES  | ORB_OUT_COMPILE_FLAGS    | \
@@ -428,7 +427,7 @@ typedef unsigned int out_flags_t;
                           ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
 #define ORB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK | \
-                          ORB_OUT_VCVARS | ORB_OUT_REFLECT | ORB_OUT_SCHEDULER  | ORB_OUT_GEN_PRELUDES)
+                          ORB_OUT_VCVARS | ORB_OUT_REFLECT | ORB_OUT_SCHEDULER )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( ORB_OUT_TESTING )
@@ -602,15 +601,6 @@ void build_gen_compile_commands( void );
     populated from g_targets[]. Called during -gen. */
 
 void build_gen_vscode( void );
-
-/*  For each registered target with unity units, writes
-    build/prelude/<name>.prelude.h containing the preprocessor setup lines
-    from the unity entry (everything before the first constituent .c include).
-    Delivered exclusively via -include flags injected into compile_commands.json
-    entries by build_gen_compile_commands().
-    Controlled by s_gen_preludes in build_tool_11_gen_prelude.c. */
-
-void build_gen_preludes( void );
 
 // clang-format on
 /*============================================================================================*/

@@ -27,7 +27,6 @@
         11_gen.c     -- -gen command: .sln / .vcxproj / .filters generation
         11_gen_json.c    -- -gen command: compile_commands.json (clangd / LSP tools)
         11_gen_vscode.c  -- -gen command: .vscode/tasks.json (VS Code build tasks)
-        11_gen_prelude.c -- -gen command: unity prelude headers + per-module .clangd
         12_test.c    -- debug arg injection from build_tool_debug.args
 
 ==============================================================================================*/
@@ -85,7 +84,6 @@
 static const char* g_build_dir    = BUILD_DIR;    // root for VS project files + intermediates.
 static const char* g_int_dir      = "obj";        // sub-folder: per-target .obj files.
 static const char* g_gen_dir      = "generated";  // sub-folder: reflection-generated .c/.h.
-static const char* g_prelude_dir  = "prelude";    // sub-folder: IntelliSense prelude headers (not compiled).
 
 /*==============================================================================================
     --- Output Flags ---
@@ -130,7 +128,6 @@ bool        g_use_rsp           = false; /* until we hit overflow this will rema
 #include "build_tool_11_gen.c"              // 11 -gen command (NMake/Makefile projects)
 #include "build_tool_11_gen_json.c"          // 11c -gen command (compile_commands.json)
 #include "build_tool_11_gen_vscode.c"       // 11d -gen command (.vscode/tasks.json)
-#include "build_tool_11_gen_prelude.c"      // 11f -gen command (unity prelude headers for clangd)
 #include "build_tool_11_gen_msbuild.c"      // 11e -gen_ms command (MSBuild projects)
 #include "build_tool_12_test.c"             // 12 debug arg injection
 
@@ -380,7 +377,6 @@ main( int argc, char** argv )
         /* Visual Studio Code /w clangd support */
         build_gen_compile_commands();
         build_gen_vscode();
-        build_gen_preludes();
         return 0;
     }
 

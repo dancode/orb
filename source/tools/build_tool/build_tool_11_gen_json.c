@@ -261,7 +261,7 @@ build_gen_compile_commands( void )
                       " -Wno-unused-function -Wno-undefined-internal" );
         }
 
-        /* --- Unity entry: one entry per compilation unit (no prelude /FI) --- */
+        /* --- Unity entry: one entry per compilation unit --- */
         for ( int j = 0; target->units[ j ]; ++j )
         {
             char rel[ PATH_MAX ];

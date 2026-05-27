@@ -116,11 +116,6 @@
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen_prelude.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen_prelude.c"
-  },
-  {
-    "directory": "F:/orb",
     "file": "F:/orb/source/tools/build_tool/build_tool_11_gen_msbuild.c",
     "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen_msbuild.c"
   },
