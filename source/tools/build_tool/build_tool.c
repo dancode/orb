@@ -374,7 +374,10 @@ main( int argc, char** argv )
 
     if ( should_gen )
     {
+        /* NMake/Makefile .sln/.vcxproj generation. */
         build_gen_projects();
+
+        /* Visual Studio Code /w clangd support */
         build_gen_compile_commands();
         build_gen_vscode();
         build_gen_preludes();
@@ -385,6 +388,7 @@ main( int argc, char** argv )
 
     if ( should_gen_msbuild )
     {
+        /* MSBuild .sln/.vcxproj generation. */
         build_gen_projects_msbuild();
         return 0;
     }

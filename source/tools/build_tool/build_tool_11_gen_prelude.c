@@ -536,11 +536,12 @@ build_gen_preludes( void )
         }
 
         fclose( fp );
+        if ( g_out_flags & ORB_OUT_GEN_PRELUDES )
+            printf( ORB_INDENT "prelude: %s\n", prelude_path );
         generated++;
-        printf( ORB_INDENT "prelude: %s\n", prelude_path );
     }
 
-    printf( "Generated %d unity preludes -> %s/\n", generated, gen_dir );
+    printf( "Generated preludes: %d written -> %s/\n", generated, gen_dir );
 }
 
 /*============================================================================================*/

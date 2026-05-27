@@ -314,7 +314,7 @@ build_gen_compile_commands( void )
     fprintf( fp, "\n]\n" );
     fclose( fp );
 
-    printf( "Generated compile_commands.json (%d entries)\n", entry_count );
+    printf( "\nGenerated compile_commands.json (%d entries)\n", entry_count );
 }
 
 /*============================================================================================*/

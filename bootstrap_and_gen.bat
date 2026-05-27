@@ -26,5 +26,5 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo Done! Open build\orb_make.sln or build\orb_build.sln in Visual Studio.
+:: echo Done 
 endlocal
