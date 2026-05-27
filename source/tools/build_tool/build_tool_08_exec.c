@@ -6,8 +6,8 @@
     the following phases in order:
 
       0. Dependency resolution  -- recurse into link deps and tool deps first.
-      1. Path preparation       -- obj_dir, gen_dir, out_path.
-      2. Per-target mutex lock  -- serialize concurrent invocations on the same target.
+      1. Per-target mutex lock  -- serialize concurrent invocations on the same target.
+      2. Path preparation       -- obj_dir, gen_dir, out_path.
       3. Up-to-date check       -- four freshness tests (A-D); short-circuit if clean.
       4. Directory creation     -- ensure every write destination exists.
       5. Locked-file management -- rename any in-use .exe aside before relinking.
@@ -16,7 +16,7 @@
       8. Config stamp           -- touch _debug.stamp or _release.stamp; delete the other.
 
     Concurrency:
-      From step 2 onward a per-target named mutex is held so two build_tool.exe
+      From step 1 onward a per-target named mutex is held so two build_tool.exe
       invocations (or two parallel workers from 09_sched) targeting the same name
       serialize here. Independent targets run fully in parallel.
 

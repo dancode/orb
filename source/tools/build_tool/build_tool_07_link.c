@@ -129,7 +129,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     }
 
     // Print sections, assemble, optionally echo raw command, then run.
-    FILE* log_out = cc_open_log();
+    FILE* log_out = log_open();
     lk_print( log_out, &lk, target );
 
     char      rsp_path[ PATH_MAX ];
@@ -140,7 +140,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     lk_check_overflow( &lk );
     lk_assemble( &lk, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_LINK_CMD ) print_raw_cmd( log_out, cmd.buf );
-    cc_close_log( log_out );
+    log_close( log_out );
 
     // NULL includes_path: no dep-tracking parse for link/lib, but line-by-line
     // capture still applies so compiler-output prefixing and gating work.

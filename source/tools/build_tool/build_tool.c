@@ -112,7 +112,14 @@ bool        g_gen_fwd_compat    = true;  /* -gen: emit stdcpp20 alongside stdc11
 
     Execution order == include order. Reading top-to-bottom traces the program
     from startup through each command to the terminal dispatch in main().
+
+    Forward declarations for functions defined in later modules but called by
+    earlier ones. One declaration here beats one per call site.
 ==============================================================================================*/
+
+/* Defined in 09_sched.c. Returns the active worker's per-thread log path, or NULL
+   when not inside a parallel worker (serial / main-thread path). */
+const char* sched_log_path( void );
 
 #if defined( _WIN32 )
     #include "build_tool_win.c"             // 00a platform layer (MSVC / Win32 CRT wrappers)

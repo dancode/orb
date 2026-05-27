@@ -8,7 +8,7 @@
     assembling correct commands; this file focuses on making them readable.
 
     Contents:
-      - Log routing   : cc_open_log / cc_close_log -- route output to the
+      - Log routing   : log_open / log_close -- route output to the
                         per-worker log during parallel builds, stdout otherwise.
       - MSVC output   : is_msvc_source_echo -- filter cl.exe TU banner lines.
       - Token printers: print_tokens, print_section, print_compile_output.
@@ -22,10 +22,6 @@
 ==============================================================================================*/
 // clang-format off
 
-/*  Forward declaration: defined in 09_sched.c; returns the active worker's
-    per-thread log path, or NULL when not inside a parallel worker. */
-const char* sched_log_path( void );
-
 /*==============================================================================================
     --- Log Routing ---
 
@@ -33,12 +29,12 @@ const char* sched_log_path( void );
     own section prints to a private per-target log file. The scheduler dumps that
     log atomically to stdout when the target finishes, preventing interleaving.
 
-    cc_open_log / cc_close_log encapsulate that routing: callers get the right sink
+    log_open / log_close encapsulate that routing: callers get the right sink
     (worker log or stdout) without caring about the scheduler's internal state.
 ==============================================================================================*/
 
 static FILE*
-cc_open_log( void )
+log_open( void )
 {
     const char* log = sched_log_path();
     if ( log )
@@ -50,7 +46,7 @@ cc_open_log( void )
 }
 
 static void
-cc_close_log( FILE* f )
+log_close( FILE* f )
 {
     if ( f != stdout ) fclose( f );
 }

@@ -16,10 +16,6 @@
 ==============================================================================================*/
 // clang-format off
 
-/*  Forward declaration: defined in 09_sched.c.
-    Returns the active worker's per-thread log path, or NULL on the serial path. */
-const char* sched_log_path( void );
-
 /*==============================================================================================
     --- One-Shot Command Execution ---
 

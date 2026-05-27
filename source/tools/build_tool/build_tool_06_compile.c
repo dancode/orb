@@ -145,8 +145,7 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
     if ( total >= CMD_RSP_THRESHOLD )
     {
         /* temporary print so we know when hit this */
-        printf( ORB_INDENT "[orb error] command length %zu exceeds threshold;"
-                " enable -rsp to use a response file\n", total );                
+        printf( ORB_INDENT "[orb warmomg] command length %zu exceeds threshold\n", total );                
 
         if ( g_use_rsp )
         {
@@ -262,7 +261,7 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
 {
     cmd_buf_t cmd = { 0 };
 
-    FILE* log_out = cc_open_log();
+    FILE* log_out = log_open();
     cc_print( log_out, cc, target, config );
 
     char rsp_path[ PATH_MAX ];
@@ -270,7 +269,7 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
     cc_check_overflow( cc );
     bool ok = cc_assemble( cc, &cmd, rsp_path );
     if ( g_out_flags & ORB_OUT_COMPILE_CMD ) print_raw_cmd( log_out, cmd.buf );
-    cc_close_log( log_out );
+    log_close( log_out );
 
     if ( !ok ) return false;
     return build_run_cmd_capture_includes( cmd.buf, includes_path ) == 0;
