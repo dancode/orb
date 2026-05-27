@@ -211,9 +211,13 @@ build_gen_compile_commands( void )
         snprintf( root_abs, sizeof( root_abs ), "." );
     compdb_fwd_slashes( root_abs );
 
-    /* Include path for generated headers: "build/generated". */
+    /* Include path for reflection-generated headers: "build/generated". */
     char gen_dir[ PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s/%s", g_build_dir, g_gen_dir );
+
+    /* Force-include path for IntelliSense prelude headers: "build/prelude". */
+    char prelude_dir[ PATH_MAX ];
+    snprintf( prelude_dir, sizeof( prelude_dir ), "%s/%s", g_build_dir, g_prelude_dir );
 
     /* Use clang-cl for the database: clangd has native support for clang-cl.exe commands
        whereas cl.exe goes through an imperfect translation layer that can break indexing.
@@ -248,7 +252,7 @@ build_gen_compile_commands( void )
         {
             size_t used = strlen( cc_constituent.includes );
             snprintf( cc_constituent.includes + used, sizeof( cc_constituent.includes ) - used,
-                      " /FI %s/%s.prelude.h", gen_dir, target->name );
+                      " /FI %s/%s.prelude.h", prelude_dir, target->name );
         }
         {
             /* Constituent files are always called from their unity entry after the

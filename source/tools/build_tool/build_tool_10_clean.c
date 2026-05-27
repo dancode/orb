@@ -79,6 +79,7 @@ build_clean( target_info_t* target )
         // Global wipe. Every del runs silently; one summary line at the end.
         del_q( "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_int_dir );
         del_q( "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_gen_dir );
+        del_q( "del /s /q %s\\%s\\* >nul 2>nul", g_build_dir, g_prelude_dir );
 
         build_run_cmd_quiet( "del /s /q bin\\*.pdb >nul 2>nul" );
         build_run_cmd_quiet( "del /s /q bin\\*.lib >nul 2>nul" );
@@ -94,8 +95,8 @@ build_clean( target_info_t* target )
                 del_q( "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
         }
 
-        printf( ORB_BANNER "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n",
-                g_build_dir, g_int_dir, g_gen_dir );
+        printf( ORB_BANNER "[orb clean] all -- bin\\*, %s\\{%s,%s,%s}\\*\n",
+                g_build_dir, g_int_dir, g_gen_dir, g_prelude_dir );
     }
 }
 

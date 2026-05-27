@@ -82,9 +82,10 @@
     too so VS treats it as the project root for IntelliSense and intermediate caches.
 ==============================================================================================*/
 
-static const char* g_build_dir = BUILD_DIR;     // root for VS project files + intermediates.
-static const char* g_int_dir   = "obj";         // sub-folder: per-target .obj files.
-static const char* g_gen_dir   = "generated";   // sub-folder: reflection-generated .c/.h.
+static const char* g_build_dir    = BUILD_DIR;    // root for VS project files + intermediates.
+static const char* g_int_dir      = "obj";        // sub-folder: per-target .obj files.
+static const char* g_gen_dir      = "generated";  // sub-folder: reflection-generated .c/.h.
+static const char* g_prelude_dir  = "prelude";    // sub-folder: IntelliSense prelude headers (not compiled).
 
 /*==============================================================================================
     --- Output Flags ---

@@ -4,7 +4,7 @@
 
     For each target that has unity compilation units, reads the unity entry .c
     file and copies all preprocessor setup lines (everything before the first
-    constituent .c #include) into build/generated/<target>.prelude.h.
+    constituent .c #include) into build/prelude/<target>.prelude.h.
 
     Delivery is exclusively through compile_commands.json: each entry in that
     database has -include <name>.prelude.h injected by build_tool_11_gen_json.c.
@@ -120,12 +120,13 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
 
     char        line[ 1024 ];
     char        sig[ 4096 ];
-    int         sig_len     = 0;
-    bool        collecting  = false;
-    bool        seen_paren  = false;
-    int         paren_depth = 0;
-    const char* p           = mf.data;
-    const char* end         = mf.data ? mf.data + mf.size : NULL;
+    int         sig_len          = 0;
+    bool        collecting       = false;
+    bool        seen_paren       = false;
+    int         paren_depth      = 0;
+    bool        in_block_comment = false;
+    const char* p                = mf.data;
+    const char* end              = mf.data ? mf.data + mf.size : NULL;
 
     while ( p && p < end )
     {
@@ -139,6 +140,27 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
 
         const char* q = line;
         while ( *q == ' ' || *q == '\t' ) q++;
+
+        /* Block comment tracking: skip lines inside block comments entirely.
+           "static" in a comment must not trigger collection or corrupt a live sig. */
+        if ( in_block_comment )
+        {
+            if ( strstr( line, "*/" ) ) in_block_comment = false;
+            collecting = false;
+            continue;
+        }
+        {
+            const char* open = strstr( q, "/*" );
+            if ( open && !strstr( open + 2, "*/" ) )
+            {
+                in_block_comment = true;
+                collecting       = false;
+                continue;
+            }
+        }
+
+        /* Skip line comments. */
+        if ( q[ 0 ] == '/' && q[ 1 ] == '/' ) { collecting = false; continue; }
 
         if ( !collecting )
         {
@@ -513,7 +535,7 @@ prelude_write_constituent_headers( FILE* out_fp, const char* root_dir, const cha
     build_gen_preludes()
 
     For every registered target with at least one unity unit, writes
-    build/generated/<name>.prelude.h.
+    build/prelude/<name>.prelude.h.
 
     The prelude is delivered to constituent .c files via -include flags injected
     into compile_commands.json entries by build_tool_11_gen_json.c -- not through
@@ -530,7 +552,7 @@ build_gen_preludes( void )
     }
 
     char gen_dir[ PATH_MAX ];
-    snprintf( gen_dir, sizeof( gen_dir ), "%s/%s", g_build_dir, g_gen_dir );
+    snprintf( gen_dir, sizeof( gen_dir ), "%s/%s", g_build_dir, g_prelude_dir );
     ensure_dir( g_build_dir );
     ensure_dir( gen_dir );
 
