@@ -5,7 +5,7 @@
 
 ==============================================================================================*/
 #include "orb.h"
-#include "str.h"
+#include "base/str.h"
 #include <string.h>
 
 /* Global empty string sentinel. ptr points to a real empty string so callers can safely

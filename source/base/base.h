@@ -13,13 +13,13 @@
     standard library includes
 ==============================================================================================*/
 
-#include "mem.h"
-#include "bit.h"
-#include "math.h"
-#include "char.h"
-#include "str.h"
-#include "str_buf.h"
-#include "str_arena.h"
+#include "base/mem.h"
+#include "base/bit.h"
+#include "base/math.h"
+#include "base/char.h"
+#include "base/str.h"
+#include "base/str_buf.h"
+#include "base/str_arena.h"
 
 /*============================================================================================*/
 #endif    // BASE_H

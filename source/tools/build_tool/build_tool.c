@@ -37,7 +37,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
-#include "build_tool.h"
+#include "tools/build_tool/build_tool.h"
 
 #include <stdio.h>
 #include <stdlib.h>
