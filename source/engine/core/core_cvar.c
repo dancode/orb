@@ -4,22 +4,15 @@
     
 ==============================================================================================*/
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <ctype.h>
-
-#include "orb.h"
-
-#include "cvar/string_pool.h"
-#include "cvar/string_pool.c"
-#include "cvar/cvar.h"
-#include "cvar/cmd.c"
-#include "cvar/cmd_buffer.c"
-#include "cvar/cmd_parse.c"
-#include "cvar/cvar.c"
-#include "cvar/cvar_cmd.c"
-#include "cvar/cvar_config.c"
-#include "test/test_core_cvar.c"
+#include "engine/core/cvar/string_pool.h"
+#include "engine/core/cvar/string_pool.c"
+#include "engine/core/cvar/cvar.h"
+#include "engine/core/cvar/cmd.c"
+#include "engine/core/cvar/cmd_buffer.c"
+#include "engine/core/cvar/cmd_parse.c"
+#include "engine/core/cvar/cvar.c"
+#include "engine/core/cvar/cvar_cmd.c"
+#include "engine/core/cvar/cvar_config.c"
+#include "engine/core/test/test_core_cvar.c"
 
 /*============================================================================================*/

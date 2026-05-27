@@ -8,12 +8,10 @@
 
 ==============================================================================================*/
 
-bool        str_icmp_eq             ( const char* a, const char* b );
-
 /*============================================================================================*/
 
-#define             STRING_POOL_MAX_BYTES       0xFFFEu    // Max pool size (fits in u16)
-#define             STRING_POOL_ALIGN           4          // Alignment for pool allocations
+#define             STRING_POOL_MAX_BYTES   0xFFFEu    // Max pool size (fits in u16)
+#define             STRING_POOL_ALIGN       4          // Alignment for pool allocations
 
 typedef struct string_pool_s
 {

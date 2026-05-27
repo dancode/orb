@@ -15,7 +15,6 @@
 
 ==============================================================================================*/
 /* Align value up to STRING_POOL_ALIGN boundary */
-#include "string_pool.h"
 
 u32
 string_pool_align_up( u32 value )

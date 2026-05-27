@@ -9,11 +9,7 @@
 ==============================================================================================*/
 #include "engine/mod/mod_export.h"
 
-// #if __has_include( "core.generated.h" )
 #include "core.generated.h"
-// #define HAS_GENERATED_FILE 1
-// #endif
-// #include "engine/core/core.h"
 #include "engine/core/core_api.h"
 
 /*==============================================================================================

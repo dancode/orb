@@ -148,7 +148,7 @@ log_exit( void )
 }
 
 /*==============================================================================================
-    Log sink adapter
+    Log sink adapter : public
 
     log_fn_t-compatible bridge. Routes pre-formatted messages from sys/mod/app
     (which cannot call core() directly) into the core write path.

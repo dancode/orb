@@ -29,7 +29,7 @@ static bool g_assert_skip = false;
     Skip mode
 ==============================================================================================*/
 
-void
+void /* public */
 core_assert_set_skip( bool skip )
 {
     g_assert_skip = skip;

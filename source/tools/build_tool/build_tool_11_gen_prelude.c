@@ -142,7 +142,11 @@ prelude_fwd_decl_file( FILE* out_fp, const char* src_path )
 
         if ( !collecting )
         {
-            if ( strncmp( q, "static ", 7 ) != 0 ) continue;
+            /* Accept "static " at the start, or after leading qualifiers like
+               ORB_NOINLINE / __forceinline / __declspec(...) that precede it. */
+            const char* s = strstr( q, "static " );
+            if ( !s ) continue;
+            if ( s != q && s[ -1 ] != ' ' && s[ -1 ] != '\t' ) continue;
             collecting  = true;
             seen_paren  = false;
             paren_depth = 0;

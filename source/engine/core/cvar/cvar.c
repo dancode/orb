@@ -8,8 +8,8 @@
 
 /* Case-insensitive string compare helper */
 
-bool
-str_icmp_eq( const char* a, const char* b )
+static bool
+cvar_str_icmp_eq( const char* a, const char* b )
 {
     while ( *a && *b )
     {
@@ -314,7 +314,7 @@ cvar_hash_find( const char* name )
         {
             cvar_t*     cv      = &g_cvar_pool[ idx ];
             const char* cv_name = string_pool_get( &g_cvar_string_pool, cv->name );
-            if ( str_icmp_eq( cv_name, name ) )
+            if ( cvar_str_icmp_eq( cv_name, name ) )
             {
                 return cv;    // Found cvar!
             }
@@ -369,7 +369,7 @@ cvar_hash_insert( u32 cvar_index )
             /* If duplicate insertion we do nothing */
 
             cvar_t* other = &g_cvar_pool[ slot ];
-            if ( str_icmp_eq( string_pool_get( &g_cvar_string_pool, other->name ), name ) )
+            if ( cvar_str_icmp_eq( string_pool_get( &g_cvar_string_pool, other->name ), name ) )
             {
                 /* Duplicate found - shouldn't happen */
                 return;
@@ -958,8 +958,8 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
             }
             else
             {
-                if      ( str_icmp_eq( value, "true" )  || str_icmp_eq( value, "on" )  || str_icmp_eq( value, "yes" ) ) { new_value = true;  parsed = true; }
-                else if ( str_icmp_eq( value, "false" ) || str_icmp_eq( value, "off" ) || str_icmp_eq( value, "no" ) )  { new_value = false; parsed = true; }
+                if      ( cvar_str_icmp_eq( value, "true" )  || cvar_str_icmp_eq( value, "on" )  || cvar_str_icmp_eq( value, "yes" ) ) { new_value = true;  parsed = true; }
+                else if ( cvar_str_icmp_eq( value, "false" ) || cvar_str_icmp_eq( value, "off" ) || cvar_str_icmp_eq( value, "no" ) )  { new_value = false; parsed = true; }
             }
 
             if ( !parsed ) { break; } // Invalid bool string
@@ -1048,7 +1048,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 for ( u32 i = 0; i < cv->s.count; ++i )
                 {
                     const char* s = g_cvar_string_pool.data + cv->s.base + i * cv->s.width;
-                    if ( str_icmp_eq( s, value ) )
+                    if ( cvar_str_icmp_eq( s, value ) )
                     {
                         new_value = ( u16 )i;
                     }

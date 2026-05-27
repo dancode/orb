@@ -119,11 +119,11 @@ cvar_exec_config( const char* filename )
             continue;
 
         // Dispatch command
-        if ( str_icmp_eq( argv[ 0 ], "seta" ) )
+        if ( cvar_str_icmp_eq( argv[ 0 ], "seta" ) )
         {
             cmd_seta( argc, argv );
         }
-        else if ( str_icmp_eq( argv[ 0 ], "set" ) )
+        else if ( cvar_str_icmp_eq( argv[ 0 ], "set" ) )
         {
             cmd_set( argc, argv );
         }
