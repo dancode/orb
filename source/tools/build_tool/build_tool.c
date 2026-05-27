@@ -14,20 +14,29 @@
         files without header exposure.
 
     Module roles (in include order):
-        01_prim.c    -- cmd_buf, mtime, file locks (pure primitives, no deps)
-        02_data.c    -- g_targets[] / g_solutions[] tables + lookup helpers
-        03_env.c     -- VS environment discovery and vcvars import
-        04_log.c     -- stateless output formatters (print_section, etc.)
-        05_spawn.c   -- child process spawning, /showIncludes capture
-        06_compile.c -- cl.exe command assembly and execution
-        07_link.c    -- link.exe / lib.exe command assembly and execution
-        08_exec.c    -- build_target() 8-phase orchestration
-        09_sched.c   -- topological worker-pool parallel scheduler
-        10_clean.c   -- -clean command: per-target or global artifact wipe
-        11_gen.c     -- -gen command: .sln / .vcxproj / .filters generation
+     
+        win.c            -- 00a platform layer: file I/O, CRT wrappers
+        win_thread.c     -- 00b platform threading: mutex, cond, TLS, threads
+        win_spawn.c      -- 00c platform process spawning
+        win_toolchain.c  -- 00d compiler/linker flag sets (MSVC vs GCC/Clang)
+        posix_*.c        -- POSIX equivalents of the above for Linux/macOS
+
+        01_prim.c        -- cmd_buf, mtime, file locks (pure primitives, no deps)
+        02_data.c        -- g_targets[] / g_solutions[] dynamic pools + lookup helpers
+        02_registry.c    -- orb.targets text-file parser; appends to 02_data pools
+        03_env.c         -- VS environment discovery and vcvars import
+        04_log.c         -- stateless output formatters (print_section, etc.)
+        05_spawn.c       -- child process spawning, /showIncludes capture
+        06_compile.c     -- cl.exe command assembly and execution
+        07_link.c        -- link.exe / lib.exe command assembly and execution
+        08_exec.c        -- build_target() orchestration
+        09_sched.c       -- topological worker-pool parallel scheduler
+        10_clean.c       -- -clean command: per-target or global artifact wipe
+        11_gen.c         -- -gen command: NMake-style .sln/.vcxproj (build_tool owns build)
         11_gen_json.c    -- -gen command: compile_commands.json (clangd / LSP tools)
         11_gen_vscode.c  -- -gen command: .vscode/tasks.json (VS Code build tasks)
-        12_test.c    -- debug arg injection from build_tool_debug.args
+        11_gen_msbuild.c -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
+        12_test.c        -- debug arg injection from build_tool_debug.args
 
 ==============================================================================================*/
 // clang-format off
@@ -126,7 +135,7 @@ bool        g_use_rsp           = false; /* until we hit overflow this will rema
 #include "build_tool_09_sched.c"            // 09 parallel scheduler
 #include "build_tool_10_clean.c"            // 10 -clean command
 #include "build_tool_11_gen.c"              // 11 -gen command (NMake/Makefile projects)
-#include "build_tool_11_gen_json.c"          // 11c -gen command (compile_commands.json)
+#include "build_tool_11_gen_json.c"         // 11c -gen command (compile_commands.json)
 #include "build_tool_11_gen_vscode.c"       // 11d -gen command (.vscode/tasks.json)
 #include "build_tool_11_gen_msbuild.c"      // 11e -gen_ms command (MSBuild projects)
 #include "build_tool_12_test.c"             // 12 debug arg injection
