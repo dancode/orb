@@ -14,7 +14,7 @@
         files without header exposure.
 
     Module roles (in include order):
-     
+
         win.c            -- 00a platform layer: file I/O, CRT wrappers
         win_thread.c     -- 00b platform threading: mutex, cond, TLS, threads
         win_spawn.c      -- 00c platform process spawning
@@ -90,9 +90,9 @@
     too so VS treats it as the project root for IntelliSense and intermediate caches.
 ==============================================================================================*/
 
-static const char* g_build_dir    = BUILD_DIR;    // root for VS project files + intermediates.
-static const char* g_int_dir      = "obj";        // sub-folder: per-target .obj files.
-static const char* g_gen_dir      = "generated";  // sub-folder: reflection-generated .c/.h.
+static const char* g_build_dir      = BUILD_DIR;    // root for VS project files + intermediates.
+static const char* g_int_dir        = "obj";        // sub-folder: per-target .obj files.
+static const char* g_gen_dir        = "generated";  // sub-folder: reflection-generated .c/.h.
 
 /*==============================================================================================
     --- Output Flags ---
@@ -101,12 +101,11 @@ static const char* g_gen_dir      = "generated";  // sub-folder: reflection-gene
     unity-included modules read it via the extern declared in build_tool.h.
 ==============================================================================================*/
 
-out_flags_t g_out_flags         = ORB_OUT_DEFAULT;
-bool        g_include_track     = true;
-bool        g_use_rsp           = true; /* until we hit overflow this will remain off */
-bool        g_gen_fwd_compat    = true;  /* -gen: emit stdcpp20 alongside stdc11 to
-                                             suppress designated-initializer squiggles */
-
+static out_flags_t g_out_flags      = ORB_OUT_DEFAULT;
+static bool        g_include_track  = true;         // Use up-to-date tracking via headers.
+static bool        g_use_rsp        = true;         // Use overflow prevention.
+static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 alongside stdc11 to
+                                                    // suppress designated-initializer squiggles
 /*==============================================================================================
     --- Unity Include Chain ---
 

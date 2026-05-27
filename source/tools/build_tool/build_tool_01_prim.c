@@ -104,15 +104,6 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
     --- Filesystem Helpers ---
 ==============================================================================================*/
 
-/* Returns the last-modified time of a file, or 0 if missing/unreadable.
-   Used as the "artifact exists" predicate: mtime 0 == needs rebuild. */
-
-platform_mtime_t
-build_get_mtime( const char* path )
-{
-    return platform_get_mtime( path );
-}
-
 /* Create a directory and all missing parent components (mkdir -p semantics).
    platform_mkdir is a no-op on existing directories so redundant calls are safe. */
 

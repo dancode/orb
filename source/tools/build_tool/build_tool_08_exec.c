@@ -123,7 +123,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
     // up_to_date flag so we short-circuit out of expensive walks. A miss on
     // ANY test forces a full rebuild.
 
-    platform_mtime_t out_mtime  = build_get_mtime( out_path );
+    platform_mtime_t out_mtime  = platform_get_mtime( out_path );
     bool       up_to_date = ( out_mtime != 0 ) && !ctx->force_rebuild;
 
     // A. Any explicit translation unit newer than the artifact?
@@ -133,7 +133,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         {
             char src_path[ PATH_MAX ];
             snprintf( src_path, sizeof( src_path ), "%s" PATH_SEP "%s", target->root_dir, target->units[ i ] );
-            if ( build_get_mtime( src_path ) > out_mtime )
+            if ( platform_get_mtime( src_path ) > out_mtime )
             {
                 up_to_date = false;
                 break;
@@ -149,7 +149,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         {
             char dep_path[ PATH_MAX ];
             snprintf( dep_path, sizeof( dep_path ), "bin" PATH_SEP "%s.lib", target->deps[ i ] );
-            if ( build_get_mtime( dep_path ) > out_mtime )
+            if ( platform_get_mtime( dep_path ) > out_mtime )
             {
                 up_to_date = false;
                 break;
@@ -196,7 +196,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
                 if ( !header_path[ 0 ] ) continue;
                 // mtime 0 means the header was deleted -- treat as forced rebuild
                 // so the compiler surfaces the missing include as an error.
-                platform_mtime_t h_mtime = build_get_mtime( header_path );
+                platform_mtime_t h_mtime = platform_get_mtime( header_path );
                 if ( h_mtime == 0 || h_mtime > out_mtime )
                     up_to_date = false;
             }

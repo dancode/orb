@@ -29,6 +29,7 @@
 # ==============================================================================
 
 target base
+
     type        static
     root        source/base
     folder      01_BASE

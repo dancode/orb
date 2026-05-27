@@ -148,11 +148,11 @@ json_emit_constituents_from( FILE* fp, bool* first,
         /* step 1: resolve relative to root_dir (target root, fixed across recursion) */
         char rel[ PATH_MAX ];
         snprintf( rel, sizeof( rel ), "%s/%s", root_dir, inc_path );
-        if ( build_get_mtime( rel ) == 0 )
+        if ( platform_get_mtime( rel ) == 0 )
         {
             /* step 2: resolve relative to the source root (via -Isource) */
             snprintf( rel, sizeof( rel ), "source/%s", inc_path );
-            if ( build_get_mtime( rel ) == 0 )
+            if ( platform_get_mtime( rel ) == 0 )
                 continue;   /* unresolvable -- skip */
         }
 

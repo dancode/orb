@@ -522,9 +522,6 @@ void cmd_append( cmd_buf_t* b, const char* fmt, ... );
 
 bool cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path );
 
-/*  Returns the last modification time of a file. Returns 0 if not found. */
-
-platform_mtime_t build_get_mtime( const char* path );
 
 /*  Acquire a Windows named mutex scoped to a single target, blocking until
     granted. Used to serialize concurrent invocations of build_tool.exe that
