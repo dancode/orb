@@ -103,7 +103,7 @@ static const char* g_gen_dir      = "generated";  // sub-folder: reflection-gene
 
 out_flags_t g_out_flags         = ORB_OUT_DEFAULT;
 bool        g_include_track     = true;
-bool        g_use_rsp           = false; /* until we hit overflow this will remain off */
+bool        g_use_rsp           = true; /* until we hit overflow this will remain off */
 bool        g_gen_fwd_compat    = true;  /* -gen: emit stdcpp20 alongside stdc11 to
                                              suppress designated-initializer squiggles */
 

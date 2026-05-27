@@ -47,12 +47,9 @@ GEMINI OUTPUT
      few system libs. There is no infrastructure for linking against 3rd-party libraries
      (headers or .lib/.a files).
   
-   * Linux IDE Generation: While -gen creates Visual Studio solutions, there is no
-     support for generating Linux-friendly project files like VS Code tasks.json or a
-     simple Makefile.
   
-   * Self-Hosting Bootstrap: The bootstrap_build_tool.bat is separate. The build tool
-     could have a -self-update or -bootstrap flag to recompile itself from within.
+Locale-Dependent Include Parsing: In build_tool_05_spawn.c, the /showIncludes parser looks for the English string "Note: including
+     file:". If the user's MSVC is set to a different language (e.g., German or Japanese), incremental header tracking will fail entirely,
+     causing the tool to either never rebuild on header changes or always rebuild. The tool should force VSLANG=1033 in build_setup_vc_env.
 	 
-	* Extra Flags: No way to specify extra_compile_flags or extra_link_flags for a
-     specific target (e.g., to set a custom entry point or increase stack size).
+	 

@@ -144,6 +144,10 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
     size_t total = strlen( cc->exe ) + 1 + ( size_t )( written < 0 ? 0 : written );
     if ( total >= CMD_RSP_THRESHOLD )
     {
+        /* temporary print so we know when hit this */
+        printf( ORB_INDENT "[orb error] command length %zu exceeds threshold;"
+                " enable -rsp to use a response file\n", total );                
+
         if ( g_use_rsp )
         {
             FILE* f = fopen( rsp_path, "w" );
