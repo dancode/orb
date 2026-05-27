@@ -1,3 +1,4 @@
+#if !defined( _WIN32 )
 /*==============================================================================================
 
     build_tool_posix_toolchain.c -- GCC / Clang compiler and linker platform layer.
@@ -279,3 +280,4 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
 
 // clang-format on
 /*============================================================================================*/
+#endif

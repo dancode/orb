@@ -116,6 +116,35 @@ typedef struct
 
 typedef void ( *platform_line_fn_t )( char* line, void* userdata );
 
+/*  Opaque threading types.  Sized to fit the largest platform implementation;
+    the platform .c file casts _opaque to the real OS type.
+    _Static_assert guards in the implementation catch size underflows. */
+
+#define PLATFORM_MUTEX_BYTES 64
+#define PLATFORM_COND_BYTES  64
+
+typedef struct { uint8_t _opaque[ PLATFORM_MUTEX_BYTES ]; } platform_mutex_t;
+typedef struct { uint8_t _opaque[ PLATFORM_COND_BYTES  ]; } platform_cond_t;
+
+/*  platform_thread_t is void* on all platforms (Win32 HANDLE / heap-allocated pthread_t). */
+
+typedef void* platform_thread_t;
+
+/*  platform_tls_t is a 32-bit slot index on both Win32 (DWORD) and pthreads (pthread_key_t).
+    PLATFORM_TLS_INVALID is the all-bits-set sentinel that signals "not yet allocated". */
+
+#if defined( _WIN32 )
+    typedef uint32_t platform_tls_t;
+    #define PLATFORM_TLS_INVALID    ( ( platform_tls_t )0xFFFFFFFFu )
+    #define PLATFORM_THREAD_ENTRY   unsigned __stdcall
+    typedef unsigned ( __stdcall *platform_thread_fn_t )( void* );
+#else
+    typedef uint32_t platform_tls_t;
+    #define PLATFORM_TLS_INVALID    ( ( platform_tls_t )( ~0u ) )
+    #define PLATFORM_THREAD_ENTRY   void*
+    typedef void* ( *platform_thread_fn_t )( void* );
+#endif
+
 /*==============================================================================================
     --- Project Constants ---
 ==============================================================================================*/

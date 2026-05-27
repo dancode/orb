@@ -1,3 +1,4 @@
+#if defined( _WIN32 )
 /*==============================================================================================
 
     build_tool_win_thread.c -- Windows threading platform layer for the ORB build tool.
@@ -6,14 +7,14 @@
     prefixed names. A future build_tool_posix_thread.c would provide identical
     symbols using pthreads; build_tool.c selects one via an #include branch.
 
-    Types defined here (visible to all later unity modules):
-        platform_mutex_t            -- CRITICAL_SECTION
-        platform_cond_t             -- CONDITION_VARIABLE
-        platform_tls_t              -- DWORD TLS slot index
-        PLATFORM_TLS_INVALID        -- TLS_OUT_OF_INDEXES sentinel
-        platform_thread_t           -- HANDLE (opaque thread handle)
-        PLATFORM_THREAD_ENTRY       -- calling-convention + return-type prefix for thread fns
-        platform_thread_fn_t        -- matching function pointer type
+    Types are declared as opaque structs / platform-conditional typedefs in build_tool.h:
+        platform_mutex_t            -- _opaque[PLATFORM_MUTEX_BYTES] -> CRITICAL_SECTION
+        platform_cond_t             -- _opaque[PLATFORM_COND_BYTES]  -> CONDITION_VARIABLE
+        platform_tls_t              -- uint32_t TLS slot index
+        PLATFORM_TLS_INVALID        -- 0xFFFFFFFF sentinel
+        platform_thread_t           -- void* (Win32 HANDLE)
+        PLATFORM_THREAD_ENTRY       -- unsigned __stdcall
+        platform_thread_fn_t        -- unsigned (__stdcall *)(void*)
 
     Functions implemented:
         platform_mutex_init()       -- InitializeCriticalSection
@@ -41,21 +42,16 @@
 
 /*==============================================================================================
     --- Platform Threading Types ---
+    Opaque types (platform_mutex_t, platform_cond_t, platform_tls_t, platform_thread_t,
+    PLATFORM_THREAD_ENTRY, platform_thread_fn_t) are declared in build_tool.h.
+    Cast helpers below map the opaque _opaque buffer to the real Win32 type.
 ==============================================================================================*/
 
-typedef CRITICAL_SECTION    platform_mutex_t;
-typedef CONDITION_VARIABLE  platform_cond_t;
-typedef DWORD               platform_tls_t;
+_Static_assert( sizeof( CRITICAL_SECTION )   <= PLATFORM_MUTEX_BYTES, "increase PLATFORM_MUTEX_BYTES" );
+_Static_assert( sizeof( CONDITION_VARIABLE ) <= PLATFORM_COND_BYTES,  "increase PLATFORM_COND_BYTES"  );
 
-#define PLATFORM_TLS_INVALID  ( ( platform_tls_t )TLS_OUT_OF_INDEXES )
-
-typedef void*               platform_thread_t;
-
-/* Prefix for thread entry-point declarations. Matches _beginthreadex expectations.
-   Usage: static PLATFORM_THREAD_ENTRY my_worker( void* arg ) { ... return 0; } */
-
-#define PLATFORM_THREAD_ENTRY  unsigned __stdcall
-typedef unsigned ( __stdcall *platform_thread_fn_t )( void* );
+static CRITICAL_SECTION*   mutex_w32( platform_mutex_t* m ) { return ( CRITICAL_SECTION*   )m->_opaque; }
+static CONDITION_VARIABLE* cond_w32(  platform_cond_t*  c ) { return ( CONDITION_VARIABLE* )c->_opaque; }
 
 /*==============================================================================================
     --- Mutex ---
@@ -64,25 +60,25 @@ typedef unsigned ( __stdcall *platform_thread_fn_t )( void* );
 static void
 platform_mutex_init( platform_mutex_t* m )
 {
-    InitializeCriticalSection( m );
+    InitializeCriticalSection( mutex_w32( m ) );
 }
 
 static void
 platform_mutex_lock( platform_mutex_t* m )
 {
-    EnterCriticalSection( m );
+    EnterCriticalSection( mutex_w32( m ) );
 }
 
 static void
 platform_mutex_unlock( platform_mutex_t* m )
 {
-    LeaveCriticalSection( m );
+    LeaveCriticalSection( mutex_w32( m ) );
 }
 
 static void
 platform_mutex_destroy( platform_mutex_t* m )
 {
-    DeleteCriticalSection( m );
+    DeleteCriticalSection( mutex_w32( m ) );
 }
 
 /*==============================================================================================
@@ -92,7 +88,7 @@ platform_mutex_destroy( platform_mutex_t* m )
 static void
 platform_cond_init( platform_cond_t* c )
 {
-    InitializeConditionVariable( c );
+    InitializeConditionVariable( cond_w32( c ) );
 }
 
 /* Atomically releases the mutex and sleeps until platform_cond_broadcast() wakes this thread,
@@ -101,7 +97,7 @@ platform_cond_init( platform_cond_t* c )
 static void
 platform_cond_wait( platform_cond_t* c, platform_mutex_t* m )
 {
-    SleepConditionVariableCS( c, m, INFINITE );
+    SleepConditionVariableCS( cond_w32( c ), mutex_w32( m ), INFINITE );
 }
 
 /* Wakes all threads waiting on c. */
@@ -109,7 +105,7 @@ platform_cond_wait( platform_cond_t* c, platform_mutex_t* m )
 static void
 platform_cond_broadcast( platform_cond_t* c )
 {
-    WakeAllConditionVariable( c );
+    WakeAllConditionVariable( cond_w32( c ) );
 }
 
 /*==============================================================================================
@@ -121,8 +117,8 @@ platform_cond_broadcast( platform_cond_t* c )
 static bool
 platform_tls_alloc( platform_tls_t* slot )
 {
-    *slot = TlsAlloc();
-    return *slot != TLS_OUT_OF_INDEXES;
+    *slot = ( platform_tls_t )TlsAlloc();
+    return *slot != PLATFORM_TLS_INVALID;
 }
 
 /* Returns true when slot was successfully allocated (i.e. is not the sentinel). */
@@ -130,7 +126,7 @@ platform_tls_alloc( platform_tls_t* slot )
 static bool
 platform_tls_is_valid( platform_tls_t slot )
 {
-    return slot != TLS_OUT_OF_INDEXES;
+    return slot != PLATFORM_TLS_INVALID;
 }
 
 static void*
@@ -197,3 +193,4 @@ platform_lock_release( void* lock )
 
 // clang-format on
 /*============================================================================================*/
+#endif

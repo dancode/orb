@@ -1,3 +1,4 @@
+#if !defined( _WIN32 )
 /*==============================================================================================
 
     build_tool_posix.c -- POSIX platform layer for the ORB build tool.
@@ -23,10 +24,6 @@
 
 ==============================================================================================*/
 // clang-format off
-
-#if defined( _WIN32 )
-    #error "build_tool_posix.c is only for POSIX builds"
-#endif
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -265,3 +262,4 @@ platform_find_close( platform_find_t handle )
 
 // clang-format on
 /*============================================================================================*/
+#endif

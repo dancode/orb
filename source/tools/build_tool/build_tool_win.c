@@ -1,3 +1,4 @@
+#if defined( _WIN32 )
 /*==============================================================================================
 
     build_tool_win.c -- Windows / MSVC platform layer for the ORB build tool.
@@ -25,10 +26,8 @@
 ==============================================================================================*/
 // clang-format off
 
-#if !defined( _WIN32 )
-    #error "build_tool_win.c is only for Windows / MSVC builds"
-#endif
-
+#include <windows.h>
+#include <direct.h>
 #include <sys/stat.h>
 #include <io.h>
 #include <process.h>
@@ -274,3 +273,4 @@ platform_unmap_file( platform_mapped_file_t* m )
 
 // clang-format on
 /*============================================================================================*/
+#endif

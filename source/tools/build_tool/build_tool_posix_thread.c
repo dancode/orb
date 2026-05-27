@@ -1,3 +1,4 @@
+#if !defined( _WIN32 )
 /*==============================================================================================
 
     build_tool_posix_thread.c -- POSIX threading platform layer for the ORB build tool.
@@ -5,14 +6,14 @@
     Wraps every pthreads primitive used by the scheduler under platform_ prefixed names.
     The Win32 counterpart is build_tool_win_thread.c; both files expose identical symbols.
 
-    Types defined here (visible to all later unity modules):
-        platform_mutex_t            -- pthread_mutex_t
-        platform_cond_t             -- pthread_cond_t
-        platform_tls_t              -- pthread_key_t
-        PLATFORM_TLS_INVALID        -- sentinel for an unallocated TLS key
+    Types are declared as opaque structs / platform-conditional typedefs in build_tool.h:
+        platform_mutex_t            -- _opaque[PLATFORM_MUTEX_BYTES] -> pthread_mutex_t
+        platform_cond_t             -- _opaque[PLATFORM_COND_BYTES]  -> pthread_cond_t
+        platform_tls_t              -- uint32_t TLS slot index (cast to pthread_key_t)
+        PLATFORM_TLS_INVALID        -- all-bits-set sentinel (~0u)
         platform_thread_t           -- void* (heap-allocated pthread_t)
-        PLATFORM_THREAD_ENTRY       -- return type prefix for thread entry functions
-        platform_thread_fn_t        -- matching function pointer type
+        PLATFORM_THREAD_ENTRY       -- void*
+        platform_thread_fn_t        -- void*(*)(void*)
 
     Functions implemented:
         platform_mutex_init()       -- pthread_mutex_init
@@ -38,6 +39,7 @@
     #error "build_tool_posix_thread.c is only for POSIX builds"
 #endif
 
+#if !defined(_WIN32)
 #include <pthread.h>
 #include <fcntl.h>
 #include <sys/file.h>
@@ -45,31 +47,20 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#endif 
 
 /*==============================================================================================
     --- Platform Threading Types ---
+    Opaque types (platform_mutex_t, platform_cond_t, platform_tls_t, platform_thread_t,
+    PLATFORM_THREAD_ENTRY, platform_thread_fn_t) are declared in build_tool.h.
+    Cast helpers below map the opaque _opaque buffer to the real pthreads type.
 ==============================================================================================*/
 
-typedef pthread_mutex_t     platform_mutex_t;
-typedef pthread_cond_t      platform_cond_t;
-typedef pthread_key_t       platform_tls_t;
+_Static_assert( sizeof( pthread_mutex_t ) <= PLATFORM_MUTEX_BYTES, "increase PLATFORM_MUTEX_BYTES" );
+_Static_assert( sizeof( pthread_cond_t  ) <= PLATFORM_COND_BYTES,  "increase PLATFORM_COND_BYTES"  );
 
-/* pthread_key_t has no built-in invalid sentinel; use all-bits-set as the marker.
-   pthread_key_create writes a valid key into the slot only on success. */
-
-#define PLATFORM_TLS_INVALID  ( ( platform_tls_t )( ~( unsigned )0 ) )
-
-/* platform_thread_t is void* to match the Win32 HANDLE type.
-   The actual pthread_t is heap-allocated in platform_thread_create and freed in
-   platform_threads_join so callers hold a stable pointer-sized handle. */
-
-typedef void*               platform_thread_t;
-
-/* Prefix for thread entry-point declarations. pthread_create expects void*(*)(void*).
-   Usage: static PLATFORM_THREAD_ENTRY my_worker( void* arg ) { ... return NULL; } */
-
-#define PLATFORM_THREAD_ENTRY  void*
-typedef void* ( *platform_thread_fn_t )( void* );
+static pthread_mutex_t* mutex_posix( platform_mutex_t* m ) { return ( pthread_mutex_t* )m->_opaque; }
+static pthread_cond_t*  cond_posix(  platform_cond_t*  c ) { return ( pthread_cond_t*  )c->_opaque; }
 
 /*==============================================================================================
     --- Mutex ---
@@ -78,25 +69,25 @@ typedef void* ( *platform_thread_fn_t )( void* );
 static void
 platform_mutex_init( platform_mutex_t* m )
 {
-    pthread_mutex_init( m, NULL );
+    pthread_mutex_init( mutex_posix( m ), NULL );
 }
 
 static void
 platform_mutex_lock( platform_mutex_t* m )
 {
-    pthread_mutex_lock( m );
+    pthread_mutex_lock( mutex_posix( m ) );
 }
 
 static void
 platform_mutex_unlock( platform_mutex_t* m )
 {
-    pthread_mutex_unlock( m );
+    pthread_mutex_unlock( mutex_posix( m ) );
 }
 
 static void
 platform_mutex_destroy( platform_mutex_t* m )
 {
-    pthread_mutex_destroy( m );
+    pthread_mutex_destroy( mutex_posix( m ) );
 }
 
 /*==============================================================================================
@@ -106,7 +97,7 @@ platform_mutex_destroy( platform_mutex_t* m )
 static void
 platform_cond_init( platform_cond_t* c )
 {
-    pthread_cond_init( c, NULL );
+    pthread_cond_init( cond_posix( c ), NULL );
 }
 
 /* Atomically releases the mutex and sleeps until platform_cond_broadcast() wakes this thread,
@@ -115,7 +106,7 @@ platform_cond_init( platform_cond_t* c )
 static void
 platform_cond_wait( platform_cond_t* c, platform_mutex_t* m )
 {
-    pthread_cond_wait( c, m );
+    pthread_cond_wait( cond_posix( c ), mutex_posix( m ) );
 }
 
 /* Wakes all threads waiting on c. */
@@ -123,7 +114,7 @@ platform_cond_wait( platform_cond_t* c, platform_mutex_t* m )
 static void
 platform_cond_broadcast( platform_cond_t* c )
 {
-    pthread_cond_broadcast( c );
+    pthread_cond_broadcast( cond_posix( c ) );
 }
 
 /*==============================================================================================
@@ -136,7 +127,10 @@ static bool
 platform_tls_alloc( platform_tls_t* slot )
 {
     *slot = PLATFORM_TLS_INVALID;
-    return pthread_key_create( slot, NULL ) == 0;
+    pthread_key_t key;
+    if ( pthread_key_create( &key, NULL ) != 0 ) return false;
+    *slot = ( platform_tls_t )key;
+    return true;
 }
 
 /* Returns true when slot was successfully allocated (i.e. is not the sentinel). */
@@ -150,13 +144,13 @@ platform_tls_is_valid( platform_tls_t slot )
 static void*
 platform_tls_get( platform_tls_t slot )
 {
-    return pthread_getspecific( slot );
+    return pthread_getspecific( ( pthread_key_t )slot );
 }
 
 static void
 platform_tls_set( platform_tls_t slot, void* value )
 {
-    pthread_setspecific( slot, value );
+    pthread_setspecific( ( pthread_key_t )slot, value );
 }
 
 /*==============================================================================================
@@ -233,3 +227,4 @@ platform_lock_release( void* lock )
 
 // clang-format on
 /*============================================================================================*/
+#endif

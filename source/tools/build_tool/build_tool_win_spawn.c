@@ -1,3 +1,4 @@
+#if defined( _WIN32 )
 /*==============================================================================================
 
     build_tool_win_spawn.c -- Windows process-spawning platform layer for the ORB build tool.
@@ -184,3 +185,4 @@ platform_spawn_capture( const char* cmd, platform_line_fn_t fn, void* userdata )
 
 // clang-format on
 /*============================================================================================*/
+#endif

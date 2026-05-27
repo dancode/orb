@@ -82,6 +82,8 @@ typedef enum
     PLINE_H_INCLUDE,       /* #include "...h" or #include <...> */
     PLINE_PRAGMA_COMMENT,  /* #pragma comment(lib, ...) -- linker directive */
     PLINE_OPEN_IF,         /* #if / #ifdef / #ifndef */
+    PLINE_ELSE,            /* #else */
+    PLINE_ELIF,            /* #elif / #elifdef / #elifndef */
     PLINE_CLOSE_IF,        /* #endif */
     PLINE_DIRECTIVE,       /* any other # directive (#define, #undef, etc.) */
 } pline_t;
@@ -113,7 +115,11 @@ prelude_classify( const char* line )
     if ( strncmp( p, "if", 2 ) == 0 &&
          ( p[ 2 ] == ' ' || p[ 2 ] == '\t' || p[ 2 ] == '\r' || p[ 2 ] == '\n' ) )
         return PLINE_OPEN_IF;
-    if ( strncmp( p, "endif", 5 ) == 0 ) return PLINE_CLOSE_IF;
+    if ( strncmp( p, "endif",   5 ) == 0 ) return PLINE_CLOSE_IF;
+    if ( strncmp( p, "elifdef", 7 ) == 0 ) return PLINE_ELIF;
+    if ( strncmp( p, "elifndef",8 ) == 0 ) return PLINE_ELIF;
+    if ( strncmp( p, "elif",    4 ) == 0 ) return PLINE_ELIF;
+    if ( strncmp( p, "else",    4 ) == 0 ) return PLINE_ELSE;
     return PLINE_DIRECTIVE;
 }
 
@@ -168,7 +174,7 @@ prelude_resolve_include( const char* root_dir, const char* inc_path,
     Returns the number of constituent paths written into constituents[].
 ==============================================================================================*/
 
-#define PRELUDE_MAX_CONSTITUENTS 64
+#define PRELUDE_MAX_CONSTITUENTS 64 // maximum .c files in a single unity entry.
 
 static int
 prelude_scan_unity( FILE* fp, const char* unity_path, const char* root_dir,
@@ -185,13 +191,31 @@ prelude_scan_unity( FILE* fp, const char* unity_path, const char* root_dir,
 
     char             line[ 1024 ];
     int              len;
-    bool             past_header   = false;
-    bool             preamble_done = false;
-    int              if_depth      = 0;
-    int              n_c           = 0;
+    bool             past_header      = false;
+    bool             preamble_done    = false;
+    bool             in_block_comment = false;
+    int              if_depth         = 0;
+    int              n_c              = 0;
 
     while ( prelude_advance( &cur, line, sizeof( line ), &len ) )
     {
+        /* Skip lines inside block comments. */
+        if ( in_block_comment )
+        {
+            if ( strstr( line, "*/" ) ) in_block_comment = false;
+            continue;
+        }
+        {
+            const char* qc   = line;
+            while ( *qc == ' ' || *qc == '\t' ) qc++;
+            const char* open = strstr( qc, "/*" );
+            if ( open && !strstr( open + 2, "*/" ) )
+            {
+                in_block_comment = true;
+                continue;
+            }
+        }
+
         pline_t kind = prelude_classify( line );
 
         /* Skip everything before the first preprocessor directive (#). */
@@ -267,27 +291,27 @@ prelude_scan_unity( FILE* fp, const char* unity_path, const char* root_dir,
     full source tree was 8, so 32 gives 4x headroom without waste.
 ==============================================================================================*/
 
-#define PRELUDE_WORKLIST_CAP 32
+/*  number of paths simultaneously queued in the iterative walker */
+/*  This bounds how many .c sub-includes can be in-flight at once across the whole 
+    constituent set for one target */
 
-/*==============================================================================================
+#define PRELUDE_WORKLIST_CAP 32 
+
+/*===============================================================================================
     --- Sub-header Emitter ---
 
-    Walks first_path and every .c sub-include it references, emitting every
-    non-.c #include line into out_fp.  Duplicate include lines are suppressed
-    via a linear-scan seen-set; the set is reset each call so deduplication is
-    per-constituent, matching the scope of a single prelude pass.
+    Walks all constituents and every .c sub-include they reference, emitting
+    every non-.c #include line and all conditional directives into out_fp.
+    All constituents are seeded into the worklist up front so one pass covers
+    the entire target.
 ==============================================================================================*/
-
-#define PRELUDE_SEEN_CAP 256
 
 static void
 prelude_write_sub_headers( FILE* out_fp, const char* root_dir,
                            char constituents[][ PATH_MAX ], int n )
-{
-    static char wl  [ PRELUDE_WORKLIST_CAP ][ PATH_MAX ];
-    static char seen[ PRELUDE_SEEN_CAP     ][ 1024     ];
-    int top    = 0;
-    int n_seen = 0;
+{   
+    static char wl[ PRELUDE_WORKLIST_CAP ][ PATH_MAX ];
+    int top = 0;
 
     /* Seed all constituents so the seen-set spans the entire target. */
     for ( int j = 0; j < n && top < PRELUDE_WORKLIST_CAP; j++ )
@@ -295,18 +319,37 @@ prelude_write_sub_headers( FILE* out_fp, const char* root_dir,
 
     while ( top > 0 )
     {
+        top--;
         char cur_path[ PATH_MAX ];
-        memcpy( cur_path, wl[ --top ], PATH_MAX );
+        memcpy( cur_path, wl[ top ], PATH_MAX );
 
         platform_mapped_file_t mf;
         if ( !platform_map_file( cur_path, &mf ) ) continue;
 
-        prelude_cursor_t cur = { mf.data, mf.data ? mf.data + mf.size : NULL };
+        prelude_cursor_t cur              = { mf.data, mf.data ? mf.data + mf.size : NULL };
         char             line[ 1024 ];
         int              len;
+        bool             in_block_comment = false;
 
         while ( prelude_advance( &cur, line, sizeof( line ), &len ) )
         {
+            /* Skip lines inside block comments. */
+            if ( in_block_comment )
+            {
+                if ( strstr( line, "*/" ) ) in_block_comment = false;
+                continue;
+            }
+            {
+                const char* qc   = line;
+                while ( *qc == ' ' || *qc == '\t' ) qc++;
+                const char* open = strstr( qc, "/*" );
+                if ( open && !strstr( open + 2, "*/" ) )
+                {
+                    in_block_comment = true;
+                    continue;
+                }
+            }
+
             pline_t kind = prelude_classify( line );
             if ( kind == PLINE_C_INCLUDE )
             {
@@ -329,16 +372,14 @@ prelude_write_sub_headers( FILE* out_fp, const char* root_dir,
             }
             else if ( kind == PLINE_H_INCLUDE )
             {
-                /* Suppress duplicate includes via linear-scan seen-set. */
-                bool already_seen = false;
-                for ( int s = 0; s < n_seen; s++ )
-                {
-                    if ( strcmp( seen[ s ], line ) == 0 ) { already_seen = true; break; }
-                }
-                if ( already_seen ) continue;
-                if ( n_seen < PRELUDE_SEEN_CAP )
-                    memcpy( seen[ n_seen++ ], line, (size_t)( len + 1 ) );
-
+                fwrite( line, 1, (size_t)len, out_fp );
+                fputc( '\n', out_fp );
+            }
+            else if ( kind == PLINE_OPEN_IF || kind == PLINE_ELSE ||
+                      kind == PLINE_ELIF    || kind == PLINE_CLOSE_IF )
+            {
+                /* Preserve conditional directives so platform guards remain intact.
+                   Clangd/cl.exe evaluate them naturally; we must not flatten both branches. */
                 fwrite( line, 1, (size_t)len, out_fp );
                 fputc( '\n', out_fp );
             }
@@ -387,8 +428,9 @@ prelude_write_fwd_decls( FILE* out_fp, const char* root_dir,
 
     while ( top > 0 )
     {
+        top--;
         char cur_path[ PATH_MAX ];
-        memcpy( cur_path, wl[ --top ], PATH_MAX );
+        memcpy( cur_path, wl[ top ], PATH_MAX );
 
         platform_mapped_file_t mf;
         if ( !platform_map_file( cur_path, &mf ) ) continue;
@@ -431,8 +473,9 @@ prelude_write_fwd_decls( FILE* out_fp, const char* root_dir,
             /* Skip line comments. */
             if ( q[ 0 ] == '/' && q[ 1 ] == '/' ) { collecting = false; continue; }
 
-            /* .c sub-includes feed the worklist; reset fwd-decl state. */
-            if ( prelude_classify( line ) == PLINE_C_INCLUDE )
+            /* .c sub-includes feed the worklist; conditional directives pass through. */
+            pline_t kind = prelude_classify( line );
+            if ( kind == PLINE_C_INCLUDE )
             {
                 collecting = false;
                 if ( top < PRELUDE_WORKLIST_CAP )
@@ -450,6 +493,16 @@ prelude_write_fwd_decls( FILE* out_fp, const char* root_dir,
                             " (cap=%d) -- bump PRELUDE_WORKLIST_CAP\n",
                             cur_path, PRELUDE_WORKLIST_CAP );
                 }
+                continue;
+            }
+            /* Platform guards (#if / #else / #endif) are emitted verbatim so clangd
+               evaluates them naturally -- POSIX decls disappear under _WIN32, and vice versa. */
+            if ( kind == PLINE_OPEN_IF || kind == PLINE_ELSE ||
+                 kind == PLINE_ELIF    || kind == PLINE_CLOSE_IF )
+            {
+                collecting = false;
+                fwrite( line, 1, (size_t)len, out_fp );
+                fputc( '\n', out_fp );
                 continue;
             }
 
@@ -559,6 +612,7 @@ build_gen_preludes( void )
     ensure_dir( gen_dir );
 
     /* Constituent path array: reused across all targets. */
+    /* This is maximum .c files in a unity entry; sub-includes do not count */
     static char constituents[ PRELUDE_MAX_CONSTITUENTS ][ PATH_MAX ];
 
     int generated = 0;

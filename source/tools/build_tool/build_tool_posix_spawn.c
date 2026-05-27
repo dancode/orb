@@ -1,3 +1,4 @@
+#if !defined( _WIN32 )
 /*==============================================================================================
 
     build_tool_posix_spawn.c -- POSIX process-spawning platform layer for the ORB build tool.
@@ -16,10 +17,6 @@
 
 ==============================================================================================*/
 // clang-format off
-
-#if defined( _WIN32 )
-    #error "build_tool_posix_spawn.c is only for POSIX builds"
-#endif
 
 #include <spawn.h>
 #include <unistd.h>
@@ -246,3 +243,4 @@ posix_collect_dep_files( const char* obj_dir, const char* includes_path )
 
 // clang-format on
 /*============================================================================================*/
+#endif
