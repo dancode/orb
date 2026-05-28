@@ -164,6 +164,19 @@ validate_targets( void )
     {
         const target_info_t* t = &g_targets[ i ];
 
+        // Unit files exist on disk.
+        for ( int j = 0; j < TARGET_MAX_SLOTS && t->units[ j ]; ++j )
+        {
+            char path[ PATH_MAX ];
+            snprintf( path, sizeof( path ), "%s/%s", t->root_dir, t->units[ j ] );
+            if ( !platform_file_exists( path ) )
+            {
+                printf( ORB_INDENT "[orb error] target '%s': unit file not found '%s'\n",
+                        t->name, t->units[ j ] );
+                ok = false;
+            }
+        }
+
         // Slot overflow.
         if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ||
              t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ||
