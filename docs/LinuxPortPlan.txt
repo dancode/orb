@@ -53,3 +53,5 @@ Locale-Dependent Include Parsing: In build_tool_05_spawn.c, the /showIncludes pa
      causing the tool to either never rebuild on header changes or always rebuild. The tool should force VSLANG=1033 in build_setup_vc_env.
 	 
 	 
+	 https://youtu.be/kLlJ5x1pNr8
+	 
