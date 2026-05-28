@@ -297,10 +297,6 @@ target c11_test
 # SOLUTIONS
 # ==============================================================================
 
-solution orb_build
-    out         build/proj
-    add         build_tool reflect_tool
-
 solution orb
     out         build/proj
 # 	nav 		source
@@ -327,7 +323,7 @@ solution orb_mono
     flag        monolithic
     add         orb
 
-
+	
 solution orb_core
     out         build/proj
     add         core
@@ -336,4 +332,10 @@ solution c11
     out         build/proj
     add         c11_test
 	
+# ==============================================================================
+# TOOLS
+# ==============================================================================
 
+solution orb_build
+    out         build/proj
+    add         build_tool reflect_tool

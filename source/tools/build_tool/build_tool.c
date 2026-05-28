@@ -160,9 +160,37 @@ static bool
 validate_targets( void )
 {
     bool ok = true;
+
+    // Duplicate target names.
+    for ( int i = 0; i < g_target_count; ++i )
+        for ( int j = i + 1; j < g_target_count; ++j )
+            if ( strcmp( g_targets[ i ].name, g_targets[ j ].name ) == 0 )
+            {
+                printf( ORB_INDENT "[orb error] duplicate target name '%s'\n", g_targets[ i ].name );
+                ok = false;
+            }
+
+    // Duplicate solution names.
+    for ( int i = 0; i < g_solution_count; ++i )
+        for ( int j = i + 1; j < g_solution_count; ++j )
+            if ( g_solutions[ i ].name && g_solutions[ j ].name &&
+                 strcmp( g_solutions[ i ].name, g_solutions[ j ].name ) == 0 )
+            {
+                printf( ORB_INDENT "[orb error] duplicate solution name '%s'\n", g_solutions[ i ].name );
+                ok = false;
+            }
+
     for ( int i = 0; i < g_target_count; ++i )
     {
         const target_info_t* t = &g_targets[ i ];
+
+        // Non-external targets must have a root_dir (guards unit file checks below).
+        if ( !t->is_external && !t->root_dir )
+        {
+            printf( ORB_INDENT "[orb error] target '%s': missing root directory\n", t->name );
+            ok = false;
+            continue;
+        }
 
         // Unit files exist on disk.
         for ( int j = 0; j < TARGET_MAX_SLOTS && t->units[ j ]; ++j )
@@ -188,40 +216,50 @@ validate_targets( void )
             ok = false;
         }
 
-        // Unresolved dep / tool_dep / mono_dep names.
+        // Unresolved and self-referencing dep / tool_dep / mono_dep names.
         for ( int j = 0; j < TARGET_MAX_SLOTS && t->deps[ j ]; ++j )
         {
-            if ( !find_target( t->deps[ j ] ) )
-            {
-                printf( ORB_INDENT "[orb error] target '%s': unknown dep '%s'\n",
-                        t->name, t->deps[ j ] );
+            if ( strcmp( t->deps[ j ], t->name ) == 0 )
+                printf( ORB_INDENT "[orb error] target '%s': dep references itself\n", t->name ),
                 ok = false;
-            }
+            else if ( !find_target( t->deps[ j ] ) )
+                printf( ORB_INDENT "[orb error] target '%s': unknown dep '%s'\n",
+                        t->name, t->deps[ j ] ),
+                ok = false;
         }
         for ( int j = 0; j < TARGET_MAX_SLOTS && t->tool_deps[ j ]; ++j )
         {
-            if ( !find_target( t->tool_deps[ j ] ) )
-            {
-                printf( ORB_INDENT "[orb error] target '%s': unknown tool_dep '%s'\n",
-                        t->name, t->tool_deps[ j ] );
+            if ( strcmp( t->tool_deps[ j ], t->name ) == 0 )
+                printf( ORB_INDENT "[orb error] target '%s': tool_dep references itself\n", t->name ),
                 ok = false;
-            }
+            else if ( !find_target( t->tool_deps[ j ] ) )
+                printf( ORB_INDENT "[orb error] target '%s': unknown tool_dep '%s'\n",
+                        t->name, t->tool_deps[ j ] ),
+                ok = false;
         }
         for ( int j = 0; j < TARGET_MAX_SLOTS && t->mono_deps[ j ]; ++j )
         {
-            if ( !find_target( t->mono_deps[ j ] ) )
-            {
-                printf( ORB_INDENT "[orb error] target '%s': unknown mono_dep '%s'\n",
-                        t->name, t->mono_deps[ j ] );
+            if ( strcmp( t->mono_deps[ j ], t->name ) == 0 )
+                printf( ORB_INDENT "[orb error] target '%s': mono_dep references itself\n", t->name ),
                 ok = false;
-            }
+            else if ( !find_target( t->mono_deps[ j ] ) )
+                printf( ORB_INDENT "[orb error] target '%s': unknown mono_dep '%s'\n",
+                        t->name, t->mono_deps[ j ] ),
+                ok = false;
         }
     }
 
-    // Unresolved solution-to-target references.
+    // Unresolved solution-to-target references and missing out_dir.
     for ( int i = 0; i < g_solution_count; ++i )
     {
         const solution_info_t* sln = &g_solutions[ i ];
+
+        if ( !sln->is_external && !sln->out_dir )
+        {
+            printf( ORB_INDENT "[orb error] solution '%s': missing 'out' directory\n", sln->name );
+            ok = false;
+        }
+
         for ( const char* const* tn = sln->target_names; *tn; ++tn )
         {
             bool found = false;
