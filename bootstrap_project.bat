@@ -1,6 +1,5 @@
 @echo off
-rem bootstrap_project.bat -- run from a child project directory to install
-rem bin\build_tool.bat (forwarder) and clean_build.bat (wipe + restore).
+rem bootstrap_project.bat -- install build tool forwarder and helpers in a child project.
 rem
 rem Usage (from the child project root):
 rem     ..\bootstrap_project.bat
@@ -10,26 +9,22 @@ rem     bin\build_tool.bat -gen
 rem     bin\build_tool.bat -config Debug
 rem     clean_build.bat
 
-rem %~dp0 expands to the dir of this .bat — drive + path with trailing backslash.
-rem ENGINE_BIN resolves to e.g. F:\orb\bin regardless of where the child project lives.
-
+rem %~dp0 expands to the engine root with a trailing backslash; strip it.
 setlocal
-set ENGINE_BIN=%~dp0bin
+set ENGINE_ROOT=%~dp0
+if "%ENGINE_ROOT:~-1%"=="\" set ENGINE_ROOT=%ENGINE_ROOT:~0,-1%
 
 if not exist bin mkdir bin
 
-rem Install the build_tool forwarder.
-(echo @"%ENGINE_BIN%\build_tool.exe" %%*) > bin\build_tool.bat
+rem Record engine root for clean_build.bat (no trailing backslash).
+(echo %ENGINE_ROOT%)> .orb_engine
 
-rem Install clean_build.bat: wipes build\ and bin\, then restores the forwarder.
-(
-    echo @echo off
-    echo if exist build rmdir /s /q build
-    echo if exist bin   rmdir /s /q bin
-    echo if not exist bin mkdir bin
-    echo ^(echo @"%ENGINE_BIN%\build_tool.exe" %%%%*^) ^> bin\build_tool.bat
-    echo echo [orb] clean complete. bin\build_tool.bat restored.
-) > clean_build.bat
+rem Install the build_tool forwarder.
+(echo @"%ENGINE_ROOT%\bin\build_tool.exe" %%*) > bin\build_tool.bat
+
+rem Copy the clean script from the engine. It reads .orb_engine at runtime
+rem so it works regardless of where this project or the engine lives.
+copy /y "%ENGINE_ROOT%\clean_build_project.bat" clean_build.bat > nul
 
 echo [orb] project bootstrapped.
 echo        Run: bin\build_tool.bat -gen
