@@ -23,7 +23,7 @@
 
         01_prim.c         -- cmd_buf, mtime, file locks (pure primitives, no deps)
         02_data.c         -- g_targets[] / g_solutions[] dynamic pools + lookup helpers
-        03_registry.c     -- orb.targets text-file parser; appends to 02_data pools
+        03_registry.c     -- "orb.targets" text-file parser; appends to 02_data pools
         04_env.c          -- VS environment discovery and vcvars import
         05_log.c          -- stateless output formatters (print_section, etc.)
         06_spawn.c        -- child process spawning, /showIncludes capture

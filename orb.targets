@@ -8,21 +8,25 @@
 # Neither operation requires recompiling build_tool.exe.
 #
 # SYNTAX
-#   target <name>          -- starts a target block
-#     type    static | dynamic | exe
-#     root    <source dir relative to project root>
-#     folder  <VS solution virtual folder>
-#     unit    <unity entry .c file>      (one per line; multiple allowed)
-#     dep     <dep1> [dep2] ...          (space-separated; multiple lines allowed)
-#     tool_dep <dep1> [dep2] ...         (space-separated; multiple lines allowed)
-#     reflect [<output name override>]   (flag; optional name override)
-#     flag    is_tool | is_build_tool | is_reflect_tool
+
+#   target <name> 		starts a target block
+
+#     type    			static | dynamic | exe 
+#     root    			<source dir relative to root> 	(e.g. source/engine/sys)
+#     folder  			<VS solution virtual folder> 	(e.g. 02_ENGINE)
+#     unit    			<unity entry .c file>      		(e.g. sys.c) - one per line; multiple allowed
+#     dep     			<dep1> [dep2] ...          		(space-separated; multiple lines allowed)
+#     tool_dep			<dep1> [dep2] ...         		(space-separated; multiple lines allowed)
+#     reflect 			[<output name override>]   		(flag; optional name override)
+
+#     flag    			is_tool | is_build_tool | is_reflect_tool
 #
-#   solution <name>        -- starts a solution block
-#     out     <output dir for .sln/.vcxproj>
-#     add     <t1> [t2] ...   (space-separated target names; repeatable)
-#     nav     <nav source dir> (optional)
-#     flag    monolithic
+#   solution <name>   	starts a solution block
+
+#     out     			<output dir for .sln/.vcxproj>	(e.g. build/proj)
+#     add     			<t1> [t2] ...   				(space-separated target names; repeatable)
+#     nav     			<nav source dir> 				(optional: folder structure only project)
+#     flag    			monolithic						(build all targets as static)
 
 # ==============================================================================
 # 01_BASE
