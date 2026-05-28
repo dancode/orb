@@ -254,6 +254,45 @@ build_gen_vscode( void )
     {
         printf( ORB_INDENT "[orb error] could not write .clangd\n" );
     }
+
+    // .code-workspace: multi-root workspace so engine source is browsable alongside
+    // the child project. Only emitted when 'engine' is declared.
+    if ( g_engine_root[ 0 ] )
+    {
+        const char* ws_name = "workspace";
+        for ( int i = 0; i < g_solution_count; ++i )
+        {
+            if ( !g_solutions[ i ].is_external && g_solutions[ i ].name )
+            {
+                ws_name = g_solutions[ i ].name;
+                break;
+            }
+        }
+
+        char ws_path[ PATH_MAX ];
+        snprintf( ws_path, sizeof( ws_path ), "%s.code-workspace", ws_name );
+
+        char engine_fwd[ PATH_MAX ];
+        snprintf( engine_fwd, sizeof( engine_fwd ), "%s", g_engine_root );
+        for ( char* p = engine_fwd; *p; ++p ) if ( *p == '\\' ) *p = '/';
+
+        fp = fopen( ws_path, "w" );
+        if ( fp )
+        {
+            fprintf( fp, "{\n" );
+            fprintf( fp, "  \"folders\": [\n" );
+            fprintf( fp, "    { \"name\": \"%s\", \"path\": \".\" },\n", ws_name );
+            fprintf( fp, "    { \"name\": \"engine\", \"path\": \"%s\" }\n", engine_fwd );
+            fprintf( fp, "  ]\n" );
+            fprintf( fp, "}\n" );
+            fclose( fp );
+            printf( "Generated %s\n", ws_path );
+        }
+        else
+        {
+            printf( ORB_INDENT "[orb error] could not write %s\n", ws_path );
+        }
+    }
 }
 
 /*============================================================================================*/

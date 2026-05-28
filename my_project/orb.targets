@@ -21,4 +21,4 @@ target my_project
 solution my_project
     out     build/proj
     add     my_project
-	# add 	sys
+	add 	sys
