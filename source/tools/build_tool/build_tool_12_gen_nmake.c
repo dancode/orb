@@ -45,24 +45,25 @@
     s_cd_root     -- "cd ..\\.." for NMake commands         (e.g. "..\\..")
 ==============================================================================================*/
 
-static const char* s_out_dir           = NULL;
-static char        s_root_prefix[ 32 ] = { 0 };
-static char        s_cd_root[ 32 ]     = { 0 };
-static bool        s_is_monolithic     = false;
+/*==============================================================================================
+    gen_ctx_t -- Per-solution generation context.
 
-// CWD at gen time, with trailing separator. Absolute root_dir paths from the
-// registry are stripped back to CWD-relative before storing in g_files[].path
-// so the existing s_root_prefix emit logic works unchanged.
-static char        s_cwd_prefix[ PATH_MAX ] = { 0 };
+    Replaces seven separate file-statics so the state is clearly grouped.
+    compute_path_parts() fills it once per solution pass; every emitter reads from s_ctx.
+==============================================================================================*/
 
-// Extra include dirs from the current solution's 'include_dir' declarations.
-// Set once per solution pass in build_gen_projects(); read by emit functions.
-static const char** s_sln_extra_include_dirs = NULL;
+typedef struct
+{
+    char         out_dir[ PATH_MAX ];           // where .sln / .vcxproj files land (copy)
+    char         root_prefix[ 32 ];             // "..\..\"-style depth prefix
+    char         cd_root[ 32 ];                 // "..\.."-style cd target for NMake commands
+    bool         is_monolithic;                 // solution is_monolithic flag
+    char         cwd_prefix[ PATH_MAX ];        // CWD with trailing backslash (for scan strip)
+    const char** sln_extra_include_dirs;        // solution-level include_dirs
+    char         build_tool_exe[ PATH_MAX + 2 ];// NMake cmd format, quoted if absolute path
+} gen_ctx_t;
 
-// NMake command prefix for invoking build_tool. At the engine root this is
-// the CWD-relative "bin\build_tool.exe". In a child project it is the engine's
-// absolute path (quoted) so NMake finds the exe even though no local copy exists.
-static char s_build_tool_exe[ PATH_MAX + 2 ] = "bin\\build_tool.exe";
+static gen_ctx_t s_ctx = { { 0 }, { 0 }, { 0 }, false, { 0 }, NULL, "bin\\build_tool.exe" };
 
 static void
 compute_path_parts( const char* out_dir )
@@ -73,18 +74,18 @@ compute_path_parts( const char* out_dir )
         if ( *p == '\\' || *p == '/' )
             depth++;
 
-    s_out_dir          = out_dir;
+    snprintf( s_ctx.out_dir, sizeof( s_ctx.out_dir ), "%s", out_dir );
 
-    s_root_prefix[ 0 ] = '\0';
-    for ( int i = 0; i < depth; ++i ) strcat( s_root_prefix, "..\\" );
+    s_ctx.root_prefix[ 0 ] = '\0';
+    for ( int i = 0; i < depth; ++i ) strcat( s_ctx.root_prefix, "..\\" );
 
     // cd_root is the same path without the trailing backslash.
-    s_cd_root[ 0 ] = '\0';
-    strcat( s_cd_root, ".." );
-    for ( int i = 1; i < depth; ++i ) strcat( s_cd_root, "\\.." );
+    s_ctx.cd_root[ 0 ] = '\0';
+    strcat( s_ctx.cd_root, ".." );
+    for ( int i = 1; i < depth; ++i ) strcat( s_ctx.cd_root, "\\.." );
 
     // Capture CWD once so scan can strip the absolute prefix from root_dir paths.
-    s_cwd_prefix[ 0 ] = '\0';
+    s_ctx.cwd_prefix[ 0 ] = '\0';
 #if defined( _WIN32 )
     char cwd[ PATH_MAX ];
     if ( GetCurrentDirectoryA( sizeof( cwd ), cwd ) )
@@ -92,7 +93,7 @@ compute_path_parts( const char* out_dir )
         for ( char* p = cwd; *p; ++p ) if ( *p == '/' ) *p = '\\';
         size_t n = strlen( cwd );
         if ( n > 0 && cwd[ n - 1 ] != '\\' ) { cwd[ n++ ] = '\\'; cwd[ n ] = '\0'; }
-        snprintf( s_cwd_prefix, sizeof( s_cwd_prefix ), "%s", cwd );
+        snprintf( s_ctx.cwd_prefix, sizeof( s_ctx.cwd_prefix ), "%s", cwd );
     }
 #endif
 }
@@ -105,7 +106,7 @@ gen_inc_path( const char* file_path, char* buf, size_t buf_size )
     if ( platform_is_abs_path( file_path ) )
         snprintf( buf, buf_size, "%s", file_path );
     else
-        snprintf( buf, buf_size, "%s%s", s_root_prefix, file_path );
+        snprintf( buf, buf_size, "%s%s", s_ctx.root_prefix, file_path );
 }
 
 // Metadata for one source file picked up by scan_directory_recursive().
@@ -279,8 +280,8 @@ scan_directory_recursive( const char* dir, const char* root_dir )
             // Strip CWD prefix from absolute paths (produced when root_dir is absolute)
             // so stored paths remain project-root-relative for vcxproj Include emit.
             // Cross-project absolute paths (outside CWD) are kept as-is.
-            size_t cwd_len = strlen( s_cwd_prefix );
-            if ( cwd_len > 0 && platform_strnicmp( path, s_cwd_prefix, cwd_len ) == 0 )
+            size_t cwd_len = strlen( s_ctx.cwd_prefix );
+            if ( cwd_len > 0 && platform_strnicmp( path, s_ctx.cwd_prefix, cwd_len ) == 0 )
                 strcpy( f->path, path + cwd_len );
             else
                 strcpy( f->path, path );
@@ -330,11 +331,11 @@ build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf
     }
 
     /* Solution-level include_dirs: skip if already present from the target. */
-    if ( s_sln_extra_include_dirs )
+    if ( s_ctx.sln_extra_include_dirs )
     {
-        for ( int i = 0; i < MAX_EXTRA_INCLUDE_DIRS && s_sln_extra_include_dirs[ i ]; ++i )
+        for ( int i = 0; i < MAX_EXTRA_INCLUDE_DIRS && s_ctx.sln_extra_include_dirs[ i ]; ++i )
         {
-            const char* dir = s_sln_extra_include_dirs[ i ];
+            const char* dir = s_ctx.sln_extra_include_dirs[ i ];
             if ( buf[ 0 ] && strstr( buf, dir ) ) continue;
             size_t len = strlen( dir );
             if ( used + len + 2 < buf_size )
@@ -418,7 +419,7 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
             target_info_t* dep = find_target( target->deps[ i ] );
             if ( !dep )
                 continue;
-            if ( dep->type == TARGET_STATIC_LIB || ( dep->type == TARGET_DYNAMIC_LIB && s_is_monolithic ) )
+            if ( dep->type == TARGET_STATIC_LIB || ( dep->type == TARGET_DYNAMIC_LIB && s_ctx.is_monolithic ) )
             {
                 char dep_upper[ 128 ];
                 get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
@@ -426,7 +427,7 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
                 ISDEF_APPEND( define );
             }
         }
-        if ( s_is_monolithic )
+        if ( s_ctx.is_monolithic )
             ISDEF_APPEND( "BUILD_STATIC" );
     }
     else
@@ -512,7 +513,7 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
         fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
     fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
     fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
+             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
              dbg_defines );
     fprintf( f, "    </ClCompile>\n" );
@@ -525,7 +526,7 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
         fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
     fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
     fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
+             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
              rel_defines );
     fprintf( f, "    </ClCompile>\n" );
@@ -535,7 +536,7 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
     fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
              dbg_defines );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
+             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     if ( g_gen_fwd_compat )
         fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
@@ -547,7 +548,7 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
     fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
              rel_defines );
     fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
+             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     if ( g_gen_fwd_compat )
         fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
@@ -573,9 +574,9 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 {
     const char* ext = ".exe";
     if ( type == TARGET_STATIC_LIB )    ext = ".lib";
-    if ( type == TARGET_DYNAMIC_LIB )   ext = s_is_monolithic ? ".lib" : ".dll";
+    if ( type == TARGET_DYNAMIC_LIB )   ext = s_ctx.is_monolithic ? ".lib" : ".dll";
 
-    const char* mono_flag = s_is_monolithic ? " -monolithic" : "";
+    const char* mono_flag = s_ctx.is_monolithic ? " -monolithic" : "";
 
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
@@ -607,16 +608,16 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     // ProjectDependencies in the .sln) own build order so parallel solution builds
     // never race on shared dep outputs.
     fprintf( f, "  <PropertyGroup>\n" );
-    fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
+    fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_ctx.root_prefix );
     fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
-             s_root_prefix, g_build_dir, g_int_dir );
+             s_ctx.root_prefix, g_build_dir, g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; %s -no-deps -config $(Configuration) -target %s%s</NMakeBuildCommandLine>\n",
-             s_cd_root, s_build_tool_exe, out_name, mono_flag );
-    fprintf( f, "    <NMakeOutput>%sbin\\%s%s</NMakeOutput>\n", s_root_prefix, out_name, ext );
+             s_ctx.cd_root, s_ctx.build_tool_exe, out_name, mono_flag );
+    fprintf( f, "    <NMakeOutput>%sbin\\%s%s</NMakeOutput>\n", s_ctx.root_prefix, out_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd %s &amp;&amp; %s -clean -target %s</NMakeCleanCommandLine>\n",
-             s_cd_root, s_build_tool_exe, out_name );
+             s_ctx.cd_root, s_ctx.build_tool_exe, out_name );
     fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; %s -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n",
-             s_cd_root, s_build_tool_exe, out_name, mono_flag );
+             s_ctx.cd_root, s_ctx.build_tool_exe, out_name, mono_flag );
     fprintf( f, "  </PropertyGroup>\n" );
 
     // Single-file compile (Ctrl+F7). Unconditional so the command is available
@@ -624,17 +625,17 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <ItemDefinitionGroup>\n" );
     fprintf( f, "    <NMakeCompile>\n" );
     fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
-             s_cd_root, s_build_tool_exe, out_name, mono_flag );
+             s_ctx.cd_root, s_ctx.build_tool_exe, out_name, mono_flag );
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
     emit_intellisense_config_groups( f, target );
 
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_cd_root );
+    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_cd_root );
+    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
     fprintf( f, "  </PropertyGroup>\n" );
 }
 
@@ -651,6 +652,74 @@ is_unit_file( const target_info_t* target, const char* path )
 }
 
 /*==============================================================================================
+    write_vcxproj_filters_file()
+
+    Writes one .vcxproj.filters file. Shared by the NMake target, NMake nav, and
+    MSBuild target generators -- all three produce identical filters content.
+
+    target == NULL means a navigation project: every file is <ClInclude> and no
+    reflect-generated items are appended. Otherwise is_unit_file() selects the tag
+    per entry and reflect items are appended when target->has_reflect is set.
+
+    Caller must populate g_files[]/g_filters[] via scan_directory_recursive() first.
+==============================================================================================*/
+
+static void
+write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
+{
+    FILE* f = fopen( filters_path, "w" );
+    if ( !f ) return;
+
+    fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
+    fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+
+    fprintf( f, "  <ItemGroup>\n" );
+    for ( int i = 0; i < g_filter_count; ++i )
+    {
+        fprintf( f, "    <Filter Include=\"%s\">\n", g_filters[ i ] );
+        fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
+                 ( unsigned int )i );
+        fprintf( f, "    </Filter>\n" );
+    }
+    if ( target && target->has_reflect )
+    {
+        fprintf( f, "    <Filter Include=\"generated\">\n" );
+        fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
+                 ( unsigned int )g_filter_count );
+        fprintf( f, "    </Filter>\n" );
+    }
+    fprintf( f, "  </ItemGroup>\n" );
+
+    fprintf( f, "  <ItemGroup>\n" );
+    for ( int i = 0; i < g_file_count; ++i )
+    {
+        bool        is_unit = target && is_unit_file( target, g_files[ i ].path );
+        const char* tag     = is_unit ? "ClCompile" : "ClInclude";
+        char        inc[ PATH_MAX + 32 ];
+        gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
+        fprintf( f, "    <%s Include=\"%s\">\n", tag, inc );
+        if ( g_files[ i ].filter[ 0 ] != '\0' )
+            fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
+        fprintf( f, "    </%s>\n", tag );
+    }
+    if ( target && target->has_reflect )
+    {
+        const char* rname = target->reflect_name ? target->reflect_name : target->name;
+        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n",
+                 s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
+        fprintf( f, "      <Filter>generated</Filter>\n" );
+        fprintf( f, "    </ClCompile>\n" );
+        fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\">\n",
+                 s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
+        fprintf( f, "      <Filter>generated</Filter>\n" );
+        fprintf( f, "    </ClInclude>\n" );
+    }
+    fprintf( f, "  </ItemGroup>\n" );
+    fprintf( f, "</Project>\n" );
+    fclose( f );
+}
+
+/*==============================================================================================
     build_gen_proj_target()
 
     Emit one .vcxproj + matching .vcxproj.filters for a specific engine target.
@@ -663,14 +732,13 @@ is_unit_file( const target_info_t* target, const char* path )
 ==============================================================================================*/
 
 static void
-build_gen_proj_target( target_info_t* target, int index )
+build_gen_proj_target( target_info_t* target )
 {
     char vcxproj_path[ PATH_MAX ];
-    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_out_dir, target->name );
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_ctx.out_dir, target->name );
 
     char guid[ 64 ];
     guid_from_name( target->name, guid );
-    ( void )index;
 
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
@@ -695,10 +763,10 @@ build_gen_proj_target( target_info_t* target, int index )
         gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
         if ( is_unit )
         {
-            const char* item_mono = s_is_monolithic ? " -monolithic" : "";
+            const char* item_mono = s_ctx.is_monolithic ? " -monolithic" : "";
             fprintf( f, "    <ClCompile Include=\"%s\">\n", inc );
             fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
-                     s_cd_root, s_build_tool_exe, target->name, item_mono );
+                     s_ctx.cd_root, s_ctx.build_tool_exe, target->name, item_mono );
             fprintf( f, "    </ClCompile>\n" );
         }
         else
@@ -718,13 +786,13 @@ build_gen_proj_target( target_info_t* target, int index )
     if ( target->has_reflect )
     {
         const char* rname     = target->reflect_name ? target->reflect_name : target->name;
-        const char* item_mono = s_is_monolithic ? " -monolithic" : "";
-        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n", s_root_prefix, g_build_dir,
+        const char* item_mono = s_ctx.is_monolithic ? " -monolithic" : "";
+        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n", s_ctx.root_prefix, g_build_dir,
                  g_gen_dir, rname );
         fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
-                 s_cd_root, s_build_tool_exe, target->name, item_mono );
+                 s_ctx.cd_root, s_ctx.build_tool_exe, target->name, item_mono );
         fprintf( f, "    </ClCompile>\n" );
-        fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n", s_root_prefix, g_build_dir,
+        fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n", s_ctx.root_prefix, g_build_dir,
                  g_gen_dir, rname );
     }
 
@@ -736,58 +804,8 @@ build_gen_proj_target( target_info_t* target, int index )
 
     // .filters file mirrors the folder structure in Solution Explorer.
     char filters_path[ PATH_MAX ];
-    snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", s_out_dir, target->name );
-    f = fopen( filters_path, "w" );
-    if ( f )
-    {
-        fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
-        fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-
-        fprintf( f, "  <ItemGroup>\n" );
-        for ( int i = 0; i < g_filter_count; ++i )
-        {
-            fprintf( f, "    <Filter Include=\"%s\">\n", g_filters[ i ] );
-            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
-                     ( unsigned int )i );
-            fprintf( f, "    </Filter>\n" );
-        }
-        if ( target->has_reflect )
-        {
-            fprintf( f, "    <Filter Include=\"generated\">\n" );
-            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
-                     ( unsigned int )g_filter_count );
-            fprintf( f, "    </Filter>\n" );
-        }
-        fprintf( f, "  </ItemGroup>\n" );
-
-        fprintf( f, "  <ItemGroup>\n" );
-        for ( int i = 0; i < g_file_count; ++i )
-        {
-            bool        is_unit = is_unit_file( target, g_files[ i ].path );
-            const char* tag     = is_unit ? "ClCompile" : "ClInclude";
-            char inc2[ PATH_MAX + 32 ];
-            gen_inc_path( g_files[ i ].path, inc2, sizeof( inc2 ) );
-            fprintf( f, "    <%s Include=\"%s\">\n", tag, inc2 );
-            if ( g_files[ i ].filter[ 0 ] != '\0' )
-                fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
-            fprintf( f, "    </%s>\n", tag );
-        }
-        if ( target->has_reflect )
-        {
-            const char* rname = target->reflect_name ? target->reflect_name : target->name;
-            fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n", s_root_prefix, g_build_dir,
-                     g_gen_dir, rname );
-            fprintf( f, "      <Filter>generated</Filter>\n" );
-            fprintf( f, "    </ClCompile>\n" );
-            fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\">\n", s_root_prefix, g_build_dir,
-                     g_gen_dir, rname );
-            fprintf( f, "      <Filter>generated</Filter>\n" );
-            fprintf( f, "    </ClInclude>\n" );
-        }
-        fprintf( f, "  </ItemGroup>\n" );
-        fprintf( f, "</Project>\n" );
-        fclose( f );
-    }
+    snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", s_ctx.out_dir, target->name );
+    write_vcxproj_filters_file( filters_path, target );
 }
 
 /*==============================================================================================
@@ -807,7 +825,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     scan_directory_recursive( nav_dir, nav_dir );
 
     char vcxproj_path[ PATH_MAX ];
-    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s_nav.vcxproj", s_out_dir, sln_name );
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s_nav.vcxproj", s_ctx.out_dir, sln_name );
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
     {
@@ -838,12 +856,12 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     // would race on shared dirs (e.g. build\\generated\\*).
     ( void )default_target;
     fprintf( f, "  <PropertyGroup>\n" );
-    fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
+    fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_ctx.root_prefix );
     fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
-             s_root_prefix, g_build_dir, g_int_dir );
+             s_ctx.root_prefix, g_build_dir, g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>echo       [nav] navigation-only project, nothing to build.</NMakeBuildCommandLine>\n" );
     fprintf( f, "    <NMakeOutput>$(ProjectDir)%s%s\\$(ProjectName)\\$(Configuration)\\nav.stamp</NMakeOutput>\n",
-             s_root_prefix, g_int_dir );
+             s_ctx.root_prefix, g_int_dir );
     fprintf( f, "    <NMakeCleanCommandLine>echo       [nav] navigation-only project, nothing to clean.</NMakeCleanCommandLine>\n" );
     fprintf( f, "    <NMakeCompileFile>echo       [nav] navigation-only project.</NMakeCompileFile>\n" );
     fprintf( f, "  </PropertyGroup>\n" );
@@ -856,7 +874,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     // context (wrong defines, wrong API visible). ClInclude has no TU semantics.
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
-        fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
+        fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_ctx.root_prefix, g_files[ i ].path );
     fprintf( f, "  </ItemGroup>\n" );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
@@ -864,35 +882,8 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fclose( f );
 
     char filters_path[ PATH_MAX ];
-    snprintf( filters_path, sizeof( filters_path ), "%s\\%s_nav.vcxproj.filters", s_out_dir, sln_name );
-    f = fopen( filters_path, "w" );
-    if ( f )
-    {
-        fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
-        fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-
-        fprintf( f, "  <ItemGroup>\n" );
-        for ( int i = 0; i < g_filter_count; ++i )
-        {
-            fprintf( f, "    <Filter Include=\"%s\">\n", g_filters[ i ] );
-            fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
-                     ( unsigned int )i );
-            fprintf( f, "    </Filter>\n" );
-        }
-        fprintf( f, "  </ItemGroup>\n" );
-
-        fprintf( f, "  <ItemGroup>\n" );
-        for ( int i = 0; i < g_file_count; ++i )
-        {
-            fprintf( f, "    <ClInclude Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
-            if ( g_files[ i ].filter[ 0 ] != '\0' )
-                fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
-            fprintf( f, "    </ClInclude>\n" );
-        }
-        fprintf( f, "  </ItemGroup>\n" );
-        fprintf( f, "</Project>\n" );
-        fclose( f );
-    }
+    snprintf( filters_path, sizeof( filters_path ), "%s\\%s_nav.vcxproj.filters", s_ctx.out_dir, sln_name );
+    write_vcxproj_filters_file( filters_path, NULL );
 }
 
 /*==============================================================================================
@@ -910,7 +901,7 @@ static void
 build_gen_solution( solution_info_t* sln, const char* out_name )
 {
     char sln_path[ PATH_MAX ];
-    snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", s_out_dir, out_name );
+    snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", s_ctx.out_dir, out_name );
     FILE* f = fopen( sln_path, "w" );
     if ( !f )
         return;
@@ -1167,10 +1158,55 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
 }
 
 /*==============================================================================================
+    run_solution_passes()
+
+    Shared iteration loop for NMake and MSBuild generation. For each local solution,
+    sets s_ctx state, computes path parts, ensures the output dir, and calls per_target_fn
+    per target then build_gen_solution.
+
+    name_suffix -- appended to sln->name for the .sln filename (e.g. "_nm", "_ms")
+    dir_suffix  -- appended to sln->out_dir for the output directory ("" or "_ms")
+    label       -- printed in the progress line ("Solution" or "MSBuild Solution")
+==============================================================================================*/
+
+typedef void ( *per_target_fn_t )( target_info_t* );
+
+static void
+run_solution_passes( const gen_manifest_t* m, const char* name_suffix,
+                     const char* dir_suffix, const char* label,
+                     per_target_fn_t per_target_fn )
+{
+    for ( int i = 0; i < m->solution_count; ++i )
+    {
+        const gen_sln_entry_t* entry = &m->solutions[ i ];
+        solution_info_t*       sln   = entry->sln;
+
+        s_ctx.is_monolithic          = sln->is_monolithic;
+        s_ctx.sln_extra_include_dirs = sln->extra_include_dirs;
+
+        char out_dir[ PATH_MAX ];
+        snprintf( out_dir, sizeof( out_dir ), "%s%s", sln->out_dir, dir_suffix );
+
+        char sln_name[ 256 ];
+        snprintf( sln_name, sizeof( sln_name ), "%s%s", sln->name, name_suffix );
+
+        compute_path_parts( out_dir );
+        ensure_dir( out_dir );
+
+        printf( "Generating %s '%s' in %s/...\n", label, sln_name, out_dir );
+
+        for ( int j = 0; j < entry->target_count; ++j )
+            per_target_fn( entry->targets[ j ] );
+
+        build_gen_solution( sln, sln_name );
+    }
+}
+
+/*==============================================================================================
 
     build_gen_projects()
 
-    Top-level entry point invoked by `build_tool.exe -gen`. Regenerates every
+    Top-level entry point invoked by `build_tool.exe -gen`. Regenerates every NMake
     .vcxproj and every .sln from the current target/solution registry.
 
     Safe to re-run anytime; the generated XML is fully deterministic given the
@@ -1182,30 +1218,8 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
 void
 build_gen_projects( const gen_manifest_t* m )
 {
-    snprintf( s_build_tool_exe, sizeof( s_build_tool_exe ), "%s", m->build_tool_exe );
-
-    for ( int i = 0; i < m->solution_count; ++i )
-    {
-        const gen_sln_entry_t* entry = &m->solutions[ i ];
-        solution_info_t*       sln   = entry->sln;
-
-        s_is_monolithic          = sln->is_monolithic;
-        s_sln_extra_include_dirs = sln->extra_include_dirs;
-
-        compute_path_parts( sln->out_dir );
-        ensure_dir( sln->out_dir );
-
-        char nm_name[ 256 ];
-        snprintf( nm_name, sizeof( nm_name ), "%s_nm", sln->name );
-
-        printf( "Generating Solution '%s' in %s/...\n", nm_name, sln->out_dir );
-
-        for ( int j = 0; j < entry->target_count; ++j )
-            build_gen_proj_target( entry->targets[ j ], 0 );
-
-        build_gen_solution( sln, nm_name );
-    }
-
+    snprintf( s_ctx.build_tool_exe, sizeof( s_ctx.build_tool_exe ), "%s", m->build_tool_exe );
+    run_solution_passes( m, "_nm", "", "Solution", build_gen_proj_target );
     printf( "\nProjects generated successfully.\n" );
 }
 

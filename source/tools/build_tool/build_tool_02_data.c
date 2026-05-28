@@ -5,20 +5,23 @@
 
     At startup, main() calls (in this order):
 
-        registry_load("orb.targets") -- appended by build_tool_03_registry.c;
-                                        all project targets and solutions live there.
-                                        If orb.targets contains 'engine <path>', this
-                                        sets g_engine_root before returning.
+        registry_load("orb.targets")
 
-        init_builtin_targets()       -- registers build_tool and reflect_tool into
-                                        g_targets[]. If g_engine_root is set, paths
-                                        and is_external are derived from it; otherwise
-                                        CWD-relative paths are used (engine-root build).
+        --  appended by build_tool_03_registry.c; all project targets and solutions
+            live there. If orb.targets contains 'engine <path>', this sets
+            g_engine_root before returning.
+
+        init_builtin_targets()
+
+        --  registers build_tool and reflect_tool into g_targets[].
+            If g_engine_root is set, paths and is_external are derived from it;
+            otherwise CWD-relative paths are used (engine-root build).
 
     g_engine_root:
+
         Empty string at startup. Set by registry_load() when it encounters the
-        'engine <path>' directive in orb.targets. Used by init_builtin_targets() and
-        the compile/gen modules to auto-add engine header search paths.
+        'engine <path>' directive in orb.targets. Used by init_builtin_targets()
+        and the compile/gen modules to auto-add engine header search paths.
 
     Why build_tool and reflect_tool are hard-coded here and not in orb.targets:
 
@@ -30,6 +33,7 @@
           or recompiling build_tool.c.
 
 ==============================================================================================*/
+// clang-format off
 
 /*==============================================================================================
     --- Engine Root ---
@@ -225,3 +229,4 @@ find_reflect_tool( void )
 }
 
 /*============================================================================================*/
+// clang-fromat on

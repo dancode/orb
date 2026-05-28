@@ -15,7 +15,7 @@
 
     Shares all infrastructure from build_tool_12_gen_nmake.c (included first in unity build):
       guid_from_name(), scan_directory_recursive(), build_intellisense_defines(),
-      s_out_dir / s_root_prefix / s_cd_root state, g_files[], g_filters[].
+      s_ctx.out_dir / s_ctx.root_prefix / s_ctx.cd_root state, g_files[], g_filters[].
 
 ==============================================================================================*/
 
@@ -57,7 +57,7 @@ static void
 write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
 {
     // In monolithic solutions DLL modules are archived as static libs.
-    target_type_t eff_type = ( s_is_monolithic && target->type == TARGET_DYNAMIC_LIB )
+    target_type_t eff_type = ( s_ctx.is_monolithic && target->type == TARGET_DYNAMIC_LIB )
                            ? TARGET_STATIC_LIB : target->type;
 
     const char* cond = ( config == CONFIG_DEBUG )
@@ -92,7 +92,7 @@ write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
     fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
     fprintf( f, "      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>\n" );
     fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
+             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
              defines );
     fprintf( f, "    </ClCompile>\n" );
@@ -126,7 +126,7 @@ static void
 build_gen_proj_target_msbuild( target_info_t* target )
 {
     char vcxproj_path[ PATH_MAX ];
-    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_out_dir, target->name );
+    snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_ctx.out_dir, target->name );
 
     char guid[ 64 ];
     guid_from_name( target->name, guid );
@@ -138,7 +138,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
         return;
     }
 
-    target_type_t eff_type = ( s_is_monolithic && target->type == TARGET_DYNAMIC_LIB )
+    target_type_t eff_type = ( s_ctx.is_monolithic && target->type == TARGET_DYNAMIC_LIB )
                            ? TARGET_STATIC_LIB : target->type;
     const char* cfg_type = msbuild_config_type_str( eff_type );
 
@@ -190,10 +190,10 @@ build_gen_proj_target_msbuild( target_info_t* target )
     for ( int ci = 0; ci < 2; ++ci )
     {
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\">\n", cfgs[ ci ] );
-        fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
+        fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_ctx.root_prefix );
         fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
-                 s_root_prefix, g_build_dir, g_int_dir );
-        fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_cd_root );
+                 s_ctx.root_prefix, g_build_dir, g_int_dir );
+        fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
         fprintf( f, "  </PropertyGroup>\n" );
     }
 
@@ -225,7 +225,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
         fprintf( f, "    <PreBuildEvent>\n" );
         fprintf( f, "      <Message>reflect_tool: building tool and generating %s.generated.c/.h</Message>\n", rname );
         fprintf( f, "      <Command>" );
-        fprintf( f, "cd /d \"$(ProjectDir)%s\"", s_cd_root );
+        fprintf( f, "cd /d \"$(ProjectDir)%s\"", s_ctx.cd_root );
         fprintf( f, " &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target reflect_tool" );
         fprintf( f, " &amp;&amp; bin\\reflect_tool.exe %s %s\\%s %s", root_dir_norm, g_build_dir, g_gen_dir, rname );
         fprintf( f, "</Command>\n" );
@@ -241,23 +241,9 @@ build_gen_proj_target_msbuild( target_info_t* target )
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
-        bool        is_unit  = false;
-        const char* filename = g_files[ i ].path;
-        for ( const char* p = g_files[ i ].path; *p; ++p )
-            if ( *p == '/' || *p == '\\' ) filename = p + 1;
-
-        for ( int j = 0; target->units[ j ]; ++j )
-        {
-            if ( platform_stricmp( filename, target->units[ j ] ) == 0 )
-            {
-                is_unit = true;
-                break;
-            }
-        }
-
         char inc[ PATH_MAX + 32 ];
         gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
-        if ( is_unit )
+        if ( is_unit_file( target, g_files[ i ].path ) )
             fprintf( f, "    <ClCompile Include=\"%s\" />\n", inc );
         else
             fprintf( f, "    <ClInclude Include=\"%s\" />\n", inc );
@@ -268,15 +254,15 @@ build_gen_proj_target_msbuild( target_info_t* target )
     {
         const char* rname = target->reflect_name ? target->reflect_name : target->name;
         fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\" />\n",
-                 s_root_prefix, g_build_dir, g_gen_dir, rname );
+                 s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
         fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n",
-                 s_root_prefix, g_build_dir, g_gen_dir, rname );
+                 s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
     }
     fprintf( f, "  </ItemGroup>\n" );
 
     // ProjectReference items: MSBuild resolves build order and links .lib outputs.
     // In monolithic mode also include mono_deps (runtime-loaded modules that must be linked).
-    bool has_refs = target->deps[ 0 ] || ( s_is_monolithic && target->mono_deps[ 0 ] );
+    bool has_refs = target->deps[ 0 ] || ( s_ctx.is_monolithic && target->mono_deps[ 0 ] );
     if ( has_refs )
     {
         fprintf( f, "  <ItemGroup>\n" );
@@ -288,7 +274,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
             fprintf( f, "      <Project>%s</Project>\n", dep_guid );
             fprintf( f, "    </ProjectReference>\n" );
         }
-        if ( s_is_monolithic )
+        if ( s_ctx.is_monolithic )
         {
             for ( int i = 0; target->mono_deps[ i ]; ++i )
             {
@@ -308,68 +294,8 @@ build_gen_proj_target_msbuild( target_info_t* target )
 
     // .filters file: mirrors the on-disk folder tree.
     char filters_path[ PATH_MAX ];
-    snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", s_out_dir, target->name );
-    f = fopen( filters_path, "w" );
-    if ( !f ) return;
-
-    fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
-    fprintf( f, "<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-
-    fprintf( f, "  <ItemGroup>\n" );
-    for ( int i = 0; i < g_filter_count; ++i )
-    {
-        fprintf( f, "    <Filter Include=\"%s\">\n", g_filters[ i ] );
-        fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
-                 ( unsigned int )i );
-        fprintf( f, "    </Filter>\n" );
-    }
-    if ( target->has_reflect )
-    {
-        fprintf( f, "    <Filter Include=\"generated\">\n" );
-        fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
-                 ( unsigned int )g_filter_count );
-        fprintf( f, "    </Filter>\n" );
-    }
-    fprintf( f, "  </ItemGroup>\n" );
-
-    fprintf( f, "  <ItemGroup>\n" );
-    for ( int i = 0; i < g_file_count; ++i )
-    {
-        bool        is_unit  = false;
-        const char* filename = strrchr( g_files[ i ].path, '/' );
-        if ( !filename ) filename = strrchr( g_files[ i ].path, '\\' );
-        if ( filename ) filename++; else filename = g_files[ i ].path;
-
-        for ( int j = 0; target->units[ j ]; ++j )
-        {
-            if ( platform_stricmp( filename, target->units[ j ] ) == 0 )
-            {
-                is_unit = true;
-                break;
-            }
-        }
-
-        const char* tag = is_unit ? "ClCompile" : "ClInclude";
-        fprintf( f, "    <%s Include=\"%s%s\">\n", tag, s_root_prefix, g_files[ i ].path );
-        if ( g_files[ i ].filter[ 0 ] != '\0' )
-            fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
-        fprintf( f, "    </%s>\n", tag );
-    }
-    if ( target->has_reflect )
-    {
-        const char* rname = target->reflect_name ? target->reflect_name : target->name;
-        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n",
-                 s_root_prefix, g_build_dir, g_gen_dir, rname );
-        fprintf( f, "      <Filter>generated</Filter>\n" );
-        fprintf( f, "    </ClCompile>\n" );
-        fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\">\n",
-                 s_root_prefix, g_build_dir, g_gen_dir, rname );
-        fprintf( f, "      <Filter>generated</Filter>\n" );
-        fprintf( f, "    </ClInclude>\n" );
-    }
-    fprintf( f, "  </ItemGroup>\n" );
-    fprintf( f, "</Project>\n" );
-    fclose( f );
+    snprintf( filters_path, sizeof( filters_path ), "%s\\%s.vcxproj.filters", s_ctx.out_dir, target->name );
+    write_vcxproj_filters_file( filters_path, target );
 }
 
 /*==============================================================================================
@@ -381,7 +307,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
     instead of NMake/Makefile projects. Output lands in <sln.out_dir>_ms.
 
     build_gen_solution() from build_tool_12_gen_nmake.c is reused as-is -- the .sln format is
-    identical regardless of project type, and it reads s_out_dir (already updated by
+    identical regardless of project type, and it reads s_ctx.out_dir (already updated by
     compute_path_parts) rather than sln->out_dir directly.
 
 ==============================================================================================*/
@@ -389,34 +315,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
 void
 build_gen_projects_msbuild( const gen_manifest_t* m )
 {
-    for ( int i = 0; i < m->solution_count; ++i )
-    {
-        const gen_sln_entry_t* entry = &m->solutions[ i ];
-        solution_info_t*       sln   = entry->sln;
-
-        s_is_monolithic          = sln->is_monolithic;
-        s_sln_extra_include_dirs = sln->extra_include_dirs;
-
-        // MSBuild projects land alongside the NMake ones, in a sibling dir.
-        char ms_out_dir[ PATH_MAX ];
-        snprintf( ms_out_dir, sizeof( ms_out_dir ), "%s_ms", sln->out_dir );
-
-        char ms_name[ 256 ];
-        snprintf( ms_name, sizeof( ms_name ), "%s_ms", sln->name );
-
-        compute_path_parts( ms_out_dir );
-        ensure_dir( ms_out_dir );
-
-        printf( "Generating MSBuild Solution '%s' in %s/...\n", ms_name, ms_out_dir );
-
-        for ( int j = 0; j < entry->target_count; ++j )
-            build_gen_proj_target_msbuild( entry->targets[ j ] );
-
-        // Solution file shares format with NMake; reuse the existing writer.
-        // s_out_dir is already pointing at ms_out_dir from compute_path_parts above.
-        build_gen_solution( sln, ms_name );
-    }
-
+    run_solution_passes( m, "_ms", "_ms", "MSBuild Solution", build_gen_proj_target_msbuild );
     printf( "\nMSBuild projects generated successfully.\n" );
 }
 

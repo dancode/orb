@@ -21,7 +21,7 @@
         win_toolchain.c  -- 00d compiler/linker flag sets (MSVC vs GCC/Clang)
         posix_*.c        -- POSIX equivalents of the above for Linux/macOS
 
-        01_prim.c         -- cmd_buf, mtime, file locks (pure primitives, no deps)
+        01_prim.c         -- shared: cmd_buf, file locks (pure primitives, no deps)
         02_data.c         -- g_targets[] / g_solutions[] dynamic pools + lookup helpers
         03_registry.c     -- "orb.targets" text-file parser; appends to 02_data pools
         04_env.c          -- VS environment discovery and vcvars import
@@ -104,8 +104,8 @@ static const char* g_gen_dir        = "generated";  // sub-folder: reflection-ge
 static out_flags_t g_out_flags      = ORB_OUT_DEFAULT;
 static bool        g_include_track  = true;         // Use up-to-date tracking via headers.
 static bool        g_use_rsp        = true;         // Use overflow prevention.
-static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 alongside stdc11 to
-                                                    // suppress designated-initializer squiggles
+static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 alongside stdc11.
+                                                    // (suppress designated-initializer squiggles)
 /*==============================================================================================
     --- Unity Include Chain ---
 
@@ -375,34 +375,27 @@ main( int argc, char** argv )
     ctx.config   = CONFIG_DEBUG;
     ctx.compiler = COMPILE_MSVC;
 
+    // --- Operational Command flags ---
+
     bool should_clean        = false;
     bool should_gen          = false;
     bool should_gen_nmake    = false;
     bool should_gen_msbuild  = false;
     bool should_bootstrap    = false;
-    int  j_threads           = 0;   // 0 -> auto-detect from CPU count.
+    int  j_threads           = 0;       // 0 -> auto-detect from CPU count.
 
     // --- Arg parsing (order-independent flag scan) ---
 
     for ( int i = 1; i < argc; ++i )
     {
+        // utiltiy functions and output control
+        if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
         if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
         if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
         if ( platform_stricmp( argv[ i ], "-gen_nm"           ) == 0 ) should_gen_nmake = true;
         if ( platform_stricmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
-        if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
-        if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
-        if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
-        if ( platform_stricmp( argv[ i ], "-release"          ) == 0 ) ctx.config = CONFIG_RELEASE;
-        if ( platform_stricmp( argv[ i ], "-clang"            ) == 0 ) ctx.compiler = COMPILE_CLANG;
-        if ( platform_stricmp( argv[ i ], "-compile-only"     ) == 0 ) ctx.compile_only = true;
-        if ( platform_stricmp( argv[ i ], "-force"            ) == 0 ) ctx.force_rebuild = true;
-        if ( platform_stricmp( argv[ i ], "-no-deps"          ) == 0 ) ctx.skip_deps = true;
-        if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
-        if ( platform_stricmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;
-        if ( platform_stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
-        if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) g_out_flags = ORB_OUT_QUIET;
-        if ( platform_stricmp( argv[ i ], "-v"                ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
+        
+        // compile settings and target selection
         if ( platform_stricmp( argv[ i ], "-target"  ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
         if ( platform_stricmp( argv[ i ], "-file"    ) == 0 && i + 1 < argc ) ctx.file_path   = argv[ ++i ];
         if ( platform_stricmp( argv[ i ], "-j"       ) == 0 && i + 1 < argc ) j_threads       = atoi( argv[ ++i ] );
@@ -410,6 +403,23 @@ main( int argc, char** argv )
         {
             if ( platform_stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
+
+        if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
+        if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
+        if ( platform_stricmp( argv[ i ], "-release"          ) == 0 ) ctx.config = CONFIG_RELEASE;
+        if ( platform_stricmp( argv[ i ], "-clang"            ) == 0 ) ctx.compiler = COMPILE_CLANG;
+        if ( platform_stricmp( argv[ i ], "-compile-only"     ) == 0 ) ctx.compile_only = true;
+        if ( platform_stricmp( argv[ i ], "-force"            ) == 0 ) ctx.force_rebuild = true;
+        if ( platform_stricmp( argv[ i ], "-no-deps"          ) == 0 ) ctx.skip_deps = true;
+
+        // internal operations (developer)
+        if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
+        if ( platform_stricmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;
+        if ( platform_stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
+
+        // output verbosity
+        if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) g_out_flags = ORB_OUT_QUIET;
+        if ( platform_stricmp( argv[ i ], "-v"                ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
         if ( platform_stricmp( argv[ i ], "--out" ) == 0 && i + 1 < argc )
         {
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
@@ -479,7 +489,7 @@ main( int argc, char** argv )
 
     if ( should_gen || should_gen_nmake || should_gen_msbuild )
     {
-        gen_manifest_t manifest;
+        static gen_manifest_t manifest;
         gen_manifest_build( &manifest );
 
         if ( should_gen || should_gen_nmake )

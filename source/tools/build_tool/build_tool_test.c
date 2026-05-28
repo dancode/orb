@@ -33,9 +33,9 @@
 #define DEBUG_ARGS_MAX   32
 #define DEBUG_ARG_LEN    512
 
-static char  s_debug_arg_storage[ DEBUG_ARGS_MAX ][ DEBUG_ARG_LEN ];
 static char* s_debug_argv[ DEBUG_ARGS_MAX + 2 ];   // +1 for argv[0], +1 for NULL sentinel
 static int   s_debug_argc = 0;
+static char  s_debug_arg_storage[ DEBUG_ARGS_MAX ][ DEBUG_ARG_LEN ];
 
 static void
 build_tool_debug_inject( int* argc, char*** argv )

@@ -35,15 +35,15 @@
     Compiler Detection
 ==============================================================================================*/
 
-#if defined( _MSC_VER )
-    #define COMPILER_MSVC  1
-    #define COMPILER_CLANG 0
-    #define COMPILER_GCC   0
-#elif defined( __clang__ )
+#if defined( __clang__ )
     #define COMPILER_MSVC  0
     #define COMPILER_CLANG 1
     #define COMPILER_GCC   0
-#elif defined( __GNUC__ ) && !defined( __clang__ )
+#elif defined( _MSC_VER )
+    #define COMPILER_MSVC  1
+    #define COMPILER_CLANG 0
+    #define COMPILER_GCC   0
+#elif defined( __GNUC__ )
     #define COMPILER_MSVC  0
     #define COMPILER_CLANG 0
     #define COMPILER_GCC   1
@@ -133,13 +133,14 @@ typedef ptrdiff_t isize;
     Compiler Hints + Utility Macros
 ==============================================================================================*/
 
-#if defined( COMPILER_MSVC )
+#if COMPILER_MSVC
     #define ORB_INLINE        __forceinline
     #define ORB_NOINLINE      __declspec( noinline )
     #define ORB_ALIGNAS( n )  __declspec( align( n ) )
     #define ORB_THREAD_LOCAL  __declspec( thread )
     #define ORB_LIKELY( x )   ( x )
     #define ORB_UNLIKELY( x ) ( x )
+    #define ORB_UNUSED_FN
 #else
     #define ORB_INLINE        inline __attribute__( ( always_inline ) )
     #define ORB_NOINLINE      __attribute__( ( noinline ) )
@@ -147,6 +148,7 @@ typedef ptrdiff_t isize;
     #define ORB_THREAD_LOCAL  __thread    // C11: _Thread_local
     #define ORB_LIKELY( x )   __builtin_expect( !!( x ), 1 )
     #define ORB_UNLIKELY( x ) __builtin_expect( !!( x ), 0 )
+    #define ORB_UNUSED_FN     __attribute__( ( unused ) )
 #endif
 
 #define UNUSED( x ) ( void )x
@@ -155,7 +157,7 @@ typedef ptrdiff_t isize;
     Assertions
 ==============================================================================================*/
 
-#if defined( COMPILER_MSVC )
+#if COMPILER_MSVC
     #define ORB_TRAP() __debugbreak()
 #else
     #define ORB_TRAP() __builtin_trap()
