@@ -201,9 +201,9 @@ build_gen_vscode( const gen_manifest_t* m )
         printf( ORB_INDENT "[orb error] could not write .clangd\n" );
     }
 
-    // .code-workspace: one folder per external target referenced in any local solution.
-    // Only emitted when 'engine' is declared.
-    if ( m->ext_ref_target_count > 0 )
+    // .code-workspace: root folder plus one entry per external target referenced in any local
+    // solution. Emitted for any project with local solutions (not just child projects).
+    if ( m->solution_count > 0 )
     {
         char ws_path[ PATH_MAX ];
         snprintf( ws_path, sizeof( ws_path ), "%s.code-workspace", m->workspace_name );
@@ -225,7 +225,10 @@ build_gen_vscode( const gen_manifest_t* m )
             fprintf( fp, "\n  ]\n" );
             fprintf( fp, "}\n" );
             fclose( fp );
-            printf( "Generated %s (%d external folders)\n", ws_path, m->ext_ref_target_count );
+            if ( m->ext_ref_target_count > 0 )
+                printf( "Generated %s (%d external folders)\n", ws_path, m->ext_ref_target_count );
+            else
+                printf( "Generated %s\n", ws_path );
         }
         else
         {
