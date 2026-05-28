@@ -907,10 +907,10 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
 ==============================================================================================*/
 
 static void
-build_gen_solution( solution_info_t* sln )
+build_gen_solution( solution_info_t* sln, const char* out_name )
 {
     char sln_path[ PATH_MAX ];
-    snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", s_out_dir, sln->name );
+    snprintf( sln_path, sizeof( sln_path ), "%s\\%s.sln", s_out_dir, out_name );
     FILE* f = fopen( sln_path, "w" );
     if ( !f )
         return;
@@ -925,7 +925,7 @@ build_gen_solution( solution_info_t* sln )
     char        nav_guid[ 64 ]   = { 0 };
     {
         char key[ 128 ];
-        snprintf( key, sizeof( key ), "nav:%s", sln->name );
+        snprintf( key, sizeof( key ), "nav:%s", out_name );
         guid_from_name( key, nav_guid );
     }
 
@@ -936,7 +936,7 @@ build_gen_solution( solution_info_t* sln )
     {
         const char* default_target =
             sln->target_names[ 0 ] ? sln->target_names[ 0 ] : "unknown";
-        gen_proj_engine_navigation( sln->name, sln->nav_dir, default_target, nav_guid );
+        gen_proj_engine_navigation( out_name, sln->nav_dir, default_target, nav_guid );
     }
 
     // 2. Target projects.
@@ -1039,7 +1039,7 @@ build_gen_solution( solution_info_t* sln )
                         {
                             snprintf( folders[ folder_count ], PATH_MAX, "%s", tmp );
                             char key[ 192 ];
-                            snprintf( key, sizeof( key ), "folder:%s:%s", sln->name, tmp );
+                            snprintf( key, sizeof( key ), "folder:%s:%s", out_name, tmp );
                             guid_from_name( key, folder_guids[ folder_count ] );
                             folder_count++;
                         }
@@ -1055,7 +1055,7 @@ build_gen_solution( solution_info_t* sln )
                 {
                     snprintf( folders[ folder_count ], PATH_MAX, "%s", tmp );
                     char key[ 192 ];
-                    snprintf( key, sizeof( key ), "folder:%s:%s", sln->name, tmp );
+                    snprintf( key, sizeof( key ), "folder:%s:%s", out_name, tmp );
                     guid_from_name( key, folder_guids[ folder_count ] );
                     folder_count++;
                 }
@@ -1067,8 +1067,8 @@ build_gen_solution( solution_info_t* sln )
     //    priority for IntelliSense ownership when VS opens a file).
     if ( sln->nav_dir )
     {
-        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n", cpp_type_guid, sln->name,
-                 sln->name, nav_guid );
+        fprintf( f, "Project(\"%s\") = \"%s_nav\", \"%s_nav.vcxproj\", \"%s\"\n", cpp_type_guid, out_name,
+                 out_name, nav_guid );
         fprintf( f, "EndProject\n" );
     }
 
@@ -1195,12 +1195,15 @@ build_gen_projects( const gen_manifest_t* m )
         compute_path_parts( sln->out_dir );
         ensure_dir( sln->out_dir );
 
-        printf( "Generating Solution '%s' in %s/...\n", sln->name, sln->out_dir );
+        char nm_name[ 256 ];
+        snprintf( nm_name, sizeof( nm_name ), "%s_nm", sln->name );
+
+        printf( "Generating Solution '%s' in %s/...\n", nm_name, sln->out_dir );
 
         for ( int j = 0; j < entry->target_count; ++j )
             build_gen_proj_target( entry->targets[ j ], 0 );
 
-        build_gen_solution( sln );
+        build_gen_solution( sln, nm_name );
     }
 
     printf( "\nProjects generated successfully.\n" );

@@ -378,7 +378,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
 
     Top-level entry point invoked by `build_tool.exe -gen_ms`. Mirrors
     build_gen_projects() but generates MSBuild StaticLibrary/DLL/Application projects
-    instead of NMake/Makefile projects. Output lands in <sln.out_dir>_msbuild.
+    instead of NMake/Makefile projects. Output lands in <sln.out_dir>_ms.
 
     build_gen_solution() from build_tool_12_gen_nmake.c is reused as-is -- the .sln format is
     identical regardless of project type, and it reads s_out_dir (already updated by
@@ -398,20 +398,23 @@ build_gen_projects_msbuild( const gen_manifest_t* m )
         s_sln_extra_include_dirs = sln->extra_include_dirs;
 
         // MSBuild projects land alongside the NMake ones, in a sibling dir.
-        char msbuild_out_dir[ PATH_MAX ];
-        snprintf( msbuild_out_dir, sizeof( msbuild_out_dir ), "%s_msbuild", sln->out_dir );
+        char ms_out_dir[ PATH_MAX ];
+        snprintf( ms_out_dir, sizeof( ms_out_dir ), "%s_ms", sln->out_dir );
 
-        compute_path_parts( msbuild_out_dir );
-        ensure_dir( msbuild_out_dir );
+        char ms_name[ 256 ];
+        snprintf( ms_name, sizeof( ms_name ), "%s_ms", sln->name );
 
-        printf( "Generating MSBuild Solution '%s' in %s/...\n", sln->name, msbuild_out_dir );
+        compute_path_parts( ms_out_dir );
+        ensure_dir( ms_out_dir );
+
+        printf( "Generating MSBuild Solution '%s' in %s/...\n", ms_name, ms_out_dir );
 
         for ( int j = 0; j < entry->target_count; ++j )
             build_gen_proj_target_msbuild( entry->targets[ j ] );
 
         // Solution file shares format with NMake; reuse the existing writer.
-        // s_out_dir is already pointing at msbuild_out_dir from compute_path_parts above.
-        build_gen_solution( sln );
+        // s_out_dir is already pointing at ms_out_dir from compute_path_parts above.
+        build_gen_solution( sln, ms_name );
     }
 
     printf( "\nMSBuild projects generated successfully.\n" );
