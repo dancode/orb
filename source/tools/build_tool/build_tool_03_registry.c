@@ -379,13 +379,43 @@ registry_load( const char* path, bool is_external )
             }
             else if ( strcmp( key, "add" ) == 0 && val )
             {
-                // Space-separated list of target names on one line.
+                // Space-separated list of target or solution names on one line.
+                // If a name matches a solution, expand it to all that solution's targets
+                // so the child project can pull in an entire engine solution with one line.
                 char tmp[ 1024 ];
                 snprintf( tmp, sizeof( tmp ), "%s", val );
                 char* tok = strtok( tmp, " \t" );
                 while ( tok )
                 {
-                    reg_sln_add( cur_sln, tok );
+                    // Target match takes priority. Only expand as a solution if no
+                    // target by that name exists -- prevents 'add my_project' from
+                    // accidentally matching the solution of the same name (which is
+                    // still being built and has an empty target list at this point).
+                    if ( find_target( tok ) )
+                    {
+                        reg_sln_add( cur_sln, tok );
+                    }
+                    else
+                    {
+                        solution_info_t* ref = NULL;
+                        for ( int i = 0; i < g_solution_count; ++i )
+                        {
+                            if ( g_solutions[ i ].name && strcmp( g_solutions[ i ].name, tok ) == 0 )
+                            {
+                                ref = &g_solutions[ i ];
+                                break;
+                            }
+                        }
+                        if ( ref )
+                        {
+                            for ( int i = 0; i < MAX_SLN_TARGETS && ref->target_names[ i ]; ++i )
+                                reg_sln_add( cur_sln, ref->target_names[ i ] );
+                        }
+                        else
+                        {
+                            reg_sln_add( cur_sln, tok );
+                        }
+                    }
                     tok = strtok( NULL, " \t" );
                 }
             }

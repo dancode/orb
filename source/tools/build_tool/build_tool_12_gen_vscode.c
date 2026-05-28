@@ -255,8 +255,10 @@ build_gen_vscode( void )
         printf( ORB_INDENT "[orb error] could not write .clangd\n" );
     }
 
-    // .code-workspace: multi-root workspace so engine source is browsable alongside
-    // the child project. Only emitted when 'engine' is declared.
+    // .code-workspace: multi-root workspace so external target source directories are
+    // browsable alongside the child project. Only emitted when 'engine' is declared.
+    // One folder entry per external target referenced in any local solution (deduplicated),
+    // so 'add sys' gives a sys folder and 'add orb' gives each engine target individually.
     if ( g_engine_root[ 0 ] )
     {
         const char* ws_name = "workspace";
@@ -269,24 +271,45 @@ build_gen_vscode( void )
             }
         }
 
+        // Collect external target root_dirs from all local solutions (deduplicated).
+        const target_info_t* ext_targets[ MAX_TARGETS ];
+        int ext_count = 0;
+        for ( int si = 0; si < g_solution_count; ++si )
+        {
+            if ( g_solutions[ si ].is_external ) continue;
+            for ( const char* const* tn = g_solutions[ si ].target_names; *tn; ++tn )
+            {
+                target_info_t* t = find_target( *tn );
+                if ( !t || !t->is_external || !t->root_dir ) continue;
+                bool seen = false;
+                for ( int k = 0; k < ext_count; ++k )
+                    if ( ext_targets[ k ] == t ) { seen = true; break; }
+                if ( !seen && ext_count < MAX_TARGETS )
+                    ext_targets[ ext_count++ ] = t;
+            }
+        }
+
         char ws_path[ PATH_MAX ];
         snprintf( ws_path, sizeof( ws_path ), "%s.code-workspace", ws_name );
-
-        char engine_fwd[ PATH_MAX ];
-        snprintf( engine_fwd, sizeof( engine_fwd ), "%s", g_engine_root );
-        for ( char* p = engine_fwd; *p; ++p ) if ( *p == '\\' ) *p = '/';
 
         fp = fopen( ws_path, "w" );
         if ( fp )
         {
             fprintf( fp, "{\n" );
             fprintf( fp, "  \"folders\": [\n" );
-            fprintf( fp, "    { \"name\": \"%s\", \"path\": \".\" },\n", ws_name );
-            fprintf( fp, "    { \"name\": \"engine\", \"path\": \"%s\" }\n", engine_fwd );
-            fprintf( fp, "  ]\n" );
+            fprintf( fp, "    { \"name\": \"%s\", \"path\": \".\" }", ws_name );
+            for ( int i = 0; i < ext_count; ++i )
+            {
+                char fwd[ PATH_MAX ];
+                snprintf( fwd, sizeof( fwd ), "%s", ext_targets[ i ]->root_dir );
+                for ( char* p = fwd; *p; ++p ) if ( *p == '\\' ) *p = '/';
+                fprintf( fp, ",\n    { \"name\": \"%s\", \"path\": \"%s\" }",
+                         ext_targets[ i ]->name, fwd );
+            }
+            fprintf( fp, "\n  ]\n" );
             fprintf( fp, "}\n" );
             fclose( fp );
-            printf( "Generated %s\n", ws_path );
+            printf( "Generated %s (%d external folders)\n", ws_path, ext_count );
         }
         else
         {
