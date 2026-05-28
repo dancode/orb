@@ -112,11 +112,20 @@ build_gen_vscode( void )
     fprintf( fp, "      \"type\": \"pickString\",\n" );
     fprintf( fp, "      \"description\": \"Select target\",\n" );
     fprintf( fp, "      \"options\": [\n" );
-    for ( int i = 0; i < g_target_count; ++i )
     {
-        fprintf( fp, "        \"%s\"%s\n",
-                 g_targets[ i ].name,
-                 ( i < g_target_count - 1 ) ? "," : "" );
+        /* Collect local target names first so comma placement is correct. */
+        int local_count = 0;
+        for ( int i = 0; i < g_target_count; ++i )
+            if ( !g_targets[ i ].is_external ) local_count++;
+        int emitted = 0;
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( g_targets[ i ].is_external ) continue;
+            ++emitted;
+            fprintf( fp, "        \"%s\"%s\n",
+                     g_targets[ i ].name,
+                     ( emitted < local_count ) ? "," : "" );
+        }
     }
     fprintf( fp, "      ]\n" );
     fprintf( fp, "    }\n" );
@@ -124,7 +133,12 @@ build_gen_vscode( void )
     fprintf( fp, "}\n" );
 
     fclose( fp );
-    printf( "Generated .vscode/tasks.json (%d targets in picker)\n", g_target_count );
+    {
+        int local_count = 0;
+        for ( int i = 0; i < g_target_count; ++i )
+            if ( !g_targets[ i ].is_external ) local_count++;
+        printf( "Generated .vscode/tasks.json (%d targets in picker)\n", local_count );
+    }
 
     // Disable the MS C/C++ IntelliSense engine so it doesn't conflict with clangd.
     fp = fopen( ".vscode/settings.json", "w" );
@@ -149,11 +163,33 @@ build_gen_vscode( void )
     fp = fopen( ".clangd", "w" );
     if ( fp )
     {
+        // Engine include paths with forward slashes for clangd YAML.
+        char engine_src_fwd[ PATH_MAX ] = { 0 };
+        char engine_gen_fwd[ PATH_MAX ] = { 0 };
+        if ( g_engine_root[ 0 ] )
+        {
+            snprintf( engine_src_fwd, sizeof( engine_src_fwd ),
+                      "%s/source", g_engine_root );
+            snprintf( engine_gen_fwd, sizeof( engine_gen_fwd ),
+                      "%s/%s/generated", g_engine_root, BUILD_DIR );
+            for ( char* p = engine_src_fwd; *p; ++p ) if ( *p == '\\' ) *p = '/';
+            for ( char* p = engine_gen_fwd; *p; ++p ) if ( *p == '\\' ) *p = '/';
+        }
+
         fprintf( fp, "Diagnostics:\n" );
         fprintf( fp, "  UnusedIncludes: None\n" );
         fprintf( fp, "CompileFlags:\n" );
-        fprintf( fp, "  Add: [--target=x86_64-pc-windows-msvc, -std=c11, -Isource, -Ibuild/generated,\n" );
-        fprintf( fp, "        -D_CRT_SECURE_NO_WARNINGS, -D_DEBUG, -Wno-unused-function]\n" );
+        if ( g_engine_root[ 0 ] )
+        {
+            fprintf( fp, "  Add: [--target=x86_64-pc-windows-msvc, -std=c11, -Isource, -Ibuild/generated,\n" );
+            fprintf( fp, "        -I%s, -I%s,\n", engine_src_fwd, engine_gen_fwd );
+            fprintf( fp, "        -D_CRT_SECURE_NO_WARNINGS, -D_DEBUG, -Wno-unused-function]\n" );
+        }
+        else
+        {
+            fprintf( fp, "  Add: [--target=x86_64-pc-windows-msvc, -std=c11, -Isource, -Ibuild/generated,\n" );
+            fprintf( fp, "        -D_CRT_SECURE_NO_WARNINGS, -D_DEBUG, -Wno-unused-function]\n" );
+        }
         fclose( fp );
         printf( "Generated .clangd\n" );
     }

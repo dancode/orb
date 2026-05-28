@@ -201,9 +201,22 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
             CC_APPEND( cc->flags, " %s", s->flag );
     }
 
-    // includes: source root + generated header dir -- platform prefix.
+    // includes: source root + generated header dir + any extra dirs from target include_dir.
     platform_cc_append_include( "source", cc->includes, sizeof( cc->includes ) );
     platform_cc_append_include( gen_dir,  cc->includes, sizeof( cc->includes ) );
+    for ( int i = 0; i < MAX_EXTRA_INCLUDE_DIRS && target->extra_include_dirs[ i ]; ++i )
+        platform_cc_append_include( target->extra_include_dirs[ i ], cc->includes, sizeof( cc->includes ) );
+
+    // Engine source root: auto-added for all local targets when 'engine' is declared.
+    if ( g_engine_root[ 0 ] && !target->is_external )
+    {
+        char engine_src[ PATH_MAX ];
+        snprintf( engine_src, sizeof( engine_src ), "%s/source", g_engine_root );
+        platform_cc_append_include( engine_src, cc->includes, sizeof( cc->includes ) );
+        char engine_gen[ PATH_MAX ];
+        snprintf( engine_gen, sizeof( engine_gen ), "%s/%s/generated", g_engine_root, BUILD_DIR );
+        platform_cc_append_include( engine_gen, cc->includes, sizeof( cc->includes ) );
+    }
 
     // defines: consumed from shared tables in 02_data.c so the IntelliSense
     // output in 11_gen.c is guaranteed to match. Per-target _STATIC chain

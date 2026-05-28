@@ -89,6 +89,7 @@ build_clean( target_info_t* target )
         // VS project to rebuild them after a clean, so leave them in place.
         for ( int i = 0; i < g_target_count; ++i )
         {
+            if ( g_targets[ i ].is_external ) continue;
             if ( g_targets[ i ].type == TARGET_EXECUTABLE && !g_targets[ i ].is_tool )
                 del_q( "del /q bin\\%s.exe >nul 2>nul", g_targets[ i ].name );
         }

@@ -14,6 +14,25 @@
     Lines beginning with # are comments. Blank lines are ignored.
     Tokens are separated by whitespace. Blocks begin with a keyword at column 0.
 
+    TOP-LEVEL DIRECTIVES (before any target/solution block):
+
+        engine <path>
+            Declares the engine installation this project builds on.
+            <path> may be relative (resolved against this file's directory) or absolute.
+            Effect:
+              - Sets g_engine_root to the resolved absolute path.
+              - Auto-imports <path>/orb.targets with is_external=true (all engine
+                targets become available as deps but excluded from local build/gen/clean).
+              - Engine source headers (<engine>/source, <engine>/build/generated) are
+                automatically added to the include path for all local targets.
+              - Built-in targets (build_tool, reflect_tool) resolve their paths against
+                the engine root and are marked external.
+            Only processed from the root orb.targets (not from imports).
+
+        import <path>
+            Merge another .targets file. All targets/solutions loaded from it are
+            marked external. Path relative to this file's directory.
+
     TARGET BLOCK:
         target <name>
             type        static | dynamic | exe
@@ -23,6 +42,7 @@
             dep         <dependency target name>            (one per line; multiple allowed)
             tool_dep     <tool dependency name>             (one per line; multiple allowed)
             reflect     [<custom reflect output name>]      (flag; optional name override)
+            include_dir <path>                              (extra include dir; repeatable)
             flag        is_tool | is_build_tool | is_reflect_tool
 
     SOLUTION BLOCK:
@@ -30,21 +50,18 @@
             out         <output directory for .sln/.vcxproj files>
             add         <target1> [target2] ...   (space-separated; line repeatable)
             nav         <navigation source directory> (optional)
+            include_dir <path>                          (extra include dir; repeatable)
             flag        monolithic
 
     EXAMPLE:
-        target core
-            type        static
-            root        source/engine/core
-            folder      02_ENGINE
-            unit        core.c
-            dep         sys
-            dep         rs
-            reflect
+        engine  ..\
 
-        solution orb_core
-            out         build/proj
-            add         core
+        target my_game
+            type        exe
+            root        src
+            folder      01_GAME
+            unit        main.c
+            dep         core
 
 ==============================================================================================*/
 // clang-format off
@@ -128,7 +145,7 @@ reg_sln_add( solution_info_t* sln, const char* name )
 ==============================================================================================*/
 
 static bool
-registry_load( const char* path )
+registry_load( const char* path, bool is_external )
 {
     // Compute the directory of this file so relative 'root' and 'import' paths
     // resolve against the declaring file, not against build_tool's working directory.
@@ -148,7 +165,8 @@ registry_load( const char* path )
     platform_mapped_file_t mf;
     if ( !platform_map_file( path, &mf ) )
     {
-        printf( ORB_INDENT "[orb warn] '%s' not found -- only built-in targets (build_tool, reflect_tool) available.\n", path );
+        if ( !is_external )
+            printf( ORB_INDENT "[orb warn] '%s' not found -- only built-in targets (build_tool, reflect_tool) available.\n", path );
         return true;
     }
 
@@ -171,6 +189,33 @@ registry_load( const char* path )
         if ( !line[ 0 ] || line[ 0 ] == '#' )
             continue;
 
+        // --- engine: declare engine root; auto-import engine/orb.targets as external ---
+        // Only processed from the root orb.targets (is_external == false).
+
+        if ( !is_external && strncmp( line, "engine ", 7 ) == 0 )
+        {
+            const char* rel = line + 7;
+            while ( *rel == ' ' || *rel == '\t' ) ++rel;
+            char engine_path[ PATH_MAX ];
+            if ( platform_is_abs_path( rel ) )
+            {
+                snprintf( engine_path, sizeof( engine_path ), "%s", rel );
+            }
+            else
+            {
+                char combined[ PATH_MAX ];
+                snprintf( combined, sizeof( combined ), "%s/%s", base_dir, rel );
+                if ( !platform_fullpath( engine_path, combined, sizeof( engine_path ) ) )
+                    snprintf( engine_path, sizeof( engine_path ), "%s", combined );
+            }
+            snprintf( g_engine_root, sizeof( g_engine_root ), "%s", engine_path );
+
+            char engine_targets[ PATH_MAX ];
+            snprintf( engine_targets, sizeof( engine_targets ), "%s/orb.targets", engine_path );
+            if ( !registry_load( engine_targets, true ) ) { ok = false; break; }
+            continue;
+        }
+
         // --- import: merge another .targets file; path relative to this file ---
 
         if ( strncmp( line, "import ", 7 ) == 0 )
@@ -190,7 +235,8 @@ registry_load( const char* path )
                     snprintf( import_path, sizeof( import_path ), "%s", combined );
             }
             // The recursive call opens a separate mapping; our mapping is unaffected.
-            if ( !registry_load( import_path ) ) { ok = false; break; }
+            // Imported targets/solutions are always marked external regardless of depth.
+            if ( !registry_load( import_path, true ) ) { ok = false; break; }
             continue;
         }
 
@@ -208,8 +254,9 @@ registry_load( const char* path )
             mode  = MODE_TARGET;
             cur_t = &g_targets[ g_target_count++ ];
             memset( cur_t, 0, sizeof( *cur_t ) );
-            cur_t->name = pool_str( line + 7 );
-            cur_sln     = NULL;
+            cur_t->name        = pool_str( line + 7 );
+            cur_t->is_external = is_external;
+            cur_sln            = NULL;
             continue;
         }
 
@@ -225,8 +272,9 @@ registry_load( const char* path )
             mode    = MODE_SOLUTION;
             cur_sln = &g_solutions[ g_solution_count++ ];
             memset( cur_sln, 0, sizeof( *cur_sln ) );
-            cur_sln->name = pool_str( line + 9 );
-            cur_t         = NULL;
+            cur_sln->name        = pool_str( line + 9 );
+            cur_sln->is_external = is_external;
+            cur_t                = NULL;
             continue;
         }
 
@@ -287,6 +335,23 @@ registry_load( const char* path )
                 if ( strcmp( val, "is_build_tool"   ) == 0 ) cur_t->is_build_tool   = true;
                 if ( strcmp( val, "is_reflect_tool" ) == 0 ) cur_t->is_reflect_tool = true;
             }
+            else if ( strcmp( key, "include_dir" ) == 0 && val )
+            {
+                /* Resolve relative path against this file's directory, store absolute. */
+                char abs_buf[ PATH_MAX ];
+                if ( platform_is_abs_path( val ) )
+                {
+                    snprintf( abs_buf, sizeof( abs_buf ), "%s", val );
+                }
+                else
+                {
+                    char combined[ PATH_MAX ];
+                    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, val );
+                    if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
+                        snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
+                }
+                reg_append_slot( cur_t->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf );
+            }
         }
         else if ( mode == MODE_SOLUTION && cur_sln )
         {
@@ -295,6 +360,22 @@ registry_load( const char* path )
             else if ( strcmp( key, "flag" ) == 0 && val )
             {
                 if ( strcmp( val, "monolithic" ) == 0 ) cur_sln->is_monolithic = true;
+            }
+            else if ( strcmp( key, "include_dir" ) == 0 && val )
+            {
+                char abs_buf[ PATH_MAX ];
+                if ( platform_is_abs_path( val ) )
+                {
+                    snprintf( abs_buf, sizeof( abs_buf ), "%s", val );
+                }
+                else
+                {
+                    char combined[ PATH_MAX ];
+                    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, val );
+                    if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
+                        snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
+                }
+                reg_append_slot( cur_sln->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf );
             }
             else if ( strcmp( key, "add" ) == 0 && val )
             {

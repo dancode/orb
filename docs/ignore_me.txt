@@ -31,23 +31,25 @@ TODO: make clangd work with Visual Studio code outout gen.
 	 
 	 
 	 
-	 
-	 
-	  OK, take your time. When you're back, I have a different theory worth discussing — the squiggles
-  may not be a C standard issue at all. core_api.c doesn't include core.h, so when VS parses it as a
-   standalone TU, core_api_t is simply undefined. VS squiggles the . in { .field = value } when the
-  struct type is unknown — it looks like a C89 error but the root cause is the missing type. We
-  should talk about whether the fix belongs in the source file or the generator before trying
-  another approach.
+  Working:
+  - Standalone targets (root src, no ORB deps) — compile, link, run correctly
+  - import ../orb.targets merges all ORB targets/solutions
+  - -gen from my_project\ produces correct vcxproj paths: own files as
+  ..\..\src\main.c, ORB cross-project files as absolute F:\orb\source\...
+
+  Not yet working:
+  - Compiling a target that deps an ORB engine lib (e.g. dep sys) — the ORB source
+   headers aren't on the include path when CWD isn't the ORB root. That needs
+  either an include_root property on targets or a way to register external include
+   directories. Worth a separate pass.
   
   
-  Still doesn't work, so I played around with it and didn't get a solution. I
-  re-generated the CMakeList.txt project and it is correctly working! designated
-  intializers and SID_INVALID (both ok).
+    REM 1. Rebuild build_tool.exe from the engine root
+  F:\orb> bootstrap_build_tool.bat
 
-  Also the .c files are not red cross out icons, they are the same icons as the
-  actual .c compiled icons.
+  REM 2. Bootstrap the child project (one-time)
+  F:\orb\my_project> ..\bootstrap_project.bat
 
-  My goal now is for you to look at the project files generated in /build from
-  CMakeLists.txt and figure out what is different from us.
+  REM 3. Build — should show 1 target only
+  F:\orb\my_project> bin\build_tool.bat
   

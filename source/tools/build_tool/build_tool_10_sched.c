@@ -413,9 +413,11 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     }
     else
     {
-        /* all targets */
+        /* all local (non-imported) targets */
 
-        for ( int i = 0; i < g_target_count; ++i ) add_job( &g_targets[ i ] );
+        for ( int i = 0; i < g_target_count; ++i )
+            if ( !g_targets[ i ].is_external )
+                add_job( &g_targets[ i ] );
     }
 
     g_sched.total_remaining = g_sched.job_count;

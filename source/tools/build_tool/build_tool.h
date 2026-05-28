@@ -169,6 +169,12 @@ typedef void* platform_thread_t;
 #define MAX_SOLUTIONS    32
 #define MAX_SLN_TARGETS 128
 
+/*  Max extra include directories per target or solution declared via 'include_dir'.
+    These are appended to AdditionalIncludeDirectories/NMakeIncludeSearchPath in vcxproj
+    gen and to /I flags in CLI compile. Stored as absolute paths. */
+
+#define MAX_EXTRA_INCLUDE_DIRS 8
+
 /*  Path buffer size for every filesystem path the build tool constructs.
     Windows MAX_PATH is 260; 512 gives generous headroom for composite paths.
     <obj_dir>\<filename> without forcing us to opt into long-path support */
@@ -301,6 +307,19 @@ typedef struct target_info_s
 
     bool            is_reflect_tool;
 
+    /*  Extra include directories declared via 'include_dir' in orb.targets.
+        Stored as absolute paths. Appended to /I flags in CLI compile and to
+        AdditionalIncludeDirectories/NMakeIncludeSearchPath in vcxproj gen.
+        NULL-terminated; unused slots are NULL. */
+
+    const char*     extra_include_dirs[ MAX_EXTRA_INCLUDE_DIRS ];
+
+    /*  True when this target was loaded via an 'import' directive rather than
+        from the root orb.targets. External targets are excluded from "build all"
+        (no -target flag) and from vcxproj gen, but remain available as deps. */
+
+    bool            is_external;
+
 } target_info_t;
 
 /*==============================================================================================
@@ -361,6 +380,18 @@ typedef struct
        _STATIC for all deps (including dynamic-lib ones). */
 
     bool            is_monolithic;
+
+    /*  Extra include directories declared via 'include_dir' in the solution block.
+        Stored as absolute paths. Applied to every target vcxproj in this solution
+        (both NMake and MSBuild gen). NULL-terminated; unused slots are NULL. */
+
+    const char*     extra_include_dirs[ MAX_EXTRA_INCLUDE_DIRS ];
+
+    /*  True when this solution was loaded via 'import'. External solutions are
+        excluded from -gen so the child project doesn't regenerate the engine's
+        own .sln/.vcxproj files in its build directory. */
+
+    bool            is_external;
 
 } solution_info_t;
 

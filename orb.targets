@@ -20,13 +20,15 @@
 #     reflect 			[<output name override>]   		(flag; optional name override)
 
 #     flag    			is_tool | is_build_tool | is_reflect_tool
-#
+#     include_dir		<dir>						(extra include root; relative to this file; repeatable)
+
 #   solution <name>   	starts a solution block
 
 #     out     			<output dir for .sln/.vcxproj>	(e.g. build/proj)
 #     add     			<t1> [t2] ...   				(space-separated target names; repeatable)
 #     nav     			<nav source dir> 				(optional: folder structure only project)
 #     flag    			monolithic						(build all targets as static)
+#     include_dir		<dir>						(extra include root for all targets; relative to this file; repeatable)
 
 # ==============================================================================
 # 01_BASE

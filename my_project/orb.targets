@@ -1,15 +1,22 @@
-# orb.targets -- my_project (test of the standalone project pattern)
+# orb.targets -- my_project
 #
-# 'import' merges ORB's targets so ORB engine targets are available as deps.
-# Paths in this file resolve relative to this file's directory (my_project\).
+# 'engine' declares the ORB installation this project builds on:
+#   - All ORB targets become available as deps (but excluded from local build/gen/clean).
+#   - Engine headers (engine/sys/sys.h etc.) are on the include path automatically.
+#   - Built-in tools (build_tool, reflect_tool) resolve from the engine root.
+#
+# Run bootstrap_project.bat once from this directory to create bin\build_tool.bat.
+# Then: bin\build_tool.bat -gen   (generate VS project files)
+#       bin\build_tool.bat        (build)
 
-import ..\orb.targets
+engine  ..\
 
 target my_project
-    type    exe
-    root    src
-    folder  01_MY_PROJECT
-    unit    main.c
+    type        exe
+    root        src
+    folder      01_MY_PROJECT
+    unit        main.c
+    # dep       sys
 
 solution my_project
     out     build/proj

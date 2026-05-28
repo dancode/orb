@@ -341,10 +341,11 @@ main( int argc, char** argv )
         return 1;
     }
 
-    // --- Target registry: built-ins first, then orb.targets ---
+    // --- Target registry: orb.targets first (sets g_engine_root if 'engine' declared),
+    //     then built-ins (uses g_engine_root to set paths and is_external correctly). ---
 
+    registry_load( "orb.targets", false );
     init_builtin_targets();
-    registry_load( "orb.targets" );
 
     if ( !validate_targets() ) return 1;
 

@@ -3,14 +3,22 @@
     build_tool_02_data.c -- Dynamic target/solution pool, built-in registrations,
                             shared define tables, and target lookup helpers.
 
-    At startup, main() calls:
-
-        init_builtin_targets()       -- registers build_tool and reflect_tool into
-                                        g_targets[]. These two are always available
-                                        regardless of whether orb.targets exists.
+    At startup, main() calls (in this order):
 
         registry_load("orb.targets") -- appended by build_tool_03_registry.c;
                                         all project targets and solutions live there.
+                                        If orb.targets contains 'engine <path>', this
+                                        sets g_engine_root before returning.
+
+        init_builtin_targets()       -- registers build_tool and reflect_tool into
+                                        g_targets[]. If g_engine_root is set, paths
+                                        and is_external are derived from it; otherwise
+                                        CWD-relative paths are used (engine-root build).
+
+    g_engine_root:
+        Empty string at startup. Set by registry_load() when it encounters the
+        'engine <path>' directive in orb.targets. Used by init_builtin_targets() and
+        the compile/gen modules to auto-add engine header search paths.
 
     Why build_tool and reflect_tool are hard-coded here and not in orb.targets:
 
@@ -22,6 +30,16 @@
           or recompiling build_tool.c.
 
 ==============================================================================================*/
+
+/*==============================================================================================
+    --- Engine Root ---
+
+    Absolute path to the engine installation. Empty when build_tool is running at the
+    engine root itself. Set by registry_load() when it encounters 'engine <path>'.
+    Read by init_builtin_targets(), cc_fill_compile_cmd(), and the gen modules.
+==============================================================================================*/
+
+char g_engine_root[ PATH_MAX ] = { 0 };
 
 /*==============================================================================================
     --- Dynamic Target and Solution Pools ---
@@ -70,23 +88,42 @@ pool_str( const char* s )
         build_tool   -- the build orchestrator (this executable).
         reflect_tool -- the reflection code-generator.
 
-    Called once at the very start of main(), before registry_load().
+    Called once in main() after registry_load(), so g_engine_root is already set.
 ==============================================================================================*/
 
 static void
 init_builtin_targets( void )
 {
+    // If 'engine <path>' was declared in orb.targets, g_engine_root is set and built-ins
+    // belong to the engine installation, not this project. Paths come from the engine root;
+    // is_external excludes them from "build all", gen, and clean.
+    bool is_external = ( g_engine_root[ 0 ] != '\0' );
+
+    char bt_root[ PATH_MAX ];
+    char rt_root[ PATH_MAX ];
+    if ( is_external )
+    {
+        snprintf( bt_root, sizeof( bt_root ), "%s/source/tools/build_tool",  g_engine_root );
+        snprintf( rt_root, sizeof( rt_root ), "%s/source/tools/reflect_tool", g_engine_root );
+    }
+    else
+    {
+        snprintf( bt_root, sizeof( bt_root ), "source/tools/build_tool" );
+        snprintf( rt_root, sizeof( rt_root ), "source/tools/reflect_tool" );
+    }
+
     // build_tool: the build orchestrator itself.
     {
         target_info_t* t = &g_targets[ g_target_count++ ];
         memset( t, 0, sizeof( *t ) );
         t->name          = "build_tool";
         t->type          = TARGET_EXECUTABLE;
-        t->root_dir      = "source/tools/build_tool";
+        t->root_dir      = pool_str( bt_root );
         t->sln_folder    = "08_TOOL";
         t->units[ 0 ]    = "build_tool.c";
         t->is_build_tool = true;
         t->is_tool       = true;
+        t->is_external   = is_external;
     }
 
     // reflect_tool: the reflection code generator.
@@ -95,11 +132,12 @@ init_builtin_targets( void )
         memset( t, 0, sizeof( *t ) );
         t->name            = "reflect_tool";
         t->type            = TARGET_EXECUTABLE;
-        t->root_dir        = "source/tools/reflect_tool";
+        t->root_dir        = pool_str( rt_root );
         t->sln_folder      = "08_TOOL";
         t->units[ 0 ]      = "reflect_tool.c";
         t->is_tool         = true;
         t->is_reflect_tool = true;
+        t->is_external     = is_external;
     }
 }
 

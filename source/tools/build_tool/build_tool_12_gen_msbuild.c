@@ -63,6 +63,10 @@ write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
     char defines[ 1024 ];
     build_intellisense_defines( defines, sizeof( defines ), config, target );
 
+    char extra_incs[ 1024 ];
+    build_extra_include_dirs_str( target, extra_incs, sizeof( extra_incs ) );
+    const char* extra_sep = extra_incs[ 0 ] ? ";" : "";
+
     fprintf( f, "  <ItemDefinitionGroup Condition=\"%s\">\n", cond );
     fprintf( f, "    <ClCompile>\n" );
     fprintf( f, "      <WarningLevel>Level4</WarningLevel>\n" );
@@ -83,8 +87,8 @@ write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
     fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
     fprintf( f, "      <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>\n" );
-    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
              defines );
     fprintf( f, "    </ClCompile>\n" );
@@ -369,7 +373,10 @@ build_gen_projects_msbuild( void )
     for ( int i = 0; i < g_solution_count; ++i )
     {
         solution_info_t* sln = &g_solutions[ i ];
-        s_is_monolithic = sln->is_monolithic;
+        if ( sln->is_external ) continue;
+
+        s_is_monolithic          = sln->is_monolithic;
+        s_sln_extra_include_dirs = sln->extra_include_dirs;
 
         // MSBuild projects land alongside the NMake ones, in a sibling dir.
         char msbuild_out_dir[ PATH_MAX ];

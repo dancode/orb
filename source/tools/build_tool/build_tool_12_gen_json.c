@@ -233,6 +233,7 @@ build_gen_compile_commands( void )
     for ( int i = 0; i < g_target_count; ++i )
     {
         target_info_t* target = &g_targets[ i ];
+        if ( target->is_external ) continue;
         if ( !target->units[ 0 ] ) continue;
 
         /* Build command skeleton: exe, flags, includes, defines.

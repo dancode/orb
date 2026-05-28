@@ -55,6 +55,15 @@ static bool        s_is_monolithic     = false;
 // so the existing s_root_prefix emit logic works unchanged.
 static char        s_cwd_prefix[ PATH_MAX ] = { 0 };
 
+// Extra include dirs from the current solution's 'include_dir' declarations.
+// Set once per solution pass in build_gen_projects(); read by emit functions.
+static const char** s_sln_extra_include_dirs = NULL;
+
+// NMake command prefix for invoking build_tool. At the engine root this is
+// the CWD-relative "bin\build_tool.exe". In a child project it is the engine's
+// absolute path (quoted) so NMake finds the exe even though no local copy exists.
+static char s_build_tool_exe[ PATH_MAX + 2 ] = "bin\\build_tool.exe";
+
 static void
 compute_path_parts( const char* out_dir )
 {
@@ -288,6 +297,78 @@ scan_directory_recursive( const char* dir, const char* root_dir )
 }
 
 /*==============================================================================================
+    build_extra_include_dirs_str()
+
+    Build a semicolon-separated string of extra include directories from the
+    target's own 'include_dir' declarations and the current solution's 'include_dir'
+    declarations. Absolute paths stored in extra_include_dirs[] are emitted as-is.
+    Used for both AdditionalIncludeDirectories (vcxproj) and NMakeIncludeSearchPath.
+    An empty string is returned when no extras are defined.
+==============================================================================================*/
+
+static void
+build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf_size )
+{
+    buf[ 0 ]    = '\0';
+    size_t used = 0;
+
+    /* Target-level include_dirs first. */
+    if ( target )
+    {
+        for ( int i = 0; i < MAX_EXTRA_INCLUDE_DIRS && target->extra_include_dirs[ i ]; ++i )
+        {
+            const char* dir = target->extra_include_dirs[ i ];
+            size_t len = strlen( dir );
+            if ( used + len + 2 < buf_size )
+            {
+                if ( used ) buf[ used++ ] = ';';
+                memcpy( buf + used, dir, len );
+                used += len;
+                buf[ used ] = '\0';
+            }
+        }
+    }
+
+    /* Solution-level include_dirs: skip if already present from the target. */
+    if ( s_sln_extra_include_dirs )
+    {
+        for ( int i = 0; i < MAX_EXTRA_INCLUDE_DIRS && s_sln_extra_include_dirs[ i ]; ++i )
+        {
+            const char* dir = s_sln_extra_include_dirs[ i ];
+            if ( buf[ 0 ] && strstr( buf, dir ) ) continue;
+            size_t len = strlen( dir );
+            if ( used + len + 2 < buf_size )
+            {
+                if ( used ) buf[ used++ ] = ';';
+                memcpy( buf + used, dir, len );
+                used += len;
+                buf[ used ] = '\0';
+            }
+        }
+    }
+
+    /* Engine source root: auto-added for IntelliSense when 'engine' is declared. */
+    if ( g_engine_root[ 0 ] )
+    {
+        char dirs[ 2 ][ PATH_MAX ];
+        snprintf( dirs[ 0 ], PATH_MAX, "%s/source",           g_engine_root );
+        snprintf( dirs[ 1 ], PATH_MAX, "%s/%s/generated", g_engine_root, BUILD_DIR );
+        for ( int i = 0; i < 2; ++i )
+        {
+            if ( buf[ 0 ] && strstr( buf, dirs[ i ] ) ) continue;
+            size_t len = strlen( dirs[ i ] );
+            if ( used + len + 2 < buf_size )
+            {
+                if ( used ) buf[ used++ ] = ';';
+                memcpy( buf + used, dirs[ i ], len );
+                used += len;
+                buf[ used ] = '\0';
+            }
+        }
+    }
+}
+
+/*==============================================================================================
     build_intellisense_defines()
 
     Build the semicolon-separated NMakePreprocessorDefinitions value from the
@@ -420,15 +501,19 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
     build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, target );
     build_intellisense_nmake_options( nmake_opts, sizeof( nmake_opts ) );
 
+    char extra_incs[ 1024 ];
+    build_extra_include_dirs_str( target, extra_incs, sizeof( extra_incs ) );
+    const char* extra_sep = extra_incs[ 0 ] ? ";" : "";
+
     fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
     fprintf( f, "    <ClCompile>\n" );
     fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     if ( g_gen_fwd_compat )
         fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
     fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
-    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
-    fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n", 
+    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
+    fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
              dbg_defines );
     fprintf( f, "    </ClCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
@@ -439,8 +524,8 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
     if ( g_gen_fwd_compat )
         fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
     fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
-    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
              rel_defines );
     fprintf( f, "    </ClCompile>\n" );
@@ -449,8 +534,8 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
     fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
              dbg_defines );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     if ( g_gen_fwd_compat )
         fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
@@ -461,8 +546,8 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
     fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
     fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
              rel_defines );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir );
+    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+             s_root_prefix, s_root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
     fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     if ( g_gen_fwd_compat )
         fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
@@ -525,21 +610,21 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_root_prefix );
     fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
              s_root_prefix, g_build_dir, g_int_dir );
-    fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeBuildCommandLine>\n",
-             s_cd_root, out_name, mono_flag );
+    fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; %s -no-deps -config $(Configuration) -target %s%s</NMakeBuildCommandLine>\n",
+             s_cd_root, s_build_tool_exe, out_name, mono_flag );
     fprintf( f, "    <NMakeOutput>%sbin\\%s%s</NMakeOutput>\n", s_root_prefix, out_name, ext );
-    fprintf( f, "    <NMakeCleanCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -clean -target %s</NMakeCleanCommandLine>\n",
-             s_cd_root, out_name );
-    fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n",
-             s_cd_root, out_name, mono_flag );
+    fprintf( f, "    <NMakeCleanCommandLine>cd %s &amp;&amp; %s -clean -target %s</NMakeCleanCommandLine>\n",
+             s_cd_root, s_build_tool_exe, out_name );
+    fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; %s -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n",
+             s_cd_root, s_build_tool_exe, out_name, mono_flag );
     fprintf( f, "  </PropertyGroup>\n" );
 
     // Single-file compile (Ctrl+F7). Unconditional so the command is available
     // regardless of active configuration.
     fprintf( f, "  <ItemDefinitionGroup>\n" );
     fprintf( f, "    <NMakeCompile>\n" );
-    fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
-             s_cd_root, out_name, mono_flag );
+    fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
+             s_cd_root, s_build_tool_exe, out_name, mono_flag );
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
@@ -612,8 +697,8 @@ build_gen_proj_target( target_info_t* target, int index )
         {
             const char* item_mono = s_is_monolithic ? " -monolithic" : "";
             fprintf( f, "    <ClCompile Include=\"%s\">\n", inc );
-            fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
-                     s_cd_root, target->name, item_mono );
+            fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
+                     s_cd_root, s_build_tool_exe, target->name, item_mono );
             fprintf( f, "    </ClCompile>\n" );
         }
         else
@@ -636,8 +721,8 @@ build_gen_proj_target( target_info_t* target, int index )
         const char* item_mono = s_is_monolithic ? " -monolithic" : "";
         fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n", s_root_prefix, g_build_dir,
                  g_gen_dir, rname );
-        fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
-                 s_cd_root, target->name, item_mono );
+        fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
+                 s_cd_root, s_build_tool_exe, target->name, item_mono );
         fprintf( f, "    </ClCompile>\n" );
         fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n", s_root_prefix, g_build_dir,
                  g_gen_dir, rname );
@@ -1097,10 +1182,21 @@ build_gen_solution( solution_info_t* sln )
 void
 build_gen_projects( void )
 {
+    // In a child project, NMake must call the engine's build_tool.exe by absolute
+    // path because no local bin\build_tool.exe exists (only bin\build_tool.bat).
+    if ( g_engine_root[ 0 ] )
+        snprintf( s_build_tool_exe, sizeof( s_build_tool_exe ),
+                  "\"%s\\bin\\build_tool.exe\"", g_engine_root );
+    else
+        snprintf( s_build_tool_exe, sizeof( s_build_tool_exe ), "bin\\build_tool.exe" );
+
     for ( int i = 0; i < g_solution_count; ++i )
     {
         solution_info_t* sln = &g_solutions[ i ];
-        s_is_monolithic = sln->is_monolithic;
+        if ( sln->is_external ) continue;
+
+        s_is_monolithic          = sln->is_monolithic;
+        s_sln_extra_include_dirs = sln->extra_include_dirs;
 
         compute_path_parts( sln->out_dir );
         ensure_dir( sln->out_dir );
