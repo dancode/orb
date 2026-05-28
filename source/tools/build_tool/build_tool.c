@@ -163,15 +163,49 @@ validate_targets( void )
     for ( int i = 0; i < g_target_count; ++i )
     {
         const target_info_t* t = &g_targets[ i ];
+
+        // Slot overflow.
         if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ||
              t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ||
-             t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ) 
+             t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ||
+             t->mono_deps[ TARGET_MAX_SLOTS - 1 ] != NULL )
         {
             printf( ORB_INDENT "[orb error] target '%s' has too many units or dependencies "
                                "(raise TARGET_MAX_SLOTS)\n", t->name );
             ok = false;
         }
+
+        // Unresolved dep / tool_dep / mono_dep names.
+        for ( int j = 0; j < TARGET_MAX_SLOTS && t->deps[ j ]; ++j )
+        {
+            if ( !find_target( t->deps[ j ] ) )
+            {
+                printf( ORB_INDENT "[orb error] target '%s': unknown dep '%s'\n",
+                        t->name, t->deps[ j ] );
+                ok = false;
+            }
+        }
+        for ( int j = 0; j < TARGET_MAX_SLOTS && t->tool_deps[ j ]; ++j )
+        {
+            if ( !find_target( t->tool_deps[ j ] ) )
+            {
+                printf( ORB_INDENT "[orb error] target '%s': unknown tool_dep '%s'\n",
+                        t->name, t->tool_deps[ j ] );
+                ok = false;
+            }
+        }
+        for ( int j = 0; j < TARGET_MAX_SLOTS && t->mono_deps[ j ]; ++j )
+        {
+            if ( !find_target( t->mono_deps[ j ] ) )
+            {
+                printf( ORB_INDENT "[orb error] target '%s': unknown mono_dep '%s'\n",
+                        t->name, t->mono_deps[ j ] );
+                ok = false;
+            }
+        }
     }
+
+    // Unresolved solution-to-target references.
     for ( int i = 0; i < g_solution_count; ++i )
     {
         const solution_info_t* sln = &g_solutions[ i ];

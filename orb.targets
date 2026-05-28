@@ -268,7 +268,7 @@ target sb_runtime_gen
     root        source/sandbox/runtime/runtime_gen
     folder      09_SANDBOX/RUNTIME
     unit        sb_runtime_gen.c
-    dep         sys rs mod core 
+    dep         sys rs mod core
 	mono_dep 	example_gen
     reflect
 
