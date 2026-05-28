@@ -194,7 +194,7 @@ json_emit_constituents( FILE* fp, bool* first,
 ==============================================================================================*/
 
 void
-build_gen_compile_commands( void )
+build_gen_compile_commands( const gen_manifest_t* m )
 {    
     const char* out_path = "compile_commands.json";
     FILE* fp = fopen( out_path, "w" );
@@ -230,10 +230,9 @@ build_gen_compile_commands( void )
 
     fprintf( fp, "[\n" );
 
-    for ( int i = 0; i < g_target_count; ++i )
+    for ( int i = 0; i < m->local_target_count; ++i )
     {
-        target_info_t* target = &g_targets[ i ];
-        if ( target->is_external ) continue;
+        target_info_t* target = m->local_targets[ i ];
         if ( !target->units[ 0 ] ) continue;
 
         /* Build command skeleton: exe, flags, includes, defines.

@@ -351,7 +351,7 @@ build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf
     if ( g_engine_root[ 0 ] )
     {
         char dirs[ 2 ][ PATH_MAX ];
-        snprintf( dirs[ 0 ], PATH_MAX, "%s/source",           g_engine_root );
+        snprintf( dirs[ 0 ], PATH_MAX, "%s/source",       g_engine_root );
         snprintf( dirs[ 1 ], PATH_MAX, "%s/%s/generated", g_engine_root, BUILD_DIR );
         for ( int i = 0; i < 2; ++i )
         {
@@ -1180,20 +1180,14 @@ build_gen_solution( solution_info_t* sln )
 ==============================================================================================*/
 
 void
-build_gen_projects( void )
+build_gen_projects( const gen_manifest_t* m )
 {
-    // In a child project, NMake must call the engine's build_tool.exe by absolute
-    // path because no local bin\build_tool.exe exists (only bin\build_tool.bat).
-    if ( g_engine_root[ 0 ] )
-        snprintf( s_build_tool_exe, sizeof( s_build_tool_exe ),
-                  "\"%s\\bin\\build_tool.exe\"", g_engine_root );
-    else
-        snprintf( s_build_tool_exe, sizeof( s_build_tool_exe ), "bin\\build_tool.exe" );
+    snprintf( s_build_tool_exe, sizeof( s_build_tool_exe ), "%s", m->build_tool_exe );
 
-    for ( int i = 0; i < g_solution_count; ++i )
+    for ( int i = 0; i < m->solution_count; ++i )
     {
-        solution_info_t* sln = &g_solutions[ i ];
-        if ( sln->is_external ) continue;
+        const gen_sln_entry_t* entry = &m->solutions[ i ];
+        solution_info_t*       sln   = entry->sln;
 
         s_is_monolithic          = sln->is_monolithic;
         s_sln_extra_include_dirs = sln->extra_include_dirs;
@@ -1203,11 +1197,8 @@ build_gen_projects( void )
 
         printf( "Generating Solution '%s' in %s/...\n", sln->name, sln->out_dir );
 
-        for ( const char* const* tn = sln->target_names; *tn; ++tn )
-        {
-            target_info_t* t = find_target( *tn );
-            if ( t ) build_gen_proj_target( t, 0 );
-        }
+        for ( int j = 0; j < entry->target_count; ++j )
+            build_gen_proj_target( entry->targets[ j ], 0 );
 
         build_gen_solution( sln );
     }

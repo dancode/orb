@@ -142,6 +142,7 @@ const char* sched_log_path( void );
 #include "build_tool_09_exec.c"             // 09 build_target orchestration
 #include "build_tool_10_sched.c"            // 10 parallel scheduler
 #include "build_tool_11_clean.c"            // 11 -clean command
+#include "build_tool_12_gen_manifest.c"      // 12  gen manifest (resolved intent; built before all generators)
 #include "build_tool_12_gen_nmake.c"        // 12a -gen command (NMake/Makefile projects)
 #include "build_tool_12_gen_json.c"         // 12b -gen command (compile_commands.json)
 #include "build_tool_12_gen_vscode.c"       // 12c -gen command (.vscode/tasks.json)
@@ -291,6 +292,7 @@ main( int argc, char** argv )
 
     bool should_clean        = false;
     bool should_gen          = false;
+    bool should_gen_nmake    = false;
     bool should_gen_msbuild  = false;
     bool should_bootstrap    = false;
     int  j_threads           = 0;   // 0 -> auto-detect from CPU count.
@@ -301,6 +303,7 @@ main( int argc, char** argv )
     {
         if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
         if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
+        if ( platform_stricmp( argv[ i ], "-gen_nm"           ) == 0 ) should_gen_nmake = true;
         if ( platform_stricmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
         if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
         if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
@@ -387,25 +390,22 @@ main( int argc, char** argv )
         return 0;
     }
 
-    // --- Command: GENERATE (NMake/Makefile projects + compile_commands.json) ---
+    // --- Command: GENERATE ---
 
-    if ( should_gen )
+    if ( should_gen || should_gen_nmake || should_gen_msbuild )
     {
-        /* NMake/Makefile .sln/.vcxproj generation. */
-        build_gen_projects();
+        gen_manifest_t manifest;
+        gen_manifest_build( &manifest );
 
-        /* Visual Studio Code /w clangd support */
-        build_gen_compile_commands();
-        build_gen_vscode();
-        return 0;
-    }
+        if ( should_gen || should_gen_nmake )
+        {
+            build_gen_projects( &manifest );
+            build_gen_compile_commands( &manifest );
+            build_gen_vscode( &manifest );
+        }
+        if ( should_gen || should_gen_msbuild )
+            build_gen_projects_msbuild( &manifest );
 
-    // --- Command: GENERATE MSBUILD (StaticLibrary/DLL/Application projects) ---
-
-    if ( should_gen_msbuild )
-    {
-        /* MSBuild .sln/.vcxproj generation. */
-        build_gen_projects_msbuild();
         return 0;
     }
 

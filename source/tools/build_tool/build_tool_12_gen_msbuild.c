@@ -368,12 +368,12 @@ build_gen_proj_target_msbuild( target_info_t* target )
 ==============================================================================================*/
 
 void
-build_gen_projects_msbuild( void )
+build_gen_projects_msbuild( const gen_manifest_t* m )
 {
-    for ( int i = 0; i < g_solution_count; ++i )
+    for ( int i = 0; i < m->solution_count; ++i )
     {
-        solution_info_t* sln = &g_solutions[ i ];
-        if ( sln->is_external ) continue;
+        const gen_sln_entry_t* entry = &m->solutions[ i ];
+        solution_info_t*       sln   = entry->sln;
 
         s_is_monolithic          = sln->is_monolithic;
         s_sln_extra_include_dirs = sln->extra_include_dirs;
@@ -387,17 +387,8 @@ build_gen_projects_msbuild( void )
 
         printf( "Generating MSBuild Solution '%s' in %s/...\n", sln->name, msbuild_out_dir );
 
-        for ( const char* const* tn = sln->target_names; *tn; ++tn )
-        {
-            for ( int j = 0; j < g_target_count; ++j )
-            {
-                if ( strcmp( g_targets[ j ].name, *tn ) == 0 )
-                {
-                    build_gen_proj_target_msbuild( &g_targets[ j ] );
-                    break;
-                }
-            }
-        }
+        for ( int j = 0; j < entry->target_count; ++j )
+            build_gen_proj_target_msbuild( entry->targets[ j ] );
 
         // Solution file shares format with NMake; reuse the existing writer.
         // s_out_dir is already pointing at msbuild_out_dir from compute_path_parts above.

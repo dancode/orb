@@ -613,23 +613,66 @@ bool build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_c
 
 void build_clean( target_info_t* target );
 
+/*==============================================================================================
+    --- Generation Manifest ---
+
+    Resolved snapshot of generation intent, built once from g_targets[]/g_solutions[]
+    before any generator runs. All generators receive a const pointer to this struct
+    instead of re-filtering the raw globals -- filtering logic lives in one place.
+==============================================================================================*/
+
+typedef struct
+{
+    solution_info_t*    sln;
+    target_info_t*      targets[ MAX_SLN_TARGETS ];
+    int                 target_count;
+} gen_sln_entry_t;
+
+typedef struct
+{
+    char  build_tool_exe    [ PATH_MAX + 4 ];   // NMake: backslashes, quoted if absolute
+    char  build_tool_exe_fwd[ PATH_MAX + 4 ];   // VSCode: forward slashes, quoted
+    char  engine_src_dir    [ PATH_MAX ];        // forward slashes; empty if no engine root
+    char  engine_gen_dir    [ PATH_MAX ];        // forward slashes; empty if no engine root
+    char  workspace_name    [ 256 ];             // first local solution name, or "workspace"
+
+    gen_sln_entry_t  solutions[ MAX_SOLUTIONS ];
+    int              solution_count;
+
+    target_info_t*  local_targets   [ MAX_TARGETS ];
+    int             local_target_count;
+
+    target_info_t*  exe_targets     [ MAX_TARGETS ];
+    int             exe_target_count;
+
+    target_info_t*  ext_ref_targets [ MAX_TARGETS ];
+    int             ext_ref_target_count;
+
+} gen_manifest_t;
+
+void gen_manifest_build( gen_manifest_t* m );
+
 /*  Generates all .sln and .vcxproj files defined in the Solution Registry.
     This maps our custom build system into the Visual Studio IDE. */
 
-void build_gen_projects( void );
+void build_gen_projects( const gen_manifest_t* m );
 
 /*  Generates compile_commands.json at the project root. Each target contributes
     one entry per unity compilation unit (supports multi-unit targets). Targets
     with has_reflect=true also get an entry for the generated .c file. Debug
     config is always used. Called alongside build_gen_projects() during -gen. */
 
-void build_gen_compile_commands( void );
+void build_gen_compile_commands( const gen_manifest_t* m );
 
 /*  Generates .vscode/tasks.json with build, clean, and regen tasks wired to
     build_tool.exe. The "build target" task includes a pickString dropdown
     populated from g_targets[]. Called during -gen. */
 
-void build_gen_vscode( void );
+void build_gen_vscode( const gen_manifest_t* m );
+
+/*  Generates MSBuild .sln/.vcxproj for IntelliSense. */
+
+void build_gen_projects_msbuild( const gen_manifest_t* m );
 
 /*  For each registered target with unity units, writes
     build/prelude/<name>.prelude.h containing the preprocessor setup lines
