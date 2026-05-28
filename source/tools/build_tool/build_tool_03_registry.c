@@ -130,6 +130,21 @@ reg_sln_add( solution_info_t* sln, const char* name )
 static bool
 registry_load( const char* path )
 {
+    // Compute the directory of this file so relative 'root' and 'import' paths
+    // resolve against the declaring file, not against build_tool's working directory.
+    char base_dir[ PATH_MAX ];
+    {
+        char abs_path[ PATH_MAX ];
+        if ( !platform_fullpath( abs_path, path, sizeof( abs_path ) ) )
+            snprintf( abs_path, sizeof( abs_path ), "%s", path );
+        snprintf( base_dir, sizeof( base_dir ), "%s", abs_path );
+        char* last = NULL;
+        for ( char* cp = base_dir; *cp; ++cp )
+            if ( *cp == '/' || *cp == '\\' ) last = cp;
+        if ( last ) *last = '\0';
+        else { base_dir[ 0 ] = '.'; base_dir[ 1 ] = '\0'; }
+    }
+
     platform_mapped_file_t mf;
     if ( !platform_map_file( path, &mf ) )
     {
@@ -155,6 +170,29 @@ registry_load( const char* path )
         reg_strip( line );
         if ( !line[ 0 ] || line[ 0 ] == '#' )
             continue;
+
+        // --- import: merge another .targets file; path relative to this file ---
+
+        if ( strncmp( line, "import ", 7 ) == 0 )
+        {
+            const char* rel = line + 7;
+            while ( *rel == ' ' || *rel == '\t' ) ++rel;
+            char import_path[ PATH_MAX ];
+            if ( platform_is_abs_path( rel ) )
+            {
+                snprintf( import_path, sizeof( import_path ), "%s", rel );
+            }
+            else
+            {
+                char combined[ PATH_MAX ];
+                snprintf( combined, sizeof( combined ), "%s/%s", base_dir, rel );
+                if ( !platform_fullpath( import_path, combined, sizeof( import_path ) ) )
+                    snprintf( import_path, sizeof( import_path ), "%s", combined );
+            }
+            // The recursive call opens a separate mapping; our mapping is unaffected.
+            if ( !registry_load( import_path ) ) { ok = false; break; }
+            continue;
+        }
 
         // --- Block openers (must start at column 0 after strip) ---
 
@@ -206,7 +244,23 @@ registry_load( const char* path )
                 else if ( strcmp( val, "dynamic" ) == 0 ) cur_t->type = TARGET_DYNAMIC_LIB;
                 else                                      cur_t->type = TARGET_EXECUTABLE;
             }
-            else if ( strcmp( key, "root"   ) == 0 && val ) cur_t->root_dir   = pool_str( val );
+            else if ( strcmp( key, "root" ) == 0 && val )
+            {
+                // Resolve relative roots against the declaring file's directory so
+                // targets in imported .targets files point back to their own source tree.
+                if ( platform_is_abs_path( val ) )
+                {
+                    cur_t->root_dir = pool_str( val );
+                }
+                else
+                {
+                    char combined[ PATH_MAX ], abs_buf[ PATH_MAX ];
+                    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, val );
+                    if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
+                        snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
+                    cur_t->root_dir = pool_str( abs_buf );
+                }
+            }
             else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->sln_folder = pool_str( val );
             else if ( strcmp( key, "unit"   ) == 0 && val ) reg_append_slot( cur_t->units, TARGET_MAX_SLOTS, val );
             else if ( ( strcmp( key, "dep" ) == 0 || strcmp( key, "tool_dep" ) == 0 ) && val )

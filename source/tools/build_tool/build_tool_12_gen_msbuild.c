@@ -245,10 +245,12 @@ build_gen_proj_target_msbuild( target_info_t* target )
             }
         }
 
+        char inc[ PATH_MAX + 32 ];
+        gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
         if ( is_unit )
-            fprintf( f, "    <ClCompile Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
+            fprintf( f, "    <ClCompile Include=\"%s\" />\n", inc );
         else
-            fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
+            fprintf( f, "    <ClInclude Include=\"%s\" />\n", inc );
     }
 
     // Reflection-generated files (may not exist until first build).

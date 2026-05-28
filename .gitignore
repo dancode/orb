@@ -61,6 +61,20 @@ dkms.conf
 /[Oo]ut/
 cmake-build-*/
 
+# Standalone project outputs (any subdirectory project)
+*/[Bb]uild/
+*/[Bb]in/
+*/.vscode/
+
+# VS Code workspace settings
+/.vscode/
+
+# clangd / LSP generated files
+/compile_commands.json
+*/compile_commands.json
+/.clangd
+*/.clangd
+
 # Visual Studio specific
 .vs/
 *.suo

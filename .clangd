@@ -1,5 +1,0 @@
-Diagnostics:
-  UnusedIncludes: None
-CompileFlags:
-  Add: [--target=x86_64-pc-windows-msvc, -std=c11, -Isource, -Ibuild/generated,
-        -D_CRT_SECURE_NO_WARNINGS, -D_DEBUG, -Wno-unused-function]

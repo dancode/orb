@@ -50,6 +50,11 @@ static char        s_root_prefix[ 32 ] = { 0 };
 static char        s_cd_root[ 32 ]     = { 0 };
 static bool        s_is_monolithic     = false;
 
+// CWD at gen time, with trailing separator. Absolute root_dir paths from the
+// registry are stripped back to CWD-relative before storing in g_files[].path
+// so the existing s_root_prefix emit logic works unchanged.
+static char        s_cwd_prefix[ PATH_MAX ] = { 0 };
+
 static void
 compute_path_parts( const char* out_dir )
 {
@@ -68,6 +73,30 @@ compute_path_parts( const char* out_dir )
     s_cd_root[ 0 ] = '\0';
     strcat( s_cd_root, ".." );
     for ( int i = 1; i < depth; ++i ) strcat( s_cd_root, "\\.." );
+
+    // Capture CWD once so scan can strip the absolute prefix from root_dir paths.
+    s_cwd_prefix[ 0 ] = '\0';
+#if defined( _WIN32 )
+    char cwd[ PATH_MAX ];
+    if ( GetCurrentDirectoryA( sizeof( cwd ), cwd ) )
+    {
+        for ( char* p = cwd; *p; ++p ) if ( *p == '/' ) *p = '\\';
+        size_t n = strlen( cwd );
+        if ( n > 0 && cwd[ n - 1 ] != '\\' ) { cwd[ n++ ] = '\\'; cwd[ n ] = '\0'; }
+        snprintf( s_cwd_prefix, sizeof( s_cwd_prefix ), "%s", cwd );
+    }
+#endif
+}
+
+// Build the Include path for a scanned file entry.
+// CWD-relative paths get s_root_prefix; absolute cross-project paths emit as-is.
+static void
+gen_inc_path( const char* file_path, char* buf, size_t buf_size )
+{
+    if ( platform_is_abs_path( file_path ) )
+        snprintf( buf, buf_size, "%s", file_path );
+    else
+        snprintf( buf, buf_size, "%s%s", s_root_prefix, file_path );
 }
 
 // Metadata for one source file picked up by scan_directory_recursive().
@@ -237,7 +266,16 @@ scan_directory_recursive( const char* dir, const char* root_dir )
                 continue;
 
             file_info_t* f = &g_files[ g_file_count++ ];
-            strcpy( f->path, path );
+
+            // Strip CWD prefix from absolute paths (produced when root_dir is absolute)
+            // so stored paths remain project-root-relative for vcxproj Include emit.
+            // Cross-project absolute paths (outside CWD) are kept as-is.
+            size_t cwd_len = strlen( s_cwd_prefix );
+            if ( cwd_len > 0 && platform_strnicmp( path, s_cwd_prefix, cwd_len ) == 0 )
+                strcpy( f->path, path + cwd_len );
+            else
+                strcpy( f->path, path );
+
             f->is_header = is_h;
             get_filter_for_path( path, root_dir, f->filter );
             if ( f->filter[ 0 ] != '\0' )
@@ -568,10 +606,12 @@ build_gen_proj_target( target_info_t* target, int index )
     {
         bool is_unit = is_unit_file( target, g_files[ i ].path );
 
+        char inc[ PATH_MAX + 32 ];
+        gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
         if ( is_unit )
         {
             const char* item_mono = s_is_monolithic ? " -monolithic" : "";
-            fprintf( f, "    <ClCompile Include=\"%s%s\">\n", s_root_prefix, g_files[ i ].path );
+            fprintf( f, "    <ClCompile Include=\"%s\">\n", inc );
             fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; bin\\build_tool.exe -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
                      s_cd_root, target->name, item_mono );
             fprintf( f, "    </ClCompile>\n" );
@@ -582,7 +622,7 @@ build_gen_proj_target( target_info_t* target, int index )
             // context flows from the unity TU, inheriting NMakeAdditionalOptions
             // (/TC /std:c11 /Zc:preprocessor) without per-file overrides that
             // bypass the C mode and break designated initializers.
-            fprintf( f, "    <ClInclude Include=\"%s%s\" />\n", s_root_prefix, g_files[ i ].path );
+            fprintf( f, "    <ClInclude Include=\"%s\" />\n", inc );
         }
     }
 
@@ -640,7 +680,9 @@ build_gen_proj_target( target_info_t* target, int index )
         {
             bool        is_unit = is_unit_file( target, g_files[ i ].path );
             const char* tag     = is_unit ? "ClCompile" : "ClInclude";
-            fprintf( f, "    <%s Include=\"%s%s\">\n", tag, s_root_prefix, g_files[ i ].path );
+            char inc2[ PATH_MAX + 32 ];
+            gen_inc_path( g_files[ i ].path, inc2, sizeof( inc2 ) );
+            fprintf( f, "    <%s Include=\"%s\">\n", tag, inc2 );
             if ( g_files[ i ].filter[ 0 ] != '\0' )
                 fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
             fprintf( f, "    </%s>\n", tag );

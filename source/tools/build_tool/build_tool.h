@@ -252,7 +252,7 @@ typedef struct target_info_s
 {
     const char*     name;           // Unique name (e.g., "base", "core", "app").
     target_type_t   type;           // Artifact type (LIB, DLL, or EXE).
-    const char*     root_dir;       // Base path for source files relative to project root.
+    const char*     root_dir;       // Absolute path to the source directory for this target.
     const char*     sln_folder;     // Virtual folder in the Visual Studio solution.
 
     /*  Translation Units (Unity Build Fragments)

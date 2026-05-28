@@ -1,0 +1,16 @@
+# orb.targets -- my_project (test of the standalone project pattern)
+#
+# 'import' merges ORB's targets so ORB engine targets are available as deps.
+# Paths in this file resolve relative to this file's directory (my_project\).
+
+import ..\orb.targets
+
+target my_project
+    type    exe
+    root    src
+    folder  01_MY_PROJECT
+    unit    main.c
+
+solution my_project
+    out     build/proj
+    add     my_project
