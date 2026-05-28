@@ -127,6 +127,7 @@ const game_api_t g_game_api_struct = {
 static bool
 game_init( void* raw_state, get_api_fn get_api )
 {
+    UNUSED( get_api );
     g_game_state = ( game_state_t* )raw_state;
 
     if ( !MOD_FETCH_CORE )    return false;

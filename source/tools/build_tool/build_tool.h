@@ -278,6 +278,12 @@ typedef struct target_info_s
 
     const char*     tool_deps[ TARGET_MAX_SLOTS ];
 
+    /*  Monolithic-only Link Dependencies: modules that are loaded dynamically at runtime
+        in modular builds but must be explicitly linked in monolithic builds (BUILD_STATIC).
+        Ignored unless ctx->is_monolithic is true at link time. */
+
+    const char*     mono_deps[ TARGET_MAX_SLOTS ];
+
     /*  Reflection metadata: if true, reflect_tool.exe is invoked on root_dir
         before compilation. Generated files land in <build_dir>/generated/ and
         are appended to the cl.exe command line for this target. */

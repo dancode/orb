@@ -14,7 +14,6 @@
 #include "engine/core/core_api.h"
 
 RS_MODULE( example_gen )
-
 MOD_USE_CORE;
 
 

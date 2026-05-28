@@ -321,23 +321,7 @@ solution orb
 solution orb_mono
     out         build/proj_mono
     flag        monolithic
-    add         base sys rs mod app core
-    add         runtime_host
-
-    add         rhi jobs
-    add         render audio physics
-
-    add         example example_reflect example_gen
-
-    add         game nav game_example
-
-    add         dev_build dev_hot
-
-    add         host_common
-
-    add         sb_engine_mod sb_engine_sys sb_engine_core sb_engine_reflect sb_engine_app
-    add         sb_runtime_reflect sb_runtime_gen
-    add         sb_base_main
+    add         orb
 
 
 solution orb_core

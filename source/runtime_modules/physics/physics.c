@@ -51,6 +51,7 @@ const physics_api_t g_physics_api_struct = {
 static bool
 physics_init( void* raw_state, get_api_fn get_api )
 {
+    UNUSED( get_api );
     g_state = ( physics_state_t* )raw_state;
 
     if ( !MOD_FETCH_CORE )
