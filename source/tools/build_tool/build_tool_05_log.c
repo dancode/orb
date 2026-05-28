@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_04_log.c -- Output formatting and log routing.
+    build_tool_05_log.c -- Output formatting and log routing.
 
     Stateless print helpers: everything in this file produces human-readable
     output without touching any build state. Separating these from the command-

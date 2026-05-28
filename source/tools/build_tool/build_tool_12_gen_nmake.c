@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_11_gen.c -- Visual Studio .sln / .vcxproj generator.
+    build_tool_12_gen_nmake.c -- Visual Studio .sln / .vcxproj generator.
 
     The build system "hijacks" Visual Studio: instead of letting MSBuild own
     the build, each .vcxproj is emitted as a Makefile-style project whose

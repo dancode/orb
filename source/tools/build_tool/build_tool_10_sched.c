@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_09_sched.c -- Parallel target scheduler.
+    build_tool_10_sched.c -- Parallel target scheduler.
 
     A topological worker pool that runs independent build targets concurrently.
     Each worker thread pulls a target whose dependencies have all finished,

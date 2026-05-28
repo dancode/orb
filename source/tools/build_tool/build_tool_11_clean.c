@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_10_clean.c -- Artifact cleanup for the -clean command.
+    build_tool_11_clean.c -- Artifact cleanup for the -clean command.
 
     Two clean modes:
 

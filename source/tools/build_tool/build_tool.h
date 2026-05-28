@@ -605,7 +605,7 @@ void build_gen_vscode( void );
     from the unity entry (everything before the first constituent .c include).
     Delivered exclusively via -include flags injected into compile_commands.json
     entries by build_gen_compile_commands().
-    Controlled by s_gen_preludes in build_tool_11_gen_prelude.c. */
+    Controlled by s_gen_preludes in build_tool_12_gen_prelude.c. */
 
 void build_gen_preludes( void );
 

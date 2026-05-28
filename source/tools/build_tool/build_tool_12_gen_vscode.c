@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_11_gen_vscode.c -- VS Code workspace configuration generator.
+    build_tool_12_gen_vscode.c -- VS Code workspace configuration generator.
 
     Emits .vscode/tasks.json with build tasks wired to build_tool.exe.
     Called as part of -gen alongside build_gen_projects() and build_gen_compile_commands().

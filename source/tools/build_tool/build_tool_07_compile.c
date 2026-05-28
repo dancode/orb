@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_06_compile.c -- Compiler command construction and execution.
+    build_tool_07_compile.c -- Compiler command construction and execution.
 
     Assembles the cl.exe command line for a single target and runs it.
     The command is built section-by-section into a compile_cmd_t struct so each
@@ -145,7 +145,7 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
     if ( total >= CMD_RSP_THRESHOLD )
     {
         /* temporary print so we know when hit this */
-        printf( ORB_INDENT "[orb warmomg] command length %zu exceeds threshold\n", total );                
+        printf( ORB_INDENT "[orb warning] command length %zu exceeds threshold\n", total );                
 
         if ( g_use_rsp )
         {

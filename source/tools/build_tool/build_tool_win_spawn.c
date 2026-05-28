@@ -13,7 +13,7 @@
     The cmd string is passed directly to CreateProcess as lpCommandLine with no cmd.exe
     wrapper. All callers pass fully-formed compiler/linker command lines with no shell
     metacharacters, so the shell layer is unnecessary and would only introduce quoting
-    ambiguity. vcvars detection (build_tool_03_env.c) uses platform_popen which still
+    ambiguity. vcvars detection (build_tool_04_env.c) uses platform_popen which still
     goes through cmd.exe because it needs shell builtins and output redirection.
 
     A future build_tool_posix_spawn.c would provide identical symbols using:

@@ -9,7 +9,7 @@
                                         g_targets[]. These two are always available
                                         regardless of whether orb.targets exists.
 
-        registry_load("orb.targets") -- appended by build_tool_02_registry.c;
+        registry_load("orb.targets") -- appended by build_tool_03_registry.c;
                                         all project targets and solutions live there.
 
     Why build_tool and reflect_tool are hard-coded here and not in orb.targets:

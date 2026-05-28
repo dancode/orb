@@ -56,73 +56,73 @@
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_02_registry.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_02_registry.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_03_registry.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_03_registry.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_03_env.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_03_env.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_04_env.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_04_env.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_04_log.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_04_log.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_05_log.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_05_log.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_05_spawn.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_05_spawn.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_06_spawn.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_06_spawn.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_06_compile.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_06_compile.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_07_compile.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_07_compile.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_07_link.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_07_link.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_08_link.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_08_link.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_08_exec.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_08_exec.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_09_exec.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_09_exec.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_09_sched.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_09_sched.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_10_sched.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_10_sched.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_10_clean.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_10_clean.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_11_clean.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_clean.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_12_gen_nmake.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_12_gen_nmake.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen_json.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen_json.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_12_gen_json.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_12_gen_json.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen_vscode.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen_vscode.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_12_gen_vscode.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_12_gen_vscode.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_11_gen_msbuild.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_11_gen_msbuild.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_12_gen_msbuild.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_12_gen_msbuild.c"
   },
   {
     "directory": "F:/orb",
-    "file": "F:/orb/source/tools/build_tool/build_tool_12_test.c",
-    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_12_test.c"
+    "file": "F:/orb/source/tools/build_tool/build_tool_test.c",
+    "command": "clang-cl.exe /c /nologo /W4 /WX --target=x86_64-pc-windows-msvc /std:c11 /Zi /Od /MDd -Wno-unused-parameter -Wno-unused-command-line-argument -Wno-unused-function -Wno-undefined-internal /I source /I build/generated /FI source/tools/build_tool/build_tool.c /D_CRT_SECURE_NO_WARNINGS /DBUILD_TOOL_STATIC /D_DEBUG F:/orb/source/tools/build_tool/build_tool_test.c"
   },
   {
     "directory": "F:/orb",

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_11_gen_compdb.c -- compile_commands.json generator.
+    build_tool_12_gen_json.c -- compile_commands.json generator.
 
     Emits a JSON Compilation Database at the project root (compile_commands.json).
     Tools that speak clangd -- VS Code, Vim/Neovim, Emacs, JetBrains CLion -- use

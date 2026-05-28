@@ -55,7 +55,7 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
 }
 
 /*==============================================================================================
-    --- Response File Spill ---
+    --- Command Response File Spill ---
 
     When the assembled command line would exceed the shell limit (~8191 chars),
     spill everything after the exe token to a response file and rewrite the

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_03_env.c -- Visual Studio environment discovery and import.
+    build_tool_04_env.c -- Visual Studio environment discovery and import.
 
     cl.exe requires ~50 environment variables (PATH, INCLUDE, LIB, LIBPATH, etc.)
     before it can run. Microsoft ships vcvarsall.bat to set them up.

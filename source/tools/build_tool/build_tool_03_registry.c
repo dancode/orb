@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_02_registry.c -- orb.targets text file parser.
+    build_tool_03_registry.c -- orb.targets text file parser.
 
     Reads orb.targets from the project root and appends targets and solutions to
     the dynamic pools in build_tool_02_data.c (g_targets[], g_solutions[]).

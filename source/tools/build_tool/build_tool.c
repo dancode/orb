@@ -21,22 +21,22 @@
         win_toolchain.c  -- 00d compiler/linker flag sets (MSVC vs GCC/Clang)
         posix_*.c        -- POSIX equivalents of the above for Linux/macOS
 
-        01_prim.c        -- cmd_buf, mtime, file locks (pure primitives, no deps)
-        02_data.c        -- g_targets[] / g_solutions[] dynamic pools + lookup helpers
-        02_registry.c    -- orb.targets text-file parser; appends to 02_data pools
-        03_env.c         -- VS environment discovery and vcvars import
-        04_log.c         -- stateless output formatters (print_section, etc.)
-        05_spawn.c       -- child process spawning, /showIncludes capture
-        06_compile.c     -- cl.exe command assembly and execution
-        07_link.c        -- link.exe / lib.exe command assembly and execution
-        08_exec.c        -- build_target() orchestration
-        09_sched.c       -- topological worker-pool parallel scheduler
-        10_clean.c       -- -clean command: per-target or global artifact wipe
-        11_gen.c         -- -gen command: NMake-style .sln/.vcxproj (build_tool owns build)
-        11_gen_json.c    -- -gen command: compile_commands.json (clangd / LSP tools)
-        11_gen_vscode.c  -- -gen command: .vscode/tasks.json (VS Code build tasks)
-        11_gen_msbuild.c -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
-        12_test.c        -- debug arg injection from build_tool_debug.args
+        01_prim.c         -- cmd_buf, mtime, file locks (pure primitives, no deps)
+        02_data.c         -- g_targets[] / g_solutions[] dynamic pools + lookup helpers
+        03_registry.c     -- orb.targets text-file parser; appends to 02_data pools
+        04_env.c          -- VS environment discovery and vcvars import
+        05_log.c          -- stateless output formatters (print_section, etc.)
+        06_spawn.c        -- child process spawning, /showIncludes capture
+        07_compile.c      -- cl.exe command assembly and execution
+        08_link.c         -- link.exe / lib.exe command assembly and execution
+        09_exec.c         -- build_target() orchestration
+        10_sched.c        -- topological worker-pool parallel scheduler
+        11_clean.c        -- -clean command: per-target or global artifact wipe
+        12_gen_nmake.c    -- -gen command: NMake-style .sln/.vcxproj (build_tool owns build)
+        12_gen_json.c     -- -gen command: compile_commands.json (clangd / LSP tools)
+        12_gen_vscode.c   -- -gen command: .vscode/tasks.json (VS Code build tasks)
+        12_gen_msbuild.c  -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
+        test.c            -- debug arg injection from build_tool_debug.args
 
 ==============================================================================================*/
 // clang-format off
@@ -133,20 +133,20 @@ const char* sched_log_path( void );
 #endif
 #include "build_tool_01_prim.c"             // 01 foundation primitives
 #include "build_tool_02_data.c"             // 02 target/solution pools + built-in registrations
-#include "build_tool_02_registry.c"         // 02b orb.targets text-file parser
-#include "build_tool_03_env.c"              // 03 vcvars setup
-#include "build_tool_04_log.c"              // 04 output formatting
-#include "build_tool_05_spawn.c"            // 05 child process spawning
-#include "build_tool_06_compile.c"          // 06 compile command
-#include "build_tool_07_link.c"             // 07 link command
-#include "build_tool_08_exec.c"             // 08 build_target orchestration
-#include "build_tool_09_sched.c"            // 09 parallel scheduler
-#include "build_tool_10_clean.c"            // 10 -clean command
-#include "build_tool_11_gen.c"              // 11 -gen command (NMake/Makefile projects)
-#include "build_tool_11_gen_json.c"         // 11c -gen command (compile_commands.json)
-#include "build_tool_11_gen_vscode.c"       // 11d -gen command (.vscode/tasks.json)
-#include "build_tool_11_gen_msbuild.c"      // 11e -gen_ms command (MSBuild projects)
-#include "build_tool_12_test.c"             // 12 debug arg injection
+#include "build_tool_03_registry.c"         // 03 orb.targets text-file parser
+#include "build_tool_04_env.c"              // 04 vcvars setup
+#include "build_tool_05_log.c"              // 05 output formatting
+#include "build_tool_06_spawn.c"            // 06 child process spawning
+#include "build_tool_07_compile.c"          // 07 compile command
+#include "build_tool_08_link.c"             // 08 link command
+#include "build_tool_09_exec.c"             // 09 build_target orchestration
+#include "build_tool_10_sched.c"            // 10 parallel scheduler
+#include "build_tool_11_clean.c"            // 11 -clean command
+#include "build_tool_12_gen_nmake.c"        // 12a -gen command (NMake/Makefile projects)
+#include "build_tool_12_gen_json.c"         // 12b -gen command (compile_commands.json)
+#include "build_tool_12_gen_vscode.c"       // 12c -gen command (.vscode/tasks.json)
+#include "build_tool_12_gen_msbuild.c"      // 12d -gen_ms command (MSBuild projects)
+#include "build_tool_test.c"                // debug arg injection (debug builds only)
 
 /*==============================================================================================
     --- validate_targets ---

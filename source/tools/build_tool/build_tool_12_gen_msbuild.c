@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_gen_msbuild.c -- MSBuild StaticLibrary/DynamicLibrary/Application generator.
+    build_tool_12_gen_msbuild.c -- MSBuild StaticLibrary/DynamicLibrary/Application generator.
 
     Generates native MSBuild projects (not NMake/Makefile) so Visual Studio uses its
     full EDG IntelliSense pipeline. The EDG front-end reads LanguageStandard_C and
@@ -13,7 +13,7 @@
     Build model: VS presses Build -> MSBuild -> cl.exe directly 
     (no build_tool.exe involved). CLI builds still use build_tool.exe -config.
 
-    Shares all infrastructure from build_tool_11_gen.c (included first in unity build):
+    Shares all infrastructure from build_tool_12_gen_nmake.c (included first in unity build):
       guid_from_name(), scan_directory_recursive(), build_intellisense_defines(),
       s_out_dir / s_root_prefix / s_cd_root state, g_files[], g_filters[].
 
@@ -191,7 +191,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
     write_msbuild_clcompile_group( f, CONFIG_DEBUG,   target );
     write_msbuild_clcompile_group( f, CONFIG_RELEASE, target );
 
-    // Reflection codegen pre-build event. Mirrors step 6 in build_tool_08_exec.c:
+    // Reflection codegen pre-build event. Mirrors step 6 in build_tool_09_exec.c:
     //   bin\reflect_tool.exe <root_dir> <gen_dir> <reflect_name>
     // Two-step command:
     //   1. build_tool.exe builds reflect_tool if missing or stale (incremental,
@@ -355,7 +355,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
     build_gen_projects() but generates MSBuild StaticLibrary/DLL/Application projects
     instead of NMake/Makefile projects. Output lands in <sln.out_dir>_msbuild.
 
-    build_gen_solution() from build_tool_11_gen.c is reused as-is -- the .sln format is
+    build_gen_solution() from build_tool_12_gen_nmake.c is reused as-is -- the .sln format is
     identical regardless of project type, and it reads s_out_dir (already updated by
     compute_path_parts) rather than sln->out_dir directly.
 

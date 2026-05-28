@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    build_tool_07_link.c -- Linker and archiver command construction and execution.
+    build_tool_08_link.c -- Linker and archiver command construction and execution.
 
     Assembles the link.exe / lib.exe command line for a single target and runs it.
     lib.exe is used for static libraries; link.exe handles both DLLs and executables.
