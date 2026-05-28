@@ -125,6 +125,20 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
                 dep_type = TARGET_STATIC_LIB;
             platform_lk_append_dep_lib( target->deps[ i ], dep_type, lk.libs, sizeof( lk.libs ) );
         }
+        // Monolithic-only deps: modules that are runtime-loaded in modular builds
+        // but must be explicitly linked when everything is compiled as static libs.
+        if ( ctx->is_monolithic )
+        {
+            for ( int i = 0; target->mono_deps[ i ]; ++i )
+            {
+                target_info_t* dep      = find_target( target->mono_deps[ i ] );
+                target_type_t  dep_type = dep ? dep->type : TARGET_DYNAMIC_LIB;
+                // mono_deps are typically DLLs; in monolithic mode they are static libs.
+                if ( dep_type == TARGET_DYNAMIC_LIB )
+                    dep_type = TARGET_STATIC_LIB;
+                platform_lk_append_dep_lib( target->mono_deps[ i ], dep_type, lk.libs, sizeof( lk.libs ) );
+            }
+        }
         platform_lk_append_sys_libs( lk.libs, sizeof( lk.libs ) );
     }
 

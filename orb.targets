@@ -152,6 +152,7 @@ target example_gen
     root        source/runtime_modules/example_gen
     folder      03_RUNTIME_EXAMPLES
     unit        example_gen.c
+	mono_dep 	core
     reflect
 
 # ==============================================================================
@@ -220,6 +221,7 @@ target sb_engine_mod
     unit        sb_engine_mod.c
     dep         sys mod
     dep         dev_build dev_hot
+	mono_dep 	example 
 
 target sb_engine_sys
     type        exe
@@ -259,6 +261,7 @@ target sb_runtime_reflect
     folder      09_SANDBOX/RUNTIME
     unit        sb_runtime_reflect.c
     dep         sys mod core rs
+	mono_dep 	example_reflect
 	
 target sb_runtime_gen
     type        exe
@@ -266,6 +269,7 @@ target sb_runtime_gen
     folder      09_SANDBOX/RUNTIME
     unit        sb_runtime_gen.c
     dep         sys rs mod core 
+	mono_dep 	example_gen
     reflect
 
 # ==============================================================================

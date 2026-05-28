@@ -56,6 +56,10 @@ msbuild_config_type_str( target_type_t type )
 static void
 write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
 {
+    // In monolithic solutions DLL modules are archived as static libs.
+    target_type_t eff_type = ( s_is_monolithic && target->type == TARGET_DYNAMIC_LIB )
+                           ? TARGET_STATIC_LIB : target->type;
+
     const char* cond = ( config == CONFIG_DEBUG )
         ? "'$(Configuration)|$(Platform)'=='Debug|x64'"
         : "'$(Configuration)|$(Platform)'=='Release|x64'";
@@ -93,10 +97,10 @@ write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
              defines );
     fprintf( f, "    </ClCompile>\n" );
 
-    // Link / Lib settings for non-static targets.
-    if ( target->type == TARGET_DYNAMIC_LIB || target->type == TARGET_EXECUTABLE )
+    // Link settings for exe and DLL targets (DLLs become static libs in monolithic mode).
+    if ( eff_type == TARGET_DYNAMIC_LIB || eff_type == TARGET_EXECUTABLE )
     {
-        const char* subsystem = ( target->type == TARGET_EXECUTABLE ) ? "Console" : "Windows";
+        const char* subsystem = ( eff_type == TARGET_EXECUTABLE ) ? "Console" : "Windows";
         const char* gen_debug = ( config == CONFIG_DEBUG ) ? "true" : "false";
         fprintf( f, "    <Link>\n" );
         fprintf( f, "      <SubSystem>%s</SubSystem>\n", subsystem );
@@ -134,7 +138,9 @@ build_gen_proj_target_msbuild( target_info_t* target )
         return;
     }
 
-    const char* cfg_type = msbuild_config_type_str( target->type );
+    target_type_t eff_type = ( s_is_monolithic && target->type == TARGET_DYNAMIC_LIB )
+                           ? TARGET_STATIC_LIB : target->type;
+    const char* cfg_type = msbuild_config_type_str( eff_type );
 
     fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
     fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
@@ -269,7 +275,9 @@ build_gen_proj_target_msbuild( target_info_t* target )
     fprintf( f, "  </ItemGroup>\n" );
 
     // ProjectReference items: MSBuild resolves build order and links .lib outputs.
-    if ( target->deps[ 0 ] )
+    // In monolithic mode also include mono_deps (runtime-loaded modules that must be linked).
+    bool has_refs = target->deps[ 0 ] || ( s_is_monolithic && target->mono_deps[ 0 ] );
+    if ( has_refs )
     {
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; target->deps[ i ]; ++i )
@@ -279,6 +287,17 @@ build_gen_proj_target_msbuild( target_info_t* target )
             fprintf( f, "    <ProjectReference Include=\"%s.vcxproj\">\n", target->deps[ i ] );
             fprintf( f, "      <Project>%s</Project>\n", dep_guid );
             fprintf( f, "    </ProjectReference>\n" );
+        }
+        if ( s_is_monolithic )
+        {
+            for ( int i = 0; target->mono_deps[ i ]; ++i )
+            {
+                char dep_guid[ 64 ];
+                guid_from_name( target->mono_deps[ i ], dep_guid );
+                fprintf( f, "    <ProjectReference Include=\"%s.vcxproj\">\n", target->mono_deps[ i ] );
+                fprintf( f, "      <Project>%s</Project>\n", dep_guid );
+                fprintf( f, "    </ProjectReference>\n" );
+            }
         }
         fprintf( f, "  </ItemGroup>\n" );
     }

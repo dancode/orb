@@ -40,7 +40,8 @@
             folder      <VS solution virtual folder>
             unit        <unity entry .c filename>           (one per line; multiple allowed)
             dep         <dependency target name>            (one per line; multiple allowed)
-            tool_dep     <tool dependency name>             (one per line; multiple allowed)
+            tool_dep    <tool dependency name>             (one per line; multiple allowed)
+            mono_dep    <monolithic-only link dep>         (one per line; multiple allowed)
             reflect     [<custom reflect output name>]      (flag; optional name override)
             include_dir <path>                              (extra include dir; repeatable)
             flag        is_tool | is_build_tool | is_reflect_tool
@@ -311,10 +312,13 @@ registry_load( const char* path, bool is_external )
             }
             else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->sln_folder = pool_str( val );
             else if ( strcmp( key, "unit"   ) == 0 && val ) reg_append_slot( cur_t->units, TARGET_MAX_SLOTS, val );
-            else if ( ( strcmp( key, "dep" ) == 0 || strcmp( key, "tool_dep" ) == 0 ) && val )
+            else if ( ( strcmp( key, "dep" ) == 0 || strcmp( key, "tool_dep" ) == 0
+                     || strcmp( key, "mono_dep" ) == 0 ) && val )
             {
-                /* dep/tool_dep accept space-separated lists: dep sys mod core */
-                const char** slots = ( key[ 0 ] == 'd' && key[ 1 ] == 'e' ) ? cur_t->deps : cur_t->tool_deps;
+                /* dep/tool_dep/mono_dep accept space-separated lists: dep sys mod core */
+                const char** slots = ( strcmp( key, "tool_dep" ) == 0 ) ? cur_t->tool_deps
+                                   : ( strcmp( key, "mono_dep" ) == 0 ) ? cur_t->mono_deps
+                                   : cur_t->deps;
                 char tmp[ 1024 ];
                 snprintf( tmp, sizeof( tmp ), "%s", val );
                 char* tok = strtok( tmp, " \t" );
