@@ -16,8 +16,9 @@ target my_project
     root        src
     folder      01_MY_PROJECT
     unit        main.c
-    # dep       sys
+    dep       	sys
 
 solution my_project
     out     build/proj
     add     my_project
+	# add 	sys

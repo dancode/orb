@@ -207,8 +207,9 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
     for ( int i = 0; i < MAX_EXTRA_INCLUDE_DIRS && target->extra_include_dirs[ i ]; ++i )
         platform_cc_append_include( target->extra_include_dirs[ i ], cc->includes, sizeof( cc->includes ) );
 
-    // Engine source root: auto-added for all local targets when 'engine' is declared.
-    if ( g_engine_root[ 0 ] && !target->is_external )
+    // Engine source root: auto-added for all targets when 'engine' is declared.
+    // External targets (e.g. sys, core) need it too -- they reference orb.h and generated headers.
+    if ( g_engine_root[ 0 ] )
     {
         char engine_src[ PATH_MAX ];
         snprintf( engine_src, sizeof( engine_src ), "%s/source", g_engine_root );

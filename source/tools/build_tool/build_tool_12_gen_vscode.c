@@ -2,7 +2,7 @@
 
     build_tool_12_gen_vscode.c -- VS Code workspace configuration generator.
 
-    Emits .vscode/tasks.json with build tasks wired to build_tool.exe.
+    Emits .vscode/tasks.json, launch.json, and settings.json.
     Called as part of -gen alongside build_gen_projects() and build_gen_compile_commands().
 
     Generated tasks:
@@ -20,28 +20,27 @@
 
 ==============================================================================================*/
 
-// VS Code workspace-relative exe path and cwd, emitted as JSON string literals.
+// VS Code cwd, emitted as a JSON string literal.
 // ${workspaceFolder} is substituted by VS Code at task run time.
-// \\\\  in C  ->  \\  in file  ->  \  in JSON string  ->  \  in path.
-
-#define VSCODE_EXE  "\"${workspaceFolder}\\\\bin\\\\build_tool.exe\""
 #define VSCODE_CWD  "\"${workspaceFolder}\""
 
 /*==============================================================================================
     vsc_task()
 
     Emit one task block (without a leading or trailing comma -- the caller manages
-    entry separation). with_matcher adds the $msCompile problemMatcher which parses
-    cl.exe error output into VS Code inline diagnostics.
+    entry separation). exe_json is the quoted JSON string for the command path.
+    with_matcher adds the $msCompile problemMatcher which parses cl.exe error output
+    into VS Code inline diagnostics.
 ==============================================================================================*/
 
 static void
-vsc_task( FILE* fp, const char* label, const char* args, bool with_matcher, bool is_default )
+vsc_task( FILE* fp, const char* exe_json, const char* label, const char* args,
+          bool with_matcher, bool is_default )
 {
     fprintf( fp, "    {\n" );
     fprintf( fp, "      \"label\": \"%s\",\n", label );
     fprintf( fp, "      \"type\": \"process\",\n" );
-    fprintf( fp, "      \"command\": " VSCODE_EXE ",\n" );
+    fprintf( fp, "      \"command\": %s,\n", exe_json );
     fprintf( fp, "      \"args\": [%s],\n", args );
     if ( is_default )
         fprintf( fp, "      \"group\": { \"kind\": \"build\", \"isDefault\": true },\n" );
@@ -66,6 +65,23 @@ build_gen_vscode( void )
 {
     ensure_dir( ".vscode" );
 
+    // Determine the build_tool.exe path for task commands.
+    // Child projects use the engine's absolute exe path (forward slashes for JSON).
+    // Engine-root builds use a workspace-relative path.
+    char vscode_exe[ PATH_MAX + 4 ];
+    if ( g_engine_root[ 0 ] )
+    {
+        char fwd[ PATH_MAX ];
+        snprintf( fwd, sizeof( fwd ), "%s/bin/build_tool.exe", g_engine_root );
+        for ( char* p = fwd; *p; ++p ) if ( *p == '\\' ) *p = '/';
+        snprintf( vscode_exe, sizeof( vscode_exe ), "\"%s\"", fwd );
+    }
+    else
+    {
+        snprintf( vscode_exe, sizeof( vscode_exe ),
+                  "\"${workspaceFolder}\\\\bin\\\\build_tool.exe\"" );
+    }
+
     const char* out_path = ".vscode/tasks.json";
     FILE* fp = fopen( out_path, "w" );
     if ( !fp )
@@ -78,27 +94,27 @@ build_gen_vscode( void )
     fprintf( fp, "  \"version\": \"2.0.0\",\n" );
     fprintf( fp, "  \"tasks\": [\n" );
 
-    vsc_task( fp, "orb: build debug",
+    vsc_task( fp, vscode_exe, "orb: build debug",
               "\"-config\", \"Debug\"",
               true, true );
     fprintf( fp, ",\n" );
 
-    vsc_task( fp, "orb: build release",
+    vsc_task( fp, vscode_exe, "orb: build release",
               "\"-config\", \"Release\"",
               true, false );
     fprintf( fp, ",\n" );
 
-    vsc_task( fp, "orb: build target",
+    vsc_task( fp, vscode_exe, "orb: build target",
               "\"-config\", \"Debug\", \"-target\", \"${input:targetName}\"",
               true, false );
     fprintf( fp, ",\n" );
 
-    vsc_task( fp, "orb: clean",
+    vsc_task( fp, vscode_exe, "orb: clean",
               "\"-clean\"",
               false, false );
     fprintf( fp, ",\n" );
 
-    vsc_task( fp, "orb: regen",
+    vsc_task( fp, vscode_exe, "orb: regen",
               "\"-gen\"",
               false, false );
     fprintf( fp, "\n" );
@@ -138,6 +154,47 @@ build_gen_vscode( void )
         for ( int i = 0; i < g_target_count; ++i )
             if ( !g_targets[ i ].is_external ) local_count++;
         printf( "Generated .vscode/tasks.json (%d targets in picker)\n", local_count );
+    }
+
+    // launch.json: one config per local exe target.
+    fp = fopen( ".vscode/launch.json", "w" );
+    if ( fp )
+    {
+        fprintf( fp, "{\n" );
+        fprintf( fp, "  \"version\": \"0.2.0\",\n" );
+        fprintf( fp, "  \"configurations\": [\n" );
+
+        int exe_count = 0;
+        for ( int i = 0; i < g_target_count; ++i )
+            if ( !g_targets[ i ].is_external && g_targets[ i ].type == TARGET_EXECUTABLE )
+                exe_count++;
+
+        int emitted = 0;
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            target_info_t* t = &g_targets[ i ];
+            if ( t->is_external || t->type != TARGET_EXECUTABLE ) continue;
+            ++emitted;
+            fprintf( fp, "    {\n" );
+            fprintf( fp, "      \"name\": \"%s\",\n", t->name );
+            fprintf( fp, "      \"type\": \"cppvsdbg\",\n" );
+            fprintf( fp, "      \"request\": \"launch\",\n" );
+            fprintf( fp, "      \"program\": \"${workspaceFolder}/bin/%s.exe\",\n", t->name );
+            fprintf( fp, "      \"args\": [],\n" );
+            fprintf( fp, "      \"cwd\": \"${workspaceFolder}\",\n" );
+            fprintf( fp, "      \"console\": \"integratedTerminal\",\n" );
+            fprintf( fp, "      \"preLaunchTask\": \"orb: build debug\"\n" );
+            fprintf( fp, "    }%s\n", ( emitted < exe_count ) ? "," : "" );
+        }
+
+        fprintf( fp, "  ]\n" );
+        fprintf( fp, "}\n" );
+        fclose( fp );
+        printf( "Generated .vscode/launch.json (%d configurations)\n", exe_count );
+    }
+    else
+    {
+        printf( ORB_INDENT "[orb error] could not write .vscode/launch.json\n" );
     }
 
     // Disable the MS C/C++ IntelliSense engine so it doesn't conflict with clangd.
