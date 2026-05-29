@@ -341,6 +341,7 @@ print_startup_banner( const build_context_t* ctx )
 
     Recognized arguments (all case-insensitive):
 
+      -list, -targets         Print all registered targets and exit.
       -clean                  Wipe build outputs and exit.
       -bootstrap              Recompile build_tool.exe itself (self-hosting).
       -gen                    Regenerate NMake .sln/.vcxproj and compile_commands.json; exit.
@@ -380,6 +381,7 @@ main( int argc, char** argv )
 
     // --- Operational Command flags ---
 
+    bool should_list         = false;
     bool should_clean        = false;
     bool should_gen          = false;
     bool should_gen_nmake    = false;
@@ -392,6 +394,7 @@ main( int argc, char** argv )
     for ( int i = 1; i < argc; ++i )
     {
         // utiltiy + project generation
+        if ( platform_stricmp( argv[ i ], "-list"             ) == 0 ) should_list = true;
         if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
         if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
         if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
@@ -449,6 +452,57 @@ main( int argc, char** argv )
     init_builtin_targets();
 
     if ( !validate_targets() ) return 1;
+
+    // --- Command: LIST ---
+
+    if ( should_list )
+    {
+        static const char* type_tag[] = { "lib", "dll", "exe" };
+
+        // measure the longest name for alignment
+        int max_name = 4;
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            int n = ( int )strlen( g_targets[ i ].name );
+            if ( n > max_name ) max_name = n;
+        }
+
+        int local_count    = 0;
+        int external_count = 0;
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( g_targets[ i ].is_external ) external_count++;
+            else                              local_count++;
+        }
+
+        printf( ORB_BANNER "[orb targets] %d local, %d external\n\n",
+                local_count, external_count );
+
+        // Local targets first, then external, each group in registration order.
+        for ( int pass = 0; pass < 2; ++pass )
+        {
+            bool printing_external = ( pass == 1 );
+            bool printed_header    = false;
+            for ( int i = 0; i < g_target_count; ++i )
+            {
+                const target_info_t* t = &g_targets[ i ];
+                if ( t->is_external != printing_external ) continue;
+
+                if ( !printed_header )
+                {
+                    printf( ORB_INDENT "%s\n", printing_external ? "(external)" : "(local)" );
+                    printed_header = true;
+                }
+
+                const char* kind = ( t->is_build_tool || t->is_reflect_tool || t->is_tool ) ? " [tool]" : "";
+                const char* folder = ( t->virtual_folder && t->virtual_folder[ 0 ] ) ? t->virtual_folder : "";
+                printf( ORB_INDENT "  [%s]  %-*s  %s%s\n",
+                        type_tag[ t->type ], max_name, t->name, folder, kind );
+            }
+            if ( printed_header ) printf( "\n" );
+        }
+        return 0;
+    }
 
     // --- Command: BOOTSTRAP (recompile build_tool.exe itself) ---
 
