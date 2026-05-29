@@ -53,3 +53,120 @@ TODO: make clangd work with Visual Studio code outout gen.
   REM 3. Build — should show 1 target only
   F:\orb\my_project> bin\build_tool.bat
   
+  
+  Gaps vs. Comparable Game Engine Build Tools
+
+  High Impact — Core Build Capabilities
+
+  1. Per-target custom defines and compiler flags in orb.targets
+  target_info_t has extra_include_dirs but no extra_defines[] or
+  extra_compile_flags[]. UBT lets every module declare its own
+  PublicDefinitions/PrivateDefinitions. Right now if a target needs e.g.
+  ENABLE_PROFILING or /GR-, it can't express that in the targets file — it
+   has to be a global define or baked into the unity .c file. This is the
+  most commonly needed missing primitive.
+
+  2. Per-target linker flags
+  No link_flag directive. Can't express /SUBSYSTEM:WINDOWS vs
+  /SUBSYSTEM:CONSOLE, /STACK:, /WHOLEARCHIVE:, custom section alignment,
+  etc. per-target. Same hole — UBT, Fastbuild, and every other mature
+  system have this.
+
+  3. Link-Time Code Generation (LTCG/LTO) for Release
+  Release builds don't use /GL (whole-program optimization) + /LTCG on the
+   linker side. This is table-stakes for Release/Shipping configs in
+  serious C game engines — id, UE, and even small studios flip this on.
+  It's a 10-30% perf improvement for free in Release.
+
+  ---
+  Medium Impact — Discoverability and Developer Ergonomics
+
+  4. -list / -targets command
+  No way to ask the build tool what targets exist. Every other build
+  system has this (ninja -t targets, make help, ue4 -listplatforms).
+  Useful especially once child projects import the engine and inherit its
+  target pool.
+
+  5. Build timing per target
+  No elapsed-time output. UBT prints [1/47] Compiling core (2.3s). When a
+  build is slow you have no data on where the time went. One
+  GetTickCount64() diff around the compile+link path is all it needs.
+
+  6. Dependency graph dump (-print-deps)
+  No way to visualize the topological order before building. UBT has
+  -graph. Useful when dep cycles or phantom rebuilds appear.
+
+  ---
+  Medium Impact — Build Performance
+
+  7. Compiler cache integration (sccache / clcache)
+  No hook to prefix cl.exe invocations with a cache layer. UBT supports
+  Incredibuild and sccache. The compile path in build_tool_07_compile.c
+  constructs the cl.exe command directly with no interposition point.
+  Adding an optional COMPILER_PREFIX env var would be enough.
+
+  8. Source globbing in orb.targets
+  unit requires explicit filenames. A glob *.c directive (resolved at
+  registry load time) would eliminate manual maintenance of unit lists as
+  new files are added. Fastbuild, SCons, and Premake all support this.
+  Unity builds still work — the glob just expands to multiple unit
+  entries.
+
+  ---
+  Lower Impact — Workflow Features
+
+  9. File-watch / auto-rebuild mode (-watch)
+  No ReadDirectoryChangesW-based loop that triggers a rebuild when a
+  source file changes. Common in smaller game dev tools (Handmade Hero's
+  build.bat analog, Bob Nystrom's craftinginterpreters build). Not in UBT
+  but expected in fast-iteration CLI tools.
+
+  10. Build artifact fingerprinting beyond mtime
+  Incremental build uses mtime + header list. It doesn't hash the compiler
+   flags — so changing a define or flag won't trigger a rebuild of
+  already-up-to-date targets. UBT stores a "build manifest" (JSON with
+  flags hash) per target for this. ORB will silently skip recompilation
+  after a define change unless you -force.
+
+  11. Configuration beyond Debug/Release
+  UBT has Development, DebugGame, Test, Shipping. Even a simple Profile
+  config (Release + /Zi symbols) is useful for profiling tools like
+  Superluminal or RAD Telemetry.
+
+  ---
+  Summary Table
+
+  ┌──────────────────────────────────┬─────┬─────────────┐
+  │             Feature              │ ORB │ UBT / peers │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Per-target defines               │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Per-target compiler/linker flags │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ LTCG in Release                  │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ -list targets command            │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Per-target build timing          │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Dependency graph dump            │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Compiler cache (sccache)         │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Source globbing                  │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Watch mode                       │ No  │ Partial     │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Flag-change invalidation         │ No  │ Yes         │
+  ├──────────────────────────────────┼─────┼─────────────┤
+  │ Config beyond Debug/Release      │ No  │ Yes         │
+  └──────────────────────────────────┴─────┴─────────────┘
+
+  The three I'd prioritize: per-target defines, LTCG in Release, and build
+   timing — they're small to add and close the biggest real gaps.
+
+✻ Baked for 1m 17s · 2 shells still running
+
+※ recap: Audited what the ORB build tool is missing compared to peers like
+   UBT. Next step is deciding which gaps to address first — per-target
+  defines, LTCG in Release, and build timing are the top three candidates.

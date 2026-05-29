@@ -429,6 +429,10 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
         }
         if ( s_ctx.is_monolithic )
             ISDEF_APPEND( "BUILD_STATIC" );
+
+        // Per-target defines from 'define' directives in orb.targets.
+        for ( int i = 0; i < MAX_EXTRA_DEFINES && target->extra_defines[ i ]; ++i )
+            ISDEF_APPEND( target->extra_defines[ i ] );
     }
     else
     {
@@ -1013,7 +1017,7 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             // Register every path segment so "A/B" creates both "A" and "A/B" folders.
             {
                 char tmp[ PATH_MAX ];
-                snprintf( tmp, sizeof( tmp ), "%s", target->sln_folder );
+                snprintf( tmp, sizeof( tmp ), "%s", target->virtual_folder );
                 for ( char* p = tmp; *p; p++ )
                     if ( *p == '\\' ) *p = '/';
 
@@ -1113,9 +1117,9 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
         target_info_t* t = find_target( *tn );
         if ( t )
         {
-            // Normalize sln_folder to forward slashes for comparison.
+            // Normalize virtual_folder to forward slashes for comparison.
             char norm[ PATH_MAX ];
-            snprintf( norm, sizeof( norm ), "%s", t->sln_folder );
+            snprintf( norm, sizeof( norm ), "%s", t->virtual_folder );
             for ( char* p = norm; *p; p++ )
                 if ( *p == '\\' ) *p = '/';
 

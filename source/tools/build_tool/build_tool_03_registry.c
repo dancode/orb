@@ -40,29 +40,108 @@
             folder      <VS solution virtual folder>
             unit        <unity entry .c filename>           (one per line; multiple allowed)
             dep         <dependency target name>            (one per line; multiple allowed)
-            tool_dep    <tool dependency name>             (one per line; multiple allowed)
-            mono_dep    <monolithic-only link dep>         (one per line; multiple allowed)
+            tool_dep    <tool dependency name>              (one per line; multiple allowed)
+            mono_dep    <monolithic-only link dep>          (one per line; multiple allowed)
             reflect     [<custom reflect output name>]      (flag; optional name override)
+            inc         <path>                              (extra include dir; alias for include_dir)
             include_dir <path>                              (extra include dir; repeatable)
+            define      <NAME>[=value]                      (per-target preprocessor define; repeatable)
+            compile_flag <msvc|clang|all> <flag>            (per-target compiler flag; repeatable)
+            subsystem   console | windows                   (exe only; /SUBSYSTEM: on Win32; default: console)
+            link_flag   <msvc|clang|all> <flag>             (per-target linker flag; repeatable)
+
             flag        is_tool | is_build_tool | is_reflect_tool
 
     SOLUTION BLOCK:
         solution <name>
             out         <output directory for .sln/.vcxproj files>
-            add         <target1> [target2] ...   (space-separated; line repeatable)
-            nav         <navigation source directory> (optional)
-            include_dir <path>                          (extra include dir; repeatable)
+            add         <target1> [target2] ...             (space-separated; line repeatable)
+            nav         <navigation source directory>       (optional)
+            include_dir <path>                              (IntelliSense-only; repeatable)
             flag        monolithic
 
+        NOTE: solution-level 'include_dir' is forwarded only to vcxproj IntelliSense
+        (AdditionalIncludeDirectories / NMakeIncludeSearchPath). It does NOT inject /I
+        flags into the actual cl.exe invocation. This is intentional: a target is a
+        single shared artifact and may appear in multiple solutions. Wiring solution
+        settings into the compile would make builds non-reproducible depending on which
+        solution triggered them. Anything that must affect compilation belongs on the
+        target, not the solution.
+
     EXAMPLE:
+
+        # Declare the engine root (child projects only; not used when building the engine itself).
+        # Relative paths resolve against this file's directory.
         engine  ..\
 
-        target my_game
+        # Pull in another .targets file; all its targets are marked external (available as
+        # deps but excluded from local -gen / clean / "build all").
+        import  platform\platform.targets
+
+        # --- Target: static library ---
+        target base
+            type        static
+            root        source/base             # source directory; relative to project root
+            folder      01_BASE                 # display-only folder in VS Solution Explorer
+            unit        base.c                  # unity entry file; repeat for multiple TUs
+
+        # --- Target: dynamic library with reflection and per-target settings ---
+        target render
+            type        dynamic
+            root        source/render
+            folder      02_RENDER
+            unit        render.c
+            dep         core sys                # link deps; space-separated or one per line
+            tool_dep    asset_compiler          # must exist before building; not linked
+            mono_dep    audio                   # linked only in monolithic (-mono) builds
+            reflect                             # run reflect_tool before compile
+            reflect     render_types            # optional: override generated file base name
+            inc         source/render/private   # extra /I flag; real compile + IntelliSense
+            include_dir third_party/stb         # alias for inc
+            define      RENDER_VALIDATION       # per-target /D flag; real compile + IntelliSense
+            define      RENDER_MAX_FRAMES=3
+            compile_flag  msvc   /GS-           # appended only when compiling with cl.exe
+            compile_flag  clang  -fno-stack..   # appended only when compiling with clang
+            compile_flag  all    /WX            # appended for every compiler
+
+        # --- Target: executable (windowed app) ---
+        target game
             type        exe
-            root        src
-            folder      01_GAME
+            root        source/game
+            folder      03_GAME
             unit        main.c
-            dep         core
+            dep         core render audio
+            subsystem   windows                 # /SUBSYSTEM:WINDOWS (WinMain; no console window)
+            link_flag   msvc /STACK:4194304     # 4 MB stack; appended only when linking with link.exe
+            link_flag   msvc /WHOLEARCHIVE:bin/core.lib  # force-include all symbols from core.lib
+            link_flag   all  /OPT:REF           # strip unreferenced symbols; safe for both toolchains
+
+        # --- Target: build-time tool (survives global clean; built as a dep automatically) ---
+        target asset_compiler
+            type        exe
+            root        source/tools/asset_compiler
+            folder      08_TOOLS
+            unit        asset_compiler.c
+            flag        is_tool
+
+        # --- Solution: standard modular workspace ---
+        solution my_project
+            out         build/proj              # output directory for .sln/.vcxproj files
+            nav         source                  # optional: navigation-only project for all sources
+            add         base core sys render    # targets to include; space-separated, repeatable
+            add         audio physics game
+            include_dir third_party/headers     # IntelliSense-only /I hint for all targets in this solution
+
+        # --- Solution: monolithic (all DLLs compiled as static libs) ---
+        solution my_project_mono
+            out         build/proj_mono
+            flag        monolithic
+            add         my_project              # expand an existing solution's target list by name
+
+        # --- Solution: narrow workspace for a single subsystem ---
+        solution render_only
+            out         build/proj
+            add         core render
 
 ==============================================================================================*/
 // clang-format off
@@ -141,8 +220,8 @@ reg_sln_add( solution_info_t* sln, const char* name )
     registry_load()
 
     Parse orb.targets and append to g_targets[] / g_solutions[].
-    Returns true on success (including missing file). Returns false only on a
-    hard error (pool overflow, file I/O failure after open).
+    Returns true on success (including missing file). 
+    Returns false only on a hard error (pool overflow, file I/O failure after open).
 ==============================================================================================*/
 
 static bool
@@ -153,14 +232,18 @@ registry_load( const char* path, bool is_external )
     char base_dir[ PATH_MAX ];
     {
         char abs_path[ PATH_MAX ];
+
         if ( !platform_fullpath( abs_path, path, sizeof( abs_path ) ) )
             snprintf( abs_path, sizeof( abs_path ), "%s", path );
         snprintf( base_dir, sizeof( base_dir ), "%s", abs_path );
         char* last = NULL;
         for ( char* cp = base_dir; *cp; ++cp )
             if ( *cp == '/' || *cp == '\\' ) last = cp;
-        if ( last ) *last = '\0';
+        if ( last ) { *last = '\0'; }
         else { base_dir[ 0 ] = '.'; base_dir[ 1 ] = '\0'; }
+        
+        // The '.' is a fallback when no directory component exists.
+        // It means the current working directory (rare occurance).
     }
 
     platform_mapped_file_t mf;
@@ -310,7 +393,7 @@ registry_load( const char* path, bool is_external )
                     cur_t->root_dir = pool_str( abs_buf );
                 }
             }
-            else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->sln_folder = pool_str( val );
+            else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->virtual_folder = pool_str( val );
             else if ( strcmp( key, "unit"   ) == 0 && val ) reg_append_slot( cur_t->units, TARGET_MAX_SLOTS, val );
             else if ( ( strcmp( key, "dep" ) == 0 || strcmp( key, "tool_dep" ) == 0
                      || strcmp( key, "mono_dep" ) == 0 ) && val )
@@ -339,9 +422,10 @@ registry_load( const char* path, bool is_external )
                 if ( strcmp( val, "is_build_tool"   ) == 0 ) cur_t->is_build_tool   = true;
                 if ( strcmp( val, "is_reflect_tool" ) == 0 ) cur_t->is_reflect_tool = true;
             }
-            else if ( strcmp( key, "include_dir" ) == 0 && val )
+            else if ( ( strcmp( key, "include_dir" ) == 0 || strcmp( key, "inc" ) == 0 ) && val )
             {
-                /* Resolve relative path against this file's directory, store absolute. */
+                /* 'inc' is an alias for 'include_dir'. Resolve relative paths against this
+                   file's directory so targets in imported .targets files point to their own tree. */
                 char abs_buf[ PATH_MAX ];
                 if ( platform_is_abs_path( val ) )
                 {
@@ -355,6 +439,98 @@ registry_load( const char* path, bool is_external )
                         snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
                 }
                 reg_append_slot( cur_t->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf );
+            }
+            else if ( strcmp( key, "define" ) == 0 && val )
+            {
+                /* Per-target preprocessor define: appended after global tables at compile time
+                   and forwarded to IntelliSense PreprocessorDefinitions in vcxproj gen. */
+                reg_append_slot( cur_t->extra_defines, MAX_EXTRA_DEFINES, val );
+            }
+            else if ( strcmp( key, "compile_flag" ) == 0 && val )
+            {
+                /* Per-target compiler flag: 'compile_flag <msvc|clang|all> <flag>'.
+                   Only appended when the active compiler matches. Not forwarded to IntelliSense. */
+                char  tmp[ 256 ];
+                snprintf( tmp, sizeof( tmp ), "%s", val );
+                char* flagp = tmp;
+                while ( *flagp && (unsigned char)*flagp > ' ' ) flagp++;
+                if ( *flagp ) { *flagp++ = '\0'; while ( *flagp && (unsigned char)*flagp <= ' ' ) flagp++; }
+
+                compiler_t comp       = COMPILE_ALL;
+                bool       comp_valid = true;
+                if      ( strcmp( tmp, "msvc"  ) == 0 ) comp = COMPILE_MSVC;
+                else if ( strcmp( tmp, "clang" ) == 0 ) comp = COMPILE_CLANG;
+                else if ( strcmp( tmp, "all"   ) == 0 ) comp = COMPILE_ALL;
+                else
+                {
+                    printf( ORB_INDENT "[orb warn] %s:%d -- unknown compiler '%s' in compile_flag"
+                                       " (use msvc/clang/all)\n", path, lineno, tmp );
+                    comp_valid = false;
+                }
+
+                if ( comp_valid && *flagp )
+                {
+                    if ( cur_t->extra_compile_flag_count < MAX_EXTRA_COMPILE_FLAGS )
+                    {
+                        target_extra_flag_t* ef =
+                            &cur_t->extra_compile_flags[ cur_t->extra_compile_flag_count++ ];
+                        ef->compiler = comp;
+                        snprintf( ef->flag, sizeof( ef->flag ), "%s", flagp );
+                    }
+                    else
+                    {
+                        printf( ORB_INDENT "[orb warn] %s:%d -- compile_flag slot full for '%s',"
+                                           " dropped: %s\n", path, lineno, cur_t->name, flagp );
+                    }
+                }
+            }
+            else if ( strcmp( key, "subsystem" ) == 0 && val )
+            {
+                /* Executable subsystem: 'subsystem <console|windows>'.
+                   Translated to /SUBSYSTEM: by the platform linker fill. Ignored for DLL/LIB. */
+                if      ( strcmp( val, "console" ) == 0 ) cur_t->subsystem = SUBSYSTEM_CONSOLE;
+                else if ( strcmp( val, "windows" ) == 0 ) cur_t->subsystem = SUBSYSTEM_WINDOWS;
+                else
+                    printf( ORB_INDENT "[orb warn] %s:%d -- unknown subsystem '%s'"
+                                       " (use console/windows)\n", path, lineno, val );
+            }
+            else if ( strcmp( key, "link_flag" ) == 0 && val )
+            {
+                /* Per-target linker flag: 'link_flag <msvc|clang|all> <flag>'.
+                   Only appended when the active linker toolchain matches. */
+                char  tmp[ 256 ];
+                snprintf( tmp, sizeof( tmp ), "%s", val );
+                char* flagp = tmp;
+                while ( *flagp && (unsigned char)*flagp > ' ' ) flagp++;
+                if ( *flagp ) { *flagp++ = '\0'; while ( *flagp && (unsigned char)*flagp <= ' ' ) flagp++; }
+
+                compiler_t comp       = COMPILE_ALL;
+                bool       comp_valid = true;
+                if      ( strcmp( tmp, "msvc"  ) == 0 ) comp = COMPILE_MSVC;
+                else if ( strcmp( tmp, "clang" ) == 0 ) comp = COMPILE_CLANG;
+                else if ( strcmp( tmp, "all"   ) == 0 ) comp = COMPILE_ALL;
+                else
+                {
+                    printf( ORB_INDENT "[orb warn] %s:%d -- unknown compiler '%s' in link_flag"
+                                       " (use msvc/clang/all)\n", path, lineno, tmp );
+                    comp_valid = false;
+                }
+
+                if ( comp_valid && *flagp )
+                {
+                    if ( cur_t->extra_link_flag_count < MAX_EXTRA_LINK_FLAGS )
+                    {
+                        target_extra_flag_t* ef =
+                            &cur_t->extra_link_flags[ cur_t->extra_link_flag_count++ ];
+                        ef->compiler = comp;
+                        snprintf( ef->flag, sizeof( ef->flag ), "%s", flagp );
+                    }
+                    else
+                    {
+                        printf( ORB_INDENT "[orb warn] %s:%d -- link_flag slot full for '%s',"
+                                           " dropped: %s\n", path, lineno, cur_t->name, flagp );
+                    }
+                }
             }
         }
         else if ( mode == MODE_SOLUTION && cur_sln )

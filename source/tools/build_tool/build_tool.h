@@ -58,8 +58,8 @@
 #ifndef BUILD_TOOL_H
 #define BUILD_TOOL_H
 
-#ifdef _WIN64               // 64-bit Windows code
-#elif defined( _WIN32 )     // 32-bit Windows code
+#ifdef _WIN64              // 64-bit Windows code
+#elif defined( _WIN32 )    // 32-bit Windows code
     #error 32bit windows
 #endif
 
@@ -153,38 +153,41 @@ typedef void* platform_thread_t;
     CMD_BUF_WORK_MAX is the soft write limit enforced by cmd_append(); 
     The 4096-byte gap absorbs appending text not part of command */
 
-#define CMD_BUF_MAX      16384
-#define CMD_BUF_WORK_MAX 12288
+#define CMD_BUF_MAX                 16384
+#define CMD_BUF_WORK_MAX            12288
 
 /*  Max entries in each NULL-terminated slot array on target_info_t (units/deps/tool_deps).
     Loops iterate with an `i < TARGET_MAX_SLOTS` bound so a fully-filled array
     (no NULL terminator) cannot read into adjacent struct fields. */
 
-#define TARGET_MAX_SLOTS 16
+#define TARGET_MAX_SLOTS            16
 
 /*  Capacity of the dynamic target and solution pools in build_tool_02_data.c.
     build_tool and reflect_tool are hardcoded; all others are loaded from orb.targets. */
 
-#define MAX_TARGETS     256
-#define MAX_SOLUTIONS    32
-#define MAX_SLN_TARGETS 128
+#define MAX_TARGETS                 64
+#define MAX_SOLUTIONS               8
+#define MAX_SLN_TARGETS             64
 
 /*  Max extra include directories per target or solution declared via 'include_dir'.
     These are appended to AdditionalIncludeDirectories/NMakeIncludeSearchPath in vcxproj
     gen and to /I flags in CLI compile. Stored as absolute paths. */
 
-#define MAX_EXTRA_INCLUDE_DIRS 8
+#define MAX_EXTRA_INCLUDE_DIRS      8
+#define MAX_EXTRA_DEFINES           16
+#define MAX_EXTRA_COMPILE_FLAGS     8
+#define MAX_EXTRA_LINK_FLAGS        8
 
 /*  Path buffer size for every filesystem path the build tool constructs.
     Windows MAX_PATH is 260; 512 gives generous headroom for composite paths.
     <obj_dir>\<filename> without forcing us to opt into long-path support */
 
-#define PATH_MAX 512
+#define PATH_MAX                    512
 
 /*  Root directory for all build outputs: VS project files, intermediates, and generated code.
     NOTE: Update bootstrap_build_tool.bat if you change this. */
 
-#define BUILD_DIR "build"
+#define BUILD_DIR                   "build"
 
 /*==============================================================================================
     --- Command Helper Types ---
@@ -225,6 +228,7 @@ typedef enum
 {
     COMPILE_MSVC,
     COMPILE_CLANG,
+    COMPILE_ALL,                // compile_flag sentinel: applies regardless of active compiler
 
 } compiler_t;
 
@@ -245,6 +249,38 @@ typedef enum
 } target_type_t;
 
 /*==============================================================================================
+    --- Per-Target Compiler Flag Entry ---
+
+    One entry in a target's extra_compile_flags[] list.
+    The compiler field gates the flag to a specific toolchain; COMPILE_ALL
+    means the flag is appended regardless of the active compiler.
+==============================================================================================*/
+
+typedef struct
+{
+    compiler_t  compiler;     // COMPILE_MSVC, COMPILE_CLANG, or COMPILE_ALL
+    char        flag[ 128 ];  // e.g. "/GS-" or "/WHOLEARCHIVE:bin/core.lib"
+
+} target_extra_flag_t;
+
+/*==============================================================================================
+    --- Executable Subsystem ---
+
+    Declares the Win32 /SUBSYSTEM: linker flag for TARGET_EXECUTABLE targets.
+    SUBSYSTEM_DEFAULT defers to the linker's built-in default (CONSOLE on Win32).
+    Set via 'subsystem <console|windows>' in orb.targets. Ignored for DLL/LIB targets
+    and no-op on POSIX (no subsystem concept; target type is determined by the entry point).
+==============================================================================================*/
+
+typedef enum
+{
+    SUBSYSTEM_DEFAULT,   // linker default (CONSOLE on Win32 without an explicit flag)
+    SUBSYSTEM_CONSOLE,   // /SUBSYSTEM:CONSOLE -- console window, main() entry point
+    SUBSYSTEM_WINDOWS,   // /SUBSYSTEM:WINDOWS -- no console window, WinMain() entry point
+
+} subsystem_t;
+
+/*==============================================================================================
     --- Target Descriptor ---
 ==============================================================================================*/
 
@@ -259,7 +295,7 @@ typedef struct target_info_s
     const char*     name;           // Unique name (e.g., "base", "core", "app").
     target_type_t   type;           // Artifact type (LIB, DLL, or EXE).
     const char*     root_dir;       // Absolute path to the source directory for this target.
-    const char*     sln_folder;     // Virtual folder in the Visual Studio solution.
+    const char*     virtual_folder; // Display-only folder name (VS Solution Explorer)
 
     /*  Translation Units (Unity Build Fragments)
         Each entry is typically an umbrella .c file that includes other sources.
@@ -319,6 +355,34 @@ typedef struct target_info_s
         NULL-terminated; unused slots are NULL. */
 
     const char*     extra_include_dirs[ MAX_EXTRA_INCLUDE_DIRS ];
+
+    /*  Per-target preprocessor defines declared via 'define' in orb.targets.
+        Appended after the global define tables during compile and IntelliSense gen.
+        NULL-terminated; unused slots are NULL. */
+
+    const char*     extra_defines[ MAX_EXTRA_DEFINES ];
+
+    /*  Per-target compiler flags declared via 'compile_flag <msvc|clang|all> <flag>'
+        in orb.targets. Only entries whose .compiler matches ctx->compiler (or COMPILE_ALL)
+        are appended in cc_fill_compile_cmd. Not forwarded to IntelliSense NMakeAdditionalOptions. */
+
+    target_extra_flag_t extra_compile_flags[ MAX_EXTRA_COMPILE_FLAGS ];
+    int                 extra_compile_flag_count;
+
+    /*  Executable subsystem declared via 'subsystem <console|windows>' in orb.targets.
+        Translated to /SUBSYSTEM: by platform_lk_fill_dynamic(). SUBSYSTEM_DEFAULT
+        preserves the linker's built-in default (CONSOLE). Ignored for DLL/LIB targets. */
+
+    subsystem_t subsystem;
+
+    /*  Per-target linker flags declared via 'link_flag <msvc|clang|all> <flag>'
+        in orb.targets. Appended to lk.flags after platform_lk_fill_dynamic() fills
+        the base flags. Only entries whose .compiler matches ctx->compiler (or COMPILE_ALL)
+        are applied. Raw flags -- no IntelliSense forwarding needed (linker flags don't
+        affect the parse model). */
+
+    target_extra_flag_t extra_link_flags[ MAX_EXTRA_LINK_FLAGS ];
+    int                 extra_link_flag_count;
 
     /*  True when this target was loaded via an 'import' directive rather than
         from the root orb.targets. External targets are excluded from "build all"
@@ -501,7 +565,7 @@ typedef struct
 {
     char exe      [ 32       ];  // lib.exe / link.exe / ar / gcc / clang
     char artifact [ PATH_MAX ];  // final output path (display only)
-    char flags    [ 256      ];  // /nologo /DLL ...  or  -shared ...
+    char flags    [ 512      ];  // /nologo /DLL /SUBSYSTEM:... ...  or  -shared ...
     char output   [ 512      ];  // /OUT:... /IMPLIB:...  or  -o ...
     char pdb      [ 256      ];  // /DEBUG /PDB:...  (empty on POSIX / for lib.exe)
     char inputs   [ 512      ];  // objDir\*.obj  or  objDir/*.o

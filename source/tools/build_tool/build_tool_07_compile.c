@@ -255,6 +255,19 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
             platform_cc_append_define( cfg_defines[ i ], cc->defines, sizeof( cc->defines ) );
     }
 
+    // Per-target defines from 'define' directives in orb.targets.
+    for ( int i = 0; i < MAX_EXTRA_DEFINES && target->extra_defines[ i ]; ++i )
+        platform_cc_append_define( target->extra_defines[ i ], cc->defines, sizeof( cc->defines ) );
+
+    // Per-target compiler flags from 'compile_flag' directives in orb.targets.
+    // Entries tagged COMPILE_ALL apply to every compiler; others must match ctx->compiler.
+    for ( int i = 0; i < target->extra_compile_flag_count; ++i )
+    {
+        const target_extra_flag_t* ef = &target->extra_compile_flags[ i ];
+        if ( ef->compiler == ctx->compiler || ef->compiler == COMPILE_ALL )
+            CC_APPEND( cc->flags, " %s", ef->flag );
+    }
+
     // output -- set by the caller after cc_fill_compile_cmd returns.
     //   Batch (Win32): platform_cc_output_flags( obj_dir, NULL, ... ) once for all sources.
     //   Per-unit (POSIX): platform_cc_output_flags( obj_dir, source_path, ... ) per source.

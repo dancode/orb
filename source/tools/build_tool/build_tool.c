@@ -74,7 +74,7 @@
 /*==============================================================================================
     --- Output Format ---
 
-    ORB_BANNER: indent for top-level orb lines  e.g.  "      [ orb build: X ]"
+    ORB_BANNER: indent for top-level orb lines  e.g.  "      [orb build: X]"
     ORB_INDENT: indent for sub-lines            e.g.  "          [build] foo ..."
 
     Defined here -- before the unity #includes -- so every module sees them.
@@ -102,6 +102,7 @@ static const char* g_gen_dir        = "generated";  // sub-folder: reflection-ge
 ==============================================================================================*/
 
 static out_flags_t g_out_flags      = ORB_OUT_DEFAULT;
+
 static bool        g_include_track  = true;         // Use up-to-date tracking via headers.
 static bool        g_use_rsp        = true;         // Use overflow prevention.
 static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 alongside stdc11.
@@ -116,7 +117,7 @@ static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 along
     earlier ones. One declaration here beats one per call site.
 ==============================================================================================*/
 
-/* Defined in 09_sched.c. Returns the active worker's per-thread log path, or NULL
+/* Defined in 10_sched.c. Returns the active worker's per-thread log path, or NULL
    when not inside a parallel worker (serial / main-thread path). */
 const char* sched_log_path( void );
 
@@ -142,7 +143,7 @@ const char* sched_log_path( void );
 #include "build_tool_09_exec.c"             // 09 build_target orchestration
 #include "build_tool_10_sched.c"            // 10 parallel scheduler
 #include "build_tool_11_clean.c"            // 11 -clean command
-#include "build_tool_12_gen_manifest.c"      // 12  gen manifest (resolved intent; built before all generators)
+#include "build_tool_12_gen_manifest.c"     // 12   gen manifest (resolved intent; built before all generators)
 #include "build_tool_12_gen_nmake.c"        // 12a -gen command (NMake/Makefile projects)
 #include "build_tool_12_gen_json.c"         // 12b -gen command (compile_commands.json)
 #include "build_tool_12_gen_vscode.c"       // 12c -gen command (.vscode/tasks.json)
@@ -388,22 +389,21 @@ main( int argc, char** argv )
 
     for ( int i = 1; i < argc; ++i )
     {
-        // utiltiy functions and output control
+        // utiltiy + project generation
         if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
         if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
         if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
         if ( platform_stricmp( argv[ i ], "-gen_nm"           ) == 0 ) should_gen_nmake = true;
         if ( platform_stricmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
         
-        // compile settings and target selection
-        if ( platform_stricmp( argv[ i ], "-target"  ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
-        if ( platform_stricmp( argv[ i ], "-file"    ) == 0 && i + 1 < argc ) ctx.file_path   = argv[ ++i ];
-        if ( platform_stricmp( argv[ i ], "-j"       ) == 0 && i + 1 < argc ) j_threads       = atoi( argv[ ++i ] );
-        if ( platform_stricmp( argv[ i ], "-config"  ) == 0 && i + 1 < argc )
+        // compile settings
+        if ( platform_stricmp( argv[ i ], "-target" ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
+        if ( platform_stricmp( argv[ i ], "-file"   ) == 0 && i + 1 < argc ) ctx.file_path   = argv[ ++i ];
+        if ( platform_stricmp( argv[ i ], "-j"      ) == 0 && i + 1 < argc ) j_threads       = atoi( argv[ ++i ] );
+        if ( platform_stricmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
         {
             if ( platform_stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
-
         if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
         if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
         if ( platform_stricmp( argv[ i ], "-release"          ) == 0 ) ctx.config = CONFIG_RELEASE;
@@ -411,7 +411,7 @@ main( int argc, char** argv )
         if ( platform_stricmp( argv[ i ], "-compile-only"     ) == 0 ) ctx.compile_only = true;
         if ( platform_stricmp( argv[ i ], "-force"            ) == 0 ) ctx.force_rebuild = true;
         if ( platform_stricmp( argv[ i ], "-no-deps"          ) == 0 ) ctx.skip_deps = true;
-
+        
         // internal operations (developer)
         if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
         if ( platform_stricmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;

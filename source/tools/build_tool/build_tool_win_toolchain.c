@@ -278,6 +278,15 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
     snprintf( lk->artifact, sizeof( lk->artifact ), "bin\\%s%s", target->name, ext );
     snprintf( lk->flags,    sizeof( lk->flags ),    "/nologo%s", is_dll ? " /DLL" : "" );
 
+    // Emit /SUBSYSTEM for executables. Always explicit so builds are deterministic
+    // regardless of the linker's built-in default. DLLs carry no subsystem.
+    if ( !is_dll )
+    {
+        const char* subsys = ( target->subsystem == SUBSYSTEM_WINDOWS ) ? "WINDOWS" : "CONSOLE";
+        size_t used = strlen( lk->flags );
+        snprintf( lk->flags + used, sizeof( lk->flags ) - used, " /SUBSYSTEM:%s", subsys );
+    }
+
     if ( is_dll )
         snprintf( lk->output, sizeof( lk->output ),
                   "/OUT:bin\\%s.dll /IMPLIB:bin\\%s.lib", target->name, target->name );

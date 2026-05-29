@@ -1,11 +1,12 @@
 /*==============================================================================================
 
-    build_tool_02_data.c -- Dynamic target/solution pool, built-in registrations,
-                            shared define tables, and target lookup helpers.
+    build_tool_02_data.c -- Build inputs (targets + solutions) + helper functions.
+    
+    The in-memory representation of the build graph as parsed from orb.targets.    
 
     At startup, main() calls (in this order):
 
-        registry_load("orb.targets")
+        registry_load( "orb.targets" )
 
         --  appended by build_tool_03_registry.c; all project targets and solutions
             live there. If orb.targets contains 'engine <path>', this sets
@@ -43,7 +44,7 @@
     Read by init_builtin_targets(), cc_fill_compile_cmd(), and the gen modules.
 ==============================================================================================*/
 
-char g_engine_root[ PATH_MAX ] = { 0 };
+char            g_engine_root[ PATH_MAX ] = { 0 };
 
 /*==============================================================================================
     --- Dynamic Target and Solution Pools ---
@@ -73,11 +74,12 @@ pool_str( const char* s )
 {
     if ( !s || !s[ 0 ] )
         return NULL;
+
     int len = (int)strlen( s ) + 1;
     if ( g_str_pool_used + len > STR_POOL_SIZE )
     {
         printf( ORB_INDENT "[orb error] string pool exhausted; raise STR_POOL_SIZE\n" );
-        return s;    // Unsafe fallback; caller's pointer may not persist.
+        exit( 1 );
     }
     char* out = g_str_pool + g_str_pool_used;
     memcpy( out, s, (size_t)len );
@@ -123,7 +125,7 @@ init_builtin_targets( void )
         t->name          = "build_tool";
         t->type          = TARGET_EXECUTABLE;
         t->root_dir      = pool_str( bt_root );
-        t->sln_folder    = "08_TOOL";
+        t->virtual_folder    = "08_TOOL";
         t->units[ 0 ]    = "build_tool.c";
         t->is_build_tool = true;
         t->is_tool       = true;
@@ -137,7 +139,7 @@ init_builtin_targets( void )
         t->name            = "reflect_tool";
         t->type            = TARGET_EXECUTABLE;
         t->root_dir        = pool_str( rt_root );
-        t->sln_folder      = "08_TOOL";
+        t->virtual_folder      = "08_TOOL";
         t->units[ 0 ]      = "reflect_tool.c";
         t->is_tool         = true;
         t->is_reflect_tool = true;
