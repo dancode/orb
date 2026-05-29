@@ -60,7 +60,7 @@
 #ifndef BUILD_TOOL_H
 #define BUILD_TOOL_H
 
-#ifdef _WIN64              // 64-bit Windows code
+#ifdef _WIN64              // 64-bit Windows code (this was added to prevent 32bit cl.exe)
 #elif defined( _WIN32 )    // 32-bit Windows code
     #error 32bit windows
 #endif
@@ -192,6 +192,64 @@ typedef void* platform_thread_t;
 #define BUILD_DIR                   "build"
 
 /*==============================================================================================
+    --- Output Flags ---
+==============================================================================================*/
+
+/*  Bitfield controlling which sections of the build log are printed.
+    Set once at startup via CLI flags (-q / -v / --out <hex>); read by all
+    build_tool modules directly as g_out_flags. No need to thread it through
+    build_context_t since output verbosity is a process-global setting. */
+
+typedef unsigned int out_flags_t;
+
+// Compile verbose detail (bits 0-5)
+#define ORB_OUT_COMPILE_SOURCES  ( 1u << 0  )  // sources: <absolute paths>
+#define ORB_OUT_COMPILE_FLAGS    ( 1u << 1  )  // flags:   /W4 /WX /Zi /Od ...
+#define ORB_OUT_COMPILE_DEFINES  ( 1u << 2  )  // defines: OS_WINDOWS ARCH_X64 ...
+#define ORB_OUT_COMPILE_INCLUDES ( 1u << 3  )  // includes: source gen_dir ...
+#define ORB_OUT_COMPILE_OUTPUT   ( 1u << 4  )  // output:  obj=... pdb=...
+#define ORB_OUT_COMPILE_CMD      ( 1u << 5  )  // raw cl.exe command line (long string)
+
+// Link verbose detail (bits 6-11)
+#define ORB_OUT_LINK_INPUTS      ( 1u << 6  )  // inputs:  objDir/*.obj
+#define ORB_OUT_LINK_LIBS        ( 1u << 7  )  // libs:    dep.lib user32.lib ...
+#define ORB_OUT_LINK_FLAGS       ( 1u << 8  )  // flags:   /nologo /DLL ...
+#define ORB_OUT_LINK_OUTPUT      ( 1u << 9  )  // output:  bin/target.lib
+#define ORB_OUT_LINK_PDB         ( 1u << 10 )  // pdb:     bin/target_xxx.pdb
+#define ORB_OUT_LINK_CMD         ( 1u << 11 )  // raw link.exe / lib.exe command line
+
+// General / always-on (bits 12+)
+#define ORB_OUT_SCHEDULER        ( 1u << 12 )  // [orb parallel] N targets, M threads
+#define ORB_OUT_SUMMARY_COMPILE  ( 1u << 13 )  // [orb compiling] or [orb skipped] per-target
+#define ORB_OUT_SUMMARY_LINK     ( 1u << 14 )  // [orb link] target -> artifact
+#define ORB_OUT_REFLECT          ( 1u << 15 )  // [orb reflect] codegen steps
+#define ORB_OUT_VCVARS           ( 1u << 16 )  // [orb vcvars] VS env discovery
+#define ORB_OUT_MSVC_OUTPUT      ( 1u << 17 )  // [MSVC] raw cl/link/lib passthrough lines
+#define ORB_OUT_ARGS             ( 1u << 18 )  // startup banner: echo raw argv on a second line/col
+#define ORB_OUT_TIMING           ( 1u << 19 )  // per-build timing summary (slowest-first table)
+
+// Convenience masks -- verbose detail only, summaries excluded.
+#define ORB_OUT_ANY_COMPILE     ( ORB_OUT_COMPILE_SOURCES  | ORB_OUT_COMPILE_FLAGS    | \
+                                  ORB_OUT_COMPILE_DEFINES  | ORB_OUT_COMPILE_INCLUDES | \
+                                  ORB_OUT_COMPILE_OUTPUT   | ORB_OUT_COMPILE_CMD )
+
+#define ORB_OUT_ANY_LINK        ( ORB_OUT_LINK_INPUTS | ORB_OUT_LINK_LIBS   | \
+                                  ORB_OUT_LINK_FLAGS  | ORB_OUT_LINK_OUTPUT | \
+                                  ORB_OUT_LINK_PDB    | ORB_OUT_LINK_CMD )
+
+#define ORB_OUT_SUMMARY         ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK )
+
+// Preset combinations -- pass as --out <hex> or use -q / -v shorthands.
+#define ORB_OUT_QUIET           ( ORB_OUT_SCHEDULER )
+#define ORB_OUT_NORMAL          ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | \
+                                  ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
+
+#define ORB_OUT_TESTING         ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS )
+
+#define ORB_OUT_VERBOSE         ( 0xFFFFFFFFu )
+#define ORB_OUT_DEFAULT         ( ORB_OUT_TESTING )
+
+/*==============================================================================================
     --- Command Helper Types ---
 
     -   Reused cmd-line buffer for assembling cl.exe / link.exe / lib.exe invocations.
@@ -260,10 +318,10 @@ typedef enum
 
 typedef struct
 {
-    compiler_t  compiler;     // COMPILE_MSVC, COMPILE_CLANG, or COMPILE_ALL
-    char        flag[ 128 ];  // e.g. "/GS-" or "/WHOLEARCHIVE:bin/core.lib"
+    compiler_t  compiler;       // COMPILE_MSVC, COMPILE_CLANG, or COMPILE_ALL
+    char        flag[ 128 ];    // e.g. "/GS-" or "/WHOLEARCHIVE:bin/core.lib"
 
-} target_extra_flag_t;
+} extra_flag_t;
 
 /*==============================================================================================
     --- Executable Subsystem ---
@@ -369,14 +427,14 @@ typedef struct target_info_s
         in orb.targets. Only entries whose .compiler matches ctx->compiler (or COMPILE_ALL)
         are appended in cc_fill_compile_cmd. Not forwarded to IntelliSense NMakeAdditionalOptions. */
 
-    target_extra_flag_t extra_compile_flags[ MAX_EXTRA_COMPILE_FLAGS ];
+    extra_flag_t extra_compile_flags[ MAX_EXTRA_COMPILE_FLAGS ];
     int                 extra_compile_flag_count;
 
     /*  Executable subsystem declared via 'subsystem <console|windows>' in orb.targets.
         Translated to /SUBSYSTEM: by platform_lk_fill_dynamic(). SUBSYSTEM_DEFAULT
         preserves the linker's built-in default (CONSOLE). Ignored for DLL/LIB targets. */
 
-    subsystem_t subsystem;
+    subsystem_t         subsystem;
 
     /*  Per-target linker flags declared via 'link_flag <msvc|clang|all> <flag>'
         in orb.targets. Appended to lk.flags after platform_lk_fill_dynamic() fills
@@ -384,7 +442,7 @@ typedef struct target_info_s
         are applied. Raw flags -- no IntelliSense forwarding needed (linker flags don't
         affect the parse model). */
 
-    target_extra_flag_t extra_link_flags[ MAX_EXTRA_LINK_FLAGS ];
+    extra_flag_t extra_link_flags[ MAX_EXTRA_LINK_FLAGS ];
     int                 extra_link_flag_count;
 
     /*  True when this target was loaded via an 'import' directive rather than
@@ -479,64 +537,6 @@ extern solution_info_t g_solutions[];
 extern int             g_solution_count;
 
 /*==============================================================================================
-    --- Output Flags ---
-==============================================================================================*/
-
-/*  Bitfield controlling which sections of the build log are printed.
-    Set once at startup via CLI flags (-q / -v / --out <hex>); read by all
-    build_tool modules directly as g_out_flags. No need to thread it through
-    build_context_t since output verbosity is a process-global setting. */
-
-typedef unsigned int out_flags_t;
-
-// Compile verbose detail (bits 0-5)
-#define ORB_OUT_COMPILE_SOURCES  ( 1u << 0  )  // sources: <absolute paths>
-#define ORB_OUT_COMPILE_FLAGS    ( 1u << 1  )  // flags:   /W4 /WX /Zi /Od ...
-#define ORB_OUT_COMPILE_DEFINES  ( 1u << 2  )  // defines: OS_WINDOWS ARCH_X64 ...
-#define ORB_OUT_COMPILE_INCLUDES ( 1u << 3  )  // includes: source gen_dir ...
-#define ORB_OUT_COMPILE_OUTPUT   ( 1u << 4  )  // output:  obj=... pdb=...
-#define ORB_OUT_COMPILE_CMD      ( 1u << 5  )  // raw cl.exe command line (long string)
-
-// Link verbose detail (bits 6-11)
-#define ORB_OUT_LINK_INPUTS      ( 1u << 6  )  // inputs:  objDir/*.obj
-#define ORB_OUT_LINK_LIBS        ( 1u << 7  )  // libs:    dep.lib user32.lib ...
-#define ORB_OUT_LINK_FLAGS       ( 1u << 8  )  // flags:   /nologo /DLL ...
-#define ORB_OUT_LINK_OUTPUT      ( 1u << 9  )  // output:  bin/target.lib
-#define ORB_OUT_LINK_PDB         ( 1u << 10 )  // pdb:     bin/target_xxx.pdb
-#define ORB_OUT_LINK_CMD         ( 1u << 11 )  // raw link.exe / lib.exe command line
-
-// General / always-on (bits 12+)
-#define ORB_OUT_SUMMARY_COMPILE  ( 1u << 12 )  // [orb compiling] or [orb skipped] per-target
-#define ORB_OUT_SUMMARY_LINK     ( 1u << 13 )  // [orb link] target -> artifact
-#define ORB_OUT_SCHEDULER        ( 1u << 14 )  // [orb parallel] N targets, M threads
-#define ORB_OUT_REFLECT          ( 1u << 15 )  // [orb reflect] codegen steps
-#define ORB_OUT_VCVARS           ( 1u << 16 )  // [orb vcvars] VS env discovery
-#define ORB_OUT_MSVC_OUTPUT      ( 1u << 17 )  // [MSVC] raw cl/link/lib passthrough lines
-#define ORB_OUT_ARGS             ( 1u << 18 )  // startup banner: echo raw argv on a second line
-#define ORB_OUT_TIMING           ( 1u << 19 )  // per-build timing summary (slowest-first table)
-
-// Convenience masks -- verbose detail only, summaries excluded.
-#define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SOURCES  | ORB_OUT_COMPILE_FLAGS    | \
-                               ORB_OUT_COMPILE_DEFINES  | ORB_OUT_COMPILE_INCLUDES | \
-                               ORB_OUT_COMPILE_OUTPUT   | ORB_OUT_COMPILE_CMD )
-
-#define ORB_OUT_ANY_LINK     ( ORB_OUT_LINK_INPUTS | ORB_OUT_LINK_LIBS   | \
-                               ORB_OUT_LINK_FLAGS  | ORB_OUT_LINK_OUTPUT | \
-                               ORB_OUT_LINK_PDB    | ORB_OUT_LINK_CMD )
-
-#define ORB_OUT_SUMMARY      ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK )
-
-// Preset combinations -- pass as --out <hex> or use -q / -v shorthands.
-#define ORB_OUT_QUIET   ( ORB_OUT_SCHEDULER )
-#define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | \
-                          ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
-
-#define ORB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS )
-
-#define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
-#define ORB_OUT_DEFAULT ( ORB_OUT_TESTING )
-
-/*==============================================================================================
     --- Compiler Command Type ---
 
     Holds each logical fragment of the final compiler command line.
@@ -613,6 +613,18 @@ bool build_target_link( build_context_t* ctx, target_info_t* target, const char*
     rebuild that would otherwise pay vcvars-prefix overhead per cl invocation. */
 
 void build_setup_vc_env( void );
+
+/*  Returns the Visual Studio internal major version to embed in generated project files
+    (e.g. 17 for VS 2022, 18 for VS 2026). Resolution order:
+      1. g_vs_major_version > 0: explicit override from -vs-version <year>.
+      2. VisualStudioVersion env var set by vcvarsall / Developer Command Prompt.
+      3. Fallback: 17 (VS 2022). */
+
+int build_detect_vs_major( void );
+
+/*  Set by -vs-version <year> in main(); 0 means auto-detect from the environment. */
+
+extern int g_vs_major_version;
 
 /*  Appends a formatted string to a command buffer. */
 

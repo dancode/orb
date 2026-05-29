@@ -111,6 +111,7 @@ static bool        g_include_track  = true;         // Use up-to-date tracking v
 static bool        g_use_rsp        = true;         // Use overflow prevention.
 static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 alongside stdc11.
                                                     // (suppress designated-initializer squiggles)
+int                g_vs_major_version = 0;           // 0 = auto-detect; set by -vs-version <year>.
 
 /*==============================================================================================
     --- ANSI Color Strings ---
@@ -251,6 +252,18 @@ main( int argc, char** argv )
         if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
         if ( platform_stricmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;
         if ( platform_stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
+        if ( platform_stricmp( argv[ i ], "-vs-version" ) == 0 && i + 1 < argc )
+        {
+            // Accept a VS release year (2022, 2026, ...) and map to the internal major version.
+            // Falls back to passing the number directly if unrecognized, for forward-compat.
+            int year = atoi( argv[ ++i ] );
+            if      ( year >= 2026 ) g_vs_major_version = 18;
+            else if ( year >= 2022 ) g_vs_major_version = 17;
+            else if ( year >= 2019 ) g_vs_major_version = 16;
+            else if ( year >= 2017 ) g_vs_major_version = 15;
+            else if ( year >= 2015 ) g_vs_major_version = 14;
+            else                     g_vs_major_version = year; // direct pass-through for unknowns
+        }
 
         // output verbosity
         if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) g_out_flags = ORB_OUT_QUIET;

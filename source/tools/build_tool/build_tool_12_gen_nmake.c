@@ -139,6 +139,18 @@ static int         g_filter_count = 0;
     Two FNV-1a passes with different (seed, prime) pairs fill the 16 bytes.
 ==============================================================================================*/
 
+// Returns the PlatformToolset string: $(DefaultPlatformToolset) by default, or vNNN when
+// -vs-version was explicitly passed (same logic as the MSBuild generator).
+static const char*
+gen_platform_toolset( char* buf, size_t buf_size )
+{
+    if ( g_vs_major_version > 0 )
+        snprintf( buf, buf_size, "v%d", g_vs_major_version + 126 );
+    else
+        snprintf( buf, buf_size, "$(DefaultPlatformToolset)" );
+    return buf;
+}
+
 static void
 guid_from_name( const char* name, char* out )
 {
@@ -602,7 +614,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
-    fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
+    { char ts[ 32 ]; fprintf( f, "    <PlatformToolset>%s</PlatformToolset>\n", gen_platform_toolset( ts, sizeof( ts ) ) ); }
     // LanguageStandard_C and IntelliSenseMode are emitted per-config below.
     fprintf( f, "  </PropertyGroup>\n" );
 
@@ -850,7 +862,7 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
     fprintf( f, "  <PropertyGroup Label=\"Configuration\">\n" );
     fprintf( f, "    <ConfigurationType>Makefile</ConfigurationType>\n" );
-    fprintf( f, "    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>\n" );
+    { char ts[ 32 ]; fprintf( f, "    <PlatformToolset>%s</PlatformToolset>\n", gen_platform_toolset( ts, sizeof( ts ) ) ); }
     // LanguageStandard_C and IntelliSenseMode are emitted per-config below.
     fprintf( f, "  </PropertyGroup>\n" );
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
@@ -911,13 +923,13 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
         return;
 
     fprintf( f, "\nMicrosoft Visual Studio Solution File, Format Version 12.00\n" );
-    fprintf( f, "# Visual Studio Version 17\n" );
+    fprintf( f, "# Visual Studio Version %d\n", build_detect_vs_major() );
 
     // These GUIDs are FIXED by Visual Studio -- do not regenerate.
     const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
     const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
 
-    char        nav_guid[ 64 ]   = { 0 };
+    char nav_guid[ 64 ]   = { 0 };
     {
         char key[ 128 ];
         snprintf( key, sizeof( key ), "nav:%s", out_name );

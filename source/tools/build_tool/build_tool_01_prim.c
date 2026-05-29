@@ -29,7 +29,7 @@ cmd_append( cmd_buf_t* b, const char* fmt, ... )
         return;
     }
 
-    size_t  remaining = CMD_BUF_WORK_MAX - b->size;
+    size_t remaining = CMD_BUF_WORK_MAX - b->size;
 
     va_list args;
     va_start( args, fmt );

@@ -63,6 +63,7 @@ print_help( void )
     printf( "\n" );
 
     printf( ORB_INDENT "developer:\n" );
+    printf( ORB_INDENT "  %-28s%s\n", "-vs-version <year>",     "-gen: override VS version (e.g. 2022, 2026). Default: auto-detect." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-fwd-compat",         "-gen: omit stdcpp20 IntelliSense mode; use strict C11." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-rsp",                "Pass command lines directly; skip .rsp response files." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-include-track",      "Skip /showIncludes; header changes won't trigger rebuild." );

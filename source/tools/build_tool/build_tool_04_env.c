@@ -286,5 +286,34 @@ build_setup_vc_env( void )
 #endif
 }
 
+/*==============================================================================================
+    build_detect_vs_major()
+
+    Returns the VS internal major version for project file generation. Resolution:
+      1. g_vs_major_version > 0 -- explicit override from -vs-version <year>.
+      2. VisualStudioVersion env var (set by vcvarsall / Developer Command Prompt).
+      3. Fallback: 17 (VS 2022).
+
+    VS year-to-major mapping:  2015->14  2017->15  2019->16  2022->17  2026->18
+    MSBuild toolset:  major + 126  (17->v143, 18->v144, ...)
+==============================================================================================*/
+
+int
+build_detect_vs_major( void )
+{
+    if ( g_vs_major_version > 0 )
+        return g_vs_major_version;
+
+    // VisualStudioVersion is set to e.g. "17.12.3.4" by vcvarsall or Dev Cmd Prompt.
+    const char* ver = getenv( "VisualStudioVersion" );
+    if ( ver )
+    {
+        int major = atoi( ver );
+        if ( major >= 14 ) return major;
+    }
+
+    return 17;    // fallback: VS 2022
+}
+
 // clang-format on
 /*============================================================================================*/

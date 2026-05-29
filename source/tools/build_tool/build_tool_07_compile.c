@@ -262,7 +262,7 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
     // Entries tagged COMPILE_ALL apply to every compiler; others must match ctx->compiler.
     for ( int i = 0; i < target->extra_compile_flag_count; ++i )
     {
-        const target_extra_flag_t* ef = &target->extra_compile_flags[ i ];
+        const extra_flag_t* ef = &target->extra_compile_flags[ i ];
         if ( ef->compiler == ctx->compiler || ef->compiler == COMPILE_ALL )
             CC_APPEND( cc->flags, " %s", ef->flag );
     }

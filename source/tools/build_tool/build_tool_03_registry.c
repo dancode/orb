@@ -155,7 +155,7 @@
 static void
 reg_parse_flag_entry( const char* path, int lineno, const char* keyword,
                       const char* val, const char* target_name,
-                      target_extra_flag_t* slots, int* count, int max )
+                      extra_flag_t* slots, int* count, int max )
 {
     char  tmp[ 256 ];
     snprintf( tmp, sizeof( tmp ), "%s", val );
@@ -179,7 +179,7 @@ reg_parse_flag_entry( const char* path, int lineno, const char* keyword,
     {
         if ( *count < max )
         {
-            target_extra_flag_t* ef = &slots[ (*count)++ ];
+            extra_flag_t* ef = &slots[ (*count)++ ];
             ef->compiler = comp;
             snprintf( ef->flag, sizeof( ef->flag ), "%s", flagp );
         }

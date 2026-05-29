@@ -119,7 +119,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
         // Per-target linker flags from 'link_flag' directives in orb.targets.
         for ( int i = 0; i < target->extra_link_flag_count; ++i )
         {
-            const target_extra_flag_t* ef = &target->extra_link_flags[ i ];
+            const extra_flag_t* ef = &target->extra_link_flags[ i ];
             if ( ef->compiler == ctx->compiler || ef->compiler == COMPILE_ALL )
             {
                 size_t used = strlen( lk.flags );

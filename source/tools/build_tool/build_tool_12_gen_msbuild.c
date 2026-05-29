@@ -166,13 +166,20 @@ build_gen_proj_target_msbuild( target_info_t* target )
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
 
-    // Per-config configuration type. v143 = VS2022 toolset.
+    // Per-config configuration type. Default to $(DefaultPlatformToolset) so MSBuild picks
+    // whatever toolset is installed. When -vs-version was explicitly passed, substitute the
+    // computed vNNN string (major + 126) to pin the toolset to that version.
     static const char* cfgs[] = { "Debug", "Release" };
+    char toolset_str[ 32 ];
+    if ( g_vs_major_version > 0 )
+        snprintf( toolset_str, sizeof( toolset_str ), "v%d", g_vs_major_version + 126 );
+    else
+        snprintf( toolset_str, sizeof( toolset_str ), "$(DefaultPlatformToolset)" );
     for ( int ci = 0; ci < 2; ++ci )
     {
         fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\" Label=\"Configuration\">\n", cfgs[ ci ] );
         fprintf( f, "    <ConfigurationType>%s</ConfigurationType>\n", cfg_type );
-        fprintf( f, "    <PlatformToolset>v143</PlatformToolset>\n" );
+        fprintf( f, "    <PlatformToolset>%s</PlatformToolset>\n", toolset_str );
         fprintf( f, "  </PropertyGroup>\n" );
     }
 
