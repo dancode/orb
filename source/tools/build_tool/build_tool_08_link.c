@@ -107,7 +107,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
     if ( effective_type == TARGET_STATIC_LIB )
     {
         // Static library: archive only, no PDB, no dep libs.
-        platform_lk_fill_static( target->name, &lk );
+        platform_lk_fill_static( target->name, ctx->is_shipping, &lk );
     }
     else
     {

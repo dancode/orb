@@ -402,7 +402,8 @@ typedef struct build_context_s
 {
     config_t        config;         // Selected build config (Debug/Release).
     compiler_t      compiler;       // Active compiler (COMPILE_MSVC or COMPILE_CLANG).
-    bool            is_monolithic;  // DLL's build as LIB's and BUILD_STATIC defined globally.    
+    bool            is_monolithic;  // DLL's build as LIB's and BUILD_STATIC defined globally.
+    bool            is_shipping;    // Enables /GL + /LTCG for whole-program optimization (-shipping flag).
     bool            skip_deps;      // skip link dep resolution. Set by -no-deps (VS) and scheduler.
     bool            skip_tool_deps; // skip tool dep + implicit reflect dep. Set by scheduler only.
     bool            force_rebuild;  // bypass the up-to-date check; always compile + link.

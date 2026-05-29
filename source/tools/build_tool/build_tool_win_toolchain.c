@@ -65,11 +65,12 @@ platform_cc_exe( compiler_t compiler )
 ==============================================================================================*/
 
 static void
-platform_cc_base_flags( compiler_t compiler, config_t config, char* buf, size_t size )
+platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, char* buf, size_t size )
 {
     size_t used = strlen( buf );
     const char* sep = used ? " " : "";
-    const char* cfg = ( config == CONFIG_DEBUG ) ? "/Zi /Od /MDd" : "/O2 /MD";
+    const char* cfg = ( config == CONFIG_DEBUG ) ? "/Zi /Od /MDd"
+                    : is_shipping               ? "/O2 /GL /MD" : "/O2 /MD";
     // /Zc:preprocessor is MSVC-only; clang-cl defaults to conforming preprocessor already.
     // --target is required for standalone LLVM clang-cl: without it the default triple may
     // not define _M_X64 / __x86_64__, causing the architecture detection in orb.h to fail.
@@ -249,12 +250,13 @@ platform_lk_pre_link( const char* target_name, config_t config )
 ==============================================================================================*/
 
 static void
-platform_lk_fill_static( const char* target_name, link_cmd_t* lk )
+platform_lk_fill_static( const char* target_name, bool is_shipping, link_cmd_t* lk )
 {
+    const char* ltcg = is_shipping ? " /LTCG" : "";
     snprintf( lk->exe,      sizeof( lk->exe ),      "lib.exe" );
-    snprintf( lk->artifact, sizeof( lk->artifact ),  "bin\\%s.lib", target_name );
-    snprintf( lk->flags,    sizeof( lk->flags ),     "/nologo" );
-    snprintf( lk->output,   sizeof( lk->output ),    "/OUT:bin\\%s.lib", target_name );
+    snprintf( lk->artifact, sizeof( lk->artifact ), "bin\\%s.lib", target_name );
+    snprintf( lk->flags,    sizeof( lk->flags ),    "/nologo%s", ltcg );
+    snprintf( lk->output,   sizeof( lk->output ),   "/OUT:bin\\%s.lib", target_name );
 }
 
 /*==============================================================================================
@@ -270,13 +272,13 @@ platform_lk_fill_static( const char* target_name, link_cmd_t* lk )
 static void
 platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_t* lk )
 {
-    ( void )ctx;  // Reserved for POSIX counterpart (config selects -g vs -O2 in the pdb-equivalent step).
     const bool  is_dll = ( target->type == TARGET_DYNAMIC_LIB );
     const char* ext    = is_dll ? ".dll" : ".exe";
+    const char* ltcg   = ctx->is_shipping ? " /LTCG" : "";
 
     snprintf( lk->exe,      sizeof( lk->exe ),      "link.exe" );
     snprintf( lk->artifact, sizeof( lk->artifact ), "bin\\%s%s", target->name, ext );
-    snprintf( lk->flags,    sizeof( lk->flags ),    "/nologo%s", is_dll ? " /DLL" : "" );
+    snprintf( lk->flags,    sizeof( lk->flags ),    "/nologo%s%s", is_dll ? " /DLL" : "", ltcg );
 
     // Emit /SUBSYSTEM for executables. Always explicit so builds are deterministic
     // regardless of the linker's built-in default. DLLs carry no subsystem.

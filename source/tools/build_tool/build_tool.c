@@ -299,7 +299,8 @@ print_startup_banner( const build_context_t* ctx )
         for ( const char* p = ctx->file_path; *p; ++p )
             if ( *p == '\\' || *p == '/' ) file_name = p + 1;
 
-    const char* config_str   = ctx->config   == CONFIG_DEBUG  ? "debug" : "release";
+    const char* config_str   = ctx->config   == CONFIG_DEBUG  ? "debug"
+                             : ctx->is_shipping                ? "release+shipping" : "release";
     const char* compiler_str = ctx->compiler == COMPILE_CLANG ? "clang" : "msvc";
     const char* mode_str     = ctx->is_monolithic ? "monolithic" : "modular";
     const char* label        = NULL;
@@ -355,6 +356,7 @@ print_startup_banner( const build_context_t* ctx )
       -no-include-track       Skip /showIncludes parsing; header changes won't trigger rebuild.
       -config <Debug|Release> Pick build configuration (default: Debug).
       -release                Shortcut for -config Release.
+      -shipping               Release + /GL + /LTCG (whole-program optimization). Implies -release.
       -clang                  Use clang-cl instead of cl.exe.
       -j N                    Worker thread count; 0/unset = auto-detect.
       -q                      Quiet: suppress most output.
@@ -404,13 +406,14 @@ main( int argc, char** argv )
         {
             if ( platform_stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
-        if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) ctx.is_monolithic = true;
-        if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) ctx.is_monolithic = true;
-        if ( platform_stricmp( argv[ i ], "-release"          ) == 0 ) ctx.config = CONFIG_RELEASE;
-        if ( platform_stricmp( argv[ i ], "-clang"            ) == 0 ) ctx.compiler = COMPILE_CLANG;
-        if ( platform_stricmp( argv[ i ], "-compile-only"     ) == 0 ) ctx.compile_only = true;
-        if ( platform_stricmp( argv[ i ], "-force"            ) == 0 ) ctx.force_rebuild = true;
-        if ( platform_stricmp( argv[ i ], "-no-deps"          ) == 0 ) ctx.skip_deps = true;
+        if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) { ctx.is_monolithic = true; }
+        if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) { ctx.is_monolithic = true; }
+        if ( platform_stricmp( argv[ i ], "-release"          ) == 0 ) { ctx.config = CONFIG_RELEASE; }
+        if ( platform_stricmp( argv[ i ], "-shipping"         ) == 0 ) { ctx.config = CONFIG_RELEASE; ctx.is_shipping = true; }
+        if ( platform_stricmp( argv[ i ], "-clang"            ) == 0 ) { ctx.compiler = COMPILE_CLANG; }
+        if ( platform_stricmp( argv[ i ], "-compile-only"     ) == 0 ) { ctx.compile_only = true; }
+        if ( platform_stricmp( argv[ i ], "-force"            ) == 0 ) { ctx.force_rebuild = true; }
+        if ( platform_stricmp( argv[ i ], "-no-deps"          ) == 0 ) { ctx.skip_deps = true; }
         
         // internal operations (developer)
         if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;

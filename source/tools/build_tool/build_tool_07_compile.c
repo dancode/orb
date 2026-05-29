@@ -191,7 +191,7 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
     snprintf( cc->exe, sizeof( cc->exe ), "%s", platform_cc_exe( ctx->compiler ) );
 
     // flags: platform base flags + active warning suppressions from 02_data.c tables.
-    platform_cc_base_flags( ctx->compiler, ctx->config, cc->flags, sizeof( cc->flags ) );
+    platform_cc_base_flags( ctx->compiler, ctx->config, ctx->is_shipping, cc->flags, sizeof( cc->flags ) );
 
     for ( int i = 0; i < g_warn_suppression_count; ++i )
     {
