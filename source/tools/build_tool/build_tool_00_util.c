@@ -411,4 +411,4 @@ print_startup_banner( const build_context_t* ctx )
 }
 
 /*============================================================================================*/
-// clang-format off
+// clang-format on

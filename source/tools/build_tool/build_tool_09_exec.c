@@ -96,7 +96,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         refl_tool = find_reflect_tool();
     }
 
-    // --- 2. Per-Target Mutex Lock ---
+    // --- 1. Per-Target Mutex Lock ---
     //
     // Acquired BEFORE the up-to-date check so a second concurrent invocation
     // observes post-build artifact mtimes -- never a half-written .obj/.lib.
@@ -104,7 +104,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     void* target_lock = build_lock_target( target->name );
     bool  result      = true;
 
-    // --- 1. Path Preparation ---
+    // --- 2. Path Preparation ---
 
     char obj_dir[ PATH_MAX ];
     snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );

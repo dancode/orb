@@ -15,13 +15,12 @@
 
     Module roles (in include order):
 
-        win.c            -- 00a platform layer: file I/O, CRT wrappers
-        win_thread.c     -- 00b platform threading: mutex, cond, TLS, threads
-        win_spawn.c      -- 00c platform process spawning
-        win_toolchain.c  -- 00d compiler/linker flag sets (MSVC vs GCC/Clang)
-        posix_*.c        -- POSIX equivalents of the above for Linux/macOS
+        win.c             -- 00a platform layer: file I/O, CRT wrappers
+        win_thread.c      -- 00b platform threading: mutex, cond, TLS, threads
+        win_spawn.c       -- 00c platform process spawning
+        win_toolchain.c   -- 00d compiler/linker flag sets (MSVC vs GCC/Clang)
+        posix_*.c         -- POSIX equivalents of the above for Linux/macOS
 
-        00_util.c         -- pre-main utilities: deps graph, validate_targets, startup_banner
         01_prim.c         -- shared: cmd_buf, file locks (pure primitives, no deps)
         02_data.c         -- g_targets[] / g_solutions[] dynamic pools + lookup helpers
         03_registry.c     -- "orb.targets" text-file parser; appends to 02_data pools
@@ -33,12 +32,15 @@
         09_exec.c         -- build_target() orchestration
         10_sched.c        -- topological worker-pool parallel scheduler
         11_clean.c        -- -clean command: per-target or global artifact wipe
+        12_gen_manifest.c -- resolved generation intent shared by all generators
         12_gen_nmake.c    -- -gen command: NMake-style .sln/.vcxproj (build_tool owns build)
         12_gen_json.c     -- -gen command: compile_commands.json (clangd / LSP tools)
         12_gen_vscode.c   -- -gen command: .vscode/tasks.json (VS Code build tasks)
         12_gen_msbuild.c  -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
         test.c            -- debug arg injection from build_tool_debug.args
-        00_util.c         -- pre-main utilities: deps graph, validate_targets, print_startup_banner
+        00_util.c         -- pre-main utilities: deps graph, validate_targets,
+                             print_startup_banner. Included LAST so it can call into
+                             every earlier module without forward declarations.
 
 ==============================================================================================*/
 // clang-format off

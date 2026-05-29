@@ -20,10 +20,12 @@
 
     Unity build:
     - build_tool.exe is itself a unity build. build_tool.c #includes every other
-      .c file in execution order (01_prim -> 02_data -> 03_env -> 04_log ->
-      05_spawn -> 06_compile -> 07_link -> 08_exec -> 09_sched -> 10_clean ->
-      11_gen -> 12_test). All "static" functions are visible across the whole
-      tool while still compiling in a single cl.exe invocation.
+      .c file in execution order (platform layer -> 01_prim -> 02_data ->
+      03_registry -> 04_env -> 05_log -> 06_spawn -> 07_compile -> 08_link ->
+      09_exec -> 10_sched -> 11_clean -> 12_gen_manifest -> 12_gen_nmake ->
+      12_gen_json -> 12_gen_vscode -> 12_gen_msbuild -> test -> 00_util).
+      All "static" functions are visible across the whole tool while still
+      compiling in a single cl.exe invocation.
 
     Build Output Format:
     +-------------------------+------------------------------+
@@ -511,8 +513,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_VCVARS           ( 1u << 16 )  // [orb vcvars] VS env discovery
 #define ORB_OUT_MSVC_OUTPUT      ( 1u << 17 )  // [MSVC] raw cl/link/lib passthrough lines
 #define ORB_OUT_ARGS             ( 1u << 18 )  // startup banner: echo raw argv on a second line
-#define ORB_OUT_GEN_PRELUDES     ( 1u << 19 )  // per-file prelude path during -gen (verbose only)
-#define ORB_OUT_TIMING           ( 1u << 20 )  // per-build timing summary (slowest-first table)
+#define ORB_OUT_TIMING           ( 1u << 19 )  // per-build timing summary (slowest-first table)
 
 // Convenience masks -- verbose detail only, summaries excluded.
 #define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SOURCES  | ORB_OUT_COMPILE_FLAGS    | \
@@ -530,8 +531,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | \
                           ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
-#define ORB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_TIMING | \
-                          ORB_OUT_VCVARS | ORB_OUT_SCHEDULER | ORB_OUT_GEN_PRELUDES )
+#define ORB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( ORB_OUT_TESTING )
@@ -745,15 +745,6 @@ void build_gen_vscode( const gen_manifest_t* m );
 /*  Generates MSBuild .sln/.vcxproj for IntelliSense. */
 
 void build_gen_projects_msbuild( const gen_manifest_t* m );
-
-/*  For each registered target with unity units, writes
-    build/prelude/<name>.prelude.h containing the preprocessor setup lines
-    from the unity entry (everything before the first constituent .c include).
-    Delivered exclusively via -include flags injected into compile_commands.json
-    entries by build_gen_compile_commands().
-    Controlled by s_gen_preludes in build_tool_12_gen_prelude.c. */
-
-void build_gen_preludes( void );
 
 // clang-format on
 /*============================================================================================*/

@@ -141,12 +141,11 @@ cc_assemble( const compile_cmd_t* cc, cmd_buf_t* cmd, const char* rsp_path )
         return false;
     }
 
-    size_t total = strlen( cc->exe ) + 1 + ( size_t )( written < 0 ? 0 : written );
+    // written is guaranteed >= 0 by the check above; the explicit cast keeps
+    // the arithmetic in size_t and silences any signed/unsigned warnings.
+    size_t total = strlen( cc->exe ) + 1 + ( size_t )written;
     if ( total >= CMD_RSP_THRESHOLD )
     {
-        /* temporary print so we know when hit this */
-        printf( ORB_INDENT "[orb warning] command length %zu exceeds threshold\n", total );                
-
         if ( g_use_rsp )
         {
             FILE* f = fopen( rsp_path, "w" );

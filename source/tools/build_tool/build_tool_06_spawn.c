@@ -108,17 +108,15 @@ process_includes_line( char* line, FILE* includes, FILE* out )
 
         if ( is_diagnostic || ( g_out_flags & ORB_OUT_MSVC_OUTPUT ) )
         {
-            // First diagnostic prints a blank line first so it stands out
-            // from any preceding banner noise. static is safe here because
-            // parallel workers serialize at the print lock anyway.
-            static int issue_count = 0;
-            if ( is_diagnostic && issue_count == 0 ) {
-                fprintf( out, "\n" );
-                issue_count++;
-            }
-
             // Drop bare source-file echoes ("foo.c"); the orb log already
             // shows the source list, so cl's echo adds duplicate noise.
+            //
+            // No leading blank-line on first diagnostic: a previous attempt
+            // used a process-wide static int counter, but the scheduler runs
+            // workers concurrently against per-target log sinks -- the static
+            // was shared across all of them and only ever fired once per
+            // process. The per-target log dump in 10_sched.c already handles
+            // its own framing.
             if ( !is_msvc_source_echo( line ) )
                 fprintf( out, ORB_INDENT "%s\n", line );
         }

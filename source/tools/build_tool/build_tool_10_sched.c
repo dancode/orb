@@ -9,7 +9,7 @@
 
     Threading model:
       Workers are OS threads inside this same build_tool.exe process, not child
-      processes. We already imported vcvars into our own environment (03_env),
+      processes. We already imported vcvars into our own environment (04_env),
       and g_targets[] is immutable after startup, so threads share everything
       with no IPC. The per-target named mutex from build_lock_target() still
       applies, so a separate build_tool.exe invocation racing the same target
@@ -97,7 +97,7 @@ static bool              g_print_lock_inited = false;
     --- TLS Log Path Hook ---
 
     Returns the active per-thread log path, or NULL if the calling thread is not
-    inside a scheduler worker. Called by 04_log, 05_spawn, and 08_exec to redirect
+    inside a scheduler worker. Called by 05_log, 06_spawn, and 09_exec to redirect
     child-process output away from the shared stdout during parallel builds.
 ==============================================================================================*/
 
