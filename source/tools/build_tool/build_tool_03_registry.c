@@ -261,7 +261,7 @@ registry_load( const char* path, bool is_external )
 
     char line[ 1024 ];
     int  lineno = 0;
-    bool ok     = true;
+    bool ok = true;
 
     const char* p   = mf.data;
     const char* end = mf.data ? mf.data + mf.size : NULL;

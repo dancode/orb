@@ -21,6 +21,7 @@
         win_toolchain.c  -- 00d compiler/linker flag sets (MSVC vs GCC/Clang)
         posix_*.c        -- POSIX equivalents of the above for Linux/macOS
 
+        00_util.c         -- pre-main utilities: deps graph, validate_targets, startup_banner
         01_prim.c         -- shared: cmd_buf, file locks (pure primitives, no deps)
         02_data.c         -- g_targets[] / g_solutions[] dynamic pools + lookup helpers
         03_registry.c     -- "orb.targets" text-file parser; appends to 02_data pools
@@ -37,6 +38,7 @@
         12_gen_vscode.c   -- -gen command: .vscode/tasks.json (VS Code build tasks)
         12_gen_msbuild.c  -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
         test.c            -- debug arg injection from build_tool_debug.args
+        00_util.c         -- pre-main utilities: deps graph, validate_targets, print_startup_banner
 
 ==============================================================================================*/
 // clang-format off
@@ -165,220 +167,12 @@ const char* sched_log_path( void );
 #include "build_tool_12_gen_vscode.c"       // 12c -gen command (.vscode/tasks.json)
 #include "build_tool_12_gen_msbuild.c"      // 12d -gen_ms command (MSBuild projects)
 #include "build_tool_test.c"                // debug arg injection (debug builds only)
-
-/*==============================================================================================
-    --- validate_targets ---
-
-    Sanity-check the target and solution tables before any build work begins.
-    Catches slot-array overflows and unresolved solution-to-target name references.
-==============================================================================================*/
-
-static bool
-validate_targets( void )
-{
-    bool ok = true;
-
-    // Duplicate target names.
-    for ( int i = 0; i < g_target_count; ++i )
-        for ( int j = i + 1; j < g_target_count; ++j )
-            if ( strcmp( g_targets[ i ].name, g_targets[ j ].name ) == 0 )
-            {
-                printf( ORB_INDENT "[orb error] duplicate target name '%s'\n", g_targets[ i ].name );
-                ok = false;
-            }
-
-    // Duplicate solution names.
-    for ( int i = 0; i < g_solution_count; ++i )
-        for ( int j = i + 1; j < g_solution_count; ++j )
-            if ( g_solutions[ i ].name && g_solutions[ j ].name &&
-                 strcmp( g_solutions[ i ].name, g_solutions[ j ].name ) == 0 )
-            {
-                printf( ORB_INDENT "[orb error] duplicate solution name '%s'\n", g_solutions[ i ].name );
-                ok = false;
-            }
-
-    for ( int i = 0; i < g_target_count; ++i )
-    {
-        const target_info_t* t = &g_targets[ i ];
-
-        // Non-external targets must have a root_dir (guards unit file checks below).
-        if ( !t->is_external && !t->root_dir )
-        {
-            printf( ORB_INDENT "[orb error] target '%s': missing root directory\n", t->name );
-            ok = false;
-            continue;
-        }
-
-        // Unit files exist on disk.
-        for ( int j = 0; j < TARGET_MAX_SLOTS && t->units[ j ]; ++j )
-        {
-            char path[ PATH_MAX ];
-            snprintf( path, sizeof( path ), "%s/%s", t->root_dir, t->units[ j ] );
-            if ( !platform_file_exists( path ) )
-            {
-                printf( ORB_INDENT "[orb error] target '%s': unit file not found '%s'\n",
-                        t->name, t->units[ j ] );
-                ok = false;
-            }
-        }
-
-        // Slot overflow.
-        if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ||
-             t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ||
-             t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ||
-             t->mono_deps[ TARGET_MAX_SLOTS - 1 ] != NULL )
-        {
-            printf( ORB_INDENT "[orb error] target '%s' has too many units or dependencies "
-                               "(raise TARGET_MAX_SLOTS)\n", t->name );
-            ok = false;
-        }
-
-        // Unresolved and self-referencing dep / tool_dep / mono_dep names.
-        for ( int j = 0; j < TARGET_MAX_SLOTS && t->deps[ j ]; ++j )
-        {
-            if ( strcmp( t->deps[ j ], t->name ) == 0 )
-                printf( ORB_INDENT "[orb error] target '%s': dep references itself\n", t->name ),
-                ok = false;
-            else if ( !find_target( t->deps[ j ] ) )
-                printf( ORB_INDENT "[orb error] target '%s': unknown dep '%s'\n",
-                        t->name, t->deps[ j ] ),
-                ok = false;
-        }
-        for ( int j = 0; j < TARGET_MAX_SLOTS && t->tool_deps[ j ]; ++j )
-        {
-            if ( strcmp( t->tool_deps[ j ], t->name ) == 0 )
-                printf( ORB_INDENT "[orb error] target '%s': tool_dep references itself\n", t->name ),
-                ok = false;
-            else if ( !find_target( t->tool_deps[ j ] ) )
-                printf( ORB_INDENT "[orb error] target '%s': unknown tool_dep '%s'\n",
-                        t->name, t->tool_deps[ j ] ),
-                ok = false;
-        }
-        for ( int j = 0; j < TARGET_MAX_SLOTS && t->mono_deps[ j ]; ++j )
-        {
-            if ( strcmp( t->mono_deps[ j ], t->name ) == 0 )
-                printf( ORB_INDENT "[orb error] target '%s': mono_dep references itself\n", t->name ),
-                ok = false;
-            else if ( !find_target( t->mono_deps[ j ] ) )
-                printf( ORB_INDENT "[orb error] target '%s': unknown mono_dep '%s'\n",
-                        t->name, t->mono_deps[ j ] ),
-                ok = false;
-        }
-    }
-
-    // Unresolved solution-to-target references and missing out_dir.
-    for ( int i = 0; i < g_solution_count; ++i )
-    {
-        const solution_info_t* sln = &g_solutions[ i ];
-
-        if ( !sln->is_external && !sln->out_dir )
-        {
-            printf( ORB_INDENT "[orb error] solution '%s': missing 'out' directory\n", sln->name );
-            ok = false;
-        }
-
-        for ( const char* const* tn = sln->target_names; *tn; ++tn )
-        {
-            bool found = false;
-            for ( int j = 0; j < g_target_count; ++j )
-                if ( strcmp( g_targets[ j ].name, *tn ) == 0 ) { found = true; break; }
-            if ( !found )
-            {
-                printf( ORB_INDENT "[orb error] solution '%s' references unknown target '%s'\n",
-                        sln->name, *tn );
-                ok = false;
-            }
-        }
-    }
-    return ok;
-}
-
-/*==============================================================================================
-    --- print_startup_banner ---
-
-    Prints a standardized header at the start of every build with the active
-    configuration. Calls get_target_upper() from 06_compile.c (visible: 06 is
-    included before main() is reached).
-==============================================================================================*/
-
-static void
-print_startup_banner( const build_context_t* ctx )
-{
-    char target_upper[ 64 ] = "ALL";
-    if ( ctx->target_name )
-        get_target_upper( ctx->target_name, target_upper, sizeof( target_upper ) );
-
-    /* truncate file path to just the file name. */
-
-    const char* file_name = ctx->file_path;
-    if ( file_name )
-        for ( const char* p = ctx->file_path; *p; ++p )
-            if ( *p == '\\' || *p == '/' ) file_name = p + 1;
-
-    const char* config_str   = ctx->config   == CONFIG_DEBUG  ? "debug"
-                             : ctx->is_shipping                ? "release+shipping" : "release";
-    const char* compiler_str = ctx->compiler == COMPILE_CLANG ? "clang" : "msvc";
-    const char* mode_str     = ctx->is_monolithic ? "monolithic" : "modular";
-    const char* label        = NULL;
-    const char* special      = NULL;
-
-    char subject[ PATH_MAX ];
-    snprintf( subject, sizeof( subject ), "%s", target_upper );
-
-    if ( ctx->compile_only )
-    {
-        label   = "[orb compile-only]";
-        special = "no-link";
-    }
-    else if ( ctx->file_path )
-    {
-        label   = "[orb single-file]";
-        special = "file";
-        snprintf( subject, sizeof( subject ), "%s %s", target_upper, file_name );
-    }
-    else
-    {
-        label   = "[orb build]";
-        special = ctx->skip_deps ? "no-deps" : NULL;
-    }
-
-    char props[ 128 ];
-    if ( special )
-        snprintf( props, sizeof( props ), "[ %s | %s | %s | %s ]", special, mode_str, config_str, compiler_str );
-    else
-        snprintf( props, sizeof( props ), "[ %s | %s | %s ]", mode_str, config_str, compiler_str );
-
-    printf( ORB_BANNER "----------------------------------------------------------------\n" );
-    printf( ORB_BANNER "%s %s %s\n", label, subject, props );
-}
+#include "build_tool_00_util.c"             // pre-main utilities: deps graph, validate_targets, print_startup_banner
 
 /*==============================================================================================
     --- Main Entry ---
 
-    Recognized arguments (all case-insensitive):
-
-      -list, -targets         Print all registered targets and exit.
-      -clean                  Wipe build outputs and exit.
-      -bootstrap              Recompile build_tool.exe itself (self-hosting).
-      -gen                    Regenerate NMake .sln/.vcxproj and compile_commands.json; exit.
-      -gen_ms                 Regenerate MSBuild .sln/.vcxproj and exit (better IntelliSense).
-      -no-fwd-compat          -gen only: omit stdcpp20 alongside stdc11; use strict C11 IntelliSense.
-      -target <name>          Restrict build to one target's closure.
-      -compile-only           Compile all unity units; no link. (VS Ctrl+F7)
-      -file <path>            Compile one file with the target's full flag set; no link.
-      -force                  Skip the up-to-date check; always compile + link.
-      -no-deps                Build only this target; no dep recursion. (VS -managed)
-      -monolithic, -mono      Build DLL modules as static libs; defines BUILD_STATIC.
-      -no-rsp                 Pass full command lines directly; skip .rsp creation.
-      -no-include-track       Skip /showIncludes parsing; header changes won't trigger rebuild.
-      -config <Debug|Release> Pick build configuration (default: Debug).
-      -release                Shortcut for -config Release.
-      -shipping               Release + /GL + /LTCG (whole-program optimization). Implies -release.
-      -clang                  Use clang-cl instead of cl.exe.
-      -j N                    Worker thread count; 0/unset = auto-detect.
-      -q                      Quiet: suppress most output.
-      -v                      Verbose: enable all output sections.
-      --out <hex>             Fine-grained output mask (see out_flags_t in build_tool.h).
+    Run with -help or -h for the full argument reference.
 
 ==============================================================================================*/
 
@@ -409,7 +203,9 @@ main( int argc, char** argv )
 
     // --- Operational Command flags ---
 
+    bool should_help         = false;
     bool should_list         = false;
+    bool should_graph        = false;
     bool should_clean        = false;
     bool should_gen          = false;
     bool should_gen_nmake    = false;
@@ -421,8 +217,11 @@ main( int argc, char** argv )
 
     for ( int i = 1; i < argc; ++i )
     {
-        // utiltiy + project generation
+        // utility + project generation
+        if ( platform_stricmp( argv[ i ], "-help"             ) == 0 ) should_help = true;
+        if ( platform_stricmp( argv[ i ], "-h"                ) == 0 ) should_help = true;
         if ( platform_stricmp( argv[ i ], "-list"             ) == 0 ) should_list = true;
+        if ( platform_stricmp( argv[ i ], "-graph"            ) == 0 ) should_graph = true;
         if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
         if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
         if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
@@ -472,6 +271,10 @@ main( int argc, char** argv )
         printf( ORB_INDENT "[orb error] -file and -compile-only are mutually exclusive\n" );
         return 1;
     }
+
+    // --- Command: HELP ---
+
+    if ( should_help ) { print_help(); return 0; }
 
     // --- Target registry: orb.targets first (sets g_engine_root if 'engine' declared),
     //     then built-ins (uses g_engine_root to set paths and is_external correctly). ---
@@ -529,6 +332,76 @@ main( int argc, char** argv )
             }
             if ( printed_header ) printf( "\n" );
         }
+        return 0;
+    }
+
+    // --- Command: GRAPH ---
+    //
+    // With -target: prints the dependency tree rooted at that target and the flat
+    // topological build order for its closure.
+    // Without -target: prints the flat build order for all local targets collectively.
+
+    if ( should_graph )
+    {
+        static const char* type_tag[] = { "lib", "dll", "exe" };
+
+        target_info_t* root = NULL;
+        if ( ctx.target_name )
+        {
+            root = find_target_icase( ctx.target_name );
+            if ( !root )
+            {
+                printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name );
+                return 1;
+            }
+        }
+
+        static deps_topo_t topo;
+        memset( &topo, 0, sizeof( topo ) );
+
+        if ( root )
+        {
+            deps_visit( &topo, root );
+        }
+        else
+        {
+            for ( int i = 0; i < g_target_count; ++i )
+                if ( !g_targets[ i ].is_external )
+                    deps_visit( &topo, &g_targets[ i ] );
+        }
+
+        if ( topo.has_cycle )
+        {
+            printf( ORB_INDENT "[orb error] %s\n", topo.cycle_msg );
+            return 1;
+        }
+
+        const char* label = root ? root->name : "ALL";
+        printf( ORB_BANNER "[orb deps]  %s  (%d in closure)\n", label, topo.count );
+
+        // Tree view: single-target mode only.
+        if ( root )
+        {
+            int shown[ MAX_TARGETS + 4 ] = { 0 };
+            int ridx = deps_target_idx( root );
+            if ( ridx >= 0 ) shown[ ridx ]++;
+            printf( "\n" );
+            printf( ORB_INDENT "tree:\n" );
+            printf( "%s  %-22s  [%s]\n", ORB_INDENT, root->name, type_tag[ root->type ] );
+            deps_tree_children( root, shown, "  " );
+        }
+
+        // Flat topological build order (leaves first).
+        int num_w = ( topo.count >= 10 ) ? 2 : 1;
+        printf( "\n" );
+        printf( ORB_INDENT "build order:\n" );
+        for ( int i = 0; i < topo.count; ++i )
+        {
+            target_info_t* t = topo.order[ i ];
+            printf( "%s  %*d  [%s]  %s\n",
+                    ORB_INDENT, num_w, i + 1, type_tag[ t->type ], t->name );
+        }
+        printf( "\n" );
         return 0;
     }
 

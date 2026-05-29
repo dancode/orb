@@ -47,8 +47,7 @@ target core
     root        source/engine/core
     folder      02_ENGINE
     unit        core.c
-    dep         sys 
-    dep         rs
+    dep         sys rs
     reflect
 
 # ==============================================================================
