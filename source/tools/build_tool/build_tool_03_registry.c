@@ -150,6 +150,47 @@
     --- Token helpers ---
 ==============================================================================================*/
 
+// Parse 'val' as "<msvc|clang|all> <flag>" and append to slots[]/count if valid.
+// keyword is "compile_flag" or "link_flag" and appears only in the warning message.
+static void
+reg_parse_flag_entry( const char* path, int lineno, const char* keyword,
+                      const char* val, const char* target_name,
+                      target_extra_flag_t* slots, int* count, int max )
+{
+    char  tmp[ 256 ];
+    snprintf( tmp, sizeof( tmp ), "%s", val );
+    char* flagp = tmp;
+    while ( *flagp && (unsigned char)*flagp > ' ' ) flagp++;
+    if ( *flagp ) { *flagp++ = '\0'; while ( *flagp && (unsigned char)*flagp <= ' ' ) flagp++; }
+
+    compiler_t comp       = COMPILE_ALL;
+    bool       comp_valid = true;
+    if      ( strcmp( tmp, "msvc"  ) == 0 ) comp = COMPILE_MSVC;
+    else if ( strcmp( tmp, "clang" ) == 0 ) comp = COMPILE_CLANG;
+    else if ( strcmp( tmp, "all"   ) == 0 ) comp = COMPILE_ALL;
+    else
+    {
+        printf( ORB_INDENT "[orb warn] %s:%d -- unknown compiler '%s' in %s"
+                           " (use msvc/clang/all)\n", path, lineno, tmp, keyword );
+        comp_valid = false;
+    }
+
+    if ( comp_valid && *flagp )
+    {
+        if ( *count < max )
+        {
+            target_extra_flag_t* ef = &slots[ (*count)++ ];
+            ef->compiler = comp;
+            snprintf( ef->flag, sizeof( ef->flag ), "%s", flagp );
+        }
+        else
+        {
+            printf( ORB_INDENT "[orb warn] %s:%d -- %s slot full for '%s',"
+                               " dropped: %s\n", path, lineno, keyword, target_name, flagp );
+        }
+    }
+}
+
 // Strip in-place: remove leading whitespace, trailing whitespace, and trailing \r\n.
 static void
 reg_strip( char* s )
@@ -254,7 +295,7 @@ registry_load( const char* path, bool is_external )
         return true;
     }
 
-    typedef enum { MODE_NONE, MODE_TARGET, MODE_SOLUTION } parse_mode_t;
+    typedef enum { MODE_NONE, MODE_SKIP, MODE_TARGET, MODE_SOLUTION } parse_mode_t;
     parse_mode_t     mode    = MODE_NONE;
     target_info_t*   cur_t   = NULL;
     solution_info_t* cur_sln = NULL;
@@ -326,6 +367,19 @@ registry_load( const char* path, bool is_external )
 
         // --- Block openers (must start at column 0 after strip) ---
 
+        // "target" with no name: reg_strip eats the trailing space so the line
+        // never matches "target <name>" -- catch it here before falling through.
+        if ( strcmp( line, "target" ) == 0 )
+        {
+            printf( ORB_INDENT "[orb error] %s:%d -- target declared with no name\n",
+                    path, lineno );
+            ok      = false;
+            mode    = MODE_SKIP;
+            cur_t   = NULL;
+            cur_sln = NULL;
+            continue;
+        }
+
         if ( strncmp( line, "target ", 7 ) == 0 )
         {
             if ( g_target_count >= MAX_TARGETS )
@@ -341,6 +395,17 @@ registry_load( const char* path, bool is_external )
             cur_t->name        = pool_str( line + 7 );
             cur_t->is_external = is_external;
             cur_sln            = NULL;
+            continue;
+        }
+
+        if ( strcmp( line, "solution" ) == 0 )
+        {
+            printf( ORB_INDENT "[orb error] %s:%d -- solution declared with no name\n",
+                    path, lineno );
+            ok      = false;
+            mode    = MODE_SKIP;
+            cur_t   = NULL;
+            cur_sln = NULL;
             continue;
         }
 
@@ -364,6 +429,9 @@ registry_load( const char* path, bool is_external )
 
         // --- Property line (belongs to current block) ---
 
+        // Properties belonging to a block that errored on declaration are silently dropped.
+        if ( mode == MODE_SKIP ) continue;
+
         char* key;
         char* val;
         reg_split_kv( line, &key, &val );
@@ -372,9 +440,15 @@ registry_load( const char* path, bool is_external )
         {
             if ( strcmp( key, "type" ) == 0 && val )
             {
-                     if ( strcmp( val, "static"  ) == 0 ) cur_t->type = TARGET_STATIC_LIB;
-                else if ( strcmp( val, "dynamic" ) == 0 ) cur_t->type = TARGET_DYNAMIC_LIB;
-                else                                      cur_t->type = TARGET_EXECUTABLE;
+                if      ( strcmp( val, "static"  ) == 0 ) { cur_t->type = TARGET_STATIC_LIB;  cur_t->has_type = true; }
+                else if ( strcmp( val, "dynamic" ) == 0 ) { cur_t->type = TARGET_DYNAMIC_LIB; cur_t->has_type = true; }
+                else if ( strcmp( val, "exe"     ) == 0 ) { cur_t->type = TARGET_EXECUTABLE;  cur_t->has_type = true; }
+                else
+                {
+                    printf( ORB_INDENT "[orb error] %s:%d -- target '%s': unknown type '%s'"
+                                       " (use static/dynamic/exe)\n", path, lineno, cur_t->name, val );
+                    ok = false;
+                }
             }
             else if ( strcmp( key, "root" ) == 0 && val )
             {
@@ -450,39 +524,9 @@ registry_load( const char* path, bool is_external )
             {
                 /* Per-target compiler flag: 'compile_flag <msvc|clang|all> <flag>'.
                    Only appended when the active compiler matches. Not forwarded to IntelliSense. */
-                char  tmp[ 256 ];
-                snprintf( tmp, sizeof( tmp ), "%s", val );
-                char* flagp = tmp;
-                while ( *flagp && (unsigned char)*flagp > ' ' ) flagp++;
-                if ( *flagp ) { *flagp++ = '\0'; while ( *flagp && (unsigned char)*flagp <= ' ' ) flagp++; }
-
-                compiler_t comp       = COMPILE_ALL;
-                bool       comp_valid = true;
-                if      ( strcmp( tmp, "msvc"  ) == 0 ) comp = COMPILE_MSVC;
-                else if ( strcmp( tmp, "clang" ) == 0 ) comp = COMPILE_CLANG;
-                else if ( strcmp( tmp, "all"   ) == 0 ) comp = COMPILE_ALL;
-                else
-                {
-                    printf( ORB_INDENT "[orb warn] %s:%d -- unknown compiler '%s' in compile_flag"
-                                       " (use msvc/clang/all)\n", path, lineno, tmp );
-                    comp_valid = false;
-                }
-
-                if ( comp_valid && *flagp )
-                {
-                    if ( cur_t->extra_compile_flag_count < MAX_EXTRA_COMPILE_FLAGS )
-                    {
-                        target_extra_flag_t* ef =
-                            &cur_t->extra_compile_flags[ cur_t->extra_compile_flag_count++ ];
-                        ef->compiler = comp;
-                        snprintf( ef->flag, sizeof( ef->flag ), "%s", flagp );
-                    }
-                    else
-                    {
-                        printf( ORB_INDENT "[orb warn] %s:%d -- compile_flag slot full for '%s',"
-                                           " dropped: %s\n", path, lineno, cur_t->name, flagp );
-                    }
-                }
+                reg_parse_flag_entry( path, lineno, "compile_flag", val, cur_t->name,
+                                      cur_t->extra_compile_flags, &cur_t->extra_compile_flag_count,
+                                      MAX_EXTRA_COMPILE_FLAGS );
             }
             else if ( strcmp( key, "subsystem" ) == 0 && val )
             {
@@ -498,39 +542,9 @@ registry_load( const char* path, bool is_external )
             {
                 /* Per-target linker flag: 'link_flag <msvc|clang|all> <flag>'.
                    Only appended when the active linker toolchain matches. */
-                char  tmp[ 256 ];
-                snprintf( tmp, sizeof( tmp ), "%s", val );
-                char* flagp = tmp;
-                while ( *flagp && (unsigned char)*flagp > ' ' ) flagp++;
-                if ( *flagp ) { *flagp++ = '\0'; while ( *flagp && (unsigned char)*flagp <= ' ' ) flagp++; }
-
-                compiler_t comp       = COMPILE_ALL;
-                bool       comp_valid = true;
-                if      ( strcmp( tmp, "msvc"  ) == 0 ) comp = COMPILE_MSVC;
-                else if ( strcmp( tmp, "clang" ) == 0 ) comp = COMPILE_CLANG;
-                else if ( strcmp( tmp, "all"   ) == 0 ) comp = COMPILE_ALL;
-                else
-                {
-                    printf( ORB_INDENT "[orb warn] %s:%d -- unknown compiler '%s' in link_flag"
-                                       " (use msvc/clang/all)\n", path, lineno, tmp );
-                    comp_valid = false;
-                }
-
-                if ( comp_valid && *flagp )
-                {
-                    if ( cur_t->extra_link_flag_count < MAX_EXTRA_LINK_FLAGS )
-                    {
-                        target_extra_flag_t* ef =
-                            &cur_t->extra_link_flags[ cur_t->extra_link_flag_count++ ];
-                        ef->compiler = comp;
-                        snprintf( ef->flag, sizeof( ef->flag ), "%s", flagp );
-                    }
-                    else
-                    {
-                        printf( ORB_INDENT "[orb warn] %s:%d -- link_flag slot full for '%s',"
-                                           " dropped: %s\n", path, lineno, cur_t->name, flagp );
-                    }
-                }
+                reg_parse_flag_entry( path, lineno, "link_flag", val, cur_t->name,
+                                      cur_t->extra_link_flags, &cur_t->extra_link_flag_count,
+                                      MAX_EXTRA_LINK_FLAGS );
             }
         }
         else if ( mode == MODE_SOLUTION && cur_sln )

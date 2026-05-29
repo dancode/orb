@@ -233,7 +233,7 @@ validate_targets( void )
                 ok = false;
             }
 
-    // Valide each target
+    // Validate each target
     for ( int i = 0; i < g_target_count; ++i )
     {
         const target_info_t* t = &g_targets[ i ];
@@ -241,9 +241,23 @@ validate_targets( void )
         // Non-external targets must have a root_dir (guards unit file checks below).
         if ( !t->is_external && !t->root_dir )
         {
-            printf( ORB_INDENT "[orb error] target '%s': missing root directory\n", t->name );
+            printf( ORB_INDENT "[orb error] target '%s': missing 'root' directory\n", t->name );
             ok = false;
             continue;
+        }
+
+        // 'type' must be explicitly declared; there is no safe default.
+        if ( !t->is_external && !t->has_type )
+        {
+            printf( ORB_INDENT "[orb error] target '%s': missing 'type' (use static/dynamic/exe)\n", t->name );
+            ok = false;
+        }
+
+        // Non-external targets must have at least one unity entry file.
+        if ( !t->is_external && !t->units[ 0 ] )
+        {
+            printf( ORB_INDENT "[orb error] target '%s': no 'unit' entries\n", t->name );
+            ok = false;
         }
 
         // Unit files exist on disk.
@@ -317,6 +331,10 @@ validate_targets( void )
             printf( ORB_INDENT "[orb error] solution '%s': missing 'out' directory\n", sln->name );
             ok = false;
         }
+
+        // A solution with no targets generates an empty workspace -- almost always a mistake.
+        if ( !sln->is_external && !sln->target_names[ 0 ] )
+            printf( ORB_INDENT "[orb warn] solution '%s': no targets added (use 'add')\n", sln->name );
 
         for ( const char* const* tn = sln->target_names; *tn; ++tn )
         {

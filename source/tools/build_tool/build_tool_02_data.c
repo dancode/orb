@@ -124,6 +124,7 @@ init_builtin_targets( void )
         memset( t, 0, sizeof( *t ) );
         t->name          = "build_tool";
         t->type          = TARGET_EXECUTABLE;
+        t->has_type      = true;
         t->root_dir      = pool_str( bt_root );
         t->virtual_folder    = "08_TOOL";
         t->units[ 0 ]    = "build_tool.c";
@@ -138,6 +139,7 @@ init_builtin_targets( void )
         memset( t, 0, sizeof( *t ) );
         t->name            = "reflect_tool";
         t->type            = TARGET_EXECUTABLE;
+        t->has_type        = true;
         t->root_dir        = pool_str( rt_root );
         t->virtual_folder      = "08_TOOL";
         t->units[ 0 ]      = "reflect_tool.c";

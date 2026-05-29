@@ -1224,7 +1224,6 @@ build_gen_projects( const gen_manifest_t* m )
 {
     snprintf( s_ctx.build_tool_exe, sizeof( s_ctx.build_tool_exe ), "%s", m->build_tool_exe );
     run_solution_passes( m, "_nm", "", "Solution", build_gen_proj_target );
-    printf( "\nProjects generated successfully.\n" );
 }
 
 /*============================================================================================*/

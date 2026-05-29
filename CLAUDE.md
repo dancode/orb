@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ORB "The Glowing Orb"** -- a C11 game engine with a modular, hot-reload-first architecture.
 Primary target is Windows with Visual Studio 2022 or higher.
-
-Only create the MSVC Win64 implementation. Stub all other platforms with `#error`.
+POSIX (Linux/macOS) is a planned secondary target; the platform layer exists but has not been
+tested yet. Do not stub POSIX paths with `#error` -- maintain them as working code.
 
 ---
 

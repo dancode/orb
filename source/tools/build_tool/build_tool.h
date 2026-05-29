@@ -294,6 +294,7 @@ typedef struct target_info_s
 {
     const char*     name;           // Unique name (e.g., "base", "core", "app").
     target_type_t   type;           // Artifact type (LIB, DLL, or EXE).
+    bool            has_type;       // True if 'type' was explicitly set in orb.targets.
     const char*     root_dir;       // Absolute path to the source directory for this target.
     const char*     virtual_folder; // Display-only folder name (VS Solution Explorer)
 

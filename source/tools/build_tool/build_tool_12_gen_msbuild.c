@@ -316,7 +316,6 @@ void
 build_gen_projects_msbuild( const gen_manifest_t* m )
 {
     run_solution_passes( m, "_ms", "_ms", "MSBuild Solution", build_gen_proj_target_msbuild );
-    printf( "\nMSBuild projects generated successfully.\n" );
 }
 
 // clang-format on

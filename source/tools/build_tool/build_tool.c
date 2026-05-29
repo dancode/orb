@@ -279,10 +279,10 @@ main( int argc, char** argv )
     // --- Target registry: orb.targets first (sets g_engine_root if 'engine' declared),
     //     then built-ins (uses g_engine_root to set paths and is_external correctly). ---
 
-    registry_load( "orb.targets", false );
+    bool registry_ok = registry_load( "orb.targets", false );
     init_builtin_targets();
 
-    if ( !validate_targets() ) return 1;
+    if ( !registry_ok || !validate_targets() ) return 1;
 
     // --- Command: LIST ---
 
@@ -459,6 +459,7 @@ main( int argc, char** argv )
         if ( should_gen || should_gen_msbuild )
             build_gen_projects_msbuild( &manifest );
 
+        printf( "\nAll projects generated successfully.\n" );
         return 0;
     }
 

@@ -313,7 +313,7 @@ build_gen_compile_commands( const gen_manifest_t* m )
     fprintf( fp, "\n]\n" );
     fclose( fp );
 
-    printf( "\nGenerated compile_commands.json (%d entries)\n", entry_count );
+    printf( "Generated compile_commands.json (%d entries)\n", entry_count );
 }
 
 /*============================================================================================*/
