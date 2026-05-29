@@ -18,6 +18,7 @@
         platform_popen()         -- open a pipe to a command       (_popen)
         platform_pclose()        -- close a pipe                   (_pclose)
         platform_time_ms()       -- monotonic millisecond counter  (GetTickCount64)
+        platform_enable_ansi_color() -- enable VT processing on stdout (SetConsoleMode)
         platform_cpu_count()     -- logical processor count         (GetSystemInfo)
         platform_mkdir()         -- create a directory             (CreateDirectoryA)
         platform_find_first()    -- begin directory enumeration    (_findfirst)
@@ -130,6 +131,23 @@ platform_time_ms( void )
 }
 
 /*==============================================================================================
+    --- ANSI Color ---
+==============================================================================================*/
+
+/* Enables ANSI escape code processing on the process stdout handle.
+   Fails silently when stdout is redirected to a file or pipe (GetConsoleMode returns false). */
+
+static bool
+platform_enable_ansi_color( void )
+{
+    HANDLE h = GetStdHandle( STD_OUTPUT_HANDLE );
+    if ( h == INVALID_HANDLE_VALUE ) return false;
+    DWORD mode = 0;
+    if ( !GetConsoleMode( h, &mode ) ) return false;
+    return SetConsoleMode( h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING ) != 0;
+}
+
+/*==============================================================================================
     --- CPU Count ---
 ==============================================================================================*/
 
@@ -143,6 +161,7 @@ platform_cpu_count( void )
     int n = (int)si.dwNumberOfProcessors;
     if ( n < 1  ) n = 1;
     if ( n > 32 ) n = 32;
+
     return n;
 }
 

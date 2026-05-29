@@ -107,6 +107,22 @@ static bool        g_include_track  = true;         // Use up-to-date tracking v
 static bool        g_use_rsp        = true;         // Use overflow prevention.
 static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 alongside stdc11.
                                                     // (suppress designated-initializer squiggles)
+
+/*==============================================================================================
+    --- ANSI Color Strings ---
+
+    Initialized to empty strings; set to real escape codes in main() when the terminal
+    supports ENABLE_VIRTUAL_TERMINAL_PROCESSING. All modules use these globals so color
+    degrades gracefully when redirected to a file or pipe.
+==============================================================================================*/
+
+static const char* g_clr_reset  = "";
+static const char* g_clr_red    = "";
+static const char* g_clr_green  = "";
+static const char* g_clr_yellow = "";
+static const char* g_clr_dim    = "";
+static const char* g_clr_bold   = "";
+
 /*==============================================================================================
     --- Unity Include Chain ---
 
@@ -369,9 +385,21 @@ print_startup_banner( const build_context_t* ctx )
 int
 main( int argc, char** argv )
 {
-    // --- Debug arg injection --- 
-    
+    // --- Debug arg injection ---
+
     build_tool_debug_inject( &argc, &argv );
+
+    // --- ANSI color: enable once; all modules read g_clr_* ---
+
+    if ( platform_enable_ansi_color() )
+    {
+        g_clr_reset  = "\033[0m";
+        g_clr_red    = "\033[31m";
+        g_clr_green  = "\033[32m";
+        g_clr_yellow = "\033[33m";
+        g_clr_dim    = "\033[2m";
+        g_clr_bold   = "\033[1m";
+    }
 
     // --- Context defaults ---
 
@@ -517,10 +545,10 @@ main( int argc, char** argv )
         bool skipped = false;
         if ( !build_target( &ctx, bt, &skipped, NULL ) )
         {
-            printf( ORB_BANNER "[ BOOTSTRAP: FAILED ]\n" );
+            printf( ORB_BANNER "%s[ BOOTSTRAP: FAILED ]%s\n", g_clr_red, g_clr_reset );
             return 1;
         }
-        printf( ORB_BANNER "[ BOOTSTRAP: OK ]\n" );
+        printf( ORB_BANNER "%s[ BOOTSTRAP: OK ]%s\n", g_clr_green, g_clr_reset );
         return 0;
     }
 
@@ -603,11 +631,9 @@ main( int argc, char** argv )
         if ( !target ) { printf( ORB_INDENT "[orb error] -compile-only requires -target\n" ); return 1; }
         if ( !build_target_compile_only( &ctx, target ) )
         {
-            printf( ORB_BANNER "[ %s: FAILED ]\n", target_upper );
+            printf( ORB_BANNER "%s[ %s: FAILED ]%s\n", g_clr_red, target_upper, g_clr_reset );
             return 1;
         }
-        if ( g_out_flags & ORB_OUT_TARGET_RESULT )
-            printf( ORB_INDENT "[orb completed] %s\n", target->name );
         printf( "\n" );
         return 0;
     }
@@ -633,10 +659,6 @@ main( int argc, char** argv )
             effective_file = resolved_file;
         }
 
-        const char* base_name = effective_file;
-        for ( const char* p = effective_file; *p; ++p )
-            if ( *p == '\\' || *p == '/' ) base_name = p + 1;
-
         char obj_dir[ PATH_MAX ];
         snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
         char gen_dir[ PATH_MAX ];
@@ -648,11 +670,9 @@ main( int argc, char** argv )
 
         if ( !build_target_compile_single( &ctx, target, obj_dir, gen_dir, effective_file ) )
         {
-            printf( ORB_BANNER "[ %s: FAILED ]\n", target_upper );
+            printf( ORB_BANNER "%s[ %s: FAILED ]%s\n", g_clr_red, target_upper, g_clr_reset );
             return 1;
         }
-        if ( g_out_flags & ORB_OUT_TARGET_RESULT )
-            printf( ORB_INDENT "[orb completed] %s\n", base_name );
         printf( "\n" );
         return 0;
     }
@@ -675,10 +695,8 @@ main( int argc, char** argv )
             return 1;
         }
 
-        bool show_result  = ( g_out_flags & ORB_OUT_TARGET_RESULT );
-        bool show_skipped = was_skipped && ( g_out_flags & ORB_OUT_SUMMARY_COMPILE );
-        if ( show_result || show_skipped )
-            printf( ORB_INDENT "[orb %s] %s\n", was_skipped ? "skipped" : "completed", target->name );
+        if ( was_skipped && ( g_out_flags & ORB_OUT_SUMMARY_COMPILE ) )
+            printf( ORB_INDENT "%s[orb skipped]%s %s\n", g_clr_dim, g_clr_reset, target->name );
     }
     else
     {

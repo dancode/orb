@@ -286,8 +286,8 @@ worker_main( void* arg )
 
         // 3. Run the build under per-target output redirection.
         // Truncate any stale log from a previous run first.
-        FILE* clr = fopen( j->log_path, "w" );
-        if ( clr ) fclose( clr );
+        FILE* log_trunc = fopen( j->log_path, "w" );
+        if ( log_trunc ) fclose( log_trunc );
 
         platform_tls_set( g_sched_log_tls, ( void* )j->log_path );
 
@@ -330,13 +330,12 @@ worker_main( void* arg )
             }
         }
 
-        bool show_output  = ( g_out_flags & ORB_OUT_TARGET_RESULT );
         bool show_skipped = j->skipped && ( g_out_flags & ORB_OUT_SUMMARY_COMPILE );
-        if ( !ok || show_output || show_skipped )
+        if ( !ok || show_skipped )
         {
-            printf( ORB_INDENT "[orb %s] %s\n",
-                    !ok ? "FAILED" : j->skipped ? "skipped" : "completed",
-                    j->target->name );
+            const char* clr    = !ok ? g_clr_red : g_clr_dim;
+            const char* status = !ok ? "FAILED" : "skipped";
+            printf( ORB_INDENT "%s[orb %s]%s %s\n", clr, status, g_clr_reset, j->target->name );
         }
         fflush( stdout );
         platform_mutex_unlock( &g_print_lock );
@@ -508,7 +507,10 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
                     snprintf( t, sizeof( t ), "%llums", ( unsigned long long )j->elapsed_ms );
                 else
                     snprintf( t, sizeof( t ), "%.1fs", j->elapsed_ms / 1000.0 );
-                printf( ORB_INDENT "%-6s  %s\n", t, j->target->name );
+                // Slow (>=2s) = yellow, fast (<200ms) = dim, normal otherwise.
+                const char* clr = ( j->elapsed_ms >= 2000 ) ? g_clr_yellow
+                                : ( j->elapsed_ms <   200 ) ? g_clr_dim : "";
+                printf( ORB_INDENT "%s%-6s  %s%s\n", clr, t, j->target->name, g_clr_reset );
             }
             char total_t[ 16 ];
             if ( total_ms < 1000 )
@@ -516,7 +518,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
             else
                 snprintf( total_t, sizeof( total_t ), "%.1fs", total_ms / 1000.0 );
             printf( ORB_INDENT "------\n" );
-            printf( ORB_INDENT "%-6s  total\n", total_t );
+            printf( ORB_INDENT "%s%-6s  total%s\n", g_clr_bold, total_t, g_clr_reset );
             printf( "\n" );
         }
     }

@@ -503,16 +503,15 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_LINK_CMD         ( 1u << 11 )  // raw link.exe / lib.exe command line
 
 // General / always-on (bits 12+)
-#define ORB_OUT_SUMMARY_COMPILE  ( 1u << 12 )  // [orb compiling] target (config)
+#define ORB_OUT_SUMMARY_COMPILE  ( 1u << 12 )  // [orb compiling] or [orb skipped] per-target
 #define ORB_OUT_SUMMARY_LINK     ( 1u << 13 )  // [orb link] target -> artifact
 #define ORB_OUT_SCHEDULER        ( 1u << 14 )  // [orb parallel] N targets, M threads
-#define ORB_OUT_TARGET_RESULT    ( 1u << 15 )  // [orb completed] / [orb skipped] per-target
-#define ORB_OUT_REFLECT          ( 1u << 16 )  // [orb reflect] codegen steps
-#define ORB_OUT_VCVARS           ( 1u << 17 )  // [orb vcvars] VS env discovery
-#define ORB_OUT_MSVC_OUTPUT      ( 1u << 18 )  // [MSVC] raw cl/link/lib passthrough lines
-#define ORB_OUT_ARGS             ( 1u << 19 )  // startup banner: echo raw argv on a second line
-#define ORB_OUT_GEN_PRELUDES     ( 1u << 20 )  // per-file prelude path during -gen (verbose only)
-#define ORB_OUT_TIMING           ( 1u << 21 )  // elapsed time on [orb completed] lines
+#define ORB_OUT_REFLECT          ( 1u << 15 )  // [orb reflect] codegen steps
+#define ORB_OUT_VCVARS           ( 1u << 16 )  // [orb vcvars] VS env discovery
+#define ORB_OUT_MSVC_OUTPUT      ( 1u << 17 )  // [MSVC] raw cl/link/lib passthrough lines
+#define ORB_OUT_ARGS             ( 1u << 18 )  // startup banner: echo raw argv on a second line
+#define ORB_OUT_GEN_PRELUDES     ( 1u << 19 )  // per-file prelude path during -gen (verbose only)
+#define ORB_OUT_TIMING           ( 1u << 20 )  // per-build timing summary (slowest-first table)
 
 // Convenience masks -- verbose detail only, summaries excluded.
 #define ORB_OUT_ANY_COMPILE  ( ORB_OUT_COMPILE_SOURCES  | ORB_OUT_COMPILE_FLAGS    | \
@@ -526,12 +525,12 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_SUMMARY      ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_SUMMARY_LINK )
 
 // Preset combinations -- pass as --out <hex> or use -q / -v shorthands.
-#define ORB_OUT_QUIET   ( ORB_OUT_TARGET_RESULT | ORB_OUT_SCHEDULER )
-#define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE |  \
+#define ORB_OUT_QUIET   ( ORB_OUT_SCHEDULER )
+#define ORB_OUT_NORMAL  ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | \
                           ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
 #define ORB_OUT_TESTING ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_TIMING | \
-                          ORB_OUT_VCVARS | ORB_OUT_REFLECT | ORB_OUT_SCHEDULER | ORB_OUT_GEN_PRELUDES )
+                          ORB_OUT_VCVARS | ORB_OUT_SCHEDULER | ORB_OUT_GEN_PRELUDES )
 
 #define ORB_OUT_VERBOSE ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT ( ORB_OUT_TESTING )

@@ -69,8 +69,10 @@ platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, 
 {
     size_t used = strlen( buf );
     const char* sep = used ? " " : "";
+    // /wd4101 /wd4189: variables used only in debug assertions compile away in Release.
     const char* cfg = ( config == CONFIG_DEBUG ) ? "/Zi /Od /MDd"
-                    : is_shipping               ? "/O2 /GL /MD" : "/O2 /MD";
+                    : is_shipping               ? "/O2 /GL /MD /wd4101 /wd4189"
+                                               : "/O2 /MD /wd4101 /wd4189";
     // /Zc:preprocessor is MSVC-only; clang-cl defaults to conforming preprocessor already.
     // --target is required for standalone LLVM clang-cl: without it the default triple may
     // not define _M_X64 / __x86_64__, causing the architecture detection in orb.h to fail.

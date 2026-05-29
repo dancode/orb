@@ -54,11 +54,13 @@ main( int argc, char** argv )
     char dbg_src[ RT_MAX_PATH ];
     char dbg_out[ RT_MAX_PATH ];
 
+    bool silent = false;
+
     if ( argc < 4 )
     {
         if ( RELEASE )
         {
-            fprintf( stderr, "usage: reflect_tool <source_dir> <output_dir> <module_name>\n" );
+            fprintf( stderr, "usage: reflect_tool <source_dir> <output_dir> <module_name> [-silent]\n" );
             return 1;
         }
         else
@@ -89,6 +91,8 @@ main( int argc, char** argv )
         source_dir  = argv[ 1 ];
         output_dir  = argv[ 2 ];
         module_name = argv[ 3 ];
+        for ( int i = 4; i < argc; ++i )
+            if ( strcmp( argv[ i ], "-silent" ) == 0 ) silent = true;
     }
 
     platform_mkdir( output_dir );
@@ -115,14 +119,18 @@ main( int argc, char** argv )
         return 1;
     }
     
-    /* Show results and exit. In release, this is the only output on success. */
+    /* Show results and exit. Suppressed when invoked with -silent (build_tool omits it
+       unless ORB_OUT_REFLECT is set). */
 
-    if ( data.module_api.has_module )
-        printf( "[reflect_tool] %s: %d struct(s), %d enum(s), module API: %d fn(s)\n",
-                module_name, data.struct_count, data.enum_count, data.module_api.func_count );
-    else
-        printf( "[reflect_tool] %s: %d struct(s), %d enum(s)\n",
-                module_name, data.struct_count, data.enum_count );
+    if ( !silent )
+    {
+        if ( data.module_api.has_module )
+            printf( "[reflect_tool] %s: %d struct(s), %d enum(s), module API: %d fn(s)\n",
+                    module_name, data.struct_count, data.enum_count, data.module_api.func_count );
+        else
+            printf( "[reflect_tool] %s: %d struct(s), %d enum(s)\n",
+                    module_name, data.struct_count, data.enum_count );
+    }
 
     return 0; /* Success */
 }

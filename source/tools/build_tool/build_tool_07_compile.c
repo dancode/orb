@@ -452,12 +452,19 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
             return false;
 
         const char* rname = target->reflect_name ? target->reflect_name : target->name;
-        printf( ORB_INDENT "[orb reflect] %s\n", rname );
 
+        if ( g_out_flags & ORB_OUT_REFLECT )
+        {
+            const char* lp = sched_log_path();
+            FILE* lf = lp ? fopen( lp, "a" ) : NULL;
+            fprintf( lf ? lf : stdout, ORB_INDENT "[orb reflect] %s\n", rname );
+            if ( lf ) fclose( lf );
+        }
+
+        const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
         char refl_cmd[ PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe %s %s %s",
-                  refl_tool->name, target->root_dir, gen_dir, rname );
-
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe %s %s %s%s",
+                  refl_tool->name, target->root_dir, gen_dir, rname, silent );
         if ( build_run_cmd( refl_cmd ) != 0 )
             return false;
     }
