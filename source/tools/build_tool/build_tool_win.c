@@ -17,6 +17,7 @@
         platform_putenv()        -- set environment variable       (_putenv_s)
         platform_popen()         -- open a pipe to a command       (_popen)
         platform_pclose()        -- close a pipe                   (_pclose)
+        platform_time_ms()       -- monotonic millisecond counter  (GetTickCount64)
         platform_cpu_count()     -- logical processor count         (GetSystemInfo)
         platform_mkdir()         -- create a directory             (CreateDirectoryA)
         platform_find_first()    -- begin directory enumeration    (_findfirst)
@@ -113,6 +114,19 @@ static int
 platform_pclose( FILE* pipe )
 {
     return _pclose( pipe );
+}
+
+/*==============================================================================================
+    --- Monotonic Timer ---
+==============================================================================================*/
+
+/* Returns a monotonically increasing millisecond counter. Used for build timing.
+   GetTickCount64 is wall-clock but monotonic and sufficient for sub-minute intervals. */
+
+static uint64_t
+platform_time_ms( void )
+{
+    return GetTickCount64();
 }
 
 /*==============================================================================================

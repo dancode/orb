@@ -50,6 +50,7 @@ typedef struct
     bool                done;                       // True when build_target() returns (success or failure).
     bool                failed;                     // True when build_target() returns failure or any dep failed.
     bool                skipped;                    // True when build_target short-circuited.
+    uint64_t            elapsed_ms;                 // Compile+link wall time; 0 when skipped.
 
 } sched_job_t;
 
@@ -293,7 +294,7 @@ worker_main( void* arg )
         build_context_t local_ctx      = *g_sched.ctx;
         local_ctx.skip_deps            = true;
         local_ctx.skip_tool_deps       = true;
-        bool ok                        = build_target( &local_ctx, j->target, &j->skipped );
+        bool ok                        = build_target( &local_ctx, j->target, &j->skipped, &j->elapsed_ms );
 
         platform_tls_set( g_sched_log_tls, NULL );
 
@@ -461,6 +462,64 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     platform_threads_join( threads, spawned );
 
     platform_mutex_destroy( &g_sched.lock );
+
+    // Timing summary: sort built targets slowest-first and print a table.
+    // Skipped targets (elapsed_ms == 0) are excluded -- they did no work.
+    if ( g_out_flags & ORB_OUT_TIMING )
+    {
+        // Collect indices of targets that actually built.
+        int order[ MAX_JOBS ];
+        int order_count = 0;
+        for ( int i = 0; i < g_sched.job_count; ++i )
+            if ( g_sched.jobs[ i ].elapsed_ms > 0 )
+                order[ order_count++ ] = i;
+
+        if ( order_count > 0 )
+        {
+            // Insertion sort descending by elapsed_ms.
+            for ( int i = 1; i < order_count; ++i )
+            {
+                int key = order[ i ];
+                int j   = i - 1;
+                while ( j >= 0 && g_sched.jobs[ order[ j ] ].elapsed_ms < g_sched.jobs[ key ].elapsed_ms )
+                {
+                    order[ j + 1 ] = order[ j ];
+                    --j;
+                }
+                order[ j + 1 ] = key;
+            }
+
+            // Measure longest name for column alignment.
+            int max_name = 4;
+            for ( int i = 0; i < order_count; ++i )
+            {
+                int n = ( int )strlen( g_sched.jobs[ order[ i ] ].target->name );
+                if ( n > max_name ) max_name = n;
+            }
+
+            uint64_t total_ms = 0;
+            printf( ORB_BANNER "\n[orb timing]\n" );
+            for ( int i = 0; i < order_count; ++i )
+            {
+                const sched_job_t* j = &g_sched.jobs[ order[ i ] ];
+                total_ms += j->elapsed_ms;
+                char t[ 16 ];
+                if ( j->elapsed_ms < 1000 )
+                    snprintf( t, sizeof( t ), "%llums", ( unsigned long long )j->elapsed_ms );
+                else
+                    snprintf( t, sizeof( t ), "%.1fs", j->elapsed_ms / 1000.0 );
+                printf( ORB_INDENT "%-6s  %s\n", t, j->target->name );
+            }
+            char total_t[ 16 ];
+            if ( total_ms < 1000 )
+                snprintf( total_t, sizeof( total_t ), "%llums", ( unsigned long long )total_ms );
+            else
+                snprintf( total_t, sizeof( total_t ), "%.1fs", total_ms / 1000.0 );
+            printf( ORB_INDENT "------\n" );
+            printf( ORB_INDENT "%-6s  total\n", total_t );
+            printf( "\n" );
+        }
+    }
 
     return !g_sched.any_failed;
 }

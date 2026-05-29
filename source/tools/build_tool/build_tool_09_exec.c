@@ -32,10 +32,10 @@
 // clang-format off
 
 bool
-build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
+build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, uint64_t* out_elapsed_ms )
 {
-    if ( out_skipped )
-        *out_skipped = false;
+    if ( out_skipped    ) *out_skipped    = false;
+    if ( out_elapsed_ms ) *out_elapsed_ms = 0;
 
     target_info_t* refl_tool = NULL;    // Located in step 0; reused in step 6.
 
@@ -53,7 +53,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
                         target->name, target->deps[ i ] );
                 return false;
             }
-            if ( !build_target( ctx, dep, NULL ) )
+            if ( !build_target( ctx, dep, NULL, NULL ) )
                 return false;
         }
     }
@@ -71,7 +71,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
                         target->name, target->tool_deps[ i ] );
                 return false;
             }
-            if ( !build_target( ctx, tool, NULL ) )
+            if ( !build_target( ctx, tool, NULL, NULL ) )
                 return false;
         }
 
@@ -85,7 +85,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
                         target->name );
                 return false;
             }
-            if ( !build_target( ctx, refl_tool, NULL ) )
+            if ( !build_target( ctx, refl_tool, NULL, NULL ) )
                 return false;
         }
     }
@@ -213,6 +213,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         goto cleanup;
     }
 
+    uint64_t t_build_start = platform_time_ms();
+
     // --- 4. Directory Creation ---
 
     {
@@ -286,6 +288,9 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped )
         result = false;
         goto cleanup;
     }
+
+    if ( out_elapsed_ms )
+        *out_elapsed_ms = platform_time_ms() - t_build_start;
 
     // --- 8. Config Stamp ---
     // Create the stamp for the config just built; delete the opposite so a

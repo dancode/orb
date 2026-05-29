@@ -515,7 +515,7 @@ main( int argc, char** argv )
         if ( !bt ) { printf( ORB_INDENT "[orb error] build_tool target not found\n" ); return 1; }
         ctx.force_rebuild = true;
         bool skipped = false;
-        if ( !build_target( &ctx, bt, &skipped ) )
+        if ( !build_target( &ctx, bt, &skipped, NULL ) )
         {
             printf( ORB_BANNER "[ BOOTSTRAP: FAILED ]\n" );
             return 1;
@@ -667,8 +667,9 @@ main( int argc, char** argv )
     {
         if ( !target ) { printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); return 1; }
 
-        bool was_skipped = false;
-        if ( !build_target( &ctx, target, &was_skipped ) )
+        bool     was_skipped = false;
+        uint64_t elapsed_ms  = 0;
+        if ( !build_target( &ctx, target, &was_skipped, &elapsed_ms ) )
         {
             printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;

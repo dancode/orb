@@ -448,7 +448,7 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
             printf( ORB_INDENT "[orb error] '%s' no reflect_tool is registered\n", target->name );
             return false;
         }
-        if ( build_target( ctx, refl_tool, NULL ) == false )
+        if ( build_target( ctx, refl_tool, NULL, NULL ) == false )
             return false;
 
         const char* rname = target->reflect_name ? target->reflect_name : target->name;
