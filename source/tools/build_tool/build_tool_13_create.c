@@ -14,21 +14,15 @@
     Dynamic (hot-reload DLL, like render/audio):
         <name>.h  <name>_api.h  <name>.c  <name>_api.c
 
+    --------------------------------------
+    
+    Ex: build_tool.exe -create net -dir source/engine/net -type static
+    Ex: build_tool.exe -create imgui -dir source/runtime_modules/imgui -type dynamic
+
 ==============================================================================================*/
 // clang-format off
 
-#include <ctype.h>
-
 /* ---- String helpers ---- */
-
-static void
-create_str_upper( const char* src, char* buf, size_t buf_size )
-{
-    size_t i = 0;
-    for ( ; src[ i ] && i < buf_size - 1; ++i )
-        buf[ i ] = ( char )toupper( ( unsigned char )src[ i ] );
-    buf[ i ] = '\0';
-}
 
 /* Copy src into buf replacing every backslash with a forward slash. */
 static void
@@ -207,7 +201,7 @@ create_emit_c_static( const char* path, const char* name, const char* inc_dir )
     if ( !f ) return;
 
     char NAME[ 128 ];
-    create_str_upper( name, NAME, sizeof( NAME ) );
+    str_upper( name, NAME, sizeof( NAME ) );
 
     fprintf( f, "/*==============================================================================================\n" );
     fprintf( f, "\n" );
@@ -342,7 +336,7 @@ create_emit_c_dynamic( const char* path, const char* name, const char* inc_dir )
     if ( !f ) return;
 
     char NAME[ 128 ];
-    create_str_upper( name, NAME, sizeof( NAME ) );
+    str_upper( name, NAME, sizeof( NAME ) );
 
     fprintf( f, "/*==============================================================================================\n" );
     fprintf( f, "\n" );
@@ -499,7 +493,7 @@ cmd_create_module( const char* name, const char* dir, bool is_dynamic )
         inc_dir = dir_fwd + 7;
 
     char NAME[ 128 ];
-    create_str_upper( name, NAME, sizeof( NAME ) );
+    str_upper( name, NAME, sizeof( NAME ) );
 
     /* Ensure the target directory exists before writing any files. */
     ensure_dir( dir );

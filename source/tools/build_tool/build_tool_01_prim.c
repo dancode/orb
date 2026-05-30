@@ -167,5 +167,23 @@ build_unlock_target( void* lock )
     platform_lock_release( lock );
 }
 
+/*==============================================================================================
+    --- String Helpers ---
+==============================================================================================*/
+
+/* Copy src into buf uppercased; ASCII only, no ctype.h dependency. */
+
+static void
+str_upper( const char* src, char* buf, size_t buf_size )
+{
+    size_t i = 0;
+    for ( ; src[ i ] && i < buf_size - 1; ++i )
+    {
+        char c   = src[ i ];
+        buf[ i ] = ( c >= 'a' && c <= 'z' ) ? ( char )( c - 32 ) : c;
+    }
+    buf[ i ] = '\0';
+}
+
 // clang-format on
 /*============================================================================================*/

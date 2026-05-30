@@ -74,19 +74,6 @@ cc_check_overflow( const compile_cmd_t* cc )
     }
 }
 
-/*==============================================================================================
-    get_target_upper() -- derive TARGETNAME from a target name string.
-    Used for both the _STATIC define and the startup banner.
-    Must match the IntelliSense defines emitted by 11_gen.c (unity build).
-==============================================================================================*/
-
-static void
-get_target_upper( const char* name, char* out, size_t out_size )
-{
-    strncpy( out, name, out_size - 1 );
-    out[ out_size - 1 ] = '\0';
-    for ( char* p = out; *p; ++p ) *p = ( char )toupper( *p );
-}
 
 /*==============================================================================================
     --- Compile Section Printer ---
@@ -226,7 +213,7 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
 
     {
         char upper[ 128 ];
-        get_target_upper( target->name, upper, sizeof( upper ) );
+        str_upper( target->name, upper, sizeof( upper ) );
         char static_define[ 128 + 8 ];
         snprintf( static_define, sizeof( static_define ), "%s_STATIC", upper );
         platform_cc_append_define( static_define, cc->defines, sizeof( cc->defines ) );
@@ -240,7 +227,7 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
         if ( dep_is_static )
         {
             char dep_upper[ 128 ];
-            get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
+            str_upper( dep->name, dep_upper, sizeof( dep_upper ) );
             char static_define[ 128 + 8 ];
             snprintf( static_define, sizeof( static_define ), "%s_STATIC", dep_upper );
             platform_cc_append_define( static_define, cc->defines, sizeof( cc->defines ) );

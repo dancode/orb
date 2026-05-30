@@ -363,7 +363,7 @@ validate_targets( void )
     --- print_startup_banner ---
 
     Prints a standardized header at the start of every build with the active
-    configuration. Calls get_target_upper() from 07_compile.c.
+    configuration.
 ==============================================================================================*/
 
 static void
@@ -371,7 +371,7 @@ print_startup_banner( const build_context_t* ctx )
 {
     char target_upper[ 64 ] = "ALL";
     if ( ctx->target_name )
-        get_target_upper( ctx->target_name, target_upper, sizeof( target_upper ) );
+        str_upper( ctx->target_name, target_upper, sizeof( target_upper ) );
 
     /* truncate file path to just the file name. */
 

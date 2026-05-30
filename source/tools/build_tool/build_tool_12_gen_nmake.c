@@ -421,7 +421,7 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
     if ( target )
     {
         char upper[ 128 ];
-        get_target_upper( target->name, upper, sizeof( upper ) );
+        str_upper( target->name, upper, sizeof( upper ) );
         char define[ 160 ];
         snprintf( define, sizeof( define ), "%s_STATIC", upper );
         ISDEF_APPEND( define );
@@ -434,7 +434,7 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
             if ( dep->type == TARGET_STATIC_LIB || ( dep->type == TARGET_DYNAMIC_LIB && s_ctx.is_monolithic ) )
             {
                 char dep_upper[ 128 ];
-                get_target_upper( dep->name, dep_upper, sizeof( dep_upper ) );
+                str_upper( dep->name, dep_upper, sizeof( dep_upper ) );
                 snprintf( define, sizeof( define ), "%s_STATIC", dep_upper );
                 ISDEF_APPEND( define );
             }
@@ -457,7 +457,7 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
             if ( g_targets[ i ].type == TARGET_STATIC_LIB )
             {
                 char upper[ 128 ];
-                get_target_upper( g_targets[ i ].name, upper, sizeof( upper ) );
+                str_upper( g_targets[ i ].name, upper, sizeof( upper ) );
                 char define[ 160 ];
                 snprintf( define, sizeof( define ), "%s_STATIC", upper );
                 ISDEF_APPEND( define );

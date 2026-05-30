@@ -520,7 +520,7 @@ main( int argc, char** argv )
 
     char target_upper[ 64 ] = "ALL";
     if ( ctx.target_name )
-        get_target_upper( ctx.target_name, target_upper, sizeof( target_upper ) );
+        str_upper( ctx.target_name, target_upper, sizeof( target_upper ) );
 
     target_info_t* target = NULL;
     if ( ctx.target_name )

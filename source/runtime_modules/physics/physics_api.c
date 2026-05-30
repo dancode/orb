@@ -1,7 +1,7 @@
 /*==============================================================================================
 
-    imgui_api.c -- imgui module wiring.
-    Implements the imgui_api_t vtable struct and the mod_desc_t lifecycle descriptor.
+    physics_api.c -- physics module wiring.
+    Implements the physics_api_t vtable struct and the mod_desc_t lifecycle descriptor.
 
 ==============================================================================================*/
 
@@ -15,35 +15,40 @@
         if ( !MOD_FETCH_CORE ) return false;             // in init() and reload()
 ==============================================================================================*/
 
+MOD_USE_CORE;
+
 /*==============================================================================================
     Persistent state (allocated by the module system; preserved across hot-reloads)
 ==============================================================================================*/
 
-typedef struct imgui_state_s
+typedef struct physics_state_s
 {
-    int32_t placeholder;    /* replace with real state fields */
+    int frame_count;
 
-} imgui_state_t;
+} physics_state_t;
 
-static imgui_state_t* g_state = NULL;
+static physics_state_t* g_state = NULL;
 
 /*==============================================================================================
     Implementation
 ==============================================================================================*/
 
 static void
-imgui_tick_impl( float dt )
+physics_function_impl( void )
 {
-    if ( !g_state ) return;
-    ( void )dt;    /* TODO */
+    if ( !g_state )
+        return;
+
+    g_state->frame_count++;
+    LOG_TRACE( "physics_function called (frame_count=%d)", g_state->frame_count );
 }
 
 /*==============================================================================================
     API Struct
 ==============================================================================================*/
 
-const imgui_api_t g_imgui_api_struct = {
-    .tick = imgui_tick_impl,
+const physics_api_t g_physics_api_struct = {
+    .physics_function = physics_function_impl,
 };
 
 /*==============================================================================================
@@ -51,25 +56,37 @@ const imgui_api_t g_imgui_api_struct = {
 ==============================================================================================*/
 
 static bool
-imgui_init( void* raw_state, get_api_fn get_api )
+physics_init( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( get_api );    /* remove when fetching module APIs */
-    g_state = ( imgui_state_t* )raw_state;
+    UNUSED( get_api );
+    g_state = ( physics_state_t* )raw_state;
+
+    if ( !MOD_FETCH_CORE )
+        return false;
+
+    LOG_INFO( "init (state=%p)", ( void* )g_state );
     return true;
 }
 
 static bool
-imgui_reload( void* raw_state, get_api_fn get_api )
+physics_reload( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( get_api );    /* remove when fetching module APIs */
-    g_state = ( imgui_state_t* )raw_state;
+    UNUSED( get_api );
+    g_state = ( physics_state_t* )raw_state;
+
+    if ( !MOD_FETCH_CORE )
+        return false;
+
+    LOG_INFO( "reloaded (frames so far = %d)", g_state->frame_count );
     return true;
 }
 
 static void
-imgui_exit( void* raw_state )
+physics_exit( void* raw_state )
 {
     UNUSED( raw_state );
+    if ( core() )
+        LOG_INFO( "exit" );
 }
 
 /*==============================================================================================
@@ -77,21 +94,22 @@ imgui_exit( void* raw_state )
 ==============================================================================================*/
 
 mod_desc_t*
-imgui_get_mod_desc( void )
+physics_get_mod_desc( void )
 {
     static mod_desc_t desc = {
         .version       = 1,
-        .state_size    = sizeof( imgui_state_t ),
-        .func_api_size = sizeof( imgui_api_t ),
-        .func_api      = &g_imgui_api_struct,
-        .dep_count     = 0,
-        .init          = imgui_init,
-        .exit          = imgui_exit,
-        .reload        = imgui_reload,
+        .state_size    = sizeof( physics_state_t ),
+        .func_api_size = sizeof( physics_api_t ),
+        .func_api      = &g_physics_api_struct,
+        .deps          = { "core" },
+        .dep_count     = 1,
+        .init          = physics_init,
+        .exit          = physics_exit,
+        .reload        = physics_reload,
     };
     return &desc;
 }
 
-MOD_DEFINE_EXPORTS( imgui )
+MOD_DEFINE_EXPORTS( physics )
 
 /*============================================================================================*/
