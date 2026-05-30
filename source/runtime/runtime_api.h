@@ -16,8 +16,8 @@
 
 typedef struct run_api_s
 {
-    const run_clock_t* ( *clock )( void ); /* current frame clock (read-only)     */
-    void ( *set_time_scale )( f32 );       /* adjust time scale from game or host */
+    const run_clock_t* ( *clock )( void );  /* current frame clock (read-only)     */
+    void ( *set_time_scale )( f32 );        /* adjust time scale from game or host */
 
 } run_api_t;
 

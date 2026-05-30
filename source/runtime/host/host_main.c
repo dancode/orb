@@ -10,7 +10,7 @@
         5. mod_init_all()                       — pass 1: load callbacks fire in dep order
                                                           (rs frames pushed, reflection live)
                                                   pass 2: init() runs in same order
-        6. MOD_HOST_FETCH_API( app, rhi, render )   — cache host-owned API ptrs
+        6. MOD_HOST_FETCH_API( run, app, rhi, render ) — cache host-owned API ptrs
         7. window_open()                        — when app is loaded (inferred from k_modules)
         8. desc->on_ready()                     — host post-init hook
         9. enter loop per desc->loop_mode
@@ -69,9 +69,10 @@ run_host_should_quit( void )
 ==============================================================================================*/
 
 MOD_USE_APP;
+MOD_USE_RUN;
+
 MOD_USE_RHI;
 MOD_USE_RENDER;
-MOD_USE_RUN;
 
 static win_id_t s_win_id = APP_WIN_INVALID;
 
@@ -129,8 +130,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        self-bootstraps on first touch, so this is safe — there's no ordering dependency
        on rs.mod_init. Every subsequent load (static, dynamic, or hot-reload swap)
        auto-registers reflection through the generic callback. */
+
     rs_wire_mod_callbacks();
-       
+    
+    // if ( !mod_static( sys ) ) { }
+
     /* Engine baseline — sys (clock + sleep), rs (reflection), run (frame clock). */
     if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
          !mod_static_load( "rs",  rs_get_mod_desc()  ) ||
@@ -170,8 +174,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                                          which is fine; the windowed path guards against it.
     */
 
-    MOD_HOST_FETCH_API( rhi_api_t,    rhi    );
-    MOD_HOST_FETCH_API( render_api_t, render );
+    MOD_HOST_FETCH_API( render_api_t,   render );
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*

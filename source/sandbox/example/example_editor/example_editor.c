@@ -18,13 +18,23 @@
 
 #include "engine/sys/sys_host.h"
 #include "engine/mod/mod_host.h"
+
+
 #include "engine/app/app_api.h"
 
 #include "runtime_service/rhi/rhi_api.h"
+#include "runtime_modules/render/render_api.h"
+#include "runtime_modules/example/example_api.h"
+
+#include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
 
-#include "runtime_modules/example/example_api.h"
+
+MOD_USE_APP;
+MOD_USE_RUN;
+// MOD_USE_RENDER;
 MOD_USE_EXAMPLE;
+
 
 /*==============================================================================================
     Host callbacks

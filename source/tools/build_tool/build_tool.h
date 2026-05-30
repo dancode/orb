@@ -168,7 +168,7 @@ typedef void* platform_thread_t;
     build_tool and reflect_tool are hardcoded; all others are loaded from orb.targets. */
 
 #define MAX_TARGETS                 64
-#define MAX_SOLUTIONS               8
+#define MAX_SOLUTIONS               16
 #define MAX_SLN_TARGETS             64
 
 /*  Max extra include directories per target or solution declared via 'include_dir'.
@@ -637,7 +637,6 @@ void cmd_append( cmd_buf_t* b, const char* fmt, ... );
 
 bool cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path );
 
-
 /*  Acquire a Windows named mutex scoped to a single target, blocking until
     granted. Used to serialize concurrent invocations of build_tool.exe that
     would otherwise both compile/link the same target's outputs. Returns an
@@ -714,22 +713,22 @@ typedef struct
 
 typedef struct
 {
-    char  build_tool_exe    [ PATH_MAX + 4 ];   // NMake: backslashes, quoted if absolute
-    char  build_tool_exe_fwd[ PATH_MAX + 4 ];   // VSCode: forward slashes, quoted
-    char  engine_src_dir    [ PATH_MAX ];        // forward slashes; empty if no engine root
-    char  engine_gen_dir    [ PATH_MAX ];        // forward slashes; empty if no engine root
-    char  workspace_name    [ 256 ];             // first local solution name, or "workspace"
+    char  build_tool_exe        [ PATH_MAX + 4 ];   // NMake: backslashes, quoted if absolute
+    char  build_tool_exe_fwd    [ PATH_MAX + 4 ];   // VSCode: forward slashes, quoted
+    char  engine_src_dir        [ PATH_MAX ];       // forward slashes; empty if no engine root
+    char  engine_gen_dir        [ PATH_MAX ];       // forward slashes; empty if no engine root
+    char  workspace_name        [ 256 ];            // first local solution name, or "workspace"
 
     gen_sln_entry_t  solutions[ MAX_SOLUTIONS ];
     int              solution_count;
 
-    target_info_t*  local_targets   [ MAX_TARGETS ];
+    target_info_t*  local_targets[ MAX_TARGETS ];
     int             local_target_count;
 
-    target_info_t*  exe_targets     [ MAX_TARGETS ];
+    target_info_t*  exe_targets[ MAX_TARGETS ];
     int             exe_target_count;
 
-    target_info_t*  ext_ref_targets [ MAX_TARGETS ];
+    target_info_t*  ext_ref_targets[ MAX_TARGETS ];
     int             ext_ref_target_count;
 
 } gen_manifest_t;

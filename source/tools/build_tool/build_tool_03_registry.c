@@ -11,7 +11,7 @@
 
     FILE FORMAT
     -----------
-    Lines beginning with # are comments. Blank lines are ignored.
+    Lines beginning with # are comments; # also ends any line mid-way (inline comment). Blank lines are ignored.
     Tokens are separated by whitespace. Blocks begin with a keyword at column 0.
 
     TOP-LEVEL DIRECTIVES (before any target/solution block):
@@ -311,7 +311,9 @@ registry_load( const char* path, bool is_external )
     {
         ++lineno;
         reg_strip( line );
-        if ( !line[ 0 ] || line[ 0 ] == '#' )
+        // Strip inline comments: truncate at the first '#' and re-trim trailing whitespace.
+        { char* cp = strchr( line, '#' ); if ( cp ) { *cp = '\0'; reg_strip( line ); } }
+        if ( !line[ 0 ] )
             continue;
 
         // --- engine: declare engine root; auto-import engine/orb.targets as external ---
@@ -392,7 +394,7 @@ registry_load( const char* path, bool is_external )
             mode  = MODE_TARGET;
             cur_t = &g_targets[ g_target_count++ ];
             memset( cur_t, 0, sizeof( *cur_t ) );
-            cur_t->name        = pool_str( line + 7 );
+            { const char* n = line + 7; while ( *n == ' ' || *n == '\t' ) ++n; cur_t->name = pool_str( n ); }
             cur_t->is_external = is_external;
             cur_sln            = NULL;
             continue;
@@ -421,7 +423,7 @@ registry_load( const char* path, bool is_external )
             mode    = MODE_SOLUTION;
             cur_sln = &g_solutions[ g_solution_count++ ];
             memset( cur_sln, 0, sizeof( *cur_sln ) );
-            cur_sln->name        = pool_str( line + 9 );
+            { const char* n = line + 9; while ( *n == ' ' || *n == '\t' ) ++n; cur_sln->name = pool_str( n ); }
             cur_sln->is_external = is_external;
             cur_t                = NULL;
             continue;
@@ -546,6 +548,12 @@ registry_load( const char* path, bool is_external )
                                       cur_t->extra_link_flags, &cur_t->extra_link_flag_count,
                                       MAX_EXTRA_LINK_FLAGS );
             }
+            else
+            {
+                printf( ORB_INDENT "[orb error] %s:%d -- target '%s': unknown property '%s'\n",
+                        path, lineno, cur_t->name, key );
+                ok = false;
+            }
         }
         else if ( mode == MODE_SOLUTION && cur_sln )
         {
@@ -612,6 +620,12 @@ registry_load( const char* path, bool is_external )
                     }
                     tok = strtok( NULL, " \t" );
                 }
+            }
+            else
+            {
+                printf( ORB_INDENT "[orb error] %s:%d -- solution '%s': unknown property '%s'\n",
+                        path, lineno, cur_sln->name, key );
+                ok = false;
             }
         }
         else
