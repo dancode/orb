@@ -55,4 +55,6 @@ core_free( void* ptr )
     API wiring  (must be last — assigns every static function to g_core_api_struct)
 ==============================================================================================*/
  
+#ifndef CORE_API_C_PRELUDE
 #include "engine/core/core_api.c"
+#endif

@@ -22,18 +22,6 @@ sys_exit( void )
 }
 
 /*==============================================================================================
-    Persistent state (allocated by module init)
-==============================================================================================*/
-
-typedef struct sys_state_s
-{
-    int32_t no_state;
-
-} sys_state_t;
-
-// static sys_state_t* s = NULL;
-
-/*==============================================================================================
     API Struct
 ==============================================================================================*/
 
@@ -74,7 +62,7 @@ sys_get_mod_desc( void )
 {
     static mod_desc_t desc = {
         .version       = 1,
-        .state_size    = sizeof( sys_state_t ),
+        .state_size    = 0,
         .func_api_size = sizeof( sys_api_t ),
         .func_api      = &g_sys_api_struct,
         .dep_count     = 0,

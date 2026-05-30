@@ -12,7 +12,7 @@
         <name>.h  <name>_api.h  <name>_host.h  <name>.c  <name>_api.c
 
     Dynamic (hot-reload DLL, like render/audio):
-        <name>.h  <name>_api.h  <name>.c
+        <name>.h  <name>_api.h  <name>.c  <name>_api.c
 
 ==============================================================================================*/
 // clang-format off
@@ -133,10 +133,12 @@ create_emit_api_h( const char* path, const char* name, const char* NAME,
     fprintf( f, "\n" );
     fprintf( f, "} %s_api_t;\n", name );
     fprintf( f, "\n" );
+    fprintf( f, "/*============================================================================================*/\n" );
+    fprintf( f, "\n" );
     fprintf( f, "#if defined( BUILD_STATIC ) || defined( %s_STATIC )\n", NAME );
-    fprintf( f, "MOD_GATEWAY_STATIC( %s_api_t, %s )\n", name, name );
+    fprintf( f, "    MOD_GATEWAY_STATIC( %s_api_t, %s )\n", name, name );
     fprintf( f, "#else\n" );
-    fprintf( f, "MOD_GATEWAY_DYNAMIC( %s_api_t, %s )\n", name, name );
+    fprintf( f, "    MOD_GATEWAY_DYNAMIC( %s_api_t, %s )\n", name, name );
     fprintf( f, "#endif\n" );
     fprintf( f, "\n" );
     fprintf( f, "#if defined( BUILD_STATIC ) || defined( %s_STATIC )\n", NAME );
@@ -173,12 +175,22 @@ create_emit_host_h( const char* path, const char* name, const char* NAME, const 
     fprintf( f, "#include \"%s/%s_api.h\"\n", inc_dir, name );
     fprintf( f, "\n" );
     fprintf( f, "/*==============================================================================================\n" );
+    fprintf( f, "    Module Descriptor\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "    Used by the host to register the %s module:\n", name );
+    fprintf( f, "        mod_static_load( \"%s\", %s_get_mod_desc() );\n", name, name );
+    fprintf( f, "    or via the build-mode-transparent macro:\n" );
+    fprintf( f, "        mod_load( %s );\n", name );
+    fprintf( f, "\n" );
+    fprintf( f, "==============================================================================================*/\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "mod_desc_t* %s_get_mod_desc( void );\n", name );
+    fprintf( f, "\n" );
+    fprintf( f, "/*==============================================================================================\n" );
     fprintf( f, "    Direct-call functions (host and sandbox use only)\n" );
     fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
-    fprintf( f, "void        %s_tick( float dt );    /* TODO: replace with real direct-call functions */\n",
-             name );
-    fprintf( f, "mod_desc_t* %s_get_mod_desc( void );\n", name );
+    fprintf( f, "void %s_tick( float dt );    /* TODO: replace with real direct-call functions */\n", name );
     fprintf( f, "\n" );
     fprintf( f, "/*============================================================================================*/\n" );
     fprintf( f, "#endif    // %s_HOST_H\n", NAME );
@@ -194,18 +206,19 @@ create_emit_c_static( const char* path, const char* name, const char* inc_dir )
     FILE* f = create_open_write( path );
     if ( !f ) return;
 
+    char NAME[ 128 ];
+    create_str_upper( name, NAME, sizeof( NAME ) );
+
     fprintf( f, "/*==============================================================================================\n" );
     fprintf( f, "\n" );
     fprintf( f, "    %s.c -- Unity build entry for the %s module.\n", name, name );
     fprintf( f, "\n" );
     fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
-    fprintf( f, "#include <stdio.h>\n" );
     fprintf( f, "#include \"orb.h\"\n" );
     fprintf( f, "\n" );
     fprintf( f, "#include \"engine/mod/mod_export.h\"\n" );
     fprintf( f, "#include \"%s/%s_host.h\"\n", inc_dir, name );
-    fprintf( f, "#include \"%s/%s_api.h\"\n", inc_dir, name );
     fprintf( f, "\n" );
     fprintf( f, "/*==============================================================================================\n" );
     fprintf( f, "    Unity build\n" );
@@ -214,7 +227,20 @@ create_emit_c_static( const char* path, const char* name, const char* inc_dir )
     fprintf( f, "/* Platform-specific implementation files go here:\n" );
     fprintf( f, "   #include \"win/win_%s.c\" */\n", name );
     fprintf( f, "\n" );
+    fprintf( f, "/*==============================================================================================\n" );
+    fprintf( f, "    Unity build\n" );
+    fprintf( f, "==============================================================================================*/\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "/* Implementation files go here:\n" );
+    fprintf( f, "   #include \"%s/%s_function.c\" */\n", inc_dir, name );
+    fprintf( f, "\n" );
+    fprintf( f, "/*==============================================================================================\n" );
+    fprintf( f, "    Public API wiring  (must be last -- all implementations must be in scope)\n" );
+    fprintf( f, "==============================================================================================*/\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "#ifndef %s_API_C_PRELUDE\n", NAME );
     fprintf( f, "#include \"%s/%s_api.c\"\n", inc_dir, name );
+    fprintf( f, "#endif\n" );
     fprintf( f, "\n" );
     fprintf( f, "/*============================================================================================*/\n" );
 
@@ -235,18 +261,6 @@ create_emit_api_c( const char* path, const char* name )
     fprintf( f, "    Implements the %s_api_t vtable struct and the mod_desc_t lifecycle descriptor.\n", name );
     fprintf( f, "\n" );
     fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Persistent state (allocated by the module system; preserved across hot-reloads)\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "typedef struct %s_state_s\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    int32_t placeholder;    /* replace with real state fields */\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "} %s_state_t;\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "/* static %s_state_t* s = NULL; */\n", name );
     fprintf( f, "\n" );
     fprintf( f, "/*==============================================================================================\n" );
     fprintf( f, "    Implementation\n" );
@@ -285,7 +299,6 @@ create_emit_api_c( const char* path, const char* name )
     fprintf( f, "{\n" );
     fprintf( f, "    UNUSED( get_api );\n" );
     fprintf( f, "    UNUSED( raw_state );\n" );
-    fprintf( f, "    /* s = ( %s_state_t* )raw_state; */\n", name );
     fprintf( f, "    return true;\n" );
     fprintf( f, "}\n" );
     fprintf( f, "\n" );
@@ -304,7 +317,7 @@ create_emit_api_c( const char* path, const char* name )
     fprintf( f, "{\n" );
     fprintf( f, "    static mod_desc_t desc = {\n" );
     fprintf( f, "        .version       = 1,\n" );
-    fprintf( f, "        .state_size    = sizeof( %s_state_t ),\n", name );
+    fprintf( f, "        .state_size    = 0,\n" );
     fprintf( f, "        .func_api_size = sizeof( %s_api_t ),\n", name );
     fprintf( f, "        .func_api      = &g_%s_api_struct,\n", name );
     fprintf( f, "        .dep_count     = 0,\n" );
@@ -321,32 +334,71 @@ create_emit_api_c( const char* path, const char* name )
     printf( ORB_INDENT "  wrote  %s\n", path );
 }
 
-/* <name>.c -- full implementation for a DYNAMIC (hot-reload DLL) module. */
+/* <name>.c -- unity build entry for a DYNAMIC (hot-reload DLL) module. */
 static void
 create_emit_c_dynamic( const char* path, const char* name, const char* inc_dir )
 {
     FILE* f = create_open_write( path );
     if ( !f ) return;
 
+    char NAME[ 128 ];
+    create_str_upper( name, NAME, sizeof( NAME ) );
+
     fprintf( f, "/*==============================================================================================\n" );
     fprintf( f, "\n" );
-    fprintf( f, "    %s.c -- %s module (hot-reloadable DLL).\n", name, name );
+    fprintf( f, "    %s.c -- Unity build entry for the %s module.\n", name, name );
     fprintf( f, "\n" );
     fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
-    fprintf( f, "#include <stdio.h>\n" );
     fprintf( f, "#include \"orb.h\"\n" );
-    fprintf( f, "#define LOG_CH \"%s\"\n", name );
     fprintf( f, "\n" );
     fprintf( f, "#include \"engine/mod/mod_export.h\"\n" );
-    fprintf( f, "#include \"engine/core/core_api.h\"\n" );
     fprintf( f, "#include \"%s/%s_api.h\"\n", inc_dir, name );
     fprintf( f, "\n" );
     fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Cached API pointers\n" );
+    fprintf( f, "    Unity build\n" );
     fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
-    fprintf( f, "MOD_USE_CORE;\n" );
+    fprintf( f, "/* Implementation files go here:\n" );
+    fprintf( f, "   #include \"%s/%s_function.c\" */\n", inc_dir, name );
+    fprintf( f, "\n" );
+    fprintf( f, "/*==============================================================================================\n" );
+    fprintf( f, "    Public API wiring  (must be last -- all implementations must be in scope)\n" );
+    fprintf( f, "==============================================================================================*/\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "#ifndef %s_API_C_PRELUDE\n", NAME );
+    fprintf( f, "#include \"%s/%s_api.c\"\n", inc_dir, name );
+    fprintf( f, "#endif\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "/*============================================================================================*/\n" );
+
+    fclose( f );
+    printf( ORB_INDENT "  wrote  %s\n", path );
+}
+
+/* <name>_api.c -- state, API struct, lifecycle, and DLL export (dynamic modules only). */
+static void
+create_emit_api_c_dynamic( const char* path, const char* name )
+{
+    FILE* f = create_open_write( path );
+    if ( !f ) return;
+
+    fprintf( f, "/*==============================================================================================\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "    %s_api.c -- %s module wiring.\n", name, name );
+    fprintf( f, "    Implements the %s_api_t vtable struct and the mod_desc_t lifecycle descriptor.\n", name );
+    fprintf( f, "\n" );
+    fprintf( f, "==============================================================================================*/\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "/*==============================================================================================\n" );
+    fprintf( f, "    Cached API pointers\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "    Declare one per consumed module using its MOD_USE_<NAME> macro (defined in its _api.h),\n" );
+    fprintf( f, "    then fetch in init() and reload() with MOD_FETCH_<NAME>:\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "        MOD_USE_CORE;                                    // file scope\n" );
+    fprintf( f, "        if ( !MOD_FETCH_CORE ) return false;             // in init() and reload()\n" );
+    fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
     fprintf( f, "/*==============================================================================================\n" );
     fprintf( f, "    Persistent state (allocated by the module system; preserved across hot-reloads)\n" );
@@ -361,7 +413,7 @@ create_emit_c_dynamic( const char* path, const char* name, const char* inc_dir )
     fprintf( f, "static %s_state_t* g_state = NULL;\n", name );
     fprintf( f, "\n" );
     fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    API implementations\n" );
+    fprintf( f, "    Implementation\n" );
     fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
     fprintf( f, "static void\n" );
@@ -372,7 +424,7 @@ create_emit_c_dynamic( const char* path, const char* name, const char* inc_dir )
     fprintf( f, "}\n" );
     fprintf( f, "\n" );
     fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    API struct\n" );
+    fprintf( f, "    API Struct\n" );
     fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
     fprintf( f, "const %s_api_t g_%s_api_struct = {\n", name, name );
@@ -386,19 +438,16 @@ create_emit_c_dynamic( const char* path, const char* name, const char* inc_dir )
     fprintf( f, "static bool\n" );
     fprintf( f, "%s_init( void* raw_state, get_api_fn get_api )\n", name );
     fprintf( f, "{\n" );
-    fprintf( f, "    UNUSED( get_api );\n" );
+    fprintf( f, "    UNUSED( get_api );    /* remove when fetching module APIs */\n" );
     fprintf( f, "    g_state = ( %s_state_t* )raw_state;\n", name );
-    fprintf( f, "    if ( !MOD_FETCH_CORE ) return false;\n" );
     fprintf( f, "    return true;\n" );
     fprintf( f, "}\n" );
     fprintf( f, "\n" );
     fprintf( f, "static bool\n" );
     fprintf( f, "%s_reload( void* raw_state, get_api_fn get_api )\n", name );
     fprintf( f, "{\n" );
-    fprintf( f, "    UNUSED( get_api );\n" );
+    fprintf( f, "    UNUSED( get_api );    /* remove when fetching module APIs */\n" );
     fprintf( f, "    g_state = ( %s_state_t* )raw_state;\n", name );
-    fprintf( f, "    if ( !MOD_FETCH_CORE ) return false;\n" );
-    fprintf( f, "    LOG_INFO( \"reloaded\" );\n" );
     fprintf( f, "    return true;\n" );
     fprintf( f, "}\n" );
     fprintf( f, "\n" );
@@ -420,8 +469,7 @@ create_emit_c_dynamic( const char* path, const char* name, const char* inc_dir )
     fprintf( f, "        .state_size    = sizeof( %s_state_t ),\n", name );
     fprintf( f, "        .func_api_size = sizeof( %s_api_t ),\n", name );
     fprintf( f, "        .func_api      = &g_%s_api_struct,\n", name );
-    fprintf( f, "        .deps          = { \"core\" },\n" );
-    fprintf( f, "        .dep_count     = 1,\n" );
+    fprintf( f, "        .dep_count     = 0,\n" );
     fprintf( f, "        .init          = %s_init,\n", name );
     fprintf( f, "        .exit          = %s_exit,\n", name );
     fprintf( f, "        .reload        = %s_reload,\n", name );
@@ -477,7 +525,8 @@ cmd_create_module( const char* name, const char* dir, bool is_dynamic )
 
     if ( is_dynamic )
     {
-        create_emit_c_dynamic( p_c, name, inc_dir );
+        create_emit_c_dynamic    ( p_c,     name, inc_dir );
+        create_emit_api_c_dynamic( p_api_c, name );
     }
     else
     {
@@ -495,8 +544,6 @@ cmd_create_module( const char* name, const char* dir, bool is_dynamic )
     printf( "        root        %s\n", dir_fwd );
     printf( "        folder      TODO_FOLDER\n" );
     printf( "        unit        %s.c\n", name );
-    if ( is_dynamic )
-        printf( "        dep         core\n" );
     printf( "\n" );
 
     return true;

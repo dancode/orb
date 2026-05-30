@@ -109,6 +109,35 @@ json_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, const 
     from root_dir + unit and calls this function at depth 0.
 ==============================================================================================*/
 
+/*==============================================================================================
+    json_prelude_macro()
+
+    Derive the prelude-guard macro name from an _api.c constituent's absolute path.
+    The generated macro lets the unity file exclude that include when the constituent
+    is compiled as the main file, preventing the double-definition that corrupts
+    clangd's type recovery and produces spurious squiggles in the _api.h header.
+
+    net_api.c  ->  NET_API_C_PRELUDE
+    sys_api.c  ->  SYS_API_C_PRELUDE
+==============================================================================================*/
+
+static void
+json_prelude_macro( const char* abs_src, char* out, size_t out_size )
+{
+    const char* base = strrchr( abs_src, '/' );
+    base = base ? base + 1 : abs_src;
+
+    size_t i = 0;
+    for ( const char* p = base; *p && i < out_size - 10; p++, i++ )
+    {
+        if      ( *p == '.' )              out[ i ] = '_';
+        else if ( *p >= 'a' && *p <= 'z' ) out[ i ] = (char)( *p - 'a' + 'A' );
+        else                               out[ i ] = *p;
+    }
+    if ( i + 9 <= out_size ) { memcpy( out + i, "_PRELUDE", 8 ); i += 8; }
+    out[ i ] = '\0';
+}
+
 static void
 json_emit_constituents_from( FILE* fp, bool* first,
                                 const char* root_abs, const compile_cmd_t* cc,
@@ -161,9 +190,33 @@ json_emit_constituents_from( FILE* fp, bool* first,
             snprintf( abs_src, sizeof( abs_src ), "%s", rel );
         json_fwd_slashes( abs_src );
 
+        /* _api.c constituents define the g_<name>_api_struct that MOD_GATEWAY_STATIC
+           declares in the matching _api.h.  The unity prelude (/FI net.c) already
+           includes net_api.c, so compiling it again as the main file produces a
+           double-definition that corrupts clangd's type recovery and squiggles
+           the _api.h.  Inject a per-file guard define so the unity file can wrap
+           its #include with #ifndef NET_API_C_PRELUDE ... #endif. */
+        const char* base = strrchr( abs_src, '/' );
+        base = base ? base + 1 : abs_src;
+        size_t base_len = strlen( base );
+        bool is_api_c   = ( base_len > 6 && strcmp( base + base_len - 6, "_api.c" ) == 0 );
+
         if ( !*first ) fprintf( fp, ",\n" );
         *first = false;
-        json_emit_entry( fp, root_abs, cc, abs_src );
+        if ( is_api_c )
+        {
+            compile_cmd_t cc_api = *cc;
+            char macro[ 64 ];
+            json_prelude_macro( abs_src, macro, sizeof( macro ) );
+            size_t used = strlen( cc_api.defines );
+            snprintf( cc_api.defines + used, sizeof( cc_api.defines ) - used,
+                      " /D%s", macro );
+            json_emit_entry( fp, root_abs, &cc_api, abs_src );
+        }
+        else
+        {
+            json_emit_entry( fp, root_abs, cc, abs_src );
+        }
         ( *entry_count )++;
 
         /* Recurse: if this constituent is itself a sub-unity, emit its children too. */

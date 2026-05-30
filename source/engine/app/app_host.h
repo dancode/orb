@@ -23,6 +23,8 @@
 
 mod_desc_t* app_get_mod_desc( void );
 
+/*============================================================================================*/
+
 /* Route app log output through core. Call after mod_init_all(). */
 void app_set_log_fn( log_fn_t fn );
 

@@ -155,5 +155,7 @@ static win_pool_t g_pool = { .main_id = APP_WIN_INVALID };
     API Definition (must be last)
 ==============================================================================================*/
 
+#ifndef APP_API_C_PRELUDE
 #include "engine/app/app_api.c"
+#endif
 

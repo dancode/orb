@@ -6,18 +6,6 @@
 ==============================================================================================*/
 
 /*==============================================================================================
-    Persistent state (allocated by the module system; preserved across hot-reloads)
-==============================================================================================*/
-
-typedef struct net_state_s
-{
-    int32_t placeholder;    /* replace with real state fields */
-
-} net_state_t;
-
-/* static net_state_t* s = NULL; */
-
-/*==============================================================================================
     Implementation
 ==============================================================================================*/
 
@@ -54,7 +42,6 @@ net_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
     UNUSED( raw_state );
-    /* s = ( net_state_t* )raw_state; */
     return true;
 }
 
@@ -73,7 +60,7 @@ net_get_mod_desc( void )
 {
     static mod_desc_t desc = {
         .version       = 1,
-        .state_size    = sizeof( net_state_t ),
+        .state_size    = 0,
         .func_api_size = sizeof( net_api_t ),
         .func_api      = &g_net_api_struct,
         .dep_count     = 0,
@@ -85,4 +72,3 @@ net_get_mod_desc( void )
 }
 
 /*============================================================================================*/
-
