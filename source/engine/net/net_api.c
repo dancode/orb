@@ -1,68 +1,67 @@
 /*==============================================================================================
 
-    sys_api.c — Platform-agnostic sys module wiring.
-
-    Implements the sys_api_t function-pointer struct and the mod_desc_t lifecycle descriptor.
+    net_api.c -- net module wiring.
+    Implements the net_api_t vtable struct and the mod_desc_t lifecycle descriptor.
 
 ==============================================================================================*/
-/*==============================================================================================
-    API Start / Shutdown
-==============================================================================================*/
-
-void
-sys_init( void )
-{
-    sys_tick_init();
-}
-
-void
-sys_exit( void )
-{
-    sys_tick_exit();
-}
 
 /*==============================================================================================
-    Persistent state (allocated by module init)
+    Persistent state (allocated by the module system; preserved across hot-reloads)
 ==============================================================================================*/
 
-typedef struct sys_state_s
+typedef struct net_state_s
 {
-    int32_t no_state;
+    int32_t placeholder;    /* replace with real state fields */
 
-} sys_state_t;
+} net_state_t;
 
-// static sys_state_t* s = NULL;
+/* static net_state_t* s = NULL; */
+
+/*==============================================================================================
+    Implementation
+==============================================================================================*/
+
+static void
+net_tick_impl( float dt )
+{
+    ( void )dt;    /* TODO */
+}
 
 /*==============================================================================================
     API Struct
 ==============================================================================================*/
 
-const sys_api_t g_sys_api_struct = {
-    .tick_seconds       = sys_tick_seconds,
-    .tick_microseconds  = sys_tick_microseconds,
-    .tick_milliseconds  = sys_tick_milliseconds,
-    .tick_nanoseconds   = sys_tick_nanoseconds,
-    .sleep_milliseconds = sys_sleep_milliseconds,
+const net_api_t g_net_api_struct = {
+    .tick = net_tick_impl,
 };
 
 /*==============================================================================================
-    Module Lifecycle (called by the module system)
+    Direct-call wrappers (declared in net_host.h)
+==============================================================================================*/
+
+void
+net_tick( float dt )
+{
+    net_tick_impl( dt );
+}
+
+/*==============================================================================================
+    Lifecycle
 ==============================================================================================*/
 
 static bool
-sys_mod_init( void* raw_state, get_api_fn get_api )
+net_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
     UNUSED( raw_state );
-    sys_init();
+    /* s = ( net_state_t* )raw_state; */
     return true;
 }
 
 static void
-sys_mod_exit( void* raw_state )
+net_mod_exit( void* raw_state )
 {
     UNUSED( raw_state );
-    sys_exit();
 }
 
 /*==============================================================================================
@@ -70,19 +69,20 @@ sys_mod_exit( void* raw_state )
 ==============================================================================================*/
 
 mod_desc_t*
-sys_get_mod_desc( void )
+net_get_mod_desc( void )
 {
     static mod_desc_t desc = {
         .version       = 1,
-        .state_size    = sizeof( sys_state_t ),
-        .func_api_size = sizeof( sys_api_t ),
-        .func_api      = &g_sys_api_struct,
+        .state_size    = sizeof( net_state_t ),
+        .func_api_size = sizeof( net_api_t ),
+        .func_api      = &g_net_api_struct,
         .dep_count     = 0,
-        .init          = sys_mod_init,
-        .exit          = sys_mod_exit,
+        .init          = net_mod_init,
+        .exit          = net_mod_exit,
         .reload        = NULL,
     };
     return &desc;
 }
 
 /*============================================================================================*/
+

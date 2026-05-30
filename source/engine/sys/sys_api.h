@@ -26,10 +26,12 @@ typedef struct sys_api_s
 
 } sys_api_t;
 
+/*============================================================================================*/
+
 #if defined( BUILD_STATIC ) || defined( SYS_STATIC )
-MOD_GATEWAY_STATIC( sys_api_t, sys )
+    MOD_GATEWAY_STATIC( sys_api_t, sys )
 #else
-MOD_GATEWAY_DYNAMIC( sys_api_t, sys )
+    MOD_GATEWAY_DYNAMIC( sys_api_t, sys )
 #endif
 
 #if defined( BUILD_STATIC ) || defined( SYS_STATIC )

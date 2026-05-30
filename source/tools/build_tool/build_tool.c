@@ -37,6 +37,7 @@
         12_gen_json.c     -- -gen command: compile_commands.json (clangd / LSP tools)
         12_gen_vscode.c   -- -gen command: .vscode/tasks.json (VS Code build tasks)
         12_gen_msbuild.c  -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
+        13_create.c       -- -create command: scaffold a new static or dynamic module
         test.c            -- debug arg injection from build_tool_debug.args
         00_util.c         -- pre-main utilities: deps graph, validate_targets,
                              print_startup_banner. Included LAST so it can call into
@@ -169,6 +170,7 @@ const char* sched_log_path( void );
 #include "build_tool_12_gen_json.c"         // 12b -gen command (compile_commands.json)
 #include "build_tool_12_gen_vscode.c"       // 12c -gen command (.vscode/tasks.json)
 #include "build_tool_12_gen_msbuild.c"      // 12d -gen_ms command (MSBuild projects)
+#include "build_tool_13_create.c"           // 13  -create command (module scaffolding)
 #include "build_tool_test.c"                // debug arg injection (debug builds only)
 #include "build_tool_00_util.c"             // pre-main utilities: deps graph, validate_targets, print_startup_banner
 
@@ -206,15 +208,19 @@ main( int argc, char** argv )
 
     // --- Operational Command flags ---
 
-    bool should_help         = false;
-    bool should_list         = false;
-    bool should_graph        = false;
-    bool should_clean        = false;
-    bool should_gen          = false;
-    bool should_gen_nmake    = false;
-    bool should_gen_msbuild  = false;
-    bool should_bootstrap    = false;
-    int  j_threads           = 0;       // 0 -> auto-detect from CPU count.
+    bool  should_help         = false;
+    bool  should_list         = false;
+    bool  should_graph        = false;
+    bool  should_clean        = false;
+    bool  should_gen          = false;
+    bool  should_gen_nmake    = false;
+    bool  should_gen_msbuild  = false;
+    bool  should_bootstrap    = false;
+    bool  should_create       = false;
+    char* create_name         = NULL;
+    char* create_dir          = NULL;
+    bool  create_dynamic      = false;
+    int   j_threads           = 0;       // 0 -> auto-detect from CPU count.
 
     // --- Arg parsing (order-independent flag scan) ---
 
@@ -230,6 +236,14 @@ main( int argc, char** argv )
         if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
         if ( platform_stricmp( argv[ i ], "-gen_nm"           ) == 0 ) should_gen_nmake = true;
         if ( platform_stricmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
+
+        // module creation (scaffolding)
+        if ( platform_stricmp( argv[ i ], "-create" ) == 0 && i + 1 < argc ) { should_create = true; create_name = argv[ ++i ]; }
+        if ( platform_stricmp( argv[ i ], "-dir"    ) == 0 && i + 1 < argc ) { create_dir = argv[ ++i ]; }
+        if ( platform_stricmp( argv[ i ], "-type"   ) == 0 && i + 1 < argc ) 
+        {
+            if ( platform_stricmp( argv[ ++i ], "dynamic" ) == 0 ) create_dynamic = true;
+        }
         
         // compile settings
         if ( platform_stricmp( argv[ i ], "-target" ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
@@ -290,6 +304,15 @@ main( int argc, char** argv )
     // --- Command: HELP ---
 
     if ( should_help ) { print_help(); return 0; }
+
+    // --- Command: CREATE (runs before registry load; works even with a missing orb.targets) ---
+
+    if ( should_create )
+    {
+        if ( !create_name ) { printf( ORB_INDENT "[orb error] -create requires a module name\n" ); return 1; }
+        if ( !create_dir )  { printf( ORB_INDENT "[orb error] -create requires -dir <source/path>\n" ); return 1; }
+        return cmd_create_module( create_name, create_dir, create_dynamic ) ? 0 : 1;
+    }
 
     // --- Target registry: orb.targets first (sets g_engine_root if 'engine' declared),
     //     then built-ins (uses g_engine_root to set paths and is_external correctly). ---

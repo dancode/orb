@@ -50,6 +50,12 @@ target core
     dep         sys rs
     reflect
 
+target net
+	type        static
+    root        source/engine/net
+    folder      02_ENGINE
+    unit        net.c
+		
 # ==============================================================================
 # 03_RUNTIME
 # ==============================================================================
@@ -270,7 +276,7 @@ target c11_test
 solution orb
     out         build/proj
 # 	nav 		source
-    add         base sys rs mod app core
+    add         base sys rs mod app core net
     add         runtime_host
 
     add         rhi jobs

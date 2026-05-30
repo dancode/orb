@@ -40,6 +40,12 @@ print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-gen",                   "Regenerate all project files (NMake + MSBuild + VSCode)" );
     printf( ORB_INDENT "  %-28s%s\n", "-gen_nm",                "Regenerate NMake .sln/.vcxproj, compile_commands.json, .vscode/tasks.json." );
     printf( ORB_INDENT "  %-28s%s\n", "-gen_ms",                "Regenerate MSBuild .sln/.vcxproj only (full EDG IntelliSense)." );
+    printf( ORB_INDENT "  %-28s%s\n", "-create <name>",         "Scaffold a new module. Requires -dir; optional -type static|dynamic." );
+    printf( "\n" );
+
+    printf( ORB_INDENT "create options:\n" );
+    printf( ORB_INDENT "  %-28s%s\n", "-dir <source/path>",     "Output directory (e.g. source/engine/physics). Required with -create." );
+    printf( ORB_INDENT "  %-28s%s\n", "-type static|dynamic",   "Module kind (default: static). dynamic = hot-reload DLL." );
     printf( "\n" );
 
     printf( ORB_INDENT "build options:\n" );
