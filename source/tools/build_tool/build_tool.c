@@ -217,6 +217,8 @@ main( int argc, char** argv )
     bool  should_gen_msbuild  = false;
     bool  should_bootstrap    = false;
     bool  should_create       = false;
+    bool  saw_quiet           = false;
+    bool  saw_verbose         = false;
     char* create_name         = NULL;
     char* create_dir          = NULL;
     bool  create_dynamic      = false;
@@ -280,8 +282,8 @@ main( int argc, char** argv )
         }
 
         // output verbosity
-        if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) g_out_flags = ORB_OUT_QUIET;
-        if ( platform_stricmp( argv[ i ], "-v"                ) == 0 ) g_out_flags = ORB_OUT_VERBOSE;
+        if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) { g_out_flags = ORB_OUT_QUIET;   saw_quiet   = true; }
+        if ( platform_stricmp( argv[ i ], "-v"                ) == 0 ) { g_out_flags = ORB_OUT_VERBOSE; saw_verbose = true; }
         if ( platform_stricmp( argv[ i ], "--out" ) == 0 && i + 1 < argc )
         {
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
@@ -298,6 +300,21 @@ main( int argc, char** argv )
     if ( ctx.file_path && ctx.compile_only )
     {
         printf( ORB_INDENT "[orb error] -file and -compile-only are mutually exclusive\n" );
+        return 1;
+    }
+    if ( ctx.file_path && ctx.skip_deps )
+    {
+        printf( ORB_INDENT "[orb error] -file and -no-deps are mutually exclusive\n" );
+        return 1;
+    }
+    if ( ctx.compile_only && ctx.skip_deps ) 
+    {
+        printf( ORB_INDENT "[orb error] -compile-only and -no-deps are mutually exclusive\n" );
+        return 1;
+    }
+    if ( saw_quiet && saw_verbose )
+    {
+        printf( ORB_INDENT "[orb error] -q and -v are mutually exclusive\n" );
         return 1;
     }
 
