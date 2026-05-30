@@ -38,10 +38,11 @@
         12_gen_vscode.c   -- -gen command: .vscode/tasks.json (VS Code build tasks)
         12_gen_msbuild.c  -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
         13_create.c       -- -create command: scaffold a new static or dynamic module
+        13_query.c        -- -help/-list/-graph commands (read-only; no compiler chain)
         test.c            -- debug arg injection from build_tool_debug.args
-        00_util.c         -- pre-main utilities: deps graph, validate_targets,
-                             print_startup_banner. Included LAST so it can call into
-                             every earlier module without forward declarations.
+        00_util.c         -- pre-main utilities: validate_targets, print_startup_banner.
+                             Included LAST so it can call into every earlier module
+                             without forward declarations.
 
 ==============================================================================================*/
 // clang-format off
@@ -110,9 +111,9 @@ static out_flags_t g_out_flags      = ORB_OUT_DEFAULT;
 
 static bool        g_include_track  = true;         // Use up-to-date tracking via headers.
 static bool        g_use_rsp        = true;         // Use overflow prevention.
-static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 alongside stdc11.
+static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 + stdc11 (for nmake).
                                                     // (suppress designated-initializer squiggles)
-int                g_vs_major_version = 0;           // 0 = auto-detect; set by -vs-version <year>.
+int                g_vs_major_version = 0;          // 0 = auto-detect; set by -vs-version <year>.
 
 /*==============================================================================================
     --- ANSI Color Strings ---
@@ -171,8 +172,9 @@ const char* sched_log_path( void );
 #include "build_tool_12_gen_vscode.c"       // 12c -gen command (.vscode/tasks.json)
 #include "build_tool_12_gen_msbuild.c"      // 12d -gen_ms command (MSBuild projects)
 #include "build_tool_13_create.c"           // 13  -create command (module scaffolding)
+#include "build_tool_13_query.c"            // 13  -help/-list/-graph (read-only queries)
 #include "build_tool_test.c"                // debug arg injection (debug builds only)
-#include "build_tool_00_util.c"             // pre-main utilities: deps graph, validate_targets, print_startup_banner
+#include "build_tool_00_util.c"             // pre-main utilities: validate_targets, print_startup_banner
 
 /*==============================================================================================
     --- Main Entry ---
@@ -318,9 +320,13 @@ main( int argc, char** argv )
         return 1;
     }
 
+    // ----------------------------------------------------------------------------
+    // --- COMMAND EXECUTION (DISPATCH TO THEIR HANDLERS)
+    // ----------------------------------------------------------------------------
+
     // --- Command: HELP ---
 
-    if ( should_help ) { print_help(); return 0; }
+    if ( should_help ) return cmd_print_help();
 
     // --- Command: CREATE (runs before registry load; works even with a missing orb.targets) ---
 
@@ -330,7 +336,7 @@ main( int argc, char** argv )
         if ( !create_dir )  { printf( ORB_INDENT "[orb error] -create requires -dir <source/path>\n" ); return 1; }
         return cmd_create_module( create_name, create_dir, create_dynamic ) ? 0 : 1;
     }
-
+    
     // --- Target registry: orb.targets first (sets g_engine_root if 'engine' declared),
     //     then built-ins (uses g_engine_root to set paths and is_external correctly). ---
 
@@ -341,124 +347,11 @@ main( int argc, char** argv )
 
     // --- Command: LIST ---
 
-    if ( should_list )
-    {
-        static const char* type_tag[] = { "lib", "dll", "exe" };
-
-        // measure the longest name for alignment
-        int max_name = 4;
-        for ( int i = 0; i < g_target_count; ++i )
-        {
-            int n = ( int )strlen( g_targets[ i ].name );
-            if ( n > max_name ) max_name = n;
-        }
-
-        int local_count    = 0;
-        int external_count = 0;
-        for ( int i = 0; i < g_target_count; ++i )
-        {
-            if ( g_targets[ i ].is_external ) external_count++;
-            else                              local_count++;
-        }
-
-        printf( ORB_BANNER "[orb targets] %d local, %d external\n\n",
-                local_count, external_count );
-
-        // Local targets first, then external, each group in registration order.
-        for ( int pass = 0; pass < 2; ++pass )
-        {
-            bool printing_external = ( pass == 1 );
-            bool printed_header    = false;
-            for ( int i = 0; i < g_target_count; ++i )
-            {
-                const target_info_t* t = &g_targets[ i ];
-                if ( t->is_external != printing_external ) continue;
-
-                if ( !printed_header )
-                {
-                    printf( ORB_INDENT "%s\n", printing_external ? "(external)" : "(local)" );
-                    printed_header = true;
-                }
-
-                const char* kind = ( t->is_build_tool || t->is_reflect_tool || t->is_tool ) ? " [tool]" : "";
-                const char* folder = ( t->virtual_folder && t->virtual_folder[ 0 ] ) ? t->virtual_folder : "";
-                printf( ORB_INDENT "  [%s]  %-*s  %s%s\n",
-                        type_tag[ t->type ], max_name, t->name, folder, kind );
-            }
-            if ( printed_header ) printf( "\n" );
-        }
-        return 0;
-    }
+    if ( should_list )  return cmd_list();
 
     // --- Command: GRAPH ---
-    //
-    // With -target: prints the dependency tree rooted at that target and the flat
-    // topological build order for its closure.
-    // Without -target: prints the flat build order for all local targets collectively.
 
-    if ( should_graph )
-    {
-        static const char* type_tag[] = { "lib", "dll", "exe" };
-
-        target_info_t* root = NULL;
-        if ( ctx.target_name )
-        {
-            root = find_target_icase( ctx.target_name );
-            if ( !root )
-            {
-                printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name );
-                return 1;
-            }
-        }
-
-        static deps_topo_t topo;
-        memset( &topo, 0, sizeof( topo ) );
-
-        if ( root )
-        {
-            deps_visit( &topo, root );
-        }
-        else
-        {
-            for ( int i = 0; i < g_target_count; ++i )
-                if ( !g_targets[ i ].is_external )
-                    deps_visit( &topo, &g_targets[ i ] );
-        }
-
-        if ( topo.has_cycle )
-        {
-            printf( ORB_INDENT "[orb error] %s\n", topo.cycle_msg );
-            return 1;
-        }
-
-        const char* label = root ? root->name : "ALL";
-        printf( ORB_BANNER "[orb deps]  %s  (%d in closure)\n", label, topo.count );
-
-        // Tree view: single-target mode only.
-        if ( root )
-        {
-            int shown[ MAX_TARGETS + 4 ] = { 0 };
-            int ridx = deps_target_idx( root );
-            if ( ridx >= 0 ) shown[ ridx ]++;
-            printf( "\n" );
-            printf( ORB_INDENT "tree:\n" );
-            printf( "%s  %-22s  [%s]\n", ORB_INDENT, root->name, type_tag[ root->type ] );
-            deps_tree_children( root, shown, "  " );
-        }
-
-        // Flat topological build order (leaves first).
-        int num_w = ( topo.count >= 10 ) ? 2 : 1;
-        printf( "\n" );
-        printf( ORB_INDENT "build order:\n" );
-        for ( int i = 0; i < topo.count; ++i )
-        {
-            target_info_t* t = topo.order[ i ];
-            printf( "%s  %*d  [%s]  %s\n",
-                    ORB_INDENT, num_w, i + 1, type_tag[ t->type ], t->name );
-        }
-        printf( "\n" );
-        return 0;
-    }
+    if ( should_graph ) return cmd_graph( ctx.target_name );
 
     // --- Command: BOOTSTRAP (recompile build_tool.exe itself) ---
 
@@ -517,6 +410,10 @@ main( int argc, char** argv )
         printf( "\nAll projects generated successfully.\n" );
         return 0;
     }
+
+    // ----------------------------------------------------------------------------
+    // --- COMPILER INVOCATION PATHS BELOW (BUILD / COMPILE-ONLY / SINGLE-FILE) ---
+    // ----------------------------------------------------------------------------
 
     // --- Banner + VC env ---
 
