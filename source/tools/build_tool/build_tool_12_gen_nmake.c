@@ -671,6 +671,36 @@ is_unit_file( const target_info_t* target, const char* path )
 }
 
 /*==============================================================================================
+    write_natvis_item_group()
+
+    Emits one <ItemGroup> containing a <Natvis Include="..."> entry for every .natvis
+    file collected by scan_directory_recursive(). No-op if g_files[] has none.
+    Shared by the NMake and MSBuild vcxproj generators (filters omits this: it handles
+    natvis separately because it also needs <Filter> children).
+==============================================================================================*/
+
+static void
+write_natvis_item_group( FILE* f )
+{
+    bool any = false;
+    for ( int i = 0; i < g_file_count; ++i )
+        if ( g_files[ i ].is_natvis ) { any = true; break; }
+    if ( !any )
+        return;
+
+    fprintf( f, "  <ItemGroup>\n" );
+    for ( int i = 0; i < g_file_count; ++i )
+    {
+        if ( !g_files[ i ].is_natvis )
+            continue;
+        char inc[ PATH_MAX + 32 ];
+        gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
+        fprintf( f, "    <Natvis Include=\"%s\" />\n", inc );
+    }
+    fprintf( f, "  </ItemGroup>\n" );
+}
+
+/*==============================================================================================
     write_vcxproj_filters_file()
 
     Writes one .vcxproj.filters file. Shared by the NMake target, NMake nav, and
@@ -800,6 +830,9 @@ build_gen_proj_target( target_info_t* target )
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
+        if ( g_files[ i ].is_natvis )
+            continue;    // emitted in a separate Natvis ItemGroup below
+
         bool is_unit = is_unit_file( target, g_files[ i ].path );
 
         char inc[ PATH_MAX + 32 ];
@@ -811,10 +844,6 @@ build_gen_proj_target( target_info_t* target )
             fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
                      s_ctx.cd_root, s_ctx.build_tool_exe, target->name, item_mono );
             fprintf( f, "    </ClCompile>\n" );
-        }
-        else if ( g_files[ i ].is_natvis )
-        {
-            fprintf( f, "    <Natvis Include=\"%s\" />\n", inc );
         }
         else
         {
@@ -844,6 +873,8 @@ build_gen_proj_target( target_info_t* target )
     }
 
     fprintf( f, "  </ItemGroup>\n" );
+
+    write_natvis_item_group( f );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
     fprintf( f, "</Project>\n" );
