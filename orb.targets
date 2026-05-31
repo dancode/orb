@@ -329,7 +329,7 @@ target sb_engine_reflect
     root        source/sandbox/engine/engine_reflect
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_reflect.c
-    dep         rs core
+    dep         rs
 
 # ==============================================================================
 # 09_SANDBOX/RUNTIME
@@ -487,6 +487,7 @@ solution orb_tools
 solution orb_examples	
 
     out         build/proj  
+	
 	add 		sb_example_tool
 	add 		sb_example_server			
 	add 		sb_example_editor 
@@ -504,21 +505,21 @@ solution orb_examples
 # SANDBOX: Running/debugging unit-style tets for specific engine layer
 # ==============================================================================
 
-solution orb_sandbox
+solution orb_sandbox_engine
 
     out         build/proj 
 
+	add         sys rs mod app core net
+
+	# 			--- SANDBOX : BASE -- 
+
     add         sb_base
-	
-	# 			--- SANDBOX : ENGINE -- 
 	
     add         sb_engine_mod 
 	add 		sb_engine_sys 
 	add 		sb_engine_core 
 	add 		sb_engine_reflect 
 	add 		sb_engine_app
-	
-	# 			--- SANDBOX : MODULES -- 
 	
     add         sb_runtime_reflect 
 	add 		sb_runtime_gen
@@ -563,12 +564,19 @@ solution orb_all
 	add 		sb_engine_app
 	
     add         sb_runtime_reflect sb_runtime_gen
+		
+	add 		host_game
+	add 		host_editor 
+	add 		host_sandbox 
+	add 		host_tool
 	
 	add 		sb_example_tool
 	add 		sb_example_server			
 	add 		sb_example_editor 
 	add 		sb_example_game 
 	add 		sb_example_runtime
+	
+	
 		
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC

@@ -7,8 +7,7 @@
 
 ==============================================================================================*/
 #include "orb.h"
-
-int base_run_tests( void );
+#include "base/base_test.c"
 
 int
 main( int argc, char* argv[] )
