@@ -210,7 +210,7 @@ emit_enum_block( FILE* fc, const decl_type_t* t )
         {
             const enum_t* e = &t->enums[ i ];
             fprintf( fc, "            { .name_id = api->intern( \"%s\" ), "
-                         ".value = (int64_t)( %s ) },\n",
+                         ".value = (int32_t)( %s ) },\n",
                      e->name, e->has_value ? e->value_expr : e->name );
         }
         fprintf( fc, "        };\n" );

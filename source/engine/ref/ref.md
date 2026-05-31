@@ -94,7 +94,7 @@ slots are always zeroed regardless.
 ```c
 ref_type_t   // a registered type: name, kind, size, align, schema_hash, field range, frame
 ref_field_t  // a struct field: name, type_hash/type_id, offset, size, mods, aux, attrs
-ref_enum_t   // one enumerator: name, value (int64_t)
+ref_enum_t   // one enumerator: name, value (int32_t) — name_id+value pack into one 64-bit word
 ref_attrib_t // one attribute entry: name, type, 4-byte payload union
 ref_frame_t  // one module's registration scope: table start marks, dll handle
 ```

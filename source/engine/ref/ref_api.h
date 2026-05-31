@@ -34,7 +34,7 @@ typedef struct ref_api_s
     uint16_t            ( *each_enumerator    )( uint16_t type_id, ref_enum_cb_t cb, void* user );
 
     /* Bitset helpers */
-    size_t              ( *bitset_describe    )( uint16_t type_id, int64_t value, char* buf, size_t cap );
+    size_t              ( *bitset_describe    )( uint16_t type_id, int32_t value, char* buf, size_t cap );
 
     /* Walkers */
     void                ( *walk_refs          )( void* inst, uint16_t type_id, ref_ref_visitor_t fn, void* user );

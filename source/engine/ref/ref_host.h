@@ -93,7 +93,7 @@ const ref_field_t*  ref_find_field           ( uint16_t type_id,  const char* na
 const ref_attrib_t* ref_type_get_attr        ( uint16_t type_id,  const char* name );
 const ref_attrib_t* ref_field_get_attr       ( uint16_t field_id, const char* name );
 const ref_enum_t*   ref_enum_find_by_name    ( uint16_t type_id,  const char* name );
-const ref_enum_t*   ref_enum_find_by_value   ( uint16_t type_id,  int64_t value );
+const ref_enum_t*   ref_enum_find_by_value   ( uint16_t type_id,  int32_t value );
 const ref_enum_t*   ref_get_enumerator       ( uint16_t enum_id );
 void                ref_get_stats            ( uint16_t* type_count, uint16_t* field_count, uint16_t* frame_count );
 
@@ -105,9 +105,9 @@ void                ref_get_stats            ( uint16_t* type_count, uint16_t* f
 ==============================================================================================*/
 
 bool                ref_enum_is_bitset       ( uint16_t type_id );
-const ref_enum_t*   ref_bitset_find_flag     ( uint16_t type_id, int64_t mask );
-uint16_t            ref_bitset_each_set_flag ( uint16_t type_id, int64_t value, ref_enum_cb_t cb, void* user );
-size_t              ref_bitset_describe      ( uint16_t type_id, int64_t value, char* buf, size_t buf_size );
+const ref_enum_t*   ref_bitset_find_flag     ( uint16_t type_id, int32_t mask );
+uint16_t            ref_bitset_each_set_flag ( uint16_t type_id, int32_t value, ref_enum_cb_t cb, void* user );
+size_t              ref_bitset_describe      ( uint16_t type_id, int32_t value, char* buf, size_t buf_size );
 
 /*==============================================================================================
     Function Signature Accessors  (type must have kind == REF_KIND_FUNCTION)

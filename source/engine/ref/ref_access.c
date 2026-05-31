@@ -130,7 +130,7 @@ ref_enum_find_by_name( uint16_t type_id, const char* name )
 }
 
 const ref_enum_t*
-ref_enum_find_by_value( uint16_t type_id, int64_t value )
+ref_enum_find_by_value( uint16_t type_id, int32_t value )
 {
     const ref_type_t* t = ref_get_type( type_id );
     if ( !t || !ref_kind_is_enum( (ref_kind_t)t->kind ) ) return NULL;
@@ -165,7 +165,7 @@ ref_enum_is_bitset( uint16_t type_id )
 }
 
 const ref_enum_t*
-ref_bitset_find_flag( uint16_t type_id, int64_t mask )
+ref_bitset_find_flag( uint16_t type_id, int32_t mask )
 {
     const ref_type_t* t = ref_get_type( type_id );
     if ( !t || t->kind != REF_KIND_BITSET || mask == 0 ) return NULL;
@@ -180,14 +180,14 @@ ref_bitset_find_flag( uint16_t type_id, int64_t mask )
 }
 
 uint16_t
-ref_bitset_each_set_flag( uint16_t type_id, int64_t value, ref_enum_cb_t cb, void* user )
+ref_bitset_each_set_flag( uint16_t type_id, int32_t value, ref_enum_cb_t cb, void* user )
 {
     const ref_type_t* t = ref_get_type( type_id );
     if ( !t || t->kind != REF_KIND_BITSET || !cb ) return 0;
 
     /* Greedy bit-claim: matched flag's bits are cleared so smaller overlapping flags
        don't double-fire on the same bits. Registration order controls priority. */
-    int64_t  remaining = value;
+    int32_t  remaining = value;
     uint16_t hits      = 0;
     for ( uint16_t i = 0; i < t->field_count; i++ )
     {
@@ -205,7 +205,7 @@ ref_bitset_each_set_flag( uint16_t type_id, int64_t value, ref_enum_cb_t cb, voi
 }
 
 size_t
-ref_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size )
+ref_bitset_describe( uint16_t type_id, int32_t value, char* buf, size_t buf_size )
 {
     if ( !buf || buf_size == 0 ) return 0;
     buf[ 0 ] = '\0';
@@ -225,7 +225,7 @@ ref_bitset_describe( uint16_t type_id, int64_t value, char* buf, size_t buf_size
     }
 
     size_t  pos       = 0;
-    int64_t remaining = value;
+    int32_t remaining = value;
     bool    first     = true;
 
     /* Emit "FLAG_A | FLAG_B" for matched bits; each matched flag clears its bits from remaining. */

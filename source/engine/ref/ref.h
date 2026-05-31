@@ -245,8 +245,8 @@ typedef struct ref_attrib_s
 
 typedef struct ref_enum_s
 {
-    ref_name_t  name_id;             // interned enumerator name
-    int32_t    value;               // signed; covers unsigned values up to INT32_MAX
+    ref_name_t  name_id;                // interned enumerator name
+    int32_t    value;                   // signed 32-bit value; name_id+value pack into one 64-bit word
 
 } ref_enum_t;
 
