@@ -75,10 +75,11 @@
 #ifdef BUILD_STATIC
     #define MOD_HOST_FETCH_API( type, name ) ( 1 )
 #else
-    #define MOD_HOST_FETCH_API( type, name ) \
-        ( ( g_##name##_api_ptr = ( const type* )mod_get_api( #name ) ) != NULL )
+    // #define MOD_HOST_FETCH_API( type, name ) \
+    //    ( ( g_##name##_api_ptr = ( const type* )mod_get_api( #name ) ) != NULL )
 
-    #define MOD_HOST_API( name ) \
+    // ** new version infers api name **
+    #define MOD_HOST_FETCH_API( name ) \
         ( ( g_##name##_api_ptr = ( const name##_api_t* )mod_get_api( #name ) ) != NULL )
 #endif
 

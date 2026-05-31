@@ -47,7 +47,7 @@ module_test( void )
 
     mod_list_all();
 
-    MOD_HOST_FETCH_API( example_api_t, example );
+    MOD_HOST_FETCH_API( example );
     example()->example_function_1();
 
     /* ---- console input ----------------------------------------------- */
@@ -73,7 +73,7 @@ module_test( void )
     /* Re-fetch after each flush so the pointer stays current post-reload.
     In a real host this belongs in the post-flush update pass, not every tick. */
 
-    MOD_HOST_FETCH_API( example_api_t, example );
+    MOD_HOST_FETCH_API( example );
 
     while ( running )
     {

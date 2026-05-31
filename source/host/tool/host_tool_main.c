@@ -85,7 +85,7 @@ run_asset_bake( tool_ctx_t* ctx )
 
     mod_set_log_fn( core_log_fn );
 
-    // if ( !MOD_HOST_FETCH_API( render_api_t, render ) )
+    // if ( !MOD_HOST_FETCH_API( render ) )
     //    return 1;
     //
     // core()->log( "asset_bake: starting (target frames-rendered API works: %d)", render()->frame_count() );

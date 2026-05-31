@@ -34,8 +34,8 @@
 static void
 game_ready( void )
 {
-    /* MOD_HOST_FETCH_API( physics_api_t,     physics     );
-       MOD_HOST_FETCH_API( sample_game_api_t, sample_game ); */
+    /* MOD_HOST_FETCH_API( physics     );
+       MOD_HOST_FETCH_API( sample_game ); */
 }
 
 static void

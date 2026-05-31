@@ -174,7 +174,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                                          which is fine; the windowed path guards against it.
     */
 
-    MOD_HOST_FETCH_API( render_api_t,   render );
+    MOD_HOST_FETCH_API( render );
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*

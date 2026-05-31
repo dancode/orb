@@ -409,7 +409,7 @@ main( int argc, char** argv )
     }
 
     /* Cache the example_reflect API pointer so we can call into the module. */
-    MOD_HOST_FETCH_API( example_reflect_api_t, example_reflect );
+    MOD_HOST_FETCH_API( example_reflect );
 
     exercise_reflection();
 

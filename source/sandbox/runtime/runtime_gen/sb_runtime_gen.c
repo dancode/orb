@@ -49,7 +49,7 @@ main( int argc, char** argv )
     UNUSED( sid );
     mod_list_all();
 
-    MOD_HOST_API( example_gen );
+    MOD_HOST_FETCH_API( example_gen );
     example_gen()->test_function_one();
     example_gen()->test_function_two();
 
