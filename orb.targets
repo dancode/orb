@@ -323,7 +323,7 @@ target sb_engine_core
     unit        sb_engine_core.c
     dep         core
 
-target sb_engine_reflect
+target sb_engine_ref
 
     type        exe
     root        source/sandbox/engine/engine_reflect
@@ -481,7 +481,7 @@ solution orb_tools
 	add 		reflect_tool
 
 # ==============================================================================
-# EXAMPLES: Working on a runtime configurations.
+# EXAMPLES: Idiomatic usage of engine to add clarity to program scaffolding
 # ==============================================================================
 
 solution orb_examples	
@@ -503,9 +503,15 @@ solution orb_examples
 	
 # ==============================================================================
 # SANDBOX: Running/debugging unit-style tets for specific engine layer
-# ==============================================================================
+# ==============================================================================	
 
-solution orb_sandbox_engine
+solution orb_sandbox_reflect			# Run/Debug reflection 
+
+    out         build/proj 
+	add         sys rs mod	
+	add 		sb_engine_ref
+
+solution orb_sandbox_engine				# Run/Debug engine
 
     out         build/proj 
 
@@ -518,10 +524,10 @@ solution orb_sandbox_engine
     add         sb_engine_mod 
 	add 		sb_engine_sys 
 	add 		sb_engine_core 
-	add 		sb_engine_reflect 
+	add 		sb_engine_ref 
 	add 		sb_engine_app
 	
-    add         sb_runtime_reflect 
+    add         sb_engine_ref 
 	add 		sb_runtime_gen
 	
 
@@ -560,7 +566,7 @@ solution orb_all
 	add         sb_engine_mod 
 	add 		sb_engine_sys 
 	add 		sb_engine_core 
-	add 		sb_engine_reflect 
+	add 		sb_engine_ref 
 	add 		sb_engine_app
 	
     add         sb_runtime_reflect sb_runtime_gen
@@ -577,7 +583,6 @@ solution orb_all
 	add 		sb_example_runtime
 	
 	
-		
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC
 # ==============================================================================
