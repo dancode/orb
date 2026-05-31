@@ -53,7 +53,7 @@ typedef struct ref_api_s
 } ref_api_t;
 
 /*============================================================================================*/
-/* rs is always statically linked into the host — REF_STATIC is set by CMake globally. */
+/* ref is always statically linked into the host — REF_STATIC is set by CMake globally. */
 
 #if defined( BUILD_STATIC ) || defined( REF_STATIC )
     MOD_GATEWAY_STATIC( ref_api_t, ref )
@@ -62,11 +62,11 @@ typedef struct ref_api_s
 #endif
 
 #if defined( BUILD_STATIC ) || defined( REF_STATIC )
-    #define MOD_USE_RS    /* static build — no pointer needed */
-    #define MOD_FETCH_RS  true
+    #define MOD_USE_REF    /* static build — no pointer needed */
+    #define MOD_FETCH_REF  true
 #else
-    #define MOD_USE_RS    MOD_DEFINE_API_PTR( ref_api_t, ref )
-    #define MOD_FETCH_RS  MOD_FETCH_API( ref_api_t, ref )
+    #define MOD_USE_REF    MOD_DEFINE_API_PTR( ref_api_t, ref )
+    #define MOD_FETCH_REF  MOD_FETCH_API( ref_api_t, ref )
 #endif
 
 // clang-format on

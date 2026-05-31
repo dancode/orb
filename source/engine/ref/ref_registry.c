@@ -752,21 +752,23 @@ ref_unregister_module( const char* name )
         return;
     }
 
-    /* Module had no frame (no ref_register in its mod_desc) -- silently ignore.
-       Only warn if the name exists deeper in the stack, which would indicate a real LIFO
-       violation that could corrupt the pool watermarks. */
-    if ( ref_debug )
+    /* Check whether the name exists deeper in the stack. If it does, that is a real LIFO
+       violation -- the pool watermark design cannot remove a middle frame without corrupting
+       every higher frame's type/field/enum/attr indices. This means the mod system unloaded
+       modules out of dependency order, which is always a bug in the caller. */
+    for ( uint16_t i = 1; i < g_ref.frame_count; ++i )
     {
-        for ( uint16_t i = 1; i < g_ref.frame_count; ++i )
+        if ( strcmp( ref_cstr( g_ref.frames[ i ].name_id ), name ) == 0 )
         {
-            if ( strcmp( ref_cstr( g_ref.frames[ i ].name_id ), name ) == 0 )
-            {
-                printf( "ref: WARNING ref_unregister_module: '%s' is not the topmost frame (top='%s'); skipped\n",
-                        name, ref_cstr( g_ref.frames[ top ].name_id ) );
-                return;
-            }
+            fprintf( stderr,
+                     "ref: FATAL ref_unregister_module: '%s' is not the topmost frame (top='%s') -- "
+                     "modules must unload in reverse dependency order\n",
+                     name, ref_cstr( g_ref.frames[ top ].name_id ) );
+            assert( 0 && "ref: out-of-order module unload -- modules must unload in reverse dependency order" );
+            return;
         }
     }
+    /* Name not found in any frame -- module registered no reflection types; silently ignore. */
 }
 
 // clang-format off

@@ -148,16 +148,19 @@ value_visit( void* addr, uint16_t type_id, const ref_field_t* field, void* user 
     /* Enum or bitset: read the integer value, then look up its name in the registry. */
     if ( t->kind == REF_KIND_ENUM || t->kind == REF_KIND_BITSET )
     {
-        int64_t val = 0;
+        int32_t val = 0;
         switch ( t->size )
         {
             case 1: val = *( int8_t* )addr; break;
             case 2: val = *( int16_t* )addr; break;
             case 4: val = *( int32_t* )addr; break;
-            case 8: val = *( int64_t* )addr; break;
+            case 8: assert( 0 ); break;
+            
+            /* enums can't be larger than 32 bits */
+            /* val = *( int64_t* )addr; break; */
         }
         const ref_enum_t* e = ref_enum_find_by_value( type_id, val );
-        printf( "    %-20s %-14s %s (%lld)\n", fname, tname, e ? ref_cstr( e->name_id ) : "?", ( long long )val );
+        printf( "    %-20s %-14s %s (%d)\n", fname, tname, e ? ref_cstr( e->name_id ) : "?", ( int )val );
         return;
     }
 
