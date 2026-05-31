@@ -1599,6 +1599,412 @@ test_usage_example( void )
 }
 
 /*==============================================================================================
+    Attribute test
+
+      Register a struct with one field per attribute type and flag combination:
+        volume      -- @range(0,100)        REF_ATTR_INT,    REF_AF_RANGE,        2-entry CI group
+        brightness  -- @clamp_ui(0.0,1.0)  REF_ATTR_FLOAT,  REF_AF_CLAMP_UI,     2-entry CI group
+        fullscreen  -- @display_name(...)   REF_ATTR_STRING, REF_AF_DISPLAY_NAME, single entry
+        username    -- @tooltip(...)        REF_ATTR_STRING, REF_AF_TOOLTIP,       single entry
+
+      Also attaches a type-level @version INT attribute to exercise ref_type_add_attr and
+      ref_type_get_attr.  Missing-attr lookup is verified to return NULL.
+
+      CI group encoding: high nibble = total count, low nibble = 0-based position.
+        REF_ATTR_CI(2,0) -> first of two; REF_ATTR_CI(2,1) -> second of two.
+        REF_ATTR_COUNT(ci) and REF_ATTR_INDEX(ci) decode back to those values.
+==============================================================================================*/
+
+typedef struct ref_test_cfg_s
+{
+    int32_t  volume;
+    float    brightness;
+    bool     fullscreen;
+    char     username[ 32 ];
+
+} ref_test_cfg_t;
+
+static void
+test_attrs_full( void )
+{
+    printf( "\n=== ref: attributes full ===\n" );
+
+    ref_init();
+    uint16_t game = ref_push_frame( "game" );
+
+    /* --- Register cfg_t --- */
+    ref_type_t type = { 0 };
+    type.name_id   = test_intern( "cfg_t" );
+    type.name_hash = ref_hash_str( "cfg_t" );
+    type.size      = REF_SIZEOF( ref_test_cfg_t );
+    type.align     = REF_ALIGNOF( ref_test_cfg_t );
+    type.kind      = REF_KIND_STRUCT;
+
+    ref_field_t fields[ 4 ] = { 0 };
+
+    fields[ 0 ].name_id   = test_intern( "volume" );
+    fields[ 0 ].type_hash = ref_hash_str( "int32_t" );
+    fields[ 0 ].offset    = REF_OFFSETOF( ref_test_cfg_t, volume );
+    fields[ 0 ].size      = REF_FIELD_SIZE( ref_test_cfg_t, volume );
+
+    fields[ 1 ].name_id   = test_intern( "brightness" );
+    fields[ 1 ].type_hash = ref_hash_str( "float" );
+    fields[ 1 ].offset    = REF_OFFSETOF( ref_test_cfg_t, brightness );
+    fields[ 1 ].size      = REF_FIELD_SIZE( ref_test_cfg_t, brightness );
+
+    fields[ 2 ].name_id   = test_intern( "fullscreen" );
+    fields[ 2 ].type_hash = ref_hash_str( "bool" );
+    fields[ 2 ].offset    = REF_OFFSETOF( ref_test_cfg_t, fullscreen );
+    fields[ 2 ].size      = REF_FIELD_SIZE( ref_test_cfg_t, fullscreen );
+
+    fields[ 3 ].name_id   = test_intern( "username" );
+    fields[ 3 ].type_hash = ref_hash_str( "char" );
+    fields[ 3 ].offset    = REF_OFFSETOF( ref_test_cfg_t, username );
+    fields[ 3 ].size      = REF_FIELD_SIZE( ref_test_cfg_t, username );
+    fields[ 3 ].mods      = REF_MODS_ARRAY;
+    fields[ 3 ].aux       = 32;
+
+    uint16_t tid = ref_register_type( &type, fields, 4 );
+
+    /* --- Type-level: @version = 3 (REF_ATTR_INT, single) ---
+       Must be added before any field attrs to satisfy the contiguous-pool ordering rule. */
+    {
+        ref_attrib_t a = { 0 };
+        a.name_id      = test_intern( "version" );
+        a.type         = REF_ATTR_INT;
+        a.flags        = 0;
+        a.ci           = REF_ATTR_CI_SINGLE;
+        a.value.i32    = 3;
+        ref_type_add_attr( tid, &a );
+    }
+
+    /* --- Field attrs: all entries for each field before moving to the next --- */
+
+    /* volume: @range(0, 100)  REF_ATTR_INT, REF_AF_RANGE, 2-entry CI group */
+    {
+        const ref_field_t* f   = ref_find_field( tid, "volume" );
+        uint16_t           fid = (uint16_t)( f - ref_get_field( 0 ) );
+
+        ref_attrib_t a = { 0 };
+        a.name_id      = test_intern( REF_ANAME_RANGE );
+        a.type         = REF_ATTR_INT;
+        a.flags        = REF_AF_RANGE;
+        a.ci           = REF_ATTR_CI( 2, 0 );
+        a.value.i32    = 0;
+        ref_field_add_attr( fid, &a );
+
+        a.ci           = REF_ATTR_CI( 2, 1 );
+        a.value.i32    = 100;
+        ref_field_add_attr( fid, &a );
+    }
+
+    /* brightness: @clamp_ui(0.0, 1.0)  REF_ATTR_FLOAT, REF_AF_CLAMP_UI, 2-entry CI group */
+    {
+        const ref_field_t* f   = ref_find_field( tid, "brightness" );
+        uint16_t           fid = (uint16_t)( f - ref_get_field( 0 ) );
+
+        ref_attrib_t a = { 0 };
+        a.name_id      = test_intern( REF_ANAME_CLAMP_UI );
+        a.type         = REF_ATTR_FLOAT;
+        a.flags        = REF_AF_CLAMP_UI;
+        a.ci           = REF_ATTR_CI( 2, 0 );
+        a.value.f32    = 0.0f;
+        ref_field_add_attr( fid, &a );
+
+        a.ci           = REF_ATTR_CI( 2, 1 );
+        a.value.f32    = 1.0f;
+        ref_field_add_attr( fid, &a );
+    }
+
+    /* fullscreen: @display_name("Full Screen")  REF_ATTR_STRING, REF_AF_DISPLAY_NAME, single */
+    {
+        const ref_field_t* f   = ref_find_field( tid, "fullscreen" );
+        uint16_t           fid = (uint16_t)( f - ref_get_field( 0 ) );
+
+        ref_attrib_t a = { 0 };
+        a.name_id      = test_intern( REF_ANAME_DISPLAY_NAME );
+        a.type         = REF_ATTR_STRING;
+        a.flags        = REF_AF_DISPLAY_NAME;
+        a.ci           = REF_ATTR_CI_SINGLE;
+        a.value.str    = test_intern( "Full Screen" );
+        ref_field_add_attr( fid, &a );
+    }
+
+    /* username: @tooltip("Your display name")  REF_ATTR_STRING, REF_AF_TOOLTIP, single */
+    {
+        const ref_field_t* f   = ref_find_field( tid, "username" );
+        uint16_t           fid = (uint16_t)( f - ref_get_field( 0 ) );
+
+        ref_attrib_t a = { 0 };
+        a.name_id      = test_intern( REF_ANAME_TOOLTIP );
+        a.type         = REF_ATTR_STRING;
+        a.flags        = REF_AF_TOOLTIP;
+        a.ci           = REF_ATTR_CI_SINGLE;
+        a.value.str    = test_intern( "Your display name" );
+        ref_field_add_attr( fid, &a );
+    }
+
+    ref_finalize_frame( game );
+    ref_print_type( tid );
+
+    bool all_ok = true;
+
+    /* --- Verify type-level @version --- */
+    {
+        const ref_attrib_t* a  = ref_type_get_attr( tid, "version" );
+        bool                ok = a && a->type == REF_ATTR_INT && a->value.i32 == 3
+                                   && REF_ATTR_COUNT( a->ci ) == 1 && REF_ATTR_INDEX( a->ci ) == 0;
+        printf( "  [%s] type @version: type=%d val=%d ci(count=%u index=%u)\n",
+                ok ? "ok  " : "FAIL",
+                a ? a->type : -1, a ? a->value.i32 : -1,
+                a ? REF_ATTR_COUNT( a->ci ) : 0, a ? REF_ATTR_INDEX( a->ci ) : 0 );
+        if ( !ok ) all_ok = false;
+    }
+
+    /* --- Verify volume @range(0,100) INT 2-entry CI group --- */
+    {
+        const ref_field_t*  f      = ref_find_field( tid, "volume" );
+        uint16_t            fid    = (uint16_t)( f - ref_get_field( 0 ) );
+        const ref_attrib_t* rmin   = ref_field_get_attr( fid, REF_ANAME_RANGE );
+        const ref_attrib_t* rmax   = rmin ? rmin + 1 : NULL;
+
+        bool ok = rmin && rmax
+               && rmin->type   == REF_ATTR_INT   && rmin->flags == REF_AF_RANGE
+               && REF_ATTR_COUNT( rmin->ci ) == 2 && REF_ATTR_INDEX( rmin->ci ) == 0
+               && rmin->value.i32 == 0
+               && REF_ATTR_COUNT( rmax->ci ) == 2 && REF_ATTR_INDEX( rmax->ci ) == 1
+               && rmax->value.i32 == 100;
+        printf( "  [%s] volume @range: min=%d max=%d  ci0(c=%u,i=%u) ci1(c=%u,i=%u)\n",
+                ok ? "ok  " : "FAIL",
+                rmin ? rmin->value.i32 : -1, rmax ? rmax->value.i32 : -1,
+                rmin ? REF_ATTR_COUNT( rmin->ci ) : 0, rmin ? REF_ATTR_INDEX( rmin->ci ) : 0,
+                rmax ? REF_ATTR_COUNT( rmax->ci ) : 0, rmax ? REF_ATTR_INDEX( rmax->ci ) : 0 );
+        if ( !ok ) all_ok = false;
+    }
+
+    /* --- Verify brightness @clamp_ui(0.0,1.0) FLOAT 2-entry CI group --- */
+    {
+        const ref_field_t*  f    = ref_find_field( tid, "brightness" );
+        uint16_t            fid  = (uint16_t)( f - ref_get_field( 0 ) );
+        const ref_attrib_t* cmin = ref_field_get_attr( fid, REF_ANAME_CLAMP_UI );
+        const ref_attrib_t* cmax = cmin ? cmin + 1 : NULL;
+
+        bool ok = cmin && cmax
+               && cmin->type  == REF_ATTR_FLOAT  && cmin->flags == REF_AF_CLAMP_UI
+               && REF_ATTR_COUNT( cmin->ci ) == 2 && REF_ATTR_INDEX( cmin->ci ) == 0
+               && cmin->value.f32 == 0.0f
+               && REF_ATTR_COUNT( cmax->ci ) == 2 && REF_ATTR_INDEX( cmax->ci ) == 1
+               && cmax->value.f32 == 1.0f;
+        printf( "  [%s] brightness @clamp_ui: min=%.1f max=%.1f\n",
+                ok ? "ok  " : "FAIL",
+                cmin ? cmin->value.f32 : -1.0f, cmax ? cmax->value.f32 : -1.0f );
+        if ( !ok ) all_ok = false;
+    }
+
+    /* --- Verify fullscreen @display_name STRING --- */
+    {
+        const ref_field_t*  f   = ref_find_field( tid, "fullscreen" );
+        uint16_t            fid = (uint16_t)( f - ref_get_field( 0 ) );
+        const ref_attrib_t* a   = ref_field_get_attr( fid, REF_ANAME_DISPLAY_NAME );
+
+        bool ok = a && a->type == REF_ATTR_STRING && a->flags == REF_AF_DISPLAY_NAME
+               && REF_ATTR_COUNT( a->ci ) == 1
+               && strcmp( test_cstr( a->value.str ), "Full Screen" ) == 0;
+        printf( "  [%s] fullscreen @display_name: \"%s\"\n",
+                ok ? "ok  " : "FAIL",
+                ( a && a->type == REF_ATTR_STRING ) ? test_cstr( a->value.str ) : "<none>" );
+        if ( !ok ) all_ok = false;
+    }
+
+    /* --- Verify username @tooltip STRING --- */
+    {
+        const ref_field_t*  f   = ref_find_field( tid, "username" );
+        uint16_t            fid = (uint16_t)( f - ref_get_field( 0 ) );
+        const ref_attrib_t* a   = ref_field_get_attr( fid, REF_ANAME_TOOLTIP );
+
+        bool ok = a && a->type == REF_ATTR_STRING && a->flags == REF_AF_TOOLTIP
+               && REF_ATTR_COUNT( a->ci ) == 1
+               && strcmp( test_cstr( a->value.str ), "Your display name" ) == 0;
+        printf( "  [%s] username @tooltip: \"%s\"\n",
+                ok ? "ok  " : "FAIL",
+                ( a && a->type == REF_ATTR_STRING ) ? test_cstr( a->value.str ) : "<none>" );
+        if ( !ok ) all_ok = false;
+    }
+
+    /* --- Missing attr lookup must return NULL --- */
+    {
+        const ref_field_t*  f   = ref_find_field( tid, "volume" );
+        uint16_t            fid = (uint16_t)( f - ref_get_field( 0 ) );
+        const ref_attrib_t* a   = ref_field_get_attr( fid, "nonexistent" );
+        bool                ok  = ( a == NULL );
+        printf( "  [%s] field_get_attr(\"nonexistent\") == NULL\n", ok ? "ok  " : "FAIL" );
+        if ( !ok ) all_ok = false;
+    }
+    {
+        const ref_attrib_t* a  = ref_type_get_attr( tid, "nonexistent" );
+        bool                ok = ( a == NULL );
+        printf( "  [%s] type_get_attr(\"nonexistent\")  == NULL\n", ok ? "ok  " : "FAIL" );
+        if ( !ok ) all_ok = false;
+    }
+
+    assert( all_ok );
+
+    ref_pop_frame( game );
+    ref_exit();
+}
+
+/*==============================================================================================
+    Field-flags test
+
+      One field per REF_FF_* bit, plus a combo field (EDITOR|READONLY) and a zero-flags field.
+      After finalize every field->flags must equal the value set at registration time.
+==============================================================================================*/
+
+typedef struct ref_test_ff_s
+{
+    int32_t a_transient;
+    int32_t a_editor;
+    int32_t a_readonly;
+    int32_t a_hidden;
+    int32_t a_network;
+    int32_t a_deprecated;
+    int32_t a_required;
+    int32_t a_combo;   /* REF_FF_EDITOR | REF_FF_READONLY */
+    int32_t a_none;
+
+} ref_test_ff_t;
+
+static void
+test_field_flags_full( void )
+{
+    printf( "\n=== ref: field flags full ===\n" );
+
+    ref_init();
+    uint16_t game = ref_push_frame( "game" );
+
+    ref_type_t type = { 0 };
+    type.name_id   = test_intern( "ff_t" );
+    type.name_hash = ref_hash_str( "ff_t" );
+    type.size      = REF_SIZEOF( ref_test_ff_t );
+    type.align     = REF_ALIGNOF( ref_test_ff_t );
+    type.kind      = REF_KIND_STRUCT;
+
+    const uint32_t h_i32 = ref_hash_str( "int32_t" );
+
+    static const struct { const char* name; size_t offset; uint32_t flags; } SPEC[] = {
+        { "a_transient",  REF_OFFSETOF( ref_test_ff_t, a_transient  ), REF_FF_TRANSIENT                    },
+        { "a_editor",     REF_OFFSETOF( ref_test_ff_t, a_editor     ), REF_FF_EDITOR                       },
+        { "a_readonly",   REF_OFFSETOF( ref_test_ff_t, a_readonly   ), REF_FF_READONLY                     },
+        { "a_hidden",     REF_OFFSETOF( ref_test_ff_t, a_hidden     ), REF_FF_HIDDEN                       },
+        { "a_network",    REF_OFFSETOF( ref_test_ff_t, a_network    ), REF_FF_NETWORK                      },
+        { "a_deprecated", REF_OFFSETOF( ref_test_ff_t, a_deprecated ), REF_FF_DEPRECATED                   },
+        { "a_required",   REF_OFFSETOF( ref_test_ff_t, a_required   ), REF_FF_REQUIRED                     },
+        { "a_combo",      REF_OFFSETOF( ref_test_ff_t, a_combo      ), REF_FF_EDITOR | REF_FF_READONLY      },
+        { "a_none",       REF_OFFSETOF( ref_test_ff_t, a_none       ), 0                                   },
+    };
+    enum { NFIELDS = 9 };
+
+    ref_field_t fields[ NFIELDS ];
+    memset( fields, 0, sizeof( fields ) );
+    for ( int i = 0; i < NFIELDS; i++ )
+    {
+        fields[ i ].name_id   = test_intern( SPEC[ i ].name );
+        fields[ i ].type_hash = h_i32;
+        fields[ i ].offset    = (uint16_t)SPEC[ i ].offset;
+        fields[ i ].size      = sizeof( int32_t );
+        fields[ i ].flags     = SPEC[ i ].flags;
+    }
+
+    uint16_t tid = ref_register_type( &type, fields, NFIELDS );
+    ref_finalize_frame( game );
+
+    bool all_ok = true;
+    for ( int i = 0; i < NFIELDS; i++ )
+    {
+        const ref_field_t* f  = ref_find_field( tid, SPEC[ i ].name );
+        bool               ok = f && f->flags == SPEC[ i ].flags;
+        printf( "  [%s] %-14s flags=0x%08x (expect 0x%08x)\n",
+                ok ? "ok  " : "FAIL", SPEC[ i ].name,
+                f ? f->flags : 0xFFFFFFFFu, SPEC[ i ].flags );
+        if ( !ok ) all_ok = false;
+    }
+
+    assert( all_ok );
+
+    ref_pop_frame( game );
+    ref_exit();
+}
+
+/*==============================================================================================
+    Type-flags test
+
+      One type per REF_TF_* bit, plus a type with all four bits set and a zero-flags type.
+      After finalize every ref_type_t.flags must equal the value set at registration time.
+      All types are minimal stubs (one int32_t field) -- the content doesn't matter here.
+==============================================================================================*/
+
+typedef struct ref_test_tf_stub_s { int32_t x; } ref_test_tf_stub_t;
+
+static void
+test_type_flags_full( void )
+{
+    printf( "\n=== ref: type flags full ===\n" );
+
+    ref_init();
+    uint16_t game = ref_push_frame( "game" );
+
+    static const struct { const char* name; uint8_t flags; } SPEC[] = {
+        { "tf_abstract",   REF_TF_ABSTRACT                                          },
+        { "tf_serialize",  REF_TF_SERIALIZE                                         },
+        { "tf_editor",     REF_TF_EDITOR                                            },
+        { "tf_deprecated", REF_TF_DEPRECATED                                        },
+        { "tf_all",        REF_TF_ABSTRACT | REF_TF_SERIALIZE | REF_TF_EDITOR | REF_TF_DEPRECATED },
+        { "tf_none",       0                                                        },
+    };
+    enum { NTYPES = 6 };
+
+    const uint32_t h_i32 = ref_hash_str( "int32_t" );
+
+    uint16_t tids[ NTYPES ];
+    for ( int i = 0; i < NTYPES; i++ )
+    {
+        ref_field_t stub = { 0 };
+        stub.name_id     = test_intern( "x" );
+        stub.type_hash   = h_i32;
+        stub.offset      = 0;
+        stub.size        = sizeof( int32_t );
+
+        ref_type_t type  = { 0 };
+        type.name_id     = test_intern( SPEC[ i ].name );
+        type.name_hash   = ref_hash_str( SPEC[ i ].name );
+        type.size        = REF_SIZEOF( ref_test_tf_stub_t );
+        type.align       = REF_ALIGNOF( ref_test_tf_stub_t );
+        type.kind        = REF_KIND_STRUCT;
+        type.flags       = SPEC[ i ].flags;
+
+        tids[ i ] = ref_register_type( &type, &stub, 1 );
+    }
+
+    ref_finalize_frame( game );
+
+    bool all_ok = true;
+    for ( int i = 0; i < NTYPES; i++ )
+    {
+        const ref_type_t* t  = ref_get_type( tids[ i ] );
+        bool              ok = t && t->flags == SPEC[ i ].flags;
+        printf( "  [%s] %-14s flags=0x%02x (expect 0x%02x)\n",
+                ok ? "ok  " : "FAIL", SPEC[ i ].name,
+                t ? t->flags : 0xFFu, SPEC[ i ].flags );
+        if ( !ok ) all_ok = false;
+    }
+
+    assert( all_ok );
+
+    ref_pop_frame( game );
+    ref_exit();
+}
+
+/*==============================================================================================
     Union test
 
       Reflect:
@@ -1729,9 +2135,9 @@ ref_run_tests( void )
     test_prim_fields();
     test_mods();
     test_union();
-    /* TODO: test_attrs_full()       -- REF_ATTR_INT / REF_ATTR_STRING / REF_AF_* / CI group */
-    /* TODO: test_field_flags_full() -- all REF_FF_* bits survive registration and finalize  */
-    /* TODO: test_type_flags_full()  -- all REF_TF_* bits survive registration and finalize  */
+    test_attrs_full();
+    test_field_flags_full();
+    test_type_flags_full();
 
     /* -- layer 2: struct/enum lifecycle, hot-reload, serialization ------------------------- */
     if ( 0 )
