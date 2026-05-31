@@ -173,7 +173,7 @@ const char* sched_log_path( void );
 #include "build_tool_12_gen_msbuild.c"      // 12d -gen_ms command (MSBuild projects)
 #include "build_tool_13_create.c"           // 13  -create command (module scaffolding)
 #include "build_tool_13_query.c"            // 13  -help/-list/-graph (read-only queries)
-#include "build_tool_test.c"                // debug arg injection (debug builds only)
+#include "build_tool_test.c"                // debug arg injection (-custom_args flag)
 #include "build_tool_00_util.c"             // pre-main utilities: validate_targets, print_startup_banner
 
 /*==============================================================================================
@@ -187,6 +187,9 @@ int
 main( int argc, char** argv )
 {
     // --- Debug arg injection ---
+
+    bool debug_arg_injection = false;
+    if ( debug_arg_injection ) { argc = 2; argv[ 1 ] = "-custom_args"; }
 
     build_tool_debug_inject( &argc, &argv );
 
