@@ -13,7 +13,7 @@
 
 /* static modules used by runtime */
 #include "engine/sys/sys_host.h"
-#include "engine/rs/rs_host.h"    // reflection: auto-wired on every DLL load
+#include "engine/ref/ref_host.h"    // reflection: auto-wired on every DLL load
 
 /*==============================================================================================
     (Optional) Module API's

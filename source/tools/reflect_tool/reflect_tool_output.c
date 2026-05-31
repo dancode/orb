@@ -2,11 +2,11 @@
 
     reflect_tool_output.c - write <module>.generated.h and <module>.generated.c
 
-    Output shape: ONE `void {module}_rs_register( const rs_reg_api_t* api )` per module,
-    emitted as imperative registration calls using the rs_ low-level API directly.
+    Output shape: ONE `void {module}_ref_register( const ref_reg_api_t* api )` per module,
+    emitted as imperative registration calls using the ref_ low-level API directly.
 
     Modules wire the generated function into their mod_desc_t via MOD_REFLECT_FUNC. The
-    host's rs_register_module() reads desc->rs_register and calls it directly â€” same
+    host's ref_register_module() reads desc->ref_register and calls it directly â€” same
     path for static and dynamic builds. No DLL symbol lookup, no descriptor types, no
     string tables.
 
@@ -23,16 +23,16 @@ mods_name( uint16_t mods )
 {
     switch ( mods )
     {
-        case 0x0000: return "RS_MODS_VALUE";
-        case 0x0001: return "RS_MODS_PTR";
-        case 0x0101: return "RS_MODS_PTR_PTR";
-        case 0x0009: return "RS_MODS_CONST_PTR";
-        case 0x0002: return "RS_MODS_ARRAY";
-        case 0x0201: return "RS_MODS_PTR_ARRAY";
-        case 0x0102: return "RS_MODS_ARRAY_PTR";
-        case 0x0004: return "RS_MODS_FUNCTION";
-        case 0x0010: return "RS_MODS_CONST_VALUE";
-        case 0x0011: return "RS_MODS_PTR_TO_CONST";
+        case 0x0000: return "REF_MODS_VALUE";
+        case 0x0001: return "REF_MODS_PTR";
+        case 0x0101: return "REF_MODS_PTR_PTR";
+        case 0x0009: return "REF_MODS_CONST_PTR";
+        case 0x0002: return "REF_MODS_ARRAY";
+        case 0x0201: return "REF_MODS_PTR_ARRAY";
+        case 0x0102: return "REF_MODS_ARRAY_PTR";
+        case 0x0004: return "REF_MODS_FUNCTION";
+        case 0x0010: return "REF_MODS_CONST_VALUE";
+        case 0x0011: return "REF_MODS_PTR_TO_CONST";
         default:     return NULL;
     }
 }
@@ -58,12 +58,12 @@ attr_kind_macro( int kind )
 {
     switch ( kind )
     {
-        case RT_ATTR_TAG:    return "RS_ATTR_BOOL";
-        case RT_ATTR_INT:    return "RS_ATTR_INT";
-        case RT_ATTR_FLOAT:  return "RS_ATTR_FLOAT";
-        case RT_ATTR_STRING: return "RS_ATTR_STRING";
+        case RT_ATTR_TAG:    return "REF_ATTR_BOOL";
+        case RT_ATTR_INT:    return "REF_ATTR_INT";
+        case RT_ATTR_FLOAT:  return "REF_ATTR_FLOAT";
+        case RT_ATTR_STRING: return "REF_ATTR_STRING";
     }
-    return "RS_ATTR_NONE";
+    return "REF_ATTR_NONE";
 }
 
 static const char*
@@ -71,23 +71,23 @@ kind_macro( int kind )
 {
     switch ( kind )
     {
-        case RT_KIND_STRUCT: return "RS_KIND_STRUCT";
-        case RT_KIND_ENUM:   return "RS_KIND_ENUM";
-        case RT_KIND_BITSET: return "RS_KIND_BITSET";
-        case RT_KIND_UNION:  return "RS_KIND_UNION";
+        case RT_KIND_STRUCT: return "REF_KIND_STRUCT";
+        case RT_KIND_ENUM:   return "REF_KIND_ENUM";
+        case RT_KIND_BITSET: return "REF_KIND_BITSET";
+        case RT_KIND_UNION:  return "REF_KIND_UNION";
     }
-    return "RS_KIND_PRIM";
+    return "REF_KIND_PRIM";
 }
 
-/* Emit one rs_attrib_t inline and call the given add function. */
+/* Emit one ref_attrib_t inline and call the given add function. */
 static void
 emit_attr_call( FILE* fc, const attr_t* a, const char* add_fn, const char* id_expr,
                 const char* indent )
 {
-    fprintf( fc, "%s{ rs_attrib_t _a = {\n", indent );
+    fprintf( fc, "%s{ ref_attrib_t _a = {\n", indent );
     fprintf( fc, "%s      .name_id = api->intern( \"%s\" ),\n", indent, a->name );
     fprintf( fc, "%s      .type    = %s,\n",                    indent, attr_kind_macro( a->kind ) );
-    fprintf( fc, "%s      .ci      = RS_ATTR_CI_SINGLE,\n",     indent );
+    fprintf( fc, "%s      .ci      = REF_ATTR_CI_SINGLE,\n",     indent );
     fprintf( fc, "%s      .value   = { ",                       indent );
     switch ( a->kind )
     {
@@ -101,20 +101,20 @@ emit_attr_call( FILE* fc, const attr_t* a, const char* add_fn, const char* id_ex
     fprintf( fc, "%s  api->%s( %s, &_a ); }\n", indent, add_fn, id_expr );
 }
 
-/* Emit the rs_type_t _t = { ... }; block shared by structs and enums. */
+/* Emit the ref_type_t _t = { ... }; block shared by structs and enums. */
 static void
 emit_type_decl( FILE* fc, const decl_type_t* t )
 {
-    fprintf( fc, "        rs_type_t _t = {\n" );
+    fprintf( fc, "        ref_type_t _t = {\n" );
     fprintf( fc, "            .name_id  = api->intern( \"%s\" ),\n", t->name );
-    fprintf( fc, "            .name_hash = rs_hash_str( \"%s\" ),\n", t->name );
-    fprintf( fc, "            .size     = RS_SIZEOF( %s ),\n", t->name );
-    fprintf( fc, "            .align    = RS_ALIGNOF( %s ),\n", t->name );
+    fprintf( fc, "            .name_hash = ref_hash_str( \"%s\" ),\n", t->name );
+    fprintf( fc, "            .size     = REF_SIZEOF( %s ),\n", t->name );
+    fprintf( fc, "            .align    = REF_ALIGNOF( %s ),\n", t->name );
     fprintf( fc, "            .kind     = %s,\n", kind_macro( t->kind ) );
     fprintf( fc, "        };\n" );
 }
 
-/* Emit the api->rs_register_*() call, optionally capturing the returned type ID. */
+/* Emit the api->ref_register_*() call, optionally capturing the returned type ID. */
 static void
 emit_register( FILE* fc, const char* fn, const char* items, int count, int capture_tid )
 {
@@ -142,15 +142,15 @@ emit_struct_block( FILE* fc, const decl_type_t* t )
 
     if ( t->field_count > 0 )
     {
-        fprintf( fc, "        rs_field_t _fields[] = {\n" );
+        fprintf( fc, "        ref_field_t _fields[] = {\n" );
         for ( int fi = 0; fi < t->field_count; fi++ )
         {
             const decl_field_t* f = &t->fields[ fi ];
             fprintf( fc, "            { .name_id = api->intern( \"%s\" ),\n", f->name );
-            fprintf( fc, "              .type_hash = rs_hash_str( \"%s\" ), "
-                         ".type_id = RS_TYPE_INVALID,\n", f->base_type );
-            fprintf( fc, "              .offset = RS_OFFSETOF( %s, %s ), "
-                         ".size = RS_FIELD_SIZE( %s, %s )",
+            fprintf( fc, "              .type_hash = ref_hash_str( \"%s\" ), "
+                         ".type_id = REF_TYPE_INVALID,\n", f->base_type );
+            fprintf( fc, "              .offset = REF_OFFSETOF( %s, %s ), "
+                         ".size = REF_FIELD_SIZE( %s, %s )",
                      t->name, f->name, t->name, f->name );
             if ( f->mods )
             {
@@ -165,19 +165,19 @@ emit_struct_block( FILE* fc, const decl_type_t* t )
             fprintf( fc, " },\n" );
         }
         fprintf( fc, "        };\n" );
-        emit_register( fc, "rs_register_type", "_fields", t->field_count, needs_tid );
+        emit_register( fc, "ref_register_type", "_fields", t->field_count, needs_tid );
     }
     else
     {
-        emit_register( fc, "rs_register_type", "NULL", 0, needs_tid );
+        emit_register( fc, "ref_register_type", "NULL", 0, needs_tid );
     }
 
     for ( int ai = 0; ai < t->attr_count; ai++ )
-        emit_attr_call( fc, &t->attrs[ ai ], "rs_type_add_attr", "tid", "        " );
+        emit_attr_call( fc, &t->attrs[ ai ], "ref_type_add_attr", "tid", "        " );
 
     if ( has_field_attrs )
     {
-        fprintf( fc, "        { const rs_type_t* _rt = api->rs_get_type( tid );\n" );
+        fprintf( fc, "        { const ref_type_t* _rt = api->ref_get_type( tid );\n" );
         for ( int fi = 0; fi < t->field_count; fi++ )
         {
             const decl_field_t* f = &t->fields[ fi ];
@@ -186,7 +186,7 @@ emit_struct_block( FILE* fc, const decl_type_t* t )
             char fid_expr[ 64 ];
             snprintf( fid_expr, sizeof fid_expr, "_rt->field_index + %d", fi );
             for ( int ai = 0; ai < f->attr_count; ai++ )
-                emit_attr_call( fc, &f->attrs[ ai ], "rs_field_add_attr", fid_expr, "          " );
+                emit_attr_call( fc, &f->attrs[ ai ], "ref_field_add_attr", fid_expr, "          " );
         }
         fprintf( fc, "        }\n" );
     }
@@ -198,14 +198,14 @@ static void
 emit_enum_block( FILE* fc, const decl_type_t* t )
 {
     int         needs_tid = ( t->attr_count > 0 );
-    const char* reg_fn    = ( t->kind == RT_KIND_BITSET ) ? "rs_register_bitset" : "rs_register_enum";
+    const char* reg_fn    = ( t->kind == RT_KIND_BITSET ) ? "ref_register_bitset" : "ref_register_enum";
 
     fprintf( fc, "    { /* %s */\n", t->name );
     emit_type_decl( fc, t );
 
     if ( t->enum_count > 0 )
     {
-        fprintf( fc, "        rs_enum_t _enums[] = {\n" );
+        fprintf( fc, "        ref_enum_t _enums[] = {\n" );
         for ( int i = 0; i < t->enum_count; i++ )
         {
             const enum_t* e = &t->enums[ i ];
@@ -222,13 +222,13 @@ emit_enum_block( FILE* fc, const decl_type_t* t )
     }
 
     for ( int ai = 0; ai < t->attr_count; ai++ )
-        emit_attr_call( fc, &t->attrs[ ai ], "rs_type_add_attr", "tid", "        " );
+        emit_attr_call( fc, &t->attrs[ ai ], "ref_type_add_attr", "tid", "        " );
 
     fprintf( fc, "    }\n\n" );
 }
 
 /*----------------------------------------------------------------------------------------------
-    Module API emitters  (RS_MODULE / RS_API)
+    Module API emitters  (REF_MODULE / REF_API)
 ----------------------------------------------------------------------------------------------*/
 
 /* Emit the generated API typedef, MOD_GATEWAY block, and GEN_API_STRUCT define into the .h */
@@ -251,9 +251,9 @@ emit_module_api_h( FILE* fh, const char* module_name, const module_api_t* api )
     fprintf( fh, "\n} %s_api_t;\n\n", module_name );
 
     fprintf( fh, "#if defined( BUILD_STATIC ) || defined( %s_STATIC )\n", upper );
-    fprintf( fh, "MOD_GATEWAY_STATIC( %s_api_t, %s )\n", module_name, module_name );
+    fprintf( fh, "    MOD_GATEWAY_STATIC( %s_api_t, %s )\n", module_name, module_name );
     fprintf( fh, "#else\n" );
-    fprintf( fh, "MOD_GATEWAY_DYNAMIC( %s_api_t, %s )\n", module_name, module_name );
+    fprintf( fh, "    MOD_GATEWAY_DYNAMIC( %s_api_t, %s )\n", module_name, module_name );
     fprintf( fh, "#endif\n\n" );
 
     fprintf( fh, "#if defined( BUILD_STATIC ) || defined( %s_STATIC )\n", upper );
@@ -305,9 +305,9 @@ emit_module_api_c( FILE* fc, const char* module_name, const module_api_t* api )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-emit_rs_register( FILE* fc, const char* module_name, const parse_data_t* data )
+emit_ref_register( FILE* fc, const char* module_name, const parse_data_t* data )
 {
-    fprintf( fc, "void\n%s_rs_register( const rs_reg_api_t* api )\n{\n", module_name );
+    fprintf( fc, "void\n%s_ref_register( const ref_reg_api_t* api )\n{\n", module_name );
 
     for ( int i = 0; i < data->type_count; i++ )
     {
@@ -348,9 +348,9 @@ output( const char* output_dir, const char* module_name, const parse_data_t* dat
     fprintf( fh, "#ifndef %s\n", guard );
     fprintf( fh, "#define %s\n", guard );
     fprintf( fh, "/* Generated by reflect_tool -- do not edit. */\n\n" );
-    fprintf( fh, "#include \"engine/rs/rs_import.h\"\n" );
+    fprintf( fh, "#include \"engine/ref/ref_import.h\"\n" );
     fprintf( fh, "\n" );
-    fprintf( fh, "void %s_rs_register( const rs_reg_api_t* api );\n\n", module_name );
+    fprintf( fh, "void %s_ref_register( const ref_reg_api_t* api );\n\n", module_name );
     if ( data->module_api.has_module && data->module_api.func_count > 0 )
         emit_module_api_h( fh, module_name, &data->module_api );
     fprintf( fh, "#endif /* %s */\n", guard );
@@ -365,7 +365,7 @@ output( const char* output_dir, const char* module_name, const parse_data_t* dat
     }
     fprintf( fc, "/* Generated by reflect_tool -- do not edit. */\n\n" );
     fprintf( fc, "#include \"orb.h\"\n" );
-    fprintf( fc, "#include \"engine/rs/rs_import.h\"\n" );
+    fprintf( fc, "#include \"engine/ref/ref_import.h\"\n" );
     for ( int i = 0; i < data->header_count; i++ )
         fprintf( fc, "#include \"%s\"\n", data->headers[ i ] );
     fprintf( fc, "#include \"%s.generated.h\"\n\n", module_name );
@@ -375,13 +375,13 @@ output( const char* output_dir, const char* module_name, const parse_data_t* dat
 
     if ( data->type_count == 0 )
     {
-        fprintf( fc, "void\n%s_rs_register( const rs_reg_api_t* api )\n{\n", module_name );
+        fprintf( fc, "void\n%s_ref_register( const ref_reg_api_t* api )\n{\n", module_name );
         fprintf( fc, "    UNUSED( api );\n" );
         fprintf( fc, "}\n" );
     }
     else
     {
-        emit_rs_register( fc, module_name, data );
+        emit_ref_register( fc, module_name, data );
     }
 
     fclose( fc );

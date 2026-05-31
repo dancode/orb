@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     example_reflect_api.c -- example_reflect module wiring.
     Implements the example_reflect_api_t vtable struct and the mod_desc_t lifecycle descriptor.
@@ -63,14 +63,14 @@ populate_demo( example_reflect_state_t* st )
     st->demo.slots[ 3 ]         = NULL;
 }
 
-RS_API()
+REF_API()
 const ex_entity_t*
 api_demo_entity( void )
 {
     return s ? &s->demo : NULL;
 }
 
-RS_API()
+REF_API()
 int
 this_is_a_function( void )
 {
@@ -129,7 +129,7 @@ example_reflect_get_mod_desc( void )
         .init          = example_reflect_init,
         .reload        = example_reflect_reload,
         .exit          = example_reflect_exit,
-        .rs_register   = MOD_REFLECT_FUNC( example_reflect ),
+        .ref_register   = MOD_REFLECT_FUNC( example_reflect ),
     };
     return &desc;
 }

@@ -5,8 +5,8 @@
     Usage:
         reflect_tool <source_dir> <output_dir> <module_name>
 
-    Scans <source_dir> for RS_STRUCT / RS_ENUM / RS_BITSET annotated headers and
-    writes <output_dir>/<module_name>.generated.h/c with rs_ registration stubs.
+    Scans <source_dir> for REF_STRUCT / REF_ENUM / REF_BITSET annotated headers and
+    writes <output_dir>/<module_name>.generated.h/c with REF_ registration stubs.
 
     This tool is called as a pre-compile step for every module that uses reflection.
     It is designed for minimal startup cost: no allocator init, no config files,
@@ -108,11 +108,11 @@ main( int argc, char** argv )
 
     scan( source_dir, &files );
 
-    /* Parse each file for RS_STRUCT / RS_ENUM / RS_BITSET declarations and build the AST. */
+    /* Parse each file for REF_STRUCT / REF_ENUM / REF_BITSET declarations and build the AST. */
 
     parse( &files, &data );
 
-    /* Generate the .h/.c files with rs_ registration code. */
+    /* Generate the .h/.c files with REF_ registration code. */
 
     if ( output( output_dir, module_name, &data ) == false )
     {

@@ -5,7 +5,7 @@
     reflect_tool_internal.h - internal types and declarations for the reflect_tool tool
 
     reflect_tool is a standalone C11 tool (no engine deps, no orb.h).
-    It scans annotated .h files and generates rs_-compatible registration code.
+    It scans annotated .h files and generates REF_-compatible registration code.
 
 ==============================================================================================*/
 
@@ -26,7 +26,7 @@
 #define RT_MAX_FIELDS_PER_TYPE 64  /* fields per struct                    */
 #define RT_MAX_ENUMS_PER_TYPE  128 /* enums per enum/bitset                */
 #define RT_MAX_ATTRS_PER_ITEM  8   /* attributes per field/type            */
-#define RT_MAX_API_FUNCS       64  /* RS_API() functions per module        */
+#define RT_MAX_API_FUNCS       64  /* REF_API() functions per module        */
 #define RT_MAX_PARAM_STR       512 /* param list string per API function   */
 
 /*==============================================================================================
@@ -34,7 +34,7 @@
 ==============================================================================================*/
 
 /* Used to pass scan results from scan to parse, and to track which headers actually
-   contained RS_ declarations for output includes. */
+   contained REF_ declarations for output includes. */
 
 typedef struct file_list_s
 {
@@ -73,7 +73,7 @@ typedef struct decl_field_s
 {
     char      name[ RT_MAX_NAME ];
     char      base_type[ RT_MAX_NAME ]; /* e.g. "vec3_t", "int32_t"             */
-    uint16_t  mods;                     /* rs_mods_t enum value from rs.h       */
+    uint16_t  mods;                     /* REF_mods_t enum value from ref.h       */
     uint16_t  array_count;              /* aux; 0 if not an array               */
 
     int       attr_count;
@@ -122,10 +122,10 @@ typedef struct decl_type_s
 } decl_type_t;
 
 /*==============================================================================================
-    Module API (RS_MODULE / RS_API)
+    Module API (REF_MODULE / REF_API)
 ==============================================================================================*/
 
-/* One RS_API()-annotated function. */
+/* One REF_API()-annotated function. */
 
 typedef struct api_func_s
 {
@@ -137,12 +137,12 @@ typedef struct api_func_s
 
 } api_func_t;
 
-/* Module-level API descriptor collected from RS_MODULE() / RS_API() markers. */
+/* Module-level API descriptor collected from REF_MODULE() / REF_API() markers. */
 
 typedef struct module_api_s
 {
-    int           has_module;            /* non-zero when RS_MODULE() was seen */
-    char          name[ RT_MAX_NAME ];   /* module name from RS_MODULE( name ) */
+    int           has_module;            /* non-zero when REF_MODULE() was seen */
+    char          name[ RT_MAX_NAME ];   /* module name from REF_MODULE( name ) */
     api_func_t funcs[ RT_MAX_API_FUNCS ];
     int           func_count;
 
@@ -161,12 +161,12 @@ typedef struct parse_data_s
     int            enum_count;      // enum + bitset
 
     /* Include paths (relative to source/) for headers that actually contained
-       RS_ markers. The generated .c #includes these so type names resolve. */
+       REF_ markers. The generated .c #includes these so type names resolve. */
 
     char headers[ RT_MAX_FILES ][ RT_MAX_PATH ];
     int  header_count;
 
-    /* Module API collected from RS_MODULE() / RS_API() markers. */
+    /* Module API collected from REF_MODULE() / REF_API() markers. */
 
     module_api_t module_api;
 

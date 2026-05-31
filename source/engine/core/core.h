@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     core.h
 
@@ -17,7 +17,7 @@
 
 ==============================================================================================*/
 
-RS_ENUM( tooltip = "Severity level for a log message." )
+REF_ENUM( tooltip = "Severity level for a log message." )
 typedef enum log_level_e
 {
     LOG_LEVEL_TRACE = ORB_LOG_TRACE,    // per-frame spam; stripped in release by default
@@ -51,7 +51,7 @@ typedef void ( *log_sink_fn )( const log_entry_t* entry, void* userdata );
 
 ==============================================================================================*/
 
-RS_ENUM( tooltip = "Built-in memory tag IDs reserved by the engine." )
+REF_ENUM( tooltip = "Built-in memory tag IDs reserved by the engine." )
 typedef enum memtag_kind_e
 {
     MEMTAG_UNKNOWN = 0,    // unknown / untagged

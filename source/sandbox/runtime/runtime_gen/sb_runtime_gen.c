@@ -5,7 +5,7 @@
 
 #include "engine/sys/sys_api.h"
 #include "engine/core/core_api.h"
-#include "engine/rs/rs_api.h"
+#include "engine/ref/ref_api.h"
 
 #include "runtime_modules/example_gen/example_gen.h"
 
@@ -26,7 +26,7 @@ main( int argc, char** argv )
     if ( !mod_static( sys ) )
         goto shutdown;
 
-    if ( !mod_static( rs ) )
+    if ( !mod_static( ref ) )
         goto shutdown;
 
     if ( !mod_static( core ) )

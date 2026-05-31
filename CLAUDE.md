@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -125,23 +125,23 @@ Include chain: `module_host.h` -> `module_api.h` -> `module.h`
 - `mod_host.h` -- direct-call mod functions. Includes `mod_api.h`.
 - `mod_export.h` -- module implementation header (`.c` files only). Defines `mod_desc_t`, lifecycle typedefs, `MOD_DEFINE_EXPORTS`.
 
-Existing sets: `mod_import.h/mod_api.h/mod_host.h/mod_export.h`, `rs.h/rs_api.h/rs_host.h`,
+Existing sets: `mod_import.h/mod_api.h/mod_host.h/mod_export.h`, `ref.h/ref_api.h/ref_host.h`,
 `sys.h/sys_api.h/sys_host.h`, `app.h/app_api.h/app_host.h`, `core.h/core_api.h/core_host.h`.
 
 ## Reflection System (rs_)
 
-Located in `source/engine/rs/`. Unity build entry is `rs.c`. Loaded via
-`mod_static_load("rs", rs_get_mod_api())` -- see `rs_host.h` for host integration.
+Located in `source/engine/ref/`. Unity build entry is `ref.c`. Loaded via
+`mod_static_load("ref", ref_get_mod_desc())` -- see `ref_host.h` for host integration.
 
 Key design points:
-- **Module pattern**: leaf module (no deps), inits before core. Hosts call `rs_wire_mod_callbacks()` to connect DLL load events -- no boilerplate needed.
+- **Module pattern**: leaf module (no deps), inits before core. Hosts call `ref_wire_mod_callbacks()` to connect DLL load events -- no boilerplate needed.
 - **Internal string pool**: 16 KB flat pool; `rs_init()` sets it up.
 - **Stack-frame registry**: each module pushes a frame on load and pops on unload; O(1) registration and teardown.
 - **Lazy resolution**: fields reference base types by hash; `rs_finalize_frame()` resolves to stable type IDs after all registrations.
 - **Packed modifier chain**: up to four declarator modifiers encoded in a single 16-bit value per field.
 - **Schema hash**: deterministic hash of the reflected layout, used to detect hot-reload ABI breaks.
 
-Include `rs.h` in DLL modules; include `rs_host.h` in hosts, unity entries, and sandboxes.
+Include `ref.h` in DLL modules; include `ref_host.h` in hosts, unity entries, and sandboxes.
 
 Implementation: `rs_registry.c`, `rs_access.c`, `rs_walk.c`, `rs_serialize.c`, `rs_print.c`, `rs_test.c`.
 

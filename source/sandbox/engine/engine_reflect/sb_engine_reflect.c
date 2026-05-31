@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 #include "orb.h"
-#include "engine/rs/rs_test.c"
+#include "engine/ref/ref_test.c"
 
 /*============================================================================================*/
 
@@ -20,7 +20,7 @@ main( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
 
-    rs_run_tests();
+    ref_run_tests();
     
     return 0;
 }

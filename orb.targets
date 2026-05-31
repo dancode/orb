@@ -25,12 +25,12 @@ target sys
     folder      02_ENGINE
     unit        sys.c
 
-target rs
+target ref
 
     type        static
-    root        source/engine/rs
+    root        source/engine/ref
     folder      02_ENGINE
-    unit        rs.c
+    unit        ref.c
 
 target mod
 
@@ -54,7 +54,7 @@ target core
     root        source/engine/core
     folder      02_ENGINE
     unit        core.c
-    dep         sys rs
+    dep         sys ref
     reflect
 
 target net
@@ -63,7 +63,7 @@ target net
     root        source/engine/net
     folder      02_ENGINE
     unit        net.c
-		
+	
 # ==============================================================================
 # 03_RUNTIME
 # ==============================================================================
@@ -74,7 +74,7 @@ target run
     root        source/runtime
     folder      03_RUNTIME
     unit        runtime.c
-    dep         mod sys rs core app
+    dep         mod sys ref core app
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
@@ -272,6 +272,7 @@ target host_sandbox
     root        source/host/sandbox
     folder      08_Host
     unit        host_sandbox_main.c
+
 	
 # ==============================================================================
 # 09_SANDBOX/BASE
@@ -329,7 +330,7 @@ target sb_engine_ref
     root        source/sandbox/engine/engine_reflect
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_reflect.c
-    dep         rs
+    dep         ref
 
 # ==============================================================================
 # 09_SANDBOX/RUNTIME
@@ -341,7 +342,7 @@ target sb_runtime_reflect
     root        source/sandbox/runtime/runtime_reflect
     folder      09_SANDBOX/RUNTIME
     unit        sb_runtime_reflect.c
-    dep         sys mod core rs
+    dep         sys mod core ref
 	mono_dep 	example_reflect
 	
 target sb_runtime_gen
@@ -350,7 +351,7 @@ target sb_runtime_gen
     root        source/sandbox/runtime/runtime_gen
     folder      09_SANDBOX/RUNTIME
     unit        sb_runtime_gen.c
-    dep         sys rs mod core
+    dep         sys ref mod core
 	mono_dep 	example_gen
     reflect
 
@@ -364,7 +365,7 @@ target sb_example_runtime
     root        source/sandbox/example/example_runtime
     folder      09_SANDBOX/EXAMPLE
     unit        example_runtime.c
-	dep 		mod rs sys core app		# static engine 
+	dep 		mod ref sys core app		# static engine 
     dep         run rhi					# static runtime + services
 		
 target sb_example_tool
@@ -373,7 +374,7 @@ target sb_example_tool
     root        source/sandbox/example/example_tool
     folder      09_SANDBOX/EXAMPLE
     unit        example_tool.c
-	dep 		mod sys core app
+	dep 		mod ref sys core app
     dep         run
 
 target sb_example_server
@@ -382,25 +383,25 @@ target sb_example_server
     root        source/sandbox/example/example_server
     folder      09_SANDBOX/EXAMPLE
     unit        example_server.c
-	dep 		mod sys core app
+	dep 		mod ref sys core app
     dep         run
-		
+
 target sb_example_editor
 
     type        exe
     root        source/sandbox/example/example_editor
     folder      09_SANDBOX/EXAMPLE
     unit        example_editor.c
-	dep 		mod sys core app
+	dep 		mod ref sys core app
     dep         run rhi
-		
+
 target sb_example_game
 
     type        exe
     root        source/sandbox/example/example_game
     folder      09_SANDBOX/EXAMPLE
     unit        example_game.c
-	dep 		mod sys core app
+	dep 		mod ref sys core app
     dep         run rhi
 	
 		
@@ -412,7 +413,7 @@ solution orb_working
 
     out         build/proj
 	add 		base
-	add         sys rs mod app core net    
+	add         sys ref mod app core net    
 	add         run	
 
 	
@@ -429,7 +430,7 @@ solution orb_dev
 	add 		base
 
 	# 			--- ENGINE --- 
-    add         sys rs mod app core net
+    add         sys ref mod app core net
 	
 	# 			--- RUNTIME --- 
     add         run
@@ -508,7 +509,7 @@ solution orb_examples
 solution orb_sandbox_reflect			# Run/Debug reflection
 
     out         build/proj
-	add         sys rs mod
+	add         sys ref mod
 	add 		sb_engine_ref
 	startup     sb_engine_ref
 
@@ -517,7 +518,7 @@ solution orb_sandbox_engine				# Run/Debug engine
     out         build/proj
     startup     sb_engine_mod
 
-	add         sys rs mod app core net
+	add         sys ref mod app core net
 
 	# 			--- SANDBOX : BASE -- 
 
@@ -553,7 +554,7 @@ solution orb_all
 # 	nav 		source
 
 	add 		base
-    add         sys rs mod app core net
+    add         sys ref mod app core net
 	
     add         run	
     add         rhi jobs	

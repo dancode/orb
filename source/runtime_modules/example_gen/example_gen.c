@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     example_gen.c - Demo generated module scaffolding
 
@@ -13,7 +13,7 @@
 
 #include "engine/core/core_api.h"
 
-RS_MODULE( example_gen )
+REF_MODULE( example_gen )
 MOD_USE_CORE;
 
 /*==============================================================================================
@@ -65,8 +65,8 @@ example_gen_mod_exit( void* state )
 /*==============================================================================================
     API implementations
 ==============================================================================================*/
-RS_API() void test_function_one( void ) { return; }
-RS_API() int test_function_two( void ) { return 99; }
+REF_API() void test_function_one( void ) { return; }
+REF_API() int test_function_two( void ) { return 99; }
 
 mod_desc_t*
 example_gen_get_mod_desc( void )
@@ -81,7 +81,7 @@ example_gen_get_mod_desc( void )
         .init          = example_gen_mod_init,
         .reload        = example_gen_mod_reload,
         .exit          = example_gen_mod_exit,
-        .rs_register   = MOD_REFLECT_FUNC( example_gen ),
+        .ref_register   = MOD_REFLECT_FUNC( example_gen ),
     };
     return &api;
 }

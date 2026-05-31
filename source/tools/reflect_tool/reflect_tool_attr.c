@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    reflect_tool_attr.c - attribute argument parser for RS_STRUCT / RS_PROP annotation args
+    reflect_tool_attr.c - attribute argument parser for REF_STRUCT / REF_PROP annotation args
 
     Grammar (comma-separated entries):
 
@@ -8,7 +8,7 @@
         value  := INT_LITERAL | FLOAT_LITERAL | STRING_LITERAL | IDENT
 
     Continuation: for `name=v1, v2, v3` the v2, v3 are emitted as repeated entries under
-    the same `name`, matching rs_attrib multi-value runs (e.g. `range=0, 100`).
+    the same `name`, matching REF_attrib multi-value runs (e.g. `range=0, 100`).
 
     All functions are static; compiled only as part of the reflect_tool unity build.
 
@@ -76,7 +76,7 @@ unquote_string( char* s )
 
     For strings like: `name = "MyStruct", flags = 1, range = 0, 100`
 
-    This function processes the text inside the parentheses of macros like RS_PROP(...).
+    This function processes the text inside the parentheses of macros like REF_PROP(...).
     It breaks the string into a list of attr_t structs. It handles:
 
         1. key = value pairs    (e.g. flags = 1).

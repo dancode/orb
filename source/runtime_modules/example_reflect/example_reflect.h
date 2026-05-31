@@ -1,10 +1,10 @@
-#ifndef EXAMPLE_REFLECT_H
+﻿#ifndef EXAMPLE_REFLECT_H
 #define EXAMPLE_REFLECT_H
 /*==============================================================================================
 
     example_reflect.h - Public API and reflected types for the example_reflect module.
 
-    Exercises the full feature set of the rs_ reflection system:
+    Exercises the full feature set of the ref_ reflection system:
         - basic struct registration
         - nested struct fields
         - pointer / const / array / pointer-to-array fields
@@ -14,19 +14,19 @@
         - tagged union (discriminated variant: ex_event_t / ex_event_payload_t)
 
     Reflection data is exported from the generated TU as the well-known DLL symbol
-    "rs_register". The rs_ system discovers and calls it automatically via the
+    "ref_register". The ref_ system discovers and calls it automatically via the
     module system's DLL load callback. The module itself is blind to the registry.
 
 ==============================================================================================*/
 
 #include "orb.h"
-#include "engine/rs/rs_api.h"
+#include "engine/ref/ref_api.h"
 
 /*==============================================================================================
     Reflected enums
 ==============================================================================================*/
 
-RS_ENUM( tooltip = "Cardinal facings used for spawn placement." )
+REF_ENUM( tooltip = "Cardinal facings used for spawn placement." )
 typedef enum ex_facing_e
 {
     EX_FACING_NORTH = 0,
@@ -36,7 +36,7 @@ typedef enum ex_facing_e
 
 } ex_facing_t;
 
-RS_BITSET( tooltip = "Per-entity capability bits." )
+REF_BITSET( tooltip = "Per-entity capability bits." )
 typedef enum ex_caps_e
 {
     EX_CAPS_NONE   = 0,
@@ -51,37 +51,37 @@ typedef enum ex_caps_e
     Reflected structs
 ==============================================================================================*/
 
-RS_STRUCT()
+REF_STRUCT()
 typedef struct ex_vec3_s
 {
-    RS_PROP() float x;
-    RS_PROP() float y;
-    RS_PROP() float z;
+    REF_PROP() float x;
+    REF_PROP() float y;
+    REF_PROP() float z;
 
 } ex_vec3_t;
 
-RS_STRUCT( tooltip = "Position, rotation, and scale in world space." )
+REF_STRUCT( tooltip = "Position, rotation, and scale in world space." )
 typedef struct ex_transform_s
 {
-    RS_PROP() ex_vec3_t position;
-    RS_PROP() ex_vec3_t rotation;
-    RS_PROP() ex_vec3_t scale;
+    REF_PROP() ex_vec3_t position;
+    REF_PROP() ex_vec3_t rotation;
+    REF_PROP() ex_vec3_t scale;
 
 } ex_transform_t;
 
-RS_STRUCT( tooltip = "Single demo entity exercising the reflection feature surface." )
+REF_STRUCT( tooltip = "Single demo entity exercising the reflection feature surface." )
 typedef struct ex_entity_s
 {
-    RS_PROP()                                int32_t        id;
-    RS_PROP()                                ex_facing_t    facing;
-    RS_PROP()                                ex_caps_t      caps;
-    RS_PROP()                                char           name[ 32 ];
-    RS_PROP()                                ex_transform_t transform;
-    RS_PROP( range = 0.0, 100.0 )            float          health;
-    RS_PROP( transient )                     void*          scratch;
-    RS_PROP()                                ex_vec3_t*     velocity;
-    RS_PROP()                                const char*    label;
-    RS_PROP()                                ex_vec3_t*     slots[ 4 ];
+    REF_PROP()                                int32_t        id;
+    REF_PROP()                                ex_facing_t    facing;
+    REF_PROP()                                ex_caps_t      caps;
+    REF_PROP()                                char           name[ 32 ];
+    REF_PROP()                                ex_transform_t transform;
+    REF_PROP( range = 0.0, 100.0 )            float          health;
+    REF_PROP( transient )                     void*          scratch;
+    REF_PROP()                                ex_vec3_t*     velocity;
+    REF_PROP()                                const char*    label;
+    REF_PROP()                                ex_vec3_t*     slots[ 4 ];
 
 } ex_entity_t;
 
@@ -94,7 +94,7 @@ typedef struct ex_entity_s
     can display the correct member without bespoke switch-case code.
 ==============================================================================================*/
 
-RS_ENUM( tooltip = "Selects the active member of ex_event_payload_t." )
+REF_ENUM( tooltip = "Selects the active member of ex_event_payload_t." )
 typedef enum ex_event_kind_e
 {
     EX_EVENT_SPAWN  = 0,
@@ -103,45 +103,45 @@ typedef enum ex_event_kind_e
 
 } ex_event_kind_t;
 
-RS_STRUCT()
+REF_STRUCT()
 typedef struct ex_spawn_payload_s
 {
-    RS_PROP() ex_vec3_t   origin;
-    RS_PROP() ex_facing_t facing;
+    REF_PROP() ex_vec3_t   origin;
+    REF_PROP() ex_facing_t facing;
 
 } ex_spawn_payload_t;
 
-RS_STRUCT()
+REF_STRUCT()
 typedef struct ex_damage_payload_s
 {
-    RS_PROP( range = 0, 1000, tooltip = "Raw hit-point loss before mitigation." ) int32_t  amount;
-    RS_PROP()                                                                      uint32_t source_id;
+    REF_PROP( range = 0, 1000, tooltip = "Raw hit-point loss before mitigation." ) int32_t  amount;
+    REF_PROP()                                                                      uint32_t source_id;
 
 } ex_damage_payload_t;
 
-RS_STRUCT()
+REF_STRUCT()
 typedef struct ex_move_payload_s
 {
-    RS_PROP() ex_vec3_t from;
-    RS_PROP() ex_vec3_t to;
+    REF_PROP() ex_vec3_t from;
+    REF_PROP() ex_vec3_t to;
 
 } ex_move_payload_t;
 
-RS_UNION( tooltip = "Per-event data; active member is selected by ex_event_t.kind." )
+REF_UNION( tooltip = "Per-event data; active member is selected by ex_event_t.kind." )
 typedef union ex_event_payload_u
 {
-    RS_PROP() ex_spawn_payload_t  spawn;
-    RS_PROP() ex_damage_payload_t damage;
-    RS_PROP() ex_move_payload_t   move;
+    REF_PROP() ex_spawn_payload_t  spawn;
+    REF_PROP() ex_damage_payload_t damage;
+    REF_PROP() ex_move_payload_t   move;
 
 } ex_event_payload_t;
 
-RS_STRUCT( tooltip = "An engine event carrying a discriminated payload union." )
+REF_STRUCT( tooltip = "An engine event carrying a discriminated payload union." )
 typedef struct ex_event_s
 {
-    RS_PROP()                                uint32_t           id;
-    RS_PROP()                                ex_event_kind_t    kind;
-    RS_PROP()                                ex_event_payload_t payload;
+    REF_PROP()                                uint32_t           id;
+    REF_PROP()                                ex_event_kind_t    kind;
+    REF_PROP()                                ex_event_payload_t payload;
 
 } ex_event_t;
 

@@ -273,5 +273,16 @@ bool sys_key_pressed( sys_key_t key );  /* true on the up->down transition only 
 bool sys_key_released( sys_key_t key ); /* true on the down->up transition only     */
 
 
+/*==============================================================================================
+    Module Descriptor
+
+    Used by the host to register the sys module:
+        mod_static_load( "sys", sys_get_mod_desc() );
+    or via the build-mode-transparent macro:
+        mod_static( sys );
+==============================================================================================*/
+
+mod_desc_t* sys_get_mod_desc( void );
+
 /*============================================================================================*/
 #endif    // SYS_HOST_H

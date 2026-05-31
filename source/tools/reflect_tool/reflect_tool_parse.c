@@ -5,25 +5,25 @@
     Hand-written recursive-descent declarator parser. No regex, no external libs.
     Lexer helpers live in reflect_tool_lex.c; attribute parsing lives in reflect_tool_attr.c.
 
-    Field declarations supported (one declarator per RS_PROP):
+    Field declarations supported (one declarator per REF_PROP):
 
-        T        name;          -> base = T,  mods = RS_MODS_VALUE
-        T*       name;          -> base = T,  mods = RS_MODS_PTR
-        T**      name;          -> base = T,  mods = RS_MODS_PTR_PTR
-        T* const name;          -> base = T,  mods = RS_MODS_CONST_PTR
-        const T  name;          -> base = T,  mods = RS_MODS_CONST_VALUE
-        const T* name;          -> base = T,  mods = RS_MODS_PTR_TO_CONST
-        T        name[N];       -> base = T,  mods = RS_MODS_ARRAY,      aux = N
-        T*       name[N];       -> base = T,  mods = RS_MODS_PTR_ARRAY,  aux = N
+        T        name;          -> base = T,  mods = REF_MODS_VALUE
+        T*       name;          -> base = T,  mods = REF_MODS_PTR
+        T**      name;          -> base = T,  mods = REF_MODS_PTR_PTR
+        T* const name;          -> base = T,  mods = REF_MODS_CONST_PTR
+        const T  name;          -> base = T,  mods = REF_MODS_CONST_VALUE
+        const T* name;          -> base = T,  mods = REF_MODS_PTR_TO_CONST
+        T        name[N];       -> base = T,  mods = REF_MODS_ARRAY,      aux = N
+        T*       name[N];       -> base = T,  mods = REF_MODS_PTR_ARRAY,  aux = N
 
     Multi-declarator statements (e.g. `float x, y, z;`) are NOT supported per
-    RS_PROP; place one RS_PROP marker per field.
+    REF_PROP; place one REF_PROP marker per field.
 
 ==============================================================================================*/
 
 #include "reflect_tool_internal.h"
 
-/* mirror of rs_mods_t bit encoding (kept local so the tool has zero engine deps) */
+/* mirror of REF_MODS_t bit encoding (kept local so the tool has zero engine deps) */
 
 #define RT_MOD_NONE        0x00
 #define RT_MOD_PTR         0x01
@@ -36,7 +36,7 @@
     Field declaration parser
 ----------------------------------------------------------------------------------------------*/
 
-/* Parse a single field declaration starting just past the closing paren of RS_PROP(...).
+/* Parse a single field declaration starting just past the closing paren of REF_PROP(...).
    Stops at the terminating ';'. Returns position after ';' (or '\0'). */
 
 static const char*
@@ -161,11 +161,11 @@ parse_field_decl( const char* p, decl_field_t* out )
 }
 
 /*----------------------------------------------------------------------------------------------
-    RS_API() function signature parser
+    REF_API() function signature parser
 ----------------------------------------------------------------------------------------------*/
 
-/* Parse a function signature that immediately follows RS_API().
-   On entry p points to the first character past the RS_API() closing paren (whitespace
+/* Parse a function signature that immediately follows REF_API().
+   On entry p points to the first character past the REF_API() closing paren (whitespace
    already skipped by the caller).  Returns a pointer past the closing ')' of the param list. */
 
 static const char*
@@ -284,8 +284,8 @@ parse_struct_body( const char* body_start, const char* body_end, const char* buf
     const char* p = body_start;
     while ( p < body_end && ( p = (const char*)memchr( p, 'R', (size_t)( body_end - p ) ) ) != NULL )
     {
-        if ( !match_word( p, buf_start, "RS_PROP" ) ) { p++; continue; }
-        p += (int)( sizeof( "RS_PROP" ) - 1 );
+        if ( !match_word( p, buf_start, "REF_PROP" ) ) { p++; continue; }
+        p += (int)( sizeof( "REF_PROP" ) - 1 );
         p = skip_ws( p );
 
         char args[ 1024 ] = { 0 };
@@ -311,7 +311,7 @@ parse_struct_body( const char* body_start, const char* body_end, const char* buf
 }
 
 /*--------------------------------------------------------------------------------------------*/
-/* Parse a RS_ENUM / RS_BITSET body. Extract `NAME [= VALUE]` pairs.                          */
+/* Parse a REF_ENUM / REF_BITSET body. Extract `NAME [= VALUE]` pairs.                          */
 
 static void
 parse_enum_body( const char* body_start, const char* body_end, decl_type_t* type )
@@ -370,8 +370,8 @@ parse_enum_body( const char* body_start, const char* body_end, decl_type_t* type
     Top-level marker dispatch
 ----------------------------------------------------------------------------------------------*/
 
-/* api_only: when non-zero, only RS_MODULE and RS_API markers are processed.
-   Used for .c file passes to avoid double-counting RS_STRUCT/RS_ENUM types
+/* api_only: when non-zero, only REF_MODULE and REF_API markers are processed.
+   Used for .c file passes to avoid double-counting REF_STRUCT/REF_ENUM types
    that also appear in the module's .h through #include. */
 static void
 parse_buffer( const char* buf, parse_data_t* out, int api_only )
@@ -381,13 +381,13 @@ parse_buffer( const char* buf, parse_data_t* out, int api_only )
     {
         int kind = -1;
 
-        if      ( !api_only && match_word( p, buf, "RS_STRUCT" ) ) kind = RT_KIND_STRUCT;
-        else if ( !api_only && match_word( p, buf, "RS_BITSET" ) ) kind = RT_KIND_BITSET;
-        else if ( !api_only && match_word( p, buf, "RS_UNION"  ) ) kind = RT_KIND_UNION;
-        else if ( !api_only && match_word( p, buf, "RS_ENUM"   ) ) kind = RT_KIND_ENUM;
-        else if ( match_word( p, buf, "RS_MODULE" ) )
+        if      ( !api_only && match_word( p, buf, "REF_STRUCT" ) ) kind = RT_KIND_STRUCT;
+        else if ( !api_only && match_word( p, buf, "REF_BITSET" ) ) kind = RT_KIND_BITSET;
+        else if ( !api_only && match_word( p, buf, "REF_UNION"  ) ) kind = RT_KIND_UNION;
+        else if ( !api_only && match_word( p, buf, "REF_ENUM"   ) ) kind = RT_KIND_ENUM;
+        else if ( match_word( p, buf, "REF_MODULE" ) )
         {
-            p += (int)( sizeof( "RS_MODULE" ) - 1 );
+            p += (int)( sizeof( "REF_MODULE" ) - 1 );
             p = skip_ws( p );
             char mod_name[ RT_MAX_NAME ] = { 0 };
             if ( *p == '(' )
@@ -400,9 +400,9 @@ parse_buffer( const char* buf, parse_data_t* out, int api_only )
             }
             continue;
         }
-        else if ( match_word( p, buf, "RS_API" ) )
+        else if ( match_word( p, buf, "REF_API" ) )
         {
-            p += (int)( sizeof( "RS_API" ) - 1 );
+            p += (int)( sizeof( "REF_API" ) - 1 );
             p = skip_ws( p );
             char dummy[ 16 ] = { 0 };
             if ( *p == '(' )
@@ -414,12 +414,12 @@ parse_buffer( const char* buf, parse_data_t* out, int api_only )
 
         if ( kind < 0 ) { p++; continue; }
 
-        p += ( kind == RT_KIND_ENUM  ) ? (int)( sizeof( "RS_ENUM"   ) - 1 )
-           : ( kind == RT_KIND_UNION ) ? (int)( sizeof( "RS_UNION"  ) - 1 )
-           :                            (int)( sizeof( "RS_STRUCT" ) - 1 );
+        p += ( kind == RT_KIND_ENUM  ) ? (int)( sizeof( "REF_ENUM"   ) - 1 )
+           : ( kind == RT_KIND_UNION ) ? (int)( sizeof( "REF_UNION"  ) - 1 )
+           :                            (int)( sizeof( "REF_STRUCT" ) - 1 );
         p  = skip_ws( p );
 
-        /* optional attribute args in parentheses, e.g. RS_STRUCT( my_attr="value", other_attr=123 ) */
+        /* optional attribute args in parentheses, e.g. REF_STRUCT( my_attr="value", other_attr=123 ) */
 
         char args[ 1024 ] = { 0 };
         if ( *p == '(' )
@@ -434,7 +434,7 @@ parse_buffer( const char* buf, parse_data_t* out, int api_only )
         parse_attr_args( args, t->attrs, RT_MAX_ATTRS_PER_ITEM, &t->attr_count );
 
         /* Walk past optional 'typedef struct tag' preamble to '{'.
-           RS_ENUM(); on its own line emits a trailing ';' we also skip. */
+           REF_ENUM(); on its own line emits a trailing ';' we also skip. */
         p = skip_ws( p );
         if ( *p == ';' ) { p++; p = skip_ws( p ); }
         while ( is_ident_start( ( unsigned char )*p ) )
@@ -546,7 +546,7 @@ parse_file_headers( const char* path, parse_data_t* out, char* buf, size_t buf_m
     }
 }
 
-/* API-only parse pass (.c): collects RS_MODULE/RS_API and marks found funcs as C-sourced. */
+/* API-only parse pass (.c): collects REF_MODULE/REF_API and marks found funcs as C-sourced. */
 static void
 parse_file_api( const char* path, parse_data_t* out, char* buf, size_t buf_max )
 {

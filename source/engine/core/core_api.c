@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     engine/core/core_api.c : Platform-agnostic core module wiring.
 
@@ -138,7 +138,7 @@ core_get_mod_desc( void )
         .init          = core_mod_init,
         .exit          = core_mod_exit,
         .reload        = NULL,
-        .rs_register   = MOD_REFLECT_FUNC( core ),
+        .ref_register   = MOD_REFLECT_FUNC( core ),
     };
     return &api;
 }

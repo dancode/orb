@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     orb.h -- The Glowing Orb Engine
 
@@ -265,25 +265,25 @@ typedef void ( *log_fn_t )( int level, const char* tag, const char* msg );
     Reflection annotation macros
 
     Parsed by reflect_tool at build time; compile out to nothing at runtime.
-    Defined here so any annotated header needs only orb.h — no rs.h dependency.
+    Defined here so any annotated header needs only orb.h — no ref.h dependency.
 
-        RS_STRUCT()           typedef struct foo_s { ... } foo_t;
-        RS_UNION()            typedef union  bar_u { ... } bar_t;
-        RS_ENUM()             typedef enum   bar_e { ... } bar_t;
-        RS_BITSET()           typedef enum   flags_e { ... } flags_t;   // OR-able bitmask
-        RS_PROP()             field_type field_name;                     // inside RS_STRUCT/RS_UNION body
-        RS_VAR()              type g_name;                               // global variable
+        REF_STRUCT()           typedef struct foo_s { ... } foo_t;
+        REF_UNION()            typedef union  bar_u { ... } bar_t;
+        REF_ENUM()             typedef enum   bar_e { ... } bar_t;
+        REF_BITSET()           typedef enum   flags_e { ... } flags_t;   // OR-able bitmask
+        REF_PROP()             field_type field_name;                     // inside REF_STRUCT/REF_UNION body
+        REF_VAR()              type g_name;                               // global variable
 ==============================================================================================*/
 
 // clang-format off
-#define RS_STRUCT(...)
-#define RS_UNION(...)
-#define RS_ENUM(...)
-#define RS_BITSET(...)
-#define RS_PROP(...)
+#define REF_STRUCT(...)
+#define REF_UNION(...)
+#define REF_ENUM(...)
+#define REF_BITSET(...)
+#define REF_PROP(...)
 
-#define RS_MODULE(...)
-#define RS_API(...)
+#define REF_MODULE(...)
+#define REF_API(...)
 // clang-format on
 
 /*==============================================================================================

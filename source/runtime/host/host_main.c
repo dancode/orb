@@ -1,10 +1,10 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     host_main.c — runtime host implementation.
 
     Boot sequence:
         1. mod_system_init()                    — registry online
-        2. rs_wire_mod_callbacks()              — install hooks; no code fires yet
+        2. ref_wire_mod_callbacks()              — install hooks; no code fires yet
         3. mod_static_load( sys, rs, run )      — PASSIVE: engine baseline registered
         4. load_all( desc->modules )            — PASSIVE: every entry registered
         5. mod_init_all()                       — pass 1: load callbacks fire in dep order
@@ -131,13 +131,13 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        on rs.mod_init. Every subsequent load (static, dynamic, or hot-reload swap)
        auto-registers reflection through the generic callback. */
 
-    rs_wire_mod_callbacks();
+    ref_wire_mod_callbacks();
     
     // if ( !mod_static( sys ) ) { }
 
     /* Engine baseline — sys (clock + sleep), rs (reflection), run (frame clock). */
     if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
-         !mod_static_load( "rs",  rs_get_mod_desc()  ) ||
+         !mod_static_load( "ref",  ref_get_mod_desc()  ) ||
          !mod_static_load( "run", run_get_mod_desc() ) )
     {
         fprintf( stderr, "[host] baseline load failed: %s\n", mod_last_error() );
