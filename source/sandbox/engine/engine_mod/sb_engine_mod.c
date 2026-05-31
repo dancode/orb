@@ -13,8 +13,8 @@
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
-#include "engine/sys/sys_api.h"
 #include "engine/sys/sys_host.h"
+#include "engine/mod/mod_host.h"
 
 #include "developer/dev_hot/dev_hot.h"
 
@@ -27,6 +27,8 @@ void
 module_test( void )
 {
     mod_system_init();
+
+    ref_wire_mod_callbacks();
 
     dev_hot_init( NULL, NULL );
 
