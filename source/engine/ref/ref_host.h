@@ -47,7 +47,24 @@ const ref_frame_t*  ref_get_frame            ( uint16_t frame_id );
 
     Low-level entry points used by generated code and hand-rolled registration.
     Set field.type_hash = ref_hash_str(base_type_name) before calling.
-    Attributes must be added contiguously per owner (all of type A's before type B's).
+
+    ATTR ORDERING RULE (hand-rolled registration only):
+        Add ALL attributes for a given type or field before adding any attribute to the
+        next type or field. Attributes are stored in a flat contiguous pool; interleaving
+        owners corrupts the layout. Generated code always satisfies this automatically.
+
+        Correct:
+            ref_register_type( &ta, fields_a, n );   // register type A
+            ref_type_add_attr( id_a, &attr1 );        // A's attrs, all together
+            ref_type_add_attr( id_a, &attr2 );
+            ref_register_type( &tb, fields_b, m );   // register type B
+            ref_type_add_attr( id_b, &attr3 );        // B's attrs
+
+        Wrong -- triggers FATAL in both debug and release:
+            ref_type_add_attr( id_a, &attr1 );
+            ref_type_add_attr( id_b, &attr3 );        // interleaved: corrupts pool
+            ref_type_add_attr( id_a, &attr2 );        // slot is no longer contiguous
+
 ==============================================================================================*/
 
 uint16_t            ref_register_type        ( const ref_type_t*, const ref_field_t*, uint16_t field_count );

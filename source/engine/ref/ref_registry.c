@@ -595,7 +595,19 @@ ref_append_attr( uint16_t* owner_index, uint16_t* owner_count, const ref_attrib_
         /* Subsequent attributes must be allocated immediately after the previous one so
            the block stays contiguous. This means all attrs for a type/field must be added
            before moving on to the next owner. */
-        assert( ( uint16_t )( *owner_index + *owner_count ) == slot && "ref: attributes must be added contiguously per owner" );
+        uint16_t expected = ( uint16_t )( *owner_index + *owner_count );
+        if ( slot != expected )
+        {
+            fprintf( stderr,
+                     "ref: FATAL attr contiguity violation: owner at attr_index=%u has %u attr(s), "
+                     "expected next slot %u but pool allocated slot %u -- "
+                     "all attrs for a type/field must be added before moving to the next owner\n",
+                     (unsigned)*owner_index, (unsigned)*owner_count,
+                     (unsigned)expected, (unsigned)slot );
+            assert( 0 && "ref: attr contiguity violation -- see stderr for details" );
+            g_ref.attr_count--; /* undo the allocation so the pool does not drift further */
+            return false;
+        }
         ( *owner_count )++;
     }
     g_ref.attrs[ slot ] = *attr;
