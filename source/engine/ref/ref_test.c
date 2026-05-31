@@ -1462,8 +1462,8 @@ test_usage_example( void )
     ref_type_t     stance_type = { 0 };
     stance_type.name_id        = test_intern( "stance_t" );
     stance_type.name_hash      = h_stance;
-    stance_type.size           = (uint16_t)sizeof( ref_test_stance_t );
-    stance_type.align          = (uint8_t)_Alignof( ref_test_stance_t );
+    stance_type.size           = REF_SIZEOF( ref_test_stance_t );
+    stance_type.align          = REF_ALIGNOF( ref_test_stance_t );
 
     ref_enum_t stances[ 3 ] = {
         {.name_id = test_intern( "IDLE" ),     .value = REF_TEST_STANCE_IDLE     },
@@ -1579,7 +1579,7 @@ test_usage_example( void )
     player.kill_count       = 42;
 
     /* Simulate a generic system that only knows the type name, not the C type. */
-    uint16_t         tid = ref_find_type_by_name( "player_t" );
+    uint16_t         tid  = ref_find_type_by_name( "player_t" );
     const ref_type_t* t   = ref_get_type( tid );
     assert( tid != REF_TYPE_INVALID && t );
     
