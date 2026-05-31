@@ -1599,6 +1599,115 @@ test_usage_example( void )
 }
 
 /*==============================================================================================
+    Union test
+
+      Reflect:
+          union value_u { int32_t i; float f; uint8_t bytes[4]; };
+
+      All three fields share offset 0.  After finalize:
+        - kind == REF_KIND_UNION
+        - every field->offset == 0
+        - size == sizeof( union ) (4 bytes on all targets)
+        - field lookup by name round-trips correctly
+        - live value written as int32_t is readable as float/bytes via offset cast
+==============================================================================================*/
+
+typedef union ref_test_value_u
+{
+    int32_t  i;
+    float    f;
+    uint8_t  bytes[ 4 ];
+
+} ref_test_value_t;
+
+static void
+test_union( void )
+{
+    printf( "\n=== ref: union registration ===\n" );
+
+    ref_init();
+    uint16_t game = ref_push_frame( "game" );
+
+    const uint32_t h_value = ref_hash_str( "value_u" );
+    const uint32_t h_i32   = ref_hash_str( "int32_t" );
+    const uint32_t h_float = ref_hash_str( "float" );
+    const uint32_t h_u8    = ref_hash_str( "uint8_t" );
+
+    ref_type_t type = { 0 };
+    type.name_id   = test_intern( "value_u" );
+    type.name_hash = h_value;
+    type.size      = REF_SIZEOF( ref_test_value_t );
+    type.align     = REF_ALIGNOF( ref_test_value_t );
+    type.kind      = REF_KIND_UNION;
+
+    /* All fields in a union share offset 0.  size is the widest member. */
+    ref_field_t fields[ 3 ] = { 0 };
+
+    fields[ 0 ].name_id   = test_intern( "i" );
+    fields[ 0 ].type_hash = h_i32;
+    fields[ 0 ].offset    = REF_OFFSETOF( ref_test_value_t, i );
+    fields[ 0 ].size      = REF_FIELD_SIZE( ref_test_value_t, i );
+
+    fields[ 1 ].name_id   = test_intern( "f" );
+    fields[ 1 ].type_hash = h_float;
+    fields[ 1 ].offset    = REF_OFFSETOF( ref_test_value_t, f );
+    fields[ 1 ].size      = REF_FIELD_SIZE( ref_test_value_t, f );
+
+    fields[ 2 ].name_id   = test_intern( "bytes" );
+    fields[ 2 ].type_hash = h_u8;
+    fields[ 2 ].offset    = REF_OFFSETOF( ref_test_value_t, bytes );
+    fields[ 2 ].size      = REF_FIELD_SIZE( ref_test_value_t, bytes );
+    fields[ 2 ].mods      = REF_MODS_ARRAY;
+    fields[ 2 ].aux       = 4;
+
+    uint16_t tid = ref_register_type( &type, fields, 3 );
+    ref_finalize_frame( game );
+
+    ref_print_type( tid );
+
+    const ref_type_t* t = ref_get_type( tid );
+
+    bool all_ok = true;
+
+    /* kind must be UNION */
+    bool kind_ok = t && t->kind == REF_KIND_UNION;
+    printf( "  [%s] kind == REF_KIND_UNION\n", kind_ok ? "ok  " : "FAIL" );
+    if ( !kind_ok ) all_ok = false;
+
+    /* size must match the C union */
+    bool size_ok = t && t->size == REF_SIZEOF( ref_test_value_t );
+    printf( "  [%s] size == %u (expect %u)\n", size_ok ? "ok  " : "FAIL",
+            t ? t->size : 0, REF_SIZEOF( ref_test_value_t ) );
+    if ( !size_ok ) all_ok = false;
+
+    /* every field must have offset == 0 */
+    static const char* NAMES[] = { "i", "f", "bytes" };
+    for ( int i = 0; i < 3; i++ )
+    {
+        const ref_field_t* f      = ref_find_field( tid, NAMES[ i ] );
+        bool               off_ok = f && f->offset == 0;
+        printf( "  [%s] field '%s' offset=%u (expect 0)\n", off_ok ? "ok  " : "FAIL",
+                NAMES[ i ], f ? f->offset : 0xFFFFu );
+        if ( !off_ok ) all_ok = false;
+    }
+
+    /* live value access: write i=0x3F800000 (bit pattern for 1.0f) and read back as float */
+    ref_test_value_t v;
+    v.i = 0x3F800000;
+    const ref_field_t* ff = ref_find_field( tid, "f" );
+    float              fv = *(const float*)( (const char*)&v + ff->offset );
+    bool               fv_ok = fv == 1.0f;
+    printf( "  [%s] i=0x3F800000 read as float -> %.6f (expect 1.000000)\n",
+            fv_ok ? "ok  " : "FAIL", fv );
+    if ( !fv_ok ) all_ok = false;
+
+    assert( all_ok );
+
+    ref_pop_frame( game );
+    ref_exit();
+}
+
+/*==============================================================================================
     Entry
 ==============================================================================================*/
 
@@ -1619,7 +1728,7 @@ ref_run_tests( void )
     test_primitives();
     test_prim_fields();
     test_mods();
-    /* TODO: test_union()            -- REF_KIND_UNION registration and field access         */
+    test_union();
     /* TODO: test_attrs_full()       -- REF_ATTR_INT / REF_ATTR_STRING / REF_AF_* / CI group */
     /* TODO: test_field_flags_full() -- all REF_FF_* bits survive registration and finalize  */
     /* TODO: test_type_flags_full()  -- all REF_TF_* bits survive registration and finalize  */
