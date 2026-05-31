@@ -3,9 +3,9 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 
-#include "engine/sys/sys_api.h"
-#include "engine/core/core_api.h"
-#include "engine/ref/ref_api.h"
+#include "engine/sys/sys_host.h"
+#include "engine/core/core_host.h"
+#include "engine/ref/ref_host.h"
 
 #include "runtime_modules/example_gen/example_gen.h"
 
@@ -20,6 +20,8 @@ main( int argc, char** argv )
     UNUSED( argv );
 
     mod_system_init();
+
+    ref_wire_mod_callbacks();
 
     // dev_hot_init( NULL, NULL );
 

@@ -47,7 +47,13 @@ ref_intern( const char* s )
     }
 
     /* Bump-allocate the new string; null terminator is included in the copy. */
-    assert( g_ref_str_top + len + 1 <= REF_STRING_POOL_SIZE && "rs string pool overflow" );
+    if ( g_ref_str_top + len + 1 > REF_STRING_POOL_SIZE )
+    {
+        fprintf( stderr, "ref: FATAL string pool overflow (used %u + need %u > limit %d) -- increase REF_STRING_POOL_SIZE in ref.c\n",
+                 g_ref_str_top, len + 1, REF_STRING_POOL_SIZE );
+        assert( 0 && "ref: string pool overflow -- increase REF_STRING_POOL_SIZE in ref.c" );
+        return 0;
+    }
     ref_name_t id = ( ref_name_t )g_ref_str_top;
     memcpy( g_ref_str_pool + g_ref_str_top, s, len + 1 );
     g_ref_str_top += len + 1;

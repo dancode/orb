@@ -197,9 +197,16 @@ ref_get_stats( uint16_t* type_count, uint16_t* field_count, uint16_t* frame_coun
 uint16_t
 ref_push_frame( const char* name )
 {
-    if ( !name || g_ref.frame_count >= REF_MAX_FRAMES )
+    if ( !name )
     {
-        assert( 0 && "ref_push_frame: invalid name or frame table full" );
+        assert( 0 && "ref_push_frame: name is NULL" );
+        return REF_FRAME_INVALID;
+    }
+    if ( g_ref.frame_count >= REF_MAX_FRAMES )
+    {
+        fprintf( stderr, "ref: FATAL frame table full (%u/%u) -- increase REF_MAX_FRAMES in ref.h\n",
+                 (unsigned)g_ref.frame_count, (unsigned)REF_MAX_FRAMES );
+        assert( 0 && "ref: frame table full -- increase REF_MAX_FRAMES in ref.h" );
         return REF_FRAME_INVALID;
     }
 
@@ -320,8 +327,12 @@ ref_compute_schema_hash( const ref_field_t* fields, uint16_t count )
 
 static uint16_t ref_alloc_type_slot( void )
 {
-    if ( g_ref.type_count >= REF_MAX_TYPES ) {
-        assert( 0 && "ref: type table full" ); return REF_TYPE_INVALID;
+    if ( g_ref.type_count >= REF_MAX_TYPES )
+    {
+        fprintf( stderr, "ref: FATAL type table full (%u/%u) -- increase REF_MAX_TYPES in ref.h\n",
+                 (unsigned)g_ref.type_count, (unsigned)REF_MAX_TYPES );
+        assert( 0 && "ref: type table full -- increase REF_MAX_TYPES in ref.h" );
+        return REF_TYPE_INVALID;
     }
     return g_ref.type_count++;
 }
@@ -329,8 +340,12 @@ static uint16_t ref_alloc_type_slot( void )
 static uint16_t ref_alloc_field_block( uint16_t count )
 {
     if ( count == 0 ) return 0;
-    if ( g_ref.field_count + count > REF_MAX_FIELDS ) {
-        assert( 0 && "ref: field table full" ); return REF_FIELD_INVALID;
+    if ( g_ref.field_count + count > REF_MAX_FIELDS )
+    {
+        fprintf( stderr, "ref: FATAL field table full (used %u + need %u > limit %u) -- increase REF_MAX_FIELDS in ref.h\n",
+                 (unsigned)g_ref.field_count, (unsigned)count, (unsigned)REF_MAX_FIELDS );
+        assert( 0 && "ref: field table full -- increase REF_MAX_FIELDS in ref.h" );
+        return REF_FIELD_INVALID;
     }
     uint16_t start = g_ref.field_count;
     g_ref.field_count += count;
@@ -340,8 +355,12 @@ static uint16_t ref_alloc_field_block( uint16_t count )
 static uint16_t ref_alloc_enum_block( uint16_t count )
 {
     if ( count == 0 ) return 0;
-    if ( g_ref.enum_count + count > REF_MAX_ENUMS ) {
-        assert( 0 && "ref: enum table full" ); return REF_TYPE_INVALID;
+    if ( g_ref.enum_count + count > REF_MAX_ENUMS )
+    {
+        fprintf( stderr, "ref: FATAL enum table full (used %u + need %u > limit %u) -- increase REF_MAX_ENUMS in ref.h\n",
+                 (unsigned)g_ref.enum_count, (unsigned)count, (unsigned)REF_MAX_ENUMS );
+        assert( 0 && "ref: enum table full -- increase REF_MAX_ENUMS in ref.h" );
+        return REF_TYPE_INVALID;
     }
     uint16_t start = g_ref.enum_count;
     g_ref.enum_count += count;
@@ -350,8 +369,12 @@ static uint16_t ref_alloc_enum_block( uint16_t count )
 
 static uint16_t ref_alloc_attr_slot( void )
 {
-    if ( g_ref.attr_count >= REF_MAX_ATTRS ) {
-        assert( 0 && "ref: attribute table full" ); return REF_ATTR_INVALID;
+    if ( g_ref.attr_count >= REF_MAX_ATTRS )
+    {
+        fprintf( stderr, "ref: FATAL attr table full (%u/%u) -- increase REF_MAX_ATTRS in ref.h\n",
+                 (unsigned)g_ref.attr_count, (unsigned)REF_MAX_ATTRS );
+        assert( 0 && "ref: attr table full -- increase REF_MAX_ATTRS in ref.h" );
+        return REF_ATTR_INVALID;
     }
     return g_ref.attr_count++;
 }
