@@ -309,23 +309,23 @@ target sb_engine_core
     unit        sb_engine_core.c
     dep         core
 
-target sb_engine_ref
-
-    type        exe
-    root        source/sandbox/engine/engine_reflect
-    folder      09_SANDBOX/ENGINE
-    unit        sb_engine_reflect.c
-    dep         ref
-
 # ==============================================================================
 # 09_SANDBOX/RUNTIME
 # ==============================================================================
 
+target sb_reflect
+
+    type        exe
+    root        source/sandbox/reflect
+    folder      09_SANDBOX/REFLECT
+    unit        sb_reflect_unit.c
+    dep         ref
+	
 target example_reflect
 
     type        dynamic
     root        source/runtime_modules/example_reflect
-    folder      09_SANDBOX/RUNTIME
+    folder      09_SANDBOX/REFLECT
     unit        example_reflect.c
     flag        reflect
 	
@@ -333,7 +333,7 @@ target sb_runtime_reflect
 
     type        exe
     root        source/sandbox/runtime/runtime_reflect
-    folder      09_SANDBOX/RUNTIME
+    folder      09_SANDBOX/REFLECT
     unit        sb_runtime_reflect.c
     dep         sys mod core ref
 	mono_dep 	example_reflect
@@ -343,7 +343,7 @@ target example_gen
 
     type        dynamic
     root        source/runtime_modules/example_gen
-    folder      09_SANDBOX/RUNTIME
+    folder      09_SANDBOX/REFLECT
     unit        example_gen.c
     flag        reflect
 
@@ -351,7 +351,7 @@ target sb_runtime_gen
 
     type        exe
     root        source/sandbox/runtime/runtime_gen
-    folder      09_SANDBOX/RUNTIME
+    folder      09_SANDBOX/REFLECT
     unit        sb_runtime_gen.c
     dep         sys ref mod core
 	mono_dep 	example_gen
@@ -516,10 +516,19 @@ solution orb_examples
 solution orb_sandbox_reflect			# Run/Debug reflection
 
     out         build/proj
-	startup     sb_engine_ref
+    startup     sb_runtime_gen
+
+    add         sb_base
+	add         sys ref mod app core net
+
+	add 		sb_reflect			# unit test reflection (hand rolled)
 	
-	add         sys ref mod
-	add 		sb_engine_ref
+	add 		example_gen			# test reflected REF_MODULE
+	add 		sb_runtime_gen		# test loading REF_MODULE
+	
+	add 		example_reflect		# test module with reflected types
+	add 		sb_runtime_reflect	# test reading reflected types
+
 	add 		reflect_tool
 
 
@@ -537,15 +546,16 @@ solution orb_sandbox_engine				# Run/Debug engine
     add         sb_engine_mod 
 	add 		sb_engine_sys 
 	add 		sb_engine_core 
-	add 		sb_engine_ref 
 	add 		sb_engine_app
+	
+	add 		sb_reflect			# unit test reflection (hand rolled)
 	
 	add 		example_gen			# test reflected REF_MODULE
 	add 		sb_runtime_gen		# test loading REF_MODULE
 	
 	add 		example_reflect		# test module with reflected types
-	add 		sb_runtime_reflect	# test reading reflected types
-	
+	add 		sb_runtime_reflect	# test reading reflected types	
+
 
 # ==============================================================================
 # TOOLS
@@ -582,10 +592,11 @@ solution orb_all
 	add         sb_engine_mod 
 	add 		sb_engine_sys 
 	add 		sb_engine_core 
-	add 		sb_engine_ref 
+
 	add 		sb_engine_app
 	
-    add         sb_runtime_reflect sb_runtime_gen
+	# 			reflection testing
+	add 		sb_reflect sb_runtime_reflect sb_runtime_gen
 	
 	add 		host_game
 	add 		host_editor 
@@ -609,4 +620,4 @@ solution orb_all_mono
     flag        monolithic
     add         orb_all
 
-# ==============================================================================
+# =============================================================================

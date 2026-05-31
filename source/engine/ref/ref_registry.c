@@ -396,8 +396,8 @@ static uint16_t ref_alloc_attr_slot( void )
 uint16_t
 ref_register_type( const ref_type_t* type, const ref_field_t* fields, uint16_t field_count )
 {
-    if ( !type )                      { assert( 0 ); return REF_TYPE_INVALID; }
-    if ( field_count > 0 && !fields ) { assert( 0 ); return REF_TYPE_INVALID; }
+    if ( !type )                       { assert( 0 ); return REF_TYPE_INVALID; }
+    if ( field_count > 0 && !fields )  { assert( 0 ); return REF_TYPE_INVALID; }
     if ( g_ref.frame_count <= 1 )      { assert( 0 ); return REF_TYPE_INVALID; }
 
     /* The topmost frame owns types registered from this point; frame_count was already
@@ -483,8 +483,8 @@ ref_compute_enum_schema_hash( const ref_enum_t* e, uint16_t count )
 uint16_t
 ref_register_enum( const ref_type_t* type, const ref_enum_t* enums, uint16_t count )
 {
-    if ( !type )                 { assert( 0 ); return REF_TYPE_INVALID; }
-    if ( count > 0 && !enums )   { assert( 0 ); return REF_TYPE_INVALID; }
+    if ( !type )                  { assert( 0 ); return REF_TYPE_INVALID; }
+    if ( count > 0 && !enums )    { assert( 0 ); return REF_TYPE_INVALID; }
     if ( g_ref.frame_count <= 1 ) { assert( 0 ); return REF_TYPE_INVALID; }
 
     uint16_t frame_id = g_ref.frame_count - 1;

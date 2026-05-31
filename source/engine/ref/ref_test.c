@@ -46,6 +46,60 @@ typedef struct ref_test_entity_s
 } ref_test_entity_t;
 
 /*==============================================================================================
+    Prim-field test type
+
+    One field per non-void, non-invalid primitive.  After finalize each field->type_id must
+    equal the corresponding REF_PRIM_* enum value and field->kind must be REF_KIND_PRIM.
+
+    REF_PRIM_VOID is intentionally absent -- it is only valid as the return-descriptor slot
+    (fields[0]) inside a REF_KIND_FUNCTION type; see test_function_sigs.
+==============================================================================================*/
+
+typedef struct ref_test_prim_fields_s
+{
+    bool     b;
+    int8_t   i8;
+    uint8_t  u8;
+    int16_t  i16;
+    uint16_t u16;
+    int32_t  i32;
+    uint32_t u32;
+    int64_t  i64;
+    uint64_t u64;
+    float    f32;
+    double   f64;
+    char     c;
+    char*    str;   /* base type "string" -- opaque pointer-sized string handle */
+
+} ref_test_prim_fields_t;
+
+/*==============================================================================================
+    Modifier-shape test type
+
+    One C field per ref_mods_t value.  const-qualified variants (CONST_VALUE, PTR_TO_CONST,
+    CONST_PTR) share the same underlying C layout as their non-const counterparts -- the mods
+    tag is stored independently of the C qualifier.  ARRAY_PTR uses a plain pointer slot
+    because T(*)[N] is always pointer-sized; the reflect_tool parser cannot emit this
+    declarator but the runtime stores and prints it correctly.
+
+    REF_MODS_FUNCTION is exercised separately in test_function_sigs.
+==============================================================================================*/
+
+typedef struct ref_test_mods_s
+{
+    int32_t   plain;      /* REF_MODS_VALUE        T              */
+    int32_t   cv;         /* REF_MODS_CONST_VALUE  const T        */
+    int32_t*  ptr;        /* REF_MODS_PTR          T*             */
+    int32_t*  ptc;        /* REF_MODS_PTR_TO_CONST const T*       */
+    int32_t*  cptr;       /* REF_MODS_CONST_PTR    T* const       */
+    int32_t** pptr;       /* REF_MODS_PTR_PTR      T**            */
+    int32_t   arr[ 4 ];   /* REF_MODS_ARRAY        T[N]  aux=4    */
+    int32_t*  parr[ 4 ];  /* REF_MODS_PTR_ARRAY    T*[N] aux=4   */
+    int32_t*  aptr;       /* REF_MODS_ARRAY_PTR    T(*)[N]        */
+
+} ref_test_mods_t;
+
+/*==============================================================================================
     Registration helpers
 
     These functions demonstrate the manual registration API that generated code (from the
@@ -225,6 +279,377 @@ ref_test_register_entity( void )
     so the registry is always in a clean state. Tests must be run sequentially (they share
     the single global g_ref), but can be toggled individually by the if(0) block in ref_run_tests.
 ==============================================================================================*/
+
+/*----------------------------------------------------------------------------------------------
+    test_primitives: all 15 built-in types installed by ref_init()
+
+    Verifies: name, type_id == ref_prim_t enum value, size, align, kind, and name-based lookup.
+    The enum-value == type_id invariant is load-bearing: callers use REF_PRIM_F32 etc. directly
+    as type IDs without going through the hash table.
+----------------------------------------------------------------------------------------------*/
+
+static void
+test_primitives( void )
+{
+    printf( "\n=== ref: primitive type table ===\n" );
+
+    ref_init();
+
+    static const struct
+    {
+        ref_prim_t  id;
+        const char* name;
+        uint16_t    size;
+        uint8_t     align;
+    } EXPECTED[ REF_PRIM_COUNT ] = {
+        { REF_PRIM_INVALID, "invalid",  0,               0               },
+        { REF_PRIM_VOID,    "void",     0,               0               },
+        { REF_PRIM_BOOL,    "bool",     1,               1               },
+        { REF_PRIM_CHAR,    "char",     1,               1               },
+        { REF_PRIM_I8,      "int8_t",   1,               1               },
+        { REF_PRIM_U8,      "uint8_t",  1,               1               },
+        { REF_PRIM_I16,     "int16_t",  2,               2               },
+        { REF_PRIM_U16,     "uint16_t", 2,               2               },
+        { REF_PRIM_I32,     "int32_t",  4,               4               },
+        { REF_PRIM_U32,     "uint32_t", 4,               4               },
+        { REF_PRIM_I64,     "int64_t",  8,               8               },
+        { REF_PRIM_U64,     "uint64_t", 8,               8               },
+        { REF_PRIM_F32,     "float",    4,               4               },
+        { REF_PRIM_F64,     "double",   8,               8               },
+        { REF_PRIM_STRING,  "string",   sizeof( char* ), sizeof( char* ) },
+    };
+
+    bool all_ok = true;
+    for ( int i = 0; i < REF_PRIM_COUNT; i++ )
+    {
+        const ref_type_t* t  = ref_get_type( (uint16_t)i );
+        bool              ok = true;
+
+        if ( !t )
+        {
+            printf( "  [FAIL] prim %d: ref_get_type returned NULL\n", i );
+            all_ok = false;
+            continue;
+        }
+
+        if ( (int)EXPECTED[ i ].id != i )                                   ok = false;
+        if ( strcmp( test_cstr( t->name_id ), EXPECTED[ i ].name ) != 0 )   ok = false;
+        if ( t->size  != EXPECTED[ i ].size  )                               ok = false;
+        if ( t->align != EXPECTED[ i ].align )                               ok = false;
+        if ( t->kind  != REF_KIND_PRIM )                                     ok = false;
+
+        /* name-based lookup must round-trip to the same slot */
+        uint16_t found = ref_find_type_by_name( EXPECTED[ i ].name );
+        if ( found != (uint16_t)i )                                          ok = false;
+
+        printf( "  [%s] %-10s  id=%-2d  size=%-2u  align=%u\n",
+                ok ? "ok  " : "FAIL", EXPECTED[ i ].name, i, t->size, t->align );
+
+        if ( !ok ) all_ok = false;
+    }
+
+    assert( all_ok );
+    ref_exit();
+}
+
+/*----------------------------------------------------------------------------------------------
+    test_prim_fields: lazy resolution maps every non-void primitive to its REF_PRIM_* type_id
+
+    Registers a flat struct with one field per non-void, non-invalid primitive.  After
+    ref_finalize_frame each field->type_id must equal the corresponding REF_PRIM_* enum value
+    and field->kind must be REF_KIND_PRIM.
+----------------------------------------------------------------------------------------------*/
+
+static void
+test_prim_fields( void )
+{
+    printf( "\n=== ref: primitive field resolution ===\n" );
+
+    ref_init();
+    uint16_t game = ref_push_frame( "game" );
+
+    ref_type_t type = { 0 };
+    type.name_id   = test_intern( "prim_fields_t" );
+    type.name_hash = ref_hash_str( "prim_fields_t" );
+    type.size      = REF_SIZEOF( ref_test_prim_fields_t );
+    type.align     = REF_ALIGNOF( ref_test_prim_fields_t );
+    type.kind      = REF_KIND_STRUCT;
+
+    ref_field_t fields[ 13 ] = { 0 };
+    int         fi            = 0;
+
+    /* bool */
+    fields[ fi ].name_id   = test_intern( "b" );
+    fields[ fi ].type_hash = ref_hash_str( "bool" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, b );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, b );
+    fi++;
+
+    /* int8_t */
+    fields[ fi ].name_id   = test_intern( "i8" );
+    fields[ fi ].type_hash = ref_hash_str( "int8_t" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, i8 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, i8 );
+    fi++;
+
+    /* uint8_t */
+    fields[ fi ].name_id   = test_intern( "u8" );
+    fields[ fi ].type_hash = ref_hash_str( "uint8_t" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, u8 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, u8 );
+    fi++;
+
+    /* int16_t */
+    fields[ fi ].name_id   = test_intern( "i16" );
+    fields[ fi ].type_hash = ref_hash_str( "int16_t" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, i16 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, i16 );
+    fi++;
+
+    /* uint16_t */
+    fields[ fi ].name_id   = test_intern( "u16" );
+    fields[ fi ].type_hash = ref_hash_str( "uint16_t" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, u16 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, u16 );
+    fi++;
+
+    /* int32_t */
+    fields[ fi ].name_id   = test_intern( "i32" );
+    fields[ fi ].type_hash = ref_hash_str( "int32_t" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, i32 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, i32 );
+    fi++;
+
+    /* uint32_t */
+    fields[ fi ].name_id   = test_intern( "u32" );
+    fields[ fi ].type_hash = ref_hash_str( "uint32_t" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, u32 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, u32 );
+    fi++;
+
+    /* int64_t */
+    fields[ fi ].name_id   = test_intern( "i64" );
+    fields[ fi ].type_hash = ref_hash_str( "int64_t" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, i64 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, i64 );
+    fi++;
+
+    /* uint64_t */
+    fields[ fi ].name_id   = test_intern( "u64" );
+    fields[ fi ].type_hash = ref_hash_str( "uint64_t" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, u64 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, u64 );
+    fi++;
+
+    /* float */
+    fields[ fi ].name_id   = test_intern( "f32" );
+    fields[ fi ].type_hash = ref_hash_str( "float" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, f32 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, f32 );
+    fi++;
+
+    /* double */
+    fields[ fi ].name_id   = test_intern( "f64" );
+    fields[ fi ].type_hash = ref_hash_str( "double" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, f64 );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, f64 );
+    fi++;
+
+    /* char */
+    fields[ fi ].name_id   = test_intern( "c" );
+    fields[ fi ].type_hash = ref_hash_str( "char" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, c );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, c );
+    fi++;
+
+    /* string: opaque pointer-sized handle; C field is char* but base type name is "string" */
+    fields[ fi ].name_id   = test_intern( "str" );
+    fields[ fi ].type_hash = ref_hash_str( "string" );
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_prim_fields_t, str );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, str );
+    fi++;
+
+    uint16_t tid = ref_register_type( &type, fields, (uint16_t)fi );
+    ref_finalize_frame( game );
+
+    static const struct { const char* name; ref_prim_t expected_id; }
+    EXPECTED[] = {
+        { "b",   REF_PRIM_BOOL   },
+        { "i8",  REF_PRIM_I8     },
+        { "u8",  REF_PRIM_U8     },
+        { "i16", REF_PRIM_I16    },
+        { "u16", REF_PRIM_U16    },
+        { "i32", REF_PRIM_I32    },
+        { "u32", REF_PRIM_U32    },
+        { "i64", REF_PRIM_I64    },
+        { "u64", REF_PRIM_U64    },
+        { "f32", REF_PRIM_F32    },
+        { "f64", REF_PRIM_F64    },
+        { "c",   REF_PRIM_CHAR   },
+        { "str", REF_PRIM_STRING },
+    };
+
+    bool all_ok = true;
+    for ( int i = 0; i < fi; i++ )
+    {
+        const ref_field_t* f       = ref_find_field( tid, EXPECTED[ i ].name );
+        bool               id_ok   = f && ( f->type_id == (uint16_t)EXPECTED[ i ].expected_id );
+        bool               kind_ok = f && ( f->kind    == REF_KIND_PRIM );
+        bool               ok      = id_ok && kind_ok;
+
+        printf( "  [%s] %-10s -> type_id=%-2u (expect %-2u)  kind=%s\n",
+                ok ? "ok  " : "FAIL", EXPECTED[ i ].name,
+                f ? f->type_id : 0xFFFFu, (uint16_t)EXPECTED[ i ].expected_id,
+                ( f && f->kind == REF_KIND_PRIM ) ? "PRIM" : "WRONG" );
+
+        if ( !ok ) all_ok = false;
+    }
+
+    assert( all_ok );
+
+    ref_pop_frame( game );
+    ref_exit();
+}
+
+/*----------------------------------------------------------------------------------------------
+    test_mods: all REF_MODS_* values stored and retrieved correctly
+
+    Registers one field per modifier shape.  After finalize each field->mods must equal the
+    value that was set at registration time.  ARRAY_PTR (0x0102, T(*)[N]) is included here
+    even though the reflect_tool parser cannot emit it -- the runtime stores it correctly and
+    ref_print_type renders it.  FUNCTION is covered by test_function_sigs.
+----------------------------------------------------------------------------------------------*/
+
+static void
+test_mods( void )
+{
+    printf( "\n=== ref: modifier shapes ===\n" );
+
+    ref_init();
+    uint16_t game = ref_push_frame( "game" );
+
+    ref_type_t type = { 0 };
+    type.name_id   = test_intern( "mods_t" );
+    type.name_hash = ref_hash_str( "mods_t" );
+    type.size      = REF_SIZEOF( ref_test_mods_t );
+    type.align     = REF_ALIGNOF( ref_test_mods_t );
+    type.kind      = REF_KIND_STRUCT;
+
+    const uint32_t h_i32 = ref_hash_str( "int32_t" );
+
+    ref_field_t fields[ 9 ] = { 0 };
+    int         fi           = 0;
+
+    /* VALUE: T */
+    fields[ fi ].name_id   = test_intern( "plain" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, plain );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, plain );
+    fields[ fi ].mods      = REF_MODS_VALUE;
+    fi++;
+
+    /* CONST_VALUE: const T */
+    fields[ fi ].name_id   = test_intern( "cv" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, cv );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, cv );
+    fields[ fi ].mods      = REF_MODS_CONST_VALUE;
+    fi++;
+
+    /* PTR: T* */
+    fields[ fi ].name_id   = test_intern( "ptr" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, ptr );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, ptr );
+    fields[ fi ].mods      = REF_MODS_PTR;
+    fi++;
+
+    /* PTR_TO_CONST: const T* */
+    fields[ fi ].name_id   = test_intern( "ptc" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, ptc );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, ptc );
+    fields[ fi ].mods      = REF_MODS_PTR_TO_CONST;
+    fi++;
+
+    /* CONST_PTR: T* const */
+    fields[ fi ].name_id   = test_intern( "cptr" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, cptr );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, cptr );
+    fields[ fi ].mods      = REF_MODS_CONST_PTR;
+    fi++;
+
+    /* PTR_PTR: T** */
+    fields[ fi ].name_id   = test_intern( "pptr" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, pptr );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, pptr );
+    fields[ fi ].mods      = REF_MODS_PTR_PTR;
+    fi++;
+
+    /* ARRAY: T[N], aux = element count */
+    fields[ fi ].name_id   = test_intern( "arr" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, arr );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, arr );
+    fields[ fi ].mods      = REF_MODS_ARRAY;
+    fields[ fi ].aux       = 4;
+    fi++;
+
+    /* PTR_ARRAY: T*[N], aux = element count */
+    fields[ fi ].name_id   = test_intern( "parr" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, parr );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, parr );
+    fields[ fi ].mods      = REF_MODS_PTR_ARRAY;
+    fields[ fi ].aux       = 4;
+    fi++;
+
+    /* ARRAY_PTR: T(*)[N] -- pointer to a fixed-size array.  Same pointer-sized layout as T*.
+       The reflect_tool parser cannot emit this declarator; registered manually here. */
+    fields[ fi ].name_id   = test_intern( "aptr" );
+    fields[ fi ].type_hash = h_i32;
+    fields[ fi ].offset    = REF_OFFSETOF( ref_test_mods_t, aptr );
+    fields[ fi ].size      = REF_FIELD_SIZE( ref_test_mods_t, aptr );
+    fields[ fi ].mods      = REF_MODS_ARRAY_PTR;
+    fields[ fi ].aux       = 4;
+    fi++;
+
+    uint16_t tid = ref_register_type( &type, fields, (uint16_t)fi );
+    ref_finalize_frame( game );
+
+    ref_print_type( tid );
+
+    static const struct { const char* name; uint16_t mods; }
+    EXPECTED[] = {
+        { "plain", REF_MODS_VALUE        },
+        { "cv",    REF_MODS_CONST_VALUE  },
+        { "ptr",   REF_MODS_PTR          },
+        { "ptc",   REF_MODS_PTR_TO_CONST },
+        { "cptr",  REF_MODS_CONST_PTR    },
+        { "pptr",  REF_MODS_PTR_PTR      },
+        { "arr",   REF_MODS_ARRAY        },
+        { "parr",  REF_MODS_PTR_ARRAY    },
+        { "aptr",  REF_MODS_ARRAY_PTR    },
+    };
+
+    bool all_ok = true;
+    for ( int i = 0; i < fi; i++ )
+    {
+        const ref_field_t* f  = ref_find_field( tid, EXPECTED[ i ].name );
+        bool               ok = f && ( f->mods == EXPECTED[ i ].mods );
+        printf( "  [%s] %-6s  mods=0x%04x (expect 0x%04x)\n",
+                ok ? "ok  " : "FAIL", EXPECTED[ i ].name,
+                f ? (unsigned)f->mods : 0xFFFFu, (unsigned)EXPECTED[ i ].mods );
+        if ( !ok ) all_ok = false;
+    }
+
+    assert( all_ok );
+
+    ref_pop_frame( game );
+    ref_exit();
+}
 
 static void
 test_basic( void )
@@ -1190,6 +1615,16 @@ ref_run_tests( void )
     printf( "  sizeof(ref_frame_t)  = %zu\n", sizeof( ref_frame_t ) );
     printf( "========================================\n" );
     
+    /* -- layer 1: primitives, field resolution, modifier shapes ---------------------------- */
+    test_primitives();
+    test_prim_fields();
+    test_mods();
+    /* TODO: test_union()            -- REF_KIND_UNION registration and field access         */
+    /* TODO: test_attrs_full()       -- REF_ATTR_INT / REF_ATTR_STRING / REF_AF_* / CI group */
+    /* TODO: test_field_flags_full() -- all REF_FF_* bits survive registration and finalize  */
+    /* TODO: test_type_flags_full()  -- all REF_TF_* bits survive registration and finalize  */
+
+    /* -- layer 2: struct/enum lifecycle, hot-reload, serialization ------------------------- */
     if ( 0 )
     {
         test_basic();

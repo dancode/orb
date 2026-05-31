@@ -321,22 +321,22 @@ typedef enum ref_type_flag_e
 typedef struct ref_type_s
 {
     ref_name_t  name_id;             // gen: interned type name
-    uint32_t   name_hash;           // gen: ref_hash_str(name) — persistent identity
-    uint32_t   schema_hash;         // ___: content hash of field layout (save-game / hot-reload compat)
+    uint32_t    name_hash;           // gen: ref_hash_str(name) — persistent identity
+    uint32_t    schema_hash;         // ___: content hash of field layout (save-game / hot-reload compat)
 
-    uint16_t   field_index;         // ___: first entry in fields[] (struct/union) or enums[] (enum)
-    uint16_t   field_count;         // ___: number of fields or enumerators in this type
+    uint16_t    field_index;         // ___: first entry in fields[] (struct/union) or enums[] (enum)
+    uint16_t    field_count;         // ___: number of fields or enumerators in this type
 
-    uint16_t   attr_index;          // ___: first attribute (REF_ATTR_INVALID if none)
-    uint16_t   attr_count;          // ___: number of attributes on the type itself (not counting fields)
+    uint16_t    attr_index;          // ___: first attribute (REF_ATTR_INVALID if none)
+    uint16_t    attr_count;          // ___: number of attributes on the type itself (not counting fields)
 
-    uint16_t   next;                // ___: next type in hash chain (REF_TYPE_INVALID = end)
-    uint16_t   size;                // gen: sizeof(T)
+    uint16_t    next;                // ___: next type in hash chain (REF_TYPE_INVALID = end)
+    uint16_t    size;                // gen: sizeof(T)
 
-    uint8_t    align;               // gen: alignof(T)
-    uint8_t    kind;                // ___: ref_kind_t (prim, struct, enum, etc.)
-    uint8_t    frame_id;            // ___: owning frame (module) — used for cleanup on unload
-    uint8_t    flags;               // gen: ref_type_flag_t bitmask (0 = no flags set)
+    uint8_t     align;               // gen: alignof(T)
+    uint8_t     kind;                // ___: ref_kind_t (prim, struct, enum, etc.)
+    uint8_t     frame_id;            // ___: owning frame (module) — used for cleanup on unload
+    uint8_t     flags;               // gen: ref_type_flag_t bitmask (0 = no flags set)
 
 } ref_type_t;
 
@@ -349,10 +349,10 @@ typedef struct ref_type_s
 typedef struct ref_frame_s
 {
     ref_name_t  name_id;             // interned module name; matches the module name passed to ref_push_frame
-    uint16_t   first_type;          // start of modules types - pop rewinds to these points
-    uint16_t   first_field;         // start of modules fields
-    uint16_t   first_attr;          // start of modules attributes
-    uint16_t   first_enum;          // start of modules enums
+    uint16_t    first_type;          // start of modules types - pop rewinds to these points
+    uint16_t    first_field;         // start of modules fields
+    uint16_t    first_attr;          // start of modules attributes
+    uint16_t    first_enum;          // start of modules enums
 
 } ref_frame_t;
 
