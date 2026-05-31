@@ -541,43 +541,6 @@ mod_last_error( void )
 }
 
 /*==============================================================================================
-    Public: self-registration as a discoverable module
-
-    The mod system registers itself so DLL modules can fetch mod_api_t via the
-    standard MOD_FETCH_API / mod_desc() pattern, enabling plugin management from DLLs
-    (e.g. an editor loading its own plugin DLLs) without special host wiring.
-
-    mod_get_mod_desc is called once from mod_system_init().  Hosts that need to pass the
-    descriptor to tooling (e.g. mod inspector) may also call it directly.
-==============================================================================================*/
-
-const mod_api_t g_mod_api_struct = {
-    .dynamic_load = mod_dynamic_load,
-    .unload       = mod_unload,
-    .get_api      = mod_get_api,
-    .reload       = mod_reload,
-    .is_loaded    = mod_is_loaded,
-    .each         = mod_each,
-    .last_error   = mod_last_error,
-};
-
-mod_desc_t*
-mod_get_mod_desc( void )
-{
-    static mod_desc_t api = {
-        .version       = 1,
-        .state_size    = 0,
-        .func_api_size = sizeof( mod_api_t ),
-        .func_api      = &g_mod_api_struct,
-        .dep_count     = 0,
-        .init          = NULL,
-        .exit          = NULL,
-        .reload        = NULL,
-    };
-    return &api;
-}
-
-/*==============================================================================================
     Public: iteration over loaded modules
 ==============================================================================================*/
 
@@ -614,5 +577,13 @@ mod_list_all( void )
                 m->is_static ? "(static)" : "" );
     }
 }
+
+/*==============================================================================================
+    API struct and module descriptor (must be last -- references public functions above)
+==============================================================================================*/
+
+#ifndef MOD_API_C_PRELUDE
+#include "engine/mod/mod_api.c"
+#endif
 
 /*============================================================================================*/

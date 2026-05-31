@@ -293,7 +293,7 @@ target sb_engine_mod
     root        source/sandbox/engine/engine_mod
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_mod.c
-    dep         sys mod
+    dep         sys mod ref
     dep         dev_build dev_hot
 	mono_dep 	example 
 
