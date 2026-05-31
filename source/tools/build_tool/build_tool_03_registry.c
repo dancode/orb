@@ -557,8 +557,9 @@ registry_load( const char* path, bool is_external )
         }
         else if ( mode == MODE_SOLUTION && cur_sln )
         {
-            if      ( strcmp( key, "out" ) == 0 && val ) cur_sln->out_dir = pool_str( val );
-            else if ( strcmp( key, "nav" ) == 0 && val ) cur_sln->nav_dir = pool_str( val );
+            if      ( strcmp( key, "out"     ) == 0 && val ) cur_sln->out_dir         = pool_str( val );
+            else if ( strcmp( key, "nav"     ) == 0 && val ) cur_sln->nav_dir         = pool_str( val );
+            else if ( strcmp( key, "startup" ) == 0 && val ) cur_sln->startup_project = pool_str( val );
             else if ( strcmp( key, "flag" ) == 0 && val )
             {
                 if ( strcmp( val, "monolithic" ) == 0 ) cur_sln->is_monolithic = true;

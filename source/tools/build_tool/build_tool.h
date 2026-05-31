@@ -519,6 +519,11 @@ typedef struct
 
     const char*     extra_include_dirs[ MAX_EXTRA_INCLUDE_DIRS ];
 
+    /*  If non-NULL, emitted as StartupProject in ExtensibilityGlobals so VS opens
+        this target's debugger by default. Set via 'startup <target-name>'. */
+
+    const char*     startup_project;
+
     /*  True when this solution was loaded via 'import'. External solutions are
         excluded from -gen so the child project doesn't regenerate the engine's
         own .sln/.vcxproj files in its build directory. */

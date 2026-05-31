@@ -947,15 +947,26 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
     }
 
     // 2. Target projects.
+    // VS uses file order (not ExtensibilityGlobals) to pick the default startup project
+    // on first open, so emit the declared startup target before all others.
     char folders[ 64 ][ PATH_MAX ];
     char folder_guids[ 64 ][ 64 ];
     int  folder_count = 0;
 
-    for ( const char* const* tn = sln->target_names; *tn; ++tn )
+    target_info_t* startup_first =
+        sln->startup_project ? find_target( sln->startup_project ) : NULL;
+
+    // 2a. Project block emission: two-pass so startup target appears first in the file.
+    for ( int emit_startup = 1; emit_startup >= 0; --emit_startup )
     {
-        target_info_t* target = find_target( *tn );
-        if ( target )
+        for ( const char* const* tn = sln->target_names; *tn; ++tn )
         {
+            target_info_t* target = find_target( *tn );
+            if ( !target ) continue;
+            bool is_startup = ( target == startup_first );
+            if (  emit_startup && !is_startup ) continue;
+            if ( !emit_startup &&  is_startup ) continue;
+
             char guid[ 64 ];
             guid_from_name( target->name, guid );
             fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, target->name,
@@ -1024,37 +1035,27 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             }
 
             fprintf( f, "EndProject\n" );
+        }
+    }
 
-            // Collect SLN folders for nesting.
-            // Register every path segment so "A/B" creates both "A" and "A/B" folders.
+    // 2b. Collect SLN folders for nesting (order-independent; covers all targets).
+    // Register every path segment so "A/B" creates both "A" and "A/B" folders.
+    for ( const char* const* tn = sln->target_names; *tn; ++tn )
+    {
+        target_info_t* target = find_target( *tn );
+        if ( !target ) continue;
+
+        char tmp[ PATH_MAX ];
+        snprintf( tmp, sizeof( tmp ), "%s", target->virtual_folder );
+        for ( char* p = tmp; *p; p++ )
+            if ( *p == '\\' ) *p = '/';
+
+        char* p = tmp;
+        while ( *p )
+        {
+            if ( *p == '/' )
             {
-                char tmp[ PATH_MAX ];
-                snprintf( tmp, sizeof( tmp ), "%s", target->virtual_folder );
-                for ( char* p = tmp; *p; p++ )
-                    if ( *p == '\\' ) *p = '/';
-
-                char* p = tmp;
-                while ( *p )
-                {
-                    if ( *p == '/' )
-                    {
-                        *p = '\0';
-                        bool found = false;
-                        for ( int j = 0; j < folder_count; ++j )
-                            if ( strcmp( folders[ j ], tmp ) == 0 ) { found = true; break; }
-                        if ( !found && folder_count < 64 )
-                        {
-                            snprintf( folders[ folder_count ], PATH_MAX, "%s", tmp );
-                            char key[ 192 ];
-                            snprintf( key, sizeof( key ), "folder:%s:%s", out_name, tmp );
-                            guid_from_name( key, folder_guids[ folder_count ] );
-                            folder_count++;
-                        }
-                        *p = '/';
-                    }
-                    p++;
-                }
-                // Register the leaf (full path).
+                *p = '\0';
                 bool found = false;
                 for ( int j = 0; j < folder_count; ++j )
                     if ( strcmp( folders[ j ], tmp ) == 0 ) { found = true; break; }
@@ -1066,7 +1067,21 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
                     guid_from_name( key, folder_guids[ folder_count ] );
                     folder_count++;
                 }
+                *p = '/';
             }
+            p++;
+        }
+        // Register the leaf (full path).
+        bool found = false;
+        for ( int j = 0; j < folder_count; ++j )
+            if ( strcmp( folders[ j ], tmp ) == 0 ) { found = true; break; }
+        if ( !found && folder_count < 64 )
+        {
+            snprintf( folders[ folder_count ], PATH_MAX, "%s", tmp );
+            char key[ 192 ];
+            snprintf( key, sizeof( key ), "folder:%s:%s", out_name, tmp );
+            guid_from_name( key, folder_guids[ folder_count ] );
+            folder_count++;
         }
     }
 
@@ -1169,6 +1184,22 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
     }
 
     fprintf( f, "\tEndGlobalSection\n" );
+
+    // ExtensibilityGlobals: startup project (optional).
+    if ( sln->startup_project )
+    {
+        target_info_t* startup_t = find_target( sln->startup_project );
+        if ( startup_t )
+        {
+            char sln_guid[ 64 ];
+            guid_from_name( out_name, sln_guid );
+            fprintf( f, "\tGlobalSection(ExtensibilityGlobals) = postSolution\n" );
+            fprintf( f, "\t\tSolutionGuid = %s\n", sln_guid );
+            fprintf( f, "\t\tStartupProject = %s\n", startup_t->name );
+            fprintf( f, "\tEndGlobalSection\n" );
+        }
+    }
+
     fprintf( f, "EndGlobal\n" );
     fclose( f );
 }
