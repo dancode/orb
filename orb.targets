@@ -265,6 +265,8 @@ target host_tool
     root        source/host/tool
     folder      08_Host
     unit        host_tool_main.c
+	dep 		mod
+	mono_dep	render
 
 target host_sandbox
 
@@ -365,8 +367,9 @@ target sb_example_runtime
     root        source/sandbox/example/example_runtime
     folder      09_SANDBOX/EXAMPLE
     unit        example_runtime.c
-	dep 		mod ref sys core app		# static engine 
+	dep 		mod ref sys core app		# static engine
     dep         run rhi					# static runtime + services
+	mono_dep	render example_reflect
 		
 target sb_example_tool
 
@@ -376,6 +379,7 @@ target sb_example_tool
     unit        example_tool.c
 	dep 		mod ref sys core app
     dep         run
+	mono_dep	render rhi
 
 target sb_example_server
 
@@ -385,6 +389,7 @@ target sb_example_server
     unit        example_server.c
 	dep 		mod ref sys core app
     dep         run
+	mono_dep	render rhi example
 
 target sb_example_editor
 
@@ -394,6 +399,7 @@ target sb_example_editor
     unit        example_editor.c
 	dep 		mod ref sys core app
     dep         run rhi
+	mono_dep	render example
 
 target sb_example_game
 
@@ -403,6 +409,8 @@ target sb_example_game
     unit        example_game.c
 	dep 		mod ref sys core app
     dep         run rhi
+	mono_dep	render
+	mono_dep 	render
 	
 		
 # ==============================================================================

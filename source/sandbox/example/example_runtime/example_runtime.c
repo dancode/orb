@@ -74,6 +74,7 @@
 
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_modules/render/render_api.h"
+#include "runtime_modules/example_reflect/example_reflect_api.h"
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
 

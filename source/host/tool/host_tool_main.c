@@ -37,6 +37,7 @@
 #include "engine/mod/mod_import.h"
 #include "engine/sys/sys_host.h"
 #include "engine/core/core_host.h"
+#include "runtime_modules/render/render_api.h"
 
 /*==============================================================================================
     Parsed CLI context

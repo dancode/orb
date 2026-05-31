@@ -16,6 +16,7 @@
 
 #include "orb.h"
 #include "runtime_service/rhi/rhi_api.h"
+#include "runtime_modules/render/render_api.h"
 #include "runtime/runtime_host.h"
 #include "engine/app/app_api.h"
 
@@ -53,7 +54,7 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( app    ),
     RUN_SERVICE( rhi    ),
     RUN_MODULE ( render ),
-    RUN_MODULE ( sample_game ),
+    // RUN_MODULE( sample_game ),   /* uncomment when sample_game_api.h exists */
     { 0 }
 };  // add RUN_MODULE( physics ) when ready
 

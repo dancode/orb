@@ -25,9 +25,9 @@ typedef struct render_api_s
 } render_api_t;
 
 #if defined( BUILD_STATIC ) || defined( RENDER_STATIC )
-MOD_GATEWAY_STATIC( render_api_t, render )
+    MOD_GATEWAY_STATIC( render_api_t, render )
 #else
-MOD_GATEWAY_DYNAMIC( render_api_t, render )
+    MOD_GATEWAY_DYNAMIC( render_api_t, render )
 #endif
 
 #if defined( BUILD_STATIC ) || defined( RENDER_STATIC )
