@@ -248,6 +248,8 @@ build_gen_proj_target_msbuild( target_info_t* target )
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
+        if ( g_files[ i ].is_natvis )
+            continue;    // emitted in a separate Natvis ItemGroup below
         char inc[ PATH_MAX + 32 ];
         gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
         if ( is_unit_file( target, g_files[ i ].path ) )
@@ -266,6 +268,24 @@ build_gen_proj_target_msbuild( target_info_t* target )
                  s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
     }
     fprintf( f, "  </ItemGroup>\n" );
+
+    // Natvis visualizer files: separate ItemGroup so VS loads them as debugger visualizers.
+    bool ms_has_natvis = false;
+    for ( int i = 0; i < g_file_count; ++i )
+        if ( g_files[ i ].is_natvis ) { ms_has_natvis = true; break; }
+    if ( ms_has_natvis )
+    {
+        fprintf( f, "  <ItemGroup>\n" );
+        for ( int i = 0; i < g_file_count; ++i )
+        {
+            if ( !g_files[ i ].is_natvis )
+                continue;
+            char inc[ PATH_MAX + 32 ];
+            gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
+            fprintf( f, "    <Natvis Include=\"%s\" />\n", inc );
+        }
+        fprintf( f, "  </ItemGroup>\n" );
+    }
 
     // ProjectReference items: MSBuild resolves build order and links .lib outputs.
     // In monolithic mode also include mono_deps (runtime-loaded modules that must be linked).

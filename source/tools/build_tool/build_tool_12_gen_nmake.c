@@ -115,6 +115,7 @@ typedef struct
     char path[ PATH_MAX ];      // Relative path from project root.
     char filter[ PATH_MAX ];    // Virtual folder path in VS (e.g. "engine\\core").
     bool is_header;             // True for .h files.
+    bool is_natvis;             // True for .natvis debugger visualizer files.
 
 } file_info_t;
 
@@ -280,9 +281,10 @@ scan_directory_recursive( const char* dir, const char* root_dir )
             if ( !ext )
                 continue;
 
-            bool is_c = platform_stricmp( ext, ".c" ) == 0;
-            bool is_h = platform_stricmp( ext, ".h" ) == 0;
-            if ( !( is_c || is_h ) )
+            bool is_c      = platform_stricmp( ext, ".c" ) == 0;
+            bool is_h      = platform_stricmp( ext, ".h" ) == 0;
+            bool is_natvis = platform_stricmp( ext, ".natvis" ) == 0;
+            if ( !( is_c || is_h || is_natvis ) )
                 continue;
             if ( g_file_count >= MAX_FILES )
                 continue;
@@ -299,6 +301,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
                 strcpy( f->path, path );
 
             f->is_header = is_h;
+            f->is_natvis = is_natvis;
             get_filter_for_path( path, root_dir, f->filter );
             if ( f->filter[ 0 ] != '\0' )
                 add_filters_recursive( f->filter );
@@ -709,6 +712,8 @@ write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
     {
+        if ( g_files[ i ].is_natvis )
+            continue;    // emitted in a separate Natvis ItemGroup below
         bool        is_unit = target && is_unit_file( target, g_files[ i ].path );
         const char* tag     = is_unit ? "ClCompile" : "ClInclude";
         char        inc[ PATH_MAX + 32 ];
@@ -731,6 +736,28 @@ write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
         fprintf( f, "    </ClInclude>\n" );
     }
     fprintf( f, "  </ItemGroup>\n" );
+
+    // Natvis visualizer files: separate ItemGroup so VS loads them as debugger visualizers.
+    bool has_natvis = false;
+    for ( int i = 0; i < g_file_count; ++i )
+        if ( g_files[ i ].is_natvis ) { has_natvis = true; break; }
+    if ( has_natvis )
+    {
+        fprintf( f, "  <ItemGroup>\n" );
+        for ( int i = 0; i < g_file_count; ++i )
+        {
+            if ( !g_files[ i ].is_natvis )
+                continue;
+            char inc[ PATH_MAX + 32 ];
+            gen_inc_path( g_files[ i ].path, inc, sizeof( inc ) );
+            fprintf( f, "    <Natvis Include=\"%s\">\n", inc );
+            if ( g_files[ i ].filter[ 0 ] != '\0' )
+                fprintf( f, "      <Filter>%s</Filter>\n", g_files[ i ].filter );
+            fprintf( f, "    </Natvis>\n" );
+        }
+        fprintf( f, "  </ItemGroup>\n" );
+    }
+
     fprintf( f, "</Project>\n" );
     fclose( f );
 }
@@ -784,6 +811,10 @@ build_gen_proj_target( target_info_t* target )
             fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
                      s_ctx.cd_root, s_ctx.build_tool_exe, target->name, item_mono );
             fprintf( f, "    </ClCompile>\n" );
+        }
+        else if ( g_files[ i ].is_natvis )
+        {
+            fprintf( f, "    <Natvis Include=\"%s\" />\n", inc );
         }
         else
         {
