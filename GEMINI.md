@@ -10,7 +10,7 @@ The engine is organized into the following hierarchical layers (from lowest to h
 2. **`source/engine/`**: Stateful foundational static libraries.
    - `sys/`: OS abstractions (files, threads, time, DLL loading).
    - `core/`: Stateful systems (arenas, logging, cvars, string interning).
-   - `rs/`: Reflection system (metadata, serialization).
+   - `ref/`: Reflection system (metadata, serialization).
    - `net/`: Networking abstractions and protocols.
    - `mod/`: Module registry, dynamic loading, and hot-reload management.
    - `app/`: Windowing, OS events, and application lifecycle.
@@ -52,7 +52,7 @@ Every engine library uses a three-header split:
 
 The `-monolithic` flag defines `BUILD_STATIC` globally. `MOD_GATEWAY_STATIC` / `MOD_GATEWAY_DYNAMIC` macros in module API headers switch behavior automatically.
 
-## Reflection System (rs_)
+## Reflection System (ref_)
 - **Module pattern**: leaf module (no deps), inits before core.
 - **Internal string pool**: 16 KB flat pool.
 - **Stack-frame registry**: each module pushes a frame on load and pops on unload.
@@ -89,7 +89,7 @@ ORB uses a self-contained, high-performance C-based build orchestrator.
 - **Verification**: Validate by running sandbox executables:
   - `sb_engine_sys` - sys layer (OS abstractions)
   - `sb_engine_core` - core layer (memory, logging, cvars)
-  - `sb_engine_reflect` - rs_ reflection system
+  - `sb_engine_reflect` - ref_ reflection system
   - `sb_engine_mod` - module system / hot-reload
   - `sb_engine_app` - application / windowing
 

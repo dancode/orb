@@ -70,7 +70,7 @@ No automated test framework. Validate by running sandbox executables:
 
 - `sb_engine_sys` -- sys layer (OS abstractions)
 - `sb_engine_core` -- core layer (memory, logging, cvars)
-- `sb_engine_reflect` -- rs_ reflection system
+- `sb_engine_reflect` -- ref_ reflection system
 - `sb_engine_mod` -- module system / hot-reload
 - `sb_engine_app` -- application / windowing
 - `sb_tool_modinfo` -- loads a DLL and prints its `mod_api_t`
@@ -90,7 +90,7 @@ Strict dependency hierarchy -- lower layers never depend on higher ones.
 source/base/          -- stateless stdlib (math, strings, memory, logging)
 source/engine/
   sys/                -- OS abstractions: files, threads, time, DLL loading, paths
-  core/               -- stateful systems: memory arenas, logging, cvars, rs_ reflection, SIDs
+  core/               -- stateful systems: memory arenas, logging, cvars, ref_ reflection, SIDs
   mod/                -- module registry: dynamic loading, hot-reload, dependency graph
   app/                -- windowing, events, main-loop lifecycle
 source/runtime/       -- simulation scaffolding: host loop + services + hot-reload DLLs
@@ -128,22 +128,22 @@ Include chain: `module_host.h` -> `module_api.h` -> `module.h`
 Existing sets: `mod_import.h/mod_api.h/mod_host.h/mod_export.h`, `ref.h/ref_api.h/ref_host.h`,
 `sys.h/sys_api.h/sys_host.h`, `app.h/app_api.h/app_host.h`, `core.h/core_api.h/core_host.h`.
 
-## Reflection System (rs_)
+## Reflection System (ref_)
 
 Located in `source/engine/ref/`. Unity build entry is `ref.c`. Loaded via
 `mod_static_load("ref", ref_get_mod_desc())` -- see `ref_host.h` for host integration.
 
 Key design points:
 - **Module pattern**: leaf module (no deps), inits before core. Hosts call `ref_wire_mod_callbacks()` to connect DLL load events -- no boilerplate needed.
-- **Internal string pool**: 16 KB flat pool; `rs_init()` sets it up.
+- **Internal string pool**: 16 KB flat pool; `ref_init()` sets it up.
 - **Stack-frame registry**: each module pushes a frame on load and pops on unload; O(1) registration and teardown.
-- **Lazy resolution**: fields reference base types by hash; `rs_finalize_frame()` resolves to stable type IDs after all registrations.
+- **Lazy resolution**: fields reference base types by hash; `ref_finalize_frame()` resolves to stable type IDs after all registrations.
 - **Packed modifier chain**: up to four declarator modifiers encoded in a single 16-bit value per field.
 - **Schema hash**: deterministic hash of the reflected layout, used to detect hot-reload ABI breaks.
 
 Include `ref.h` in DLL modules; include `ref_host.h` in hosts, unity entries, and sandboxes.
 
-Implementation: `rs_registry.c`, `rs_access.c`, `rs_walk.c`, `rs_serialize.c`, `rs_print.c`, `rs_test.c`.
+Implementation: `ref_registry.c`, `ref_access.c`, `ref_walk.c`, `ref_serialize.c`, `ref_print.c`, `ref_test.c`.
 
 ## Module System
 

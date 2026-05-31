@@ -517,9 +517,11 @@ solution orb_examples
 solution orb_sandbox_reflect			# Run/Debug reflection
 
     out         build/proj
+	startup     sb_engine_ref
+	
 	add         sys ref mod
 	add 		sb_engine_ref
-	startup     sb_engine_ref
+	add 		reflect_tool
 
 solution orb_sandbox_engine				# Run/Debug engine
 

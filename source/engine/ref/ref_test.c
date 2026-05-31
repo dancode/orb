@@ -1034,16 +1034,16 @@ test_usage_example( void )
 
     /* Register stance_t enum. */
     const uint32_t h_stance    = ref_hash_str( "stance_t" );
-    ref_type_t      stance_type = { 0 };
+    ref_type_t     stance_type = { 0 };
     stance_type.name_id        = test_intern( "stance_t" );
     stance_type.name_hash      = h_stance;
     stance_type.size           = (uint16_t)sizeof( ref_test_stance_t );
     stance_type.align          = (uint8_t)_Alignof( ref_test_stance_t );
 
     ref_enum_t stances[ 3 ] = {
-        {.name_id = test_intern( "IDLE" ),     .value = REF_TEST_STANCE_IDLE    },
-        {.name_id = test_intern( "RUNNING" ),  .value = REF_TEST_STANCE_RUNNING },
-        {.name_id = test_intern( "CROUCHED" ), .value = REF_TEST_STANCE_CROUCHED},
+        {.name_id = test_intern( "IDLE" ),     .value = REF_TEST_STANCE_IDLE     },
+        {.name_id = test_intern( "RUNNING" ),  .value = REF_TEST_STANCE_RUNNING  },
+        {.name_id = test_intern( "CROUCHED" ), .value = REF_TEST_STANCE_CROUCHED },
     };
     ref_register_enum( &stance_type, stances, 3 );
 
