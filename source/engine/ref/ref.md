@@ -186,6 +186,7 @@ typedef struct ref_reg_api_s {
     uint16_t   (*ref_register_type)( const ref_type_t*, const ref_field_t*, uint16_t );
     uint16_t   (*ref_register_enum)( const ref_type_t*, const ref_enum_t*, uint16_t );
     uint16_t   (*ref_register_bitset)( const ref_type_t*, const ref_enum_t*, uint16_t );
+    uint16_t   (*ref_register_function)( const ref_type_t*, const ref_field_t*, uint16_t );
     bool       (*ref_type_add_attr)( uint16_t type_id, const ref_attrib_t* );
     bool       (*ref_field_add_attr)( uint16_t field_id, const ref_attrib_t* );
     const ref_type_t* (*ref_get_type)( uint16_t type_id );

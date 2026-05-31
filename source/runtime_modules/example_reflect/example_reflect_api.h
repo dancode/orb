@@ -19,6 +19,9 @@ typedef struct example_reflect_api_s
     /* Returns a populated demo entity (pointer is stable for the module's lifetime). */
     const ex_entity_t* ( *demo_entity )( void );
 
+    /* Returns a populated demo NPC whose on_damage field holds a live callback pointer. */
+    const ex_npc_t* ( *demo_npc )( void );
+
 } example_reflect_api_t;
 
 #if defined( BUILD_STATIC ) || defined( EXAMPLE_REFLECT_STATIC )

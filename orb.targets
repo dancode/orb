@@ -132,18 +132,6 @@ target physics
     unit        physics.c
 
 # ==============================================================================
-# 03_RUNTIME_EXAMPLES
-# ==============================================================================
-
-target example_reflect
-
-    type        dynamic
-    root        source/runtime_modules/example_reflect
-    folder      03_RUNTIME/EXAMPLES
-    unit        example_reflect.c
-    flag        reflect
-
-# ==============================================================================
 # 04_GAME
 # ==============================================================================
 
@@ -333,6 +321,14 @@ target sb_engine_ref
 # 09_SANDBOX/RUNTIME
 # ==============================================================================
 
+target example_reflect
+
+    type        dynamic
+    root        source/runtime_modules/example_reflect
+    folder      09_SANDBOX/RUNTIME
+    unit        example_reflect.c
+    flag        reflect
+	
 target sb_runtime_reflect
 
     type        exe
@@ -347,7 +343,7 @@ target example_gen
 
     type        dynamic
     root        source/runtime_modules/example_gen
-    folder      03_RUNTIME/EXAMPLES
+    folder      09_SANDBOX/RUNTIME
     unit        example_gen.c
     flag        reflect
 
@@ -544,8 +540,11 @@ solution orb_sandbox_engine				# Run/Debug engine
 	add 		sb_engine_ref 
 	add 		sb_engine_app
 	
-	add 		sb_runtime_gen		# test reflected module
-	add 		example_gen			# reflected module
+	add 		example_gen			# test reflected REF_MODULE
+	add 		sb_runtime_gen		# test loading REF_MODULE
+	
+	add 		example_reflect		# test module with reflected types
+	add 		sb_runtime_reflect	# test reading reflected types
 	
 
 # ==============================================================================

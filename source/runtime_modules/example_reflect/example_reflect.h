@@ -145,5 +145,26 @@ typedef struct ex_event_s
 
 } ex_event_t;
 
+/*==============================================================================================
+    Reflected function signature and NPC type
+
+    ex_on_damage_fn demonstrates REF_FUNC: the signature is registered as a
+    REF_KIND_FUNCTION type whose fields are [return, param0, param1, ...].
+    ex_npc_t.on_damage is a REF_MODS_FUNCTION field; its aux stores the sig type_id.
+==============================================================================================*/
+
+REF_FUNC()
+typedef void ( *ex_on_damage_fn )( int32_t amount, const ex_vec3_t* hit_pos );
+
+REF_STRUCT( tooltip = "NPC with a reflected damage callback field." )
+typedef struct ex_npc_s
+{
+    REF_PROP()                     int32_t         id;
+    REF_PROP()                     char            name[ 32 ];
+    REF_PROP( range = 0.0, 100.0 ) float           health;
+    REF_PROP()                     ex_on_damage_fn on_damage;
+
+} ex_npc_t;
+
 /*============================================================================================*/
 #endif    // EXAMPLE_REFLECT_H

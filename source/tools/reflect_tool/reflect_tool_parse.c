@@ -161,6 +161,141 @@ parse_field_decl( const char* p, decl_field_t* out )
 }
 
 /*----------------------------------------------------------------------------------------------
+    REF_FUNC typedef parser
+
+    Parses: typedef ret_type (*name_fn)( param_type param_name, ... );
+
+    Stores results in decl_type_t using the fields[] array:
+        fields[0] = return descriptor  (name="return", base_type=ret_type, mods=0)
+        fields[1..N] = param descriptors (name=param_name, base_type=param_type, mods=...)
+----------------------------------------------------------------------------------------------*/
+
+static const char*
+parse_func_typedef( const char* p, decl_type_t* t )
+{
+    p = skip_ws( p );
+
+    /* Skip optional 'typedef' keyword. */
+    if ( is_ident_start( ( unsigned char )*p ) )
+    {
+        char        tok[ RT_MAX_NAME ];
+        const char* np = read_ident( p, tok, RT_MAX_NAME );
+        if ( strcmp( tok, "typedef" ) == 0 )
+            p = skip_ws( np );
+    }
+
+    /* Scan forward to find '( *' which marks the function pointer declarator.
+       Allow optional whitespace between '(' and '*' to handle both `(*name)` and `( *name )`. */
+    const char* ret_start = p;
+    const char* fn_open   = NULL;
+    for ( const char* q = p; *q && *q != ';'; q++ )
+    {
+        if ( q[ 0 ] == '(' )
+        {
+            const char* r = q + 1;
+            while ( *r == ' ' || *r == '\t' ) r++;
+            if ( *r == '*' ) { fn_open = q; break; }
+        }
+    }
+    if ( !fn_open )
+        return p;
+
+    /* Extract return type: everything between ret_start and '(*', trimmed. */
+    char ret_type[ RT_MAX_NAME ] = { 0 };
+    {
+        int rlen = ( int )( fn_open - ret_start );
+        if ( rlen > 0 && rlen < RT_MAX_NAME )
+        {
+            memcpy( ret_type, ret_start, ( size_t )rlen );
+            ret_type[ rlen ] = '\0';
+            trim( ret_type );
+        }
+    }
+    if ( !ret_type[ 0 ] )
+        str_copy( ret_type, "void", RT_MAX_NAME );
+
+    /* Read the function pointer name from inside (* name ). */
+    p = fn_open + 1;  /* skip '(' */
+    p = skip_ws( p );
+    if ( *p == '*' ) p++;  /* skip '*' */
+    p = skip_ws( p );
+    p = read_ident( p, t->name, RT_MAX_NAME );
+    while ( *p && *p != ')' ) p++;  /* skip to closing ')' */
+    if ( *p == ')' ) p++;
+    p = skip_ws( p );
+
+    /* Read the full parameter list. */
+    char param_str[ RT_MAX_PARAM_STR ] = { 0 };
+    if ( *p == '(' )
+        p = read_paren_block( p, param_str, sizeof param_str );
+
+    /* Build fields: [0] = return descriptor. */
+    t->field_count = 0;
+    {
+        decl_field_t* rf = &t->fields[ t->field_count++ ];
+        memset( rf, 0, sizeof *rf );
+        str_copy( rf->name,      "return",  RT_MAX_NAME );
+        str_copy( rf->base_type, ret_type,  RT_MAX_NAME );
+        /* mods = 0 (REF_MODS_VALUE) for typical void or primitive return */
+    }
+
+    /* Parse parameters: split param_str on commas at paren depth 0. */
+    {
+        const char* q     = param_str;
+        char        seg[ RT_MAX_NAME * 4 ];
+        int         slen  = 0;
+        int         depth = 0;
+
+        for ( ;; )
+        {
+            int done  = ( *q == '\0' );
+            int split = ( !done && *q == ',' && depth == 0 );
+
+            if ( done || split )
+            {
+                if ( slen > 0 && t->field_count < RT_MAX_FIELDS_PER_TYPE )
+                {
+                    seg[ slen ] = '\0';
+                    trim( seg );
+
+                    /* Skip lone 'void' which means no parameters. */
+                    if ( strcmp( seg, "void" ) != 0 && seg[ 0 ] )
+                    {
+                        /* Synthesize "type name;" and reuse the existing field parser. */
+                        char decl[ RT_MAX_NAME * 4 + 2 ];
+                        snprintf( decl, sizeof decl, "%s;", seg );
+
+                        decl_field_t* pf = &t->fields[ t->field_count ];
+                        memset( pf, 0, sizeof *pf );
+                        parse_field_decl( decl, pf );
+
+                        if ( pf->base_type[ 0 ] )
+                            t->field_count++;
+                    }
+                }
+                slen = 0;
+                if ( done ) break;
+                q++;
+                continue;
+            }
+
+            if ( *q == '(' ) depth++;
+            else if ( *q == ')' ) depth--;
+
+            if ( slen < ( int )sizeof( seg ) - 1 )
+                seg[ slen++ ] = *q;
+            q++;
+        }
+    }
+
+    /* Advance past the closing ';'. */
+    while ( *p && *p != ';' ) p++;
+    if ( *p == ';' ) p++;
+
+    return p;
+}
+
+/*----------------------------------------------------------------------------------------------
     REF_API() function signature parser
 ----------------------------------------------------------------------------------------------*/
 
@@ -385,6 +520,37 @@ parse_buffer( const char* buf, parse_data_t* out, int api_only )
         else if ( !api_only && match_word( p, buf, "REF_BITSET" ) ) kind = RT_KIND_BITSET;
         else if ( !api_only && match_word( p, buf, "REF_UNION"  ) ) kind = RT_KIND_UNION;
         else if ( !api_only && match_word( p, buf, "REF_ENUM"   ) ) kind = RT_KIND_ENUM;
+        else if ( !api_only && match_word( p, buf, "REF_FUNC"   ) )
+        {
+            p += ( int )( sizeof( "REF_FUNC" ) - 1 );
+            p  = skip_ws( p );
+
+            char args[ 1024 ] = { 0 };
+            if ( *p == '(' )
+                p = read_paren_block( p, args, sizeof args );
+
+            if ( out->type_count < RT_MAX_TYPES )
+            {
+                decl_type_t* t = &out->types[ out->type_count ];
+                memset( t, 0, sizeof *t );
+                t->kind = RT_KIND_FUNCTION;
+                parse_attr_args( args, t->attrs, RT_MAX_ATTRS_PER_ITEM, &t->attr_count );
+
+                p = parse_func_typedef( p, t );
+
+                if ( t->name[ 0 ] && t->field_count > 0 )
+                {
+                    out->type_count++;
+                    out->func_count++;
+                }
+            }
+            else
+            {
+                while ( *p && *p != ';' ) p++;
+                if ( *p ) p++;
+            }
+            continue;
+        }
         else if ( match_word( p, buf, "REF_MODULE" ) )
         {
             p += (int)( sizeof( "REF_MODULE" ) - 1 );
@@ -570,6 +736,7 @@ parse( const file_list_t* files, parse_data_t* out )
     out->type_count            = 0;
     out->struct_count          = 0;
     out->enum_count            = 0;
+    out->func_count            = 0;
     out->header_count          = 0;
     out->module_api.has_module = 0;
     out->module_api.func_count = 0;

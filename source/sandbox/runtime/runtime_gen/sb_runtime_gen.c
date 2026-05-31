@@ -19,6 +19,8 @@ main( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
 
+    printf( "=== sb_runtime_gen ===\n" );
+
     mod_system_init();
 
     ref_wire_mod_callbacks();

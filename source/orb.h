@@ -280,6 +280,7 @@ typedef void ( *log_fn_t )( int level, const char* tag, const char* msg );
 #define REF_UNION(...)
 #define REF_ENUM(...)
 #define REF_BITSET(...)
+#define REF_FUNC(...)
 #define REF_PROP(...)
 
 #define REF_MODULE(...)

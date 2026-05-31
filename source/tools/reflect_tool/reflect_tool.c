@@ -125,11 +125,12 @@ main( int argc, char** argv )
     if ( !silent )
     {
         if ( data.module_api.has_module )
-            printf( "[reflect_tool] %s: %d struct(s), %d enum(s), module API: %d fn(s)\n",
-                    module_name, data.struct_count, data.enum_count, data.module_api.func_count );
+            printf( "[reflect_tool] %s: %d struct(s), %d enum(s), %d func sig(s), module API: %d fn(s)\n",
+                    module_name, data.struct_count, data.enum_count, data.func_count,
+                    data.module_api.func_count );
         else
-            printf( "[reflect_tool] %s: %d struct(s), %d enum(s)\n",
-                    module_name, data.struct_count, data.enum_count );
+            printf( "[reflect_tool] %s: %d struct(s), %d enum(s), %d func sig(s)\n",
+                    module_name, data.struct_count, data.enum_count, data.func_count );
     }
 
     return 0; /* Success */

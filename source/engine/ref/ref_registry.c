@@ -725,13 +725,14 @@ ref_register_module( const char* name, const mod_desc_t* desc )
     /* Build the registration vtable that generated DLL code calls into.
        This keeps the generated code independent of the internal ref_ implementation. */
     ref_reg_api_t api = {
-        .intern             = ref_intern,
-        .ref_register_type   = ref_register_type,
-        .ref_register_enum   = ref_register_enum,
-        .ref_register_bitset = ref_register_bitset,
-        .ref_type_add_attr   = ref_type_add_attr,
-        .ref_field_add_attr  = ref_field_add_attr,
-        .ref_get_type        = ref_get_type,
+        .intern                  = ref_intern,
+        .ref_register_type       = ref_register_type,
+        .ref_register_enum       = ref_register_enum,
+        .ref_register_bitset     = ref_register_bitset,
+        .ref_register_function   = ref_register_function,
+        .ref_type_add_attr       = ref_type_add_attr,
+        .ref_field_add_attr      = ref_field_add_attr,
+        .ref_get_type            = ref_get_type,
     };
 
     ref_reg( &api );

@@ -95,10 +95,11 @@ typedef struct enum_s
 
 typedef enum kind_e
 {
-    RT_KIND_STRUCT = 0,
-    RT_KIND_ENUM   = 1,
-    RT_KIND_BITSET = 2,
-    RT_KIND_UNION  = 3,
+    RT_KIND_STRUCT   = 0,
+    RT_KIND_ENUM     = 1,
+    RT_KIND_BITSET   = 2,
+    RT_KIND_UNION    = 3,
+    RT_KIND_FUNCTION = 4,   /* typedef void (*name_fn)(...) -- field[0]=return, field[1..]=params */
 
 } kind_t;
 
@@ -159,6 +160,7 @@ typedef struct parse_data_s
     int            type_count;      // total declared types (any kind)
     int            struct_count;    // count used for output loops
     int            enum_count;      // enum + bitset
+    int            func_count;      // REF_FUNC function signature types
 
     /* Include paths (relative to source/) for headers that actually contained
        REF_ markers. The generated .c #includes these so type names resolve. */

@@ -26,6 +26,7 @@ typedef struct example_reflect_state_s
     ex_entity_t demo;
     ex_vec3_t   demo_velocity;
     ex_vec3_t   demo_slot[ 2 ];
+    ex_npc_t    demo_npc;
 
 } example_reflect_state_t;
 
@@ -34,6 +35,14 @@ static example_reflect_state_t* s = NULL;
 /*==============================================================================================
     Implementation
 ==============================================================================================*/
+
+/* Concrete callback wired into the demo NPC so on_damage is a non-null pointer. */
+static void
+ex_on_damage_impl( int32_t amount, const ex_vec3_t* hit_pos )
+{
+    UNUSED( amount );
+    UNUSED( hit_pos );
+}
 
 static void
 populate_demo( example_reflect_state_t* st )
@@ -61,6 +70,13 @@ populate_demo( example_reflect_state_t* st )
     st->demo.slots[ 1 ]         = &st->demo_slot[ 1 ];
     st->demo.slots[ 2 ]         = NULL;
     st->demo.slots[ 3 ]         = NULL;
+
+    /* Populate demo NPC with a live callback so the function pointer field is non-null. */
+    memset( &st->demo_npc, 0, sizeof st->demo_npc );
+    st->demo_npc.id        = 1;
+    strncpy( st->demo_npc.name, "demo_npc", sizeof st->demo_npc.name - 1 );
+    st->demo_npc.health    = 80.0f;
+    st->demo_npc.on_damage = ex_on_damage_impl;
 }
 
 REF_API()
@@ -68,6 +84,13 @@ const ex_entity_t*
 api_demo_entity( void )
 {
     return s ? &s->demo : NULL;
+}
+
+REF_API()
+const ex_npc_t*
+api_demo_npc( void )
+{
+    return s ? &s->demo_npc : NULL;
 }
 
 REF_API()
@@ -83,6 +106,7 @@ this_is_a_function( void )
 
 const example_reflect_api_t g_example_reflect_api_struct = {
     .demo_entity = api_demo_entity,
+    .demo_npc    = api_demo_npc,
 };
 
 /*==============================================================================================

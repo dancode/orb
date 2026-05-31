@@ -67,10 +67,11 @@ list_type_cb( uint16_t type_id, const ref_type_t* t, void* user )
     const char* kind = "?";
     switch ( t->kind )
     {
-        case REF_KIND_STRUCT: kind = "struct"; break;
-        case REF_KIND_ENUM: kind = "enum"; break;
-        case REF_KIND_BITSET: kind = "bitset"; break;
-        case REF_KIND_UNION: kind = "union"; break;
+        case REF_KIND_STRUCT:   kind = "struct";   break;
+        case REF_KIND_ENUM:     kind = "enum";     break;
+        case REF_KIND_BITSET:   kind = "bitset";   break;
+        case REF_KIND_UNION:    kind = "union";     break;
+        case REF_KIND_FUNCTION: kind = "func_sig"; break;
         default: break;
     }
     printf( "  [%3u] %-7s %-20s size=%-3u align=%-2u fields=%u\n", type_id, kind, ref_cstr( t->name_id ),
@@ -134,6 +135,15 @@ value_visit( void* addr, uint16_t type_id, const ref_field_t* field, void* user 
     if ( is_ptr_shape )
     {
         printf( "    %-20s %-14s %s\n", fname, tname, *( void** )addr ? "(non-null)" : "(null)" );
+        return;
+    }
+
+    /* Function pointer field: addr is the function pointer variable itself. */
+    if ( field->mods == REF_MODS_FUNCTION )
+    {
+        const ref_type_t* sig = ref_get_type( field->aux );
+        const char* signame = sig ? ref_cstr( sig->name_id ) : "?";
+        printf( "    %-20s %-14s %s\n", fname, signame, *( void** )addr ? "(set)" : "(null)" );
         return;
     }
 
@@ -373,6 +383,66 @@ exercise_reflection( void )
 
         printf( "\n=== ref_walk over ex_event_t (damage variant) ===\n" );
         ref_walk( &ev, event_tid, value_visit, NULL );
+    }
+
+    /* STEP 10: Function signature reflection.
+       REF_FUNC registers a function pointer typedef as a REF_KIND_FUNCTION type.
+       The type stores: field[0] = return descriptor, field[1..N] = parameter descriptors.
+       ref_function_get_return / ref_function_param_count / ref_function_get_param provide
+       typed access so callers never need to index into the field array manually.
+       ex_npc_t.on_damage is a REF_MODS_FUNCTION field; its aux holds the sig's type_id,
+       letting an inspector resolve the full signature from any callback field at runtime. */
+
+    u16 sig_tid = ref_find_type_by_name( "ex_on_damage_fn" );
+    u16 npc_tid = ref_find_type_by_name( "ex_npc_t" );
+
+    if ( sig_tid != REF_TYPE_INVALID )
+    {
+        printf( "\n=== Function signature: ex_on_damage_fn ===\n" );
+
+        const ref_field_t* ret = ref_function_get_return( sig_tid );
+        if ( ret )
+        {
+            char desc[ 64 ];
+            ref_field_describe( ret, desc, sizeof desc );
+            printf( "  return : %s\n", desc );
+        }
+
+        u16 param_n = ref_function_param_count( sig_tid );
+        printf( "  params : %u\n", ( unsigned )param_n );
+        for ( u16 i = 0; i < param_n; i++ )
+        {
+            const ref_field_t* p = ref_function_get_param( sig_tid, i );
+            if ( p )
+            {
+                char desc[ 64 ];
+                ref_field_describe( p, desc, sizeof desc );
+                printf( "    [%u] %-12s : %s\n", ( unsigned )i, ref_cstr( p->name_id ), desc );
+            }
+        }
+    }
+
+    if ( npc_tid != REF_TYPE_INVALID )
+    {
+        printf( "\n=== NPC struct fields (including callback) ===\n" );
+        ref_each_field( npc_tid, print_field_cb, NULL );
+
+        /* Resolve the callback field's aux back to its sig type to confirm the linkage. */
+        const ref_field_t* cb_field = ref_find_field( npc_tid, "on_damage" );
+        if ( cb_field && cb_field->mods == REF_MODS_FUNCTION )
+        {
+            const ref_type_t* sig = ref_get_type( cb_field->aux );
+            printf( "  on_damage links to sig '%s' (type_id=%u)\n",
+                    sig ? ref_cstr( sig->name_id ) : "?", ( unsigned )cb_field->aux );
+        }
+
+        /* Walk the live NPC instance — value_visit prints the function pointer slot as "(set)". */
+        const ex_npc_t* demo_npc = mod->demo_npc();
+        if ( demo_npc )
+        {
+            printf( "\n=== ref_walk over demo npc ===\n" );
+            ref_walk( ( void* )demo_npc, npc_tid, value_visit, NULL );
+        }
     }
 }
 

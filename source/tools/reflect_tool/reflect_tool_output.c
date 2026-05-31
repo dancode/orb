@@ -75,12 +75,32 @@ kind_macro( int kind )
 {
     switch ( kind )
     {
-        case RT_KIND_STRUCT: return "REF_KIND_STRUCT";
-        case RT_KIND_ENUM:   return "REF_KIND_ENUM";
-        case RT_KIND_BITSET: return "REF_KIND_BITSET";
-        case RT_KIND_UNION:  return "REF_KIND_UNION";
+        case RT_KIND_STRUCT:   return "REF_KIND_STRUCT";
+        case RT_KIND_ENUM:     return "REF_KIND_ENUM";
+        case RT_KIND_BITSET:   return "REF_KIND_BITSET";
+        case RT_KIND_UNION:    return "REF_KIND_UNION";
+        case RT_KIND_FUNCTION: return "REF_KIND_FUNCTION";
     }
     return "REF_KIND_PRIM";
+}
+
+/* Find a RT_KIND_FUNCTION type in the module's type table by name. Returns NULL if not found. */
+static const decl_type_t*
+find_func_type( const parse_data_t* data, const char* name )
+{
+    for ( int i = 0; i < data->type_count; i++ )
+    {
+        if ( data->types[ i ].kind == RT_KIND_FUNCTION && strcmp( data->types[ i ].name, name ) == 0 )
+            return &data->types[ i ];
+    }
+    return NULL;
+}
+
+/* Write the local-variable name used to capture a function signature's type_id. */
+static void
+func_tid_var( char* out, int max, const char* type_name )
+{
+    snprintf( out, max, "_tid_%s", type_name );
 }
 
 /* Emit one ref_attrib_t inline and call the given add function. */
@@ -133,7 +153,7 @@ emit_register( FILE* fc, const char* fn, const char* items, int count, int captu
 ----------------------------------------------------------------------------------------------*/
 
 static void
-emit_struct_block( FILE* fc, const decl_type_t* t )
+emit_struct_block( FILE* fc, const decl_type_t* t, const parse_data_t* data )
 {
     int has_field_attrs = 0;
     for ( int fi = 0; fi < t->field_count; fi++ )
@@ -149,24 +169,44 @@ emit_struct_block( FILE* fc, const decl_type_t* t )
         fprintf( fc, "        ref_field_t _fields[] = {\n" );
         for ( int fi = 0; fi < t->field_count; fi++ )
         {
-            const decl_field_t* f = &t->fields[ fi ];
+            const decl_field_t*  f    = &t->fields[ fi ];
+            const decl_type_t*   fsig = find_func_type( data, f->base_type );
+
             fprintf( fc, "            { .name_id = api->intern( \"%s\" ),\n", f->name );
-            fprintf( fc, "              .type_hash = ref_hash_str( \"%s\" ), "
-                         ".type_id = REF_TYPE_INVALID,\n", f->base_type );
-            fprintf( fc, "              .offset = REF_OFFSETOF( %s, %s ), "
-                         ".size = REF_FIELD_SIZE( %s, %s )",
-                     t->name, f->name, t->name, f->name );
-            if ( f->mods )
+
+            if ( fsig )
             {
-                const char* mname = mods_name( f->mods );
-                if ( mname )
-                    fprintf( fc, ",\n              .mods = %s", mname );
-                else
-                    fprintf( fc, ",\n              .mods = (uint16_t)0x%04X", (unsigned)f->mods );
+                /* Function pointer field: base type resolves to the signature's return type;
+                   mods = REF_MODS_FUNCTION; aux = the signature's captured type_id variable. */
+                const char* ret_base = ( fsig->field_count > 0 ) ? fsig->fields[ 0 ].base_type : "void";
+                char        var[ RT_MAX_NAME + 8 ];
+                func_tid_var( var, sizeof var, fsig->name );
+                fprintf( fc, "              .type_hash = ref_hash_str( \"%s\" ), "
+                             ".type_id = REF_TYPE_INVALID,\n", ret_base );
+                fprintf( fc, "              .offset = REF_OFFSETOF( %s, %s ), "
+                             ".size = REF_FIELD_SIZE( %s, %s ),\n",
+                         t->name, f->name, t->name, f->name );
+                fprintf( fc, "              .mods = REF_MODS_FUNCTION, .aux = %s },\n", var );
             }
-            if ( f->array_count )
-                fprintf( fc, ",\n              .aux = %u", (unsigned)f->array_count );
-            fprintf( fc, " },\n" );
+            else
+            {
+                fprintf( fc, "              .type_hash = ref_hash_str( \"%s\" ), "
+                             ".type_id = REF_TYPE_INVALID,\n", f->base_type );
+                fprintf( fc, "              .offset = REF_OFFSETOF( %s, %s ), "
+                             ".size = REF_FIELD_SIZE( %s, %s )",
+                         t->name, f->name, t->name, f->name );
+                if ( f->mods )
+                {
+                    const char* mname = mods_name( f->mods );
+                    if ( mname )
+                        fprintf( fc, ",\n              .mods = %s", mname );
+                    else
+                        fprintf( fc, ",\n              .mods = (uint16_t)0x%04X", (unsigned)f->mods );
+                }
+                if ( f->array_count )
+                    fprintf( fc, ",\n              .aux = %u", (unsigned)f->array_count );
+                fprintf( fc, " },\n" );
+            }
         }
         fprintf( fc, "        };\n" );
         emit_register( fc, "ref_register_type", "_fields", t->field_count, needs_tid );
@@ -311,7 +351,60 @@ emit_module_api_c( FILE* fc, const char* module_name, const module_api_t* api )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Function signature block emitter
+----------------------------------------------------------------------------------------------*/
+
+static void
+emit_func_block( FILE* fc, const decl_type_t* t )
+{
+    char var[ RT_MAX_NAME + 8 ];
+    func_tid_var( var, sizeof var, t->name );
+
+    fprintf( fc, "    { /* %s */\n", t->name );
+
+    /* kind is forced to REF_KIND_FUNCTION by ref_register_function; no need to set it here. */
+    fprintf( fc, "        ref_type_t _t = {\n" );
+    fprintf( fc, "            .name_id   = api->intern( \"%s\" ),\n", t->name );
+    fprintf( fc, "            .name_hash = ref_hash_str( \"%s\" ),\n", t->name );
+    fprintf( fc, "            .size      = REF_SIZEOF( %s ),\n", t->name );
+    fprintf( fc, "            .align     = REF_ALIGNOF( %s ),\n", t->name );
+    fprintf( fc, "        };\n" );
+
+    if ( t->field_count > 0 )
+    {
+        fprintf( fc, "        ref_field_t _fields[] = {\n" );
+        for ( int fi = 0; fi < t->field_count; fi++ )
+        {
+            const decl_field_t* f = &t->fields[ fi ];
+            fprintf( fc, "            { .name_id = api->intern( \"%s\" ),\n", f->name );
+            fprintf( fc, "              .type_hash = ref_hash_str( \"%s\" )", f->base_type );
+            if ( f->mods )
+            {
+                const char* mname = mods_name( f->mods );
+                if ( mname )
+                    fprintf( fc, ",\n              .mods = %s", mname );
+                else
+                    fprintf( fc, ",\n              .mods = (uint16_t)0x%04X", (unsigned)f->mods );
+            }
+            fprintf( fc, " },\n" );
+        }
+        fprintf( fc, "        };\n" );
+        fprintf( fc, "        %s = api->ref_register_function( &_t, _fields, %d );\n",
+                 var, t->field_count );
+    }
+    else
+    {
+        fprintf( fc, "        %s = api->ref_register_function( &_t, NULL, 0 );\n", var );
+    }
+
+    fprintf( fc, "    }\n\n" );
+}
+
+/*----------------------------------------------------------------------------------------------
     Register function emitter
+
+    Two-pass strategy: function signature types are emitted before struct/union/enum types so
+    that their captured type_ids are available when struct fields referencing them are built.
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -319,12 +412,35 @@ emit_ref_register( FILE* fc, const char* module_name, const parse_data_t* data )
 {
     fprintf( fc, "void\n%s_ref_register( const ref_reg_api_t* api )\n{\n", module_name );
 
+    /* Declare type_id capture variables for all function signature types up front.
+       C89/C11 requires declarations before statements inside a block. */
+    for ( int i = 0; i < data->type_count; i++ )
+    {
+        if ( data->types[ i ].kind == RT_KIND_FUNCTION )
+        {
+            char var[ RT_MAX_NAME + 8 ];
+            func_tid_var( var, sizeof var, data->types[ i ].name );
+            fprintf( fc, "    uint16_t %s = REF_TYPE_INVALID;\n", var );
+        }
+    }
+    if ( data->func_count > 0 )
+        fprintf( fc, "\n" );
+
+    /* Pass 1: register function signature types and capture their type_ids. */
+    for ( int i = 0; i < data->type_count; i++ )
+    {
+        const decl_type_t* t = &data->types[ i ];
+        if ( t->kind == RT_KIND_FUNCTION )
+            emit_func_block( fc, t );
+    }
+
+    /* Pass 2: register struct/union/enum types (function ptr fields reference sig type_ids). */
     for ( int i = 0; i < data->type_count; i++ )
     {
         const decl_type_t* t = &data->types[ i ];
         if ( t->kind == RT_KIND_STRUCT || t->kind == RT_KIND_UNION )
-            emit_struct_block( fc, t );
-        else
+            emit_struct_block( fc, t, data );
+        else if ( t->kind != RT_KIND_FUNCTION )
             emit_enum_block( fc, t );
     }
 
