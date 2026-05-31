@@ -441,7 +441,7 @@ static sid_t
 sid_intern_cstr( const char* str )
 {
     assert( sid_is_init == true );
-
+     
     if ( str == NULL ) return SID_INVALID;
 
     /* convenience function for C strings */

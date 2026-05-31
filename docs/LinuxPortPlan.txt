@@ -61,3 +61,7 @@ https://www.youtube.com/watch?v=2z6or4HNmfs
 	
 	 
 	 
+segment in generated.h where
+
+	REFELECTION CODE IS and where (FUNCTION TABLE etc)
+	MODULE CODE IS (GATEWAY MACROS)
