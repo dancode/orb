@@ -410,6 +410,13 @@ typedef struct target_info_s
 
     bool            is_reflect_tool;
 
+    /*  If true, this target is a host-only engine service (sys, core, mod, app, ref).
+        Dynamic targets may not list it as a dep -- globals and state live exclusively
+        in the host exe. DLLs access these services through the module API vtable.
+        validate_targets() rejects any dynamic target that violates this contract. */
+
+    bool            is_host_only;
+
     /*  Extra include directories declared via 'include_dir' in orb.targets.
         Stored as absolute paths. Appended to /I flags in CLI compile and to
         AdditionalIncludeDirectories/NMakeIncludeSearchPath in vcxproj gen.

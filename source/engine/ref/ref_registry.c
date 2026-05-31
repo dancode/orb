@@ -68,7 +68,7 @@ ref_hash_find( uint32_t hash )
 /*==============================================================================================
     Built-in Primitives
 
-    Registers the fundamental C types in the "rs" frame (frame 0) so that field type_hash
+    Registers the fundamental C types in the "ref" frame (frame 0) so that field type_hash
     values for int, float, etc. can be resolved during module registration.
 
     Critical invariant: the type_id assigned to each primitive equals its ref_prim_t enum
@@ -166,7 +166,7 @@ ref_exit( void )
         return;
 
     /* Pop all module frames in LIFO order before wiping the registry so that pop-callbacks
-       (if any) see a consistent table during teardown. Frame 0 ("rs") is destroyed by the
+       (if any) see a consistent table during teardown. Frame 0 ("ref") is destroyed by the
        memset below rather than by ref_pop_frame, since frame 0 can never be popped. */
     while ( g_ref.frame_count > 1 ) ref_pop_frame( g_ref.frame_count - 1 );
     memset( &g_ref, 0, sizeof( g_ref ) );

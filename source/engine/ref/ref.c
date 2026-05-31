@@ -161,10 +161,10 @@ ref_mod_init( void* state, get_api_fn get_api )
 {
     UNUSED( state );
     UNUSED( get_api );
-    /* rs is a leaf module with no dependencies. The registry initializes lazily via
+    /* ref is a leaf module with no dependencies. The registry initializes lazily via
        ref_ensure_init() the first time any registration function is called, so this
        init callback's only job is to publish ref_api_t through the standard mod gateway.
-       core declares "rs" as a dependency so the mod system loads rs before core, guaranteeing
+       core declares "ref" as a dependency so the mod system loads ref before core, guaranteeing
        the vtable is live when core -- and every module thereafter -- fetches it. */
     return true;
 }

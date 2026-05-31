@@ -133,7 +133,7 @@ core_get_mod_desc( void )
         .state_size    = sizeof( core_state_t ),
         .func_api_size = sizeof( core_api_t ),
         .func_api      = ( void* )&g_core_api_struct,
-        .deps          = { "sys", "rs" },
+        .deps          = { "sys", "ref" },
         .dep_count     = 2,
         .init          = core_mod_init,
         .exit          = core_mod_exit,

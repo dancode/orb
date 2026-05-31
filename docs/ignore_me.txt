@@ -1,49 +1,5 @@
 
 
- :: From a Developer Command Prompt for VS 2022:
-  devenv build\orb_make.sln
-
-  You can make this the default by creating a shortcut that runs:
-
-  cmd /k "vcvarsall.bat x64 && devenv build\orb_make.sln"
-  
-  
-  
-// unified error handling?
-
- Error Handling Centralization:
-       * The code currently uses a mix of printf("[orb error]...") and exit(1).
-       * Recommendation: A fatal_error(fmt, ...) helper would provide a single point to
-         handle cleanup (like releasing the global print lock or deleting partial
-         artifacts) before exiting.
-		 
-		 
-TODO: make clangd work with Visual Studio code outout gen.
-	 
-1. Visual Studio Code (VS Code) — Most Common
-  While not a full IDE, it is the most popular choice for Linux development.
-   * The Benefit: It does not use a "solution file." Instead, it relies on the JSON
-     Compilation Database (compile_commands.json).
-   * How it works: Nearly every Linux tool (VS Code, Vim/Neovim, Emacs) uses a Language
-     Server (specifically clangd). If your build_tool generates a compile_commands.json
-     file in the root directory, VS Code instantly gets perfect IntelliSense, "Go to
-     Definition," and error squigglies that match your compiler perfectly.
-	 
-	 
-	 
-  Working:
-  - Standalone targets (root src, no ORB deps) — compile, link, run correctly
-  - import ../orb.targets merges all ORB targets/solutions
-  - -gen from my_project\ produces correct vcxproj paths: own files as
-  ..\..\src\main.c, ORB cross-project files as absolute F:\orb\source\...
-
-  Not yet working:
-  - Compiling a target that deps an ORB engine lib (e.g. dep sys) — the ORB source
-   headers aren't on the include path when CWD isn't the ORB root. That needs
-  either an include_root property on targets or a way to register external include
-   directories. Worth a separate pass.
-  
-  
     REM 1. Rebuild build_tool.exe from the engine root
   F:\orb> bootstrap_build_tool.bat
 

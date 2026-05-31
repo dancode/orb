@@ -24,6 +24,7 @@ target sys
     root        source/engine/sys
     folder      02_ENGINE
     unit        sys.c
+    flag        host_only
 
 target ref
 
@@ -31,6 +32,7 @@ target ref
     root        source/engine/ref
     folder      02_ENGINE
     unit        ref.c
+    flag        host_only
 
 target mod
 
@@ -39,6 +41,7 @@ target mod
     folder      02_ENGINE
     unit        mod.c
     dep         sys
+    flag        host_only
 
 target app
 
@@ -47,6 +50,7 @@ target app
     folder      02_ENGINE
     unit        app.c
     dep         sys
+    flag        host_only
 
 target core
 
@@ -55,7 +59,7 @@ target core
     folder      02_ENGINE
     unit        core.c
     dep         sys ref
-    reflect
+    flag        reflect host_only
 
 target net
 
@@ -137,16 +141,7 @@ target example_reflect
     root        source/runtime_modules/example_reflect
     folder      03_RUNTIME/EXAMPLES
     unit        example_reflect.c
-    reflect
-
-target example_gen
-
-    type        dynamic
-    root        source/runtime_modules/example_gen
-    folder      03_RUNTIME/EXAMPLES
-    unit        example_gen.c
-	mono_dep 	core
-    reflect
+    flag        reflect
 
 # ==============================================================================
 # 04_GAME
@@ -347,6 +342,15 @@ target sb_runtime_reflect
     dep         sys mod core ref
 	mono_dep 	example_reflect
 	
+	
+target example_gen
+
+    type        dynamic
+    root        source/runtime_modules/example_gen
+    folder      03_RUNTIME/EXAMPLES
+    unit        example_gen.c
+    flag        reflect
+
 target sb_runtime_gen
 
     type        exe
@@ -355,7 +359,7 @@ target sb_runtime_gen
     unit        sb_runtime_gen.c
     dep         sys ref mod core
 	mono_dep 	example_gen
-    reflect
+    flag        reflect
 
 # ==============================================================================
 # 09_SANDBOX_EXAMPLES
@@ -410,7 +414,6 @@ target sb_example_game
 	dep 		mod ref sys core app
     dep         run rhi
 	mono_dep	render
-	mono_dep 	render
 	
 		
 # ==============================================================================
@@ -523,10 +526,11 @@ solution orb_sandbox_reflect			# Run/Debug reflection
 	add 		sb_engine_ref
 	add 		reflect_tool
 
+
 solution orb_sandbox_engine				# Run/Debug engine
 
     out         build/proj
-    startup     sb_engine_mod
+    startup     sb_runtime_gen
 
 	add         sys ref mod app core net
 
@@ -540,8 +544,8 @@ solution orb_sandbox_engine				# Run/Debug engine
 	add 		sb_engine_ref 
 	add 		sb_engine_app
 	
-    add         sb_engine_ref 
-	add 		sb_runtime_gen
+	add 		sb_runtime_gen		# test reflected module
+	add 		example_gen			# reflected module
 	
 
 # ==============================================================================
@@ -583,7 +587,7 @@ solution orb_all
 	add 		sb_engine_app
 	
     add         sb_runtime_reflect sb_runtime_gen
-		
+	
 	add 		host_game
 	add 		host_editor 
 	add 		host_sandbox 

@@ -94,7 +94,7 @@ validate_targets( void )
             ok = false;
         }
 
-        // Unresolved and self-referencing dep / tool_dep / mono_dep names.
+        // Unresolved, self-referencing, and host_only dep names.
         for ( int j = 0; j < TARGET_MAX_SLOTS && t->deps[ j ]; ++j )
         {
             if ( strcmp( t->deps[ j ], t->name ) == 0 )
@@ -104,6 +104,20 @@ validate_targets( void )
                 printf( ORB_INDENT "[orb error] target '%s': unknown dep '%s'\n",
                         t->name, t->deps[ j ] ),
                 ok = false;
+            else if ( t->type == TARGET_DYNAMIC_LIB )
+            {
+                /* Dynamic targets must not directly link host-only engine services.
+                   Their globals live exclusively in the host exe; a DLL that links one
+                   gets a private uninitialized copy and will fail at runtime. */
+                const target_info_t* dep = find_target( t->deps[ j ] );
+                if ( dep->is_host_only )
+                {
+                    printf( ORB_INDENT "[orb error] target '%s' (dynamic): dep '%s' is host_only"
+                                       " -- access it through the module API\n",
+                            t->name, t->deps[ j ] );
+                    ok = false;
+                }
+            }
         }
 
         // All deps exist + prevent tool targets from depending on oneself.

@@ -42,7 +42,7 @@
             dep         <dependency target name>            (one per line; multiple allowed)
             tool_dep    <tool dependency name>              (one per line; multiple allowed)
             mono_dep    <monolithic-only link dep>          (one per line; multiple allowed)
-            reflect     [<custom reflect output name>]      (flag; optional name override)
+            reflect_name <name>                             (override generated file base name)
             inc         <path>                              (extra include dir; alias for include_dir)
             include_dir <path>                              (extra include dir; repeatable)
             define      <NAME>[=value]                      (per-target preprocessor define; repeatable)
@@ -50,7 +50,10 @@
             subsystem   console | windows                   (exe only; /SUBSYSTEM: on Win32; default: console)
             link_flag   <msvc|clang|all> <flag>             (per-target linker flag; repeatable)
 
-            flag        is_tool | is_build_tool | is_reflect_tool
+            flag        <token1> [token2] ...               (space-separated list of boolean flags)
+                            reflect                         -- run reflect_tool before compile
+                            host_only                       -- engine service; dynamic targets may not dep this
+                            is_tool | is_build_tool | is_reflect_tool
 
     SOLUTION BLOCK:
         solution <name>
@@ -94,8 +97,8 @@
             dep         core sys                # link deps; space-separated or one per line
             tool_dep    asset_compiler          # must exist before building; not linked
             mono_dep    audio                   # linked only in monolithic (-mono) builds
-            reflect                             # run reflect_tool before compile
-            reflect     render_types            # optional: override generated file base name
+            flag        reflect                 # run reflect_tool before compile
+            reflect_name render_types           # optional: override generated file base name
             inc         source/render/private   # extra /I flag; real compile + IntelliSense
             include_dir third_party/stb         # alias for inc
             define      RENDER_VALIDATION       # per-target /D flag; real compile + IntelliSense
@@ -115,6 +118,15 @@
             link_flag   msvc /STACK:4194304     # 4 MB stack; appended only when linking with link.exe
             link_flag   msvc /WHOLEARCHIVE:bin/core.lib  # force-include all symbols from core.lib
             link_flag   all  /OPT:REF           # strip unreferenced symbols; safe for both toolchains
+
+        # --- Target: host-only engine service (dynamic targets may not dep this) ---
+        target core
+            type        static
+            root        source/engine/core
+            folder      02_ENGINE
+            unit        core.c
+            dep         sys ref
+            flag        reflect host_only       # multiple flags on one line
 
         # --- Target: build-time tool (survives global clean; built as a dep automatically) ---
         target asset_compiler
@@ -487,16 +499,28 @@ registry_load( const char* path, bool is_external )
                     tok = strtok( NULL, " \t" );
                 }
             }
-            else if ( strcmp( key, "reflect" ) == 0 )
+            else if ( strcmp( key, "reflect_name" ) == 0 && val )
             {
-                cur_t->has_reflect  = true;
-                if ( val ) cur_t->reflect_name = pool_str( val );
+                cur_t->reflect_name = pool_str( val );
             }
             else if ( strcmp( key, "flag" ) == 0 && val )
             {
-                if ( strcmp( val, "is_tool"         ) == 0 ) cur_t->is_tool         = true;
-                if ( strcmp( val, "is_build_tool"   ) == 0 ) cur_t->is_build_tool   = true;
-                if ( strcmp( val, "is_reflect_tool" ) == 0 ) cur_t->is_reflect_tool = true;
+                /* flag accepts a space-separated list: flag  reflect host_only is_tool */
+                char tmp[ 256 ];
+                snprintf( tmp, sizeof( tmp ), "%s", val );
+                char* tok = strtok( tmp, " \t" );
+                while ( tok )
+                {
+                    if      ( strcmp( tok, "reflect"         ) == 0 ) cur_t->has_reflect    = true;
+                    else if ( strcmp( tok, "host_only"       ) == 0 ) cur_t->is_host_only   = true;
+                    else if ( strcmp( tok, "is_tool"         ) == 0 ) cur_t->is_tool        = true;
+                    else if ( strcmp( tok, "is_build_tool"   ) == 0 ) cur_t->is_build_tool  = true;
+                    else if ( strcmp( tok, "is_reflect_tool" ) == 0 ) cur_t->is_reflect_tool = true;
+                    else
+                        printf( ORB_INDENT "[orb warn] %s:%d -- target '%s': unknown flag '%s'\n",
+                                path, lineno, cur_t->name, tok );
+                    tok = strtok( NULL, " \t" );
+                }
             }
             else if ( ( strcmp( key, "include_dir" ) == 0 || strcmp( key, "inc" ) == 0 ) && val )
             {
