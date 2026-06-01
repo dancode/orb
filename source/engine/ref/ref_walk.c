@@ -219,18 +219,26 @@ ref_walk_one( void* instance, const ref_type_t* t, const ref_field_t* f,
         return;
     }
 
-    /* T[N] -- inline array; visit and recurse each element in order. */
+    /* T[N] -- inline array; visit and recurse each element in order. Hoist the struct
+       check so the branch is not re-evaluated on every iteration of the element loop. */
     if ( f->mods == REF_MODS_ARRAY )
     {
         const ref_type_t* bt = ref_get_type( f->type_id );
         if ( bt && bt->size > 0 )
         {
-            for ( uint16_t k = 0; k < f->aux; k++ )
+            if ( f->kind == REF_KIND_STRUCT )
             {
-                uint8_t* elem = addr + (size_t)k * bt->size;
-                visit( elem, f->type_id, f, user );
-                if ( f->kind == REF_KIND_STRUCT )
+                for ( uint16_t k = 0; k < f->aux; k++ )
+                {
+                    uint8_t* elem = addr + (size_t)k * bt->size;
+                    visit( elem, f->type_id, f, user );
                     ref_walk_fields( elem, bt, visit, user );
+                }
+            }
+            else
+            {
+                for ( uint16_t k = 0; k < f->aux; k++ )
+                    visit( addr + (size_t)k * bt->size, f->type_id, f, user );
             }
         }
         return;
