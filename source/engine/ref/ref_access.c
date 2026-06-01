@@ -269,6 +269,7 @@ ref_bitset_each_set_flag( uint16_t type_id, int32_t value, ref_enum_cb_t cb, voi
             cb( eid, e, user );
             remaining &= ~e->value;   /* consume bits so narrower flags don't re-fire */
             hits++;
+            if ( remaining == 0 ) break;   /* all bits claimed; no point scanning further */
         }
     }
     return hits;
@@ -310,6 +311,7 @@ ref_bitset_describe( uint16_t type_id, int32_t value, char* buf, size_t buf_size
         while ( *name && pos + 1 < buf_size ) buf[ pos++ ] = *name++;
         first = false;
         remaining &= ~e->value;
+        if ( remaining == 0 ) break;   /* all bits claimed; skip remaining enumerators */
     }
 
     /* Any bits not claimed by a named flag are appended as a hex literal tail. */
