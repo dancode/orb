@@ -22,6 +22,7 @@
     NOTE: This tool is standalone C11. It does NOT include orb.h or any engine headers.
 
 ==============================================================================================*/
+
 #include "orb.h"
 #include "reflect_tool_internal.h"
 
@@ -108,21 +109,22 @@ main( int argc, char** argv )
     /* Second pass: positional fallback when no named flags were used.
        Positional order: <source_dir> [<output_dir> [<module_name>]].
        Tokens starting with '-' are flags; skip them and their value (if any). */
-    if ( !source_dir )
-    {
-        int pos = 0;
-        for ( int i = 1; i < argc; ++i )
-        {
-            if ( argv[ i ][ 0 ] == '-' )
-            {
-                if ( arg_has_value( argc, argv, i ) ) ++i; /* skip value-taking flag's value */
-                continue;
-            }
-            if      ( pos == 0 ) { source_dir  = argv[ i ]; pos++; }
-            else if ( pos == 1 ) { output_dir  = argv[ i ]; pos++; }
-            else if ( pos == 2 ) { module_name = argv[ i ]; pos++; }
-        }
-    }
+
+    // if ( !source_dir )
+    // {
+    //     int pos = 0;
+    //     for ( int i = 1; i < argc; ++i )
+    //     {
+    //         if ( argv[ i ][ 0 ] == '-' )
+    //         {
+    //             if ( arg_has_value( argc, argv, i ) ) ++i; /* skip value-taking flag's value */
+    //             continue;
+    //         }
+    //         if      ( pos == 0 ) { source_dir  = argv[ i ]; pos++; }
+    //         else if ( pos == 1 ) { output_dir  = argv[ i ]; pos++; }
+    //         else if ( pos == 2 ) { module_name = argv[ i ]; pos++; }
+    //     }
+    // }
 
     /* --- Defaults and validation --- */
 
@@ -136,8 +138,9 @@ main( int argc, char** argv )
         }
         else
         {
-            /* Debug: derive paths from exe location so IDE F5 works from any CWD.
+            /* Derive paths from exe location so debug from IDE F5 works from any CWD.
                exe lives at <root>/bin/  ->  source at <root>/<source_sub>, out at <root>/build/generated */
+
             char exe_dir[ RT_MAX_PATH ];
             platform_exe_dir( exe_dir, RT_MAX_PATH );
 

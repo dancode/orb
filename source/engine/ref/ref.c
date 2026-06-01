@@ -95,11 +95,11 @@ typedef struct ref_registry_s
     ref_frame_t  frames      [ REF_MAX_FRAMES ];
 
     /* Hash table: maps name_hash -> type_id; bucket chains use ref_type_t.next. */
-    uint16_t    type_hash[   REF_TYPE_HASH_SIZE ];
+    uint16_t    type_hash    [ REF_TYPE_HASH_SIZE ];
 
 } ref_registry_t;
 
-static ref_registry_t    g_ref;
+static ref_registry_t   g_ref;
 static const bool       ref_debug = true;
 
 /*==============================================================================================
@@ -126,42 +126,42 @@ static const bool       ref_debug = true;
 const ref_api_t g_ref_api_struct =
 {
      /* Lookup */
-    .find_type_by_name  = ref_find_type_by_name,
-    .get_type           = ref_get_type,
-    .get_field          = ref_get_field,
-    .find_field         = ref_find_field,
-    .type_get_attr      = ref_type_get_attr,
-    .field_get_attr     = ref_field_get_attr,
-    .type_get_attr_values  = ref_type_get_attr_values,
-    .field_get_attr_values = ref_field_get_attr_values,
-    .intern             = ref_intern,
-    .cstr               = ref_cstr,
+    .find_type_by_name      = ref_find_type_by_name,
+    .get_type               = ref_get_type,
+    .get_field              = ref_get_field,
+    .find_field             = ref_find_field,
+    .type_get_attr          = ref_type_get_attr,
+    .field_get_attr         = ref_field_get_attr,
+    .type_get_attr_values   = ref_type_get_attr_values,
+    .field_get_attr_values  = ref_field_get_attr_values,
+    .intern                 = ref_intern,
+    .cstr                   = ref_cstr,
 
     /* Iteration */
-    .each_type          = ref_each_type,
-    .each_type_in_frame = ref_each_type_in_frame,
-    .each_field         = ref_each_field,
-    .each_enumerator    = ref_each_enumerator,
+    .each_type              = ref_each_type,
+    .each_type_in_frame     = ref_each_type_in_frame,
+    .each_field             = ref_each_field,
+    .each_enumerator        = ref_each_enumerator,
 
     /* Bitset helpers */
-    .bitset_describe    = ref_bitset_describe,
+    .bitset_describe        = ref_bitset_describe,
 
     /* Union discriminant */
-    .union_case_field   = ref_union_case_field,
+    .union_case_field       = ref_union_case_field,
 
     /* Walkers */
-    .walk_refs          = ref_walk_refs,
-    .walk               = ref_walk,
+    .walk_refs              = ref_walk_refs,
+    .walk                   = ref_walk,
 
     /* Serialization */
-    .write              = ref_write,
-    .read               = ref_read,
-    .peek_type_hash     = ref_peek_type_hash,
+    .write                  = ref_write,
+    .read                   = ref_read,
+    .peek_type_hash         = ref_peek_type_hash,
 
     /* Diagnostics */
-    .field_describe     = ref_field_describe,
-    .print_type         = ref_print_type,
-    .print_types        = ref_print_types,
+    .field_describe         = ref_field_describe,
+    .print_type             = ref_print_type,
+    .print_types            = ref_print_types,
 };
 
 /*==============================================================================================
