@@ -185,5 +185,36 @@ str_upper( const char* src, char* buf, size_t buf_size )
     buf[ i ] = '\0';
 }
 
+/* ASCII case-insensitive strcmp / strncmp; no locale, no CRT dependency. */
+
+static int
+str_icmp( const char* a, const char* b )
+{
+    for ( ;; )
+    {
+        unsigned char ca = (unsigned char)*a++;
+        unsigned char cb = (unsigned char)*b++;
+        if ( ca >= 'A' && ca <= 'Z' ) ca = (unsigned char)( ca + 32 );
+        if ( cb >= 'A' && cb <= 'Z' ) cb = (unsigned char)( cb + 32 );
+        if ( ca != cb ) return (int)ca - (int)cb;
+        if ( ca == '\0' ) return 0;
+    }
+}
+
+static int
+str_nicmp( const char* a, const char* b, size_t n )
+{
+    for ( ; n; --n )
+    {
+        unsigned char ca = (unsigned char)*a++;
+        unsigned char cb = (unsigned char)*b++;
+        if ( ca >= 'A' && ca <= 'Z' ) ca = (unsigned char)( ca + 32 );
+        if ( cb >= 'A' && cb <= 'Z' ) cb = (unsigned char)( cb + 32 );
+        if ( ca != cb ) return (int)ca - (int)cb;
+        if ( ca == '\0' ) return 0;
+    }
+    return 0;
+}
+
 // clang-format on
 /*============================================================================================*/

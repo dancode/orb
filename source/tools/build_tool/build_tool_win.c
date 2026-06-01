@@ -12,8 +12,6 @@
         platform_get_mtime()     -- last-modified time of a file   (_stat64)
         platform_file_exists()   -- presence check                 (_access)
         platform_fullpath()      -- resolve to absolute path       (_fullpath)
-        platform_stricmp()       -- case-insensitive compare       (_stricmp)
-        platform_strnicmp()      -- case-insensitive compare (n)   (_strnicmp)
         platform_putenv()        -- set environment variable       (_putenv_s)
         platform_popen()         -- open a pipe to a command       (_popen)
         platform_pclose()        -- close a pipe                   (_pclose)
@@ -71,22 +69,6 @@ static bool
 platform_fullpath( char* out, const char* in, size_t size )
 {
     return _fullpath( out, in, size ) != NULL;
-}
-
-/*==============================================================================================
-    --- Case-Insensitive String Comparison ---
-==============================================================================================*/
-
-static int
-platform_stricmp( const char* a, const char* b )
-{
-    return _stricmp( a, b );
-}
-
-static int
-platform_strnicmp( const char* a, const char* b, size_t n )
-{
-    return _strnicmp( a, b, n );
 }
 
 /*==============================================================================================

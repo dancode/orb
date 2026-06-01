@@ -219,7 +219,7 @@ static target_info_t*
 find_target_icase( const char* name )
 {
     for ( int i = 0; i < g_target_count; ++i )
-        if ( platform_stricmp( g_targets[ i ].name, name ) == 0 )
+        if ( str_icmp( g_targets[ i ].name, name ) == 0 )
             return &g_targets[ i ];
     return NULL;
 }

@@ -294,7 +294,7 @@ test_primitives( void )
 
     static const struct
     {
-        ref_prim_t  id;
+        ref_prim_t  id; 
         const char* name;
         uint16_t    size;
         uint8_t     align;

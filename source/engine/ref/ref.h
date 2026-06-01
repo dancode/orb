@@ -304,21 +304,21 @@ typedef enum ref_field_flag_e
 
 typedef struct ref_field_s
 {
-    ref_name_t  name_id;             // gen: interned field name
-    uint32_t   type_hash;           // gen: ref_hash_str(base_type_name) — used during lazy resolution
-    uint16_t   type_id;             // ___: resolved base type (REF_TYPE_INVALID until finalize)
-    uint16_t   offset;              // gen: byte offset within parent struct
-    uint16_t   size;                // gen: sizeof(field), including any inline array
-    uint16_t   mods;                // gen: packed modifier chain
-    uint16_t   aux;                 // gen: array element count, or function signature type_id
+    ref_name_t  name_id;            // gen: interned field name
+    uint32_t    type_hash;          // gen: ref_hash_str(base_type_name) — used during lazy resolution
+    uint16_t    type_id;            // ___: resolved base type (REF_TYPE_INVALID until finalize)
+    uint16_t    offset;             // gen: byte offset within parent struct
+    uint16_t    size;               // gen: sizeof(field), including any inline array
+    uint16_t    mods;               // gen: packed modifier chain
+    uint16_t    aux;                // gen: array element count, or function signature type_id
 
-    uint8_t    kind;                // ___: gcached ref_kind_t of base, for fast dispatch
-    uint8_t    _pad;                // ___: reserved for future use
+    uint8_t     kind;               // ___: gcached ref_kind_t of base, for fast dispatch
+    uint8_t     _pad;               // ___: reserved for future use
 
-    uint16_t   attr_index;          // ___: first attribute index (REF_ATTR_INVALID if none)
-    uint16_t   attr_count;          // ___: number of attributes
+    uint16_t    attr_index;         // ___: first attribute index (REF_ATTR_INVALID if none)
+    uint16_t    attr_count;         // ___: number of attributes
 
-    uint32_t   flags;               // gen: ref_field_flag_t bitmask (0 = no flags set)
+    uint32_t    flags;              // gen: ref_field_flag_t bitmask (0 = no flags set)
 
 } ref_field_t;
 

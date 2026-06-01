@@ -178,7 +178,7 @@ add_filter( const char* filter )
         return;
     for ( int i = 0; i < g_filter_count; ++i )
     {
-        if ( platform_stricmp( g_filters[ i ], filter ) == 0 )
+        if ( str_icmp( g_filters[ i ], filter ) == 0 )
             return;
     }
     if ( g_filter_count < MAX_FILTERS )
@@ -281,9 +281,9 @@ scan_directory_recursive( const char* dir, const char* root_dir )
             if ( !ext )
                 continue;
 
-            bool is_c      = platform_stricmp( ext, ".c" ) == 0;
-            bool is_h      = platform_stricmp( ext, ".h" ) == 0;
-            bool is_natvis = platform_stricmp( ext, ".natvis" ) == 0;
+            bool is_c      = str_icmp( ext, ".c" ) == 0;
+            bool is_h      = str_icmp( ext, ".h" ) == 0;
+            bool is_natvis = str_icmp( ext, ".natvis" ) == 0;
             if ( !( is_c || is_h || is_natvis ) )
                 continue;
             if ( g_file_count >= MAX_FILES )
@@ -295,7 +295,7 @@ scan_directory_recursive( const char* dir, const char* root_dir )
             // so stored paths remain project-root-relative for vcxproj Include emit.
             // Cross-project absolute paths (outside CWD) are kept as-is.
             size_t cwd_len = strlen( s_ctx.cwd_prefix );
-            if ( cwd_len > 0 && platform_strnicmp( path, s_ctx.cwd_prefix, cwd_len ) == 0 )
+            if ( cwd_len > 0 && str_nicmp( path, s_ctx.cwd_prefix, cwd_len ) == 0 )
                 strcpy( f->path, path + cwd_len );
             else
                 strcpy( f->path, path );
@@ -666,7 +666,7 @@ is_unit_file( const target_info_t* target, const char* path )
     for ( const char* p = path; *p; ++p )
         if ( *p == '/' || *p == '\\' ) filename = p + 1;
     for ( int j = 0; target->units[ j ]; ++j )
-        if ( platform_stricmp( filename, target->units[ j ] ) == 0 ) return true;
+        if ( str_icmp( filename, target->units[ j ] ) == 0 ) return true;
     return false;
 }
 

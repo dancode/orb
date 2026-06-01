@@ -246,46 +246,46 @@ main( int argc, char** argv )
     for ( int i = 1; i < argc; ++i )
     {
         // utility + project generation
-        if ( platform_stricmp( argv[ i ], "-help"             ) == 0 ) should_help = true;
-        if ( platform_stricmp( argv[ i ], "-h"                ) == 0 ) should_help = true;
-        if ( platform_stricmp( argv[ i ], "-list"             ) == 0 ) should_list = true;
-        if ( platform_stricmp( argv[ i ], "-graph"            ) == 0 ) should_graph = true;
-        if ( platform_stricmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
-        if ( platform_stricmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
-        if ( platform_stricmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
-        if ( platform_stricmp( argv[ i ], "-gen_nm"           ) == 0 ) should_gen_nmake = true;
-        if ( platform_stricmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
+        if ( str_icmp( argv[ i ], "-help"             ) == 0 ) should_help = true;
+        if ( str_icmp( argv[ i ], "-h"                ) == 0 ) should_help = true;
+        if ( str_icmp( argv[ i ], "-list"             ) == 0 ) should_list = true;
+        if ( str_icmp( argv[ i ], "-graph"            ) == 0 ) should_graph = true;
+        if ( str_icmp( argv[ i ], "-bootstrap"        ) == 0 ) should_bootstrap = true;
+        if ( str_icmp( argv[ i ], "-clean"            ) == 0 ) should_clean = true;
+        if ( str_icmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
+        if ( str_icmp( argv[ i ], "-gen_nm"           ) == 0 ) should_gen_nmake = true;
+        if ( str_icmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
 
         // module creation (scaffolding)
-        if ( platform_stricmp( argv[ i ], "-create" ) == 0 && arg_has_value( argc, argv, i ) ) { should_create = true; create_name = argv[ ++i ]; }
-        if ( platform_stricmp( argv[ i ], "-dir"    ) == 0 && arg_has_value( argc, argv, i ) ) { create_dir = argv[ ++i ]; }
-        if ( platform_stricmp( argv[ i ], "-type"   ) == 0 && arg_has_value( argc, argv, i ) )
+        if ( str_icmp( argv[ i ], "-create" ) == 0 && arg_has_value( argc, argv, i ) ) { should_create = true; create_name = argv[ ++i ]; }
+        if ( str_icmp( argv[ i ], "-dir"    ) == 0 && arg_has_value( argc, argv, i ) ) { create_dir = argv[ ++i ]; }
+        if ( str_icmp( argv[ i ], "-type"   ) == 0 && arg_has_value( argc, argv, i ) )
         {
-            if ( platform_stricmp( argv[ ++i ], "dynamic" ) == 0 ) create_dynamic = true;
+            if ( str_icmp( argv[ ++i ], "dynamic" ) == 0 ) create_dynamic = true;
         }
         
         // compile settings
-        if ( platform_stricmp( argv[ i ], "-target" ) == 0 && arg_has_value( argc, argv, i ) ) ctx.target_name = argv[ ++i ];
-        if ( platform_stricmp( argv[ i ], "-file"   ) == 0 && arg_has_value( argc, argv, i ) ) ctx.file_path   = argv[ ++i ];
-        if ( platform_stricmp( argv[ i ], "-j"      ) == 0 && arg_has_value( argc, argv, i ) ) j_threads       = atoi( argv[ ++i ] );
-        if ( platform_stricmp( argv[ i ], "-config" ) == 0 && arg_has_value( argc, argv, i ) )
+        if ( str_icmp( argv[ i ], "-target" ) == 0 && arg_has_value( argc, argv, i ) ) ctx.target_name = argv[ ++i ];
+        if ( str_icmp( argv[ i ], "-file"   ) == 0 && arg_has_value( argc, argv, i ) ) ctx.file_path   = argv[ ++i ];
+        if ( str_icmp( argv[ i ], "-j"      ) == 0 && arg_has_value( argc, argv, i ) ) j_threads       = atoi( argv[ ++i ] );
+        if ( str_icmp( argv[ i ], "-config" ) == 0 && arg_has_value( argc, argv, i ) )
         {
-            if ( platform_stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
+            if ( str_icmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
-        if ( platform_stricmp( argv[ i ], "-monolithic"       ) == 0 ) { ctx.is_monolithic = true; }
-        if ( platform_stricmp( argv[ i ], "-mono"             ) == 0 ) { ctx.is_monolithic = true; }
-        if ( platform_stricmp( argv[ i ], "-release"          ) == 0 ) { ctx.config = CONFIG_RELEASE; }
-        if ( platform_stricmp( argv[ i ], "-shipping"         ) == 0 ) { ctx.config = CONFIG_RELEASE; ctx.is_shipping = true; }
-        if ( platform_stricmp( argv[ i ], "-clang"            ) == 0 ) { ctx.compiler = COMPILE_CLANG; }
-        if ( platform_stricmp( argv[ i ], "-compile-only"     ) == 0 ) { ctx.compile_only = true; }
-        if ( platform_stricmp( argv[ i ], "-force"            ) == 0 ) { ctx.force_rebuild = true; }
-        if ( platform_stricmp( argv[ i ], "-no-deps"          ) == 0 ) { ctx.skip_deps = true; }
+        if ( str_icmp( argv[ i ], "-monolithic"       ) == 0 ) { ctx.is_monolithic = true; }
+        if ( str_icmp( argv[ i ], "-mono"             ) == 0 ) { ctx.is_monolithic = true; }
+        if ( str_icmp( argv[ i ], "-release"          ) == 0 ) { ctx.config = CONFIG_RELEASE; }
+        if ( str_icmp( argv[ i ], "-shipping"         ) == 0 ) { ctx.config = CONFIG_RELEASE; ctx.is_shipping = true; }
+        if ( str_icmp( argv[ i ], "-clang"            ) == 0 ) { ctx.compiler = COMPILE_CLANG; }
+        if ( str_icmp( argv[ i ], "-compile-only"     ) == 0 ) { ctx.compile_only = true; }
+        if ( str_icmp( argv[ i ], "-force"            ) == 0 ) { ctx.force_rebuild = true; }
+        if ( str_icmp( argv[ i ], "-no-deps"          ) == 0 ) { ctx.skip_deps = true; }
         
         // internal operations (developer)
-        if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
-        if ( platform_stricmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;
-        if ( platform_stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
-        if ( platform_stricmp( argv[ i ], "-vs-version" ) == 0 && arg_has_value( argc, argv, i ) )
+        if ( str_icmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
+        if ( str_icmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;
+        if ( str_icmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
+        if ( str_icmp( argv[ i ], "-vs-version" ) == 0 && arg_has_value( argc, argv, i ) )
         {
             // Accept a VS release year (2022, 2026, ...) and map to the internal major version.
             // Falls back to passing the number directly if unrecognized, for forward-compat.
@@ -299,9 +299,9 @@ main( int argc, char** argv )
         }
 
         // output verbosity
-        if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) { g_out_flags = ORB_OUT_QUIET;   saw_quiet   = true; }
-        if ( platform_stricmp( argv[ i ], "-v"                ) == 0 ) { g_out_flags = ORB_OUT_VERBOSE; saw_verbose = true; }
-        if ( platform_stricmp( argv[ i ], "--out" ) == 0 && arg_has_value( argc, argv, i ) )
+        if ( str_icmp( argv[ i ], "-q"                ) == 0 ) { g_out_flags = ORB_OUT_QUIET;   saw_quiet   = true; }
+        if ( str_icmp( argv[ i ], "-v"                ) == 0 ) { g_out_flags = ORB_OUT_VERBOSE; saw_verbose = true; }
+        if ( str_icmp( argv[ i ], "--out" ) == 0 && arg_has_value( argc, argv, i ) )
         {
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
         }

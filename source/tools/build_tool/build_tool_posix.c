@@ -11,8 +11,6 @@
         platform_get_mtime()     -- last-modified time of a file   (stat / st_mtime)
         platform_file_exists()   -- presence check                 (access / F_OK)
         platform_fullpath()      -- resolve to absolute path       (realpath)
-        platform_stricmp()       -- case-insensitive compare       (strcasecmp)
-        platform_strnicmp()      -- case-insensitive compare (n)   (strncasecmp)
         platform_putenv()        -- set environment variable       (setenv)
         platform_popen()         -- open a pipe to a command       (popen)
         platform_pclose()        -- close a pipe                   (pclose)
@@ -30,7 +28,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <dirent.h>
 #include <fnmatch.h>
 #include <time.h>
@@ -77,22 +74,6 @@ platform_fullpath( char* out, const char* in, size_t size )
     snprintf( out, size, "%s", resolved );
     free( resolved );
     return true;
-}
-
-/*==============================================================================================
-    --- Case-Insensitive String Comparison ---
-==============================================================================================*/
-
-static int
-platform_stricmp( const char* a, const char* b )
-{
-    return strcasecmp( a, b );
-}
-
-static int
-platform_strnicmp( const char* a, const char* b, size_t n )
-{
-    return strncasecmp( a, b, n );
 }
 
 /*==============================================================================================
