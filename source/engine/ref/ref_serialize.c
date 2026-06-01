@@ -76,11 +76,37 @@ ref_serialize_zero_transient( uint8_t* body, uint16_t type_id )
             continue;
         }
 
-        /* Recurse into nested structs to catch transient fields inside them. Unions are not
-           recursed: their members overlap, so blind recursion would zero the wrong storage.
-           Discriminant-aware union descent belongs with the field-wise serializer (later). */
-        if ( f->mods == REF_MODS_VALUE && f->kind == REF_KIND_STRUCT )
-            ref_serialize_zero_transient( body + f->offset, f->type_id );
+        if ( f->mods == REF_MODS_VALUE )
+        {
+            /* Recurse into a nested struct to catch transient fields inside it. */
+            if ( f->kind == REF_KIND_STRUCT )
+            {
+                ref_serialize_zero_transient( body + f->offset, f->type_id );
+            }
+            /* For a union value, use the discriminant to descend only into the active member
+               so we zero transients in the right member without touching the others. */
+            else if ( f->kind == REF_KIND_UNION )
+            {
+                const ref_field_t* active = ref_resolve_union_member( body, t, f );
+                if ( active )
+                {
+                    uint8_t* union_body = body + f->offset;
+                    if ( active->flags & REF_FF_TRANSIENT )
+                        memset( union_body + active->offset, 0, active->size );
+                    else if ( active->mods == REF_MODS_VALUE && active->kind == REF_KIND_STRUCT )
+                        ref_serialize_zero_transient( union_body + active->offset, active->type_id );
+                }
+            }
+        }
+        /* Recurse per-element for inline arrays of structs; a plain T[N] cannot carry
+           a per-element discriminant so union arrays remain skipped (same as the walker). */
+        else if ( f->mods == REF_MODS_ARRAY && f->kind == REF_KIND_STRUCT )
+        {
+            const ref_type_t* bt = ref_get_type( f->type_id );
+            if ( bt && bt->size > 0 )
+                for ( uint16_t k = 0; k < f->aux; k++ )
+                    ref_serialize_zero_transient( body + f->offset + (size_t)k * bt->size, f->type_id );
+        }
     }
 }
 

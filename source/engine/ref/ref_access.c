@@ -1,5 +1,25 @@
 ﻿/* engine/ref/ref_access.c - Type, field, attribute lookups and iteration.
 
+   ref_stricmp_eq: portable ASCII case-insensitive equality used to confirm hash-table
+   matches. ref_hash_str is case-insensitive, so lookups by name must confirm with a
+   case-insensitive compare rather than strcmp to guard against FNV-1a hash collisions. */
+
+static bool
+ref_stricmp_eq( const char* a, const char* b )
+{
+    for ( ;; )
+    {
+        unsigned char ca = ( unsigned char )*a++;
+        unsigned char cb = ( unsigned char )*b++;
+        if ( ca >= 'A' && ca <= 'Z' ) ca = ( unsigned char )( ca + 32 );
+        if ( cb >= 'A' && cb <= 'Z' ) cb = ( unsigned char )( cb + 32 );
+        if ( ca != cb ) return false;
+        if ( ca == '\0' ) return true;
+    }
+}
+
+/* engine/ref/ref_access.c - Type, field, attribute lookups and iteration.
+
    All functions here are read-only accessors into g_ref. They are safe to call from any
    thread that holds a read lock on the registry; none of them mutate state.
    ref_hash_find (in ref_registry.c) is the fast O(1) path; the linear scans below are
@@ -31,7 +51,22 @@ uint16_t
 ref_find_type_by_name( const char* name )
 {
     if ( !name ) return REF_TYPE_INVALID;
-    return ref_hash_find( ref_hash_str( name ) );
+    uint32_t hash = ref_hash_str( name );
+
+    /* Walk the bucket chain and confirm with a case-insensitive strcmp after each hash
+       match, guarding against the rare but possible 32-bit FNV-1a collision where two
+       distinct names produce the same hash value. ref_hash_find (used internally for
+       resolution by stored hash) cannot do this since it has no original string available,
+       but here the caller supplies the name so we can confirm. */
+    uint16_t idx = g_ref.type_hash[ hash & REF_TYPE_HASH_MASK ];
+    while ( idx != REF_TYPE_INVALID )
+    {
+        if ( g_ref.types[ idx ].name_hash == hash &&
+             ref_stricmp_eq( ref_cstr( g_ref.types[ idx ].name_id ), name ) )
+            return idx;
+        idx = g_ref.types[ idx ].next;
+    }
+    return REF_TYPE_INVALID;
 }
 
 /*==============================================================================================

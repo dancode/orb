@@ -34,7 +34,12 @@ ref_read_tag_value( const void* p, uint16_t size )
         case 1:  return *(const int8_t* )p;
         case 2:  return *(const int16_t*)p;
         case 4:  return *(const int32_t*)p;
-        case 8:  return (int32_t)*(const int64_t*)p;
+        case 8:
+        {
+            int64_t v = *(const int64_t*)p;
+            assert( v == (int64_t)(int32_t)v && "ref: 64-bit discriminant out of int32_t range; use int32_t tag field" );
+            return (int32_t)v;
+        }
         default: return 0;
     }
 }
@@ -100,17 +105,24 @@ ref_walk_refs_one( void* instance, const ref_type_t* t, const ref_field_t* f,
         return;
     }
 
-    /* T* -- single pointer slot; visit and let the callback read/write *slot. */
-    if ( f->mods == REF_MODS_PTR )
+    /* T*, const T*, T* const -- all three are single pointer slots containing a data address.
+       const T* (PTR_TO_CONST) and T* const (CONST_PTR) carry live addresses that must be
+       zeroed during serialization just like plain T*. The const qualifiers are C-source
+       annotations; the in-memory representation is identical. */
+    if ( f->mods == REF_MODS_PTR || f->mods == REF_MODS_PTR_TO_CONST || f->mods == REF_MODS_CONST_PTR )
     {
         visit( (void**)addr, f->type_id, f, user );
         return;
     }
 
-    /* T[N] -- inline array; no pointer at this level, recurse per-element for aggregates. */
+    /* T[N] -- inline array; no pointer at this level, recurse per-element for structs.
+       Union arrays are intentionally skipped: each element's discriminant (@union_tag) is
+       a sibling field of the union in its enclosing struct, not something we can reach from
+       inside the array loop, so there is no safe way to identify which member is active.
+       The in-struct union case is handled via ref_resolve_union_member in the VALUE branch. */
     if ( f->mods == REF_MODS_ARRAY )
     {
-        if ( f->kind == REF_KIND_STRUCT || f->kind == REF_KIND_UNION )
+        if ( f->kind == REF_KIND_STRUCT )
         {
             const ref_type_t* bt = ref_get_type( f->type_id );
             if ( bt && bt->size > 0 )

@@ -135,11 +135,16 @@ static bool g_ref_initialized = false;
 void
 ref_init( void )
 {
-    g_ref_str_top = 0;
     memset( &g_ref, 0, sizeof( g_ref ) );
 
     /* Hash buckets must be REF_TYPE_INVALID (0xFFFF), not 0, which is a valid type_id. */
     for ( int i = 0; i < REF_TYPE_HASH_SIZE; i++ ) g_ref.type_hash[ i ] = REF_TYPE_INVALID;
+
+    /* Reserve pool offset 0 as an empty-string sentinel. ref_intern returns 0 after the
+       assert fires on pool overflow; making offset 0 == "" means the overflow produces an
+       empty name rather than aliasing to whatever string happens to occupy offset 0. */
+    g_ref_str_pool[ 0 ] = '\0';
+    g_ref_str_top       = 1;
 
     /* Frame 0 is owned by the reflection system itself and holds only the built-in prims.
        It is never popped; ref_exit tears it down by resetting the whole registry. */
@@ -248,7 +253,10 @@ ref_pop_frame( uint16_t frame_id )
     for ( uint16_t i = f->first_type; i < g_ref.type_count; i++ ) ref_hash_remove( i );
 
     /* Rewind the pool counters -- the records themselves are simply abandoned in place;
-       the next push will overwrite them without any explicit free. */
+       the next push will overwrite them without any explicit free. The string pool is
+       intentionally NOT rewound: ref_intern deduplicates by scan, so re-registration of
+       the same module reuses existing offsets without growing the pool. Only renamed
+       fields accumulate as orphan bytes, which is negligible over a dev session. */
     g_ref.type_count  = f->first_type;
     g_ref.field_count = f->first_field;
     g_ref.attr_count  = f->first_attr;
@@ -406,6 +414,14 @@ ref_register_type( const ref_type_t* type, const ref_field_t* fields, uint16_t f
     if ( !type )                       { assert( 0 ); return REF_TYPE_INVALID; }
     if ( field_count > 0 && !fields )  { assert( 0 ); return REF_TYPE_INVALID; }
     if ( g_ref.frame_count <= 1 )      { assert( 0 ); return REF_TYPE_INVALID; }
+
+    /* Enum/bitset types store their values in enums[], not fields[]. Routing them through
+       ref_register_type would write the data to the wrong table and corrupt both tables. */
+    if ( type->kind == REF_KIND_ENUM || type->kind == REF_KIND_BITSET )
+    {
+        assert( 0 && "ref_register_type: use ref_register_enum / ref_register_bitset for enum kinds" );
+        return REF_TYPE_INVALID;
+    }
 
     /* The topmost frame owns types registered from this point; frame_count was already
        incremented by ref_push_frame, so the current frame index is frame_count - 1. */
