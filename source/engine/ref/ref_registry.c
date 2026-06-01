@@ -137,8 +137,9 @@ ref_init( void )
 {
     memset( &g_ref, 0, sizeof( g_ref ) );
 
-    /* Hash buckets must be REF_TYPE_INVALID (0xFFFF), not 0, which is a valid type_id. */
-    for ( int i = 0; i < REF_TYPE_HASH_SIZE; i++ ) g_ref.type_hash[ i ] = REF_TYPE_INVALID;
+    /* Hash buckets must be REF_TYPE_INVALID (0xFFFF), not 0, which is a valid type_id.
+       0xFF repeated fills every uint16_t slot with 0xFFFF == REF_TYPE_INVALID. */
+    memset( g_ref.type_hash, 0xFF, sizeof( g_ref.type_hash ) );
 
     /* Reserve pool offset 0 as an empty-string sentinel. ref_intern returns 0 after the
        assert fires on pool overflow; making offset 0 == "" means the overflow produces an
