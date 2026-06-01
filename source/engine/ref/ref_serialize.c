@@ -87,7 +87,7 @@ ref_serialize_zero_transient( uint8_t* body, uint16_t type_id )
                so we zero transients in the right member without touching the others. */
             else if ( f->kind == REF_KIND_UNION )
             {
-                const ref_field_t* active = ref_resolve_union_member( body, t, f );
+                const ref_field_t* active = ref_resolve_union_member( body, f );
                 if ( active )
                 {
                     uint8_t* union_body = body + f->offset;
@@ -125,7 +125,10 @@ ref_write( const void* instance, uint16_t type_id, uint8_t* buf, size_t cap )
     if ( !instance || !buf ) return 0;
 
     const ref_type_t* t = ref_get_type( type_id );
-    if ( !t || ( t->kind != REF_KIND_STRUCT && t->kind != REF_KIND_UNION ) ) return 0;
+    /* Unions cannot be serialized at the top level: ref_walk_refs has no discriminant
+       context to identify which member is active and therefore cannot zero pointer slots
+       safely. Callers must serialize the enclosing struct instead. */
+    if ( !t || t->kind != REF_KIND_STRUCT ) return 0;
 
     size_t need = (size_t)REF_SAVE_HEADER_SIZE + t->size;
     if ( cap < need ) return 0;

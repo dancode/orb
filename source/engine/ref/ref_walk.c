@@ -19,9 +19,9 @@
 /*==============================================================================================
     Discriminant Helpers
 
-    Resolve the active member of a union value embedded in a parent struct. The parent context
-    is required because the discriminant (@union_tag) names a sibling field of the union, which
-    is only visible at the level of the enclosing struct.
+    ref_finalize_frame resolves each union field's @union_tag attribute string to a direct
+    tag_field_id index stored on ref_field_t. ref_resolve_union_member uses that index for
+    an O(1) discriminant read at walk time -- no attribute scan, no string-based field lookup.
 ==============================================================================================*/
 
 /* Read a small signed integer of the given byte width -- used to fetch a discriminant value
@@ -44,22 +44,14 @@ ref_read_tag_value( const void* p, uint16_t size )
     }
 }
 
-/* Given a union value field inside owner struct `t` at parent base `parent`, resolve which
-   member is active. Returns NULL if the union has no @union_tag, the named sibling does not
-   exist, or no member's @case matches the live tag value. */
+/* Returns the active union member field, or NULL if the field is untagged (tag_field_id ==
+   REF_FIELD_INVALID) or no @case matches the live discriminant value. */
 static const ref_field_t*
-ref_resolve_union_member( const void* parent, const ref_type_t* t, const ref_field_t* union_field )
+ref_resolve_union_member( const void* parent, const ref_field_t* union_field )
 {
-    uint16_t            ufid = (uint16_t)( union_field - g_ref.fields );
-    const ref_attrib_t* tag  = ref_field_get_attr( ufid, REF_ANAME_UNION_TAG );
-    if ( !tag || tag->type != REF_ATTR_STRING ) return NULL;
-
-    /* Find the sibling discriminant field by name within the enclosing struct. */
-    uint16_t           owner_id  = (uint16_t)( t - g_ref.types );
-    const ref_field_t* tag_field = ref_find_field( owner_id, ref_cstr( tag->value.str ) );
-    if ( !tag_field ) return NULL;
-
-    int32_t tag_value = ref_read_tag_value( (const uint8_t*)parent + tag_field->offset, tag_field->size );
+    if ( union_field->aux == REF_FIELD_INVALID ) return NULL;
+    const ref_field_t* tag_field = &g_ref.fields[ union_field->aux ];
+    int32_t            tag_value = ref_read_tag_value( (const uint8_t*)parent + tag_field->offset, tag_field->size );
     return ref_union_case_field( union_field->type_id, tag_value );
 }
 
@@ -79,12 +71,11 @@ ref_resolve_union_member( const void* parent, const ref_type_t* t, const ref_fie
 
 static void ref_walk_refs_fields( void* instance, const ref_type_t* t, ref_ref_visitor_t visit, void* user );
 
-/* Process a single field for pointer slots. `instance` is the base of the field's owner `t`;
+/* Process a single field for pointer slots. `instance` is the base of the field's owner;
    the field address is instance + f->offset. Factored out so the union active-member can be
    handled by recursing with the union type as the owner. */
 static void
-ref_walk_refs_one( void* instance, const ref_type_t* t, const ref_field_t* f,
-                   ref_ref_visitor_t visit, void* user )
+ref_walk_refs_one( void* instance, const ref_field_t* f, ref_ref_visitor_t visit, void* user )
 {
     uint8_t* addr = (uint8_t*)instance + f->offset;
 
@@ -98,9 +89,9 @@ ref_walk_refs_one( void* instance, const ref_type_t* t, const ref_field_t* f,
         }
         else if ( f->kind == REF_KIND_UNION )
         {
-            const ref_field_t* active = ref_resolve_union_member( instance, t, f );
+            const ref_field_t* active = ref_resolve_union_member( instance, f );
             if ( active )
-                ref_walk_refs_one( addr, ref_get_type( f->type_id ), active, visit, user );
+                ref_walk_refs_one( addr, active, visit, user );
         }
         return;
     }
@@ -162,7 +153,7 @@ ref_walk_refs_fields( void* instance, const ref_type_t* t, ref_ref_visitor_t vis
     if ( t->kind != REF_KIND_STRUCT ) return;
 
     for ( uint16_t i = 0; i < t->field_count; i++ )
-        ref_walk_refs_one( instance, t, &g_ref.fields[ t->field_index + i ], visit, user );
+        ref_walk_refs_one( instance, &g_ref.fields[ t->field_index + i ], visit, user );
 }
 
 void
@@ -190,8 +181,7 @@ ref_walk_refs( void* instance, uint16_t type_id, ref_ref_visitor_t visit, void* 
 static void ref_walk_fields( void* instance, const ref_type_t* t, ref_visitor_t visit, void* user );
 
 static void
-ref_walk_one( void* instance, const ref_type_t* t, const ref_field_t* f,
-              ref_visitor_t visit, void* user )
+ref_walk_one( void* instance, const ref_field_t* f, ref_visitor_t visit, void* user )
 {
     uint8_t* addr = (uint8_t*)instance + f->offset;
 
@@ -205,9 +195,9 @@ ref_walk_one( void* instance, const ref_type_t* t, const ref_field_t* f,
         }
         else if ( f->kind == REF_KIND_UNION )
         {
-            const ref_field_t* active = ref_resolve_union_member( instance, t, f );
+            const ref_field_t* active = ref_resolve_union_member( instance, f );
             if ( active )
-                ref_walk_one( addr, ref_get_type( f->type_id ), active, visit, user );
+                ref_walk_one( addr, active, visit, user );
         }
         return;
     }
@@ -268,7 +258,7 @@ ref_walk_fields( void* instance, const ref_type_t* t, ref_visitor_t visit, void*
 {
     if ( !t || t->kind != REF_KIND_STRUCT ) return;
     for ( uint16_t i = 0; i < t->field_count; i++ )
-        ref_walk_one( instance, t, &g_ref.fields[ t->field_index + i ], visit, user );
+        ref_walk_one( instance, &g_ref.fields[ t->field_index + i ], visit, user );
 }
 
 void

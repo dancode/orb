@@ -242,10 +242,12 @@ typedef enum ref_attr_flag_e
 #define REF_ANAME_CLAMP_UI       "clamp_ui"
 #define REF_ANAME_DISPLAY_NAME   "display_name"
 #define REF_ANAME_TOOLTIP        "tooltip"
-#define REF_ANAME_UNION_TAG      "union_tag"
-#define REF_ANAME_CASE           "case"
 #define REF_ANAME_CATEGORY       "category"
 #define REF_ANAME_STEP           "step"
+
+#define REF_ANAME_UNION_TAG      "union_tag"
+#define REF_ANAME_CASE           "case"
+
 
 typedef struct ref_attrib_s
 {
@@ -310,7 +312,9 @@ typedef struct ref_field_s
     uint16_t    offset;             // gen: byte offset within parent struct
     uint16_t    size;               // gen: sizeof(field), including any inline array
     uint16_t    mods;               // gen: packed modifier chain
-    uint16_t    aux;                // gen: array element count, or function signature type_id
+    uint16_t    aux;                // gen: ARRAY->element count  FUNCTION->sig type_id 
+                                    //      VALUE+UNION->discriminant field index 
+                                    //      (REF_FIELD_INVALID if untagged; set by ref_finalize_frame)
 
     uint8_t     kind;               // ___: gcached ref_kind_t of base, for fast dispatch
     uint8_t     _pad;               // ___: reserved for future use

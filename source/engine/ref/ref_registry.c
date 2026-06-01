@@ -445,7 +445,7 @@ ref_register_type( const ref_type_t* type, const ref_field_t* fields, uint16_t f
     if ( field_count > 0 )
     {
         uint16_t first = ref_alloc_field_block( field_count );
-        if ( first == REF_FIELD_INVALID ) return REF_TYPE_INVALID;
+        if ( first == REF_FIELD_INVALID ) { g_ref.type_count--; return REF_TYPE_INVALID; }
 
         t->field_index = first;
         t->field_count = field_count;
@@ -711,6 +711,43 @@ ref_finalize_frame( uint16_t frame_id )
             ok = false;
         }
     }
+
+    /* Third pass: resolve @union_tag attribute strings to direct tag_field_id indices so
+       ref_resolve_union_member is a single array dereference rather than an attribute scan +
+       string-based field lookup at every walk call. Also validates the named field exists. */
+    uint16_t type_end = ( frame_id + 1 == g_ref.frame_count )
+                       ? g_ref.type_count
+                       : g_ref.frames[ frame_id + 1 ].first_type;
+
+    for ( uint16_t ti = f->first_type; ti < type_end; ti++ )
+    {
+        const ref_type_t* owner = &g_ref.types[ ti ];
+        if ( owner->kind != REF_KIND_STRUCT && owner->kind != REF_KIND_UNION ) continue;
+
+        for ( uint16_t fi = 0; fi < owner->field_count; fi++ )
+        {
+            uint16_t     fid = (uint16_t)( owner->field_index + fi );
+            ref_field_t* fld = &g_ref.fields[ fid ];
+            if ( fld->mods != REF_MODS_VALUE || fld->kind != REF_KIND_UNION ) continue;
+
+            fld->aux = REF_FIELD_INVALID;   /* default: untagged */
+
+            const ref_attrib_t* tag_attr = ref_field_get_attr( fid, REF_ANAME_UNION_TAG );
+            if ( !tag_attr || tag_attr->type != REF_ATTR_STRING ) continue;
+
+            const char*        tag_name  = ref_cstr( tag_attr->value.str );
+            const ref_field_t* tag_field = ref_find_field( ti, tag_name );
+            if ( !tag_field )
+            {
+                printf( "ref: ERROR @union_tag('%s') on field '%s.%s': no such field in owner type\n",
+                        tag_name, ref_cstr( owner->name_id ), ref_cstr( fld->name_id ) );
+                ok = false;
+                continue;
+            }
+            fld->aux = (uint16_t)( tag_field - g_ref.fields );
+        }
+    }
+
     return ok;
 }
 

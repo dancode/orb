@@ -318,7 +318,7 @@ ref_bitset_describe( uint16_t type_id, int32_t value, char* buf, size_t buf_size
     if ( remaining != 0 )
     {
         char tmp[ 32 ];
-        snprintf( tmp, sizeof( tmp ), "%s0x%llx", first ? "" : " | ", (long long)remaining );
+        snprintf( tmp, sizeof( tmp ), "%s0x%lx", first ? "" : " | ", (unsigned long)(uint32_t)remaining );
         const char* p = tmp;
         while ( *p && pos + 1 < buf_size ) buf[ pos++ ] = *p++;
     }
@@ -383,7 +383,7 @@ ref_function_get_param( uint16_t type_id, uint16_t param_index )
 {
     const ref_type_t* t = ref_get_type( type_id );
     if ( !t || t->kind != REF_KIND_FUNCTION ) return NULL;
-    if ( (uint16_t)( param_index + 1 ) >= t->field_count ) return NULL;
+    if ( (uint32_t)param_index + 1u >= (uint32_t)t->field_count ) return NULL;
     return &g_ref.fields[ t->field_index + 1 + param_index ];
 }
 
