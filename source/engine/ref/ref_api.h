@@ -24,6 +24,8 @@ typedef struct ref_api_s
     const ref_field_t*   ( *find_field         )( uint16_t type_id, const char* name );
     const ref_attrib_t*  ( *type_get_attr      )( uint16_t type_id, const char* key );
     const ref_attrib_t*  ( *field_get_attr     )( uint16_t field_id, const char* key );
+    uint16_t            ( *type_get_attr_values )( uint16_t type_id, const char* key, const ref_attrib_t** out );
+    uint16_t            ( *field_get_attr_values)( uint16_t field_id, const char* key, const ref_attrib_t** out );
     ref_name_t           ( *intern             )( const char* s );
     const char*         ( *cstr               )( ref_name_t id );
 

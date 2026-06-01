@@ -67,78 +67,10 @@ segment in generated.h where
 	MODULE CODE IS (GATEWAY MACROS)
 	
 	
-	
-	2. Pool ceilings are hard-coded asserts. REF_MAX_TYPES = 512, REF_MAX_FIELDS = 4096,
-  REF_MAX_ATTRS = 1024, string pool = 16 KB. When a table overflows, it assert(0) and
-  returns REF_TYPE_INVALID. In a full game with many reflected components, these are
-  tight — especially fields (4096 for all modules combined). There's no graceful
-  degradation, no error log, just a crash in debug or silent corruption in release.
+/*==============================================================================================
+    Module Code
 
-  3. String pool intern is O(n). ref_intern() does a full linear scan every call. The
-  comment acknowledges this is acceptable for small pools, but the pool is shared
-  across all modules for the whole session. With 512 types × average 4-char names, it
-  stays fast. But if string pool usage grows (long attribute strings, many enumerator
-  names), intern frequency during hot-reload could become a measurable cost. A simple
-  hash-of-pool or trie would eliminate this entirely.
+    ...
+==============================================================================================*/
 
-  4. Attribute contiguity is a footgun for hand-rolled registration. The system
-  requires that all attributes for owner A be added before any attribute for owner B.
-  This is enforced by an assert in debug. Generated code handles it correctly because
-  the tool emits attributes immediately after each type/field registration. But any
-  hand-written ref_register callback that adds attrs out of order silently (in release)
-   corrupts the attr pool. The assert message ("ref: attributes must be added
-  contiguously per owner") is good, but the constraint isn't surfaced in the API docs
-  until you hit it.
-
-  5. ref_enum_t.value is int32_t but the doc comment says int64_t. The ref.md data
-  model table says ref_enum_t: value (int64_t) and the generated code casts
-  (int64_t)(0) before assigning. But ref_enum_t.value in ref.h is declared int32_t. Any
-   bitset flag above 0x7FFFFFFF (common in 32-bit flag enums using the high bit)
-  silently truncates. This is a bug.
-
-  6. ref_reg_api_t is missing ref_register_function. The vtable in ref_import.h has
-  ref_register_type, ref_register_enum, ref_register_bitset, but not
-  ref_register_function. Function-signature types (used for REF_MODS_FUNCTION fields)
-  can't be registered through the DLL-safe vtable — only from the host via direct call.
-   If reflect_tool ever needs to generate function-signature registrations for DLL
-  modules, it has no path to do so.
-
-  7. Stale rs_-era artifacts in ref_api.h. Line 56: /* rs is always statically linked
-  into the host — REF_STATIC is set by CMake globally. */. Both the rs reference and
-  the CMake claim are outdated. MOD_USE_RS/MOD_FETCH_RS macros defined in ref_api.h use
-   the old name but the system is now ref. The ref.md also uses rs() at call sites in
-  the "Consuming rs at runtime" section. These are documentation-level inconsistencies
-  but they'll cause confusion for anyone reading the API.
-
-  8. ref_field_t has no parent back-reference. A field record doesn't know its owning
-  type. If you hold a field_id and need to find the parent type (e.g., to get the
-  type's schema_hash, or for error reporting), you have to scan all types and check
-  type->field_index <= field_id < type->field_index + type->field_count. This linear
-  scan might be acceptable given the small table sizes, but it's a pain point for
-  tooling.
-
-  9. LIFO-only unload with silent skip. ref_unregister_module silently ignores a module
-   that isn't the topmost frame. In debug, it logs a warning if the name is found
-  deeper in the stack. In a forced or unexpected unload order, types just stay
-  registered forever (or until teardown). There's no mechanism to forcibly clean up a
-  middle frame.
-
-  10. ref_enum_t.value uses int32_t while ref_write/ref_read treat it as field data.
-  Related to point 5 — since enum types use field_index/field_count to index into
-  enums[] and those values are stored as 32-bit signed, serialization of enum values
-  wider than int32_t is silently wrong.
-
-  ---
-  Priority Order for Fixes
-
-  1. sb_runtime_gen.c: add ref_wire_mod_callbacks() — the sandbox isn't exercising
-  reflection at all right now for the dynamic module.
-  2. ref_enum_t.value: change to int32_t or int64_t consistently — pick one and update
-  both the struct and the generated cast.
-  3. Stale rs_ comments in ref_api.h and ref.md — rename MOD_USE_RS/MOD_FETCH_RS to
-  MOD_USE_REF/MOD_FETCH_REF and update the docs.
-  4. ref_reg_api_t: add ref_register_function — close the asymmetry before it's needed.
-  5. Pool overflow: log before assert — at minimum, fprintf(stderr, ...) before the
-  assert(0) so release builds produce a diagnostic rather than UB.
-
-✻ Sautéed for 3m 37s
+/*============================================================================================*/

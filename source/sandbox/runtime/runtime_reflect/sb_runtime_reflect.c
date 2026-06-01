@@ -54,6 +54,7 @@ MOD_USE_EXAMPLE_REFLECT;
 typedef struct
 {
     uint16_t frame_id;
+
 } list_ctx_t;
 
 /* Called once per type in the registry. We filter to only print types from our module's frame. */
@@ -243,7 +244,8 @@ exercise_reflection( void )
     /* STEP 2: List all types registered by a module.
        Each module owns a "frame" in the registry. When the module unloads, its frame
        is popped and all its types disappear — no cleanup code needed. */
-
+    
+    /* This is the user data we send to our for_each() callback to filter for our frame */
     list_ctx_t lc = { .frame_id = ref_get_type( entity_tid )->frame_id };
 
     printf( "\n=== Types in frame %u ===\n", lc.frame_id );

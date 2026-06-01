@@ -68,10 +68,10 @@ ref_find_field( uint16_t type_id, const char* name )
 /*==============================================================================================
     Attribute Access
 
-    Attributes are accessed by name string; the first matching entry in the owner's block
-    is returned. For multi-entry attributes (e.g. @range with min and max as two consecutive
-    entries sharing the same name_id), the caller must read subsequent entries via pointer
-    arithmetic (+1) since there is no ref_each_attr iterator in the public API.
+    Attributes are accessed by name string. The *_get_attr functions return the first matching
+    entry. For multi-value attributes (e.g. @range with a min and a max), use the *_get_attr_values
+    functions: they return how many consecutive same-name entries form the group and point the
+    caller at the first, so values are read as out[0], out[1], ... with no pointer arithmetic.
 ==============================================================================================*/
 
 static const ref_attrib_t*
@@ -84,6 +84,25 @@ ref_find_attr_in_block( uint16_t first, uint16_t count, const char* name )
         if ( strcmp( ref_cstr( a->name_id ), name ) == 0 ) return a;
     }
     return NULL;
+}
+
+/* Find the first entry matching `name`, then count the run of consecutive entries that share
+   its name_id -- the multi-value group. The run is bounded by the owner's block end so it can
+   never bleed into the next owner's attributes. Returns the group size (0 if not found). */
+static uint16_t
+ref_find_attr_values_in_block( uint16_t first, uint16_t count, const char* name,
+                               const ref_attrib_t** out )
+{
+    const ref_attrib_t* head = ref_find_attr_in_block( first, count, name );
+    if ( out ) *out = head;
+    if ( !head ) return 0;
+
+    uint16_t start = (uint16_t)( head - g_ref.attrs );
+    uint16_t end   = (uint16_t)( first + count );
+    uint16_t n     = 0;
+    while ( start + n < end && g_ref.attrs[ start + n ].name_id == head->name_id )
+        n++;
+    return n;
 }
 
 const ref_attrib_t*
@@ -100,6 +119,22 @@ ref_field_get_attr( uint16_t field_id, const char* name )
     const ref_field_t* f = ref_get_field( field_id );
     if ( !f ) return NULL;
     return ref_find_attr_in_block( f->attr_index, f->attr_count, name );
+}
+
+uint16_t
+ref_type_get_attr_values( uint16_t type_id, const char* name, const ref_attrib_t** out )
+{
+    const ref_type_t* t = ref_get_type( type_id );
+    if ( !t ) { if ( out ) *out = NULL; return 0; }
+    return ref_find_attr_values_in_block( t->attr_index, t->attr_count, name, out );
+}
+
+uint16_t
+ref_field_get_attr_values( uint16_t field_id, const char* name, const ref_attrib_t** out )
+{
+    const ref_field_t* f = ref_get_field( field_id );
+    if ( !f ) { if ( out ) *out = NULL; return 0; }
+    return ref_find_attr_values_in_block( f->attr_index, f->attr_count, name, out );
 }
 
 /*==============================================================================================

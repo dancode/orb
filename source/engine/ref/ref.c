@@ -131,6 +131,8 @@ const ref_api_t g_ref_api_struct =
     .find_field         = ref_find_field,
     .type_get_attr      = ref_type_get_attr,
     .field_get_attr     = ref_field_get_attr,
+    .type_get_attr_values  = ref_type_get_attr_values,
+    .field_get_attr_values = ref_field_get_attr_values,
     .intern             = ref_intern,
     .cstr               = ref_cstr,
 

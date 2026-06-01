@@ -53,7 +53,14 @@
       "Bash(cd /d F:\\\\orb)",
       "Bash(bootstrap_build_tool.bat)",
       "Bash(Get-ChildItem -Path \"F:\\\\orb\" -Filter \"*.bat\" -File)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target reflect_tool')",
+      "PowerShell(bin\\\\reflect_tool.exe 2>&1 | Select-Object -First 30)",
+      "PowerShell(bin\\\\reflect_tool.exe source\\\\runtime_modules\\\\example_reflect build\\\\generated example_reflect)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_runtime_reflect && bin\\\\build_tool.exe -config Debug -target sb_engine_reflect')",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_reflect && bin\\\\build_tool.exe -config Debug -target sb_runtime_reflect')",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target example_reflect' ; \"=== sb_reflect ===\" ; $o = bin\\\\sb_reflect.exe 2>&1 | Out-String; \"FAIL count: \" + \\([regex]::Matches\\($o,\"FAIL\"\\)\\).Count; $o -split \"`n\" | Select-String \"volume @range|brightness|version|display_name|tooltip|health|speed|range \" | Select-Object -First 12)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

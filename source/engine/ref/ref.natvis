@@ -62,12 +62,10 @@
         <DisplayString>{g_ref_str_pool+name_id,s} = {value}</DisplayString>
     </Type>
 
-    <!-- ref_attrib_t  (ci high-nibble=count, low-nibble=index) -->
+    <!-- ref_attrib_t  (multi-value groups are consecutive same-name entries) -->
     <Type Name="ref_attrib_t">
-        <DisplayString Condition="type == 1 &amp;&amp; (ci &gt;&gt; 4) &lt;= 1">{g_ref_str_pool+name_id,s} = {value.i32}</DisplayString>
-        <DisplayString Condition="type == 1 &amp;&amp; (ci &gt;&gt; 4) &gt;  1">{g_ref_str_pool+name_id,s}[{ci &amp; 0xF}/{ci &gt;&gt; 4}] = {value.i32}</DisplayString>
-        <DisplayString Condition="type == 2 &amp;&amp; (ci &gt;&gt; 4) &lt;= 1">{g_ref_str_pool+name_id,s} = {value.f32}</DisplayString>
-        <DisplayString Condition="type == 2 &amp;&amp; (ci &gt;&gt; 4) &gt;  1">{g_ref_str_pool+name_id,s}[{ci &amp; 0xF}/{ci &gt;&gt; 4}] = {value.f32}</DisplayString>
+        <DisplayString Condition="type == 1">{g_ref_str_pool+name_id,s} = {value.i32}</DisplayString>
+        <DisplayString Condition="type == 2">{g_ref_str_pool+name_id,s} = {value.f32}</DisplayString>
         <DisplayString Condition="type == 3">{g_ref_str_pool+name_id,s}  [bool]</DisplayString>
         <DisplayString Condition="type == 4">{g_ref_str_pool+name_id,s} = "{g_ref_str_pool+value.str,s}"</DisplayString>
         <DisplayString>                      {g_ref_str_pool+name_id,s}</DisplayString>

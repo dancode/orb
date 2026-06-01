@@ -92,6 +92,8 @@ const ref_field_t*  ref_get_field            ( uint16_t field_id );
 const ref_field_t*  ref_find_field           ( uint16_t type_id,  const char* name );
 const ref_attrib_t* ref_type_get_attr        ( uint16_t type_id,  const char* name );
 const ref_attrib_t* ref_field_get_attr       ( uint16_t field_id, const char* name );
+uint16_t            ref_type_get_attr_values  ( uint16_t type_id,  const char* name, const ref_attrib_t** out );
+uint16_t            ref_field_get_attr_values ( uint16_t field_id, const char* name, const ref_attrib_t** out );
 const ref_enum_t*   ref_enum_find_by_name    ( uint16_t type_id,  const char* name );
 const ref_enum_t*   ref_enum_find_by_value   ( uint16_t type_id,  int32_t value );
 const ref_enum_t*   ref_get_enumerator       ( uint16_t enum_id );

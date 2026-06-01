@@ -7,8 +7,12 @@
         entry  := IDENT [ '=' value ]
         value  := INT_LITERAL | FLOAT_LITERAL | STRING_LITERAL | IDENT
 
-    Continuation: for `name=v1, v2, v3` the v2, v3 are emitted as repeated entries under
-    the same `name`, matching REF_attrib multi-value runs (e.g. `range=0, 100`).
+    Continuation: for `name = v1, v2, v3` the trailing v2, v3 are emitted as repeated
+    entries under the same `name`, matching ref_attrib multi-value runs (e.g. `range=0, 100`).
+    Only NUMERIC continuations are joined to the current key -- once a value has been read,
+    a non-numeric comma-separated token starts a fresh entry, and any top-level `=` begins a
+    new `key = value` entry. This is what lets several attributes coexist after a multi-value
+    one, e.g. `range = 0, 1000, tooltip = "...", transient`.
 
     All functions are static; compiled only as part of the reflect_tool unity build.
 
@@ -81,8 +85,22 @@ unquote_string( char* s )
 
         1. key = value pairs    (e.g. flags = 1).
         2. bare tags            (e.g. hidden).
-        3. multi-value keys     (e.g. range = 0, 100),
+        3. multi-value keys     (e.g. range = 0, 100).
+        4. several entries after a multi-value key (e.g. range = 0, 100, tooltip = "x", hidden).
+
+    State machine -- `phase` tracks where we are within an entry:
+
+        PHASE_KEY   parsing a key or a bare tag (no '=' seen yet for this entry)
+        PHASE_VALUE just saw '='; the next token is this key's value, whatever its type
+        PHASE_CONT  a value has been read; a further comma-separated NUMERIC token is a
+                    continuation of the same key, anything else starts a new entry
+
+    A top-level '=' always opens a new `key = value` entry regardless of phase, so the
+    pending token becomes the new key. This is the boundary that separates `tooltip = "x"`
+    from a preceding `range = 0, 100` instead of swallowing it as another range value.
 ----------------------------------------------------------------------------------------------*/
+
+enum { PHASE_KEY = 0, PHASE_VALUE = 1, PHASE_CONT = 2 };
 
 static void
 parse_attr_args( const char* args, attr_t* out, int max, int* out_count )
@@ -91,8 +109,8 @@ parse_attr_args( const char* args, attr_t* out, int max, int* out_count )
     if ( !args || !*args )
         return;
 
-    char current_name[ RT_MAX_NAME ] = { 0 };   // Keeps track of the key for multi-value args.
-    int  in_value = 0;                          // 0 if parsing key/tag, 1 if parsing value.
+    char current_name[ RT_MAX_NAME ] = { 0 };   // Key the current value(s) belong to.
+    int  phase = PHASE_KEY;                     // PHASE_KEY / PHASE_VALUE / PHASE_CONT.
     char token[ RT_MAX_NAME ] = { 0 };          // Accumulates characters for the current fragment.
     int  token_length = 0;                      // token length
     int  depth  = 0;                            // Tracks nesting level of brackets/parens.
@@ -108,33 +126,36 @@ parse_attr_args( const char* args, attr_t* out, int max, int* out_count )
             token[ token_length ] = '\0';
             trim( token );
 
-            if ( token[ 0 ] )
+            if ( token[ 0 ] && *out_count < max )
             {
-                if ( !in_value )
+                /* In PHASE_CONT a numeric token continues the current key; a non-numeric one
+                   (bare identifier) is a fresh tag, so fall back to PHASE_KEY handling. */
+                int as_value = ( phase == PHASE_VALUE );
+                if ( phase == PHASE_CONT )
                 {
-                    /* No '=' seen yet; this is a "Tag" attribute (e.g. `read_only`). */
-                    if ( *out_count < max )
-                    {
-                        attr_t* a = &out[ ( *out_count )++ ];
-                        str_copy( a->name, token, RT_MAX_NAME );
-                        a->kind       = RT_ATTR_TAG;
-                        a->value[ 0 ] = '\0';
-                        str_copy( current_name, token, RT_MAX_NAME );
-                    }
+                    int k = classify_literal( token );
+                    as_value = ( k == RT_ATTR_INT || k == RT_ATTR_FLOAT );
+                }
+
+                attr_t* a = &out[ ( *out_count )++ ];
+                if ( as_value )
+                {
+                    /* Value (or numeric continuation) belonging to current_name. */
+                    str_copy( a->name, current_name, RT_MAX_NAME );
+                    a->kind = classify_literal( token );
+                    str_copy( a->value, token, RT_MAX_NAME );
+                    if ( a->kind == RT_ATTR_STRING )
+                        unquote_string( a->value );
+                    phase = PHASE_CONT;   /* later numeric tokens keep continuing this key */
                 }
                 else
                 {
-                    /* We are after an '='; this token is the value. */
-                    if ( *out_count < max )
-                    {
-                        attr_t* a = &out[ ( *out_count )++ ];
-                        /* Reuse the name found before the '='. */
-                        str_copy( a->name, current_name, RT_MAX_NAME );
-                        a->kind = classify_literal( token );
-                        str_copy( a->value, token, RT_MAX_NAME );
-                        if ( a->kind == RT_ATTR_STRING )
-                            unquote_string( a->value );
-                    }
+                    /* Bare tag attribute (e.g. `transient`, `hidden`). */
+                    str_copy( a->name, token, RT_MAX_NAME );
+                    a->kind       = RT_ATTR_TAG;
+                    a->value[ 0 ] = '\0';
+                    str_copy( current_name, token, RT_MAX_NAME );
+                    phase = PHASE_KEY;
                 }
             }
 
@@ -144,20 +165,18 @@ parse_attr_args( const char* args, attr_t* out, int max, int* out_count )
             if ( c == '\0' )
                 break;
             p++;
-
-            /* Note: We DO NOT reset in_value here.
-               This allows `range=0, 100` to work, as `100` will be treated as another value for `range`. */
             continue;
         }
 
-        /* Detect transition from key to value. */
-        if ( c == '=' && depth == 0 && !in_value )
+        /* A top-level '=' opens a new key=value entry: the pending token is the key name.
+           Firing in any phase is what ends a multi-value run and starts the next attribute. */
+        if ( c == '=' && depth == 0 )
         {
             token[ token_length ] = '\0';
             trim( token );
             /* The token we just finished is the name of the attribute. */
             str_copy( current_name, token, RT_MAX_NAME );
-            in_value   = 1;
+            phase      = PHASE_VALUE;
             token_length = 0;
             token[ 0 ] = '\0';
             p++;

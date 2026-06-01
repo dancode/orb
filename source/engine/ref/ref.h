@@ -157,22 +157,17 @@ typedef enum ref_mods_e
 /*==============================================================================================
     Attribute
 
-    Single 4-byte payload entry. Multi-value metadata (@range(0, 100)) uses repeated
-    entries with the same name_id. Larger types are split across multiple entries.
-    String values are interned into the ref_ string pool.
+    Single 4-byte payload entry. Multi-value metadata (@range(0, 100)) is stored as
+    repeated entries with the same name_id, kept contiguous in the owner's attr block.
+    The group is self-describing: its size is simply the run of consecutive same-name
+    entries, so no per-entry count/index is stored. Read a whole group with
+    ref_field_get_attr_values / ref_type_get_attr_values; read the first (or only) entry
+    with ref_field_get_attr / ref_type_get_attr. String values are interned into the pool.
 
     flags (uint16_t): engine bits 0-7, user-defined bits 8-15.
 
-        Use ref_attr_flag_t for engine bits. 
+        Use ref_attr_flag_t for engine bits.
         Check with (attr->flags & REF_AF_*).
-
-    ci  packed group size and position in a byte.
-
-        High nibble = count (total entries in logical group, 1 = single value).
-        Low  nibble = index (this entry's 0-based position within the group).
-
-        Build with:  REF_ATTR_CI( count, index ). 
-        Read withL   REF_ATTR_COUNT( ci ), REF_ATTR_INDEX( ci ).
 
 ==============================================================================================*/
 
@@ -212,25 +207,18 @@ typedef enum ref_attr_flag_e
 #define REF_ANAME_DISPLAY_NAME   "display_name"
 #define REF_ANAME_TOOLTIP        "tooltip"
 
-/* Pack count (1-15) and index (0-14) into one byte: high nibble = count, low = index */
-
-#define REF_ATTR_CI( count, index )  ( (uint8_t)( ( (uint8_t)(count) & 0x0F ) << 4 | ( (uint8_t)(index) & 0x0F ) ) )
-#define REF_ATTR_COUNT( ci )         ( (uint8_t)( (uint8_t)(ci) >> 4 ) )
-#define REF_ATTR_INDEX( ci )         ( (uint8_t)( (uint8_t)(ci) & 0x0F ) )
-#define REF_ATTR_CI_SINGLE           REF_ATTR_CI( 1, 0 )   /* shorthand for a lone entry */
-
 typedef struct ref_attrib_s
 {
     ref_name_t  name_id;         // interned attribute name
-    uint16_t   flags;           // ref_attr_flag_t bitmask; bits 8-15 user-defined
-    uint8_t    type;            // ref_attr_type_t
-    uint8_t    ci;              // packed: high nibble = count, low nibble = index
+    uint16_t    flags;           // ref_attr_flag_t bitmask; bits 8-15 user-defined
+    uint8_t     type;            // ref_attr_type_t
+    uint8_t     _pad;            // reserved
     union
     {
-        int32_t   i32;
-        float     f32;
-        ref_name_t str;          // interned string value (u32)
-        uint32_t  u32;
+        int32_t     i32;
+        float       f32;
+        ref_name_t  str;          // interned string value (u32)
+        uint32_t    u32;
     } value;
 
 } ref_attrib_t;

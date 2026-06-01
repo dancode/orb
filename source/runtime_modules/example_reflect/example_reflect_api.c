@@ -118,6 +118,8 @@ example_reflect_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
     s = ( example_reflect_state_t* )raw_state;
+
+    /* Populate the demo entity and NPC with live data */
     populate_demo( s );
     return true;
 }
@@ -153,7 +155,7 @@ example_reflect_get_mod_desc( void )
         .init          = example_reflect_init,
         .reload        = example_reflect_reload,
         .exit          = example_reflect_exit,
-        .ref_register   = MOD_REFLECT_FUNC( example_reflect ),
+        .ref_register  = MOD_REFLECT_FUNC( example_reflect ),
     };
     return &desc;
 }

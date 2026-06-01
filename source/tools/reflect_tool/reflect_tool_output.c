@@ -103,15 +103,35 @@ func_tid_var( char* out, int max, const char* type_name )
     snprintf( out, max, "_tid_%s", type_name );
 }
 
-/* Emit one ref_attrib_t inline and call the given add function. */
+/* Map a built-in attribute name to its REF_AF_* semantic flag macro, or NULL if none.
+   Names mirror the REF_ANAME_* constants in engine/ref/ref.h; kept as literals here because
+   reflect_tool has no engine dependency. Setting .flags lets consumers test attr->flags
+   instead of strcmp-ing the name on every field. */
+static const char*
+attr_flag_macro( const char* name )
+{
+    if ( strcmp( name, "range" )        == 0 ) return "REF_AF_RANGE";
+    if ( strcmp( name, "clamp" )        == 0 ) return "REF_AF_RANGE";       /* alias of range */
+    if ( strcmp( name, "clamp_ui" )     == 0 ) return "REF_AF_CLAMP_UI";
+    if ( strcmp( name, "display_name" ) == 0 ) return "REF_AF_DISPLAY_NAME";
+    if ( strcmp( name, "tooltip" )      == 0 ) return "REF_AF_TOOLTIP";
+    return NULL;
+}
+
+/* Emit one ref_attrib_t inline and call the given add function. A multi-value attribute
+   (e.g. range=0,100) is emitted as consecutive same-name entries; the group's size is the
+   run of same-name entries, so nothing extra is stored per entry. */
 static void
 emit_attr_call( FILE* fc, const attr_t* a, const char* add_fn, const char* id_expr,
                 const char* indent )
 {
+    const char* flag = attr_flag_macro( a->name );
+
     fprintf( fc, "%s{ ref_attrib_t _a = {\n", indent );
     fprintf( fc, "%s      .name_id = api->intern( \"%s\" ),\n", indent, a->name );
     fprintf( fc, "%s      .type    = %s,\n",                    indent, attr_kind_macro( a->kind ) );
-    fprintf( fc, "%s      .ci      = REF_ATTR_CI_SINGLE,\n",     indent );
+    if ( flag )
+        fprintf( fc, "%s      .flags   = %s,\n",                indent, flag );
     fprintf( fc, "%s      .value   = { ",                       indent );
     switch ( a->kind )
     {
@@ -123,6 +143,17 @@ emit_attr_call( FILE* fc, const attr_t* a, const char* add_fn, const char* id_ex
     fprintf( fc, " },\n" );
     fprintf( fc, "%s  };\n",                         indent );
     fprintf( fc, "%s  api->%s( %s, &_a ); }\n", indent, add_fn, id_expr );
+}
+
+/* Emit a whole attribute array. Entries are emitted in order; consecutive same-name entries
+   form a multi-value group at read time (see ref_field_get_attr_values), so the registration
+   only needs to keep them contiguous, which they already are here. */
+static void
+emit_attr_block( FILE* fc, const attr_t* attrs, int n, const char* add_fn,
+                 const char* id_expr, const char* indent )
+{
+    for ( int i = 0; i < n; i++ )
+        emit_attr_call( fc, &attrs[ i ], add_fn, id_expr, indent );
 }
 
 /* Emit the ref_type_t _t = { ... }; block shared by structs and enums. */
@@ -216,8 +247,7 @@ emit_struct_block( FILE* fc, const decl_type_t* t, const parse_data_t* data )
         emit_register( fc, "ref_register_type", "NULL", 0, needs_tid );
     }
 
-    for ( int ai = 0; ai < t->attr_count; ai++ )
-        emit_attr_call( fc, &t->attrs[ ai ], "ref_type_add_attr", "tid", "        " );
+    emit_attr_block( fc, t->attrs, t->attr_count, "ref_type_add_attr", "tid", "        " );
 
     if ( has_field_attrs )
     {
@@ -229,8 +259,7 @@ emit_struct_block( FILE* fc, const decl_type_t* t, const parse_data_t* data )
                 continue;
             char fid_expr[ 64 ];
             snprintf( fid_expr, sizeof fid_expr, "_rt->field_index + %d", fi );
-            for ( int ai = 0; ai < f->attr_count; ai++ )
-                emit_attr_call( fc, &f->attrs[ ai ], "ref_field_add_attr", fid_expr, "          " );
+            emit_attr_block( fc, f->attrs, f->attr_count, "ref_field_add_attr", fid_expr, "          " );
         }
         fprintf( fc, "        }\n" );
     }
@@ -265,8 +294,7 @@ emit_enum_block( FILE* fc, const decl_type_t* t )
         emit_register( fc, reg_fn, "NULL", 0, needs_tid );
     }
 
-    for ( int ai = 0; ai < t->attr_count; ai++ )
-        emit_attr_call( fc, &t->attrs[ ai ], "ref_type_add_attr", "tid", "        " );
+    emit_attr_block( fc, t->attrs, t->attr_count, "ref_type_add_attr", "tid", "        " );
 
     fprintf( fc, "    }\n\n" );
 }

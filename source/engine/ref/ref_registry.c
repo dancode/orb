@@ -572,8 +572,8 @@ ref_register_function( const ref_type_t* type, const ref_field_t* return_then_pa
     enforced by the assertion in ref_append_attr and is required by ref_find_attr_in_block.
 
     Multi-value attributes (such as @range which needs a min and max entry) are represented
-    as two consecutive entries with the same name_id. The ref_attrib_t.ci field encodes
-    total group count and this entry's index within the group (see REF_ATTR_CI macros).
+    as consecutive entries with the same name_id. Because the block is contiguous, the group
+    size is simply the run of same-name entries -- read it with ref_field_get_attr_values.
 ==============================================================================================*/
 
 static bool

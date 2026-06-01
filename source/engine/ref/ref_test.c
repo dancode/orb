@@ -147,7 +147,6 @@ ref_test_register_vec3( void )
     ref_attrib_t a          = { 0 };
     a.name_id              = test_intern( "serializable" );
     a.type                 = REF_ATTR_BOOL;
-    a.ci                   = REF_ATTR_CI_SINGLE;
     a.value.u32            = 1;
     ref_type_add_attr( tid, &a );
 }
@@ -263,10 +262,8 @@ ref_test_register_entity( void )
         a.name_id       = test_intern( REF_ANAME_RANGE );
         a.type          = REF_ATTR_FLOAT;
         a.flags         = REF_AF_RANGE;
-        a.ci            = REF_ATTR_CI( 2, 0 );
         a.value.f32     = 0.0f;
         ref_field_add_attr( fid, &a );
-        a.ci            = REF_ATTR_CI( 2, 1 );
         a.value.f32     = 100.0f;
         ref_field_add_attr( fid, &a );
     }
@@ -332,8 +329,8 @@ test_primitives( void )
             continue;
         }
 
-        if ( (int)EXPECTED[ i ].id != i )                                   ok = false;
-        if ( strcmp( test_cstr( t->name_id ), EXPECTED[ i ].name ) != 0 )   ok = false;
+        if ( (int)EXPECTED[ i ].id != i )                                    ok = false;
+        if ( strcmp( test_cstr( t->name_id ), EXPECTED[ i ].name ) != 0 )    ok = false;
         if ( t->size  != EXPECTED[ i ].size  )                               ok = false;
         if ( t->align != EXPECTED[ i ].align )                               ok = false;
         if ( t->kind  != REF_KIND_PRIM )                                     ok = false;
@@ -366,8 +363,9 @@ test_prim_fields( void )
     printf( "\n=== ref: primitive field resolution ===\n" );
 
     ref_init();
-    uint16_t game = ref_push_frame( "game" );
+    uint16_t our_frame = ref_push_frame( "test_prim_fields" );
 
+    /* create a struct of all our primitive fields */
     ref_type_t type = { 0 };
     type.name_id   = test_intern( "prim_fields_t" );
     type.name_hash = ref_hash_str( "prim_fields_t" );
@@ -376,7 +374,7 @@ test_prim_fields( void )
     type.kind      = REF_KIND_STRUCT;
 
     ref_field_t fields[ 13 ] = { 0 };
-    int         fi            = 0;
+    int         fi           = 0;
 
     /* bool */
     fields[ fi ].name_id   = test_intern( "b" );
@@ -469,8 +467,9 @@ test_prim_fields( void )
     fields[ fi ].size      = REF_FIELD_SIZE( ref_test_prim_fields_t, str );
     fi++;
 
+    /* register the struct + field array + count */
     uint16_t tid = ref_register_type( &type, fields, (uint16_t)fi );
-    ref_finalize_frame( game );
+    ref_finalize_frame( our_frame );
 
     static const struct { const char* name; ref_prim_t expected_id; }
     EXPECTED[] = {
@@ -507,7 +506,7 @@ test_prim_fields( void )
 
     assert( all_ok );
 
-    ref_pop_frame( game );
+    ref_pop_frame( our_frame );
     ref_exit();
 }
 
@@ -526,7 +525,7 @@ test_mods( void )
     printf( "\n=== ref: modifier shapes ===\n" );
 
     ref_init();
-    uint16_t game = ref_push_frame( "game" );
+    uint16_t our_frame = ref_push_frame( "test_mods" );
 
     ref_type_t type = { 0 };
     type.name_id   = test_intern( "mods_t" );
@@ -617,7 +616,7 @@ test_mods( void )
     fi++;
 
     uint16_t tid = ref_register_type( &type, fields, (uint16_t)fi );
-    ref_finalize_frame( game );
+    ref_finalize_frame( our_frame );
 
     ref_print_type( tid );
 
@@ -647,7 +646,7 @@ test_mods( void )
 
     assert( all_ok );
 
-    ref_pop_frame( game );
+    ref_pop_frame( our_frame );
     ref_exit();
 }
 
@@ -1010,7 +1009,6 @@ test_serialize( void )
         ref_attrib_t a   = { 0 };
         a.name_id       = test_intern( "transient" );
         a.type          = REF_ATTR_BOOL;
-        a.ci            = REF_ATTR_CI_SINGLE;
         a.value.u32     = 1;
         ref_field_add_attr( fid, &a );
     }
@@ -1380,18 +1378,12 @@ ref_usage_inspect_field( uint16_t field_id, const ref_field_t* f, void* user )
                         float v = *(const float*)addr;
                         printf( "%.2f", v );
 
-                        /* Read @range min -- ref_field_get_attr returns the first entry only.
-                           FRICTION: for multi-entry attributes (range has min + max as two
-                           consecutive entries sharing the same name_id), there is no
-                           ref_each_field_attr.  The entries are contiguous in the attr block
-                           so pointer arithmetic to +1 works, but it relies on layout knowledge
-                           that the public API does not expose through a typed accessor. */
-                        const ref_attrib_t* rmin = ref_field_get_attr( field_id, REF_ANAME_RANGE );
-                        if ( rmin && REF_ATTR_COUNT( rmin->ci ) >= 2 )
-                        {
-                            const ref_attrib_t* rmax = rmin + 1;
-                            printf( "  [range %.0f..%.0f]", rmin->value.f32, rmax->value.f32 );
-                        }
+                        /* Read @range as a multi-value group. ref_field_get_attr_values
+                           returns how many consecutive entries share the name and points at
+                           the first, so min/max are range[0]/range[1] -- no pointer math. */
+                        const ref_attrib_t* range;
+                        if ( ref_field_get_attr_values( field_id, REF_ANAME_RANGE, &range ) >= 2 )
+                            printf( "  [range %.0f..%.0f]", range[ 0 ].value.f32, range[ 1 ].value.f32 );
                         break;
                     }
                     default: printf( "<prim id=%u>", f->type_id ); break;
@@ -1543,10 +1535,8 @@ test_usage_example( void )
         a.name_id     = test_intern( REF_ANAME_RANGE );
         a.type        = REF_ATTR_FLOAT;
         a.flags       = REF_AF_RANGE;
-        a.ci          = REF_ATTR_CI( 2, 0 );
         a.value.f32   = 0.0f;
         ref_field_add_attr( hid, &a );
-        a.ci          = REF_ATTR_CI( 2, 1 );
         a.value.f32   = 100.0f;
         ref_field_add_attr( hid, &a );
     }
@@ -1558,10 +1548,8 @@ test_usage_example( void )
         a.name_id     = test_intern( REF_ANAME_RANGE );
         a.type        = REF_ATTR_FLOAT;
         a.flags       = REF_AF_RANGE;
-        a.ci          = REF_ATTR_CI( 2, 0 );
         a.value.f32   = 0.0f;
         ref_field_add_attr( sid, &a );
-        a.ci          = REF_ATTR_CI( 2, 1 );
         a.value.f32   = 20.0f;
         ref_field_add_attr( sid, &a );
     }
@@ -1602,17 +1590,16 @@ test_usage_example( void )
     Attribute test
 
       Register a struct with one field per attribute type and flag combination:
-        volume      -- @range(0,100)        REF_ATTR_INT,    REF_AF_RANGE,        2-entry CI group
-        brightness  -- @clamp_ui(0.0,1.0)  REF_ATTR_FLOAT,  REF_AF_CLAMP_UI,     2-entry CI group
-        fullscreen  -- @display_name(...)   REF_ATTR_STRING, REF_AF_DISPLAY_NAME, single entry
-        username    -- @tooltip(...)        REF_ATTR_STRING, REF_AF_TOOLTIP,       single entry
+        volume      -- @range(0,100)        REF_ATTR_INT,    REF_AF_RANGE,        2-value group
+        brightness  -- @clamp_ui(0.0,1.0)  REF_ATTR_FLOAT,  REF_AF_CLAMP_UI,     2-value group
+        fullscreen  -- @display_name(...)   REF_ATTR_STRING, REF_AF_DISPLAY_NAME, single value
+        username    -- @tooltip(...)        REF_ATTR_STRING, REF_AF_TOOLTIP,       single value
 
       Also attaches a type-level @version INT attribute to exercise ref_type_add_attr and
       ref_type_get_attr.  Missing-attr lookup is verified to return NULL.
 
-      CI group encoding: high nibble = total count, low nibble = 0-based position.
-        REF_ATTR_CI(2,0) -> first of two; REF_ATTR_CI(2,1) -> second of two.
-        REF_ATTR_COUNT(ci) and REF_ATTR_INDEX(ci) decode back to those values.
+      Multi-value groups are consecutive same-name entries; ref_field_get_attr_values returns
+      the group size and points at the first, so the values are read as out[0], out[1], ...
 ==============================================================================================*/
 
 typedef struct ref_test_cfg_s
@@ -1673,7 +1660,6 @@ test_attrs_full( void )
         a.name_id      = test_intern( "version" );
         a.type         = REF_ATTR_INT;
         a.flags        = 0;
-        a.ci           = REF_ATTR_CI_SINGLE;
         a.value.i32    = 3;
         ref_type_add_attr( tid, &a );
     }
@@ -1689,11 +1675,9 @@ test_attrs_full( void )
         a.name_id      = test_intern( REF_ANAME_RANGE );
         a.type         = REF_ATTR_INT;
         a.flags        = REF_AF_RANGE;
-        a.ci           = REF_ATTR_CI( 2, 0 );
         a.value.i32    = 0;
         ref_field_add_attr( fid, &a );
 
-        a.ci           = REF_ATTR_CI( 2, 1 );
         a.value.i32    = 100;
         ref_field_add_attr( fid, &a );
     }
@@ -1707,11 +1691,9 @@ test_attrs_full( void )
         a.name_id      = test_intern( REF_ANAME_CLAMP_UI );
         a.type         = REF_ATTR_FLOAT;
         a.flags        = REF_AF_CLAMP_UI;
-        a.ci           = REF_ATTR_CI( 2, 0 );
         a.value.f32    = 0.0f;
         ref_field_add_attr( fid, &a );
 
-        a.ci           = REF_ATTR_CI( 2, 1 );
         a.value.f32    = 1.0f;
         ref_field_add_attr( fid, &a );
     }
@@ -1725,7 +1707,6 @@ test_attrs_full( void )
         a.name_id      = test_intern( REF_ANAME_DISPLAY_NAME );
         a.type         = REF_ATTR_STRING;
         a.flags        = REF_AF_DISPLAY_NAME;
-        a.ci           = REF_ATTR_CI_SINGLE;
         a.value.str    = test_intern( "Full Screen" );
         ref_field_add_attr( fid, &a );
     }
@@ -1739,7 +1720,6 @@ test_attrs_full( void )
         a.name_id      = test_intern( REF_ANAME_TOOLTIP );
         a.type         = REF_ATTR_STRING;
         a.flags        = REF_AF_TOOLTIP;
-        a.ci           = REF_ATTR_CI_SINGLE;
         a.value.str    = test_intern( "Your display name" );
         ref_field_add_attr( fid, &a );
     }
@@ -1751,34 +1731,28 @@ test_attrs_full( void )
 
     /* --- Verify type-level @version --- */
     {
-        const ref_attrib_t* a  = ref_type_get_attr( tid, "version" );
-        bool                ok = a && a->type == REF_ATTR_INT && a->value.i32 == 3
-                                   && REF_ATTR_COUNT( a->ci ) == 1 && REF_ATTR_INDEX( a->ci ) == 0;
-        printf( "  [%s] type @version: type=%d val=%d ci(count=%u index=%u)\n",
+        const ref_attrib_t* a;
+        uint16_t            n  = ref_type_get_attr_values( tid, "version", &a );
+        bool                ok = a && n == 1 && a->type == REF_ATTR_INT && a->value.i32 == 3;
+        printf( "  [%s] type @version: type=%d val=%d count=%u\n",
                 ok ? "ok  " : "FAIL",
-                a ? a->type : -1, a ? a->value.i32 : -1,
-                a ? REF_ATTR_COUNT( a->ci ) : 0, a ? REF_ATTR_INDEX( a->ci ) : 0 );
+                a ? a->type : -1, a ? a->value.i32 : -1, ( unsigned )n );
         if ( !ok ) all_ok = false;
     }
 
     /* --- Verify volume @range(0,100) INT 2-entry CI group --- */
     {
-        const ref_field_t*  f      = ref_find_field( tid, "volume" );
-        uint16_t            fid    = (uint16_t)( f - ref_get_field( 0 ) );
-        const ref_attrib_t* rmin   = ref_field_get_attr( fid, REF_ANAME_RANGE );
-        const ref_attrib_t* rmax   = rmin ? rmin + 1 : NULL;
+        const ref_field_t*  f    = ref_find_field( tid, "volume" );
+        uint16_t            fid  = (uint16_t)( f - ref_get_field( 0 ) );
+        const ref_attrib_t* r;
+        uint16_t            n    = ref_field_get_attr_values( fid, REF_ANAME_RANGE, &r );
 
-        bool ok = rmin && rmax
-               && rmin->type   == REF_ATTR_INT   && rmin->flags == REF_AF_RANGE
-               && REF_ATTR_COUNT( rmin->ci ) == 2 && REF_ATTR_INDEX( rmin->ci ) == 0
-               && rmin->value.i32 == 0
-               && REF_ATTR_COUNT( rmax->ci ) == 2 && REF_ATTR_INDEX( rmax->ci ) == 1
-               && rmax->value.i32 == 100;
-        printf( "  [%s] volume @range: min=%d max=%d  ci0(c=%u,i=%u) ci1(c=%u,i=%u)\n",
-                ok ? "ok  " : "FAIL",
-                rmin ? rmin->value.i32 : -1, rmax ? rmax->value.i32 : -1,
-                rmin ? REF_ATTR_COUNT( rmin->ci ) : 0, rmin ? REF_ATTR_INDEX( rmin->ci ) : 0,
-                rmax ? REF_ATTR_COUNT( rmax->ci ) : 0, rmax ? REF_ATTR_INDEX( rmax->ci ) : 0 );
+        bool ok = n == 2
+               && r[ 0 ].type == REF_ATTR_INT && r[ 0 ].flags == REF_AF_RANGE && r[ 0 ].value.i32 == 0
+               && r[ 1 ].type == REF_ATTR_INT && r[ 1 ].flags == REF_AF_RANGE && r[ 1 ].value.i32 == 100;
+        printf( "  [%s] volume @range: count=%u min=%d max=%d\n",
+                ok ? "ok  " : "FAIL", ( unsigned )n,
+                n >= 1 ? r[ 0 ].value.i32 : -1, n >= 2 ? r[ 1 ].value.i32 : -1 );
         if ( !ok ) all_ok = false;
     }
 
@@ -1786,18 +1760,15 @@ test_attrs_full( void )
     {
         const ref_field_t*  f    = ref_find_field( tid, "brightness" );
         uint16_t            fid  = (uint16_t)( f - ref_get_field( 0 ) );
-        const ref_attrib_t* cmin = ref_field_get_attr( fid, REF_ANAME_CLAMP_UI );
-        const ref_attrib_t* cmax = cmin ? cmin + 1 : NULL;
+        const ref_attrib_t* c;
+        uint16_t            n    = ref_field_get_attr_values( fid, REF_ANAME_CLAMP_UI, &c );
 
-        bool ok = cmin && cmax
-               && cmin->type  == REF_ATTR_FLOAT  && cmin->flags == REF_AF_CLAMP_UI
-               && REF_ATTR_COUNT( cmin->ci ) == 2 && REF_ATTR_INDEX( cmin->ci ) == 0
-               && cmin->value.f32 == 0.0f
-               && REF_ATTR_COUNT( cmax->ci ) == 2 && REF_ATTR_INDEX( cmax->ci ) == 1
-               && cmax->value.f32 == 1.0f;
+        bool ok = n == 2
+               && c[ 0 ].type == REF_ATTR_FLOAT && c[ 0 ].flags == REF_AF_CLAMP_UI && c[ 0 ].value.f32 == 0.0f
+               && c[ 1 ].type == REF_ATTR_FLOAT && c[ 1 ].flags == REF_AF_CLAMP_UI && c[ 1 ].value.f32 == 1.0f;
         printf( "  [%s] brightness @clamp_ui: min=%.1f max=%.1f\n",
                 ok ? "ok  " : "FAIL",
-                cmin ? cmin->value.f32 : -1.0f, cmax ? cmax->value.f32 : -1.0f );
+                n >= 1 ? c[ 0 ].value.f32 : -1.0f, n >= 2 ? c[ 1 ].value.f32 : -1.0f );
         if ( !ok ) all_ok = false;
     }
 
@@ -1805,10 +1776,10 @@ test_attrs_full( void )
     {
         const ref_field_t*  f   = ref_find_field( tid, "fullscreen" );
         uint16_t            fid = (uint16_t)( f - ref_get_field( 0 ) );
-        const ref_attrib_t* a   = ref_field_get_attr( fid, REF_ANAME_DISPLAY_NAME );
+        const ref_attrib_t* a;
+        uint16_t            n   = ref_field_get_attr_values( fid, REF_ANAME_DISPLAY_NAME, &a );
 
-        bool ok = a && a->type == REF_ATTR_STRING && a->flags == REF_AF_DISPLAY_NAME
-               && REF_ATTR_COUNT( a->ci ) == 1
+        bool ok = a && n == 1 && a->type == REF_ATTR_STRING && a->flags == REF_AF_DISPLAY_NAME
                && strcmp( test_cstr( a->value.str ), "Full Screen" ) == 0;
         printf( "  [%s] fullscreen @display_name: \"%s\"\n",
                 ok ? "ok  " : "FAIL",
@@ -1820,10 +1791,10 @@ test_attrs_full( void )
     {
         const ref_field_t*  f   = ref_find_field( tid, "username" );
         uint16_t            fid = (uint16_t)( f - ref_get_field( 0 ) );
-        const ref_attrib_t* a   = ref_field_get_attr( fid, REF_ANAME_TOOLTIP );
+        const ref_attrib_t* a;
+        uint16_t            n   = ref_field_get_attr_values( fid, REF_ANAME_TOOLTIP, &a );
 
-        bool ok = a && a->type == REF_ATTR_STRING && a->flags == REF_AF_TOOLTIP
-               && REF_ATTR_COUNT( a->ci ) == 1
+        bool ok = a && n == 1 && a->type == REF_ATTR_STRING && a->flags == REF_AF_TOOLTIP
                && strcmp( test_cstr( a->value.str ), "Your display name" ) == 0;
         printf( "  [%s] username @tooltip: \"%s\"\n",
                 ok ? "ok  " : "FAIL",
@@ -2131,16 +2102,21 @@ ref_run_tests( void )
     printf( "========================================\n" );
     
     /* -- layer 1: primitives, field resolution, modifier shapes ---------------------------- */
-    test_primitives();
-    test_prim_fields();
-    test_mods();
-    test_union();
-    test_attrs_full();
-    test_field_flags_full();
-    test_type_flags_full();
+
+    if ( 1 )
+    {
+        test_primitives();
+        test_prim_fields();
+        test_mods();
+        test_union();
+        test_attrs_full();
+        test_field_flags_full();
+        test_type_flags_full();
+    }
 
     /* -- layer 2: struct/enum lifecycle, hot-reload, serialization ------------------------- */
-    if ( 0 )
+
+    if ( 1 )
     {
         test_basic();
         test_mod_decode();
@@ -2151,6 +2127,9 @@ ref_run_tests( void )
         test_walker();
         test_serialize();
     }
+
+    /* -- layer 3: editor integration, usage patterns ----------------------------------------- */
+
     test_usage_example();
 
     printf( "\nrs: all tests complete.\n" );
