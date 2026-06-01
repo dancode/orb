@@ -83,7 +83,9 @@ validate_targets( void )
             }
         }
 
-        // Slot overflow.
+        // Slot overflow (defense-in-depth). registry_load() now hard-fails on a full
+        // slot array at parse time, so this only ever fires for programmatically
+        // constructed targets (e.g. the built-ins) that bypass the parser.
         if ( t->units    [ TARGET_MAX_SLOTS - 1 ] != NULL ||
              t->deps     [ TARGET_MAX_SLOTS - 1 ] != NULL ||
              t->tool_deps[ TARGET_MAX_SLOTS - 1 ] != NULL ||

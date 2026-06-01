@@ -183,6 +183,18 @@ const char* sched_log_path( void );
 
 ==============================================================================================*/
 
+/*  True when argv[i] is followed by a usable value: a next token exists and is
+    not itself a flag (no leading '-'). Prevents a value-taking flag from
+    swallowing the following flag as its argument -- e.g. '-target -clean' must
+    not set the target name to "-clean". No legitimate value (path, name, hex,
+    integer, VS year) begins with '-', so rejecting leading-'-' tokens is safe. */
+
+static bool
+arg_has_value( int argc, char** argv, int i )
+{
+    return i + 1 < argc && argv[ i + 1 ][ 0 ] != '-';
+}
+
 int
 main( int argc, char** argv )
 {
@@ -245,18 +257,18 @@ main( int argc, char** argv )
         if ( platform_stricmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
 
         // module creation (scaffolding)
-        if ( platform_stricmp( argv[ i ], "-create" ) == 0 && i + 1 < argc ) { should_create = true; create_name = argv[ ++i ]; }
-        if ( platform_stricmp( argv[ i ], "-dir"    ) == 0 && i + 1 < argc ) { create_dir = argv[ ++i ]; }
-        if ( platform_stricmp( argv[ i ], "-type"   ) == 0 && i + 1 < argc ) 
+        if ( platform_stricmp( argv[ i ], "-create" ) == 0 && arg_has_value( argc, argv, i ) ) { should_create = true; create_name = argv[ ++i ]; }
+        if ( platform_stricmp( argv[ i ], "-dir"    ) == 0 && arg_has_value( argc, argv, i ) ) { create_dir = argv[ ++i ]; }
+        if ( platform_stricmp( argv[ i ], "-type"   ) == 0 && arg_has_value( argc, argv, i ) )
         {
             if ( platform_stricmp( argv[ ++i ], "dynamic" ) == 0 ) create_dynamic = true;
         }
         
         // compile settings
-        if ( platform_stricmp( argv[ i ], "-target" ) == 0 && i + 1 < argc ) ctx.target_name = argv[ ++i ];
-        if ( platform_stricmp( argv[ i ], "-file"   ) == 0 && i + 1 < argc ) ctx.file_path   = argv[ ++i ];
-        if ( platform_stricmp( argv[ i ], "-j"      ) == 0 && i + 1 < argc ) j_threads       = atoi( argv[ ++i ] );
-        if ( platform_stricmp( argv[ i ], "-config" ) == 0 && i + 1 < argc )
+        if ( platform_stricmp( argv[ i ], "-target" ) == 0 && arg_has_value( argc, argv, i ) ) ctx.target_name = argv[ ++i ];
+        if ( platform_stricmp( argv[ i ], "-file"   ) == 0 && arg_has_value( argc, argv, i ) ) ctx.file_path   = argv[ ++i ];
+        if ( platform_stricmp( argv[ i ], "-j"      ) == 0 && arg_has_value( argc, argv, i ) ) j_threads       = atoi( argv[ ++i ] );
+        if ( platform_stricmp( argv[ i ], "-config" ) == 0 && arg_has_value( argc, argv, i ) )
         {
             if ( platform_stricmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
         }
@@ -273,7 +285,7 @@ main( int argc, char** argv )
         if ( platform_stricmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
         if ( platform_stricmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;
         if ( platform_stricmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
-        if ( platform_stricmp( argv[ i ], "-vs-version" ) == 0 && i + 1 < argc )
+        if ( platform_stricmp( argv[ i ], "-vs-version" ) == 0 && arg_has_value( argc, argv, i ) )
         {
             // Accept a VS release year (2022, 2026, ...) and map to the internal major version.
             // Falls back to passing the number directly if unrecognized, for forward-compat.
@@ -289,7 +301,7 @@ main( int argc, char** argv )
         // output verbosity
         if ( platform_stricmp( argv[ i ], "-q"                ) == 0 ) { g_out_flags = ORB_OUT_QUIET;   saw_quiet   = true; }
         if ( platform_stricmp( argv[ i ], "-v"                ) == 0 ) { g_out_flags = ORB_OUT_VERBOSE; saw_verbose = true; }
-        if ( platform_stricmp( argv[ i ], "--out" ) == 0 && i + 1 < argc )
+        if ( platform_stricmp( argv[ i ], "--out" ) == 0 && arg_has_value( argc, argv, i ) )
         {
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
         }

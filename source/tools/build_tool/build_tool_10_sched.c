@@ -222,11 +222,20 @@ add_job( target_info_t* t )
 
     // Wire reverse-dep edges. When a dep finishes, worker_main decrements each
     // dependent's remaining_deps. The job becomes ready when that count hits 0.
+    // Overflow is a hard error: a dropped edge means the dependent's count never
+    // reaches 0, so it is never dispatched and the scheduler misreports it as a
+    // dependency cycle. Failing loudly here points at the real cause.
     for ( int d = 0; d < dep_count; ++d )
     {
         sched_job_t* dj = &g_sched.jobs[ dep_indices[ d ] ];
-        if ( dj->rev_dep_count < MAX_REV_DEPS )
-            dj->rev_deps[ dj->rev_dep_count++ ] = idx;
+        if ( dj->rev_dep_count >= MAX_REV_DEPS )
+        {
+            printf( ORB_INDENT "[orb error] '%s' has too many dependents (MAX_REV_DEPS=%d);"
+                    " raise MAX_REV_DEPS to avoid scheduler stalls\n",
+                    dj->target->name, MAX_REV_DEPS );
+            return -1;
+        }
+        dj->rev_deps[ dj->rev_dep_count++ ] = idx;
     }
 
     return idx;
@@ -260,8 +269,13 @@ worker_main( void* arg )
             // means no job will ever produce a wakeup -> deadlock. Abort.
             if ( g_sched.in_flight == 0 )
             {
-                printf( ORB_INDENT "[orb error] dependency cycle detected in build graph (%d targets stuck)\n",
+                // The unfinished jobs (!done) are the cycle members plus anything
+                // downstream of them -- name them so the user can find the loop.
+                printf( ORB_INDENT "[orb error] dependency cycle detected in build graph (%d targets stuck):\n",
                         g_sched.total_remaining );
+                for ( int i = 0; i < g_sched.job_count; ++i )
+                    if ( !g_sched.jobs[ i ].done )
+                        printf( ORB_INDENT "  - %s\n", g_sched.jobs[ i ].target->name );
                 g_sched.any_failed = true;
                 platform_cond_broadcast( &g_sched.cv );
                 break;
@@ -395,6 +409,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
         {
             printf( ORB_INDENT "[orb error] TLS allocation failed\n" );
             platform_mutex_destroy( &g_sched.lock );
+            platform_cond_destroy( &g_sched.cv );
             return false;
         }
     }
@@ -408,6 +423,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
         if ( add_job( root ) < 0 )
         {
             platform_mutex_destroy( &g_sched.lock );
+            platform_cond_destroy( &g_sched.cv );
             return false;
         }
     }
@@ -417,7 +433,12 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
 
         for ( int i = 0; i < g_target_count; ++i )
             if ( !g_targets[ i ].is_external )
-                add_job( &g_targets[ i ] );
+                if ( add_job( &g_targets[ i ] ) < 0 )
+                {
+                    platform_mutex_destroy( &g_sched.lock );
+                    platform_cond_destroy( &g_sched.cv );
+                    return false;
+                }
     }
 
     g_sched.total_remaining = g_sched.job_count;
@@ -461,6 +482,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     platform_threads_join( threads, spawned );
 
     platform_mutex_destroy( &g_sched.lock );
+    platform_cond_destroy( &g_sched.cv );
 
     // Timing summary: sort built targets slowest-first and print a table.
     // Skipped targets (elapsed_ms == 0) are excluded -- they did no work.

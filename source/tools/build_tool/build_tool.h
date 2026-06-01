@@ -192,6 +192,19 @@ typedef void* platform_thread_t;
 #define BUILD_DIR                   "build"
 
 /*==============================================================================================
+    --- Known Constraint: no spaces in build paths ---
+
+    Compiler, linker, and reflect command lines are assembled from space-separated,
+    UNQUOTED tokens and spawned directly (no cmd.exe shell -- see build_run_cmd). A
+    source file, object dir, generated dir, or target root containing a space would be
+    split into multiple arguments and the build would fail in confusing ways. Keep the
+    engine root and every target source tree on space-free paths.
+
+    The one path we cannot control -- vcvarsall.bat, always under "Program Files" -- IS
+    quoted explicitly in build_tool_04_env.c. Everything else assumes space-free paths.
+==============================================================================================*/
+
+/*==============================================================================================
     --- Output Flags ---
 ==============================================================================================*/
 
@@ -661,17 +674,21 @@ void* build_lock_target( const char* target_name );
 
 void  build_unlock_target( void* lock );
 
-/*  Run a shell command via CreateProcess and return its exit code. cmd is
-    wrapped with "cmd.exe /C" so shell builtins (del, for) and glob args
-    (*.obj) keep working. Output is redirected to the per-thread log file if
-    a parallel worker is active (see sched_log_path), otherwise inherits the
-    parent's stdout/stderr. */
+/*  Run a command via the platform spawn layer (CreateProcess on Win32) and
+    return its exit code. cmd is executed directly with NO cmd.exe wrapper, so
+    the caller must pass a fully-formed command line: no shell builtins (del,
+    for) and no shell-side glob expansion are available. (MSVC's cl/link/lib
+    perform their own wildcard expansion, so *.obj inputs still resolve.)
+    Output is redirected to the per-thread log file if a parallel worker is
+    active (see sched_log_path), otherwise inherits the parent's stdout/stderr. */
 
 int build_run_cmd( const char* cmd );
 
-/*  Same as build_run_cmd but suppresses the "[cmd] ..." echo. Use for trivial
-    housekeeping invocations (e.g. del/rd during clean) where the caller will
-    print a single human-readable summary itself instead of one line per call. */
+/*  Like build_run_cmd but routes through the shell (cmd.exe /c on Win32) so
+    shell builtins (del, rd) and output redirections (>nul 2>nul) work. Used for
+    housekeeping invocations such as build_clean() where "file not found" is
+    expected; the caller prints its own human-readable summary instead of one
+    line per call. */
 
 int build_run_cmd_quiet( const char* cmd );
 

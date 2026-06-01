@@ -24,6 +24,7 @@
         platform_cond_init()        -- InitializeConditionVariable
         platform_cond_wait()        -- SleepConditionVariableCS (INFINITE)
         platform_cond_broadcast()   -- WakeAllConditionVariable
+        platform_cond_destroy()     -- no-op (CONDITION_VARIABLE needs no teardown)
         platform_tls_alloc()        -- TlsAlloc
         platform_tls_is_valid()     -- slot != TLS_OUT_OF_INDEXES
         platform_tls_get()          -- TlsGetValue
@@ -106,6 +107,15 @@ static void
 platform_cond_broadcast( platform_cond_t* c )
 {
     WakeAllConditionVariable( cond_w32( c ) );
+}
+
+/* Tears down a condition variable. Win32 CONDITION_VARIABLE needs no explicit
+   destruction; provided for API symmetry with the POSIX pthread_cond_destroy. */
+
+static void
+platform_cond_destroy( platform_cond_t* c )
+{
+    ( void )c;
 }
 
 /*==============================================================================================

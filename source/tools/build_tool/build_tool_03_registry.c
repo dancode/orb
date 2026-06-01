@@ -163,8 +163,9 @@
 ==============================================================================================*/
 
 // Parse 'val' as "<msvc|clang|all> <flag>" and append to slots[]/count if valid.
-// keyword is "compile_flag" or "link_flag" and appears only in the warning message.
-static void
+// keyword is "compile_flag" or "link_flag" and appears only in the message.
+// Returns false on a hard error (slot table full); true otherwise.
+static bool
 reg_parse_flag_entry( const char* path, int lineno, const char* keyword,
                       const char* val, const char* target_name,
                       extra_flag_t* slots, int* count, int max )
@@ -197,10 +198,12 @@ reg_parse_flag_entry( const char* path, int lineno, const char* keyword,
         }
         else
         {
-            printf( ORB_INDENT "[orb warn] %s:%d -- %s slot full for '%s',"
-                               " dropped: %s\n", path, lineno, keyword, target_name, flagp );
+            printf( ORB_INDENT "[orb error] %s:%d -- %s slot full (max %d) for '%s',"
+                               " dropped: %s\n", path, lineno, keyword, max, target_name, flagp );
+            return false;
         }
     }
+    return true;
 }
 
 // Strip in-place: remove leading whitespace, trailing whitespace, and trailing \r\n.
@@ -239,8 +242,10 @@ reg_split_kv( char* line, char** out_key, char** out_val )
 }
 
 // Append one string to a NULL-terminated slot array (units/deps/tool_deps).
-// Silently drops if the array is already full.
-static void
+// Returns false on a hard error: a full array means an entry would be dropped,
+// which silently corrupts the build graph -- the caller aborts the load instead.
+// The last slot is reserved as the NULL terminator, so capacity is max_slots-1.
+static bool
 reg_append_slot( const char** slots, int max_slots, const char* s )
 {
     for ( int i = 0; i < max_slots - 1; ++i )
@@ -248,14 +253,16 @@ reg_append_slot( const char** slots, int max_slots, const char* s )
         if ( !slots[ i ] )
         {
             slots[ i ] = pool_str( s );
-            return;
+            return true;
         }
     }
-    printf( ORB_INDENT "[orb warn] slot array full, dropped: %s\n", s );
+    printf( ORB_INDENT "[orb error] slot array full (max %d), dropped: %s\n", max_slots - 1, s );
+    return false;
 }
 
 // Append one string to a solution's target_names array.
-static void
+// Returns false on a hard error (list full) for the same reason as reg_append_slot.
+static bool
 reg_sln_add( solution_info_t* sln, const char* name )
 {
     for ( int i = 0; i < MAX_SLN_TARGETS - 1; ++i )
@@ -263,10 +270,12 @@ reg_sln_add( solution_info_t* sln, const char* name )
         if ( !sln->target_names[ i ] )
         {
             sln->target_names[ i ] = pool_str( name );
-            return;
+            return true;
         }
     }
-    printf( ORB_INDENT "[orb warn] solution '%s' target list full, dropped: %s\n", sln->name, name );
+    printf( ORB_INDENT "[orb error] solution '%s' target list full (max %d), dropped: %s\n",
+            sln->name, MAX_SLN_TARGETS - 1, name );
+    return false;
 }
 
 /*==============================================================================================
@@ -482,7 +491,7 @@ registry_load( const char* path, bool is_external )
                 }
             }
             else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->virtual_folder = pool_str( val );
-            else if ( strcmp( key, "unit"   ) == 0 && val ) reg_append_slot( cur_t->units, TARGET_MAX_SLOTS, val );
+            else if ( strcmp( key, "unit"   ) == 0 && val ) { if ( !reg_append_slot( cur_t->units, TARGET_MAX_SLOTS, val ) ) ok = false; }
             else if ( ( strcmp( key, "dep" ) == 0 || strcmp( key, "tool_dep" ) == 0
                      || strcmp( key, "mono_dep" ) == 0 ) && val )
             {
@@ -495,7 +504,7 @@ registry_load( const char* path, bool is_external )
                 char* tok = strtok( tmp, " \t" );
                 while ( tok )
                 {
-                    reg_append_slot( slots, TARGET_MAX_SLOTS, tok );
+                    if ( !reg_append_slot( slots, TARGET_MAX_SLOTS, tok ) ) ok = false;
                     tok = strtok( NULL, " \t" );
                 }
             }
@@ -538,21 +547,21 @@ registry_load( const char* path, bool is_external )
                     if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
                         snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
                 }
-                reg_append_slot( cur_t->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf );
+                if ( !reg_append_slot( cur_t->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf ) ) ok = false;
             }
             else if ( strcmp( key, "define" ) == 0 && val )
             {
                 /* Per-target preprocessor define: appended after global tables at compile time
                    and forwarded to IntelliSense PreprocessorDefinitions in vcxproj gen. */
-                reg_append_slot( cur_t->extra_defines, MAX_EXTRA_DEFINES, val );
+                if ( !reg_append_slot( cur_t->extra_defines, MAX_EXTRA_DEFINES, val ) ) ok = false;
             }
             else if ( strcmp( key, "compile_flag" ) == 0 && val )
             {
                 /* Per-target compiler flag: 'compile_flag <msvc|clang|all> <flag>'.
                    Only appended when the active compiler matches. Not forwarded to IntelliSense. */
-                reg_parse_flag_entry( path, lineno, "compile_flag", val, cur_t->name,
-                                      cur_t->extra_compile_flags, &cur_t->extra_compile_flag_count,
-                                      MAX_EXTRA_COMPILE_FLAGS );
+                if ( !reg_parse_flag_entry( path, lineno, "compile_flag", val, cur_t->name,
+                                            cur_t->extra_compile_flags, &cur_t->extra_compile_flag_count,
+                                            MAX_EXTRA_COMPILE_FLAGS ) ) ok = false;
             }
             else if ( strcmp( key, "subsystem" ) == 0 && val )
             {
@@ -568,9 +577,9 @@ registry_load( const char* path, bool is_external )
             {
                 /* Per-target linker flag: 'link_flag <msvc|clang|all> <flag>'.
                    Only appended when the active linker toolchain matches. */
-                reg_parse_flag_entry( path, lineno, "link_flag", val, cur_t->name,
-                                      cur_t->extra_link_flags, &cur_t->extra_link_flag_count,
-                                      MAX_EXTRA_LINK_FLAGS );
+                if ( !reg_parse_flag_entry( path, lineno, "link_flag", val, cur_t->name,
+                                            cur_t->extra_link_flags, &cur_t->extra_link_flag_count,
+                                            MAX_EXTRA_LINK_FLAGS ) ) ok = false;
             }
             else
             {
@@ -602,7 +611,7 @@ registry_load( const char* path, bool is_external )
                     if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
                         snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
                 }
-                reg_append_slot( cur_sln->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf );
+                if ( !reg_append_slot( cur_sln->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf ) ) ok = false;
             }
             else if ( strcmp( key, "add" ) == 0 && val )
             {
@@ -620,7 +629,7 @@ registry_load( const char* path, bool is_external )
                     // still being built and has an empty target list at this point).
                     if ( find_target( tok ) )
                     {
-                        reg_sln_add( cur_sln, tok );
+                        if ( !reg_sln_add( cur_sln, tok ) ) ok = false;
                     }
                     else
                     {
@@ -636,11 +645,11 @@ registry_load( const char* path, bool is_external )
                         if ( ref )
                         {
                             for ( int i = 0; i < MAX_SLN_TARGETS && ref->target_names[ i ]; ++i )
-                                reg_sln_add( cur_sln, ref->target_names[ i ] );
+                                if ( !reg_sln_add( cur_sln, ref->target_names[ i ] ) ) ok = false;
                         }
                         else
                         {
-                            reg_sln_add( cur_sln, tok );
+                            if ( !reg_sln_add( cur_sln, tok ) ) ok = false;
                         }
                     }
                     tok = strtok( NULL, " \t" );

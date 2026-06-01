@@ -23,6 +23,7 @@
         platform_cond_init()        -- pthread_cond_init
         platform_cond_wait()        -- pthread_cond_wait (INFINITE equivalent)
         platform_cond_broadcast()   -- pthread_cond_broadcast
+        platform_cond_destroy()     -- pthread_cond_destroy
         platform_tls_alloc()        -- pthread_key_create
         platform_tls_is_valid()     -- key != PLATFORM_TLS_INVALID
         platform_tls_get()          -- pthread_getspecific
@@ -115,6 +116,14 @@ static void
 platform_cond_broadcast( platform_cond_t* c )
 {
     pthread_cond_broadcast( cond_posix( c ) );
+}
+
+/* Tears down a condition variable, releasing any kernel resources it holds. */
+
+static void
+platform_cond_destroy( platform_cond_t* c )
+{
+    pthread_cond_destroy( cond_posix( c ) );
 }
 
 /*==============================================================================================

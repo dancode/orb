@@ -94,6 +94,12 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         // Scheduler path: reflect tool was already built as a graph dep.
         // We still need refl_tool for the codegen invocation in step 6.
         refl_tool = find_reflect_tool();
+        if ( !refl_tool )
+        {
+            printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n",
+                    target->name );
+            return false;
+        }
     }
 
     // --- 1. Per-Target Mutex Lock ---
