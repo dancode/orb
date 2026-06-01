@@ -27,6 +27,7 @@
 ==============================================================================================*/
 
 REF_ENUM( tooltip = "Cardinal facings used for spawn placement." )
+
 typedef enum ex_facing_e
 {
     EX_FACING_NORTH = 0,
@@ -37,6 +38,7 @@ typedef enum ex_facing_e
 } ex_facing_t;
 
 REF_BITSET( tooltip = "Per-entity capability bits." )
+
 typedef enum ex_caps_e
 {
     EX_CAPS_NONE   = 0,
@@ -52,6 +54,7 @@ typedef enum ex_caps_e
 ==============================================================================================*/
 
 REF_STRUCT()
+
 typedef struct ex_vec3_s
 {
     REF_PROP() float x;
@@ -61,6 +64,7 @@ typedef struct ex_vec3_s
 } ex_vec3_t;
 
 REF_STRUCT( tooltip = "Position, rotation, and scale in world space." )
+
 typedef struct ex_transform_s
 {
     REF_PROP() ex_vec3_t position;
@@ -70,18 +74,19 @@ typedef struct ex_transform_s
 } ex_transform_t;
 
 REF_STRUCT( tooltip = "Single demo entity exercising the reflection feature surface." )
+
 typedef struct ex_entity_s
 {
-    REF_PROP()                                int32_t        id;
-    REF_PROP()                                ex_facing_t    facing;
-    REF_PROP()                                ex_caps_t      caps;
-    REF_PROP()                                char           name[ 32 ];
-    REF_PROP()                                ex_transform_t transform;
+    REF_PROP() int32_t id;
+    REF_PROP() ex_facing_t facing;
+    REF_PROP() ex_caps_t caps;
+    REF_PROP() char name[ 32 ];
+    REF_PROP() ex_transform_t transform;
     REF_PROP( range = 0.0, 100.0, step = 0.5, category = "Stats" ) float health;
-    REF_PROP( transient )                     void*          scratch;
-    REF_PROP()                                ex_vec3_t*     velocity;
-    REF_PROP()                                const char*    label;
-    REF_PROP()                                ex_vec3_t*     slots[ 4 ];
+    REF_PROP( transient ) void* scratch;
+    REF_PROP() ex_vec3_t* velocity;
+    REF_PROP() const char* label;
+    REF_PROP() ex_vec3_t* slots[ 4 ];
 
 } ex_entity_t;
 
@@ -95,6 +100,7 @@ typedef struct ex_entity_s
 ==============================================================================================*/
 
 REF_ENUM( tooltip = "Selects the active member of ex_event_payload_t." )
+
 typedef enum ex_event_kind_e
 {
     EX_EVENT_SPAWN  = 0,
@@ -104,22 +110,25 @@ typedef enum ex_event_kind_e
 } ex_event_kind_t;
 
 REF_STRUCT()
+
 typedef struct ex_spawn_payload_s
 {
-    REF_PROP() ex_vec3_t   origin;
+    REF_PROP() ex_vec3_t origin;
     REF_PROP() ex_facing_t facing;
 
 } ex_spawn_payload_t;
 
 REF_STRUCT()
+
 typedef struct ex_damage_payload_s
 {
-    REF_PROP( range = 0, 1000, tooltip = "Raw hit-point loss before mitigation." ) int32_t  amount;
-    REF_PROP()                                                                      uint32_t source_id;
+    REF_PROP( range = 0, 1000, tooltip = "Raw hit-point loss before mitigation." ) int32_t amount;
+    REF_PROP() uint32_t source_id;
 
 } ex_damage_payload_t;
 
 REF_STRUCT()
+
 typedef struct ex_move_payload_s
 {
     REF_PROP() ex_vec3_t from;
@@ -128,22 +137,24 @@ typedef struct ex_move_payload_s
 } ex_move_payload_t;
 
 REF_UNION( tooltip = "Per-event data; active member is selected by ex_event_t.kind." )
+
 typedef union ex_event_payload_u
 {
     /* @case values mirror ex_event_kind_t; numeric literals because the attr parser treats a
        bare identifier as a tag, not an integer. spawn=0, damage=1, move=2. */
-    REF_PROP( case = 0 ) ex_spawn_payload_t  spawn;
+    REF_PROP( case = 0 ) ex_spawn_payload_t spawn;
     REF_PROP( case = 1 ) ex_damage_payload_t damage;
-    REF_PROP( case = 2 ) ex_move_payload_t   move;
+    REF_PROP( case = 2 ) ex_move_payload_t move;
 
 } ex_event_payload_t;
 
 REF_STRUCT( tooltip = "An engine event carrying a discriminated payload union." )
+
 typedef struct ex_event_s
 {
-    REF_PROP()                                uint32_t           id;
-    REF_PROP()                                ex_event_kind_t    kind;
-    REF_PROP( union_tag = "kind" )            ex_event_payload_t payload;
+    REF_PROP() uint32_t id;
+    REF_PROP() ex_event_kind_t kind;
+    REF_PROP( union_tag = "kind" ) ex_event_payload_t payload;
 
 } ex_event_t;
 
@@ -159,12 +170,13 @@ REF_FUNC()
 typedef void ( *ex_on_damage_fn )( int32_t amount, const ex_vec3_t* hit_pos );
 
 REF_STRUCT( tooltip = "NPC with a reflected damage callback field." )
+
 typedef struct ex_npc_s
 {
-    REF_PROP()                     int32_t         id;
-    REF_PROP()                     char            name[ 32 ];
-    REF_PROP( range = 0.0, 100.0 ) float           health;
-    REF_PROP()                     ex_on_damage_fn on_damage;
+    REF_PROP() int32_t id;
+    REF_PROP() char name[ 32 ];
+    REF_PROP( range = 0.0, 100.0 ) float health;
+    REF_PROP() ex_on_damage_fn on_damage;
 
 } ex_npc_t;
 
