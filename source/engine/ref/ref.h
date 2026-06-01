@@ -217,12 +217,13 @@ typedef enum ref_attr_type_e
 
 typedef enum ref_attr_flag_e
 {
-    REF_AF_CLAMP        = ( 1 << 0 ),   // min/max hard clamp on value and editor edit (@range)
-    REF_AF_CLAMP_UI     = ( 1 << 1 ),   // min/max soft UI limiter; user can type past
-    REF_AF_DISPLAY_NAME = ( 1 << 2 ),   // string override for editor display name
-    REF_AF_TOOLTIP      = ( 1 << 3 ),   // tooltip / helper string shown in editor
-    REF_AF_UNION_TAG    = ( 1 << 4 ),   // names the sibling discriminant field of a union (@union_tag)
-    REF_AF_CASE         = ( 1 << 5 ),   // discriminant value selecting this union member (@case)
+    REF_AF_UNION_TAG    = ( 1 << 0 ),   // names the sibling discriminant field of a union (@union_tag)
+    REF_AF_CASE         = ( 1 << 1 ),   // discriminant value selecting this union member (@case)
+
+    REF_AF_CLAMP        = ( 1 << 2 ),   // min/max hard clamp on value and editor edit (@range)
+    REF_AF_CLAMP_UI     = ( 1 << 3 ),   // min/max soft UI limiter; user can type past
+    REF_AF_DISPLAY_NAME = ( 1 << 4 ),   // string override for editor display name
+    REF_AF_TOOLTIP      = ( 1 << 5 ),   // tooltip / helper string shown in editor
     REF_AF_CATEGORY     = ( 1 << 6 ),   // editor inspector group / section name (@category)
     REF_AF_STEP         = ( 1 << 7 ),   // numeric drag increment for editor sliders (@step)
 

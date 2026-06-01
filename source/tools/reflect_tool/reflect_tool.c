@@ -3,10 +3,15 @@
     reflect_tool.c - Reflection code generation tool (unity build root)
 
     Usage:
-        reflect_tool <source_dir> <output_dir> <module_name>
+        reflect_tool -src <source_dir> [-out <output_dir>] [-name <module_name>] [-silent]
+        reflect_tool <source_dir> [<output_dir> [<module_name>]] [-silent]   (legacy positional)
 
     Scans <source_dir> for REF_STRUCT / REF_ENUM / REF_BITSET annotated headers and
     writes <output_dir>/<module_name>.generated.h/c with REF_ registration stubs.
+
+    Defaults:
+        -out   build/generated           (relative to CWD)
+        -name  last path component of -src
 
     This tool is called as a pre-compile step for every module that uses reflection.
     It is designed for minimal startup cost: no allocator init, no config files,
@@ -15,8 +20,6 @@
     This file is the unity build root. All translation units are included here.
 
     NOTE: This tool is standalone C11. It does NOT include orb.h or any engine headers.
-
-    Example: F:\orb\source\engine\core F:\orb\build\generated core
 
 ==============================================================================================*/
 #include "orb.h"
@@ -40,35 +43,97 @@
 #define RT_DEBUG_SOURCE_SUB "source/engine/core"
 
 /*----------------------------------------------------------------------------------------------
+    Helpers
+----------------------------------------------------------------------------------------------*/
+
+/* True when argv[i] has a following value that is not itself a flag. */
+static bool
+arg_has_value( int argc, char** argv, int i )
+{
+    return i + 1 < argc && argv[ i + 1 ][ 0 ] != '-';
+}
+
+/* Return a pointer to the last path component of s (after the final / or \). */
+static const char*
+path_basename( const char* s )
+{
+    const char* p = s;
+    for ( const char* c = s; *c; ++c )
+        if ( *c == '/' || *c == '\\' )
+            p = c + 1;
+    return p;
+}
+
+/*----------------------------------------------------------------------------------------------
     Entry point
 ----------------------------------------------------------------------------------------------*/
 
 int
 main( int argc, char** argv )
 {
-    const char* source_dir;
-    const char* output_dir;
-    const char* module_name;
+    const char* source_dir  = NULL;
+    const char* output_dir  = NULL;
+    const char* module_name = NULL;
+    bool        silent      = false;
+    bool        show_help   = false;
 
-    // Storage for debug paths - lives for the duration of main
-    char dbg_src[ RT_MAX_PATH ];
-    char dbg_out[ RT_MAX_PATH ];
+    /* Storage for debug and inferred paths -- lives for the duration of main. */
+    char dbg_src [ RT_MAX_PATH ];
+    char dbg_out [ RT_MAX_PATH ];
+    char inf_name[ RT_MAX_NAME ];
 
-    bool silent = false;
+    /* --- Arg parsing: named flags take priority; positional fallback follows --- */
 
-    if ( argc < 4 )
+    /* First pass: scan for named flags. */
+    for ( int i = 1; i < argc; ++i )
+    {
+        if ( strcmp( argv[ i ], "-src"    ) == 0 && arg_has_value( argc, argv, i ) ) source_dir  = argv[ ++i ];
+        if ( strcmp( argv[ i ], "-out"    ) == 0 && arg_has_value( argc, argv, i ) ) output_dir  = argv[ ++i ];
+        if ( strcmp( argv[ i ], "-name"   ) == 0 && arg_has_value( argc, argv, i ) ) module_name = argv[ ++i ];
+        if ( strcmp( argv[ i ], "-silent" ) == 0 ) silent    = true;
+        if ( strcmp( argv[ i ], "-help"   ) == 0 ) show_help = true;
+        if ( strcmp( argv[ i ], "-h"      ) == 0 ) show_help = true;
+    }
+
+    if ( show_help )
+    {
+        printf( "usage: reflect_tool -src <source_dir> [-out <output_dir>] [-name <module_name>] [-silent]\n" );
+        printf( "  -src   directory to scan for REF_STRUCT / REF_ENUM / REF_BITSET annotations\n" );
+        printf( "  -out   output directory for generated files (default: build/generated)\n" );
+        printf( "  -name  base name for generated files (default: last component of -src)\n" );
+        printf( "  -silent  suppress summary output\n" );
+        return 0;
+    }
+
+    /* Second pass: positional fallback when no named flags were used.
+       Positional order: <source_dir> [<output_dir> [<module_name>]].
+       Tokens starting with '-' are skipped (they are flags consumed above). */
+    if ( !source_dir )
+    {
+        int pos = 0;
+        for ( int i = 1; i < argc; ++i )
+        {
+            if ( argv[ i ][ 0 ] == '-' ) { ++i; continue; } /* skip flag + its value */
+            if      ( pos == 0 ) { source_dir  = argv[ i ]; pos++; }
+            else if ( pos == 1 ) { output_dir  = argv[ i ]; pos++; }
+            else if ( pos == 2 ) { module_name = argv[ i ]; pos++; }
+        }
+    }
+
+    /* --- Defaults and validation --- */
+
+    if ( !source_dir )
     {
         if ( RELEASE )
         {
-            fprintf( stderr, "usage: reflect_tool <source_dir> <output_dir> <module_name> [-silent]\n" );
+            fprintf( stderr, "reflect_tool: -src is required\n" );
+            fprintf( stderr, "usage: reflect_tool -src <source_dir> [-out <output_dir>] [-name <module_name>] [-silent]\n" );
             return 1;
         }
         else
         {
-            // Derive paths from the exe location so this works regardless of working directory.
-            // exe lives at  <root>/build/bin/  so:
-            //   source  ->  <exedir>/../../<source_sub>
-            //   output  ->  <exedir>/../generated
+            /* Debug: derive paths from exe location so IDE F5 works from any CWD.
+               exe lives at <root>/bin/  ->  source at <root>/<source_sub>, out at <root>/build/generated */
             char exe_dir[ RT_MAX_PATH ];
             platform_exe_dir( exe_dir, RT_MAX_PATH );
 
@@ -82,17 +147,17 @@ main( int argc, char** argv )
             output_dir  = dbg_out;
             module_name = RT_DEBUG_MODULE;
 
-            printf( "[reflect_tool] no args -- debug: %s\n  src: %s\n  out: %s\n", module_name, source_dir,
-                    output_dir );
+            printf( "[reflect_tool] no args -- debug: %s\n  src: %s\n  out: %s\n",
+                    module_name, source_dir, output_dir );
         }
     }
-    else
+
+    if ( !output_dir  ) output_dir  = "build/generated";
+    if ( !module_name )
     {
-        source_dir  = argv[ 1 ];
-        output_dir  = argv[ 2 ];
-        module_name = argv[ 3 ];
-        for ( int i = 4; i < argc; ++i )
-            if ( strcmp( argv[ i ], "-silent" ) == 0 ) silent = true;
+        /* Infer from the last path component of source_dir. */
+        str_copy( inf_name, path_basename( source_dir ), RT_MAX_NAME );
+        module_name = inf_name;
     }
 
     platform_mkdir( output_dir );
