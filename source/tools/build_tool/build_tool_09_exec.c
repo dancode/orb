@@ -211,6 +211,11 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         // Empty file (size == 0): no headers recorded, nothing to check, stay up to date.
     }
 
+    // Declared here so cleanup: can access them regardless of which goto fires.
+    char exe_path[ PATH_MAX ] = { 0 };
+    char old_path[ PATH_MAX ] = { 0 };
+    bool renamed              = false;
+
     if ( up_to_date )
     {
         if ( out_skipped )
@@ -238,10 +243,6 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     // Windows refuses to overwrite a running .exe (sharing violation), but WILL
     // let you rename one. Shove the old image to <name>.exe.old first; restore
     // it if compile or link fails; let it be overwritten on the next success.
-
-    char exe_path[ PATH_MAX ] = { 0 };
-    char old_path[ PATH_MAX ] = { 0 };
-    bool renamed              = false;
 
     if ( target->type == TARGET_EXECUTABLE )
     {
@@ -278,7 +279,6 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
                   refl_tool->name, target->root_dir, gen_dir, rname, silent );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {
-            if ( renamed ) rename( old_path, exe_path );
             result = false;
             goto cleanup;
         }
@@ -288,14 +288,12 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     if ( !build_target_compile( ctx, target, obj_dir, gen_dir ) )
     {
-        if ( renamed ) rename( old_path, exe_path );
         result = false;
         goto cleanup;
     }
 
     if ( !build_target_link( ctx, target, obj_dir ) )
     {
-        if ( renamed ) rename( old_path, exe_path );
         result = false;
         goto cleanup;
     }
@@ -318,6 +316,11 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     }
 
 cleanup:
+    if ( renamed && !result )
+    {
+        if ( rename( old_path, exe_path ) != 0 )
+            fprintf( stderr, "[orb warn] failed to restore %s from %s\n", exe_path, old_path );
+    }
     build_unlock_target( target_lock );
     return result;
 }

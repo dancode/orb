@@ -249,8 +249,10 @@ ref_pop_frame( uint16_t frame_id )
     ref_frame_t* f = &g_ref.frames[ frame_id ];
 
     /* Remove every type owned by this frame from the hash table before rewinding the count,
-       so stale type_ids are never returned by ref_hash_find. */
-    for ( uint16_t i = f->first_type; i < g_ref.type_count; i++ ) ref_hash_remove( i );
+       so stale type_ids are never returned by ref_hash_find. Iterate newest-first so each
+       removal hits the chain head (prepend-on-insert means highest id == head), keeping
+       each ref_hash_remove O(1) rather than O(chain depth). */
+    for ( uint16_t i = g_ref.type_count; i-- > f->first_type; ) ref_hash_remove( i );
 
     /* Rewind the pool counters -- the records themselves are simply abandoned in place;
        the next push will overwrite them without any explicit free. The string pool is

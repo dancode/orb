@@ -41,9 +41,10 @@ ref_intern( const char* s )
        Returns the existing offset immediately on a hit to guarantee stable ids. */
     while ( i < g_ref_str_top )
     {
-        if ( strcmp( g_ref_str_pool + i, s ) == 0 )
-            return ( ref_name_t )i;
-        i += ( uint32_t )strlen( g_ref_str_pool + i ) + 1;
+        uint32_t entry_len = (uint32_t)strlen( g_ref_str_pool + i );
+        if ( entry_len == len && memcmp( g_ref_str_pool + i, s, len ) == 0 )
+              return (ref_name_t)i;
+        i += entry_len + 1;
     }
 
     /* Bump-allocate the new string; null terminator is included in the copy. */
