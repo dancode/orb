@@ -16,17 +16,17 @@
         1. mod_system_init()                 -- module registry online
         2. ref_wire_mod_callbacks()           -- install the load/unload hooks; nothing
                                                 fires yet. Safe to call before any module
-                                                loads because the rs registry self-
+                                                loads because the ref registry self-
                                                 bootstraps on first touch.
         3. mod_static_load / mod_load(...)   -- PASSIVE. Each call only registers the
                                                 descriptor. No callbacks fire here.
         4. mod_init_all()                    -- pass 1 fires the load callback for every
-                                                newly-loaded module in dep order (rs reads
+                                                newly-loaded module in dep order (ref reads
                                                 desc->ref_register and pushes a frame);
                                                 pass 2 runs init() in the same order.
 
     After step 4 the registry reflects the dep graph: deps are below their dependents
-    on the rs frame stack, and every init() saw its own types already registered.
+    on the ref frame stack, and every init() saw its own types already registered.
 
 ==============================================================================================*/
 
