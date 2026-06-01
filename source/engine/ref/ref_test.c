@@ -261,7 +261,7 @@ ref_test_register_entity( void )
         ref_attrib_t a   = { 0 };
         a.name_id       = test_intern( REF_ANAME_RANGE );
         a.type          = REF_ATTR_FLOAT;
-        a.flags         = REF_AF_RANGE;
+        a.flags         = REF_AF_CLAMP;
         a.value.f32     = 0.0f;
         ref_field_add_attr( fid, &a );
         a.value.f32     = 100.0f;
@@ -1534,7 +1534,7 @@ test_usage_example( void )
         ref_attrib_t a = { 0 };
         a.name_id     = test_intern( REF_ANAME_RANGE );
         a.type        = REF_ATTR_FLOAT;
-        a.flags       = REF_AF_RANGE;
+        a.flags       = REF_AF_CLAMP;
         a.value.f32   = 0.0f;
         ref_field_add_attr( hid, &a );
         a.value.f32   = 100.0f;
@@ -1547,7 +1547,7 @@ test_usage_example( void )
         ref_attrib_t a = { 0 };
         a.name_id     = test_intern( REF_ANAME_RANGE );
         a.type        = REF_ATTR_FLOAT;
-        a.flags       = REF_AF_RANGE;
+        a.flags       = REF_AF_CLAMP;
         a.value.f32   = 0.0f;
         ref_field_add_attr( sid, &a );
         a.value.f32   = 20.0f;
@@ -1590,7 +1590,7 @@ test_usage_example( void )
     Attribute test
 
       Register a struct with one field per attribute type and flag combination:
-        volume      -- @range(0,100)        REF_ATTR_INT,    REF_AF_RANGE,        2-value group
+        volume      -- @range(0,100)        REF_ATTR_INT,    REF_AF_CLAMP,        2-value group
         brightness  -- @clamp_ui(0.0,1.0)  REF_ATTR_FLOAT,  REF_AF_CLAMP_UI,     2-value group
         fullscreen  -- @display_name(...)   REF_ATTR_STRING, REF_AF_DISPLAY_NAME, single value
         username    -- @tooltip(...)        REF_ATTR_STRING, REF_AF_TOOLTIP,       single value
@@ -1666,7 +1666,7 @@ test_attrs_full( void )
 
     /* --- Field attrs: all entries for each field before moving to the next --- */
 
-    /* volume: @range(0, 100)  REF_ATTR_INT, REF_AF_RANGE, 2-entry CI group */
+    /* volume: @range(0, 100)  REF_ATTR_INT, REF_AF_CLAMP, 2-entry CI group */
     {
         const ref_field_t* f   = ref_find_field( tid, "volume" );
         uint16_t           fid = (uint16_t)( f - ref_get_field( 0 ) );
@@ -1674,7 +1674,7 @@ test_attrs_full( void )
         ref_attrib_t a = { 0 };
         a.name_id      = test_intern( REF_ANAME_RANGE );
         a.type         = REF_ATTR_INT;
-        a.flags        = REF_AF_RANGE;
+        a.flags        = REF_AF_CLAMP;
         a.value.i32    = 0;
         ref_field_add_attr( fid, &a );
 
@@ -1748,8 +1748,8 @@ test_attrs_full( void )
         uint16_t            n    = ref_field_get_attr_values( fid, REF_ANAME_RANGE, &r );
 
         bool ok = n == 2
-               && r[ 0 ].type == REF_ATTR_INT && r[ 0 ].flags == REF_AF_RANGE && r[ 0 ].value.i32 == 0
-               && r[ 1 ].type == REF_ATTR_INT && r[ 1 ].flags == REF_AF_RANGE && r[ 1 ].value.i32 == 100;
+               && r[ 0 ].type == REF_ATTR_INT && r[ 0 ].flags == REF_AF_CLAMP && r[ 0 ].value.i32 == 0
+               && r[ 1 ].type == REF_ATTR_INT && r[ 1 ].flags == REF_AF_CLAMP && r[ 1 ].value.i32 == 100;
         printf( "  [%s] volume @range: count=%u min=%d max=%d\n",
                 ok ? "ok  " : "FAIL", ( unsigned )n,
                 n >= 1 ? r[ 0 ].value.i32 : -1, n >= 2 ? r[ 1 ].value.i32 : -1 );

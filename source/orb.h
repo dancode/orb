@@ -271,8 +271,11 @@ typedef void ( *log_fn_t )( int level, const char* tag, const char* msg );
         REF_UNION()            typedef union  bar_u { ... } bar_t;
         REF_ENUM()             typedef enum   bar_e { ... } bar_t;
         REF_BITSET()           typedef enum   flags_e { ... } flags_t;   // OR-able bitmask
-        REF_PROP()             field_type field_name;                     // inside REF_STRUCT/REF_UNION body
-        REF_VAR()              type g_name;                               // global variable
+        REF_PROP()             field_type field_name;                    // inside REF_STRUCT/REF_UNION body
+        REF_FUNC()             typedef ret (*fn_t)( args );               // function-signature type
+
+        REF_MODULE( name )     declare a module's function API            // see <module>_api.h
+        REF_API()              ret module_fn( args );                     // one entry in that API
 ==============================================================================================*/
 
 // clang-format off

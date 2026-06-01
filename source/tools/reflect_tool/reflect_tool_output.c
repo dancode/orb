@@ -110,8 +110,8 @@ func_tid_var( char* out, int max, const char* type_name )
 static const char*
 attr_flag_macro( const char* name )
 {
-    if ( strcmp( name, "range" )        == 0 ) return "REF_AF_RANGE";
-    if ( strcmp( name, "clamp" )        == 0 ) return "REF_AF_RANGE";       /* alias of range */
+    if ( strcmp( name, "range" )        == 0 ) return "REF_AF_CLAMP";
+    if ( strcmp( name, "clamp" )        == 0 ) return "REF_AF_CLAMP";       /* @clamp == @range */
     if ( strcmp( name, "clamp_ui" )     == 0 ) return "REF_AF_CLAMP_UI";
     if ( strcmp( name, "display_name" ) == 0 ) return "REF_AF_DISPLAY_NAME";
     if ( strcmp( name, "tooltip" )      == 0 ) return "REF_AF_TOOLTIP";

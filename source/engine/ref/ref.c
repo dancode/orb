@@ -111,7 +111,7 @@ static const bool       ref_debug = true;
 #include "engine/ref/ref_serialize.c"
 #include "engine/ref/ref_print.c"
 
-/* ref_test.c is compiled separately as part of sb_engine_reflect, not this library. */
+/* ref_test.c is compiled separately as part of sb_reflect, not this library. */
 
 /*==============================================================================================
     API Publishing

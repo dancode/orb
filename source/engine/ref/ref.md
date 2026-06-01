@@ -9,7 +9,7 @@ single table truncation with no GC or tombstones.
 | File              | Role
 |                   |
 | `ref.h`            | Public API — types, constants, registration, lookup, iteration, walkers, serialization |
-| `ref_api.h`        | `ref_api_t` func-pointer struct + module accessor macros (`rs()`, `MOD_USE_RS`) |
+| `ref_api.h`        | `ref_api_t` func-pointer struct + module accessor macros (`ref()`, `MOD_USE_REF`) |
 | `ref_host.h`       | Host-only: `ref_wire_mod_callbacks()` — wires reflection into the mod lifecycle |
 | `ref.c`            | Unity entry point: string pool, registry storage, `g_ref_api_struct`, mod descriptor |
 | `ref_registry.c`   | Frame lifecycle, type/enum/function registration, lazy resolution, schema hashing |
@@ -17,7 +17,7 @@ single table truncation with no GC or tombstones.
 | `ref_walk.c`       | Reference walker (`ref_walk_refs`) and value walker (`ref_walk`) |
 | `ref_serialize.c`  | Binary read/write with schema-hash compatibility gating |
 | `ref_print.c`      | `ref_field_describe`, `ref_print_type`, `ref_print_types`, `ref_print_frame` |
-| `ref_test.c`       | Standalone test TU (not part of the library unity build; compiled into `sb_engine_reflect`) |
+| `ref_test.c`       | Standalone test TU (not part of the library unity build; `#include`d by `sb_reflect_unit.c`, built as `sb_reflect`) |
 
 
 ## Design
@@ -130,12 +130,12 @@ its own reflected types and those of all its dependencies.
 ```c
 mod_system_init();
 ref_wire_mod_callbacks();           // install hooks — nothing fires yet
-mod_static_load( "rs",  ... );    // passive
+mod_static_load( "ref",  ... );   // passive
 mod_static_load( "core", ... );   // passive
 mod_init_all();                   // pre_init fires in dep order (reflection), then init()
 ```
 
-`ref_wire_mod_callbacks` is safe to call before `rs.mod_init` has run. The registry
+`ref_wire_mod_callbacks` is safe to call before the `ref` module's `init` has run. The registry
 self-bootstraps on first touch via `ref_ensure_init()` in `ref_registry.c`.
 
 ### Reflecting a module
@@ -158,20 +158,20 @@ DLL modules from linking against the host's registration internals.
 
 If `ref_register` is NULL the module is silently skipped; reflection is opt-in.
 
-### Consuming rs at runtime
+### Consuming ref at runtime
 
 `ref_` is always statically linked. In dynamic builds, modules access it through the
 standard `ref_api_t` gateway:
 
 ```c
 // file scope — allocates the cached pointer in dynamic builds, no-op in static
-MOD_USE_RS;
+MOD_USE_REF;
 
 // in init() / reload()
-if ( !MOD_FETCH_RS ) return false;
+if ( !MOD_FETCH_REF ) return false;
 
 // call site identical in both build modes
-uint16_t tid = rs()->find_type_by_name( "vec3_t" );
+uint16_t tid = ref()->find_type_by_name( "vec3_t" );
 ```
 
 

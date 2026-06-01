@@ -60,7 +60,17 @@
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_runtime_reflect && bin\\\\build_tool.exe -config Debug -target sb_engine_reflect')",
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_reflect && bin\\\\build_tool.exe -config Debug -target sb_runtime_reflect')",
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target example_reflect' ; \"=== sb_reflect ===\" ; $o = bin\\\\sb_reflect.exe 2>&1 | Out-String; \"FAIL count: \" + \\([regex]::Matches\\($o,\"FAIL\"\\)\\).Count; $o -split \"`n\" | Select-String \"volume @range|brightness|version|display_name|tooltip|health|speed|range \" | Select-Object -First 12)",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(./bin/build_tool.exe -config Debug -target sb_runtime_reflect)",
+      "Bash(./bin/sb_runtime_reflect.exe)",
+      "Bash(./bin/build_tool.exe -config Debug -target sb_reflect)",
+      "Bash(./bin/sb_reflect.exe)",
+      "Bash(echo \"sb_reflect exit=$?\")",
+      "Bash(echo \"sb_runtime_reflect exit=$?\")",
+      "Bash(./bin/build_tool.exe -config Debug -target example_reflect)",
+      "Bash(echo \"runtime exit=$?\")",
+      "Bash(echo \"reflect exit=$?\")",
+      "Bash(echo \"exit=$? \\(1 = no matches, good\\)\")"
     ]
   }
 }

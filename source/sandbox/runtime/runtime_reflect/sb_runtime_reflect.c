@@ -130,17 +130,14 @@ value_visit( void* addr, uint16_t type_id, const ref_field_t* field, void* user 
     const char*      fname = ref_cstr( field->name_id );
 
     /* Pointer field (T*, T**, T* const, T*[N]): addr is the pointer variable itself. */
-    bool is_ptr_shape = ( field->mods == REF_MODS_PTR         || field->mods == REF_MODS_PTR_PTR  ||
-                          field->mods == REF_MODS_CONST_PTR   || field->mods == REF_MODS_PTR_ARRAY ||
-                          field->mods == REF_MODS_PTR_TO_CONST );
-    if ( is_ptr_shape )
+    if ( ref_mods_is_ptr( field->mods ) )
     {
         printf( "    %-20s %-14s %s\n", fname, tname, *( void** )addr ? "(non-null)" : "(null)" );
         return;
     }
 
     /* Function pointer field: addr is the function pointer variable itself. */
-    if ( field->mods == REF_MODS_FUNCTION )
+    if ( ref_mods_is_function( field->mods ) )
     {
         const ref_type_t* sig = ref_get_type( field->aux );
         const char* signame = sig ? ref_cstr( sig->name_id ) : "?";
@@ -431,7 +428,7 @@ exercise_reflection( void )
 
         /* Resolve the callback field's aux back to its sig type to confirm the linkage. */
         const ref_field_t* cb_field = ref_find_field( npc_tid, "on_damage" );
-        if ( cb_field && cb_field->mods == REF_MODS_FUNCTION )
+        if ( cb_field && ref_mods_is_function( cb_field->mods ) )
         {
             const ref_type_t* sig = ref_get_type( cb_field->aux );
             printf( "  on_damage links to sig '%s' (type_id=%u)\n",

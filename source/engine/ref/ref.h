@@ -154,6 +154,36 @@ typedef enum ref_mods_e
 
 } ref_mods_t;
 
+/* Primary declarator mask -- bits [2:0] hold the field's own top-level shape. The predicates
+   below classify a field by this primary declarator so callers can test the shape with one
+   call instead of OR-ing every concrete ref_mods_t value (e.g. T*, T**, T* const, T*[N] all
+   share primary == ptr). */
+#define REF_MODS_PRIMARY_MASK  0x0007
+
+static inline bool
+ref_mods_is_value( uint16_t mods )
+{
+    return ( mods & REF_MODS_PRIMARY_MASK ) == 0;
+}
+
+static inline bool
+ref_mods_is_ptr( uint16_t mods )
+{
+    return ( mods & REF_MODS_PRIMARY_MASK ) == REF_MODS_PTR;
+}
+
+static inline bool
+ref_mods_is_array( uint16_t mods )
+{
+    return ( mods & REF_MODS_PRIMARY_MASK ) == REF_MODS_ARRAY;
+}
+
+static inline bool
+ref_mods_is_function( uint16_t mods )
+{
+    return ( mods & REF_MODS_PRIMARY_MASK ) == REF_MODS_FUNCTION;
+}
+
 /*==============================================================================================
     Attribute
 
@@ -187,22 +217,20 @@ typedef enum ref_attr_type_e
 
 typedef enum ref_attr_flag_e
 {
-    REF_AF_RANGE        = ( 1 << 0 ),   // min/max hard clamp on value and editor edit
+    REF_AF_CLAMP        = ( 1 << 0 ),   // min/max hard clamp on value and editor edit (@range)
     REF_AF_CLAMP_UI     = ( 1 << 1 ),   // min/max soft UI limiter; user can type past
-    REF_AF_DISPLAY_NAME = ( 1 << 2 ),   // string override for editor display name    
-    REF_AF_TOOLTIP      = ( 1 << 3 ),   // tooltip / helper string shown in editor    
+    REF_AF_DISPLAY_NAME = ( 1 << 2 ),   // string override for editor display name
+    REF_AF_TOOLTIP      = ( 1 << 3 ),   // tooltip / helper string shown in editor
 
     /* bits 4-7: engine reserved */
     /* bits 8-15: user-defined */
 
 } ref_attr_flag_t;
 
-#define REF_AF_CLAMP             REF_AF_RANGE   /* range and clamp are the same concept */
-
-/* Canonical name strings for built-in attributes -- include in name_id interns */
+/* Canonical name strings for built-in attributes -- include in name_id interns.
+   The @range attribute carries the REF_AF_CLAMP flag. */
 
 #define REF_ANAME_RANGE          "range"
-#define REF_ANAME_CLAMP          "range"             /* alias */
 #define REF_ANAME_CLAMP_UI       "clamp_ui"
 #define REF_ANAME_DISPLAY_NAME   "display_name"
 #define REF_ANAME_TOOLTIP        "tooltip"
@@ -348,7 +376,7 @@ typedef struct ref_frame_s
     Serialization Status
 
     ref_io_status_t is part of the ref_api_t vtable surface; kept here so DLL modules can
-    inspect the return value of rs()->read() without including ref_host.h.
+    inspect the return value of ref()->read() without including ref_host.h.
 ==============================================================================================*/
 
 #define REF_SAVE_MAGIC        0x31307372u  /* 'rs01' little-endian */
