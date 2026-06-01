@@ -158,7 +158,7 @@ typedef enum ref_mods_e
    below classify a field by this primary declarator so callers can test the shape with one
    call instead of OR-ing every concrete ref_mods_t value (e.g. T*, T**, T* const, T*[N] all
    share primary == ptr). */
-#define REF_MODS_PRIMARY_MASK  0x0007
+#define REF_MODS_PRIMARY_MASK  0x0007 // binary 0111
 
 static inline bool
 ref_mods_is_value( uint16_t mods )
@@ -221,19 +221,31 @@ typedef enum ref_attr_flag_e
     REF_AF_CLAMP_UI     = ( 1 << 1 ),   // min/max soft UI limiter; user can type past
     REF_AF_DISPLAY_NAME = ( 1 << 2 ),   // string override for editor display name
     REF_AF_TOOLTIP      = ( 1 << 3 ),   // tooltip / helper string shown in editor
+    REF_AF_UNION_TAG    = ( 1 << 4 ),   // names the sibling discriminant field of a union (@union_tag)
+    REF_AF_CASE         = ( 1 << 5 ),   // discriminant value selecting this union member (@case)
+    REF_AF_CATEGORY     = ( 1 << 6 ),   // editor inspector group / section name (@category)
+    REF_AF_STEP         = ( 1 << 7 ),   // numeric drag increment for editor sliders (@step)
 
-    /* bits 4-7: engine reserved */
     /* bits 8-15: user-defined */
 
 } ref_attr_flag_t;
 
 /* Canonical name strings for built-in attributes -- include in name_id interns.
-   The @range attribute carries the REF_AF_CLAMP flag. */
+   The @range attribute carries the REF_AF_CLAMP flag.
+
+   Union discriminant: a tagged union is a struct holding a discriminant field plus a union
+   field. Put @union_tag("tag_field") on the union field, naming its sibling tag; put @case(N)
+   on each union member, giving the tag value that selects it. The walkers read these to visit
+   only the active member instead of every overlapping member. */
 
 #define REF_ANAME_RANGE          "range"
 #define REF_ANAME_CLAMP_UI       "clamp_ui"
 #define REF_ANAME_DISPLAY_NAME   "display_name"
 #define REF_ANAME_TOOLTIP        "tooltip"
+#define REF_ANAME_UNION_TAG      "union_tag"
+#define REF_ANAME_CASE           "case"
+#define REF_ANAME_CATEGORY       "category"
+#define REF_ANAME_STEP           "step"
 
 typedef struct ref_attrib_s
 {
@@ -277,13 +289,11 @@ typedef struct ref_enum_s
 typedef enum ref_field_flag_e
 {
     REF_FF_TRANSIENT  = ( 1 << 0 ),  // serialize: exclude from serialization
-    REF_FF_EDITOR     = ( 1 << 1 ),  // editor: show in editor inspector
-    REF_FF_READONLY   = ( 1 << 2 ),  // editor: display in editor, no edit
-    REF_FF_HIDDEN     = ( 1 << 3 ),  // editor: hide from editor
-    REF_FF_NETWORK    = ( 1 << 4 ),  // network: replicate over network
-    REF_FF_DEPRECATED = ( 1 << 5 ),  // developer: warn on use
-    REF_FF_REQUIRED   = ( 1 << 6 ),  // developer: validation: field must be set
+    REF_FF_READONLY   = ( 1 << 1 ),  // editor: display in editor, no edit
+    REF_FF_HIDDEN     = ( 1 << 2 ),  // editor: hide from editor
+    REF_FF_NETWORK    = ( 1 << 3 ),  // network: replicate over network
 
+    /* bits 4-15: engine reserved */
     /* bits 16-31: user defined */
 
 } ref_field_flag_t;
@@ -321,11 +331,10 @@ typedef struct ref_field_s
 
 typedef enum ref_type_flag_e
 {
-    REF_TF_ABSTRACT   = ( 1 << 0 ),  // not directly instantiable (e.g. interface or base struct)
-    REF_TF_SERIALIZE  = ( 1 << 1 ),  // default-serialize all fields
-    REF_TF_EDITOR     = ( 1 << 2 ),  // show in editor type browser
-    REF_TF_DEPRECATED = ( 1 << 3 ),  // warn on use
+    REF_TF_SERIALIZE  = ( 1 << 0 ),  // default-serialize all fields
+    REF_TF_EDITOR     = ( 1 << 1 ),  // show in editor type browser
 
+    /* bits 2-3: engine reserved */
     /* bits 4-7: project/game-defined */
 
 } ref_type_flag_t;

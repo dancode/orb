@@ -70,7 +70,9 @@
       "Bash(./bin/build_tool.exe -config Debug -target example_reflect)",
       "Bash(echo \"runtime exit=$?\")",
       "Bash(echo \"reflect exit=$?\")",
-      "Bash(echo \"exit=$? \\(1 = no matches, good\\)\")"
+      "Bash(echo \"exit=$? \\(1 = no matches, good\\)\")",
+      "Bash(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_engine_reflect 2>&1')",
+      "PowerShell(& cmd /c \"F:\\\\orb\\\\_build_ref_tmp.bat\")"
     ]
   }
 }

@@ -145,6 +145,9 @@ const ref_api_t g_ref_api_struct =
     /* Bitset helpers */
     .bitset_describe    = ref_bitset_describe,
 
+    /* Union discriminant */
+    .union_case_field   = ref_union_case_field,
+
     /* Walkers */
     .walk_refs          = ref_walk_refs,
     .walk               = ref_walk,

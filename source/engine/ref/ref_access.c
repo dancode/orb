@@ -291,6 +291,32 @@ ref_bitset_describe( uint16_t type_id, int32_t value, char* buf, size_t buf_size
 }
 
 /*==============================================================================================
+    Union Discriminant Access
+
+    A tagged union is a struct with a discriminant field plus a union field. The union field
+    carries @union_tag("tag") naming its sibling discriminant; each union member carries
+    @case(N) giving the tag value that selects it. ref_union_case_field maps a tag value to
+    the member it selects so walkers/editors can act on only the active member. Returns NULL
+    if the type is not a union or no member matches.
+==============================================================================================*/
+
+const ref_field_t*
+ref_union_case_field( uint16_t union_type_id, int32_t case_value )
+{
+    const ref_type_t* t = ref_get_type( union_type_id );
+    if ( !t || t->kind != REF_KIND_UNION ) return NULL;
+
+    for ( uint16_t i = 0; i < t->field_count; i++ )
+    {
+        uint16_t            fid = (uint16_t)( t->field_index + i );
+        const ref_attrib_t* c   = ref_field_get_attr( fid, REF_ANAME_CASE );
+        if ( c && c->value.i32 == case_value )
+            return &g_ref.fields[ fid ];
+    }
+    return NULL;
+}
+
+/*==============================================================================================
     Function Signature Access
 
     Function signature types store their return and parameters as fields, following the

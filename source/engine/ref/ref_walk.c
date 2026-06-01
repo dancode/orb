@@ -1,10 +1,62 @@
-﻿/* engine/ref/ref_walk.c - Reference walker and value walker.
+/* engine/ref/ref_walk.c - Reference walker and value walker.
 
    Two complementary traversals over a reflected struct instance:
      ref_walk_refs -- visits ONLY pointer-typed slots (T*, T*[N], T(*)[N]).
                     Used for pointer fixups after save-load, or for pointer-set tracking.
      ref_walk      -- visits EVERY field including bare values. Used for deep copy,
-                    debug print, or any operation that needs to see all data. */
+                    debug print, or any operation that needs to see all data.
+
+   Union handling: a union's members overlap in memory, so walking all of them would touch
+   storage that does not belong to the active member (and, for ref_walk_refs, would zero
+   pointers that are not really live). Both walkers therefore descend into a union only when
+   its discriminant is known: the union field carries @union_tag naming a sibling tag field,
+   and each member carries @case giving the tag value that selects it. With those present the
+   walker reads the tag from the instance and visits only the active member. Without them the
+   union is skipped -- the safe default. */
+
+// clang-format off
+
+/*==============================================================================================
+    Discriminant Helpers
+
+    Resolve the active member of a union value embedded in a parent struct. The parent context
+    is required because the discriminant (@union_tag) names a sibling field of the union, which
+    is only visible at the level of the enclosing struct.
+==============================================================================================*/
+
+/* Read a small signed integer of the given byte width -- used to fetch a discriminant value
+   regardless of whether the tag field is an enum (4 bytes), a byte, or a wider integer. */
+static int32_t
+ref_read_tag_value( const void* p, uint16_t size )
+{
+    switch ( size )
+    {
+        case 1:  return *(const int8_t* )p;
+        case 2:  return *(const int16_t*)p;
+        case 4:  return *(const int32_t*)p;
+        case 8:  return (int32_t)*(const int64_t*)p;
+        default: return 0;
+    }
+}
+
+/* Given a union value field inside owner struct `t` at parent base `parent`, resolve which
+   member is active. Returns NULL if the union has no @union_tag, the named sibling does not
+   exist, or no member's @case matches the live tag value. */
+static const ref_field_t*
+ref_resolve_union_member( const void* parent, const ref_type_t* t, const ref_field_t* union_field )
+{
+    uint16_t            ufid = (uint16_t)( union_field - g_ref.fields );
+    const ref_attrib_t* tag  = ref_field_get_attr( ufid, REF_ANAME_UNION_TAG );
+    if ( !tag || tag->type != REF_ATTR_STRING ) return NULL;
+
+    /* Find the sibling discriminant field by name within the enclosing struct. */
+    uint16_t           owner_id  = (uint16_t)( t - g_ref.types );
+    const ref_field_t* tag_field = ref_find_field( owner_id, ref_cstr( tag->value.str ) );
+    if ( !tag_field ) return NULL;
+
+    int32_t tag_value = ref_read_tag_value( (const uint8_t*)parent + tag_field->offset, tag_field->size );
+    return ref_union_case_field( union_field->type_id, tag_value );
+}
 
 /*==============================================================================================
     Reference Walker
@@ -15,69 +67,97 @@
 
     Recursion: bare value fields (T) and inline arrays (T[N]) are recursed into if the
     element type is an aggregate, because they may contain pointer fields deeper inside.
-    Function pointers are intentionally skipped -- they are code references, not data
-    pointers, and should never be patched by generic fixup passes.
+    Unions descend only into their active member (see file header). Function pointers are
+    intentionally skipped -- they are code references, not data pointers, and should never
+    be patched by generic fixup passes.
 ==============================================================================================*/
+
+static void ref_walk_refs_fields( void* instance, const ref_type_t* t, ref_ref_visitor_t visit, void* user );
+
+/* Process a single field for pointer slots. `instance` is the base of the field's owner `t`;
+   the field address is instance + f->offset. Factored out so the union active-member can be
+   handled by recursing with the union type as the owner. */
+static void
+ref_walk_refs_one( void* instance, const ref_type_t* t, const ref_field_t* f,
+                   ref_ref_visitor_t visit, void* user )
+{
+    uint8_t* addr = (uint8_t*)instance + f->offset;
+
+    /* T -- bare value; no pointer here. Recurse into structs to find deeper ones; for unions
+       descend only into the active member, which is itself processed as a field. */
+    if ( f->mods == REF_MODS_VALUE )
+    {
+        if ( f->kind == REF_KIND_STRUCT )
+        {
+            ref_walk_refs_fields( addr, ref_get_type( f->type_id ), visit, user );
+        }
+        else if ( f->kind == REF_KIND_UNION )
+        {
+            const ref_field_t* active = ref_resolve_union_member( instance, t, f );
+            if ( active )
+                ref_walk_refs_one( addr, ref_get_type( f->type_id ), active, visit, user );
+        }
+        return;
+    }
+
+    /* T* -- single pointer slot; visit and let the callback read/write *slot. */
+    if ( f->mods == REF_MODS_PTR )
+    {
+        visit( (void**)addr, f->type_id, f, user );
+        return;
+    }
+
+    /* T[N] -- inline array; no pointer at this level, recurse per-element for aggregates. */
+    if ( f->mods == REF_MODS_ARRAY )
+    {
+        if ( f->kind == REF_KIND_STRUCT || f->kind == REF_KIND_UNION )
+        {
+            const ref_type_t* bt = ref_get_type( f->type_id );
+            if ( bt && bt->size > 0 )
+                for ( uint16_t k = 0; k < f->aux; k++ )
+                    ref_walk_refs_fields( addr + (size_t)k * bt->size, bt, visit, user );
+        }
+        return;
+    }
+
+    /* T*[N] -- array of pointers; visit each individual pointer slot in the array. */
+    if ( f->mods == REF_MODS_PTR_ARRAY )
+    {
+        for ( uint16_t k = 0; k < f->aux; k++ )
+            visit( (void**)( addr + (size_t)k * sizeof( void* ) ), f->type_id, f, user );
+        return;
+    }
+
+    /* T(*)[N] -- pointer to array; the pointer itself is a single slot, not the elements. */
+    if ( f->mods == REF_MODS_ARRAY_PTR )
+    {
+        visit( (void**)addr, f->type_id, f, user );
+        return;
+    }
+
+    /* Function pointers (REF_MODS_FUNCTION) and deeper chains (T**, const T*) are
+       intentionally skipped -- they are not data pointers and must not be patched. */
+}
+
+static void
+ref_walk_refs_fields( void* instance, const ref_type_t* t, ref_ref_visitor_t visit, void* user )
+{
+    if ( !t ) return;
+
+    /* A struct iterates its fields; a union recursed into directly has no parent context to
+       resolve a discriminant, so it cannot be walked safely from here. The only safe union
+       entry point is through ref_walk_refs_one, which is reached from the enclosing struct. */
+    if ( t->kind != REF_KIND_STRUCT ) return;
+
+    for ( uint16_t i = 0; i < t->field_count; i++ )
+        ref_walk_refs_one( instance, t, &g_ref.fields[ t->field_index + i ], visit, user );
+}
 
 void
 ref_walk_refs( void* instance, uint16_t type_id, ref_ref_visitor_t visit, void* user )
 {
     if ( !instance || !visit ) return;
-
-    const ref_type_t* t = ref_get_type( type_id );
-    if ( !t || ( t->kind != REF_KIND_STRUCT && t->kind != REF_KIND_UNION ) ) return;
-
-    for ( uint16_t i = 0; i < t->field_count; i++ )
-    {
-        const ref_field_t* f    = &g_ref.fields[ t->field_index + i ];
-        uint8_t*          addr = (uint8_t*)instance + f->offset;
-
-        /* T -- bare value; no pointer here, but recurse into aggregates to find deeper ones. */
-        if ( f->mods == REF_MODS_VALUE )
-        {
-            if ( f->kind == REF_KIND_STRUCT || f->kind == REF_KIND_UNION )
-                ref_walk_refs( addr, f->type_id, visit, user );
-            continue;
-        }
-
-        /* T* -- single pointer slot; visit and let the callback read/write *slot. */
-        if ( f->mods == REF_MODS_PTR )
-        {
-            visit( (void**)addr, f->type_id, f, user );
-            continue;
-        }
-
-        /* T[N] -- inline array; no pointer at this level, recurse per-element for aggregates. */
-        if ( f->mods == REF_MODS_ARRAY )
-        {
-            if ( f->kind == REF_KIND_STRUCT || f->kind == REF_KIND_UNION )
-            {
-                const ref_type_t* bt = ref_get_type( f->type_id );
-                if ( bt && bt->size > 0 )
-                    for ( uint16_t k = 0; k < f->aux; k++ )
-                        ref_walk_refs( addr + (size_t)k * bt->size, f->type_id, visit, user );
-            }
-            continue;
-        }
-
-        /* T*[N] -- array of pointers; visit each individual pointer slot in the array. */
-        if ( f->mods == REF_MODS_PTR_ARRAY )
-        {
-            for ( uint16_t k = 0; k < f->aux; k++ )
-                visit( (void**)( addr + (size_t)k * sizeof( void* ) ), f->type_id, f, user );
-            continue;
-        }
-
-        /* T(*)[N] -- pointer to array; the pointer itself is a single slot, not the elements. */
-        if ( f->mods == REF_MODS_ARRAY_PTR )
-        {
-            visit( (void**)addr, f->type_id, f, user );
-            continue;
-        }
-
-        /* Function pointers (REF_MODS_FUNCTION) and deeper chains (T**, const T*) are
-           intentionally skipped -- they are not data pointers and must not be patched. */
-    }
+    ref_walk_refs_fields( instance, ref_get_type( type_id ), visit, user );
 }
 
 /*==============================================================================================
@@ -85,79 +165,98 @@ ref_walk_refs( void* instance, uint16_t type_id, ref_ref_visitor_t visit, void* 
 
     Visits every field in a struct instance, including bare values, pointers, and arrays.
     The visitor receives the field's memory address, its resolved base type_id, the field
-    descriptor, and a user pointer. For aggregate values (nested structs/unions), the
-    visitor fires on the aggregate itself AND then ref_walk recurses into it, so the
-    visitor sees both the container and its contents.
+    descriptor, and a user pointer. For aggregate values (nested structs), the visitor fires
+    on the aggregate itself AND then ref_walk recurses into it, so the visitor sees both the
+    container and its contents. A union value fires the visitor on the union itself and then
+    recurses only into its active member (see file header).
 
     Contrast with ref_walk_refs: this walker is exhaustive (everything), ref_walk_refs is
     selective (pointers only). Use ref_walk for deep copy, diagnostics, or any operation
     that processes all data uniformly.
 ==============================================================================================*/
 
+static void ref_walk_fields( void* instance, const ref_type_t* t, ref_visitor_t visit, void* user );
+
+static void
+ref_walk_one( void* instance, const ref_type_t* t, const ref_field_t* f,
+              ref_visitor_t visit, void* user )
+{
+    uint8_t* addr = (uint8_t*)instance + f->offset;
+
+    /* T -- bare value; visit the field, then recurse if it is itself an aggregate. */
+    if ( f->mods == REF_MODS_VALUE )
+    {
+        visit( addr, f->type_id, f, user );
+        if ( f->kind == REF_KIND_STRUCT )
+        {
+            ref_walk_fields( addr, ref_get_type( f->type_id ), visit, user );
+        }
+        else if ( f->kind == REF_KIND_UNION )
+        {
+            const ref_field_t* active = ref_resolve_union_member( instance, t, f );
+            if ( active )
+                ref_walk_one( addr, ref_get_type( f->type_id ), active, visit, user );
+        }
+        return;
+    }
+
+    /* T* -- single pointer; visit the pointer variable (not what it points to). */
+    if ( f->mods == REF_MODS_PTR )
+    {
+        visit( addr, f->type_id, f, user );
+        return;
+    }
+
+    /* T[N] -- inline array; visit and recurse each element in order. */
+    if ( f->mods == REF_MODS_ARRAY )
+    {
+        const ref_type_t* bt = ref_get_type( f->type_id );
+        if ( bt && bt->size > 0 )
+        {
+            for ( uint16_t k = 0; k < f->aux; k++ )
+            {
+                uint8_t* elem = addr + (size_t)k * bt->size;
+                visit( elem, f->type_id, f, user );
+                if ( f->kind == REF_KIND_STRUCT )
+                    ref_walk_fields( elem, bt, visit, user );
+            }
+        }
+        return;
+    }
+
+    /* T*[N] -- array of pointers; visit each pointer slot (the pointer, not pointee). */
+    if ( f->mods == REF_MODS_PTR_ARRAY )
+    {
+        for ( uint16_t k = 0; k < f->aux; k++ )
+            visit( addr + (size_t)k * sizeof( void* ), f->type_id, f, user );
+        return;
+    }
+
+    /* T(*)[N] -- pointer to array; visit the pointer variable. */
+    if ( f->mods == REF_MODS_ARRAY_PTR )
+    {
+        visit( addr, f->type_id, f, user );
+        return;
+    }
+
+    /* Function pointers and any other modifier chains fall through to an opaque visit. */
+    visit( addr, f->type_id, f, user );
+}
+
+static void
+ref_walk_fields( void* instance, const ref_type_t* t, ref_visitor_t visit, void* user )
+{
+    if ( !t || t->kind != REF_KIND_STRUCT ) return;
+    for ( uint16_t i = 0; i < t->field_count; i++ )
+        ref_walk_one( instance, t, &g_ref.fields[ t->field_index + i ], visit, user );
+}
+
 void
 ref_walk( void* instance, uint16_t type_id, ref_visitor_t visit, void* user )
 {
     if ( !instance || !visit ) return;
-
-    const ref_type_t* t = ref_get_type( type_id );
-    if ( !t || ( t->kind != REF_KIND_STRUCT && t->kind != REF_KIND_UNION ) ) return;
-
-    for ( uint16_t i = 0; i < t->field_count; i++ )
-    {
-        const ref_field_t* f    = &g_ref.fields[ t->field_index + i ];
-        uint8_t*          addr = (uint8_t*)instance + f->offset;
-
-        /* T -- bare value; visit the field, then recurse if it is itself an aggregate. */
-        if ( f->mods == REF_MODS_VALUE )
-        {
-            visit( addr, f->type_id, f, user );
-            if ( f->kind == REF_KIND_STRUCT || f->kind == REF_KIND_UNION )
-                ref_walk( addr, f->type_id, visit, user );
-            continue;
-        }
-
-        /* T* -- single pointer; visit the pointer variable (not what it points to). */
-        if ( f->mods == REF_MODS_PTR )
-        {
-            visit( addr, f->type_id, f, user );
-            continue;
-        }
-
-        /* T[N] -- inline array; visit and recurse each element in order. */
-        if ( f->mods == REF_MODS_ARRAY )
-        {
-            const ref_type_t* bt = ref_get_type( f->type_id );
-            if ( bt && bt->size > 0 )
-            {
-                for ( uint16_t k = 0; k < f->aux; k++ )
-                {
-                    uint8_t* elem = addr + (size_t)k * bt->size;
-                    visit( elem, f->type_id, f, user );
-                    if ( f->kind == REF_KIND_STRUCT || f->kind == REF_KIND_UNION )
-                        ref_walk( elem, f->type_id, visit, user );
-                }
-            }
-            continue;
-        }
-
-        /* T*[N] -- array of pointers; visit each pointer slot (the pointer, not pointee). */
-        if ( f->mods == REF_MODS_PTR_ARRAY )
-        {
-            for ( uint16_t k = 0; k < f->aux; k++ )
-                visit( addr + (size_t)k * sizeof( void* ), f->type_id, f, user );
-            continue;
-        }
-
-        /* T(*)[N] -- pointer to array; visit the pointer variable. */
-        if ( f->mods == REF_MODS_ARRAY_PTR )
-        {
-            visit( addr, f->type_id, f, user );
-            continue;
-        }
-
-        /* Function pointers and any other modifier chains fall through to an opaque visit. */
-        visit( addr, f->type_id, f, user );
-    }
+    ref_walk_fields( instance, ref_get_type( type_id ), visit, user );
 }
 
+// clang-format on
 /*============================================================================================*/

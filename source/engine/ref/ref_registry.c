@@ -283,9 +283,15 @@ ref_get_frame( uint16_t frame_id )
          rejects a buffer whose hash does not match, preventing silent data corruption
          when a type's layout changes between game versions.
 
-    Fields included in the hash: name_id, offset, size, mods, aux, type_hash.
+    Fields included in the hash: field-name content hash, offset, size, mods, aux, type_hash.
     type_flags and attr data are intentionally excluded -- they are editor/runtime hints
     and changing them should not invalidate saves.
+
+    The field NAME is folded in as a content hash (ref_hash_str of the interned string), NOT
+    as name_id. name_id is a byte offset into the session-local string pool; its value depends
+    on intern order and would differ between process runs even for a byte-identical layout,
+    which would make schema_hash unstable across builds and spuriously reject valid saves.
+    type_hash is already a content hash, so this makes the whole fingerprint run-independent.
 ==============================================================================================*/
 
 static uint32_t
@@ -302,8 +308,9 @@ ref_compute_schema_hash( const ref_field_t* fields, uint16_t count )
     uint32_t h = 2166136261u;
     for ( uint16_t i = 0; i < count; i++ )
     {
-        const ref_field_t* f = &fields[ i ];
-        h = ref_fnv1a_step( h, &f->name_id,   sizeof( f->name_id ) );
+        const ref_field_t* f         = &fields[ i ];
+        uint32_t          name_hash = ref_hash_str( ref_cstr( f->name_id ) );
+        h = ref_fnv1a_step( h, &name_hash,  sizeof( name_hash ) );
         h = ref_fnv1a_step( h, &f->offset,    sizeof( f->offset ) );
         h = ref_fnv1a_step( h, &f->size,      sizeof( f->size ) );
         h = ref_fnv1a_step( h, &f->mods,      sizeof( f->mods ) );
@@ -474,8 +481,10 @@ ref_compute_enum_schema_hash( const ref_enum_t* e, uint16_t count )
     uint32_t h = 2166136261u;
     for ( uint16_t i = 0; i < count; i++ )
     {
-        h = ref_fnv1a_step( h, &e[ i ].name_id, sizeof( e[ i ].name_id ) );
-        h = ref_fnv1a_step( h, &e[ i ].value,   sizeof( e[ i ].value ) );
+        /* Hash the enumerator name's content, not its pool offset -- see ref_compute_schema_hash. */
+        uint32_t name_hash = ref_hash_str( ref_cstr( e[ i ].name_id ) );
+        h = ref_fnv1a_step( h, &name_hash,    sizeof( name_hash ) );
+        h = ref_fnv1a_step( h, &e[ i ].value, sizeof( e[ i ].value ) );
     }
     return h;
 }

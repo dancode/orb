@@ -994,24 +994,15 @@ test_serialize( void )
     fields[ 4 ].size       = REF_FIELD_SIZE( ref_test_save_t, cache_ptr );
     fields[ 4 ].mods       = REF_MODS_PTR;
 
+    /* cached_hash is runtime-only computed state: flag it REF_FF_TRANSIENT so the serializer
+       zeroes it on save. The flag is the single source of truth (no @transient attribute). */
     fields[ 5 ].name_id    = test_intern( "cached_hash" );
     fields[ 5 ].type_hash  = h_u32;
     fields[ 5 ].offset     = REF_OFFSETOF( ref_test_save_t, cached_hash );
     fields[ 5 ].size       = REF_FIELD_SIZE( ref_test_save_t, cached_hash );
+    fields[ 5 ].flags      = REF_FF_TRANSIENT;
 
     uint16_t tid           = ref_register_type( &type, fields, 6 );
-
-    /* Mark cached_hash @transient. */
-    const ref_field_t* hash_field = ref_find_field( tid, "cached_hash" );
-    assert( hash_field );
-    {
-        uint16_t    fid = ( uint16_t )( hash_field - ref_get_field( 0 ) );
-        ref_attrib_t a   = { 0 };
-        a.name_id       = test_intern( "transient" );
-        a.type          = REF_ATTR_BOOL;
-        a.value.u32     = 1;
-        ref_field_add_attr( fid, &a );
-    }
 
     ref_finalize_frame( game );
 
@@ -1827,20 +1818,17 @@ test_attrs_full( void )
 /*==============================================================================================
     Field-flags test
 
-      One field per REF_FF_* bit, plus a combo field (EDITOR|READONLY) and a zero-flags field.
+      One field per REF_FF_* bit, plus a combo field (HIDDEN|READONLY) and a zero-flags field.
       After finalize every field->flags must equal the value set at registration time.
 ==============================================================================================*/
 
 typedef struct ref_test_ff_s
 {
     int32_t a_transient;
-    int32_t a_editor;
     int32_t a_readonly;
     int32_t a_hidden;
     int32_t a_network;
-    int32_t a_deprecated;
-    int32_t a_required;
-    int32_t a_combo;   /* REF_FF_EDITOR | REF_FF_READONLY */
+    int32_t a_combo;   /* REF_FF_HIDDEN | REF_FF_READONLY */
     int32_t a_none;
 
 } ref_test_ff_t;
@@ -1863,17 +1851,14 @@ test_field_flags_full( void )
     const uint32_t h_i32 = ref_hash_str( "int32_t" );
 
     static const struct { const char* name; size_t offset; uint32_t flags; } SPEC[] = {
-        { "a_transient",  REF_OFFSETOF( ref_test_ff_t, a_transient  ), REF_FF_TRANSIENT                    },
-        { "a_editor",     REF_OFFSETOF( ref_test_ff_t, a_editor     ), REF_FF_EDITOR                       },
-        { "a_readonly",   REF_OFFSETOF( ref_test_ff_t, a_readonly   ), REF_FF_READONLY                     },
-        { "a_hidden",     REF_OFFSETOF( ref_test_ff_t, a_hidden     ), REF_FF_HIDDEN                       },
-        { "a_network",    REF_OFFSETOF( ref_test_ff_t, a_network    ), REF_FF_NETWORK                      },
-        { "a_deprecated", REF_OFFSETOF( ref_test_ff_t, a_deprecated ), REF_FF_DEPRECATED                   },
-        { "a_required",   REF_OFFSETOF( ref_test_ff_t, a_required   ), REF_FF_REQUIRED                     },
-        { "a_combo",      REF_OFFSETOF( ref_test_ff_t, a_combo      ), REF_FF_EDITOR | REF_FF_READONLY      },
-        { "a_none",       REF_OFFSETOF( ref_test_ff_t, a_none       ), 0                                   },
+        { "a_transient",  REF_OFFSETOF( ref_test_ff_t, a_transient  ), REF_FF_TRANSIENT                },
+        { "a_readonly",   REF_OFFSETOF( ref_test_ff_t, a_readonly   ), REF_FF_READONLY                 },
+        { "a_hidden",     REF_OFFSETOF( ref_test_ff_t, a_hidden     ), REF_FF_HIDDEN                   },
+        { "a_network",    REF_OFFSETOF( ref_test_ff_t, a_network    ), REF_FF_NETWORK                  },
+        { "a_combo",      REF_OFFSETOF( ref_test_ff_t, a_combo      ), REF_FF_HIDDEN | REF_FF_READONLY },
+        { "a_none",       REF_OFFSETOF( ref_test_ff_t, a_none       ), 0                              },
     };
-    enum { NFIELDS = 9 };
+    enum { NFIELDS = 6 };
 
     ref_field_t fields[ NFIELDS ];
     memset( fields, 0, sizeof( fields ) );
@@ -1909,7 +1894,7 @@ test_field_flags_full( void )
 /*==============================================================================================
     Type-flags test
 
-      One type per REF_TF_* bit, plus a type with all four bits set and a zero-flags type.
+      One type per REF_TF_* bit, plus a type with both bits set and a zero-flags type.
       After finalize every ref_type_t.flags must equal the value set at registration time.
       All types are minimal stubs (one int32_t field) -- the content doesn't matter here.
 ==============================================================================================*/
@@ -1925,14 +1910,12 @@ test_type_flags_full( void )
     uint16_t game = ref_push_frame( "game" );
 
     static const struct { const char* name; uint8_t flags; } SPEC[] = {
-        { "tf_abstract",   REF_TF_ABSTRACT                                          },
-        { "tf_serialize",  REF_TF_SERIALIZE                                         },
-        { "tf_editor",     REF_TF_EDITOR                                            },
-        { "tf_deprecated", REF_TF_DEPRECATED                                        },
-        { "tf_all",        REF_TF_ABSTRACT | REF_TF_SERIALIZE | REF_TF_EDITOR | REF_TF_DEPRECATED },
-        { "tf_none",       0                                                        },
+        { "tf_serialize",  REF_TF_SERIALIZE                 },
+        { "tf_editor",     REF_TF_EDITOR                    },
+        { "tf_all",        REF_TF_SERIALIZE | REF_TF_EDITOR },
+        { "tf_none",       0                                },
     };
-    enum { NTYPES = 6 };
+    enum { NTYPES = 4 };
 
     const uint32_t h_i32 = ref_hash_str( "int32_t" );
 
@@ -2085,6 +2068,229 @@ test_union( void )
 }
 
 /*==============================================================================================
+    Tagged-union discriminant test
+
+      Reflect a tagged union:
+          struct shape_t {
+              int32_t kind;                 // discriminant: 0 = circle, 1 = seg
+              union { circle_t circle; seg_t seg; } data;   // @union_tag("kind")
+          };
+      circle_t has no pointers; seg_t holds two vec3_t* pointers.
+
+      The union 'data' field carries @union_tag("kind"); each member carries @case(N).
+      ref_walk_refs must visit ONLY the active member's pointer slots:
+        - kind = seg (1):    2 visits (seg.a, seg.b)
+        - kind = circle (0): 0 visits (seg's overlapping pointers must NOT be touched)
+==============================================================================================*/
+
+typedef struct ref_test_circle_s
+{
+    float radius;
+} ref_test_circle_t;
+
+typedef struct ref_test_seg_s
+{
+    ref_test_vec3_t* a;
+    ref_test_vec3_t* b;
+} ref_test_seg_t;
+
+typedef union ref_test_shape_data_u
+{
+    ref_test_circle_t circle;
+    ref_test_seg_t    seg;
+} ref_test_shape_data_t;
+
+typedef struct ref_test_shape_s
+{
+    int32_t               kind;
+    ref_test_shape_data_t data;
+} ref_test_shape_t;
+
+enum { REF_TEST_SHAPE_CIRCLE = 0, REF_TEST_SHAPE_SEG = 1 };
+
+typedef struct { int count; } ref_test_count_ctx_t;
+
+static void
+ref_test_count_visitor( void** slot, uint16_t pointee_id, const ref_field_t* f, void* user )
+{
+    (void)slot; (void)pointee_id; (void)f;
+    ( (ref_test_count_ctx_t*)user )->count++;
+}
+
+static uint16_t
+ref_test_field_id( uint16_t type_id, const char* name )
+{
+    /* Bridge a field pointer back to its id for the *_add_attr calls. */
+    const ref_field_t* f = ref_find_field( type_id, name );
+    assert( f );
+    return (uint16_t)( f - ref_get_field( 0 ) );
+}
+
+static void
+test_union_tagged( void )
+{
+    printf( "\n=== ref: tagged union discriminant ===\n" );
+
+    ref_init();
+    uint16_t game = ref_push_frame( "game" );
+
+    ref_test_register_vec3();
+
+    const uint32_t h_vec3 = ref_hash_str( "vec3_t" );
+    const uint32_t h_f32  = ref_hash_str( "float" );
+    const uint32_t h_i32  = ref_hash_str( "int32_t" );
+
+    /* circle_t { float radius; } */
+    {
+        ref_type_t  type   = { 0 };
+        type.name_id       = test_intern( "circle_t" );
+        type.name_hash     = ref_hash_str( "circle_t" );
+        type.size          = REF_SIZEOF( ref_test_circle_t );
+        type.align         = REF_ALIGNOF( ref_test_circle_t );
+        type.kind          = REF_KIND_STRUCT;
+
+        ref_field_t f      = { 0 };
+        f.name_id          = test_intern( "radius" );
+        f.type_hash        = h_f32;
+        f.offset           = REF_OFFSETOF( ref_test_circle_t, radius );
+        f.size             = REF_FIELD_SIZE( ref_test_circle_t, radius );
+        ref_register_type( &type, &f, 1 );
+    }
+
+    /* seg_t { vec3_t* a; vec3_t* b; } */
+    {
+        ref_type_t  type    = { 0 };
+        type.name_id        = test_intern( "seg_t" );
+        type.name_hash      = ref_hash_str( "seg_t" );
+        type.size           = REF_SIZEOF( ref_test_seg_t );
+        type.align          = REF_ALIGNOF( ref_test_seg_t );
+        type.kind           = REF_KIND_STRUCT;
+
+        ref_field_t fs[ 2 ] = { 0 };
+        fs[ 0 ].name_id     = test_intern( "a" );
+        fs[ 0 ].type_hash   = h_vec3;
+        fs[ 0 ].offset      = REF_OFFSETOF( ref_test_seg_t, a );
+        fs[ 0 ].size        = REF_FIELD_SIZE( ref_test_seg_t, a );
+        fs[ 0 ].mods        = REF_MODS_PTR;
+        fs[ 1 ].name_id     = test_intern( "b" );
+        fs[ 1 ].type_hash   = h_vec3;
+        fs[ 1 ].offset      = REF_OFFSETOF( ref_test_seg_t, b );
+        fs[ 1 ].size        = REF_FIELD_SIZE( ref_test_seg_t, b );
+        fs[ 1 ].mods        = REF_MODS_PTR;
+        ref_register_type( &type, fs, 2 );
+    }
+
+    /* union shape_data { circle_t circle; seg_t seg; } -- members carry @case(N). */
+    uint16_t union_tid;
+    {
+        ref_type_t  type    = { 0 };
+        type.name_id        = test_intern( "shape_data_u" );
+        type.name_hash      = ref_hash_str( "shape_data_u" );
+        type.size           = REF_SIZEOF( ref_test_shape_data_t );
+        type.align          = REF_ALIGNOF( ref_test_shape_data_t );
+        type.kind           = REF_KIND_UNION;
+
+        ref_field_t fs[ 2 ] = { 0 };
+        fs[ 0 ].name_id     = test_intern( "circle" );
+        fs[ 0 ].type_hash   = ref_hash_str( "circle_t" );
+        fs[ 0 ].offset      = REF_OFFSETOF( ref_test_shape_data_t, circle );
+        fs[ 0 ].size        = REF_FIELD_SIZE( ref_test_shape_data_t, circle );
+        fs[ 1 ].name_id     = test_intern( "seg" );
+        fs[ 1 ].type_hash   = ref_hash_str( "seg_t" );
+        fs[ 1 ].offset      = REF_OFFSETOF( ref_test_shape_data_t, seg );
+        fs[ 1 ].size        = REF_FIELD_SIZE( ref_test_shape_data_t, seg );
+        union_tid           = ref_register_type( &type, fs, 2 );
+
+        /* @case(0) on circle, @case(1) on seg -- one attr per field, kept contiguous. */
+        ref_attrib_t c   = { 0 };
+        c.name_id        = test_intern( REF_ANAME_CASE );
+        c.type           = REF_ATTR_INT;
+        c.flags          = REF_AF_CASE;
+        c.value.i32      = REF_TEST_SHAPE_CIRCLE;
+        ref_field_add_attr( ref_test_field_id( union_tid, "circle" ), &c );
+        c.value.i32      = REF_TEST_SHAPE_SEG;
+        ref_field_add_attr( ref_test_field_id( union_tid, "seg" ), &c );
+    }
+
+    /* shape_t { int32_t kind; shape_data_u data; } -- data carries @union_tag("kind"). */
+    uint16_t shape_tid;
+    {
+        ref_type_t  type    = { 0 };
+        type.name_id        = test_intern( "shape_t" );
+        type.name_hash      = ref_hash_str( "shape_t" );
+        type.size           = REF_SIZEOF( ref_test_shape_t );
+        type.align          = REF_ALIGNOF( ref_test_shape_t );
+        type.kind           = REF_KIND_STRUCT;
+
+        ref_field_t fs[ 2 ] = { 0 };
+        fs[ 0 ].name_id     = test_intern( "kind" );
+        fs[ 0 ].type_hash   = h_i32;
+        fs[ 0 ].offset      = REF_OFFSETOF( ref_test_shape_t, kind );
+        fs[ 0 ].size        = REF_FIELD_SIZE( ref_test_shape_t, kind );
+        fs[ 1 ].name_id     = test_intern( "data" );
+        fs[ 1 ].type_hash   = ref_hash_str( "shape_data_u" );
+        fs[ 1 ].offset      = REF_OFFSETOF( ref_test_shape_t, data );
+        fs[ 1 ].size        = REF_FIELD_SIZE( ref_test_shape_t, data );
+        shape_tid           = ref_register_type( &type, fs, 2 );
+
+        ref_attrib_t u   = { 0 };
+        u.name_id        = test_intern( REF_ANAME_UNION_TAG );
+        u.type           = REF_ATTR_STRING;
+        u.flags          = REF_AF_UNION_TAG;
+        u.value.str      = test_intern( "kind" );
+        ref_field_add_attr( ref_test_field_id( shape_tid, "data" ), &u );
+    }
+
+    ref_finalize_frame( game );
+
+    ref_test_vec3_t va = { 1, 2, 3 };
+    ref_test_vec3_t vb = { 4, 5, 6 };
+
+    bool all_ok = true;
+
+    /* Active member = seg: both seg pointers must be visited. */
+    {
+        ref_test_shape_t s = { 0 };
+        s.kind            = REF_TEST_SHAPE_SEG;
+        s.data.seg.a      = &va;
+        s.data.seg.b      = &vb;
+
+        ref_test_count_ctx_t ctx = { 0 };
+        ref_walk_refs( &s, shape_tid, ref_test_count_visitor, &ctx );
+        bool ok = ( ctx.count == 2 );
+        printf( "  [%s] kind=seg    -> %d pointer visits (expect 2)\n", ok ? "ok  " : "FAIL", ctx.count );
+        if ( !ok ) all_ok = false;
+    }
+
+    /* Active member = circle: no pointers; seg's overlapping slots must NOT be visited. */
+    {
+        ref_test_shape_t s = { 0 };
+        s.kind            = REF_TEST_SHAPE_CIRCLE;
+        s.data.circle.radius = 2.5f;
+
+        ref_test_count_ctx_t ctx = { 0 };
+        ref_walk_refs( &s, shape_tid, ref_test_count_visitor, &ctx );
+        bool ok = ( ctx.count == 0 );
+        printf( "  [%s] kind=circle -> %d pointer visits (expect 0)\n", ok ? "ok  " : "FAIL", ctx.count );
+        if ( !ok ) all_ok = false;
+    }
+
+    /* Direct case lookup. */
+    {
+        const ref_field_t* m = ref_union_case_field( union_tid, REF_TEST_SHAPE_SEG );
+        bool ok = m && strcmp( ref_cstr( m->name_id ), "seg" ) == 0;
+        printf( "  [%s] union_case_field(1) -> %s (expect seg)\n", ok ? "ok  " : "FAIL",
+                m ? ref_cstr( m->name_id ) : "<none>" );
+        if ( !ok ) all_ok = false;
+    }
+
+    assert( all_ok );
+
+    ref_pop_frame( game );
+    ref_exit();
+}
+
+/*==============================================================================================
     Entry
 ==============================================================================================*/
 
@@ -2109,6 +2315,7 @@ ref_run_tests( void )
         test_prim_fields();
         test_mods();
         test_union();
+        test_union_tagged();
         test_attrs_full();
         test_field_flags_full();
         test_type_flags_full();

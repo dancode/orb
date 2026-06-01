@@ -77,7 +77,7 @@ typedef struct ex_entity_s
     REF_PROP()                                ex_caps_t      caps;
     REF_PROP()                                char           name[ 32 ];
     REF_PROP()                                ex_transform_t transform;
-    REF_PROP( range = 0.0, 100.0 )            float          health;
+    REF_PROP( range = 0.0, 100.0, step = 0.5, category = "Stats" ) float health;
     REF_PROP( transient )                     void*          scratch;
     REF_PROP()                                ex_vec3_t*     velocity;
     REF_PROP()                                const char*    label;
@@ -130,9 +130,11 @@ typedef struct ex_move_payload_s
 REF_UNION( tooltip = "Per-event data; active member is selected by ex_event_t.kind." )
 typedef union ex_event_payload_u
 {
-    REF_PROP() ex_spawn_payload_t  spawn;
-    REF_PROP() ex_damage_payload_t damage;
-    REF_PROP() ex_move_payload_t   move;
+    /* @case values mirror ex_event_kind_t; numeric literals because the attr parser treats a
+       bare identifier as a tag, not an integer. spawn=0, damage=1, move=2. */
+    REF_PROP( case = 0 ) ex_spawn_payload_t  spawn;
+    REF_PROP( case = 1 ) ex_damage_payload_t damage;
+    REF_PROP( case = 2 ) ex_move_payload_t   move;
 
 } ex_event_payload_t;
 
@@ -141,7 +143,7 @@ typedef struct ex_event_s
 {
     REF_PROP()                                uint32_t           id;
     REF_PROP()                                ex_event_kind_t    kind;
-    REF_PROP()                                ex_event_payload_t payload;
+    REF_PROP( union_tag = "kind" )            ex_event_payload_t payload;
 
 } ex_event_t;
 

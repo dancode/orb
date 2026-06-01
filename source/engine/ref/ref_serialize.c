@@ -44,10 +44,11 @@ static uint32_t ref_read_u32_le( const uint8_t* src )
          meaningless after a reload or between sessions; leaving them would make saves
          non-reproducible and would crash on naive memcpy-back.
 
-      2. Transient field zeroing -- fields tagged with the @transient attribute represent
-         cached or computed state (e.g. a pre-built acceleration structure, a render handle)
-         that must be rebuilt at runtime. They are always zeroed on save so that loaded
-         instances start in a clean "not yet initialized" state.
+      2. Transient field zeroing -- fields tagged REF_FF_TRANSIENT represent cached or computed
+         state (e.g. a pre-built acceleration structure, a render handle) that must be rebuilt
+         at runtime. They are always zeroed on save so that loaded instances start in a clean
+         "not yet initialized" state. The flag is the single source of truth; @transient in an
+         annotated header compiles to this flag, so there is no per-field string lookup here.
 ==============================================================================================*/
 
 static void
@@ -68,15 +69,17 @@ ref_serialize_zero_transient( uint8_t* body, uint16_t type_id )
     {
         const ref_field_t* f = &g_ref.fields[ t->field_index + i ];
 
-        /* Zero any field annotated @transient -- it holds runtime-only computed state. */
-        if ( ref_field_get_attr( (uint16_t)( t->field_index + i ), "transient" ) )
+        /* Zero any field flagged REF_FF_TRANSIENT -- it holds runtime-only computed state. */
+        if ( f->flags & REF_FF_TRANSIENT )
         {
             memset( body + f->offset, 0, f->size );
             continue;
         }
 
-        /* Recurse into nested aggregates to catch @transient fields inside them. */
-        if ( f->mods == REF_MODS_VALUE && ( f->kind == REF_KIND_STRUCT || f->kind == REF_KIND_UNION ) )
+        /* Recurse into nested structs to catch transient fields inside them. Unions are not
+           recursed: their members overlap, so blind recursion would zero the wrong storage.
+           Discriminant-aware union descent belongs with the field-wise serializer (later). */
+        if ( f->mods == REF_MODS_VALUE && f->kind == REF_KIND_STRUCT )
             ref_serialize_zero_transient( body + f->offset, f->type_id );
     }
 }

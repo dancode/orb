@@ -112,6 +112,15 @@ uint16_t            ref_bitset_each_set_flag ( uint16_t type_id, int32_t value, 
 size_t              ref_bitset_describe      ( uint16_t type_id, int32_t value, char* buf, size_t buf_size );
 
 /*==============================================================================================
+    Union Discriminant Accessor  (type must have kind == REF_KIND_UNION)
+
+    Map a discriminant value to the union member it selects. Members declare their tag value
+    with the @case attribute. Returns NULL if not a union or no member matches the value.
+==============================================================================================*/
+
+const ref_field_t*  ref_union_case_field     ( uint16_t union_type_id, int32_t case_value );
+
+/*==============================================================================================
     Function Signature Accessors  (type must have kind == REF_KIND_FUNCTION)
 ==============================================================================================*/
 

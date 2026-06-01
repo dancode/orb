@@ -115,7 +115,61 @@ attr_flag_macro( const char* name )
     if ( strcmp( name, "clamp_ui" )     == 0 ) return "REF_AF_CLAMP_UI";
     if ( strcmp( name, "display_name" ) == 0 ) return "REF_AF_DISPLAY_NAME";
     if ( strcmp( name, "tooltip" )      == 0 ) return "REF_AF_TOOLTIP";
+    if ( strcmp( name, "union_tag" )    == 0 ) return "REF_AF_UNION_TAG";
+    if ( strcmp( name, "case" )         == 0 ) return "REF_AF_CASE";
+    if ( strcmp( name, "category" )     == 0 ) return "REF_AF_CATEGORY";
+    if ( strcmp( name, "group" )        == 0 ) return "REF_AF_CATEGORY";    /* @group == @category */
+    if ( strcmp( name, "step" )         == 0 ) return "REF_AF_STEP";
+    if ( strcmp( name, "speed" )        == 0 ) return "REF_AF_STEP";        /* @speed == @step */
     return NULL;
+}
+
+/* Map a bare-tag annotation to its REF_FF_* field-flag macro, or NULL if it is a data-carrying
+   attribute rather than a field flag. These tags are emitted as bits in ref_field_t.flags
+   instead of as attribute entries -- @transient is the single source the serializer reads. */
+static const char*
+field_flag_macro( const char* name )
+{
+    if ( strcmp( name, "transient" ) == 0 ) return "REF_FF_TRANSIENT";
+    if ( strcmp( name, "readonly" )  == 0 ) return "REF_FF_READONLY";
+    if ( strcmp( name, "hidden" )    == 0 ) return "REF_FF_HIDDEN";
+    if ( strcmp( name, "network" )   == 0 ) return "REF_FF_NETWORK";
+    return NULL;
+}
+
+/* True if this annotation is a bare-tag field flag (emitted into ref_field_t.flags) rather
+   than a data-carrying attribute (emitted into the attrs pool). */
+static int
+attr_is_field_flag( const attr_t* a )
+{
+    return a->kind == RT_ATTR_TAG && field_flag_macro( a->name ) != NULL;
+}
+
+/* Build "REF_FF_A | REF_FF_B" from a field's bare-tag flag annotations; empty if none. */
+static void
+build_field_flags( const decl_field_t* f, char* out, int max )
+{
+    int n = 0;
+    out[ 0 ] = '\0';
+    for ( int i = 0; i < f->attr_count; i++ )
+    {
+        if ( !attr_is_field_flag( &f->attrs[ i ] ) )
+            continue;
+        if ( n++ )
+            str_cat( out, " | ", max );
+        str_cat( out, field_flag_macro( f->attrs[ i ].name ), max );
+    }
+}
+
+/* Count a field's data-carrying attributes (everything that is not a field-flag tag). */
+static int
+field_attr_count( const decl_field_t* f )
+{
+    int c = 0;
+    for ( int i = 0; i < f->attr_count; i++ )
+        if ( !attr_is_field_flag( &f->attrs[ i ] ) )
+            c++;
+    return c;
 }
 
 /* Emit one ref_attrib_t inline and call the given add function. A multi-value attribute
@@ -188,7 +242,7 @@ emit_struct_block( FILE* fc, const decl_type_t* t, const parse_data_t* data )
 {
     int has_field_attrs = 0;
     for ( int fi = 0; fi < t->field_count; fi++ )
-        if ( t->fields[ fi ].attr_count > 0 ) { has_field_attrs = 1; break; }
+        if ( field_attr_count( &t->fields[ fi ] ) > 0 ) { has_field_attrs = 1; break; }
 
     int needs_tid = ( t->attr_count > 0 || has_field_attrs );
 
@@ -202,6 +256,10 @@ emit_struct_block( FILE* fc, const decl_type_t* t, const parse_data_t* data )
         {
             const decl_field_t*  f    = &t->fields[ fi ];
             const decl_type_t*   fsig = find_func_type( data, f->base_type );
+
+            /* Bare-tag flags (@transient, @hidden, ...) become bits in ref_field_t.flags. */
+            char flags[ 256 ];
+            build_field_flags( f, flags, sizeof flags );
 
             fprintf( fc, "            { .name_id = api->intern( \"%s\" ),\n", f->name );
 
@@ -217,7 +275,10 @@ emit_struct_block( FILE* fc, const decl_type_t* t, const parse_data_t* data )
                 fprintf( fc, "              .offset = REF_OFFSETOF( %s, %s ), "
                              ".size = REF_FIELD_SIZE( %s, %s ),\n",
                          t->name, f->name, t->name, f->name );
-                fprintf( fc, "              .mods = REF_MODS_FUNCTION, .aux = %s },\n", var );
+                fprintf( fc, "              .mods = REF_MODS_FUNCTION, .aux = %s", var );
+                if ( flags[ 0 ] )
+                    fprintf( fc, ", .flags = %s", flags );
+                fprintf( fc, " },\n" );
             }
             else
             {
@@ -236,6 +297,8 @@ emit_struct_block( FILE* fc, const decl_type_t* t, const parse_data_t* data )
                 }
                 if ( f->array_count )
                     fprintf( fc, ",\n              .aux = %u", (unsigned)f->array_count );
+                if ( flags[ 0 ] )
+                    fprintf( fc, ",\n              .flags = %s", flags );
                 fprintf( fc, " },\n" );
             }
         }
@@ -255,11 +318,15 @@ emit_struct_block( FILE* fc, const decl_type_t* t, const parse_data_t* data )
         for ( int fi = 0; fi < t->field_count; fi++ )
         {
             const decl_field_t* f = &t->fields[ fi ];
-            if ( f->attr_count == 0 )
+            if ( field_attr_count( f ) == 0 )
                 continue;
             char fid_expr[ 64 ];
             snprintf( fid_expr, sizeof fid_expr, "_rt->field_index + %d", fi );
-            emit_attr_block( fc, f->attrs, f->attr_count, "ref_field_add_attr", fid_expr, "          " );
+
+            /* Emit only data-carrying attributes; bare-tag flags were folded into .flags above. */
+            for ( int ai = 0; ai < f->attr_count; ai++ )
+                if ( !attr_is_field_flag( &f->attrs[ ai ] ) )
+                    emit_attr_call( fc, &f->attrs[ ai ], "ref_field_add_attr", fid_expr, "          " );
         }
         fprintf( fc, "        }\n" );
     }
