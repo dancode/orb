@@ -275,7 +275,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         // build_run_cmd routes to the per-target log in a parallel worker automatically.
         const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
         char refl_cmd[ PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe %s %s %s%s",
+        snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe -src %s -out %s -name %s%s",
                   refl_tool->name, target->root_dir, gen_dir, rname, silent );
         if ( build_run_cmd( refl_cmd ) != 0 )
         {

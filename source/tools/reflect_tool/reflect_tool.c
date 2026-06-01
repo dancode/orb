@@ -98,22 +98,26 @@ main( int argc, char** argv )
     if ( show_help )
     {
         printf( "usage: reflect_tool -src <source_dir> [-out <output_dir>] [-name <module_name>] [-silent]\n" );
-        printf( "  -src   directory to scan for REF_STRUCT / REF_ENUM / REF_BITSET annotations\n" );
-        printf( "  -out   output directory for generated files (default: build/generated)\n" );
-        printf( "  -name  base name for generated files (default: last component of -src)\n" );
-        printf( "  -silent  suppress summary output\n" );
+        printf( "  -src    directory to scan for REF_STRUCT / REF_ENUM / REF_BITSET annotations\n" );
+        printf( "  -out    output directory for generated files (default: build/generated)\n" );
+        printf( "  -name   base name for generated files (default: last component of -src)\n" );
+        printf( "  -silent suppress summary output\n" );
         return 0;
     }
 
     /* Second pass: positional fallback when no named flags were used.
        Positional order: <source_dir> [<output_dir> [<module_name>]].
-       Tokens starting with '-' are skipped (they are flags consumed above). */
+       Tokens starting with '-' are flags; skip them and their value (if any). */
     if ( !source_dir )
     {
         int pos = 0;
         for ( int i = 1; i < argc; ++i )
         {
-            if ( argv[ i ][ 0 ] == '-' ) { ++i; continue; } /* skip flag + its value */
+            if ( argv[ i ][ 0 ] == '-' )
+            {
+                if ( arg_has_value( argc, argv, i ) ) ++i; /* skip value-taking flag's value */
+                continue;
+            }
             if      ( pos == 0 ) { source_dir  = argv[ i ]; pos++; }
             else if ( pos == 1 ) { output_dir  = argv[ i ]; pos++; }
             else if ( pos == 2 ) { module_name = argv[ i ]; pos++; }

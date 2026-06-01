@@ -209,7 +209,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
     write_msbuild_clcompile_group( f, CONFIG_RELEASE, target );
 
     // Reflection codegen pre-build event. Mirrors step 6 in build_tool_09_exec.c:
-    //   bin\reflect_tool.exe <root_dir> <gen_dir> <reflect_name>
+    //   bin\reflect_tool.exe -src <root_dir> -out <gen_dir> -name <reflect_name>
     // Two-step command:
     //   1. build_tool.exe builds reflect_tool if missing or stale (incremental,
     //      nearly instant when already up to date). This handles fresh checkouts
@@ -234,7 +234,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
         fprintf( f, "      <Command>" );
         fprintf( f, "cd /d \"$(ProjectDir)%s\"", s_ctx.cd_root );
         fprintf( f, " &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target reflect_tool" );
-        fprintf( f, " &amp;&amp; bin\\reflect_tool.exe %s %s\\%s %s", root_dir_norm, g_build_dir, g_gen_dir, rname );
+        fprintf( f, " &amp;&amp; bin\\reflect_tool.exe -src %s -out %s\\%s -name %s", root_dir_norm, g_build_dir, g_gen_dir, rname );
         fprintf( f, "</Command>\n" );
         fprintf( f, "    </PreBuildEvent>\n" );
         fprintf( f, "  </ItemDefinitionGroup>\n" );
