@@ -68,6 +68,8 @@ typedef struct app_api_s
 
 } app_api_t;
 
+/*============================================================================================*/
+
 #if defined( BUILD_STATIC ) || defined( APP_STATIC )
     MOD_GATEWAY_STATIC( app_api_t, app )
 #else

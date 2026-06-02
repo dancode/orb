@@ -12,10 +12,11 @@
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
+#include "engine/ref/ref_host.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
+#include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
-
 
 // include path: %VULKAN_SDK%\Include    
 // library path: %VULKAN_SDK%\Lib
@@ -32,9 +33,11 @@ main( int argc, char** argv )
 
     /* Load modules. */
     mod_system_init();
-    mod_static_load( "sys", sys_get_mod_desc() );
-    mod_static_load( "app", app_get_mod_desc() );
-    mod_static_load( "rhi", rhi_get_mod_desc() );
+    mod_static( sys );
+    mod_static( ref );
+    mod_static( app );
+    mod_static( core );
+    mod_static( rhi );
 
     if ( !mod_init_all() )
     {
@@ -42,6 +45,9 @@ main( int argc, char** argv )
         mod_system_exit();
         return 1;
     }
+
+    mod_set_log_fn( core_log_fn );
+    app_set_log_fn( core_log_fn );
 
     /* Open window. */
     win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );

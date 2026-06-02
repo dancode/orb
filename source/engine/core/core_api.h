@@ -36,27 +36,34 @@ typedef struct core_debug_api_s
 typedef struct core_api_s
 {
     /* debug api */
+
     core_debug_api_t* debug_api;    // for natvis and debugging
 
     /* assertions */
+
     bool        ( *assert_report )      ( const char* cond, const char* msg, const char* func, const char* file, int line );
+
     /* logging */
+
     void        ( *log_write )           ( log_level_t level, const char* channel, const char* fmt, ... );
     void        ( *log_set_min_level )   ( log_level_t level );
     void        ( *log_add_sink )        ( log_sink_fn fn, void* userdata );
     void        ( *log_remove_sink )     ( log_sink_fn fn );
 
     /* ring buffer access for editor/tools */
+
     const log_entry_t* ( *log_ring_entries )  ( void );
     u32         ( *log_ring_capacity )  ( void );
     u32         ( *log_ring_seq )       ( void );
 
     /* allocator */
+
     void*       ( *alloc )              ( size_t size );
     void*       ( *realloc )            ( void* ptr, size_t size );
     void        ( *free )               ( void* ptr );
 
     /* sid */
+
     sid_t       ( *sid_intern )         ( const char* str, int32_t len );
     sid_t       ( *sid_intern_cstr )    ( const char* str );
     sid_t       ( *sid_find_cstr )      ( const char* str );
@@ -110,9 +117,14 @@ MOD_GATEWAY_DYNAMIC( core_api_t, core )
 #endif
 
 /*============================================================================================*/
+/* ASSERT handler macros - ORB_ASSERT calls cores assert_report function pointer */
 
 #include "engine/core/debug/assert.h"
-#include "engine/core/core_api_log.h"
+
+/*============================================================================================*/
+/* LOG convenience macros - LOG_ERROR( fmt, ... ), etc.. */
+
+#include "engine/core/core_api_log.h"      
 
 /*============================================================================================*/
 /* SID convenience macros — require core() to be live at call time */

@@ -10,14 +10,12 @@
         1. Standard headers
         2. orb.h
         3. Platform headers           (windows.h, gated by OS_WINDOWS)
-        4. mod_export.h               (mod_desc_t, get_api_fn)
-        5. rhi.h                      (handle types, API struct, gateway)
-        6. vk_state.c                 (the singleton — everything else uses it)
-        7. vk_*.c                     (subsystem implementations)
-        8. rhi_api.c                  (assigns the static functions into
-                                       g_rhi_api_struct and provides the
-                                       lifecycle orchestrator + module descriptor)
-
+        4. rhi.h                      (handle types, API struct, gateway)
+        5. vk_state.c                 (the singleton — everything else uses it)
+        6. vk_*.c                     (subsystem implementations)
+        7. vk_init.c                  (orchestrates init/shutdown/resize across subsystems)
+        8. rhi_api.c                  (assigns functions into g_rhi_api_struct,
+                                       provides the module descriptor)
     Vulkan headers
     --------------
     When implementation begins, <vulkan/vulkan.h> and the platform surface header
@@ -35,51 +33,66 @@
 
 #include "orb.h"
 
+#define LOG_CH "vk" /* called before core_api_log.h */
+
+#include "engine/sys/sys_host.h"
+#include "engine/core/core_host.h"
+
 /*==============================================================================================
     Platform headers
 ==============================================================================================*/
 
 #if OS_WINDOWS
 
-#    define NOMINMAX
-#    define WIN32_LEAN_AND_MEAN
-#    define WIN32_EXTRA_LEAN
-#    define VC_EXTRALEAN
-
-#    include <windows.h>
+    #define NOMINMAX
+    #define WIN32_LEAN_AND_MEAN
+    #define WIN32_EXTRA_LEAN
+    #define VC_EXTRALEAN
+    #include <windows.h>
 
 #else
 
-#    error "rhi: platform not implemented"
+    #error "rhi: platform not implemented"
 
 #endif
-
-/* TODO: when Vulkan is wired up, add here:
-       #include <vulkan/vulkan.h>
-       #if OS_WINDOWS
-       #    include <vulkan/vulkan_win32.h>
-       #endif
-*/
 
 /*==============================================================================================
     Engine headers
 ==============================================================================================*/
 
-#include "engine/mod/mod_export.h"
-#include "runtime_service/rhi/rhi_api.h"
+#include "runtime_service/rhi/rhi_api.h" /* rhi API struct -- non-vk function names */
+
+/*==============================================================================================
+    Vulkan platform headers
+==============================================================================================*/
+
+#if OS_WINDOWS
+
+    #define VK_USE_PLATFORM_WIN32_KHR    // exposes platform functions in vulkan.h
+    #define VK_NO_PROTOTYPES             // we dynamically link our own api function pointers.
+
+    #include <vulkan/vulkan.h>
+    #include <vulkan/vulkan_win32.h>
+    #include <vulkan/vk_enum_string_helper.h>
+
+#endif
 
 /*==============================================================================================
     Vulkan backend  (vk_state.c FIRST so g_vk is visible to everything below)
 ==============================================================================================*/
 
-#include "runtime_service/rhi/vk.c"
-#include "runtime_service/rhi/vk_state.c"
+#include "runtime_service/rhi/vk.c"             /* nothing currently */
+#include "runtime_service/rhi/vk_state.c"       /* the singleton Vulkan state struct */
+#include "runtime_service/rhi/vk_library.c"     /* Vulkan function pointer loading */
+
 #include "runtime_service/rhi/vk_instance.c"
 #include "runtime_service/rhi/vk_swapchain.c"
 #include "runtime_service/rhi/vk_device.c"
 #include "runtime_service/rhi/vk_sync.c"
 #include "runtime_service/rhi/vk_command.c"
 #include "runtime_service/rhi/vk_frame.c"
+
+#include "runtime_service/rhi/vk_init.c"        /* setup vulkan RHI */
 
 /* Future files (added as subsystems come online):
        #include "runtime_service/rhi/vk_memory.c"
@@ -90,12 +103,14 @@
        #include "runtime_service/rhi/vk_descriptor.c"
 */
 
+
 /*==============================================================================================
     API wiring + lifecycle orchestrator  (must be last)
 ==============================================================================================*/
 
 #ifndef RHI_API_C_PRELUDE
-#include "runtime_service/rhi/rhi_api.c"
+    #include "runtime_service/rhi/rhi_api.c"
 #endif
+
 
 /*============================================================================================*/

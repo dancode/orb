@@ -30,6 +30,8 @@ typedef struct rhi_api_s
 
 } rhi_api_t;
 
+/*============================================================================================*/
+
 #if defined( BUILD_STATIC ) || defined( RHI_STATIC )
 MOD_GATEWAY_STATIC( rhi_api_t, rhi )
 #else

@@ -14,10 +14,6 @@
 
 ==============================================================================================*/
 
-/* windows.h is already included by rhi.c before this file. */
-/* TODO: when implementing, also include <vulkan/vulkan.h> and the platform
-         surface extension header (e.g. <vulkan/vulkan_win32.h>) above this. */
-
 /*==============================================================================================
     State
 ==============================================================================================*/
@@ -26,43 +22,47 @@
 
 typedef struct vk_state_s
 {
-    bool  initialized;        /* set true at the end of a successful rhi_init() */
-    void* native_window;      /* HWND on Windows; cast at use sites */
+    bool  initialized;   /* set true at the end of a successful rhi_init() */
+    void* native_window; /* HWND on Windows; cast at use sites */
 
     i32   width;
     i32   height;
-    bool  resize_pending;     /* set when WM_SIZE causes a deferred swap-chain rebuild */
+    bool  resize_pending; /* set when WM_SIZE causes a deferred swap-chain rebuild */
 
-    u32   current_frame;      /* index into per-frame arrays, 0..VK_MAX_FRAMES_IN_FLIGHT-1 */
+    u32   current_frame; /* index into per-frame arrays, 0..VK_MAX_FRAMES_IN_FLIGHT-1 */
+
+    /* required */
+
+    lib_handle_t dll;    // only if VULKAN_DYNAMIC.
 
     /* TODO (Vulkan implementation) — uncomment as each is wired up:
 
-        VkInstance               instance;
-        VkDebugUtilsMessengerEXT debug_messenger;
+    VkInstance                 instance;
+    VkDebugUtilsMessengerEXT   debug_messenger;
 
-        VkPhysicalDevice         physical_device;
-        VkPhysicalDeviceProperties physical_device_props;
-        u32                      graphics_queue_family;
-        u32                      present_queue_family;
-        VkDevice                 device;
-        VkQueue                  graphics_queue;
-        VkQueue                  present_queue;
+    VkPhysicalDevice           physical_device;
+    VkPhysicalDeviceProperties physical_device_props;
+    u32                        graphics_queue_family;
+    u32                        present_queue_family;
+    VkDevice                   device;
+    VkQueue                    graphics_queue;
+    VkQueue                    present_queue;
 
-        VkSurfaceKHR             surface;
-        VkSurfaceFormatKHR       surface_format;
-        VkPresentModeKHR         present_mode;
-        VkSwapchainKHR           swapchain;
-        u32                      swapchain_image_count;
-        VkImage                  swapchain_images[8];
-        VkImageView              swapchain_image_views[8];
-        VkExtent2D               swapchain_extent;
+    VkSurfaceKHR               surface;
+    VkSurfaceFormatKHR         surface_format;
+    VkPresentModeKHR           present_mode;
+    VkSwapchainKHR             swapchain;
+    u32                        swapchain_image_count;
+    VkImage                    swapchain_images[ 8 ];
+    VkImageView                swapchain_image_views[ 8 ];
+    VkExtent2D                 swapchain_extent;
 
-        VkCommandPool            command_pool;
-        VkCommandBuffer          command_buffers   [VK_MAX_FRAMES_IN_FLIGHT];
+    VkCommandPool              command_pool;
+    VkCommandBuffer            command_buffers[ VK_MAX_FRAMES_IN_FLIGHT ];
 
-        VkSemaphore              image_available_sem[VK_MAX_FRAMES_IN_FLIGHT];
-        VkSemaphore              render_finished_sem[VK_MAX_FRAMES_IN_FLIGHT];
-        VkFence                  in_flight_fence    [VK_MAX_FRAMES_IN_FLIGHT];
+    VkSemaphore                image_available_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkSemaphore                render_finished_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkFence                    in_flight_fence[ VK_MAX_FRAMES_IN_FLIGHT ];
     */
 
 } vk_state_t;
