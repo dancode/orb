@@ -73,7 +73,7 @@
 ==============================================================================================*/
 
 #ifdef BUILD_STATIC
-    #define MOD_HOST_FETCH_API( type, name ) ( 1 )
+    #define MOD_HOST_FETCH_API( name ) ( 1 )
 #else
     #define MOD_HOST_FETCH_API( name ) \
         ( ( g_##name##_api_ptr = ( const name##_api_t* )mod_get_api( #name ) ) != NULL )

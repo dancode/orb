@@ -72,6 +72,7 @@
     Vulkan backend  (vk_state.c FIRST so g_vk is visible to everything below)
 ==============================================================================================*/
 
+#include "runtime_service/rhi/vk.c"
 #include "runtime_service/rhi/vk_state.c"
 #include "runtime_service/rhi/vk_instance.c"
 #include "runtime_service/rhi/vk_swapchain.c"

@@ -2,11 +2,11 @@
 #define EXAMPLE_REFLECT_API_H
 /*==============================================================================================
 
-    runtime_modules/example_reflect/example_reflect_api.h — example_reflect API struct and gateway.
+    sandbox/reflect/example_reflect/example_reflect_api.h — example_reflect API struct and gateway.
 
 ==============================================================================================*/
 
-#include "runtime_modules/example_reflect/example_reflect.h"
+#include "sandbox/reflect/example_reflect/example_reflect.h"
 #include "engine/mod/mod_import.h"
 
 // clang-format off

@@ -10,7 +10,6 @@
 #include <assert.h>
 
 #include "engine/mod/mod_export.h"
-
 #include "engine/ref/ref_host.h"
 #include "engine/ref/ref_import.h"
 
@@ -50,7 +49,8 @@ ref_intern( const char* s )
     /* Bump-allocate the new string; null terminator is included in the copy. */
     if ( g_ref_str_top + len + 1 > REF_STRING_POOL_SIZE )
     {
-        fprintf( stderr, "ref: FATAL string pool overflow (used %u + need %u > limit %d) -- increase REF_STRING_POOL_SIZE in ref.c\n",
+        fprintf( stderr, "ref: FATAL string pool overflow (used %u + need %u > limit %d) " 
+                 "-- increase REF_STRING_POOL_SIZE in ref.c\n",
                  g_ref_str_top, len + 1, REF_STRING_POOL_SIZE );
         assert( 0 && "ref: string pool overflow -- increase REF_STRING_POOL_SIZE in ref.c" );
         return 0;

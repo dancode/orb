@@ -8,7 +8,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod_export.h"
-#include "runtime_modules/example_gen/example_gen.h"
+#include "sandbox/reflect/example_gen/example_gen.h"
 #include "example_gen.generated.h"
 
 #include "engine/core/core_api.h"

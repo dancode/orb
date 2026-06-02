@@ -161,7 +161,7 @@ void                ref_walk                 ( void* instance, uint16_t type_id,
 ==============================================================================================*/
 
 size_t              ref_write                ( const void* instance, uint16_t type_id, uint8_t* buf, size_t cap );
-ref_io_status_t      ref_read                 ( void* instance, uint16_t expected_type_id, const uint8_t* buf, size_t cap, size_t* bytes_read );
+ref_io_status_t     ref_read                 ( void* instance, uint16_t expected_type_id, const uint8_t* buf, size_t cap, size_t* bytes_read );
 uint32_t            ref_peek_type_hash       ( const uint8_t* buf, size_t cap );
 
 /*==============================================================================================

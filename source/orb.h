@@ -137,6 +137,7 @@ typedef ptrdiff_t isize;
     #define ORB_INLINE        __forceinline
     #define ORB_NOINLINE      __declspec( noinline )
     #define ORB_ALIGNAS( n )  __declspec( align( n ) )
+    #define ORB_ALIGNOF( T )  __alignof( T )
     #define ORB_THREAD_LOCAL  __declspec( thread )
     #define ORB_LIKELY( x )   ( x )
     #define ORB_UNLIKELY( x ) ( x )
@@ -145,10 +146,34 @@ typedef ptrdiff_t isize;
     #define ORB_INLINE        inline __attribute__( ( always_inline ) )
     #define ORB_NOINLINE      __attribute__( ( noinline ) )
     #define ORB_ALIGNAS( n )  __attribute__( ( aligned( n ) ) )
+    #define ORB_ALIGNOF( T )  _Alignof( T )
     #define ORB_THREAD_LOCAL  __thread    // C11: _Thread_local
     #define ORB_LIKELY( x )   __builtin_expect( !!( x ), 1 )
     #define ORB_UNLIKELY( x ) __builtin_expect( !!( x ), 0 )
     #define ORB_UNUSED_FN     __attribute__( ( unused ) )
+#endif
+
+#if COMPILER_MSVC
+
+    // __pragma(x) is the MSVC token-based pragma; wrapping it lets macros compose.
+    #define PRAGMA( x )               __pragma( x )
+
+    #define PUSH_WARNINGS PRAGMA( warning( push, 0 ) )
+    #define POP_WARNINGS  PRAGMA( warning( pop ) )
+
+#elif COMPILER_CLANG
+
+    // Clang supports -Weverything to blanket-suppress all diagnostics.
+    #define PUSH_WARNINGS \
+        _Pragma( "clang diagnostic push" ) _Pragma( "clang diagnostic ignored \"-Weverything\"" )
+    #define POP_WARNINGS _Pragma( "clang diagnostic pop" )
+
+#else    /* GCC */
+
+    // GCC has no "suppress everything" diagnostic pragma; push/pop save and restore state.
+    #define PUSH_WARNINGS _Pragma( "GCC diagnostic push" )
+    #define POP_WARNINGS  _Pragma( "GCC diagnostic pop" )
+
 #endif
 
 #define UNUSED( x ) ( void )x
@@ -182,28 +207,30 @@ typedef ptrdiff_t isize;
     #define ORB_ASSERT( cond )        ( ( void )0 )
     #define ORB_ASSERT_MSG( cond, m ) ( ( void )0 )
 #else
-    #define ORB_ASSERT( cond )                                                   \
-        do {                                                                     \
-            if ( ORB_UNLIKELY( !( cond ) ) )                                     \
-            {                                                                    \
-                ORB_REPORT_ASSERT( #cond, "", __func__, __FILE__, __LINE__ );    \
-                ORB_TRAP();                                                      \
-            }                                                                    \
-        }                                                                        \
+    #define ORB_ASSERT( cond )                                                \
+        do                                                                    \
+        {                                                                     \
+            if ( ORB_UNLIKELY( !( cond ) ) )                                  \
+            {                                                                 \
+                ORB_REPORT_ASSERT( #cond, "", __func__, __FILE__, __LINE__ ); \
+                ORB_TRAP();                                                   \
+            }                                                                 \
+        }                                                                     \
         while ( 0 )
 
-    #define ORB_ASSERT_MSG( cond, m )                                            \
-        do {                                                                     \
-            if ( ORB_UNLIKELY( !( cond ) ) )                                     \
-            {                                                                    \
-                ORB_REPORT_ASSERT( #cond, m, __func__, __FILE__, __LINE__ );     \
-                ORB_TRAP();                                                      \
-            }                                                                    \
-        }                                                                        \
+    #define ORB_ASSERT_MSG( cond, m )                                        \
+        do                                                                   \
+        {                                                                    \
+            if ( ORB_UNLIKELY( !( cond ) ) )                                 \
+            {                                                                \
+                ORB_REPORT_ASSERT( #cond, m, __func__, __FILE__, __LINE__ ); \
+                ORB_TRAP();                                                  \
+            }                                                                \
+        }                                                                    \
         while ( 0 )
 #endif
 
-#ifdef __cplusplus // for intellisense (cpp20 in NMake)
+#ifdef __cplusplus    // for intellisense (cpp20 in NMake)
     #define ORB_STATIC_ASSERT( cond, msg ) static_assert( cond, msg )
 #else
     #define ORB_STATIC_ASSERT( cond, msg ) _Static_assert( cond, msg )
@@ -229,11 +256,11 @@ typedef ptrdiff_t isize;
     instead of writing directly to stdout/stderr.
 ==============================================================================================*/
 
-#define ORB_LOG_TRACE  0
-#define ORB_LOG_DEBUG  1
-#define ORB_LOG_INFO   2
-#define ORB_LOG_WARN   3
-#define ORB_LOG_ERROR  4
+#define ORB_LOG_TRACE 0
+#define ORB_LOG_DEBUG 1
+#define ORB_LOG_INFO  2
+#define ORB_LOG_WARN  3
+#define ORB_LOG_ERROR 4
 
 typedef void ( *log_fn_t )( int level, const char* tag, const char* msg );
 

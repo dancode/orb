@@ -7,7 +7,7 @@
 #include "engine/core/core_host.h"
 #include "engine/ref/ref_host.h"
 
-#include "runtime_modules/example_gen/example_gen.h"
+#include "sandbox/reflect/example_gen/example_gen.h"
 
 MOD_USE_CORE;
 MOD_USE_EXAMPLE_GEN;

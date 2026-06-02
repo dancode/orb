@@ -14,7 +14,7 @@
 
 #include "engine/mod/mod_export.h"
 #include "engine/ref/ref_api.h"
-#include "runtime_modules/example_reflect/example_reflect_api.h"
+#include "sandbox/reflect/example_reflect/example_reflect_api.h"
 #include "example_reflect.generated.h"
 
 /*==============================================================================================
@@ -29,7 +29,7 @@
 ==============================================================================================*/
 
 #ifndef EXAMPLE_REFLECT_API_C_PRELUDE
-#include "runtime_modules/example_reflect/example_reflect_api.c"
+#include "sandbox/reflect/example_reflect/example_reflect_api.c"
 #endif
 
 /*============================================================================================*/

@@ -36,9 +36,5 @@ typedef struct run_api_s
 #endif
 
 // clang-format on
-
-/* Host-internal — called once per frame by the host before on_update. Modules must not call. */
-void run_clock_update( f64 app_time, f32 dt_real );
-
 /*============================================================================================*/
 #endif    // RUNTIME_API_H

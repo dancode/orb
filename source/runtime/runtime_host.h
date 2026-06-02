@@ -109,9 +109,15 @@ typedef struct run_host_desc_s
     API
 ==============================================================================================*/
 
-int  run_host_main( const run_host_desc_t* desc, int argc, char** argv );
-void run_host_quit( void ); /* headless quit — sets flag, checked each frame top */
+int run_host_main( const run_host_desc_t* desc, int argc, char** argv );
+
+/* headless quit — sets flag, checked each frame top */
+void run_host_quit( void ); 
+
 bool run_host_should_quit( void );
+
+/* called once per frame by the host before on_update. Modules must not call. */
+void run_clock_update( f64 app_time, f32 dt_real );
 
 /*============================================================================================*/
 #endif /* RUNTIME_HOST_H */

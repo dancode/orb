@@ -137,7 +137,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* Engine baseline — sys (clock + sleep), rs (reflection), run (frame clock). */
     if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
-         !mod_static_load( "ref",  ref_get_mod_desc()  ) ||
+         !mod_static_load( "ref", ref_get_mod_desc() ) ||
          !mod_static_load( "run", run_get_mod_desc() ) )
     {
         fprintf( stderr, "[host] baseline load failed: %s\n", mod_last_error() );
@@ -262,7 +262,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            stack — can call any loaded module API or run_host_quit(). */
 
         if ( desc->on_update )
-            desc->on_update( dt );
+             desc->on_update( dt );
 
         /* -- render ------------------------------------------------------ */
 
@@ -295,7 +295,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* RHI destroys the Vulkan surface — must happen before the window (HWND) is destroyed. */
     if ( rhi() )
-        rhi()->shutdown();
+         rhi()->shutdown();
 
     if ( windowed && app() && s_win_id != APP_WIN_INVALID )
         app()->window_close( s_win_id );

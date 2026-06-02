@@ -257,10 +257,9 @@ target host_sandbox
     root        source/host/sandbox
     folder      08_Host
     unit        host_sandbox_main.c
-
 	
 # ==============================================================================
-# 09_SANDBOX/BASE
+# 09_SANDBOX -- BASE
 # ==============================================================================
 	
 target sb_base
@@ -272,7 +271,7 @@ target sb_base
     dep         base
 
 # ==============================================================================
-# 09_SANDBOX/ENGINE
+# 09_SANDBOX -- ENGINE
 # ==============================================================================
 
 target sb_engine_mod
@@ -310,10 +309,10 @@ target sb_engine_core
     dep         core
 
 # ==============================================================================
-# 09_SANDBOX/RUNTIME
+# 09_SANDBOX -- REFLECT
 # ==============================================================================
 
-target sb_reflect
+target sb_reflect							# dll test code
 
     type        exe
     root        source/sandbox/reflect
@@ -321,36 +320,35 @@ target sb_reflect
     unit        sb_reflect_unit.c
     dep         ref
 	
-target example_reflect
+target example_reflect						# a dll that has reflected types
 
     type        dynamic
-    root        source/runtime_modules/example_reflect
+    root        source/sandbox/reflect/example_reflect
     folder      09_SANDBOX/REFLECT
     unit        example_reflect.c
     flag        reflect
 	
-target sb_runtime_reflect
+target example_gen							# REF_MODULE() usage
+
+    type        dynamic
+    root        source/sandbox/reflect/example_gen
+    folder      09_SANDBOX/REFLECT
+    unit        example_gen.c
+    flag        reflect
+	
+target sb_runtime_reflect					# load a dll with reflected types
 
     type        exe
-    root        source/sandbox/runtime/runtime_reflect
+    root        source/sandbox/reflect/runtime_reflect
     folder      09_SANDBOX/REFLECT
     unit        sb_runtime_reflect.c
     dep         sys mod core ref
 	mono_dep 	example_reflect
-	
-	
-target example_gen
 
-    type        dynamic
-    root        source/runtime_modules/example_gen
-    folder      09_SANDBOX/REFLECT
-    unit        example_gen.c
-    flag        reflect
-
-target sb_runtime_gen
+target sb_runtime_gen						# load a REF_MODULE() dll
 
     type        exe
-    root        source/sandbox/runtime/runtime_gen
+    root        source/sandbox/reflect/runtime_gen
     folder      09_SANDBOX/REFLECT
     unit        sb_runtime_gen.c
     dep         sys ref mod core
@@ -358,7 +356,22 @@ target sb_runtime_gen
     flag        reflect
 
 # ==============================================================================
-# 09_SANDBOX_EXAMPLES
+# 09_SANDBOX -- Vulkan
+# ==============================================================================
+
+target sb_vulkan						# vulkan development and testing
+
+    type        exe
+    root        source/sandbox/vulkan
+    folder      09_SANDBOX/VULKAN
+    unit        sb_vulkan.c
+    dep         sys ref mod core app
+	dep 		run rhi
+	mono_dep 	render
+  # flag        reflect
+
+# ==============================================================================
+# 09_SANDBOX -- EXAMPLE EXECUTABLE PROJECT TYPES
 # ==============================================================================
 
 target sb_example_runtime
@@ -368,7 +381,7 @@ target sb_example_runtime
     folder      09_SANDBOX/EXAMPLE
     unit        example_runtime.c
 	dep 		mod ref sys core app		# static engine
-    dep         run rhi					# static runtime + services
+    dep         run rhi						# static runtime + services
 	mono_dep	render example_reflect
 		
 target sb_example_tool
@@ -409,23 +422,10 @@ target sb_example_game
     unit        example_game.c
 	dep 		mod ref sys core app
     dep         run rhi
-	mono_dep	render
-	
-		
-# ==============================================================================
-# SOLUTIONS : Smaller working set for isolated tasks.
-# ==============================================================================
+	mono_dep	render		
 
-solution orb_working
-
-    out         build/proj
-	add 		base
-	add         sys ref mod app core net    
-	add         run	
-
-	
 # ==============================================================================
-# ORB DEV : Daily Driver. No Sandbox. Full inteillsense of the stack.
+# DEV : Development Solution Wihout Any Sandbox or Test Code
 # ==============================================================================
 
 solution orb_dev
@@ -468,7 +468,7 @@ solution orb_dev
     add         host_common
 
 # ==============================================================================
-# ORB EDITOR : Editor development
+# EDITOR : Editor development
 # ==============================================================================
 
 solution orb_editor 
@@ -479,17 +479,7 @@ solution orb_editor
 	add 		editor_example
 
 # ==============================================================================
-# ORB EDITOR : Editor development
-# ==============================================================================
-
-solution orb_tools
-
-    out         build/proj
-	add 		build_tool
-	add 		reflect_tool
-
-# ==============================================================================
-# EXAMPLES: Idiomatic usage of engine to add clarity to program scaffolding
+# EXAMPLES: Executable Examples
 # ==============================================================================
 
 solution orb_examples	
@@ -508,31 +498,45 @@ solution orb_examples
 	add 		host_editor 
 	add 		host_sandbox 
 	add 		host_tool
-	
+
 # ==============================================================================
 # SANDBOX: Running/debugging unit-style tets for specific engine layer
 # ==============================================================================	
 
-solution orb_sandbox_reflect			# Run/Debug reflection
+solution orb_sandbox_reflect			# developing reflection
 
     out         build/proj
     startup     sb_runtime_gen
 
-    add         sb_base
+    add         base
 	add         sys ref mod app core net
 
-	add 		sb_reflect			# unit test reflection (hand rolled)
+	add 		sb_reflect				# unit test reflection (hand rolled)
 	
-	add 		example_gen			# test reflected REF_MODULE
-	add 		sb_runtime_gen		# test loading REF_MODULE
+	add 		example_gen				# test reflected REF_MODULE
+	add 		example_reflect			# test module with reflected types
 	
-	add 		example_reflect		# test module with reflected types
-	add 		sb_runtime_reflect	# test reading reflected types
+	add 		sb_runtime_gen			# test loading REF_MODULE		
+	add 		sb_runtime_reflect		# test reading reflected types
 
 	add 		reflect_tool
 
 
-solution orb_sandbox_engine				# Run/Debug engine
+solution orb_sandbox_vulkan				# developing rendering / vulkan
+
+    out         build/proj
+    startup     sb_runtime_gen
+
+    add         base
+	add         sys ref mod app core net
+
+	add 		run
+	add 		rhi						# vulkan render library
+	
+	add 		sb_vulkan				# exe 
+
+
+solution orb_sandbox_engine				# developing engine libraries
 
     out         build/proj
     startup     sb_runtime_gen
@@ -541,24 +545,16 @@ solution orb_sandbox_engine				# Run/Debug engine
 
 	# 			--- SANDBOX : BASE -- 
 
-    add         sb_base
-	
+    add         sb_base	
     add         sb_engine_mod 
 	add 		sb_engine_sys 
 	add 		sb_engine_core 
 	add 		sb_engine_app
 	
-	add 		sb_reflect			# unit test reflection (hand rolled)
-	
-	add 		example_gen			# test reflected REF_MODULE
-	add 		sb_runtime_gen		# test loading REF_MODULE
-	
-	add 		example_reflect		# test module with reflected types
-	add 		sb_runtime_reflect	# test reading reflected types	
-
+	# TOOD: engine test
 
 # ==============================================================================
-# TOOLS
+# TOOLS: TOOL DEVELOPMENT
 # ==============================================================================
 
 solution orb_build
