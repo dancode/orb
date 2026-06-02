@@ -29,7 +29,8 @@ typedef struct render_state_s
 
     float clear_r, clear_g, clear_b, clear_a;
 
-    rhi_command_list_t cmd;    /* valid between begin_frame / end_frame; NULL otherwise */
+    i32       rhi_ctx;  /* set by host after rhi()->context_create */
+    rhi_command_list_t cmd;      /* valid between begin_frame / end_frame; NULL otherwise */
 
 } render_state_t;
 
@@ -40,12 +41,19 @@ static render_state_t* g_state = NULL;
 ==============================================================================================*/
 
 static void
+render_set_context_impl( i32 ctx_id )
+{
+    if ( g_state )
+        g_state->rhi_ctx = ctx_id;
+}
+
+static void
 render_begin_frame_impl( void )
 {
     if ( !g_state )
         return;
 
-    g_state->cmd = rhi()->frame_begin();
+    g_state->cmd = rhi()->frame_begin( g_state->rhi_ctx );
     /* NULL means the swap chain is not ready this frame (resize pending, etc.);
        draw_frame and end_frame both guard on cmd != NULL */
 }
@@ -72,7 +80,7 @@ render_end_frame_impl( void )
 
     if ( g_state->cmd )
     {
-        rhi()->frame_end();
+        rhi()->frame_end( g_state->rhi_ctx );
         g_state->cmd = NULL;
     }
 
@@ -102,6 +110,7 @@ render_set_clear_color_impl( float r, float g, float b, float a )
 ==============================================================================================*/
 
 const render_api_t g_render_api_struct = {
+    .set_context     = render_set_context_impl,
     .begin_frame     = render_begin_frame_impl,
     .draw_frame      = render_draw_frame_impl,
     .end_frame       = render_end_frame_impl,
@@ -128,6 +137,7 @@ render_init( void* raw_state, get_api_fn get_api )
         return false;
     }
 
+    g_state->rhi_ctx = RHI_CTX_INVALID;
     g_state->clear_r = 0.08f;
     g_state->clear_g = 0.10f;
     g_state->clear_b = 0.14f;

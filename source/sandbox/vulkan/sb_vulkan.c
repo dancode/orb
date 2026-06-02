@@ -2,9 +2,10 @@
 
     sandbox/vulkan/sb_vulkan.c -- Vulkan RHI bring-up test.
 
-    Loads sys + app + rhi (static), opens a window, calls rhi()->init() with
-    the native HWND, then runs a basic clear-color loop until the window is
-    closed or ESC is pressed.  No runtime host, no module hot-reload.
+    Loads sys + app + rhi (static), opens a window, calls rhi()->init() then
+    rhi()->context_create() with the native HWND, then runs a basic clear-color
+    loop until the window is closed or ESC is pressed.  No runtime host, no
+    module hot-reload.
 
 ==============================================================================================*/
 
@@ -18,7 +19,7 @@
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 
-// include path: %VULKAN_SDK%\Include    
+// include path: %VULKAN_SDK%\Include
 // library path: %VULKAN_SDK%\Lib
 
 /*==============================================================================================
@@ -49,6 +50,12 @@ main( int argc, char** argv )
     mod_set_log_fn( core_log_fn );
     app_set_log_fn( core_log_fn );
 
+    assert( sys() );
+    assert( ref() );
+    assert( app() );
+    assert( core() );
+    assert( rhi() );
+
     /* Open window. */
     win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID )
@@ -58,11 +65,22 @@ main( int argc, char** argv )
         return 1;
     }
 
-    /* Hand the native handle to the RHI. */
-    void* hwnd = app()->window_handle( win );
-    if ( !rhi()->init( hwnd ) )
+    /* Global RHI init (instance + device). */
+    if ( !rhi()->init() )
     {
         fprintf( stderr, "[sb_vulkan] rhi->init failed\n" );
+        app()->window_close( win );
+        mod_system_exit();
+        return 1;
+    }
+
+    /* Per-window render context. */
+    void*        hwnd = app()->window_handle( win );
+    i32 ctx  = rhi()->context_create( win, hwnd, 1280, 720 );
+    if ( ctx == RHI_CTX_INVALID )
+    {
+        fprintf( stderr, "[sb_vulkan] rhi->context_create failed\n" );
+        rhi()->shutdown();
         app()->window_close( win );
         mod_system_exit();
         return 1;
@@ -73,29 +91,30 @@ main( int argc, char** argv )
     /* Main loop. */
     while ( app()->pump_events() )
     {
-        /* Check for resize. */
+        /* Forward resize events to the context. */
         app_event_t ev;
         while ( app()->next_event( &ev ) )
         {
             if ( ev.type == APP_EV_WIN_RESIZE )
-                rhi()->resize( ev.data.win_resize.w, ev.data.win_resize.h );
+                rhi()->context_resize( ctx, ev.data.win_resize.w, ev.data.win_resize.h );
         }
 
         if ( app()->key_pressed( APP_KEY_ESCAPE ) )
             break;
 
         /* Frame. */
-        rhi_command_list_t cmd = rhi()->frame_begin();
+        rhi_command_list_t cmd = rhi()->frame_begin( ctx );
         if ( cmd )
         {
             rhi()->cmd_clear_color( cmd, 0.05f, 0.05f, 0.15f, 1.0f );
-            rhi()->frame_end();
+            rhi()->frame_end( ctx );
         }
 
         sys_sleep_milliseconds( 16 );
     }
 
-    /* Shutdown. */
+    /* Shutdown -- context before device, device before window. */
+    rhi()->context_destroy( ctx );
     rhi()->shutdown();
     app()->window_close( win );
     mod_system_exit();

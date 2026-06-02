@@ -74,7 +74,8 @@ MOD_USE_RUN;
 MOD_USE_RHI;
 MOD_USE_RENDER;
 
-static win_id_t s_win_id = APP_WIN_INVALID;
+static win_id_t      s_win_id = APP_WIN_INVALID;
+static i32  s_ctx_id = RHI_CTX_INVALID;
 
 /*==============================================================================================
     Module loading
@@ -121,6 +122,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     g_quit_requested = false;
     s_win_id         = APP_WIN_INVALID;
+    s_ctx_id         = RHI_CTX_INVALID;
 
     /* ---- boot --------------------------------------------------------- */
 
@@ -200,13 +202,27 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         {
             void* hwnd = app()->window_handle( s_win_id );
             app()->window_set_paint( s_win_id, false );
-            if ( !rhi()->init( hwnd ) )
+
+            if ( !rhi()->init() )
             {
-                fprintf( stderr, "[host] rhi init failed\n" );
+                fprintf( stderr, "[host] rhi global init failed\n" );
                 app()->window_close( s_win_id );
                 mod_system_exit();
                 return 1;
             }
+
+            s_ctx_id = rhi()->context_create( s_win_id, hwnd, w, h );
+            if ( s_ctx_id == RHI_CTX_INVALID )
+            {
+                fprintf( stderr, "[host] rhi context_create failed\n" );
+                rhi()->shutdown();
+                app()->window_close( s_win_id );
+                mod_system_exit();
+                return 1;
+            }
+
+            if ( render() )
+                render()->set_context( s_ctx_id );
         }
     }
 
@@ -293,9 +309,16 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- shutdown ---------------------------------------------------- */
 
-    /* RHI destroys the Vulkan surface — must happen before the window (HWND) is destroyed. */
+    /* RHI surface teardown must happen before the window (HWND) is destroyed. */
     if ( rhi() )
-         rhi()->shutdown();
+    {
+        if ( s_ctx_id != RHI_CTX_INVALID )
+        {
+            rhi()->context_destroy( s_ctx_id );
+            s_ctx_id = RHI_CTX_INVALID;
+        }
+        rhi()->shutdown();
+    }
 
     if ( windowed && app() && s_win_id != APP_WIN_INVALID )
         app()->window_close( s_win_id );

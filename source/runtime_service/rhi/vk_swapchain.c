@@ -1,90 +1,88 @@
 /*==============================================================================================
 
-    vulkan/vk_swapchain.c — VkSurfaceKHR + VkSwapchainKHR + image views.
+    vulkan/vk_swapchain.c -- VkSurfaceKHR + VkSwapchainKHR + image views.
+
+    All functions operate on a single vk_context_t, so multiple windows can
+    each own their own surface and swapchain simultaneously.
 
     Surface creation happens after vk_instance_create() (needs instance + window).
     Swapchain creation happens after vk_device_create() (needs device + surface).
 
-    Lifetime: created in init, destroyed in shutdown, recreated on resize.
-
 ==============================================================================================*/
 
-static bool vk_swapchain_recreate( void );  /* forward -- referenced in vk_swapchain_destroy */
+static bool vk_swapchain_recreate( vk_context_t* ctx );   /* forward */
 
 static bool
-vk_surface_create( void )
+vk_surface_create( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] surface_create (placeholder)\n" );
+    printf( "[rhi:vk] surface_create ctx=%d win=%d (placeholder)\n", ctx->id, ctx->win_id );
 
     /* TODO (Vulkan implementation, Windows):
-       - VkWin32SurfaceCreateInfoKHR with HINSTANCE and HWND
-            HWND      = (HWND)g_vk.native_window
+       - VkWin32SurfaceCreateInfoKHR:
+            HWND      = (HWND)ctx->native_window
             HINSTANCE = GetModuleHandle(NULL)
-       - vkCreateWin32SurfaceKHR → g_vk.surface */
+       - vkCreateWin32SurfaceKHR( g_vk.instance, &info, NULL, &ctx->surface ) */
 
     return true;
 }
 
 static void
-vk_surface_destroy( void )
+vk_surface_destroy( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] surface_destroy (placeholder)\n" );
+    printf( "[rhi:vk] surface_destroy ctx=%d (placeholder)\n", ctx->id );
 
-    /* TODO: vkDestroySurfaceKHR( g_vk.instance, g_vk.surface, NULL ) */
+    /* TODO: vkDestroySurfaceKHR( g_vk.instance, ctx->surface, NULL ) */
 }
 
 static bool
-vk_swapchain_create( void )
+vk_swapchain_create( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] swapchain_create (placeholder)\n" );
+    printf( "[rhi:vk] swapchain_create ctx=%d (placeholder)\n", ctx->id );
 
     /* TODO (Vulkan implementation):
        Query support:
-       - vkGetPhysicalDeviceSurfaceCapabilitiesKHR
-       - vkGetPhysicalDeviceSurfaceFormatsKHR  → pick BGRA8 SRGB if available
-       - vkGetPhysicalDeviceSurfacePresentModesKHR → pick MAILBOX if available,
-         fall back to FIFO
+       - vkGetPhysicalDeviceSurfaceCapabilitiesKHR( g_vk.physical_device, ctx->surface, ... )
+       - vkGetPhysicalDeviceSurfaceFormatsKHR      -> pick BGRA8 SRGB if available
+       - vkGetPhysicalDeviceSurfacePresentModesKHR -> pick MAILBOX, fall back to FIFO
 
        Choose extent:
-       - If currentExtent is (UINT32_MAX, UINT32_MAX), use g_vk.width/height
+       - If currentExtent is (UINT32_MAX, UINT32_MAX), use ctx->width/height
          clamped to capabilities.minImageExtent..maxImageExtent
 
        Choose image count:
        - capabilities.minImageCount + 1, clamped to maxImageCount
 
        Create:
-       - VkSwapchainCreateInfoKHR (graphics + present family sharing if different)
-       - vkCreateSwapchainKHR → g_vk.swapchain
-       - vkGetSwapchainImagesKHR → g_vk.swapchain_images[]
-       - For each image: vkCreateImageView → g_vk.swapchain_image_views[]
-       - Record g_vk.swapchain_extent */
+       - VkSwapchainCreateInfoKHR (handle graphics + present family sharing)
+       - vkCreateSwapchainKHR -> ctx->swapchain
+       - vkGetSwapchainImagesKHR -> ctx->swapchain_images[]
+       - For each image: vkCreateImageView -> ctx->swapchain_image_views[]
+       - Record ctx->swapchain_extent */
 
     return true;
 }
 
 static void
-vk_swapchain_destroy( void )
+vk_swapchain_destroy( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] swapchain_destroy (placeholder)\n" );
+    printf( "[rhi:vk] swapchain_destroy ctx=%d (placeholder)\n", ctx->id );
 
-    /* TODO (Vulkan implementation):
+    /* TODO:
        - vkDeviceWaitIdle
        - For each image view: vkDestroyImageView
        - vkDestroySwapchainKHR */
 
-    /* vk_swapchain_recreate composes destroy+create; referenced here to satisfy
-       the compiler until the resize path calls it. */
     ( void )vk_swapchain_recreate;
 }
 
 static bool
-vk_swapchain_recreate( void )
+vk_swapchain_recreate( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] swapchain_recreate (placeholder)\n" );
+    printf( "[rhi:vk] swapchain_recreate ctx=%d (placeholder)\n", ctx->id );
 
-    /* TODO: vk_swapchain_destroy() then vk_swapchain_create().
-       Or use VkSwapchainCreateInfoKHR::oldSwapchain to hand off the old one
-       cleanly. Must be called between frames, never during recording. */
+    /* TODO: vk_swapchain_destroy(ctx) then vk_swapchain_create(ctx).
+       Or pass oldSwapchain in VkSwapchainCreateInfoKHR for a clean handoff.
+       Must be called between frames, never mid-recording. */
 
     return true;
 }

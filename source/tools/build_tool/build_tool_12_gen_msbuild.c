@@ -51,6 +51,7 @@ msbuild_config_type_str( target_type_t type )
         /MDd (Debug)       -> RuntimeLibrary MultiThreadedDebugDLL
         /O2 (Release)      -> Optimization MaxSpeed
         /MD  (Release)     -> RuntimeLibrary MultiThreadedDLL
+        /wd<N> entries     -> DisableSpecificWarnings (driven by g_warn_suppressions[])
 ==============================================================================================*/
 
 static void
@@ -87,6 +88,22 @@ write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
         fprintf( f, "      <Optimization>MaxSpeed</Optimization>\n" );
         fprintf( f, "      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>\n" );
     }
+
+    // Collect /wd<num> entries from g_warn_suppressions that apply to this config + MSVC.
+    // MSBuild uses <DisableSpecificWarnings> instead of /wd flags on the command line.
+    char disabled_warns[ 256 ] = { 0 };
+    for ( int i = 0; i < g_warn_suppression_count; ++i )
+    {
+        warn_suppress_t* s = &g_warn_suppressions[ i ];
+        if ( s->compiler != COMPILE_MSVC ) continue;
+        if ( s->config != config && s->config != CONFIG_COUNT ) continue;
+        if ( strncmp( s->flag, "/wd", 3 ) != 0 ) continue;
+        size_t used = strlen( disabled_warns );
+        snprintf( disabled_warns + used, sizeof( disabled_warns ) - used,
+                  "%s%s", used ? ";" : "", s->flag + 3 );
+    }
+    if ( disabled_warns[ 0 ] )
+        fprintf( f, "      <DisableSpecificWarnings>%s</DisableSpecificWarnings>\n", disabled_warns );
 
     fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
     fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
