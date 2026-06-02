@@ -91,6 +91,7 @@ target rhi
     folder      03_RUNTIME/SERVICE
     unit        rhi.c
     dep         app
+	inc         %VULKAN_SDK%/Include
 
 target jobs
 

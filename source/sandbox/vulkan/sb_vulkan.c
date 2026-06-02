@@ -16,6 +16,10 @@
 #include "engine/app/app_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 
+
+// include path: %VULKAN_SDK%\Include    
+// library path: %VULKAN_SDK%\Lib
+
 /*==============================================================================================
     main
 ==============================================================================================*/

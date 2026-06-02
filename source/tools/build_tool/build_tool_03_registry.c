@@ -534,16 +534,20 @@ registry_load( const char* path, bool is_external )
             else if ( ( strcmp( key, "include_dir" ) == 0 || strcmp( key, "inc" ) == 0 ) && val )
             {
                 /* 'inc' is an alias for 'include_dir'. Resolve relative paths against this
-                   file's directory so targets in imported .targets files point to their own tree. */
+                   file's directory so targets in imported .targets files point to their own tree.
+                   %VAR% tokens are expanded first so SDK roots like %VULKAN_SDK% work. */
+                char expanded[ PATH_MAX ];
+                if ( !platform_expand_env( val, expanded, sizeof( expanded ) ) )
+                    snprintf( expanded, sizeof( expanded ), "%s", val );
                 char abs_buf[ PATH_MAX ];
-                if ( platform_is_abs_path( val ) )
+                if ( platform_is_abs_path( expanded ) )
                 {
-                    snprintf( abs_buf, sizeof( abs_buf ), "%s", val );
+                    snprintf( abs_buf, sizeof( abs_buf ), "%s", expanded );
                 }
                 else
                 {
                     char combined[ PATH_MAX ];
-                    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, val );
+                    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, expanded );
                     if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
                         snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
                 }

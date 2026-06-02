@@ -88,6 +88,49 @@ platform_putenv( const char* key, const char* value )
     return setenv( key, value, 1 );
 }
 
+/* Expands %VAR% tokens in `in` using the current process environment.
+   Writes the result to `out` (size bytes). Returns true on success. */
+
+static bool
+platform_expand_env( const char* in, char* out, size_t size )
+{
+    const char* src = in;
+    char*       dst = out;
+    char*       end = out + size - 1;
+
+    while ( *src && dst < end )
+    {
+        if ( src[ 0 ] == '%' )
+        {
+            const char* close = strchr( src + 1, '%' );
+            if ( close && close > src + 1 )
+            {
+                char name[ 256 ];
+                size_t name_len = (size_t)( close - ( src + 1 ) );
+                if ( name_len < sizeof( name ) )
+                {
+                    memcpy( name, src + 1, name_len );
+                    name[ name_len ] = '\0';
+                    const char* val = getenv( name );
+                    if ( val )
+                    {
+                        size_t vlen = strlen( val );
+                        if ( dst + vlen > end ) return false;
+                        memcpy( dst, val, vlen );
+                        dst += vlen;
+                        src  = close + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        *dst++ = *src++;
+    }
+
+    *dst = '\0';
+    return true;
+}
+
 /*==============================================================================================
     --- Pipe ---
 ==============================================================================================*/

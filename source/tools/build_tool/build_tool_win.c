@@ -83,6 +83,16 @@ platform_putenv( const char* key, const char* value )
     return _putenv_s( key, value );
 }
 
+/* Expands %VAR% tokens in `in` using the current process environment.
+   Writes the result to `out` (size bytes). Returns true on success. */
+
+static bool
+platform_expand_env( const char* in, char* out, size_t size )
+{
+    DWORD n = ExpandEnvironmentStringsA( in, out, (DWORD)size );
+    return n > 0 && n <= (DWORD)size;
+}
+
 /*==============================================================================================
     --- Pipe ---
 ==============================================================================================*/
