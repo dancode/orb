@@ -1,7 +1,16 @@
 /*==============================================================================================
 
-    vulkan/vk_functions.h —
+    vulkan/vk_functions.h -- X-macro table of every Vulkan function pointer used by the RHI.
 
+    Include this file up to four times, each time with one VK_*_FUNCTION macro defined.
+    Undefined macros expand to nothing so a single inclusion safely skips other levels.
+    Each section #undefs its macro after its entries so the next inclusion starts clean.
+
+    Load levels (must be resolved in order):
+      VK_EXPORTED_FUNCTION       -- exported from vulkan-1.dll; retrieved via GetProcAddress
+      VK_GLOBAL_LEVEL_FUNCTION   -- vkGetInstanceProcAddr( NULL, ... ); pre-instance helpers
+      VK_INSTANCE_LEVEL_FUNCTION -- vkGetInstanceProcAddr( instance, ... ); post-CreateInstance
+      VK_DEVICE_LEVEL_FUNCTION   -- vkGetDeviceProcAddr( device, ... ); post-CreateDevice
 
 ==============================================================================================*/
 #ifdef OS_WINDOWS
@@ -38,7 +47,7 @@ VK_GLOBAL_LEVEL_FUNCTION( vkCreateInstance )
 // Instance
 VK_INSTANCE_LEVEL_FUNCTION( vkDestroyInstance )
 
-// Pysical Device
+// Physical Device
 VK_INSTANCE_LEVEL_FUNCTION( vkEnumeratePhysicalDevices )
 VK_INSTANCE_LEVEL_FUNCTION( vkGetPhysicalDeviceProperties )
 VK_INSTANCE_LEVEL_FUNCTION( vkGetPhysicalDeviceFeatures )
@@ -84,7 +93,7 @@ VK_DEVICE_LEVEL_FUNCTION( vkGetSwapchainImagesKHR )
 VK_DEVICE_LEVEL_FUNCTION( vkAcquireNextImageKHR )
 VK_DEVICE_LEVEL_FUNCTION( vkQueuePresentKHR )
 
-// Syncronziation
+// Synchronization
 VK_DEVICE_LEVEL_FUNCTION( vkCreateSemaphore )
 VK_DEVICE_LEVEL_FUNCTION( vkDestroySemaphore )
 VK_DEVICE_LEVEL_FUNCTION( vkCreateFence )

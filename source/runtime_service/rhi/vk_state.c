@@ -13,7 +13,7 @@
     we want the module system load to remain side-effect-free.
 
 ==============================================================================================*/
-
+// clang-format off
 /*==============================================================================================
     State
 ==============================================================================================*/
@@ -22,29 +22,34 @@
 
 typedef struct vk_state_s
 {
-    bool  initialized;   /* set true at the end of a successful rhi_init() */
-    void* native_window; /* HWND on Windows; cast at use sites */
+    /* high level state */
 
-    i32   width;
-    i32   height;
-    bool  resize_pending; /* set when WM_SIZE causes a deferred swap-chain rebuild */
+    bool            initialized;        // set true at the end of a successful vk_init() 
+    void*           native_window;      // HWND on Windows; cast at use sites.
 
-    u32   current_frame; /* index into per-frame arrays, 0..VK_MAX_FRAMES_IN_FLIGHT-1 */
+    i32             width;
+    i32             height;
+    bool            resize_pending;     // set when WM_SIZE causes a deferred swap-chain rebuild
+
+    u32             current_frame;      // index into per-frame arrays, 0..VK_MAX_FRAMES_IN_FLIGHT-1
 
     /* required */
 
-    lib_handle_t dll;    // only if VULKAN_DYNAMIC.
+    lib_handle_t    dll;
+    VkInstance      instance;
+    VkDevice        device;
+
+    /* optional */
 
     /* TODO (Vulkan implementation) — uncomment as each is wired up:
 
-    VkInstance                 instance;
+    VkAllocationCallbacks       alloc_cb;           // vulkan callback functions.
     VkDebugUtilsMessengerEXT   debug_messenger;
 
     VkPhysicalDevice           physical_device;
     VkPhysicalDeviceProperties physical_device_props;
     u32                        graphics_queue_family;
     u32                        present_queue_family;
-    VkDevice                   device;
     VkQueue                    graphics_queue;
     VkQueue                    present_queue;
 
@@ -70,3 +75,4 @@ typedef struct vk_state_s
 static vk_state_t g_vk;
 
 /*============================================================================================*/
+// clang-format off

@@ -44,7 +44,9 @@ rhi_mod_init( void* raw_state, get_api_fn get_api )
     /* Real device init happens in rhi()->init() once the host calls it with
        a window handle. */
 
-    vk_lib_init();
+    bool success = vk_lib_init();
+    if ( success == false )
+        return false;
 
     return true;
 }
