@@ -60,6 +60,11 @@ vk_init( void )
         return true;
     }
 
+    if ( g_vk.use_vk_alloc_cb )
+    {
+        vk_allocation_callback_init();
+    }
+
     printf( "[rhi] init begin\n" );
 
     /* Order: instance first, then device.

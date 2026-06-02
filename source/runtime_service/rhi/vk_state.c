@@ -180,6 +180,15 @@ typedef struct vk_state_s
     /* Global lifecycle */
     bool  initialized;
 
+    /* Configuration */
+
+    // bool use_debug_print;                // print debug info.
+    bool use_vk_alloc_cb;                   // use Vulkan allocation callbacks.
+    // bool use_vk_debug_messenger;         // use debug messenger.
+    // bool use_vk_layer_validation;        // use vulkan debug layer.
+    // bool use_vk_layer_monitor;           // use vulkan debug layer.
+    // i32  version;                        // minor version number
+
     /* Vulkan loader handle */
     lib_handle_t  dll;
 
@@ -188,15 +197,15 @@ typedef struct vk_state_s
     VkDevice     device;
 
     /* Allocation callbacks (NULL = Vulkan default allocator) */
-    VkAllocationCallbacks*  alloc_cb;
+    VkAllocationCallbacks*              alloc_cb;
 
     /* Debug messenger (enabled when DEBUG and VK_EXT_debug_utils is available) */
-    VkDebugUtilsMessengerEXT  debug_messenger;
+    VkDebugUtilsMessengerEXT            debug_messenger;
 
     /* Physical device */
-    VkPhysicalDevice              physical_device;
-    VkPhysicalDeviceProperties    physical_device_props;
-    VkPhysicalDeviceMemoryProperties  memory_props;
+    VkPhysicalDevice                    physical_device;
+    VkPhysicalDeviceProperties          physical_device_props;
+    VkPhysicalDeviceMemoryProperties    memory_props;
 
     /* Queue families; may be the same index on some hardware */
     u32    graphics_queue_family;

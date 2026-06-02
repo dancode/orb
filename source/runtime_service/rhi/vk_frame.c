@@ -174,8 +174,8 @@ vk_cmd_clear_color( rhi_command_list_t cmd, f32 r, f32 g, f32 b, f32 a )
     if ( !cmd )
         return;
 
-    /* Stores the clear color for the context; consumed by vkCmdBeginRendering loadOp.
-       This must be called before frame_begin returns to affect the current frame. */
+    /* Stores the clear color for this context; consumed by the NEXT frame's
+       vkCmdBeginRendering loadOp.  One frame of latency is expected and acceptable. */
     vk_context_t* ctx = vk_ctx_get( cmd->ctx_id );
     if ( !ctx )
         return;

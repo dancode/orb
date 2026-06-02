@@ -48,7 +48,7 @@
 #include "engine/core/core_host.h"
 
 /*==============================================================================================
-    Platform headers
+    Platform Headers
 ==============================================================================================*/
 
 #if OS_WINDOWS
@@ -116,6 +116,8 @@
 ==============================================================================================*/
 
 #include "runtime_service/rhi/vk_state.c"
+#include "runtime_service/rhi/vk_alloc_callback.c"
+
 #include "runtime_service/rhi/vk_library.c"
 #include "runtime_service/rhi/vk_debug.c"
 #include "runtime_service/rhi/vk_memory.c"
