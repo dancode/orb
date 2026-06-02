@@ -222,7 +222,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             }
 
             if ( render() )
-                render()->set_context( s_ctx_id );
+                render()->context_register( s_ctx_id );
         }
     }
 
@@ -284,9 +284,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( windowed && render() )
         {
-            render()->begin_frame();
-            render()->draw_frame( dt );
-            render()->end_frame();
+            if ( render()->begin_frame( s_ctx_id ) )
+            {
+                render()->draw_scene( s_ctx_id, dt );
+                render()->end_frame( s_ctx_id );
+            }
         }
 
         /* -- hot-reload -------------------------------------------------- */

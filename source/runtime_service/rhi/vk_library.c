@@ -133,22 +133,31 @@ exit:
 static bool
 vk_lib_init()
 {
-#if !OS_WINDOWS
-    return false;
+    if ( g_vk.dll == NULL )
+    {
+#if OS_WINDOWS
+        g_vk.dll = sys_library_load( "vulkan-1.dll" );
+#elif OS_LINUX
+        g_vk.dll = sys_library_load( "libvulkan.so.1" );
+#elif OS_MAC
+        /* MoltenVK ships as libMoltenVK.dylib or the Vulkan SDK loader */
+        g_vk.dll = sys_library_load( "libvulkan.1.dylib" );
+        if ( !g_vk.dll )
+            g_vk.dll = sys_library_load( "libMoltenVK.dylib" );
 #endif
+    }
 
     if ( g_vk.dll == NULL )
     {
-        g_vk.dll = sys_library_load( "vulkan-1.dll" );
-    }
-    if ( g_vk.dll == NULL )
-    {
-        LOG_ERROR( "could not load vulkan-1.dll" );
+        LOG_ERROR( "could not load Vulkan library" );
         return false;
     }
 
-    vk_lib_exported_entry_points();
-    vk_lib_global_entry_points();
+    if ( !vk_lib_exported_entry_points() )
+        return false;
+
+    if ( !vk_lib_global_entry_points() )
+        return false;
 
     return true;
 }

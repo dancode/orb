@@ -7,84 +7,152 @@
 
 /*==============================================================================================
     Cached API pointers
-
-    Declare one per consumed module using its MOD_USE_<NAME> macro (defined in its _api.h),
-    then fetch in init() and reload() with MOD_FETCH_<NAME>:
-
-        MOD_USE_CORE;                                    // file scope
-        if ( !MOD_FETCH_CORE ) return false;             // in init() and reload()
 ==============================================================================================*/
 
 MOD_USE_CORE;
 MOD_USE_RHI;
 
 /*==============================================================================================
-    Persistent state (allocated by the module system; preserved across hot-reloads)
+    Persistent state  (allocated and zeroed by the module system; preserved across reloads)
 ==============================================================================================*/
+
+/* Per-context render slot.  Indexed by ctx_id directly (ctx_id is [0..RHI_CTX_MAX)). */
+typedef struct render_ctx_slot_s
+{
+    bool               active;
+    rhi_command_list_t cmd;       /* valid between begin_frame / end_frame; NULL otherwise */
+    rhi_color_t        clear;     /* default: dark charcoal */
+
+} render_ctx_slot_t;
 
 typedef struct render_state_s
 {
-    int   frame_count;
-    float total_time;
-
-    float clear_r, clear_g, clear_b, clear_a;
-
-    i32       rhi_ctx;  /* set by host after rhi()->context_create */
-    rhi_command_list_t cmd;      /* valid between begin_frame / end_frame; NULL otherwise */
+    render_ctx_slot_t  ctx[ RHI_CTX_MAX ];
+    int                frame_count;
+    f32                total_time;
 
 } render_state_t;
 
 static render_state_t* g_state = NULL;
 
 /*==============================================================================================
-    Implementation
+    Context management
 ==============================================================================================*/
 
 static void
-render_set_context_impl( i32 ctx_id )
+render_context_register_impl( i32 ctx_id )
 {
-    if ( g_state )
-        g_state->rhi_ctx = ctx_id;
-}
-
-static void
-render_begin_frame_impl( void )
-{
-    if ( !g_state )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
-    g_state->cmd = rhi()->frame_begin( g_state->rhi_ctx );
-    /* NULL means the swap chain is not ready this frame (resize pending, etc.);
-       draw_frame and end_frame both guard on cmd != NULL */
+    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+    s->active    = true;
+    s->cmd       = NULL;
+    s->clear.r   = 0.08f;
+    s->clear.g   = 0.10f;
+    s->clear.b   = 0.14f;
+    s->clear.a   = 1.0f;
 }
 
 static void
-render_draw_frame_impl( float dt )
+render_context_unregister_impl( i32 ctx_id )
 {
-    if ( !g_state || !g_state->cmd )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
+        return;
+
+    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+    s->active = false;
+    s->cmd    = NULL;
+}
+
+/*==============================================================================================
+    Frame
+==============================================================================================*/
+
+static bool
+render_begin_frame_impl( i32 ctx_id )
+{
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
+        return false;
+
+    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+    if ( !s->active )
+        return false;
+
+    /* The RHI reads ctx->clear_color (stashed by cmd_clear_color last frame) inside
+       vkCmdBeginRendering.  One frame of latency on clear color changes is acceptable. */
+    s->cmd = rhi()->frame_begin( ctx_id );
+    return s->cmd != NULL;
+}
+
+static void
+render_draw_scene_impl( i32 ctx_id, f32 dt )
+{
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
+        return;
+
+    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+    if ( !s->active || !s->cmd )
         return;
 
     g_state->total_time += dt;
-    rhi()->cmd_clear_color( g_state->cmd,
-                                g_state->clear_r,
-                                g_state->clear_g,
-                                g_state->clear_b,
-                                g_state->clear_a );
+
+    /* Stash clear color into the context; vkCmdBeginRendering reads it next frame. */
+    rhi()->cmd_clear_color( s->cmd, s->clear.r, s->clear.g, s->clear.b, s->clear.a );
+
+    /* TODO: submit scene draw calls for this context.
+       rhi()->cmd_bind_bindless( s->cmd )
+       -- iterate scene draw list, bind pipelines, push constants, draw meshes
+    */
 }
 
 static void
-render_end_frame_impl( void )
+render_draw_editor_impl( i32 ctx_id, f32 dt )
 {
-    if ( !g_state )
+    UNUSED( dt );
+
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
-    if ( g_state->cmd )
+    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+    if ( !s->active || !s->cmd )
+        return;
+
+    /* TODO: ImGui render pass for editor contexts.
+       imgui_api()->render( s->cmd )
+    */
+}
+
+static void
+render_end_frame_impl( i32 ctx_id )
+{
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
+        return;
+
+    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+    if ( !s->active )
+        return;
+
+    if ( s->cmd )
     {
-        rhi()->frame_end( g_state->rhi_ctx );
-        g_state->cmd = NULL;
+        rhi()->frame_end( ctx_id );
+        s->cmd = NULL;
     }
 
     g_state->frame_count++;
+}
+
+static void
+render_set_clear_color_impl( i32 ctx_id, f32 r, f32 g, f32 b, f32 a )
+{
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
+        return;
+
+    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+    s->clear.r = r;
+    s->clear.g = g;
+    s->clear.b = b;
+    s->clear.a = a;
 }
 
 static int
@@ -93,29 +161,19 @@ render_frame_count_impl( void )
     return g_state ? g_state->frame_count : 0;
 }
 
-static void
-render_set_clear_color_impl( float r, float g, float b, float a )
-{
-    if ( !g_state )
-        return;
-
-    g_state->clear_r = r;
-    g_state->clear_g = g;
-    g_state->clear_b = b;
-    g_state->clear_a = a;
-}
-
 /*==============================================================================================
     API Struct
 ==============================================================================================*/
 
 const render_api_t g_render_api_struct = {
-    .set_context     = render_set_context_impl,
-    .begin_frame     = render_begin_frame_impl,
-    .draw_frame      = render_draw_frame_impl,
-    .end_frame       = render_end_frame_impl,
-    .frame_count     = render_frame_count_impl,
-    .set_clear_color = render_set_clear_color_impl,
+    .context_register   = render_context_register_impl,
+    .context_unregister = render_context_unregister_impl,
+    .begin_frame        = render_begin_frame_impl,
+    .draw_scene         = render_draw_scene_impl,
+    .draw_editor        = render_draw_editor_impl,
+    .end_frame          = render_end_frame_impl,
+    .set_clear_color    = render_set_clear_color_impl,
+    .frame_count        = render_frame_count_impl,
 };
 
 /*==============================================================================================
@@ -133,15 +191,9 @@ render_init( void* raw_state, get_api_fn get_api )
 
     if ( !MOD_FETCH_RHI )
     {
-        fprintf( stderr, "[render] failed to fetch rhi_api\n" );
+        LOG_ERROR( "failed to fetch rhi_api" );
         return false;
     }
-
-    g_state->rhi_ctx = RHI_CTX_INVALID;
-    g_state->clear_r = 0.08f;
-    g_state->clear_g = 0.10f;
-    g_state->clear_b = 0.14f;
-    g_state->clear_a = 1.0f;
 
     return true;
 }

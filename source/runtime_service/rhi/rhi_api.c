@@ -2,10 +2,9 @@
 
     runtime/services/rhi/rhi_api.c -- RHI API struct wiring + module descriptor.
 
-    Included LAST by rhi.c. By this point vk_*.c and vk_init.c have defined all
-    static functions in the same translation unit. This file only:
-        - Assigns vk_* functions into g_rhi_api_struct
-        - Provides the mod_desc_t descriptor for mod_static_load
+    Included LAST by rhi.c.  By this point every vk_*.c file has defined all static
+    functions in the same translation unit; this file only assigns them into the vtable
+    and provides the mod_desc_t lifecycle descriptor for mod_static_load.
 
 ==============================================================================================*/
 
@@ -19,20 +18,64 @@
 const rhi_api_t g_rhi_api_struct =
 {
     /* Global lifecycle */
-    .init             = vk_init,
-    .shutdown         = vk_shutdown,
+    .init     = vk_init,
+    .shutdown = vk_shutdown,
 
     /* Per-context lifecycle */
-    .context_create   = vk_context_create,
-    .context_destroy  = vk_context_destroy,
-    .context_resize   = vk_context_resize,
+    .context_create  = vk_context_create,
+    .context_destroy = vk_context_destroy,
+    .context_resize  = vk_context_resize,
 
     /* Frame */
-    .frame_begin      = vk_frame_begin,
-    .frame_end        = vk_frame_end,
+    .frame_begin = vk_frame_begin,
+    .frame_end   = vk_frame_end,
+
+    /* Buffer */
+    .buffer_create  = vk_buffer_create,
+    .buffer_destroy = vk_buffer_destroy,
+    .buffer_write   = vk_buffer_write,
+
+    /* Texture */
+    .texture_create  = vk_texture_create,
+    .texture_destroy = vk_texture_destroy,
+
+    /* Sampler */
+    .sampler_create  = vk_sampler_create,
+    .sampler_destroy = vk_sampler_destroy,
+
+    /* Shader */
+    .shader_create  = vk_shader_create,
+    .shader_destroy = vk_shader_destroy,
+
+    /* Pipeline */
+    .pipeline_create  = vk_pipeline_create,
+    .pipeline_destroy = vk_pipeline_destroy,
+
+    /* Staged upload */
+    .upload_buffer  = vk_upload_buffer,
+    .upload_texture = vk_upload_texture,
 
     /* Commands */
-    .cmd_clear_color  = vk_cmd_clear_color,
+    .cmd_set_viewport       = vk_cmd_set_viewport,
+    .cmd_set_scissor        = vk_cmd_set_scissor,
+    .cmd_bind_pipeline      = vk_cmd_bind_pipeline,
+    .cmd_bind_vertex_buffer = vk_cmd_bind_vertex_buffer,
+    .cmd_bind_index_buffer  = vk_cmd_bind_index_buffer,
+    .cmd_push_constants     = vk_cmd_push_constants,
+    .cmd_draw               = vk_cmd_draw,
+    .cmd_draw_indexed       = vk_cmd_draw_indexed,
+    .cmd_clear_color        = vk_cmd_clear_color,
+
+    /* Bindless */
+    .register_texture   = vk_register_texture,
+    .unregister_texture = vk_unregister_texture,
+    .register_sampler   = vk_register_sampler,
+    .unregister_sampler = vk_unregister_sampler,
+    .cmd_bind_bindless  = vk_cmd_bind_bindless,
+
+    /* Debug labels */
+    .cmd_begin_label = vk_cmd_begin_label,
+    .cmd_end_label   = vk_cmd_end_label,
 };
 
 /*==============================================================================================
@@ -45,8 +88,8 @@ rhi_mod_init( void* raw_state, get_api_fn get_api )
     UNUSED( raw_state );
     UNUSED( get_api );
 
-    /* Load the Vulkan DLL only. The host calls rhi()->init() for global device
-       init once it is ready, and rhi()->context_create() per window. */
+    /* Load Vulkan DLL only.  Host calls rhi()->init() for the global device, then
+       rhi()->context_create() per window. */
     return vk_lib_init();
 }
 
@@ -55,8 +98,7 @@ rhi_mod_exit( void* raw_state )
 {
     UNUSED( raw_state );
 
-    /* Defensive: destroy any contexts the host left open, then shut down
-       the global device. */
+    /* Defensive cleanup: destroy any contexts the host left open, then shut down. */
     for ( int i = 0; i < RHI_CTX_MAX; ++i )
     {
         if ( g_vk.ctx_alloc & ( 1u << i ) )
@@ -76,18 +118,18 @@ rhi_mod_exit( void* raw_state )
 mod_desc_t*
 rhi_get_mod_desc( void )
 {
-    static mod_desc_t api = {
+    static mod_desc_t desc = {
         .version       = 1,
-        .state_size    = 0, /* singleton lives in vk_state.c's g_vk */
+        .state_size    = 0,   /* singleton lives in g_vk (vk_state.c); not managed by mod system */
         .func_api_size = sizeof( rhi_api_t ),
-        .dep_count     = 2,
+        .dep_count     = 3,
         .deps          = { "sys", "app", "core" },
         .func_api      = &g_rhi_api_struct,
         .init          = rhi_mod_init,
         .exit          = rhi_mod_exit,
-        .reload        = NULL,
+        .reload        = NULL,   /* RHI is a static service; hot-reload not supported */
     };
-    return &api;
+    return &desc;
 }
 
 /*============================================================================================*/
