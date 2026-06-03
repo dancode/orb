@@ -11,7 +11,7 @@
     (vk_instance_create, vk_surface_create, etc.) are visible.
 
 ==============================================================================================*/
-
+// clang-format off
 /*==============================================================================================
     Context pool helpers
 ==============================================================================================*/
@@ -76,6 +76,9 @@ vk_init( void )
        vk_context_create call will validate the choice against a real surface. */
 
     if ( !vk_instance_create() ) goto fail_after_nothing;
+
+    // TODO: vk_debug_messenger_init();
+
     if ( !vk_device_create()   ) goto fail_after_instance;
 
     g_vk.initialized = true;
@@ -84,6 +87,7 @@ vk_init( void )
 
 fail_after_instance:  vk_instance_destroy();
 fail_after_nothing:
+
     printf( "[rhi] init failed\n" );
     return false;
 }
@@ -154,6 +158,7 @@ fail_after_sync:      vk_sync_destroy( ctx );
 fail_after_swapchain: vk_swapchain_destroy( ctx );
 fail_after_surface:   vk_surface_destroy( ctx );
 fail_after_nothing:
+
     vk_ctx_free( id );
     memset( ctx, 0, sizeof( *ctx ) );
     printf( "[rhi] context_create failed (win %d)\n", win_id );
@@ -201,3 +206,4 @@ vk_context_resize( i32 ctx_id, i32 width, i32 height )
 }
 
 /*============================================================================================*/
+// clang-format on
