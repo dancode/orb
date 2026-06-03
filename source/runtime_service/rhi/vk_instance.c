@@ -26,15 +26,14 @@ vk_instance_get_extensions( const char** out_ext_array )
 
     /* collect list of vulkan extentions */
     
-    VkResult result = VK_SUCCESS;
-    result = vkEnumerateInstanceExtensionProperties( NULL, &ext_count, NULL );    
-    result = vkEnumerateInstanceExtensionProperties( NULL, &ext_count, ext_props );    
-    assert( ext_count <= 64 );
-    if ( result != VK_SUCCESS ) {
-         LOG_ERROR( "vkEnumerateInstanceExtensionProperties: %s", string_VkResult( result ) );
+    VkResult r = vkEnumerateInstanceExtensionProperties( NULL, &ext_count, NULL );    
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "vkEnumerateInstanceExtensionProperties: %s", string_VkResult( r ) );
          return 0;
     }
-    
+    assert( ext_count <= 64 );
+    vkEnumerateInstanceExtensionProperties( NULL, &ext_count, ext_props );    
+
     /* validate the extentions we require exists. */
     
     bool has_debug_utils_ext = false;
@@ -76,7 +75,7 @@ vk_instance_get_extensions( const char** out_ext_array )
     
     /* debug list our available extensions */
 
-    LOG_INFO( "VK: %u extensions supported", ext_count );
+    LOG_INFO( "%u extensions supported", ext_count );
     for ( u32 i = 0; i < ext_count; i++ ) {
         LOG_TRACE( "EXT: %s", ext_props[ i ].extensionName );
     }
@@ -114,14 +113,13 @@ vk_instance_get_layers( const char** out_layer_names )
 
     /* get available vulkan layers */
     
-    VkResult result = VK_SUCCESS;
-    result = vkEnumerateInstanceLayerProperties( &layer_count, NULL );
-    result = vkEnumerateInstanceLayerProperties( &layer_count, layer_props );
-    assert( layer_count <= 32 );
-    if ( result != VK_SUCCESS ) {
-         LOG_FATAL( "vkEnumerateInstanceLayerProperties: %s", string_VkResult( result ) );
+    VkResult r = vkEnumerateInstanceLayerProperties( &layer_count, NULL );
+    if ( r != VK_SUCCESS ) {
+         LOG_FATAL( "vkEnumerateInstanceLayerProperties: %s", string_VkResult( r ) );
     }
-
+    assert( layer_count <= 32 );
+    vkEnumerateInstanceLayerProperties( &layer_count, layer_props );    
+    
     /* set all the instance layers we require */
 
     static const char* validation_layer = "VK_LAYER_KHRONOS_validation";
@@ -165,7 +163,7 @@ vk_instance_get_layers( const char** out_layer_names )
 
     /* debug list our available layers */
 
-    LOG_INFO( "VK: %u layerrs supported", layer_count );
+    LOG_INFO( "%u layerrs supported", layer_count );
     for ( u32 i = 0; i < layer_count; i++ ) {
         LOG_TRACE( "LYR: %s", layer_props[ i ].layerName );    
     }
@@ -206,54 +204,64 @@ vk_get_version()
 ==============================================================================================*/
 
 static bool
-vk_instance_create(  u32 layer_count, const char** layer_array, u32 ext_count, const char** ext_array )
+vk_instance_create( u32 layer_count, const char** layer_array, u32 ext_count, const char** ext_array )
 {
-    LOG_INFO( "instance_create" );
+    /* Describe the application and the minimum Vulkan API version required. */
 
-    /* Create a vulkan instance + set optional application info. */
+    VkApplicationInfo app_info  = { 0 };
+    app_info.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app_info.pApplicationName   = "orb";
+    app_info.applicationVersion = VK_MAKE_API_VERSION( 0, 1, 0, 0 );
+    app_info.pEngineName        = "orb";
+    app_info.engineVersion      = VK_MAKE_API_VERSION( 0, ORB_VERSION_MAJOR, ORB_VERSION_MINOR, ORB_VERSION_PATCH );
+    app_info.apiVersion         = VK_API_VERSION_1_3;
 
-    // VkDebugUtilsMessengerCreateInfoEXT dbg_info = { 0 };
+    VkInstanceCreateInfo ci    = { 0 };
+    ci.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    ci.pApplicationInfo        = &app_info;
+    ci.enabledExtensionCount   = ext_count;
+    ci.ppEnabledExtensionNames = ext_array;
+    ci.enabledLayerCount       = layer_count;
+    ci.ppEnabledLayerNames     = layer_array;
+
+    /* Chain a debug messenger CI into pNext so validation messages emitted during
+       vkCreateInstance / vkDestroyInstance itself are captured (before the
+       persistent messenger exists).  vk_debug_messenger_fill_ci() is the single
+       source of truth for callback settings; it and vk_debug_callback only exist
+       in DEBUG builds. */
+
+#if DEBUG
+    VkDebugUtilsMessengerCreateInfoEXT dbg_ci = { 0 };
     if ( vk.use_vk_ext_debug_utils )
     {
-        vk_debug_messenger_create();
+        vk_debug_messenger_fill_ci( &dbg_ci );
+        ci.pNext = &dbg_ci;
     }
-    // UNUSED( dbg_info );
+#endif
 
-    /*
-   2. Fill VkApplicationInfo:
-          sType            = VK_STRUCTURE_TYPE_APPLICATION_INFO
-          pEngineName      = "orb"
-          engineVersion    = VK_MAKE_API_VERSION( 0, ORB_VERSION_MAJOR, ... )
-          apiVersion       = VK_API_VERSION_1_3
+    VkResult r = vkCreateInstance( &ci, vk.alloc_cb, &vk.instance );
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "vkCreateInstance: %s", string_VkResult( r ) );
+         return false;
+    }
 
-   3. Query supported instance extensions via vkEnumerateInstanceExtensionProperties.
-      Build required extension list:
-          VK_KHR_SURFACE_EXTENSION_NAME
-          platform surface (VK_KHR_WIN32_SURFACE_EXTENSION_NAME etc.)
-          VK_EXT_DEBUG_UTILS_EXTENSION_NAME  (debug builds only; skip if absent)
-
-   4. Query supported layers via vkEnumerateInstanceLayerProperties.
-      Optionally enable:
-          "VK_LAYER_KHRONOS_validation"  (debug builds; skip if absent)
-
-   5. vkCreateInstance -> vk.instance
-   */
-
+    LOG_INFO( "vkCreateInstance: OK" );
     return true;
 }
+
+/*============================================================================================*/
 
 static void
 vk_instance_destroy( void )
 {
-    LOG_INFO( "instance_destroy (placeholder)" );
+    if ( vk.instance == VK_NULL_HANDLE )
+        return;
 
-    /* TODO (Vulkan implementation):
-       #if DEBUG
-           vk_debug_messenger_destroy()
-       #endif
-       vkDestroyInstance( vk.instance, vk.alloc_cb )
-       vk.instance = VK_NULL_HANDLE
-    */
+    vk_debug_messenger_destroy();
+    vkDestroyInstance( vk.instance, vk.alloc_cb );
+    vk.instance = VK_NULL_HANDLE;
+
+    LOG_INFO( "instance_destroy: OK" );
 }
 
 /*============================================================================================*/
@@ -285,24 +293,24 @@ vk_instance_init()
          LOG_FATAL( "vulkan layers buffer overflow" );
     }
 
-    /* create instance using extention and layers and checking version */
-    vk_instance_create( layer_count, layers_array, exten_count, exten_array );
+    /* create instance */
 
-    /* ignore verbose extention spam messages on load */
-    // vk_debug_messenger_enable( true );
+    if ( !vk_instance_create( layer_count, layers_array, exten_count, exten_array ) )
+         return false;
 
-    /* load function pointers that can only be queried after creating instance */
-    // vk_lib_instance_entry_points();
+    /* load instance-level function pointers now that vk.instance is live */
 
-   /*
+    if ( !vk_lib_instance_entry_points() )
+    {
+         vk_instance_destroy();
+         return false;
+    }
 
-   6. Load instance-level function pointers:
-          vk_lib_instance_entry_points()
+    /* create the persistent debug messenger (requires instance-level functions) */
 
-   7. In debug builds, create the debug messenger:
-          vk_debug_messenger_create()  (defined in vk_debug.c)
-*/
-
+    if ( vk.use_vk_ext_debug_utils ) {
+         vk_debug_messenger_create();
+    }
 
     return true;
 }

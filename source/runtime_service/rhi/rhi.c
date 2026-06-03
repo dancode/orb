@@ -39,6 +39,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "orb.h"
 
@@ -78,6 +79,8 @@
     Vulkan headers  (VK_NO_PROTOTYPES: we own all function pointer declarations)
 ==============================================================================================*/
 
+/* NOTE: We are Win32 only for Vulkan currently!!! */
+
 #if OS_WINDOWS
 
     #define VK_USE_PLATFORM_WIN32_KHR
@@ -116,10 +119,10 @@
 ==============================================================================================*/
 
 #include "runtime_service/rhi/vk_state.c"
-#include "runtime_service/rhi/vk_alloc_callback.c"
-
 #include "runtime_service/rhi/vk_library.c"
-#include "runtime_service/rhi/vk_debug.c"
+#include "runtime_service/rhi/vk_callback_alloc.c"
+#include "runtime_service/rhi/vk_callback_debug.c"
+
 #include "runtime_service/rhi/vk_memory.c"
 #include "runtime_service/rhi/vk_texture.c"
 #include "runtime_service/rhi/vk_buffer.c"

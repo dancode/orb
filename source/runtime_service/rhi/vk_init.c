@@ -69,7 +69,10 @@ vk_init( void )
       
     if ( !vk_instance_init() ) goto fail_after_nothing;
 
-    // TODO: vk_debug_messenger_init();
+    /* ignore verbose extention spam messages on load */
+    vk_debug_set_min_level( LOG_LEVEL_WARN );
+
+    LOG_LINE();
 
     if ( !vk_device_create() ) goto fail_after_instance;
 

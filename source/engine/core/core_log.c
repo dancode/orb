@@ -45,7 +45,7 @@ static int              g_sink_count = 0;
 ==============================================================================================*/
 
 static const char* s_prefixes[ LOG_LEVEL_COUNT ] = {
-    "[trace] ", "[debug] ", "[info] ", "[warn] ", "[error] ", "[fatal] "
+    "[trace] ", "[debug] ", "[info ] ", "[warn ] ", "[error] ", "[fatal] "
 };
 
 static const char s_separator[] = "------------------------------------------------";
