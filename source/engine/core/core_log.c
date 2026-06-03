@@ -21,9 +21,22 @@ typedef struct
                                         // (e.g. file handle, network connection)
 } log_sink_slot_t;
 
+/* current mutable logging level */
+
 static log_level_t      g_min_level = LOG_LEVEL_INFO;
+
+/* monotonic sequence number for log entries; 
+   used to compute ring slot index and detect dropped entries */
+
 static u32              g_ring_seq = 0;
+
+/* fixed-size ring buffer of recent log entries; 
+   indexed by seq % LOG_RING_CAPACITY */
+
 static log_entry_t      g_ring[ LOG_RING_CAPACITY ];
+
+/* simple fixed-size sink list; no duplicates, no ordering guarantees */
+
 static log_sink_slot_t  g_sinks[ LOG_MAX_SINKS ];
 static int              g_sink_count = 0;
 
@@ -32,7 +45,7 @@ static int              g_sink_count = 0;
 ==============================================================================================*/
 
 static const char* s_prefixes[ LOG_LEVEL_COUNT ] = {
-    "[trace] ", "[debug] ", "[info] ", "[warn] ", "[error] "
+    "[trace] ", "[debug] ", "[info] ", "[warn] ", "[error] ", "[fatal] "
 };
 
 static const char s_separator[] = "------------------------------------------------";
@@ -135,6 +148,12 @@ log_write( log_level_t level, const char* channel, const char* fmt, ... )
 
     for ( int i = 0; i < g_sink_count; i++ )
         g_sinks[ i ].fn( entry, g_sinks[ i ].userdata );
+
+    if ( level == LOG_LEVEL_FATAL )
+    {
+        assert( 0 );
+        exit( 1 );
+    }
 }
 
 /*==============================================================================================

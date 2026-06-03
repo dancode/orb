@@ -134,23 +134,27 @@ typedef ptrdiff_t isize;
 ==============================================================================================*/
 
 #if COMPILER_MSVC
-    #define ORB_INLINE        __forceinline
-    #define ORB_NOINLINE      __declspec( noinline )
-    #define ORB_ALIGNAS( n )  __declspec( align( n ) )
-    #define ORB_ALIGNOF( T )  __alignof( T )
-    #define ORB_THREAD_LOCAL  __declspec( thread )
-    #define ORB_LIKELY( x )   ( x )
-    #define ORB_UNLIKELY( x ) ( x )
+    #define ORB_INLINE          __forceinline
+    #define ORB_NOINLINE        __declspec( noinline )
+    #define ORB_ALIGNAS( n )    __declspec( align( n ) )
+    #define ORB_ALIGNOF( T )    __alignof( T )
+    #define ORB_THREAD_LOCAL    __declspec( thread )
+    #define ORB_LIKELY( x )     ( x )
+    #define ORB_UNLIKELY( x )   ( x )
     #define ORB_UNUSED_FN
+    #define ORB_NORETURN        __declspec( noreturn )
+    #define ORB_UNREACHABLE()   __assume( 0 )
 #else
-    #define ORB_INLINE        inline __attribute__( ( always_inline ) )
-    #define ORB_NOINLINE      __attribute__( ( noinline ) )
-    #define ORB_ALIGNAS( n )  __attribute__( ( aligned( n ) ) )
-    #define ORB_ALIGNOF( T )  _Alignof( T )
-    #define ORB_THREAD_LOCAL  __thread    // C11: _Thread_local
-    #define ORB_LIKELY( x )   __builtin_expect( !!( x ), 1 )
-    #define ORB_UNLIKELY( x ) __builtin_expect( !!( x ), 0 )
-    #define ORB_UNUSED_FN     __attribute__( ( unused ) )
+    #define ORB_INLINE          inline __attribute__( ( always_inline ) )
+    #define ORB_NOINLINE        __attribute__( ( noinline ) )
+    #define ORB_ALIGNAS( n )    __attribute__( ( aligned( n ) ) )
+    #define ORB_ALIGNOF( T )    _Alignof( T )
+    #define ORB_THREAD_LOCAL    __thread    // C11: _Thread_local
+    #define ORB_LIKELY( x )     __builtin_expect( !!( x ), 1 )
+    #define ORB_UNLIKELY( x )   __builtin_expect( !!( x ), 0 )
+    #define ORB_UNUSED_FN       __attribute__( ( unused ) )
+    #define ORB_NORETURN        __attribute__( ( noreturn ) )
+    #define ORB_UNREACHABLE()   __builtin_unreachable()
 #endif
 
 #if COMPILER_MSVC
@@ -261,6 +265,7 @@ typedef ptrdiff_t isize;
 #define ORB_LOG_INFO  2
 #define ORB_LOG_WARN  3
 #define ORB_LOG_ERROR 4
+#define ORB_LOG_FATAL 5
 
 typedef void ( *log_fn_t )( int level, const char* tag, const char* msg );
 

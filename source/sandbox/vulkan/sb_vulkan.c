@@ -56,6 +56,8 @@ main( int argc, char** argv )
     assert( core() );
     assert( rhi() );
 
+    core()->log_set_min_level( LOG_LEVEL_TRACE );
+
     LOG_LINE();
 
     /* Open window. */

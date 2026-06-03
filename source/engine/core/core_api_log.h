@@ -22,6 +22,8 @@
 ==============================================================================================*/
 #pragma once
 
+#include "orb.h"
+
 #ifndef CORE_API_H
     #error "log.h must not be included directly; include core_api.h"
 #endif
@@ -88,7 +90,8 @@
     #define LOG_ERROR( fmt, ... )  ( ( void )0 )
 #endif
 
-#define LOG_LINE()  core()->log_write( LOG_LEVEL_LINE, LOG_CH, "" )
+#define LOG_FATAL( fmt, ... )  do { _LOG( LOG_LEVEL_FATAL, fmt, ##__VA_ARGS__ ); ORB_UNREACHABLE(); } while ( 0 )
+#define LOG_LINE()             core()->log_write( LOG_LEVEL_LINE, LOG_CH, "" )
 
 // clang-format on
 /*============================================================================================*/

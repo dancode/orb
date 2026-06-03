@@ -71,7 +71,7 @@ vk_init( void )
 
     // TODO: vk_debug_messenger_init();
 
-    if ( !vk_device_create()   ) goto fail_after_instance;
+    if ( !vk_device_create() ) goto fail_after_instance;
 
     vk.initialized = true;
     LOG_LINE();

@@ -170,6 +170,11 @@ warn_suppress_t g_warn_suppressions[] = {
     // clang-cl: suppress spurious "linker input unused" when the toolchain passes extra
     // arguments that clang doesn't consume (e.g. response-file edge cases).
     { "-Wno-unused-command-line-argument", CONFIG_COUNT, COMPILE_CLANG },
+
+    // C6262: stack frame exceeds threshold. Default is 16 KB; raised to 64 KB here.
+    // We have 1 MB of stack and stay shallow, so large locals are not a concern.
+    // To suppress entirely instead: { "/wd6262", CONFIG_COUNT, COMPILE_MSVC }
+    { "/analyze:stacksize 65536",          CONFIG_COUNT, COMPILE_MSVC  },
 };
 
 int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_suppressions[ 0 ] );

@@ -183,13 +183,12 @@ typedef struct vk_state_s
 
     bool    initialized;    
     bool    use_vk_alloc_cb;                // use Vulkan allocation callbacks.
-    bool    use_vk_debug_messenger;         // use debug messenger.
+    bool    use_vk_ext_debug_utils;         // use debug messenger.
     bool    use_vk_layer_validation;        // use vulkan debug layer.
     bool    use_vk_layer_monitor;           // use vulkan debug layer.
 
     bool    ext_win32_surface;              // extention required for win32 window surface support
     bool    ext_khr_surface;                // extention required for win32 window surface support
-
 
     /* Vulkan loader handle */
     lib_handle_t  dll;
@@ -199,38 +198,46 @@ typedef struct vk_state_s
     VkDevice     device;
 
     /* Allocation callbacks (NULL = Vulkan default allocator) */
+
     VkAllocationCallbacks*              alloc_cb;
 
     /* Debug messenger (enabled when DEBUG and VK_EXT_debug_utils is available) */
+
     VkDebugUtilsMessengerEXT            debug_messenger;
 
     /* Physical device */
+
     VkPhysicalDevice                    physical_device;
     VkPhysicalDeviceProperties          physical_device_props;
     VkPhysicalDeviceMemoryProperties    memory_props;
 
     /* Queue families; may be the same index on some hardware */
-    u32    graphics_queue_family;
-    u32    present_queue_family;
-    u32    transfer_queue_family;    /* dedicated transfer queue if available, else graphics */
-    VkQueue  graphics_queue;
-    VkQueue  present_queue;
-    VkQueue  transfer_queue;
+
+    u32         graphics_queue_family;
+    u32         present_queue_family;
+    u32         transfer_queue_family;    /* dedicated transfer queue if available, else graphics */
+    VkQueue     graphics_queue;
+    VkQueue     present_queue;
+    VkQueue     transfer_queue;
 
     /* Pipeline cache (loaded from disk at init; serialized at shutdown for warm restarts) */
+
     VkPipelineCache  pipeline_cache;
 
     /* Global bindless descriptor layout (set 0; shared by all pipelines) */
+
     VkDescriptorPool       bindless_pool;
     VkDescriptorSetLayout  bindless_layout;
     VkDescriptorSet        bindless_set;
     VkPipelineLayout       pipeline_layout;   /* push constants + bindless set 0 */
 
     /* Staging upload ring (indexed by global_frame % VK_MAX_FRAMES_IN_FLIGHT) */
+
     vk_staging_t  staging[ VK_MAX_FRAMES_IN_FLIGHT ];
     u32           global_frame;   /* monotonic counter; drives staging slot selection */
 
     /* Resource slot pools */
+
     vk_buffer_slot_t    buffers[ VK_MAX_BUFFERS ];
     vk_texture_slot_t   textures[ VK_MAX_TEXTURES ];
     vk_sampler_slot_t   samplers[ VK_MAX_SAMPLERS ];
@@ -238,12 +245,19 @@ typedef struct vk_state_s
     vk_pipeline_slot_t  pipelines[ VK_MAX_PIPELINES ];
 
     /* Context pool */
+
     vk_context_t  contexts[ RHI_CTX_MAX ];
     u32           ctx_alloc;   /* bitmask: bit i set = slot i is live */
 
 } vk_state_t;
 
-static vk_state_t vk;
+static vk_state_t vk =
+{
+    .use_vk_alloc_cb = true,
+    .use_vk_ext_debug_utils = true,
+    .use_vk_layer_validation = true,
+    .use_vk_layer_monitor = true,
+};
 
 /*============================================================================================*/
 // clang-format on

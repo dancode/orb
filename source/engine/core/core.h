@@ -25,12 +25,12 @@ typedef enum log_level_e
     LOG_LEVEL_INFO  = ORB_LOG_INFO,     // significant one-time events
     LOG_LEVEL_WARN  = ORB_LOG_WARN,     // recoverable issues
     LOG_LEVEL_ERROR = ORB_LOG_ERROR,    // non-fatal errors
-
+    LOG_LEVEL_FATAL = ORB_LOG_FATAL,    // fatal error that should trigger a breakpoint;
     LOG_LEVEL_LINE  = 0xFF,             // visual separator; filtered and stored at INFO level
 
 } log_level_t;
 
-#define LOG_LEVEL_COUNT   5
+#define LOG_LEVEL_COUNT   6
 #define LOG_RING_CAPACITY 4096          // ring slot count; must be a power of 2
 
 /* Single log record written into the ring buffer and passed to every sink. */
