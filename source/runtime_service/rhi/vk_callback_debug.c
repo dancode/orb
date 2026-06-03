@@ -41,8 +41,8 @@ vk_debug_set_min_level( log_level_t level )
 
     No Vulkan equivalent exists for LOG_LEVEL_DEBUG or LOG_LEVEL_FATAL.
 ==============================================================================================*/
-#if DEBUG
 
+#if DEBUG
 static log_level_t
 vk_severity_to_log_level( VkDebugUtilsMessageSeverityFlagBitsEXT severity )
 {
@@ -73,8 +73,8 @@ vk_debug_callback( VkDebugUtilsMessageSeverityFlagBitsEXT       severity,
 
     return VK_FALSE; /* returning VK_TRUE would abort the Vulkan call that triggered this */
 }
-
 #endif /* DEBUG */
+
 /*==============================================================================================
     Single source of truth for messenger create info settings.
 
@@ -82,23 +82,26 @@ vk_debug_callback( VkDebugUtilsMessageSeverityFlagBitsEXT       severity,
     by vk_instance_create() to capture messages during vkCreateInstance /
     vkDestroyInstance before the persistent messenger exists.
 ==============================================================================================*/
-#if DEBUG
 
+#if DEBUG
 static void
 vk_debug_messenger_fill_ci( VkDebugUtilsMessengerCreateInfoEXT* ci )
 {
     ci->sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+
     ci->messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT   |
                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT    |
                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
-    ci->messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT    |
+
+    ci->messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT     |
                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT  |
                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+
     ci->pfnUserCallback = vk_debug_callback;
 }
-
 #endif /* DEBUG */
+
 /*==============================================================================================
     Messenger lifecycle
 ==============================================================================================*/
@@ -117,8 +120,7 @@ vk_debug_messenger_create( void )
         LOG_ERROR( "vkCreateDebugUtilsMessengerEXT: %s", string_VkResult( r ) );
         return false;
     }
-
-    LOG_INFO( "debug messenger: OK" );
+    LOG_INFO( "vkCreateDebugUtilsMessengerEXT: OK" );
 
 #endif
 

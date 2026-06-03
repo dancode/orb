@@ -61,20 +61,22 @@ vk_init( void )
     }
 
     LOG_LINE();
+    LOG_INFO( "vk_init..." );
 
-    if ( vk.use_vk_alloc_cb )
-    {
+    if ( vk.use_vk_alloc_cb ) {
         vk_allocation_callback_init();
     }
-      
-    if ( !vk_instance_init() ) goto fail_after_nothing;
+    
+    if ( !vk_instance_init() ) 
+        goto fail_after_nothing;
 
-    /* ignore verbose extention spam messages on load */
+    /* turn on regular logging levels */
     vk_debug_set_min_level( LOG_LEVEL_WARN );
 
     LOG_LINE();
 
-    if ( !vk_device_create() ) goto fail_after_instance;
+    if ( !vk_device_create() ) 
+        goto fail_after_instance;
 
     vk.initialized = true;
     LOG_LINE();
@@ -94,15 +96,16 @@ vk_shutdown( void )
     if ( !vk.initialized )
         return;
 
-    LOG_INFO( "shutdown begin\n" );
+    LOG_LINE();
+    LOG_INFO( "vk_shutdown..." );
 
     /* TODO: vkDeviceWaitIdle before destroying device-owned objects. */
 
     vk_device_destroy();
     vk_instance_destroy();
 
-    vk.initialized = false;
-    LOG_INFO( "shutdown complete\n" );
+    vk.initialized = false;    
+    LOG_LINE();
 }
 
 /*==============================================================================================

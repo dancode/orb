@@ -284,32 +284,34 @@ vk_instance_init()
     const char* exten_array[ 8 ] = { 0 };
     i32  exten_count = vk_instance_get_extensions( exten_array );
     if ( exten_count >= 8 || exten_count == 0 ) {
-         LOG_FATAL( "vulkan extension buffer failure or overflow" );
+         LOG_ERROR( "vulkan extension buffer failure or overflow" );
+         return false;
     }
 
     const char* layers_array[ 8 ] = { 0 };
     i32  layer_count = vk_instance_get_layers( layers_array );
     if ( layer_count >= 8 ) {
-         LOG_FATAL( "vulkan layers buffer overflow" );
+         LOG_ERROR( "vulkan layers buffer overflow" );
+         return false;
     }
 
     /* create instance */
 
-    if ( !vk_instance_create( layer_count, layers_array, exten_count, exten_array ) )
+    if ( !vk_instance_create( layer_count, layers_array, exten_count, exten_array )) {
          return false;
+    }
 
     /* load instance-level function pointers now that vk.instance is live */
 
-    if ( !vk_lib_instance_entry_points() )
-    {
-         vk_instance_destroy();
-         return false;
+    if ( !vk_lib_instance_entry_points() ){
+          vk_instance_destroy();
+          return false;
     }
 
     /* create the persistent debug messenger (requires instance-level functions) */
 
     if ( vk.use_vk_ext_debug_utils ) {
-         vk_debug_messenger_create();
+         vk_debug_messenger_create();         
     }
 
     return true;
