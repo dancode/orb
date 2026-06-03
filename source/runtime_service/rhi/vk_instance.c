@@ -6,6 +6,7 @@
     the validation diagnostic plumbing in debug builds.
 
 ==============================================================================================*/
+// clang-format off
 /*==============================================================================================
 
     Vulkan extensions provide additional functionality beyond the core Vulkan API .
@@ -14,7 +15,7 @@
 ==============================================================================================*/
 
 static i32
-vk_instance_get_extensions( const i8** out_ext_array )
+vk_instance_get_extensions( const char** out_ext_array )
 {
     i32                   out_ext_count   = 0;
     u32                   ext_count       = 0;
@@ -23,63 +24,58 @@ vk_instance_get_extensions( const i8** out_ext_array )
     UNUSED( ext_props );
     UNUSED( ext_count );
 
-    // /* collect list of vulkan extentions */
-    // 
-    // VkResult result = VK_SUCCESS;
-    // result          = vkEnumerateInstanceExtensionProperties( NULL, &ext_count, NULL );
-    // result          = vkEnumerateInstanceExtensionProperties( NULL, &ext_count, ext_props );
-    // 
-    // check( ext_count <= 32 );
-    // 
-    // if ( result != VK_SUCCESS )
-    // {
-    //     FATAL( "vkEnumerateInstanceExtensionProperties: %s", string_VkResult( result ) );
-    //     return ext_count;
-    // }
-    // 
-    // /* validate the extentions we require exists. */
-    // 
-    // for ( u32 i = 0; i < ext_count; i++ )
-    // {
-    //     str_t ext_str = str_( ext_props[ i ].extensionName );
-    //     if ( str_cmp( str_arg( VK_KHR_WIN32_SURFACE_EXTENSION_NAME ), &ext_str ) == true )
-    //     {
-    //         vk.ext_win32_surface = true;
-    //         continue;
-    //     }
-    //     if ( str_cmp( str_arg( VK_KHR_SURFACE_EXTENSION_NAME ), &ext_str ) == true )
-    //     {
-    //         vk.ext_khr_surface = true;
-    //         continue;
-    //     }
-    // }
-    // 
-    // if ( vk.ext_win32_surface == false || vk.ext_khr_surface == false )
-    // {
-    //     FATAL( "failed to get win32 surface extensions" );
-    //     return out_ext_count;
-    // }
-    // 
-    // /* add the extentions to extention list */
-    // 
-    // out_ext_array[ 0 ] = VK_KHR_SURFACE_EXTENSION_NAME;
-    // out_ext_array[ 1 ] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
-    // out_ext_count      = 2;
-    // 
-    // if ( vk.use_vk_debug_messenger )
-    // {
-    //     out_ext_array[ 2 ] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-    //     out_ext_count++;
-    // }
-    // 
-    // if ( vk.use_debug_print && 0 )
-    // {
-    //     INFO( "VK: %u extensions supported", ext_count );
-    //     for ( u32 i = 0; i < ext_count; i++ )
-    //     {
-    //         INFO( "VKEXT: %s", ext_props[ i ].extensionName );
-    //     }
-    // }
+    /* collect list of vulkan extentions */
+    
+    VkResult result = VK_SUCCESS;
+    result = vkEnumerateInstanceExtensionProperties( NULL, &ext_count, NULL );
+    result = vkEnumerateInstanceExtensionProperties( NULL, &ext_count, ext_props );
+    
+    assert( ext_count <= 32 );
+    
+    if ( result != VK_SUCCESS )
+    {
+        LOG_ERROR( "vkEnumerateInstanceExtensionProperties: %s", string_VkResult( result ) );
+        return 0;
+    }
+    
+    /* validate the extentions we require exists. */
+    
+    for ( u32 i = 0; i < ext_count; i++ )
+    {
+        const char* ext_str = ext_props[ i ].extensionName;
+        if ( strcmp( VK_KHR_WIN32_SURFACE_EXTENSION_NAME, ext_str ) == 0 ) 
+        {
+            vk.ext_win32_surface = true;
+        }
+        if ( strcmp( VK_KHR_SURFACE_EXTENSION_NAME, ext_str ) == 0 )
+        {
+            vk.ext_khr_surface = true;
+        }
+    }
+    
+    if ( vk.ext_win32_surface == false || vk.ext_khr_surface == false )
+    {
+        LOG_ERROR( "failed to get win32 surface extensions" );
+        return 0;
+    }
+    
+    /* add the extentions to extention list */
+    
+    out_ext_array[ 0 ] = VK_KHR_SURFACE_EXTENSION_NAME;
+    out_ext_array[ 1 ] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+    out_ext_count = 2;
+    
+    if ( vk.use_vk_debug_messenger )
+    {
+        out_ext_array[ 2 ] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+        out_ext_count++;
+    }
+    
+    LOG_INFO( "VK: %u extensions supported", ext_count );
+    for ( u32 i = 0; i < ext_count; i++ )
+    {
+        LOG_DEBUG( "VKEXT: %s", ext_props[ i ].extensionName );
+    }
 
     return out_ext_count;
 }
@@ -92,81 +88,75 @@ vk_instance_get_extensions( const i8** out_ext_array )
 ==============================================================================================*/
 
 static i32 /* count */
-vk_instance_get_layers( const i8** out_layer_names )
+vk_instance_get_layers( const char** out_layer_names )
 {
     i32 out_layer_count = 0;
 
-    // /* get the instance support layers list. */
-    // 
-    // u32               layer_count       = 0;
-    // VkLayerProperties layer_props[ 32 ] = { 0 };
-    // 
-    // /* get available vulkan layers */
-    // 
-    // VkResult result = VK_SUCCESS;
-    // result          = vkEnumerateInstanceLayerProperties( &layer_count, NULL );
-    // result          = vkEnumerateInstanceLayerProperties( &layer_count, layer_props );
-    // if ( result != VK_SUCCESS )
-    // {
-    //     FATAL( "vkEnumerateInstanceLayerProperties: %s", string_VkResult( result ) );
-    //     return out_layer_count;
-    // }
-    // 
-    // check( layer_count <= 32 );
-    // 
-    // /* set all the instance layers we require */
-    // 
-    // static ci8* validation_layer     = "VK_LAYER_KHRONOS_validation";
-    // static ci8* monitor_layer        = "VK_LAYER_LUNARG_monitor";
-    // 
-    // bool        has_layer_validation = false;
-    // bool        has_layer_monitor    = false;
-    // 
-    // /* validate debug layer we require exists in layer list. */
-    // 
-    // for ( u32 i = 0; i < layer_count; i++ )
-    // {
-    //     cstr_t layername = str_( layer_props[ i ].layerName );
-    // 
-    //     if ( str_cmp( str_arg( validation_layer ), &layername ) == true )
-    //         has_layer_validation = true;
-    // 
-    //     if ( str_cmp( str_arg( monitor_layer ), &layername ) == true )
-    //         has_layer_monitor = true;
-    // }
-    // 
-    // /*  only enable if we are using validation and monitoring */
-    // 
-    // if ( vk.use_vk_layer_validation && has_layer_validation )
-    // {
-    //     out_layer_names[ out_layer_count ] = validation_layer;
-    //     out_layer_count++;
-    // }
-    // else
-    // {
-    //     vk.use_vk_layer_validation = false;
-    // }
-    // if ( vk.use_vk_layer_monitor && has_layer_monitor )
-    // {
-    //     out_layer_names[ out_layer_count ] = monitor_layer;
-    //     out_layer_count++;
-    // }
-    // else
-    // {
-    //     vk.use_vk_layer_monitor = false;
-    // }
-    // 
-    // if ( vk.use_debug_print && 0 )
-    // {
-    //     for ( u32 i = 0; i < layer_count; i++ )
-    //     {
-    //         LOG_INFO( "VKLYR: %s", layer_props[ i ].layerName );
-    //     }
-    // }
+    /* get the instance support layers list. */
+    
+    u32               layer_count = 0;
+    VkLayerProperties layer_props[ 32 ] = { 0 };
+    
+    /* get available vulkan layers */
+    
+    VkResult result = VK_SUCCESS;
+    result = vkEnumerateInstanceLayerProperties( &layer_count, NULL );
+    result = vkEnumerateInstanceLayerProperties( &layer_count, layer_props );
+    if ( result != VK_SUCCESS )
+    {
+        LOG_ERROR( "vkEnumerateInstanceLayerProperties: %s", string_VkResult( result ) );
+        return 0;
+    }
+    
+    assert( layer_count <= 32 );
+    
+    /* set all the instance layers we require */
+
+    static const char* validation_layer = "VK_LAYER_KHRONOS_validation";
+    static const char* monitor_layer    = "VK_LAYER_LUNARG_monitor";
+    
+    bool has_layer_validation = false;
+    bool has_layer_monitor    = false;
+    
+    /* validate debug layer we require exists in layer list. */
+    
+    for ( u32 i = 0; i < layer_count; i++ )
+    {   
+        if ( strcmp( validation_layer, layer_props[ i ].layerName ) == 0 )
+            has_layer_validation = true;
+
+        if ( strcmp( monitor_layer, layer_props[ i ].layerName ) == 0 )
+            has_layer_monitor = true;
+    }
+    
+    /*  only enable if we are using validation and monitoring */
+    
+    if ( vk.use_vk_layer_validation && has_layer_validation )
+    {
+        out_layer_names[ out_layer_count ] = validation_layer;
+        out_layer_count++;
+    }
+    else
+    {
+        vk.use_vk_layer_validation = false;
+    }
+    if ( vk.use_vk_layer_monitor && has_layer_monitor )
+    {
+        out_layer_names[ out_layer_count ] = monitor_layer;
+        out_layer_count++;
+    }
+    else
+    {
+        vk.use_vk_layer_monitor = false;
+    }
+
+    for ( u32 i = 0; i < layer_count; i++ )
+    {
+        LOG_DEBUG( "VKLYR: %s", layer_props[ i ].layerName );    
+    }
 
     return out_layer_count;
 }
-
 
 /*==============================================================================================
     VK: Acquire our version of Vulkan
@@ -175,7 +165,7 @@ vk_instance_get_layers( const i8** out_layer_names )
 static i32
 vk_get_version()
 {
-    u32      api_version = 0;
+    u32 api_version = 0;
     VkResult r = vkEnumerateInstanceVersion( &api_version );
     if ( r == VK_SUCCESS )
     {
@@ -189,7 +179,7 @@ vk_get_version()
     else
     {
         LOG_INFO( "failed to query vulkan api version" );
-        return 1;
+        return 0;
     }
 }
 
@@ -228,15 +218,35 @@ vk_instance_init()
 {
     assert( vk.instance == VK_NULL_HANDLE );
 
-    /* TODO (Vulkan implementation):
+    /* 1. Verify Vulkan 1.3 is available: */
+   
+    vk.version = vk_get_version();
+    if ( vk.version < 3 || vk.version == 0 )
+    {
+        LOG_ERROR( "Vulkan 1.3 required; driver reports an older version" );
+        return false;
+    }
 
-   1. Verify Vulkan 1.3 is available:
-          vkEnumerateInstanceVersion( &ver );
-          if ( VK_API_VERSION_MINOR(ver) < 3 ) -- fail with message */
-    
-    vk_get_version();
+    /* get vulkan extentions and layers that will be specified during instance creation. */
+    /* note: arrays size determinisitic, since we add < 8 extensions or layers */
 
-    /*
+    const char* exten_array[ 8 ] = { 0 };
+    u32  exten_count = vk_instance_get_extensions( exten_array );
+    if ( exten_count > 8 || exten_count == 0 )
+    {
+        LOG_ERROR( "vulkan extension buffer failure or overflow" );
+        return false;
+    }
+
+    const char* layers_array[ 8 ] = { 0 };
+    u32  layer_count = vk_instance_get_layers( layers_array );
+    if ( layer_count > 8 )
+    {
+        LOG_ERROR( "vulkan layers buffer failure or overflow" );
+        return false;
+    }
+
+   /*
    2. Fill VkApplicationInfo:
           sType            = VK_STRUCTURE_TYPE_APPLICATION_INFO
           pEngineName      = "orb"
@@ -268,3 +278,4 @@ vk_instance_init()
 
 
 /*============================================================================================*/
+// clang-format off

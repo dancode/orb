@@ -177,17 +177,19 @@ typedef struct vk_context_s
 
 typedef struct vk_state_s
 {
-    /* Global lifecycle */
-    bool  initialized;
+    i32  version;                           // minor version number
 
-    /* Configuration */
+    /* status flags */
 
-    // bool use_debug_print;                // print debug info.
-    bool use_vk_alloc_cb;                   // use Vulkan allocation callbacks.
-    // bool use_vk_debug_messenger;         // use debug messenger.
-    // bool use_vk_layer_validation;        // use vulkan debug layer.
-    // bool use_vk_layer_monitor;           // use vulkan debug layer.
-    // i32  version;                        // minor version number
+    bool    initialized;    
+    bool    use_vk_alloc_cb;                // use Vulkan allocation callbacks.
+    bool    use_vk_debug_messenger;         // use debug messenger.
+    bool    use_vk_layer_validation;        // use vulkan debug layer.
+    bool    use_vk_layer_monitor;           // use vulkan debug layer.
+
+    bool    ext_win32_surface;              // extention required for win32 window surface support
+    bool    ext_khr_surface;                // extention required for win32 window surface support
+
 
     /* Vulkan loader handle */
     lib_handle_t  dll;
