@@ -21,9 +21,9 @@ vk_ctx_alloc( void )
 {
     for ( int i = 0; i < RHI_CTX_MAX; ++i )
     {
-        if ( !( g_vk.ctx_alloc & ( 1u << i ) ) )
+        if ( !( vk.ctx_alloc & ( 1u << i ) ) )
         {
-            g_vk.ctx_alloc |= ( 1u << i );
+            vk.ctx_alloc |= ( 1u << i );
             return ( i32 )i;
         }
     }
@@ -34,7 +34,7 @@ static void
 vk_ctx_free( i32 id )
 {
     if ( id >= 0 && id < RHI_CTX_MAX )
-        g_vk.ctx_alloc &= ~( 1u << id );
+        vk.ctx_alloc &= ~( 1u << id );
 }
 
 static vk_context_t*
@@ -42,9 +42,9 @@ vk_ctx_get( i32 id )
 {
     if ( id < 0 || id >= RHI_CTX_MAX )
         return NULL;
-    if ( !( g_vk.ctx_alloc & ( 1u << id ) ) )
+    if ( !( vk.ctx_alloc & ( 1u << id ) ) )
         return NULL;
-    return &g_vk.contexts[ id ];
+    return &vk.contexts[ id ];
 }
 
 /*==============================================================================================
@@ -54,59 +54,52 @@ vk_ctx_get( i32 id )
 static bool
 vk_init( void )
 {
-    if ( g_vk.initialized )
+    if ( vk.initialized )
     {
-        printf( "[rhi] init: already initialized\n" );
+        LOG_INFO( "init: already initialized\n" );
         return true;
     }
 
-    if ( g_vk.use_vk_alloc_cb )
+    LOG_LINE();
+
+    if ( vk.use_vk_alloc_cb )
     {
         vk_allocation_callback_init();
     }
-
-    printf( "[rhi] init begin\n" );
-
-    /* Order: instance first, then device.
-       NOTE: In real Vulkan, physical device selection queries present support
-       against a specific VkSurfaceKHR. The standard workaround is to select a
-       device whose queue family advertises support for the target platform
-       surface type (checked via vkGetPhysicalDeviceSurfaceSupportKHR with a
-       temporary surface, or via platform-specific caps). The first
-       vk_context_create call will validate the choice against a real surface. */
-
-    if ( !vk_instance_create() ) goto fail_after_nothing;
+      
+    if ( !vk_instance_init() ) goto fail_after_nothing;
 
     // TODO: vk_debug_messenger_init();
 
     if ( !vk_device_create()   ) goto fail_after_instance;
 
-    g_vk.initialized = true;
-    printf( "[rhi] init complete\n" );
+    vk.initialized = true;
+    LOG_LINE();
     return true;
 
 fail_after_instance:  vk_instance_destroy();
 fail_after_nothing:
 
-    printf( "[rhi] init failed\n" );
+    LOG_ERROR( "init failed\n" );
+    LOG_LINE();
     return false;
 }
 
 static void
 vk_shutdown( void )
 {
-    if ( !g_vk.initialized )
+    if ( !vk.initialized )
         return;
 
-    printf( "[rhi] shutdown begin\n" );
+    LOG_INFO( "shutdown begin\n" );
 
     /* TODO: vkDeviceWaitIdle before destroying device-owned objects. */
 
     vk_device_destroy();
     vk_instance_destroy();
 
-    g_vk.initialized = false;
-    printf( "[rhi] shutdown complete\n" );
+    vk.initialized = false;
+    LOG_INFO( "shutdown complete\n" );
 }
 
 /*==============================================================================================
@@ -116,7 +109,7 @@ vk_shutdown( void )
 static i32
 vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
 {
-    if ( !g_vk.initialized )
+    if ( !vk.initialized )
     {
         printf( "[rhi] context_create: global init not done\n" );
         return RHI_CTX_INVALID;
@@ -134,7 +127,7 @@ vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
         return RHI_CTX_INVALID;
     }
 
-    vk_context_t* ctx  = &g_vk.contexts[ id ];
+    vk_context_t* ctx  = &vk.contexts[ id ];
     ctx->id            = id;
     ctx->win_id        = win_id;
     ctx->native_window = native_window;

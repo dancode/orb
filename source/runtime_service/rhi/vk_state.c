@@ -1,7 +1,7 @@
 /*==============================================================================================
 
     vulkan/vk_state.c -- Vulkan state: opaque command list type, per-context state, and
-    the global g_vk singleton.
+    the global vk singleton.
 
     Included FIRST by rhi.c so every other vk_*.c file sees the complete type definitions.
 
@@ -241,7 +241,7 @@ typedef struct vk_state_s
 
 } vk_state_t;
 
-static vk_state_t g_vk;
+static vk_state_t vk;
 
 /*============================================================================================*/
 // clang-format on

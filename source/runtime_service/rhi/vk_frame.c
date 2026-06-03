@@ -32,24 +32,24 @@ vk_frame_begin( i32 ctx_id )
     }
 
     /* Advance the global frame counter and select the staging slot. */
-    g_vk.global_frame++;
+    vk.global_frame++;
 
     /* TODO (Vulkan implementation):
 
        u32 frame = ctx->current_frame;
 
-       1. vkWaitForFences( g_vk.device, 1, &ctx->in_flight_fence[frame], VK_TRUE, UINT64_MAX )
+       1. vkWaitForFences( vk.device, 1, &ctx->in_flight_fence[frame], VK_TRUE, UINT64_MAX )
           -- CPU blocks until this slot's GPU work is complete
 
        2. Flush the staging uploads queued last frame for this slot:
-          vk_upload_flush( g_vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT )
+          vk_upload_flush( vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT )
 
-       3. vkAcquireNextImageKHR( g_vk.device, ctx->swapchain, UINT64_MAX,
+       3. vkAcquireNextImageKHR( vk.device, ctx->swapchain, UINT64_MAX,
                                  ctx->image_available_sem[frame], VK_NULL_HANDLE,
                                  &ctx->image_index )
           -- VK_ERROR_OUT_OF_DATE_KHR or VK_SUBOPTIMAL_KHR -> mark resize and return NULL
 
-       4. vkResetFences( g_vk.device, 1, &ctx->in_flight_fence[frame] )
+       4. vkResetFences( vk.device, 1, &ctx->in_flight_fence[frame] )
 
        5. vkResetCommandBuffer( ctx->command_buffers[frame], 0 )
 
@@ -146,7 +146,7 @@ vk_frame_end( i32 ctx_id )
           VkSubmitInfo2 sub = { .waitSemaphoreInfoCount   = 1, .pWaitSemaphoreInfos   = &wait_sem,
                                 .commandBufferInfoCount   = 1, .pCommandBufferInfos   = &cmd_info,
                                 .signalSemaphoreInfoCount = 1, .pSignalSemaphoreInfos = &signal_sem };
-          vkQueueSubmit2( g_vk.graphics_queue, 1, &sub, ctx->in_flight_fence[frame] )
+          vkQueueSubmit2( vk.graphics_queue, 1, &sub, ctx->in_flight_fence[frame] )
 
        5. vkQueuePresentKHR:
           VkPresentInfoKHR pi = {
@@ -156,7 +156,7 @@ vk_frame_end( i32 ctx_id )
               .pSwapchains        = &ctx->swapchain,
               .pImageIndices      = &ctx->image_index,
           };
-          result = vkQueuePresentKHR( g_vk.present_queue, &pi )
+          result = vkQueuePresentKHR( vk.present_queue, &pi )
           if result == VK_ERROR_OUT_OF_DATE_KHR or VK_SUBOPTIMAL_KHR:
               ctx->resize_pending = true
     */
@@ -220,7 +220,7 @@ vk_cmd_bind_vertex_buffer( rhi_command_list_t cmd, rhi_buffer_t buf, u32 offset 
     UNUSED( buf );
     UNUSED( offset );
     /* TODO: VkDeviceSize off = offset;
-             vkCmdBindVertexBuffers( cmd->vk_cmd, 0, 1, &g_vk.buffers[idx].buffer, &off ) */
+             vkCmdBindVertexBuffers( cmd->vk_cmd, 0, 1, &vk.buffers[idx].buffer, &off ) */
 }
 
 static void
@@ -242,7 +242,7 @@ vk_cmd_push_constants( rhi_command_list_t cmd, const void* data, u32 size, u32 o
     UNUSED( data );
     UNUSED( size );
     UNUSED( offset );
-    /* TODO: vkCmdPushConstants( cmd->vk_cmd, g_vk.pipeline_layout,
+    /* TODO: vkCmdPushConstants( cmd->vk_cmd, vk.pipeline_layout,
                                  VK_SHADER_STAGE_ALL_GRAPHICS, offset, size, data ) */
 }
 
@@ -269,7 +269,7 @@ vk_cmd_bind_bindless( rhi_command_list_t cmd )
 {
     UNUSED( cmd );
     /* TODO: vkCmdBindDescriptorSets( cmd->vk_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                      g_vk.pipeline_layout, 0, 1, &g_vk.bindless_set, 0, NULL ) */
+                                      vk.pipeline_layout, 0, 1, &vk.bindless_set, 0, NULL ) */
 }
 
 /*============================================================================================*/

@@ -2,7 +2,7 @@
 
     vulkan/vk_texture.c -- VkImage + VkImageView lifecycle and format mapping.
 
-    Slot pool: g_vk.textures[ VK_MAX_TEXTURES ] (vk_texture_slot_t).
+    Slot pool: vk.textures[ VK_MAX_TEXTURES ] (vk_texture_slot_t).
     Each texture gets a default "full-range" image view covering all mips and layers.
     Sampler objects are separate (see vk_sampler_create below).
 
@@ -57,7 +57,7 @@ vk_texture_alloc_slot( void )
 {
     for ( u32 i = 0; i < VK_MAX_TEXTURES; ++i )
     {
-        if ( g_vk.textures[ i ].generation == 0 )
+        if ( vk.textures[ i ].generation == 0 )
             return ( i32 )i;
     }
     return -1;
@@ -68,7 +68,7 @@ vk_texture_validate( rhi_texture_t handle )
 {
     u32 idx = VK_HANDLE_IDX( handle.id );
     u8  gen = VK_HANDLE_GEN( handle.id );
-    return idx < VK_MAX_TEXTURES && gen != 0 && g_vk.textures[ idx ].generation == gen;
+    return idx < VK_MAX_TEXTURES && gen != 0 && vk.textures[ idx ].generation == gen;
 }
 
 /*==============================================================================================
@@ -88,7 +88,7 @@ vk_texture_create( const rhi_texture_desc_t* desc )
         return ( rhi_texture_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_texture_slot_t* slot = &g_vk.textures[ idx ];
+    vk_texture_slot_t* slot = &vk.textures[ idx ];
     u8 gen = ( u8 )( slot->generation == 0 ? 1 : slot->generation );
 
     u16 mips = desc->mip_levels;
@@ -118,12 +118,12 @@ vk_texture_create( const rhi_texture_desc_t* desc )
            .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
        };
-       vkCreateImage( g_vk.device, &ci, g_vk.alloc_cb, &slot->image )
+       vkCreateImage( vk.device, &ci, vk.alloc_cb, &slot->image )
 
        VkMemoryRequirements2 reqs2;
        vkGetImageMemoryRequirements2( ... )
        vk_mem_alloc( reqs2.memoryRequirements, RHI_MEMORY_GPU_ONLY, &alloc )
-       vkBindImageMemory( g_vk.device, slot->image, alloc.memory, alloc.offset )
+       vkBindImageMemory( vk.device, slot->image, alloc.memory, alloc.offset )
 
        VkImageAspectFlags aspect = rhi_format_is_depth( desc->format )
                                  ? VK_IMAGE_ASPECT_DEPTH_BIT
@@ -135,7 +135,7 @@ vk_texture_create( const rhi_texture_desc_t* desc )
            .format           = vk_fmt,
            .subresourceRange = { aspect, 0, mips, 0, MAX(desc->array_layers,1) },
        };
-       vkCreateImageView( g_vk.device, &vci, g_vk.alloc_cb, &slot->view )
+       vkCreateImageView( vk.device, &vci, vk.alloc_cb, &slot->view )
 
        if ( desc->debug_name )
            vk_debug_name_object( VK_OBJECT_TYPE_IMAGE, (u64)slot->image, desc->debug_name )
@@ -156,11 +156,11 @@ vk_texture_destroy( rhi_texture_t handle )
         return;
 
     u32                idx  = VK_HANDLE_IDX( handle.id );
-    vk_texture_slot_t* slot = &g_vk.textures[ idx ];
+    vk_texture_slot_t* slot = &vk.textures[ idx ];
 
     /* TODO:
-       vkDestroyImageView( g_vk.device, slot->view,   g_vk.alloc_cb )
-       vkDestroyImage    ( g_vk.device, slot->image,  g_vk.alloc_cb )
+       vkDestroyImageView( vk.device, slot->view,   vk.alloc_cb )
+       vkDestroyImage    ( vk.device, slot->image,  vk.alloc_cb )
        vk_mem_free( ... )
     */
 
@@ -178,7 +178,7 @@ vk_sampler_alloc_slot( void )
 {
     for ( u32 i = 0; i < VK_MAX_SAMPLERS; ++i )
     {
-        if ( g_vk.samplers[ i ].generation == 0 )
+        if ( vk.samplers[ i ].generation == 0 )
             return ( i32 )i;
     }
     return -1;
@@ -189,7 +189,7 @@ vk_sampler_validate( rhi_sampler_t handle )
 {
     u32 idx = VK_HANDLE_IDX( handle.id );
     u8  gen = VK_HANDLE_GEN( handle.id );
-    return idx < VK_MAX_SAMPLERS && gen != 0 && g_vk.samplers[ idx ].generation == gen;
+    return idx < VK_MAX_SAMPLERS && gen != 0 && vk.samplers[ idx ].generation == gen;
 }
 
 static VkFilter
@@ -229,7 +229,7 @@ vk_sampler_create( const rhi_sampler_desc_t* desc )
         return ( rhi_sampler_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_sampler_slot_t* slot = &g_vk.samplers[ idx ];
+    vk_sampler_slot_t* slot = &vk.samplers[ idx ];
     u8 gen = ( u8 )( slot->generation == 0 ? 1 : slot->generation );
 
     /* TODO:
@@ -247,7 +247,7 @@ vk_sampler_create( const rhi_sampler_desc_t* desc )
            .borderColor             = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
            .unnormalizedCoordinates = VK_FALSE,
        };
-       vkCreateSampler( g_vk.device, &ci, g_vk.alloc_cb, &slot->sampler )
+       vkCreateSampler( vk.device, &ci, vk.alloc_cb, &slot->sampler )
     */
 
     UNUSED( rhi_filter_to_vk );
@@ -265,9 +265,9 @@ vk_sampler_destroy( rhi_sampler_t handle )
         return;
 
     u32                idx  = VK_HANDLE_IDX( handle.id );
-    vk_sampler_slot_t* slot = &g_vk.samplers[ idx ];
+    vk_sampler_slot_t* slot = &vk.samplers[ idx ];
 
-    /* TODO: vkDestroySampler( g_vk.device, slot->sampler, g_vk.alloc_cb ) */
+    /* TODO: vkDestroySampler( vk.device, slot->sampler, vk.alloc_cb ) */
 
     slot->generation = ( u8 )( slot->generation + 1 );
     slot->sampler    = VK_NULL_HANDLE;

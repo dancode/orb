@@ -101,11 +101,11 @@ rhi_mod_exit( void* raw_state )
     /* Defensive cleanup: destroy any contexts the host left open, then shut down. */
     for ( int i = 0; i < RHI_CTX_MAX; ++i )
     {
-        if ( g_vk.ctx_alloc & ( 1u << i ) )
+        if ( vk.ctx_alloc & ( 1u << i ) )
             vk_context_destroy( i );
     }
 
-    if ( g_vk.initialized )
+    if ( vk.initialized )
         vk_shutdown();
 
     vk_lib_exit();
@@ -120,7 +120,7 @@ rhi_get_mod_desc( void )
 {
     static mod_desc_t desc = {
         .version       = 1,
-        .state_size    = 0,   /* singleton lives in g_vk (vk_state.c); not managed by mod system */
+        .state_size    = 0,   /* singleton lives in vk (vk_state.c); not managed by mod system */
         .func_api_size = sizeof( rhi_api_t ),
         .dep_count     = 3,
         .deps          = { "sys", "app", "core" },

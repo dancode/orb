@@ -36,7 +36,7 @@ vk_lib_exported_entry_points()
     const char* func = NULL;
 
 #define VK_EXPORTED_FUNCTION( fun )                                     \
-    fun = ( PFN_##fun )sys_library_get_symbol( g_vk.dll, #fun );        \
+    fun = ( PFN_##fun )sys_library_get_symbol( vk.dll, #fun );        \
     if ( !fun )                                                         \
     {                                                                   \
         func = #fun;                                                    \
@@ -84,7 +84,7 @@ vk_lib_instance_entry_points()
     const char* func = NULL;
 
 #define VK_INSTANCE_LEVEL_FUNCTION( fun )                               \
-    fun = ( PFN_##fun )vkGetInstanceProcAddr( g_vk.instance, #fun );    \
+    fun = ( PFN_##fun )vkGetInstanceProcAddr( vk.instance, #fun );    \
     if ( !fun )                                                         \
     {                                                                   \
         func = #fun;                                                    \
@@ -108,7 +108,7 @@ vk_lib_device_entry_points()
     const char* func = NULL;
 
 #define VK_DEVICE_LEVEL_FUNCTION( fun )                                 \
-    fun = ( PFN_##fun )vkGetDeviceProcAddr( g_vk.device, #fun );        \
+    fun = ( PFN_##fun )vkGetDeviceProcAddr( vk.device, #fun );        \
     if ( !fun )                                                         \
     {                                                                   \
         func = #fun;                                                    \
@@ -133,21 +133,21 @@ exit:
 static bool
 vk_lib_init()
 {
-    if ( g_vk.dll == NULL )
+    if ( vk.dll == NULL )
     {
 #if OS_WINDOWS
-        g_vk.dll = sys_library_load( "vulkan-1.dll" );
+        vk.dll = sys_library_load( "vulkan-1.dll" );
 #elif OS_LINUX
-        g_vk.dll = sys_library_load( "libvulkan.so.1" );
+        vk.dll = sys_library_load( "libvulkan.so.1" );
 #elif OS_MAC
         /* MoltenVK ships as libMoltenVK.dylib or the Vulkan SDK loader */
-        g_vk.dll = sys_library_load( "libvulkan.1.dylib" );
-        if ( !g_vk.dll )
-            g_vk.dll = sys_library_load( "libMoltenVK.dylib" );
+        vk.dll = sys_library_load( "libvulkan.1.dylib" );
+        if ( !vk.dll )
+            vk.dll = sys_library_load( "libMoltenVK.dylib" );
 #endif
     }
 
-    if ( g_vk.dll == NULL )
+    if ( vk.dll == NULL )
     {
         LOG_ERROR( "could not load Vulkan library" );
         return false;
@@ -169,10 +169,10 @@ vk_lib_init()
 static void
 vk_lib_exit()
 {
-    if ( g_vk.dll != NULL )
+    if ( vk.dll != NULL )
     {
-        sys_library_unload( g_vk.dll );
-        g_vk.dll = NULL;
+        sys_library_unload( vk.dll );
+        vk.dll = NULL;
     }
 }
 

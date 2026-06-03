@@ -2,9 +2,9 @@
 
     vulkan/vk_pipeline.c -- Graphics and compute PSO creation with a persistent cache.
 
-    Slot pool: g_vk.pipelines[ VK_MAX_PIPELINES ] (vk_pipeline_slot_t).
+    Slot pool: vk.pipelines[ VK_MAX_PIPELINES ] (vk_pipeline_slot_t).
 
-    All pipelines share one VkPipelineLayout (g_vk.pipeline_layout) built by
+    All pipelines share one VkPipelineLayout (vk.pipeline_layout) built by
     vk_descriptor.c:
         set 0 = global bindless descriptor set (textures, samplers, storage buffers)
         push constants = one range covering all shader stages, up to RHI_MAX_PUSH_CONST_SIZE
@@ -18,7 +18,7 @@
         No VkRenderPass is required.
 
     Pipeline cache:
-        g_vk.pipeline_cache is initialized at device creation.
+        vk.pipeline_cache is initialized at device creation.
         Optionally loaded from a file on disk and serialized back at shutdown for
         faster warm-starts (driver can skip some shader compilation work).
 
@@ -37,7 +37,7 @@ vk_pipeline_cache_load( void )
            .initialDataSize = file_size,
            .pInitialData    = file_data,
        };
-       vkCreatePipelineCache( g_vk.device, &ci, g_vk.alloc_cb, &g_vk.pipeline_cache )
+       vkCreatePipelineCache( vk.device, &ci, vk.alloc_cb, &vk.pipeline_cache )
 
        If file not found: ci.initialDataSize = 0; still create the cache object so
        subsequent pipeline creates can populate it.
@@ -49,7 +49,7 @@ static void
 vk_pipeline_cache_save( void )
 {
     /* TODO:
-       vkGetPipelineCacheData( g_vk.device, g_vk.pipeline_cache, &data_size, NULL )
+       vkGetPipelineCacheData( vk.device, vk.pipeline_cache, &data_size, NULL )
        allocate data_size bytes, call again with the buffer, write to disk.
     */
 }
@@ -63,7 +63,7 @@ vk_pipeline_alloc_slot( void )
 {
     for ( u32 i = 0; i < VK_MAX_PIPELINES; ++i )
     {
-        if ( g_vk.pipelines[ i ].generation == 0 )
+        if ( vk.pipelines[ i ].generation == 0 )
             return ( i32 )i;
     }
     return -1;
@@ -74,7 +74,7 @@ vk_pipeline_validate( rhi_pipeline_t handle )
 {
     u32 idx = VK_HANDLE_IDX( handle.id );
     u8  gen = VK_HANDLE_GEN( handle.id );
-    return idx < VK_MAX_PIPELINES && gen != 0 && g_vk.pipelines[ idx ].generation == gen;
+    return idx < VK_MAX_PIPELINES && gen != 0 && vk.pipelines[ idx ].generation == gen;
 }
 
 /*==============================================================================================
@@ -100,13 +100,13 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
         return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_pipeline_slot_t* slot = &g_vk.pipelines[ idx ];
+    vk_pipeline_slot_t* slot = &vk.pipelines[ idx ];
     u8 gen = ( u8 )( slot->generation == 0 ? 1 : slot->generation );
 
     /* TODO (Vulkan implementation):
 
-       VkShaderModule vert_mod = g_vk.shaders[ VK_HANDLE_IDX(desc->vert.id) ].module;
-       VkShaderModule frag_mod = g_vk.shaders[ VK_HANDLE_IDX(desc->frag.id) ].module;
+       VkShaderModule vert_mod = vk.shaders[ VK_HANDLE_IDX(desc->vert.id) ].module;
+       VkShaderModule frag_mod = vk.shaders[ VK_HANDLE_IDX(desc->frag.id) ].module;
 
        VkPipelineShaderStageCreateInfo stages[2] = {
            { .stage = VK_SHADER_STAGE_VERTEX_BIT,   .module = vert_mod, .pName = "main" },
@@ -153,10 +153,10 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
            .pDepthStencilState  = &depth_stencil,
            .pColorBlendState    = &blend,
            .pDynamicState       = &dyn_state,
-           .layout              = g_vk.pipeline_layout,
+           .layout              = vk.pipeline_layout,
        };
-       vkCreateGraphicsPipelines( g_vk.device, g_vk.pipeline_cache, 1, &ci,
-                                  g_vk.alloc_cb, &slot->pipeline )
+       vkCreateGraphicsPipelines( vk.device, vk.pipeline_cache, 1, &ci,
+                                  vk.alloc_cb, &slot->pipeline )
 
        if ( desc->debug_name )
            vk_debug_name_object( VK_OBJECT_TYPE_PIPELINE, (u64)slot->pipeline, desc->debug_name )
@@ -173,9 +173,9 @@ vk_pipeline_destroy( rhi_pipeline_t handle )
         return;
 
     u32                 idx  = VK_HANDLE_IDX( handle.id );
-    vk_pipeline_slot_t* slot = &g_vk.pipelines[ idx ];
+    vk_pipeline_slot_t* slot = &vk.pipelines[ idx ];
 
-    /* TODO: vkDestroyPipeline( g_vk.device, slot->pipeline, g_vk.alloc_cb ) */
+    /* TODO: vkDestroyPipeline( vk.device, slot->pipeline, vk.alloc_cb ) */
 
     slot->generation = ( u8 )( slot->generation + 1 );
     slot->pipeline   = VK_NULL_HANDLE;

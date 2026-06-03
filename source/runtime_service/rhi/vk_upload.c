@@ -3,7 +3,7 @@
     vulkan/vk_upload.c -- Staged upload ring buffer for GPU-only resources.
 
     One staging buffer per frame-in-flight slot (VK_STAGING_SIZE bytes each).
-    The slot indexed by (g_vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT) is the active one.
+    The slot indexed by (vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT) is the active one.
     frame_begin resets the head after waiting for the fence (GPU done with that slot).
 
     Upload flow:
@@ -30,11 +30,11 @@ vk_upload_init( void )
            .usage       = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
        };
-       vkCreateBuffer -> g_vk.staging[i].buffer
-       vkAllocateMemory (HOST_VISIBLE | HOST_COHERENT) -> g_vk.staging[i].memory
+       vkCreateBuffer -> vk.staging[i].buffer
+       vkAllocateMemory (HOST_VISIBLE | HOST_COHERENT) -> vk.staging[i].memory
        vkBindBufferMemory
-       vkMapMemory -> g_vk.staging[i].mapped   (persists until shutdown)
-       g_vk.staging[i].head = 0;
+       vkMapMemory -> vk.staging[i].mapped   (persists until shutdown)
+       vk.staging[i].head = 0;
     */
 
     return true;
@@ -63,8 +63,8 @@ typedef struct vk_staging_alloc_s
 static bool
 vk_staging_alloc( u32 size, u32 align, vk_staging_alloc_t* out )
 {
-    u32 slot = g_vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT;
-    vk_staging_t* s = &g_vk.staging[ slot ];
+    u32 slot = vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT;
+    vk_staging_t* s = &vk.staging[ slot ];
 
     /* TODO:
        u32 aligned_head = ALIGN_UP( s->head, align );
@@ -99,7 +99,7 @@ vk_upload_buffer( rhi_buffer_t dst, const void* data, u32 size )
        memcpy( sa.cpu_ptr, data, size );
 
        VkBufferCopy region = { .srcOffset = sa.offset, .size = size };
-       VkBuffer dst_buf = g_vk.buffers[ VK_HANDLE_IDX(dst.id) ].buffer;
+       VkBuffer dst_buf = vk.buffers[ VK_HANDLE_IDX(dst.id) ].buffer;
        vkCmdCopyBuffer( transfer_cmd, sa.buffer, dst_buf, 1, &region )
        -- transfer_cmd is the active transfer command buffer for this frame slot.
        -- The copy executes before the graphics queue sees the buffer (pipeline barrier needed).
@@ -148,10 +148,10 @@ vk_upload_flush( u32 slot )
     UNUSED( slot );
 
     /* TODO:
-       Submit the transfer command buffer for this slot on g_vk.transfer_queue.
+       Submit the transfer command buffer for this slot on vk.transfer_queue.
        Use a timeline semaphore so the graphics queue waits before reading
        any buffers or textures that were written this slot.
-       Reset the staging head:  g_vk.staging[slot].head = 0;
+       Reset the staging head:  vk.staging[slot].head = 0;
     */
 }
 

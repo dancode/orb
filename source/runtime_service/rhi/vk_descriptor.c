@@ -18,7 +18,7 @@
     call register_texture / register_sampler to get stable per-resource indices, then
     pack those indices into the push constant struct.
 
-    VkPipelineLayout  (g_vk.pipeline_layout):
+    VkPipelineLayout  (vk.pipeline_layout):
         set 0    = bindless layout above
         push constants = one range covering all stages, size RHI_MAX_PUSH_CONST_SIZE
 
@@ -104,7 +104,7 @@ vk_descriptor_init( void )
                .bindingCount = 2,
                .pBindings    = bindings,
            };
-           vkCreateDescriptorSetLayout -> g_vk.bindless_layout
+           vkCreateDescriptorSetLayout -> vk.bindless_layout
 
        Pool:
            VkDescriptorPoolSize pool_sizes[] = {
@@ -117,15 +117,15 @@ vk_descriptor_init( void )
                .poolSizeCount = 2,
                .pPoolSizes    = pool_sizes,
            };
-           vkCreateDescriptorPool -> g_vk.bindless_pool
+           vkCreateDescriptorPool -> vk.bindless_pool
 
        Set:
            VkDescriptorSetAllocateInfo alloc_info = {
-               .descriptorPool     = g_vk.bindless_pool,
+               .descriptorPool     = vk.bindless_pool,
                .descriptorSetCount = 1,
-               .pSetLayouts        = &g_vk.bindless_layout,
+               .pSetLayouts        = &vk.bindless_layout,
            };
-           vkAllocateDescriptorSets -> g_vk.bindless_set
+           vkAllocateDescriptorSets -> vk.bindless_set
 
        Pipeline layout (push constants + bindless set):
            VkPushConstantRange pc_range = {
@@ -135,11 +135,11 @@ vk_descriptor_init( void )
            };
            VkPipelineLayoutCreateInfo pl_ci = {
                .setLayoutCount         = 1,
-               .pSetLayouts            = &g_vk.bindless_layout,
+               .pSetLayouts            = &vk.bindless_layout,
                .pushConstantRangeCount = 1,
                .pPushConstantRanges    = &pc_range,
            };
-           vkCreatePipelineLayout -> g_vk.pipeline_layout
+           vkCreatePipelineLayout -> vk.pipeline_layout
     */
 
     return true;
@@ -149,9 +149,9 @@ static void
 vk_descriptor_shutdown( void )
 {
     /* TODO:
-       vkDestroyPipelineLayout  ( g_vk.device, g_vk.pipeline_layout, g_vk.alloc_cb )
-       vkDestroyDescriptorPool  ( g_vk.device, g_vk.bindless_pool,   g_vk.alloc_cb )
-       vkDestroyDescriptorSetLayout( g_vk.device, g_vk.bindless_layout, g_vk.alloc_cb )
+       vkDestroyPipelineLayout  ( vk.device, vk.pipeline_layout, vk.alloc_cb )
+       vkDestroyDescriptorPool  ( vk.device, vk.bindless_pool,   vk.alloc_cb )
+       vkDestroyDescriptorSetLayout( vk.device, vk.bindless_layout, vk.alloc_cb )
     */
 }
 
@@ -175,18 +175,18 @@ vk_register_texture( rhi_texture_t handle )
     /* TODO:
        VkDescriptorImageInfo img_info = {
            .sampler     = VK_NULL_HANDLE,
-           .imageView   = g_vk.textures[ VK_HANDLE_IDX(handle.id) ].view,
+           .imageView   = vk.textures[ VK_HANDLE_IDX(handle.id) ].view,
            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
        };
        VkWriteDescriptorSet write = {
-           .dstSet          = g_vk.bindless_set,
+           .dstSet          = vk.bindless_set,
            .dstBinding      = 0,
            .dstArrayElement = slot_idx,
            .descriptorCount = 1,
            .descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
            .pImageInfo      = &img_info,
        };
-       vkUpdateDescriptorSets( g_vk.device, 1, &write, 0, NULL )
+       vkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL )
     */
 
     UNUSED( handle );
@@ -216,7 +216,7 @@ vk_register_sampler( rhi_sampler_t handle )
 
     /* TODO:
        VkDescriptorImageInfo samp_info = {
-           .sampler     = g_vk.samplers[ VK_HANDLE_IDX(handle.id) ].sampler,
+           .sampler     = vk.samplers[ VK_HANDLE_IDX(handle.id) ].sampler,
            .imageView   = VK_NULL_HANDLE,
            .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
        };

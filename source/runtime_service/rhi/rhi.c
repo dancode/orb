@@ -12,7 +12,7 @@
         3. Platform headers    (windows.h, gated by OS_WINDOWS)
         4. Vulkan headers      (platform-gated; VK_NO_PROTOTYPES so we own all pointers)
         5. rhi_api.h           (RHI API struct + gateway; transitively includes rhi.h)
-        6. vk_state.c          (g_vk singleton and type definitions -- MUST be first)
+        6. vk_state.c          (vk singleton and type definitions -- MUST be first)
         7. vk_library.c        (function pointer bootstrap)
         8. vk_debug.c          (messenger + GPU labels; referenced by later files)
         9. vk_memory.c         (device memory allocation)

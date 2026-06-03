@@ -17,7 +17,7 @@ vk_command_create( vk_context_t* ctx )
     /* TODO (Vulkan implementation):
        Pool:
        - VkCommandPoolCreateInfo with VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-         queueFamilyIndex = g_vk.graphics_queue_family
+         queueFamilyIndex = vk.graphics_queue_family
        - vkCreateCommandPool -> ctx->command_pool
 
        Buffers:

@@ -54,7 +54,7 @@ vk_debug_messenger_create( void )
                             | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
            .pfnUserCallback = vk_debug_callback,
        };
-       vkCreateDebugUtilsMessengerEXT( g_vk.instance, &ci, g_vk.alloc_cb, &g_vk.debug_messenger )
+       vkCreateDebugUtilsMessengerEXT( vk.instance, &ci, vk.alloc_cb, &vk.debug_messenger )
     */
     printf( "[rhi:vk] debug_messenger_create (placeholder)\n" );
 #endif
@@ -65,7 +65,7 @@ static void
 vk_debug_messenger_destroy( void )
 {
 #if DEBUG
-    /* TODO: vkDestroyDebugUtilsMessengerEXT( g_vk.instance, g_vk.debug_messenger, g_vk.alloc_cb )
+    /* TODO: vkDestroyDebugUtilsMessengerEXT( vk.instance, vk.debug_messenger, vk.alloc_cb )
     */
     printf( "[rhi:vk] debug_messenger_destroy (placeholder)\n" );
 #endif
@@ -79,7 +79,7 @@ static void
 vk_debug_name_object( VkObjectType type, u64 handle, const char* name )
 {
 #if DEBUG
-    if ( !name || !g_vk.device )
+    if ( !name || !vk.device )
         return;
 
     /* TODO:
@@ -89,7 +89,7 @@ vk_debug_name_object( VkObjectType type, u64 handle, const char* name )
            .objectHandle = handle,
            .pObjectName  = name,
        };
-       vkSetDebugUtilsObjectNameEXT( g_vk.device, &info )
+       vkSetDebugUtilsObjectNameEXT( vk.device, &info )
     */
     UNUSED( type );
     UNUSED( handle );

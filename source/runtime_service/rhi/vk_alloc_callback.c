@@ -16,7 +16,7 @@
       arena once lifetime semantics are confirmed -- Vulkan holds some objects across
       the entire device lifetime).
 
-    Disabled by default.  Set g_vk.use_vk_alloc_cb = true before rhi()->init() to enable.
+    Disabled by default.  Set vk.use_vk_alloc_cb = true before rhi()->init() to enable.
     Callbacks must be thread-safe -- the driver can call them from any thread.
 
     Note: alloc callbacks fire BEFORE core is initialized (during vkCreateInstance), so
@@ -225,8 +225,8 @@ vk_cb_internal_free( void* userdata, size_t size, VkInternalAllocationType type,
 /*==============================================================================================
     Static storage + init
 
-    g_vk.alloc_cb is a pointer; this file owns the struct it points to.
-    g_vk.alloc_cb stays NULL when use_vk_alloc_cb is false, so all Vulkan call sites
+    vk.alloc_cb is a pointer; this file owns the struct it points to.
+    vk.alloc_cb stays NULL when use_vk_alloc_cb is false, so all Vulkan call sites
     pass NULL to use the driver's default allocator without any conditional logic.
 ==============================================================================================*/
 
@@ -242,7 +242,7 @@ vk_allocation_callback_init( void )
     s_alloc_cb.pfnInternalAllocation = vk_cb_internal_alloc;
     s_alloc_cb.pfnInternalFree       = vk_cb_internal_free;
 
-    g_vk.alloc_cb                    = &s_alloc_cb;
+    vk.alloc_cb                    = &s_alloc_cb;
 
     if ( cb_debug )
     {

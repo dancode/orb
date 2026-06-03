@@ -88,5 +88,7 @@
     #define LOG_ERROR( fmt, ... )  ( ( void )0 )
 #endif
 
+#define LOG_LINE()  core()->log_write( LOG_LEVEL_LINE, LOG_CH, "" )
+
 // clang-format on
 /*============================================================================================*/

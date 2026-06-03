@@ -33,7 +33,7 @@ vk_surface_create( vk_context_t* ctx )
            .hwnd      = (HWND)ctx->native_window,
            .hinstance = GetModuleHandle(NULL),
        };
-       vkCreateWin32SurfaceKHR( g_vk.instance, &ci, g_vk.alloc_cb, &ctx->surface )
+       vkCreateWin32SurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface )
     */
 #elif OS_LINUX && defined( VK_USE_PLATFORM_WAYLAND_KHR )
     /* TODO:
@@ -42,7 +42,7 @@ vk_surface_create( vk_context_t* ctx )
            .display = wl_display,
            .surface = (struct wl_surface*)ctx->native_window,
        };
-       vkCreateWaylandSurfaceKHR( g_vk.instance, &ci, g_vk.alloc_cb, &ctx->surface )
+       vkCreateWaylandSurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface )
     */
 #elif OS_LINUX
     /* TODO (Xlib):
@@ -51,7 +51,7 @@ vk_surface_create( vk_context_t* ctx )
            .dpy    = x11_display,
            .window = (Window)ctx->native_window,
        };
-       vkCreateXlibSurfaceKHR( g_vk.instance, &ci, g_vk.alloc_cb, &ctx->surface )
+       vkCreateXlibSurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface )
     */
 #elif OS_MAC
     /* TODO (MoltenVK):
@@ -59,7 +59,7 @@ vk_surface_create( vk_context_t* ctx )
            .sType  = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT,
            .pLayer = (CAMetalLayer*)ctx->native_window,
        };
-       vkCreateMetalSurfaceEXT( g_vk.instance, &ci, g_vk.alloc_cb, &ctx->surface )
+       vkCreateMetalSurfaceEXT( vk.instance, &ci, vk.alloc_cb, &ctx->surface )
     */
 #endif
 
@@ -71,7 +71,7 @@ vk_surface_destroy( vk_context_t* ctx )
 {
     printf( "[rhi:vk] surface_destroy ctx=%d (placeholder)\n", ctx->id );
 
-    /* TODO: vkDestroySurfaceKHR( g_vk.instance, ctx->surface, g_vk.alloc_cb ) */
+    /* TODO: vkDestroySurfaceKHR( vk.instance, ctx->surface, vk.alloc_cb ) */
 }
 
 /*==============================================================================================
@@ -121,8 +121,8 @@ vk_swapchain_destroy( vk_context_t* ctx )
 
     /* TODO:
        vk_depth_destroy( ctx )
-       For each image view: vkDestroyImageView( g_vk.device, ctx->swapchain_image_views[i], ... )
-       vkDestroySwapchainKHR( g_vk.device, ctx->swapchain, g_vk.alloc_cb )
+       For each image view: vkDestroyImageView( vk.device, ctx->swapchain_image_views[i], ... )
+       vkDestroySwapchainKHR( vk.device, ctx->swapchain, vk.alloc_cb )
        Zero the swapchain handles.
     */
 
@@ -180,9 +180,9 @@ static void
 vk_depth_destroy( vk_context_t* ctx )
 {
     /* TODO:
-       vkDestroyImageView( g_vk.device, ctx->depth_view,   g_vk.alloc_cb )
-       vkDestroyImage    ( g_vk.device, ctx->depth_image,  g_vk.alloc_cb )
-       vkFreeMemory      ( g_vk.device, ctx->depth_memory, g_vk.alloc_cb )
+       vkDestroyImageView( vk.device, ctx->depth_view,   vk.alloc_cb )
+       vkDestroyImage    ( vk.device, ctx->depth_image,  vk.alloc_cb )
+       vkFreeMemory      ( vk.device, ctx->depth_memory, vk.alloc_cb )
     */
     UNUSED( ctx );
 }

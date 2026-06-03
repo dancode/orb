@@ -41,9 +41,9 @@ static u32
 vk_memory_find_type( u32 type_filter, VkMemoryPropertyFlags required )
 {
     /* TODO:
-       for ( u32 i = 0; i < g_vk.memory_props.memoryTypeCount; ++i )
+       for ( u32 i = 0; i < vk.memory_props.memoryTypeCount; ++i )
            if ( (type_filter & (1u << i)) &&
-                (g_vk.memory_props.memoryTypes[i].propertyFlags & required) == required )
+                (vk.memory_props.memoryTypes[i].propertyFlags & required) == required )
                return i;
        return UINT32_MAX;   -- caller must handle failure
     */
@@ -72,7 +72,7 @@ vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, vk_mem_alloc_t* out 
            .allocationSize  = reqs.size,
            .memoryTypeIndex = type_idx,
        };
-       vkAllocateMemory( g_vk.device, &ai, g_vk.alloc_cb, &out->memory )
+       vkAllocateMemory( vk.device, &ai, vk.alloc_cb, &out->memory )
        out->offset = 0;
     */
 
@@ -83,7 +83,7 @@ static void
 vk_mem_free( vk_mem_alloc_t alloc )
 {
     UNUSED( alloc );
-    /* TODO: vkFreeMemory( g_vk.device, alloc.memory, g_vk.alloc_cb ) */
+    /* TODO: vkFreeMemory( vk.device, alloc.memory, vk.alloc_cb ) */
 }
 
 /*============================================================================================*/

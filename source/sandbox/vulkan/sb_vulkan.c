@@ -56,6 +56,8 @@ main( int argc, char** argv )
     assert( core() );
     assert( rhi() );
 
+    LOG_LINE();
+
     /* Open window. */
     win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID )

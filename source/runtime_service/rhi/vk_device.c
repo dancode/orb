@@ -12,7 +12,7 @@
 static bool
 vk_device_create( void )
 {
-    printf( "[rhi:vk] device_create (placeholder)\n" );
+    LOG_INFO( "device_create (placeholder)" );
 
     /* TODO (Vulkan implementation):
 
@@ -100,7 +100,7 @@ vk_device_create( void )
 static void
 vk_device_destroy( void )
 {
-    printf( "[rhi:vk] device_destroy (placeholder)\n" );
+    LOG_INFO( "device_destroy (placeholder)" );
 
     /* TODO (Vulkan implementation):
        vkDeviceWaitIdle( g_vk.device )

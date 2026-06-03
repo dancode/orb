@@ -32,15 +32,23 @@ static int              g_sink_count = 0;
 ==============================================================================================*/
 
 static const char* s_prefixes[ LOG_LEVEL_COUNT ] = {
-    "[trace] ", "[debug] ", "[info ] ", "[warn ] ", "[error] "
+    "[trace] ", "[debug] ", "[info] ", "[warn] ", "[error] "
 };
+
+static const char s_separator[] = "------------------------------------------------";
 
 static void
 log_console_sink( const log_entry_t* entry, void* userdata )
 {
     UNUSED( userdata );
+    if ( entry->level == LOG_LEVEL_LINE )
+    {
+        fprintf( stdout, "%s\n", s_separator );
+        return;
+    }
     FILE* stream = ( entry->level >= LOG_LEVEL_WARN ) ? stderr : stdout;
-    fprintf( stream, "%s[%-8s] %s\n", s_prefixes[ entry->level ], entry->channel, entry->msg );
+    fprintf( stream, "%s[%s] %s\n", s_prefixes[ entry->level ], entry->channel, entry->msg );
+ // fprintf( stream, "%s[%-8s] %s\n", s_prefixes[ entry->level ], entry->channel, entry->msg );
 }
 
 /*==============================================================================================
@@ -109,7 +117,8 @@ log_ring_seq( void )
 static void
 log_write( log_level_t level, const char* channel, const char* fmt, ... )
 {
-    if ( level < g_min_level )
+    log_level_t filter = ( level == LOG_LEVEL_LINE ) ? LOG_LEVEL_INFO : level;
+    if ( filter < g_min_level )
         return;
 
     u32 seq            = g_ring_seq++;

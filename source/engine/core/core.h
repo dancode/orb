@@ -26,6 +26,8 @@ typedef enum log_level_e
     LOG_LEVEL_WARN  = ORB_LOG_WARN,     // recoverable issues
     LOG_LEVEL_ERROR = ORB_LOG_ERROR,    // non-fatal errors
 
+    LOG_LEVEL_LINE  = 0xFF,             // visual separator; filtered and stored at INFO level
+
 } log_level_t;
 
 #define LOG_LEVEL_COUNT   5
