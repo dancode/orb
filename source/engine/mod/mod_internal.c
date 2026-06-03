@@ -639,7 +639,7 @@ do_reload( mod_info_t* m )
     m->dll     = NULL;
     m->mod_desc = NULL;
 
-    if ( !slot_load_dll( m ) )
+    if ( !slot_load_dll( m ) || !m->mod_desc )
     {
         snapshot_rollback( m, &prev, "load failed" );
         return false;

@@ -14,11 +14,8 @@
 
 // Compiler intrinsics for memory operations to avoid <string.h>
 #if defined( _MSC_VER )
-    // MSVC
-    void* __cdecl memcpy( void*, const void*, usize );
-    void* __cdecl memmove( void*, const void*, usize );
-    void* __cdecl memset( void*, int, usize );
-    int   __cdecl memcmp( const void*, const void*, usize );
+    // Use the SAL-annotated MSVC declarations to satisfy static analysis (C28251).
+    #include <string.h>
     #pragma intrinsic( memcpy, memmove, memset, memcmp )
 #else
     // Clang / GCC

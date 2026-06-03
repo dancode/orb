@@ -86,9 +86,8 @@ game_on_update( float dt )
 static void
 game_on_render( void )
 {
-    render()->begin_frame();
-    /* would issue draw calls here in a real engine */
-    render()->end_frame();
+    /* host calls begin_frame / end_frame; game_on_render issues draw calls between them */
+    // render()->draw_scene( ctx_id, dt );
 }
 
 static void

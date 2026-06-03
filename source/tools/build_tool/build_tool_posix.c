@@ -16,6 +16,7 @@
         platform_pclose()        -- close a pipe                   (pclose)
         platform_cpu_count()     -- logical processor count        (sysconf)
         platform_mkdir()         -- create a directory             (mkdir)
+        platform_get_cwd()       -- working directory with trailing slash  (getcwd)
         platform_find_first()    -- begin directory enumeration    (opendir / readdir / fnmatch)
         platform_find_next()     -- advance directory enumeration  (readdir / fnmatch)
         platform_find_close()    -- end directory enumeration      (closedir)
@@ -160,6 +161,23 @@ platform_cpu_count( void )
     if ( n < 1  ) n = 1;
     if ( n > 32 ) n = 32;
     return ( int )n;
+}
+
+/*==============================================================================================
+    --- Working Directory ---
+==============================================================================================*/
+
+/* Fills buf with the current working directory, appending a trailing slash.
+   Returns true on success; on false buf is an empty string. */
+
+static bool
+platform_get_cwd( char* buf, size_t size )
+{
+    buf[ 0 ] = '\0';
+    if ( !getcwd( buf, size ) ) return false;
+    size_t n = strlen( buf );
+    if ( n > 0 && buf[ n - 1 ] != '/' && n + 1 < size ) { buf[ n++ ] = '/'; buf[ n ] = '\0'; }
+    return true;
 }
 
 /*==============================================================================================

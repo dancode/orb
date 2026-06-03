@@ -19,6 +19,7 @@
         platform_enable_ansi_color() -- enable VT processing on stdout (SetConsoleMode)
         platform_cpu_count()     -- logical processor count         (GetSystemInfo)
         platform_mkdir()         -- create a directory             (CreateDirectoryA)
+        platform_get_cwd()       -- working directory with trailing backslash (GetCurrentDirectoryA)
         platform_find_first()    -- begin directory enumeration    (_findfirst)
         platform_find_next()     -- advance directory enumeration  (_findnext)
         platform_find_close()    -- end directory enumeration      (_findclose)
@@ -203,6 +204,24 @@ static void
 platform_find_close( platform_find_t handle )
 {
     _findclose( handle );
+}
+
+/*==============================================================================================
+    --- Working Directory ---
+==============================================================================================*/
+
+/* Fills buf with the current working directory, appending a trailing backslash.
+   Returns true on success; on false buf is an empty string. */
+
+static bool
+platform_get_cwd( char* buf, size_t size )
+{
+    buf[ 0 ] = '\0';
+    if ( !GetCurrentDirectoryA( (DWORD)size, buf ) ) return false;
+    size_t n = strlen( buf );
+    if ( n > 0 && buf[ n - 1 ] != '\\' && n + 1 < size ) { buf[ n++ ] = '\\'; buf[ n ] = '\0'; }
+    for ( char* p = buf; *p; ++p ) if ( *p == '/' ) *p = '\\';
+    return true;
 }
 
 /*==============================================================================================

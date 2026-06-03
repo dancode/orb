@@ -89,7 +89,7 @@ runtime_ready( void )
        are live. Use for one-time setup: register cvars, install default settings,
        hand initial state to modules. */
 
-    render()->set_clear_color( 0.08f, 0.10f, 0.18f, 1.0f );
+    render()->set_clear_color( 0, 0.08f, 0.10f, 0.18f, 1.0f );
 
     printf( "[example_runtime] ready - ESC to quit, R to reload all DLLs\n" );
 

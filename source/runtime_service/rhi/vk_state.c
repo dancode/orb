@@ -127,16 +127,19 @@ typedef struct vk_staging_s
 typedef struct vk_context_s
 {
     /* Identity */
+
     i32    id;
     i32    win_id;
     void*  native_window;     /* HWND on Windows; cast at use sites */
 
     /* Dimensions */
+
     i32    width;
     i32    height;
     bool   resize_pending;    /* swapchain rebuild deferred to next frame_begin */
 
     /* Frame tracking */
+
     u32    current_frame;     /* [0..VK_MAX_FRAMES_IN_FLIGHT); indexes per-frame arrays */
     u32    image_index;       /* swapchain image acquired by vkAcquireNextImageKHR */
 
@@ -151,20 +154,23 @@ typedef struct vk_context_s
     VkExtent2D          swapchain_extent;
 
     /* Depth attachment (matched to swapchain extent) */
-    VkImage        depth_image;
-    VkDeviceMemory depth_memory;
-    VkImageView    depth_view;
-    VkFormat       depth_format;    /* selected at swapchain creation time */
+
+    VkImage             depth_image;
+    VkDeviceMemory      depth_memory;
+    VkImageView         depth_view;
+    VkFormat            depth_format;    /* selected at swapchain creation time */
 
     /* Per-frame synchronization */
-    VkSemaphore  image_available_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkSemaphore  render_finished_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkFence      in_flight_fence[ VK_MAX_FRAMES_IN_FLIGHT ];
+
+    VkSemaphore         image_available_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkSemaphore         render_finished_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkFence             in_flight_fence[ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Per-frame command state */
-    VkCommandPool            command_pool;
-    VkCommandBuffer          command_buffers[ VK_MAX_FRAMES_IN_FLIGHT ];
-    struct rhi_command_list_s cmd_lists[ VK_MAX_FRAMES_IN_FLIGHT ];
+
+    VkCommandPool               command_pool;
+    VkCommandBuffer             command_buffers[ VK_MAX_FRAMES_IN_FLIGHT ];
+    struct rhi_command_list_s   cmd_lists[ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Clear color (set by cmd_clear_color; consumed by vkCmdBeginRendering loadOp) */
     VkClearColorValue  clear_color;
@@ -187,8 +193,8 @@ typedef struct vk_state_s
     bool    use_vk_layer_validation;        // use vulkan debug layer.
     bool    use_vk_layer_monitor;           // use vulkan debug layer.
 
-    bool    ext_win32_surface;              // extention required for win32 window surface support
-    bool    ext_khr_surface;                // extention required for win32 window surface support
+    bool    ext_win32_surface;              // extension required for win32 window surface support
+    bool    ext_khr_surface;                // extension required for khr window surface support
 
     /* Vulkan loader handle */
     lib_handle_t  dll;

@@ -150,10 +150,10 @@ json_emit_constituents_from( FILE* fp, bool* first,
     if ( !in ) return;
 
     char line[ 1024 ];
-    while ( fgets( line, sizeof( line ), in ) )
+    const char* p;
+    while ( ( p = fgets( line, sizeof( line ), in ) ) != NULL )
     {
         /* detect #include "*.c" with arbitrary whitespace after # */
-        const char* p = line;
         while ( *p == ' ' || *p == '\t' ) p++;
         if ( *p != '#' ) continue;
         p++;

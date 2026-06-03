@@ -903,11 +903,11 @@ test_function_sigs( void )
 
     /* Sanity checks via the convenience accessors. */
     const ref_field_t* ret = ref_function_get_return( sig_id );
-    printf( "  return resolves to type_id=%u  (expect void = %u)\n", ret ? ret->type_id : 0xFFFF, REF_PRIM_VOID );
+    printf( "  return resolves to type_id=%u  (expect void = %u)\n", ret ? (unsigned)ret->type_id : 0xFFFFu, (unsigned)REF_PRIM_VOID );
     printf( "  param_count = %u\n", ref_function_param_count( sig_id ) );
     const ref_field_t* p1 = ref_function_get_param( sig_id, 1 );
     printf( "  param[1] '%s' base_type_id=%u (expect vec3_t)\n", p1 ? test_cstr( p1->name_id ) : "?",
-            p1 ? p1->type_id : 0xFFFF );
+            p1 ? (unsigned)p1->type_id : 0xFFFFu );
 
     ref_pop_frame( game );
     ref_exit();
@@ -2037,7 +2037,7 @@ test_union( void )
     /* size must match the C union */
     bool size_ok = t && t->size == REF_SIZEOF( ref_test_value_t );
     printf( "  [%s] size == %u (expect %u)\n", size_ok ? "ok  " : "FAIL",
-            t ? t->size : 0, REF_SIZEOF( ref_test_value_t ) );
+            (unsigned)( t ? t->size : 0 ), (unsigned)REF_SIZEOF( ref_test_value_t ) );
     if ( !size_ok ) all_ok = false;
 
     /* every field must have offset == 0 */

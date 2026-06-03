@@ -85,17 +85,7 @@ compute_path_parts( const char* out_dir )
     for ( int i = 1; i < depth; ++i ) strcat( s_ctx.cd_root, "\\.." );
 
     // Capture CWD once so scan can strip the absolute prefix from root_dir paths.
-    s_ctx.cwd_prefix[ 0 ] = '\0';
-#if defined( _WIN32 )
-    char cwd[ PATH_MAX ];
-    if ( GetCurrentDirectoryA( sizeof( cwd ), cwd ) )
-    {
-        for ( char* p = cwd; *p; ++p ) if ( *p == '/' ) *p = '\\';
-        size_t n = strlen( cwd );
-        if ( n > 0 && cwd[ n - 1 ] != '\\' ) { cwd[ n++ ] = '\\'; cwd[ n ] = '\0'; }
-        snprintf( s_ctx.cwd_prefix, sizeof( s_ctx.cwd_prefix ), "%s", cwd );
-    }
-#endif
+    platform_get_cwd( s_ctx.cwd_prefix, sizeof( s_ctx.cwd_prefix ) );
 }
 
 // Build the Include path for a scanned file entry.

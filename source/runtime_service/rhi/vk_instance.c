@@ -78,7 +78,7 @@ vk_instance_get_extensions( const char** out_ext_array )
 
     LOG_INFO( "VK: %u extensions supported", ext_count );
     for ( u32 i = 0; i < ext_count; i++ ) {
-        LOG_DEBUG( "VKEXT: %s", ext_props[ i ].extensionName );
+        LOG_TRACE( "EXT: %s", ext_props[ i ].extensionName );
     }
 
     return out_ext_count;
@@ -165,8 +165,9 @@ vk_instance_get_layers( const char** out_layer_names )
 
     /* debug list our available layers */
 
+    LOG_INFO( "VK: %u layerrs supported", layer_count );
     for ( u32 i = 0; i < layer_count; i++ ) {
-        LOG_DEBUG( "VKLYR: %s", layer_props[ i ].layerName );    
+        LOG_TRACE( "LYR: %s", layer_props[ i ].layerName );    
     }
 
     return out_layer_count;
@@ -197,13 +198,26 @@ vk_get_version()
 }
 
 /*==============================================================================================
+    VK: Setup.
+==============================================================================================*/
+
+/*==============================================================================================
     Global lifecycle  (instance + device, no window)
 ==============================================================================================*/
 
 static bool
-vk_instance_create( void )
+vk_instance_create(  u32 layer_count, const char** layer_array, u32 ext_count, const char** ext_array )
 {
-    LOG_INFO( "instance_create (placeholder)" );
+    LOG_INFO( "instance_create" );
+
+    /* Create a vulkan instance + set optional application info. */
+
+    // VkDebugUtilsMessengerCreateInfoEXT dbg_info = { 0 };
+    if ( vk.use_vk_ext_debug_utils )
+    {
+        vk_debug_messenger_create();
+    }
+    // UNUSED( dbg_info );
 
     /*
    2. Fill VkApplicationInfo:
@@ -272,8 +286,8 @@ vk_instance_init()
     }
 
     /* create instance using extention and layers and checking version */
-    // vk_instance_create( layer_count, layers_array, exten_count, exten_array );
-\
+    vk_instance_create( layer_count, layers_array, exten_count, exten_array );
+
     /* ignore verbose extention spam messages on load */
     // vk_debug_messenger_enable( true );
 

@@ -9,7 +9,7 @@
     Depends on VK_EXT_debug_utils being loaded in vk_functions.h.
 
 ==============================================================================================*/
-
+// clang-format off
 /*==============================================================================================
     Debug messenger  (validation layer output -> engine log)
 ==============================================================================================*/
@@ -17,49 +17,75 @@
 #if DEBUG
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
-vk_debug_callback( VkDebugUtilsMessageSeverityFlagBitsEXT      severity,
+vk_debug_callback( VkDebugUtilsMessageSeverityFlagBitsEXT       severity,
                    VkDebugUtilsMessageTypeFlagsEXT              type,
-                   const VkDebugUtilsMessengerCallbackDataEXT*  data,
+                   const VkDebugUtilsMessengerCallbackDataEXT*  cb_data,
                    void*                                        user_data )
 {
     UNUSED( type );
     UNUSED( user_data );
 
-    /* TODO: route through core()->log_* once core is wired up in this module.
-       For now printf suffices since this is only active in debug builds. */
+    switch ( severity )
+    {
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: {
+            LOG_ERROR( "%s", cb_data->pMessage );
+            break;
+        }
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: {
+            LOG_WARN( "%s", cb_data->pMessage );
+            break;
+        } 
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: {
+            LOG_INFO( "%s", cb_data->pMessage );
+            break;
+        }
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: {
+            LOG_TRACE( "%s", cb_data->pMessage );
+            break;
+        }
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_FLAG_BITS_MAX_ENUM_EXT: {
+            break; /* stop warning */
+        }
+    }
 
-    if ( severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT )
-        printf( "[vk:ERROR] %s\n", data->pMessage );
-    else if ( severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT )
-        printf( "[vk:WARN ] %s\n", data->pMessage );
-    else
-        printf( "[vk:INFO ] %s\n", data->pMessage );
-
-    return VK_FALSE;   /* returning VK_TRUE would abort the Vulkan call that triggered this */
+    return VK_FALSE; /* returning VK_TRUE would abort the Vulkan call that triggered this */
 }
 
-#endif    /* DEBUG */
+#endif /* DEBUG */
+
+/*============================================================================================*/
 
 static bool
 vk_debug_messenger_create( void )
 {
 #if DEBUG
-    /* TODO (Vulkan implementation):
-       VkDebugUtilsMessengerCreateInfoEXT ci = {
-           .sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-           .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
-                            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-           .messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
-                            | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
-                            | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-           .pfnUserCallback = vk_debug_callback,
-       };
-       vkCreateDebugUtilsMessengerEXT( vk.instance, &ci, vk.alloc_cb, &vk.debug_messenger )
-    */
-    printf( "[rhi:vk] debug_messenger_create (placeholder)\n" );
+
+    VkDebugUtilsMessengerCreateInfoEXT ci = { 0 };
+
+    ci.sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    ci.messageSeverity = 0;
+    ci.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+    ci.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+
+    ci.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;    // very verbose.
+    ci.messageSeverity |= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+
+    ci.messageType = 0;
+    ci.messageType |= VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT;
+    ci.messageType |= VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+    ci.messageType |= VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+
+    ci.pfnUserCallback = vk_debug_callback;
+
+    vkCreateDebugUtilsMessengerEXT( vk.instance, &ci, vk.alloc_cb, &vk.debug_messenger );
+    
+    printf( "debug_messenger_create\n" );
+
 #endif
     return true;
 }
+
+/*============================================================================================*/
 
 static void
 vk_debug_messenger_destroy( void )
@@ -130,6 +156,8 @@ vk_cmd_begin_label( rhi_command_list_t cmd, const char* name, f32 r, f32 g, f32 
 #endif
 }
 
+/*============================================================================================*/
+
 static void
 vk_cmd_end_label( rhi_command_list_t cmd )
 {
@@ -143,3 +171,4 @@ vk_cmd_end_label( rhi_command_list_t cmd )
 }
 
 /*============================================================================================*/
+// clang-format on

@@ -30,7 +30,7 @@ static log_level_t      g_min_level = LOG_LEVEL_INFO;
 
 static u32              g_ring_seq = 0;
 
-/* fixed-size ring buffer of recent log entries; 
+/* fixed-size ring buffer of recent log entries;
    indexed by seq % LOG_RING_CAPACITY */
 
 static log_entry_t      g_ring[ LOG_RING_CAPACITY ];
