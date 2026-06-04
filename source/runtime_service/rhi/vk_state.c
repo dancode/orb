@@ -218,6 +218,13 @@ typedef struct vk_state_s
     VkPhysicalDeviceProperties          physical_device_props;
     VkPhysicalDeviceMemoryProperties    memory_props;
 
+    /* Device capabilities -- cached at selection time; consumed by RHI subsystems.
+       Query these instead of re-reading physical_device_props at each use site. */
+
+    VkSampleCountFlagBits   max_msaa_samples;     /* max combined color+depth sample count  */
+    u32                     min_ubo_align;        /* minUniformBufferOffsetAlignment, bytes */
+    bool                    has_push_descriptor;  /* VK_KHR_push_descriptor was enabled     */
+
     /* Queue families; may be the same index on some hardware */
 
     u32         graphics_queue_family;
