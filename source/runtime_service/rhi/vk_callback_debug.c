@@ -115,10 +115,9 @@ vk_debug_messenger_create( void )
     vk_debug_messenger_fill_ci( &ci );
 
     VkResult r = vkCreateDebugUtilsMessengerEXT( vk.instance, &ci, vk.alloc_cb, &vk.debug_messenger );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "vkCreateDebugUtilsMessengerEXT: %s", string_VkResult( r ) );
-        return false;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "vkCreateDebugUtilsMessengerEXT: %s", string_VkResult( r ) );
+         return false;
     }
     LOG_INFO( "vkCreateDebugUtilsMessengerEXT: OK" );
 
@@ -135,7 +134,7 @@ vk_debug_messenger_destroy( void )
 #if DEBUG
 
     if ( vk.debug_messenger == VK_NULL_HANDLE )
-        return;
+         return;
 
     vkDestroyDebugUtilsMessengerEXT( vk.instance, vk.debug_messenger, vk.alloc_cb );
     vk.debug_messenger = VK_NULL_HANDLE;
@@ -153,7 +152,7 @@ vk_debug_name_object( VkObjectType type, u64 handle, const char* name )
 #if DEBUG
 
     if ( !vk.use_vk_ext_debug_utils || !vk.device || !name )
-        return;
+         return;
 
     VkDebugUtilsObjectNameInfoEXT info = { 0 };
     info.sType        = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
@@ -209,12 +208,16 @@ static void
 vk_cmd_end_label( rhi_command_list_t cmd )
 {
 #if DEBUG
+
     if ( !vk.use_vk_ext_debug_utils || !cmd )
         return;
 
     vkCmdEndDebugUtilsLabelEXT( cmd->vk_cmd );
+
 #else
+
     UNUSED( cmd );
+
 #endif
 }
 

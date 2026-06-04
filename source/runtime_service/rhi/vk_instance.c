@@ -7,14 +7,13 @@
 
 ==============================================================================================*/
 // clang-format off
-/*==============================================================================================
 
+/*==============================================================================================
     Vulkan extensions provide additional functionality beyond the core Vulkan API .
     We use this function to acquire our required vulkan extentions.
 
     VK_KHR_WIN32_SURFACE_EXTENSION_NAME: required for creating surfaces from Win32 HWNDs.
     VK_KHR_SURFACE_EXTENSION_NAME : required for surface support on all platforms.
-
 ==============================================================================================*/
 
 static i32
@@ -84,16 +83,13 @@ vk_instance_get_extensions( const char** out_ext_array )
 }
 
 /*==============================================================================================
-
     Vulkan layers are optional components that can provide additional functionality or
     validation for Vulkan applications. We use this function to acquire our layers.
 
     VK_LAYER_KHRONOS_validation : Perform error checking and validation of Vulkan API usage.
                                   Should be disabled in release builds for performance.
-
     VK_LAYER_LUNARG_monitor     : A lightweight performance tracker build in.
                                   Adds (FPS) and Frame Time (in window title or terminal)
-
 ==============================================================================================*/
 
 static i32 /* count */
@@ -172,7 +168,7 @@ vk_instance_get_layers( const char** out_layer_names )
 }
 
 /*==============================================================================================
-    VK: Acquire our version of Vulkan
+    Acquire our version of Vulkan supported by the driver. 
 ==============================================================================================*/
 
 static i32
@@ -196,11 +192,7 @@ vk_get_version()
 }
 
 /*==============================================================================================
-    VK: Setup.
-==============================================================================================*/
-
-/*==============================================================================================
-    Global lifecycle  (instance + device, no window)
+    Call Vulkan loader to create a Vulkan instance with the specified extension + layers.
 ==============================================================================================*/
 
 static bool
@@ -225,18 +217,17 @@ vk_instance_create( u32 layer_count, const char** layer_array, u32 ext_count, co
     ci.ppEnabledLayerNames     = layer_array;
 
     /* Chain a debug messenger CI into pNext so validation messages emitted during
-       vkCreateInstance / vkDestroyInstance itself are captured (before the
-       persistent messenger exists).  vk_debug_messenger_fill_ci() is the single
-       source of truth for callback settings; it and vk_debug_callback only exist
-       in DEBUG builds. */
+       vkCreateInstance / vkDestroyInstance can trigger validation (temporary).
+       The real persistent messenger is created via vk_debug_messenger_create() */
 
 #if DEBUG
+
     VkDebugUtilsMessengerCreateInfoEXT dbg_ci = { 0 };
-    if ( vk.use_vk_ext_debug_utils )
-    {
-        vk_debug_messenger_fill_ci( &dbg_ci );
-        ci.pNext = &dbg_ci;
+    if ( vk.use_vk_ext_debug_utils ) {
+         vk_debug_messenger_fill_ci( &dbg_ci );
+         ci.pNext = &dbg_ci;
     }
+
 #endif
 
     VkResult r = vkCreateInstance( &ci, vk.alloc_cb, &vk.instance );
@@ -250,6 +241,7 @@ vk_instance_create( u32 layer_count, const char** layer_array, u32 ext_count, co
 }
 
 /*============================================================================================*/
+/* Destroy the Vulkan instance, which will also destroy the debug messenger if it exists. */
 
 static void
 vk_instance_destroy( void )
@@ -264,7 +256,13 @@ vk_instance_destroy( void )
     LOG_INFO( "instance_destroy: OK" );
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+    Initialize the Vulkan instance, which represents our connection to the Vulkan loader
+    and provides access to global Vulkan functionality.  Also creates a debug messenger if
+    VK_EXT_debug_utils is available and enabled. 
+
+    We require Vulkan 1.3 for bindless descriptors and other features.
+==============================================================================================*/   
 
 static bool 
 vk_instance_init()
@@ -272,7 +270,7 @@ vk_instance_init()
     assert( vk.instance == VK_NULL_HANDLE );
 
     /* 1. Verify Vulkan 1.3 is available: */
-   
+    
     vk.version = vk_get_version();
     if ( vk.version < 3 ){
          LOG_ERROR( "Vulkan 1.3 required; driver reports an older version" );

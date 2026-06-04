@@ -308,25 +308,29 @@ typedef struct rhi_pipeline_desc_s
     rhi_shader_t  frag;
 
     /* Vertex input */
-    rhi_vertex_attrib_t  attribs[ RHI_MAX_VERTEX_ATTRIBS ];
-    u32                  attrib_count;
-    u32                  vertex_stride;    /* single interleaved binding for now */
+
+    rhi_vertex_attrib_t attribs[ RHI_MAX_VERTEX_ATTRIBS ];
+    u32                 attrib_count;
+    u32                 vertex_stride;       /* single interleaved binding for now */
 
     /* Rasterizer */
-    rhi_cull_mode_t   cull;
-    bool              depth_test;
-    bool              depth_write;
-    rhi_compare_op_t  depth_compare;    /* default: RHI_COMPARE_LESS */
+
+    rhi_cull_mode_t     cull;
+    bool                depth_test;
+    bool                depth_write;
+    rhi_compare_op_t    depth_compare;      /* default: RHI_COMPARE_LESS */
 
     /* Dynamic rendering attachments (no VkRenderPass) */
+
     rhi_color_target_t  color_targets[ RHI_MAX_COLOR_TARGETS ];
     u32                 color_target_count;
-    rhi_format_t        depth_format;   /* RHI_FORMAT_UNKNOWN = no depth attachment */
+    rhi_format_t        depth_format;       /* RHI_FORMAT_UNKNOWN = no depth attachment */
 
     /* Push constants (vert + frag share one range) */
-    u32  push_const_size;   /* bytes; 0 = none; max RHI_MAX_PUSH_CONST_SIZE */
 
-    const char*  debug_name;
+    u32                 push_const_size;    /* bytes; 0 = none; max RHI_MAX_PUSH_CONST_SIZE */
+
+    const char*         debug_name;
 
 } rhi_pipeline_desc_t;
 

@@ -183,11 +183,12 @@ typedef struct vk_context_s
 
 typedef struct vk_state_s
 {
-    i32  version;                           // minor version number
+    i32  version;                           // minor version number only; major is implicitly 1
 
     /* status flags */
 
-    bool    initialized;    
+    bool    initialized;                    // global init complete (instance + device)
+
     bool    use_vk_alloc_cb;                // use Vulkan allocation callbacks.
     bool    use_vk_ext_debug_utils;         // use debug messenger.
     bool    use_vk_layer_validation;        // use vulkan debug layer.
@@ -235,12 +236,13 @@ typedef struct vk_state_s
     VkDescriptorPool       bindless_pool;
     VkDescriptorSetLayout  bindless_layout;
     VkDescriptorSet        bindless_set;
-    VkPipelineLayout       pipeline_layout;   /* push constants + bindless set 0 */
+    VkPipelineLayout       pipeline_layout;     /* push constants + bindless set 0 */
 
     /* Staging upload ring (indexed by global_frame % VK_MAX_FRAMES_IN_FLIGHT) */
 
     vk_staging_t  staging[ VK_MAX_FRAMES_IN_FLIGHT ];
-    u32           global_frame;   /* monotonic counter; drives staging slot selection */
+
+    u32           global_frame;                 /* monotonic counter; drives staging slot selection */
 
     /* Resource slot pools */
 
@@ -253,16 +255,18 @@ typedef struct vk_state_s
     /* Context pool */
 
     vk_context_t  contexts[ RHI_CTX_MAX ];
-    u32           ctx_alloc;   /* bitmask: bit i set = slot i is live */
+    u32           ctx_alloc;                    /* bitmask: bit i set = slot i is live */
 
 } vk_state_t;
 
+/* default values for the global singleton */
+
 static vk_state_t vk =
 {
-    .use_vk_alloc_cb = true,
-    .use_vk_ext_debug_utils = true,
-    .use_vk_layer_validation = true,
-    .use_vk_layer_monitor = true,
+    .use_vk_alloc_cb            = true,
+    .use_vk_ext_debug_utils     = true,
+    .use_vk_layer_validation    = true,
+    .use_vk_layer_monitor       = true,
 };
 
 /*============================================================================================*/
