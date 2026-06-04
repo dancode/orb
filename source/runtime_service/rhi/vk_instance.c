@@ -269,7 +269,7 @@ vk_instance_init()
 {
     assert( vk.instance == VK_NULL_HANDLE );
 
-    /* 1. Verify Vulkan 1.3 is available: */
+    /* --- Verify Vulkan 1.3 is available: --- */
     
     vk.version = vk_get_version();
     if ( vk.version < 3 ){
@@ -277,7 +277,7 @@ vk_instance_init()
          return false;
     }
 
-    /* 2. Get vulkan extensions and layers we will specify during instance creation. */
+    /* --- Get Vulkan extensions and layers we will specify during instance creation: --- */
 
     const char* exten_array[ 8 ] = { 0 };
     i32  exten_count = vk_instance_get_extensions( exten_array );
@@ -293,20 +293,20 @@ vk_instance_init()
          return false;
     }
 
-    /* create instance */
+    /* --- Create instance --- */
 
     if ( !vk_instance_create( layer_count, layers_array, exten_count, exten_array )) {
          return false;
     }
 
-    /* load instance-level function pointers now that vk.instance is live */
+    /* --- Load instance-level function pointers now that vk.instance is live --- */
 
     if ( !vk_lib_instance_entry_points() ){
           vk_instance_destroy();
           return false;
     }
 
-    /* create the persistent debug messenger (requires instance-level functions) */
+    /* --- Create the persistent debug messenger (requires instance-level functions) --- */
 
     if ( vk.use_vk_ext_debug_utils ) {
          vk_debug_messenger_create();         
