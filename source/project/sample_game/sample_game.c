@@ -47,7 +47,6 @@ typedef struct example_game_state_s
 
 } example_game_state_t;
 
-static example_game_state_t* state = NULL;
 
 /*==============================================================================================
     Lifecycle

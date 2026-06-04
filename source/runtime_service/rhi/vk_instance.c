@@ -191,6 +191,14 @@ vk_get_version()
     }
 }
 
+static const char*
+vk_version_string( u32 version )
+{
+    static char buf[ 32 ] = {0};
+    snprintf( buf, 32, "%d.%d.%d", VK_VERSION_MAJOR( version ), VK_VERSION_MINOR( version ), VK_VERSION_PATCH( version ) );
+    return buf;
+}
+
 /*==============================================================================================
     Call Vulkan loader to create a Vulkan instance with the specified extension + layers.
 ==============================================================================================*/

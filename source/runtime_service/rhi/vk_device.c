@@ -47,36 +47,40 @@
 ==============================================================================================*/
 // clang-format off
 
+/*==============================================================================================
+
+    Physical Device: Helpers for creating and managing physical devices
+
+==============================================================================================*/
+
 #define VK_MAX_PHYSICAL_DEVICES     8
 #define VK_MAX_QUEUE_FAMILIES       16
 #define VK_QUEUE_FAMILY_INVALID     ( ~0u )
 
 /* Optional extensions: checked against the selected device; enabled only if present.
-   VK_OPT_EXT_COUNT is the compile-time array length -- use it instead of sizeof/sizeof. */
+   Each entry has a named index in vk_opt_ext_e; VK_OPT_EXT_COUNT is the sentinel.
+   Reference slots by name (e.g. VK_OPT_EXT_PUSH_DESCRIPTOR) -- never by raw integer. */
 
-static const char* s_optional_exts[] =
+enum
 {
-    VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,   /* inline per-draw descriptor updates */
+    VK_OPT_EXT_PUSH_DESCRIPTOR = 0,   /* VK_KHR_push_descriptor: inline per-draw updates */
+    VK_OPT_EXT_COUNT,
 };
 
-#define VK_OPT_EXT_COUNT  ( sizeof( s_optional_exts ) / sizeof( s_optional_exts[ 0 ] ) )
-
-/* Queue priorities at file scope so pQueuePriorities pointers in VkDeviceQueueCreateInfo
-   remain valid through vkCreateDevice without escaping a helper's stack frame. */
-
-static const float s_prio_high = 1.0f;   /* graphics + present: highest scheduling weight */
-static const float s_prio_low  = 0.5f;   /* transfer (dedicated): lower than rendering   */
+static const char* s_optional_exts[ VK_OPT_EXT_COUNT ] =
+{
+    VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+};
 
 /*==============================================================================================
-    Physical device helpers
+    Physical Device: Returns true if device exposes VK_KHR_swapchain (hard requirement).
+
+        Also checks which optional extensions are present and writes results to
+        out_optional[] (one bool per entry, parallel to the array).
+
+        Note: Extension counts reach 200+ on current drivers, so we heap-allocate
+              rather than risk a large stack frame.
 ==============================================================================================*/
-
-/*  Returns true if dev exposes VK_KHR_swapchain (hard requirement).  
-    Also checks which optional extensions from s_optional_exts[] are present and 
-    writes results to out_optional[] (one bool per entry, parallel to the array).
-
-    Two-call pattern: first get count, then fill. Extension counts reach 200+ on current
-    drivers, so we heap-allocate rather than risk a large stack frame. */
 
 static bool
 vk_device_validate_extensions( VkPhysicalDevice dev, bool* out_optional )
@@ -86,31 +90,30 @@ vk_device_validate_extensions( VkPhysicalDevice dev, bool* out_optional )
     u32 count = 0;
     vkEnumerateDeviceExtensionProperties( dev, NULL, &count, NULL );
     VkExtensionProperties* exts = malloc( sizeof( VkExtensionProperties ) * ( count + 1 ) );
+    if ( !exts ) return false;
     vkEnumerateDeviceExtensionProperties( dev, NULL, &count, exts );
 
-    /* Check for required and optional extensions */
+    /* Check for required + optional extension support */
 
     bool has_swapchain = false;
     for ( u32 i = 0; i < count; ++i )
     {
         const char* name = exts[ i ].extensionName;
 
-        if ( strcmp( name, VK_KHR_SWAPCHAIN_EXTENSION_NAME ) == 0 )
-            has_swapchain = true;
-
-        for ( u32 j = 0; j < VK_OPT_EXT_COUNT; ++j )
-        {
+        if ( strcmp( name, VK_KHR_SWAPCHAIN_EXTENSION_NAME ) == 0 ) {
+             has_swapchain = true;
+        }
+        for ( u32 j = 0; j < VK_OPT_EXT_COUNT; ++j ) {
             if ( strcmp( name, s_optional_exts[ j ] ) == 0 )
                 out_optional[ j ] = true;
         }
     }
-
     free( exts );
     return has_swapchain;
 }
 
-/*
-    Walks queue families on dev and resolves indices for graphics + compute, present, transfer.
+/*==============================================================================================
+    Physical Device: Get queue family indicices for graphics + compute, present, transfer.
 
     Combined graphics + compute:
        Render and compute share the same timeline so they can occupy the same command buffer
@@ -127,22 +130,23 @@ vk_device_validate_extensions( VkPhysicalDevice dev, bool* out_optional )
        re-validates via vkGetPhysicalDeviceSurfaceSupportKHR once a real surface is available.
 
     Returns false if graphics or present cannot be satisfied (both are hard requirements).
-*/
+==============================================================================================*/
 
 static bool
 vk_device_validate_queues( VkPhysicalDevice dev, u32* out_gfx, u32* out_present, u32* out_transfer )
 {
-    VkQueueFamilyProperties families[ VK_MAX_QUEUE_FAMILIES ];
-    u32 count = VK_MAX_QUEUE_FAMILIES;
-    vkGetPhysicalDeviceQueueFamilyProperties( dev, &count, families );
+    VkQueueFamilyProperties queue_families[ VK_MAX_QUEUE_FAMILIES ];
 
+    u32 count    = VK_MAX_QUEUE_FAMILIES;
     u32 gfx      = VK_QUEUE_FAMILY_INVALID;
     u32 present  = VK_QUEUE_FAMILY_INVALID;
     u32 transfer = VK_QUEUE_FAMILY_INVALID;
 
+    vkGetPhysicalDeviceQueueFamilyProperties( dev, &count, queue_families );
+
     for ( u32 i = 0; i < count; ++i )
     {
-        VkQueueFlags flags = families[ i ].queueFlags;
+        VkQueueFlags flags = queue_families[ i ].queueFlags;
 
         /* Combined graphics + compute: both are needed for our command buffers, 
            so prefer a single family that supports both. */
@@ -152,19 +156,20 @@ vk_device_validate_queues( VkPhysicalDevice dev, u32* out_gfx, u32* out_present,
              gfx = i;
         }
 
-        /* Surface-free present support query: platform-specific. 
-           context_create will confirm with a real surface. */
+        /* Use the surface-free present support query (platform-specific) to
+           check for surface capability, which is confirmed in context creation */
+
         if ( present == VK_QUEUE_FAMILY_INVALID )
         {
             #if defined( VK_USE_PLATFORM_WIN32_KHR )
-                /* Surface-free query: answers without a HWND or VkSurfaceKHR.
-                   On most Win32 drivers the graphics family also supports present. */
+                // Surface-free query can answer without a HWND or VkSurfaceKHR.
+                // On most Win32 drivers the graphics family also supports present.
                 if ( vkGetPhysicalDeviceWin32PresentationSupportKHR( dev, i ) )
                     present = i;
             #else
-                /* Linux/Mac: no surface-free present query is available without a live
-                   display connection.  Accept any graphics family; context_create will
-                   confirm support via vkGetPhysicalDeviceSurfaceSupportKHR. */
+                // Lnux/Mac: has no surface-free present query is available without a
+                // live display connection.  Accept any graphics family; context_create 
+                // will confirm support via vkGetPhysicalDeviceSurfaceSupportKHR.
                 if ( flags & VK_QUEUE_GRAPHICS_BIT )
                     present = i;
             #endif
@@ -172,15 +177,13 @@ vk_device_validate_queues( VkPhysicalDevice dev, u32* out_gfx, u32* out_present,
 
         /* Dedicated transfer: TRANSFER set, GRAPHICS and COMPUTE both absent.
            Maps to copy-engine / DMA hardware on discrete GPUs. */
-        if ( transfer == VK_QUEUE_FAMILY_INVALID &&
-              ( flags & VK_QUEUE_TRANSFER_BIT  ) && 
-             !( flags & VK_QUEUE_GRAPHICS_BIT  ) &&
-             !( flags & VK_QUEUE_COMPUTE_BIT   ) )
+        if ( transfer == VK_QUEUE_FAMILY_INVALID &&  ( flags & VK_QUEUE_TRANSFER_BIT ) && 
+             !( flags & VK_QUEUE_GRAPHICS_BIT  ) && !( flags & VK_QUEUE_COMPUTE_BIT  )) 
         {
             transfer = i;
         }
     }
-
+    
     /* Integrated GPUs and older discrete cards expose no dedicated transfer family.
        Fall back to the graphics family so transfer_queue is always a valid handle. */
     if ( transfer == VK_QUEUE_FAMILY_INVALID )
@@ -194,17 +197,19 @@ vk_device_validate_queues( VkPhysicalDevice dev, u32* out_gfx, u32* out_present,
     return valid;
 }
 
-/* Full compatibility check for a device. Returns false if any hard requirement is absent. */
+/*==============================================================================================
+    Physical Device: Full compatibility check for a device. False if requirements fail.
+==============================================================================================*/
 
 static bool
 vk_device_validate( VkPhysicalDevice dev, u32* 
                     out_gfx, u32* out_present, u32* out_transfer, bool* out_opt )
 {
+    /* validate extensions */
     if ( !vk_device_validate_extensions( dev, out_opt ))
          return false;
 
-    /* --- validate physical device features: --- */
-
+    /* validate physical device features */
     VkPhysicalDeviceFeatures2 feats2 = { 0 };
     feats2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     vkGetPhysicalDeviceFeatures2( dev, &feats2 );
@@ -214,88 +219,101 @@ vk_device_validate( VkPhysicalDevice dev, u32*
         return false;
     }
 
+    /* validate queue families */
     bool valid = vk_device_validate_queues( dev, out_gfx, out_present, out_transfer );
     return valid;
 }
 
 /*==============================================================================================
-    vk_device_select  --  enumerate GPUs, pick best by type, validate, store in vk.*
+    Physical Device: Pick the best (GPU) device and store in vulkan state struct.
 ==============================================================================================*/
 
 static bool
 vk_device_select( bool* out_opt_found )
 {
-    VkPhysicalDevice devs[ VK_MAX_PHYSICAL_DEVICES ];
-    u32 count = VK_MAX_PHYSICAL_DEVICES;
+    /* Enumerate vulkan capable devices on machine */
 
-    VkResult result = vkEnumeratePhysicalDevices( vk.instance, &count, devs );
-    if (( result != VK_SUCCESS && result != VK_INCOMPLETE ) || count == 0 ) {
-        LOG_ERROR( "vkEnumeratePhysicalDevices: %s (count=%u)", string_VkResult( result ), count );
+    VkPhysicalDevice            device_array[ VK_MAX_PHYSICAL_DEVICES ];
+    VkPhysicalDeviceProperties  device_props[ VK_MAX_PHYSICAL_DEVICES ];
+    u32                         device_count = VK_MAX_PHYSICAL_DEVICES;
+
+    VkResult result = vkEnumeratePhysicalDevices( vk.instance, &device_count, device_array );
+    if (( result != VK_SUCCESS && result != VK_INCOMPLETE ) || device_count == 0 ) {
+        LOG_ERROR( "vkEnumeratePhysicalDevices: %s (count=%u)", string_VkResult( result ), device_count );
         return false;
     }
 
-    /* Fetch all properties in one pass -- used for logging and type selection below. */
-    VkPhysicalDeviceProperties props[ VK_MAX_PHYSICAL_DEVICES ];
-    for ( u32 i = 0; i < count; ++i )
-        vkGetPhysicalDeviceProperties( devs[ i ], &props[ i ] );
+    LOG_INFO( "physical devices found: %u", device_count );
 
-    LOG_INFO( "physical devices found: %u", count );
-    for ( u32 i = 0; i < count; ++i ) {
-        LOG_INFO( "  [%u] %s  type=%s  api=%u.%u", i,
-                  props[ i ].deviceName, string_VkPhysicalDeviceType( props[ i ].deviceType ),
-                  VK_VERSION_MAJOR( props[ i ].apiVersion ), VK_VERSION_MINOR( props[ i ].apiVersion ) );
+    /* Fetch device properties for all devices */    
+    for ( u32 i = 0; i < device_count; ++i )
+        vkGetPhysicalDeviceProperties( device_array[ i ], &device_props[ i ] );
+    
+    for ( u32 i = 0; i < device_count; ++i ) {
+        LOG_INFO( "[%u] %s type=%s api=%u.%u", i,
+                  device_props[ i ].deviceName, string_VkPhysicalDeviceType( device_props[ i ].deviceType ),
+                  VK_VERSION_MAJOR( device_props[ i ].apiVersion ), VK_VERSION_MINOR( device_props[ i ].apiVersion ) );
     }
 
-    /* Try device types in preference order; validate and take the first that passes. */
-
+    /* Preferred device by type */
     static const VkPhysicalDeviceType s_pref[] = {
         VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU, VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
         VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU,  VK_PHYSICAL_DEVICE_TYPE_CPU,
         VK_PHYSICAL_DEVICE_TYPE_OTHER,
     };
-
-    for ( u32 t = 0; t < ( sizeof( s_pref ) / sizeof( s_pref[ 0 ] ) ); ++t )
+    
+    /* Validate first successful device in order of type preference */
+    u32 pref_count = sizeof( s_pref ) / sizeof( s_pref[ 0 ] );
+    for ( u32 t = 0; t < pref_count; ++t )
     {
-        for ( u32 i = 0; i < count; ++i )
+        for ( u32 i = 0; i < device_count; ++i )
         {
-            if ( props[ i ].deviceType != s_pref[ t ] )
+            // Skip if not the preferred type for this iteration.
+            if ( device_props[ i ].deviceType != s_pref[ t ] )
                  continue;
 
+            // Check if the device meets our requirements.
             bool opt[ VK_OPT_EXT_COUNT ] = { 0 };
             u32  gfx, pres, xfer;
 
-            if ( !vk_device_validate( devs[ i ], &gfx, &pres, &xfer, opt )) {
-                 LOG_INFO( "  skipped %s (failed compatibility check)", props[ i ].deviceName );
+            // We grab the queue family values since we are validating them anyway.
+            if ( !vk_device_validate( device_array[ i ], &gfx, &pres, &xfer, opt )) {
+                 LOG_INFO( "  skipped %s (failed compatibility check)", device_props[ i ].deviceName );
                  continue;
             }
 
-            vk.physical_device       = devs[ i ];
+            // Store our selection.
+            vk.physical_device       = device_array[ i ];
+            vk.physical_device_props = device_props[ i ];
             vk.graphics_queue_family = gfx;
             vk.present_queue_family  = pres;
             vk.transfer_queue_family = xfer;
-            vk.physical_device_props = props[ i ];
-            memcpy( out_opt_found, opt, VK_OPT_EXT_COUNT * sizeof( bool ) );
-
             vkGetPhysicalDeviceMemoryProperties( vk.physical_device, &vk.memory_props );
 
-            LOG_INFO( "selected: %s  (gfx=%u  present=%u  xfer=%u)",
-                      props[ i ].deviceName, gfx, pres, xfer );
+            // Store which optional extensions were present for later.
+            memcpy( out_opt_found, opt, VK_OPT_EXT_COUNT * sizeof( bool ) );
 
+            LOG_INFO( "best match: [%u]", i );
+            LOG_INFO( "  device named : %s", vk.physical_device_props.deviceName );
+            LOG_INFO( "  device type  : %s", string_VkPhysicalDeviceType( vk.physical_device_props.deviceType ));
+            LOG_INFO( "  queue family : Graphics = %u Present = %u Transfer = %u", i, gfx, pres, xfer );
+            LOG_INFO( "  api          : %s", vk_version_string( vk.physical_device_props.apiVersion ));
+            LOG_INFO( "  driver       : %s", vk_version_string( vk.physical_device_props.driverVersion ));
+            LOG_INFO( "  vendor id    : %u", vk.physical_device_props.vendorID );                                                                 
+            
             return true; /* success */
         }
     }
 
-    LOG_ERROR( "no suitable physical device " 
-              "(requires VK_KHR_swapchain, samplerAnisotropy, fillModeNonSolid, "
-               "graphics + compute queue, present support)" );
+    LOG_ERROR( "no suitable physical device requires VK_KHR_swapchain, samplerAnisotropy, "
+               "fillModeNonSolid, graphics + compute queue, present support)" );
     return false;
 }
 
 /*==============================================================================================
-    Selected device diagnostics  --  called after vk_device_select; reads from vk.*
+    Physical Device: Cache key limits in our vulkan state struct.
 ==============================================================================================*/
 
-/* Cache key limits in vk.* for runtime use by RHI subsystems, then log them. */
 static void
 vk_device_cache_limits( void )
 {
@@ -303,8 +321,9 @@ vk_device_cache_limits( void )
 
     /* Resolve max MSAA to the highest single flag bit supported by both color and depth.
        Stored as VkSampleCountFlagBits so callers can pass it directly to Vulkan APIs. */
-    VkSampleCountFlags    msaa_mask = L->framebufferColorSampleCounts
-                                    & L->framebufferDepthSampleCounts;
+    VkSampleCountFlags msaa_mask = L->framebufferColorSampleCounts
+                                 & L->framebufferDepthSampleCounts;
+
     VkSampleCountFlagBits max_msaa  = VK_SAMPLE_COUNT_1_BIT;
          if ( msaa_mask & VK_SAMPLE_COUNT_64_BIT ) max_msaa = VK_SAMPLE_COUNT_64_BIT;
     else if ( msaa_mask & VK_SAMPLE_COUNT_32_BIT ) max_msaa = VK_SAMPLE_COUNT_32_BIT;
@@ -312,7 +331,7 @@ vk_device_cache_limits( void )
     else if ( msaa_mask & VK_SAMPLE_COUNT_8_BIT  ) max_msaa = VK_SAMPLE_COUNT_8_BIT;
     else if ( msaa_mask & VK_SAMPLE_COUNT_4_BIT  ) max_msaa = VK_SAMPLE_COUNT_4_BIT;
     else if ( msaa_mask & VK_SAMPLE_COUNT_2_BIT  ) max_msaa = VK_SAMPLE_COUNT_2_BIT;
-
+    
     vk.max_msaa_samples = max_msaa;
     vk.min_ubo_align    = (u32)L->minUniformBufferOffsetAlignment;
 
@@ -333,8 +352,10 @@ vk_device_cache_limits( void )
     }
 }
 
-/* Logged at TRACE because it is verbose; invaluable when debugging allocation failures
-   or choosing the correct memory type index in vk_memory.c. */
+/*==============================================================================================
+     Physical Device: Expose the memory type indexes for clarity (pure log output function)
+==============================================================================================*/
+
 static void
 vk_device_log_memory( void )
 {
@@ -344,10 +365,9 @@ vk_device_log_memory( void )
     for ( u32 i = 0; i < mp->memoryHeapCount; ++i )
     {
         VkMemoryHeapFlags f  = mp->memoryHeaps[ i ].flags;
-        double            gb = (double)mp->memoryHeaps[ i ].size / ( 1024.0 * 1024.0 * 1024.0 );
+        double gb = (double)mp->memoryHeaps[ i ].size / ( 1024.0 * 1024.0 * 1024.0 );
 
-        LOG_TRACE( "  heap[%u]: %.2f GB  %s%s",
-                   i, gb,
+        LOG_TRACE( "  heap[%u]: %6.2f GB  %s%s", i, gb,
                    ( f & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT   ) ? "DEVICE_LOCAL "   : "",
                    ( f & VK_MEMORY_HEAP_MULTI_INSTANCE_BIT ) ? "MULTI_INSTANCE " : "" );
     }
@@ -363,7 +383,7 @@ vk_device_log_memory( void )
 
         /* Append only the set bits; avoids a wide fixed-column table full of dashes. */
         char buf[ 256 ] = { 0 };
-        int  pos        = 0;
+        int  pos = 0;
         if ( f & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT     ) pos += snprintf( buf+pos, 256-pos, "DEVICE_LOCAL "     );
         if ( f & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT     ) pos += snprintf( buf+pos, 256-pos, "HOST_VISIBLE "     );
         if ( f & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT    ) pos += snprintf( buf+pos, 256-pos, "HOST_COHERENT "    );
@@ -371,109 +391,156 @@ vk_device_log_memory( void )
         if ( f & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT ) pos += snprintf( buf+pos, 256-pos, "LAZILY_ALLOCATED " );
         if ( f & VK_MEMORY_PROPERTY_PROTECTED_BIT        ) pos += snprintf( buf+pos, 256-pos, "PROTECTED "        );
 
-        LOG_TRACE( "  type[%2u] heap=%u : %s", i, h, buf );
+        LOG_TRACE( "  type[%u] heap=%u : %s", i, h, buf );
     }
 }
 
 /*==============================================================================================
-    Logical device helpers
+
+    Logical Device: Helpers for creating and managing logical devices
+
 ==============================================================================================*/
 
 /* All pNext-linked feature structs together in one allocation so the chain can be built
-   by a helper without the pointers escaping its stack frame.  feats2 is the chain root. */
+   by a helper without the pointers escaping its stack frame. feats2 is the chain root. */
 
 typedef struct
 {
-    VkPhysicalDeviceDescriptorIndexingFeatures  desc_idx;   /* bindless indexing: VK 1.2 */
-    VkPhysicalDeviceDynamicRenderingFeatures    dyn_rend;  /* renderpass-free: VK 1.3   */
-    VkPhysicalDeviceSynchronization2Features    sync2;     /* barrier2/submit2: VK 1.3  */
-    VkPhysicalDeviceTimelineSemaphoreFeatures   timeline;  /* monotonic counter: VK 1.2 */
-    VkPhysicalDeviceFeatures2                   feats2;    /* chain root + VK 1.0 feats */
+    VkPhysicalDeviceDescriptorIndexingFeatures  desc_idx;  // bindless indexing: VK 1.2 
+    VkPhysicalDeviceDynamicRenderingFeatures    dyn_rend;  // renderpass-free: VK 1.3   
+    VkPhysicalDeviceSynchronization2Features    sync2;     // barrier2/submit2: VK 1.3  
+    VkPhysicalDeviceTimelineSemaphoreFeatures   timeline;  // monotonic counter: VK 1.2 
+    VkPhysicalDeviceFeatures2                   feats2;    // chain root + VK 1.0 feats 
 
 } vk_feature_chain_t;
 
-/* Fill f and wire the pNext links.  Chain order bottom to top:
-   desc_idx <- dyn_rend <- sync2 <- timeline <- feats2.
-   Only what the RHI uses is opted in; everything else stays VK_FALSE. */
+/*==============================================================================================
+    Logical Device: Set features and extensions for device creation.
+
+    This wires with the pNext links chain orders from bottom of code to the top.
+        e.g. desc_idx <- dyn_rend <- sync2 <- timeline <- feats2.
+==============================================================================================*/
+
 static void
 vk_device_init_features( vk_feature_chain_t* f )
 {
-    f->desc_idx.sType                                     = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-    f->desc_idx.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;  /* per-lane dynamic index into bindless array */
-    f->desc_idx.descriptorBindingPartiallyBound           = VK_TRUE;  /* bindless slots may be empty/unused        */
-    f->desc_idx.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;  /* write new slots while GPU reads others    */
-    f->desc_idx.runtimeDescriptorArray                    = VK_TRUE;  /* array size set by layout, not SPIR-V      */
+    //-------------------------------------------------------
+    f->desc_idx.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    
+    /* per-lane dynamic index into bindless array */
+    f->desc_idx.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;  
 
-    f->dyn_rend.sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
-    f->dyn_rend.pNext            = &f->desc_idx;
-    f->dyn_rend.dynamicRendering = VK_TRUE;  /* vkCmdBeginRendering -- no VkRenderPass / VkFramebuffer */
+    /* bindless slots may be empty/unused */
+    f->desc_idx.descriptorBindingPartiallyBound = VK_TRUE;  
 
-    f->sync2.sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
-    f->sync2.pNext            = &f->dyn_rend;
-    f->sync2.synchronization2 = VK_TRUE;  /* vkCmdPipelineBarrier2 + vkQueueSubmit2 */
+    /* write new slots while GPU reads others */
+    f->desc_idx.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;  
 
-    f->timeline.sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
-    f->timeline.pNext             = &f->sync2;
-    f->timeline.timelineSemaphore = VK_TRUE;  /* monotonically increasing GPU/CPU sync counter */
+    /* array size set by layout, not SPIR-V */
+    f->desc_idx.runtimeDescriptorArray = VK_TRUE;  
+    
+    //-------------------------------------------------------
+    f->dyn_rend.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+    f->dyn_rend.pNext = &f->desc_idx;
 
-    f->feats2.sType                      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    f->feats2.pNext                      = &f->timeline;
-    f->feats2.features.samplerAnisotropy = VK_TRUE;  /* anisotropic texture filtering */
-    f->feats2.features.fillModeNonSolid  = VK_TRUE;  /* VK_POLYGON_MODE_LINE wireframe */
+    /* vkCmdBeginRendering -- no VkRenderPass / VkFramebuffer */
+    f->dyn_rend.dynamicRendering = VK_TRUE;  
+    
+    //-------------------------------------------------------
+    f->sync2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
+    f->sync2.pNext = &f->dyn_rend;    
+    
+    /* vkCmdPipelineBarrier2 + vkQueueSubmit2 */
+    f->sync2.synchronization2 = VK_TRUE;  
+    
+    //-------------------------------------------------------
+    f->timeline.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    f->timeline.pNext = &f->sync2;    
+
+    /* monotonically increasing GPU/CPU sync counter */
+    f->timeline.timelineSemaphore = VK_TRUE; 
+
+    //-------------------------------------------------------
+    f->feats2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    f->feats2.pNext = &f->timeline;
+
+    /* anisotropic texture filtering */
+    f->feats2.features.samplerAnisotropy = VK_TRUE;  
+
+    /* VK_POLYGON_MODE_LINE wireframe */
+    f->feats2.features.fillModeNonSolid  = VK_TRUE;  
 }
 
-/* Build the extension list for VkDeviceCreateInfo.  Prepends the required swapchain
-   extension, then appends each optional extension reported present by opt_found[].
-   out_exts must have room for 1 + VK_OPT_EXT_COUNT entries.  Returns total count. */
+/*==============================================================================================
+    Logical Device: Build the extension list for VkDeviceCreateInfo.  
+    
+    Prepends the required swapchain extension, then appends each optional extension 
+    reported present by opt_found[]. 
+    
+    Returns total count. 
+==============================================================================================*/
+
 static u32
 vk_device_collect_extensions( const bool* opt_found, const char** out_exts )
 {
     u32 count        = 0;
     out_exts[ count++ ] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;   /* hard requirement */
 
+    
+    LOG_INFO( "optional extentions:" );
+
     for ( u32 i = 0; i < VK_OPT_EXT_COUNT; ++i )
     {
-        LOG_INFO( "  optional ext: %-42s  [%s]",
-                  s_optional_exts[ i ],
-                  opt_found[ i ] ? "enabled" : "not present" );
+        LOG_INFO( "  [%u]: %s [%s]", i, s_optional_exts[ i ], opt_found[ i ] ? "enabled" : "not present" );
 
         if ( opt_found[ i ] )
-            out_exts[ count++ ] = s_optional_exts[ i ];
+             out_exts[ count++ ] = s_optional_exts[ i ];
     }
-
     return count;
 }
 
-/* Build deduplicated VkDeviceQueueCreateInfo entries for the three queue families.
-   Graphics and present share one family on most desktop hardware; transfer may or may
-   not be dedicated.  Duplicate indices are collapsed -- passing the same index twice
-   is a validation error.  Returns the number of unique entries written to out_cis. */
+/*==============================================================================================
+    Logical Device: Build the queue create info array for vkCreateDevice.
+    
+    - Build deduplicated VkDeviceQueueCreateInfo entries for the three queue families.
+    - Graphics and present share one family on most desktop hardware; 
+    - Transfer may or may not be dedicated.      
+    - Duplicate indices are collapsed -- passing the same index twice is a validation error. 
+    - Returns the number of unique entries written to out_cis.
+
+==============================================================================================*/
+
+/* Queue priorities at file scope so pQueuePriorities pointers in VkDeviceQueueCreateInfo
+   remain valid through vkCreateDevice without escaping a helper's stack frame. */
+
+static const float s_prio_high = 1.0f;   /* graphics + present: highest scheduling weight */
+static const float s_prio_low  = 0.5f;   /* transfer (dedicated): lower than rendering   */
+
 static u32
-vk_device_build_queue_infos( VkDeviceQueueCreateInfo out_cis[3] )
+vk_device_build_queue_infos( VkDeviceQueueCreateInfo out_cis[ 3 ] )
 {
-    u32          families[3] = { vk.graphics_queue_family,
-                                  vk.present_queue_family,
-                                  vk.transfer_queue_family };
-    const float* prios[3]    = { &s_prio_high, &s_prio_high, &s_prio_low };
+    const u32 family_array[ 3 ] = 
+        { vk.graphics_queue_family, vk.present_queue_family, vk.transfer_queue_family };
+    const f32* queue_priority[ 3 ] = 
+        { &s_prio_high, &s_prio_high, &s_prio_low };
 
     u32 count = 0;
-
     for ( u32 i = 0; i < 3; ++i )
     {
-        u32 fam = families[ i ];
+        u32 family_id = family_array[ i ];
 
         bool dup = false;
         for ( u32 j = 0; j < count; ++j )
         {
-            if ( out_cis[ j ].queueFamilyIndex == fam ) { dup = true; break; }
+            if ( out_cis[ j ].queueFamilyIndex == family_id ) { dup = true; break; }
         }
         if ( dup ) continue;
 
         out_cis[ count ]                  = ( VkDeviceQueueCreateInfo ){ 0 };
         out_cis[ count ].sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        out_cis[ count ].queueFamilyIndex = fam;
+        out_cis[ count ].queueFamilyIndex = family_id;
         out_cis[ count ].queueCount       = 1;
-        out_cis[ count ].pQueuePriorities = prios[ i ];
+        out_cis[ count ].pQueuePriorities = queue_priority[ i ];
         ++count;
     }
 
@@ -503,33 +570,39 @@ vk_device_wait_idle( void )
 static bool
 vk_device_create( void )
 {
-    /* Phase 1: enumerate GPUs, score, and pick the best candidate.
-       opt_found[] is filled during scoring; no second enumerate needed. */
+    /* Phase 1: Find the RHI hardware device that supports our features */
 
-    bool opt_found[ VK_OPT_EXT_COUNT ] = { 0 };
-    if ( vk_device_select( opt_found ) == false )
-        return false;
+    bool optional_ext_found[ VK_OPT_EXT_COUNT ] = { 0 };
+    if ( vk_device_select( optional_ext_found ) == false ) 
+    {
+        return false; /* no suitable device found */
+    }
 
-    /* Phase 2: cache hardware limits in vk.* and log them. */
-    vk_device_cache_limits();
-    vk_device_log_memory();
+    /* Phase 2: Cache hardware limits in vk.* and log them. */
 
-    /* Phase 3: build extension list from opt_found; record capability flags. */
+    vk_device_cache_limits();   // cache key limits + visual output
+    vk_device_log_memory();     // visual output only.
+
+    /* Phase 3: Build extension list from opt_found; record capability flags. */
+
     const char* dev_exts[ 1 + VK_OPT_EXT_COUNT ];
-    u32 dev_ext_count = vk_device_collect_extensions( opt_found, dev_exts );
-    vk.has_push_descriptor = opt_found[ 0 ];   /* s_optional_exts[0] = VK_KHR_push_descriptor */
+    u32 dev_ext_count = vk_device_collect_extensions( optional_ext_found, dev_exts );
+    vk.has_push_descriptor = optional_ext_found[ VK_OPT_EXT_PUSH_DESCRIPTOR ];
 
-    /* Phase 4: fill required feature pNext chain. */
+    /* Phase 4: Fill required feature pNext chain. */
+
     vk_feature_chain_t features = { 0 };
     vk_device_init_features( &features );
 
-    /* Phase 5: build deduplicated queue create infos. */
+    /* Phase 5: Build deduplicated queue create infos. */
+
     VkDeviceQueueCreateInfo qcis[ 3 ];
     u32 qci_count = vk_device_build_queue_infos( qcis );
 
-    /* Phase 6: create the logical device.
+    /* Phase 6: Create the logical device.
        pEnabledFeatures must be NULL when VkPhysicalDeviceFeatures2 is in pNext --
        setting both is a validation error; pNext is the authoritative path for VK 1.1+. */
+
     VkDeviceCreateInfo ci          = { 0 };
     ci.sType                       = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     ci.pNext                       = &features.feats2;
@@ -546,6 +619,7 @@ vk_device_create( void )
     }
 
     /* Device-level function pointers; required before any vkCmd* or resource call. */
+
     if ( !vk_lib_device_entry_points() )
     {
         vkDestroyDevice( vk.device, vk.alloc_cb );
@@ -555,11 +629,13 @@ vk_device_create( void )
 
     /* Retrieve queue handles.  When families overlap all three may alias the same VkQueue
        object -- the driver serializes them internally; this is valid Vulkan. */
+
     vkGetDeviceQueue( vk.device, vk.graphics_queue_family, 0, &vk.graphics_queue );
     vkGetDeviceQueue( vk.device, vk.present_queue_family,  0, &vk.present_queue  );
     vkGetDeviceQueue( vk.device, vk.transfer_queue_family, 0, &vk.transfer_queue  );
 
     /* Subsystem init in dependency order: pipeline cache -> descriptor -> upload. */
+
     vk_pipeline_cache_load();
 
     if ( !vk_descriptor_init() )
@@ -568,7 +644,7 @@ vk_device_create( void )
     if ( !vk_upload_init() )
         goto fail_after_descriptor;
 
-    LOG_INFO( "device_create: OK" );
+    LOG_INFO( "vkCreateDevice: OK" );
     return true;
 
 fail_after_descriptor:  vk_descriptor_shutdown();

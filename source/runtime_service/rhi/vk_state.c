@@ -182,87 +182,80 @@ typedef struct vk_context_s
 ==============================================================================================*/
 
 typedef struct vk_state_s
-{
-    i32  version;                           // minor version number only; major is implicitly 1
+{    
+    VkAllocationCallbacks*              alloc_cb;           // if use_vk_alloc_cb = true     
+    VkDebugUtilsMessengerEXT            debug_messenger;    // if use_vk_ext_debug_utils = true.
 
-    /* status flags */
-
-    bool    initialized;                    // global init complete (instance + device)
-
-    bool    use_vk_alloc_cb;                // use Vulkan allocation callbacks.
-    bool    use_vk_ext_debug_utils;         // use debug messenger.
-    bool    use_vk_layer_validation;        // use vulkan debug layer.
-    bool    use_vk_layer_monitor;           // use vulkan debug layer.
-
-    bool    ext_win32_surface;              // extension required for win32 window surface support
-    bool    ext_khr_surface;                // extension required for khr window surface support
-
-    /* Vulkan loader handle */
-    lib_handle_t  dll;
-
-    /* Core Vulkan objects */
-    VkInstance   instance;
-    VkDevice     device;
-
-    /* Allocation callbacks (NULL = Vulkan default allocator) */
-
-    VkAllocationCallbacks*              alloc_cb;
-
-    /* Debug messenger (enabled when DEBUG and VK_EXT_debug_utils is available) */
-
-    VkDebugUtilsMessengerEXT            debug_messenger;
-
-    /* Physical device */
+    /* physical device */
 
     VkPhysicalDevice                    physical_device;
     VkPhysicalDeviceProperties          physical_device_props;
     VkPhysicalDeviceMemoryProperties    memory_props;
 
-    /* Device capabilities -- cached at selection time; consumed by RHI subsystems.
-       Query these instead of re-reading physical_device_props at each use site. */
+    /* basic flags */
+                                               
+    i32                     version;                    // minor version number only; major is implicitly   
+    bool                    initialized;                // global init complete (instance + device)
 
-    VkSampleCountFlagBits   max_msaa_samples;     /* max combined color+depth sample count  */
-    u32                     min_ubo_align;        /* minUniformBufferOffsetAlignment, bytes */
-    bool                    has_push_descriptor;  /* VK_KHR_push_descriptor was enabled     */
+    bool                    use_vk_alloc_cb;            // use Vulkan allocation callbacks.
+    bool                    use_vk_ext_debug_utils;     // use debug messenger (in DEBUG only)
+    bool                    use_vk_layer_validation;    // use vulkan debug layer.
+    bool                    use_vk_layer_monitor;       // use vulkan debug layer.
+
+    bool                    ext_win32_surface;          // extension required for win32 window surface support
+    bool                    ext_khr_surface;            // extension required for khr window surface support
+    
+    lib_handle_t            dll;                        // Vulkan loader handle
+
+    /* Core Vulkan objects */
+
+    VkInstance              instance;                   // Our created instance
+    VkDevice                device;                     // Our created device
+
+    /* Device capabilities -- cached for faster query */
+
+    VkSampleCountFlagBits   max_msaa_samples;           // max combined color+depth sample count.
+    u32                     min_ubo_align;              // minUniformBufferOffsetAlignment, bytes.
+    bool                    has_push_descriptor;        // VK_KHR_push_descriptor was enabled.
 
     /* Queue families; may be the same index on some hardware */
 
-    u32         graphics_queue_family;
-    u32         present_queue_family;
-    u32         transfer_queue_family;    /* dedicated transfer queue if available, else graphics */
-    VkQueue     graphics_queue;
-    VkQueue     present_queue;
-    VkQueue     transfer_queue;
+    u32                     graphics_queue_family;
+    u32                     present_queue_family;
+    u32                     transfer_queue_family;      // dedicated queue if available, else graphics
+    VkQueue                 graphics_queue;
+    VkQueue                 present_queue;
+    VkQueue                 transfer_queue;
 
     /* Pipeline cache (loaded from disk at init; serialized at shutdown for warm restarts) */
 
-    VkPipelineCache  pipeline_cache;
+    VkPipelineCache         pipeline_cache;
 
     /* Global bindless descriptor layout (set 0; shared by all pipelines) */
 
-    VkDescriptorPool       bindless_pool;
-    VkDescriptorSetLayout  bindless_layout;
-    VkDescriptorSet        bindless_set;
-    VkPipelineLayout       pipeline_layout;     /* push constants + bindless set 0 */
+    VkDescriptorPool        bindless_pool;
+    VkDescriptorSetLayout   bindless_layout;
+    VkDescriptorSet         bindless_set;
+    VkPipelineLayout        pipeline_layout;    /* push constants + bindless set 0 */
 
     /* Staging upload ring (indexed by global_frame % VK_MAX_FRAMES_IN_FLIGHT) */
 
-    vk_staging_t  staging[ VK_MAX_FRAMES_IN_FLIGHT ];
+    vk_staging_t            staging[ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    u32           global_frame;                 /* monotonic counter; drives staging slot selection */
+    u32                     global_frame;       /* monotonic counter; drives staging slot selection */
 
     /* Resource slot pools */
 
-    vk_buffer_slot_t    buffers[ VK_MAX_BUFFERS ];
-    vk_texture_slot_t   textures[ VK_MAX_TEXTURES ];
-    vk_sampler_slot_t   samplers[ VK_MAX_SAMPLERS ];
-    vk_shader_slot_t    shaders[ VK_MAX_SHADERS ];
-    vk_pipeline_slot_t  pipelines[ VK_MAX_PIPELINES ];
+    vk_buffer_slot_t        buffers[ VK_MAX_BUFFERS ];
+    vk_texture_slot_t       textures[ VK_MAX_TEXTURES ];
+    vk_sampler_slot_t       samplers[ VK_MAX_SAMPLERS ];
+    vk_shader_slot_t        shaders[ VK_MAX_SHADERS ];
+    vk_pipeline_slot_t      pipelines[ VK_MAX_PIPELINES ];
 
     /* Context pool */
 
-    vk_context_t  contexts[ RHI_CTX_MAX ];
-    u32           ctx_alloc;                    /* bitmask: bit i set = slot i is live */
+    vk_context_t            contexts[ RHI_CTX_MAX ];
+    u32                     ctx_alloc;                    /* bitmask: bit i set = slot i is live */
 
 } vk_state_t;
 
