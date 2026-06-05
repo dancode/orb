@@ -52,6 +52,15 @@ vk_frame_begin( i32 ctx_id )
         return RHI_CMD_INVALID;
     }
 
+    /* Epoch check-in: this context has confirmed its fence.  When every active context
+       has checked in the epoch advances, allowing deferred descriptor slots to be retired. */
+    vk.epoch_ack_mask |= ( 1u << ctx_id );
+    if ( vk.epoch_ack_mask == vk.ctx_alloc )
+    {
+        vk.global_epoch++;
+        vk.epoch_ack_mask = 0;
+    }
+
     /* Flush staged uploads from the previous cycle; advances g_upload_active_slot. */
     vk_upload_flush();
 
@@ -491,6 +500,30 @@ vk_cmd_draw_indexed( rhi_command_list_t cmd, const rhi_draw_indexed_args_t* args
 
     vkCmdDrawIndexed( cl->vk_cmd, args->index_count, args->instance_count,
                       args->first_index, args->vertex_offset, args->first_instance );
+}
+
+static void
+vk_cmd_draw_indirect( rhi_command_list_t cmd, rhi_buffer_t buf, u32 offset, u32 draw_count, u32 stride )
+{
+    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
+    if ( !cl || !vk_buffer_validate( buf ) ) return;
+    vkCmdDrawIndirect( cl->vk_cmd, vk.buffers[ buf.id ].buffer, offset, draw_count, stride );
+}
+
+static void
+vk_cmd_draw_indexed_indirect( rhi_command_list_t cmd, rhi_buffer_t buf, u32 offset, u32 draw_count, u32 stride )
+{
+    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
+    if ( !cl || !vk_buffer_validate( buf ) ) return;
+    vkCmdDrawIndexedIndirect( cl->vk_cmd, vk.buffers[ buf.id ].buffer, offset, draw_count, stride );
+}
+
+static void
+vk_cmd_dispatch( rhi_command_list_t cmd, u32 groups_x, u32 groups_y, u32 groups_z )
+{
+    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
+    if ( !cl ) return;
+    vkCmdDispatch( cl->vk_cmd, groups_x, groups_y, groups_z );
 }
 
 static void

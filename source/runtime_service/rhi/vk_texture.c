@@ -105,6 +105,7 @@ vk_texture_create( const rhi_texture_desc_t* desc )
     if ( mips == 0 )
     {
         u32 dim = desc->width > desc->height ? desc->width : desc->height;
+        if ( desc->depth > dim ) dim = desc->depth;
         mips = 1;
         while ( dim > 1 ) { dim >>= 1; mips++; }
     }

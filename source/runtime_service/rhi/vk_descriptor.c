@@ -102,18 +102,14 @@ vk_bindless_free( vk_bindless_free_t* pool, u32 idx )
     pool->stack[ pool->top++ ] = idx;
 }
 
-/* Compute the global_frame threshold that must be reached before a slot retired NOW is safe.
-   Scales by the active context count because global_frame advances once per frame_begin per
-   context; all contexts must have cycled through VK_MAX_FRAMES_IN_FLIGHT fence waits. */
+/* Returns the epoch value that must be reached before a slot retired NOW is safe to reuse.
+   global_epoch advances only when every active context has fence-waited (checked in), so
+   VK_MAX_FRAMES_IN_FLIGHT epochs guarantee every context has completed that many full rounds
+   regardless of individual frame rates. */
 static u32
 vk_retire_safe_at( void )
 {
-    u32 n_ctx = 0;
-    for ( u32 mask = vk.ctx_alloc; mask; mask &= mask - 1 )
-        n_ctx++;
-    if ( n_ctx == 0 )
-        n_ctx = 1;
-    return vk.global_frame + VK_MAX_FRAMES_IN_FLIGHT * n_ctx;
+    return vk.global_epoch + VK_MAX_FRAMES_IN_FLIGHT;
 }
 
 static void
@@ -122,7 +118,7 @@ vk_descriptor_flush_retired( void )
     while ( g_tex_retire_head != g_tex_retire_tail )
     {
         vk_deferred_retire_t* e = &g_tex_retire[ g_tex_retire_head ];
-        if ( vk.global_frame < e->safe_at )
+        if ( vk.global_epoch < e->safe_at )
             break;
         vk_bindless_free( &g_tex_free, e->idx );
         g_tex_retire_head = ( g_tex_retire_head + 1 ) % VK_MAX_BINDLESS_TEXTURES;
@@ -131,7 +127,7 @@ vk_descriptor_flush_retired( void )
     while ( g_samp_retire_head != g_samp_retire_tail )
     {
         vk_deferred_retire_t* e = &g_samp_retire[ g_samp_retire_head ];
-        if ( vk.global_frame < e->safe_at )
+        if ( vk.global_epoch < e->safe_at )
             break;
         vk_bindless_free( &g_samp_free, e->idx );
         g_samp_retire_head = ( g_samp_retire_head + 1 ) % VK_MAX_BINDLESS_SAMPLERS;

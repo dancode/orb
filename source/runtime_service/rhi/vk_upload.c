@@ -243,7 +243,12 @@ vk_upload_begin_recording( u32 slot )
     VkCommandBufferBeginInfo bi = { 0 };
     bi.sType                    = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     bi.flags                    = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer( up->cmd, &bi );
+    VkResult r = vkBeginCommandBuffer( up->cmd, &bi );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "upload_begin_recording: vkBeginCommandBuffer: %s", string_VkResult( r ) );
+        return;
+    }
     up->is_recording = true;
 }
 

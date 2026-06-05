@@ -196,7 +196,7 @@ typedef struct vk_state_s
 
     /* basic flags */
                                                
-    i32                     version;                    // minor version number only; major is implicitly   
+    u32                     version;                    // full packed VkApiVersion (use VK_VERSION_* macros)
     bool                    initialized;                // global init complete (instance + device)
 
     bool                    use_vk_alloc_cb;            // use Vulkan allocation callbacks.
@@ -248,7 +248,9 @@ typedef struct vk_state_s
     VkSemaphore             upload_timeline;
     u64                     upload_counter;
 
-    u32                     global_frame;       /* monotonic counter; incremented per frame_begin */
+    u32                     global_frame;       /* monotonic counter; incremented per frame_begin (diagnostics) */
+    u32                     global_epoch;       /* advances when every active context has fence-waited */
+    u32                     epoch_ack_mask;     /* bitmask; context i sets bit i after fence wait; reset on epoch advance */
 
     /* Resource slot pools */
 

@@ -112,6 +112,17 @@ typedef struct rhi_api_s
     void ( *cmd_draw_indexed       )( rhi_command_list_t cmd,
                                       const rhi_draw_indexed_args_t* args );
 
+    /* Indirect draw: draw parameters read from a GPU buffer (one VkDrawIndirectCommand per draw).
+       buf must have RHI_BUFFER_USAGE_INDIRECT set.  stride is typically sizeof(VkDrawIndirectCommand). */
+    void ( *cmd_draw_indirect         )( rhi_command_list_t cmd, rhi_buffer_t buf,
+                                         u32 offset, u32 draw_count, u32 stride );
+    void ( *cmd_draw_indexed_indirect )( rhi_command_list_t cmd, rhi_buffer_t buf,
+                                         u32 offset, u32 draw_count, u32 stride );
+
+    /* Compute dispatch: launch (groups_x * groups_y * groups_z) workgroups.
+       A compute pipeline must be bound before calling this. */
+    void ( *cmd_dispatch )( rhi_command_list_t cmd, u32 groups_x, u32 groups_y, u32 groups_z );
+
     /* ---- Bindless resource registration ---- */
 
     /* Returns a persistent slot index for use in shader push-constant lookups.  0 = invalid. */

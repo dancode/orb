@@ -86,7 +86,9 @@
       "PowerShell(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\runtime\" -Directory | ForEach-Object { $_.Name })",
       "PowerShell(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\runtime\\\\host\" -Directory | ForEach-Object { $_.Name })",
       "PowerShell(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\runtime_service\\\\rhi\" -File | ForEach-Object { $_.Name })",
-      "Bash(bin\\\\build_tool.exe -config Debug -target rhi)"
+      "Bash(bin\\\\build_tool.exe -config Debug -target rhi)",
+      "Bash(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\runtime_service\\\\rhi\" -Recurse -File)",
+      "Bash(Sort-Object)"
     ]
   }
 }

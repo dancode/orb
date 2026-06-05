@@ -173,12 +173,23 @@ vk_context_destroy( i32 ctx_id )
     /* Drain all queues before touching any context-owned Vulkan objects. */
     vk_device_wait_idle();
 
+    /* GPU work is complete: count this context as having checked in for the current epoch.
+       If it was the last pending context, advance the epoch now.  Clear the stale bit after
+       vk_ctx_free so epoch_ack_mask remains a subset of ctx_alloc going forward. */
+    vk.epoch_ack_mask |= ( 1u << ctx_id );
+    if ( vk.epoch_ack_mask == vk.ctx_alloc )
+    {
+        vk.global_epoch++;
+        vk.epoch_ack_mask = 0;
+    }
+
     vk_command_destroy( ctx );
     vk_sync_destroy( ctx );
     vk_swapchain_destroy( ctx );
     vk_surface_destroy( ctx );
 
     vk_ctx_free( ctx_id );
+    vk.epoch_ack_mask &= ~( 1u << ctx_id );   /* remove stale bit if epoch did not reset above */
     memset( ctx, 0, sizeof( *ctx ) );
 
     LOG_INFO( "context_destroy: complete (ctx %d)", ctx_id );

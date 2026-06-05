@@ -253,7 +253,10 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     VkVertexInputAttributeDescription vtx_attribs[ RHI_MAX_VERTEX_ATTRIBS ] = { 0 };
     for ( u32 i = 0; i < desc->attrib_count; ++i )
     {
-        vtx_attribs[ i ].binding  = desc->attribs[ i ].binding;
+        /* Only binding 0 is declared above; attributes referencing other bindings
+           would produce an invalid pipeline. Multi-binding support is not implemented. */
+        ORB_ASSERT( desc->attribs[ i ].binding == 0 );
+        vtx_attribs[ i ].binding  = 0;
         vtx_attribs[ i ].location = desc->attribs[ i ].location;
         vtx_attribs[ i ].offset   = desc->attribs[ i ].offset;
         vtx_attribs[ i ].format   = rhi_vertex_format_to_vk( desc->attribs[ i ].format );

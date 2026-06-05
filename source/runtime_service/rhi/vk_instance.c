@@ -164,7 +164,7 @@ vk_instance_get_layers( const char** out_layer_names )
 
     /* debug list our available layers */
 
-    LOG_INFO( "%u layerrs supported", layer_count );
+    LOG_INFO( "%u layers supported", layer_count );
     for ( u32 i = 0; i < layer_count; i++ ) {
         LOG_TRACE( "LYR: %s", layer_props[ i ].layerName );    
     }
@@ -176,24 +176,19 @@ vk_instance_get_layers( const char** out_layer_names )
     Acquire our version of Vulkan supported by the driver. 
 ==============================================================================================*/
 
-static i32
-vk_get_version()
+static u32
+vk_get_version( void )
 {
     u32 api_version = 0;
     VkResult r = vkEnumerateInstanceVersion( &api_version );
-    if ( r == VK_SUCCESS )
-    {
-        u32 major = VK_VERSION_MAJOR( api_version );
-        u32 minor = VK_VERSION_MINOR( api_version );
-        u32 patch = VK_VERSION_PATCH( api_version );
-
-        LOG_INFO( "vulkan api version: %d.%d.%d", major, minor, patch );
-        return minor;
-    }
-    else
-    {
+    if ( r != VK_SUCCESS )
         LOG_FATAL( "failed to query vulkan api version" );
-    }
+
+    LOG_INFO( "vulkan api version: %d.%d.%d",
+              VK_VERSION_MAJOR( api_version ),
+              VK_VERSION_MINOR( api_version ),
+              VK_VERSION_PATCH( api_version ) );
+    return api_version;
 }
 
 static const char*
@@ -285,9 +280,11 @@ vk_instance_init()
     /* --- Verify Vulkan 1.3 is available: --- */
     
     vk.version = vk_get_version();
-    if ( vk.version < 3 ){
-         LOG_ERROR( "Vulkan 1.3 required; driver reports an older version" );
-         return false;
+    if ( vk.version < VK_API_VERSION_1_3 )
+    {
+        LOG_ERROR( "Vulkan 1.3 required; driver reports %d.%d",
+                   VK_VERSION_MAJOR( vk.version ), VK_VERSION_MINOR( vk.version ) );
+        return false;
     }
 
     /* --- Get Vulkan extensions and layers we will specify during instance creation: --- */

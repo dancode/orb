@@ -72,6 +72,8 @@ vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, VkMemoryAllocateFlag
     {
         type_idx = vk_memory_find_type( reqs.memoryTypeBits,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+        if ( type_idx != UINT32_MAX )
+            LOG_WARN( "vk_mem_alloc: GPU_ONLY unavailable; falling back to host-visible (unified memory?)" );
     }
     if ( type_idx == UINT32_MAX )
     {
