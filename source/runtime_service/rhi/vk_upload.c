@@ -17,17 +17,11 @@
            flushes, uploads queued in flush G are not overwritten until flush
            G+VK_MAX_FRAMES_IN_FLIGHT. Resources are safe to sample only after that.
 
-    Known issue: vk_upload_flush calls vkQueueWaitIdle after submitting the upload batch.
-    This stalls the entire GPU queue until all uploads complete before render work can start.
-    The frame fence from vkWaitForFences does NOT cover this; it only tracks the render
-    command buffer from a past frame.  The upload command buffer is submitted here without
-    any fence, so vkQueueWaitIdle is the only thing ensuring uploads finish before render
-    commands read the results.
-
-    Planned fix: attach a VkSemaphore (or timeline semaphore) to the upload vkQueueSubmit2
-    and pass it as a pWaitSemaphoreInfos entry on the render submit.  The GPU will stall
-    only the pipeline stages that consume uploaded data, letting other GPU work overlap.
-    This matters most for a streaming engine that uploads assets every frame.
+    Sync: vk_upload_flush signals vk.upload_timeline at ++vk.upload_counter when the DMA
+    batch completes.  vk_frame_end adds a wait on that semaphore value at the vertex/fragment
+    shader stages, so the GPU stalls only the stages that consume uploaded data -- early
+    rendering work (vertex input, rasterisation setup) can overlap with the DMA transfer.
+    Frames with no uploads skip the wait because vk.upload_counter is already satisfied.
 
 ==============================================================================================*/
 
@@ -121,6 +115,25 @@ vk_upload_init( void )
         g_upload[ i ].is_recording = false;
     }
 
+    /* Timeline semaphore: vk_upload_flush signals this after each DMA batch. */
+    {
+        VkSemaphoreTypeCreateInfo type_ci = { 0 };
+        type_ci.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        type_ci.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        type_ci.initialValue  = 0;
+
+        VkSemaphoreCreateInfo sem_ci = { 0 };
+        sem_ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        sem_ci.pNext = &type_ci;
+
+        VkResult r = vkCreateSemaphore( vk.device, &sem_ci, vk.alloc_cb, &vk.upload_timeline );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "upload_init: vkCreateSemaphore (timeline): %s", string_VkResult( r ) );
+            goto fail;
+        }
+    }
+
     LOG_INFO( "upload_init: OK (%u slots, %u MB each)",
               VK_MAX_FRAMES_IN_FLIGHT, (u32)( VK_STAGING_SIZE / ( 1024 * 1024 ) ) );
     return true;
@@ -133,6 +146,13 @@ fail:
 static void
 vk_upload_shutdown( void )
 {
+    if ( vk.upload_timeline != VK_NULL_HANDLE )
+    {
+        vkDestroySemaphore( vk.device, vk.upload_timeline, vk.alloc_cb );
+        vk.upload_timeline = VK_NULL_HANDLE;
+    }
+    vk.upload_counter = 0;
+
     for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
     {
         if ( g_upload[ i ].pool != VK_NULL_HANDLE )
@@ -331,18 +351,27 @@ vk_upload_flush( void )
         cmd_si.sType                     = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
         cmd_si.commandBuffer             = up->cmd;
 
+        /* Signal upload_timeline at the next counter value when the DMA batch completes. */
+        u64 signal_value                 = vk.upload_counter + 1;
+
+        VkSemaphoreSubmitInfo signal_si  = { 0 };
+        signal_si.sType                  = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signal_si.semaphore              = vk.upload_timeline;
+        signal_si.value                  = signal_value;
+        signal_si.stageMask              = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+
         VkSubmitInfo2 submit             = { 0 };
         submit.sType                     = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submit.commandBufferInfoCount    = 1;
         submit.pCommandBufferInfos       = &cmd_si;
+        submit.signalSemaphoreInfoCount  = 1;
+        submit.pSignalSemaphoreInfos     = &signal_si;
 
         VkResult r = vkQueueSubmit2( vk.graphics_queue, 1, &submit, VK_NULL_HANDLE );
         if ( r != VK_SUCCESS )
             LOG_ERROR( "upload_flush: vkQueueSubmit2: %s", string_VkResult( r ) );
         else
-            /* KNOWN ISSUE: stalls the entire GPU queue until uploads complete.
-               Replace with a per-slot semaphore waited on by the render submit. */
-            vkQueueWaitIdle( vk.graphics_queue );
+            vk.upload_counter = signal_value;
 
         vkResetCommandBuffer( up->cmd, 0 );
         up->is_recording = false;

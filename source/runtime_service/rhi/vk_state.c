@@ -241,6 +241,10 @@ typedef struct vk_state_s
 
     vk_staging_t            staging[ VK_MAX_FRAMES_IN_FLIGHT ];
 
+    /* Upload/render sync: timeline semaphore signaled after each DMA batch; render submit waits on it */
+    VkSemaphore             upload_timeline;
+    u64                     upload_counter;
+
     u32                     global_frame;       /* monotonic counter; incremented per frame_begin */
 
     /* Resource slot pools */

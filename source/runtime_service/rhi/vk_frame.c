@@ -198,10 +198,26 @@ vk_frame_end( i32 ctx_id )
     }
 
     /* Submit via vkQueueSubmit2 (sync2 path). */
-    VkSemaphoreSubmitInfo wait_sem    = { 0 };
-    wait_sem.sType                    = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    wait_sem.semaphore                = ctx->image_available_sem[ frame ];
-    wait_sem.stageMask                = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    /* Wait semaphores: swapchain image available + any pending upload batch. */
+    VkSemaphoreSubmitInfo wait_sems[ 2 ] = { 0 };
+    u32 wait_count = 0;
+
+    wait_sems[ wait_count ].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+    wait_sems[ wait_count ].semaphore = ctx->image_available_sem[ frame ];
+    wait_sems[ wait_count ].stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    wait_count++;
+
+    /* Stall only VS/FS stages until uploads complete; earlier GPU work can overlap DMA. */
+    if ( vk.upload_counter > 0 )
+    {
+        wait_sems[ wait_count ].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        wait_sems[ wait_count ].semaphore = vk.upload_timeline;
+        wait_sems[ wait_count ].value     = vk.upload_counter;
+        wait_sems[ wait_count ].stageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+                                          | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        wait_count++;
+    }
 
     VkSemaphoreSubmitInfo signal_sem  = { 0 };
     signal_sem.sType                  = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
@@ -214,8 +230,8 @@ vk_frame_end( i32 ctx_id )
 
     VkSubmitInfo2 submit              = { 0 };
     submit.sType                      = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    submit.waitSemaphoreInfoCount     = 1;
-    submit.pWaitSemaphoreInfos        = &wait_sem;
+    submit.waitSemaphoreInfoCount     = wait_count;
+    submit.pWaitSemaphoreInfos        = wait_sems;
     submit.commandBufferInfoCount     = 1;
     submit.pCommandBufferInfos        = &cmd_si;
     submit.signalSemaphoreInfoCount   = 1;
