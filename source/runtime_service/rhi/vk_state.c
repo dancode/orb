@@ -252,6 +252,9 @@ typedef struct vk_state_s
     u32                     global_epoch;       /* advances when every active context has fence-waited */
     u32                     epoch_ack_mask;     /* bitmask; context i sets bit i after fence wait; reset on epoch advance */
 
+    u32                     upload_flush_epoch; /* epoch value at the last vk_upload_flush; gates flush to once per display epoch */
+    u32                     acquire_ack_mask;   /* bitmask; context i sets bit i after apply_acquires; cleared when all contexts applied */
+
     /* Resource slot pools */
 
     vk_buffer_slot_t        buffers[ VK_MAX_BUFFERS ];
@@ -275,6 +278,7 @@ static vk_state_t vk =
     .use_vk_ext_debug_utils     = true,
     .use_vk_layer_validation    = true,
     .use_vk_layer_monitor       = true,
+    .global_epoch               = 1,    /* starts at 1 so upload_flush_epoch=0 triggers the very first flush */
 };
 
 /*==============================================================================================

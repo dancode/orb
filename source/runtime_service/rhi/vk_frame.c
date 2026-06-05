@@ -61,8 +61,16 @@ vk_frame_begin( i32 ctx_id )
         vk.epoch_ack_mask = 0;
     }
 
-    /* Flush staged uploads from the previous cycle; advances g_upload_active_slot. */
-    vk_upload_flush();
+    /* Flush staged uploads once per display epoch regardless of how many contexts call
+       frame_begin.  upload_flush_epoch starts at 0 and global_epoch at 1, so the first
+       context of every epoch (including the very first frame) triggers the flush; every
+       subsequent context in that same epoch skips it, preventing the upload slot from
+       cycling faster than once per display frame. */
+    if ( vk.upload_flush_epoch < vk.global_epoch )
+    {
+        vk.upload_flush_epoch = vk.global_epoch;
+        vk_upload_flush();
+    }
 
     /* Return deferred bindless slots whose GPU references have expired. */
     vk_descriptor_flush_retired();
@@ -103,7 +111,7 @@ vk_frame_begin( i32 ctx_id )
        On hardware with a dedicated transfer family, images and buffers uploaded via
        vk_upload_texture/vk_upload_buffer need a QFOT acquire barrier here before
        any draw that samples them.  On integrated GPUs (same family) this is a no-op. */
-    vk_upload_apply_acquires( cmd_buf );
+    vk_upload_apply_acquires( cmd_buf, ctx_id );
 
     /* Build the barrier array.  The color barrier is always issued (UNDEFINED srcLayout
        is valid per spec -- contents are discarded, which is fine with loadOp=CLEAR).

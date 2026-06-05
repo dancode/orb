@@ -3,9 +3,9 @@
     vulkan/vk_upload.c -- Staged upload ring buffer for GPU-only resources.
 
     One staging buffer per frame-in-flight slot (VK_STAGING_SIZE bytes each).
-    The active slot is tracked by g_upload_active_slot, independent of vk.global_frame.
-    Advancing that counter is the sole responsibility of vk_upload_flush, so the upload
-    slot timeline is decoupled from how many contexts call frame_begin each display frame.
+    The active slot is tracked by g_upload_active_slot.  vk_upload_flush advances it, and
+    vk_frame.c gates that call to fire at most once per display epoch via upload_flush_epoch,
+    so the slot cycles at display-frame cadence regardless of how many contexts call frame_begin.
 
     Upload flow:
         1. Caller calls rhi()->upload_buffer / upload_texture.
@@ -259,11 +259,10 @@ vk_staging_alloc( u32 size, u32 align, vk_staging_alloc_t* out )
     vk_staging_t*  s    = &vk.staging[ slot ];
 
     /* First write to this slot in the new cycle: formally guarantee the prior DMA read from
-       this buffer has completed.  In single-context operation the vkWaitForFences call in
-       frame_begin is already a proof of this (fence signaling implies the render that waited
-       on upload_timeline finished, which implies the DMA completed).  The semaphore wait here
-       makes the invariant explicit and correct for multi-context topologies where the upload
-       slot index and the per-context fence index can diverge. */
+       this buffer has completed.  The epoch-gated flush in vk_frame.c keeps the slot cycling
+       at display-frame cadence, so this wait is normally already satisfied by the fence wait
+       in frame_begin.  The explicit semaphore wait is kept as a belt-and-suspenders guarantee
+       that remains correct regardless of future changes to context topology or flush ordering. */
     if ( s->head == 0 && s->last_submit_value > 0 )
     {
         VkSemaphoreWaitInfo wi = { 0 };
@@ -509,7 +508,7 @@ vk_upload_flush( void )
 ==============================================================================================*/
 
 static void
-vk_upload_apply_acquires( VkCommandBuffer cmd )
+vk_upload_apply_acquires( VkCommandBuffer cmd, i32 ctx_id )
 {
     /* Same-family path: no QFOTs were issued, nothing to acquire. */
     if ( vk.transfer_queue_family == vk.graphics_queue_family )
@@ -580,8 +579,17 @@ vk_upload_apply_acquires( VkCommandBuffer cmd )
     dep.pBufferMemoryBarriers        = buf_bars;
     vkCmdPipelineBarrier2( cmd, &dep );
 
-    g_pending_image_count  = 0;
-    g_pending_buffer_count = 0;
+    /* Track which contexts have consumed this batch.  The pending lists are global; only
+       clear them after every allocated context has injected its acquire barriers, so each
+       context's command buffer gets the full set regardless of call order.  acquire_ack_mask
+       resets to 0 when cleared, ready for the next epoch's uploads. */
+    vk.acquire_ack_mask |= ( 1u << ctx_id );
+    if ( vk.acquire_ack_mask == vk.ctx_alloc )
+    {
+        g_pending_image_count  = 0;
+        g_pending_buffer_count = 0;
+        vk.acquire_ack_mask    = 0;
+    }
 }
 
 /*============================================================================================*/
