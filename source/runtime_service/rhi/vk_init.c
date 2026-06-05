@@ -117,31 +117,30 @@ static i32
 vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
 {
     if ( !vk.initialized ) {
-         LOG_ERROR( "[rhi] context_create: global init not done\n" );
+         LOG_ERROR( "global init not done\n" );
          return RHI_CTX_INVALID;
     }
     if ( !native_window ) {
-         LOG_ERROR( "[rhi] context_create: native_window is NULL\n" );
+         LOG_ERROR( "native_window is NULL\n" );
          return RHI_CTX_INVALID;
     }
 
     i32  id = vk_ctx_alloc();
-    if ( id == RHI_CTX_INVALID )
-    {
-        LOG_ERROR( "[rhi] context_create: pool full (max %d)\n", RHI_CTX_MAX );
-        return RHI_CTX_INVALID;
+    if ( id == RHI_CTX_INVALID ) {
+         LOG_ERROR( "pool full (max %d)\n", RHI_CTX_MAX );
+         return RHI_CTX_INVALID;
     }
 
-    vk_context_t* ctx  = &vk.contexts[ id ];
-    ctx->id            = id;
-    ctx->win_id        = win_id;
-    ctx->native_window = native_window;
-    ctx->width         = w;
-    ctx->height        = h;
-    ctx->current_frame = 0;
+    vk_context_t* ctx   = &vk.contexts[ id ];
+    ctx->id             = id;
+    ctx->win_id         = win_id;
+    ctx->native_window  = native_window;
+    ctx->width          = w;
+    ctx->height         = h;
+    ctx->current_frame  = 0;
     ctx->resize_pending = false;
 
-    printf( "[rhi] context_create begin (ctx %d, win %d)\n", id, win_id );
+    LOG_INFO( "vk_context_create begin (ctx %d, win %d)\n", id, win_id );
 
     /* Order matters: surface before swapchain, swapchain before sync/commands. */
     if ( !vk_surface_create( ctx )   ) goto fail_after_nothing;

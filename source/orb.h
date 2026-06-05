@@ -134,33 +134,33 @@ typedef ptrdiff_t isize;
 ==============================================================================================*/
 
 #if COMPILER_MSVC
-    #define ORB_INLINE          __forceinline
-    #define ORB_NOINLINE        __declspec( noinline )
-    #define ORB_ALIGNAS( n )    __declspec( align( n ) )
-    #define ORB_ALIGNOF( T )    __alignof( T )
-    #define ORB_THREAD_LOCAL    __declspec( thread )
-    #define ORB_LIKELY( x )     ( x )
-    #define ORB_UNLIKELY( x )   ( x )
+    #define ORB_INLINE        __forceinline
+    #define ORB_NOINLINE      __declspec( noinline )
+    #define ORB_ALIGNAS( n )  __declspec( align( n ) )
+    #define ORB_ALIGNOF( T )  __alignof( T )
+    #define ORB_THREAD_LOCAL  __declspec( thread )
+    #define ORB_LIKELY( x )   ( x )
+    #define ORB_UNLIKELY( x ) ( x )
     #define ORB_UNUSED_FN
-    #define ORB_NORETURN        __declspec( noreturn )
-    #define ORB_UNREACHABLE()   __assume( 0 )
+    #define ORB_NORETURN      __declspec( noreturn )
+    #define ORB_UNREACHABLE() __assume( 0 )
 #else
-    #define ORB_INLINE          inline __attribute__( ( always_inline ) )
-    #define ORB_NOINLINE        __attribute__( ( noinline ) )
-    #define ORB_ALIGNAS( n )    __attribute__( ( aligned( n ) ) )
-    #define ORB_ALIGNOF( T )    _Alignof( T )
-    #define ORB_THREAD_LOCAL    __thread    // C11: _Thread_local
-    #define ORB_LIKELY( x )     __builtin_expect( !!( x ), 1 )
-    #define ORB_UNLIKELY( x )   __builtin_expect( !!( x ), 0 )
-    #define ORB_UNUSED_FN       __attribute__( ( unused ) )
-    #define ORB_NORETURN        __attribute__( ( noreturn ) )
-    #define ORB_UNREACHABLE()   __builtin_unreachable()
+    #define ORB_INLINE        inline __attribute__( ( always_inline ) )
+    #define ORB_NOINLINE      __attribute__( ( noinline ) )
+    #define ORB_ALIGNAS( n )  __attribute__( ( aligned( n ) ) )
+    #define ORB_ALIGNOF( T )  _Alignof( T )
+    #define ORB_THREAD_LOCAL  __thread    // C11: _Thread_local
+    #define ORB_LIKELY( x )   __builtin_expect( !!( x ), 1 )
+    #define ORB_UNLIKELY( x ) __builtin_expect( !!( x ), 0 )
+    #define ORB_UNUSED_FN     __attribute__( ( unused ) )
+    #define ORB_NORETURN      __attribute__( ( noreturn ) )
+    #define ORB_UNREACHABLE() __builtin_unreachable()
 #endif
 
 #if COMPILER_MSVC
 
     // __pragma(x) is the MSVC token-based pragma; wrapping it lets macros compose.
-    #define PRAGMA( x )               __pragma( x )
+    #define PRAGMA( x )   __pragma( x )
 
     #define PUSH_WARNINGS PRAGMA( warning( push, 0 ) )
     #define POP_WARNINGS  PRAGMA( warning( pop ) )
@@ -172,7 +172,7 @@ typedef ptrdiff_t isize;
         _Pragma( "clang diagnostic push" ) _Pragma( "clang diagnostic ignored \"-Weverything\"" )
     #define POP_WARNINGS _Pragma( "clang diagnostic pop" )
 
-#else    /* GCC */
+#else /* GCC */
 
     // GCC has no "suppress everything" diagnostic pragma; push/pop save and restore state.
     #define PUSH_WARNINGS _Pragma( "GCC diagnostic push" )
@@ -181,6 +181,9 @@ typedef ptrdiff_t isize;
 #endif
 
 #define UNUSED( x ) ( void )x
+#define ORB_FUNC    __func__
+#define ORB_FILE    __FILE__
+#define ORB_LINE    __LINE__
 
 /*==============================================================================================
     Assertions

@@ -12,7 +12,7 @@
         LOG_TRACE( "dt=%.4f", dt );
         LOG_INFO( "loaded %u textures", count );
         LOG_WARN( "texture '%s' not found", name );
-        LOG_ERROR( "out of memory" );
+        LOG_ERROR( "out of memory" );           // prefixed with __func__ automatically
 
     Compile-time stripping:
         LOG_COMPILE_MIN defaults to ORB_LOG_TRACE in debug, ORB_LOG_INFO in release.
@@ -54,7 +54,8 @@
     Internal dispatch  (do not call directly)
 ==============================================================================================*/
 
-#define _LOG( lvl, fmt, ... )  core()->log_write( lvl, LOG_CH, fmt, ##__VA_ARGS__ )
+#define _LOG(  lvl, fmt, ... )  core()->log_write( lvl, LOG_CH, fmt, ##__VA_ARGS__ )
+#define _LOGF( lvl, fmt, ... )  core()->log_write( lvl, LOG_CH, "%s: " fmt, __func__, ##__VA_ARGS__ )
 
 /*==============================================================================================
     Public macros
@@ -79,19 +80,20 @@
 #endif
 
 #if ORB_LOG_WARN >= LOG_COMPILE_MIN
-    #define LOG_WARN(  fmt, ... )  _LOG( LOG_LEVEL_WARN,  fmt, ##__VA_ARGS__ )
+    #define LOG_WARN(  fmt, ... )  _LOGF( LOG_LEVEL_WARN,  fmt, ##__VA_ARGS__ )
 #else
     #define LOG_WARN(  fmt, ... )  ( ( void )0 )
 #endif
 
 #if ORB_LOG_ERROR >= LOG_COMPILE_MIN
-    #define LOG_ERROR( fmt, ... )  _LOG( LOG_LEVEL_ERROR, fmt, ##__VA_ARGS__ )
+    #define LOG_ERROR( fmt, ... )  _LOGF( LOG_LEVEL_ERROR, fmt, ##__VA_ARGS__ )
 #else
     #define LOG_ERROR( fmt, ... )  ( ( void )0 )
 #endif
 
-#define LOG_FATAL( fmt, ... )  do { _LOG( LOG_LEVEL_FATAL, fmt, ##__VA_ARGS__ ); ORB_UNREACHABLE(); } while ( 0 )
 #define LOG_LINE()             core()->log_write( LOG_LEVEL_LINE, LOG_CH, "" )
+#define LOG_FATAL( fmt, ... )  do { _LOGF( LOG_LEVEL_FATAL, fmt, ##__VA_ARGS__ ); \
+                                    ORB_UNREACHABLE(); } while ( 0 )
 
 // clang-format on
 /*============================================================================================*/
