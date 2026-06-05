@@ -319,7 +319,8 @@ vk_upload_texture( rhi_texture_t dst, const void* data, u32 data_size, u16 mip, 
     to_read.srcStageMask                        = VK_PIPELINE_STAGE_2_COPY_BIT;
     to_read.srcAccessMask                       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     to_read.dstStageMask                        = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
-                                                | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+                                                | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+                                                | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     to_read.dstAccessMask                       = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
     to_read.oldLayout                           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     to_read.newLayout                           = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;

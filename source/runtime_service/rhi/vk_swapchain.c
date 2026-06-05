@@ -332,9 +332,18 @@ vk_swapchain_recreate( vk_context_t* ctx )
     VkSwapchainKHR old_swapchain = ctx->swapchain;
     ctx->swapchain               = VK_NULL_HANDLE;
 
-    /* Wait for the GPU to be idle before destroying image views and depth buffer.
-       The VkSwapchainKHR handle itself is kept alive until after creation. */
-    vk_device_wait_idle();
+    /* Wait only on this context's in-flight fences and the present queue; avoids
+       draining the whole device and stalling sibling contexts (e.g. other editor
+       viewports).  The present queue must drain because vkQueuePresentKHR may
+       still hold a reference to the old swapchain images even after the graphics
+       fence fires.  The VkSwapchainKHR handle itself is kept alive until after
+       creation. */
+    VkResult r = vkWaitForFences( vk.device, VK_MAX_FRAMES_IN_FLIGHT, ctx->in_flight_fence, VK_TRUE, UINT64_MAX );
+    if ( r != VK_SUCCESS )
+        LOG_ERROR( "swapchain_recreate: vkWaitForFences: %s", string_VkResult( r ) );
+    r = vkQueueWaitIdle( vk.present_queue );
+    if ( r != VK_SUCCESS )
+        LOG_ERROR( "swapchain_recreate: vkQueueWaitIdle: %s", string_VkResult( r ) );
     vk_swapchain_destroy( ctx );
 
     bool ok = vk_swapchain_create( ctx, old_swapchain );
