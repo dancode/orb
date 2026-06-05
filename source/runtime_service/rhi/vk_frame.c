@@ -90,6 +90,12 @@ vk_frame_begin( i32 ctx_id )
         return RHI_CMD_INVALID;
     }
 
+    /* Acquire any resources that were uploaded on the transfer queue this cycle.
+       On hardware with a dedicated transfer family, images and buffers uploaded via
+       vk_upload_texture/vk_upload_buffer need a QFOT acquire barrier here before
+       any draw that samples them.  On integrated GPUs (same family) this is a no-op. */
+    vk_upload_apply_acquires( cmd_buf );
+
     /* Build the barrier array.  The color barrier is always issued (UNDEFINED srcLayout
        is valid per spec -- contents are discarded, which is fine with loadOp=CLEAR).
        The depth barrier only fires on first use; after that depth stays in
@@ -211,14 +217,19 @@ vk_frame_end( i32 ctx_id )
     wait_sems[ wait_count ].stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     wait_count++;
 
-    /* Stall only VS/FS stages until uploads complete; earlier GPU work can overlap DMA. */
+    /* Stall vertex-input, shader, and compute stages until the DMA batch completes.
+       Vertex input and index input are listed because uploaded buffers may be used as
+       vertex/index data; the 3D front-end (draw setup, early-Z) can still overlap. */
     if ( vk.upload_counter > 0 )
     {
         wait_sems[ wait_count ].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         wait_sems[ wait_count ].semaphore = vk.upload_timeline;
         wait_sems[ wait_count ].value     = vk.upload_counter;
-        wait_sems[ wait_count ].stageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
-                                          | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        wait_sems[ wait_count ].stageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT
+                                          | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT
+                                          | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+                                          | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                          | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         wait_count++;
     }
 

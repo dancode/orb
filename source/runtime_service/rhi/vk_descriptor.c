@@ -44,10 +44,18 @@ static vk_bindless_free_t  g_samp_free;
     unsafe: a new registration would overwrite that descriptor entry while the GPU may
     still be reading the old one in a previous frame.
 
-    Instead, vk_unregister_* pushes (idx, vk.global_frame) into a FIFO retire ring.
-    vk_descriptor_flush_retired() (called after the fence wait in vk_frame_begin) moves
-    entries back to the free stack once VK_MAX_FRAMES_IN_FLIGHT frames have elapsed,
-    guaranteeing the GPU has finished all in-flight work that referenced those slots.
+    Instead, vk_unregister_* pushes (idx, safe_at) into a FIFO retire ring, where safe_at
+    is the global_frame threshold at which the slot is provably idle on all contexts.
+    vk_descriptor_flush_retired() (called after the fence wait in vk_frame_begin) drains
+    entries once vk.global_frame reaches their safe_at.
+
+    Multi-context correctness: vk.global_frame increments once per frame_begin, which is
+    once per context per display frame.  With N active contexts, global_frame advances by N
+    per display frame, so the effective in-flight guard must be VK_MAX_FRAMES_IN_FLIGHT * N.
+    vk_retire_safe_at() snapshots N at retirement time and bakes it into safe_at.  If a
+    context is later destroyed the FIFO head may have a larger safe_at than newer entries;
+    the drain loop will delay those newer entries until the older one ages out -- conservative
+    but correct, never a leak.
 
     Ring capacity equals the pool size.  Because slot 0 is reserved, at most
     (capacity - 1) slots can ever be allocated at once, so the ring never overflows.
@@ -56,7 +64,7 @@ static vk_bindless_free_t  g_samp_free;
 typedef struct vk_deferred_retire_s
 {
     u32 idx;
-    u32 retire_frame;
+    u32 safe_at;    /* vk.global_frame value at which this slot is safe to reuse */
 } vk_deferred_retire_t;
 
 static vk_deferred_retire_t  g_tex_retire[ VK_MAX_BINDLESS_TEXTURES ];
@@ -94,21 +102,27 @@ vk_bindless_free( vk_bindless_free_t* pool, u32 idx )
     pool->stack[ pool->top++ ] = idx;
 }
 
+/* Compute the global_frame threshold that must be reached before a slot retired NOW is safe.
+   Scales by the active context count because global_frame advances once per frame_begin per
+   context; all contexts must have cycled through VK_MAX_FRAMES_IN_FLIGHT fence waits. */
+static u32
+vk_retire_safe_at( void )
+{
+    u32 n_ctx = 0;
+    for ( u32 mask = vk.ctx_alloc; mask; mask &= mask - 1 )
+        n_ctx++;
+    if ( n_ctx == 0 )
+        n_ctx = 1;
+    return vk.global_frame + VK_MAX_FRAMES_IN_FLIGHT * n_ctx;
+}
+
 static void
 vk_descriptor_flush_retired( void )
 {
-    /* Need at least VK_MAX_FRAMES_IN_FLIGHT frames before any slot is safe to reuse. */
-    if ( vk.global_frame < VK_MAX_FRAMES_IN_FLIGHT )
-        return;
-
-    /* Slots retired on frame R are safe once all GPU work from frame R has completed,
-       which is guaranteed after VK_MAX_FRAMES_IN_FLIGHT subsequent fence waits. */
-    u32 safe_frame = vk.global_frame - VK_MAX_FRAMES_IN_FLIGHT;
-
     while ( g_tex_retire_head != g_tex_retire_tail )
     {
         vk_deferred_retire_t* e = &g_tex_retire[ g_tex_retire_head ];
-        if ( e->retire_frame > safe_frame )
+        if ( vk.global_frame < e->safe_at )
             break;
         vk_bindless_free( &g_tex_free, e->idx );
         g_tex_retire_head = ( g_tex_retire_head + 1 ) % VK_MAX_BINDLESS_TEXTURES;
@@ -117,7 +131,7 @@ vk_descriptor_flush_retired( void )
     while ( g_samp_retire_head != g_samp_retire_tail )
     {
         vk_deferred_retire_t* e = &g_samp_retire[ g_samp_retire_head ];
-        if ( e->retire_frame > safe_frame )
+        if ( vk.global_frame < e->safe_at )
             break;
         vk_bindless_free( &g_samp_free, e->idx );
         g_samp_retire_head = ( g_samp_retire_head + 1 ) % VK_MAX_BINDLESS_SAMPLERS;
@@ -309,10 +323,10 @@ vk_unregister_texture( u32 bindless_index )
 {
     if ( bindless_index == 0 )
         return;
-    /* Defer: the GPU may still be reading this slot's descriptor in a previous frame. */
+    /* Defer until all active contexts have cycled through VK_MAX_FRAMES_IN_FLIGHT fences. */
     u32 next = ( g_tex_retire_tail + 1 ) % VK_MAX_BINDLESS_TEXTURES;
     ORB_ASSERT( next != g_tex_retire_head );   /* deferred queue overflow -- impossible if slot 0 is reserved */
-    g_tex_retire[ g_tex_retire_tail ] = ( vk_deferred_retire_t ){ bindless_index, vk.global_frame };
+    g_tex_retire[ g_tex_retire_tail ] = ( vk_deferred_retire_t ){ bindless_index, vk_retire_safe_at() };
     g_tex_retire_tail                 = next;
     /* Stale descriptor remains; PARTIALLY_BOUND allows unused slots to stay as-is. */
 }
@@ -355,7 +369,7 @@ vk_unregister_sampler( u32 bindless_index )
         return;
     u32 next = ( g_samp_retire_tail + 1 ) % VK_MAX_BINDLESS_SAMPLERS;
     ORB_ASSERT( next != g_samp_retire_head );
-    g_samp_retire[ g_samp_retire_tail ] = ( vk_deferred_retire_t ){ bindless_index, vk.global_frame };
+    g_samp_retire[ g_samp_retire_tail ] = ( vk_deferred_retire_t ){ bindless_index, vk_retire_safe_at() };
     g_samp_retire_tail                  = next;
 }
 

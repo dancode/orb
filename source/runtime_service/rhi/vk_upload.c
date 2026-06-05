@@ -12,24 +12,36 @@
         2. Data is memcpy'd into the staging ring at the current head.
         3. Copy commands are recorded into the slot's dedicated transfer command buffer.
         4. vk_upload_flush (called at frame_begin after the fence wait for this slot)
-           submits the pending transfer commands, resets the slot head, then advances
-           g_upload_active_slot. Because slots cycle every VK_MAX_FRAMES_IN_FLIGHT
-           flushes, uploads queued in flush G are not overwritten until flush
-           G+VK_MAX_FRAMES_IN_FLIGHT. Resources are safe to sample only after that.
+           submits the pending transfer commands to the transfer queue, resets the slot head,
+           then advances g_upload_active_slot.  Because slots cycle every
+           VK_MAX_FRAMES_IN_FLIGHT flushes, uploads queued in flush G are not overwritten
+           until flush G+VK_MAX_FRAMES_IN_FLIGHT.
 
     Sync: vk_upload_flush signals vk.upload_timeline at ++vk.upload_counter when the DMA
-    batch completes.  vk_frame_end adds a wait on that semaphore value at the vertex/fragment
-    shader stages, so the GPU stalls only the stages that consume uploaded data -- early
-    rendering work (vertex input, rasterisation setup) can overlap with the DMA transfer.
-    Frames with no uploads skip the wait because vk.upload_counter is already satisfied.
+    batch completes.  vk_frame_end adds a wait on that semaphore value at vertex-input,
+    shader, and compute stages, so those GPU stages stall only until the DMA finishes --
+    the 3D engine front-end (draw setup, early-Z) can overlap with the async transfer.
+    Frames with no uploads skip the semaphore wait entirely.
+
+    Queue-family ownership transfers (QFOTs):
+        When vk.transfer_queue_family != vk.graphics_queue_family (dedicated DMA engine on
+        discrete AMD/NVIDIA), resources uploaded via this path are on an EXCLUSIVE sharing
+        mode.  After the copy, each resource needs a two-step QFOT:
+            a. Release barrier -- recorded into the transfer command buffer after the copy.
+               Relinquishes ownership; declares the intended final layout.
+            b. Acquire barrier -- recorded at the top of the graphics command buffer in
+               vk_upload_apply_acquires().  Completes the ownership transfer and performs
+               the layout transition visible to shader stages.
+        The timeline semaphore provides the cross-queue execution dependency; the acquire
+        barrier provides the memory visibility dependency on the graphics queue.
+        When the transfer family equals the graphics family (integrated GPU / fallback),
+        no QFOT is needed: barriers use VK_QUEUE_FAMILY_IGNORED and all stages run on the
+        same queue.
 
     Staging reuse safety: vk_staging_t.last_submit_value records the upload_timeline value
     signaled when a slot is submitted.  vk_staging_alloc checks this value via
     vkWaitSemaphores on the first write to a slot each cycle, guaranteeing the prior DMA read
-    from that buffer has completed before the CPU memcpy overwrites it.  In the common
-    single-context case the per-frame fence wait in frame_begin is already a proof of this and
-    the semaphore query returns immediately; the check is the formal guarantee for topologies
-    where the upload slot index and the per-context fence index diverge.
+    from that buffer has completed before the CPU memcpy overwrites it.
 
 ==============================================================================================*/
 
@@ -45,6 +57,25 @@ typedef struct vk_upload_slot_s
 
 static vk_upload_slot_t g_upload[ VK_MAX_FRAMES_IN_FLIGHT ];
 static u32              g_upload_active_slot = 0;
+
+/* Pending queue-family ownership transfer acquires.
+   Populated by vk_upload_texture/vk_upload_buffer when a dedicated transfer queue is in use.
+   Drained by vk_upload_apply_acquires() at the top of each graphics command buffer.
+   Global (not per-slot) so missed frames (early frame_begin returns) carry over correctly. */
+
+#define VK_MAX_UPLOAD_ACQUIRES 256
+
+typedef struct vk_image_acquire_s
+{
+    VkImage image;
+    u16     mip;
+    u16     layer;
+} vk_image_acquire_t;
+
+static vk_image_acquire_t g_pending_image_acquires[ VK_MAX_UPLOAD_ACQUIRES ];
+static VkBuffer           g_pending_buffer_acquires[ VK_MAX_UPLOAD_ACQUIRES ];
+static u32                g_pending_image_count;
+static u32                g_pending_buffer_count;
 
 /*==============================================================================================
     Init / shutdown
@@ -94,11 +125,12 @@ vk_upload_init( void )
         }
         vk.staging[ i ].head = 0;
 
-        /* Dedicated command pool for transfer recording (graphics family for queue compatibility). */
+        /* Command pool on the transfer queue family.  Falls back to graphics when no dedicated
+           transfer family exists; in that case transfer_queue_family == graphics_queue_family. */
         VkCommandPoolCreateInfo pool_ci = { 0 };
         pool_ci.sType                   = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         pool_ci.flags                   = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        pool_ci.queueFamilyIndex        = vk.graphics_queue_family;
+        pool_ci.queueFamilyIndex        = vk.transfer_queue_family;
 
         r = vkCreateCommandPool( vk.device, &pool_ci, vk.alloc_cb, &g_upload[ i ].pool );
         if ( r != VK_SUCCESS )
@@ -280,6 +312,34 @@ vk_upload_buffer( rhi_buffer_t dst, const void* data, u32 size )
     region.size         = size;
     vkCmdCopyBuffer( cmd, sa.buffer, dst_buf, 1, &region );
 
+    if ( vk.transfer_queue_family != vk.graphics_queue_family )
+    {
+        /* Release buffer ownership to the graphics family; matched by an acquire in
+           vk_upload_apply_acquires on the graphics command buffer. */
+        VkBufferMemoryBarrier2 release  = { 0 };
+        release.sType                   = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        release.srcStageMask            = VK_PIPELINE_STAGE_2_COPY_BIT;
+        release.srcAccessMask           = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        release.dstStageMask            = VK_PIPELINE_STAGE_2_NONE;
+        release.dstAccessMask           = 0;
+        release.srcQueueFamilyIndex     = vk.transfer_queue_family;
+        release.dstQueueFamilyIndex     = vk.graphics_queue_family;
+        release.buffer                  = dst_buf;
+        release.offset                  = 0;
+        release.size                    = VK_WHOLE_SIZE;
+
+        VkDependencyInfo dep_rel         = { 0 };
+        dep_rel.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep_rel.bufferMemoryBarrierCount = 1;
+        dep_rel.pBufferMemoryBarriers    = &release;
+        vkCmdPipelineBarrier2( cmd, &dep_rel );
+
+        if ( g_pending_buffer_count < VK_MAX_UPLOAD_ACQUIRES )
+            g_pending_buffer_acquires[ g_pending_buffer_count++ ] = dst_buf;
+        else
+            LOG_WARN( "upload_buffer: pending acquire list full; buffer QFOT will be skipped" );
+    }
+
     return true;
 }
 
@@ -338,22 +398,52 @@ vk_upload_texture( rhi_texture_t dst, const void* data, u32 data_size, u16 mip, 
     region.imageExtent.depth                    = 1;
     vkCmdCopyBufferToImage( cmd, sa.buffer, tex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
 
-    /* Barrier: TRANSFER_DST_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL */
-    VkImageMemoryBarrier2 to_read               = to_dst;
-    to_read.srcStageMask                        = VK_PIPELINE_STAGE_2_COPY_BIT;
-    to_read.srcAccessMask                       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    to_read.dstStageMask                        = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+    if ( vk.transfer_queue_family != vk.graphics_queue_family )
+    {
+        /* Dedicated transfer queue: release ownership to the graphics family.
+           The layout transition (TRANSFER_DST -> SHADER_READ_ONLY) is declared in both
+           the release and the matching acquire, which vk_upload_apply_acquires injects
+           into the graphics command buffer. */
+        VkImageMemoryBarrier2 release           = to_dst;
+        release.srcStageMask                    = VK_PIPELINE_STAGE_2_COPY_BIT;
+        release.srcAccessMask                   = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        release.dstStageMask                    = VK_PIPELINE_STAGE_2_NONE;
+        release.dstAccessMask                   = 0;
+        release.oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        release.newLayout                       = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        release.srcQueueFamilyIndex             = vk.transfer_queue_family;
+        release.dstQueueFamilyIndex             = vk.graphics_queue_family;
+
+        VkDependencyInfo dep_rel                = { 0 };
+        dep_rel.sType                           = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep_rel.imageMemoryBarrierCount         = 1;
+        dep_rel.pImageMemoryBarriers            = &release;
+        vkCmdPipelineBarrier2( cmd, &dep_rel );
+
+        if ( g_pending_image_count < VK_MAX_UPLOAD_ACQUIRES )
+            g_pending_image_acquires[ g_pending_image_count++ ] = (vk_image_acquire_t){ tex->image, mip, layer };
+        else
+            LOG_WARN( "upload_texture: pending acquire list full; image will not transition to SHADER_READ" );
+    }
+    else
+    {
+        /* Same queue family: no ownership transfer needed; transition the layout here. */
+        VkImageMemoryBarrier2 to_read           = to_dst;
+        to_read.srcStageMask                    = VK_PIPELINE_STAGE_2_COPY_BIT;
+        to_read.srcAccessMask                   = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        to_read.dstStageMask                    = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
                                                 | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
                                                 | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    to_read.dstAccessMask                       = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-    to_read.oldLayout                           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    to_read.newLayout                           = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        to_read.dstAccessMask                   = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        to_read.oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        to_read.newLayout                       = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkDependencyInfo dep_to_read        = { 0 };
-    dep_to_read.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep_to_read.imageMemoryBarrierCount = 1;
-    dep_to_read.pImageMemoryBarriers    = &to_read;
-    vkCmdPipelineBarrier2( cmd, &dep_to_read );
+        VkDependencyInfo dep_to_read            = { 0 };
+        dep_to_read.sType                       = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep_to_read.imageMemoryBarrierCount     = 1;
+        dep_to_read.pImageMemoryBarriers        = &to_read;
+        vkCmdPipelineBarrier2( cmd, &dep_to_read );
+    }
 
     return true;
 }
@@ -392,7 +482,7 @@ vk_upload_flush( void )
         submit.signalSemaphoreInfoCount  = 1;
         submit.pSignalSemaphoreInfos     = &signal_si;
 
-        VkResult r = vkQueueSubmit2( vk.graphics_queue, 1, &submit, VK_NULL_HANDLE );
+        VkResult r = vkQueueSubmit2( vk.transfer_queue, 1, &submit, VK_NULL_HANDLE );
         if ( r != VK_SUCCESS )
             LOG_ERROR( "upload_flush: vkQueueSubmit2: %s", string_VkResult( r ) );
         else
@@ -407,6 +497,86 @@ vk_upload_flush( void )
 
     vk.staging[ slot ].head  = 0;
     g_upload_active_slot     = ( slot + 1 ) % VK_MAX_FRAMES_IN_FLIGHT;
+}
+
+/*==============================================================================================
+    Acquire injection  (called from vk_frame.c at the top of each graphics command buffer)
+==============================================================================================*/
+
+static void
+vk_upload_apply_acquires( VkCommandBuffer cmd )
+{
+    /* Same-family path: no QFOTs were issued, nothing to acquire. */
+    if ( vk.transfer_queue_family == vk.graphics_queue_family )
+        return;
+    if ( g_pending_image_count == 0 && g_pending_buffer_count == 0 )
+        return;
+
+    /* Build image acquire barriers.  The matching release barriers declared
+       TRANSFER_DST -> SHADER_READ_ONLY; the acquire must use the same layout pair.
+       srcStageMask = NONE because the timeline semaphore wait in the graphics submit
+       already provides the inter-queue execution dependency. */
+    static VkImageMemoryBarrier2  img_bars[ VK_MAX_UPLOAD_ACQUIRES ];
+    for ( u32 i = 0; i < g_pending_image_count; ++i )
+    {
+        vk_image_acquire_t*    e = &g_pending_image_acquires[ i ];
+        VkImageMemoryBarrier2* b = &img_bars[ i ];
+
+        *b = (VkImageMemoryBarrier2){ 0 };
+        b->sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        b->srcStageMask                    = VK_PIPELINE_STAGE_2_NONE;
+        b->srcAccessMask                   = 0;
+        b->dstStageMask                    = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+                                           | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                           | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        b->dstAccessMask                   = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        b->oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        b->newLayout                       = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        b->srcQueueFamilyIndex             = vk.transfer_queue_family;
+        b->dstQueueFamilyIndex             = vk.graphics_queue_family;
+        b->image                           = e->image;
+        b->subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        b->subresourceRange.baseMipLevel   = e->mip;
+        b->subresourceRange.levelCount     = 1;
+        b->subresourceRange.baseArrayLayer = e->layer;
+        b->subresourceRange.layerCount     = 1;
+    }
+
+    /* Build buffer acquire barriers. */
+    static VkBufferMemoryBarrier2 buf_bars[ VK_MAX_UPLOAD_ACQUIRES ];
+    for ( u32 i = 0; i < g_pending_buffer_count; ++i )
+    {
+        VkBufferMemoryBarrier2* b = &buf_bars[ i ];
+
+        *b = (VkBufferMemoryBarrier2){ 0 };
+        b->sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        b->srcStageMask        = VK_PIPELINE_STAGE_2_NONE;
+        b->srcAccessMask       = 0;
+        b->dstStageMask        = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT
+                               | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT
+                               | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+                               | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                               | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        b->dstAccessMask       = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT
+                               | VK_ACCESS_2_INDEX_READ_BIT
+                               | VK_ACCESS_2_SHADER_READ_BIT;
+        b->srcQueueFamilyIndex = vk.transfer_queue_family;
+        b->dstQueueFamilyIndex = vk.graphics_queue_family;
+        b->buffer              = g_pending_buffer_acquires[ i ];
+        b->offset              = 0;
+        b->size                = VK_WHOLE_SIZE;
+    }
+
+    VkDependencyInfo dep             = { 0 };
+    dep.sType                        = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep.imageMemoryBarrierCount      = g_pending_image_count;
+    dep.pImageMemoryBarriers         = img_bars;
+    dep.bufferMemoryBarrierCount     = g_pending_buffer_count;
+    dep.pBufferMemoryBarriers        = buf_bars;
+    vkCmdPipelineBarrier2( cmd, &dep );
+
+    g_pending_image_count  = 0;
+    g_pending_buffer_count = 0;
 }
 
 /*============================================================================================*/
