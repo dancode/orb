@@ -97,6 +97,7 @@ typedef struct vk_shader_slot_s
 typedef struct vk_pipeline_slot_s
 {
     VkPipeline  pipeline;
+    bool        is_compute;
 
 } vk_pipeline_slot_t;
 

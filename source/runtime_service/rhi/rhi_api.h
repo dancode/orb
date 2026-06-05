@@ -12,7 +12,7 @@
         Texture    : create / destroy
         Sampler    : create / destroy
         Shader     : create / destroy
-        Pipeline   : create / destroy
+        Pipeline   : create / compute_create / destroy
         Upload     : staged copy to GPU-only buffer or texture
         Pass       : begin_rendering / end_rendering  (explicit dynamic pass open/close)
         Commands   : viewport, scissor, pipeline, vertex/index, push constants, draw
@@ -76,8 +76,9 @@ typedef struct rhi_api_s
 
     /* ---- Pipeline ---- */
 
-    rhi_pipeline_t ( *pipeline_create  )( const rhi_pipeline_desc_t* desc );
-    void           ( *pipeline_destroy )( rhi_pipeline_t pipeline );
+    rhi_pipeline_t ( *pipeline_create         )( const rhi_pipeline_desc_t*         desc );
+    rhi_pipeline_t ( *compute_pipeline_create )( const rhi_compute_pipeline_desc_t* desc );
+    void           ( *pipeline_destroy        )( rhi_pipeline_t pipeline );
 
     /* ---- Staged upload (GPU_ONLY targets) ---- */
 

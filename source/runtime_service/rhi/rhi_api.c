@@ -50,6 +50,7 @@ const rhi_api_t g_rhi_api_struct =
 
     /* Pipeline */
     .pipeline_create            = vk_pipeline_create,
+    .compute_pipeline_create    = vk_compute_pipeline_create,
     .pipeline_destroy           = vk_pipeline_destroy,
 
     /* Staged upload */

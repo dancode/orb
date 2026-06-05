@@ -447,8 +447,10 @@ vk_cmd_bind_pipeline( rhi_command_list_t cmd, rhi_pipeline_t pipeline )
     if ( !cl || !vk_pipeline_validate( pipeline ) )
         return;
 
-    VkPipeline vkp = vk.pipelines[ pipeline.id ].pipeline;
-    vkCmdBindPipeline( cl->vk_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vkp );
+    vk_pipeline_slot_t* slot = &vk.pipelines[ pipeline.id ];
+    VkPipelineBindPoint bp   = slot->is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE
+                                                : VK_PIPELINE_BIND_POINT_GRAPHICS;
+    vkCmdBindPipeline( cl->vk_cmd, bp, slot->pipeline );
 }
 
 static void

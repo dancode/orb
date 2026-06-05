@@ -215,6 +215,10 @@ typedef struct rhi_shader_desc_s
 
     Uses dynamic rendering (VK 1.3): no VkRenderPass or VkFramebuffer.
     All pipelines share a common bindless VkPipelineLayout (push constants + bindless set).
+
+    Compute pipelines use rhi_compute_pipeline_desc_t + compute_pipeline_create().
+    The resulting rhi_pipeline_t handle is passed to cmd_bind_pipeline exactly like
+    a graphics pipeline; the backend picks the correct VkPipelineBindPoint automatically.
 ==============================================================================================*/
 
 typedef enum rhi_cull_mode_e
@@ -337,6 +341,18 @@ typedef struct rhi_pipeline_desc_s
     const char*         debug_name;
 
 } rhi_pipeline_desc_t;
+
+/*==============================================================================================
+    Pipeline (compute)
+==============================================================================================*/
+
+typedef struct rhi_compute_pipeline_desc_s
+{
+    rhi_shader_t  comp;
+    u32           push_const_size;   /* bytes; 0 = none; max RHI_MAX_PUSH_CONST_SIZE */
+    const char*   debug_name;
+
+} rhi_compute_pipeline_desc_t;
 
 /*==============================================================================================
     Draw parameters
