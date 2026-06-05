@@ -28,7 +28,6 @@ typedef struct render_ctx_slot_s
 typedef struct render_state_s
 {
     render_ctx_slot_t  ctx[ RHI_CTX_MAX ];
-    int                frame_count;
     f32                total_time;
 
 } render_state_t;
@@ -152,8 +151,6 @@ render_end_frame_impl( i32 ctx_id )
         rhi()->frame_end( ctx_id );
         s->cmd = RHI_CMD_INVALID;
     }
-
-    g_state->frame_count++;
 }
 
 static void
@@ -169,12 +166,6 @@ render_set_clear_color_impl( i32 ctx_id, f32 r, f32 g, f32 b, f32 a )
     s->clear.a = a;
 }
 
-static int
-render_frame_count_impl( void )
-{
-    return g_state ? g_state->frame_count : 0;
-}
-
 /*==============================================================================================
     API Struct
 ==============================================================================================*/
@@ -187,7 +178,6 @@ const render_api_t g_render_api_struct = {
     .draw_editor        = render_draw_editor_impl,
     .end_frame          = render_end_frame_impl,
     .set_clear_color    = render_set_clear_color_impl,
-    .frame_count        = render_frame_count_impl,
 };
 
 /*==============================================================================================
@@ -227,7 +217,7 @@ render_reload( void* raw_state, get_api_fn get_api )
         return false;
     }
 
-    LOG_INFO( "reloaded (frames so far = %d)", g_state->frame_count );
+    LOG_INFO( "reloaded" );
     return true;
 }
 

@@ -101,7 +101,7 @@ typedef struct vk_pipeline_slot_s
 } vk_pipeline_slot_t;
 
 /*==============================================================================================
-    Staging ring  (one per frame-in-flight; indexed by global frame_index % VK_MAX_FRAMES)
+    Staging ring  (one per frame-in-flight; active slot tracked by vk_upload.c)
 ==============================================================================================*/
 
 typedef struct vk_staging_s
@@ -109,7 +109,7 @@ typedef struct vk_staging_s
     VkBuffer       buffer;
     VkDeviceMemory memory;
     void*          mapped;     /* persistently mapped host pointer */
-    u32            head;       /* linear bump allocator offset; reset each frame_begin */
+    u32            head;       /* linear bump allocator offset; reset when the slot is flushed */
 
 } vk_staging_t;
 
@@ -237,11 +237,11 @@ typedef struct vk_state_s
     VkDescriptorSet         bindless_set;
     VkPipelineLayout        pipeline_layout;    /* push constants + bindless set 0 */
 
-    /* Staging upload ring (indexed by global_frame % VK_MAX_FRAMES_IN_FLIGHT) */
+    /* Staging upload ring (active slot owned by vk_upload.c via g_upload_active_slot) */
 
     vk_staging_t            staging[ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    u32                     global_frame;       /* monotonic counter; drives staging slot selection */
+    u32                     global_frame;       /* monotonic counter; incremented per frame_begin */
 
     /* Resource slot pools */
 

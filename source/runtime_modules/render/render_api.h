@@ -48,9 +48,6 @@ typedef struct render_api_s
     /* ---- Per-context settings ---- */
     void ( *set_clear_color )( i32 ctx_id, f32 r, f32 g, f32 b, f32 a );
 
-    /* ---- Global counters ---- */
-    int  ( *frame_count )( void );
-
 } render_api_t;
 
 /*============================================================================================*/

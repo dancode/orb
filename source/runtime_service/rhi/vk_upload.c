@@ -3,17 +3,19 @@
     vulkan/vk_upload.c -- Staged upload ring buffer for GPU-only resources.
 
     One staging buffer per frame-in-flight slot (VK_STAGING_SIZE bytes each).
-    The slot indexed by (vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT) is the active one.
+    The active slot is tracked by g_upload_active_slot, independent of vk.global_frame.
+    Advancing that counter is the sole responsibility of vk_upload_flush, so the upload
+    slot timeline is decoupled from how many contexts call frame_begin each display frame.
 
     Upload flow:
         1. Caller calls rhi()->upload_buffer / upload_texture.
         2. Data is memcpy'd into the staging ring at the current head.
         3. Copy commands are recorded into the slot's dedicated transfer command buffer.
         4. vk_upload_flush (called at frame_begin after the fence wait for this slot)
-           submits the pending transfer commands and recycles the slot. Because slots
-           cycle every VK_MAX_FRAMES_IN_FLIGHT frames, uploads queued in frame G are
-           not flushed until frame G+VK_MAX_FRAMES_IN_FLIGHT. Resources are safe to
-           sample only in that frame and later.
+           submits the pending transfer commands, resets the slot head, then advances
+           g_upload_active_slot. Because slots cycle every VK_MAX_FRAMES_IN_FLIGHT
+           flushes, uploads queued in flush G are not overwritten until flush
+           G+VK_MAX_FRAMES_IN_FLIGHT. Resources are safe to sample only after that.
 
     Known issue: vk_upload_flush calls vkQueueWaitIdle after submitting the upload batch.
     This stalls the entire GPU queue until all uploads complete before render work can start.
@@ -40,6 +42,7 @@ typedef struct vk_upload_slot_s
 } vk_upload_slot_t;
 
 static vk_upload_slot_t g_upload[ VK_MAX_FRAMES_IN_FLIGHT ];
+static u32              g_upload_active_slot = 0;
 
 /*==============================================================================================
     Init / shutdown
@@ -187,7 +190,7 @@ vk_upload_begin_recording( u32 slot )
 static bool
 vk_staging_alloc( u32 size, u32 align, vk_staging_alloc_t* out )
 {
-    u32            slot = vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT;
+    u32            slot = g_upload_active_slot;
     vk_staging_t*  s    = &vk.staging[ slot ];
 
     u32 aligned_head = ( s->head + align - 1 ) & ~( align - 1 );
@@ -223,7 +226,7 @@ vk_upload_buffer( rhi_buffer_t dst, const void* data, u32 size )
 
     memcpy( sa.cpu_ptr, data, size );
 
-    u32             slot    = vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT;
+    u32             slot    = g_upload_active_slot;
     VkCommandBuffer cmd     = g_upload[ slot ].cmd;
     VkBuffer        dst_buf = vk.buffers[ dst.id ].buffer;
 
@@ -248,7 +251,7 @@ vk_upload_texture( rhi_texture_t dst, const void* data, u32 data_size, u16 mip, 
 
     memcpy( sa.cpu_ptr, data, data_size );
 
-    u32                slot = vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT;
+    u32                slot = g_upload_active_slot;
     VkCommandBuffer    cmd  = g_upload[ slot ].cmd;
     vk_texture_slot_t* tex  = &vk.textures[ dst.id ];
 
@@ -315,12 +318,10 @@ vk_upload_texture( rhi_texture_t dst, const void* data, u32 data_size, u16 mip, 
 ==============================================================================================*/
 
 static void
-vk_upload_flush( u32 slot )
+vk_upload_flush( void )
 {
-    if ( slot >= VK_MAX_FRAMES_IN_FLIGHT )
-        return;
-
-    vk_upload_slot_t* up = &g_upload[ slot ];
+    u32                slot = g_upload_active_slot;
+    vk_upload_slot_t*  up   = &g_upload[ slot ];
 
     if ( up->is_recording )
     {
@@ -347,7 +348,8 @@ vk_upload_flush( u32 slot )
         up->is_recording = false;
     }
 
-    vk.staging[ slot ].head = 0;
+    vk.staging[ slot ].head  = 0;
+    g_upload_active_slot     = ( slot + 1 ) % VK_MAX_FRAMES_IN_FLIGHT;
 }
 
 /*============================================================================================*/

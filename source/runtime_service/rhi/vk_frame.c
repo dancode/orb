@@ -37,7 +37,7 @@ vk_frame_begin( i32 ctx_id )
         ctx->resize_pending = false;
     }
 
-    /* Advance the global frame counter and select the staging slot. */
+    /* Advance the global frame counter (monotonic; for diagnostics / future use). */
     vk.global_frame++;
 
     u32             frame   = ctx->current_frame;
@@ -51,8 +51,8 @@ vk_frame_begin( i32 ctx_id )
         return RHI_CMD_INVALID;
     }
 
-    /* Flush staged uploads queued last time this slot was active. */
-    vk_upload_flush( vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT );
+    /* Flush staged uploads from the previous cycle; advances g_upload_active_slot. */
+    vk_upload_flush();
 
     /* Acquire the next presentable swapchain image. */
     r = vkAcquireNextImageKHR( vk.device, ctx->swapchain, UINT64_MAX,
