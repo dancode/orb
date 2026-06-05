@@ -79,10 +79,26 @@ render_begin_frame_impl( i32 ctx_id )
     if ( !s->active )
         return false;
 
-    /* The RHI reads ctx->clear_color (stashed by cmd_clear_color last frame) inside
-       vkCmdBeginRendering.  One frame of latency on clear color changes is acceptable. */
     s->cmd = rhi()->frame_begin( ctx_id );
-    return rhi_cmd_valid( s->cmd );
+    if ( !rhi_cmd_valid( s->cmd ) )
+        return false;
+
+    /* Open the main pass against the swapchain; cleared to the slot's clear color. */
+    rhi_color_attachment_t color_att = {
+        .texture  = { .id = RHI_SWAPCHAIN_COLOR },
+        .load_op  = RHI_LOAD_OP_CLEAR,
+        .store_op = RHI_STORE_OP_STORE,
+        .clear    = s->clear,
+    };
+    rhi_depth_attachment_t depth_att = {
+        .texture      = { .id = RHI_SWAPCHAIN_DEPTH },
+        .load_op      = RHI_LOAD_OP_CLEAR,
+        .store_op     = RHI_STORE_OP_DISCARD,
+        .depth_clear  = 1.0f,
+        .stencil_clear = 0,
+    };
+    rhi()->cmd_begin_rendering( s->cmd, &color_att, 1, &depth_att );
+    return true;
 }
 
 static void
@@ -96,9 +112,6 @@ render_draw_scene_impl( i32 ctx_id, f32 dt )
         return;
 
     g_state->total_time += dt;
-
-    /* Stash clear color into the context; vkCmdBeginRendering reads it next frame. */
-    rhi()->cmd_clear_color( s->cmd, s->clear.r, s->clear.g, s->clear.b, s->clear.a );
 
     /* TODO: submit scene draw calls for this context.
        rhi()->cmd_bind_bindless( s->cmd )
@@ -135,6 +148,7 @@ render_end_frame_impl( i32 ctx_id )
 
     if ( rhi_cmd_valid( s->cmd ) )
     {
+        rhi()->cmd_end_rendering( s->cmd );
         rhi()->frame_end( ctx_id );
         s->cmd = RHI_CMD_INVALID;
     }

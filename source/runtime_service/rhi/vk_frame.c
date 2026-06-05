@@ -3,10 +3,11 @@
     vulkan/vk_frame.c -- Per-frame orchestration.
 
     frame_begin and frame_end drive per-window Vulkan choreography.  Each context
-    advances its own current_frame counter independently.
+    advances its own current_frame counter independently.  frame_begin returns an open
+    command list with no active render pass; callers use cmd_begin_rendering /
+    cmd_end_rendering to open and close passes explicitly.
 
-    Rendering uses VK 1.3 dynamic rendering (vkCmdBeginRendering / vkCmdEndRendering).
-    No VkRenderPass or VkFramebuffer objects are created or managed here.
+    Uses VK 1.3 dynamic rendering.  No VkRenderPass or VkFramebuffer objects are created.
 
 ==============================================================================================*/
 // clang-format off
@@ -142,34 +143,6 @@ vk_frame_begin( i32 ctx_id )
 
     vkCmdPipelineBarrier2( cmd_buf, &dep_info );
 
-    /* Begin dynamic rendering. */
-    VkRenderingAttachmentInfo color_att  = { 0 };
-    color_att.sType                      = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    color_att.imageView                  = ctx->swapchain_image_views[ ctx->image_index ];
-    color_att.imageLayout                = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color_att.loadOp                     = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color_att.storeOp                    = VK_ATTACHMENT_STORE_OP_STORE;
-    color_att.clearValue.color           = ctx->clear_color;
-
-    VkRenderingAttachmentInfo depth_att  = { 0 };
-    depth_att.sType                      = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depth_att.imageView                  = ctx->depth_view;
-    depth_att.imageLayout                = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depth_att.loadOp                     = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth_att.storeOp                    = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_att.clearValue.depthStencil    = (VkClearDepthStencilValue){ 1.0f, 0 };
-
-    VkRenderingInfo ri               = { 0 };
-    ri.sType                         = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    ri.renderArea.offset             = (VkOffset2D){ 0, 0 };
-    ri.renderArea.extent             = ctx->swapchain_extent;
-    ri.layerCount                    = 1;
-    ri.colorAttachmentCount          = 1;
-    ri.pColorAttachments             = &color_att;
-    ri.pDepthAttachment              = &depth_att;
-
-    vkCmdBeginRendering( cmd_buf, &ri );
-
     /* Wire the command list slot so vk_cmd_from_handle resolves this frame correctly. */
     ctx->cmd_lists[ frame ].vk_cmd = cmd_buf;
     ctx->cmd_lists[ frame ].ctx_id = ctx_id;
@@ -187,9 +160,6 @@ vk_frame_end( i32 ctx_id )
 
     u32             frame   = ctx->current_frame;
     VkCommandBuffer cmd_buf = ctx->command_buffers[ frame ];
-
-    /* End dynamic rendering pass. */
-    vkCmdEndRendering( cmd_buf );
 
     /* Barrier: COLOR_ATTACHMENT_OPTIMAL -> PRESENT_SRC_KHR. */
     VkImageMemoryBarrier2 present_b               = { 0 };
@@ -279,27 +249,114 @@ vk_frame_end( i32 ctx_id )
 }
 
 /*==============================================================================================
-    Commands  (v0 -- expanded as each subsystem comes online)
+    Render pass open / close
 ==============================================================================================*/
 
+static VkAttachmentLoadOp
+vk_load_op( rhi_load_op_t op )
+{
+    switch ( op )
+    {
+        case RHI_LOAD_OP_LOAD:    return VK_ATTACHMENT_LOAD_OP_LOAD;
+        case RHI_LOAD_OP_CLEAR:   return VK_ATTACHMENT_LOAD_OP_CLEAR;
+        case RHI_LOAD_OP_DISCARD: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    }
+    return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+}
+
+static VkAttachmentStoreOp
+vk_store_op( rhi_store_op_t op )
+{
+    switch ( op )
+    {
+        case RHI_STORE_OP_STORE:   return VK_ATTACHMENT_STORE_OP_STORE;
+        case RHI_STORE_OP_DISCARD: return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    }
+    return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+}
+
 static void
-vk_cmd_clear_color( rhi_command_list_t cmd, f32 r, f32 g, f32 b, f32 a )
+vk_cmd_begin_rendering( rhi_command_list_t             cmd,
+                        const rhi_color_attachment_t*  color_atts, u32 color_count,
+                        const rhi_depth_attachment_t*  depth_att )
 {
     struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
     if ( !cl )
         return;
 
-    /* Stores the clear color for this context; consumed by the NEXT frame's
-       vkCmdBeginRendering loadOp.  One frame of latency is expected and acceptable. */
     vk_context_t* ctx = vk_ctx_get( cl->ctx_id );
     if ( !ctx )
         return;
 
-    ctx->clear_color.float32[ 0 ] = r;
-    ctx->clear_color.float32[ 1 ] = g;
-    ctx->clear_color.float32[ 2 ] = b;
-    ctx->clear_color.float32[ 3 ] = a;
+    /* Build color attachment infos. */
+    VkRenderingAttachmentInfo color_infos[ RHI_MAX_COLOR_TARGETS ] = { 0 };
+    u32 cc = ( color_count < RHI_MAX_COLOR_TARGETS ) ? color_count : RHI_MAX_COLOR_TARGETS;
+    for ( u32 i = 0; i < cc; i++ )
+    {
+        const rhi_color_attachment_t* ca = &color_atts[ i ];
+        VkRenderingAttachmentInfo*    ai = &color_infos[ i ];
+
+        ai->sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        ai->imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        ai->loadOp      = vk_load_op( ca->load_op );
+        ai->storeOp     = vk_store_op( ca->store_op );
+        ai->imageView   = ( ca->texture.id == RHI_SWAPCHAIN_COLOR )
+                          ? ctx->swapchain_image_views[ ctx->image_index ]
+                          : vk.textures[ ca->texture.id ].view;
+
+        if ( ca->load_op == RHI_LOAD_OP_CLEAR )
+        {
+            ai->clearValue.color.float32[ 0 ] = ca->clear.r;
+            ai->clearValue.color.float32[ 1 ] = ca->clear.g;
+            ai->clearValue.color.float32[ 2 ] = ca->clear.b;
+            ai->clearValue.color.float32[ 3 ] = ca->clear.a;
+        }
+    }
+
+    /* Build depth attachment info. */
+    VkRenderingAttachmentInfo depth_info = { 0 };
+    if ( depth_att )
+    {
+        depth_info.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depth_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depth_info.loadOp      = vk_load_op( depth_att->load_op );
+        depth_info.storeOp     = vk_store_op( depth_att->store_op );
+        depth_info.imageView   = ( depth_att->texture.id == RHI_SWAPCHAIN_DEPTH )
+                                 ? ctx->depth_view
+                                 : vk.textures[ depth_att->texture.id ].view;
+
+        if ( depth_att->load_op == RHI_LOAD_OP_CLEAR )
+        {
+            depth_info.clearValue.depthStencil.depth   = depth_att->depth_clear;
+            depth_info.clearValue.depthStencil.stencil = depth_att->stencil_clear;
+        }
+    }
+
+    VkRenderingInfo ri               = { 0 };
+    ri.sType                         = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    ri.renderArea.offset             = (VkOffset2D){ 0, 0 };
+    ri.renderArea.extent             = ctx->swapchain_extent;
+    ri.layerCount                    = 1;
+    ri.colorAttachmentCount          = cc;
+    ri.pColorAttachments             = cc > 0 ? color_infos : NULL;
+    ri.pDepthAttachment              = depth_att ? &depth_info : NULL;
+
+    vkCmdBeginRendering( cl->vk_cmd, &ri );
 }
+
+static void
+vk_cmd_end_rendering( rhi_command_list_t cmd )
+{
+    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
+    if ( !cl )
+        return;
+
+    vkCmdEndRendering( cl->vk_cmd );
+}
+
+/*==============================================================================================
+    Commands  (v0 -- expanded as each subsystem comes online)
+==============================================================================================*/
 
 static void
 vk_cmd_set_viewport( rhi_command_list_t cmd, const rhi_viewport_t* vp )

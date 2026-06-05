@@ -14,7 +14,8 @@
         Shader     : create / destroy
         Pipeline   : create / destroy
         Upload     : staged copy to GPU-only buffer or texture
-        Commands   : viewport, scissor, pipeline, vertex/index, push constants, draw, clear
+        Pass       : begin_rendering / end_rendering  (explicit dynamic pass open/close)
+        Commands   : viewport, scissor, pipeline, vertex/index, push constants, draw
         Bindless   : register/unregister texture+sampler indices; bind global set
         Debug      : begin/end GPU label  (debug builds only; release no-ops)
 
@@ -84,6 +85,15 @@ typedef struct rhi_api_s
     bool ( *upload_texture )( rhi_texture_t dst, const void* data, u32 data_size,
                               u16 mip, u16 layer );
 
+    /* ---- Render pass ---- */
+
+    /* Open a dynamic rendering pass.  Must be closed with cmd_end_rendering before
+       frame_end or before opening another pass. */
+    void ( *cmd_begin_rendering )( rhi_command_list_t          cmd,
+                                   const rhi_color_attachment_t* color_atts, u32 color_count,
+                                   const rhi_depth_attachment_t* depth_att );
+    void ( *cmd_end_rendering   )( rhi_command_list_t cmd );
+
     /* ---- Commands ---- */
 
     void ( *cmd_set_viewport       )( rhi_command_list_t cmd, const rhi_viewport_t* vp );
@@ -97,9 +107,6 @@ typedef struct rhi_api_s
     void ( *cmd_draw               )( rhi_command_list_t cmd, const rhi_draw_args_t* args );
     void ( *cmd_draw_indexed       )( rhi_command_list_t cmd,
                                       const rhi_draw_indexed_args_t* args );
-
-    /* Stores clear color for the current context; applied in vkCmdBeginRendering loadOp. */
-    void ( *cmd_clear_color        )( rhi_command_list_t cmd, f32 r, f32 g, f32 b, f32 a );
 
     /* ---- Bindless resource registration ---- */
 

@@ -170,9 +170,6 @@ typedef struct vk_context_s
     VkCommandBuffer             command_buffers[ VK_MAX_FRAMES_IN_FLIGHT ];
     struct rhi_command_list_s   cmd_lists[ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    /* Clear color (set by cmd_clear_color; consumed by vkCmdBeginRendering loadOp) */
-    VkClearColorValue  clear_color;
-
     /* Depth image layout tracker: UNDEFINED on create; set to DEPTH_ATTACHMENT_OPTIMAL after
        the first frame's barrier.  Avoids an unnecessary barrier on every subsequent frame. */
     VkImageLayout       depth_layout;

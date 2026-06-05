@@ -55,6 +55,10 @@ const rhi_api_t g_rhi_api_struct =
     .upload_buffer          = vk_upload_buffer,
     .upload_texture         = vk_upload_texture,
 
+    /* Render pass */
+    .cmd_begin_rendering    = vk_cmd_begin_rendering,
+    .cmd_end_rendering      = vk_cmd_end_rendering,
+
     /* Commands */
     .cmd_set_viewport       = vk_cmd_set_viewport,
     .cmd_set_scissor        = vk_cmd_set_scissor,
@@ -64,7 +68,6 @@ const rhi_api_t g_rhi_api_struct =
     .cmd_push_constants     = vk_cmd_push_constants,
     .cmd_draw               = vk_cmd_draw,
     .cmd_draw_indexed       = vk_cmd_draw_indexed,
-    .cmd_clear_color        = vk_cmd_clear_color,
 
     /* Bindless */
     .register_texture       = vk_register_texture,

@@ -386,5 +386,50 @@ typedef struct rhi_color_s
 
 } rhi_color_t;
 
+/*==============================================================================================
+    Render pass attachments  (for cmd_begin_rendering / cmd_end_rendering)
+
+    Sentinel IDs for context-owned attachments:
+        RHI_SWAPCHAIN_COLOR -- current swapchain image (color attachment)
+        RHI_SWAPCHAIN_DEPTH -- context depth buffer (depth attachment)
+==============================================================================================*/
+
+#define RHI_SWAPCHAIN_COLOR  0xFFFFFFFFu
+#define RHI_SWAPCHAIN_DEPTH  0xFFFFFFFEu
+
+typedef enum rhi_load_op_e
+{
+    RHI_LOAD_OP_LOAD    = 0,   /* preserve existing contents */
+    RHI_LOAD_OP_CLEAR   = 1,   /* clear to the provided clear value */
+    RHI_LOAD_OP_DISCARD = 2,   /* contents undefined; fastest */
+
+} rhi_load_op_t;
+
+typedef enum rhi_store_op_e
+{
+    RHI_STORE_OP_STORE   = 0,   /* written contents are preserved after the pass */
+    RHI_STORE_OP_DISCARD = 1,   /* contents discarded; use for transient depth etc. */
+
+} rhi_store_op_t;
+
+typedef struct rhi_color_attachment_s
+{
+    rhi_texture_t  texture;    /* RHI_SWAPCHAIN_COLOR = current swapchain image */
+    rhi_load_op_t  load_op;
+    rhi_store_op_t store_op;
+    rhi_color_t    clear;      /* used when load_op == RHI_LOAD_OP_CLEAR */
+
+} rhi_color_attachment_t;
+
+typedef struct rhi_depth_attachment_s
+{
+    rhi_texture_t  texture;       /* RHI_SWAPCHAIN_DEPTH = context depth buffer */
+    rhi_load_op_t  load_op;
+    rhi_store_op_t store_op;
+    f32            depth_clear;   /* used when load_op == RHI_LOAD_OP_CLEAR */
+    u32            stencil_clear;
+
+} rhi_depth_attachment_t;
+
 /*============================================================================================*/
 #endif    // RHI_H

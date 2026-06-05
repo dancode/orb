@@ -107,7 +107,21 @@ main( int argc, char** argv )
         rhi_command_list_t cmd = rhi()->frame_begin( ctx );
         if ( rhi_cmd_valid( cmd ) )
         {
-            rhi()->cmd_clear_color( cmd, 0.05f, 0.05f, 0.15f, 1.0f );
+            rhi_color_attachment_t color_att = {
+                .texture  = { .id = RHI_SWAPCHAIN_COLOR },
+                .load_op  = RHI_LOAD_OP_CLEAR,
+                .store_op = RHI_STORE_OP_STORE,
+                .clear    = { 0.05f, 0.15f, 0.05f, 1.0f },
+            };
+            rhi_depth_attachment_t depth_att = {
+                .texture      = { .id = RHI_SWAPCHAIN_DEPTH },
+                .load_op      = RHI_LOAD_OP_CLEAR,
+                .store_op     = RHI_STORE_OP_DISCARD,
+                .depth_clear  = 1.0f,
+                .stencil_clear = 0,
+            };
+            rhi()->cmd_begin_rendering( cmd, &color_att, 1, &depth_att );
+            rhi()->cmd_end_rendering( cmd );
             rhi()->frame_end( ctx );
         }
 
