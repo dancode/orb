@@ -16,11 +16,10 @@
 /*==============================================================================================
     Handle helpers  (internal; never exposed in rhi.h)
 
-    id == 0 is always null (RHI_NULL_HANDLE).
-    Live handles are slot index + 1, so slot 0 produces id 1 (non-zero).
+    handle.id == 0  ->  RHI_NULL_HANDLE (invalid).
+    handle.id == N  ->  slot N.  Slot 0 is permanently unused; allocators start at 1.
+    No encoding or decoding needed: the handle value is the slot index.
 ==============================================================================================*/
-
-#define VK_HANDLE_IDX( id )   ( (u32)( (id) - 1u ) )
 
 /*==============================================================================================
     rhi_command_list_s  (internal slot; rhi_command_list_t is an i32 handle)

@@ -227,7 +227,7 @@ vk_register_texture( rhi_texture_t handle )
 
     VkDescriptorImageInfo img_info = { 0 };
     img_info.sampler               = VK_NULL_HANDLE;
-    img_info.imageView             = vk.textures[ VK_HANDLE_IDX( handle.id ) ].view;
+    img_info.imageView             = vk.textures[ handle.id ].view;
     img_info.imageLayout           = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkWriteDescriptorSet write = { 0 };
@@ -265,7 +265,7 @@ vk_register_sampler( rhi_sampler_t handle )
     }
 
     VkDescriptorImageInfo samp_info = { 0 };
-    samp_info.sampler               = vk.samplers[ VK_HANDLE_IDX( handle.id ) ].sampler;
+    samp_info.sampler               = vk.samplers[ handle.id ].sampler;
     samp_info.imageView             = VK_NULL_HANDLE;
     samp_info.imageLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
 

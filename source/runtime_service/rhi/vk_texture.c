@@ -67,7 +67,7 @@ rhi_texture_usage_to_vk( rhi_texture_usage_t usage )
 static i32
 vk_texture_alloc_slot( void )
 {
-    for ( u32 i = 0; i < VK_MAX_TEXTURES; ++i )
+    for ( u32 i = 1; i < VK_MAX_TEXTURES; ++i )
     {
         if ( vk.textures[ i ].image == VK_NULL_HANDLE )
             return ( i32 )i;
@@ -78,9 +78,8 @@ vk_texture_alloc_slot( void )
 static bool
 vk_texture_validate( rhi_texture_t handle )
 {
-    if ( handle.id == RHI_NULL_HANDLE ) return false;
-    u32 idx = VK_HANDLE_IDX( handle.id );
-    return idx < VK_MAX_TEXTURES && vk.textures[ idx ].image != VK_NULL_HANDLE;
+    return handle.id > 0 && handle.id < VK_MAX_TEXTURES
+        && vk.textures[ handle.id ].image != VK_NULL_HANDLE;
 }
 
 /*==============================================================================================
@@ -100,7 +99,7 @@ vk_texture_create( const rhi_texture_desc_t* desc )
         return ( rhi_texture_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_texture_slot_t* slot = &vk.textures[ idx ];
+    vk_texture_slot_t* slot = &vk.textures[ (u32)idx ];
 
     u16 mips = desc->mip_levels;
     if ( mips == 0 )
@@ -202,7 +201,7 @@ vk_texture_create( const rhi_texture_desc_t* desc )
     slot->width     = desc->width;
     slot->height    = desc->height;
 
-    return ( rhi_texture_t ){ (u32)idx + 1u };
+    return ( rhi_texture_t ){ (u32)idx };
 }
 
 static void
@@ -211,8 +210,7 @@ vk_texture_destroy( rhi_texture_t handle )
     if ( !vk_texture_validate( handle ) )
         return;
 
-    u32                idx  = VK_HANDLE_IDX( handle.id );
-    vk_texture_slot_t* slot = &vk.textures[ idx ];
+    vk_texture_slot_t* slot = &vk.textures[ handle.id ];
 
     if ( slot->view   != VK_NULL_HANDLE )
         vkDestroyImageView( vk.device, slot->view,   vk.alloc_cb );
@@ -233,7 +231,7 @@ vk_texture_destroy( rhi_texture_t handle )
 static i32
 vk_sampler_alloc_slot( void )
 {
-    for ( u32 i = 0; i < VK_MAX_SAMPLERS; ++i )
+    for ( u32 i = 1; i < VK_MAX_SAMPLERS; ++i )
     {
         if ( vk.samplers[ i ].sampler == VK_NULL_HANDLE )
             return ( i32 )i;
@@ -244,9 +242,8 @@ vk_sampler_alloc_slot( void )
 static bool
 vk_sampler_validate( rhi_sampler_t handle )
 {
-    if ( handle.id == RHI_NULL_HANDLE ) return false;
-    u32 idx = VK_HANDLE_IDX( handle.id );
-    return idx < VK_MAX_SAMPLERS && vk.samplers[ idx ].sampler != VK_NULL_HANDLE;
+    return handle.id > 0 && handle.id < VK_MAX_SAMPLERS
+        && vk.samplers[ handle.id ].sampler != VK_NULL_HANDLE;
 }
 
 static VkFilter
@@ -286,7 +283,7 @@ vk_sampler_create( const rhi_sampler_desc_t* desc )
         return ( rhi_sampler_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_sampler_slot_t* slot = &vk.samplers[ idx ];
+    vk_sampler_slot_t* slot = &vk.samplers[ (u32)idx ];
 
     VkSamplerCreateInfo ci     = { 0 };
     ci.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -310,7 +307,7 @@ vk_sampler_create( const rhi_sampler_desc_t* desc )
         return ( rhi_sampler_t ){ RHI_NULL_HANDLE };
     }
 
-    return ( rhi_sampler_t ){ (u32)idx + 1u };
+    return ( rhi_sampler_t ){ (u32)idx };
 }
 
 static void
@@ -319,8 +316,7 @@ vk_sampler_destroy( rhi_sampler_t handle )
     if ( !vk_sampler_validate( handle ) )
         return;
 
-    u32                idx  = VK_HANDLE_IDX( handle.id );
-    vk_sampler_slot_t* slot = &vk.samplers[ idx ];
+    vk_sampler_slot_t* slot = &vk.samplers[ handle.id ];
 
     vkDestroySampler( vk.device, slot->sampler, vk.alloc_cb );
 

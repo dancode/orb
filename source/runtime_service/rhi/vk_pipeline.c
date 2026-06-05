@@ -189,7 +189,7 @@ vk_pipeline_cache_save( void )
 static i32
 vk_pipeline_alloc_slot( void )
 {
-    for ( u32 i = 0; i < VK_MAX_PIPELINES; ++i )
+    for ( u32 i = 1; i < VK_MAX_PIPELINES; ++i )
     {
         if ( vk.pipelines[ i ].pipeline == VK_NULL_HANDLE )
             return ( i32 )i;
@@ -200,9 +200,8 @@ vk_pipeline_alloc_slot( void )
 static bool
 vk_pipeline_validate( rhi_pipeline_t handle )
 {
-    if ( handle.id == RHI_NULL_HANDLE ) return false;
-    u32 idx = VK_HANDLE_IDX( handle.id );
-    return idx < VK_MAX_PIPELINES && vk.pipelines[ idx ].pipeline != VK_NULL_HANDLE;
+    return handle.id > 0 && handle.id < VK_MAX_PIPELINES
+        && vk.pipelines[ handle.id ].pipeline != VK_NULL_HANDLE;
 }
 
 /*==============================================================================================
@@ -228,9 +227,9 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
         return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_pipeline_slot_t* slot     = &vk.pipelines[ idx ];
-    vk_shader_slot_t*   vert_slt = &vk.shaders[ VK_HANDLE_IDX( desc->vert.id ) ];
-    vk_shader_slot_t*   frag_slt = &vk.shaders[ VK_HANDLE_IDX( desc->frag.id ) ];
+    vk_pipeline_slot_t* slot     = &vk.pipelines[ (u32)idx ];
+    vk_shader_slot_t*   vert_slt = &vk.shaders[ desc->vert.id ];
+    vk_shader_slot_t*   frag_slt = &vk.shaders[ desc->frag.id ];
 
     /* --- Shader stages --- */
 
@@ -384,7 +383,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     if ( desc->debug_name )
         vk_debug_name_object( VK_OBJECT_TYPE_PIPELINE, (u64)slot->pipeline, desc->debug_name );
 
-    return ( rhi_pipeline_t ){ (u32)idx + 1u };
+    return ( rhi_pipeline_t ){ (u32)idx };
 }
 
 static void
@@ -393,8 +392,7 @@ vk_pipeline_destroy( rhi_pipeline_t handle )
     if ( !vk_pipeline_validate( handle ) )
         return;
 
-    u32                 idx  = VK_HANDLE_IDX( handle.id );
-    vk_pipeline_slot_t* slot = &vk.pipelines[ idx ];
+    vk_pipeline_slot_t* slot = &vk.pipelines[ handle.id ];
 
     vkDestroyPipeline( vk.device, slot->pipeline, vk.alloc_cb );
     slot->pipeline = VK_NULL_HANDLE;

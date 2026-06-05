@@ -340,7 +340,7 @@ vk_cmd_bind_pipeline( rhi_command_list_t cmd, rhi_pipeline_t pipeline )
     if ( !cl || !vk_pipeline_validate( pipeline ) )
         return;
 
-    VkPipeline vkp = vk.pipelines[ VK_HANDLE_IDX( pipeline.id ) ].pipeline;
+    VkPipeline vkp = vk.pipelines[ pipeline.id ].pipeline;
     vkCmdBindPipeline( cl->vk_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vkp );
 }
 
@@ -351,7 +351,7 @@ vk_cmd_bind_vertex_buffer( rhi_command_list_t cmd, rhi_buffer_t buf, u32 offset 
     if ( !cl || !vk_buffer_validate( buf ) )
         return;
 
-    VkBuffer     vkb = vk.buffers[ VK_HANDLE_IDX( buf.id ) ].buffer;
+    VkBuffer     vkb = vk.buffers[ buf.id ].buffer;
     VkDeviceSize off = offset;
     vkCmdBindVertexBuffers( cl->vk_cmd, 0, 1, &vkb, &off );
 }
@@ -364,7 +364,7 @@ vk_cmd_bind_index_buffer( rhi_command_list_t cmd, rhi_buffer_t buf, u32 offset,
     if ( !cl || !vk_buffer_validate( buf ) )
         return;
 
-    VkBuffer    vkb  = vk.buffers[ VK_HANDLE_IDX( buf.id ) ].buffer;
+    VkBuffer    vkb  = vk.buffers[ buf.id ].buffer;
     VkIndexType vkt  = ( type == RHI_INDEX_TYPE_UINT16 ) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
     vkCmdBindIndexBuffer( cl->vk_cmd, vkb, offset, vkt );
 }

@@ -3,7 +3,7 @@
     vulkan/vk_buffer.c -- VkBuffer lifecycle and slot management.
 
     Slot pool: vk.buffers[ VK_MAX_BUFFERS ] (vk_buffer_slot_t).
-    Handle packing: see VK_HANDLE_IDX in vk_state.c.
+    handle.id is the slot index directly; 0 is unused (RHI_NULL_HANDLE).
 
     CPU_TO_GPU and CPU_ONLY buffers are persistently mapped at creation time.
     GPU_ONLY buffers must be populated via vk_upload.c (staged copy).
@@ -31,7 +31,7 @@ rhi_buffer_usage_to_vk( rhi_buffer_usage_t usage )
 static i32
 vk_buffer_alloc_slot( void )
 {
-    for ( u32 i = 0; i < VK_MAX_BUFFERS; ++i )
+    for ( u32 i = 1; i < VK_MAX_BUFFERS; ++i )
     {
         if ( vk.buffers[ i ].buffer == VK_NULL_HANDLE )
             return ( i32 )i;
@@ -42,9 +42,8 @@ vk_buffer_alloc_slot( void )
 static bool
 vk_buffer_validate( rhi_buffer_t handle )
 {
-    if ( handle.id == RHI_NULL_HANDLE ) return false;
-    u32 idx = VK_HANDLE_IDX( handle.id );
-    return idx < VK_MAX_BUFFERS && vk.buffers[ idx ].buffer != VK_NULL_HANDLE;
+    return handle.id > 0 && handle.id < VK_MAX_BUFFERS
+        && vk.buffers[ handle.id ].buffer != VK_NULL_HANDLE;
 }
 
 /*==============================================================================================
@@ -64,7 +63,7 @@ vk_buffer_create( const rhi_buffer_desc_t* desc )
         return ( rhi_buffer_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_buffer_slot_t* slot = &vk.buffers[ idx ];
+    vk_buffer_slot_t* slot = &vk.buffers[ (u32)idx ];
 
     VkBufferCreateInfo buf_ci = { 0 };
     buf_ci.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -122,7 +121,7 @@ vk_buffer_create( const rhi_buffer_desc_t* desc )
 
     slot->size = desc->size;
 
-    return ( rhi_buffer_t ){ (u32)idx + 1u };
+    return ( rhi_buffer_t ){ (u32)idx };
 }
 
 static void
@@ -131,8 +130,7 @@ vk_buffer_destroy( rhi_buffer_t handle )
     if ( !vk_buffer_validate( handle ) )
         return;
 
-    u32               idx  = VK_HANDLE_IDX( handle.id );
-    vk_buffer_slot_t* slot = &vk.buffers[ idx ];
+    vk_buffer_slot_t* slot = &vk.buffers[ handle.id ];
 
     if ( slot->mapped )
     {
@@ -155,7 +153,7 @@ vk_buffer_write( rhi_buffer_t handle, const void* data, u32 size, u32 offset )
     if ( !vk_buffer_validate( handle ) || !data )
         return;
 
-    vk_buffer_slot_t* slot = &vk.buffers[ VK_HANDLE_IDX( handle.id ) ];
+    vk_buffer_slot_t* slot = &vk.buffers[ handle.id ];
 
     /* Caller must not write to GPU_ONLY buffers; use upload_buffer for those. */
     if ( !slot->mapped )

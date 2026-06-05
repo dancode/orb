@@ -216,7 +216,7 @@ vk_upload_buffer( rhi_buffer_t dst, const void* data, u32 size )
 
     u32             slot    = vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT;
     VkCommandBuffer cmd     = g_upload[ slot ].cmd;
-    VkBuffer        dst_buf = vk.buffers[ VK_HANDLE_IDX( dst.id ) ].buffer;
+    VkBuffer        dst_buf = vk.buffers[ dst.id ].buffer;
 
     VkBufferCopy region = { 0 };
     region.srcOffset    = sa.offset;
@@ -241,7 +241,7 @@ vk_upload_texture( rhi_texture_t dst, const void* data, u32 data_size, u16 mip, 
 
     u32                slot = vk.global_frame % VK_MAX_FRAMES_IN_FLIGHT;
     VkCommandBuffer    cmd  = g_upload[ slot ].cmd;
-    vk_texture_slot_t* tex  = &vk.textures[ VK_HANDLE_IDX( dst.id ) ];
+    vk_texture_slot_t* tex  = &vk.textures[ dst.id ];
 
     u32 mip_w = tex->width  >> mip; if ( mip_w < 1 ) mip_w = 1;
     u32 mip_h = tex->height >> mip; if ( mip_h < 1 ) mip_h = 1;
