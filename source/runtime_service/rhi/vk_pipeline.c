@@ -191,7 +191,7 @@ vk_pipeline_alloc_slot( void )
 {
     for ( u32 i = 0; i < VK_MAX_PIPELINES; ++i )
     {
-        if ( vk.pipelines[ i ].generation == 0 )
+        if ( vk.pipelines[ i ].pipeline == VK_NULL_HANDLE )
             return ( i32 )i;
     }
     return -1;
@@ -200,9 +200,9 @@ vk_pipeline_alloc_slot( void )
 static bool
 vk_pipeline_validate( rhi_pipeline_t handle )
 {
+    if ( handle.id == RHI_NULL_HANDLE ) return false;
     u32 idx = VK_HANDLE_IDX( handle.id );
-    u8  gen = VK_HANDLE_GEN( handle.id );
-    return idx < VK_MAX_PIPELINES && gen != 0 && vk.pipelines[ idx ].generation == gen;
+    return idx < VK_MAX_PIPELINES && vk.pipelines[ idx ].pipeline != VK_NULL_HANDLE;
 }
 
 /*==============================================================================================
@@ -229,7 +229,6 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     }
 
     vk_pipeline_slot_t* slot     = &vk.pipelines[ idx ];
-    u8                  gen      = ( u8 )( slot->generation == 0 ? 1 : slot->generation );
     vk_shader_slot_t*   vert_slt = &vk.shaders[ VK_HANDLE_IDX( desc->vert.id ) ];
     vk_shader_slot_t*   frag_slt = &vk.shaders[ VK_HANDLE_IDX( desc->frag.id ) ];
 
@@ -385,8 +384,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     if ( desc->debug_name )
         vk_debug_name_object( VK_OBJECT_TYPE_PIPELINE, (u64)slot->pipeline, desc->debug_name );
 
-    slot->generation = gen;
-    return ( rhi_pipeline_t ){ VK_MAKE_HANDLE( gen, ( u32 )idx ) };
+    return ( rhi_pipeline_t ){ (u32)idx + 1u };
 }
 
 static void
@@ -399,9 +397,7 @@ vk_pipeline_destroy( rhi_pipeline_t handle )
     vk_pipeline_slot_t* slot = &vk.pipelines[ idx ];
 
     vkDestroyPipeline( vk.device, slot->pipeline, vk.alloc_cb );
-
-    slot->generation = ( u8 )( slot->generation + 1 );
-    slot->pipeline   = VK_NULL_HANDLE;
+    slot->pipeline = VK_NULL_HANDLE;
 }
 
 /*============================================================================================*/

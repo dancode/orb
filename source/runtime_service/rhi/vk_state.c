@@ -16,14 +16,11 @@
 /*==============================================================================================
     Handle helpers  (internal; never exposed in rhi.h)
 
-    id layout: [ gen:8 | idx:24 ]
     id == 0 is always null (RHI_NULL_HANDLE).
-    Generations start at 1 so slot 0 at gen 1 gives id != 0.
+    Live handles are slot index + 1, so slot 0 produces id 1 (non-zero).
 ==============================================================================================*/
 
-#define VK_HANDLE_IDX( id )          ( (u32)( (id) & 0x00FFFFFFu ) )
-#define VK_HANDLE_GEN( id )          ( (u8)(  (id) >> 24           ) )
-#define VK_MAKE_HANDLE( gen, idx )   ( ( (u32)(gen) << 24 ) | (u32)(idx) )
+#define VK_HANDLE_IDX( id )   ( (u32)( (id) - 1u ) )
 
 /*==============================================================================================
     rhi_command_list_s  (internal slot; rhi_command_list_t is an i32 handle)
@@ -70,7 +67,6 @@ typedef struct vk_buffer_slot_s
     VkDeviceMemory memory;
     void*          mapped;       /* non-NULL only for CPU_TO_GPU / CPU_ONLY allocations */
     u32            size;
-    u8             generation;   /* 0 = free slot */
 
 } vk_buffer_slot_t;
 
@@ -82,14 +78,12 @@ typedef struct vk_texture_slot_s
     VkFormat       vk_format;
     u32            width;
     u32            height;
-    u8             generation;
 
 } vk_texture_slot_t;
 
 typedef struct vk_sampler_slot_s
 {
     VkSampler  sampler;
-    u8         generation;
 
 } vk_sampler_slot_t;
 
@@ -97,7 +91,6 @@ typedef struct vk_shader_slot_s
 {
     VkShaderModule     module;
     rhi_shader_stage_t stage;
-    u8                 generation;
     char               entry[ 32 ];   /* SPIR-V entry point name; stored for pipeline create */
 
 } vk_shader_slot_t;
@@ -105,7 +98,6 @@ typedef struct vk_shader_slot_s
 typedef struct vk_pipeline_slot_s
 {
     VkPipeline  pipeline;
-    u8          generation;
 
 } vk_pipeline_slot_t;
 

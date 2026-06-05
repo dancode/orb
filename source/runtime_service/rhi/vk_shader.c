@@ -20,7 +20,7 @@ vk_shader_alloc_slot( void )
 {
     for ( u32 i = 0; i < VK_MAX_SHADERS; ++i )
     {
-        if ( vk.shaders[ i ].generation == 0 )
+        if ( vk.shaders[ i ].module == VK_NULL_HANDLE )
             return ( i32 )i;
     }
     return -1;
@@ -29,9 +29,9 @@ vk_shader_alloc_slot( void )
 static bool
 vk_shader_validate( rhi_shader_t handle )
 {
+    if ( handle.id == RHI_NULL_HANDLE ) return false;
     u32 idx = VK_HANDLE_IDX( handle.id );
-    u8  gen = VK_HANDLE_GEN( handle.id );
-    return idx < VK_MAX_SHADERS && gen != 0 && vk.shaders[ idx ].generation == gen;
+    return idx < VK_MAX_SHADERS && vk.shaders[ idx ].module != VK_NULL_HANDLE;
 }
 
 static rhi_shader_t
@@ -54,7 +54,6 @@ vk_shader_create( const rhi_shader_desc_t* desc )
     }
 
     vk_shader_slot_t* slot = &vk.shaders[ idx ];
-    u8 gen = ( u8 )( slot->generation == 0 ? 1 : slot->generation );
 
     VkShaderModuleCreateInfo ci = { 0 };
     ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -76,10 +75,9 @@ vk_shader_create( const rhi_shader_desc_t* desc )
     if ( desc->debug_name )
         vk_debug_name_object( VK_OBJECT_TYPE_SHADER_MODULE, (u64)slot->module, desc->debug_name );
 
-    slot->stage      = desc->stage;
-    slot->generation = gen;
+    slot->stage = desc->stage;
 
-    return ( rhi_shader_t ){ VK_MAKE_HANDLE( gen, ( u32 )idx ) };
+    return ( rhi_shader_t ){ (u32)idx + 1u };
 }
 
 static void
@@ -93,7 +91,6 @@ vk_shader_destroy( rhi_shader_t handle )
 
     vkDestroyShaderModule( vk.device, slot->module, vk.alloc_cb );
 
-    slot->generation = ( u8 )( slot->generation + 1 );
     slot->module     = VK_NULL_HANDLE;
     slot->entry[ 0 ] = '\0';
 }

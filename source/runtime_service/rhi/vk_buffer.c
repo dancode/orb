@@ -3,7 +3,7 @@
     vulkan/vk_buffer.c -- VkBuffer lifecycle and slot management.
 
     Slot pool: vk.buffers[ VK_MAX_BUFFERS ] (vk_buffer_slot_t).
-    Handle packing: see VK_MAKE_HANDLE / VK_HANDLE_IDX / VK_HANDLE_GEN in vk_state.c.
+    Handle packing: see VK_HANDLE_IDX in vk_state.c.
 
     CPU_TO_GPU and CPU_ONLY buffers are persistently mapped at creation time.
     GPU_ONLY buffers must be populated via vk_upload.c (staged copy).
@@ -33,7 +33,7 @@ vk_buffer_alloc_slot( void )
 {
     for ( u32 i = 0; i < VK_MAX_BUFFERS; ++i )
     {
-        if ( vk.buffers[ i ].generation == 0 )
+        if ( vk.buffers[ i ].buffer == VK_NULL_HANDLE )
             return ( i32 )i;
     }
     return -1;
@@ -42,9 +42,9 @@ vk_buffer_alloc_slot( void )
 static bool
 vk_buffer_validate( rhi_buffer_t handle )
 {
+    if ( handle.id == RHI_NULL_HANDLE ) return false;
     u32 idx = VK_HANDLE_IDX( handle.id );
-    u8  gen = VK_HANDLE_GEN( handle.id );
-    return idx < VK_MAX_BUFFERS && gen != 0 && vk.buffers[ idx ].generation == gen;
+    return idx < VK_MAX_BUFFERS && vk.buffers[ idx ].buffer != VK_NULL_HANDLE;
 }
 
 /*==============================================================================================
@@ -65,7 +65,6 @@ vk_buffer_create( const rhi_buffer_desc_t* desc )
     }
 
     vk_buffer_slot_t* slot = &vk.buffers[ idx ];
-    u8 gen = ( u8 )( slot->generation == 0 ? 1 : slot->generation );
 
     VkBufferCreateInfo buf_ci = { 0 };
     buf_ci.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -121,10 +120,9 @@ vk_buffer_create( const rhi_buffer_desc_t* desc )
     if ( desc->debug_name )
         vk_debug_name_object( VK_OBJECT_TYPE_BUFFER, (u64)slot->buffer, desc->debug_name );
 
-    slot->size       = desc->size;
-    slot->generation = gen;
+    slot->size = desc->size;
 
-    return ( rhi_buffer_t ){ VK_MAKE_HANDLE( gen, ( u32 )idx ) };
+    return ( rhi_buffer_t ){ (u32)idx + 1u };
 }
 
 static void
@@ -146,9 +144,8 @@ vk_buffer_destroy( rhi_buffer_t handle )
     if ( slot->memory != VK_NULL_HANDLE )
         vkFreeMemory   ( vk.device, slot->memory, vk.alloc_cb );
 
-    slot->generation = ( u8 )( slot->generation + 1 );
-    slot->buffer     = VK_NULL_HANDLE;
-    slot->memory     = VK_NULL_HANDLE;
+    slot->buffer = VK_NULL_HANDLE;
+    slot->memory = VK_NULL_HANDLE;
     slot->size       = 0;
 }
 
