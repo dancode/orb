@@ -36,6 +36,8 @@ static vk_upload_slot_t g_upload[ VK_MAX_FRAMES_IN_FLIGHT ];
     Init / shutdown
 ==============================================================================================*/
 
+static void vk_upload_shutdown( void );
+
 static bool
 vk_upload_init( void )
 {

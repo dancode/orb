@@ -20,7 +20,7 @@ MOD_USE_RHI;
 typedef struct render_ctx_slot_s
 {
     bool               active;
-    rhi_command_list_t cmd;       /* valid between begin_frame / end_frame; NULL otherwise */
+    rhi_command_list_t cmd;       /* valid between begin_frame / end_frame; RHI_CMD_INVALID otherwise */
     rhi_color_t        clear;     /* default: dark charcoal */
 
 } render_ctx_slot_t;
@@ -47,7 +47,7 @@ render_context_register_impl( i32 ctx_id )
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
     s->active    = true;
-    s->cmd       = NULL;
+    s->cmd       = RHI_CMD_INVALID;
     s->clear.r   = 0.08f;
     s->clear.g   = 0.10f;
     s->clear.b   = 0.14f;
@@ -82,7 +82,7 @@ render_begin_frame_impl( i32 ctx_id )
     /* The RHI reads ctx->clear_color (stashed by cmd_clear_color last frame) inside
        vkCmdBeginRendering.  One frame of latency on clear color changes is acceptable. */
     s->cmd = rhi()->frame_begin( ctx_id );
-    return s->cmd != NULL;
+    return rhi_cmd_valid( s->cmd );
 }
 
 static void
@@ -92,7 +92,7 @@ render_draw_scene_impl( i32 ctx_id, f32 dt )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
-    if ( !s->active || !s->cmd )
+    if ( !s->active || !rhi_cmd_valid( s->cmd ) )
         return;
 
     g_state->total_time += dt;
@@ -115,7 +115,7 @@ render_draw_editor_impl( i32 ctx_id, f32 dt )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
-    if ( !s->active || !s->cmd )
+    if ( !s->active || !rhi_cmd_valid( s->cmd ) )
         return;
 
     /* TODO: ImGui render pass for editor contexts.
@@ -133,10 +133,10 @@ render_end_frame_impl( i32 ctx_id )
     if ( !s->active )
         return;
 
-    if ( s->cmd )
+    if ( rhi_cmd_valid( s->cmd ) )
     {
         rhi()->frame_end( ctx_id );
-        s->cmd = NULL;
+        s->cmd = RHI_CMD_INVALID;
     }
 
     g_state->frame_count++;
