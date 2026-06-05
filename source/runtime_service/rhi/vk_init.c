@@ -143,7 +143,7 @@ vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
 
     /* Order matters: surface before swapchain, swapchain before sync/commands. */
     if ( !vk_surface_create( ctx )   ) goto fail_after_nothing;
-    if ( !vk_swapchain_create( ctx ) ) goto fail_after_surface;
+    if ( !vk_swapchain_create( ctx, VK_NULL_HANDLE ) ) goto fail_after_surface;
     if ( !vk_sync_create( ctx )      ) goto fail_after_swapchain;
     if ( !vk_command_create( ctx )   ) goto fail_after_sync;
 

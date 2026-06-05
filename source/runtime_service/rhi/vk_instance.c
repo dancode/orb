@@ -30,7 +30,10 @@ vk_instance_get_extensions( const char** out_ext_array )
          LOG_ERROR( "vkEnumerateInstanceExtensionProperties: %s", string_VkResult( r ) );
          return 0;
     }
-    assert( ext_count <= 64 );
+    if ( ext_count > 64 ) {
+         LOG_WARN( "instance extension count %u exceeds buffer (64); clamping", ext_count );
+         ext_count = 64;
+    }
     vkEnumerateInstanceExtensionProperties( NULL, &ext_count, ext_props );    
 
     /* validate the extentions we require exists. */

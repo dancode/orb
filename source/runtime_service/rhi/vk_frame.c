@@ -467,7 +467,11 @@ vk_cmd_bind_bindless( rhi_command_list_t cmd )
     if ( !cl )
         return;
 
+    /* Bind for both points: descriptor set state is per-bind-point in Vulkan, and the
+       pipeline layout covers compute (push constant range includes COMPUTE_BIT). */
     vkCmdBindDescriptorSets( cl->vk_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                             vk.pipeline_layout, 0, 1, &vk.bindless_set, 0, NULL );
+    vkCmdBindDescriptorSets( cl->vk_cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                              vk.pipeline_layout, 0, 1, &vk.bindless_set, 0, NULL );
 }
 

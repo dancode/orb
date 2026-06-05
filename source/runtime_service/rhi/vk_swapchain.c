@@ -145,7 +145,7 @@ vk_swapchain_pick_present_mode( VkPresentModeKHR* modes, u32 count )
 ==============================================================================================*/
 
 static bool
-vk_swapchain_create( vk_context_t* ctx )
+vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
 {
     /* --- Query surface capabilities --- */
 
@@ -227,7 +227,7 @@ vk_swapchain_create( vk_context_t* ctx )
     ci.compositeAlpha           = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     ci.presentMode              = ctx->present_mode;
     ci.clipped                  = VK_TRUE;
-    ci.oldSwapchain             = VK_NULL_HANDLE;
+    ci.oldSwapchain             = old_swapchain;
 
     /* Exclusive mode when graphics and present share a queue family (most desktop HW). */
     u32 queue_families[ 2 ] = { vk.graphics_queue_family, vk.present_queue_family };
@@ -248,6 +248,10 @@ vk_swapchain_create( vk_context_t* ctx )
         LOG_ERROR( "swapchain_create: vkCreateSwapchainKHR: %s", string_VkResult( r ) );
         return false;
     }
+
+    /* Retire the old swapchain now that the new one is live; driver may reuse its resources. */
+    if ( old_swapchain != VK_NULL_HANDLE )
+        vkDestroySwapchainKHR( vk.device, old_swapchain, vk.alloc_cb );
 
     /* --- Retrieve swapchain images (driver may give more than we requested) --- */
 
@@ -323,11 +327,17 @@ vk_swapchain_recreate( vk_context_t* ctx )
 {
     LOG_INFO( "swapchain_recreate: begin (ctx %d, %dx%d)", ctx->id, ctx->width, ctx->height );
 
-    /* Wait for the GPU to be idle before destroying any swapchain resources. */
+    /* Save the old handle so we can pass it to vkCreateSwapchainKHR.  The driver
+       may reuse its presentation resources, avoiding a blank frame on resize. */
+    VkSwapchainKHR old_swapchain = ctx->swapchain;
+    ctx->swapchain               = VK_NULL_HANDLE;
+
+    /* Wait for the GPU to be idle before destroying image views and depth buffer.
+       The VkSwapchainKHR handle itself is kept alive until after creation. */
     vk_device_wait_idle();
     vk_swapchain_destroy( ctx );
 
-    bool ok = vk_swapchain_create( ctx );
+    bool ok = vk_swapchain_create( ctx, old_swapchain );
     LOG_INFO( "swapchain_recreate: %s (ctx %d)", ok ? "OK" : "FAILED", ctx->id );
     return ok;
 }
