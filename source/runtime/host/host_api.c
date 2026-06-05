@@ -24,7 +24,7 @@ static u64         s_frame_count = 0;
 void
 run_clock_update( f64 app_time, f32 dt_real )
 {
-    f32 capped       = dt_real > RUN_MAX_DT ? RUN_MAX_DT : dt_real;
+    f32 capped          = dt_real > RUN_MAX_DT ? RUN_MAX_DT : dt_real;
     g_clock.app_time    = app_time;
     g_clock.dt_real     = dt_real;
     g_clock.dt          = capped * g_clock.time_scale;

@@ -102,7 +102,7 @@ vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, VkMemoryAllocateFlag
     return true;
 }
 
-static void
+static void ORB_UNUSED_FN
 vk_mem_free( vk_mem_alloc_t alloc )
 {
     if ( alloc.memory != VK_NULL_HANDLE )

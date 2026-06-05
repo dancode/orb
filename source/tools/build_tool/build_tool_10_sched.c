@@ -174,6 +174,28 @@ add_job( target_info_t* t )
         return -1;
     }
 
+    // Monolithic-only deps: in a mono build these are linked as static libs, so
+    // they must finish building before this target's link step runs.
+    if ( g_sched.ctx->is_monolithic )
+    {
+        for ( i = 0; t->mono_deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
+        {
+            target_info_t* dep = find_target( t->mono_deps[ i ] );
+            if ( dep )
+            {
+                int di = add_job( dep );
+                if ( di >= 0 ) dep_indices[ dep_count++ ] = di;
+            }
+        }
+        if ( t->mono_deps[ i ] )
+        {
+            printf( ORB_INDENT "[orb error] '%s' has too many mono deps (MAX_LOCAL_DEPS=%d);"
+                    " raise MAX_LOCAL_DEPS to avoid scheduler race conditions\n",
+                    t->name, MAX_LOCAL_DEPS );
+            return -1;
+        }
+    }
+
     // Tool deps.
     for ( i = 0; t->tool_deps[ i ] && dep_count < MAX_LOCAL_DEPS; ++i )
     {
