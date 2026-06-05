@@ -62,7 +62,7 @@ render_context_unregister_impl( i32 ctx_id )
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
     s->active = false;
-    s->cmd    = NULL;
+    s->cmd    = RHI_CMD_INVALID;
 }
 
 /*==============================================================================================

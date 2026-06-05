@@ -105,7 +105,7 @@ main( int argc, char** argv )
 
         /* Frame. */
         rhi_command_list_t cmd = rhi()->frame_begin( ctx );
-        if ( cmd )
+        if ( rhi_cmd_valid( cmd ) )
         {
             rhi()->cmd_clear_color( cmd, 0.05f, 0.05f, 0.15f, 1.0f );
             rhi()->frame_end( ctx );
