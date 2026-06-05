@@ -255,7 +255,17 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
 
     /* --- Retrieve swapchain images (driver may give more than we requested) --- */
 
-    ctx->swapchain_image_count = VK_MAX_SWAPCHAIN_IMAGES;
+    /* Two-pass: query true count first so we can clamp before writing into the fixed-size array.
+       Skipping this lets VK_INCOMPLETE go undetected and image_index OOB on acquire. */
+    u32 true_image_count = 0;
+    vkGetSwapchainImagesKHR( vk.device, ctx->swapchain, &true_image_count, NULL );
+    if ( true_image_count > VK_MAX_SWAPCHAIN_IMAGES )
+    {
+        LOG_WARN( "swapchain_create: driver returned %u images; clamping to %u (ctx %d)",
+                  true_image_count, VK_MAX_SWAPCHAIN_IMAGES, ctx->id );
+        true_image_count = VK_MAX_SWAPCHAIN_IMAGES;
+    }
+    ctx->swapchain_image_count = true_image_count;
     vkGetSwapchainImagesKHR( vk.device, ctx->swapchain, &ctx->swapchain_image_count,
                              ctx->swapchain_images );
 
