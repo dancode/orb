@@ -232,7 +232,7 @@ vk_frame_end( i32 ctx_id )
 
     VkSemaphoreSubmitInfo signal_sem  = { 0 };
     signal_sem.sType                  = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    signal_sem.semaphore              = ctx->render_finished_sem[ frame ];
+    signal_sem.semaphore              = ctx->render_finished_sem[ ctx->image_index ];
     signal_sem.stageMask              = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
     VkCommandBufferSubmitInfo cmd_si  = { 0 };
@@ -260,7 +260,7 @@ vk_frame_end( i32 ctx_id )
     VkPresentInfoKHR present_info   = { 0 };
     present_info.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores    = &ctx->render_finished_sem[ frame ];
+    present_info.pWaitSemaphores    = &ctx->render_finished_sem[ ctx->image_index ];
     present_info.swapchainCount     = 1;
     present_info.pSwapchains        = &ctx->swapchain;
     present_info.pImageIndices      = &ctx->image_index;

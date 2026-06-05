@@ -158,8 +158,11 @@ typedef struct vk_context_s
     /* Per-frame synchronization */
 
     VkSemaphore         image_available_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkSemaphore         render_finished_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
     VkFence             in_flight_fence[ VK_MAX_FRAMES_IN_FLIGHT ];
+
+    /* Per-swapchain-image: reusing this semaphore is safe only when the image is
+       acquired again, which guarantees the previous present consumed it. */
+    VkSemaphore         render_finished_sem[ VK_MAX_SWAPCHAIN_IMAGES ];
 
     /* Per-frame command state */
 
