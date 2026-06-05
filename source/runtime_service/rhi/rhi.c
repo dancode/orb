@@ -131,6 +131,8 @@
 #include "runtime_service/rhi/vk_pipeline.c"
 #include "runtime_service/rhi/vk_upload.c"
 
+static void vk_device_wait_idle( void );
+
 #include "runtime_service/rhi/vk_instance.c"
 #include "runtime_service/rhi/vk_swapchain.c"
 #include "runtime_service/rhi/vk_device.c"

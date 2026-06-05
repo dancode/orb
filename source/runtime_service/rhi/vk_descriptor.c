@@ -70,89 +70,142 @@ vk_bindless_free( vk_bindless_free_t* pool, u32 idx )
 static bool
 vk_descriptor_init( void )
 {
-    printf( "[rhi:vk] descriptor_init (placeholder)\n" );
-
     vk_bindless_free_init( &g_tex_free,  VK_MAX_BINDLESS_TEXTURES );
     vk_bindless_free_init( &g_samp_free, VK_MAX_BINDLESS_SAMPLERS );
 
-    /* TODO (Vulkan implementation):
+    /* --- Descriptor set layout --- */
 
-       Enable VK_EXT_descriptor_indexing flags:
-           VkDescriptorSetLayoutBindingFlagsCreateInfo flags_ci = {
-               .bindingCount  = 2,
-               .pBindingFlags = { PARTIALLY_BOUND | UPDATE_AFTER_BIND, ... }
-           };
+    /* Both bindings need PARTIALLY_BOUND (slots may be empty) and UPDATE_AFTER_BIND
+       (CPU can write new slots while GPU reads other slots in the same array). */
+    VkDescriptorBindingFlags binding_flags[ 2 ] = {
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+    };
 
-       Bindings:
-           VkDescriptorSetLayoutBinding bindings[2] = {
-               {  // Binding 0: sampled textures
-                   .binding            = 0,
-                   .descriptorType     = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-                   .descriptorCount    = VK_MAX_BINDLESS_TEXTURES,
-                   .stageFlags         = VK_SHADER_STAGE_ALL,
-               },
-               {  // Binding 1: samplers
-                   .binding            = 1,
-                   .descriptorType     = VK_DESCRIPTOR_TYPE_SAMPLER,
-                   .descriptorCount    = VK_MAX_BINDLESS_SAMPLERS,
-                   .stageFlags         = VK_SHADER_STAGE_ALL,
-               },
-           };
-           VkDescriptorSetLayoutCreateInfo layout_ci = {
-               .pNext        = &flags_ci,
-               .flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-               .bindingCount = 2,
-               .pBindings    = bindings,
-           };
-           vkCreateDescriptorSetLayout -> vk.bindless_layout
+    VkDescriptorSetLayoutBindingFlagsCreateInfo flags_ci = { 0 };
+    flags_ci.sType                                       = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    flags_ci.bindingCount                                = 2;
+    flags_ci.pBindingFlags                               = binding_flags;
 
-       Pool:
-           VkDescriptorPoolSize pool_sizes[] = {
-               { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_MAX_BINDLESS_TEXTURES },
-               { VK_DESCRIPTOR_TYPE_SAMPLER,       VK_MAX_BINDLESS_SAMPLERS },
-           };
-           VkDescriptorPoolCreateInfo pool_ci = {
-               .flags         = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
-               .maxSets       = 1,
-               .poolSizeCount = 2,
-               .pPoolSizes    = pool_sizes,
-           };
-           vkCreateDescriptorPool -> vk.bindless_pool
+    VkDescriptorSetLayoutBinding bindings[ 2 ] = { 0 };
 
-       Set:
-           VkDescriptorSetAllocateInfo alloc_info = {
-               .descriptorPool     = vk.bindless_pool,
-               .descriptorSetCount = 1,
-               .pSetLayouts        = &vk.bindless_layout,
-           };
-           vkAllocateDescriptorSets -> vk.bindless_set
+    /* Binding 0: sampled images (texture array) */
+    bindings[ 0 ].binding         = 0;
+    bindings[ 0 ].descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    bindings[ 0 ].descriptorCount = VK_MAX_BINDLESS_TEXTURES;
+    bindings[ 0 ].stageFlags      = VK_SHADER_STAGE_ALL;
 
-       Pipeline layout (push constants + bindless set):
-           VkPushConstantRange pc_range = {
-               .stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT,
-               .offset     = 0,
-               .size       = RHI_MAX_PUSH_CONST_SIZE,
-           };
-           VkPipelineLayoutCreateInfo pl_ci = {
-               .setLayoutCount         = 1,
-               .pSetLayouts            = &vk.bindless_layout,
-               .pushConstantRangeCount = 1,
-               .pPushConstantRanges    = &pc_range,
-           };
-           vkCreatePipelineLayout -> vk.pipeline_layout
-    */
+    /* Binding 1: samplers */
+    bindings[ 1 ].binding         = 1;
+    bindings[ 1 ].descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLER;
+    bindings[ 1 ].descriptorCount = VK_MAX_BINDLESS_SAMPLERS;
+    bindings[ 1 ].stageFlags      = VK_SHADER_STAGE_ALL;
 
+    VkDescriptorSetLayoutCreateInfo layout_ci = { 0 };
+    layout_ci.sType                           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layout_ci.pNext                           = &flags_ci;
+    layout_ci.flags                           = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    layout_ci.bindingCount                    = 2;
+    layout_ci.pBindings                       = bindings;
+
+    VkResult r = vkCreateDescriptorSetLayout( vk.device, &layout_ci, vk.alloc_cb, &vk.bindless_layout );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "descriptor_init: vkCreateDescriptorSetLayout: %s", string_VkResult( r ) );
+        return false;
+    }
+
+    /* --- Descriptor pool --- */
+
+    VkDescriptorPoolSize pool_sizes[ 2 ] = { 0 };
+    pool_sizes[ 0 ].type            = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    pool_sizes[ 0 ].descriptorCount = VK_MAX_BINDLESS_TEXTURES;
+    pool_sizes[ 1 ].type            = VK_DESCRIPTOR_TYPE_SAMPLER;
+    pool_sizes[ 1 ].descriptorCount = VK_MAX_BINDLESS_SAMPLERS;
+
+    VkDescriptorPoolCreateInfo pool_ci = { 0 };
+    pool_ci.sType                      = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_ci.flags                      = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+    pool_ci.maxSets                    = 1;
+    pool_ci.poolSizeCount              = 2;
+    pool_ci.pPoolSizes                 = pool_sizes;
+
+    r = vkCreateDescriptorPool( vk.device, &pool_ci, vk.alloc_cb, &vk.bindless_pool );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "descriptor_init: vkCreateDescriptorPool: %s", string_VkResult( r ) );
+        goto fail_after_layout;
+    }
+
+    /* --- Allocate the one bindless set --- */
+
+    VkDescriptorSetAllocateInfo alloc_info = { 0 };
+    alloc_info.sType                       = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc_info.descriptorPool              = vk.bindless_pool;
+    alloc_info.descriptorSetCount          = 1;
+    alloc_info.pSetLayouts                 = &vk.bindless_layout;
+
+    r = vkAllocateDescriptorSets( vk.device, &alloc_info, &vk.bindless_set );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "descriptor_init: vkAllocateDescriptorSets: %s", string_VkResult( r ) );
+        goto fail_after_pool;
+    }
+
+    /* --- Pipeline layout: set 0 (bindless) + push constants --- */
+
+    VkPushConstantRange pc_range = { 0 };
+    pc_range.stageFlags          = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT;
+    pc_range.offset              = 0;
+    pc_range.size                = RHI_MAX_PUSH_CONST_SIZE;
+
+    VkPipelineLayoutCreateInfo pl_ci = { 0 };
+    pl_ci.sType                      = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pl_ci.setLayoutCount             = 1;
+    pl_ci.pSetLayouts                = &vk.bindless_layout;
+    pl_ci.pushConstantRangeCount     = 1;
+    pl_ci.pPushConstantRanges        = &pc_range;
+
+    r = vkCreatePipelineLayout( vk.device, &pl_ci, vk.alloc_cb, &vk.pipeline_layout );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "descriptor_init: vkCreatePipelineLayout: %s", string_VkResult( r ) );
+        goto fail_after_pool;
+    }
+
+    LOG_INFO( "descriptor_init: OK (textures=%u, samplers=%u, push=%u bytes)",
+              VK_MAX_BINDLESS_TEXTURES, VK_MAX_BINDLESS_SAMPLERS, RHI_MAX_PUSH_CONST_SIZE );
     return true;
+
+fail_after_pool:
+    vkDestroyDescriptorPool( vk.device, vk.bindless_pool, vk.alloc_cb );
+    vk.bindless_pool = VK_NULL_HANDLE;
+fail_after_layout:
+    vkDestroyDescriptorSetLayout( vk.device, vk.bindless_layout, vk.alloc_cb );
+    vk.bindless_layout = VK_NULL_HANDLE;
+    return false;
 }
 
 static void
 vk_descriptor_shutdown( void )
 {
-    /* TODO:
-       vkDestroyPipelineLayout  ( vk.device, vk.pipeline_layout, vk.alloc_cb )
-       vkDestroyDescriptorPool  ( vk.device, vk.bindless_pool,   vk.alloc_cb )
-       vkDestroyDescriptorSetLayout( vk.device, vk.bindless_layout, vk.alloc_cb )
-    */
+    if ( vk.pipeline_layout != VK_NULL_HANDLE )
+    {
+        vkDestroyPipelineLayout( vk.device, vk.pipeline_layout, vk.alloc_cb );
+        vk.pipeline_layout = VK_NULL_HANDLE;
+    }
+    /* Destroying the pool implicitly frees vk.bindless_set. */
+    if ( vk.bindless_pool != VK_NULL_HANDLE )
+    {
+        vkDestroyDescriptorPool( vk.device, vk.bindless_pool, vk.alloc_cb );
+        vk.bindless_pool = VK_NULL_HANDLE;
+        vk.bindless_set  = VK_NULL_HANDLE;
+    }
+    if ( vk.bindless_layout != VK_NULL_HANDLE )
+    {
+        vkDestroyDescriptorSetLayout( vk.device, vk.bindless_layout, vk.alloc_cb );
+        vk.bindless_layout = VK_NULL_HANDLE;
+    }
 }
 
 /*==============================================================================================
@@ -172,24 +225,21 @@ vk_register_texture( rhi_texture_t handle )
         return 0;
     }
 
-    /* TODO:
-       VkDescriptorImageInfo img_info = {
-           .sampler     = VK_NULL_HANDLE,
-           .imageView   = vk.textures[ VK_HANDLE_IDX(handle.id) ].view,
-           .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-       };
-       VkWriteDescriptorSet write = {
-           .dstSet          = vk.bindless_set,
-           .dstBinding      = 0,
-           .dstArrayElement = slot_idx,
-           .descriptorCount = 1,
-           .descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-           .pImageInfo      = &img_info,
-       };
-       vkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL )
-    */
+    VkDescriptorImageInfo img_info = { 0 };
+    img_info.sampler               = VK_NULL_HANDLE;
+    img_info.imageView             = vk.textures[ VK_HANDLE_IDX( handle.id ) ].view;
+    img_info.imageLayout           = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    UNUSED( handle );
+    VkWriteDescriptorSet write = { 0 };
+    write.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet               = vk.bindless_set;
+    write.dstBinding           = 0;
+    write.dstArrayElement      = slot_idx;
+    write.descriptorCount      = 1;
+    write.descriptorType       = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo           = &img_info;
+
+    vkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
     return slot_idx;
 }
 
@@ -214,16 +264,21 @@ vk_register_sampler( rhi_sampler_t handle )
         return 0;
     }
 
-    /* TODO:
-       VkDescriptorImageInfo samp_info = {
-           .sampler     = vk.samplers[ VK_HANDLE_IDX(handle.id) ].sampler,
-           .imageView   = VK_NULL_HANDLE,
-           .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-       };
-       Write descriptor at binding 1, element slot_idx.
-    */
+    VkDescriptorImageInfo samp_info = { 0 };
+    samp_info.sampler               = vk.samplers[ VK_HANDLE_IDX( handle.id ) ].sampler;
+    samp_info.imageView             = VK_NULL_HANDLE;
+    samp_info.imageLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    UNUSED( handle );
+    VkWriteDescriptorSet write = { 0 };
+    write.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet               = vk.bindless_set;
+    write.dstBinding           = 1;
+    write.dstArrayElement      = slot_idx;
+    write.descriptorCount      = 1;
+    write.descriptorType       = VK_DESCRIPTOR_TYPE_SAMPLER;
+    write.pImageInfo           = &samp_info;
+
+    vkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
     return slot_idx;
 }
 

@@ -98,6 +98,7 @@ typedef struct vk_shader_slot_s
     VkShaderModule     module;
     rhi_shader_stage_t stage;
     u8                 generation;
+    char               entry[ 32 ];   /* SPIR-V entry point name; stored for pipeline create */
 
 } vk_shader_slot_t;
 
@@ -177,6 +178,10 @@ typedef struct vk_context_s
 
     /* Clear color (set by cmd_clear_color; consumed by vkCmdBeginRendering loadOp) */
     VkClearColorValue  clear_color;
+
+    /* Depth image layout tracker: UNDEFINED on create; set to DEPTH_ATTACHMENT_OPTIMAL after
+       the first frame's barrier.  Avoids an unnecessary barrier on every subsequent frame. */
+    VkImageLayout       depth_layout;
 
 } vk_context_t;
 

@@ -40,7 +40,6 @@ vk_shader_create( const rhi_shader_desc_t* desc )
     if ( !desc || !desc->spirv || desc->spirv_size == 0 )
         return ( rhi_shader_t ){ RHI_NULL_HANDLE };
 
-    /* SPIR-V must be a multiple of 4 bytes. */
     if ( desc->spirv_size % 4 != 0 )
     {
         LOG_ERROR( "shader SPIR-V size (%u) is not a multiple of 4", desc->spirv_size );
@@ -57,16 +56,25 @@ vk_shader_create( const rhi_shader_desc_t* desc )
     vk_shader_slot_t* slot = &vk.shaders[ idx ];
     u8 gen = ( u8 )( slot->generation == 0 ? 1 : slot->generation );
 
-    /* TODO:
-       VkShaderModuleCreateInfo ci = {
-           .codeSize = desc->spirv_size,
-           .pCode    = (const u32*)desc->spirv,
-       };
-       vkCreateShaderModule( vk.device, &ci, vk.alloc_cb, &slot->module )
+    VkShaderModuleCreateInfo ci = { 0 };
+    ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    ci.codeSize = desc->spirv_size;
+    ci.pCode    = (const u32*)desc->spirv;
 
-       if ( desc->debug_name )
-           vk_debug_name_object( VK_OBJECT_TYPE_SHADER_MODULE, (u64)slot->module, desc->debug_name )
-    */
+    VkResult r = vkCreateShaderModule( vk.device, &ci, vk.alloc_cb, &slot->module );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "shader_create: vkCreateShaderModule: %s", string_VkResult( r ) );
+        return ( rhi_shader_t ){ RHI_NULL_HANDLE };
+    }
+
+    /* Copy entry point name; fall back to "main" if not specified. */
+    const char* entry = ( desc->entry && desc->entry[0] ) ? desc->entry : "main";
+    strncpy( slot->entry, entry, sizeof( slot->entry ) - 1 );
+    slot->entry[ sizeof( slot->entry ) - 1 ] = '\0';
+
+    if ( desc->debug_name )
+        vk_debug_name_object( VK_OBJECT_TYPE_SHADER_MODULE, (u64)slot->module, desc->debug_name );
 
     slot->stage      = desc->stage;
     slot->generation = gen;
@@ -83,10 +91,11 @@ vk_shader_destroy( rhi_shader_t handle )
     u32               idx  = VK_HANDLE_IDX( handle.id );
     vk_shader_slot_t* slot = &vk.shaders[ idx ];
 
-    /* TODO: vkDestroyShaderModule( vk.device, slot->module, vk.alloc_cb ) */
+    vkDestroyShaderModule( vk.device, slot->module, vk.alloc_cb );
 
     slot->generation = ( u8 )( slot->generation + 1 );
     slot->module     = VK_NULL_HANDLE;
+    slot->entry[ 0 ] = '\0';
 }
 
 /*============================================================================================*/

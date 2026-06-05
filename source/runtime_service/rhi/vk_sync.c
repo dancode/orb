@@ -11,29 +11,74 @@
 
 ==============================================================================================*/
 
+static void vk_sync_destroy( vk_context_t* ctx );
+
 static bool
 vk_sync_create( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] sync_create ctx=%d (placeholder)\n", ctx->id );
+    VkSemaphoreCreateInfo sem_ci = { 0 };
+    sem_ci.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-    /* TODO (Vulkan implementation):
-       For i in [0..VK_MAX_FRAMES_IN_FLIGHT):
-         - vkCreateSemaphore -> ctx->image_available_sem[i]
-         - vkCreateSemaphore -> ctx->render_finished_sem[i]
-         - vkCreateFence (VK_FENCE_CREATE_SIGNALED_BIT so first frame doesn't block)
-                         -> ctx->in_flight_fence[i] */
+    /* Pre-signal fences so the first vkWaitForFences on each slot returns immediately. */
+    VkFenceCreateInfo fence_ci   = { 0 };
+    fence_ci.sType               = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fence_ci.flags               = VK_FENCE_CREATE_SIGNALED_BIT;
 
+    for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
+    {
+        VkResult r;
+
+        r = vkCreateSemaphore( vk.device, &sem_ci, vk.alloc_cb, &ctx->image_available_sem[ i ] );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "sync_create: image_available_sem[%u]: %s", i, string_VkResult( r ) );
+            goto fail;
+        }
+
+        r = vkCreateSemaphore( vk.device, &sem_ci, vk.alloc_cb, &ctx->render_finished_sem[ i ] );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "sync_create: render_finished_sem[%u]: %s", i, string_VkResult( r ) );
+            goto fail;
+        }
+
+        r = vkCreateFence( vk.device, &fence_ci, vk.alloc_cb, &ctx->in_flight_fence[ i ] );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "sync_create: in_flight_fence[%u]: %s", i, string_VkResult( r ) );
+            goto fail;
+        }
+    }
+
+    LOG_INFO( "sync_create: OK (ctx %d, %u slots)", ctx->id, VK_MAX_FRAMES_IN_FLIGHT );
     return true;
+
+fail:
+    vk_sync_destroy( ctx );
+    return false;
 }
 
 static void
 vk_sync_destroy( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] sync_destroy ctx=%d (placeholder)\n", ctx->id );
-
-    /* TODO:
-       - vkDeviceWaitIdle first
-       - For each i: vkDestroySemaphore x2, vkDestroyFence */
+    for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
+    {
+        if ( ctx->in_flight_fence[ i ] != VK_NULL_HANDLE )
+        {
+            vkDestroyFence( vk.device, ctx->in_flight_fence[ i ], vk.alloc_cb );
+            ctx->in_flight_fence[ i ] = VK_NULL_HANDLE;
+        }
+        if ( ctx->render_finished_sem[ i ] != VK_NULL_HANDLE )
+        {
+            vkDestroySemaphore( vk.device, ctx->render_finished_sem[ i ], vk.alloc_cb );
+            ctx->render_finished_sem[ i ] = VK_NULL_HANDLE;
+        }
+        if ( ctx->image_available_sem[ i ] != VK_NULL_HANDLE )
+        {
+            vkDestroySemaphore( vk.device, ctx->image_available_sem[ i ], vk.alloc_cb );
+            ctx->image_available_sem[ i ] = VK_NULL_HANDLE;
+        }
+    }
 }
 
 /*============================================================================================*/

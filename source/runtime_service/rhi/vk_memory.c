@@ -40,16 +40,13 @@ typedef struct vk_mem_alloc_s
 static u32
 vk_memory_find_type( u32 type_filter, VkMemoryPropertyFlags required )
 {
-    /* TODO:
-       for ( u32 i = 0; i < vk.memory_props.memoryTypeCount; ++i )
-           if ( (type_filter & (1u << i)) &&
-                (vk.memory_props.memoryTypes[i].propertyFlags & required) == required )
-               return i;
-       return UINT32_MAX;   -- caller must handle failure
-    */
-    UNUSED( type_filter );
-    UNUSED( required );
-    return 0;
+    for ( u32 i = 0; i < vk.memory_props.memoryTypeCount; ++i )
+    {
+        if ( ( type_filter & ( 1u << i ) ) &&
+             ( vk.memory_props.memoryTypes[ i ].propertyFlags & required ) == required )
+            return i;
+    }
+    return UINT32_MAX;
 }
 
 /*==============================================================================================
@@ -59,31 +56,49 @@ vk_memory_find_type( u32 type_filter, VkMemoryPropertyFlags required )
 static bool
 vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, vk_mem_alloc_t* out )
 {
-    UNUSED( reqs );
-    UNUSED( hint );
-    UNUSED( out );
+    /* Map RHI memory class to the required Vulkan property flags */
+    static const VkMemoryPropertyFlags s_flags[] = {
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,                                             /* GPU_ONLY   */
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,     /* CPU_TO_GPU */
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,     /* CPU_ONLY   */
+    };
 
-    /* TODO:
-       VkMemoryPropertyFlags flags = ...;   -- map rhi_memory_t -> VkMemoryPropertyFlags
-       u32 type_idx = vk_memory_find_type( reqs.memoryTypeBits, flags );
-       if ( type_idx == UINT32_MAX ) return false;
+    VkMemoryPropertyFlags flags    = s_flags[ hint ];
+    u32                   type_idx = vk_memory_find_type( reqs.memoryTypeBits, flags );
 
-       VkMemoryAllocateInfo ai = {
-           .allocationSize  = reqs.size,
-           .memoryTypeIndex = type_idx,
-       };
-       vkAllocateMemory( vk.device, &ai, vk.alloc_cb, &out->memory )
-       out->offset = 0;
-    */
+    /* GPU_ONLY: fall back to host-visible on unified-memory architectures (iGPU / APU). */
+    if ( type_idx == UINT32_MAX && hint == RHI_MEMORY_GPU_ONLY )
+    {
+        type_idx = vk_memory_find_type( reqs.memoryTypeBits,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+    }
+    if ( type_idx == UINT32_MAX )
+    {
+        LOG_ERROR( "vk_mem_alloc: no compatible memory type (filter=0x%x flags=0x%x)",
+                   reqs.memoryTypeBits, (u32)flags );
+        return false;
+    }
 
+    VkMemoryAllocateInfo ai  = { 0 };
+    ai.sType                 = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    ai.allocationSize        = reqs.size;
+    ai.memoryTypeIndex       = type_idx;
+
+    VkResult r = vkAllocateMemory( vk.device, &ai, vk.alloc_cb, &out->memory );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "vkAllocateMemory: %s", string_VkResult( r ) );
+        return false;
+    }
+    out->offset = 0;
     return true;
 }
 
 static void
 vk_mem_free( vk_mem_alloc_t alloc )
 {
-    UNUSED( alloc );
-    /* TODO: vkFreeMemory( vk.device, alloc.memory, vk.alloc_cb ) */
+    if ( alloc.memory != VK_NULL_HANDLE )
+        vkFreeMemory( vk.device, alloc.memory, vk.alloc_cb );
 }
 
 /*============================================================================================*/

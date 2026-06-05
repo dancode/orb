@@ -10,6 +10,20 @@
 
 ==============================================================================================*/
 
+static VkBufferUsageFlags
+rhi_buffer_usage_to_vk( rhi_buffer_usage_t usage )
+{
+    VkBufferUsageFlags flags = 0;
+    if ( usage & RHI_BUFFER_USAGE_VERTEX       ) flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    if ( usage & RHI_BUFFER_USAGE_INDEX        ) flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    if ( usage & RHI_BUFFER_USAGE_UNIFORM      ) flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    if ( usage & RHI_BUFFER_USAGE_STORAGE      ) flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    if ( usage & RHI_BUFFER_USAGE_INDIRECT     ) flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    if ( usage & RHI_BUFFER_USAGE_TRANSFER_SRC ) flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    if ( usage & RHI_BUFFER_USAGE_TRANSFER_DST ) flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    return flags;
+}
+
 /*==============================================================================================
     Slot allocation helpers
 ==============================================================================================*/
@@ -17,7 +31,6 @@
 static i32
 vk_buffer_alloc_slot( void )
 {
-    /* Linear scan for the first free slot (generation == 0). */
     for ( u32 i = 0; i < VK_MAX_BUFFERS; ++i )
     {
         if ( vk.buffers[ i ].generation == 0 )
@@ -52,32 +65,61 @@ vk_buffer_create( const rhi_buffer_desc_t* desc )
     }
 
     vk_buffer_slot_t* slot = &vk.buffers[ idx ];
-
-    /* Increment generation; skip 0 so the handle is never null. */
     u8 gen = ( u8 )( slot->generation == 0 ? 1 : slot->generation );
 
-    /* TODO (Vulkan implementation):
-       VkBufferUsageFlags vk_usage = rhi_buffer_usage_to_vk( desc->usage );
-       VkBufferCreateInfo ci = {
-           .size        = desc->size,
-           .usage       = vk_usage | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-           .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-       };
-       vkCreateBuffer( vk.device, &ci, vk.alloc_cb, &slot->buffer )
+    VkBufferCreateInfo buf_ci = { 0 };
+    buf_ci.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buf_ci.size               = desc->size;
+    buf_ci.usage              = rhi_buffer_usage_to_vk( desc->usage );
+    buf_ci.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
 
-       VkMemoryRequirements reqs;
-       vkGetBufferMemoryRequirements2( vk.device, ... )
+    VkResult r = vkCreateBuffer( vk.device, &buf_ci, vk.alloc_cb, &slot->buffer );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "buffer_create: vkCreateBuffer: %s", string_VkResult( r ) );
+        return ( rhi_buffer_t ){ RHI_NULL_HANDLE };
+    }
 
-       vk_mem_alloc_t alloc;
-       vk_mem_alloc( reqs, desc->memory, &alloc )
-       vkBindBufferMemory( vk.device, slot->buffer, alloc.memory, alloc.offset )
+    VkMemoryRequirements reqs;
+    vkGetBufferMemoryRequirements( vk.device, slot->buffer, &reqs );
 
-       if ( desc->memory != RHI_MEMORY_GPU_ONLY )
-           vkMapMemory( vk.device, alloc.memory, alloc.offset, desc->size, 0, &slot->mapped )
+    vk_mem_alloc_t alloc = { 0 };
+    if ( !vk_mem_alloc( reqs, desc->memory, &alloc ) )
+    {
+        vkDestroyBuffer( vk.device, slot->buffer, vk.alloc_cb );
+        slot->buffer = VK_NULL_HANDLE;
+        return ( rhi_buffer_t ){ RHI_NULL_HANDLE };
+    }
+    slot->memory = alloc.memory;
 
-       if ( desc->debug_name )
-           vk_debug_name_object( VK_OBJECT_TYPE_BUFFER, (u64)slot->buffer, desc->debug_name )
-    */
+    r = vkBindBufferMemory( vk.device, slot->buffer, slot->memory, alloc.offset );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "buffer_create: vkBindBufferMemory: %s", string_VkResult( r ) );
+        vkFreeMemory   ( vk.device, slot->memory, vk.alloc_cb );
+        vkDestroyBuffer( vk.device, slot->buffer, vk.alloc_cb );
+        slot->memory = VK_NULL_HANDLE;
+        slot->buffer = VK_NULL_HANDLE;
+        return ( rhi_buffer_t ){ RHI_NULL_HANDLE };
+    }
+
+    /* Persistently map host-visible buffers; GPU-only buffers are populated by staged upload. */
+    if ( desc->memory != RHI_MEMORY_GPU_ONLY )
+    {
+        r = vkMapMemory( vk.device, slot->memory, 0, desc->size, 0, &slot->mapped );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "buffer_create: vkMapMemory: %s", string_VkResult( r ) );
+            vkFreeMemory   ( vk.device, slot->memory, vk.alloc_cb );
+            vkDestroyBuffer( vk.device, slot->buffer, vk.alloc_cb );
+            slot->memory = VK_NULL_HANDLE;
+            slot->buffer = VK_NULL_HANDLE;
+            return ( rhi_buffer_t ){ RHI_NULL_HANDLE };
+        }
+    }
+
+    if ( desc->debug_name )
+        vk_debug_name_object( VK_OBJECT_TYPE_BUFFER, (u64)slot->buffer, desc->debug_name );
 
     slot->size       = desc->size;
     slot->generation = gen;
@@ -94,17 +136,19 @@ vk_buffer_destroy( rhi_buffer_t handle )
     u32               idx  = VK_HANDLE_IDX( handle.id );
     vk_buffer_slot_t* slot = &vk.buffers[ idx ];
 
-    /* TODO:
-       if ( slot->mapped )
-           vkUnmapMemory( vk.device, ... )
-       vkDestroyBuffer( vk.device, slot->buffer, vk.alloc_cb )
-       vk_mem_free( ... )
-    */
+    if ( slot->mapped )
+    {
+        vkUnmapMemory( vk.device, slot->memory );
+        slot->mapped = NULL;
+    }
+    if ( slot->buffer != VK_NULL_HANDLE )
+        vkDestroyBuffer( vk.device, slot->buffer, vk.alloc_cb );
+    if ( slot->memory != VK_NULL_HANDLE )
+        vkFreeMemory   ( vk.device, slot->memory, vk.alloc_cb );
 
-    /* Advance generation so stale handles fail validation. */
     slot->generation = ( u8 )( slot->generation + 1 );
     slot->buffer     = VK_NULL_HANDLE;
-    slot->mapped     = NULL;
+    slot->memory     = VK_NULL_HANDLE;
     slot->size       = 0;
 }
 
@@ -116,15 +160,20 @@ vk_buffer_write( rhi_buffer_t handle, const void* data, u32 size, u32 offset )
 
     vk_buffer_slot_t* slot = &vk.buffers[ VK_HANDLE_IDX( handle.id ) ];
 
-    /* TODO: assert slot->mapped != NULL (caller must not write to GPU_ONLY buffers)
-       memcpy( (u8*)slot->mapped + offset, data, size )
-       -- No explicit flush needed if memory is HOST_COHERENT (our default for CPU_TO_GPU).
-       -- For non-coherent memory: vkFlushMappedMemoryRanges( ... )
-    */
+    /* Caller must not write to GPU_ONLY buffers; use upload_buffer for those. */
+    if ( !slot->mapped )
+    {
+        LOG_ERROR( "buffer_write: buffer is GPU_ONLY; use upload_buffer for staged copies" );
+        return;
+    }
+    if ( offset + size > slot->size )
+    {
+        LOG_ERROR( "buffer_write: out of bounds (offset=%u size=%u buffer_size=%u)", offset, size, slot->size );
+        return;
+    }
 
-    UNUSED( size );
-    UNUSED( offset );
-    UNUSED( slot );
+    /* Memory is HOST_COHERENT (our default for CPU-visible allocations); no flush needed. */
+    memcpy( (u8*)slot->mapped + offset, data, size );
 }
 
 /*============================================================================================*/

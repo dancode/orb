@@ -661,9 +661,9 @@ vk_device_create( void )
 
     /* Subsystem init in dependency order: pipeline cache -> descriptor -> upload. */
 
-    vk_pipeline_cache_load(); // TODO:
+    vk_pipeline_cache_load();
 
-    if ( !vk_descriptor_init() ) // TODO:
+    if ( !vk_descriptor_init() )
         goto fail_after_cache;
 
     if ( !vk_upload_init() )

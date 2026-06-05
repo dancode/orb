@@ -148,7 +148,7 @@ vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
     if ( !vk_sync_create( ctx )      ) goto fail_after_swapchain;
     if ( !vk_command_create( ctx )   ) goto fail_after_sync;
 
-    printf( "[rhi] context_create complete (ctx %d, win %d)\n", id, win_id );
+    LOG_INFO( "context_create: complete (ctx %d, win %d)", id, win_id );
     return id;
 
 fail_after_sync:      vk_sync_destroy( ctx );
@@ -158,7 +158,7 @@ fail_after_nothing:
 
     vk_ctx_free( id );
     memset( ctx, 0, sizeof( *ctx ) );
-    printf( "[rhi] context_create failed (win %d)\n", win_id );
+    LOG_ERROR( "context_create: failed (win %d)", win_id );
     return RHI_CTX_INVALID;
 }
 
@@ -169,7 +169,7 @@ vk_context_destroy( i32 ctx_id )
     if ( !ctx )
         return;
 
-    printf( "[rhi] context_destroy begin (ctx %d, win %d)\n", ctx->id, ctx->win_id );
+    LOG_INFO( "context_destroy: begin (ctx %d, win %d)", ctx->id, ctx->win_id );
 
     /* Drain all queues before touching any context-owned Vulkan objects. */
     vk_device_wait_idle();
@@ -182,7 +182,7 @@ vk_context_destroy( i32 ctx_id )
     vk_ctx_free( ctx_id );
     memset( ctx, 0, sizeof( *ctx ) );
 
-    printf( "[rhi] context_destroy complete (ctx %d)\n", ctx_id );
+    LOG_INFO( "context_destroy: complete (ctx %d)", ctx_id );
 }
 
 static bool

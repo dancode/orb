@@ -10,6 +10,7 @@
     Depth    -> requires: device + swapchain extent
 
 ==============================================================================================*/
+// clang-format off
 
 /* Forward; called from vk_frame.c when resize_pending is set. */
 static bool vk_swapchain_recreate( vk_context_t* ctx );
@@ -24,54 +25,119 @@ static void vk_depth_destroy( vk_context_t* ctx );
 static bool
 vk_surface_create( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] surface_create ctx=%d win=%d (placeholder)\n", ctx->id, ctx->win_id );
+    VkResult r;
 
 #if OS_WINDOWS
-    /* TODO:
-       VkWin32SurfaceCreateInfoKHR ci = {
-           .sType     = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-           .hwnd      = (HWND)ctx->native_window,
-           .hinstance = GetModuleHandle(NULL),
-       };
-       vkCreateWin32SurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface )
-    */
+
+    VkWin32SurfaceCreateInfoKHR ci = { 0 };
+    ci.sType                       = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    ci.hwnd                        = (HWND)ctx->native_window;
+    ci.hinstance                   = GetModuleHandle( NULL );
+
+    r = vkCreateWin32SurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface );
+
 #elif OS_LINUX && defined( VK_USE_PLATFORM_WAYLAND_KHR )
-    /* TODO:
-       VkWaylandSurfaceCreateInfoKHR ci = {
-           .sType   = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
-           .display = wl_display,
-           .surface = (struct wl_surface*)ctx->native_window,
-       };
-       vkCreateWaylandSurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface )
-    */
+
+    /* native_window is a wl_surface*; display must be passed via platform context */
+    VkWaylandSurfaceCreateInfoKHR ci = { 0 };
+    ci.sType                         = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+    ci.display                       = NULL;    /* TODO: obtain wl_display from sys layer */
+    ci.surface                       = (struct wl_surface*)ctx->native_window;
+
+    r = vkCreateWaylandSurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface );
+
 #elif OS_LINUX
-    /* TODO (Xlib):
-       VkXlibSurfaceCreateInfoKHR ci = {
-           .sType  = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
-           .dpy    = x11_display,
-           .window = (Window)ctx->native_window,
-       };
-       vkCreateXlibSurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface )
-    */
+
+    /* native_window is a Window (XID); display must be passed via platform context */
+    VkXlibSurfaceCreateInfoKHR ci = { 0 };
+    ci.sType                      = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+    ci.dpy                        = NULL;    /* TODO: obtain Display* from sys layer */
+    ci.window                     = (Window)(uintptr_t)ctx->native_window;
+
+    r = vkCreateXlibSurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface );
+
 #elif OS_MAC
-    /* TODO (MoltenVK):
-       VkMetalSurfaceCreateInfoEXT ci = {
-           .sType  = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT,
-           .pLayer = (CAMetalLayer*)ctx->native_window,
-       };
-       vkCreateMetalSurfaceEXT( vk.instance, &ci, vk.alloc_cb, &ctx->surface )
-    */
+
+    /* native_window is a CAMetalLayer* passed from the platform windowing layer */
+    VkMetalSurfaceCreateInfoEXT ci = { 0 };
+    ci.sType                       = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+    ci.pLayer                      = (const CAMetalLayer*)ctx->native_window;
+
+    r = vkCreateMetalSurfaceEXT( vk.instance, &ci, vk.alloc_cb, &ctx->surface );
+
+#else
+    LOG_ERROR( "surface_create: unsupported platform" );
+    return false;
 #endif
 
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "surface_create: %s (ctx %d)", string_VkResult( r ), ctx->id );
+        return false;
+    }
+
+    /* Confirm the selected present queue family actually supports this surface. */
+    VkBool32 supported = VK_FALSE;
+    vkGetPhysicalDeviceSurfaceSupportKHR( vk.physical_device, vk.present_queue_family,
+                                          ctx->surface, &supported );
+    if ( !supported )
+    {
+        LOG_ERROR( "surface_create: present queue family %u does not support this surface (ctx %d)",
+                   vk.present_queue_family, ctx->id );
+        vkDestroySurfaceKHR( vk.instance, ctx->surface, vk.alloc_cb );
+        ctx->surface = VK_NULL_HANDLE;
+        return false;
+    }
+
+    LOG_INFO( "surface_create: OK (ctx %d)", ctx->id );
     return true;
 }
 
 static void
 vk_surface_destroy( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] surface_destroy ctx=%d (placeholder)\n", ctx->id );
+    if ( ctx->surface == VK_NULL_HANDLE )
+        return;
 
-    /* TODO: vkDestroySurfaceKHR( vk.instance, ctx->surface, vk.alloc_cb ) */
+    vkDestroySurfaceKHR( vk.instance, ctx->surface, vk.alloc_cb );
+    ctx->surface = VK_NULL_HANDLE;
+}
+
+/*==============================================================================================
+    Swapchain -- format and present-mode selection helpers
+==============================================================================================*/
+
+static VkSurfaceFormatKHR
+vk_swapchain_pick_format( VkSurfaceFormatKHR* formats, u32 count )
+{
+    /* Prefer BGRA8_SRGB: most common on Win32/DXGI path and correct gamma. */
+    for ( u32 i = 0; i < count; ++i )
+    {
+        if ( formats[ i ].format     == VK_FORMAT_B8G8R8A8_SRGB &&
+             formats[ i ].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR )
+            return formats[ i ];
+    }
+    /* Also accept RGBA8_SRGB for platforms that prefer it. */
+    for ( u32 i = 0; i < count; ++i )
+    {
+        if ( formats[ i ].format     == VK_FORMAT_R8G8B8A8_SRGB &&
+             formats[ i ].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR )
+            return formats[ i ];
+    }
+    return formats[ 0 ];
+}
+
+static VkPresentModeKHR
+vk_swapchain_pick_present_mode( VkPresentModeKHR* modes, u32 count )
+{
+    /* Prefer MAILBOX: triple-buffered, no tearing, lower latency than FIFO. */
+    for ( u32 i = 0; i < count; ++i )
+    {
+        if ( modes[ i ] == VK_PRESENT_MODE_MAILBOX_KHR )
+            return modes[ i ];
+    }
+    /* FIFO is always present per spec: vsync, no tearing. */
+    return VK_PRESENT_MODE_FIFO_KHR;
 }
 
 /*==============================================================================================
@@ -81,67 +147,189 @@ vk_surface_destroy( vk_context_t* ctx )
 static bool
 vk_swapchain_create( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] swapchain_create ctx=%d (placeholder)\n", ctx->id );
+    /* --- Query surface capabilities --- */
 
-    /* TODO (Vulkan implementation):
+    VkSurfaceCapabilitiesKHR caps = { 0 };
+    VkResult r = vkGetPhysicalDeviceSurfaceCapabilitiesKHR( vk.physical_device, ctx->surface, &caps );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "swapchain_create: vkGetPhysicalDeviceSurfaceCapabilitiesKHR: %s", string_VkResult( r ) );
+        return false;
+    }
 
-       Query surface capabilities:
-           vkGetPhysicalDeviceSurfaceCapabilitiesKHR -> caps
-           vkGetPhysicalDeviceSurfaceFormatsKHR      -> pick VK_FORMAT_B8G8R8A8_SRGB +
-                                                        VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
-           vkGetPhysicalDeviceSurfacePresentModesKHR -> pick MAILBOX, fallback FIFO
+    /* --- Pick surface format --- */
 
-       Extent:
-           if caps.currentExtent == UINT32_MAX: clamp (ctx->width, ctx->height) to min/max
-           else: use caps.currentExtent
+    u32 format_count = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR( vk.physical_device, ctx->surface, &format_count, NULL );
+    if ( format_count == 0 )
+    {
+        LOG_ERROR( "swapchain_create: no surface formats available (ctx %d)", ctx->id );
+        return false;
+    }
 
-       Image count:
-           caps.minImageCount + 1, clamped to caps.maxImageCount (0 = no max)
+    VkSurfaceFormatKHR formats[ 32 ] = { 0 };
+    if ( format_count > 32 ) format_count = 32;
+    vkGetPhysicalDeviceSurfaceFormatsKHR( vk.physical_device, ctx->surface, &format_count, formats );
+    ctx->surface_format = vk_swapchain_pick_format( formats, format_count );
 
-       Sharing mode:
-           if graphics_queue_family == present_queue_family: EXCLUSIVE
-           else: CONCURRENT with both families listed
+    /* --- Pick present mode --- */
 
-       VkSwapchainCreateInfoKHR + vkCreateSwapchainKHR -> ctx->swapchain
-       vkGetSwapchainImagesKHR  -> ctx->swapchain_images[]
-       For each image: vkCreateImageView -> ctx->swapchain_image_views[]
-       Record ctx->swapchain_extent, ctx->surface_format, ctx->present_mode
+    u32 mode_count = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR( vk.physical_device, ctx->surface, &mode_count, NULL );
 
-       Then create the matched depth buffer:
-           vk_depth_create( ctx )
-    */
+    VkPresentModeKHR modes[ 8 ] = { 0 };
+    if ( mode_count > 8 ) mode_count = 8;
+    vkGetPhysicalDeviceSurfacePresentModesKHR( vk.physical_device, ctx->surface, &mode_count, modes );
+    ctx->present_mode = vk_swapchain_pick_present_mode( modes, mode_count );
 
-    return true;
+    /* --- Determine swapchain extent --- */
+
+    VkExtent2D extent;
+    if ( caps.currentExtent.width != UINT32_MAX )
+    {
+        /* Surface dictates the exact extent. */
+        extent = caps.currentExtent;
+    }
+    else
+    {
+        /* Clamp the requested dimensions to the surface-supported range. */
+        u32 w = (u32)ctx->width;
+        u32 h = (u32)ctx->height;
+        if ( w < caps.minImageExtent.width  ) w = caps.minImageExtent.width;
+        if ( w > caps.maxImageExtent.width  ) w = caps.maxImageExtent.width;
+        if ( h < caps.minImageExtent.height ) h = caps.minImageExtent.height;
+        if ( h > caps.maxImageExtent.height ) h = caps.maxImageExtent.height;
+        extent.width  = w;
+        extent.height = h;
+    }
+    ctx->swapchain_extent = extent;
+
+    /* --- Determine image count: one more than minimum for better pipelining --- */
+
+    u32 image_count = caps.minImageCount + 1;
+    if ( caps.maxImageCount > 0 && image_count > caps.maxImageCount )
+        image_count = caps.maxImageCount;
+    if ( image_count > VK_MAX_SWAPCHAIN_IMAGES )
+        image_count = VK_MAX_SWAPCHAIN_IMAGES;
+
+    /* --- Build swapchain create info --- */
+
+    VkSwapchainCreateInfoKHR ci = { 0 };
+    ci.sType                    = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    ci.surface                  = ctx->surface;
+    ci.minImageCount            = image_count;
+    ci.imageFormat              = ctx->surface_format.format;
+    ci.imageColorSpace          = ctx->surface_format.colorSpace;
+    ci.imageExtent              = extent;
+    ci.imageArrayLayers         = 1;
+    ci.imageUsage               = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    ci.preTransform             = caps.currentTransform;
+    ci.compositeAlpha           = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    ci.presentMode              = ctx->present_mode;
+    ci.clipped                  = VK_TRUE;
+    ci.oldSwapchain             = VK_NULL_HANDLE;
+
+    /* Exclusive mode when graphics and present share a queue family (most desktop HW). */
+    u32 queue_families[ 2 ] = { vk.graphics_queue_family, vk.present_queue_family };
+    if ( vk.graphics_queue_family != vk.present_queue_family )
+    {
+        ci.imageSharingMode      = VK_SHARING_MODE_CONCURRENT;
+        ci.queueFamilyIndexCount = 2;
+        ci.pQueueFamilyIndices   = queue_families;
+    }
+    else
+    {
+        ci.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
+    }
+
+    r = vkCreateSwapchainKHR( vk.device, &ci, vk.alloc_cb, &ctx->swapchain );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "swapchain_create: vkCreateSwapchainKHR: %s", string_VkResult( r ) );
+        return false;
+    }
+
+    /* --- Retrieve swapchain images (driver may give more than we requested) --- */
+
+    ctx->swapchain_image_count = VK_MAX_SWAPCHAIN_IMAGES;
+    vkGetSwapchainImagesKHR( vk.device, ctx->swapchain, &ctx->swapchain_image_count,
+                             ctx->swapchain_images );
+
+    /* --- Create image views --- */
+
+    for ( u32 i = 0; i < ctx->swapchain_image_count; ++i )
+    {
+        VkImageViewCreateInfo view_ci           = { 0 };
+        view_ci.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_ci.image                           = ctx->swapchain_images[ i ];
+        view_ci.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+        view_ci.format                          = ctx->surface_format.format;
+        view_ci.components.r                    = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_ci.components.g                    = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_ci.components.b                    = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_ci.components.a                    = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_ci.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        view_ci.subresourceRange.baseMipLevel   = 0;
+        view_ci.subresourceRange.levelCount     = 1;
+        view_ci.subresourceRange.baseArrayLayer = 0;
+        view_ci.subresourceRange.layerCount     = 1;
+
+        r = vkCreateImageView( vk.device, &view_ci, vk.alloc_cb, &ctx->swapchain_image_views[ i ] );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "swapchain_create: vkCreateImageView[%u]: %s", i, string_VkResult( r ) );
+            /* Destroy any views already created, then the swapchain. */
+            for ( u32 j = 0; j < i; ++j )
+                vkDestroyImageView( vk.device, ctx->swapchain_image_views[ j ], vk.alloc_cb );
+            vkDestroySwapchainKHR( vk.device, ctx->swapchain, vk.alloc_cb );
+            ctx->swapchain = VK_NULL_HANDLE;
+            return false;
+        }
+    }
+
+    LOG_INFO( "swapchain_create: OK (ctx %d, %ux%u, %u images, fmt=%d, mode=%d)",
+              ctx->id, extent.width, extent.height, ctx->swapchain_image_count,
+              (i32)ctx->surface_format.format, (i32)ctx->present_mode );
+
+    /* --- Create the depth buffer sized to match the swapchain --- */
+
+    return vk_depth_create( ctx );
 }
 
 static void
 vk_swapchain_destroy( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] swapchain_destroy ctx=%d (placeholder)\n", ctx->id );
+    vk_depth_destroy( ctx );
 
-    /* TODO:
-       vk_depth_destroy( ctx )
-       For each image view: vkDestroyImageView( vk.device, ctx->swapchain_image_views[i], ... )
-       vkDestroySwapchainKHR( vk.device, ctx->swapchain, vk.alloc_cb )
-       Zero the swapchain handles.
-    */
+    for ( u32 i = 0; i < ctx->swapchain_image_count; ++i )
+    {
+        if ( ctx->swapchain_image_views[ i ] != VK_NULL_HANDLE )
+        {
+            vkDestroyImageView( vk.device, ctx->swapchain_image_views[ i ], vk.alloc_cb );
+            ctx->swapchain_image_views[ i ] = VK_NULL_HANDLE;
+        }
+    }
+    ctx->swapchain_image_count = 0;
 
-    ( void )vk_swapchain_recreate;    /* suppress unused-function warning until wired */
+    if ( ctx->swapchain != VK_NULL_HANDLE )
+    {
+        vkDestroySwapchainKHR( vk.device, ctx->swapchain, vk.alloc_cb );
+        ctx->swapchain = VK_NULL_HANDLE;
+    }
 }
 
 static bool
 vk_swapchain_recreate( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] swapchain_recreate ctx=%d (placeholder)\n", ctx->id );
+    LOG_INFO( "swapchain_recreate: begin (ctx %d, %dx%d)", ctx->id, ctx->width, ctx->height );
 
-    /* TODO:
-       Pass ctx->swapchain as oldSwapchain in VkSwapchainCreateInfoKHR for zero-gap handoff.
-       vk_swapchain_destroy( ctx ) -- destroys views and depth; old VkSwapchainKHR freed here
-       vk_swapchain_create( ctx )  -- creates new swapchain + depth at new size
-       Must only be called between frames (never mid-recording).
-    */
+    /* Wait for the GPU to be idle before destroying any swapchain resources. */
+    vk_device_wait_idle();
+    vk_swapchain_destroy( ctx );
 
-    return true;
+    bool ok = vk_swapchain_create( ctx );
+    LOG_INFO( "swapchain_recreate: %s (ctx %d)", ok ? "OK" : "FAILED", ctx->id );
+    return ok;
 }
 
 /*==============================================================================================
@@ -151,40 +339,128 @@ vk_swapchain_recreate( vk_context_t* ctx )
 static bool
 vk_depth_create( vk_context_t* ctx )
 {
-    printf( "[rhi:vk] depth_create ctx=%d (placeholder)\n", ctx->id );
+    /* Probe depth formats from most to least precise. */
+    static const VkFormat s_candidates[] = {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_FORMAT_D16_UNORM,
+    };
 
-    /* TODO:
-       Format selection: probe VK_FORMAT_D32_SFLOAT, fallback VK_FORMAT_D24_UNORM_S8_UINT,
-       last resort VK_FORMAT_D16_UNORM.  Check vkGetPhysicalDeviceFormatProperties for
-       VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT.
+    ctx->depth_format = VK_FORMAT_UNDEFINED;
+    for ( u32 i = 0; i < 3; ++i )
+    {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties( vk.physical_device, s_candidates[ i ], &props );
+        if ( props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT )
+        {
+            ctx->depth_format = s_candidates[ i ];
+            break;
+        }
+    }
+    if ( ctx->depth_format == VK_FORMAT_UNDEFINED )
+    {
+        LOG_ERROR( "depth_create: no supported depth format (ctx %d)", ctx->id );
+        return false;
+    }
 
-       VkImageCreateInfo:
-           imageType   = VK_IMAGE_TYPE_2D
-           format      = ctx->depth_format
-           extent      = { ctx->swapchain_extent.width, ctx->swapchain_extent.height, 1 }
-           mipLevels   = 1
-           arrayLayers = 1
-           samples     = VK_SAMPLE_COUNT_1_BIT
-           tiling      = VK_IMAGE_TILING_OPTIMAL
-           usage       = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
-       vkCreateImage -> ctx->depth_image
-       vkAllocateMemory (device-local) + vkBindImageMemory -> ctx->depth_memory
+    /* Create the depth image. */
+    VkImageCreateInfo img_ci      = { 0 };
+    img_ci.sType                  = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    img_ci.imageType              = VK_IMAGE_TYPE_2D;
+    img_ci.format                 = ctx->depth_format;
+    img_ci.extent.width           = ctx->swapchain_extent.width;
+    img_ci.extent.height          = ctx->swapchain_extent.height;
+    img_ci.extent.depth           = 1;
+    img_ci.mipLevels              = 1;
+    img_ci.arrayLayers            = 1;
+    img_ci.samples                = VK_SAMPLE_COUNT_1_BIT;
+    img_ci.tiling                 = VK_IMAGE_TILING_OPTIMAL;
+    img_ci.usage                  = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    img_ci.sharingMode            = VK_SHARING_MODE_EXCLUSIVE;
+    img_ci.initialLayout          = VK_IMAGE_LAYOUT_UNDEFINED;
 
-       VkImageViewCreateInfo with VK_IMAGE_ASPECT_DEPTH_BIT -> ctx->depth_view
-    */
+    VkResult r = vkCreateImage( vk.device, &img_ci, vk.alloc_cb, &ctx->depth_image );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "depth_create: vkCreateImage: %s", string_VkResult( r ) );
+        return false;
+    }
 
+    /* Allocate device-local memory and bind. */
+    VkMemoryRequirements reqs;
+    vkGetImageMemoryRequirements( vk.device, ctx->depth_image, &reqs );
+
+    vk_mem_alloc_t alloc = { 0 };
+    if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, &alloc ) )
+    {
+        vkDestroyImage( vk.device, ctx->depth_image, vk.alloc_cb );
+        ctx->depth_image = VK_NULL_HANDLE;
+        return false;
+    }
+    ctx->depth_memory = alloc.memory;
+
+    r = vkBindImageMemory( vk.device, ctx->depth_image, ctx->depth_memory, alloc.offset );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "depth_create: vkBindImageMemory: %s", string_VkResult( r ) );
+        vkFreeMemory( vk.device, ctx->depth_memory, vk.alloc_cb );
+        vkDestroyImage( vk.device, ctx->depth_image, vk.alloc_cb );
+        ctx->depth_memory = VK_NULL_HANDLE;
+        ctx->depth_image  = VK_NULL_HANDLE;
+        return false;
+    }
+
+    /* Create depth-only image view. */
+    VkImageViewCreateInfo view_ci           = { 0 };
+    view_ci.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_ci.image                           = ctx->depth_image;
+    view_ci.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    view_ci.format                          = ctx->depth_format;
+    view_ci.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
+    view_ci.subresourceRange.baseMipLevel   = 0;
+    view_ci.subresourceRange.levelCount     = 1;
+    view_ci.subresourceRange.baseArrayLayer = 0;
+    view_ci.subresourceRange.layerCount     = 1;
+
+    r = vkCreateImageView( vk.device, &view_ci, vk.alloc_cb, &ctx->depth_view );
+    if ( r != VK_SUCCESS )
+    {
+        LOG_ERROR( "depth_create: vkCreateImageView: %s", string_VkResult( r ) );
+        vkFreeMemory( vk.device, ctx->depth_memory, vk.alloc_cb );
+        vkDestroyImage( vk.device, ctx->depth_image, vk.alloc_cb );
+        ctx->depth_memory = VK_NULL_HANDLE;
+        ctx->depth_image  = VK_NULL_HANDLE;
+        return false;
+    }
+
+    /* Layout starts UNDEFINED; frame_begin barriers it to DEPTH_ATTACHMENT_OPTIMAL. */
+    ctx->depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    LOG_INFO( "depth_create: OK (ctx %d, fmt=%d, %ux%u)", ctx->id, (i32)ctx->depth_format,
+              img_ci.extent.width, img_ci.extent.height );
     return true;
 }
 
 static void
 vk_depth_destroy( vk_context_t* ctx )
 {
-    /* TODO:
-       vkDestroyImageView( vk.device, ctx->depth_view,   vk.alloc_cb )
-       vkDestroyImage    ( vk.device, ctx->depth_image,  vk.alloc_cb )
-       vkFreeMemory      ( vk.device, ctx->depth_memory, vk.alloc_cb )
-    */
-    UNUSED( ctx );
+    if ( ctx->depth_view != VK_NULL_HANDLE )
+    {
+        vkDestroyImageView( vk.device, ctx->depth_view, vk.alloc_cb );
+        ctx->depth_view = VK_NULL_HANDLE;
+    }
+    if ( ctx->depth_image != VK_NULL_HANDLE )
+    {
+        vkDestroyImage( vk.device, ctx->depth_image, vk.alloc_cb );
+        ctx->depth_image = VK_NULL_HANDLE;
+    }
+    if ( ctx->depth_memory != VK_NULL_HANDLE )
+    {
+        vkFreeMemory( vk.device, ctx->depth_memory, vk.alloc_cb );
+        ctx->depth_memory = VK_NULL_HANDLE;
+    }
+    ctx->depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 /*============================================================================================*/
+// clang-format on
