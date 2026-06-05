@@ -36,6 +36,37 @@ typedef struct vk_bindless_free_s
 static vk_bindless_free_t  g_tex_free;
 static vk_bindless_free_t  g_samp_free;
 
+/*==============================================================================================
+    Deferred descriptor slot retirement.
+
+    UPDATE_AFTER_BIND lets the GPU read descriptors while the CPU writes other slots in
+    the same array.  Returning a freed slot to the free stack immediately is therefore
+    unsafe: a new registration would overwrite that descriptor entry while the GPU may
+    still be reading the old one in a previous frame.
+
+    Instead, vk_unregister_* pushes (idx, vk.global_frame) into a FIFO retire ring.
+    vk_descriptor_flush_retired() (called after the fence wait in vk_frame_begin) moves
+    entries back to the free stack once VK_MAX_FRAMES_IN_FLIGHT frames have elapsed,
+    guaranteeing the GPU has finished all in-flight work that referenced those slots.
+
+    Ring capacity equals the pool size.  Because slot 0 is reserved, at most
+    (capacity - 1) slots can ever be allocated at once, so the ring never overflows.
+==============================================================================================*/
+
+typedef struct vk_deferred_retire_s
+{
+    u32 idx;
+    u32 retire_frame;
+} vk_deferred_retire_t;
+
+static vk_deferred_retire_t  g_tex_retire[ VK_MAX_BINDLESS_TEXTURES ];
+static u32                   g_tex_retire_head;   /* next entry to drain */
+static u32                   g_tex_retire_tail;   /* next entry to write */
+
+static vk_deferred_retire_t  g_samp_retire[ VK_MAX_BINDLESS_SAMPLERS ];
+static u32                   g_samp_retire_head;
+static u32                   g_samp_retire_tail;
+
 static void
 vk_bindless_free_init( vk_bindless_free_t* pool, u32 count )
 {
@@ -61,6 +92,36 @@ vk_bindless_free( vk_bindless_free_t* pool, u32 idx )
         return;
     ORB_ASSERT( pool->top < ARRAY_COUNT( pool->stack ) );
     pool->stack[ pool->top++ ] = idx;
+}
+
+static void
+vk_descriptor_flush_retired( void )
+{
+    /* Need at least VK_MAX_FRAMES_IN_FLIGHT frames before any slot is safe to reuse. */
+    if ( vk.global_frame < VK_MAX_FRAMES_IN_FLIGHT )
+        return;
+
+    /* Slots retired on frame R are safe once all GPU work from frame R has completed,
+       which is guaranteed after VK_MAX_FRAMES_IN_FLIGHT subsequent fence waits. */
+    u32 safe_frame = vk.global_frame - VK_MAX_FRAMES_IN_FLIGHT;
+
+    while ( g_tex_retire_head != g_tex_retire_tail )
+    {
+        vk_deferred_retire_t* e = &g_tex_retire[ g_tex_retire_head ];
+        if ( e->retire_frame > safe_frame )
+            break;
+        vk_bindless_free( &g_tex_free, e->idx );
+        g_tex_retire_head = ( g_tex_retire_head + 1 ) % VK_MAX_BINDLESS_TEXTURES;
+    }
+
+    while ( g_samp_retire_head != g_samp_retire_tail )
+    {
+        vk_deferred_retire_t* e = &g_samp_retire[ g_samp_retire_head ];
+        if ( e->retire_frame > safe_frame )
+            break;
+        vk_bindless_free( &g_samp_free, e->idx );
+        g_samp_retire_head = ( g_samp_retire_head + 1 ) % VK_MAX_BINDLESS_SAMPLERS;
+    }
 }
 
 /*==============================================================================================
@@ -246,9 +307,14 @@ vk_register_texture( rhi_texture_t handle )
 static void
 vk_unregister_texture( u32 bindless_index )
 {
-    vk_bindless_free( &g_tex_free, bindless_index );
-    /* Intentionally leave the stale descriptor; it is PARTIALLY_BOUND so unused entries
-       are legal as long as shaders do not access them. */
+    if ( bindless_index == 0 )
+        return;
+    /* Defer: the GPU may still be reading this slot's descriptor in a previous frame. */
+    u32 next = ( g_tex_retire_tail + 1 ) % VK_MAX_BINDLESS_TEXTURES;
+    ORB_ASSERT( next != g_tex_retire_head );   /* deferred queue overflow -- impossible if slot 0 is reserved */
+    g_tex_retire[ g_tex_retire_tail ] = ( vk_deferred_retire_t ){ bindless_index, vk.global_frame };
+    g_tex_retire_tail                 = next;
+    /* Stale descriptor remains; PARTIALLY_BOUND allows unused slots to stay as-is. */
 }
 
 static u32
@@ -285,7 +351,12 @@ vk_register_sampler( rhi_sampler_t handle )
 static void
 vk_unregister_sampler( u32 bindless_index )
 {
-    vk_bindless_free( &g_samp_free, bindless_index );
+    if ( bindless_index == 0 )
+        return;
+    u32 next = ( g_samp_retire_tail + 1 ) % VK_MAX_BINDLESS_SAMPLERS;
+    ORB_ASSERT( next != g_samp_retire_head );
+    g_samp_retire[ g_samp_retire_tail ] = ( vk_deferred_retire_t ){ bindless_index, vk.global_frame };
+    g_samp_retire_tail                  = next;
 }
 
 /*============================================================================================*/

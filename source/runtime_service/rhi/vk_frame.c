@@ -54,6 +54,9 @@ vk_frame_begin( i32 ctx_id )
     /* Flush staged uploads from the previous cycle; advances g_upload_active_slot. */
     vk_upload_flush();
 
+    /* Return deferred bindless slots whose GPU references have expired. */
+    vk_descriptor_flush_retired();
+
     /* Acquire the next presentable swapchain image. */
     r = vkAcquireNextImageKHR( vk.device, ctx->swapchain, UINT64_MAX,
                                 ctx->image_available_sem[ frame ], VK_NULL_HANDLE,
