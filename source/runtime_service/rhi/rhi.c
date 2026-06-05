@@ -9,28 +9,33 @@
     -----------------------
         1. Standard headers
         2. orb.h  +  LOG_CH  +  engine headers
-        3. Platform headers    (windows.h, gated by OS_WINDOWS)
-        4. Vulkan headers      (platform-gated; VK_NO_PROTOTYPES so we own all pointers)
-        5. rhi_api.h           (RHI API struct + gateway; transitively includes rhi.h)
-        6. vk_state.c          (vk singleton and type definitions -- MUST be first)
-        7. vk_library.c        (function pointer bootstrap)
-        8. vk_callback_alloc.c (allocation callback handler)
-        9. vk_callback_debug.c (messenger + GPU labels; referenced by later files)
-       10. vk_memory.c         (device memory allocation)
-       11. vk_texture.c        (VkImage + VkImageView + VkSampler; format map used by pipeline)
-       12. vk_buffer.c         (VkBuffer; depends on vk_memory.c helpers)
-       13. vk_shader.c         (VkShaderModule)
-       14. vk_descriptor.c     (bindless pool + pipeline layout; needed before pipeline)
-       15. vk_pipeline.c       (graphics/compute PSO; depends on shader + descriptor)
-       16. vk_upload.c         (staging ring buffer)
-       17. vk_instance.c       (VkInstance + debug messenger)
-       18. vk_swapchain.c      (VkSurfaceKHR + VkSwapchainKHR + depth buffer)
-       19. vk_device.c         (VkDevice + queues)
-       20. vk_sync.c           (per-frame semaphores + fences)
-       21. vk_command.c        (command pool + buffers)
-       22. vk_frame.c          (frame_begin / frame_end + draw commands)
-       23. vk_init.c           (orchestrates init/shutdown/context create/destroy)
-       24. rhi_api.c           (wires vk_* functions into the API struct + mod descriptor)
+        3. Platform headers        (windows.h, gated by OS_WINDOWS)
+        4. Vulkan headers          (platform-gated; VK_NO_PROTOTYPES so we own all pointers)
+        5. rhi_api.h               (RHI API struct + gateway; transitively includes rhi.h)
+        6. vk_state.c              (vk singleton and type definitions -- MUST be first)
+        7. vk_library.c            (Vulkan DLL load + function pointer bootstrap)
+        8. vk_debug.c              (allocation callbacks, validation messenger, GPU labels)
+        9. vk_convert.c            (all RHI -> Vulkan enum/format translations)
+       10. vk_memory.c             (device memory allocation)
+       11. vk_texture.c            (VkImage + VkImageView + VkSampler lifecycle)
+       12. vk_buffer.c             (VkBuffer lifecycle)
+       13. vk_shader.c             (VkShaderModule lifecycle)
+       14. vk_descriptor.c         (bindless pool + shared pipeline layout)
+       15. vk_pipeline_cache.c     (VkPipelineCache disk persistence)
+       16. vk_pipeline_graphics.c  (slot helpers + graphics PSO creation)
+       17. vk_pipeline_compute.c   (compute PSO creation)
+       18. vk_upload.c             (staged upload ring buffer + QFOT)
+       19. vk_instance.c           (VkInstance + extensions + layers)
+       20. vk_swapchain.c          (VkSurfaceKHR + VkSwapchainKHR + depth buffer)
+       21. vk_device_select.c      (physical device enumeration + feature validation)
+       22. vk_device.c             (VkDevice creation + queue retrieval + subsystem init)
+       23. vk_sync.c               (per-frame semaphores + fences)
+       24. vk_command.c            (command pool + per-frame command buffers)
+       25. vk_frame.c              (frame_begin / frame_end orchestration)
+       26. vk_cmd_graphics.c       (render pass, draw calls, state binding)
+       27. vk_cmd_compute.c        (compute dispatch)
+       28. vk_init.c               (global and per-context lifecycle)
+       29. rhi_api.c               (wires vk_* functions into API struct + mod descriptor)
 
 ==============================================================================================*/
 
@@ -121,25 +126,30 @@
 
 #include "runtime_service/rhi/vk_state.c"
 #include "runtime_service/rhi/vk_library.c"
-#include "runtime_service/rhi/vk_callback_alloc.c"
-#include "runtime_service/rhi/vk_callback_debug.c"
+#include "runtime_service/rhi/vk_debug.c"
+#include "runtime_service/rhi/vk_convert.c"
 
 #include "runtime_service/rhi/vk_memory.c"
 #include "runtime_service/rhi/vk_texture.c"
 #include "runtime_service/rhi/vk_buffer.c"
 #include "runtime_service/rhi/vk_shader.c"
 #include "runtime_service/rhi/vk_descriptor.c"
-#include "runtime_service/rhi/vk_pipeline.c"
+#include "runtime_service/rhi/vk_pipeline_cache.c"
+#include "runtime_service/rhi/vk_pipeline_graphics.c"
+#include "runtime_service/rhi/vk_pipeline_compute.c"
 #include "runtime_service/rhi/vk_upload.c"
 
 static void vk_device_wait_idle( void );
 
 #include "runtime_service/rhi/vk_instance.c"
 #include "runtime_service/rhi/vk_swapchain.c"
+#include "runtime_service/rhi/vk_device_select.c"
 #include "runtime_service/rhi/vk_device.c"
 #include "runtime_service/rhi/vk_sync.c"
 #include "runtime_service/rhi/vk_command.c"
 #include "runtime_service/rhi/vk_frame.c"
+#include "runtime_service/rhi/vk_cmd_graphics.c"
+#include "runtime_service/rhi/vk_cmd_compute.c"
 
 #include "runtime_service/rhi/vk_init.c"
 

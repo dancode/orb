@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    vulkan/vk_pipeline.c -- Graphics PSO creation with a persistent cache.
+    vk_pipeline_graphics.c -- Graphics PSO creation and shared pipeline slot management.
 
     Slot pool: vk.pipelines[ VK_MAX_PIPELINES ] (vk_pipeline_slot_t).
 
@@ -20,170 +20,7 @@
 ==============================================================================================*/
 
 /*==============================================================================================
-    Enum conversion helpers
-==============================================================================================*/
-
-static VkCullModeFlags
-rhi_cull_to_vk( rhi_cull_mode_t cull )
-{
-    switch ( cull )
-    {
-        case RHI_CULL_FRONT: return VK_CULL_MODE_FRONT_BIT;
-        case RHI_CULL_BACK:  return VK_CULL_MODE_BACK_BIT;
-        default:             return VK_CULL_MODE_NONE;
-    }
-}
-
-static VkCompareOp
-rhi_compare_to_vk( rhi_compare_op_t op )
-{
-    switch ( op )
-    {
-        case RHI_COMPARE_NEVER:         return VK_COMPARE_OP_NEVER;
-        case RHI_COMPARE_LESS:          return VK_COMPARE_OP_LESS;
-        case RHI_COMPARE_EQUAL:         return VK_COMPARE_OP_EQUAL;
-        case RHI_COMPARE_LESS_EQUAL:    return VK_COMPARE_OP_LESS_OR_EQUAL;
-        case RHI_COMPARE_GREATER:       return VK_COMPARE_OP_GREATER;
-        case RHI_COMPARE_NOT_EQUAL:     return VK_COMPARE_OP_NOT_EQUAL;
-        case RHI_COMPARE_GREATER_EQUAL: return VK_COMPARE_OP_GREATER_OR_EQUAL;
-        default:                        return VK_COMPARE_OP_ALWAYS;
-    }
-}
-
-static VkBlendFactor
-rhi_blend_factor_to_vk( rhi_blend_factor_t f )
-{
-    switch ( f )
-    {
-        case RHI_BLEND_ZERO:            return VK_BLEND_FACTOR_ZERO;
-        case RHI_BLEND_ONE:             return VK_BLEND_FACTOR_ONE;
-        case RHI_BLEND_SRC_COLOR:       return VK_BLEND_FACTOR_SRC_COLOR;
-        case RHI_BLEND_ONE_MINUS_SRC_C: return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
-        case RHI_BLEND_SRC_ALPHA:       return VK_BLEND_FACTOR_SRC_ALPHA;
-        case RHI_BLEND_ONE_MINUS_SRC_A: return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        case RHI_BLEND_DST_ALPHA:       return VK_BLEND_FACTOR_DST_ALPHA;
-        case RHI_BLEND_ONE_MINUS_DST_A: return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
-        default:                        return VK_BLEND_FACTOR_ZERO;
-    }
-}
-
-static VkBlendOp
-rhi_blend_op_to_vk( rhi_blend_op_t op )
-{
-    switch ( op )
-    {
-        case RHI_BLEND_OP_SUBTRACT: return VK_BLEND_OP_SUBTRACT;
-        case RHI_BLEND_OP_MIN:      return VK_BLEND_OP_MIN;
-        case RHI_BLEND_OP_MAX:      return VK_BLEND_OP_MAX;
-        default:                    return VK_BLEND_OP_ADD;
-    }
-}
-
-static VkFormat
-rhi_vertex_format_to_vk( rhi_vertex_format_t f )
-{
-    switch ( f )
-    {
-        case RHI_VERTEX_FORMAT_FLOAT:  return VK_FORMAT_R32_SFLOAT;
-        case RHI_VERTEX_FORMAT_FLOAT2: return VK_FORMAT_R32G32_SFLOAT;
-        case RHI_VERTEX_FORMAT_FLOAT3: return VK_FORMAT_R32G32B32_SFLOAT;
-        case RHI_VERTEX_FORMAT_FLOAT4: return VK_FORMAT_R32G32B32A32_SFLOAT;
-        case RHI_VERTEX_FORMAT_UINT:   return VK_FORMAT_R32_UINT;
-        case RHI_VERTEX_FORMAT_UINT2:  return VK_FORMAT_R32G32_UINT;
-        case RHI_VERTEX_FORMAT_UINT4:  return VK_FORMAT_R32G32B32A32_UINT;
-        case RHI_VERTEX_FORMAT_UNORM4: return VK_FORMAT_R8G8B8A8_UNORM;
-        default:                       return VK_FORMAT_UNDEFINED;
-    }
-}
-
-/*==============================================================================================
-    Pipeline cache disk I/O
-==============================================================================================*/
-
-static const char* const PIPELINE_CACHE_PATH = "bin/vk_pipeline_cache.bin";
-
-static void
-vk_pipeline_cache_load( void )
-{
-    void*  data      = NULL;
-    size_t data_size = 0;
-
-    FILE* f = fopen( PIPELINE_CACHE_PATH, "rb" );
-    if ( f )
-    {
-        fseek( f, 0, SEEK_END );
-        long sz = ftell( f );
-        fseek( f, 0, SEEK_SET );
-
-        if ( sz > 0 )
-        {
-            data = malloc( (size_t)sz );
-            if ( data )
-            {
-                data_size = fread( data, 1, (size_t)sz, f );
-                if ( data_size != (size_t)sz )
-                {
-                    free( data );
-                    data      = NULL;
-                    data_size = 0;
-                }
-            }
-        }
-        fclose( f );
-    }
-
-    VkPipelineCacheCreateInfo ci = { 0 };
-    ci.sType           = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-    ci.initialDataSize = data_size;
-    ci.pInitialData    = data;
-
-    VkResult r = vkCreatePipelineCache( vk.device, &ci, vk.alloc_cb, &vk.pipeline_cache );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_WARN( "pipeline_cache_load: vkCreatePipelineCache: %s; continuing without cache",
-                  string_VkResult( r ) );
-        vk.pipeline_cache = VK_NULL_HANDLE;
-    }
-    else
-    {
-        LOG_INFO( "pipeline_cache_load: OK (%zu bytes from disk)", data_size );
-    }
-
-    free( data );
-}
-
-static void
-vk_pipeline_cache_save( void )
-{
-    if ( vk.pipeline_cache == VK_NULL_HANDLE )
-        return;
-
-    size_t   data_size = 0;
-    VkResult r         = vkGetPipelineCacheData( vk.device, vk.pipeline_cache, &data_size, NULL );
-    if ( r != VK_SUCCESS || data_size == 0 )
-        return;
-
-    void* data = malloc( data_size );
-    if ( !data )
-        return;
-
-    r = vkGetPipelineCacheData( vk.device, vk.pipeline_cache, &data_size, data );
-    if ( r == VK_SUCCESS )
-    {
-        FILE* f = fopen( PIPELINE_CACHE_PATH, "wb" );
-        if ( f )
-        {
-            fwrite( data, 1, data_size, f );
-            fclose( f );
-            LOG_INFO( "pipeline_cache_save: %zu bytes written", data_size );
-        }
-    }
-
-    free( data );
-}
-
-/*==============================================================================================
-    Slot allocation helpers
+    Slot allocation helpers  (shared by graphics and compute)
 ==============================================================================================*/
 
 static i32
@@ -205,7 +42,7 @@ vk_pipeline_validate( rhi_pipeline_t handle )
 }
 
 /*==============================================================================================
-    Pipeline creation / destruction
+    Graphics PSO creation
 ==============================================================================================*/
 
 static rhi_pipeline_t
@@ -389,51 +226,9 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     return ( rhi_pipeline_t ){ (u32)idx };
 }
 
-static rhi_pipeline_t
-vk_compute_pipeline_create( const rhi_compute_pipeline_desc_t* desc )
-{
-    if ( !desc )
-        return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
-
-    if ( !vk_shader_validate( desc->comp ) )
-    {
-        LOG_ERROR( "compute_pipeline_create: invalid shader handle" );
-        return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
-    }
-
-    i32 idx = vk_pipeline_alloc_slot();
-    if ( idx < 0 )
-    {
-        LOG_ERROR( "pipeline pool exhausted (VK_MAX_PIPELINES = %d)", VK_MAX_PIPELINES );
-        return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
-    }
-
-    vk_pipeline_slot_t* slot     = &vk.pipelines[ (u32)idx ];
-    vk_shader_slot_t*   comp_slt = &vk.shaders[ desc->comp.id ];
-
-    VkComputePipelineCreateInfo ci = { 0 };
-    ci.sType               = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    ci.stage.sType         = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    ci.stage.stage         = VK_SHADER_STAGE_COMPUTE_BIT;
-    ci.stage.module        = comp_slt->module;
-    ci.stage.pName         = comp_slt->entry;
-    ci.layout              = vk.pipeline_layout;
-
-    VkResult r = vkCreateComputePipelines( vk.device, vk.pipeline_cache, 1, &ci,
-                                           vk.alloc_cb, &slot->pipeline );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "compute_pipeline_create: vkCreateComputePipelines: %s", string_VkResult( r ) );
-        return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
-    }
-
-    slot->is_compute = true;
-
-    if ( desc->debug_name )
-        vk_debug_name_object( VK_OBJECT_TYPE_PIPELINE, (u64)slot->pipeline, desc->debug_name );
-
-    return ( rhi_pipeline_t ){ (u32)idx };
-}
+/*==============================================================================================
+    Pipeline destruction  (shared; destroys both graphics and compute slots)
+==============================================================================================*/
 
 static void
 vk_pipeline_destroy( rhi_pipeline_t handle )

@@ -8,22 +8,9 @@
     CPU_TO_GPU and CPU_ONLY buffers are persistently mapped at creation time.
     GPU_ONLY buffers must be populated via vk_upload.c (staged copy).
 
-==============================================================================================*/
+    Buffer usage flag conversion lives in vk_convert.c.
 
-static VkBufferUsageFlags
-rhi_buffer_usage_to_vk( rhi_buffer_usage_t usage )
-{
-    VkBufferUsageFlags flags = 0;
-    if ( usage & RHI_BUFFER_USAGE_VERTEX       ) flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    if ( usage & RHI_BUFFER_USAGE_INDEX        ) flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    if ( usage & RHI_BUFFER_USAGE_UNIFORM      ) flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    if ( usage & RHI_BUFFER_USAGE_STORAGE      ) flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    if ( usage & RHI_BUFFER_USAGE_INDIRECT     ) flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-    if ( usage & RHI_BUFFER_USAGE_TRANSFER_SRC ) flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    if ( usage & RHI_BUFFER_USAGE_TRANSFER_DST   ) flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    if ( usage & RHI_BUFFER_USAGE_DEVICE_ADDRESS ) flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-    return flags;
-}
+==============================================================================================*/
 
 /*==============================================================================================
     Slot allocation helpers

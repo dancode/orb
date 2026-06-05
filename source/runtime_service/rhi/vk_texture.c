@@ -1,64 +1,16 @@
 /*==============================================================================================
 
-    vulkan/vk_texture.c -- VkImage + VkImageView lifecycle and format mapping.
+    vulkan/vk_texture.c -- VkImage + VkImageView + VkSampler lifecycle.
 
     Slot pool: vk.textures[ VK_MAX_TEXTURES ] (vk_texture_slot_t).
     Each texture gets a default "full-range" image view covering all mips and layers.
-    Sampler objects are separate (see vk_sampler_create below).
+    Sampler objects share the file for filter/address locality but use a separate pool.
 
     Mip level auto-compute: if desc->mip_levels == 0, floor(log2(max(w,h))) + 1.
 
+    Format and usage conversions live in vk_convert.c.
+
 ==============================================================================================*/
-
-/*==============================================================================================
-    Format mapping  (rhi_format_t -> VkFormat)
-==============================================================================================*/
-
-static VkFormat
-rhi_format_to_vk( rhi_format_t fmt )
-{
-    switch ( fmt )
-    {
-        case RHI_FORMAT_RGBA8_UNORM:         return VK_FORMAT_R8G8B8A8_UNORM;
-        case RHI_FORMAT_RGBA8_SRGB:          return VK_FORMAT_R8G8B8A8_SRGB;
-        case RHI_FORMAT_BGRA8_UNORM:         return VK_FORMAT_B8G8R8A8_UNORM;
-        case RHI_FORMAT_BGRA8_SRGB:          return VK_FORMAT_B8G8R8A8_SRGB;
-        case RHI_FORMAT_RGBA16_FLOAT:        return VK_FORMAT_R16G16B16A16_SFLOAT;
-        case RHI_FORMAT_RG11B10_FLOAT:       return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
-        case RHI_FORMAT_RGB9E5_FLOAT:        return VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
-        case RHI_FORMAT_R8_UNORM:            return VK_FORMAT_R8_UNORM;
-        case RHI_FORMAT_R16_FLOAT:           return VK_FORMAT_R16_SFLOAT;
-        case RHI_FORMAT_R32_FLOAT:           return VK_FORMAT_R32_SFLOAT;
-        case RHI_FORMAT_RG8_UNORM:           return VK_FORMAT_R8G8_UNORM;
-        case RHI_FORMAT_RG16_FLOAT:          return VK_FORMAT_R16G16_SFLOAT;
-        case RHI_FORMAT_RG32_FLOAT:          return VK_FORMAT_R32G32_SFLOAT;
-        case RHI_FORMAT_D32_FLOAT:           return VK_FORMAT_D32_SFLOAT;
-        case RHI_FORMAT_D24_UNORM_S8_UINT:   return VK_FORMAT_D24_UNORM_S8_UINT;
-        case RHI_FORMAT_D16_UNORM:           return VK_FORMAT_D16_UNORM;
-        default:                             return VK_FORMAT_UNDEFINED;
-    }
-}
-
-static bool
-rhi_format_is_depth( rhi_format_t fmt )
-{
-    return fmt == RHI_FORMAT_D32_FLOAT
-        || fmt == RHI_FORMAT_D24_UNORM_S8_UINT
-        || fmt == RHI_FORMAT_D16_UNORM;
-}
-
-static VkImageUsageFlags
-rhi_texture_usage_to_vk( rhi_texture_usage_t usage )
-{
-    VkImageUsageFlags flags = 0;
-    if ( usage & RHI_TEXTURE_USAGE_SAMPLED          ) flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    if ( usage & RHI_TEXTURE_USAGE_STORAGE          ) flags |= VK_IMAGE_USAGE_STORAGE_BIT;
-    if ( usage & RHI_TEXTURE_USAGE_COLOR_ATTACHMENT ) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    if ( usage & RHI_TEXTURE_USAGE_DEPTH_ATTACHMENT ) flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    if ( usage & RHI_TEXTURE_USAGE_TRANSFER_SRC     ) flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    if ( usage & RHI_TEXTURE_USAGE_TRANSFER_DST     ) flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    return flags;
-}
 
 /*==============================================================================================
     Slot allocation helpers
@@ -226,7 +178,7 @@ vk_texture_destroy( rhi_texture_t handle )
 }
 
 /*==============================================================================================
-    Sampler creation / destruction  (lives here for format/filter locality)
+    Sampler creation / destruction
 ==============================================================================================*/
 
 static i32
@@ -245,30 +197,6 @@ vk_sampler_validate( rhi_sampler_t handle )
 {
     return handle.id > 0 && handle.id < VK_MAX_SAMPLERS
         && vk.samplers[ handle.id ].sampler != VK_NULL_HANDLE;
-}
-
-static VkFilter
-rhi_filter_to_vk( rhi_filter_t f )
-{
-    return f == RHI_FILTER_LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
-}
-
-static VkSamplerMipmapMode
-rhi_mip_filter_to_vk( rhi_filter_t f )
-{
-    return f == RHI_FILTER_LINEAR ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
-}
-
-static VkSamplerAddressMode
-rhi_address_to_vk( rhi_address_mode_t m )
-{
-    switch ( m )
-    {
-        case RHI_ADDRESS_MODE_MIRRORED_REPEAT: return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
-        case RHI_ADDRESS_MODE_CLAMP_TO_EDGE:   return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        case RHI_ADDRESS_MODE_CLAMP_TO_BORDER: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-        default:                               return VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    }
 }
 
 static rhi_sampler_t
