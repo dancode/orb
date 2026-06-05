@@ -24,7 +24,7 @@ vk_instance_get_extensions( const char** out_ext_array )
     VkExtensionProperties ext_props[ 64 ] = { 0 };
 
     /* collect list of vulkan extentions */
-    
+
     VkResult r = vkEnumerateInstanceExtensionProperties( NULL, &ext_count, NULL );    
     if ( r != VK_SUCCESS ) {
          LOG_ERROR( "vkEnumerateInstanceExtensionProperties: %s", string_VkResult( r ) );
@@ -50,20 +50,19 @@ vk_instance_get_extensions( const char** out_ext_array )
         }
     }
     
-#if OS_WINDOWS
-    if ( vk.ext_win32_surface == false || vk.ext_khr_surface == false )
-    {
-        LOG_FATAL( "failed to get win32 surface extensions" );
+    #if OS_WINDOWS
+    if ( vk.ext_win32_surface == false || vk.ext_khr_surface == false ) {
+         LOG_FATAL( "failed to get win32 surface extensions" );
     }
-#endif
+    #endif
     
     /* add the extentions to extention list */
     
     out_ext_array[ 0 ] = VK_KHR_SURFACE_EXTENSION_NAME;
     out_ext_count = 1;
-#if OS_WINDOWS
-    out_ext_array[ out_ext_count++ ] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
-#endif
+    #if OS_WINDOWS
+        out_ext_array[ out_ext_count++ ] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+    #endif
     
     /*  warn if requested layers are not available */
     
