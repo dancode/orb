@@ -24,6 +24,9 @@
             descriptorBindingPartiallyBound            -- bindless slots may be empty; shaders
                                                           must not read them, but the array can
                                                           have holes
+            descriptorBindingSampledImageUpdateAfterBind -- UPDATE_AFTER_BIND on sampled image
+                                                          and sampler bindings (spec covers
+                                                          VK_DESCRIPTOR_TYPE_SAMPLER here too)
             descriptorBindingUpdateUnusedWhilePending  -- CPU can write new descriptors into
                                                           unused slots while GPU reads other slots
                                                           in the same array; enables streaming
@@ -245,9 +248,10 @@ vk_device_validate( VkPhysicalDevice dev, u32*
     }
 
     /* VK 1.2 descriptor indexing requirements */
-    if ( !f.desc_idx.shaderSampledImageArrayNonUniformIndexing ||
-         !f.desc_idx.descriptorBindingPartiallyBound           ||
-         !f.desc_idx.descriptorBindingUpdateUnusedWhilePending ||
+    if ( !f.desc_idx.shaderSampledImageArrayNonUniformIndexing    ||
+         !f.desc_idx.descriptorBindingPartiallyBound              ||
+         !f.desc_idx.descriptorBindingSampledImageUpdateAfterBind ||
+         !f.desc_idx.descriptorBindingUpdateUnusedWhilePending    ||
          !f.desc_idx.runtimeDescriptorArray ) {
         return false;
     }
@@ -456,10 +460,14 @@ vk_device_init_features( vk_feature_chain_t* f )
     f->desc_idx.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;  
 
     /* bindless slots may be empty/unused */
-    f->desc_idx.descriptorBindingPartiallyBound = VK_TRUE;  
+    f->desc_idx.descriptorBindingPartiallyBound = VK_TRUE;
+
+    /* UPDATE_AFTER_BIND on sampled image + sampler bindings -- required by bindless layout.
+       Spec covers VK_DESCRIPTOR_TYPE_SAMPLER under this same flag. */
+    f->desc_idx.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
 
     /* write new slots while GPU reads others */
-    f->desc_idx.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;  
+    f->desc_idx.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 
     /* array size set by layout, not SPIR-V */
     f->desc_idx.runtimeDescriptorArray = VK_TRUE;  

@@ -50,16 +50,20 @@ vk_instance_get_extensions( const char** out_ext_array )
         }
     }
     
+#if OS_WINDOWS
     if ( vk.ext_win32_surface == false || vk.ext_khr_surface == false )
     {
         LOG_FATAL( "failed to get win32 surface extensions" );
     }
+#endif
     
     /* add the extentions to extention list */
     
     out_ext_array[ 0 ] = VK_KHR_SURFACE_EXTENSION_NAME;
-    out_ext_array[ 1 ] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
-    out_ext_count = 2;
+    out_ext_count = 1;
+#if OS_WINDOWS
+    out_ext_array[ out_ext_count++ ] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+#endif
     
     /*  warn if requested layers are not available */
     
@@ -68,8 +72,7 @@ vk_instance_get_extensions( const char** out_ext_array )
          vk.use_vk_ext_debug_utils = false;
     }
     if ( vk.use_vk_ext_debug_utils ) {
-         out_ext_array[ 2 ] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-         out_ext_count++;
+         out_ext_array[ out_ext_count++ ] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
     }
     
     /* debug list our available extensions */
