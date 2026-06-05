@@ -9,8 +9,11 @@
         1. Caller calls rhi()->upload_buffer / upload_texture.
         2. Data is memcpy'd into the staging ring at the current head.
         3. Copy commands are recorded into the slot's dedicated transfer command buffer.
-        4. vk_upload_flush (called at frame_begin after the fence wait) submits the
-           pending transfer commands on the graphics queue and recycles the slot.
+        4. vk_upload_flush (called at frame_begin after the fence wait for this slot)
+           submits the pending transfer commands and recycles the slot. Because slots
+           cycle every VK_MAX_FRAMES_IN_FLIGHT frames, uploads queued in frame G are
+           not flushed until frame G+VK_MAX_FRAMES_IN_FLIGHT. Resources are safe to
+           sample only in that frame and later.
 
     Known issue: vk_upload_flush calls vkQueueWaitIdle after submitting the upload batch.
     This stalls the entire GPU queue until all uploads complete before render work can start.

@@ -76,7 +76,10 @@ typedef struct rhi_api_s
 
     /* ---- Staged upload (GPU_ONLY targets) ---- */
 
-    /* Enqueues a copy via internal staging; executes before the next frame_begin. */
+    /* Enqueues a copy via internal staging. The upload is flushed at the frame_begin
+       that reuses this slot (VK_MAX_FRAMES_IN_FLIGHT frames later). The destination
+       resource is safe to sample starting in that same frame; drawing from it any
+       earlier reads VK_IMAGE_LAYOUT_UNDEFINED / stale buffer data. */
     bool ( *upload_buffer  )( rhi_buffer_t  dst, const void* data, u32 size );
     bool ( *upload_texture )( rhi_texture_t dst, const void* data, u32 data_size,
                               u16 mip, u16 layer );
