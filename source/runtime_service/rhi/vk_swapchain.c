@@ -358,7 +358,7 @@ vk_swapchain_recreate( vk_context_t* ctx )
 static bool
 vk_depth_create( vk_context_t* ctx )
 {
-    /* Probe depth formats from most to least precise. */
+    /* Probe depth formats from most to least precise -- done once, shared across slots. */
     static const VkFormat s_candidates[] = {
         VK_FORMAT_D32_SFLOAT,
         VK_FORMAT_D24_UNORM_S8_UINT,
@@ -382,103 +382,102 @@ vk_depth_create( vk_context_t* ctx )
         return false;
     }
 
-    /* Create the depth image. */
-    VkImageCreateInfo img_ci      = { 0 };
-    img_ci.sType                  = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    img_ci.imageType              = VK_IMAGE_TYPE_2D;
-    img_ci.format                 = ctx->depth_format;
-    img_ci.extent.width           = ctx->swapchain_extent.width;
-    img_ci.extent.height          = ctx->swapchain_extent.height;
-    img_ci.extent.depth           = 1;
-    img_ci.mipLevels              = 1;
-    img_ci.arrayLayers            = 1;
-    img_ci.samples                = VK_SAMPLE_COUNT_1_BIT;
-    img_ci.tiling                 = VK_IMAGE_TILING_OPTIMAL;
-    img_ci.usage                  = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    img_ci.sharingMode            = VK_SHARING_MODE_EXCLUSIVE;
-    img_ci.initialLayout          = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    VkResult r = vkCreateImage( vk.device, &img_ci, vk.alloc_cb, &ctx->depth_image );
-    if ( r != VK_SUCCESS )
+    /* Create one image + memory + view per frame-in-flight slot.
+       On any failure, vk_depth_destroy cleans up all slots allocated so far. */
+    for ( u32 slot = 0; slot < VK_MAX_FRAMES_IN_FLIGHT; ++slot )
     {
-        LOG_ERROR( "depth_create: vkCreateImage: %s", string_VkResult( r ) );
-        return false;
+        VkImageCreateInfo img_ci      = { 0 };
+        img_ci.sType                  = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        img_ci.imageType              = VK_IMAGE_TYPE_2D;
+        img_ci.format                 = ctx->depth_format;
+        img_ci.extent.width           = ctx->swapchain_extent.width;
+        img_ci.extent.height          = ctx->swapchain_extent.height;
+        img_ci.extent.depth           = 1;
+        img_ci.mipLevels              = 1;
+        img_ci.arrayLayers            = 1;
+        img_ci.samples                = VK_SAMPLE_COUNT_1_BIT;
+        img_ci.tiling                 = VK_IMAGE_TILING_OPTIMAL;
+        img_ci.usage                  = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        img_ci.sharingMode            = VK_SHARING_MODE_EXCLUSIVE;
+        img_ci.initialLayout          = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        VkResult r = vkCreateImage( vk.device, &img_ci, vk.alloc_cb, &ctx->depth_image[ slot ] );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "depth_create: vkCreateImage[%u]: %s", slot, string_VkResult( r ) );
+            vk_depth_destroy( ctx );
+            return false;
+        }
+
+        VkMemoryRequirements reqs;
+        vkGetImageMemoryRequirements( vk.device, ctx->depth_image[ slot ], &reqs );
+
+        vk_mem_alloc_t alloc = { 0 };
+        if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, &alloc ) )
+        {
+            vk_depth_destroy( ctx );
+            return false;
+        }
+        ctx->depth_memory[ slot ] = alloc.memory;
+
+        r = vkBindImageMemory( vk.device, ctx->depth_image[ slot ], ctx->depth_memory[ slot ], alloc.offset );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "depth_create: vkBindImageMemory[%u]: %s", slot, string_VkResult( r ) );
+            vk_depth_destroy( ctx );
+            return false;
+        }
+
+        VkImageViewCreateInfo view_ci           = { 0 };
+        view_ci.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_ci.image                           = ctx->depth_image[ slot ];
+        view_ci.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+        view_ci.format                          = ctx->depth_format;
+        view_ci.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
+        view_ci.subresourceRange.baseMipLevel   = 0;
+        view_ci.subresourceRange.levelCount     = 1;
+        view_ci.subresourceRange.baseArrayLayer = 0;
+        view_ci.subresourceRange.layerCount     = 1;
+
+        r = vkCreateImageView( vk.device, &view_ci, vk.alloc_cb, &ctx->depth_view[ slot ] );
+        if ( r != VK_SUCCESS )
+        {
+            LOG_ERROR( "depth_create: vkCreateImageView[%u]: %s", slot, string_VkResult( r ) );
+            vk_depth_destroy( ctx );
+            return false;
+        }
+
+        /* Layout starts UNDEFINED; frame_begin barriers it to DEPTH_ATTACHMENT_OPTIMAL on first use. */
+        ctx->depth_layout[ slot ] = VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
-    /* Allocate device-local memory and bind. */
-    VkMemoryRequirements reqs;
-    vkGetImageMemoryRequirements( vk.device, ctx->depth_image, &reqs );
-
-    vk_mem_alloc_t alloc = { 0 };
-    if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, &alloc ) )
-    {
-        vkDestroyImage( vk.device, ctx->depth_image, vk.alloc_cb );
-        ctx->depth_image = VK_NULL_HANDLE;
-        return false;
-    }
-    ctx->depth_memory = alloc.memory;
-
-    r = vkBindImageMemory( vk.device, ctx->depth_image, ctx->depth_memory, alloc.offset );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "depth_create: vkBindImageMemory: %s", string_VkResult( r ) );
-        vkFreeMemory( vk.device, ctx->depth_memory, vk.alloc_cb );
-        vkDestroyImage( vk.device, ctx->depth_image, vk.alloc_cb );
-        ctx->depth_memory = VK_NULL_HANDLE;
-        ctx->depth_image  = VK_NULL_HANDLE;
-        return false;
-    }
-
-    /* Create depth-only image view. */
-    VkImageViewCreateInfo view_ci           = { 0 };
-    view_ci.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view_ci.image                           = ctx->depth_image;
-    view_ci.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    view_ci.format                          = ctx->depth_format;
-    view_ci.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT;
-    view_ci.subresourceRange.baseMipLevel   = 0;
-    view_ci.subresourceRange.levelCount     = 1;
-    view_ci.subresourceRange.baseArrayLayer = 0;
-    view_ci.subresourceRange.layerCount     = 1;
-
-    r = vkCreateImageView( vk.device, &view_ci, vk.alloc_cb, &ctx->depth_view );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "depth_create: vkCreateImageView: %s", string_VkResult( r ) );
-        vkFreeMemory( vk.device, ctx->depth_memory, vk.alloc_cb );
-        vkDestroyImage( vk.device, ctx->depth_image, vk.alloc_cb );
-        ctx->depth_memory = VK_NULL_HANDLE;
-        ctx->depth_image  = VK_NULL_HANDLE;
-        return false;
-    }
-
-    /* Layout starts UNDEFINED; frame_begin barriers it to DEPTH_ATTACHMENT_OPTIMAL. */
-    ctx->depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    LOG_INFO( "depth_create: OK (ctx %d, fmt=%d, %ux%u)", ctx->id, (i32)ctx->depth_format,
-              img_ci.extent.width, img_ci.extent.height );
+    LOG_INFO( "depth_create: OK (ctx %d, fmt=%d, %ux%u, %u slots)", ctx->id, (i32)ctx->depth_format,
+              ctx->swapchain_extent.width, ctx->swapchain_extent.height, (u32)VK_MAX_FRAMES_IN_FLIGHT );
     return true;
 }
 
 static void
 vk_depth_destroy( vk_context_t* ctx )
 {
-    if ( ctx->depth_view != VK_NULL_HANDLE )
+    for ( u32 slot = 0; slot < VK_MAX_FRAMES_IN_FLIGHT; ++slot )
     {
-        vkDestroyImageView( vk.device, ctx->depth_view, vk.alloc_cb );
-        ctx->depth_view = VK_NULL_HANDLE;
+        if ( ctx->depth_view[ slot ] != VK_NULL_HANDLE )
+        {
+            vkDestroyImageView( vk.device, ctx->depth_view[ slot ], vk.alloc_cb );
+            ctx->depth_view[ slot ] = VK_NULL_HANDLE;
+        }
+        if ( ctx->depth_image[ slot ] != VK_NULL_HANDLE )
+        {
+            vkDestroyImage( vk.device, ctx->depth_image[ slot ], vk.alloc_cb );
+            ctx->depth_image[ slot ] = VK_NULL_HANDLE;
+        }
+        if ( ctx->depth_memory[ slot ] != VK_NULL_HANDLE )
+        {
+            vkFreeMemory( vk.device, ctx->depth_memory[ slot ], vk.alloc_cb );
+            ctx->depth_memory[ slot ] = VK_NULL_HANDLE;
+        }
+        ctx->depth_layout[ slot ] = VK_IMAGE_LAYOUT_UNDEFINED;
     }
-    if ( ctx->depth_image != VK_NULL_HANDLE )
-    {
-        vkDestroyImage( vk.device, ctx->depth_image, vk.alloc_cb );
-        ctx->depth_image = VK_NULL_HANDLE;
-    }
-    if ( ctx->depth_memory != VK_NULL_HANDLE )
-    {
-        vkFreeMemory( vk.device, ctx->depth_memory, vk.alloc_cb );
-        ctx->depth_memory = VK_NULL_HANDLE;
-    }
-    ctx->depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 /*============================================================================================*/

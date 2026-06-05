@@ -148,12 +148,13 @@ typedef struct vk_context_s
     VkImageView         swapchain_image_views[ VK_MAX_SWAPCHAIN_IMAGES ];
     VkExtent2D          swapchain_extent;
 
-    /* Depth attachment (matched to swapchain extent) */
+    /* Depth attachment: one image per frame-in-flight so consecutive frames do not race
+       on the same image.  depth_format is shared (same for all slots). */
 
-    VkImage             depth_image;
-    VkDeviceMemory      depth_memory;
-    VkImageView         depth_view;
-    VkFormat            depth_format;    /* selected at swapchain creation time */
+    VkImage             depth_image[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkDeviceMemory      depth_memory[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkImageView         depth_view[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkFormat            depth_format;    /* selected at swapchain creation time; same for all slots */
 
     /* Per-frame synchronization */
 
@@ -170,9 +171,10 @@ typedef struct vk_context_s
     VkCommandBuffer             command_buffers[ VK_MAX_FRAMES_IN_FLIGHT ];
     struct rhi_command_list_s   cmd_lists[ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    /* Depth image layout tracker: UNDEFINED on create; set to DEPTH_ATTACHMENT_OPTIMAL after
-       the first frame's barrier.  Avoids an unnecessary barrier on every subsequent frame. */
-    VkImageLayout       depth_layout;
+    /* Per-slot layout tracker: UNDEFINED on create; promoted to DEPTH_ATTACHMENT_OPTIMAL after
+       each slot's first barrier.  Safe because the fence wait guarantees the previous use of
+       this slot is complete before we access it again. */
+    VkImageLayout       depth_layout[ VK_MAX_FRAMES_IN_FLIGHT ];
 
 } vk_context_t;
 

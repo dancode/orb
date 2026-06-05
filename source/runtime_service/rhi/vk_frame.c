@@ -116,8 +116,10 @@ vk_frame_begin( i32 ctx_id )
     color_b->subresourceRange.baseArrayLayer         = 0;
     color_b->subresourceRange.layerCount             = 1;
 
-    /* Depth image: UNDEFINED -> DEPTH_ATTACHMENT_OPTIMAL (first frame only). */
-    if ( ctx->depth_layout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL )
+    /* Depth image: UNDEFINED -> DEPTH_ATTACHMENT_OPTIMAL (first use of this slot only).
+       The fence wait above guarantees the previous use of this frame slot is complete,
+       so depth_layout[frame] accurately reflects the image state for this slot. */
+    if ( ctx->depth_layout[ frame ] != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL )
     {
         VkImageMemoryBarrier2* depth_b               = &barriers[ barrier_count++ ];
         depth_b->sType                               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -126,18 +128,18 @@ vk_frame_begin( i32 ctx_id )
         depth_b->dstStageMask                        = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
         depth_b->dstAccessMask                       = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                                                      | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        depth_b->oldLayout                           = ctx->depth_layout;
+        depth_b->oldLayout                           = ctx->depth_layout[ frame ];
         depth_b->newLayout                           = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         depth_b->srcQueueFamilyIndex                 = VK_QUEUE_FAMILY_IGNORED;
         depth_b->dstQueueFamilyIndex                 = VK_QUEUE_FAMILY_IGNORED;
-        depth_b->image                               = ctx->depth_image;
+        depth_b->image                               = ctx->depth_image[ frame ];
         depth_b->subresourceRange.aspectMask         = VK_IMAGE_ASPECT_DEPTH_BIT;
         depth_b->subresourceRange.baseMipLevel       = 0;
         depth_b->subresourceRange.levelCount         = 1;
         depth_b->subresourceRange.baseArrayLayer     = 0;
         depth_b->subresourceRange.layerCount         = 1;
 
-        ctx->depth_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        ctx->depth_layout[ frame ] = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     }
 
     VkDependencyInfo dep_info        = { 0 };
@@ -342,7 +344,7 @@ vk_cmd_begin_rendering( rhi_command_list_t             cmd,
         depth_info.loadOp      = vk_load_op( depth_att->load_op );
         depth_info.storeOp     = vk_store_op( depth_att->store_op );
         depth_info.imageView   = ( depth_att->texture.id == RHI_SWAPCHAIN_DEPTH )
-                                 ? ctx->depth_view
+                                 ? ctx->depth_view[ cl->frame ]
                                  : vk.textures[ depth_att->texture.id ].view;
 
         if ( depth_att->load_op == RHI_LOAD_OP_CLEAR )
