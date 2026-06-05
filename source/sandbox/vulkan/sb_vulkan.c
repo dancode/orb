@@ -19,9 +19,6 @@
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 
-// include path: %VULKAN_SDK%\Include
-// library path: %VULKAN_SDK%\Lib
-
 /*==============================================================================================
     main
 ==============================================================================================*/
@@ -79,8 +76,8 @@ main( int argc, char** argv )
     }
 
     /* Per-window render context. */
-    void*        hwnd = app()->window_handle( win );
-    i32 ctx  = rhi()->context_create( win, hwnd, 1280, 720 );
+    void* hwnd = app()->window_handle( win );
+    i32 ctx = rhi()->context_create( win, hwnd, 1280, 720 );
     if ( ctx == RHI_CTX_INVALID )
     {
         fprintf( stderr, "[sb_vulkan] rhi->context_create failed\n" );

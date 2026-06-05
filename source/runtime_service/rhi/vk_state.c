@@ -26,10 +26,10 @@
 #define VK_MAKE_HANDLE( gen, idx )   ( ( (u32)(gen) << 24 ) | (u32)(idx) )
 
 /*==============================================================================================
-    rhi_command_list_s  (opaque to callers via rhi_command_list_t pointer)
+    rhi_command_list_s  (internal slot; rhi_command_list_t is an i32 handle)
 
-    One struct lives inside each context's per-frame slot, so no heap allocation is needed.
-    frame_begin returns a pointer into ctx->cmd_lists[current_frame].
+    One struct lives inside each context's per-frame slot, no heap allocation needed.
+    Handle encoding: ctx_id * VK_MAX_FRAMES_IN_FLIGHT + frame  (RHI_CMD_INVALID = -1)
 ==============================================================================================*/
 
 struct rhi_command_list_s
@@ -37,6 +37,7 @@ struct rhi_command_list_s
     VkCommandBuffer  vk_cmd;
     i32              ctx_id;
     u32              frame;    /* slot index [0..VK_MAX_FRAMES_IN_FLIGHT) */
+
 };
 
 /*==============================================================================================
@@ -128,26 +129,28 @@ typedef struct vk_context_s
 {
     /* Identity */
 
-    i32    id;
-    i32    win_id;
-    void*  native_window;     /* HWND on Windows; cast at use sites */
+    i32                 id;                 // our vk.contexts[ id ];
+    i32                 win_id;             // our app.windows[ id ];
+    void*               native_window;      // HWND on Windows; cast at use sites
 
     /* Dimensions */
 
-    i32    width;
-    i32    height;
-    bool   resize_pending;    /* swapchain rebuild deferred to next frame_begin */
+    i32                 width;              // current swapchain dimensions, updated by resize.
+    i32                 height;             // used for swapchain creation and viewport setup
+    bool                resize_pending;     // swapchain rebuild deferred to next frame_begin */
 
     /* Frame tracking */
 
-    u32    current_frame;     /* [0..VK_MAX_FRAMES_IN_FLIGHT); indexes per-frame arrays */
-    u32    image_index;       /* swapchain image acquired by vkAcquireNextImageKHR */
+    u32                 current_frame;     // [0..VK_MAX_FRAMES_IN_FLIGHT); indexes per-frame arrays
+    u32                 image_index;       // swapchain image acquired by vkAcquireNextImageKHR
 
     /* Surface and swapchain */
+
     VkSurfaceKHR        surface;
     VkSurfaceFormatKHR  surface_format;
     VkPresentModeKHR    present_mode;
     VkSwapchainKHR      swapchain;
+
     u32                 swapchain_image_count;
     VkImage             swapchain_images[ VK_MAX_SWAPCHAIN_IMAGES ];
     VkImageView         swapchain_image_views[ VK_MAX_SWAPCHAIN_IMAGES ];
@@ -268,6 +271,34 @@ static vk_state_t vk =
     .use_vk_layer_validation    = true,
     .use_vk_layer_monitor       = true,
 };
+
+/*==============================================================================================
+    Command list handle encode / decode
+
+    vk_ctx_get is defined in vk_init.c (included last); forward-declared here so these
+    helpers are visible to all vk_*.c files that follow in the unity build.
+==============================================================================================*/
+
+static vk_context_t* vk_ctx_get( i32 id );
+
+static rhi_command_list_t
+vk_cmd_make_handle( i32 ctx_id, u32 frame )
+{
+    return ctx_id * (i32)VK_MAX_FRAMES_IN_FLIGHT + (i32)frame;
+}
+
+static struct rhi_command_list_s*
+vk_cmd_from_handle( rhi_command_list_t cmd )
+{
+    if ( cmd < 0 )
+        return NULL;
+    i32 ctx_id = cmd / (i32)VK_MAX_FRAMES_IN_FLIGHT;
+    u32 frame  = (u32)( cmd % (i32)VK_MAX_FRAMES_IN_FLIGHT );
+    vk_context_t* ctx = vk_ctx_get( ctx_id );
+    if ( !ctx )
+        return NULL;
+    return &ctx->cmd_lists[ frame ];
+}
 
 /*============================================================================================*/
 // clang-format on

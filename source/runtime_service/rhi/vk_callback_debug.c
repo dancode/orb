@@ -179,7 +179,8 @@ vk_cmd_begin_label( rhi_command_list_t cmd, const char* name, f32 r, f32 g, f32 
 {
 #if DEBUG
 
-    if ( !vk.use_vk_ext_debug_utils || !cmd || !name )
+    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
+    if ( !vk.use_vk_ext_debug_utils || !cl || !name )
         return;
 
     VkDebugUtilsLabelEXT label = { 0 };
@@ -189,7 +190,7 @@ vk_cmd_begin_label( rhi_command_list_t cmd, const char* name, f32 r, f32 g, f32 
     label.color[ 1 ] = g;
     label.color[ 2 ] = b;
     label.color[ 3 ] = 1.0f;
-    vkCmdBeginDebugUtilsLabelEXT( cmd->vk_cmd, &label );
+    vkCmdBeginDebugUtilsLabelEXT( cl->vk_cmd, &label );
 
 #else
 
@@ -209,10 +210,11 @@ vk_cmd_end_label( rhi_command_list_t cmd )
 {
 #if DEBUG
 
-    if ( !vk.use_vk_ext_debug_utils || !cmd )
+    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
+    if ( !vk.use_vk_ext_debug_utils || !cl )
         return;
 
-    vkCmdEndDebugUtilsLabelEXT( cmd->vk_cmd );
+    vkCmdEndDebugUtilsLabelEXT( cl->vk_cmd );
 
 #else
 

@@ -62,7 +62,7 @@ vk_init( void )
     }
 
     LOG_LINE();
-    LOG_INFO( "vk_init..." );
+    LOG_INFO( "vk_instance_create..." );
 
     if ( vk.use_vk_alloc_cb ) {
         vk_allocation_callback_init();
@@ -75,6 +75,7 @@ vk_init( void )
     vk_debug_set_min_level( LOG_LEVEL_WARN );
 
     LOG_LINE();
+    LOG_INFO( "vk_device_create..." );
 
     if ( !vk_device_create() ) 
         goto fail_after_instance;
@@ -86,7 +87,7 @@ vk_init( void )
 fail_after_instance:  vk_instance_destroy();
 fail_after_nothing:
 
-    LOG_ERROR( "init failed\n" );
+    LOG_ERROR( "vk_init failed\n" );
     LOG_LINE();
     return false;
 }
@@ -100,8 +101,7 @@ vk_shutdown( void )
     LOG_LINE();
     LOG_INFO( "vk_shutdown..." );
 
-    /* TODO: vkDeviceWaitIdle before destroying device-owned objects. */
-
+    vk_device_wait_idle();
     vk_device_destroy();
     vk_instance_destroy();
 
@@ -116,21 +116,19 @@ vk_shutdown( void )
 static i32
 vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
 {
-    if ( !vk.initialized )
-    {
-        printf( "[rhi] context_create: global init not done\n" );
-        return RHI_CTX_INVALID;
+    if ( !vk.initialized ) {
+         LOG_ERROR( "[rhi] context_create: global init not done\n" );
+         return RHI_CTX_INVALID;
     }
-    if ( !native_window )
-    {
-        printf( "[rhi] context_create: native_window is NULL\n" );
-        return RHI_CTX_INVALID;
+    if ( !native_window ) {
+         LOG_ERROR( "[rhi] context_create: native_window is NULL\n" );
+         return RHI_CTX_INVALID;
     }
 
-    i32 id = vk_ctx_alloc();
+    i32  id = vk_ctx_alloc();
     if ( id == RHI_CTX_INVALID )
     {
-        printf( "[rhi] context_create: pool full (max %d)\n", RHI_CTX_MAX );
+        LOG_ERROR( "[rhi] context_create: pool full (max %d)\n", RHI_CTX_MAX );
         return RHI_CTX_INVALID;
     }
 
@@ -174,7 +172,8 @@ vk_context_destroy( i32 ctx_id )
 
     printf( "[rhi] context_destroy begin (ctx %d, win %d)\n", ctx->id, ctx->win_id );
 
-    /* TODO: vkDeviceWaitIdle before destroying any Vulkan objects. */
+    /* Drain all queues before touching any context-owned Vulkan objects. */
+    vk_device_wait_idle();
 
     vk_command_destroy( ctx );
     vk_sync_destroy( ctx );

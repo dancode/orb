@@ -72,8 +72,21 @@ static const char* s_optional_exts[ VK_OPT_EXT_COUNT ] =
     VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
 };
 
+/* All pNext-linked feature structs together in one allocation so the chain can be built
+   by a helper without the pointers escaping its stack frame. feats2 is the chain root. */
+
+typedef struct
+{
+    VkPhysicalDeviceDescriptorIndexingFeatures  desc_idx;  // bindless indexing: VK 1.2 
+    VkPhysicalDeviceDynamicRenderingFeatures    dyn_rend;  // renderpass-free: VK 1.3   
+    VkPhysicalDeviceSynchronization2Features    sync2;     // barrier2/submit2: VK 1.3  
+    VkPhysicalDeviceTimelineSemaphoreFeatures   timeline;  // monotonic counter: VK 1.2 
+    VkPhysicalDeviceFeatures2                   feats2;    // chain root + VK 1.0 feats 
+
+} vk_feature_chain_t;
+
 /*==============================================================================================
-    Physical Device: Returns true if device exposes VK_KHR_swapchain (hard requirement).
+    Physical Device: Check if device exposes VK_KHR_swapchain extension (hard requirement).
 
         Also checks which optional extensions are present and writes results to
         out_optional[] (one bool per entry, parallel to the array).
@@ -193,8 +206,7 @@ vk_device_validate_queues( VkPhysicalDevice dev, u32* out_gfx, u32* out_present,
     *out_present  = present;
     *out_transfer = transfer;
     
-    bool valid = ( gfx != VK_QUEUE_FAMILY_INVALID ) && ( present != VK_QUEUE_FAMILY_INVALID );
-    return valid;
+    return ( gfx != VK_QUEUE_FAMILY_INVALID ) && ( present != VK_QUEUE_FAMILY_INVALID );
 }
 
 /*==============================================================================================
@@ -209,19 +221,46 @@ vk_device_validate( VkPhysicalDevice dev, u32*
     if ( !vk_device_validate_extensions( dev, out_opt ))
          return false;
 
-    /* validate physical device features */
-    VkPhysicalDeviceFeatures2 feats2 = { 0 };
-    feats2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    vkGetPhysicalDeviceFeatures2( dev, &feats2 );
+    /* validate physical device features -- chain all required 1.0/1.2/1.3 structs so
+       vkGetPhysicalDeviceFeatures2 populates every flag in one call, then reject the
+       device if any hard requirement is absent. */
 
-    if ( !feats2.features.samplerAnisotropy || 
-         !feats2.features.fillModeNonSolid ) {
+    vk_feature_chain_t f    = { 0 };
+    f.desc_idx.sType        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    f.dyn_rend.sType        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+    f.dyn_rend.pNext        = &f.desc_idx;
+    f.sync2.sType           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
+    f.sync2.pNext           = &f.dyn_rend;
+    f.timeline.sType        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    f.timeline.pNext        = &f.sync2;
+    f.feats2.sType          = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    f.feats2.pNext          = &f.timeline;
+
+    vkGetPhysicalDeviceFeatures2( dev, &f.feats2 );
+
+    /* VK 1.0 requirements */
+    if ( !f.feats2.features.samplerAnisotropy ||
+         !f.feats2.features.fillModeNonSolid ) {
+        return false;
+    }
+
+    /* VK 1.2 descriptor indexing requirements */
+    if ( !f.desc_idx.shaderSampledImageArrayNonUniformIndexing ||
+         !f.desc_idx.descriptorBindingPartiallyBound           ||
+         !f.desc_idx.descriptorBindingUpdateUnusedWhilePending ||
+         !f.desc_idx.runtimeDescriptorArray ) {
+        return false;
+    }
+
+    /* VK 1.3 requirements */
+    if ( !f.dyn_rend.dynamicRendering ||
+         !f.sync2.synchronization2    ||
+         !f.timeline.timelineSemaphore ) {
         return false;
     }
 
     /* validate queue families */
-    bool valid = vk_device_validate_queues( dev, out_gfx, out_present, out_transfer );
-    return valid;
+    return vk_device_validate_queues( dev, out_gfx, out_present, out_transfer );
 }
 
 /*==============================================================================================
@@ -296,7 +335,7 @@ vk_device_select( bool* out_opt_found )
             LOG_INFO( "best match: [%u]", i );
             LOG_INFO( "  device named : %s", vk.physical_device_props.deviceName );
             LOG_INFO( "  device type  : %s", string_VkPhysicalDeviceType( vk.physical_device_props.deviceType ));
-            LOG_INFO( "  queue family : Graphics = %u Present = %u Transfer = %u", i, gfx, pres, xfer );
+            LOG_INFO( "  queue family : Graphics = %u Present = %u Transfer = %u", gfx, pres, xfer );
             LOG_INFO( "  api          : %s", vk_version_string( vk.physical_device_props.apiVersion ));
             LOG_INFO( "  driver       : %s", vk_version_string( vk.physical_device_props.driverVersion ));
             LOG_INFO( "  vendor id    : %u", vk.physical_device_props.vendorID );                                                                 
@@ -400,20 +439,6 @@ vk_device_log_memory( void )
     Logical Device: Helpers for creating and managing logical devices
 
 ==============================================================================================*/
-
-/* All pNext-linked feature structs together in one allocation so the chain can be built
-   by a helper without the pointers escaping its stack frame. feats2 is the chain root. */
-
-typedef struct
-{
-    VkPhysicalDeviceDescriptorIndexingFeatures  desc_idx;  // bindless indexing: VK 1.2 
-    VkPhysicalDeviceDynamicRenderingFeatures    dyn_rend;  // renderpass-free: VK 1.3   
-    VkPhysicalDeviceSynchronization2Features    sync2;     // barrier2/submit2: VK 1.3  
-    VkPhysicalDeviceTimelineSemaphoreFeatures   timeline;  // monotonic counter: VK 1.2 
-    VkPhysicalDeviceFeatures2                   feats2;    // chain root + VK 1.0 feats 
-
-} vk_feature_chain_t;
-
 /*==============================================================================================
     Logical Device: Set features and extensions for device creation.
 
@@ -636,9 +661,9 @@ vk_device_create( void )
 
     /* Subsystem init in dependency order: pipeline cache -> descriptor -> upload. */
 
-    vk_pipeline_cache_load();
+    vk_pipeline_cache_load(); // TODO:
 
-    if ( !vk_descriptor_init() )
+    if ( !vk_descriptor_init() ) // TODO:
         goto fail_after_cache;
 
     if ( !vk_upload_init() )

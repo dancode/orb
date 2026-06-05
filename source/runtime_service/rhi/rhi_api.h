@@ -31,47 +31,58 @@
 typedef struct rhi_api_s
 {
     /* ---- Global lifecycle (once per process) ---- */
+
     bool ( *init     )( void );   /* create VkInstance + VkDevice; no window needed */
     void ( *shutdown )( void );   /* call after all contexts are destroyed */
 
     /* ---- Per-context lifecycle (one per window) ---- */
+
     i32  ( *context_create  )( i32 win_id, void* native_window, i32 w, i32 h );
     void ( *context_destroy )( i32 ctx_id );
     bool ( *context_resize  )( i32 ctx_id, i32 w, i32 h );
 
     /* ---- Frame ---- */
+
     rhi_command_list_t ( *frame_begin )( i32 ctx_id );   /* NULL = swapchain not ready */
     void               ( *frame_end   )( i32 ctx_id );
 
     /* ---- Buffer ---- */
+
     rhi_buffer_t ( *buffer_create  )( const rhi_buffer_desc_t* desc );
     void         ( *buffer_destroy )( rhi_buffer_t buf );
+
     /* Write directly to a CPU_TO_GPU or CPU_ONLY buffer.  Undefined on GPU_ONLY memory. */
     void         ( *buffer_write   )( rhi_buffer_t buf, const void* data, u32 size, u32 offset );
 
     /* ---- Texture ---- */
+
     rhi_texture_t ( *texture_create  )( const rhi_texture_desc_t* desc );
     void          ( *texture_destroy )( rhi_texture_t tex );
 
     /* ---- Sampler ---- */
+
     rhi_sampler_t ( *sampler_create  )( const rhi_sampler_desc_t* desc );
     void          ( *sampler_destroy )( rhi_sampler_t samp );
 
     /* ---- Shader ---- */
+
     rhi_shader_t  ( *shader_create  )( const rhi_shader_desc_t* desc );
     void          ( *shader_destroy )( rhi_shader_t shader );
 
     /* ---- Pipeline ---- */
+
     rhi_pipeline_t ( *pipeline_create  )( const rhi_pipeline_desc_t* desc );
     void           ( *pipeline_destroy )( rhi_pipeline_t pipeline );
 
     /* ---- Staged upload (GPU_ONLY targets) ---- */
+
     /* Enqueues a copy via internal staging; executes before the next frame_begin. */
     bool ( *upload_buffer  )( rhi_buffer_t  dst, const void* data, u32 size );
     bool ( *upload_texture )( rhi_texture_t dst, const void* data, u32 data_size,
                               u16 mip, u16 layer );
 
     /* ---- Commands ---- */
+
     void ( *cmd_set_viewport       )( rhi_command_list_t cmd, const rhi_viewport_t* vp );
     void ( *cmd_set_scissor        )( rhi_command_list_t cmd, const rhi_rect_t* rect );
     void ( *cmd_bind_pipeline      )( rhi_command_list_t cmd, rhi_pipeline_t pipeline );
@@ -83,19 +94,23 @@ typedef struct rhi_api_s
     void ( *cmd_draw               )( rhi_command_list_t cmd, const rhi_draw_args_t* args );
     void ( *cmd_draw_indexed       )( rhi_command_list_t cmd,
                                       const rhi_draw_indexed_args_t* args );
+
     /* Stores clear color for the current context; applied in vkCmdBeginRendering loadOp. */
     void ( *cmd_clear_color        )( rhi_command_list_t cmd, f32 r, f32 g, f32 b, f32 a );
 
     /* ---- Bindless resource registration ---- */
+
     /* Returns a persistent slot index for use in shader push-constant lookups.  0 = invalid. */
     u32  ( *register_texture   )( rhi_texture_t tex );
     void ( *unregister_texture )( u32 bindless_index );
     u32  ( *register_sampler   )( rhi_sampler_t samp );
     void ( *unregister_sampler )( u32 bindless_index );
+
     /* Binds the global bindless descriptor set; call once at the top of each frame. */
     void ( *cmd_bind_bindless  )( rhi_command_list_t cmd );
 
     /* ---- Debug GPU labels (no-ops in release; always safe to call) ---- */
+
     void ( *cmd_begin_label )( rhi_command_list_t cmd, const char* name, f32 r, f32 g, f32 b );
     void ( *cmd_end_label   )( rhi_command_list_t cmd );
 

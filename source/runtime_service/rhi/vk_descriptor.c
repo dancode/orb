@@ -7,7 +7,7 @@
     One VkDescriptorSetLayout (set 0) is shared by all pipelines:
         Binding 0: VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE   x VK_MAX_BINDLESS_TEXTURES
         Binding 1: VK_DESCRIPTOR_TYPE_SAMPLER         x VK_MAX_BINDLESS_SAMPLERS
-
+    
     Each binding uses VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT and
     VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT (core in VK 1.2 via descriptor indexing).
 

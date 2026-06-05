@@ -10,9 +10,6 @@
 
 ==============================================================================================*/
 
-/* Defined in vk_init.c, included after this file in the unity build. */
-static vk_context_t* vk_ctx_get( i32 id );
-
 /*==============================================================================================
     Frame begin / end
 ==============================================================================================*/
@@ -22,7 +19,7 @@ vk_frame_begin( i32 ctx_id )
 {
     vk_context_t* ctx = vk_ctx_get( ctx_id );
     if ( !ctx )
-        return NULL;
+        return RHI_CMD_INVALID;
 
     /* Handle deferred resize (never mid-recording; always between frames). */
     if ( ctx->resize_pending )
@@ -98,12 +95,13 @@ vk_frame_begin( i32 ctx_id )
           ctx->cmd_lists[frame].frame   = frame;
     */
 
-    /* Placeholder: return a pointer to the cmd list struct (non-NULL; vk_cmd is VK_NULL_HANDLE
-       until implementation is wired; callers guard on NULL but may pass through). */
-    struct rhi_command_list_s* cmd = &ctx->cmd_lists[ ctx->current_frame ];
-    cmd->ctx_id = ctx_id;
-    cmd->frame  = ctx->current_frame;
-    return cmd;
+    /* Placeholder: wire the slot and return the handle (vk_cmd is VK_NULL_HANDLE until
+       the Vulkan implementation is connected; callers guard on RHI_CMD_INVALID). */
+    u32 frame = ctx->current_frame;
+    struct rhi_command_list_s* cl = &ctx->cmd_lists[ frame ];
+    cl->ctx_id = ctx_id;
+    cl->frame  = frame;
+    return vk_cmd_make_handle( ctx_id, frame );
 }
 
 static void
@@ -171,12 +169,13 @@ vk_frame_end( i32 ctx_id )
 static void
 vk_cmd_clear_color( rhi_command_list_t cmd, f32 r, f32 g, f32 b, f32 a )
 {
-    if ( !cmd )
+    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
+    if ( !cl )
         return;
 
     /* Stores the clear color for this context; consumed by the NEXT frame's
        vkCmdBeginRendering loadOp.  One frame of latency is expected and acceptable. */
-    vk_context_t* ctx = vk_ctx_get( cmd->ctx_id );
+    vk_context_t* ctx = vk_ctx_get( cl->ctx_id );
     if ( !ctx )
         return;
 
