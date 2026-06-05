@@ -535,6 +535,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 
 	add 		run
 	add 		rhi						# vulkan render library
+	add 		render 					# render dll
 	
 	add 		sb_vulkan				# exe 
 

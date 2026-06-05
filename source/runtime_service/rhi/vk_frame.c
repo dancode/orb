@@ -25,7 +25,14 @@ vk_frame_begin( i32 ctx_id )
     /* Handle deferred resize (never mid-recording; always between frames). */
     if ( ctx->resize_pending )
     {
+        /* vk_swapchain_recreate calls vkDeviceWaitIdle, so the GPU is idle when it
+           returns.  Recreate sync objects too: semaphores that were consumed by the
+           old present's vkQueuePresentKHR wait are tracked by the validation layer as
+           associated with the old swapchain, and re-signaling them on the new swapchain
+           triggers a spurious hazard warning.  Fresh handles have no WSI history. */
         vk_swapchain_recreate( ctx );
+        vk_sync_destroy( ctx );
+        vk_sync_create( ctx );
         ctx->resize_pending = false;
     }
 

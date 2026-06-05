@@ -55,21 +55,20 @@ vk_ctx_get( i32 id )
 static bool
 vk_init( void )
 {
-    if ( vk.initialized )
-    {
-        LOG_INFO( "init: already initialized\n" );
-        return true;
+    if ( vk.initialized ) {
+         LOG_INFO( "init: already initialized\n" );
+         return true;
     }
 
     LOG_LINE();
     LOG_INFO( "vk_instance_create..." );
 
     if ( vk.use_vk_alloc_cb ) {
-        vk_allocation_callback_init();
+         vk_allocation_callback_init();
     }
     
     if ( !vk_instance_init() ) 
-        goto fail_after_nothing;
+         goto fail_after_nothing;
 
     /* turn on regular logging levels */
     vk_debug_set_min_level( LOG_LEVEL_WARN );
@@ -78,7 +77,7 @@ vk_init( void )
     LOG_INFO( "vk_device_create..." );
 
     if ( !vk_device_create() ) 
-        goto fail_after_instance;
+         goto fail_after_instance;
 
     vk.initialized = true;
     LOG_LINE();
@@ -96,7 +95,7 @@ static void
 vk_shutdown( void )
 {
     if ( !vk.initialized )
-        return;
+         return;
 
     LOG_LINE();
     LOG_INFO( "vk_shutdown..." );
