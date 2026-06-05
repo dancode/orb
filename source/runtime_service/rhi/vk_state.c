@@ -108,8 +108,9 @@ typedef struct vk_staging_s
 {
     VkBuffer       buffer;
     VkDeviceMemory memory;
-    void*          mapped;     /* persistently mapped host pointer */
-    u32            head;       /* linear bump allocator offset; reset when the slot is flushed */
+    void*          mapped;              /* persistently mapped host pointer */
+    u32            head;                /* linear bump allocator offset; reset when the slot is flushed */
+    u64            last_submit_value;   /* upload_timeline value signaled when this slot was last submitted */
 
 } vk_staging_t;
 

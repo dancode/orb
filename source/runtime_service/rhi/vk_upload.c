@@ -23,6 +23,14 @@
     rendering work (vertex input, rasterisation setup) can overlap with the DMA transfer.
     Frames with no uploads skip the wait because vk.upload_counter is already satisfied.
 
+    Staging reuse safety: vk_staging_t.last_submit_value records the upload_timeline value
+    signaled when a slot is submitted.  vk_staging_alloc checks this value via
+    vkWaitSemaphores on the first write to a slot each cycle, guaranteeing the prior DMA read
+    from that buffer has completed before the CPU memcpy overwrites it.  In the common
+    single-context case the per-frame fence wait in frame_begin is already a proof of this and
+    the semaphore query returns immediately; the check is the formal guarantee for topologies
+    where the upload slot index and the per-context fence index diverge.
+
 ==============================================================================================*/
 
 /* Per-slot state for the transfer command pool and recording status.
@@ -213,6 +221,22 @@ vk_staging_alloc( u32 size, u32 align, vk_staging_alloc_t* out )
     u32            slot = g_upload_active_slot;
     vk_staging_t*  s    = &vk.staging[ slot ];
 
+    /* First write to this slot in the new cycle: formally guarantee the prior DMA read from
+       this buffer has completed.  In single-context operation the vkWaitForFences call in
+       frame_begin is already a proof of this (fence signaling implies the render that waited
+       on upload_timeline finished, which implies the DMA completed).  The semaphore wait here
+       makes the invariant explicit and correct for multi-context topologies where the upload
+       slot index and the per-context fence index can diverge. */
+    if ( s->head == 0 && s->last_submit_value > 0 )
+    {
+        VkSemaphoreWaitInfo wi = { 0 };
+        wi.sType               = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        wi.semaphoreCount      = 1;
+        wi.pSemaphores         = &vk.upload_timeline;
+        wi.pValues             = &s->last_submit_value;
+        vkWaitSemaphores( vk.device, &wi, UINT64_MAX );
+    }
+
     u32 aligned_head = ( s->head + align - 1 ) & ~( align - 1 );
     if ( aligned_head + size > VK_STAGING_SIZE )
     {
@@ -372,7 +396,10 @@ vk_upload_flush( void )
         if ( r != VK_SUCCESS )
             LOG_ERROR( "upload_flush: vkQueueSubmit2: %s", string_VkResult( r ) );
         else
-            vk.upload_counter = signal_value;
+        {
+            vk.upload_counter                    = signal_value;
+            vk.staging[ slot ].last_submit_value = signal_value;
+        }
 
         vkResetCommandBuffer( up->cmd, 0 );
         up->is_recording = false;
