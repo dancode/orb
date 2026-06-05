@@ -2,29 +2,29 @@
 
     vulkan/vk_memory.c -- Device memory allocation.
 
-    Sub-allocates from large VkDeviceMemory blocks keyed by heap type.
+    Current implementation: one vkAllocateMemory call per resource.  offset is always 0.
     Returns a (memory, offset) pair; callers bind with vkBind*Memory.
 
-    Architecture
-    ------------
+    Memory classes
+    --------------
     Three heap classes map to rhi_memory_t:
         RHI_MEMORY_GPU_ONLY   -> VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
         RHI_MEMORY_CPU_TO_GPU -> VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                                | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
         RHI_MEMORY_CPU_ONLY   -> same as CPU_TO_GPU but reserved for staging
 
-    Each class owns a list of large blocks (default VK_MEM_BLOCK_SIZE).  Allocations
-    use a linear bump allocator within the current block; a new block is appended when
-    there is insufficient space.  Freed memory is not reclaimed (arenas are cleared on
-    device destroy).  For a longer-lived engine a slab allocator per size class would
-    be the natural next step.
+    Known limit
+    -----------
+    Desktop GPUs expose maxMemoryAllocationCount ~4096.  At VK_MAX_TEXTURES=2048 plus
+    VK_MAX_BUFFERS=1024 at full occupancy we approach that ceiling; allocation failures
+    will occur once it is exceeded.
 
-    Alternatively, drop this file and wire in the Vulkan Memory Allocator (VMA) library;
-    replace the two helpers below with vmaCreateBuffer / vmaCreateImage calls.
+    Planned: replace with a slab/bump sub-allocator that issues one large VkDeviceMemory
+    block per heap class and carves resources out of it -- matching the (memory, offset)
+    interface callers already use.  Alternatively, wire in VMA (Vulkan Memory Allocator)
+    and replace the two helpers below with vmaCreateBuffer / vmaCreateImage calls.
 
 ==============================================================================================*/
-
-#define VK_MEM_BLOCK_SIZE  ORB_MB( 256 )
 
 typedef struct vk_mem_alloc_s
 {

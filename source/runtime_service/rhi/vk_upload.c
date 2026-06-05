@@ -12,11 +12,17 @@
         4. vk_upload_flush (called at frame_begin after the fence wait) submits the
            pending transfer commands on the graphics queue and recycles the slot.
 
-    The vkQueueWaitIdle in flush is redundant after vkWaitForFences (the fence ensures
-    the graphics queue finished all prior work for this slot), but guards correctly if
-    flush is ever called outside the fence-wait path (e.g. at init time).
+    Known issue: vk_upload_flush calls vkQueueWaitIdle after submitting the upload batch.
+    This stalls the entire GPU queue until all uploads complete before render work can start.
+    The frame fence from vkWaitForFences does NOT cover this; it only tracks the render
+    command buffer from a past frame.  The upload command buffer is submitted here without
+    any fence, so vkQueueWaitIdle is the only thing ensuring uploads finish before render
+    commands read the results.
 
-    Transfers and renders share the graphics queue; no cross-queue semaphore is needed.
+    Planned fix: attach a VkSemaphore (or timeline semaphore) to the upload vkQueueSubmit2
+    and pass it as a pWaitSemaphoreInfos entry on the render submit.  The GPU will stall
+    only the pipeline stages that consume uploaded data, letting other GPU work overlap.
+    This matters most for a streaming engine that uploads assets every frame.
 
 ==============================================================================================*/
 
@@ -330,6 +336,8 @@ vk_upload_flush( u32 slot )
         if ( r != VK_SUCCESS )
             LOG_ERROR( "upload_flush: vkQueueSubmit2: %s", string_VkResult( r ) );
         else
+            /* KNOWN ISSUE: stalls the entire GPU queue until uploads complete.
+               Replace with a per-slot semaphore waited on by the render submit. */
             vkQueueWaitIdle( vk.graphics_queue );
 
         vkResetCommandBuffer( up->cmd, 0 );
