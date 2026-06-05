@@ -80,8 +80,9 @@ static const char* s_optional_exts[ VK_OPT_EXT_COUNT ] =
 
 typedef struct
 {
-    VkPhysicalDeviceDescriptorIndexingFeatures  desc_idx;  // bindless indexing: VK 1.2 
-    VkPhysicalDeviceDynamicRenderingFeatures    dyn_rend;  // renderpass-free: VK 1.3   
+    VkPhysicalDeviceDescriptorIndexingFeatures  desc_idx;  // bindless indexing: VK 1.2
+    VkPhysicalDeviceBufferDeviceAddressFeatures bda;       // GPU buffer pointers: VK 1.2
+    VkPhysicalDeviceDynamicRenderingFeatures    dyn_rend;  // renderpass-free: VK 1.3
     VkPhysicalDeviceSynchronization2Features    sync2;     // barrier2/submit2: VK 1.3  
     VkPhysicalDeviceTimelineSemaphoreFeatures   timeline;  // monotonic counter: VK 1.2 
     VkPhysicalDeviceFeatures2                   feats2;    // chain root + VK 1.0 feats 
@@ -230,8 +231,10 @@ vk_device_validate( VkPhysicalDevice dev, u32*
 
     vk_feature_chain_t f    = { 0 };
     f.desc_idx.sType        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    f.bda.sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+    f.bda.pNext             = &f.desc_idx;
     f.dyn_rend.sType        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
-    f.dyn_rend.pNext        = &f.desc_idx;
+    f.dyn_rend.pNext        = &f.bda;
     f.sync2.sType           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
     f.sync2.pNext           = &f.dyn_rend;
     f.timeline.sType        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
@@ -253,6 +256,11 @@ vk_device_validate( VkPhysicalDevice dev, u32*
          !f.desc_idx.descriptorBindingSampledImageUpdateAfterBind ||
          !f.desc_idx.descriptorBindingUpdateUnusedWhilePending    ||
          !f.desc_idx.runtimeDescriptorArray ) {
+        return false;
+    }
+
+    /* VK 1.2 buffer device address requirement */
+    if ( !f.bda.bufferDeviceAddress ) {
         return false;
     }
 
@@ -473,11 +481,18 @@ vk_device_init_features( vk_feature_chain_t* f )
     f->desc_idx.runtimeDescriptorArray = VK_TRUE;  
     
     //-------------------------------------------------------
+    f->bda.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+    f->bda.pNext = &f->desc_idx;
+
+    /* 64-bit GPU virtual addresses; enables vkGetBufferDeviceAddress for BDA buffers */
+    f->bda.bufferDeviceAddress = VK_TRUE;
+
+    //-------------------------------------------------------
     f->dyn_rend.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
-    f->dyn_rend.pNext = &f->desc_idx;
+    f->dyn_rend.pNext = &f->bda;
 
     /* vkCmdBeginRendering -- no VkRenderPass / VkFramebuffer */
-    f->dyn_rend.dynamicRendering = VK_TRUE;  
+    f->dyn_rend.dynamicRendering = VK_TRUE;
     
     //-------------------------------------------------------
     f->sync2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;

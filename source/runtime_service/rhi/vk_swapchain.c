@@ -423,7 +423,7 @@ vk_depth_create( vk_context_t* ctx )
         vkGetImageMemoryRequirements( vk.device, ctx->depth_image[ slot ], &reqs );
 
         vk_mem_alloc_t alloc = { 0 };
-        if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, &alloc ) )
+        if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, 0, &alloc ) )
         {
             vk_depth_destroy( ctx );
             return false;

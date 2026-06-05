@@ -54,7 +54,8 @@ vk_memory_find_type( u32 type_filter, VkMemoryPropertyFlags required )
 ==============================================================================================*/
 
 static bool
-vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, vk_mem_alloc_t* out )
+vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, VkMemoryAllocateFlags extra_flags,
+              vk_mem_alloc_t* out )
 {
     /* Map RHI memory class to the required Vulkan property flags */
     static const VkMemoryPropertyFlags s_flags[] = {
@@ -79,8 +80,13 @@ vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, vk_mem_alloc_t* out 
         return false;
     }
 
+    VkMemoryAllocateFlagsInfo fi = { 0 };
+    fi.sType                     = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    fi.flags                     = extra_flags;
+
     VkMemoryAllocateInfo ai  = { 0 };
     ai.sType                 = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    ai.pNext                 = extra_flags ? &fi : NULL;
     ai.allocationSize        = reqs.size;
     ai.memoryTypeIndex       = type_idx;
 

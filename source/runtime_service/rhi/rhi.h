@@ -102,8 +102,9 @@ typedef enum rhi_buffer_usage_e
     RHI_BUFFER_USAGE_UNIFORM      = BIT( 2 ),
     RHI_BUFFER_USAGE_STORAGE      = BIT( 3 ),
     RHI_BUFFER_USAGE_INDIRECT     = BIT( 4 ),
-    RHI_BUFFER_USAGE_TRANSFER_SRC = BIT( 5 ),
-    RHI_BUFFER_USAGE_TRANSFER_DST = BIT( 6 ),
+    RHI_BUFFER_USAGE_TRANSFER_SRC  = BIT( 5 ),
+    RHI_BUFFER_USAGE_TRANSFER_DST  = BIT( 6 ),
+    RHI_BUFFER_USAGE_DEVICE_ADDRESS = BIT( 7 ),   /* enables vkGetBufferDeviceAddress on this buffer */
 
 } rhi_buffer_usage_t;
 

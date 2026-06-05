@@ -31,9 +31,10 @@ const rhi_api_t g_rhi_api_struct =
     .frame_end              = vk_frame_end,
 
     /* Buffer */
-    .buffer_create          = vk_buffer_create,
-    .buffer_destroy         = vk_buffer_destroy,
-    .buffer_write           = vk_buffer_write,
+    .buffer_create              = vk_buffer_create,
+    .buffer_destroy             = vk_buffer_destroy,
+    .buffer_write               = vk_buffer_write,
+    .buffer_get_device_address  = vk_buffer_get_device_address,
 
     /* Texture */
     .texture_create         = vk_texture_create,

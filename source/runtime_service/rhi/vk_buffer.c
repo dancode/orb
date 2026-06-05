@@ -20,7 +20,8 @@ rhi_buffer_usage_to_vk( rhi_buffer_usage_t usage )
     if ( usage & RHI_BUFFER_USAGE_STORAGE      ) flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     if ( usage & RHI_BUFFER_USAGE_INDIRECT     ) flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
     if ( usage & RHI_BUFFER_USAGE_TRANSFER_SRC ) flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    if ( usage & RHI_BUFFER_USAGE_TRANSFER_DST ) flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if ( usage & RHI_BUFFER_USAGE_TRANSFER_DST   ) flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if ( usage & RHI_BUFFER_USAGE_DEVICE_ADDRESS ) flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     return flags;
 }
 
@@ -81,8 +82,10 @@ vk_buffer_create( const rhi_buffer_desc_t* desc )
     VkMemoryRequirements reqs;
     vkGetBufferMemoryRequirements( vk.device, slot->buffer, &reqs );
 
+    VkMemoryAllocateFlags bda_flag = ( desc->usage & RHI_BUFFER_USAGE_DEVICE_ADDRESS )
+                                   ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
     vk_mem_alloc_t alloc = { 0 };
-    if ( !vk_mem_alloc( reqs, desc->memory, &alloc ) )
+    if ( !vk_mem_alloc( reqs, desc->memory, bda_flag, &alloc ) )
     {
         vkDestroyBuffer( vk.device, slot->buffer, vk.alloc_cb );
         slot->buffer = VK_NULL_HANDLE;
@@ -169,6 +172,16 @@ vk_buffer_write( rhi_buffer_t handle, const void* data, u32 size, u32 offset )
 
     /* Memory is HOST_COHERENT (our default for CPU-visible allocations); no flush needed. */
     memcpy( (u8*)slot->mapped + offset, data, size );
+}
+
+static u64
+vk_buffer_get_device_address( rhi_buffer_t handle )
+{
+    if ( !vk_buffer_validate( handle ) ) return 0;
+    VkBufferDeviceAddressInfo info = { 0 };
+    info.sType                     = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    info.buffer                    = vk.buffers[ handle.id ].buffer;
+    return (u64)vkGetBufferDeviceAddress( vk.device, &info );
 }
 
 /*============================================================================================*/

@@ -139,7 +139,7 @@ vk_texture_create( const rhi_texture_desc_t* desc )
     vkGetImageMemoryRequirements( vk.device, slot->image, &reqs );
 
     vk_mem_alloc_t alloc = { 0 };
-    if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, &alloc ) )
+    if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, 0, &alloc ) )
     {
         vkDestroyImage( vk.device, slot->image, vk.alloc_cb );
         slot->image = VK_NULL_HANDLE;

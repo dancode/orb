@@ -80,7 +80,13 @@
       "PowerShell(bin\\\\build_tool.exe -config Debug -target rhi 2>&1; echo \"Exit: $LASTEXITCODE\")",
       "PowerShell(bin\\\\build_tool.exe -clean 2>&1 | Select-Object -Last 5; bin\\\\build_tool.exe -config Debug -target sb_vulkan 2>&1)",
       "PowerShell(echo \"Exit: $LASTEXITCODE\")",
-      "PowerShell(bin\\\\build_tool.exe -clean; if \\($?\\) { bin\\\\build_tool.exe -config Debug -target sb_vulkan; Write-Host \"Exit: $LASTEXITCODE\" })"
+      "PowerShell(bin\\\\build_tool.exe -clean; if \\($?\\) { bin\\\\build_tool.exe -config Debug -target sb_vulkan; Write-Host \"Exit: $LASTEXITCODE\" })",
+      "Bash(dir F:\\\\orb /s /b)",
+      "PowerShell(Get-ChildItem -Path \"F:\\\\orb\\\\source\" -Directory | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\runtime\" -Directory | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\runtime\\\\host\" -Directory | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\runtime_service\\\\rhi\" -File | ForEach-Object { $_.Name })",
+      "Bash(bin\\\\build_tool.exe -config Debug -target rhi)"
     ]
   }
 }

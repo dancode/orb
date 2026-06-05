@@ -106,7 +106,7 @@ vk_upload_init( void )
         vkGetBufferMemoryRequirements( vk.device, vk.staging[ i ].buffer, &reqs );
 
         vk_mem_alloc_t alloc = { 0 };
-        if ( !vk_mem_alloc( reqs, RHI_MEMORY_CPU_ONLY, &alloc ) )
+        if ( !vk_mem_alloc( reqs, RHI_MEMORY_CPU_ONLY, 0, &alloc ) )
             goto fail;
         vk.staging[ i ].memory = alloc.memory;
 

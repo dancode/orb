@@ -53,7 +53,11 @@ typedef struct rhi_api_s
     void         ( *buffer_destroy )( rhi_buffer_t buf );
 
     /* Write directly to a CPU_TO_GPU or CPU_ONLY buffer.  Undefined on GPU_ONLY memory. */
-    void         ( *buffer_write   )( rhi_buffer_t buf, const void* data, u32 size, u32 offset );
+    void         ( *buffer_write           )( rhi_buffer_t buf, const void* data, u32 size, u32 offset );
+
+    /* Returns the 64-bit GPU virtual address of a DEVICE_ADDRESS buffer; 0 on invalid handle.
+       Pass this value in push constants to let shaders access the buffer without a descriptor. */
+    u64          ( *buffer_get_device_address )( rhi_buffer_t buf );
 
     /* ---- Texture ---- */
 

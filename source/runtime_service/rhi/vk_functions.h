@@ -216,6 +216,7 @@ VK_DEVICE_LEVEL_FUNCTION( vkGetBufferMemoryRequirements )
 VK_DEVICE_LEVEL_FUNCTION( vkGetBufferMemoryRequirements2 )
 VK_DEVICE_LEVEL_FUNCTION( vkBindBufferMemory )
 VK_DEVICE_LEVEL_FUNCTION( vkCmdCopyBuffer )
+VK_DEVICE_LEVEL_FUNCTION( vkGetBufferDeviceAddress )   /* VK 1.2: returns 64-bit GPU VA for BDA buffers */
 
 /* Images */
 VK_DEVICE_LEVEL_FUNCTION( vkCreateImage )
