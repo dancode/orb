@@ -200,6 +200,7 @@ typedef struct vk_state_s
     u32                     version;                    // full packed VkApiVersion (use VK_VERSION_* macros)
     bool                    initialized;                // global init complete (instance + device)
 
+    bool                    use_pipeline_cache;         // load/save pipeline cache to disk (vk_pipeline_cache.c)
     bool                    use_vk_alloc_cb;            // use Vulkan allocation callbacks.
     bool                    use_vk_ext_debug_utils;     // use debug messenger (in DEBUG only)
     bool                    use_vk_layer_validation;    // use vulkan debug layer.
@@ -225,7 +226,7 @@ typedef struct vk_state_s
 
     u32                     graphics_queue_family;
     u32                     present_queue_family;
-    u32                     transfer_queue_family;      // dedicated queue if available, else graphics
+    u32                     transfer_queue_family;      // dedicated if available, else graphics
     VkQueue                 graphics_queue;
     VkQueue                 present_queue;
     VkQueue                 transfer_queue;
@@ -277,6 +278,7 @@ typedef struct vk_state_s
 
 static vk_state_t vk =
 {
+    .use_pipeline_cache         = false,
     .use_vk_alloc_cb            = true,
     .use_vk_ext_debug_utils     = true,
     .use_vk_layer_validation    = true,

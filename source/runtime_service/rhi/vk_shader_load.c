@@ -10,6 +10,13 @@
     reporting conventions.  The caller is responsible for vk_shader_destroy() on the
     returned handle.
 
+    Usage from draw_material.c (or anywhere) will look like:
+    rhi_shader_t vert = rhi()->shader_load_file( 
+        "data/shaders/solid.vert.spv", RHI_SHADER_STAGE_VERTEX, "main", "solid.vert" );
+
+    rhi_shader_t frag = rhi()->shader_load_file( 
+        "data/shaders/solid.frag.spv", RHI_SHADER_STAGE_FRAGMENT, "main", "solid.frag" );
+
 ==============================================================================================*/
 
 /* Load a compiled SPIR-V blob (.spv) from disk.  debug_name falls back to path if NULL. */

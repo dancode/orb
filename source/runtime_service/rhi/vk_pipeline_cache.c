@@ -15,6 +15,16 @@ static const char* const PIPELINE_CACHE_PATH = "bin/vk_pipeline_cache.bin";
 static void
 vk_pipeline_cache_load( void )
 {
+    if ( vk.use_pipeline_cache )
+    {
+        LOG_INFO( "pipeline_cache_load: enabled; attempting to load from disk" );
+    }
+    else 
+    {
+        LOG_INFO( "pipeline_cache_load: disabled; skipping" );
+        return;
+    }
+
     void*  data      = NULL;
     size_t data_size = 0;
 
@@ -62,14 +72,24 @@ vk_pipeline_cache_load( void )
     free( data );
 }
 
+/*============================================================================================*/
+/* Save the pipeline cache to disk for loading on the next run.  Called from vk_device_destroy
+   and on error unwind paths. */
+
 static void
 vk_pipeline_cache_save( void )
 {
+    if ( !vk.use_pipeline_cache )
+    {
+        LOG_INFO( "pipeline_cache_save: disabled; skipping" );
+        return;
+    }
+
     if ( vk.pipeline_cache == VK_NULL_HANDLE )
         return;
 
-    size_t   data_size = 0;
-    VkResult r         = vkGetPipelineCacheData( vk.device, vk.pipeline_cache, &data_size, NULL );
+    size_t data_size = 0;
+    VkResult r = vkGetPipelineCacheData( vk.device, vk.pipeline_cache, &data_size, NULL );
     if ( r != VK_SUCCESS || data_size == 0 )
         return;
 

@@ -13,19 +13,19 @@
 
     Resource indices (u32) are passed to shaders via push constants:
         struct PushConstants { u32 texture_idx; u32 sampler_idx; ... };
-
+    
     This eliminates per-draw descriptor binding overhead.  The render layer and game code
     call register_texture / register_sampler to get stable per-resource indices, then
     pack those indices into the push constant struct.
 
     VkPipelineLayout  (vk.pipeline_layout):
-        set 0    = bindless layout above
+        set 0           = bindless layout above
         push constants = one range covering all stages, size RHI_MAX_PUSH_CONST_SIZE
 
 ==============================================================================================*/
 
 /* Free index stacks for bindless slots.
-   head == 0 means the stack is empty (index 0 is reserved as "invalid"). */
+   top == 0 means the stack is empty (index 0 is reserved as "invalid"). */
 typedef struct vk_bindless_free_s
 {
     u32  stack[ VK_MAX_BINDLESS_TEXTURES ];  /* conservative; samplers use a smaller stack */
@@ -64,7 +64,7 @@ static vk_bindless_free_t  g_samp_free;
 typedef struct vk_deferred_retire_s
 {
     u32 idx;
-    u32 safe_at;    /* vk.global_frame value at which this slot is safe to reuse */
+    u32 safe_at;            /* vk.global_frame value at which this slot is safe to reuse */
 } vk_deferred_retire_t;
 
 static vk_deferred_retire_t  g_tex_retire[ VK_MAX_BINDLESS_TEXTURES ];
