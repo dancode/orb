@@ -47,6 +47,8 @@ const rhi_api_t g_rhi_api_struct =
     /* Shader */
     .shader_create              = vk_shader_create,
     .shader_destroy             = vk_shader_destroy,
+    .shader_load_file           = vk_shader_load_file,
+    .shader_load_memory         = vk_shader_load_memory,
 
     /* Pipeline */
     .pipeline_create            = vk_pipeline_create,

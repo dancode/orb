@@ -70,7 +70,7 @@ vk_init( void )
     if ( !vk_instance_init() ) 
          goto fail_after_nothing;
 
-    /* turn on regular logging levels */
+    /* turn on regular vk logging levels */
     vk_debug_set_min_level( LOG_LEVEL_WARN );
 
     LOG_LINE();

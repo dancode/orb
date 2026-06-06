@@ -20,7 +20,8 @@
        11. vk_texture.c            (VkImage + VkImageView + VkSampler lifecycle)
        12. vk_buffer.c             (VkBuffer lifecycle)
        13. vk_shader.c             (VkShaderModule lifecycle)
-       14. vk_descriptor.c         (bindless pool + shared pipeline layout)
+       14. vk_shader_load.c        (file and embedded SPIR-V loaders)
+       15. vk_descriptor.c         (bindless pool + shared pipeline layout)
        15. vk_pipeline_cache.c     (VkPipelineCache disk persistence)
        16. vk_pipeline_graphics.c  (slot helpers + graphics PSO creation)
        17. vk_pipeline_compute.c   (compute PSO creation)
@@ -133,6 +134,7 @@
 #include "runtime_service/rhi/vk_texture.c"
 #include "runtime_service/rhi/vk_buffer.c"
 #include "runtime_service/rhi/vk_shader.c"
+#include "runtime_service/rhi/vk_shader_load.c"
 #include "runtime_service/rhi/vk_descriptor.c"
 #include "runtime_service/rhi/vk_pipeline_cache.c"
 #include "runtime_service/rhi/vk_pipeline_graphics.c"

@@ -238,8 +238,8 @@ vk_device_validate( VkPhysicalDevice dev,
 static bool
 vk_device_select( bool* out_opt_found )
 {
-    VkPhysicalDevice            device_array[ VK_MAX_PHYSICAL_DEVICES ];
-    VkPhysicalDeviceProperties  device_props[ VK_MAX_PHYSICAL_DEVICES ];
+    VkPhysicalDevice            device_array[  VK_MAX_PHYSICAL_DEVICES ];
+    VkPhysicalDeviceProperties  device_props[  VK_MAX_PHYSICAL_DEVICES ];
     u32                         device_count = VK_MAX_PHYSICAL_DEVICES;
 
     VkResult result = vkEnumeratePhysicalDevices( vk.instance, &device_count, device_array );
@@ -302,9 +302,9 @@ vk_device_select( bool* out_opt_found )
             return true;
         }
     }
-
     LOG_ERROR( "no suitable physical device (requires VK_KHR_swapchain, samplerAnisotropy, "
                "fillModeNonSolid, graphics + compute queue, present support)" );
+
     return false;
 }
 

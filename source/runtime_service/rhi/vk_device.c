@@ -181,10 +181,8 @@ vk_device_init_features( vk_feature_chain_t* f )
 /*==============================================================================================
     Logical Device: Build the extension list for VkDeviceCreateInfo.  
     
-    Prepends the required swapchain extension, then appends each optional extension 
-    reported present by opt_found[]. 
-    
-    Returns total count. 
+    We prepend the required swapchain extension (always required) and then appends 
+    each optional extension reported present by opt_found[]. Returns the total count.
 ==============================================================================================*/
 
 static u32
@@ -192,7 +190,6 @@ vk_device_collect_extensions( const bool* opt_found, const char** out_exts )
 {
     u32 count        = 0;
     out_exts[ count++ ] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;   /* hard requirement */
-
     
     LOG_INFO( "optional extentions:" );
 
@@ -200,7 +197,7 @@ vk_device_collect_extensions( const bool* opt_found, const char** out_exts )
     {
         LOG_INFO( "  [%u]: %s [%s]", i, s_optional_exts[ i ], opt_found[ i ] ? "enabled" : "not present" );
 
-        if ( opt_found[ i ] )
+        if ( opt_found[ i ] ) 
              out_exts[ count++ ] = s_optional_exts[ i ];
     }
     return count;
@@ -208,8 +205,32 @@ vk_device_collect_extensions( const bool* opt_found, const char** out_exts )
 
 /*==============================================================================================
     Logical Device: Build the queue create info array for vkCreateDevice.
+
+    When you send commands to a GPU in Vulkan, you submit them to a Queue. 
+    GPUs have different types of hardware queues tailored for different jobs:
+
+    * Graphics: Rendering 3D geometry, rasterization, etc.
+    * Present: Taking a finished image and giving it to the OS/Monitor to display. 
+    * Transfer: Moving data (like textures or buffers) from CPU RAM to GPU VRAM.
     
-    - Build deduplicated VkDeviceQueueCreateInfo entries for the three queue families.
+    Vulkan groups queues with identical capabilities into Queue Families, identified
+    by an integer index (e.g., Family 0, Family 1).
+
+    The Problem: Hardware Overlap
+    When you initialize your Vulkan Logical Device (vkCreateDevice), you must explicitly 
+    tell Vulkan which queue families you want to use by providing an array of 
+    VkDeviceQueueCreateInfo structs.
+
+     On most modern GPUs (NVIDIA or AMD), a single unified queue family can do everything.
+     vk.graphics_queue_family might be 0, vk.present_queue_family might also be 0,
+     vk.transfer_queue_family might be a dedicated async transfer queue, say 1 (or still 0).
+   
+    Vulkan Rule: No Duplicates
+    The Vulkan specification enforces a strict rule: You cannot submit multiple 
+    VkDeviceQueueCreateInfo structs that have the same queueFamilyIndex.
+
+    - We aren't allowed duplicated VkDeviceQueueCreateInfo entries so we deduplicate.
+    - One entry for each queueFamilyIndex of the three queue family types.
     - Graphics and present share one family on most desktop hardware; 
     - Transfer may or may not be dedicated.      
     - Duplicate indices are collapsed -- passing the same index twice is a validation error. 
@@ -218,7 +239,7 @@ vk_device_collect_extensions( const bool* opt_found, const char** out_exts )
 ==============================================================================================*/
 
 /* Queue priorities at file scope so pQueuePriorities pointers in VkDeviceQueueCreateInfo
-   remain valid through vkCreateDevice without escaping a helper's stack frame. */
+   remain valid through vkCreateDevice call without escaping a helper's stack frame. */
 
 static const float s_prio_high = 1.0f;   /* graphics + present: highest scheduling weight */
 static const float s_prio_low  = 0.5f;   /* transfer (dedicated): lower than rendering   */

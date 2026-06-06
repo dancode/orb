@@ -9,6 +9,7 @@
     draw-indexed calls.
 
 ==============================================================================================*/
+// clang-format off
 
 typedef struct
 {
@@ -40,12 +41,12 @@ static struct
 static bool
 draw_init( void )
 {
-    if ( !draw_batch_init( &s.batch ) )
-        return false;
-    if ( !draw_material_init( s.mats ) )
-    {
-        draw_batch_shutdown( &s.batch );
-        return false;
+    if ( !draw_batch_init( &s.batch )) {
+         return false;
+    }
+    if ( !draw_material_init( s.mats )) {
+         draw_batch_shutdown( &s.batch );
+         return false;
     }
     s.cur_mat = DRAW_MAT_SOLID;
     return true;
@@ -162,3 +163,4 @@ draw_circle( f32 cx, f32 cy, f32 r, u32 segs, const f32 rgba[ 4 ] )
 }
 
 /*============================================================================================*/
+// clang-format on

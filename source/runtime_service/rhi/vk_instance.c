@@ -124,7 +124,7 @@ vk_instance_get_layers( const char** out_layer_names )
     /* set all the instance layers we require */
 
     static const char* validation_layer = "VK_LAYER_KHRONOS_validation";
-    static const char* monitor_layer    = "VK_LAYER_LUNARG_monitor";
+    static const char* monitor_layer = "VK_LAYER_LUNARG_monitor";
     
     bool has_layer_validation = false;
     bool has_layer_monitor    = false;
@@ -166,7 +166,7 @@ vk_instance_get_layers( const char** out_layer_names )
 
     LOG_INFO( "%u layers supported", layer_count );
     for ( u32 i = 0; i < layer_count; i++ ) {
-        LOG_TRACE( "LYR: %s", layer_props[ i ].layerName );    
+         LOG_TRACE( "LYR: %s", layer_props[ i ].layerName );    
     }
 
     return out_layer_count;
@@ -196,8 +196,8 @@ vk_version_string( u32 version )
 {
     static char buf[ 32 ] = {0};
     snprintf( buf, 32, "%d.%d.%d", VK_VERSION_MAJOR( version ), 
-                                   VK_VERSION_MINOR( version ), 
-                                   VK_VERSION_PATCH( version ) );
+                                   VK_VERSION_MINOR( version ),
+                                   VK_VERSION_PATCH( version ));
     return buf;
 }
 
@@ -230,16 +230,14 @@ vk_instance_create( u32 layer_count, const char** layer_array, u32 ext_count, co
        vkCreateInstance / vkDestroyInstance can trigger validation (temporary).
        The real persistent messenger is created via vk_debug_messenger_create() */
 
-#if DEBUG
-
-    VkDebugUtilsMessengerCreateInfoEXT dbg_ci = { 0 };
-    if ( vk.use_vk_ext_debug_utils ) {
-         vk_debug_messenger_fill_ci( &dbg_ci );
-         ci.pNext = &dbg_ci;
-    }
-
-#endif
-
+    #if DEBUG
+        VkDebugUtilsMessengerCreateInfoEXT dbg_ci = { 0 };
+        if ( vk.use_vk_ext_debug_utils ) {
+             vk_debug_messenger_fill_ci( &dbg_ci );
+             ci.pNext = &dbg_ci;
+        }
+    #endif
+    
     VkResult r = vkCreateInstance( &ci, vk.alloc_cb, &vk.instance );
     if ( r != VK_SUCCESS ) {
          LOG_ERROR( "vkCreateInstance: %s", string_VkResult( r ) );

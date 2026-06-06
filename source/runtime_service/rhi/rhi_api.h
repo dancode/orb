@@ -11,7 +11,7 @@
         Buffer     : create / destroy / write
         Texture    : create / destroy
         Sampler    : create / destroy
-        Shader     : create / destroy
+        Shader     : create / destroy / load_file / load_memory
         Pipeline   : create / compute_create / destroy
         Upload     : staged copy to GPU-only buffer or texture
         Pass       : begin_rendering / end_rendering  (explicit dynamic pass open/close)
@@ -71,8 +71,16 @@ typedef struct rhi_api_s
 
     /* ---- Shader ---- */
 
-    rhi_shader_t  ( *shader_create  )( const rhi_shader_desc_t* desc );
-    void          ( *shader_destroy )( rhi_shader_t shader );
+    rhi_shader_t  ( *shader_create      )( const rhi_shader_desc_t* desc );
+    void          ( *shader_destroy     )( rhi_shader_t shader );
+
+    /* Convenience loaders -- both delegate to shader_create internally.
+       shader_load_file  reads a compiled .spv file from disk.
+       shader_load_memory creates from an embedded SPIR-V byte array (e.g. a static C array). */
+    rhi_shader_t  ( *shader_load_file   )( const char* path, rhi_shader_stage_t stage,
+                                            const char* entry, const char* debug_name );
+    rhi_shader_t  ( *shader_load_memory )( const void* spirv, u32 size, rhi_shader_stage_t stage,
+                                            const char* entry, const char* debug_name );
 
     /* ---- Pipeline ---- */
 
