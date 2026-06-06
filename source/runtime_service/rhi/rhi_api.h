@@ -44,7 +44,7 @@ typedef struct rhi_api_s
 
     /* ---- Frame ---- */
 
-    rhi_command_list_t ( *frame_begin )( i32 ctx_id );   /* NULL = swapchain not ready */
+    rhi_command_list_t ( *frame_begin )( i32 ctx_id );   /* RHI_CMD_INVALID = swapchain not ready */
     void               ( *frame_end   )( i32 ctx_id );
 
     /* ---- Buffer ---- */

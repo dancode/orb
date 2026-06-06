@@ -212,10 +212,8 @@ vk_device_collect_extensions( const bool* opt_found, const char** out_exts )
 
     - Graphics and present share one family on most desktop hardware.
     - Transfer may or may not be dedicated.
-    - Duplicate indices are collapsed -- passing the same index twice is a validation error. 
+    - Duplicate indices are collapsed -- passing the same index twice is a validation error.
     - Returns the number of unique entries written to out_cis.
-
-    TLDR: Returns two queue's from three family array since graphics and present share.
 
 ==============================================================================================*/
 

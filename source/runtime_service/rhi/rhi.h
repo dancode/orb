@@ -4,10 +4,10 @@
 
     Targets Vulkan 1.3 (dynamic rendering, synchronization2, descriptor indexing).
 
-    All GPU resources are referenced through typed generation handles:
-        high 8 bits = generation counter
-        low  24 bits = slot index
-        id == 0 is always invalid regardless of type
+    All GPU resources are referenced through opaque slot handles (u32):
+        handle.id is the pool slot index; slot 0 is permanently reserved as invalid
+        id == 0 (RHI_NULL_HANDLE) is always invalid regardless of type
+        Handles carry no generation counter -- they are stable for the resource lifetime
 
     Three-stage init (host-driven):
         1. rhi_mod_init              : loads vulkan-1.dll (cheap; no-op if absent)

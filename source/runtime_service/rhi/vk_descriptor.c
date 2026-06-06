@@ -45,17 +45,21 @@ static vk_bindless_free_t  g_samp_free;
     still be reading the old one in a previous frame.
 
     Instead, vk_unregister_* pushes (idx, safe_at) into a FIFO retire ring, where safe_at
-    is the global_frame threshold at which the slot is provably idle on all contexts.
+    is the global_epoch threshold at which the slot is provably idle on all contexts.
     vk_descriptor_flush_retired() (called after the fence wait in vk_frame_begin) drains
-    entries once vk.global_frame reaches their safe_at.
+    entries once vk.global_epoch reaches their safe_at.
 
-    Multi-context correctness: vk.global_frame increments once per frame_begin, which is
-    once per context per display frame.  With N active contexts, global_frame advances by N
-    per display frame, so the effective in-flight guard must be VK_MAX_FRAMES_IN_FLIGHT * N.
-    vk_retire_safe_at() snapshots N at retirement time and bakes it into safe_at.  If a
-    context is later destroyed the FIFO head may have a larger safe_at than newer entries;
-    the drain loop will delay those newer entries until the older one ages out -- conservative
-    but correct, never a leak.
+    Epoch semantics: vk.global_epoch advances only after every currently active context has
+    fence-waited in the current round (tracked by epoch_ack_mask in vk_state.c).
+    vk_retire_safe_at() returns vk.global_epoch + VK_MAX_FRAMES_IN_FLIGHT.  Because one
+    epoch advance means every context completed a full fence cycle, VK_MAX_FRAMES_IN_FLIGHT
+    epoch advances guarantee every context has retired at least that many complete rounds
+    regardless of individual frame rates.  If a context is destroyed, context_destroy checks
+    it in on its behalf so epoch advancement is never blocked by a dead window.
+
+    FIFO ordering: if an older entry has a larger safe_at than a newer one (possible when
+    contexts are added or removed between two retirements), the drain stalls at the older
+    entry until its epoch is reached -- conservative but correct, never a leak.
 
     Ring capacity equals the pool size.  Because slot 0 is reserved, at most
     (capacity - 1) slots can ever be allocated at once, so the ring never overflows.
@@ -64,7 +68,7 @@ static vk_bindless_free_t  g_samp_free;
 typedef struct vk_deferred_retire_s
 {
     u32 idx;
-    u32 safe_at;            /* vk.global_frame value at which this slot is safe to reuse */
+    u32 safe_at;            /* vk.global_epoch value at which this slot is safe to reuse */
 } vk_deferred_retire_t;
 
 static vk_deferred_retire_t  g_tex_retire[ VK_MAX_BINDLESS_TEXTURES ];
