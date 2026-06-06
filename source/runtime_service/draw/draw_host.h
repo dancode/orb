@@ -25,8 +25,10 @@
         // call site:
         draw()->rect( 0.f, 0.f, 0.5f, 0.3f, red );
 
-    The dep "rhi" in the mod_desc_t means the module system ensures rhi is initialized
-    before draw, so get_api("rhi") is guaranteed to succeed in draw_mod_init.
+    The dep "rhi" in the mod_desc_t ensures rhi is loaded before draw, so get_api("rhi")
+    succeeds in draw_mod_init.  GPU resources (buffers, pipelines) are NOT created there;
+    call draw()->init() explicitly after rhi()->init(), and draw()->shutdown() before
+    rhi()->shutdown().
 
 ==============================================================================================*/
 

@@ -24,6 +24,12 @@
 
 typedef struct draw_api_s
 {
+    /* GPU resource setup / teardown.
+       init()     -- call after rhi()->init(); creates vertex/index buffers and pipelines.
+       shutdown() -- call before rhi()->shutdown(); destroys all GPU-side resources. */
+    bool ( *init     )( void );
+    void ( *shutdown )( void );
+
     /* Set the command list and view-projection matrix for the current frame.
        Call inside an open render pass (between cmd_begin_rendering / cmd_end_rendering). */
     void ( *begin  )( rhi_command_list_t cmd, const f32 view_proj[ 16 ] );

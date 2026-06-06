@@ -18,11 +18,13 @@
 
 const draw_api_t g_draw_api_struct =
 {
-    .begin  = draw_begin,
-    .end    = draw_end,
-    .rect   = draw_rect,
-    .box    = draw_box,
-    .circle = draw_circle,
+    .init     = draw_init,
+    .shutdown = draw_shutdown,
+    .begin    = draw_begin,
+    .end      = draw_end,
+    .rect     = draw_rect,
+    .box      = draw_box,
+    .circle   = draw_circle,
 };
 
 /*==============================================================================================
@@ -34,10 +36,9 @@ draw_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
 
-    /* Cache the rhi API pointer so draw_batch.c and draw_material.c can call rhi(). */
-    if ( !MOD_FETCH_RHI ) return false;
-
-    return draw_init();
+    /* Cache the rhi API pointer; GPU resource creation is deferred to draw()->init()
+       because the Vulkan device does not exist until the host calls rhi()->init(). */
+    return MOD_FETCH_RHI;
 }
 
 static bool

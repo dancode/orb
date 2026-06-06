@@ -93,9 +93,21 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup Resources */
 
+    /* Initialize draw GPU resources (buffers + pipelines) now that the device is live. */
+    if ( !draw()->init() )
+    {
+        fprintf( stderr, "[sb_vulkan] draw->init failed\n" );
+        rhi()->context_destroy( ctx );
+        rhi()->shutdown();
+        app()->window_close( win );
+        mod_system_exit();
+        return 1;
+    }
+
     sb_vk_boot_t boot = { 0 };
     if ( !sb_vk_boot_create( &boot ) )
     {
+        draw()->shutdown();
         rhi()->context_destroy( ctx );
         rhi()->shutdown();
         app()->window_close( win );
@@ -148,6 +160,7 @@ main( int argc, char** argv )
     /* Shutdown -- resources before context, context before device, device before window. */
 
     sb_vk_boot_destroy( &boot );
+    draw()->shutdown();
     rhi()->context_destroy( ctx );
     rhi()->shutdown();
     app()->window_close( win );
