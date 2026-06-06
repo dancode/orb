@@ -201,7 +201,6 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( rhi() )
         {
             void* hwnd = app()->window_handle( s_win_id );
-            app()->window_set_paint( s_win_id, false );
 
             if ( !rhi()->init() )
             {

@@ -88,11 +88,11 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
 
         WNDCLASSEXW wc = {
             .cbSize        = sizeof( wc ),
-            .style         = CS_HREDRAW | CS_VREDRAW,
+            .style         = 0, /* no CS_HREDRAW/CS_VREDRAW -- RHI owns pixels, suppress resize invalidation */
             .lpfnWndProc   = app_wnd_proc,
             .hInstance     = g_pool.hinst,
-            .hCursor       = NULL, // LoadCursorW( NULL, IDC_ARROW ),
-            .hbrBackground = CreateSolidBrush( RGB( 30, 80, 160 ) ), /* ( HBRUSH )( COLOR_WINDOW + 1 ) */
+            .hCursor       = NULL,
+            .hbrBackground = NULL, /* no brush -- renderer is responsible for all pixel content */
             .lpszClassName = APP_WINDOW_CLASS_W,
         };
 
@@ -117,7 +117,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     win->prev          = win->state;
     win->w             = w;
     win->h             = h;
-    win->paint_enabled = true;
+    win->paint_enabled = false;
 
     /* Map app flags → Win32 style */
     DWORD style    = 0;
