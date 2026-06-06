@@ -217,7 +217,7 @@ typedef struct vk_state_s
 
     /* Device capabilities -- cached for faster query */
 
-    VkSampleCountFlagBits   max_msaa_samples;           // max combined color+depth sample count.
+    VkSampleCountFlagBits   max_msaa_samples;           // max combined color + depth sample count.
     u32                     min_ubo_align;              // minUniformBufferOffsetAlignment, bytes.
     bool                    has_push_descriptor;        // VK_KHR_push_descriptor was enabled.
 
@@ -246,10 +246,12 @@ typedef struct vk_state_s
     vk_staging_t            staging[ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Upload/render sync: timeline semaphore signaled after each DMA batch; render submit waits on it */
+
     VkSemaphore             upload_timeline;
     u64                     upload_counter;
 
     u32                     global_frame;       /* monotonic counter; incremented per frame_begin (diagnostics) */
+
     u32                     global_epoch;       /* advances when every active context has fence-waited */
     u32                     epoch_ack_mask;     /* bitmask; context i sets bit i after fence wait; reset on epoch advance */
 
@@ -258,16 +260,16 @@ typedef struct vk_state_s
 
     /* Resource slot pools */
 
-    vk_buffer_slot_t        buffers[ VK_MAX_BUFFERS ];
-    vk_texture_slot_t       textures[ VK_MAX_TEXTURES ];
-    vk_sampler_slot_t       samplers[ VK_MAX_SAMPLERS ];
-    vk_shader_slot_t        shaders[ VK_MAX_SHADERS ];
-    vk_pipeline_slot_t      pipelines[ VK_MAX_PIPELINES ];
+    vk_buffer_slot_t        buffers     [ VK_MAX_BUFFERS ];
+    vk_texture_slot_t       textures    [ VK_MAX_TEXTURES ];
+    vk_sampler_slot_t       samplers    [ VK_MAX_SAMPLERS ];
+    vk_shader_slot_t        shaders     [ VK_MAX_SHADERS ];
+    vk_pipeline_slot_t      pipelines   [ VK_MAX_PIPELINES ];
 
     /* Context pool */
 
-    vk_context_t            contexts[ RHI_CTX_MAX ];
-    u32                     ctx_alloc;                    /* bitmask: bit i set = slot i is live */
+    vk_context_t            contexts    [ RHI_CTX_MAX ];
+    u32                     ctx_alloc;                      /* bitmask: bit i set = slot i is live */
 
 } vk_state_t;
 

@@ -73,8 +73,8 @@ app_get_mod_desc( void )
         .state_size    = 0, /* state lives in static storage in the platform backends */
         .func_api_size = sizeof( app_api_t ),
         .func_api      = &g_app_api_struct,
-        .dep_count     = 1,
-        .deps          = { "sys" },
+        .dep_count     = 0,
+        .deps          = {}, 
         .init          = app_mod_init,
         .exit          = app_mod_exit,
         .reload        = NULL,

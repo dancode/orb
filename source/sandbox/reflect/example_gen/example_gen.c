@@ -81,7 +81,7 @@ example_gen_get_mod_desc( void )
         .init          = example_gen_mod_init,
         .reload        = example_gen_mod_reload,
         .exit          = example_gen_mod_exit,
-        .ref_register   = MOD_REFLECT_FUNC( example_gen ),
+        .ref_register  = MOD_REFLECT_FUNC( example_gen ),
     };
     return &api;
 }

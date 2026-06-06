@@ -16,10 +16,13 @@
 
     Used by the host to register the app module:
         mod_static_load( "app", app_get_mod_desc() );
+        mod_static( app );
     or via the build-mode-transparent macro:
         mod_load( app );
 
 ==============================================================================================*/
+
+mod_desc_t* app_get_mod_desc( void );
 
 /* Route app log output through core. Call after mod_init_all(). */
 void app_set_log_fn( log_fn_t fn );

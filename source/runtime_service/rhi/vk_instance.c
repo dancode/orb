@@ -195,7 +195,9 @@ static const char*
 vk_version_string( u32 version )
 {
     static char buf[ 32 ] = {0};
-    snprintf( buf, 32, "%d.%d.%d", VK_VERSION_MAJOR( version ), VK_VERSION_MINOR( version ), VK_VERSION_PATCH( version ) );
+    snprintf( buf, 32, "%d.%d.%d", VK_VERSION_MAJOR( version ), 
+                                   VK_VERSION_MINOR( version ), 
+                                   VK_VERSION_PATCH( version ) );
     return buf;
 }
 

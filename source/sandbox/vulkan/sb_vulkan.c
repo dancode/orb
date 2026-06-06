@@ -2,10 +2,9 @@
 
     sandbox/vulkan/sb_vulkan.c -- Vulkan RHI bring-up test.
 
-    Loads sys + app + rhi (static), opens a window, calls rhi()->init() then
-    rhi()->context_create() with the native HWND, then runs a basic clear-color
-    loop until the window is closed or ESC is pressed.  No runtime host, no
-    module hot-reload.
+    Loads sys + app + rhi + draw (static), opens a window, then exercises the pipeline.
+    Currently uses sb_vk_boot to render a hardcoded triangle until the window is closed
+    or ESC is pressed.  No runtime host, no module hot-reload.
 
 ==============================================================================================*/
 
@@ -18,6 +17,8 @@
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
+#include "runtime_service/draw/draw_host.h"
+#include "sb_vulkan_boot.h"
 
 /*==============================================================================================
     main
@@ -36,6 +37,7 @@ main( int argc, char** argv )
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
+    mod_static( draw ); 
 
     if ( !mod_init_all() )
     {
@@ -52,32 +54,33 @@ main( int argc, char** argv )
     assert( app() );
     assert( core() );
     assert( rhi() );
+    assert( draw() );
 
     core()->log_set_min_level( LOG_LEVEL_TRACE );
+    core_log_fn( LOG_LEVEL_DEBUG, "sb_vulkan", "debug log: modules loaded successfully" );
 
     LOG_LINE();
 
+    /* ------------------------------------------------------------------------------ */
+    /* Setup Window + RHI */
+
     /* Open window. */
     win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );
-    if ( win == APP_WIN_INVALID )
-    {
-        fprintf( stderr, "[sb_vulkan] window_open failed\n" );
-        mod_system_exit();
-        return 1;
+    if ( win == APP_WIN_INVALID ) {
+         mod_system_exit();
+         return 1;
     }
 
     /* Global RHI init (instance + device). */
-    if ( !rhi()->init() )
-    {
-        fprintf( stderr, "[sb_vulkan] rhi->init failed\n" );
-        app()->window_close( win );
-        mod_system_exit();
-        return 1;
+    if ( !rhi()->init() ) {
+         app()->window_close( win );
+         mod_system_exit();
+         return 1;
     }
 
     /* Per-window render context. */
     void* hwnd = app()->window_handle( win );
-    i32 ctx = rhi()->context_create( win, hwnd, 1280, 720 );
+    i32   ctx  = rhi()->context_create( win, hwnd, 1280, 720 );
     if ( ctx == RHI_CTX_INVALID )
     {
         fprintf( stderr, "[sb_vulkan] rhi->context_create failed\n" );
@@ -87,7 +90,27 @@ main( int argc, char** argv )
         return 1;
     }
 
+    /* ------------------------------------------------------------------------------ */
+    /* Setup Resources */
+
+    sb_vk_boot_t boot = { 0 };
+    if ( !sb_vk_boot_create( &boot ) )
+    {
+        rhi()->context_destroy( ctx );
+        rhi()->shutdown();
+        app()->window_close( win );
+        mod_system_exit();
+        return 1;
+    }
+
+    /* ------------------------------------------------------------------------------ */
+    /* Start render loop. */
+
     printf( "[sb_vulkan] running -- ESC or close window to quit\n" );
+
+    /* Track window size for viewport/scissor updates. */
+    i32 win_w = 1280;
+    i32 win_h = 720;
 
     /* Main loop. */
     while ( app()->pump_events() )
@@ -97,38 +120,34 @@ main( int argc, char** argv )
         while ( app()->next_event( &ev ) )
         {
             if ( ev.type == APP_EV_WIN_RESIZE )
-                rhi()->context_resize( ctx, ev.data.win_resize.w, ev.data.win_resize.h );
+            {
+                win_w = ev.data.win_resize.w;
+                win_h = ev.data.win_resize.h;
+                rhi()->context_resize( ctx, win_w, win_h );
+            }
         }
 
         if ( app()->key_pressed( APP_KEY_ESCAPE ) )
             break;
 
-        /* Frame. */
+        /* ------------------------------------------------------------------------------ */
+        /* Render frame. */
+
         rhi_command_list_t cmd = rhi()->frame_begin( ctx );
         if ( rhi_cmd_valid( cmd ) )
         {
-            rhi_color_attachment_t color_att = {
-                .texture  = { .id = RHI_SWAPCHAIN_COLOR },
-                .load_op  = RHI_LOAD_OP_CLEAR,
-                .store_op = RHI_STORE_OP_STORE,
-                .clear    = { 0.05f, 0.15f, 0.05f, 1.0f },
-            };
-            rhi_depth_attachment_t depth_att = {
-                .texture      = { .id = RHI_SWAPCHAIN_DEPTH },
-                .load_op      = RHI_LOAD_OP_CLEAR,
-                .store_op     = RHI_STORE_OP_DISCARD,
-                .depth_clear  = 1.0f,
-                .stencil_clear = 0,
-            };
-            rhi()->cmd_begin_rendering( cmd, &color_att, 1, &depth_att );
-            rhi()->cmd_end_rendering( cmd );
+            sb_vk_boot_render( &boot, cmd, win_w, win_h );
             rhi()->frame_end( ctx );
         }
+
+        /* ------------------------------------------------------------------------------ */
 
         sys_sleep_milliseconds( 16 );
     }
 
-    /* Shutdown -- context before device, device before window. */
+    /* Shutdown -- resources before context, context before device, device before window. */
+
+    sb_vk_boot_destroy( &boot );
     rhi()->context_destroy( ctx );
     rhi()->shutdown();
     app()->window_close( win );

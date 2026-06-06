@@ -10,17 +10,23 @@
 
 #include "engine/sys/sys_api.h"
 
+// clang-format off
 /*==============================================================================================
 
     Library - Dynamic library loading and symbol lookup
 
 ==============================================================================================*/
 
-typedef void* lib_handle_t;
+typedef void*   lib_handle_t;
 
-lib_handle_t  sys_library_load( const char* path );
-void*         sys_library_get_symbol( lib_handle_t module, const char* name );
-void          sys_library_unload( lib_handle_t module );
+//              Load a dynamic library from the specified (os) path. NULL on failure.
+lib_handle_t    sys_library_load( const char* path );
+
+//              Get the address of a symbol exported by the library. NULL if not found.
+void*           sys_library_get_symbol( lib_handle_t module, const char* name );
+
+//              Unload the library and release resources.
+void            sys_library_unload( lib_handle_t module );
 
 /*==============================================================================================
 
@@ -232,7 +238,6 @@ void sys_datetime_local( SysDateTime* dt );
     Distinct from app input (windowed, raw input, controllers). Useful before the
     app/window system exists.
 ==============================================================================================*/
-// clang-format off
 
 typedef enum sys_key_e
 {
@@ -262,7 +267,6 @@ typedef enum sys_key_e
 
 } sys_key_t;
 
-// clang-format on
 
 bool sys_console_input_init( void );
 void sys_console_input_shutdown( void );
@@ -284,5 +288,6 @@ bool sys_key_released( sys_key_t key ); /* true on the down->up transition only 
 
 mod_desc_t* sys_get_mod_desc( void );
 
+// clang-format on
 /*============================================================================================*/
 #endif    // SYS_HOST_H

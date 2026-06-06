@@ -86,7 +86,7 @@ vk_init( void )
 fail_after_instance:  vk_instance_destroy();
 fail_after_nothing:
 
-    LOG_ERROR( "vk_init failed\n" );
+    LOG_ERROR( "vk_init failed" );
     LOG_LINE();
     return false;
 }

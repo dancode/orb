@@ -52,9 +52,9 @@ typedef struct core_api_s
 
     /* ring buffer access for editor/tools */
 
-    const log_entry_t* ( *log_ring_entries )  ( void );
-    u32         ( *log_ring_capacity )  ( void );
-    u32         ( *log_ring_seq )       ( void );
+    const log_entry_t*  ( *log_ring_entries )   ( void );
+    u32                 ( *log_ring_capacity )  ( void );
+    u32                 ( *log_ring_seq )       ( void );
 
     /* allocator */
 

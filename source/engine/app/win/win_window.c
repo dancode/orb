@@ -86,13 +86,16 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     {
         g_pool.hinst = GetModuleHandleW( NULL );
 
+        /* style: no CS_HREDRAW/CS_VREDRAW -- RHI owns pixels, suppress resize invalidation */
+        /* .hbrBackground: no brush -- renderer is responsible for all pixel content */
+
         WNDCLASSEXW wc = {
             .cbSize        = sizeof( wc ),
-            .style         = 0, /* no CS_HREDRAW/CS_VREDRAW -- RHI owns pixels, suppress resize invalidation */
+            .style         = 0, 
             .lpfnWndProc   = app_wnd_proc,
             .hInstance     = g_pool.hinst,
             .hCursor       = NULL,
-            .hbrBackground = NULL, /* no brush -- renderer is responsible for all pixel content */
+            .hbrBackground = NULL, 
             .lpszClassName = APP_WINDOW_CLASS_W,
         };
 

@@ -11,12 +11,12 @@
     Call sites:
         LOG_TRACE( "dt=%.4f", dt );
         LOG_INFO( "loaded %u textures", count );
-        LOG_WARN( "texture '%s' not found", name );
-        LOG_ERROR( "out of memory" );           // prefixed with __func__ automatically
+        LOG_WARN( "texture '%s' not found", name ); // auto prefixed with function name
+        LOG_ERROR( "out of memory" );               // auto prefixed with function name
 
     Compile-time stripping:
         LOG_COMPILE_MIN defaults to ORB_LOG_TRACE in debug, ORB_LOG_INFO in release.
-        Override per-target in CMake: target_compile_definitions(foo PRIVATE LOG_COMPILE_MIN=2)
+        Override per-target in #define LOG_COMPILE_MIN=2
         Calls below the minimum compile to ((void)0) — no string literal, no branch, no call.
 
 ==============================================================================================*/

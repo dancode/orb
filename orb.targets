@@ -49,7 +49,7 @@ target app
     root        source/engine/app
     folder      02_ENGINE
     unit        app.c
-    dep         sys
+#   dep         sys			#currently doesnt actually need it
     flag        host_only
 
 target core
@@ -93,6 +93,14 @@ target rhi
     dep         core app
 	inc         %VULKAN_SDK%/Include
 
+target draw
+
+    type        static
+    root        source/runtime_service/draw
+    folder      03_RUNTIME/SERVICE
+    unit        draw.c
+	dep 		rhi
+	
 target jobs
 
     type        static
@@ -251,7 +259,7 @@ target host_tool
     root        source/host/tool
     folder      08_Host
     unit        host_tool_main.c
-	dep 		mod
+	dep         mod sys ref core app
 	mono_dep	render
 
 target host_sandbox
@@ -260,6 +268,7 @@ target host_sandbox
     root        source/host/sandbox
     folder      08_Host
     unit        host_sandbox_main.c
+    dep         mod sys ref core app
 	
 # ==============================================================================
 # 09_SANDBOX -- BASE
@@ -368,10 +377,10 @@ target sb_vulkan						# vulkan development and testing
     root        source/sandbox/vulkan
     folder      09_SANDBOX/VULKAN
     unit        sb_vulkan.c
+    unit        sb_vulkan_boot.c
     dep         sys ref mod core app
-	dep 		run rhi
-	mono_dep 	render
-	startup     sb_vulkan	
+	dep 		run rhi draw
+	mono_dep 	render	
   # flag        reflect
 
 # ==============================================================================
@@ -529,13 +538,14 @@ solution orb_sandbox_reflect			# developing reflection
 solution orb_sandbox_vulkan				# developing rendering / vulkan
 
     out         build/proj
-    startup     sb_runtime_gen
+	startup     sb_vulkan
 
     add         base
 	add         sys ref mod app core net
 
 	add 		run
 	add 		rhi						# vulkan render library
+	add 		draw 					# drawing using the rhi
 	add 		render 					# render dll
 	
 	add 		sb_vulkan				# exe 

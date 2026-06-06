@@ -49,10 +49,10 @@
 
 #include "orb.h"
 
-#define LOG_CH "vk"
+#define LOG_CH "vk"                     // for core log macros in vk_* files
 
-#include "engine/sys/sys_host.h"
-#include "engine/core/core_host.h"
+#include "engine/sys/sys_host.h"        // load_library, get_proc_address
+#include "engine/core/core_host.h"      // log and assert
 
 /*==============================================================================================
     Platform Headers

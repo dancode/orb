@@ -60,8 +60,7 @@ log_console_sink( const log_entry_t* entry, void* userdata )
         return;
     }
     FILE* stream = ( entry->level >= LOG_LEVEL_WARN ) ? stderr : stdout;
-    fprintf( stream, "%s[%s] %s\n", s_prefixes[ entry->level ], entry->channel, entry->msg );
- // fprintf( stream, "%s[%-8s] %s\n", s_prefixes[ entry->level ], entry->channel, entry->msg );
+    fprintf( stream, "%s[%s] %s\n", s_prefixes[ entry->level ], entry->channel, entry->msg ); 
 }
 
 /*==============================================================================================
