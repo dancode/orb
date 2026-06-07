@@ -65,7 +65,7 @@ main( int argc, char** argv )
     /* Setup Window + RHI */
 
     /* Open window. */
-    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );
+    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT | APP_WIN_MINIMIZE );
     if ( win == APP_WIN_INVALID ) {
          mod_system_exit();
          return 1;
@@ -141,13 +141,16 @@ main( int argc, char** argv )
             break;
 
         /* ------------------------------------------------------------------------------ */
-        /* Render frame. */
+        /* Render frame -- skip entirely while minimized to avoid 0x0 swapchain churn. */
 
-        rhi_command_list_t cmd = rhi()->frame_begin( ctx );
-        if ( rhi_cmd_valid( cmd ) )
+        if ( !app()->window_is_minimized( win ) )
         {
-            sb_vk_boot_render( &boot, cmd, win_w, win_h );
-            rhi()->frame_end( ctx );
+            rhi_command_list_t cmd = rhi()->frame_begin( ctx );
+            if ( rhi_cmd_valid( cmd ) )
+            {
+                sb_vk_boot_render( &boot, cmd, win_w, win_h );
+                rhi()->frame_end( ctx );
+            }
         }
 
         /* ------------------------------------------------------------------------------ */

@@ -35,8 +35,11 @@ vk_frame_begin( i32 ctx_id )
            too: semaphores consumed by the old present's vkQueuePresentKHR wait are
            tracked by the validation layer as associated with the old swapchain, and
            re-signaling them on the new swapchain triggers a spurious hazard warning.
-           Fresh handles have no WSI history. */
-        vk_swapchain_recreate( ctx );
+           Fresh handles have no WSI history.
+           Returns false when the window is minimized (surface extent {0,0}); in that
+           case leave resize_pending set and skip the frame -- retry next pump. */
+        if ( !vk_swapchain_recreate( ctx ) )
+            return RHI_CMD_INVALID;
         vk_sync_destroy( ctx );
         vk_sync_create( ctx );
         ctx->resize_pending = false;

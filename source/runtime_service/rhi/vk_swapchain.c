@@ -335,6 +335,14 @@ vk_swapchain_destroy( vk_context_t* ctx )
 static bool
 vk_swapchain_recreate( vk_context_t* ctx )
 {
+    /* Query surface caps before touching anything.  On a minimized window the driver
+       reports currentExtent {0,0}; skip recreation and let the caller retry next frame
+       with the old swapchain still live. */
+    VkSurfaceCapabilitiesKHR caps = { 0 };
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR( vk.physical_device, ctx->surface, &caps );
+    if ( caps.currentExtent.width == 0 || caps.currentExtent.height == 0 )
+        return false;
+
     LOG_INFO( "swapchain_recreate: begin (ctx %d, %dx%d)", ctx->id, ctx->width, ctx->height );
 
     /* Save the old handle so we can pass it to vkCreateSwapchainKHR.  The driver
