@@ -133,6 +133,8 @@ fail_after_nothing:
     return false;
 }
 
+/*============================================================================================*/
+
 static void
 vk_shutdown( void )
 {
@@ -224,6 +226,8 @@ fail_after_nothing:
     return RHI_CTX_INVALID;
 }
 
+/*============================================================================================*/
+
 static void
 vk_context_destroy( i32 ctx_id )
 {
@@ -257,6 +261,8 @@ vk_context_destroy( i32 ctx_id )
 
     LOG_INFO( "context_destroy: complete (ctx %d)", ctx_id );
 }
+
+/*============================================================================================*/
 
 static bool
 vk_context_resize( i32 ctx_id, i32 width, i32 height )

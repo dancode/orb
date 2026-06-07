@@ -23,30 +23,32 @@
 
 struct rhi_cmd_s
 {
-    VkCommandBuffer  vk_cmd;
-    i32              ctx_id;
-    u32              frame;    /* slot index [0..VK_MAX_FRAMES_IN_FLIGHT) */
+    VkCommandBuffer  vk_cmd;        // Vulkan handle; callers record into this directly.
+    i32              ctx_id;        // Index of the parent context
+    u32              frame;         // slot index [0..VK_MAX_FRAMES_IN_FLIGHT]
 };
 
 /*==============================================================================================
     Resource limits
 ==============================================================================================*/
 
-#define VK_MAX_FRAMES_IN_FLIGHT   2
-#define VK_MAX_SWAPCHAIN_IMAGES   3
+#define VK_MAX_FRAMES_IN_FLIGHT     2
+#define VK_MAX_SWAPCHAIN_IMAGES     3
 
-#define VK_MAX_BUFFERS            1024
-#define VK_MAX_TEXTURES           2048
-#define VK_MAX_SAMPLERS           128
-#define VK_MAX_SHADERS            512
-#define VK_MAX_PIPELINES          256
+#define VK_MAX_BUFFERS              1024
+#define VK_MAX_TEXTURES             2048
+#define VK_MAX_SAMPLERS             128
+#define VK_MAX_SHADERS              512
+#define VK_MAX_PIPELINES            256
 
 /* Bindless descriptor array sizes (must match shader set layout in vk_descriptor.c) */
-#define VK_MAX_BINDLESS_TEXTURES  2048
-#define VK_MAX_BINDLESS_SAMPLERS  128
+
+#define VK_MAX_BINDLESS_TEXTURES    2048
+#define VK_MAX_BINDLESS_SAMPLERS    128
 
 /* Per-frame staging capacity (linear bump; reset each frame_begin) */
-#define VK_STAGING_SIZE           ORB_MB( 64 )
+
+#define VK_STAGING_SIZE             ORB_MB( 64 )
 
 /*==============================================================================================
     Resource slot types
@@ -56,7 +58,7 @@ typedef struct vk_buffer_slot_s
 {
     VkBuffer       buffer;
     VkDeviceMemory memory;
-    void*          mapped;       /* non-NULL only for CPU_TO_GPU / CPU_ONLY allocations */
+    void*          mapped;          // non-NULL only for CPU_TO_GPU / CPU_ONLY allocations
     u32            size;
 
 } vk_buffer_slot_t;
@@ -64,7 +66,7 @@ typedef struct vk_buffer_slot_s
 typedef struct vk_texture_slot_s
 {
     VkImage        image;
-    VkImageView    view;         /* default full-range view */
+    VkImageView    view;            // default full-range view
     VkDeviceMemory memory;
     VkFormat       vk_format;
     u32            width;
@@ -82,7 +84,7 @@ typedef struct vk_shader_slot_s
 {
     VkShaderModule     module;
     rhi_shader_stage_t stage;
-    char               entry[ 32 ];   /* SPIR-V entry point name; stored for pipeline create */
+    char               entry[ 32 ]; // SPIR-V entry point name; stored for pipeline create
 
 } vk_shader_slot_t;
 
@@ -115,35 +117,35 @@ typedef struct vk_context_s
 {
     /* Identity */
 
-    i32                 id;                 // our vk.contexts[ id ];
-    i32                 win_id;             // our app.windows[ id ];
-    void*               native_window;      // HWND on Windows; cast at use sites
+    i32                 id;                     // our vk.contexts[ id ];
+    i32                 win_id;                 // our app.windows[ id ];
+    void*               native_window;          // HWND on Windows; cast at use sites
 
     /* Dimensions */
 
-    i32                 width;              // current swapchain dimensions, updated by resize.
-    i32                 height;             // used for swapchain creation and viewport setup
-    bool                resize_pending;     // swapchain rebuild deferred to next frame_begin */
+    i32                 width;                  // current swapchain dimensions, updated by resize.
+    i32                 height;                 // used for swapchain creation and viewport setup
+    bool                resize_pending;         // swapchain rebuild deferred to next frame_begin */
 
     /* Frame tracking */
 
-    u32                 current_frame;      // [0..VK_MAX_FRAMES_IN_FLIGHT); indexes per-frame arrays
-    u32                 image_index;        // swapchain image acquired by vkAcquireNextImageKHR
+    u32                 current_frame;          // [0..VK_MAX_FRAMES_IN_FLIGHT); indexes per-frame arrays
+    u32                 image_index;            // swapchain image acquired by vkAcquireNextImageKHR
 
     /* Surface and swapchain */
 
-    VkSurfaceKHR        surface;            // created from native_window; used in swapchain and present.
-    VkSurfaceFormatKHR  surface_format;     // selected surface format (color space + pixel format)
-    VkPresentModeKHR    present_mode;       // selected present mode (vsync / mailbox / immediate)
-    VkSwapchainKHR      swapchain;          // created with surface; used in present and image acquisition.
-
-    u32                 swapchain_image_count;
+    VkSurfaceKHR        surface;                // created from native_window; used in swapchain and present.
+    VkSurfaceFormatKHR  surface_format;         // selected surface format (color space + pixel format)
+    VkPresentModeKHR    present_mode;           // selected present mode (vsync / mailbox / immediate)
+    VkSwapchainKHR      swapchain;              // created with surface; used in present and image acquisition.
+    
+    VkExtent2D          swapchain_extent;
     VkImage             swapchain_images        [ VK_MAX_SWAPCHAIN_IMAGES ];
     VkImageView         swapchain_image_views   [ VK_MAX_SWAPCHAIN_IMAGES ];
-    VkExtent2D          swapchain_extent;
+    u32                 swapchain_image_count;    
 
     /* Depth attachment: one image per frame-in-flight so consecutive frames do not race
-       on the same image.  depth_format is shared (same for all slots). */
+       on the same image. depth_format is shared (same for all slots). */
 
     VkImage             depth_image             [ VK_MAX_FRAMES_IN_FLIGHT ];
     VkDeviceMemory      depth_memory            [ VK_MAX_FRAMES_IN_FLIGHT ];
@@ -157,18 +159,20 @@ typedef struct vk_context_s
 
     /* Per-swapchain-image: reusing this semaphore is safe only when the image is
        acquired again, which guarantees the previous present consumed it. */
+
     VkSemaphore         render_finished_sem     [ VK_MAX_SWAPCHAIN_IMAGES ];
 
     /* Per-frame command state */
 
     VkCommandPool       command_pool;
     VkCommandBuffer     command_buffers         [ VK_MAX_FRAMES_IN_FLIGHT ];
-    struct rhi_cmd_s  cmd_lists            [ VK_MAX_FRAMES_IN_FLIGHT ];
+    struct rhi_cmd_s    cmd_lists               [ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Per-slot layout tracker: UNDEFINED on create; promoted to DEPTH_ATTACHMENT_OPTIMAL after
-       each slot's first barrier.  Safe because the fence wait guarantees the previous use of
+       each slot's first barrier. Safe because the fence wait guarantees the previous use of
        this slot is complete before we access it again. */
-    VkImageLayout               depth_layout    [ VK_MAX_FRAMES_IN_FLIGHT ];
+
+    VkImageLayout       depth_layout            [ VK_MAX_FRAMES_IN_FLIGHT ];
 
 } vk_context_t;
 
@@ -247,13 +251,13 @@ typedef struct vk_state_s
     VkSemaphore             upload_timeline;    // monotonic timeline semaphore signaled with each vk_upload_flush; waited on by frame_begin.
     u64                     upload_counter;     // incremented and signaled with each vk_upload_flush; waited on at frame_begin.
 
-    u32                     global_frame;       /* monotonic counter; incremented per frame_begin (diagnostics) */
+    u32                     global_frame;       // monotonic counter; incremented per frame_begin (diagnostics)
 
-    u32                     global_epoch;       /* advances when every active context has fence-waited */
-    u32                     epoch_ack_mask;     /* bitmask; context i sets bit i after fence wait; reset on epoch advance */
+    u32                     global_epoch;       // advances when every active context has fence-waited
+    u32                     epoch_ack_mask;     // bitmask; context i sets bit i after fence wait; reset on epoch advance
 
-    u32                     upload_flush_epoch; /* epoch value at the last vk_upload_flush; gates flush to once per display epoch */
-    u32                     acquire_ack_mask;   /* bitmask; context i sets bit i after apply_acquires; cleared when all contexts applied */
+    u32                     upload_flush_epoch; // epoch value at the last vk_upload_flush; gates flush to once per display epoch 
+    u32                     acquire_ack_mask;   // bitmask; context i sets bit i after apply_acquires; cleared when all contexts applied
 
     /* Resource slot pools */
 

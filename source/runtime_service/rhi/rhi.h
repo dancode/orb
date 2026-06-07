@@ -20,6 +20,7 @@
 
 #include "orb.h"
 
+// clang-format off
 /*==============================================================================================
     Resource handles
 
@@ -449,5 +450,6 @@ typedef struct rhi_depth_attachment_s
 
 } rhi_depth_attachment_t;
 
+// clang-format on
 /*============================================================================================*/
 #endif    // RHI_H

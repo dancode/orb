@@ -432,6 +432,8 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
     return vk_depth_create( ctx );
 }
 
+/*============================================================================================*/
+
 static void
 vk_swapchain_destroy( vk_context_t* ctx )
 {
@@ -447,12 +449,13 @@ vk_swapchain_destroy( vk_context_t* ctx )
     }
     ctx->swapchain_image_count = 0;
 
-    if ( ctx->swapchain != VK_NULL_HANDLE )
-    {
-        vkDestroySwapchainKHR( vk.device, ctx->swapchain, vk.alloc_cb );
-        ctx->swapchain = VK_NULL_HANDLE;
+    if ( ctx->swapchain != VK_NULL_HANDLE ) {
+         vkDestroySwapchainKHR( vk.device, ctx->swapchain, vk.alloc_cb );
+         ctx->swapchain = VK_NULL_HANDLE;
     }
 }
+
+/*============================================================================================*/
 
 static bool
 vk_swapchain_recreate( vk_context_t* ctx )
@@ -464,12 +467,13 @@ vk_swapchain_recreate( vk_context_t* ctx )
     VkSurfaceCapabilitiesKHR caps = { 0 };
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR( vk.physical_device, ctx->surface, &caps );
     if ( caps.currentExtent.width == 0 || caps.currentExtent.height == 0 )
-        return false;
+         return false;
 
     LOG_INFO( "swapchain_recreate: begin (ctx %d, %dx%d)", ctx->id, ctx->width, ctx->height );
 
     /* Save the old handle so we can pass it to vkCreateSwapchainKHR.  The driver
        may reuse its presentation resources, avoiding a blank frame on resize. */
+
     VkSwapchainKHR old_swapchain = ctx->swapchain;
     ctx->swapchain               = VK_NULL_HANDLE;
 
@@ -486,7 +490,7 @@ vk_swapchain_recreate( vk_context_t* ctx )
     }
     r = vkQueueWaitIdle( vk.present_queue );
     if ( r != VK_SUCCESS ) {
-        LOG_ERROR( "swapchain_recreate: vkQueueWaitIdle: %s", string_VkResult( r ) );
+         LOG_ERROR( "swapchain_recreate: vkQueueWaitIdle: %s", string_VkResult( r ) );
     }
     vk_swapchain_destroy( ctx );
 
@@ -505,9 +509,12 @@ vk_depth_create( vk_context_t* ctx )
     /* Probe depth formats from most to least precise -- done once, shared across slots. */
     static const VkFormat s_candidates[] = {
         VK_FORMAT_D32_SFLOAT,
-        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_FORMAT_D24_UNORM_S8_UINT, 
         VK_FORMAT_D16_UNORM,
     };
+
+    /* Vulkan uses a unified DEPTH_STENCIL bit for any depth/stencil pipeline usage,
+       even for depth-only formats like D32 that don't have a stencil aspect. */
 
     ctx->depth_format = VK_FORMAT_UNDEFINED;
     for ( u32 i = 0; i < 3; ++i )
@@ -520,10 +527,9 @@ vk_depth_create( vk_context_t* ctx )
             break;
         }
     }
-    if ( ctx->depth_format == VK_FORMAT_UNDEFINED )
-    {
-        LOG_ERROR( "depth_create: no supported depth format (ctx %d)", ctx->id );
-        return false;
+    if ( ctx->depth_format == VK_FORMAT_UNDEFINED ) {
+         LOG_ERROR( "depth_create: no supported depth format (ctx %d)", ctx->id );
+         return false;
     }
 
     /* Create one image + memory + view per frame-in-flight slot.
@@ -546,30 +552,27 @@ vk_depth_create( vk_context_t* ctx )
         img_ci.initialLayout          = VK_IMAGE_LAYOUT_UNDEFINED;
 
         VkResult r = vkCreateImage( vk.device, &img_ci, vk.alloc_cb, &ctx->depth_image[ slot ] );
-        if ( r != VK_SUCCESS )
-        {
-            LOG_ERROR( "depth_create: vkCreateImage[%u]: %s", slot, string_VkResult( r ) );
-            vk_depth_destroy( ctx );
-            return false;
+        if ( r != VK_SUCCESS ) {
+             LOG_ERROR( "depth_create: vkCreateImage[%u]: %s", slot, string_VkResult( r ) );
+             vk_depth_destroy( ctx );
+             return false;
         }
 
         VkMemoryRequirements reqs;
         vkGetImageMemoryRequirements( vk.device, ctx->depth_image[ slot ], &reqs );
 
         vk_mem_alloc_t alloc = { 0 };
-        if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, 0, &alloc ) )
-        {
-            vk_depth_destroy( ctx );
-            return false;
+        if ( !vk_mem_alloc( reqs, RHI_MEMORY_GPU_ONLY, 0, &alloc )) {
+             vk_depth_destroy( ctx );
+             return false;
         }
         ctx->depth_memory[ slot ] = alloc.memory;
 
         r = vkBindImageMemory( vk.device, ctx->depth_image[ slot ], ctx->depth_memory[ slot ], alloc.offset );
-        if ( r != VK_SUCCESS )
-        {
-            LOG_ERROR( "depth_create: vkBindImageMemory[%u]: %s", slot, string_VkResult( r ) );
-            vk_depth_destroy( ctx );
-            return false;
+        if ( r != VK_SUCCESS ) {
+             LOG_ERROR( "depth_create: vkBindImageMemory[%u]: %s", slot, string_VkResult( r ) );
+             vk_depth_destroy( ctx );
+             return false;
         }
 
         VkImageViewCreateInfo view_ci           = { 0 };
@@ -584,21 +587,23 @@ vk_depth_create( vk_context_t* ctx )
         view_ci.subresourceRange.layerCount     = 1;
 
         r = vkCreateImageView( vk.device, &view_ci, vk.alloc_cb, &ctx->depth_view[ slot ] );
-        if ( r != VK_SUCCESS )
-        {
-            LOG_ERROR( "depth_create: vkCreateImageView[%u]: %s", slot, string_VkResult( r ) );
-            vk_depth_destroy( ctx );
-            return false;
+        if ( r != VK_SUCCESS ) {
+             LOG_ERROR( "depth_create: vkCreateImageView[%u]: %s", slot, string_VkResult( r ) );
+             vk_depth_destroy( ctx );
+             return false;
         }
 
         /* Layout starts UNDEFINED; frame_begin barriers it to DEPTH_ATTACHMENT_OPTIMAL on first use. */
         ctx->depth_layout[ slot ] = VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
-    LOG_INFO( "vk_depth_create: OK (ctx %d, fmt=%d, %ux%u, %u slots)", ctx->id, (i32)ctx->depth_format,
-              ctx->swapchain_extent.width, ctx->swapchain_extent.height, (u32)VK_MAX_FRAMES_IN_FLIGHT );
+    LOG_INFO( "vk_depth_create: OK (ctx %d, fmt=%s, %ux%u, %u slots)", ctx->id, 
+                    string_VkFormat( ctx->depth_format ), ctx->swapchain_extent.width, 
+                    ctx->swapchain_extent.height, (u32)VK_MAX_FRAMES_IN_FLIGHT );
     return true;
 }
+
+/*============================================================================================*/
 
 static void
 vk_depth_destroy( vk_context_t* ctx )

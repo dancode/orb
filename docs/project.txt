@@ -6,7 +6,7 @@ orb.h : Root configuration header. Should be included in all source files.
 Config/ Configuration files for the engine, such as build settings, platform-specific configurations, and other global settings.
 Build/ Output directory for all compiled binaries (exe's, dll's, lib's) and intermediate files (obj's, pdb's, etc.).
 
-Engine Heirarchy Stack:
+Engine Hierarchy Stack:
 
 00_Root
 01_Base
