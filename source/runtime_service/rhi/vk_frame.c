@@ -20,7 +20,7 @@
     Frame begin / end
 ==============================================================================================*/
 
-static rhi_cmd_list_t
+static rhi_cmd_t
 vk_frame_begin( i32 ctx_id )
 {
     vk_context_t* ctx = vk_ctx_get( ctx_id );

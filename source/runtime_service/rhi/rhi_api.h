@@ -44,7 +44,7 @@ typedef struct rhi_api_s
 
     /* ---- Frame ---- */
 
-    rhi_cmd_list_t ( *frame_begin )( i32 ctx_id );   /* RHI_CMD_INVALID = swapchain not ready */
+    rhi_cmd_t ( *frame_begin )( i32 ctx_id );   /* RHI_CMD_INVALID = swapchain not ready */
     void               ( *frame_end   )( i32 ctx_id );
 
     /* ---- Buffer ---- */
@@ -102,35 +102,35 @@ typedef struct rhi_api_s
 
     /* Open a dynamic rendering pass.  Must be closed with cmd_end_rendering before
        frame_end or before opening another pass. */
-    void ( *cmd_begin_rendering )( rhi_cmd_list_t          cmd,
+    void ( *cmd_begin_rendering )( rhi_cmd_t          cmd,
                                    const rhi_color_attachment_t* color_atts, u32 color_count,
                                    const rhi_depth_attachment_t* depth_att );
-    void ( *cmd_end_rendering   )( rhi_cmd_list_t cmd );
+    void ( *cmd_end_rendering   )( rhi_cmd_t cmd );
 
     /* ---- Commands ---- */
 
-    void ( *cmd_set_viewport       )( rhi_cmd_list_t cmd, const rhi_viewport_t* vp );
-    void ( *cmd_set_scissor        )( rhi_cmd_list_t cmd, const rhi_rect_t* rect );
-    void ( *cmd_bind_pipeline      )( rhi_cmd_list_t cmd, rhi_pipeline_t pipeline );
-    void ( *cmd_bind_vertex_buffer )( rhi_cmd_list_t cmd, rhi_buffer_t buf, u32 offset );
-    void ( *cmd_bind_index_buffer  )( rhi_cmd_list_t cmd, rhi_buffer_t buf, u32 offset,
+    void ( *cmd_set_viewport       )( rhi_cmd_t cmd, const rhi_viewport_t* vp );
+    void ( *cmd_set_scissor        )( rhi_cmd_t cmd, const rhi_rect_t* rect );
+    void ( *cmd_bind_pipeline      )( rhi_cmd_t cmd, rhi_pipeline_t pipeline );
+    void ( *cmd_bind_vertex_buffer )( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset );
+    void ( *cmd_bind_index_buffer  )( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset,
                                       rhi_index_type_t type );
-    void ( *cmd_push_constants     )( rhi_cmd_list_t cmd, const void* data, u32 size,
+    void ( *cmd_push_constants     )( rhi_cmd_t cmd, const void* data, u32 size,
                                       u32 offset );
-    void ( *cmd_draw               )( rhi_cmd_list_t cmd, const rhi_draw_args_t* args );
-    void ( *cmd_draw_indexed       )( rhi_cmd_list_t cmd,
+    void ( *cmd_draw               )( rhi_cmd_t cmd, const rhi_draw_args_t* args );
+    void ( *cmd_draw_indexed       )( rhi_cmd_t cmd,
                                       const rhi_draw_indexed_args_t* args );
 
     /* Indirect draw: draw parameters read from a GPU buffer (one VkDrawIndirectCommand per draw).
        buf must have RHI_BUFFER_USAGE_INDIRECT set.  stride is typically sizeof(VkDrawIndirectCommand). */
-    void ( *cmd_draw_indirect         )( rhi_cmd_list_t cmd, rhi_buffer_t buf,
+    void ( *cmd_draw_indirect         )( rhi_cmd_t cmd, rhi_buffer_t buf,
                                          u32 offset, u32 draw_count, u32 stride );
-    void ( *cmd_draw_indexed_indirect )( rhi_cmd_list_t cmd, rhi_buffer_t buf,
+    void ( *cmd_draw_indexed_indirect )( rhi_cmd_t cmd, rhi_buffer_t buf,
                                          u32 offset, u32 draw_count, u32 stride );
 
     /* Compute dispatch: launch (groups_x * groups_y * groups_z) workgroups.
        A compute pipeline must be bound before calling this. */
-    void ( *cmd_dispatch )( rhi_cmd_list_t cmd, u32 groups_x, u32 groups_y, u32 groups_z );
+    void ( *cmd_dispatch )( rhi_cmd_t cmd, u32 groups_x, u32 groups_y, u32 groups_z );
 
     /* ---- Bindless resource registration ---- */
 
@@ -141,12 +141,12 @@ typedef struct rhi_api_s
     void ( *unregister_sampler )( u32 bindless_index );
 
     /* Binds the global bindless descriptor set; call once at the top of each frame. */
-    void ( *cmd_bind_bindless  )( rhi_cmd_list_t cmd );
+    void ( *cmd_bind_bindless  )( rhi_cmd_t cmd );
 
     /* ---- Debug GPU labels (no-ops in release; always safe to call) ---- */
 
-    void ( *cmd_begin_label )( rhi_cmd_list_t cmd, const char* name, f32 r, f32 g, f32 b );
-    void ( *cmd_end_label   )( rhi_cmd_list_t cmd );
+    void ( *cmd_begin_label )( rhi_cmd_t cmd, const char* name, f32 r, f32 g, f32 b );
+    void ( *cmd_end_label   )( rhi_cmd_t cmd );
 
 } rhi_api_t;
 

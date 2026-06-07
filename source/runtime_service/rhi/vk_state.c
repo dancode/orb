@@ -15,19 +15,18 @@
 // clang-format off
 
 /*==============================================================================================
-    rhi_cmd_list_t  (opaque pointer to one of vk_context_t::cmd_lists[])
+    rhi_cmd_t  (opaque pointer to one of vk_context_t::cmd_lists[])
 
     One struct lives inside each context's per-frame slot, no heap allocation needed.
-    rhi_cmd_list_t is a direct pointer to the live slot; NULL = invalid.
+    rhi_cmd_t is a direct pointer to the live slot; NULL = invalid.
 ==============================================================================================*/
 
-struct rhi_cmd_list_s
+struct rhi_cmd_s
 {
     VkCommandBuffer  vk_cmd;
     i32              ctx_id;
     u32              frame;    /* slot index [0..VK_MAX_FRAMES_IN_FLIGHT) */
 };
-
 
 /*==============================================================================================
     Resource limits
@@ -164,7 +163,7 @@ typedef struct vk_context_s
 
     VkCommandPool       command_pool;
     VkCommandBuffer     command_buffers         [ VK_MAX_FRAMES_IN_FLIGHT ];
-    struct rhi_cmd_list_s  cmd_lists            [ VK_MAX_FRAMES_IN_FLIGHT ];
+    struct rhi_cmd_s  cmd_lists            [ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Per-slot layout tracker: UNDEFINED on create; promoted to DEPTH_ATTACHMENT_OPTIMAL after
        each slot's first barrier.  Safe because the fence wait guarantees the previous use of

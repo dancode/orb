@@ -43,8 +43,8 @@ RHI_DEFINE_HANDLE( rhi_pipeline_t );
     Command list handle  (opaque pointer into vk_context_t::cmd_lists[]; NULL = invalid)
 ==============================================================================================*/
 
-struct rhi_cmd_list_s;
-typedef struct rhi_cmd_list_s* rhi_cmd_list_t;
+struct rhi_cmd_s;
+typedef struct rhi_cmd_s* rhi_cmd_t;
 
 #define RHI_CMD_INVALID     NULL
 #define rhi_cmd_valid(cmd)  ( (cmd) != NULL )

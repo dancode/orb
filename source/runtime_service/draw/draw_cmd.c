@@ -28,7 +28,7 @@ static struct
     draw_material_t mats[ DRAW_MAT_COUNT ];
     draw_call_t     calls[ DRAW_MAX_CALLS ];
     u32             call_count;
-    rhi_cmd_list_t cmd;
+    rhi_cmd_t cmd;
     draw_push_t     frame_push;  /* current view-projection baked into every draw */
     draw_mat_id_t   cur_mat;
 
@@ -64,7 +64,7 @@ draw_shutdown( void )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-draw_begin( rhi_cmd_list_t cmd, const f32 view_proj[ 16 ] )
+draw_begin( rhi_cmd_t cmd, const f32 view_proj[ 16 ] )
 {
     s.cmd = cmd;
     for ( u32 i = 0; i < 16; ++i )

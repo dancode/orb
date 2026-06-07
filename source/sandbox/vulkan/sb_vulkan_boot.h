@@ -32,7 +32,7 @@ typedef struct
 bool sb_vk_boot_create( sb_vk_boot_t* boot );
 
 /* Issue one full render pass that clears to dark green and draws the triangle. */
-void sb_vk_boot_render( sb_vk_boot_t* boot, rhi_cmd_list_t cmd, i32 win_w, i32 win_h );
+void sb_vk_boot_render( sb_vk_boot_t* boot, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
 /* Destroy shaders and pipeline.  Safe to call even if create partially failed. */
 void sb_vk_boot_destroy( sb_vk_boot_t* boot );

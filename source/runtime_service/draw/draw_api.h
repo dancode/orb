@@ -14,7 +14,7 @@
 ==============================================================================================*/
 
 #include "runtime_service/draw/draw.h"
-#include "runtime_service/rhi/rhi.h"   /* rhi_cmd_list_t for begin() */
+#include "runtime_service/rhi/rhi.h"   /* rhi_cmd_t for begin() */
 #include "engine/mod/mod_import.h"
 
 // clang-format off
@@ -32,7 +32,7 @@ typedef struct draw_api_s
 
     /* Set the command list and view-projection matrix for the current frame.
        Call inside an open render pass (between cmd_begin_rendering / cmd_end_rendering). */
-    void ( *begin  )( rhi_cmd_list_t cmd, const f32 view_proj[ 16 ] );
+    void ( *begin  )( rhi_cmd_t cmd, const f32 view_proj[ 16 ] );
 
     /* Flush all accumulated draw calls to the command list and reset internal state. */
     void ( *end    )( void );

@@ -9,7 +9,7 @@
 ==============================================================================================*/
 
 static void
-vk_cmd_dispatch( rhi_cmd_list_t cmd, u32 groups_x, u32 groups_y, u32 groups_z )
+vk_cmd_dispatch( rhi_cmd_t cmd, u32 groups_x, u32 groups_y, u32 groups_z )
 {
     if ( !cmd ) return;
     vkCmdDispatch( cmd->vk_cmd, groups_x, groups_y, groups_z );

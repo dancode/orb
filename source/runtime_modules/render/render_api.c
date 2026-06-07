@@ -20,7 +20,7 @@ MOD_USE_RHI;
 typedef struct render_ctx_slot_s
 {
     bool               active;
-    rhi_cmd_list_t cmd;       /* valid between begin_frame / end_frame; RHI_CMD_INVALID otherwise */
+    rhi_cmd_t cmd;       /* valid between begin_frame / end_frame; RHI_CMD_INVALID otherwise */
     rhi_color_t        clear;     /* default: dark charcoal */
 
 } render_ctx_slot_t;

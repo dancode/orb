@@ -18,7 +18,7 @@
 ==============================================================================================*/
 
 static void
-vk_cmd_begin_rendering( rhi_cmd_list_t             cmd,
+vk_cmd_begin_rendering( rhi_cmd_t             cmd,
                         const rhi_color_attachment_t*  color_atts, u32 color_count,
                         const rhi_depth_attachment_t*  depth_att )
 {
@@ -86,7 +86,7 @@ vk_cmd_begin_rendering( rhi_cmd_list_t             cmd,
 }
 
 static void
-vk_cmd_end_rendering( rhi_cmd_list_t cmd )
+vk_cmd_end_rendering( rhi_cmd_t cmd )
 {
     if ( !cmd )
         return;
@@ -99,7 +99,7 @@ vk_cmd_end_rendering( rhi_cmd_list_t cmd )
 ==============================================================================================*/
 
 static void
-vk_cmd_set_viewport( rhi_cmd_list_t cmd, const rhi_viewport_t* vp )
+vk_cmd_set_viewport( rhi_cmd_t cmd, const rhi_viewport_t* vp )
 {
     if ( !cmd || !vp )
         return;
@@ -115,7 +115,7 @@ vk_cmd_set_viewport( rhi_cmd_list_t cmd, const rhi_viewport_t* vp )
 }
 
 static void
-vk_cmd_set_scissor( rhi_cmd_list_t cmd, const rhi_rect_t* rect )
+vk_cmd_set_scissor( rhi_cmd_t cmd, const rhi_rect_t* rect )
 {
     if ( !cmd || !rect )
         return;
@@ -133,7 +133,7 @@ vk_cmd_set_scissor( rhi_cmd_list_t cmd, const rhi_rect_t* rect )
 ==============================================================================================*/
 
 static void
-vk_cmd_bind_pipeline( rhi_cmd_list_t cmd, rhi_pipeline_t pipeline )
+vk_cmd_bind_pipeline( rhi_cmd_t cmd, rhi_pipeline_t pipeline )
 {
     if ( !cmd || !vk_pipeline_validate( pipeline ) )
         return;
@@ -145,7 +145,7 @@ vk_cmd_bind_pipeline( rhi_cmd_list_t cmd, rhi_pipeline_t pipeline )
 }
 
 static void
-vk_cmd_bind_bindless( rhi_cmd_list_t cmd )
+vk_cmd_bind_bindless( rhi_cmd_t cmd )
 {
     if ( !cmd )
         return;
@@ -159,7 +159,7 @@ vk_cmd_bind_bindless( rhi_cmd_list_t cmd )
 }
 
 static void
-vk_cmd_push_constants( rhi_cmd_list_t cmd, const void* data, u32 size, u32 offset )
+vk_cmd_push_constants( rhi_cmd_t cmd, const void* data, u32 size, u32 offset )
 {
     if ( !cmd || !data || size == 0 )
         return;
@@ -174,7 +174,7 @@ vk_cmd_push_constants( rhi_cmd_list_t cmd, const void* data, u32 size, u32 offse
 ==============================================================================================*/
 
 static void
-vk_cmd_bind_vertex_buffer( rhi_cmd_list_t cmd, rhi_buffer_t buf, u32 offset )
+vk_cmd_bind_vertex_buffer( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset )
 {
     if ( !cmd || !vk_buffer_validate( buf ) )
         return;
@@ -185,7 +185,7 @@ vk_cmd_bind_vertex_buffer( rhi_cmd_list_t cmd, rhi_buffer_t buf, u32 offset )
 }
 
 static void
-vk_cmd_bind_index_buffer( rhi_cmd_list_t cmd, rhi_buffer_t buf, u32 offset,
+vk_cmd_bind_index_buffer( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset,
                            rhi_index_type_t type )
 {
     if ( !cmd || !vk_buffer_validate( buf ) )
@@ -201,7 +201,7 @@ vk_cmd_bind_index_buffer( rhi_cmd_list_t cmd, rhi_buffer_t buf, u32 offset,
 ==============================================================================================*/
 
 static void
-vk_cmd_draw( rhi_cmd_list_t cmd, const rhi_draw_args_t* args )
+vk_cmd_draw( rhi_cmd_t cmd, const rhi_draw_args_t* args )
 {
     if ( !cmd || !args )
         return;
@@ -211,7 +211,7 @@ vk_cmd_draw( rhi_cmd_list_t cmd, const rhi_draw_args_t* args )
 }
 
 static void
-vk_cmd_draw_indexed( rhi_cmd_list_t cmd, const rhi_draw_indexed_args_t* args )
+vk_cmd_draw_indexed( rhi_cmd_t cmd, const rhi_draw_indexed_args_t* args )
 {
     if ( !cmd || !args )
         return;
@@ -221,14 +221,14 @@ vk_cmd_draw_indexed( rhi_cmd_list_t cmd, const rhi_draw_indexed_args_t* args )
 }
 
 static void
-vk_cmd_draw_indirect( rhi_cmd_list_t cmd, rhi_buffer_t buf, u32 offset, u32 draw_count, u32 stride )
+vk_cmd_draw_indirect( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset, u32 draw_count, u32 stride )
 {
     if ( !cmd || !vk_buffer_validate( buf ) ) return;
     vkCmdDrawIndirect( cmd->vk_cmd, vk.buffers[ buf.id ].buffer, offset, draw_count, stride );
 }
 
 static void
-vk_cmd_draw_indexed_indirect( rhi_cmd_list_t cmd, rhi_buffer_t buf, u32 offset, u32 draw_count, u32 stride )
+vk_cmd_draw_indexed_indirect( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset, u32 draw_count, u32 stride )
 {
     if ( !cmd || !vk_buffer_validate( buf ) ) return;
     vkCmdDrawIndexedIndirect( cmd->vk_cmd, vk.buffers[ buf.id ].buffer, offset, draw_count, stride );

@@ -320,7 +320,7 @@ vk_debug_name_object( VkObjectType type, u64 handle, const char* name )
 ==============================================================================================*/
 
 static void
-vk_cmd_begin_label( rhi_cmd_list_t cmd, const char* name, f32 r, f32 g, f32 b )
+vk_cmd_begin_label( rhi_cmd_t cmd, const char* name, f32 r, f32 g, f32 b )
 {
 #if DEBUG
 
@@ -350,7 +350,7 @@ vk_cmd_begin_label( rhi_cmd_list_t cmd, const char* name, f32 r, f32 g, f32 b )
 /*============================================================================================*/
 
 static void
-vk_cmd_end_label( rhi_cmd_list_t cmd )
+vk_cmd_end_label( rhi_cmd_t cmd )
 {
 #if DEBUG
 
