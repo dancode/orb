@@ -6,20 +6,13 @@
     Included FIRST by rhi.c so every other vk_*.c file sees the complete type definitions.
 
     Initialization is three-phase:
+
         rhi_mod_init           : loads vulkan-1.dll (vk_lib_init)
         rhi()->init()          : VkInstance + VkDevice + global resources (no window)
         rhi()->context_create  : per-window surface, swapchain, depth buffer, sync, commands
 
 ==============================================================================================*/
 // clang-format off
-
-/*==============================================================================================
-    Handle helpers  (internal; never exposed in rhi.h)
-
-    handle.id == 0  ->  RHI_NULL_HANDLE (invalid).
-    handle.id == N  ->  slot N.  Slot 0 is permanently unused; allocators start at 1.
-    No encoding or decoding needed: the handle value is the slot index.
-==============================================================================================*/
 
 /*==============================================================================================
     rhi_command_list_s  (internal slot; rhi_command_list_t is an i32 handle)
@@ -33,7 +26,6 @@ struct rhi_command_list_s
     VkCommandBuffer  vk_cmd;
     i32              ctx_id;
     u32              frame;    /* slot index [0..VK_MAX_FRAMES_IN_FLIGHT) */
-
 };
 
 /*==============================================================================================
@@ -107,11 +99,11 @@ typedef struct vk_pipeline_slot_s
 
 typedef struct vk_staging_s
 {
-    VkBuffer       buffer;
-    VkDeviceMemory memory;
-    void*          mapped;              /* persistently mapped host pointer */
-    u32            head;                /* linear bump allocator offset; reset when the slot is flushed */
-    u64            last_submit_value;   /* upload_timeline value signaled when this slot was last submitted */
+    VkBuffer       buffer;              // staging: host-visible, coherent, transfer-source only
+    VkDeviceMemory memory;              // bound to the staging buffer; persistently mapped for CPU writes.
+    void*          mapped;              // persistently mapped host pointer
+    u32            head;                // linear bump allocator offset; reset when the slot is flushed
+    u64            last_submit_value;   // upload_timeline value signaled when this slot was last submitted
 
 } vk_staging_t;
 
@@ -237,10 +229,10 @@ typedef struct vk_state_s
 
     /* Global bindless descriptor layout (set 0; shared by all pipelines) */
 
-    VkDescriptorPool        bindless_pool;
-    VkDescriptorSetLayout   bindless_layout;
-    VkDescriptorSet         bindless_set;
-    VkPipelineLayout        pipeline_layout;    /* push constants + bindless set 0 */
+    VkDescriptorSetLayout   bindless_layout;    // layout set 0: of bindless arrays for tex + samp.
+    VkDescriptorPool        bindless_pool;      // pool set 0: that supports layout.
+    VkDescriptorSet         bindless_set;       // allocated from pool and layout; bound to set 0.
+    VkPipelineLayout        pipeline_layout;    // push constants + bindless set 0.
 
     /* Staging upload ring (active slot owned by vk_upload.c via g_upload_active_slot) */
 
@@ -248,8 +240,8 @@ typedef struct vk_state_s
 
     /* Upload/render sync: timeline semaphore signaled after each DMA batch; render submit waits on it */
 
-    VkSemaphore             upload_timeline;
-    u64                     upload_counter;
+    VkSemaphore             upload_timeline;    // monotonic timeline semaphore signaled with each vk_upload_flush; waited on by frame_begin.
+    u64                     upload_counter;     // incremented and signaled with each vk_upload_flush; waited on at frame_begin.
 
     u32                     global_frame;       /* monotonic counter; incremented per frame_begin (diagnostics) */
 

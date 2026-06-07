@@ -155,11 +155,13 @@ main( int argc, char** argv )
         sys_sleep_milliseconds( 16 );
     }
 
-    /* Shutdown -- resources before context, context before device, device before window. */
+    /* Shutdown -- drain GPU first, then free all GPU resources, then device, then window.
+       context_destroy calls vk_device_wait_idle before tearing down sync/swapchain; after
+       it returns the GPU is idle and pipeline/buffer destroy calls are safe. */
 
+    rhi()->context_destroy( ctx );
     sb_vk_boot_destroy( &boot );
     draw()->shutdown();
-    rhi()->context_destroy( ctx );
     rhi()->shutdown();
     app()->window_close( win );
     mod_system_exit();

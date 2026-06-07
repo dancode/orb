@@ -7,13 +7,13 @@
     One VkDescriptorSetLayout (set 0) is shared by all pipelines:
         Binding 0: VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE   x VK_MAX_BINDLESS_TEXTURES
         Binding 1: VK_DESCRIPTOR_TYPE_SAMPLER         x VK_MAX_BINDLESS_SAMPLERS
-    
+
     Each binding uses VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT and
     VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT (core in VK 1.2 via descriptor indexing).
 
     Resource indices (u32) are passed to shaders via push constants:
         struct PushConstants { u32 texture_idx; u32 sampler_idx; ... };
-    
+
     This eliminates per-draw descriptor binding overhead.  The render layer and game code
     call register_texture / register_sampler to get stable per-resource indices, then
     pack those indices into the push constant struct.
@@ -23,9 +23,19 @@
         push constants = one range covering all stages, size RHI_MAX_PUSH_CONST_SIZE
 
 ==============================================================================================*/
+// clang-format off
 
-/* Free index stacks for bindless slots.
-   top == 0 means the stack is empty (index 0 is reserved as "invalid"). */
+/*==============================================================================================
+    Free index stack management for bindless slots
+
+    Free index stacks for bindless slots. Fully decoupled from actual resource order.
+    So we take the first free id (top) on alloc and add to the top when we free.
+
+    Free index stacks for bindless slots.
+    top == 0 means the stack is empty (index 0 is reserved as "invalid").
+
+==============================================================================================*/
+
 typedef struct vk_bindless_free_s
 {
     u32  stack[ VK_MAX_BINDLESS_TEXTURES ];  /* conservative; samplers use a smaller stack */
@@ -35,6 +45,38 @@ typedef struct vk_bindless_free_s
 
 static vk_bindless_free_t  g_tex_free;
 static vk_bindless_free_t  g_samp_free;
+
+static void
+vk_bindless_free_init( vk_bindless_free_t* pool, u32 count )
+{
+    /* Pre-fill the free stack in reverse so index 1 is returned first.
+       Index 0 is reserved (invalid). 
+       
+       When done top = 1024, stack[1023] = 1, and stack[0] = 1024.
+       Our first alloc is --top = 1023 -> idx=1, 
+       last is --top=0 -> idx=1024, which is never used */
+        
+    pool->top = 0;
+    for ( u32 i = count; i >= 1; --i )
+        pool->stack[ pool->top++ ] = i;
+}
+
+static u32
+vk_bindless_alloc( vk_bindless_free_t* pool )
+{
+    if ( pool->top == 0 )
+        return 0;   /* 0 == invalid */
+    return pool->stack[ --pool->top ];
+}
+
+static void
+vk_bindless_free( vk_bindless_free_t* pool, u32 idx )
+{
+    if ( idx == 0 )
+        return;
+    ORB_ASSERT( pool->top < ARRAY_COUNT( pool->stack ) );
+    pool->stack[ pool->top++ ] = idx;
+}
 
 /*==============================================================================================
     Deferred descriptor slot retirement.
@@ -68,48 +110,22 @@ static vk_bindless_free_t  g_samp_free;
 typedef struct vk_deferred_retire_s
 {
     u32 idx;
-    u32 safe_at;            /* vk.global_epoch value at which this slot is safe to reuse */
+    u32 safe_at; /* vk.global_epoch value at which this slot is safe to reuse */
 } vk_deferred_retire_t;
 
-static vk_deferred_retire_t  g_tex_retire[ VK_MAX_BINDLESS_TEXTURES ];
-static u32                   g_tex_retire_head;   /* next entry to drain */
-static u32                   g_tex_retire_tail;   /* next entry to write */
+static vk_deferred_retire_t g_tex_retire[ VK_MAX_BINDLESS_TEXTURES ];
+static u32                  g_tex_retire_head; /* next entry to drain */
+static u32                  g_tex_retire_tail; /* next entry to write */
 
-static vk_deferred_retire_t  g_samp_retire[ VK_MAX_BINDLESS_SAMPLERS ];
-static u32                   g_samp_retire_head;
-static u32                   g_samp_retire_tail;
-
-static void
-vk_bindless_free_init( vk_bindless_free_t* pool, u32 count )
-{
-    /* Pre-fill the free stack in reverse so index 1 is returned first.
-       Index 0 is reserved (invalid). */
-    pool->top = 0;
-    for ( u32 i = count; i >= 1; --i )
-        pool->stack[ pool->top++ ] = i;
-}
-
-static u32
-vk_bindless_alloc( vk_bindless_free_t* pool )
-{
-    if ( pool->top == 0 )
-        return 0;   /* 0 == invalid */
-    return pool->stack[ --pool->top ];
-}
-
-static void
-vk_bindless_free( vk_bindless_free_t* pool, u32 idx )
-{
-    if ( idx == 0 )
-        return;
-    ORB_ASSERT( pool->top < ARRAY_COUNT( pool->stack ) );
-    pool->stack[ pool->top++ ] = idx;
-}
+static vk_deferred_retire_t g_samp_retire[ VK_MAX_BINDLESS_SAMPLERS ];
+static u32                  g_samp_retire_head;
+static u32                  g_samp_retire_tail;
 
 /* Returns the epoch value that must be reached before a slot retired NOW is safe to reuse.
    global_epoch advances only when every active context has fence-waited (checked in), so
    VK_MAX_FRAMES_IN_FLIGHT epochs guarantee every context has completed that many full rounds
    regardless of individual frame rates. */
+
 static u32
 vk_retire_safe_at( void )
 {
@@ -124,6 +140,7 @@ vk_descriptor_flush_retired( void )
         vk_deferred_retire_t* e = &g_tex_retire[ g_tex_retire_head ];
         if ( vk.global_epoch < e->safe_at )
             break;
+
         vk_bindless_free( &g_tex_free, e->idx );
         g_tex_retire_head = ( g_tex_retire_head + 1 ) % VK_MAX_BINDLESS_TEXTURES;
     }
@@ -133,6 +150,7 @@ vk_descriptor_flush_retired( void )
         vk_deferred_retire_t* e = &g_samp_retire[ g_samp_retire_head ];
         if ( vk.global_epoch < e->safe_at )
             break;
+
         vk_bindless_free( &g_samp_free, e->idx );
         g_samp_retire_head = ( g_samp_retire_head + 1 ) % VK_MAX_BINDLESS_SAMPLERS;
     }
@@ -140,48 +158,80 @@ vk_descriptor_flush_retired( void )
 
 /*==============================================================================================
     Init / shutdown  (called from vk_device.c)
+
+    The heart of the "bindless" resource architecture. In Vulkan (1.2+), function replaces
+    the traditional, high-overhead method of swapping descriptor sets for every material or 
+    draw call with a single, global array of resources that shaders index into dynamically.
+
+    The function executes four primary stages to set up the global resource table:
+    A. Free Index Management
+    B. The "Descriptor Indexing" Layout
+    C. The Pool and The Set
+    D. The Shared Pipeline Layout
+
 ==============================================================================================*/
 
 static bool
 vk_descriptor_init( void )
 {
+    /* --- Setup free index management for bindless slots --- */
+
+    /* Before talking to Vulkan, it initializes simple CPU-side stacks. Since we have a 
+       fixed-size array (e.g., 1024 slots), we need to know which slots are empty. We treat
+       the descriptor array like a heap: we "alloc" an index when a texture is loaded and 
+       "free" it when unloaded. */
+
     vk_bindless_free_init( &g_tex_free,  VK_MAX_BINDLESS_TEXTURES );
     vk_bindless_free_init( &g_samp_free, VK_MAX_BINDLESS_SAMPLERS );
 
-    /* --- Descriptor set layout --- */
+    /* --- Descriptor indexing layout --- */
+
+    /* This is where the Vulkan 1.2 comes into play 
+    
+       PARTIALLY_BOUND: In older Vulkan, if you declared an array of 1000 textures, 
+       you had to fill all 1000 slots with valid views before using the set. 
+       With this flag, you can leave slots empty (null) as long as the shader doesn't
+       actually try to read them.
+
+       UPDATE_AFTER_BIND: Normally, once you call vkCmdBindDescriptorSets, that set
+       is "locked" until the GPU finishes the command. This flag allows the CPU to 
+       write to slot #500 even if the GPU is currently mid-render using slot #5.
+       This is critical for high-performance streaming. */
 
     /* Both bindings need PARTIALLY_BOUND (slots may be empty) and UPDATE_AFTER_BIND
        (CPU can write new slots while GPU reads other slots in the same array). */
+
     VkDescriptorBindingFlags binding_flags[ 2 ] = {
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
     };
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo flags_ci = { 0 };
-    flags_ci.sType                                       = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flags_ci.bindingCount                                = 2;
-    flags_ci.pBindingFlags                               = binding_flags;
+
+    flags_ci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    flags_ci.bindingCount  = 2;
+    flags_ci.pBindingFlags = binding_flags;
 
     VkDescriptorSetLayoutBinding bindings[ 2 ] = { 0 };
 
     /* Binding 0: sampled images (texture array) */
-    bindings[ 0 ].binding         = 0;
-    bindings[ 0 ].descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    bindings[ 0 ].descriptorCount = VK_MAX_BINDLESS_TEXTURES;
-    bindings[ 0 ].stageFlags      = VK_SHADER_STAGE_ALL;
+    bindings[ 0 ].binding           = 0;
+    bindings[ 0 ].descriptorType    = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    bindings[ 0 ].descriptorCount   = VK_MAX_BINDLESS_TEXTURES;
+    bindings[ 0 ].stageFlags        = VK_SHADER_STAGE_ALL;
 
     /* Binding 1: samplers */
-    bindings[ 1 ].binding         = 1;
-    bindings[ 1 ].descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLER;
-    bindings[ 1 ].descriptorCount = VK_MAX_BINDLESS_SAMPLERS;
-    bindings[ 1 ].stageFlags      = VK_SHADER_STAGE_ALL;
+    bindings[ 1 ].binding           = 1;
+    bindings[ 1 ].descriptorType    = VK_DESCRIPTOR_TYPE_SAMPLER;
+    bindings[ 1 ].descriptorCount   = VK_MAX_BINDLESS_SAMPLERS;
+    bindings[ 1 ].stageFlags        = VK_SHADER_STAGE_ALL;
 
     VkDescriptorSetLayoutCreateInfo layout_ci = { 0 };
-    layout_ci.sType                           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layout_ci.pNext                           = &flags_ci;
-    layout_ci.flags                           = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    layout_ci.bindingCount                    = 2;
-    layout_ci.pBindings                       = bindings;
+    layout_ci.sType                 = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layout_ci.pNext                 = &flags_ci;
+    layout_ci.flags                 = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    layout_ci.bindingCount          = 2;
+    layout_ci.pBindings             = bindings;
 
     VkResult r = vkCreateDescriptorSetLayout( vk.device, &layout_ci, vk.alloc_cb, &vk.bindless_layout );
     if ( r != VK_SUCCESS )
@@ -192,11 +242,13 @@ vk_descriptor_init( void )
 
     /* --- Descriptor pool --- */
 
+    /* A pool that supports "Update After Bind", using the same flags as the layout. */
+
     VkDescriptorPoolSize pool_sizes[ 2 ] = { 0 };
-    pool_sizes[ 0 ].type            = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    pool_sizes[ 0 ].descriptorCount = VK_MAX_BINDLESS_TEXTURES;
-    pool_sizes[ 1 ].type            = VK_DESCRIPTOR_TYPE_SAMPLER;
-    pool_sizes[ 1 ].descriptorCount = VK_MAX_BINDLESS_SAMPLERS;
+    pool_sizes[ 0 ].type               = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    pool_sizes[ 0 ].descriptorCount    = VK_MAX_BINDLESS_TEXTURES;
+    pool_sizes[ 1 ].type               = VK_DESCRIPTOR_TYPE_SAMPLER;
+    pool_sizes[ 1 ].descriptorCount    = VK_MAX_BINDLESS_SAMPLERS;
 
     VkDescriptorPoolCreateInfo pool_ci = { 0 };
     pool_ci.sType                      = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -206,13 +258,15 @@ vk_descriptor_init( void )
     pool_ci.pPoolSizes                 = pool_sizes;
 
     r = vkCreateDescriptorPool( vk.device, &pool_ci, vk.alloc_cb, &vk.bindless_pool );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "descriptor_init: vkCreateDescriptorPool: %s", string_VkResult( r ) );
-        goto fail_after_layout;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "descriptor_init: vkCreateDescriptorPool: %s", string_VkResult( r ) );
+         goto fail_after_layout;
     }
 
     /* --- Allocate the one bindless set --- */
+
+    /* Allocate exactly one descriptor set. This set acts as our "Global Table", 
+       We never allocate another set for textures or samplers again. */
 
     VkDescriptorSetAllocateInfo alloc_info = { 0 };
     alloc_info.sType                       = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -221,25 +275,28 @@ vk_descriptor_init( void )
     alloc_info.pSetLayouts                 = &vk.bindless_layout;
 
     r = vkAllocateDescriptorSets( vk.device, &alloc_info, &vk.bindless_set );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "descriptor_init: vkAllocateDescriptorSets: %s", string_VkResult( r ) );
-        goto fail_after_pool;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "descriptor_init: vkAllocateDescriptorSets: %s", string_VkResult( r ) );
+         goto fail_after_pool;
     }
 
     /* --- Pipeline layout: set 0 (bindless) + push constants --- */
 
-    VkPushConstantRange pc_range = { 0 };
-    pc_range.stageFlags          = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT;
-    pc_range.offset              = 0;
-    pc_range.size                = RHI_MAX_PUSH_CONST_SIZE;
+    /* Create a VkPipelineLayout, since every shader in the engine will use this exact layout
+       (Set 0 = Bindless Table, plus some Push Constants), we can keep the bindless set bound
+       to the GPU indefinitely. Switching pipelines no longer requires rebinding resources. */
+
+    VkPushConstantRange pc_range  = { 0 };
+    pc_range.stageFlags           = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT;
+    pc_range.offset               = 0;
+    pc_range.size                 = RHI_MAX_PUSH_CONST_SIZE;
 
     VkPipelineLayoutCreateInfo pl_ci = { 0 };
-    pl_ci.sType                      = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pl_ci.setLayoutCount             = 1;
-    pl_ci.pSetLayouts                = &vk.bindless_layout;
-    pl_ci.pushConstantRangeCount     = 1;
-    pl_ci.pPushConstantRanges        = &pc_range;
+    pl_ci.sType                   = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pl_ci.setLayoutCount          = 1;
+    pl_ci.pSetLayouts             = &vk.bindless_layout;
+    pl_ci.pushConstantRangeCount  = 1;
+    pl_ci.pPushConstantRanges     = &pc_range;
 
     r = vkCreatePipelineLayout( vk.device, &pl_ci, vk.alloc_cb, &vk.pipeline_layout );
     if ( r != VK_SUCCESS )
@@ -255,31 +312,30 @@ vk_descriptor_init( void )
 fail_after_pool:
     vkDestroyDescriptorPool( vk.device, vk.bindless_pool, vk.alloc_cb );
     vk.bindless_pool = VK_NULL_HANDLE;
+
 fail_after_layout:
     vkDestroyDescriptorSetLayout( vk.device, vk.bindless_layout, vk.alloc_cb );
     vk.bindless_layout = VK_NULL_HANDLE;
+
     return false;
 }
 
 static void
 vk_descriptor_shutdown( void )
 {
-    if ( vk.pipeline_layout != VK_NULL_HANDLE )
-    {
-        vkDestroyPipelineLayout( vk.device, vk.pipeline_layout, vk.alloc_cb );
-        vk.pipeline_layout = VK_NULL_HANDLE;
+    if ( vk.pipeline_layout != VK_NULL_HANDLE ) {
+         vkDestroyPipelineLayout( vk.device, vk.pipeline_layout, vk.alloc_cb );
+         vk.pipeline_layout = VK_NULL_HANDLE;
     }
     /* Destroying the pool implicitly frees vk.bindless_set. */
-    if ( vk.bindless_pool != VK_NULL_HANDLE )
-    {
-        vkDestroyDescriptorPool( vk.device, vk.bindless_pool, vk.alloc_cb );
-        vk.bindless_pool = VK_NULL_HANDLE;
-        vk.bindless_set  = VK_NULL_HANDLE;
+    if ( vk.bindless_pool != VK_NULL_HANDLE ) {
+         vkDestroyDescriptorPool( vk.device, vk.bindless_pool, vk.alloc_cb );
+         vk.bindless_pool = VK_NULL_HANDLE;
+         vk.bindless_set  = VK_NULL_HANDLE;
     }
-    if ( vk.bindless_layout != VK_NULL_HANDLE )
-    {
-        vkDestroyDescriptorSetLayout( vk.device, vk.bindless_layout, vk.alloc_cb );
-        vk.bindless_layout = VK_NULL_HANDLE;
+    if ( vk.bindless_layout != VK_NULL_HANDLE ) {
+         vkDestroyDescriptorSetLayout( vk.device, vk.bindless_layout, vk.alloc_cb );
+         vk.bindless_layout = VK_NULL_HANDLE;
     }
 }
 
@@ -323,9 +379,13 @@ vk_unregister_texture( u32 bindless_index )
 {
     if ( bindless_index == 0 )
         return;
+
     /* Defer until all active contexts have cycled through VK_MAX_FRAMES_IN_FLIGHT fences. */
     u32 next = ( g_tex_retire_tail + 1 ) % VK_MAX_BINDLESS_TEXTURES;
-    ORB_ASSERT( next != g_tex_retire_head );   /* deferred queue overflow -- impossible if slot 0 is reserved */
+
+    /* deferred queue overflow -- impossible if slot 0 is reserved */
+    ORB_ASSERT( next != g_tex_retire_head );
+
     g_tex_retire[ g_tex_retire_tail ] = ( vk_deferred_retire_t ){ bindless_index, vk_retire_safe_at() };
     g_tex_retire_tail                 = next;
     /* Stale descriptor remains; PARTIALLY_BOUND allows unused slots to stay as-is. */
@@ -349,14 +409,14 @@ vk_register_sampler( rhi_sampler_t handle )
     samp_info.imageView             = VK_NULL_HANDLE;
     samp_info.imageLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    VkWriteDescriptorSet write = { 0 };
-    write.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet               = vk.bindless_set;
-    write.dstBinding           = 1;
-    write.dstArrayElement      = slot_idx;
-    write.descriptorCount      = 1;
-    write.descriptorType       = VK_DESCRIPTOR_TYPE_SAMPLER;
-    write.pImageInfo           = &samp_info;
+    VkWriteDescriptorSet write      = { 0 };
+    write.sType                     = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet                    = vk.bindless_set;
+    write.dstBinding                = 1;
+    write.dstArrayElement           = slot_idx;
+    write.descriptorCount           = 1;
+    write.descriptorType            = VK_DESCRIPTOR_TYPE_SAMPLER;
+    write.pImageInfo                = &samp_info;
 
     vkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
     return slot_idx;
@@ -374,3 +434,4 @@ vk_unregister_sampler( u32 bindless_index )
 }
 
 /*============================================================================================*/
+// clang-format on

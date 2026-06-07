@@ -25,6 +25,7 @@
     and replace the two helpers below with vmaCreateBuffer / vmaCreateImage calls.
 
 ==============================================================================================*/
+// clang-format off
 
 typedef struct vk_mem_alloc_s
 {
@@ -34,7 +35,7 @@ typedef struct vk_mem_alloc_s
 } vk_mem_alloc_t;
 
 /*==============================================================================================
-    Internal helpers
+    Internal helpers    
 ==============================================================================================*/
 
 static u32
@@ -59,13 +60,13 @@ vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, VkMemoryAllocateFlag
 {
     /* Map RHI memory class to the required Vulkan property flags */
     static const VkMemoryPropertyFlags s_flags[] = {
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,                                             /* GPU_ONLY   */
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,     /* CPU_TO_GPU */
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,     /* CPU_ONLY   */
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,                                        /* GPU_ONLY   */
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, /* CPU_TO_GPU */
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, /* CPU_ONLY   */
     };
 
-    VkMemoryPropertyFlags flags    = s_flags[ hint ];
-    u32                   type_idx = vk_memory_find_type( reqs.memoryTypeBits, flags );
+    VkMemoryPropertyFlags flags = s_flags[ hint ];
+    u32 type_idx = vk_memory_find_type( reqs.memoryTypeBits, flags );
 
     /* GPU_ONLY: fall back to host-visible on unified-memory architectures (iGPU / APU). */
     if ( type_idx == UINT32_MAX && hint == RHI_MEMORY_GPU_ONLY )
@@ -73,18 +74,17 @@ vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, VkMemoryAllocateFlag
         type_idx = vk_memory_find_type( reqs.memoryTypeBits,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
         if ( type_idx != UINT32_MAX )
-            LOG_WARN( "vk_mem_alloc: GPU_ONLY unavailable; falling back to host-visible (unified memory?)" );
+             LOG_WARN( "vk_mem_alloc: GPU_ONLY unavailable; falling back to host-visible (unified memory?)" );
     }
-    if ( type_idx == UINT32_MAX )
-    {
-        LOG_ERROR( "vk_mem_alloc: no compatible memory type (filter=0x%x flags=0x%x)",
-                   reqs.memoryTypeBits, (u32)flags );
-        return false;
+    if ( type_idx == UINT32_MAX ) {
+         LOG_ERROR( "vk_mem_alloc: no compatible memory type (filter=0x%x flags=0x%x)",
+                    reqs.memoryTypeBits, (u32)flags );
+         return false;
     }
 
     VkMemoryAllocateFlagsInfo fi = { 0 };
-    fi.sType                     = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
-    fi.flags                     = extra_flags;
+    fi.sType                 = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    fi.flags                 = extra_flags;
 
     VkMemoryAllocateInfo ai  = { 0 };
     ai.sType                 = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -93,10 +93,9 @@ vk_mem_alloc( VkMemoryRequirements reqs, rhi_memory_t hint, VkMemoryAllocateFlag
     ai.memoryTypeIndex       = type_idx;
 
     VkResult r = vkAllocateMemory( vk.device, &ai, vk.alloc_cb, &out->memory );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "vkAllocateMemory: %s", string_VkResult( r ) );
-        return false;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "vkAllocateMemory: %s", string_VkResult( r ) );
+         return false;
     }
     out->offset = 0;
     return true;
@@ -110,3 +109,4 @@ vk_mem_free( vk_mem_alloc_t alloc )
 }
 
 /*============================================================================================*/
+// clang-format on

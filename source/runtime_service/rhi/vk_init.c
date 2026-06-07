@@ -204,6 +204,12 @@ vk_context_resize( i32 ctx_id, i32 width, i32 height )
     if ( width <= 0 || height <= 0 )
         return false;
 
+    /* Skip if the swapchain already matches -- suppresses the WM_SIZE fired during
+       CreateWindowExW, which arrives after context_create and has the same dimensions. */
+    if ( (u32)width  == ctx->swapchain_extent.width &&
+         (u32)height == ctx->swapchain_extent.height )
+        return true;
+
     ctx->width          = width;
     ctx->height         = height;
     ctx->resize_pending = true;

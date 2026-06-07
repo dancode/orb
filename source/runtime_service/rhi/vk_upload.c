@@ -1,11 +1,12 @@
 /*==============================================================================================
-
+ 
     vulkan/vk_upload.c -- Staged upload ring buffer for GPU-only resources.
 
     One staging buffer per frame-in-flight slot (VK_STAGING_SIZE bytes each).
-    The active slot is tracked by g_upload_active_slot.  vk_upload_flush advances it, and
-    vk_frame.c gates that call to fire at most once per display epoch via upload_flush_epoch,
-    so the slot cycles at display-frame cadence regardless of how many contexts call frame_begin.
+    The active slot is tracked by g_upload_active_slot. vk_upload_flush advances
+    it, and vk_frame.c gates that call to fire at most once per display epoch via
+    upload_flush_epoch, so the slot cycles at display-frame cadence regardless
+    of how many contexts call frame_begin.
 
     Upload flow:
         1. Caller calls rhi()->upload_buffer / upload_texture.
@@ -43,14 +44,88 @@
     vkWaitSemaphores on the first write to a slot each cycle, guaranteeing the prior DMA read
     from that buffer has completed before the CPU memcpy overwrites it.
 
+    --------------------------------------------------------------------------------
+    Implementation Notes : Modern Vulkan features (1.3+)
+    --------------------------------------------------------------------------------
+    1. Modern Synchronization: The Timeline Semaphore
+
+    We use Vulkan 1.3 features (specifically Synchronization2 and Timeline Semaphores) 
+    to simplify what used to be the most "boilerplate-heavy" part of the API
+
+      * The Old Way: You had to manage a complex web of Fences (for CPU-GPU sync) and
+        Binary Semaphores (for GPU-GPU sync). To reuse a staging buffer, you'd have to
+        wait on a fence. To signal the graphics queue that an upload was ready, you'd
+        use a semaphore.
+
+    The ORB Way: We use a single upload_timeline.
+
+       * The CPU can check vkWaitSemaphores to see if a specific upload value has
+         passed before reusing memory.
+       * The GPU (Graphics Queue) can wait on a specific value of the same semaphore
+         before starting a shader that needs the texture.
+       * Benefit: It's much easier to debug (it's just a number) and prevents
+         "leaking" semaphores.
+    
+    2.  Synchronization2 (vkCmdPipelineBarrier2)
+
+        Note the use of VkImageMemoryBarrier2 and vkCmdPipelineBarrier2.
+        * The Old Way: You had to use vkCmdPipelineBarrier, which had a very confusing
+         "all-or-nothing" approach to stage masks and access flags.
+        * The ORB Way: Sync2 (introduced in Vulkan 1.3) moves the stage masks into the
+          barrier struct itself. It's more readable and allows the driver to optimize
+          transitions better because the dependency is more explicit.
+
+    Dedicated Transfer Queue (The "DMA Engine")
+    
+        * Advantage: You can upload textures while the GPU is busy drawing a complex 3D
+          frame. They don't fight for the same execution resources.
+
+        * Complexity: This requires a Queue Family Ownership Transfer (QFOT).
+            1. The Transfer Queue does the copy, then "Releases" ownership.
+            2. The Graphics Queue "Acquires" ownership before it can use the resource.
+        *   Look at vk_upload_apply_acquires() in the code—it handles this "handshake"
+            between the two hardware units.
+
+    Integrated/Fallback (Same Family)
+
+        On integrated GPUs (Intel/M1/M2), there is often only one queue family that 
+        does everything.
+
+        * Behavior: vk.transfer_queue_family == vk.graphics_queue_family.
+        * Logic: The code detects this and skips the QFOT. It just does a standard layout
+          transition (e.g., TRANSFER_DST -> SHADER_READ_ONLY) because the memory is
+          already "owned" by the same unit.
+
+    Summary of the Flow:
+
+        1. Init: Setup N staging buffers and a 64-bit counter.
+        2. Upload: CPU memcpy to staging → vkCmdCopy recorded in a transfer buffer.
+        3. Flush: Submit transfer buffer → Signal timeline value X.
+        4  Graphics: Graphics queue waits for timeline value X → Renders with the new data.
+        5. Reuse: When we cycle back to the first staging buffer, the CPU checks if the
+           GPU has reached value X before overwriting.
+
 ==============================================================================================*/
+// clang-format off
 
 /* Per-slot state for the transfer command pool and recording status.
    Lives here rather than in vk_staging_t to keep vk_state.c self-contained. */
+
 typedef struct vk_upload_slot_s
 {
+    // Command pool for the transfer queue family; 
+    // One per slot to allow concurrent recording and submission.
+
     VkCommandPool   pool;
+
+    // Dedicated primary command buffer allocated from that pool;
+    // Reset and re-recorded each cycle.
+
     VkCommandBuffer cmd;
+
+    // True if the command buffer is currently being recorded into;
+    // Used to prevent double recording.
+
     bool            is_recording;
 
 } vk_upload_slot_t;
@@ -70,6 +145,7 @@ typedef struct vk_image_acquire_s
     VkImage image;
     u16     mip;
     u16     layer;
+
 } vk_image_acquire_t;
 
 static vk_image_acquire_t g_pending_image_acquires[ VK_MAX_UPLOAD_ACQUIRES ];
@@ -79,24 +155,38 @@ static u32                g_pending_buffer_count;
 
 /*==============================================================================================
     Init / shutdown
+
+    In the ORB engine, vk_upload.c implements a Staged Upload Ring Buffer. 
+    This is the standard high-performance way to move data from the CPU to GPU-only memory
+    (like textures and vertex buffers) without stalling the graphics pipeline.
+
+    This function prepares a set of "staging areas"—one for each frame that can be
+    "in flight" (typically 2 or 3).
+
+    A. The Staging Buffers (CPU-to-GPU bridge)
+    B. The Transfer Command Infrastructure
+    C. Modern Synchronization: The Timeline Semaphore
 ==============================================================================================*/
 
 static void vk_upload_shutdown( void );
 
 static bool
 vk_upload_init( void )
-{
+{    
+
     for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
     {
-        /* Staging buffer: host-visible, coherent, transfer-source only. */
+        /* --- A. The Staging Buffers (CPU-to-GPU bridge) --- */
+        
         VkBufferCreateInfo buf_ci = { 0 };
-        buf_ci.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buf_ci.size               = VK_STAGING_SIZE;
-        buf_ci.usage              = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        buf_ci.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
-
+        buf_ci.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buf_ci.size        = VK_STAGING_SIZE;
+        buf_ci.usage       = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        buf_ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        
+        /* Staging buffer: host-visible, coherent, transfer-source only! */
         VkResult r = vkCreateBuffer( vk.device, &buf_ci, vk.alloc_cb, &vk.staging[ i ].buffer );
-        if ( r != VK_SUCCESS )
+        if ( r != VK_SUCCESS ) 
         {
             LOG_ERROR( "upload_init: vkCreateBuffer[%u]: %s", i, string_VkResult( r ) );
             goto fail;
@@ -105,35 +195,47 @@ vk_upload_init( void )
         VkMemoryRequirements reqs;
         vkGetBufferMemoryRequirements( vk.device, vk.staging[ i ].buffer, &reqs );
 
+        /* In Vulkan terms, this maps to HOST_VISIBLE and HOST_COHERENT memory */
+        /* Note: HOST_COHERENT means we don't need to manually flush to GPU, 
+           As soon as the CPU writes to the pointer, the GPU can see it (after sync) */
+
         vk_mem_alloc_t alloc = { 0 };
         if ( !vk_mem_alloc( reqs, RHI_MEMORY_CPU_ONLY, 0, &alloc ) )
-            goto fail;
+             goto fail;
+
         vk.staging[ i ].memory = alloc.memory;
 
         r = vkBindBufferMemory( vk.device, vk.staging[ i ].buffer, vk.staging[ i ].memory, alloc.offset );
-        if ( r != VK_SUCCESS )
+        if ( r != VK_SUCCESS ) 
         {
-            LOG_ERROR( "upload_init: vkBindBufferMemory[%u]: %s", i, string_VkResult( r ) );
-            goto fail;
+             LOG_ERROR( "upload_init: vkBindBufferMemory[%u]: %s", i, string_VkResult( r ) );
+             goto fail;
         }
 
+        /* vkMapMemory: Maps the GPU memory into the CPU's address space. We keep this
+           pointer (mapped) persisted for the lifetime of the engine to avoid the
+           overhead of mapping/unmapping every frame. */
+
         r = vkMapMemory( vk.device, vk.staging[ i ].memory, 0, VK_STAGING_SIZE, 0, &vk.staging[ i ].mapped );
-        if ( r != VK_SUCCESS )
+        if ( r != VK_SUCCESS ) 
         {
-            LOG_ERROR( "upload_init: vkMapMemory[%u]: %s", i, string_VkResult( r ) );
-            goto fail;
+             LOG_ERROR( "upload_init: vkMapMemory[%u]: %s", i, string_VkResult( r ) );
+             goto fail;
         }
         vk.staging[ i ].head = 0;
 
+        /* --- B. The Transfer Command Infrastructure --- */
+
         /* Command pool on the transfer queue family.  Falls back to graphics when no dedicated
            transfer family exists; in that case transfer_queue_family == graphics_queue_family. */
+
         VkCommandPoolCreateInfo pool_ci = { 0 };
         pool_ci.sType                   = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         pool_ci.flags                   = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         pool_ci.queueFamilyIndex        = vk.transfer_queue_family;
 
         r = vkCreateCommandPool( vk.device, &pool_ci, vk.alloc_cb, &g_upload[ i ].pool );
-        if ( r != VK_SUCCESS )
+        if ( r != VK_SUCCESS ) 
         {
             LOG_ERROR( "upload_init: vkCreateCommandPool[%u]: %s", i, string_VkResult( r ) );
             goto fail;
@@ -145,6 +247,9 @@ vk_upload_init( void )
         alloc_info.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         alloc_info.commandBufferCount          = 1;
 
+        /* Allocates one primary command buffer per slot. This buffer will record the 
+           vkCmdCopyBuffer or vkCmdCopyBufferToImage calls. It's reset and re-recorded each cycle. */
+
         r = vkAllocateCommandBuffers( vk.device, &alloc_info, &g_upload[ i ].cmd );
         if ( r != VK_SUCCESS )
         {
@@ -155,8 +260,14 @@ vk_upload_init( void )
         g_upload[ i ].is_recording = false;
     }
 
-    /* Timeline semaphore: vk_upload_flush signals this after each DMA batch. */
+    /* --- C. Modern Synchronization: The Timeline Semaphore --- */
     {
+         /* Unlike old "binary" semaphores (which are just 0 or 1), a timeline 
+            semaphore is a monotonically increasing 64-bit integer. 
+            
+            The engine increments this counter (vk.upload_counter) every time a batch of
+            uploads is submitted. */
+
         VkSemaphoreTypeCreateInfo type_ci = { 0 };
         type_ci.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
         type_ci.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
@@ -166,6 +277,7 @@ vk_upload_init( void )
         sem_ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         sem_ci.pNext = &type_ci;
 
+        /* Timeline semaphore: vk_upload_flush signals this after each DMA batch. */
         VkResult r = vkCreateSemaphore( vk.device, &sem_ci, vk.alloc_cb, &vk.upload_timeline );
         if ( r != VK_SUCCESS )
         {
@@ -182,6 +294,8 @@ fail:
     vk_upload_shutdown();
     return false;
 }
+
+/*============================================================================================*/
 
 static void
 vk_upload_shutdown( void )
@@ -593,3 +707,4 @@ vk_upload_apply_acquires( VkCommandBuffer cmd, i32 ctx_id )
 }
 
 /*============================================================================================*/
+// clang-format on
