@@ -52,17 +52,15 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     if ( !desc )
         return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
 
-    if ( !vk_shader_validate( desc->vert ) || !vk_shader_validate( desc->frag ) )
-    {
-        LOG_ERROR( "pipeline_create: invalid shader handle(s)" );
-        return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
+    if ( !vk_shader_validate( desc->vert ) || !vk_shader_validate( desc->frag )) {
+         LOG_ERROR( "invalid shader handle(s)" );
+         return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
     }
 
     i32  idx = vk_pipeline_alloc_slot();
-    if ( idx < 0 )
-    {
-        LOG_ERROR( "pipeline pool exhausted (VK_MAX_PIPELINES = %d)", VK_MAX_PIPELINES );
-        return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
+    if ( idx < 0 ) {
+         LOG_ERROR( "pipeline pool exhausted (VK_MAX_PIPELINES = %d)", VK_MAX_PIPELINES );
+         return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
     }
 
     vk_pipeline_slot_t* slot     = &vk.pipelines[ idx ];

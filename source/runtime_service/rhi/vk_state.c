@@ -56,42 +56,42 @@ struct rhi_cmd_s
 
 typedef struct vk_buffer_slot_s
 {
-    VkBuffer       buffer;
-    VkDeviceMemory memory;
-    void*          mapped;          // non-NULL only for CPU_TO_GPU / CPU_ONLY allocations
-    u32            size;
+    VkBuffer            buffer;
+    VkDeviceMemory      memory;
+    void*               mapped;         // non-NULL only for CPU_TO_GPU / CPU_ONLY allocations
+    u32                 size;
 
 } vk_buffer_slot_t;
 
 typedef struct vk_texture_slot_s
 {
-    VkImage        image;
-    VkImageView    view;            // default full-range view
-    VkDeviceMemory memory;
-    VkFormat       vk_format;
-    u32            width;
-    u32            height;
+    VkImage             image;
+    VkImageView         view;           // default full-range view
+    VkDeviceMemory      memory;
+    VkFormat            vk_format;
+    u32                 width;
+    u32                 height;
 
 } vk_texture_slot_t;
 
 typedef struct vk_sampler_slot_s
 {
-    VkSampler  sampler;
+    VkSampler           sampler;
 
 } vk_sampler_slot_t;
 
 typedef struct vk_shader_slot_s
 {
-    VkShaderModule     module;  
-    rhi_shader_stage_t stage;
-    char               entry[ 32 ]; // SPIR-V entry point name; stored for pipeline create
+    VkShaderModule      module;  
+    rhi_shader_stage_t  stage;
+    char                entry[ 32 ];    // SPIR-V entry point name; stored for pipeline create
 
 } vk_shader_slot_t;
 
 typedef struct vk_pipeline_slot_s
 {
-    VkPipeline  pipeline;
-    bool        is_compute;
+    VkPipeline          pipeline;       // 
+    bool                is_compute;     // 
 
 } vk_pipeline_slot_t;
 

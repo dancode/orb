@@ -62,6 +62,7 @@ const rhi_api_t g_rhi_api_struct =
     /* Render pass */
     .cmd_begin_rendering        = vk_cmd_begin_rendering,
     .cmd_end_rendering          = vk_cmd_end_rendering,
+    .cmd_image_barrier          = vk_cmd_image_barrier,
 
     /* Commands */
     .cmd_set_viewport           = vk_cmd_set_viewport,

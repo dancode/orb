@@ -406,6 +406,59 @@ typedef struct rhi_color_s
 } rhi_color_t;
 
 /*==============================================================================================
+    Image layout  (for cmd_image_barrier)
+
+    Describes how a texture is used within the pipeline at a given point in the frame.
+    The backend derives Vulkan stage masks and access flags from each layout pair; the
+    renderer only needs to express intent.
+
+    UNDEFINED is valid only as old_layout for a texture whose contents should be discarded
+    (e.g. a freshly created render target before its first write).  Never use it as new_layout.
+
+    DEPTH_READ_ONLY is for a depth attachment that is simultaneously sampled -- the depth
+    test is active but depth writes are disabled.  Useful for shadow map reads during
+    a lighting pass that still performs depth testing.
+
+    Swapchain and context-owned depth images are managed internally; do not barrier them.
+==============================================================================================*/
+
+typedef enum rhi_layout_e
+{
+    RHI_LAYOUT_UNDEFINED        = 0,   /* initial state; contents discarded on transition    */
+    RHI_LAYOUT_COLOR_ATTACHMENT = 1,   /* written as a color render target                  */
+    RHI_LAYOUT_DEPTH_ATTACHMENT = 2,   /* read/written as a depth/stencil render target      */
+    RHI_LAYOUT_DEPTH_READ_ONLY  = 3,   /* depth test active (read-only); may also be sampled */
+    RHI_LAYOUT_SHADER_READ      = 4,   /* sampled in any shader stage                       */
+    RHI_LAYOUT_STORAGE          = 5,   /* read/write via image load/store in compute         */
+    RHI_LAYOUT_TRANSFER_SRC     = 6,   /* source of a copy or blit operation                */
+    RHI_LAYOUT_TRANSFER_DST     = 7,   /* destination of a copy; used internally by upload  */
+
+} rhi_layout_t;
+
+/*==============================================================================================
+    Image barrier  (for cmd_image_barrier)
+
+    Records a layout transition with implicit pipeline synchronization.  Call between
+    cmd_end_rendering and cmd_begin_rendering to transition intermediate render targets.
+    Batching multiple textures into one call is more efficient than calling once per texture;
+    the backend submits all barriers as a single vkCmdPipelineBarrier2 invocation.
+
+    Constraints:
+      - Must be called outside an open render pass (between end_rendering and begin_rendering).
+      - Only valid for user-created rhi_texture_t resources.  Swapchain color and the
+        built-in context depth target are managed internally; do not pass them here.
+      - Transitioning a texture to the same layout it is already in is a no-op.
+==============================================================================================*/
+
+typedef struct rhi_image_barrier_s
+{
+    rhi_texture_t  texture;      /* texture to transition                            */
+    rhi_layout_t   old_layout;   /* layout the texture is currently in               */
+    rhi_layout_t   new_layout;   /* layout the texture must be in after the barrier  */
+
+} rhi_image_barrier_t;
+
+/*==============================================================================================
     Render pass attachments  (for cmd_begin_rendering / cmd_end_rendering)
 
     Sentinel IDs for context-owned attachments:

@@ -35,8 +35,9 @@
        26. vk_frame.c              (frame_begin / frame_end orchestration)
        27. vk_cmd_graphics.c       (render pass, draw calls, state binding)
        28. vk_cmd_compute.c        (compute dispatch)
-       29. vk_init.c               (global and per-context lifecycle)
-       30. rhi_api.c               (wires vk_* functions into API struct + mod descriptor)
+       29. vk_barrier.c            (image layout transition barriers)
+       30. vk_init.c               (global and per-context lifecycle)
+       31. rhi_api.c               (wires vk_* functions into API struct + mod descriptor)
 
 ==============================================================================================*/
 
@@ -154,6 +155,7 @@ static void vk_device_wait_idle( void );
 #include "runtime_service/rhi/vk_frame.c"
 #include "runtime_service/rhi/vk_cmd_graphics.c"
 #include "runtime_service/rhi/vk_cmd_compute.c"
+#include "runtime_service/rhi/vk_barrier.c"
 
 #include "runtime_service/rhi/vk_init.c"
 
@@ -174,7 +176,7 @@ static void vk_device_wait_idle( void );
     set 2, etc. available to a renderer. All shader resource access goes through bindless
     indices passed via push constants. This eliminates per-draw descriptor updates but also 
     means the renderer has no "free" descriptor set slot to bind its own per-frame or
-    per-material layout — everything must flow through 128 bytes of push constants or buffer
+    per-material layout ï¿½ everything must flow through 128 bytes of push constants or buffer
     device addresses (buffer_get_device_address).
 
     Single shared pipeline layout
@@ -188,7 +190,7 @@ static void vk_device_wait_idle( void );
     cmd_begin_rendering uses VK_KHR_dynamic_rendering. This means no VkRenderPass objects, 
     which means no Vulkan subpasses. Tile-based deferred (the subpass-based optimization on 
     mobile GPUs that avoids writing G-buffer data to DRAM) is not expressible through this RHI.
-    Desktop deferred still works fine — it just runs as separate passes.
+    Desktop deferred still works fine ï¿½ it just runs as separate passes.
 
     Up to 4 MRT color targets
 
@@ -198,7 +200,7 @@ static void vk_device_wait_idle( void );
 
     Single interleaved vertex binding
 
-    vk_pipeline_graphics.c and the comment in rhi_api.h:225 — "single interleaved binding for now".
+    vk_pipeline_graphics.c and the comment in rhi_api.h:225 ï¿½ "single interleaved binding for now".
     You can't bind separate position/normal/UV streams; all vertex data must be interleaved 
     in one buffer. This is a current limitation, not an inherent one, but it constrains
     the renderer above it.
@@ -208,14 +210,14 @@ static void vk_device_wait_idle( void );
     One rhi_cmd_t per frame per context. No secondary buffers, no parallel recording. 
     Multithreaded rendering submission is not available from above.
 
-    No explicit barrier API
+    Explicit barrier API
 
-    There is no cmd_pipeline_barrier() or cmd_image_transition() in the API. 
-    Transitions are handled internally — upload_texture transitions to SHADER_READ_ONLY_OPTIMAL, 
-    and cmd_begin_rendering / cmd_end_rendering presumably handle the swapchain transitions.
-    For intermediate render targets (render to G-buffer, then sample it in a lighting pass),
-    there is currently no public way to insert the required layout transition between passes.
-    This is probably the most significant gap for deferred rendering.
+    cmd_image_barrier() transitions user-created rhi_texture_t resources between pipeline
+    layouts (rhi_layout_t).  The backend derives Vulkan stage masks and access flags from
+    the layout pair and submits a single vkCmdPipelineBarrier2 for the whole batch.
+    Call between cmd_end_rendering and cmd_begin_rendering to transition G-buffer targets,
+    shadow maps, or any intermediate render target.  Swapchain and context-owned depth
+    images are managed internally by vk_frame.c and must not be passed to cmd_image_barrier.
 
 
 ==============================================================================================*/

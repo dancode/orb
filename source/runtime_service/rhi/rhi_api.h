@@ -203,6 +203,16 @@ typedef struct rhi_api_s
        Must be matched with every cmd_begin_rendering() call in the same frame. */
     void (*cmd_end_rendering)( rhi_cmd_t cmd );
 
+    /* Transitions one or more user-created textures between pipeline layouts, inserting
+       the required execution and memory dependencies via vkCmdPipelineBarrier2.
+       Call between cmd_end_rendering and the next cmd_begin_rendering; never inside an
+       open render pass.  Batching multiple textures in a single call is more efficient
+       than one call per texture; all barriers are submitted in one pipeline stall.
+       Same-layout transitions and invalid handles are silently skipped.
+       Do not pass swapchain or context-owned depth targets here; those are managed
+       internally and have no rhi_texture_t handle. */
+    void (*cmd_image_barrier)( rhi_cmd_t cmd, const rhi_image_barrier_t* barriers, u32 count );
+
     /* ---- Commands ---- */
 
     /* Sets the viewport transform applied after vertex processing.
