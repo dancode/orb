@@ -127,15 +127,15 @@ typedef struct vk_context_s
 
     /* Frame tracking */
 
-    u32                 current_frame;     // [0..VK_MAX_FRAMES_IN_FLIGHT); indexes per-frame arrays
-    u32                 image_index;       // swapchain image acquired by vkAcquireNextImageKHR
+    u32                 current_frame;      // [0..VK_MAX_FRAMES_IN_FLIGHT); indexes per-frame arrays
+    u32                 image_index;        // swapchain image acquired by vkAcquireNextImageKHR
 
     /* Surface and swapchain */
 
-    VkSurfaceKHR        surface;
-    VkSurfaceFormatKHR  surface_format;
-    VkPresentModeKHR    present_mode;
-    VkSwapchainKHR      swapchain;
+    VkSurfaceKHR        surface;            // created from native_window; used in swapchain and present.
+    VkSurfaceFormatKHR  surface_format;     // selected surface format (color space + pixel format)
+    VkPresentModeKHR    present_mode;       // selected present mode (vsync / mailbox / immediate)
+    VkSwapchainKHR      swapchain;          // created with surface; used in present and image acquisition.
 
     u32                 swapchain_image_count;
     VkImage             swapchain_images        [ VK_MAX_SWAPCHAIN_IMAGES ];
@@ -145,19 +145,19 @@ typedef struct vk_context_s
     /* Depth attachment: one image per frame-in-flight so consecutive frames do not race
        on the same image.  depth_format is shared (same for all slots). */
 
-    VkImage             depth_image     [ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkDeviceMemory      depth_memory    [ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkImageView         depth_view      [ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkFormat            depth_format;    /* selected at swapchain creation time; same for all slots */
+    VkImage             depth_image             [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkDeviceMemory      depth_memory            [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkImageView         depth_view              [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkFormat            depth_format;
 
     /* Per-frame synchronization */
 
-    VkSemaphore         image_available_sem [ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkFence             in_flight_fence     [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkSemaphore         image_available_sem     [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkFence             in_flight_fence         [ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Per-swapchain-image: reusing this semaphore is safe only when the image is
        acquired again, which guarantees the previous present consumed it. */
-    VkSemaphore         render_finished_sem [ VK_MAX_SWAPCHAIN_IMAGES ];
+    VkSemaphore         render_finished_sem     [ VK_MAX_SWAPCHAIN_IMAGES ];
 
     /* Per-frame command state */
 

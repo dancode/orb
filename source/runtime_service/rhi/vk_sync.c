@@ -27,19 +27,15 @@ vk_sync_create( vk_context_t* ctx )
     for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
     {
         VkResult r;
-
         r = vkCreateSemaphore( vk.device, &sem_ci, vk.alloc_cb, &ctx->image_available_sem[ i ] );
-        if ( r != VK_SUCCESS )
-        {
-            LOG_ERROR( "sync_create: image_available_sem[%u]: %s", i, string_VkResult( r ) );
-            goto fail;
+        if ( r != VK_SUCCESS ) {
+             LOG_ERROR( "sync_create: image_available_sem[%u]: %s", i, string_VkResult( r ) );
+             goto fail;
         }
-
         r = vkCreateFence( vk.device, &fence_ci, vk.alloc_cb, &ctx->in_flight_fence[ i ] );
-        if ( r != VK_SUCCESS )
-        {
-            LOG_ERROR( "sync_create: in_flight_fence[%u]: %s", i, string_VkResult( r ) );
-            goto fail;
+        if ( r != VK_SUCCESS ) {
+             LOG_ERROR( "sync_create: in_flight_fence[%u]: %s", i, string_VkResult( r ) );
+             goto fail;
         }
     }
 
