@@ -6,6 +6,7 @@
 
     All pipelines share one VkPipelineLayout (vk.pipeline_layout) built by
     vk_descriptor.c:
+
         set 0 = global bindless descriptor set (textures + samplers)
         push constants = one range covering all shader stages, up to RHI_MAX_PUSH_CONST_SIZE
 
@@ -26,10 +27,10 @@
 static i32
 vk_pipeline_alloc_slot( void )
 {
-    for ( u32 i = 1; i < VK_MAX_PIPELINES; ++i )
+    for ( i32 i = 1; i < VK_MAX_PIPELINES; ++i )
     {
         if ( vk.pipelines[ i ].pipeline == VK_NULL_HANDLE )
-            return ( i32 )i;
+            return i;
     }
     return -1;
 }
@@ -57,14 +58,14 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
         return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
     }
 
-    i32 idx = vk_pipeline_alloc_slot();
+    i32  idx = vk_pipeline_alloc_slot();
     if ( idx < 0 )
     {
         LOG_ERROR( "pipeline pool exhausted (VK_MAX_PIPELINES = %d)", VK_MAX_PIPELINES );
         return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_pipeline_slot_t* slot     = &vk.pipelines[ (u32)idx ];
+    vk_pipeline_slot_t* slot     = &vk.pipelines[ idx ];
     vk_shader_slot_t*   vert_slt = &vk.shaders[ desc->vert.id ];
     vk_shader_slot_t*   frag_slt = &vk.shaders[ desc->frag.id ];
 

@@ -162,10 +162,12 @@ main( int argc, char** argv )
        context_destroy calls vk_device_wait_idle before tearing down sync/swapchain; after
        it returns the GPU is idle and pipeline/buffer destroy calls are safe. */
 
-    rhi()->context_destroy( ctx );
-    sb_vk_boot_destroy( &boot );
-    draw()->shutdown();
-    rhi()->shutdown();
+    rhi()->context_destroy( ctx );      // finish rendering and free swapchain + sync objects (first)
+
+        sb_vk_boot_destroy( &boot );    // destroy boot resources
+        draw()->shutdown();             // destroy draw resources
+
+    rhi()->shutdown();                  // destroy device and instance (last)
     app()->window_close( win );
     mod_system_exit();
     return 0;

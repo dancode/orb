@@ -9,6 +9,7 @@
 #include "sb_vulkan_boot.h"
 #include "runtime_service/rhi/rhi_host.h"
 
+// clang-format off
 /*==============================================================================================
     Vertex shader SPIR-V  (manually assembled, SPIR-V 1.3)
 
@@ -198,7 +199,7 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
 {
     *boot = ( sb_vk_boot_t ){ 0 };
 
-    boot->vert = rhi()->shader_create( &( rhi_shader_desc_t ){
+    boot->vert = rhi()->shader_create( &( rhi_shader_desc_t ) {
         .spirv      = s_vert_spirv,
         .spirv_size = sizeof( s_vert_spirv ),
         .stage      = RHI_SHADER_STAGE_VERTEX,
@@ -218,7 +219,7 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
         .entry      = "main",
         .debug_name = "tri_frag",
     } );
-    if ( !rhi_handle_valid( boot->frag ) )
+    if ( !rhi_handle_valid( boot->frag ) ) 
     {
         fprintf( stderr, "[sb_vk_boot] shader_create(frag) failed\n" );
         rhi()->shader_destroy( boot->vert );
@@ -230,7 +231,8 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
        No vertex buffers; positions come from gl_VertexIndex in the vertex shader.
        No depth attachment; this is a 2D overlay draw. */
     rhi_color_target_t color_target = { .format = RHI_FORMAT_BGRA8_SRGB };
-    boot->pipeline                  = rhi()->pipeline_create( &( rhi_pipeline_desc_t ){
+
+    boot->pipeline          = rhi()->pipeline_create( &( rhi_pipeline_desc_t ){
         .vert               = boot->vert,
         .frag               = boot->frag,
         .attrib_count       = 0,
@@ -310,3 +312,4 @@ sb_vk_boot_destroy( sb_vk_boot_t* boot )
 }
 
 /*============================================================================================*/
+// clang-format on

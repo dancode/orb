@@ -29,7 +29,7 @@
     against magic values other than RHI_NULL_HANDLE.
 ==============================================================================================*/
 
-#define RHI_DEFINE_HANDLE( name ) typedef struct { u32 id; } name
+#define RHI_DEFINE_HANDLE( name ) typedef struct { i32 id; } name
 
 RHI_DEFINE_HANDLE( rhi_buffer_t   );
 RHI_DEFINE_HANDLE( rhi_texture_t  );
@@ -37,7 +37,7 @@ RHI_DEFINE_HANDLE( rhi_sampler_t  );
 RHI_DEFINE_HANDLE( rhi_shader_t   );
 RHI_DEFINE_HANDLE( rhi_pipeline_t );
 
-#define RHI_NULL_HANDLE          0u
+#define RHI_NULL_HANDLE          0
 #define rhi_handle_valid( h )    ( (h).id != RHI_NULL_HANDLE )
 
 /*==============================================================================================
@@ -413,8 +413,8 @@ typedef struct rhi_color_s
         RHI_SWAPCHAIN_DEPTH -- context depth buffer (depth attachment)
 ==============================================================================================*/
 
-#define RHI_SWAPCHAIN_COLOR  0xFFFFFFFFu
-#define RHI_SWAPCHAIN_DEPTH  0xFFFFFFFEu
+#define RHI_SWAPCHAIN_COLOR  (-1)
+#define RHI_SWAPCHAIN_DEPTH  (-2)
 
 typedef enum rhi_load_op_e
 {

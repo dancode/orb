@@ -18,10 +18,10 @@
 static i32
 vk_shader_alloc_slot( void )
 {
-    for ( u32 i = 1; i < VK_MAX_SHADERS; ++i )
+    for ( i32 i = 1; i < VK_MAX_SHADERS; ++i )
     {
         if ( vk.shaders[ i ].module == VK_NULL_HANDLE )
-            return ( i32 )i;
+            return i;
     }
     return -1;
 }
@@ -37,33 +37,31 @@ static rhi_shader_t
 vk_shader_create( const rhi_shader_desc_t* desc )
 {
     if ( !desc || !desc->spirv || desc->spirv_size == 0 )
-        return ( rhi_shader_t ){ RHI_NULL_HANDLE };
+         return ( rhi_shader_t ){ RHI_NULL_HANDLE };
 
-    if ( desc->spirv_size % 4 != 0 )
-    {
-        LOG_ERROR( "shader SPIR-V size (%u) is not a multiple of 4", desc->spirv_size );
-        return ( rhi_shader_t ){ RHI_NULL_HANDLE };
+    if ( desc->spirv_size % 4 != 0 ) {
+         LOG_ERROR( "shader SPIR-V size (%u) is not a multiple of 4", desc->spirv_size );
+         return ( rhi_shader_t ){ RHI_NULL_HANDLE };
     }
 
-    i32 idx = vk_shader_alloc_slot();
+    i32  idx = vk_shader_alloc_slot();
     if ( idx < 0 )
     {
         LOG_ERROR( "shader pool exhausted (VK_MAX_SHADERS = %d)", VK_MAX_SHADERS );
         return ( rhi_shader_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_shader_slot_t* slot = &vk.shaders[ (u32)idx ];
-
+    vk_shader_slot_t* slot = &vk.shaders[ idx ];
+    
     VkShaderModuleCreateInfo ci = { 0 };
     ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     ci.codeSize = desc->spirv_size;
     ci.pCode    = (const u32*)desc->spirv;
 
     VkResult r = vkCreateShaderModule( vk.device, &ci, vk.alloc_cb, &slot->module );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "shader_create: vkCreateShaderModule: %s", string_VkResult( r ) );
-        return ( rhi_shader_t ){ RHI_NULL_HANDLE };
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "shader_create: vkCreateShaderModule: %s", string_VkResult( r ) );
+         return ( rhi_shader_t ){ RHI_NULL_HANDLE };
     }
 
     /* Copy entry point name; fall back to "main" if not specified. */
@@ -76,8 +74,10 @@ vk_shader_create( const rhi_shader_desc_t* desc )
 
     slot->stage = desc->stage;
 
-    return ( rhi_shader_t ){ (u32)idx };
+    return ( rhi_shader_t ){ idx };
 }
+
+/*============================================================================================*/
 
 static void
 vk_shader_destroy( rhi_shader_t handle )

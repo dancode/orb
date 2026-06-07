@@ -165,4 +165,59 @@ static void vk_device_wait_idle( void );
     #include "runtime_service/rhi/rhi_api.c"
 #endif
 
+/*==============================================================================================
+    RHI Design:
+    
+    Bindless-only descriptor model
+
+    The RHI exposes a single global set 0 (the bindless descriptor array). There is no set 1,
+    set 2, etc. available to a renderer. All shader resource access goes through bindless
+    indices passed via push constants. This eliminates per-draw descriptor updates but also 
+    means the renderer has no "free" descriptor set slot to bind its own per-frame or
+    per-material layout — everything must flow through 128 bytes of push constants or buffer
+    device addresses (buffer_get_device_address).
+
+    Single shared pipeline layout
+
+    The comment in rhi.h:218 says "all pipelines share a common bindless VkPipelineLayout 
+    (push constants + bindless set)". The layout is fixed at init(). You can't have a 
+    renderer that changes the root layout without restarting the host.
+
+    Dynamic rendering (no VkRenderPass)
+
+    cmd_begin_rendering uses VK_KHR_dynamic_rendering. This means no VkRenderPass objects, 
+    which means no Vulkan subpasses. Tile-based deferred (the subpass-based optimization on 
+    mobile GPUs that avoids writing G-buffer data to DRAM) is not expressible through this RHI.
+    Desktop deferred still works fine — it just runs as separate passes.
+
+    Up to 4 MRT color targets
+
+    RHI_MAX_COLOR_TARGETS = 4. A G-buffer layout must fit within 4 color attachments. 
+    This is plenty for most deferred schemes (albedo, normals, roughness/metallic, emissive) 
+    but it's a hard ceiling.
+
+    Single interleaved vertex binding
+
+    vk_pipeline_graphics.c and the comment in rhi_api.h:225 — "single interleaved binding for now".
+    You can't bind separate position/normal/UV streams; all vertex data must be interleaved 
+    in one buffer. This is a current limitation, not an inherent one, but it constrains
+    the renderer above it.
+
+     Frame-level single command buffer
+
+    One rhi_cmd_t per frame per context. No secondary buffers, no parallel recording. 
+    Multithreaded rendering submission is not available from above.
+
+    No explicit barrier API
+
+    There is no cmd_pipeline_barrier() or cmd_image_transition() in the API. 
+    Transitions are handled internally — upload_texture transitions to SHADER_READ_ONLY_OPTIMAL, 
+    and cmd_begin_rendering / cmd_end_rendering presumably handle the swapchain transitions.
+    For intermediate render targets (render to G-buffer, then sample it in a lighting pass),
+    there is currently no public way to insert the required layout transition between passes.
+    This is probably the most significant gap for deferred rendering.
+
+
+==============================================================================================*/
+
 /*============================================================================================*/

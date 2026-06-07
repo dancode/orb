@@ -82,7 +82,7 @@ typedef struct vk_sampler_slot_s
 
 typedef struct vk_shader_slot_s
 {
-    VkShaderModule     module;
+    VkShaderModule     module;  
     rhi_shader_stage_t stage;
     char               entry[ 32 ]; // SPIR-V entry point name; stored for pipeline create
 

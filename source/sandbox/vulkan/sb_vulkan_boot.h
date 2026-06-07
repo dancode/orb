@@ -26,6 +26,7 @@ typedef struct
     rhi_shader_t   vert;
     rhi_shader_t   frag;
     rhi_pipeline_t pipeline;
+
 } sb_vk_boot_t;
 
 /* Create shaders and pipeline.  Returns false and logs on failure. */
