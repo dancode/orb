@@ -20,7 +20,7 @@
     Frame begin / end
 ==============================================================================================*/
 
-static rhi_command_list_t
+static rhi_cmd_list_t
 vk_frame_begin( i32 ctx_id )
 {
     vk_context_t* ctx = vk_ctx_get( ctx_id );
@@ -179,12 +179,12 @@ vk_frame_begin( i32 ctx_id )
 
     vkCmdPipelineBarrier2( cmd_buf, &dep_info );
 
-    /* Wire the command list slot so vk_cmd_from_handle resolves this frame correctly. */
+    /* Initialize the command list slot and return a direct pointer to it. */
     ctx->cmd_lists[ frame ].vk_cmd = cmd_buf;
     ctx->cmd_lists[ frame ].ctx_id = ctx_id;
     ctx->cmd_lists[ frame ].frame  = frame;
 
-    return vk_cmd_make_handle( ctx_id, frame );
+    return &ctx->cmd_lists[ frame ];
 }
 
 static void

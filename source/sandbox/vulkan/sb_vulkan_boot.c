@@ -262,7 +262,7 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
 ==============================================================================================*/
 
 void
-sb_vk_boot_render( sb_vk_boot_t* boot, rhi_command_list_t cmd, i32 win_w, i32 win_h )
+sb_vk_boot_render( sb_vk_boot_t* boot, rhi_cmd_list_t cmd, i32 win_w, i32 win_h )
 {
     /* Bind global bindless set before any draws. */
     rhi()->cmd_bind_bindless( cmd );

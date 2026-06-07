@@ -320,12 +320,11 @@ vk_debug_name_object( VkObjectType type, u64 handle, const char* name )
 ==============================================================================================*/
 
 static void
-vk_cmd_begin_label( rhi_command_list_t cmd, const char* name, f32 r, f32 g, f32 b )
+vk_cmd_begin_label( rhi_cmd_list_t cmd, const char* name, f32 r, f32 g, f32 b )
 {
 #if DEBUG
 
-    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
-    if ( !vk.use_vk_ext_debug_utils || !cl || !name )
+    if ( !vk.use_vk_ext_debug_utils || !cmd || !name )
         return;
 
     VkDebugUtilsLabelEXT label = { 0 };
@@ -335,7 +334,7 @@ vk_cmd_begin_label( rhi_command_list_t cmd, const char* name, f32 r, f32 g, f32 
     label.color[ 1 ] = g;
     label.color[ 2 ] = b;
     label.color[ 3 ] = 1.0f;
-    vkCmdBeginDebugUtilsLabelEXT( cl->vk_cmd, &label );
+    vkCmdBeginDebugUtilsLabelEXT( cmd->vk_cmd, &label );
 
 #else
 
@@ -351,15 +350,14 @@ vk_cmd_begin_label( rhi_command_list_t cmd, const char* name, f32 r, f32 g, f32 
 /*============================================================================================*/
 
 static void
-vk_cmd_end_label( rhi_command_list_t cmd )
+vk_cmd_end_label( rhi_cmd_list_t cmd )
 {
 #if DEBUG
 
-    struct rhi_command_list_s* cl = vk_cmd_from_handle( cmd );
-    if ( !vk.use_vk_ext_debug_utils || !cl )
+    if ( !vk.use_vk_ext_debug_utils || !cmd )
         return;
 
-    vkCmdEndDebugUtilsLabelEXT( cl->vk_cmd );
+    vkCmdEndDebugUtilsLabelEXT( cmd->vk_cmd );
 
 #else
 

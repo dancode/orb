@@ -145,7 +145,7 @@ main( int argc, char** argv )
 
         if ( !app()->window_is_minimized( win ) )
         {
-            rhi_command_list_t cmd = rhi()->frame_begin( ctx );
+            rhi_cmd_list_t cmd = rhi()->frame_begin( ctx );
             if ( rhi_cmd_valid( cmd ) )
             {
                 sb_vk_boot_render( &boot, cmd, win_w, win_h );

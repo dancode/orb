@@ -15,18 +15,19 @@
 // clang-format off
 
 /*==============================================================================================
-    rhi_command_list_s  (internal slot; rhi_command_list_t is an i32 handle)
+    rhi_cmd_list_t  (opaque pointer to one of vk_context_t::cmd_lists[])
 
     One struct lives inside each context's per-frame slot, no heap allocation needed.
-    Handle encoding: ctx_id * VK_MAX_FRAMES_IN_FLIGHT + frame  (RHI_CMD_INVALID = -1)
+    rhi_cmd_list_t is a direct pointer to the live slot; NULL = invalid.
 ==============================================================================================*/
 
-struct rhi_command_list_s
+struct rhi_cmd_list_s
 {
     VkCommandBuffer  vk_cmd;
     i32              ctx_id;
     u32              frame;    /* slot index [0..VK_MAX_FRAMES_IN_FLIGHT) */
 };
+
 
 /*==============================================================================================
     Resource limits
@@ -161,9 +162,9 @@ typedef struct vk_context_s
 
     /* Per-frame command state */
 
-    VkCommandPool               command_pool;
-    VkCommandBuffer             command_buffers [ VK_MAX_FRAMES_IN_FLIGHT ];
-    struct rhi_command_list_s   cmd_lists       [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkCommandPool       command_pool;
+    VkCommandBuffer     command_buffers         [ VK_MAX_FRAMES_IN_FLIGHT ];
+    struct rhi_cmd_list_s  cmd_lists            [ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Per-slot layout tracker: UNDEFINED on create; promoted to DEPTH_ATTACHMENT_OPTIMAL after
        each slot's first barrier.  Safe because the fence wait guarantees the previous use of
@@ -285,32 +286,11 @@ static vk_state_t vk =
 };
 
 /*==============================================================================================
-    Command list handle encode / decode
-
-    vk_ctx_get is defined in vk_init.c (included last); forward-declared here so these
-    helpers are visible to all vk_*.c files that follow in the unity build.
+    vk_ctx_get is defined in vk_init.c (included last); forward-declared here so all
+    vk_*.c files that follow in the unity build can call it.
 ==============================================================================================*/
 
 static vk_context_t* vk_ctx_get( i32 id );
-
-static rhi_command_list_t
-vk_cmd_make_handle( i32 ctx_id, u32 frame )
-{
-    return ctx_id * (i32)VK_MAX_FRAMES_IN_FLIGHT + (i32)frame;
-}
-
-static struct rhi_command_list_s*
-vk_cmd_from_handle( rhi_command_list_t cmd )
-{
-    if ( cmd < 0 )
-        return NULL;
-    i32 ctx_id = cmd / (i32)VK_MAX_FRAMES_IN_FLIGHT;
-    u32 frame  = (u32)( cmd % (i32)VK_MAX_FRAMES_IN_FLIGHT );
-    vk_context_t* ctx = vk_ctx_get( ctx_id );
-    if ( !ctx )
-        return NULL;
-    return &ctx->cmd_lists[ frame ];
-}
 
 /*============================================================================================*/
 // clang-format on

@@ -42,7 +42,7 @@ vk_command_create( vk_context_t* ctx )
         return false;
     }
 
-    /* Wire cmd_list structs so vk_cmd_from_handle can reach the right VkCommandBuffer. */
+    /* Pre-populate cmd_list identity fields; vk_cmd is overwritten each frame_begin. */
     for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
     {
         ctx->cmd_lists[ i ].vk_cmd = ctx->command_buffers[ i ];

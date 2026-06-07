@@ -40,13 +40,14 @@ RHI_DEFINE_HANDLE( rhi_pipeline_t );
 #define rhi_handle_valid( h )    ( (h).id != RHI_NULL_HANDLE )
 
 /*==============================================================================================
-    Command list handle  (i32; -1 = invalid; encodes ctx_id + frame slot)
+    Command list handle  (opaque pointer into vk_context_t::cmd_lists[]; NULL = invalid)
 ==============================================================================================*/
 
-typedef i32 rhi_command_list_t;
+struct rhi_cmd_list_s;
+typedef struct rhi_cmd_list_s* rhi_cmd_list_t;
 
-#define RHI_CMD_INVALID     ( -1 )
-#define rhi_cmd_valid(cmd)  ( (cmd) >= 0 )
+#define RHI_CMD_INVALID     NULL
+#define rhi_cmd_valid(cmd)  ( (cmd) != NULL )
 
 /*==============================================================================================
     Render context pool  (one per platform window)
