@@ -33,7 +33,7 @@ struct rhi_command_list_s
 ==============================================================================================*/
 
 #define VK_MAX_FRAMES_IN_FLIGHT   2
-#define VK_MAX_SWAPCHAIN_IMAGES   8
+#define VK_MAX_SWAPCHAIN_IMAGES   3
 
 #define VK_MAX_BUFFERS            1024
 #define VK_MAX_TEXTURES           2048
@@ -138,37 +138,37 @@ typedef struct vk_context_s
     VkSwapchainKHR      swapchain;
 
     u32                 swapchain_image_count;
-    VkImage             swapchain_images[ VK_MAX_SWAPCHAIN_IMAGES ];
-    VkImageView         swapchain_image_views[ VK_MAX_SWAPCHAIN_IMAGES ];
+    VkImage             swapchain_images        [ VK_MAX_SWAPCHAIN_IMAGES ];
+    VkImageView         swapchain_image_views   [ VK_MAX_SWAPCHAIN_IMAGES ];
     VkExtent2D          swapchain_extent;
 
     /* Depth attachment: one image per frame-in-flight so consecutive frames do not race
        on the same image.  depth_format is shared (same for all slots). */
 
-    VkImage             depth_image[ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkDeviceMemory      depth_memory[ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkImageView         depth_view[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkImage             depth_image     [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkDeviceMemory      depth_memory    [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkImageView         depth_view      [ VK_MAX_FRAMES_IN_FLIGHT ];
     VkFormat            depth_format;    /* selected at swapchain creation time; same for all slots */
 
     /* Per-frame synchronization */
 
-    VkSemaphore         image_available_sem[ VK_MAX_FRAMES_IN_FLIGHT ];
-    VkFence             in_flight_fence[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkSemaphore         image_available_sem [ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkFence             in_flight_fence     [ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Per-swapchain-image: reusing this semaphore is safe only when the image is
        acquired again, which guarantees the previous present consumed it. */
-    VkSemaphore         render_finished_sem[ VK_MAX_SWAPCHAIN_IMAGES ];
+    VkSemaphore         render_finished_sem [ VK_MAX_SWAPCHAIN_IMAGES ];
 
     /* Per-frame command state */
 
     VkCommandPool               command_pool;
-    VkCommandBuffer             command_buffers[ VK_MAX_FRAMES_IN_FLIGHT ];
-    struct rhi_command_list_s   cmd_lists[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkCommandBuffer             command_buffers [ VK_MAX_FRAMES_IN_FLIGHT ];
+    struct rhi_command_list_s   cmd_lists       [ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Per-slot layout tracker: UNDEFINED on create; promoted to DEPTH_ATTACHMENT_OPTIMAL after
        each slot's first barrier.  Safe because the fence wait guarantees the previous use of
        this slot is complete before we access it again. */
-    VkImageLayout       depth_layout[ VK_MAX_FRAMES_IN_FLIGHT ];
+    VkImageLayout               depth_layout    [ VK_MAX_FRAMES_IN_FLIGHT ];
 
 } vk_context_t;
 

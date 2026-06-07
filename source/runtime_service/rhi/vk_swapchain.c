@@ -301,12 +301,15 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
     VkExtent2D extent;
     if ( caps.currentExtent.width != UINT32_MAX )
     {
-        /* Surface dictates the exact extent. */
+        /* Surface dictates the exact extent -- 
+           window system decides size (most common Win32 behavior). */
         extent = caps.currentExtent;
     }
     else
     {
+        /* Flexible size, the window systems will adapt to our swapchain. */
         /* Clamp the requested dimensions to the surface-supported range. */
+
         u32 w = (u32)ctx->width;
         u32 h = (u32)ctx->height;
         if ( w < caps.minImageExtent.width  ) w = caps.minImageExtent.width;
@@ -318,13 +321,19 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
     }
     ctx->swapchain_extent = extent;
 
-    /* --- Determine image count: one more than minimum for better pipelining --- */
+    /* --- Determine image count based on present mode ---
+       Mailbox needs 3 (on-screen + mailbox slot + rendering); others need only the minimum. */
 
-    u32 image_count = caps.minImageCount + 1;
+    u32  image_count;
+    if ( ctx->present_mode == VK_PRESENT_MODE_MAILBOX_KHR )
+         image_count = ( caps.minImageCount < 3 ) ? 3 : caps.minImageCount;
+    else
+         image_count = ( caps.minImageCount );
+
     if ( caps.maxImageCount > 0 && image_count > caps.maxImageCount )
-        image_count = caps.maxImageCount;
+         image_count = caps.maxImageCount;
     if ( image_count > VK_MAX_SWAPCHAIN_IMAGES )
-        image_count = VK_MAX_SWAPCHAIN_IMAGES;
+         image_count = VK_MAX_SWAPCHAIN_IMAGES;
 
     /* --- Build swapchain create info --- */
 
@@ -344,26 +353,24 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
     ci.oldSwapchain             = old_swapchain;
 
     /* Exclusive mode when graphics and present share a queue family (most desktop HW). */
-    u32 queue_families[ 2 ] = { vk.graphics_queue_family, vk.present_queue_family };
+    u32 queue_families[ 2 ] = { vk.graphics_queue_family, vk.present_queue_family };    
+    ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if ( vk.graphics_queue_family != vk.present_queue_family )
     {
         ci.imageSharingMode      = VK_SHARING_MODE_CONCURRENT;
         ci.queueFamilyIndexCount = 2;
         ci.pQueueFamilyIndices   = queue_families;
     }
-    else
-    {
-        ci.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
-    }
 
     r = vkCreateSwapchainKHR( vk.device, &ci, vk.alloc_cb, &ctx->swapchain );
     if ( r != VK_SUCCESS )
     {
-        LOG_ERROR( "swapchain_create: vkCreateSwapchainKHR: %s", string_VkResult( r ) );
+        LOG_ERROR( "vkCreateSwapchainKHR: %s", string_VkResult( r ) );
         return false;
     }
 
     /* Retire the old swapchain now that the new one is live; driver may reuse its resources. */
+
     if ( old_swapchain != VK_NULL_HANDLE )
         vkDestroySwapchainKHR( vk.device, old_swapchain, vk.alloc_cb );
 
@@ -371,6 +378,7 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
 
     /* Two-pass: query true count first so we can clamp before writing into the fixed-size array.
        Skipping this lets VK_INCOMPLETE go undetected and image_index OOB on acquire. */
+
     u32 true_image_count = 0;
     vkGetSwapchainImagesKHR( vk.device, ctx->swapchain, &true_image_count, NULL );
     if ( true_image_count > VK_MAX_SWAPCHAIN_IMAGES )
@@ -403,21 +411,21 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
         view_ci.subresourceRange.layerCount     = 1;
 
         r = vkCreateImageView( vk.device, &view_ci, vk.alloc_cb, &ctx->swapchain_image_views[ i ] );
-        if ( r != VK_SUCCESS )
-        {
-            LOG_ERROR( "swapchain_create: vkCreateImageView[%u]: %s", i, string_VkResult( r ) );
-            /* Destroy any views already created, then the swapchain. */
-            for ( u32 j = 0; j < i; ++j )
-                vkDestroyImageView( vk.device, ctx->swapchain_image_views[ j ], vk.alloc_cb );
-            vkDestroySwapchainKHR( vk.device, ctx->swapchain, vk.alloc_cb );
-            ctx->swapchain = VK_NULL_HANDLE;
-            return false;
+        if ( r != VK_SUCCESS ) {
+             LOG_ERROR( "swapchain_create: vkCreateImageView[%u]: %s", i, string_VkResult( r ) );
+             /* Destroy any views already created, then the swapchain. */
+             for ( u32 j = 0; j < i; ++j )
+                  vkDestroyImageView( vk.device, ctx->swapchain_image_views[ j ], vk.alloc_cb );
+             vkDestroySwapchainKHR( vk.device, ctx->swapchain, vk.alloc_cb );
+             ctx->swapchain = VK_NULL_HANDLE;
+             return false;
         }
     }
 
-    LOG_INFO( "swapchain_create: OK (ctx %d, %ux%u, %u images, fmt=%d, mode=%d)",
+    LOG_INFO( "vk_swapchain_create: OK (ctx %d, %ux%u, %u images,fmt=%s, mode=%s)",
               ctx->id, extent.width, extent.height, ctx->swapchain_image_count,
-              (i32)ctx->surface_format.format, (i32)ctx->present_mode );
+              string_VkFormat( ctx->surface_format.format ), 
+              string_VkPresentModeKHR( ctx->present_mode ) );
 
     /* --- Create the depth buffer sized to match the swapchain --- */
 
@@ -452,6 +460,7 @@ vk_swapchain_recreate( vk_context_t* ctx )
     /* Query surface caps before touching anything.  On a minimized window the driver
        reports currentExtent {0,0}; skip recreation and let the caller retry next frame
        with the old swapchain still live. */
+
     VkSurfaceCapabilitiesKHR caps = { 0 };
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR( vk.physical_device, ctx->surface, &caps );
     if ( caps.currentExtent.width == 0 || caps.currentExtent.height == 0 )
@@ -470,12 +479,15 @@ vk_swapchain_recreate( vk_context_t* ctx )
        still hold a reference to the old swapchain images even after the graphics
        fence fires.  The VkSwapchainKHR handle itself is kept alive until after
        creation. */
+
     VkResult r = vkWaitForFences( vk.device, VK_MAX_FRAMES_IN_FLIGHT, ctx->in_flight_fence, VK_TRUE, UINT64_MAX );
-    if ( r != VK_SUCCESS )
+    if ( r != VK_SUCCESS ) {
         LOG_ERROR( "swapchain_recreate: vkWaitForFences: %s", string_VkResult( r ) );
+    }
     r = vkQueueWaitIdle( vk.present_queue );
-    if ( r != VK_SUCCESS )
+    if ( r != VK_SUCCESS ) {
         LOG_ERROR( "swapchain_recreate: vkQueueWaitIdle: %s", string_VkResult( r ) );
+    }
     vk_swapchain_destroy( ctx );
 
     bool ok = vk_swapchain_create( ctx, old_swapchain );
@@ -583,7 +595,7 @@ vk_depth_create( vk_context_t* ctx )
         ctx->depth_layout[ slot ] = VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
-    LOG_INFO( "depth_create: OK (ctx %d, fmt=%d, %ux%u, %u slots)", ctx->id, (i32)ctx->depth_format,
+    LOG_INFO( "vk_depth_create: OK (ctx %d, fmt=%d, %ux%u, %u slots)", ctx->id, (i32)ctx->depth_format,
               ctx->swapchain_extent.width, ctx->swapchain_extent.height, (u32)VK_MAX_FRAMES_IN_FLIGHT );
     return true;
 }

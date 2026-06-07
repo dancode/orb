@@ -66,8 +66,8 @@
     #define WIN32_EXTRA_LEAN
     #define VC_EXTRALEAN
     #include <windows.h>
-    #include <dxgi1_5.h>
-    #pragma comment( lib, "dxgi.lib" )
+    #include <dxgi1_5.h>                  // for vk_platform_check_vrr in vk_init.c
+    #pragma comment( lib, "dxgi.lib" )    // for vk_platform_check_vrr in vk_init.c
 
 #elif OS_LINUX
 

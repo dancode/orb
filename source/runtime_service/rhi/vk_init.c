@@ -182,7 +182,7 @@ vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
     ctx->resize_pending = false;
 
     LOG_LINE();
-    LOG_INFO( "vk_context_create begin (ctx %d, win %d)", id, win_id );
+    LOG_INFO( "vk_context_create... (ctx %d, win %d)", id, win_id );
 
     /* Order matters: surface before swapchain, swapchain before sync/commands. */
     if ( !vk_surface_create( ctx ) ) 
@@ -209,6 +209,8 @@ vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
     if ( !vk_command_create( ctx ) ) goto fail_after_sync;
 
     LOG_INFO( "vk_context_create: complete (ctx %d, win %d)", id, win_id );
+    LOG_LINE();
+
     return id;
 
 fail_after_sync:      vk_sync_destroy( ctx );

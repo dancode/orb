@@ -80,7 +80,7 @@ main( int argc, char** argv )
 
     /* Per-window render context. */
     void* hwnd = app()->window_handle( win );
-    i32   ctx  = rhi()->context_create( win, hwnd, 1280, 720 );
+    i32  ctx   = rhi()->context_create( win, hwnd, 1280, 720 );
     if ( ctx == RHI_CTX_INVALID ) {
          rhi()->shutdown();
          app()->window_close( win );
