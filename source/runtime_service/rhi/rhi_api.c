@@ -70,11 +70,11 @@ const rhi_api_t g_rhi_api_struct =
     .cmd_bind_vertex_buffer     = vk_cmd_bind_vertex_buffer,
     .cmd_bind_index_buffer      = vk_cmd_bind_index_buffer,
     .cmd_push_constants         = vk_cmd_push_constants,
-    .cmd_draw                       = vk_cmd_draw,
-    .cmd_draw_indexed               = vk_cmd_draw_indexed,
-    .cmd_draw_indirect              = vk_cmd_draw_indirect,
-    .cmd_draw_indexed_indirect      = vk_cmd_draw_indexed_indirect,
-    .cmd_dispatch                   = vk_cmd_dispatch,
+    .cmd_draw                   = vk_cmd_draw,
+    .cmd_draw_indexed           = vk_cmd_draw_indexed,
+    .cmd_draw_indirect          = vk_cmd_draw_indirect,
+    .cmd_draw_indexed_indirect  = vk_cmd_draw_indexed_indirect,
+    .cmd_dispatch               = vk_cmd_dispatch,
 
     /* Bindless */
     .register_texture           = vk_register_texture,
