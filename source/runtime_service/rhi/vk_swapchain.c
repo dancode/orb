@@ -5,9 +5,9 @@
     All functions operate on a single vk_context_t so multiple windows each own
     independent surface + swapchain + depth buffer simultaneously.
 
-    Surface  -> requires: instance + native window
+    Surface   -> requires: instance + native window
     Swapchain -> requires: device + surface
-    Depth    -> requires: device + swapchain extent
+    Depth     -> requires: device + swapchain extent
 
 ==============================================================================================*/
 // clang-format off
@@ -30,9 +30,9 @@ vk_surface_create( vk_context_t* ctx )
 #if OS_WINDOWS
 
     VkWin32SurfaceCreateInfoKHR ci = { 0 };
-    ci.sType                       = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    ci.hwnd                        = (HWND)ctx->native_window;
-    ci.hinstance                   = GetModuleHandle( NULL );
+    ci.sType        = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    ci.hwnd         = (HWND)ctx->native_window;
+    ci.hinstance    = GetModuleHandle( NULL );
 
     r = vkCreateWin32SurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface );
 
@@ -40,9 +40,9 @@ vk_surface_create( vk_context_t* ctx )
 
     /* native_window is a wl_surface*; display must be passed via platform context */
     VkWaylandSurfaceCreateInfoKHR ci = { 0 };
-    ci.sType                         = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-    ci.display                       = NULL;    /* TODO: obtain wl_display from sys layer */
-    ci.surface                       = (struct wl_surface*)ctx->native_window;
+    ci.sType        = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+    ci.display      = NULL;    /* TODO: obtain wl_display from sys layer */
+    ci.surface      = (struct wl_surface*)ctx->native_window;
 
     r = vkCreateWaylandSurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface );
 
@@ -50,9 +50,9 @@ vk_surface_create( vk_context_t* ctx )
 
     /* native_window is a Window (XID); display must be passed via platform context */
     VkXlibSurfaceCreateInfoKHR ci = { 0 };
-    ci.sType                      = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-    ci.dpy                        = NULL;    /* TODO: obtain Display* from sys layer */
-    ci.window                     = (Window)(uintptr_t)ctx->native_window;
+    ci.sType        = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+    ci.dpy          = NULL;    /* TODO: obtain Display* from sys layer */
+    ci.window       = (Window)(uintptr_t)ctx->native_window;
 
     r = vkCreateXlibSurfaceKHR( vk.instance, &ci, vk.alloc_cb, &ctx->surface );
 
@@ -65,15 +65,11 @@ vk_surface_create( vk_context_t* ctx )
 
     r = vkCreateMetalSurfaceEXT( vk.instance, &ci, vk.alloc_cb, &ctx->surface );
 
-#else
-    LOG_ERROR( "surface_create: unsupported platform" );
-    return false;
 #endif
 
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "surface_create: %s (ctx %d)", string_VkResult( r ), ctx->id );
-        return false;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "surface_create: %s (ctx %d)", string_VkResult( r ), ctx->id );
+         return false;
     }
 
     /* Confirm the selected present queue family actually supports this surface. */
@@ -89,7 +85,7 @@ vk_surface_create( vk_context_t* ctx )
         return false;
     }
 
-    LOG_INFO( "surface_create: OK (ctx %d)", ctx->id );
+    LOG_INFO( "vk_surface_create: OK (ctx %d)", ctx->id );
     return true;
 }
 
@@ -104,7 +100,7 @@ vk_surface_destroy( vk_context_t* ctx )
 }
 
 /*==============================================================================================
-    Swapchain -- format and present-mode selection helpers
+    Swapchain Support -- Format selection helper
 ==============================================================================================*/
 
 static VkSurfaceFormatKHR
@@ -127,16 +123,136 @@ vk_swapchain_pick_format( VkSurfaceFormatKHR* formats, u32 count )
     return formats[ 0 ];
 }
 
+/*==============================================================================================
+    Swapchain Support -- Present-mode selection helper 
+    
+    For reference, do not modify.
+
+    VK_PRESENT_MODE_IMMEDIATE_KHR (VSync OFF)
+    * The engine submits a frame, and the display controller shows it immediately. 
+      It does not wait for the monitor to finish its current refresh cycle.
+    * Pros: Absolute lowest possible input latency.
+    * Cons: Resulting "tearing" (horizontal lines where the old frame meets the new one). 
+      Tearing is more visible at lower framerates and higher resolutions.
+
+    VK_PRESENT_MODE_MAILBOX_KHR (Fast VSync / Triple Buffering)
+    * This is a "non-blocking" VSync. The GPU keeps rendering frames into a 3-slot queue. 
+      If the queue is full, the newest frame replaces the one waiting to be shown.
+    * Pros: No tearing. Significantly lower latency than standard VSync because the
+      monitor always grabs the most recent completed frame at the moment of refresh.
+    * Cons: Uses more VRAM (3+ images). Requires the GPU to work harder (rendering
+      frames that might never be seen) which can increase power consumption/heat.
+
+    VK_PRESENT_MODE_FIFO_KHR (Standard VSync)
+    * A traditional queue. If the queue is full, the engine "blocks" (stalls) until a 
+      vertical blanking interval (VBlank) occurs and a slot opens up.
+    * Pros: No tearing. Guaranteed to be supported by every Vulkan implementation.
+      Perfect frame pacing if you hit the refresh rate exactly.
+    * Cons: Highest input latency. If you miss the refresh rate (e.g., 59 FPS on a
+      60Hz screen), the framerate effectively drops to 30 FPS (stutter).
+
+    VK_PRESENT_MODE_FIFO_RELAXED_KHR (Late-Swap VSync)
+    * How it works: If you are faster than the refresh rate, it behaves like FIFO (no
+      tearing). If you are late (a frame takes too long), it behaves like IMMEDIATE
+      to avoid the "drop to 30 FPS" stutter.
+    * Pros: Good middle ground for systems that occasionally dip below target FPS.
+    * Cons: Tearing only happens when you're lagging, which is exactly when you don't
+      want the visual distraction.
+
+    VK_PRESENT_MODE_FIFO_LATEST_READY_KHR
+    * It’s a hybrid of FIFO and MAILBOX. Like FIFO, it waits for the
+      VBlank (VSync). However, if your game rendered 3 frames since the last VBlank,
+      it will discard the first 2 and show the most recent one.
+    * Trade-offs: It gives you the "snappiness" of Mailbox but uses the strict queue
+      logic of FIFO. It’s excellent for reducing the "VSync lag" on modern drivers
+      that support it.
+    * Verdict: If supported, this is usually superior to standard FIFO.
+     
+    The "New Tech" Impact (GSync / FreeSync / VRR)
+
+    Variable Refresh Rate (VRR) technologies completely change the logic of
+    vk_swapchain_pick_present_mode.
+
+    With GSync/FreeSync Enabled:
+    * Use FIFO: Counter-intuitively, FIFO is often the best choice for VRR. Within
+      the monitor's range (e.g., 40Hz–144Hz), the monitor waits for the GPU. FIFO
+      behaves like IMMEDIATE but without the tearing.
+    * Frame Limiting: To stay in the VRR range, you should limit your game's FPS to
+      ~3 FPS below the max refresh (e.g., 141 FPS for a 144Hz screen). If you exceed
+      the max refresh, FIFO will revert to high-latency VSync behavior.
+
+        The "Modern Ultra-Low Latency" Setup:
+        1. GSync ON (Global Driver Setting).
+        2. VSync ON (In-game or Driver).
+        3. Frame Limiter (In-game) set to (RefreshRate - 3).
+  
+    This combination provides the lowest latency with zero tearing.
+
+
+==============================================================================================*/
+
 static VkPresentModeKHR
 vk_swapchain_pick_present_mode( VkPresentModeKHR* modes, u32 count )
 {
-    /* Prefer MAILBOX: triple-buffered, no tearing, lower latency than FIFO. */
-    for ( u32 i = 0; i < count; ++i )
+    if ( vk.has_vrr && vk.use_vrr_if_available )
     {
+        /* VRR (GSync/FreeSync): monitor adapts its refresh to the GPU framerate.
+           FIFO becomes tear-free adaptive sync; MAILBOX only wastes GPU cycles here. */
+
+        /* 1. FIFO_LATEST_READY: adaptive sync + latest-frame = best VRR quality. */
+        if ( vk.has_fifo_latest_ready )
+        {
+            for ( u32 i = 0; i < count; ++i ) {
+                if ( modes[ i ] == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR )
+                    return modes[ i ];
+            }
+        }
+        /* 2. IMMEDIATE (vsync-off only): raw minimum latency as explicit user intent. */
+        if ( vk.use_vsync == false )
+        {
+            for ( u32 i = 0; i < count; ++i ) {
+                if ( modes[ i ] == VK_PRESENT_MODE_IMMEDIATE_KHR )
+                    return modes[ i ];
+            }
+        }
+        /* 2/3. FIFO: VRR turns this into tear-free adaptive presentation. */
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    if ( vk.use_vsync == true )
+    {
+        /* No VRR, vsync on: strict vblank-synced tear-free presentation. */
+
+        /* 1. FIFO_LATEST_READY: reduces VSync lag on modern drivers. */
+        if ( vk.has_fifo_latest_ready )
+        {
+            for ( u32 i = 0; i < count; ++i ) {
+                if ( modes[ i ] == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR )
+                    return modes[ i ];
+            }
+        }
+        /* 2. FIFO_RELAXED: avoids the "miss one frame -> halve FPS" stutter on frame drops. */
+        for ( u32 i = 0; i < count; ++i ) {
+            if ( modes[ i ] == VK_PRESENT_MODE_FIFO_RELAXED_KHR )
+                return modes[ i ];
+        }
+        /* 3. FIFO: mandatory per spec; classic vsync, no tearing. */
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    /* No VRR, vsync off: uncapped render, favor lowest latency. */
+
+    /* 1. MAILBOX: uncapped render, no tearing, low latency. Best default for vsync-off. */
+    for ( u32 i = 0; i < count; ++i ) {
         if ( modes[ i ] == VK_PRESENT_MODE_MAILBOX_KHR )
             return modes[ i ];
     }
-    /* FIFO is always present per spec: vsync, no tearing. */
+    /* 2. IMMEDIATE: true minimum latency, may tear. */
+    for ( u32 i = 0; i < count; ++i ) {
+        if ( modes[ i ] == VK_PRESENT_MODE_IMMEDIATE_KHR )
+            return modes[ i ];
+    }
+    /* 3. FIFO: guaranteed fallback. */
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
@@ -151,20 +267,18 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
 
     VkSurfaceCapabilitiesKHR caps = { 0 };
     VkResult r = vkGetPhysicalDeviceSurfaceCapabilitiesKHR( vk.physical_device, ctx->surface, &caps );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "swapchain_create: vkGetPhysicalDeviceSurfaceCapabilitiesKHR: %s", string_VkResult( r ) );
-        return false;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "vkGetPhysicalDeviceSurfaceCapabilitiesKHR: %s", string_VkResult( r ) );
+         return false;
     }
 
     /* --- Pick surface format --- */
 
     u32 format_count = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR( vk.physical_device, ctx->surface, &format_count, NULL );
-    if ( format_count == 0 )
-    {
-        LOG_ERROR( "swapchain_create: no surface formats available (ctx %d)", ctx->id );
-        return false;
+    if ( format_count == 0 ) {
+         LOG_ERROR( "no surface formats available (ctx %d)", ctx->id );
+         return false;
     }
 
     VkSurfaceFormatKHR formats[ 32 ] = { 0 };

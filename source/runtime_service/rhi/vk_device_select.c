@@ -39,13 +39,15 @@
 
 enum
 {
-    VK_OPT_EXT_PUSH_DESCRIPTOR = 0,   /* VK_KHR_push_descriptor: inline per-draw updates */
+    VK_OPT_EXT_PUSH_DESCRIPTOR    = 0,   /* VK_KHR_push_descriptor: inline per-draw updates */
+    VK_OPT_EXT_FIFO_LATEST_READY,        /* VK_KHR_present_mode_fifo_latest_ready           */
     VK_OPT_EXT_COUNT,
 };
 
 static const char* s_optional_exts[ VK_OPT_EXT_COUNT ] =
 {
     VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+    VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME,
 };
 
 /* All pNext-linked feature structs together in one allocation so the chain can be built
@@ -53,12 +55,13 @@ static const char* s_optional_exts[ VK_OPT_EXT_COUNT ] =
 
 typedef struct
 {
-    VkPhysicalDeviceDescriptorIndexingFeatures  desc_idx;  /* bindless indexing: VK 1.2 */
-    VkPhysicalDeviceBufferDeviceAddressFeatures bda;       /* GPU buffer pointers: VK 1.2 */
-    VkPhysicalDeviceDynamicRenderingFeatures    dyn_rend;  /* renderpass-free: VK 1.3    */
-    VkPhysicalDeviceSynchronization2Features    sync2;     /* barrier2/submit2: VK 1.3   */
-    VkPhysicalDeviceTimelineSemaphoreFeatures   timeline;  /* monotonic counter: VK 1.2  */
-    VkPhysicalDeviceFeatures2                   feats2;    /* chain root + VK 1.0 feats  */
+    VkPhysicalDeviceDescriptorIndexingFeatures              desc_idx;          /* bindless indexing: VK 1.2                    */
+    VkPhysicalDeviceBufferDeviceAddressFeatures             bda;               /* GPU buffer pointers: VK 1.2                  */
+    VkPhysicalDeviceDynamicRenderingFeatures                dyn_rend;          /* renderpass-free: VK 1.3                      */
+    VkPhysicalDeviceSynchronization2Features                sync2;             /* barrier2/submit2: VK 1.3                     */
+    VkPhysicalDeviceTimelineSemaphoreFeatures               timeline;          /* monotonic counter: VK 1.2                    */
+    VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR   fifo_latest_ready; /* optional: VK_KHR_present_mode_fifo_latest_ready */
+    VkPhysicalDeviceFeatures2                               feats2;            /* chain root + VK 1.0 feats                    */
 
 } vk_feature_chain_t;
 

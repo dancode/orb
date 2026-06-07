@@ -244,7 +244,7 @@ vk_instance_create( u32 layer_count, const char** layer_array, u32 ext_count, co
          return false;
     }
 
-    LOG_INFO( "vkCreateInstance: OK" );
+    LOG_INFO( "vk_instance_create: OK" );
     return true;
 }
 

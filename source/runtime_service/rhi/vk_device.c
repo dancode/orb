@@ -293,12 +293,23 @@ vk_device_create( void )
 
     const char* dev_exts[ 1 + VK_OPT_EXT_COUNT ];
     u32 dev_ext_count = vk_device_collect_extensions( optional_ext_found, dev_exts );
-    vk.has_push_descriptor = optional_ext_found[ VK_OPT_EXT_PUSH_DESCRIPTOR ];
+    vk.has_push_descriptor   = optional_ext_found[ VK_OPT_EXT_PUSH_DESCRIPTOR ];
+    vk.has_fifo_latest_ready = optional_ext_found[ VK_OPT_EXT_FIFO_LATEST_READY ];
 
     /* Phase 4: Fill required feature pNext chain. */
 
     vk_feature_chain_t features = { 0 };
     vk_device_init_features( &features );
+
+    /* Wire optional feature structs for extensions that were found. Each is prepended
+       to the chain so it survives past this scope without escaping a stack frame. */
+    if ( optional_ext_found[ VK_OPT_EXT_FIFO_LATEST_READY ] )
+    {
+        features.fifo_latest_ready.sType                      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR;
+        features.fifo_latest_ready.presentModeFifoLatestReady = VK_TRUE;
+        features.fifo_latest_ready.pNext                      = features.feats2.pNext;
+        features.feats2.pNext                                 = &features.fifo_latest_ready;
+    }
 
     /* Phase 5: Build deduplicated queue create infos. */
 
@@ -350,7 +361,7 @@ vk_device_create( void )
     if ( !vk_upload_init() )
         goto fail_after_descriptor;
 
-    LOG_INFO( "vkCreateDevice: OK" );
+    LOG_INFO( "vk_device_create: OK" );
     return true;
 
 fail_after_descriptor:  vk_descriptor_shutdown();

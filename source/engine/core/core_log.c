@@ -60,7 +60,12 @@ log_console_sink( const log_entry_t* entry, void* userdata )
         return;
     }
     FILE* stream = ( entry->level >= LOG_LEVEL_WARN ) ? stderr : stdout;
-    fprintf( stream, "%s[%s] %s\n", s_prefixes[ entry->level ], entry->channel, entry->msg ); 
+    if ( entry->channel == NULL ) /* overflow continuation: no prefix */
+    {
+        fprintf( stream, "%s\n", entry->msg );
+        return;
+    }
+    fprintf( stream, "%s[%s] %s\n", s_prefixes[ entry->level ], entry->channel, entry->msg );
 }
 
 /*==============================================================================================
@@ -133,20 +138,39 @@ log_write( log_level_t level, const char* channel, const char* fmt, ... )
     if ( filter < g_min_level )
         return;
 
-    u32 seq            = g_ring_seq++;
-    log_entry_t* entry = &g_ring[ seq & ( LOG_RING_CAPACITY - 1 ) ];
+    /* Format into a large scratch buffer; emit in msg[]-sized chunks if it overflows. */
 
-    entry->seq     = seq;
-    entry->level   = level;
-    entry->channel = channel ? channel : "?";
+    char full[ 4096 ];
 
-    va_list ap;
+    va_list ap; 
     va_start( ap, fmt );
-    vsnprintf( entry->msg, sizeof( entry->msg ), fmt, ap );
+    int full_len = vsnprintf( full, sizeof( full ), fmt, ap );
     va_end( ap );
 
-    for ( int i = 0; i < g_sink_count; i++ )
-        g_sinks[ i ].fn( entry, g_sinks[ i ].userdata );
+    if ( full_len < 0 )     full_len = 0;
+    if ( full_len >= 4096 ) full_len = 4096 - 1;
+ 
+    const int chunk_max = (int)sizeof( g_ring[ 0 ].msg ) - 1;
+    int offset = 0;
+    do
+    {
+        u32 seq            = g_ring_seq++;
+        log_entry_t* entry = &g_ring[ seq & ( LOG_RING_CAPACITY - 1 ) ];
+
+        entry->seq     = seq;
+        entry->level   = level;
+        entry->channel = ( offset == 0 ) ? ( channel ? channel : "?" ) : NULL;
+
+        int  to_copy = full_len - offset;
+        if ( to_copy > chunk_max ) to_copy = chunk_max;
+        memcpy( entry->msg, full + offset, (size_t)to_copy );
+        entry->msg[ to_copy ] = '\0';
+        offset += to_copy;
+
+        for ( int i = 0; i < g_sink_count; i++ )
+            g_sinks[ i ].fn( entry, g_sinks[ i ].userdata );
+    }
+    while ( offset < full_len );
 
     if ( level == LOG_LEVEL_FATAL )
     {

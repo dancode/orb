@@ -264,7 +264,7 @@ vk_debug_messenger_create( void )
          LOG_ERROR( "vkCreateDebugUtilsMessengerEXT: %s", string_VkResult( r ) );
          return false;
     }
-    LOG_INFO( "vkCreateDebugUtilsMessengerEXT: OK" );
+    LOG_INFO( "vk_debug_messenger_create: OK" );
 
 #endif
 

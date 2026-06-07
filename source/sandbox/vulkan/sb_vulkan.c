@@ -65,7 +65,7 @@ main( int argc, char** argv )
     /* Setup Window + RHI */
 
     /* Open window. */
-    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT | APP_WIN_MINIMIZE );
+    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID ) {
          mod_system_exit();
          return 1;
@@ -80,7 +80,7 @@ main( int argc, char** argv )
 
     /* Per-window render context. */
     void* hwnd = app()->window_handle( win );
-    i32  ctx  = rhi()->context_create( win, hwnd, 1280, 720 );
+    i32   ctx  = rhi()->context_create( win, hwnd, 1280, 720 );
     if ( ctx == RHI_CTX_INVALID ) {
          rhi()->shutdown();
          app()->window_close( win );

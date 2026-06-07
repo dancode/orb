@@ -192,6 +192,9 @@ typedef struct vk_state_s
     u32                     version;                    // full packed VkApiVersion (use VK_VERSION_* macros)
     bool                    initialized;                // global init complete (instance + device)
 
+    bool                    use_vsync;                  // use vsync present mode (else mailbox or immediate)
+    bool                    use_vrr_if_available;       // use vrr if available. 
+    bool                    has_vrr;                    // system supports variable refresh rate (GSync / FreeSync)
     bool                    use_pipeline_cache;         // load/save pipeline cache to disk (vk_pipeline_cache.c)
     bool                    use_vk_alloc_cb;            // use Vulkan allocation callbacks.
     bool                    use_vk_ext_debug_utils;     // use debug messenger (in DEBUG only)
@@ -213,6 +216,7 @@ typedef struct vk_state_s
     VkSampleCountFlagBits   max_msaa_samples;           // max combined color + depth sample count.
     u32                     min_ubo_align;              // minUniformBufferOffsetAlignment, bytes.
     bool                    has_push_descriptor;        // VK_KHR_push_descriptor was enabled.
+    bool                    has_fifo_latest_ready;      // VK_KHR_present_mode_fifo_latest_ready was enabled.
 
     /* Queue families; may be the same index on some hardware */
 
@@ -270,7 +274,9 @@ typedef struct vk_state_s
 
 static vk_state_t vk =
 {
-    .use_pipeline_cache         = false,
+    .use_vsync                  = false,
+    .use_vrr_if_available       = true,
+    .use_pipeline_cache         = true,
     .use_vk_alloc_cb            = true,
     .use_vk_ext_debug_utils     = true,
     .use_vk_layer_validation    = true,
