@@ -1,35 +1,45 @@
 /*==============================================================================================
 
-    vulkan/vk_state.c -- Vulkan state: opaque command list type, per-context state, and
-    the global vk singleton.
+    vulkan/vk_state.c -- The engine's memory of all live Vulkan objects.
 
-    Included FIRST by rhi.c so every other vk_*.c file sees the complete type definitions.
+    Think of this as the engine's address book.  Every texture, buffer, pipeline, window
+    swapchain, and sync primitive the engine creates has a slot here.  Nothing in this file
+    does GPU work directly -- it defines the shapes of the buckets and holds the one global
+    "vk" singleton that every other RHI file reads and writes.
 
-    Initialization is three-phase:
+    Included FIRST by rhi.c so every vk_*.c file sees the complete type definitions.
 
-        rhi_mod_init           : loads vulkan-1.dll (vk_lib_init)
-        rhi()->init()          : VkInstance + VkDevice + global resources (no window)
-        rhi()->context_create  : per-window surface, swapchain, depth buffer, sync, commands
+    Three-phase initialization:
+
+        rhi_mod_init          : load vulkan-1.dll; bootstrap Vulkan function pointers.
+        rhi()->init()         : create VkInstance + VkDevice (no window required yet).
+        rhi()->context_create : per-window surface, swapchain, depth buffer, sync objects,
+                                and command buffers.
 
 ==============================================================================================*/
 // clang-format off
 
 /*==============================================================================================
-    rhi_cmd_t  (opaque pointer to one of vk_context_t::cmd_lists[])
+    rhi_cmd_t  --  a recording handle for one frame's GPU work.
 
-    One struct lives inside each context's per-frame slot, no heap allocation needed.
-    rhi_cmd_t is a direct pointer to the live slot; NULL = invalid.
+    Think of it like a notepad.  frame_begin hands the caller a fresh page; draw calls and
+    barriers are written onto it during the frame; frame_end tears it off and delivers it to
+    the GPU.
+
+    Internally it is a direct pointer into one of vk_context_t::cmd_lists[].  Each context
+    pre-allocates one slot per frame-in-flight (stack storage; no heap allocation).
+    NULL means frame_begin failed; no work should be recorded.
 ==============================================================================================*/
 
 struct rhi_cmd_s
 {
-    VkCommandBuffer  vk_cmd;        // Vulkan handle; callers record into this directly.
-    i32              ctx_id;        // Index of the parent context
-    u32              frame;         // slot index [0..VK_MAX_FRAMES_IN_FLIGHT]
+    VkCommandBuffer  vk_cmd;        // Vulkan handle; callers record draw calls into this directly.
+    i32              ctx_id;        // Index of the parent context in vk.contexts[].
+    u32              frame;         // Frame slot index [0..VK_MAX_FRAMES_IN_FLIGHT).
 };
 
 /*==============================================================================================
-    Resource limits
+    Resource limits  --  fixed upper bounds; slots are allocated from flat arrays.
 ==============================================================================================*/
 
 #define VK_MAX_FRAMES_IN_FLIGHT     2
@@ -46,12 +56,12 @@ struct rhi_cmd_s
 #define VK_MAX_BINDLESS_TEXTURES    2048
 #define VK_MAX_BINDLESS_SAMPLERS    128
 
-/* Per-frame staging capacity (linear bump; reset each frame_begin) */
+/* Per-frame staging capacity (linear bump; reset at each frame_begin) */
 
 #define VK_STAGING_SIZE             ORB_MB( 64 )
 
 /*==============================================================================================
-    Resource slot types
+    Resource slot types  --  one entry per live GPU object; indexed by rhi handle .id field.
 ==============================================================================================*/
 
 typedef struct vk_buffer_slot_s
@@ -82,7 +92,7 @@ typedef struct vk_sampler_slot_s
 
 typedef struct vk_shader_slot_s
 {
-    VkShaderModule      module;  
+    VkShaderModule      module;
     rhi_shader_stage_t  stage;
     char                entry[ 32 ];    // SPIR-V entry point name; stored for pipeline create
 
@@ -90,108 +100,117 @@ typedef struct vk_shader_slot_s
 
 typedef struct vk_pipeline_slot_s
 {
-    VkPipeline          pipeline;       // 
-    bool                is_compute;     // 
+    VkPipeline          pipeline;
+    bool                is_compute;
 
 } vk_pipeline_slot_t;
 
 /*==============================================================================================
-    Staging ring  (one per frame-in-flight; active slot tracked by vk_upload.c)
+    Staging ring  (one slot per frame-in-flight; active slot owned by vk_upload.c)
+
+    Each slot is a 64 MB host-visible buffer the CPU writes into directly via the mapped
+    pointer.  The GPU reads from it via vkCmdCopy.  Slots cycle every VK_MAX_FRAMES_IN_FLIGHT
+    flushes so a slot is not overwritten until the GPU has finished reading from it.
 ==============================================================================================*/
 
 typedef struct vk_staging_s
 {
-    VkBuffer       buffer;              // staging: host-visible, coherent, transfer-source only
-    VkDeviceMemory memory;              // bound to the staging buffer; persistently mapped for CPU writes.
-    void*          mapped;              // persistently mapped host pointer
-    u32            head;                // linear bump allocator offset; reset when the slot is flushed
-    u64            last_submit_value;   // upload_timeline value signaled when this slot was last submitted
+    VkBuffer       buffer;              // host-visible, coherent, transfer-source buffer
+    VkDeviceMemory memory;              // backing memory; persistently mapped for CPU writes
+    void*          mapped;              // CPU-side pointer into the mapped memory
+    u32            head;                // linear bump offset; reset to 0 when the slot is flushed
+    u64            last_submit_value;   // upload_timeline value signaled when this slot was last
+                                        // submitted; checked by vk_staging_alloc before overwriting
 
 } vk_staging_t;
 
 /*==============================================================================================
-    Per-context state  (one per platform window)
+    Per-context state  --  one instance per platform window.
+
+    A "context" owns everything needed to render into one window: the surface, swapchain,
+    depth images, command buffers, and per-frame sync objects.
 ==============================================================================================*/
 
 typedef struct vk_context_s
 {
     /* Identity */
 
-    i32                 id;                     // our vk.contexts[ id ];
-    i32                 win_id;                 // our app.windows[ id ];
+    i32                 id;                     // index into vk.contexts[]
+    i32                 win_id;                 // index into app.windows[]
     void*               native_window;          // HWND on Windows; cast at use sites
 
     /* Dimensions */
 
-    i32                 width;                  // current swapchain dimensions, updated by resize.
-    i32                 height;                 // used for swapchain creation and viewport setup
-    bool                resize_pending;         // swapchain rebuild deferred to next frame_begin */
+    i32                 width;                  // current swapchain width; updated on resize
+    i32                 height;                 // current swapchain height; updated on resize
+    bool                resize_pending;         // swapchain rebuild deferred to next frame_begin
 
     /* Frame tracking */
 
-    u32                 current_frame;          // [0..VK_MAX_FRAMES_IN_FLIGHT); indexes per-frame arrays
-    u32                 image_index;            // swapchain image acquired by vkAcquireNextImageKHR
+    u32                 current_frame;          // [0..VK_MAX_FRAMES_IN_FLIGHT); ring index into per-frame arrays
+    u32                 image_index;            // swapchain image index returned by vkAcquireNextImageKHR
 
     /* Surface and swapchain */
 
-    VkSurfaceKHR        surface;                // created from native_window; used in swapchain and present.
-    VkSurfaceFormatKHR  surface_format;         // selected surface format (color space + pixel format)
-    VkPresentModeKHR    present_mode;           // selected present mode (vsync / mailbox / immediate)
-    VkSwapchainKHR      swapchain;              // created with surface; used in present and image acquisition.
-    
+    VkSurfaceKHR        surface;                // created from native_window; owned for the life of this context
+    VkSurfaceFormatKHR  surface_format;         // selected pixel format and color space
+    VkPresentModeKHR    present_mode;           // vsync / mailbox / immediate
+    VkSwapchainKHR      swapchain;              // pool of presentable images; recreated on resize
+
     VkExtent2D          swapchain_extent;
     VkImage             swapchain_images        [ VK_MAX_SWAPCHAIN_IMAGES ];
     VkImageView         swapchain_image_views   [ VK_MAX_SWAPCHAIN_IMAGES ];
-    u32                 swapchain_image_count;    
+    u32                 swapchain_image_count;
 
     /* Depth attachment: one image per frame-in-flight so consecutive frames do not race
-       on the same image. depth_format is shared (same for all slots). */
+       on the same depth image.  depth_format is shared across all slots. */
 
     VkImage             depth_image             [ VK_MAX_FRAMES_IN_FLIGHT ];
     VkDeviceMemory      depth_memory            [ VK_MAX_FRAMES_IN_FLIGHT ];
     VkImageView         depth_view              [ VK_MAX_FRAMES_IN_FLIGHT ];
     VkFormat            depth_format;
 
-    /* --- Per-frame synchronization --- */
+    /* --- Per-frame synchronization ---
 
-    /*  Swapchain handoff, GPU side. 
-        
-        GPU waits for the display engine to release the swapchain image.
-        Passed to vkAcquireNextImageKHR to signal when the image is free. 
-        At submit, the graphics queue waits on it at the COLOR_ATTACHMENT_OUTPUT 
-        stage, and the GPU won't write color until the display engine is 
-        done reading the image for presentation (backup edge case)
+       Three primitives work together like a relay race to keep the CPU, GPU, and display
+       engine from tripping over each other.
 
-        Signaled by: the WSI/display engine via vkAcquireNextImageKHR
-        Waited by: GPU queue submit at COLOR_ATTACHMENT_OUTPUT */
+       (1) in_flight_fence      The CPU blocks here at frame_begin until the GPU finishes
+                                whatever it was doing with this frame slot last time.
+                                Prevents overwriting a command buffer the GPU still reads.
+
+       (2) image_available_sem  The GPU stalls COLOR_ATTACHMENT_OUTPUT until the display
+                                engine releases the swapchain image.  Usually already
+                                satisfied before the GPU reaches that stage; only stalls in
+                                the rare case where the display is still reading the image.
+
+       (3) render_finished_sem  The GPU signals this when all draw commands complete.
+                                vkQueuePresentKHR waits on it so the display engine will
+                                not scan out the image before the GPU finishes writing it.
+    */
+
+    /* Semaphore the WSI signals when a swapchain image is free for rendering.
+       Signaled by: vkAcquireNextImageKHR (WSI / display engine).
+       Waited by:   vkQueueSubmit2 at frame_end, COLOR_ATTACHMENT_OUTPUT stage. */
 
     VkSemaphore         image_available_sem     [ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    /*  The CPU waits on GPU at the start of frame_begin, the CPU calls
-        vkWaitForFences on this slot's fence. It blocks until the GPU has finished
-        all work submitted in the previous use of this same slot (two frames ago).
-        Only then is it safe to reset and reuse the command buffer, staging memory, 
-        and depth image for this slot.
-
-        Signaled by: vkQueueSubmit2 at vk_frame_end
-        Waited by:   CPU at vk_frame_begin
-        Reset:       vk_frame_begin after valid swapchain image acquired. */
+    /* Fence the GPU signals when it finishes all work in this frame slot.
+       The CPU waits on it at frame_begin before reusing the slot's command buffer,
+       staging memory, and depth image.
+       Signaled by: vkQueueSubmit2 at vk_frame_end.
+       Waited by:   CPU (vkWaitForFences) at vk_frame_begin.
+       Reset:       vk_frame_begin, after a valid swapchain image is acquired. */
 
     VkFence             in_flight_fence         [ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    /*  Sent in vk_frame_end*() GPU vkQueueSubmit2 to tell the display engine that 
-        rendering is finished and the image is ready for presentation.
-                
-        Then waited on by present, so the display engine won't scan out the 
-        image until the GPU signals it's done writing.
-
-        Indexed by the swapchain image slot, not current_frame. This matters 
-        because the swapchain can return any of up to 3 images in any order — 
-        if you indexed by frame slot you could clobber a semaphore that's 
-        still in use for a different image.
-
-        Signaled by: GPU queue submit at frame_end.
-        Waited by: vkQueuePresentKHR (display engine) when we present this image. */
+    /* Semaphore the GPU signals when rendering is complete; vkQueuePresentKHR waits on
+       it before handing the image to the display engine for scan-out.
+       Indexed by swapchain image index, not current_frame: the swapchain may return up to
+       VK_MAX_SWAPCHAIN_IMAGES images in arbitrary order, so indexing by frame slot could
+       clobber a semaphore still in flight for a different image.
+       Signaled by: vkQueueSubmit2 at frame_end.
+       Waited by:   vkQueuePresentKHR (display engine). */
 
     VkSemaphore         render_finished_sem     [ VK_MAX_SWAPCHAIN_IMAGES ];
 
@@ -201,104 +220,115 @@ typedef struct vk_context_s
     VkCommandBuffer     command_buffers         [ VK_MAX_FRAMES_IN_FLIGHT ];
     struct rhi_cmd_s    cmd_lists               [ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    /* Per-slot layout tracker: UNDEFINED on create; promoted to DEPTH_ATTACHMENT_OPTIMAL after
-       each slot's first barrier. Safe because the fence wait guarantees the previous use of
-       this slot is complete before we access it again. */
+    /* Tracks the current Vulkan layout of each slot's depth image.  Starts as UNDEFINED;
+       promoted to DEPTH_ATTACHMENT_OPTIMAL after the first barrier in frame_begin.  Safe
+       to read here because the fence wait guarantees the prior use of this slot is done. */
 
     VkImageLayout       depth_layout            [ VK_MAX_FRAMES_IN_FLIGHT ];
 
 } vk_context_t;
 
 /*==============================================================================================
-    Global singleton  (shared across all contexts)
+    Global singleton  --  shared state visible to all contexts and all vk_*.c files.
 ==============================================================================================*/
 
 typedef struct vk_state_s
-{    
-    VkAllocationCallbacks*              alloc_cb;           // if use_vk_alloc_cb = true     
-    VkDebugUtilsMessengerEXT            debug_messenger;    // if use_vk_ext_debug_utils = true.
+{
+    VkAllocationCallbacks*              alloc_cb;           // custom allocator; NULL in non-debug builds
+    VkDebugUtilsMessengerEXT            debug_messenger;    // validation layer message callback
 
-    /* physical device */
+    /* Physical device */
 
     VkPhysicalDevice                    physical_device;
     VkPhysicalDeviceProperties          physical_device_props;
     VkPhysicalDeviceMemoryProperties    memory_props;
 
-    /* basic flags */
-                                               
-    u32                     version;                    // full packed VkApiVersion (use VK_VERSION_* macros)
-    bool                    initialized;                // global init complete (instance + device)
+    /* Flags and feature toggles */
 
-    bool                    use_vsync;                  // use vsync present mode (else mailbox or immediate)
-    bool                    use_vrr_if_available;       // use vrr if available. 
-    bool                    has_vrr;                    // system supports variable refresh rate (GSync / FreeSync)
-    bool                    use_pipeline_cache;         // load/save pipeline cache to disk (vk_pipeline_cache.c)
-    bool                    use_vk_alloc_cb;            // use Vulkan allocation callbacks.
-    bool                    use_vk_ext_debug_utils;     // use debug messenger (in DEBUG only)
-    bool                    use_vk_layer_validation;    // use vulkan debug layer.
-    bool                    use_vk_layer_monitor;       // use vulkan debug layer.
+    u32                     version;                    // packed VkApiVersion (use VK_VERSION_* macros)
+    bool                    initialized;                // true after instance + device are created
 
-    bool                    ext_win32_surface;          // extension required for win32 window surface support
-    bool                    ext_khr_surface;            // extension required for khr window surface support
-    
-    lib_handle_t            dll;                        // Vulkan loader handle
+    bool                    use_vsync;                  // FIFO present mode (hard vsync)
+    bool                    use_vrr_if_available;       // prefer variable refresh rate if supported
+    bool                    has_vrr;                    // true if GSync / FreeSync was detected
+    bool                    use_pipeline_cache;         // serialize pipeline cache to disk for warm restarts
+    bool                    use_vk_alloc_cb;            // enable Vulkan allocation callbacks
+    bool                    use_vk_ext_debug_utils;     // enable debug messenger (debug builds only)
+    bool                    use_vk_layer_validation;    // enable Vulkan validation layer
+    bool                    use_vk_layer_monitor;       // enable Vulkan monitor layer
+
+    bool                    ext_win32_surface;          // VK_KHR_win32_surface instance extension
+    bool                    ext_khr_surface;            // VK_KHR_surface instance extension
+
+    lib_handle_t            dll;                        // vulkan-1.dll handle
 
     /* Core Vulkan objects */
 
-    VkInstance              instance;                   // Our created instance
-    VkDevice                device;                     // Our created device
+    VkInstance              instance;
+    VkDevice                device;
 
-    /* Device capabilities -- cached for faster query */
+    /* Device capability cache */
 
-    VkSampleCountFlagBits   max_msaa_samples;           // max combined color + depth sample count.
-    u32                     min_ubo_align;              // minUniformBufferOffsetAlignment, bytes.
-    bool                    has_push_descriptor;        // VK_KHR_push_descriptor was enabled.
-    bool                    has_fifo_latest_ready;      // VK_KHR_present_mode_fifo_latest_ready was enabled.
+    VkSampleCountFlagBits   max_msaa_samples;           // highest combined color + depth sample count
+    u32                     min_ubo_align;              // minUniformBufferOffsetAlignment, in bytes
+    bool                    has_push_descriptor;        // VK_KHR_push_descriptor was enabled
+    bool                    has_fifo_latest_ready;      // VK_KHR_present_mode_fifo_latest_ready was enabled
 
-    /* Queue families; may be the same index on some hardware */
+    /* Queue families -- may be the same index on integrated hardware */
 
     u32                     graphics_queue_family;
     u32                     present_queue_family;
-    u32                     transfer_queue_family;      // dedicated if available, else graphics
+    u32                     transfer_queue_family;      // dedicated DMA engine if available; else graphics
     VkQueue                 graphics_queue;
     VkQueue                 present_queue;
     VkQueue                 transfer_queue;
 
-    /* Pipeline cache (loaded from disk at init; serialized at shutdown for warm restarts) */
+    /* Pipeline cache (loaded from disk at init; saved at shutdown for warm restarts) */
 
     VkPipelineCache         pipeline_cache;
 
     /* Global bindless descriptor layout (set 0; shared by all pipelines) */
 
-    VkDescriptorSetLayout   bindless_layout;    // layout set 0: of bindless arrays for tex + samp.
-    VkDescriptorPool        bindless_pool;      // pool set 0: that supports layout.
-    VkDescriptorSet         bindless_set;       // allocated from pool and layout; bound to set 0.
-    VkPipelineLayout        pipeline_layout;    // push constants + bindless set 0.
+    VkDescriptorSetLayout   bindless_layout;    // set 0 layout: arrays of textures and samplers
+    VkDescriptorPool        bindless_pool;      // pool backing the bindless set
+    VkDescriptorSet         bindless_set;       // the one descriptor set bound to all pipelines
+    VkPipelineLayout        pipeline_layout;    // push constants + bindless set 0
 
-    /* Staging upload ring (active slot owned by vk_upload.c via g_upload_active_slot) */
+    /* Staging upload ring (VK_MAX_FRAMES_IN_FLIGHT slots; active slot owned by vk_upload.c) */
 
     vk_staging_t            staging[ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    /* Upload/render sync: timeline semaphore signaled after each DMA batch; render submit waits on it */
+    /* Upload sync: one timeline semaphore connects the transfer queue to the graphics queue.
 
-    /* Graphics queue waits for the transfer queue to finish uploading. A monotonic timeline semaphore
-       incremented with each upload batch flush. At submit, if upload_counter > 0, the graphics queue
-       waits on the current counter value before proceeding through vertex input, index input, 
-       vertex shader, fragment shader, and compute — blocking any stage that could sample or draw 
-       from freshly uploaded data before its done uploading 
-       
-       upload_counter incremenets first on CPU side then upload_timeline is checked to read the same value */
-    
-    VkSemaphore             upload_timeline;    // monotonic timeline semaphore signaled with each vk_upload_flush; waited on by frame_begin.
-    u64                     upload_counter;     // incremented and signaled with each vk_upload_flush; waited on at frame_begin.
+       A timeline semaphore is a 64-bit counter that both the CPU and GPU can observe.
+       Every time vk_upload_flush() submits a DMA batch, upload_counter increments and the
+       transfer queue signals that value when the copy finishes.  frame_end then tells the
+       graphics queue "stall vertex input and shaders until upload_timeline reaches
+       upload_counter" -- so shaders always see fully uploaded data.
+       Frames with no uploads skip the wait entirely (guarded by the upload_counter > 0 check
+       in frame_end).                                                                         */
 
-    u32                     global_epoch;       // advances when every active context has fence-waited
-    u32                     epoch_ack_mask;     // bitmask; context i sets bit i after fence wait; reset on epoch advance
+    VkSemaphore             upload_timeline;    // timeline semaphore; transfer queue signals this after each flush
+    u64                     upload_counter;     // CPU mirror of the last signaled timeline value
 
-    u32                     upload_flush_epoch; // epoch value at the last vk_upload_flush; gates flush to once per display epoch 
-    u32                     acquire_ack_mask;   // bitmask; context i sets bit i after apply_acquires; cleared when all contexts applied
+    /* Display epoch: gates vk_upload_flush() to fire at most once per display frame,
+       regardless of how many contexts call frame_begin in the same frame.
 
-    /* Resource slot pools */
+       Each context sets its bit in epoch_ack_mask after its fence wait.  When every active
+       context has checked in, global_epoch advances and the mask resets.  upload_flush_epoch
+       records when the flush last ran; a context only triggers the flush when
+       upload_flush_epoch < global_epoch, preventing redundant flushes in multi-context setups. */
+
+    u32                     global_epoch;       // advances when all active contexts complete their fence wait
+    u32                     epoch_ack_mask;     // bitmask: context i sets bit i; cleared when all check in
+    u32                     upload_flush_epoch; // global_epoch value at the last vk_upload_flush call
+
+    /* Acquire tracking: ensures every context's command buffer receives the QFOT acquire barriers
+       before the global pending lists are cleared.  Same bitmask pattern as epoch_ack_mask.     */
+
+    u32                     acquire_ack_mask;   // bitmask: context i sets bit i after apply_acquires
+
+    /* Resource slot pools  --  indexed by the .id field of the corresponding rhi handle */
 
     vk_buffer_slot_t        buffers     [ VK_MAX_BUFFERS ];
     vk_texture_slot_t       textures    [ VK_MAX_TEXTURES ];
@@ -309,11 +339,12 @@ typedef struct vk_state_s
     /* Context pool */
 
     vk_context_t            contexts    [ RHI_CTX_MAX ];
-    u32                     ctx_alloc;                      /* bitmask: bit i set = slot i is live */
+    u32                     ctx_alloc;          // bitmask: bit i set = slot i is live
 
 } vk_state_t;
 
-/* default values for the global singleton */
+/* Default values for the global singleton.
+   global_epoch starts at 1 so upload_flush_epoch=0 fires the flush on the very first frame. */
 
 static vk_state_t vk =
 {
