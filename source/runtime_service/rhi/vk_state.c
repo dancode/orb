@@ -121,7 +121,6 @@ typedef struct vk_staging_s
     u32            head;                // linear bump offset; reset to 0 when the slot is flushed
     u64            last_submit_value;   // upload_timeline value signaled when this slot was last
                                         // submitted; checked by vk_staging_alloc before overwriting
-
 } vk_staging_t;
 
 /*==============================================================================================

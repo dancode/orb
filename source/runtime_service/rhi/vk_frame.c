@@ -184,7 +184,10 @@ vk_frame_begin( i32 ctx_id )
        a matching acquire barrier here before any draw commands can sample them.
        The timeline semaphore wait in frame_end provides the cross-queue execution dependency;
        these barriers provide the memory visibility guarantee on the graphics queue side.
-       On integrated GPUs (same queue family for transfer and graphics), this is a no-op. */
+       On integrated GPUs (same queue family for transfer and graphics), this is a no-op. 
+       
+       Only one context needs to call vk_upload_apply_acquires() because the pending acquire 
+       lists are global, but we don't know who is first, late comers are no-ops ops so its ok. */
 
     vk_upload_apply_acquires( cmd_buf, ctx_id );
 

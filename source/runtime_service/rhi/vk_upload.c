@@ -594,8 +594,10 @@ vk_upload_flush( void )
         submit.pSignalSemaphoreInfos     = &signal_si;
 
         VkResult r = vkQueueSubmit2( vk.transfer_queue, 1, &submit, VK_NULL_HANDLE );
-        if ( r != VK_SUCCESS )
-            LOG_ERROR( "upload_flush: vkQueueSubmit2: %s", string_VkResult( r ) );
+        if ( r != VK_SUCCESS ) 
+        {
+             LOG_ERROR( "upload_flush: vkQueueSubmit2: %s", string_VkResult( r ) );
+        }
         else
         {
             /* Record the signaled value on both the CPU counter and the slot so that
@@ -630,6 +632,7 @@ vk_upload_apply_acquires( VkCommandBuffer cmd, i32 ctx_id )
     /* Same-family path: no QFOTs were issued by vk_upload_texture / vk_upload_buffer. */
     if ( vk.transfer_queue_family == vk.graphics_queue_family )
         return;
+
     if ( g_pending_image_count == 0 && g_pending_buffer_count == 0 )
         return;
 
