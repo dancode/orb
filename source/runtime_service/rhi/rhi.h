@@ -275,7 +275,7 @@ typedef enum rhi_vertex_format_e
     RHI_VERTEX_FORMAT_UINT    = 4,
     RHI_VERTEX_FORMAT_UINT2   = 5,
     RHI_VERTEX_FORMAT_UINT4   = 6,
-    RHI_VERTEX_FORMAT_UNORM4  = 7,   /* packed 8-bit RGBA normalized */
+    RHI_VERTEX_FORMAT_UNORM4  = 7,      /* packed 8-bit RGBA normalized */
 
 } rhi_vertex_format_t;
 
@@ -288,7 +288,7 @@ typedef enum rhi_index_type_e
 
 #define RHI_MAX_VERTEX_ATTRIBS   8
 #define RHI_MAX_COLOR_TARGETS    4
-#define RHI_MAX_PUSH_CONST_SIZE  128   /* bytes; guaranteed minimum by the Vulkan spec */
+#define RHI_MAX_PUSH_CONST_SIZE  128    /* bytes; guaranteed minimum by the Vulkan spec */
 
 typedef struct rhi_vertex_attrib_s
 {
@@ -312,33 +312,40 @@ typedef struct rhi_color_target_s
 
 } rhi_color_target_t;
 
+/*==============================================================================================
+    Pipeline Descriptor
+    
+    All state needed to create a graphics pipeline, except shader resource bindings and 
+    dynamic state.  The backend derives the full VkGraphicsPipelineCreateInfo from this.
+==============================================================================================*/
+
 typedef struct rhi_pipeline_desc_s
 {
-    rhi_shader_t  vert;
-    rhi_shader_t  frag;
+    rhi_shader_t        vert;
+    rhi_shader_t        frag;
 
     /* Vertex input */
 
     rhi_vertex_attrib_t attribs[ RHI_MAX_VERTEX_ATTRIBS ];
     u32                 attrib_count;
-    u32                 vertex_stride;       /* single interleaved binding for now */
+    u32                 vertex_stride;          // single interleaved binding for now
 
     /* Rasterizer */
 
     rhi_cull_mode_t     cull;
     bool                depth_test;
     bool                depth_write;
-    rhi_compare_op_t    depth_compare;      /* default: RHI_COMPARE_LESS */
+    rhi_compare_op_t    depth_compare;          // default: RHI_COMPARE_LESS
 
     /* Dynamic rendering attachments (no VkRenderPass) */
 
     rhi_color_target_t  color_targets[ RHI_MAX_COLOR_TARGETS ];
     u32                 color_target_count;
-    rhi_format_t        depth_format;       /* RHI_FORMAT_UNKNOWN = no depth attachment */
+    rhi_format_t        depth_format;           // RHI_FORMAT_UNKNOWN = no depth attachment
 
     /* Push constants (vert + frag share one range) */
 
-    u32                 push_const_size;    /* bytes; 0 = none; max RHI_MAX_PUSH_CONST_SIZE */
+    u32                 push_const_size;        // bytes; 0 = none; max RHI_MAX_PUSH_CONST_SIZE
 
     const char*         debug_name;
 

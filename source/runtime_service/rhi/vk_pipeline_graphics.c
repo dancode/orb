@@ -82,8 +82,8 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     /* --- Vertex input: single interleaved binding at slot 0 --- */
 
     VkVertexInputBindingDescription vtx_binding = { 0 };
-    vtx_binding.binding   = 0;
-    vtx_binding.stride    = desc->vertex_stride;
+    vtx_binding.binding = 0;
+    vtx_binding.stride = desc->vertex_stride;
     vtx_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription vtx_attribs[ RHI_MAX_VERTEX_ATTRIBS ] = { 0 };
@@ -92,81 +92,81 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
         /* Only binding 0 is declared above; attributes referencing other bindings
            would produce an invalid pipeline. Multi-binding support is not implemented. */
         ORB_ASSERT( desc->attribs[ i ].binding == 0 );
-        vtx_attribs[ i ].binding  = 0;
+        vtx_attribs[ i ].binding = 0;
         vtx_attribs[ i ].location = desc->attribs[ i ].location;
-        vtx_attribs[ i ].offset   = desc->attribs[ i ].offset;
-        vtx_attribs[ i ].format   = rhi_vertex_format_to_vk( desc->attribs[ i ].format );
+        vtx_attribs[ i ].offset = desc->attribs[ i ].offset;
+        vtx_attribs[ i ].format = rhi_vertex_format_to_vk( desc->attribs[ i ].format );
     }
 
-    VkPipelineVertexInputStateCreateInfo vtx_input     = { 0 };
-    vtx_input.sType                                    = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vtx_input.vertexBindingDescriptionCount            = desc->vertex_stride > 0 ? 1 : 0;
-    vtx_input.pVertexBindingDescriptions               = &vtx_binding;
-    vtx_input.vertexAttributeDescriptionCount          = desc->attrib_count;
-    vtx_input.pVertexAttributeDescriptions             = vtx_attribs;
+    VkPipelineVertexInputStateCreateInfo vtx_input = { 0 };
+    vtx_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vtx_input.vertexBindingDescriptionCount = desc->vertex_stride > 0 ? 1 : 0;
+    vtx_input.pVertexBindingDescriptions = &vtx_binding;
+    vtx_input.vertexAttributeDescriptionCount = desc->attrib_count;
+    vtx_input.pVertexAttributeDescriptions = vtx_attribs;
 
     /* --- Input assembly --- */
 
     VkPipelineInputAssemblyStateCreateInfo input_asm = { 0 };
-    input_asm.sType                                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_asm.topology                               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    input_asm.primitiveRestartEnable                 = VK_FALSE;
+    input_asm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    input_asm.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    input_asm.primitiveRestartEnable = VK_FALSE;
 
     /* --- Viewport (dynamic; count required even with null ptr) --- */
 
     VkPipelineViewportStateCreateInfo vp_ci = { 0 };
-    vp_ci.sType                             = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    vp_ci.viewportCount                     = 1;
-    vp_ci.scissorCount                      = 1;
+    vp_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    vp_ci.viewportCount = 1;
+    vp_ci.scissorCount = 1;
 
     /* --- Rasterizer --- */
 
     VkPipelineRasterizationStateCreateInfo rast_ci = { 0 };
-    rast_ci.sType                                  = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rast_ci.polygonMode                            = VK_POLYGON_MODE_FILL;
-    rast_ci.cullMode                               = rhi_cull_to_vk( desc->cull );
-    rast_ci.frontFace                              = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rast_ci.lineWidth                              = 1.0f;
+    rast_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rast_ci.polygonMode = VK_POLYGON_MODE_FILL;
+    rast_ci.cullMode = rhi_cull_to_vk( desc->cull );
+    rast_ci.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rast_ci.lineWidth = 1.0f;
 
     /* --- Multisample (no MSAA) --- */
 
     VkPipelineMultisampleStateCreateInfo ms_ci = { 0 };
-    ms_ci.sType                                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    ms_ci.rasterizationSamples                 = VK_SAMPLE_COUNT_1_BIT;
-    ms_ci.minSampleShading                     = 1.0f;
+    ms_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms_ci.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    ms_ci.minSampleShading = 1.0f;
 
     /* --- Depth / stencil --- */
 
     VkPipelineDepthStencilStateCreateInfo depth_ci = { 0 };
-    depth_ci.sType                                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth_ci.depthTestEnable                       = desc->depth_test  ? VK_TRUE : VK_FALSE;
-    depth_ci.depthWriteEnable                      = desc->depth_write ? VK_TRUE : VK_FALSE;
-    depth_ci.depthCompareOp                        = rhi_compare_to_vk( desc->depth_compare );
-    depth_ci.depthBoundsTestEnable                 = VK_FALSE;
-    depth_ci.stencilTestEnable                     = VK_FALSE;
+    depth_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_ci.depthTestEnable  = desc->depth_test  ? VK_TRUE : VK_FALSE;
+    depth_ci.depthWriteEnable = desc->depth_write ? VK_TRUE : VK_FALSE;
+    depth_ci.depthCompareOp = rhi_compare_to_vk( desc->depth_compare );
+    depth_ci.depthBoundsTestEnable = VK_FALSE;
+    depth_ci.stencilTestEnable = VK_FALSE;
 
     /* --- Color blend attachments --- */
 
     VkPipelineColorBlendAttachmentState blend_atts[ RHI_MAX_COLOR_TARGETS ] = { 0 };
     for ( u32 i = 0; i < desc->color_target_count; ++i )
     {
-        const rhi_color_target_t* ct    = &desc->color_targets[ i ];
-        blend_atts[ i ].blendEnable     = ct->blend_enable ? VK_TRUE : VK_FALSE;
+        const rhi_color_target_t* ct        = &desc->color_targets[ i ];
+        blend_atts[ i ].blendEnable         = ct->blend_enable ? VK_TRUE : VK_FALSE;
         blend_atts[ i ].srcColorBlendFactor = rhi_blend_factor_to_vk( ct->src_color );
         blend_atts[ i ].dstColorBlendFactor = rhi_blend_factor_to_vk( ct->dst_color );
-        blend_atts[ i ].colorBlendOp    = rhi_blend_op_to_vk( ct->color_op );
+        blend_atts[ i ].colorBlendOp        = rhi_blend_op_to_vk( ct->color_op );
         blend_atts[ i ].srcAlphaBlendFactor = rhi_blend_factor_to_vk( ct->src_alpha );
         blend_atts[ i ].dstAlphaBlendFactor = rhi_blend_factor_to_vk( ct->dst_alpha );
-        blend_atts[ i ].alphaBlendOp    = rhi_blend_op_to_vk( ct->alpha_op );
-        blend_atts[ i ].colorWriteMask  = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-                                        | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        blend_atts[ i ].alphaBlendOp        = rhi_blend_op_to_vk( ct->alpha_op );
+        blend_atts[ i ].colorWriteMask      = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+                                            | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     }
 
     VkPipelineColorBlendStateCreateInfo blend_ci = { 0 };
-    blend_ci.sType                               = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    blend_ci.logicOpEnable                       = VK_FALSE;
-    blend_ci.attachmentCount                     = desc->color_target_count;
-    blend_ci.pAttachments                        = blend_atts;
+    blend_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend_ci.logicOpEnable = VK_FALSE;
+    blend_ci.attachmentCount = desc->color_target_count;
+    blend_ci.pAttachments = blend_atts;
 
     /* --- Dynamic state --- */
 
@@ -176,9 +176,9 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     };
 
     VkPipelineDynamicStateCreateInfo dyn_ci = { 0 };
-    dyn_ci.sType                            = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dyn_ci.dynamicStateCount                = 2;
-    dyn_ci.pDynamicStates                   = dyn_states;
+    dyn_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dyn_ci.dynamicStateCount = 2;
+    dyn_ci.pDynamicStates = dyn_states;
 
     /* --- Dynamic rendering attachment info (replaces VkRenderPass) --- */
 
@@ -187,29 +187,29 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
         color_fmts[ i ] = rhi_format_to_vk( desc->color_targets[ i ].format );
 
     VkPipelineRenderingCreateInfo rendering_ci    = { 0 };
-    rendering_ci.sType                            = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    rendering_ci.colorAttachmentCount             = desc->color_target_count;
-    rendering_ci.pColorAttachmentFormats          = color_fmts;
-    rendering_ci.depthAttachmentFormat            = ( desc->depth_format != RHI_FORMAT_UNKNOWN )
-                                                  ? rhi_format_to_vk( desc->depth_format )
-                                                  : VK_FORMAT_UNDEFINED;
+    rendering_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering_ci.colorAttachmentCount = desc->color_target_count;
+    rendering_ci.pColorAttachmentFormats = color_fmts;
+    rendering_ci.depthAttachmentFormat = ( desc->depth_format != RHI_FORMAT_UNKNOWN )
+                                           ? rhi_format_to_vk( desc->depth_format )
+                                           : VK_FORMAT_UNDEFINED;
 
     /* --- Graphics pipeline --- */
 
     VkGraphicsPipelineCreateInfo ci = { 0 };
-    ci.sType                        = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    ci.pNext                        = &rendering_ci;
-    ci.stageCount                   = 2;
-    ci.pStages                      = stages;
-    ci.pVertexInputState            = &vtx_input;
-    ci.pInputAssemblyState          = &input_asm;
-    ci.pViewportState               = &vp_ci;
-    ci.pRasterizationState          = &rast_ci;
-    ci.pMultisampleState            = &ms_ci;
-    ci.pDepthStencilState           = &depth_ci;
-    ci.pColorBlendState             = &blend_ci;
-    ci.pDynamicState                = &dyn_ci;
-    ci.layout                       = vk.pipeline_layout;
+    ci.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    ci.pNext               = &rendering_ci;
+    ci.stageCount          = 2;
+    ci.pStages             = stages;
+    ci.pVertexInputState   = &vtx_input;
+    ci.pInputAssemblyState = &input_asm;
+    ci.pViewportState      = &vp_ci;
+    ci.pRasterizationState = &rast_ci;
+    ci.pMultisampleState   = &ms_ci;
+    ci.pDepthStencilState  = &depth_ci;
+    ci.pColorBlendState    = &blend_ci;
+    ci.pDynamicState       = &dyn_ci;
+    ci.layout              = vk.pipeline_layout;
 
     VkResult r = vkCreateGraphicsPipelines( vk.device, vk.pipeline_cache, 1, &ci,
                                             vk.alloc_cb, &slot->pipeline );
