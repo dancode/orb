@@ -20,6 +20,7 @@ MOD_USE_RHI
 #include "draw_batch.c"
 #include "draw_material.c"
 #include "draw_cmd.c"
+#include "draw_helper.c"
 #include "draw_api.c"
 
 /*============================================================================================*/

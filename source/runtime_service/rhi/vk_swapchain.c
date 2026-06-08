@@ -422,7 +422,7 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
         }
     }
 
-    LOG_INFO( "vk_swapchain_create: OK (ctx %d, %ux%u, %u images,fmt=%s, mode=%s)",
+    LOG_INFO( "vk_swapchain_create: OK (ctx %d, %ux%u, %u \n\t\timages,fmt=%s, mode=%s)",
               ctx->id, extent.width, extent.height, ctx->swapchain_image_count,
               string_VkFormat( ctx->surface_format.format ), 
               string_VkPresentModeKHR( ctx->present_mode ) );
@@ -463,6 +463,8 @@ vk_swapchain_recreate( vk_context_t* ctx )
     /* Query surface caps before touching anything.  On a minimized window the driver
        reports currentExtent {0,0}; skip recreation and let the caller retry next frame
        with the old swapchain still live. */
+
+    LOG_LINE();
 
     VkSurfaceCapabilitiesKHR caps = { 0 };
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR( vk.physical_device, ctx->surface, &caps );

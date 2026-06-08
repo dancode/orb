@@ -18,13 +18,16 @@
 
 const draw_api_t g_draw_api_struct =
 {
-    .init     = draw_init,
-    .shutdown = draw_shutdown,
-    .begin    = draw_begin,
-    .end      = draw_end,
-    .rect     = draw_rect,
-    .box      = draw_box,
-    .circle   = draw_circle,
+    .init       = draw_init,
+    .shutdown   = draw_shutdown,
+    .begin      = draw_begin,
+    .end        = draw_end,
+    .rect       = draw_rect,
+    .box        = draw_box,
+    .circle     = draw_circle,
+    .ortho_2d   = draw_ortho_2d,
+    .begin_pass = draw_begin_pass,
+    .end_pass   = draw_end_pass,
 };
 
 /*==============================================================================================

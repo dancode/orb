@@ -9,6 +9,7 @@
 
     Function groups (all called through the draw() vtable):
         Frame     : begin / end
+        Helpers   : ortho_2d / begin_pass / end_pass
         Primitives: rect / box / circle
 
 ==============================================================================================*/
@@ -41,6 +42,17 @@ typedef struct draw_api_s
     void ( *rect   )( f32 cx, f32 cy,          f32 w, f32 h,        const f32 rgba[ 4 ] );
     void ( *box    )( f32 cx, f32 cy, f32 cz,  f32 w, f32 h, f32 d, const f32 rgba[ 4 ] );
     void ( *circle )( f32 cx, f32 cy,          f32 r, u32 segs,      const f32 rgba[ 4 ] );
+
+    /* Pixel-space orthographic matrix.  Fills out[16] (column-major) to map pixel
+       coordinates (0,0 = top-left, w x h = bottom-right) to Vulkan NDC. */
+    void ( *ortho_2d   )( f32 out[ 16 ], f32 w, f32 h );
+
+    /* Full-frame 2D pass helpers.  begin_pass combines: cmd_bind_bindless,
+       cmd_begin_rendering (CLEAR to clear_rgba), cmd_set_viewport, cmd_set_scissor,
+       and begin() with a pixel-space ortho matrix.
+       end_pass calls end() then cmd_end_rendering.  Must be matched. */
+    void ( *begin_pass )( rhi_cmd_t cmd, i32 win_w, i32 win_h, const f32 clear_rgba[ 4 ] );
+    void ( *end_pass   )( void );
 
 } draw_api_t;
 
