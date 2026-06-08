@@ -14,7 +14,11 @@
 // clang-format off
 
 /*==============================================================================================
-    Render pass open / close
+    Render pass open 
+
+    In simple terms, this function tells the GPU: "I am about to start drawing. 
+    Here are the canvases (textures) I want to paint on, and here is how to prepare them."
+
 ==============================================================================================*/
 
 static void
@@ -82,8 +86,18 @@ vk_cmd_begin_rendering( rhi_cmd_t cmd,
     ri.pColorAttachments             = cc > 0 ? color_infos : NULL;
     ri.pDepthAttachment              = depth_att ? &depth_info : NULL;
 
+    /* This is where the magic happens: we tell Vulkan to start a dynamic render pass
+       with our specified attachments. After this call, the GPU is ready to accept draw 
+       commands that will render into these targets. */
+
     vkCmdBeginRendering( cmd->vk_cmd, &ri );
 }
+
+/*==============================================================================================
+    Render pass close
+
+    It tells the GPU: "I'm done drawing for this pass."
+==============================================================================================*/
 
 static void
 vk_cmd_end_rendering( rhi_cmd_t cmd )
@@ -96,6 +110,7 @@ vk_cmd_end_rendering( rhi_cmd_t cmd )
 
 /*==============================================================================================
     Viewport and scissor state
+
 ==============================================================================================*/
 
 static void
@@ -108,7 +123,7 @@ vk_cmd_set_viewport( rhi_cmd_t cmd, const rhi_viewport_t* vp )
     vkvp.x        = vp->x;
     vkvp.y        = vp->y;
     vkvp.width    = vp->width;
-    vkvp.height   = vp->height;
+    vkvp.height   = vp->height;         
     vkvp.minDepth = vp->min_depth;
     vkvp.maxDepth = vp->max_depth;
     vkCmdSetViewport( cmd->vk_cmd, 0, 1, &vkvp );
@@ -132,6 +147,10 @@ vk_cmd_set_scissor( rhi_cmd_t cmd, const rhi_rect_t* rect )
     Shared pipeline / descriptor binding  (serves both graphics and compute bind points)
 ==============================================================================================*/
 
+/*  This is a high-performance ORB feature. Instead of binding textures one by one, 
+    it binds a single massive "table" of all textures/buffers in the game. 
+    Shaders then just "look up" what they need by an ID. */
+
 static void
 vk_cmd_bind_bindless( rhi_cmd_t cmd )
 {
@@ -150,17 +169,24 @@ vk_cmd_bind_bindless( rhi_cmd_t cmd )
                              vk.pipeline_layout, 0, 1, &vk.bindless_set, 0, NULL );
 }
 
+/*  This is the "brain." It binds the Shaders (code) and State (how to blend colors, 
+    depth testing, etc.) that the GPU should use for subsequent draw calls. */
+
 static void
 vk_cmd_bind_pipeline( rhi_cmd_t cmd, rhi_pipeline_t pipeline )
-{
+{    
     if ( !cmd || !vk_pipeline_validate( pipeline ) )
         return;
 
     vk_pipeline_slot_t* slot = &vk.pipelines[ pipeline.id ];
     VkPipelineBindPoint bp   = slot->is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE
                                                 : VK_PIPELINE_BIND_POINT_GRAPHICS;
+
     vkCmdBindPipeline( cmd->vk_cmd, bp, slot->pipeline );
 }
+
+/* The fastest way to send tiny bits of data (like a model's position or a color) 
+   directly to the shader without creating a separate buffer. */
 
 static void
 vk_cmd_push_constants( rhi_cmd_t cmd, const void* data, u32 size, u32 offset )
@@ -175,6 +201,9 @@ vk_cmd_push_constants( rhi_cmd_t cmd, const void* data, u32 size, u32 offset )
 
 /*==============================================================================================
     Vertex / index buffer binding
+
+    These tell the GPU where the actual 3D geometry 
+    (points and triangles) is stored in memory.
 ==============================================================================================*/
 
 static void
@@ -190,7 +219,7 @@ vk_cmd_bind_vertex_buffer( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset )
 
 static void
 vk_cmd_bind_index_buffer( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset,
-                           rhi_index_type_t type )
+                          rhi_index_type_t type )
 {
     if ( !cmd || !vk_buffer_validate( buf ) )
         return;
@@ -204,6 +233,8 @@ vk_cmd_bind_index_buffer( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset,
     Draw calls
 ==============================================================================================*/
 
+/* Draws a simple list of vertices. */
+
 static void
 vk_cmd_draw( rhi_cmd_t cmd, const rhi_draw_args_t* args )
 {
@@ -213,6 +244,9 @@ vk_cmd_draw( rhi_cmd_t cmd, const rhi_draw_args_t* args )
     vkCmdDraw( cmd->vk_cmd, args->vertex_count, args->instance_count,
                args->first_vertex, args->first_instance );
 }
+
+/* The standard way to draw 3D models. It uses an "Index Buffer" to reuse vertices 
+   (e.g., two triangles sharing a side only need 4 vertices instead of 6). */
 
 static void
 vk_cmd_draw_indexed( rhi_cmd_t cmd, const rhi_draw_indexed_args_t* args )
@@ -224,12 +258,18 @@ vk_cmd_draw_indexed( rhi_cmd_t cmd, const rhi_draw_indexed_args_t* args )
                       args->first_index, args->vertex_offset, args->first_instance );
 }
 
+/*  These are advanced "GPU-driven" commands. Instead of the CPU saying "Draw 100 triangles,"
+    the CPU says "Look at this piece of GPU memory; it will tell you how many triangles 
+    to draw." This is used for complex systems like massive grass or particle effects. */
+
 static void
 vk_cmd_draw_indirect( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset, u32 draw_count, u32 stride )
 {
     if ( !cmd || !vk_buffer_validate( buf ) ) return;
     vkCmdDrawIndirect( cmd->vk_cmd, vk.buffers[ buf.id ].buffer, offset, draw_count, stride );
 }
+
+/* An indexed version of draw indirect */
 
 static void
 vk_cmd_draw_indexed_indirect( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset, u32 draw_count, u32 stride )

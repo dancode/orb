@@ -91,6 +91,8 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup Resources */
 
+    const bool b_use_boot = false;  // skip bootstrap triangle pipeline
+
     /* Initialize draw GPU resources (buffers + pipelines) now that the device is live. */
     if ( !draw()->init() )
     {
@@ -103,14 +105,17 @@ main( int argc, char** argv )
     }
 
     sb_vk_boot_t boot = { 0 };
-    if ( !sb_vk_boot_create( &boot ) )
+    if ( b_use_boot )
     {
-        draw()->shutdown();
-        rhi()->context_destroy( ctx );
-        rhi()->shutdown();
-        app()->window_close( win );
-        mod_system_exit();
-        return 1;
+        if ( !sb_vk_boot_create( &boot ) )
+        {
+            draw()->shutdown();
+            rhi()->context_destroy( ctx );
+            rhi()->shutdown();
+            app()->window_close( win );
+            mod_system_exit();
+            return 1;
+        }
     }
 
     /* ------------------------------------------------------------------------------ */
@@ -149,7 +154,14 @@ main( int argc, char** argv )
             rhi_cmd_t cmd = rhi()->frame_begin( ctx );
             if ( rhi_cmd_valid( cmd ) )
             {
-                sb_vk_boot_render( &boot, cmd, win_w, win_h );
+                if ( b_use_boot )
+                {
+                    sb_vk_boot_render( &boot, cmd, win_w, win_h );
+                }
+
+                // do other drawing methods...
+
+
                 rhi()->frame_end( ctx );
             }
         }
@@ -165,8 +177,12 @@ main( int argc, char** argv )
 
     rhi()->context_destroy( ctx );      // finish rendering and free swapchain + sync objects (first)
 
+    if ( b_use_boot )
+    {
         sb_vk_boot_destroy( &boot );    // destroy boot resources
-        draw()->shutdown();             // destroy draw resources
+    }
+
+    draw()->shutdown();                 // destroy draw resources
 
     rhi()->shutdown();                  // destroy device and instance (last)
     app()->window_close( win );
