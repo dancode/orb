@@ -114,7 +114,7 @@ target imgui
     root        source/runtime_service/imgui
     folder      03_RUNTIME/SERVICE
     unit        imgui.c
-	dep 		app
+	dep 		rhi app
 	
 # ==============================================================================
 # 03_RUNTIME_MODULES
