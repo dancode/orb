@@ -145,6 +145,7 @@ main( int argc, char** argv )
 
         if ( !app()->window_is_minimized( win ))
         {
+            /* valid command recording handle on success */
             rhi_cmd_t cmd = rhi()->frame_begin( ctx );
             if ( rhi_cmd_valid( cmd ) )
             {

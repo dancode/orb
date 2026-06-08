@@ -192,6 +192,34 @@ static const u32 s_frag_spirv[] =
 
 /*==============================================================================================
     sb_vk_boot_create
+
+    TEACHING: How to create GPU resources through the RHI.
+
+    All GPU resources (shaders, pipelines, buffers, textures) are referenced through typed
+    opaque handles -- rhi_shader_t, rhi_pipeline_t, etc.  Each is a struct wrapping a i32
+    slot index.  Zero-initializing the struct always gives a safe null state.  Never compare
+    .id directly; use rhi_handle_valid() for validity checks.
+
+    Resource creation follows a descriptor pattern:
+        1. Fill a stack-allocated desc struct with all parameters.
+        2. Pass a pointer to the relevant rhi()->resource_create() function.
+        3. The RHI copies everything it needs; the desc can be discarded after the call.
+        4. Check rhi_handle_valid() on the returned handle.  An invalid handle (id == 0)
+           means creation failed; the RHI will have logged details internally.
+    
+    Shaders are created from raw SPIR-V bytecode.  The RHI wraps the bytecode in a
+    VkShaderModule but does not otherwise interpret it.  Shader objects are inputs to
+    pipeline_create() and can be destroyed immediately after the pipeline is built --
+    the pipeline keeps its own compiled reference.
+
+    Pipelines encode all fixed-function state the GPU needs for a draw call.  Unlike raw
+    Vulkan there are no separate VkRenderPass objects; the RHI uses dynamic rendering
+    (VK_KHR_dynamic_rendering), so format compatibility is declared in the pipeline desc
+    via color_targets[] and depth_format instead.  The formats here must match the actual
+    attachments used when cmd_begin_rendering() is called at draw time.
+
+    attrib_count = 0 because this pipeline reads no vertex buffers -- all three triangle
+    positions are hard-coded in the vertex shader via gl_VertexIndex.
 ==============================================================================================*/
 
 bool
@@ -199,12 +227,14 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
 {
     *boot = ( sb_vk_boot_t ){ 0 };
 
+    /* Each shader stage is a separate object.  Both must succeed before the pipeline
+       can be created.  On failure we clean up whichever stages already succeeded. */
     boot->vert = rhi()->shader_create( &( rhi_shader_desc_t ) {
         .spirv      = s_vert_spirv,
         .spirv_size = sizeof( s_vert_spirv ),
         .stage      = RHI_SHADER_STAGE_VERTEX,
         .entry      = "main",
-        .debug_name = "tri_vert",
+        .debug_name = "tri_vert",     /* visible in Vulkan validation layers and GPU profilers */
     } );
     if ( !rhi_handle_valid( boot->vert ) )
     {
@@ -219,26 +249,27 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
         .entry      = "main",
         .debug_name = "tri_frag",
     } );
-    if ( !rhi_handle_valid( boot->frag ) ) 
+    if ( !rhi_handle_valid( boot->frag ) )
     {
         fprintf( stderr, "[sb_vk_boot] shader_create(frag) failed\n" );
-        rhi()->shader_destroy( boot->vert );
+        rhi()->shader_destroy( boot->vert );     /* vert succeeded; must be cleaned up */
         boot->vert = ( rhi_shader_t ){ 0 };
         return false;
     }
 
-    /* Color format matches swapchain preference (BGRA8_SRGB on most Windows GPUs).
-       No vertex buffers; positions come from gl_VertexIndex in the vertex shader.
-       No depth attachment; this is a 2D overlay draw. */
+    /* color_targets tells the pipeline what format(s) it will write into.  With dynamic
+       rendering this is a compatibility contract, not a render pass object; Vulkan validates
+       it at draw time against whatever attachment was passed to cmd_begin_rendering().
+       BGRA8_SRGB matches the swapchain format selected on most Windows GPUs. */
     rhi_color_target_t color_target = { .format = RHI_FORMAT_BGRA8_SRGB };
 
     boot->pipeline          = rhi()->pipeline_create( &( rhi_pipeline_desc_t ){
         .vert               = boot->vert,
         .frag               = boot->frag,
-        .attrib_count       = 0,
+        .attrib_count       = 0,           /* no vertex buffer inputs; shader uses gl_VertexIndex */
         .vertex_stride      = 0,
         .cull               = RHI_CULL_NONE,
-        .depth_test         = false,
+        .depth_test         = false,       /* no depth attachment; 2D overlay draw */
         .depth_write        = false,
         .color_targets      = { color_target },
         .color_target_count = 1,
@@ -249,8 +280,8 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
     if ( !rhi_handle_valid( boot->pipeline ) )
     {
         fprintf( stderr, "[sb_vk_boot] pipeline_create failed\n" );
-        rhi()->shader_destroy( boot->frag );
-        rhi()->shader_destroy( boot->vert );
+        rhi()->shader_destroy( boot->frag );    /* pipeline_create does not own the shaders; */
+        rhi()->shader_destroy( boot->vert );    /* we must destroy them on failure ourselves. */
         boot->frag = ( rhi_shader_t ){ 0 };
         boot->vert = ( rhi_shader_t ){ 0 };
         return false;
@@ -261,23 +292,60 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
 
 /*==============================================================================================
     sb_vk_boot_render
+
+    TEACHING: The per-frame render sequence using the RHI command API.
+
+    'cmd' is an opaque pointer into the current frame's command list.  It is obtained from
+    rhi()->frame_begin() in the main loop and is only valid until rhi()->frame_end() is
+    called.  Never cache it across frames.
+
+    The minimal recording sequence for a draw call is:
+
+        cmd_bind_bindless()         -- establish the global descriptor set (once per frame)
+        cmd_begin_rendering()       -- open a dynamic render pass with attachment descs
+        cmd_set_viewport()          -- required every frame; viewport is always dynamic state
+        cmd_set_scissor()           -- required every frame; scissor is always dynamic state
+        cmd_bind_pipeline()         -- select the PSO (shaders + fixed-function state)
+        cmd_draw()                  -- emit the draw call
+        cmd_end_rendering()         -- close the dynamic render pass
+
+    Dynamic rendering (Vulkan 1.3 / VK_KHR_dynamic_rendering) means there are no VkRenderPass
+    or VkFramebuffer objects.  Instead, cmd_begin_rendering() takes a list of attachment descs
+    directly.  Each attachment specifies the texture to write into, what to do at load (clear
+    vs. load the existing contents), and what to do at store (keep vs. discard).
+
+    RHI_SWAPCHAIN_COLOR is a reserved magic handle ID.  Inside cmd_begin_rendering() the RHI
+    resolves it to the actual swapchain image for the current frame.  This avoids exposing
+    the swapchain image array to callers; the context knows which image index is active.
+
+    Viewport and scissor are always dynamic in this RHI (VK_DYNAMIC_STATE_VIEWPORT and
+    VK_DYNAMIC_STATE_SCISSOR are baked into every pipeline).  They must be recorded every
+    frame even if the window size has not changed.
 ==============================================================================================*/
 
 void
 sb_vk_boot_render( sb_vk_boot_t* boot, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
-    /* Bind global bindless set before any draws. */
+    /* Bind the global bindless descriptor set once at the top of the frame.  All GPU-resident
+       buffers and textures are accessible to shaders via integer indices after this call.
+       It does not need to be repeated after pipeline binds or draws: vkCmdBindDescriptorSets
+       state survives vkCmdBindPipeline as long as the pipeline layout is compatible, and every
+       pipeline in this RHI is compiled against the same global layout. */
     rhi()->cmd_bind_bindless( cmd );
 
-    /* Begin render pass -- clear to dark green, no depth attachment. */
+    /* Open a dynamic render pass.  load_op CLEAR replaces any previous swapchain contents
+       at the start of the pass -- no separate vkCmdClearColorImage call needed.
+       store_op STORE preserves the result in the swapchain image for presentation. */
     rhi_color_attachment_t color_att = {
-        .texture  = { .id = RHI_SWAPCHAIN_COLOR },
-        .load_op  = RHI_LOAD_OP_CLEAR,
+        .texture  = { .id = RHI_SWAPCHAIN_COLOR },  /* magic ID: resolves to current frame image */
+        .load_op  = RHI_LOAD_OP_CLEAR, // RHI_LOAD_OP_DISCARD
         .store_op = RHI_STORE_OP_STORE,
-        .clear    = { 0.05f, 0.15f, 0.05f, 1.0f },
+        .clear    = { 0.05f, 0.15f, 0.05f, 1.0f },  /* dark green background */
     };
-    rhi()->cmd_begin_rendering( cmd, &color_att, 1, NULL );
+    rhi()->cmd_begin_rendering( cmd, &color_att, 1, NULL );   /* NULL = no depth attachment */
 
+    /* Viewport and scissor cover the full window.  min_depth/max_depth bracket the NDC
+       depth range; 0..1 is the Vulkan convention (depth = 0 at near plane). */
     rhi_viewport_t vp = {
         .x         = 0.0f,
         .y         = 0.0f,
@@ -289,25 +357,57 @@ sb_vk_boot_render( sb_vk_boot_t* boot, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     rhi_rect_t scissor = { .x = 0, .y = 0, .width = win_w, .height = win_h };
     rhi()->cmd_set_viewport( cmd, &vp );
     rhi()->cmd_set_scissor( cmd, &scissor );
+
+    /* Binding the pipeline selects the compiled PSO (shaders + rasterizer + blend state).
+       After this point the pipeline state is fixed until cmd_bind_pipeline() is called again
+       or the render pass ends. */
     rhi()->cmd_bind_pipeline( cmd, boot->pipeline );
+
+    /* Draw 3 vertices with no vertex buffer.  The vertex shader reads gl_VertexIndex (0,1,2)
+       and computes positions from a hard-coded array; instance_count = 1 is required even
+       for non-instanced draws. */
     rhi()->cmd_draw( cmd, &( rhi_draw_args_t ){ .vertex_count = 3, .instance_count = 1 } );
 
+    /* End the dynamic render pass.  The RHI inserts a pipeline barrier to transition the
+       swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR before frame_end()
+       queues it for display. */
     rhi()->cmd_end_rendering( cmd );
 }
 
 /*==============================================================================================
     sb_vk_boot_destroy
+
+    TEACHING: Correct teardown order and the safe-to-call-on-partial-init pattern.
+
+    GPU resources must be destroyed before the device.  The caller (sb_vulkan.c main) already
+    ensures the GPU is idle via context_destroy() before this function runs, so no additional
+    vkDeviceWaitIdle() is needed here.
+
+    Shaders and pipelines are independent after pipeline_create() returns.  In Vulkan, the
+    pipeline holds a compiled copy of the shader code; the VkShaderModule wrappers can be
+    destroyed at any point after the pipeline is built.  Here we kept them alive alongside the
+    pipeline for simplicity, but either order is valid at teardown.
+
+    rhi_handle_valid() guards each destroy call to make this safe even if sb_vk_boot_create()
+    failed partway through -- boot starts zeroed, so any handles that were never assigned
+    will be invalid and the corresponding destroy call is skipped.
+
+    Zeroing *boot after all destroys resets handle ids to 0 (RHI_NULL_HANDLE), preventing
+    accidental double-free if destroy is called a second time.
 ==============================================================================================*/
 
 void
 sb_vk_boot_destroy( sb_vk_boot_t* boot )
 {
+    /* Destroy the pipeline before its source shaders; mirrors logical dependency order. */
     if ( rhi_handle_valid( boot->pipeline ) )
         rhi()->pipeline_destroy( boot->pipeline );
     if ( rhi_handle_valid( boot->frag ) )
         rhi()->shader_destroy( boot->frag );
     if ( rhi_handle_valid( boot->vert ) )
         rhi()->shader_destroy( boot->vert );
+
+    /* Reset all handles to their null state so a second call is harmless. */
     *boot = ( sb_vk_boot_t ){ 0 };
 }
 

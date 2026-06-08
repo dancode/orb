@@ -18,16 +18,16 @@
 ==============================================================================================*/
 
 static void
-vk_cmd_begin_rendering( rhi_cmd_t             cmd,
+vk_cmd_begin_rendering( rhi_cmd_t cmd, 
                         const rhi_color_attachment_t*  color_atts, u32 color_count,
                         const rhi_depth_attachment_t*  depth_att )
 {
     if ( !cmd )
-        return;
+         return;
 
     vk_context_t* ctx = vk_ctx_get( cmd->ctx_id );
     if ( !ctx )
-        return;
+         return;
 
     /* Build color attachment infos. */
     VkRenderingAttachmentInfo color_infos[ RHI_MAX_COLOR_TARGETS ] = { 0 };
@@ -133,6 +133,24 @@ vk_cmd_set_scissor( rhi_cmd_t cmd, const rhi_rect_t* rect )
 ==============================================================================================*/
 
 static void
+vk_cmd_bind_bindless( rhi_cmd_t cmd )
+{
+    if ( !cmd )
+        return;
+
+    /* Bind for both points: descriptor set state is per-bind-point in Vulkan, and the
+       pipeline layout covers compute (push constant range includes COMPUTE_BIT). */
+
+    /* The bindless descriptor set is global and immutable after init, so we can 
+       bind it once per frame without worrying about rebinding when pipelines change. */
+
+    vkCmdBindDescriptorSets( cmd->vk_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                             vk.pipeline_layout, 0, 1, &vk.bindless_set, 0, NULL );
+    vkCmdBindDescriptorSets( cmd->vk_cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                             vk.pipeline_layout, 0, 1, &vk.bindless_set, 0, NULL );
+}
+
+static void
 vk_cmd_bind_pipeline( rhi_cmd_t cmd, rhi_pipeline_t pipeline )
 {
     if ( !cmd || !vk_pipeline_validate( pipeline ) )
@@ -142,20 +160,6 @@ vk_cmd_bind_pipeline( rhi_cmd_t cmd, rhi_pipeline_t pipeline )
     VkPipelineBindPoint bp   = slot->is_compute ? VK_PIPELINE_BIND_POINT_COMPUTE
                                                 : VK_PIPELINE_BIND_POINT_GRAPHICS;
     vkCmdBindPipeline( cmd->vk_cmd, bp, slot->pipeline );
-}
-
-static void
-vk_cmd_bind_bindless( rhi_cmd_t cmd )
-{
-    if ( !cmd )
-        return;
-
-    /* Bind for both points: descriptor set state is per-bind-point in Vulkan, and the
-       pipeline layout covers compute (push constant range includes COMPUTE_BIT). */
-    vkCmdBindDescriptorSets( cmd->vk_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                             vk.pipeline_layout, 0, 1, &vk.bindless_set, 0, NULL );
-    vkCmdBindDescriptorSets( cmd->vk_cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                             vk.pipeline_layout, 0, 1, &vk.bindless_set, 0, NULL );
 }
 
 static void

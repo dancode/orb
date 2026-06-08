@@ -166,10 +166,12 @@ vk_frame_begin( i32 ctx_id )
     /* Reset and begin recording the command buffer for this slot. */
     vkResetCommandBuffer( cmd_buf, 0 );
 
+    /* Command buffer is open until vkEndCommandBuffer in frame_end. */ 
+
     VkCommandBufferBeginInfo begin_info = { 0 };
     begin_info.sType                    = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags                    = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
+    
     r = vkBeginCommandBuffer( cmd_buf, &begin_info );
     if ( r != VK_SUCCESS )
     {
@@ -193,26 +195,30 @@ vk_frame_begin( i32 ctx_id )
 
     /* --- Step 5: Layout transitions. ---
 
-       Vulkan images have a "layout" that tells the GPU how to read the underlying memory
-       for a given purpose.  Using the wrong layout is undefined behavior.
+        Vulkan images have a "layout" that tells the GPU how to read the underlying memory
+        for a given purpose.  Using the wrong layout is undefined behavior.
 
-       Color image (swapchain): UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL every frame.
-         UNDEFINED tells the driver it may discard old contents, which is correct because
-         loadOp=CLEAR will overwrite them anyway.  The barrier blocks color writes until
-         the COLOR_ATTACHMENT_OUTPUT stage is reached.
+        Color image (swapchain): UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL every frame.
+        UNDEFINED tells the driver it may discard old contents, which is correct because
+        loadOp=CLEAR will overwrite them anyway.  The barrier blocks color writes until
+        the COLOR_ATTACHMENT_OUTPUT stage is reached.
 
-       Depth image: UNDEFINED -> DEPTH_ATTACHMENT_OPTIMAL, first use of this slot only.
-         After the first frame, the depth image stays in DEPTH_ATTACHMENT_OPTIMAL between
-         frames so no barrier is needed.  The fence wait above guarantees the previous use
-         of this slot is fully complete, so depth_layout[frame] accurately reflects the
-         image's current state when we read it here.                                       */
+        Depth image: UNDEFINED -> DEPTH_ATTACHMENT_OPTIMAL, first use of this slot only.
+        After the first frame, the depth image stays in DEPTH_ATTACHMENT_OPTIMAL between
+        frames so no barrier is needed.  The fence wait above guarantees the previous use
+        of this slot is fully complete, so depth_layout[frame] accurately reflects the
+        image's current state when we read it here.                                       */
 
     VkImageMemoryBarrier2 barriers[ 2 ] = { 0 };
     u32 barrier_count = 0;
 
     /* Swapchain color image: UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL */
+    /* This barrier is required every frame because the swapchain image may be in a different
+       layout each time (the display engine may have transitioned it to PRESENT_SRC_KHR for
+       scan-out, or it may have been left in COLOR_ATTACHMENT_OPTIMAL from the prior frame). */
+
     VkImageMemoryBarrier2* color_b                   = &barriers[ barrier_count++ ];
-    color_b->sType                                   = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    color_b->sType                                   = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;    
     color_b->srcStageMask                            = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
     color_b->srcAccessMask                           = 0;
     color_b->dstStageMask                            = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -264,6 +270,7 @@ vk_frame_begin( i32 ctx_id )
     ctx->cmd_lists[ frame ].ctx_id = ctx_id;
     ctx->cmd_lists[ frame ].frame  = frame;
 
+    /* Return a valid command recording handle for this frame on success */
     return &ctx->cmd_lists[ frame ];
 }
 
@@ -275,8 +282,8 @@ vk_frame_begin( i32 ctx_id )
       1. Record a present barrier: COLOR_ATTACHMENT_OPTIMAL -> PRESENT_SRC_KHR.
       2. Close the command buffer.
       3. Submit to the graphics queue via vkQueueSubmit2 (sync2):
-           - WAIT image_available_sem  (stall color output until display releases the image)
-           - WAIT upload_timeline      (stall shaders until any DMA uploads finish)
+           - WAIT image_available_sem   (stall color output until display releases the image)
+           - WAIT upload_timeline       (stall shaders until any DMA uploads finish)
            - SIGNAL render_finished_sem (fires when the GPU finishes all commands)
            - SIGNAL in_flight_fence     (fires when done; CPU waits on this next frame)
       4. Present the image via vkQueuePresentKHR.
@@ -295,41 +302,47 @@ vk_frame_end( i32 ctx_id )
 
     /* --- Step 1: Transition the swapchain image to PRESENT_SRC_KHR. ---
 
-       The GPU just finished writing color in COLOR_ATTACHMENT_OPTIMAL layout.  The display
-       engine needs the image in PRESENT_SRC_KHR layout before it can scan it out.
+       The GPU just finished writing color in COLOR_ATTACHMENT_OPTIMAL layout.  
+       The display engine needs the image in PRESENT_SRC_KHR layout before it can scan it out.
        srcStageMask = COLOR_ATTACHMENT_OUTPUT: declares that all color writes are finished.
        dstStageMask = BOTTOM_OF_PIPE:          the presentation engine reads after all GPU work. */
 
-    VkImageMemoryBarrier2 present_b               = { 0 };
-    present_b.sType                               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    present_b.srcStageMask                        = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-    present_b.srcAccessMask                       = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-    present_b.dstStageMask                        = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-    present_b.dstAccessMask                       = 0;
-    present_b.oldLayout                           = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    present_b.newLayout                           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    present_b.srcQueueFamilyIndex                 = VK_QUEUE_FAMILY_IGNORED;
-    present_b.dstQueueFamilyIndex                 = VK_QUEUE_FAMILY_IGNORED;
-    present_b.image                               = ctx->swapchain_images[ ctx->image_index ];
-    present_b.subresourceRange.aspectMask         = VK_IMAGE_ASPECT_COLOR_BIT;
-    present_b.subresourceRange.baseMipLevel       = 0;
-    present_b.subresourceRange.levelCount         = 1;
-    present_b.subresourceRange.baseArrayLayer     = 0;
-    present_b.subresourceRange.layerCount         = 1;
+    VkImageMemoryBarrier2 present_b             = { 0 };
+    present_b.sType                             = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+                                                  // must match the stage + mask where the image was last written
+    present_b.srcStageMask                      = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT; 
+    present_b.srcAccessMask                     = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT; 
+                                                  // presentation engine reads after all GPU work is done
+    present_b.dstStageMask                      = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT; 
+    present_b.dstAccessMask                     = 0;
+                                                  // must match the layout where the image was last written
+    present_b.oldLayout                         = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; 
+                                                  // required for presentation
+    present_b.newLayout                         = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; 
+    present_b.srcQueueFamilyIndex               = VK_QUEUE_FAMILY_IGNORED;
+    present_b.dstQueueFamilyIndex               = VK_QUEUE_FAMILY_IGNORED;
+    present_b.image                             = ctx->swapchain_images[ ctx->image_index ];
+    present_b.subresourceRange.aspectMask       = VK_IMAGE_ASPECT_COLOR_BIT;
+    present_b.subresourceRange.baseMipLevel     = 0;
+    present_b.subresourceRange.levelCount       = 1;
+    present_b.subresourceRange.baseArrayLayer   = 0;
+    present_b.subresourceRange.layerCount       = 1;
 
-    VkDependencyInfo dep_info        = { 0 };
-    dep_info.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep_info.imageMemoryBarrierCount = 1;
-    dep_info.pImageMemoryBarriers    = &present_b;
+    VkDependencyInfo dep_info                   = { 0 };
+    dep_info.sType                              = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep_info.imageMemoryBarrierCount            = 1;
+    dep_info.pImageMemoryBarriers               = &present_b;
 
     vkCmdPipelineBarrier2( cmd_buf, &dep_info );
 
+    /* Close the command buffer.  It is invalid to submit an open command buffer, so we must do this
+       before any of the following steps -- even if we encounter an error. */
+
     VkResult r = vkEndCommandBuffer( cmd_buf );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "frame_end: vkEndCommandBuffer: %s", string_VkResult( r ) );
-        ctx->current_frame = ( ctx->current_frame + 1 ) % VK_MAX_FRAMES_IN_FLIGHT;
-        return;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "frame_end: vkEndCommandBuffer: %s", string_VkResult( r ) );
+         ctx->current_frame = ( ctx->current_frame + 1 ) % VK_MAX_FRAMES_IN_FLIGHT;
+         return;
     }
 
     /* --- Step 2: Build the wait semaphore list. ---
@@ -354,12 +367,15 @@ vk_frame_end( i32 ctx_id )
 
     /* Wait for any in-flight DMA upload to finish before shaders sample the new data.
        Skipped entirely when no uploads were flushed this epoch. */
+     
+    /* This ensures that the shaders don't start reading a buffer or texture until the
+       DMA transfer that actually fills that memory has finished. */
 
     if ( vk.upload_counter > 0 )
     {
         wait_sems[ wait_count ].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        wait_sems[ wait_count ].semaphore = vk.upload_timeline;
-        wait_sems[ wait_count ].value     = vk.upload_counter;
+        wait_sems[ wait_count ].semaphore = vk.upload_timeline; // waiting to reach counter value
+        wait_sems[ wait_count ].value     = vk.upload_counter;  // greater than or equal to this
         wait_sems[ wait_count ].stageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT
                                           | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT
                                           | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT

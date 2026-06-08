@@ -188,28 +188,18 @@ typedef struct vk_context_s
                                 not scan out the image before the GPU finishes writing it.
     */
 
-    /* Semaphore the WSI signals when a swapchain image is free for rendering.
-       Signaled by: vkAcquireNextImageKHR (WSI / display engine).
-       Waited by:   vkQueueSubmit2 at frame_end, COLOR_ATTACHMENT_OUTPUT stage. */
-
-    VkSemaphore         image_available_sem     [ VK_MAX_FRAMES_IN_FLIGHT ];
-
     /* Fence the GPU signals when it finishes all work in this frame slot.
        The CPU waits on it at frame_begin before reusing the slot's command buffer,
-       staging memory, and depth image.
-       Signaled by: vkQueueSubmit2 at vk_frame_end.
-       Waited by:   CPU (vkWaitForFences) at vk_frame_begin.
-       Reset:       vk_frame_begin, after a valid swapchain image is acquired. */
+       staging memory, and depth image. */
 
     VkFence             in_flight_fence         [ VK_MAX_FRAMES_IN_FLIGHT ];
 
+    /* Semaphore the WSI signals when a swapchain image is free for rendering. */
+
+    VkSemaphore         image_available_sem     [ VK_MAX_FRAMES_IN_FLIGHT ];
+
     /* Semaphore the GPU signals when rendering is complete; vkQueuePresentKHR waits on
-       it before handing the image to the display engine for scan-out.
-       Indexed by swapchain image index, not current_frame: the swapchain may return up to
-       VK_MAX_SWAPCHAIN_IMAGES images in arbitrary order, so indexing by frame slot could
-       clobber a semaphore still in flight for a different image.
-       Signaled by: vkQueueSubmit2 at frame_end.
-       Waited by:   vkQueuePresentKHR (display engine). */
+       it before handing the image to the display engine for scan-out. */
 
     VkSemaphore         render_finished_sem     [ VK_MAX_SWAPCHAIN_IMAGES ];
 
@@ -220,8 +210,8 @@ typedef struct vk_context_s
     struct rhi_cmd_s    cmd_lists               [ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Tracks the current Vulkan layout of each slot's depth image.  Starts as UNDEFINED;
-       promoted to DEPTH_ATTACHMENT_OPTIMAL after the first barrier in frame_begin.  Safe
-       to read here because the fence wait guarantees the prior use of this slot is done. */
+       promoted to DEPTH_ATTACHMENT_OPTIMAL after the first barrier in frame_begin. 
+       Safe to read here because the fence wait guarantees the prior use of this slot is done. */
 
     VkImageLayout       depth_layout            [ VK_MAX_FRAMES_IN_FLIGHT ];
 
@@ -291,7 +281,7 @@ typedef struct vk_state_s
     VkDescriptorSetLayout   bindless_layout;    // set 0 layout: arrays of textures and samplers
     VkDescriptorPool        bindless_pool;      // pool backing the bindless set
     VkDescriptorSet         bindless_set;       // the one descriptor set bound to all pipelines
-    VkPipelineLayout        pipeline_layout;    // push constants + bindless set 0
+    VkPipelineLayout        pipeline_layout;    // set as bindless set 0 + push constants
 
     /* Staging upload ring (VK_MAX_FRAMES_IN_FLIGHT slots; active slot owned by vk_upload.c) */
 
@@ -350,7 +340,7 @@ static vk_state_t vk =
     .use_vsync                  = false,
     .use_vrr_if_available       = true,
     .use_pipeline_cache         = true,
-    .use_vk_alloc_cb            = true,
+    .use_vk_alloc_cb            = false,
     .use_vk_ext_debug_utils     = true,
     .use_vk_layer_validation    = true,
     .use_vk_layer_monitor       = true,
