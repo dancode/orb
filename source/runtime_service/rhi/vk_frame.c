@@ -17,13 +17,14 @@
 // clang-format off
 
 /*==============================================================================================
-    Frame begin / end
+    
+    vk_frame_begin -- begin a new frame on the given context.
 
-    Returns RHI_CMD_INVALID = swapchain not ready.
+    returns RHI_CMD_INVLAID on failure (swapchain not ready).
 
 ==============================================================================================*/
 
-static rhi_cmd_t
+static rhi_cmd_t 
 vk_frame_begin( i32 ctx_id )
 {
     vk_context_t* ctx = vk_ctx_get( ctx_id );
@@ -34,22 +35,25 @@ vk_frame_begin( i32 ctx_id )
     if ( ctx->resize_pending )
     {
         /* vk_swapchain_recreate waits on this context's fences and the present queue,
-           so this context's GPU work is idle when it returns.  Recreate sync objects
-           too: semaphores consumed by the old present's vkQueuePresentKHR wait are
-           tracked by the validation layer as associated with the old swapchain, and
-           re-signaling them on the new swapchain triggers a spurious hazard warning.
-           Fresh handles have no WSI history.
+           so this context's GPU work is idle when it returns. 
+
            Returns false when the window is minimized (surface extent {0,0}); in that
-           case leave resize_pending set and skip the frame -- retry next pump. */
+           case we leave resize_pending set and skip the frame -- retry next pump. */
+
         if ( !vk_swapchain_recreate( ctx ) )
             return RHI_CMD_INVALID;
+
+        /* Recreate sync objects. Semaphores consumed by the old present's vkQueuePresentKHR
+           wait are tracked by the validation layer as associated with the old swapchain, 
+           and re-signaling them on the new swapchain triggers a spurious hazard warning.
+           Fresh handles have no WSI history. */
+
         vk_sync_destroy( ctx );
         vk_sync_create( ctx );
         ctx->resize_pending = false;
     }
 
-    /* Advance the global frame counter (monotonic; for diagnostics / future use). */
-    vk.global_frame++;
+    /* Grab the current slot's command buffer and sync objects. */
 
     u32             frame   = ctx->current_frame;
     VkCommandBuffer cmd_buf = ctx->command_buffers[ frame ];
@@ -190,7 +194,11 @@ vk_frame_begin( i32 ctx_id )
     return &ctx->cmd_lists[ frame ];
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+
+    vk_frame_end() : submit the command buffer and present the swapchain image.
+
+==============================================================================================*/
 
 static void
 vk_frame_end( i32 ctx_id )

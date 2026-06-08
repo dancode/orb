@@ -27,7 +27,7 @@
 static i32
 vk_pipeline_alloc_slot( void )
 {
-    for ( i32 i = 1; i < VK_MAX_PIPELINES; ++i )
+    for ( i32 i = 1; i < VK_MAX_PIPELINES; ++i ) 
     {
         if ( vk.pipelines[ i ].pipeline == VK_NULL_HANDLE )
             return i;
@@ -44,30 +44,37 @@ vk_pipeline_validate( rhi_pipeline_t handle )
 
 /*==============================================================================================
     Graphics PSO creation
+
+    The core factory for creating Graphics Pipeline State Objects (PSOs). 
+    In Vulkan, a PSO is a "baked" state that includes almost everything the GPU needs to
+    know to execute a draw call (shader + vertex format + raster state + blend state + etc.).
+
 ==============================================================================================*/
 
 static rhi_pipeline_t
 vk_pipeline_create( const rhi_pipeline_desc_t* desc )
 {
     if ( !desc )
-        return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
+         return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
 
     if ( !vk_shader_validate( desc->vert ) || !vk_shader_validate( desc->frag )) {
          LOG_ERROR( "invalid shader handle(s)" );
          return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
     }
 
-    i32  idx = vk_pipeline_alloc_slot();
-    if ( idx < 0 ) {
+    i32  pipeline_id = vk_pipeline_alloc_slot();
+    if ( pipeline_id < 0 ) {
          LOG_ERROR( "pipeline pool exhausted (VK_MAX_PIPELINES = %d)", VK_MAX_PIPELINES );
          return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
     }
 
-    vk_pipeline_slot_t* slot     = &vk.pipelines[ idx ];
+    vk_pipeline_slot_t* slot     = &vk.pipelines[ pipeline_id ];
     vk_shader_slot_t*   vert_slt = &vk.shaders[ desc->vert.id ];
     vk_shader_slot_t*   frag_slt = &vk.shaders[ desc->frag.id ];
 
     /* --- Shader stages --- */
+
+    /* Vert + frag only; geometry, tessellation, and compute stages are not implemented. */
 
     VkPipelineShaderStageCreateInfo stages[ 2 ] = { 0 };
     stages[ 0 ].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -81,21 +88,23 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
 
     /* --- Vertex input: single interleaved binding at slot 0 --- */
 
+    /* vertex_stride == 0 suppresses the binding for bufferless draws
+       (e.g., fullscreen passes that generate positions from gl_VertexIndex). */
+
     VkVertexInputBindingDescription vtx_binding = { 0 };
-    vtx_binding.binding = 0;
-    vtx_binding.stride = desc->vertex_stride;
+    vtx_binding.binding   = 0;
+    vtx_binding.stride    = desc->vertex_stride;
     vtx_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription vtx_attribs[ RHI_MAX_VERTEX_ATTRIBS ] = { 0 };
     for ( u32 i = 0; i < desc->attrib_count; ++i )
     {
-        /* Only binding 0 is declared above; attributes referencing other bindings
-           would produce an invalid pipeline. Multi-binding support is not implemented. */
+        /* Only binding 0 is declared; multi-binding is not implemented. */
         ORB_ASSERT( desc->attribs[ i ].binding == 0 );
-        vtx_attribs[ i ].binding = 0;
+        vtx_attribs[ i ].binding  = 0;
         vtx_attribs[ i ].location = desc->attribs[ i ].location;
-        vtx_attribs[ i ].offset = desc->attribs[ i ].offset;
-        vtx_attribs[ i ].format = rhi_vertex_format_to_vk( desc->attribs[ i ].format );
+        vtx_attribs[ i ].offset   = desc->attribs[ i ].offset;
+        vtx_attribs[ i ].format   = rhi_vertex_format_to_vk( desc->attribs[ i ].format );
     }
 
     VkPipelineVertexInputStateCreateInfo vtx_input = { 0 };
@@ -106,6 +115,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     vtx_input.pVertexAttributeDescriptions = vtx_attribs;
 
     /* --- Input assembly --- */
+    /* Triangle list is the only topology in use; strips would require restart-index logic. */
 
     VkPipelineInputAssemblyStateCreateInfo input_asm = { 0 };
     input_asm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -113,6 +123,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     input_asm.primitiveRestartEnable = VK_FALSE;
 
     /* --- Viewport (dynamic; count required even with null ptr) --- */
+    /* pViewport/pScissor may be null here because the dynamic state owns the values at draw time. */
 
     VkPipelineViewportStateCreateInfo vp_ci = { 0 };
     vp_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -120,6 +131,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     vp_ci.scissorCount = 1;
 
     /* --- Rasterizer --- */
+    /* CCW winding follows the right-hand projection convention; depth bias disabled. */
 
     VkPipelineRasterizationStateCreateInfo rast_ci = { 0 };
     rast_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -129,6 +141,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     rast_ci.lineWidth = 1.0f;
 
     /* --- Multisample (no MSAA) --- */
+    /* Single-sample only; swapchain and all render targets carry no MSAA, no resolve pass exists. */
 
     VkPipelineMultisampleStateCreateInfo ms_ci = { 0 };
     ms_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -136,6 +149,8 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     ms_ci.minSampleShading = 1.0f;
 
     /* --- Depth / stencil --- */
+    /* Stencil is globally disabled; no pass uses it and it avoids format 
+       requirements on the attachment. */
 
     VkPipelineDepthStencilStateCreateInfo depth_ci = { 0 };
     depth_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -146,6 +161,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     depth_ci.stencilTestEnable = VK_FALSE;
 
     /* --- Color blend attachments --- */
+    /* Per-attachment blend state allows MRT targets to mix independently; full RGBA write mask. */
 
     VkPipelineColorBlendAttachmentState blend_atts[ RHI_MAX_COLOR_TARGETS ] = { 0 };
     for ( u32 i = 0; i < desc->color_target_count; ++i )
@@ -169,6 +185,8 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     blend_ci.pAttachments = blend_atts;
 
     /* --- Dynamic state --- */
+    /* Minimum set: viewport + scissor keeps the PSO valid across swapchain 
+       resizes without recreation. */
 
     VkDynamicState dyn_states[ 2 ] = {
         VK_DYNAMIC_STATE_VIEWPORT,
@@ -180,7 +198,8 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     dyn_ci.dynamicStateCount = 2;
     dyn_ci.pDynamicStates = dyn_states;
 
-    /* --- Dynamic rendering attachment info (replaces VkRenderPass) --- */
+    /* --- Dynamic rendering (VK 1.3, replaces VkRenderPass) --- */
+    /* Attachment formats bake into the PSO; they must match the actual render targets at draw time. */
 
     VkFormat color_fmts[ RHI_MAX_COLOR_TARGETS ] = { 0 };
     for ( u32 i = 0; i < desc->color_target_count; ++i )
@@ -191,10 +210,11 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     rendering_ci.colorAttachmentCount = desc->color_target_count;
     rendering_ci.pColorAttachmentFormats = color_fmts;
     rendering_ci.depthAttachmentFormat = ( desc->depth_format != RHI_FORMAT_UNKNOWN )
-                                           ? rhi_format_to_vk( desc->depth_format )
-                                           : VK_FORMAT_UNDEFINED;
+                       ? rhi_format_to_vk( desc->depth_format ): VK_FORMAT_UNDEFINED;
 
     /* --- Graphics pipeline --- */
+    /* One global layout for all shaders: bindless descriptor set + push constants.
+       Eliminates layout-switch overhead when changing pipelines within a frame. */
 
     VkGraphicsPipelineCreateInfo ci = { 0 };
     ci.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -222,7 +242,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     if ( desc->debug_name )
         vk_debug_name_object( VK_OBJECT_TYPE_PIPELINE, (u64)slot->pipeline, desc->debug_name );
 
-    return ( rhi_pipeline_t ){ (u32)idx };
+    return ( rhi_pipeline_t ){ (u32)pipeline_id };
 }
 
 /*==============================================================================================

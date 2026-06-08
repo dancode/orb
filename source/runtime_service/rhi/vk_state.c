@@ -251,8 +251,6 @@ typedef struct vk_state_s
     VkSemaphore             upload_timeline;    // monotonic timeline semaphore signaled with each vk_upload_flush; waited on by frame_begin.
     u64                     upload_counter;     // incremented and signaled with each vk_upload_flush; waited on at frame_begin.
 
-    u32                     global_frame;       // monotonic counter; incremented per frame_begin (diagnostics)
-
     u32                     global_epoch;       // advances when every active context has fence-waited
     u32                     epoch_ack_mask;     // bitmask; context i sets bit i after fence wait; reset on epoch advance
 

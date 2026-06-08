@@ -143,7 +143,7 @@ main( int argc, char** argv )
         /* ------------------------------------------------------------------------------ */
         /* Render frame -- skip entirely while minimized to avoid 0x0 swapchain churn. */
 
-        if ( !app()->window_is_minimized( win ) )
+        if ( !app()->window_is_minimized( win ))
         {
             rhi_cmd_t cmd = rhi()->frame_begin( ctx );
             if ( rhi_cmd_valid( cmd ) )

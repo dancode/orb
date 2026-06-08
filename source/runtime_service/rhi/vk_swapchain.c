@@ -471,27 +471,31 @@ vk_swapchain_recreate( vk_context_t* ctx )
 
     LOG_INFO( "swapchain_recreate: begin (ctx %d, %dx%d)", ctx->id, ctx->width, ctx->height );
 
-    /* Save the old handle so we can pass it to vkCreateSwapchainKHR.  The driver
+    /* Save the old handle so we can pass it to vkCreateSwapchainKHR. The driver
        may reuse its presentation resources, avoiding a blank frame on resize. */
 
     VkSwapchainKHR old_swapchain = ctx->swapchain;
     ctx->swapchain               = VK_NULL_HANDLE;
 
-    /* Wait only on this context's in-flight fences and the present queue; avoids
-       draining the whole device and stalling sibling contexts (e.g. other editor
-       viewports).  The present queue must drain because vkQueuePresentKHR may
-       still hold a reference to the old swapchain images even after the graphics
-       fence fires.  The VkSwapchainKHR handle itself is kept alive until after
-       creation. */
+    /* Wait only on this context's in-flight fences and the present queue; avoids draining 
+       the whole device and stalling sibling contexts (e.g. other editor viewports).  */
 
     VkResult r = vkWaitForFences( vk.device, VK_MAX_FRAMES_IN_FLIGHT, ctx->in_flight_fence, VK_TRUE, UINT64_MAX );
     if ( r != VK_SUCCESS ) {
         LOG_ERROR( "swapchain_recreate: vkWaitForFences: %s", string_VkResult( r ) );
     }
+    
+    /* Waiting for the present queue before recreating is a synchronization step required
+       to ensure that the Presentation Engine (the OS compositor or display hardware) 
+       is finished with the old swapchain images before you start destroying or modifying them. */
+
+    /* The old VkSwapchainKHR is kept alive and destroyed after the new swapchain is created */
+
     r = vkQueueWaitIdle( vk.present_queue );
     if ( r != VK_SUCCESS ) {
          LOG_ERROR( "swapchain_recreate: vkQueueWaitIdle: %s", string_VkResult( r ) );
     }
+
     vk_swapchain_destroy( ctx );
 
     bool ok = vk_swapchain_create( ctx, old_swapchain );
