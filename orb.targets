@@ -108,6 +108,14 @@ target jobs
     folder      03_RUNTIME/SERVICE
     unit        jobs.c
 
+target imgui
+
+	type        static
+    root        source/runtime_service/imgui
+    folder      03_RUNTIME/SERVICE
+    unit        imgui.c
+	dep 		app
+	
 # ==============================================================================
 # 03_RUNTIME_MODULES
 # ==============================================================================
@@ -379,7 +387,7 @@ target sb_vulkan						# vulkan development and testing
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
     dep         sys ref mod core app
-	dep 		run rhi draw
+	dep 		run rhi draw imgui
 	mono_dep 	render	
   # flag        reflect
 
@@ -546,7 +554,9 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		run
 	add 		rhi						# vulkan render library
 	add 		draw 					# drawing using the rhi
-	add 		render 					# render dll
+	add 		imgui 					# imgui lbrary
+	
+	add 		render 					# render dll	
 	
 	add 		sb_vulkan				# exe 
 
