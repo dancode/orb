@@ -58,21 +58,28 @@ vk_frame_begin( i32 ctx_id )
     u32             frame   = ctx->current_frame;
     VkCommandBuffer cmd_buf = ctx->command_buffers[ frame ];
 
-    /* Block until this slot's previous GPU work is complete. */
+    /* Block until this slot's previous GPU work is complete */        
+    
+    /* CPU waits on GPU at the start of frame_begin, It blocks until the GPU has 
+       finished all work submitted in the previous use of this same slot (two frames ago).
+       Only then is it safe to reset and reuse the command buffer, staging memory, 
+       and depth image for this slot. Signaled by vkQueueSubmit2 at vk_frame_end. */
+
     VkResult r = vkWaitForFences( vk.device, 1, &ctx->in_flight_fence[ frame ], VK_TRUE, UINT64_MAX );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "frame_begin: vkWaitForFences: %s", string_VkResult( r ) );
-        return RHI_CMD_INVALID;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "frame_begin: vkWaitForFences: %s", string_VkResult( r ) );
+         return RHI_CMD_INVALID;
     }
 
-    /* Epoch check-in: this context has confirmed its fence.  When every active context
-       has checked in the epoch advances, allowing deferred descriptor slots to be retired. */
+    /* 1. Flag an epoch check-in. this context has confirmed its fence is now clear! 
+       2. When every active context has checked in the epoch advances... 
+       3. This allows vk_upload_flush to retire the deferred descriptor slots. */
+
     vk.epoch_ack_mask |= ( 1u << ctx_id );
     if ( vk.epoch_ack_mask == vk.ctx_alloc )
     {
-        vk.global_epoch++;
-        vk.epoch_ack_mask = 0;
+        vk.global_epoch++;          // Every active context has checked in.
+        vk.epoch_ack_mask = 0;      // Reset for the next epoch (all checked in)
     }
 
     /* Flush staged uploads once per display epoch regardless of how many contexts call
@@ -80,28 +87,50 @@ vk_frame_begin( i32 ctx_id )
        context of every epoch (including the very first frame) triggers the flush; every
        subsequent context in that same epoch skips it, preventing the upload slot from
        cycling faster than once per display frame. */
-    if ( vk.upload_flush_epoch < vk.global_epoch )
-    {
-        vk.upload_flush_epoch = vk.global_epoch;
-        vk_upload_flush();
+
+    if ( vk.upload_flush_epoch < vk.global_epoch ) {
+         vk.upload_flush_epoch = vk.global_epoch;
+         vk_upload_flush();
     }
 
     /* Return deferred bindless slots whose GPU references have expired. */
     vk_descriptor_flush_retired();
 
-    /* Acquire the next presentable swapchain image. */
+    /* GPU is now done -- this slot's resources are now idle and can be reset and reused.
+       But... the fence is only reset at this function after we know we will submit work.
+       If we acquire an invalid swapchain image, and reset, we would deadlock waiting next
+       frame without a signal ever being created in vk_end_frame. Instead we loop until 
+       the next frame_begin and encounter the fence in an already-signaled state, 
+       pass through immediately (correct). */
+
+    /* vkAcquireNextImageKHR takes the semaphore as a parameter and hands it to the WSI engine
+       essentially saying "signal this when the image is ready". It will mostly never hit unless
+       the display engine runs long. This tells it to fire asynchronously on the GPU timeline 
+       when the display engine is done with the image.-- does not block here */
+
+    /* Acquire the next presentable swapchain image -- placed in image_index  */
     r = vkAcquireNextImageKHR( vk.device, ctx->swapchain, UINT64_MAX,
                                 ctx->image_available_sem[ frame ], VK_NULL_HANDLE,
                                 &ctx->image_index );
+
     if ( r == VK_ERROR_OUT_OF_DATE_KHR )
     {
-        ctx->resize_pending = true;
+        /* ensure we re-create the swapchain and try again next frame */
+        ctx->resize_pending = true; 
         return RHI_CMD_INVALID;
     }
-    if ( r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR )
-    {
-        LOG_ERROR( "frame_begin: vkAcquireNextImageKHR: %s", string_VkResult( r ) );
-        return RHI_CMD_INVALID;
+
+    /* On success, we have a new image index to render to, and the GPU will signal
+       image_available_sem[frame] when that image is ready.  We wait on that semaphore
+       at the COLOR_ATTACHMENT_OUTPUT stage in vk_end_frame, so the GPU won't start
+       writing color until the display engine is done reading the image for presentation
+       (backup edge case). 
+       
+       VK_SUBOPTIMAL_KHR = swapchain is no longer optimal but can still be used */
+
+    if ( r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR ) {
+         LOG_ERROR( "frame_begin: vkAcquireNextImageKHR: %s", string_VkResult( r ) );
+         return RHI_CMD_INVALID;
     }
 
     /* Reset fence only after we know we will submit work this frame. */
@@ -120,6 +149,12 @@ vk_frame_begin( i32 ctx_id )
         LOG_ERROR( "frame_begin: vkBeginCommandBuffer: %s", string_VkResult( r ) );
         return RHI_CMD_INVALID;
     }
+
+    /* Acquire barriers (dedicated transfer queue only) */
+
+    /* The timeline semaphore provides the execution dependency (DMA finishes before shaders run).
+       But on a dedicated transfer queue, ownership of the resource also needs to transfer
+       formally — that's the QFOT two-step. */
 
     /* Acquire any resources that were uploaded on the transfer queue this cycle.
        On hardware with a dedicated transfer family, images and buffers uploaded via
@@ -249,14 +284,22 @@ vk_frame_end( i32 ctx_id )
     VkSemaphoreSubmitInfo wait_sems[ 2 ] = { 0 };
     u32 wait_count = 0;
 
+    /* 1. Commands are recorded into the command buffer (CPU side, no GPU involvement yet)
+       2. vkQueueSubmit2 is called — the GPU receives the work but does not start 
+          COLOR_ATTACHMENT_OUTPUT until image_available_sem[frame] fires
+       3. The WSI signals that semaphore when the display engine releases the image */
+
     wait_sems[ wait_count ].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     wait_sems[ wait_count ].semaphore = ctx->image_available_sem[ frame ];
     wait_sems[ wait_count ].stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     wait_count++;
 
+    /* If upload_counter > 0, a second wait semaphore is added to the graphics submit: */
+
     /* Stall vertex-input, shader, and compute stages until the DMA batch completes.
        Vertex input and index input are listed because uploaded buffers may be used as
        vertex/index data; the 3D front-end (draw setup, early-Z) can still overlap. */
+    
     if ( vk.upload_counter > 0 )
     {
         wait_sems[ wait_count ].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
@@ -270,10 +313,15 @@ vk_frame_end( i32 ctx_id )
         wait_count++;
     }
 
+    /* Tells the presentation layer when the GPU is done */
+
     VkSemaphoreSubmitInfo signal_sem  = { 0 };
     signal_sem.sType                  = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     signal_sem.semaphore              = ctx->render_finished_sem[ ctx->image_index ];
     signal_sem.stageMask              = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+    /* The command buffer submit info struct. We have one command buffer, 
+       but multiple wait semaphores. */
 
     VkCommandBufferSubmitInfo cmd_si  = { 0 };
     cmd_si.sType                      = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
@@ -288,15 +336,17 @@ vk_frame_end( i32 ctx_id )
     submit.signalSemaphoreInfoCount   = 1;
     submit.pSignalSemaphoreInfos      = &signal_sem;
 
+    /* Submit work and signal the in-flight fence when the GPU finishes this batch. */
+
     r = vkQueueSubmit2( vk.graphics_queue, 1, &submit, ctx->in_flight_fence[ frame ] );
-    if ( r != VK_SUCCESS )
-    {
-        LOG_ERROR( "frame_end: vkQueueSubmit2: %s", string_VkResult( r ) );
-        ctx->current_frame = ( ctx->current_frame + 1 ) % VK_MAX_FRAMES_IN_FLIGHT;
-        return;
+    if ( r != VK_SUCCESS ) {
+         LOG_ERROR( "frame_end: vkQueueSubmit2: %s", string_VkResult( r ) );
+         ctx->current_frame = ( ctx->current_frame + 1 ) % VK_MAX_FRAMES_IN_FLIGHT;
+         return;
     }
 
-    /* Present. */
+    /* Present when the GPU is done and signals so */
+
     VkPresentInfoKHR present_info   = { 0 };
     present_info.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;

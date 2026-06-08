@@ -152,17 +152,50 @@ typedef struct vk_context_s
     VkImageView         depth_view              [ VK_MAX_FRAMES_IN_FLIGHT ];
     VkFormat            depth_format;
 
-    /* Per-frame synchronization */
+    /* --- Per-frame synchronization --- */
+
+    /*  Swapchain handoff, GPU side. 
+        
+        GPU waits for the display engine to release the swapchain image.
+        Passed to vkAcquireNextImageKHR to signal when the image is free. 
+        At submit, the graphics queue waits on it at the COLOR_ATTACHMENT_OUTPUT 
+        stage, and the GPU won't write color until the display engine is 
+        done reading the image for presentation (backup edge case)
+
+        Signaled by: the WSI/display engine via vkAcquireNextImageKHR
+        Waited by: GPU queue submit at COLOR_ATTACHMENT_OUTPUT */
 
     VkSemaphore         image_available_sem     [ VK_MAX_FRAMES_IN_FLIGHT ];
+
+    /*  The CPU waits on GPU at the start of frame_begin, the CPU calls
+        vkWaitForFences on this slot's fence. It blocks until the GPU has finished
+        all work submitted in the previous use of this same slot (two frames ago).
+        Only then is it safe to reset and reuse the command buffer, staging memory, 
+        and depth image for this slot.
+
+        Signaled by: vkQueueSubmit2 at vk_frame_end
+        Waited by:   CPU at vk_frame_begin
+        Reset:       vk_frame_begin after valid swapchain image acquired. */
+
     VkFence             in_flight_fence         [ VK_MAX_FRAMES_IN_FLIGHT ];
 
-    /* Per-swapchain-image: reusing this semaphore is safe only when the image is
-       acquired again, which guarantees the previous present consumed it. */
+    /*  Sent in vk_frame_end*() GPU vkQueueSubmit2 to tell the display engine that 
+        rendering is finished and the image is ready for presentation.
+                
+        Then waited on by present, so the display engine won't scan out the 
+        image until the GPU signals it's done writing.
+
+        Indexed by the swapchain image slot, not current_frame. This matters 
+        because the swapchain can return any of up to 3 images in any order — 
+        if you indexed by frame slot you could clobber a semaphore that's 
+        still in use for a different image.
+
+        Signaled by: GPU queue submit at frame_end.
+        Waited by: vkQueuePresentKHR (display engine) when we present this image. */
 
     VkSemaphore         render_finished_sem     [ VK_MAX_SWAPCHAIN_IMAGES ];
 
-    /* Per-frame command state */
+    /* --- Per-frame command state --- */
 
     VkCommandPool       command_pool;
     VkCommandBuffer     command_buffers         [ VK_MAX_FRAMES_IN_FLIGHT ];
@@ -248,6 +281,14 @@ typedef struct vk_state_s
 
     /* Upload/render sync: timeline semaphore signaled after each DMA batch; render submit waits on it */
 
+    /* Graphics queue waits for the transfer queue to finish uploading. A monotonic timeline semaphore
+       incremented with each upload batch flush. At submit, if upload_counter > 0, the graphics queue
+       waits on the current counter value before proceeding through vertex input, index input, 
+       vertex shader, fragment shader, and compute — blocking any stage that could sample or draw 
+       from freshly uploaded data before its done uploading 
+       
+       upload_counter incremenets first on CPU side then upload_timeline is checked to read the same value */
+    
     VkSemaphore             upload_timeline;    // monotonic timeline semaphore signaled with each vk_upload_flush; waited on by frame_begin.
     u64                     upload_counter;     // incremented and signaled with each vk_upload_flush; waited on at frame_begin.
 

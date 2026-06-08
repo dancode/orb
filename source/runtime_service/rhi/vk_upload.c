@@ -105,6 +105,39 @@
         5. Reuse: When we cycle back to the first staging buffer, the CPU checks if the
            GPU has reached value X before overwriting.
 
+
+    Summary as a timeline
+
+    CPU                         Transfer Queue              Graphics Queue
+    ---                         --------------              --------------
+    memcpy to staging[0]
+    record vkCmdCopy
+    vk_upload_flush()
+      submit to transfer ──────► DMA copy runs
+      upload_counter = 1         signal upload_timeline=1
+                                                            frame_begin records commands
+                                                            vk_upload_apply_acquires (acquire barriers)
+                                                            frame_end submit:
+                                                              wait image_available_sem
+                                                              wait upload_timeline=1 ──► stalls at
+    VERTEX_INPUT
+                                                            ◄── semaphore fires
+                                                              runs shaders with new data
+                                                              signal render_finished_sem
+                                                              signal in_flight_fence
+
+    -- next frame --
+    frame_begin
+      vkWaitForFences ◄────────────────────────────────── in_flight_fence fires (slot now idle)
+      vk_staging_alloc on slot 0:
+        vkWaitSemaphores(last_submit_value=1) ← already satisfied, returns instantly
+      memcpy overwrites staging[0] safely
+
+    The timeline value is the thread connecting all of this — the CPU writes it, the transfer queue signals
+    it, and the graphics queue waits on it. Compared to the old binary semaphore approach you'd have
+    needed a separate fence for staging reuse safety AND a separate binary semaphore for the GPU-GPU sync;
+    here it's one number that serves both purposes.
+
 ==============================================================================================*/
 // clang-format off
 
@@ -129,6 +162,8 @@ typedef struct vk_upload_slot_s
     bool            is_recording;
 
 } vk_upload_slot_t;
+
+/* One vk_upload_slot_t per frame-in-flight slot, tracked by g_upload_active_slot. */
 
 static vk_upload_slot_t g_upload[ VK_MAX_FRAMES_IN_FLIGHT ];
 static u32              g_upload_active_slot = 0;
@@ -173,6 +208,10 @@ static void vk_upload_shutdown( void );
 static bool
 vk_upload_init( void )
 {    
+     /* Two staging slots exist (VK_MAX_FRAMES_IN_FLIGHT = 2), each 64MB, host-visible and
+        persistently mapped. The CPU can write into them directly via the mapped pointer at
+        any time. A single upload_timeline semaphore starts at value 0, and upload_counter 
+        mirrors that on the CPU side. */
 
     for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
     {
@@ -377,6 +416,7 @@ vk_staging_alloc( u32 size, u32 align, vk_staging_alloc_t* out )
        at display-frame cadence, so this wait is normally already satisfied by the fence wait
        in frame_begin.  The explicit semaphore wait is kept as a belt-and-suspenders guarantee
        that remains correct regardless of future changes to context topology or flush ordering. */
+
     if ( s->head == 0 && s->last_submit_value > 0 )
     {
         VkSemaphoreWaitInfo wi = { 0 };
