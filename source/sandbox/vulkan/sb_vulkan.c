@@ -191,15 +191,19 @@ main( int argc, char** argv )
                     // draw()->rect( ... );
                     // draw()->end_pass();
 
-                    imgui()->new_frame( 640, 480, 4000 );
-                    imgui()->begin_window( "Debug", 10, 10, 220, 200 );
+                    imgui()->set_scale( 2.0f );    // test dynamic scaling between frames
+                    imgui()->new_frame( win_w, win_h, 4 );
+                    imgui()->begin_window( "Debug", 10, 10, 640, 480 );
                     if ( imgui()->button( "Reload" ) )
                     {
                         
                     }
 
-                    static float spd = 1.0f;
-                    imgui()->slider_float( "Speed", &spd, 0.f, 10.f );
+                    static float scale = 1.0f;
+                    if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) ) {
+                         imgui()->set_scale( scale );
+                    }
+
                     imgui()->end_window();
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
                 }          

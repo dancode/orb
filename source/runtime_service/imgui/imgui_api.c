@@ -70,6 +70,11 @@ static bool imgui_input_text_fn( const char* label, char* buf, u32 bufsz )
     return widget_input_text( label, buf, bufsz );
 }
 
+static void imgui_set_scale_fn( f32 scale )
+{
+    s_scale = scale;
+}
+
 static void imgui_draw_rect_fn( f32 x, f32 y, f32 w, f32 h, u32 abgr )
 {
     widget_draw_rect( x, y, w, h, abgr );
@@ -106,6 +111,7 @@ const imgui_api_t g_imgui_api_struct = {
     .checkbox      = imgui_checkbox_fn,
     .slider_float  = imgui_slider_float_fn,
     .input_text    = imgui_input_text_fn,
+    .set_scale     = imgui_set_scale_fn,
     .draw_rect     = imgui_draw_rect_fn,
     .draw_text     = imgui_draw_text_fn,
     .push_clip     = imgui_push_clip_fn,
@@ -131,6 +137,7 @@ bool imgui_checkbox( const char* label, bool* v )                    { return im
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi ) { return imgui_slider_float_fn( label, v, lo, hi ); }
 bool imgui_input_text( const char* label, char* buf, u32 bufsz )     { return imgui_input_text_fn( label, buf, bufsz ); }
 
+void imgui_set_scale( f32 scale )                               { imgui_set_scale_fn( scale ); }
 void imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr )    { imgui_draw_rect_fn( x, y, w, h, abgr ); }
 void imgui_draw_text( f32 x, f32 y, u32 abgr, const char* str ) { imgui_draw_text_fn( x, y, abgr, str ); }
 void imgui_push_clip( f32 x, f32 y, f32 w, f32 h )              { imgui_push_clip_fn( x, y, w, h ); }

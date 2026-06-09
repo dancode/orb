@@ -73,14 +73,14 @@ typedef struct
 
 typedef struct
 {
-    f32  mouse_x, mouse_y;          /* client-area cursor position        */
-    f32  mouse_wheel;               /* signed scroll delta this frame     */
-    bool mouse_down[ 3 ];           /* left=0 right=1 middle=2, held      */
-    bool mouse_pressed[ 3 ];        /* true only on the first down frame  */
-    bool mouse_released[ 3 ];       /* true only on the first up frame    */
+    f32  mouse_x, mouse_y;                  /* client-area cursor position        */
+    f32  mouse_wheel;                       /* signed scroll delta this frame     */
+    bool mouse_down[ 3 ];                   /* left=0 right=1 middle=2, held      */
+    bool mouse_pressed[ 3 ];                /* true only on the first down frame  */
+    bool mouse_released[ 3 ];               /* true only on the first up frame    */
     bool keys_down[ IMGUI_KEY_COUNT ];
     bool keys_pressed[ IMGUI_KEY_COUNT ];
-    char text[ 32 ];                /* UTF-8 printable chars (NUL-term'd) */
+    char text[ 32 ];                        /* UTF-8 printable chars (NUL-term'd) */
     f32  dt;
     i32  display_w, display_h;
 

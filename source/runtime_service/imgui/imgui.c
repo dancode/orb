@@ -30,6 +30,9 @@
 MOD_USE_RHI;
 MOD_USE_APP;
 
+/* Global UI scale factor; read by font metrics and widget layout constants. */
+static f32 s_scale = 1.0f;
+
 /*==============================================================================================
     Unity build
 ==============================================================================================*/

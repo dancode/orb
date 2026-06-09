@@ -28,6 +28,7 @@ typedef struct imgui_api_s
     /* GPU resource lifecycle.
        init()     -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
        shutdown() -- call before rhi()->shutdown(); destroys all GPU resources. */
+
     bool ( *init     )( void );
     void ( *shutdown )( void );
 
@@ -37,25 +38,36 @@ typedef struct imgui_api_s
        render()    -- flush the draw list to GPU; opens a LOAD render pass on the
                       swapchain, emits all draw calls, and closes the pass.
                       Call after all widget calls, before rhi()->frame_end(). */
+
     void ( *new_frame )( i32 win_w, i32 win_h, f32 dt );
     void ( *render    )( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
     /* Panels -- open a window panel; must be matched with end_window().
        x, y are the panel's top-left pixel position; w, h are its dimensions. */
+
     void ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h );
     void ( *end_window   )( void );
 
     /* Widgets -- return true on the frame they are activated or changed.
        All widgets must be called between a matched begin_window / end_window pair. */
+
     void ( *text        )( const char* str );
     bool ( *button      )( const char* label );
     bool ( *checkbox    )( const char* label, bool* v );
     bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );
     bool ( *input_text  )( const char* label, char* buf, u32 bufsz );
 
+    /* Scale -- uniform scale multiplier applied to all font metrics and widget layout.
+       Call between frames (outside new_frame / render).  1.0 = 8x8 native size.
+       Integer and half-integer steps (1.5, 2.0, 3.0) render cleanest with the
+       nearest-neighbour font sampler. */
+
+    void ( *set_scale )( f32 scale );
+
     /* Low-level draw list access -- may be called anywhere between new_frame and render.
        draw_rect and draw_text push geometry directly into the draw list.
        push_clip / pop_clip set the current scissor rectangle. */
+
     void ( *draw_rect )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
     void ( *draw_text )( f32 x, f32 y, u32 abgr, const char* str );
     void ( *push_clip )( f32 x, f32 y, f32 w, f32 h );

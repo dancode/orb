@@ -140,8 +140,8 @@ font_init( void )
 
     for ( u32 g = 0; g < 96; ++g )
     {
-        u32 col = g % FONT_GLYPHS_ROW;
-        u32 row = g / FONT_GLYPHS_ROW;
+        u32 col =   g % FONT_GLYPHS_ROW;
+        u32 row =   g / FONT_GLYPHS_ROW;
         u32 ox  = col * FONT_GLYPH_W;
         u32 oy  = row * FONT_GLYPH_H;
 
@@ -228,9 +228,9 @@ font_glyph( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1 )
     *v1 = *v0 + (f32)FONT_GLYPH_H / (f32)FONT_ATLAS_H;
 }
 
-static f32 font_char_w( void ) { return FONT_GLYPH_ADV; }
-static f32 font_char_h( void ) { return (f32)FONT_GLYPH_H; }
-static f32 font_line_h( void ) { return FONT_LINE_H; }
+static f32 font_char_w( void ) { return FONT_GLYPH_ADV * s_scale; }
+static f32 font_char_h( void ) { return (f32)FONT_GLYPH_H * s_scale; }
+static f32 font_line_h( void ) { return FONT_LINE_H * s_scale; }
 
 /* Approximate pixel width of a string (monospace). */
 static f32
