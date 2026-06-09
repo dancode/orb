@@ -14,14 +14,19 @@
 
 ==============================================================================================*/
 
+#include <string.h> /* for memset */
+
 #include "orb.h"
 
+// internal API headers
 #include "engine/mod/mod_export.h"
 #include "runtime_service/imgui/imgui_host.h"
+
+// API function headers
 #include "runtime_service/rhi/rhi_api.h"
 #include "engine/app/app_api.h"
 
-/* API accessor pointers -- wired at module init/reload time. */
+// API access pointers -- wired at module init/reload time
 MOD_USE_RHI;
 MOD_USE_APP;
 

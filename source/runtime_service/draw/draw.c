@@ -16,6 +16,10 @@
    In static builds this is a no-op (the shared global struct is used directly). */
 MOD_USE_RHI
 
+/*==============================================================================================
+    Unity build
+==============================================================================================*/
+
 #include "draw_geo.c"
 #include "draw_batch.c"
 #include "draw_material.c"

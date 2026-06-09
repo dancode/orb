@@ -116,25 +116,25 @@ const imgui_api_t g_imgui_api_struct = {
     Direct-call wrappers (declared in imgui_host.h for host / sandbox use)
 ----------------------------------------------------------------------------------------------*/
 
-bool imgui_init( void )          { return imgui_init_fn(); }
-void imgui_shutdown( void )      { imgui_shutdown_fn(); }
+bool imgui_init( void )                                     { return imgui_init_fn(); }
+void imgui_shutdown( void )                                 { imgui_shutdown_fn(); }
 
-void imgui_new_frame( i32 win_w, i32 win_h, f32 dt ) { imgui_new_frame_fn( win_w, win_h, dt ); }
-void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h ) { imgui_render_fn( cmd, win_w, win_h ); }
+void imgui_new_frame( i32 win_w, i32 win_h, f32 dt )        { imgui_new_frame_fn( win_w, win_h, dt ); }
+void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )    { imgui_render_fn( cmd, win_w, win_h ); }
 
 void imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h ) { imgui_begin_window_fn( title, x, y, w, h ); }
-void imgui_end_window( void )    { imgui_end_window_fn(); }
+void imgui_end_window( void )                                            { imgui_end_window_fn(); }
 
-void imgui_text( const char* str )           { imgui_text_fn( str ); }
-bool imgui_button( const char* label )       { return imgui_button_fn( label ); }
-bool imgui_checkbox( const char* label, bool* v )  { return imgui_checkbox_fn( label, v ); }
+void imgui_text( const char* str )                                   { imgui_text_fn( str ); }
+bool imgui_button( const char* label )                               { return imgui_button_fn( label ); }
+bool imgui_checkbox( const char* label, bool* v )                    { return imgui_checkbox_fn( label, v ); }
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi ) { return imgui_slider_float_fn( label, v, lo, hi ); }
 bool imgui_input_text( const char* label, char* buf, u32 bufsz )     { return imgui_input_text_fn( label, buf, bufsz ); }
 
-void imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr ) { imgui_draw_rect_fn( x, y, w, h, abgr ); }
+void imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr )    { imgui_draw_rect_fn( x, y, w, h, abgr ); }
 void imgui_draw_text( f32 x, f32 y, u32 abgr, const char* str ) { imgui_draw_text_fn( x, y, abgr, str ); }
-void imgui_push_clip( f32 x, f32 y, f32 w, f32 h ) { imgui_push_clip_fn( x, y, w, h ); }
-void imgui_pop_clip( void )      { imgui_pop_clip_fn(); }
+void imgui_push_clip( f32 x, f32 y, f32 w, f32 h )              { imgui_push_clip_fn( x, y, w, h ); }
+void imgui_pop_clip( void )                                     { imgui_pop_clip_fn(); }
 
 /*----------------------------------------------------------------------------------------------
     Module lifecycle callbacks
@@ -146,6 +146,7 @@ imgui_mod_init( void* state, get_api_fn get_api )
     (void)state;
     /* Cache sibling API pointers.  GPU resources are NOT created here; the host
        must call imgui()->init() explicitly after rhi()->init(). */
+
     if ( !MOD_FETCH_RHI ) return false;
     if ( !MOD_FETCH_APP ) return false;
     return true;
@@ -188,8 +189,6 @@ imgui_get_mod_desc( void )
 {
     return &s_imgui_mod_desc;
 }
-
-MOD_DEFINE_EXPORTS( imgui )
 
 // clang-format on
 /*============================================================================================*/

@@ -18,6 +18,7 @@
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/draw/draw_host.h"
+#include "runtime_service/imgui/imgui_host.h"
 #include "sb_vulkan_boot.h"
 
 /*==============================================================================================
@@ -38,6 +39,7 @@ main( int argc, char** argv )
     mod_static( core );
     mod_static( rhi );
     mod_static( draw ); 
+    mod_static( imgui );
 
     if ( !mod_init_all() )
     {
@@ -55,6 +57,7 @@ main( int argc, char** argv )
     assert( core() );
     assert( rhi() );
     assert( draw() );
+    assert( imgui() );
 
     core()->log_set_min_level( LOG_LEVEL_TRACE );
     core_log_fn( LOG_LEVEL_DEBUG, "sb_vulkan", "debug log: modules loaded successfully" );
@@ -118,6 +121,11 @@ main( int argc, char** argv )
         }
     }
 
+    if ( imgui() ) {
+         imgui()->init();
+    }
+
+
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
@@ -159,20 +167,42 @@ main( int argc, char** argv )
                     sb_vk_boot_render( &boot, cmd, win_w, win_h );
                 }
 
-                /* 2D draw pass -- positions in pixel space (0,0 = top-left). */
-                const f32 bg[ 4 ] = { 0.08f, 0.08f, 0.12f, 1.0f };
-                draw()->begin_pass( cmd, win_w, win_h, bg );
+                if ( 0 )
+                {
+                    /* 2D draw pass -- positions in pixel space (0,0 = top-left). */
+                    const f32 bg[ 4 ] = { 0.08f, 0.08f, 0.12f, 1.0f };
+                    draw()->begin_pass( cmd, win_w, win_h, bg );
 
-                const f32 white[ 4 ] = { 1.0f, 1.0f, 1.0f, 1.0f };
-                draw()->rect( win_w * 0.5f, win_h * 0.5f, 200.0f, 100.0f, white );
+                    const f32 white[ 4 ] = { 1.0f, 1.0f, 1.0f, 1.0f };
+                    draw()->rect( win_w * 0.5f, win_h * 0.5f, 200.0f, 100.0f, white );
 
-                const f32 red[ 4 ] = { 0.9f, 0.2f, 0.2f, 1.0f };
-                draw()->circle( 200.0f, 200.0f, 80.0f, 32, red );
+                    const f32 red[ 4 ] = { 0.9f, 0.2f, 0.2f, 1.0f };
+                    draw()->circle( 200.0f, 200.0f, 80.0f, 32, red );
 
-                const f32 blue[ 4 ] = { 0.2f, 0.4f, 0.9f, 1.0f };
-                draw()->rect( win_w - 160.0f, win_h - 80.0f, 120.0f, 60.0f, blue );
+                    const f32 blue[ 4 ] = { 0.2f, 0.4f, 0.9f, 1.0f };
+                    draw()->rect( win_w - 160.0f, win_h - 80.0f, 120.0f, 60.0f, blue );
 
-                draw()->end_pass();
+                    draw()->end_pass();
+                }
+
+                if ( imgui() )
+                {
+                    // draw()->begin_pass( cmd, w, h, clear );
+                    // draw()->rect( ... );
+                    // draw()->end_pass();
+
+                    imgui()->new_frame( 640, 480, 4000 );
+                    imgui()->begin_window( "Debug", 10, 10, 220, 200 );
+                    if ( imgui()->button( "Reload" ) )
+                    {
+                        
+                    }
+
+                    float spd = 1.0f;
+                    imgui()->slider_float( "Speed", &spd, 0.f, 10.f );
+                    imgui()->end_window();
+                    imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
+                }
 
                 rhi()->frame_end( ctx );
             }
@@ -189,6 +219,10 @@ main( int argc, char** argv )
 
     rhi()->context_destroy( ctx );      // finish rendering and free swapchain + sync objects (first)
 
+    if ( imgui() ) {
+         imgui()->shutdown();
+    }
+
     if ( b_use_boot )
     {
         sb_vk_boot_destroy( &boot );    // destroy boot resources
@@ -203,3 +237,4 @@ main( int argc, char** argv )
 }
 
 /*============================================================================================*/
+

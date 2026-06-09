@@ -96,6 +96,6 @@ run_get_mod_desc( void )
     return &api;
 }
 
-MOD_DEFINE_EXPORTS( run )
+// MOD_DEFINE_EXPORTS( run )
 
 /*============================================================================================*/

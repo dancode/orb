@@ -83,7 +83,5 @@ draw_get_mod_desc( void )
     return &desc;
 }
 
-MOD_DEFINE_EXPORTS( draw )
-
 // clang-format on
 /*============================================================================================*/

@@ -45,17 +45,19 @@
 typedef struct mod_desc_s mod_desc_t;
 
 /* STATIC: every TU sees the struct directly. LTO can devirtualize the call. */
-#define MOD_GATEWAY_STATIC( type, name )                                         \
-    typedef struct mod_desc_s mod_desc_t;                                        \
-    extern const type         g_##name##_api_struct;                             \
-    static inline const type* name( void ) { return &g_##name##_api_struct; }    \
-    mod_desc_t*               name##_get_mod_desc( void );
+#define MOD_GATEWAY_STATIC( type, name )                                            \
+                                                                                    \
+    typedef struct mod_desc_s   mod_desc_t;                                         \
+    extern const type           g_##name##_api_struct;                              \
+    static inline const type*   name( void ) { return &g_##name##_api_struct; }     \
+    mod_desc_t*                 name##_get_mod_desc( void );
 
 /* DYNAMIC: every TU reads through a cached pointer populated during init(). */
-#define MOD_GATEWAY_DYNAMIC( type, name )         \
-    typedef struct mod_desc_s mod_desc_t;         \
-    extern const type*        g_##name##_api_ptr; \
-    static inline const type* name( void ) { return g_##name##_api_ptr; }
+#define MOD_GATEWAY_DYNAMIC( type, name )                                           \
+                                                                                    \
+    typedef struct mod_desc_s   mod_desc_t;                                         \
+    extern const type*          g_##name##_api_ptr;                                 \
+    static inline const type*   name( void ) { return g_##name##_api_ptr; }
 
 /*==============================================================================================
     MOD_DEFINE_API_PTR — Allocates cached pointer storage in a consuming .c file.
