@@ -133,10 +133,13 @@ main( int argc, char** argv )
         return 1;
     }
     
-    // imgui()->load_font( "fonts/cascadia_mono_16.orb_font" );
+    imgui()->load_font( "fonts/cascadia_mono_16.orb_font" );
     // imgui()->load_font( "fonts/cascadia_mono_20.orb_font" );
     // imgui()->load_font( "bin/segoeui_16.orb_font" );
-    imgui()->set_font( IMGUI_FONT_BITMAP_12 );    
+    // imgui()->set_font( IMGUI_FONT_BITMAP_8 );
+    // imgui()->set_font( IMGUI_FONT_BITMAP_12 );
+    // imgui()->set_bmp_scale( 2 );
+
     // imgui()->set_font( IMGUI_FONT_BITMAP_8 );    
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
@@ -164,6 +167,25 @@ main( int argc, char** argv )
 
         if ( app()->key_pressed( APP_KEY_ESCAPE ) )
             break;
+
+        if ( app()->key_pressed( APP_KEY_S ) )
+        {            
+            static int bmp_scale = 1;
+            bmp_scale = bmp_scale == 1 ? 2 : 1;
+            {                
+                imgui()->set_bmp_scale( bmp_scale );
+            }
+        }
+
+        if ( app()->key_pressed( APP_KEY_P ) )
+        {
+            static int font_select = 0;
+            font_select = font_select == 0 ? 1 : 0;
+            {
+                imgui()->set_font( font_select == 1 ? IMGUI_FONT_BITMAP_8 : IMGUI_FONT_BITMAP_12 );
+            }
+        }
+
 
         /* ------------------------------------------------------------------------------ */
         /* Render frame -- skip entirely while minimized to avoid 0x0 swapchain churn. */

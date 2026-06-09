@@ -58,6 +58,16 @@ void imgui_set_font( imgui_font_t font )
     layout_compute( (u32)s_font->line_h );
 }
 
+void imgui_set_bmp_scale( u32 scale )
+{
+    bitmap_scale_set( scale );
+    if ( !s_tt_font.active )
+    {
+        s_font_size = (u32)s_font->char_h;
+        layout_compute( (u32)s_font->line_h );
+    }
+}
+
 void imgui_push_clip( f32 x, f32 y, f32 w, f32 h )
 {
     draw_push_clip_rect( x, y, w, h );
@@ -86,6 +96,7 @@ const imgui_api_t g_imgui_api_struct = {
     .slider_float  = imgui_slider_float,
     .input_text    = imgui_input_text,
     .set_font      = imgui_set_font,
+    .set_bmp_scale = imgui_set_bmp_scale,
     .draw_rect     = imgui_draw_rect,
     .draw_text     = imgui_draw_text,
     .push_clip     = imgui_push_clip,

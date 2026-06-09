@@ -302,21 +302,36 @@ static bitmap_font_t  s_bitmap_8      = { .def = &s_def_8  };
 static bitmap_font_t  s_bitmap_12     = { .def = &s_def_12 };
 static bitmap_font_t* s_bitmap_active = NULL;
 
+static imgui_font_t s_bmp_font  = IMGUI_FONT_BITMAP_12;
+static u32          s_bmp_scale = 1;
+
 static void
 bitmap_font_select( imgui_font_t font )
 {
+    s_bmp_font      = font;
     s_bitmap_active = ( font == IMGUI_FONT_BITMAP_12 ) ? &s_bitmap_12 : &s_bitmap_8;
 
-    /* Resolve metrics from the def's native pixel dimensions -- no external font_size scaling. */
+    /* Resolve metrics from native pixel dimensions scaled by s_bmp_scale.
+       All downstream code (widget sizing, glyph quads, text width) reads from s_font,
+       so the scale is transparent -- callers see it as if the font were natively that size. */
     const bitmap_font_def_t* def = s_bitmap_active->def;
+    f32 s = (f32)s_bmp_scale;
     s_bitmap_active->metrics = ( font_metrics_t ){
-        .char_h       = (f32)def->glyph_h,
-        .line_h       = (f32)( def->glyph_h + def->glyph_h / 4u ),
-        .char_w       = (f32)def->glyph_w,
+        .char_h       = (f32)def->glyph_h * s,
+        .line_h       = (f32)( def->glyph_h + def->glyph_h / 4u ) * s,
+        .char_w       = (f32)def->glyph_w * s,
         .atlas_idx    = s_bitmap_active->atlas_idx,
         .proportional = false,
     };
     s_font = &s_bitmap_active->metrics;
+}
+
+static void
+bitmap_scale_set( u32 scale )
+{
+    s_bmp_scale = ( scale < 1u ) ? 1u : scale;
+    if ( s_bitmap_active )
+        bitmap_font_select( s_bmp_font );   // reapply metrics with new scale
 }
 
 /*----------------------------------------------------------------------------------------------

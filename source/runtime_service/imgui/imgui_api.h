@@ -61,10 +61,13 @@ typedef struct imgui_api_s
     bool ( *input_text  )( const char* label, char* buf, u32 bufsz );
 
     /* Font -- select the active font; call between frames (outside new_frame / render).
-       set_font()  -- select a built-in bitmap font; also unloads any active TrueType font.
-                      Widget layout dimensions are recomputed from the new font's char_h. */
+       set_font()      -- select a built-in bitmap font; also unloads any active TrueType font.
+                         Widget layout dimensions are recomputed from the new font's char_h.
+       set_bmp_scale() -- integer pixel-scale multiplier for bitmap fonts (1 = native, 2 = 2x, ...).
+                         Has no effect on TrueType fonts.  Recomputes layout immediately. */
 
-    void ( *set_font  )( imgui_font_t font );
+    void ( *set_font      )( imgui_font_t font );
+    void ( *set_bmp_scale )( u32 scale );
 
     /* Low-level draw list access -- may be called anywhere between new_frame and render.
        draw_rect and draw_text push geometry directly into the draw list.
