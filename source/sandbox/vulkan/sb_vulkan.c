@@ -198,14 +198,14 @@ main( int argc, char** argv )
                         
                     }
 
-                    float spd = 1.0f;
+                    static float spd = 1.0f;
                     imgui()->slider_float( "Speed", &spd, 0.f, 10.f );
                     imgui()->end_window();
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
-                }
-
-                rhi()->frame_end( ctx );
+                }          
             }
+
+            rhi()->frame_end( ctx );            
         }
 
         /* ------------------------------------------------------------------------------ */

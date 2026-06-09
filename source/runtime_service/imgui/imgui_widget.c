@@ -77,7 +77,7 @@ widget_interact( imgui_id_t id, imgui_rect_t r )
 
     /* Capture on press if hot. */
     if ( s_ctx.hot_id == id && s_io.mouse_pressed[ 0 ] )
-        s_ctx.active_id = id;
+         s_ctx.active_id = id;
 }
 
 /* Returns true when the widget was clicked (pressed + released while hot). */

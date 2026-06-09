@@ -606,7 +606,11 @@ vk_upload_flush( void )
             vk.staging[ slot ].last_submit_value = signal_value;
         }
 
-        vkResetCommandBuffer( up->cmd, 0 );
+        /* Do NOT reset the command buffer here -- it is still Pending on the GPU.
+           vk_staging_alloc waits on the timeline semaphore before recycling this slot,
+           which guarantees the buffer has left Pending state.  vkBeginCommandBuffer in
+           vk_upload_begin_recording then implicitly resets it (pool has
+           VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT). */
         up->is_recording = false;
     }
 

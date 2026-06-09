@@ -20,7 +20,7 @@
 #define FONT_GLYPH_ADV   8.0f /* pixels to advance per character */
 #define FONT_LINE_H     10.0f /* line height including 2px leading */
 
-/* 96 glyphs, ASCII 32-127.  Each row is one byte; bit 7 = leftmost pixel. */
+/* 96 glyphs, ASCII 32-127.  Each row is one byte; bit 0 = leftmost pixel. */
 static const u8 s_font_data[ 96 ][ FONT_GLYPH_H ] =
 {
     /* 0x20 ' ' */ { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 },
@@ -152,7 +152,7 @@ font_init( void )
             {
                 u32 px = ox + c;
                 u32 py = oy + r;
-                pixels[ py * FONT_ATLAS_W + px ] = ( bits & ( 0x80u >> c ) ) ? 0xFF : 0x00;
+                pixels[ py * FONT_ATLAS_W + px ] = ( bits & ( 1u << c ) ) ? 0xFF : 0x00;
             }
         }
     }
