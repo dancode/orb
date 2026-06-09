@@ -96,27 +96,18 @@ typedef struct
 #define IMGUI_CLIP_DEPTH  32
 
 /*==============================================================================================
-    Style
+    Font selection
 
-    Two integer pillars control all UI dimensions.  Every other metric (padding, title bar
-    height, checkbox size, etc.) is derived from these as integer pixel values -- no
-    fractional pixels are generated in the layout.
-
-    font_size : rendered glyph cell height in pixels.  The built-in 8x8 atlas is
-                pixel-perfect at multiples of 8 (8, 16, 24 ...).  The built-in 8x12
-                atlas (default) is pixel-perfect at multiples of 12 (12, 24, 36 ...).
-                font_size >= 12 selects the 8x12 atlas; < 12 selects the 8x8 atlas.
-                Minimum enforced: 8.
-    line_size : widget row height in pixels.  Must be >= font_size.  Even integers keep
-                top/bottom padding symmetric.  Minimum enforced: font_size.
+    imgui_font_t selects which built-in bitmap atlas to use.
+    The TrueType path is activated separately via imgui()->load_font(path).
 ==============================================================================================*/
 
-typedef struct
+typedef enum
 {
-    u32 font_size;    /* rendered glyph cell side (even integer, min 8)    */
-    u32 line_size;    /* widget row height (even integer, >= font_size)     */
+    IMGUI_FONT_BITMAP_8  = 0,   /* 8x8 pixel glyphs  -- compact, pixel-perfect at native size  */
+    IMGUI_FONT_BITMAP_12 = 1,   /* 8x12 pixel glyphs -- default, pixel-perfect at native size  */
 
-} imgui_style_t;
+} imgui_font_t;
 
 /*============================================================================================*/
 #endif    // IMGUI_H

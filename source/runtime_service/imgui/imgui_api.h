@@ -10,7 +10,6 @@
         Frame     : new_frame / render
         Panels    : begin_window / end_window
         Widgets   : text / button / checkbox / slider_float / input_text
-        Style     : set_style / set_scale
         Draw      : draw_rect / draw_text / push_clip / pop_clip
 
 ==============================================================================================*/
@@ -61,16 +60,11 @@ typedef struct imgui_api_s
     bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );
     bool ( *input_text  )( const char* label, char* buf, u32 bufsz );
 
-    /* Style / scale -- configure the two layout pillars that drive all UI dimensions.
-       Call between frames (outside new_frame / render).
+    /* Font -- select the active font; call between frames (outside new_frame / render).
+       set_font()  -- select a built-in bitmap font; also unloads any active TrueType font.
+                      Widget layout dimensions are recomputed from the new font's char_h. */
 
-       set_style() -- set font_size and line_size directly; all other dimensions are
-                      derived as integer pixel values (no fractional layout).
-       set_scale() -- convenience shorthand: multiplies the base style (set by set_style,
-                      or the defaults 8px/18px) by 'scale', snapping to nearest even integer. */
-
-    void ( *set_style )( imgui_style_t style );
-    void ( *set_scale )( f32 scale );
+    void ( *set_font  )( imgui_font_t font );
 
     /* Low-level draw list access -- may be called anywhere between new_frame and render.
        draw_rect and draw_text push geometry directly into the draw list.

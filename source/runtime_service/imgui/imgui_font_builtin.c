@@ -303,9 +303,9 @@ static bitmap_font_t  s_bitmap_12     = { .def = &s_def_12 };
 static bitmap_font_t* s_bitmap_active = NULL;
 
 static void
-bitmap_font_select( u32 font_size )
+bitmap_font_select( imgui_font_t font )
 {
-    s_bitmap_active = ( font_size >= 12u ) ? &s_bitmap_12 : &s_bitmap_8;
+    s_bitmap_active = ( font == IMGUI_FONT_BITMAP_12 ) ? &s_bitmap_12 : &s_bitmap_8;
 
     /* Resolve metrics from the def's native pixel dimensions -- no external font_size scaling. */
     const bitmap_font_def_t* def = s_bitmap_active->def;

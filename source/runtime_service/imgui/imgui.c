@@ -35,13 +35,12 @@ MOD_USE_APP;
 
 /*==============================================================================================
     Layout
-    All dimensions are integer pixel counts derived from the active style.
-    Defaults match the original hardcoded constants (8x8 font, 18px line).
+    All dimensions are integer pixel counts derived from the active font and line_size.
+    Defaults match the bitmap 8x12 font (fs=12) with a 20px line height.
 ==============================================================================================*/
 
 typedef struct
 {
-    u32 font_size;      /* rendered glyph cell side                          */
     u32 line_size;      /* widget row height                                 */
     u32 widget_gap;     /* vertical gap between consecutive widgets          */
     u32 widget_pad;     /* horizontal content area padding                   */
@@ -55,34 +54,32 @@ typedef struct
 
 } imgui_layout_t;
 
-/* Unscaled base style used by set_style / set_scale.  set_style updates this;
-   set_scale multiplies it to derive the actual layout dimensions. */
-static imgui_style_t s_base_style = { .font_size = 12, .line_size = 20 };
+/* Font size used by layout_compute; updated by set_font() / load_font(). */
+static u32 s_font_size = 12;
 
 static imgui_layout_t s_layout =
 {
-    .font_size     = 12,
     .line_size     = 20,
-    .widget_gap    = 3,    /* 20 / 6                */
-    .widget_pad    = 6,    /* 12 / 2                */
-    .win_title_h   = 23,   /* 20 + 12/4             */
+    .widget_gap    = 3,    /* 20 / 6                     */
+    .widget_pad    = 6,    /* 12 / 2  (fs=12 default)    */
+    .win_title_h   = 23,   /* 20 + 12/4                  */
     .win_border    = 1,
-    .checkbox_sz   = 18,   /* 12 + 12/2             */
-    .slider_knob_w = 12,   /* = font_size           */
-    .checkmark_pad = 4,    /* 18 / 4                */
-    .cursor_w      = 1,    /* 12 / 8                */
-    .cursor_inset  = 3,    /* 12 / 4                */
+    .checkbox_sz   = 18,   /* 12 + 12/2                  */
+    .slider_knob_w = 12,   /* = fs                       */
+    .checkmark_pad = 4,    /* 18 / 4                     */
+    .cursor_w      = 1,    /* 12 / 8                     */
+    .cursor_inset  = 3,    /* 12 / 4                     */
 };
 
 static void
-layout_compute( u32 fs, u32 ls )
+layout_compute( u32 ls )
 {
+    u32 fs = s_font_size;
     if ( fs < 8u ) fs = 8u;
     if ( ls < fs ) ls = fs;
 
     u32 csz = fs + fs / 2u;    /* checkbox_sz = fs * 3/2 */
 
-    s_layout.font_size     = fs;
     s_layout.line_size     = ls;
     s_layout.widget_gap    = ls / 6u < 2u ? 2u : ls / 6u;
     s_layout.widget_pad    = fs / 2u;

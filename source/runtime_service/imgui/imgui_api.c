@@ -20,7 +20,17 @@ bool imgui_init( void )
 
 bool imgui_load_font( const char* path )
 {
-    return tt_font_load( path );
+    /* load the font */
+    if ( !tt_font_load( path ) )
+        return false;
+
+    /* update global font size */
+    s_font_size = (u32)s_font->char_h;
+
+    /* update supporting layout dimensions */
+    // layout_compute( s_font_size );
+    layout_compute( (u32)s_font->line_h );
+    return true;
 }
 
 void imgui_shutdown( void )
@@ -40,22 +50,12 @@ void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )
     imgui_render_flush( cmd, win_w, win_h );
 }
 
-void imgui_set_style( imgui_style_t style )
+void imgui_set_font( imgui_font_t font )
 {
-    s_base_style = style;
-    layout_compute( style.font_size, style.line_size );
-    bitmap_font_select( s_layout.font_size );
-}
-
-void imgui_set_scale( f32 scale )
-{
-    /* Scale from the base style set by imgui_set_style; snap to nearest even integer. */
-    u32 fs = (u32)( (f32)s_base_style.font_size * scale + 0.5f );
-    u32 ls = (u32)( (f32)s_base_style.line_size * scale + 0.5f );
-    fs = ( fs < 2u ) ? 2u : ( fs & ~1u );
-    ls = ( ls < 2u ) ? 2u : ( ls & ~1u );
-    layout_compute( fs, ls );
-    bitmap_font_select( s_layout.font_size );
+    tt_font_unload();
+    bitmap_font_select( font );
+    s_font_size = (u32)s_font->char_h;
+    layout_compute( (u32)s_font->line_h );
 }
 
 void imgui_push_clip( f32 x, f32 y, f32 w, f32 h )
@@ -85,8 +85,7 @@ const imgui_api_t g_imgui_api_struct = {
     .checkbox      = imgui_checkbox,
     .slider_float  = imgui_slider_float,
     .input_text    = imgui_input_text,
-    .set_style     = imgui_set_style,
-    .set_scale     = imgui_set_scale,
+    .set_font      = imgui_set_font,
     .draw_rect     = imgui_draw_rect,
     .draw_text     = imgui_draw_text,
     .push_clip     = imgui_push_clip,

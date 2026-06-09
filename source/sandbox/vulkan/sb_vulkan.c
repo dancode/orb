@@ -132,8 +132,12 @@ main( int argc, char** argv )
         mod_system_exit();
         return 1;
     }
-    imgui()->load_font( "bin/segoeui_16.orb_font" );
-
+    
+    imgui()->load_font( "fonts/cascadia_mono_16.orb_font" );
+    // imgui()->load_font( "fonts/cascadia_mono_20.orb_font" );
+    // imgui()->load_font( "bin/segoeui_16.orb_font" );
+    // imgui()->set_font( IMGUI_FONT_BITMAP_12 );    
+    // imgui()->set_font( IMGUI_FONT_BITMAP_8 );    
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
@@ -194,23 +198,21 @@ main( int argc, char** argv )
                 }
 
                 if ( imgui() )
-                {                                        
-                    // imgui()->set_style( ( imgui_style_t ){ .font_size = 12, .line_size = 32 } );
-                    // imgui()->set_scale( 2.0f );
-
+                {
                     imgui()->new_frame( win_w, win_h, 4 );
                     imgui()->begin_window( "Debug", 10, 10, 640, 480 );
                     if ( imgui()->button( "Reload" ) )
                     {
-                        
+
                     }
                     imgui()->text( "this is some text" );
                     static float scale = 1.0f;
-                    if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) ) {
-                         // imgui()->set_scale( scale );
-                    }
+                    if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) )
+                    {
 
+                    }
                     imgui()->text( "here we go..." );
+
                     imgui()->text( "this is some text" );
                     imgui()->text( "this is more text" );
                     imgui()->text( "the last line!" );

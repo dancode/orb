@@ -160,6 +160,10 @@ tt_font_load( const char* path )
         .proportional = true,
     };
     s_font = &s_tt_font.metrics;
+
+    printf( "[imgui] loaded font '%s' (char_h=%.1f line_h=%.1f)\n",
+            path, s_font->char_h, s_font->line_h );
+
     return true;
 }
 
@@ -177,7 +181,7 @@ font_init( void )
         bitmap_atlas_shutdown( &s_bitmap_8 );
         return false;
     }
-    bitmap_font_select( s_layout.font_size );
+    bitmap_font_select( IMGUI_FONT_BITMAP_12 );
     return true;
 }
 
