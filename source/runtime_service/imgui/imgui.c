@@ -6,7 +6,7 @@
         imgui_shader.h  -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
         imgui_font.c    -- font atlas: font_init/shutdown/glyph + s_atlas_idx
         imgui_draw.c    -- CPU draw list: draw_reset, draw_push_*, s_draw
-        imgui_render.c  -- GPU flush: render_init/shutdown/flush
+        imgui_render.c  -- GPU flush: imgui_render_init/shutdown/flush
         imgui_input.c   -- app->IO snapshot: input_update, s_io
         imgui_ctx.c     -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
         imgui_widget.c  -- widget implementations: widget_*
@@ -14,7 +14,9 @@
 
 ==============================================================================================*/
 
-#include <string.h> /* for memset */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "orb.h"
 
@@ -52,26 +54,30 @@ typedef struct
 
 } imgui_layout_t;
 
-static imgui_layout_t s_layout = 
+/* Unscaled base style used by set_style / set_scale.  set_style updates this;
+   set_scale multiplies it to derive the actual layout dimensions. */
+static imgui_style_t s_base_style = { .font_size = 12, .line_size = 20 };
+
+static imgui_layout_t s_layout =
 {
-    .font_size     = 8,
-    .line_size     = 18,
-    .widget_gap    = 3,    /* 18 / 6                */
-    .widget_pad    = 4,    /* 8  / 2                */
-    .win_title_h   = 20,   /* 18 + 8/4              */
+    .font_size     = 12,
+    .line_size     = 20,
+    .widget_gap    = 3,    /* 20 / 6                */
+    .widget_pad    = 6,    /* 12 / 2                */
+    .win_title_h   = 23,   /* 20 + 12/4             */
     .win_border    = 1,
-    .checkbox_sz   = 12,   /* 8  + 8/2              */
-    .slider_knob_w = 8,    /* = font_size           */
-    .checkmark_pad = 3,    /* 12 / 4                */
-    .cursor_w      = 1,    /* 8  / 8                */
-    .cursor_inset  = 2,    /* 8  / 4                */
+    .checkbox_sz   = 18,   /* 12 + 12/2             */
+    .slider_knob_w = 12,   /* = font_size           */
+    .checkmark_pad = 4,    /* 18 / 4                */
+    .cursor_w      = 1,    /* 12 / 8                */
+    .cursor_inset  = 3,    /* 12 / 4                */
 };
 
 static void
 layout_compute( u32 fs, u32 ls )
 {
-    if ( fs < 8u        ) fs = 8u;
-    if ( ls < fs        ) ls = fs;
+    if ( fs < 8u ) fs = 8u;
+    if ( ls < fs ) ls = fs;
 
     u32 csz = fs + fs / 2u;    /* checkbox_sz = fs * 3/2 */
 

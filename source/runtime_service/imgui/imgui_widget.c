@@ -102,8 +102,8 @@ button_color( imgui_id_t id )
     begin_window / end_window
 ----------------------------------------------------------------------------------------------*/
 
-static void
-widget_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
+void
+imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
 {
     s_ctx.win_x      = x;
     s_ctx.win_y      = y;
@@ -132,8 +132,8 @@ widget_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     s_ctx.cursor_y = y + WIN_TITLE_H + WIDGET_GAP;
 }
 
-static void
-widget_end_window( void )
+void
+imgui_end_window( void )
 {
     draw_pop_clip_rect();
 }
@@ -142,8 +142,8 @@ widget_end_window( void )
     text
 ----------------------------------------------------------------------------------------------*/
 
-static void
-widget_text( const char* str )
+void
+imgui_text( const char* str )
 {
     imgui_rect_t r = widget_next_rect( font_char_h() );
     draw_push_text( r.x, r.y, COL_TEXT, str );
@@ -153,8 +153,8 @@ widget_text( const char* str )
     button -- returns true on the frame the button is released while hovered
 ----------------------------------------------------------------------------------------------*/
 
-static bool
-widget_button( const char* label )
+bool
+imgui_button( const char* label )
 {
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
@@ -177,8 +177,8 @@ widget_button( const char* label )
     checkbox -- returns true when the value toggles
 ----------------------------------------------------------------------------------------------*/
 
-static bool
-widget_checkbox( const char* label, bool* v )
+bool
+imgui_checkbox( const char* label, bool* v )
 {
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
@@ -217,8 +217,8 @@ widget_checkbox( const char* label, bool* v )
     slider_float -- draggable horizontal slider; returns true while dragging
 ----------------------------------------------------------------------------------------------*/
 
-static bool
-widget_slider_float( const char* label, f32* v, f32 lo, f32 hi )
+bool
+imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 {
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
@@ -276,8 +276,8 @@ widget_slider_float( const char* label, f32* v, f32 lo, f32 hi )
     input_text -- single-line text field; returns true when Enter is pressed
 ----------------------------------------------------------------------------------------------*/
 
-static bool
-widget_input_text( const char* label, char* buf, u32 bufsz )
+bool
+imgui_input_text( const char* label, char* buf, u32 bufsz )
 {
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
@@ -369,18 +369,17 @@ widget_input_text( const char* label, char* buf, u32 bufsz )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Low-level draw_rect / draw_text / push_clip / pop_clip
-    (these are thin wrappers exposed through the imgui_api_t)
+    Low-level draw_rect / draw_text
 ----------------------------------------------------------------------------------------------*/
 
-static void
-widget_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr )
+void
+imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr )
 {
     draw_push_rect_filled( x, y, w, h, 0,0,1,1, 0, abgr );
 }
 
-static void
-widget_draw_text( f32 x, f32 y, u32 abgr, const char* str )
+void
+imgui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
 {
     draw_push_text( x, y, abgr, str );
 }

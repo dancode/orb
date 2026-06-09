@@ -84,3 +84,6 @@ cmake-build-*/
 
 # Child project engine root marker (machine-local)
 .orb_engine
+
+# Third Party Bloat
+/third_party

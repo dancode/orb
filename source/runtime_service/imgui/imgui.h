@@ -102,9 +102,11 @@ typedef struct
     height, checkbox size, etc.) is derived from these as integer pixel values -- no
     fractional pixels are generated in the layout.
 
-    font_size : rendered glyph cell side in pixels.  For the built-in 8x8 bitmap, use
-                multiples of 8 (8, 16, 24 ...) for pixel-perfect scaling; even integers
-                work with any future font atlas.  Minimum enforced: 8.
+    font_size : rendered glyph cell height in pixels.  The built-in 8x8 atlas is
+                pixel-perfect at multiples of 8 (8, 16, 24 ...).  The built-in 8x12
+                atlas (default) is pixel-perfect at multiples of 12 (12, 24, 36 ...).
+                font_size >= 12 selects the 8x12 atlas; < 12 selects the 8x8 atlas.
+                Minimum enforced: 8.
     line_size : widget row height in pixels.  Must be >= font_size.  Even integers keep
                 top/bottom padding symmetric.  Minimum enforced: font_size.
 ==============================================================================================*/

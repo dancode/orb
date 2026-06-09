@@ -2,10 +2,10 @@
 
     runtime_service/imgui/imgui_render.c -- GPU resource management and draw-list flush.
 
-    render_init  creates the VB, IB, pipeline, font sampler, and a 1x1 white pixel texture.
-    render_flush opens a LOAD render pass on the swapchain (preserves scene content),
-                 writes the current frame's vertex/index data, and emits one indexed draw
-                 call per draw command in s_draw.  render_shutdown destroys all GPU objects.
+    imgui_render_init  creates the VB, IB, pipeline, font sampler, and a 1x1 white pixel texture.
+    imgui_render_flush opens a LOAD render pass on the swapchain (preserves scene content),
+                       writes the current frame's vertex/index data, and emits one indexed draw
+                       call per draw command in s_draw.  imgui_render_shutdown destroys all GPU objects.
 
     Included by imgui.c after imgui_draw.c so s_draw is in scope.
 
@@ -57,11 +57,11 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
 }
 
 /*----------------------------------------------------------------------------------------------
-    render_init -- allocate all GPU resources.  Call once after rhi()->init().
+    imgui_render_init -- allocate all GPU resources.  Call once after rhi()->init().
 ----------------------------------------------------------------------------------------------*/
 
 static bool
-render_init( void )
+imgui_render_init( void )
 {
     /* Vertex buffer (CPU_TO_GPU, updated every frame via buffer_write). */
     s_render.vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
@@ -214,11 +214,11 @@ render_init( void )
 }
 
 /*----------------------------------------------------------------------------------------------
-    render_shutdown -- destroy all GPU resources.  Call before rhi()->shutdown().
+    imgui_render_shutdown -- destroy all GPU resources.  Call before rhi()->shutdown().
 ----------------------------------------------------------------------------------------------*/
 
 static void
-render_shutdown( void )
+imgui_render_shutdown( void )
 {
     if ( s_render.white_tex_idx )
         rhi()->unregister_texture( s_render.white_tex_idx );
@@ -243,14 +243,14 @@ render_shutdown( void )
 }
 
 /*----------------------------------------------------------------------------------------------
-    render_flush -- upload draw list to GPU and emit one draw call per command.
+    imgui_render_flush -- upload draw list to GPU and emit one draw call per command.
 
     Opens a LOAD render pass so the scene rendered before this call is preserved.
     Sets full-window viewport; each draw command applies its own scissor rectangle.
 ----------------------------------------------------------------------------------------------*/
 
 static void
-render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
+imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;

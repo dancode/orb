@@ -121,10 +121,18 @@ main( int argc, char** argv )
         }
     }
 
-    if ( imgui() ) {
-         imgui()->init();
+    /* Initialize imgui GPU resources and load TrueType font atlas. */
+    if ( !imgui()->init() )
+    {
+        fprintf( stderr, "[sb_vulkan] imgui->init failed\n" );
+        draw()->shutdown();
+        rhi()->context_destroy( ctx );
+        rhi()->shutdown();
+        app()->window_close( win );
+        mod_system_exit();
+        return 1;
     }
-
+    imgui()->load_font( "bin/segoeui_16.orb_font" );
 
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
@@ -186,25 +194,26 @@ main( int argc, char** argv )
                 }
 
                 if ( imgui() )
-                {
-                    // draw()->begin_pass( cmd, w, h, clear );
-                    // draw()->rect( ... );
-                    // draw()->end_pass();
+                {                                        
+                    // imgui()->set_style( ( imgui_style_t ){ .font_size = 12, .line_size = 32 } );
+                    // imgui()->set_scale( 2.0f );
 
-                    imgui()->set_scale( 2.0f );    // test dynamic scaling between frames
-                    // imgui()->set_style( ( imgui_style_t ){ .font_size = 16, .line_size = 28 } );
-                    
                     imgui()->new_frame( win_w, win_h, 4 );
                     imgui()->begin_window( "Debug", 10, 10, 640, 480 );
                     if ( imgui()->button( "Reload" ) )
                     {
                         
                     }
-
+                    imgui()->text( "this is some text" );
                     static float scale = 1.0f;
                     if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) ) {
                          imgui()->set_scale( scale );
                     }
+
+                    imgui()->text( "here we go..." );
+                    imgui()->text( "this is some text" );
+                    imgui()->text( "this is more text" );
+                    imgui()->text( "the last line!" );
 
                     imgui()->end_window();
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
@@ -225,9 +234,7 @@ main( int argc, char** argv )
 
     rhi()->context_destroy( ctx );      // finish rendering and free swapchain + sync objects (first)
 
-    if ( imgui() ) {
-         imgui()->shutdown();
-    }
+    imgui()->shutdown();
 
     if ( b_use_boot )
     {

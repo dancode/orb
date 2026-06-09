@@ -5,11 +5,12 @@
     runtime_service/imgui/imgui_api.h -- imgui module API struct and gateway macro.
     Always statically linked into the host.
 
-    Function groups (all called through the imgui() vtable):
+    Function groups (all called through imgui() vtable or as imgui_* direct calls):
         Lifecycle : init / shutdown
         Frame     : new_frame / render
         Panels    : begin_window / end_window
         Widgets   : text / button / checkbox / slider_float / input_text
+        Style     : set_style / set_scale
         Draw      : draw_rect / draw_text / push_clip / pop_clip
 
 ==============================================================================================*/
@@ -26,11 +27,14 @@
 typedef struct imgui_api_s
 {
     /* GPU resource lifecycle.
-       init()     -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
-       shutdown() -- call before rhi()->shutdown(); destroys all GPU resources. */
+       init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
+       shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
+       load_font() -- load a pre-baked .orb_font atlas; call after init().
+                      Returns true on success; falls back to bitmap font on failure. */
 
-    bool ( *init     )( void );
-    void ( *shutdown )( void );
+    bool ( *init      )( void );
+    void ( *shutdown  )( void );
+    bool ( *load_font )( const char* path );
 
     /* Frame lifecycle.
        new_frame() -- reset draw list and translate app input into the IO snapshot.
@@ -62,8 +66,8 @@ typedef struct imgui_api_s
 
        set_style() -- set font_size and line_size directly; all other dimensions are
                       derived as integer pixel values (no fractional layout).
-       set_scale() -- convenience shorthand: scales the default 8px font and 18px line
-                      by 'scale', snapping each result to the nearest even integer. */
+       set_scale() -- convenience shorthand: multiplies the base style (set by set_style,
+                      or the defaults 8px/18px) by 'scale', snapping to nearest even integer. */
 
     void ( *set_style )( imgui_style_t style );
     void ( *set_scale )( f32 scale );

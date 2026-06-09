@@ -26,6 +26,7 @@ mod_desc_t* imgui_get_mod_desc( void );
 
 bool imgui_init( void );
 void imgui_shutdown( void );
+bool imgui_load_font( const char* path );
 void imgui_new_frame( i32 win_w, i32 win_h, f32 dt );
 void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 

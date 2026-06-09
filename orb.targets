@@ -443,7 +443,21 @@ target sb_example_game
     unit        example_game.c
 	dep 		mod ref sys core app
     dep         run rhi
-	mono_dep	render		
+	mono_dep	render
+
+# ==============================================================================
+# 10_TOOLS -- Standalone offline CLI tools (no engine runtime dependency)
+# ==============================================================================
+
+target font_tool
+
+    type        exe
+    root        source/tools/font_tool
+    folder      08_TOOL
+    unit        font_tool.c
+    flag        is_tool
+    inc         third_party/freetype-2.14.3/include
+    link_flag   msvc third_party/freetype-2.14.3/objs/x64/Release/freetype.lib
 
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code
@@ -585,8 +599,9 @@ solution orb_sandbox_engine				# developing engine libraries
 solution orb_build
 
     out         build/proj
-    add         build_tool 
+    add         build_tool
 	add 		reflect_tool
+	add 		font_tool
 
 # ==============================================================================
 # FULL SOLUTION
@@ -625,12 +640,13 @@ solution orb_all
 	add 		host_tool
 	
 	add 		sb_example_tool
-	add 		sb_example_server			
-	add 		sb_example_editor 
-	add 		sb_example_game 
+	add 		sb_example_server
+	add 		sb_example_editor
+	add 		sb_example_game
 	add 		sb_example_runtime
-	
-	
+
+	add 		font_tool
+
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC
 # ==============================================================================

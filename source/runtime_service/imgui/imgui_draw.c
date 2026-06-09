@@ -180,10 +180,11 @@ draw_push_text( f32 x, f32 y, u32 abgr, const char* str )
     for ( ; *str; ++str )
     {
         u8  ch = (u8)*str;
-        f32 u0, v0, u1, v1;
-        font_glyph( ch, &u0, &v0, &u1, &v1 );
-        draw_push_rect_filled( cx, y, font_char_w(), font_char_h(), u0, v0, u1, v1, s_atlas_idx, abgr );
-        cx += font_char_w();
+        f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
+        font_glyph( ch, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
+        if ( gw > 0.0f && gh > 0.0f )
+            draw_push_rect_filled( cx + ox, y + oy, gw, gh, u0, v0, u1, v1, font_atlas_idx(), abgr );
+        cx += advance;
     }
 }
 
