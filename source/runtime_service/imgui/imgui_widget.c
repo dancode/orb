@@ -18,24 +18,16 @@
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
-    Layout constants  (base values x s_scale at every use site)
+    Layout accessors  (read from s_layout, computed by layout_compute() in imgui.c)
 ----------------------------------------------------------------------------------------------*/
 
-#define WIDGET_H_BASE      18.0f            /* standard widget height (px)                    */
-#define WIDGET_GAP_BASE     3.0f            /* vertical gap between consecutive widgets       */
-#define WIDGET_PAD_BASE     4.0f            /* horizontal padding inside window content area  */
-#define WIN_TITLE_H_BASE   20.0f            /* window title bar height                        */
-#define WIN_BORDER_BASE     1.0f            /* window border thickness                        */
-#define CHECKBOX_SZ_BASE   12.0f            /* side length of the check box indicator         */
-#define SLIDER_KNOB_W_BASE  8.0f            /* width of the slider knob                       */
-
-#define WIDGET_H      ( WIDGET_H_BASE      * s_scale )
-#define WIDGET_GAP    ( WIDGET_GAP_BASE    * s_scale )
-#define WIDGET_PAD    ( WIDGET_PAD_BASE    * s_scale )
-#define WIN_TITLE_H   ( WIN_TITLE_H_BASE   * s_scale )
-#define WIN_BORDER    ( WIN_BORDER_BASE    * s_scale )
-#define CHECKBOX_SZ   ( CHECKBOX_SZ_BASE   * s_scale )
-#define SLIDER_KNOB_W ( SLIDER_KNOB_W_BASE * s_scale )
+#define WIDGET_H      ( (f32)s_layout.line_size      )
+#define WIDGET_GAP    ( (f32)s_layout.widget_gap     )
+#define WIDGET_PAD    ( (f32)s_layout.widget_pad     )
+#define WIN_TITLE_H   ( (f32)s_layout.win_title_h    )
+#define WIN_BORDER    ( (f32)s_layout.win_border     )
+#define CHECKBOX_SZ   ( (f32)s_layout.checkbox_sz    )
+#define SLIDER_KNOB_W ( (f32)s_layout.slider_knob_w  )
 
 /*----------------------------------------------------------------------------------------------
     Color palette (IMGUI_COLOR: byte order R,G,B,A in memory = ABGR u32)
@@ -202,7 +194,7 @@ widget_checkbox( const char* label, bool* v )
     if ( *v )
     {
         /* Check mark: simple smaller filled square. */
-        f32 pad = 3.0f * s_scale;
+        f32 pad = (f32)s_layout.checkmark_pad;
         draw_push_rect_filled( bx + pad, by + pad,
                                CHECKBOX_SZ - 2.0f * pad, CHECKBOX_SZ - 2.0f * pad,
                                0,0,1,1, 0, COL_CHECK_MARK );
@@ -234,7 +226,8 @@ widget_slider_float( const char* label, f32* v, f32 lo, f32 hi )
     /* Label to the right of the track; track takes the left portion. */
     f32 label_w = font_text_w( label );
     f32 track_w = r.w - label_w - WIDGET_PAD;
-    if ( track_w < 20.0f * s_scale ) track_w = 20.0f * s_scale;
+    f32 min_w   = (f32)( s_layout.slider_knob_w * 3u );
+    if ( track_w < min_w ) track_w = min_w;
 
     imgui_rect_t track_r = { r.x, r.y, track_w, r.h };
     widget_interact( id, track_r );
@@ -291,8 +284,9 @@ widget_input_text( const char* label, char* buf, u32 bufsz )
 
     /* Box takes the left portion; label on the right. */
     f32 label_w = font_text_w( label );
-    f32 box_w   = r.w - label_w - WIDGET_PAD;
-    if ( box_w < 20.0f * s_scale ) box_w = 20.0f * s_scale;
+    f32 box_w    = r.w - label_w - WIDGET_PAD;
+    f32 min_box  = (f32)( s_layout.font_size * 3u );
+    if ( box_w < min_box ) box_w = min_box;
     imgui_rect_t box_r = { r.x, r.y, box_w, r.h };
 
     /* Click focuses this widget. */
@@ -356,11 +350,13 @@ widget_input_text( const char* label, char* buf, u32 bufsz )
     /* Blinking cursor (always visible when focused for simplicity). */
     if ( focused )
     {
-        f32 tw = font_text_w( buf );
-        f32 cx = box_r.x + WIDGET_PAD + tw;
-        if ( cx + 2.0f * s_scale < box_r.x + box_r.w )
-            draw_push_rect_filled( cx, box_r.y + 2.0f * s_scale,
-                                   1.0f * s_scale, box_r.h - 4.0f * s_scale,
+        f32 tw      = font_text_w( buf );
+        f32 cx      = box_r.x + WIDGET_PAD + tw;
+        f32 inset   = (f32)s_layout.cursor_inset;
+        f32 cur_w   = (f32)s_layout.cursor_w;
+        if ( cx + cur_w < box_r.x + box_r.w )
+            draw_push_rect_filled( cx, box_r.y + inset,
+                                   cur_w, box_r.h - inset * 2.0f,
                                    0,0,1,1, 0, COL_CURSOR );
     }
 

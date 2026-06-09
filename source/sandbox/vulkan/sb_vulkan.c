@@ -192,6 +192,8 @@ main( int argc, char** argv )
                     // draw()->end_pass();
 
                     imgui()->set_scale( 2.0f );    // test dynamic scaling between frames
+                    // imgui()->set_style( ( imgui_style_t ){ .font_size = 16, .line_size = 28 } );
+                    
                     imgui()->new_frame( win_w, win_h, 4 );
                     imgui()->begin_window( "Debug", 10, 10, 640, 480 );
                     if ( imgui()->button( "Reload" ) )

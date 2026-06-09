@@ -38,6 +38,7 @@ bool imgui_checkbox( const char* label, bool* v );
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
 
+void imgui_set_style( imgui_style_t style );
 void imgui_set_scale( f32 scale );
 void imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );
 void imgui_draw_text( f32 x, f32 y, u32 abgr, const char* str );

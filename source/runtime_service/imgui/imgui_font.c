@@ -12,13 +12,13 @@
 ==============================================================================================*/
 // clang-format off
 
-#define FONT_ATLAS_W   128
-#define FONT_ATLAS_H    64
-#define FONT_GLYPH_W     8
-#define FONT_GLYPH_H     8
-#define FONT_GLYPHS_ROW 16    /* glyphs per atlas row */
-#define FONT_GLYPH_ADV   8.0f /* pixels to advance per character */
-#define FONT_LINE_H     10.0f /* line height including 2px leading */
+#define FONT_ATLAS_W           128
+#define FONT_ATLAS_H            64
+#define FONT_GLYPH_W             8
+#define FONT_GLYPH_H             8
+#define FONT_GLYPHS_ROW         16      /* glyphs per atlas row */
+#define FONT_GLYPH_ADV           8.0f   /* pixels to advance per character */
+#define FONT_LINE_H             10.0f   /* line height including 2px leading */
 
 /* 96 glyphs, ASCII 32-127.  Each row is one byte; bit 0 = leftmost pixel. */
 static const u8 s_font_data[ 96 ][ FONT_GLYPH_H ] =
@@ -228,9 +228,9 @@ font_glyph( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1 )
     *v1 = *v0 + (f32)FONT_GLYPH_H / (f32)FONT_ATLAS_H;
 }
 
-static f32 font_char_w( void ) { return FONT_GLYPH_ADV * s_scale; }
-static f32 font_char_h( void ) { return (f32)FONT_GLYPH_H * s_scale; }
-static f32 font_line_h( void ) { return FONT_LINE_H * s_scale; }
+static f32 font_char_w( void ) { return (f32)s_layout.font_size; }
+static f32 font_char_h( void ) { return (f32)s_layout.font_size; }
+static f32 font_line_h( void ) { return (f32)( s_layout.font_size + s_layout.font_size / 4u ); }
 
 /* Approximate pixel width of a string (monospace). */
 static f32

@@ -95,5 +95,26 @@ typedef struct
 #define IMGUI_MAX_CMDS    1024
 #define IMGUI_CLIP_DEPTH  32
 
+/*==============================================================================================
+    Style
+
+    Two integer pillars control all UI dimensions.  Every other metric (padding, title bar
+    height, checkbox size, etc.) is derived from these as integer pixel values -- no
+    fractional pixels are generated in the layout.
+
+    font_size : rendered glyph cell side in pixels.  For the built-in 8x8 bitmap, use
+                multiples of 8 (8, 16, 24 ...) for pixel-perfect scaling; even integers
+                work with any future font atlas.  Minimum enforced: 8.
+    line_size : widget row height in pixels.  Must be >= font_size.  Even integers keep
+                top/bottom padding symmetric.  Minimum enforced: font_size.
+==============================================================================================*/
+
+typedef struct
+{
+    u32 font_size;    /* rendered glyph cell side (even integer, min 8)    */
+    u32 line_size;    /* widget row height (even integer, >= font_size)     */
+
+} imgui_style_t;
+
 /*============================================================================================*/
 #endif    // IMGUI_H

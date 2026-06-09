@@ -57,11 +57,15 @@ typedef struct imgui_api_s
     bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );
     bool ( *input_text  )( const char* label, char* buf, u32 bufsz );
 
-    /* Scale -- uniform scale multiplier applied to all font metrics and widget layout.
-       Call between frames (outside new_frame / render).  1.0 = 8x8 native size.
-       Integer and half-integer steps (1.5, 2.0, 3.0) render cleanest with the
-       nearest-neighbour font sampler. */
+    /* Style / scale -- configure the two layout pillars that drive all UI dimensions.
+       Call between frames (outside new_frame / render).
 
+       set_style() -- set font_size and line_size directly; all other dimensions are
+                      derived as integer pixel values (no fractional layout).
+       set_scale() -- convenience shorthand: scales the default 8px font and 18px line
+                      by 'scale', snapping each result to the nearest even integer. */
+
+    void ( *set_style )( imgui_style_t style );
     void ( *set_scale )( f32 scale );
 
     /* Low-level draw list access -- may be called anywhere between new_frame and render.
