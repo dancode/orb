@@ -207,7 +207,7 @@ main( int argc, char** argv )
                     imgui()->text( "this is some text" );
                     static float scale = 1.0f;
                     if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) ) {
-                         imgui()->set_scale( scale );
+                         // imgui()->set_scale( scale );
                     }
 
                     imgui()->text( "here we go..." );

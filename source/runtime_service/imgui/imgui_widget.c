@@ -285,7 +285,7 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
     /* Box takes the left portion; label on the right. */
     f32 label_w = font_text_w( label );
     f32 box_w    = r.w - label_w - WIDGET_PAD;
-    f32 min_box  = (f32)( s_layout.font_size * 3u );
+    f32 min_box  = s_font->char_h * 3.0f;
     if ( box_w < min_box ) box_w = min_box;
     imgui_rect_t box_r = { r.x, r.y, box_w, r.h };
 

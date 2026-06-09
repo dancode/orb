@@ -3,9 +3,10 @@
     runtime_service/imgui/imgui.c -- Unity build entry for the imgui module.
 
     Include order matters: each file can reference statics from files included above it.
-        imgui_shader.h  -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
-        imgui_font.c    -- font atlas: font_init/shutdown/glyph + s_atlas_idx
-        imgui_draw.c    -- CPU draw list: draw_reset, draw_push_*, s_draw
+        imgui_shader.h       -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
+        imgui_font_builtin.c -- hardcoded bitmap fonts: bitmap_font_def_t/t, bitmap_atlas_*, s_bitmap_*
+        imgui_font.c         -- font management + dispatch: tt_font_t, tt_font_load, font_glyph, font_*
+        imgui_draw.c         -- CPU draw list: draw_reset, draw_push_*, s_draw
         imgui_render.c  -- GPU flush: imgui_render_init/shutdown/flush
         imgui_input.c   -- app->IO snapshot: input_update, s_io
         imgui_ctx.c     -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
@@ -99,6 +100,7 @@ layout_compute( u32 fs, u32 ls )
 ==============================================================================================*/
 
 #include "runtime_service/imgui/imgui_shader.h"
+#include "runtime_service/imgui/imgui_font_builtin.c"
 #include "runtime_service/imgui/imgui_font.c"
 #include "runtime_service/imgui/imgui_draw.c"
 #include "runtime_service/imgui/imgui_render.c"

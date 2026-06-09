@@ -20,7 +20,7 @@ bool imgui_init( void )
 
 bool imgui_load_font( const char* path )
 {
-    return font_load_orb( path );
+    return tt_font_load( path );
 }
 
 void imgui_shutdown( void )
@@ -44,7 +44,7 @@ void imgui_set_style( imgui_style_t style )
 {
     s_base_style = style;
     layout_compute( style.font_size, style.line_size );
-    font_select( s_layout.font_size );
+    bitmap_font_select( s_layout.font_size );
 }
 
 void imgui_set_scale( f32 scale )
@@ -55,7 +55,7 @@ void imgui_set_scale( f32 scale )
     fs = ( fs < 2u ) ? 2u : ( fs & ~1u );
     ls = ( ls < 2u ) ? 2u : ( ls & ~1u );
     layout_compute( fs, ls );
-    font_select( s_layout.font_size );
+    bitmap_font_select( s_layout.font_size );
 }
 
 void imgui_push_clip( f32 x, f32 y, f32 w, f32 h )
