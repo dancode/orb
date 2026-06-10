@@ -183,7 +183,8 @@ imgui_render_init( void )
     }
 
     /* 1x1 opaque white RGBA8 texture for solid-color draws.
-       Fragment formula: out = v_color.rgba * sample.r; with s.r=1.0 the color passes through. */
+       Fragment formula: out = ( srgb_to_linear(v_color.rgb), v_color.a * sample.r );
+       with s.r=1.0 the white pixel does not attenuate, so the vertex color drives the draw. */
     s_render.white_tex = rhi()->texture_create( &( rhi_texture_desc_t ){
         .width        = 1,
         .height       = 1,
@@ -299,12 +300,18 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
             continue;
         }
 
-        /* Scissor to the draw command's clip rect. */
+        /* Scissor to the draw command's clip rect.  Floor the origin and ceil the
+           far edge (rather than truncating both) so a fractional clip rect never
+           rounds inward and shaves a pixel off the visible content at a border. */
+        i32 sx0 = (i32)floorf( dc->clip_rect.x );
+        i32 sy0 = (i32)floorf( dc->clip_rect.y );
+        i32 sx1 = (i32)ceilf ( dc->clip_rect.x + dc->clip_rect.w );
+        i32 sy1 = (i32)ceilf ( dc->clip_rect.y + dc->clip_rect.h );
         rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){
-            .x      = (i32)dc->clip_rect.x,
-            .y      = (i32)dc->clip_rect.y,
-            .width  = (i32)dc->clip_rect.w,
-            .height = (i32)dc->clip_rect.h,
+            .x      = sx0,
+            .y      = sy0,
+            .width  = sx1 - sx0,
+            .height = sy1 - sy0,
         } );
 
         /* Resolve texture index: 0 means use white pixel (solid-color draw). */

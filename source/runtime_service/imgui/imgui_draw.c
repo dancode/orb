@@ -108,6 +108,15 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     if ( s_draw.vert_count + 4 > IMGUI_MAX_VERTS ) return;
     if ( s_draw.idx_count  + 6 > IMGUI_MAX_IDX   ) return;
 
+    /* Pixel-grid snap: round the quad origin to the nearest integer pixel.  The
+       ortho maps integer coords exactly onto pixel boundaries, so a snapped origin
+       keeps thin edges (1px borders, slider/checkbox outlines, the text cursor) and
+       glyph quads crisp instead of straddling two pixels and blurring or vanishing.
+       Width/height are left intact -- with integer extents the far edge stays on the
+       grid too; fractional extents (e.g. a slider fill bar) keep their exact length. */
+    x = floorf( x + 0.5f );
+    y = floorf( y + 0.5f );
+
     imgui_rect_t clip = draw_current_clip();
     draw_ensure_cmd( tex_idx, clip );
     if ( s_draw.cmd_count == 0 ) return;

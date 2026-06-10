@@ -94,7 +94,14 @@
       "Bash(Select-Object Name)",
       "PowerShell(Get-ChildItem -Path \"F:\\\\orb\\\\source\\\\runtime_service\" -Recurse | Where-Object { $_.PSIsContainer } | Select-Object FullName)",
       "Bash(python tools_tmp/gen_orb_mono_16.py --preview)",
-      "Bash(bin/build_tool.exe -config Debug -target font_tool)"
+      "Bash(bin/build_tool.exe -config Debug -target font_tool)",
+      "Bash(glslc --target-env=vulkan1.3 imgui.frag -o imgui.frag.spv)",
+      "Read(//f/f/orb/source/runtime_service/imgui/shaders/**)",
+      "Bash(python *)",
+      "Bash(cmd.exe /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && bin\\\\build_tool.exe -config Debug -target imgui')",
+      "Bash(echo \"exit=$?\")",
+      "PowerShell(cmd /c _build_imgui_tmp.bat 2>&1 | Select-Object -Last 40)",
+      "PowerShell(cmd /c \"F:\\\\orb\\\\_build_imgui_tmp.bat\" 2>&1 | Select-Object -Last 40)"
     ]
   }
 }

@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>      /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 
 #include "orb.h"
 

@@ -133,7 +133,8 @@ main( int argc, char** argv )
         return 1;
     }
     
-    imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
+    imgui()->load_font( "fonts/jetbrains_regular_24.orb_font" );
+    // imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
     
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
