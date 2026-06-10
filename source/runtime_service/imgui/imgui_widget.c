@@ -113,12 +113,11 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     s_ctx.content_w  = w - 2.0f * WIDGET_PAD;
 
     /* Window background. */
-    draw_push_rect_filled( x, y, w, h, 0,0,1,1, 0, COL_WIN_BG );
+    draw_push_rect_filled( x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
     /* Title bar. */
-    draw_push_rect_filled( x, y, w, WIN_TITLE_H, 0,0,1,1, 0, COL_TITLE_BG );
-    draw_push_text( x + WIDGET_PAD, y + ( WIN_TITLE_H - font_char_h() ) * 0.5f,
-                    COL_TEXT, title );
+    draw_push_rect_filled( x, y, w, WIN_TITLE_H, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
+    draw_push_text( x + WIDGET_PAD, y + ( WIN_TITLE_H - font_char_h() ) * 0.5f, COL_TEXT, title );
 
     /* Border. */
     draw_push_rect_outline( x, y, w, h, WIN_BORDER, 0, COL_BORDER );

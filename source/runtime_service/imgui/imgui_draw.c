@@ -80,7 +80,7 @@ draw_ensure_cmd( u32 tex_idx, imgui_rect_t clip )
         if ( cur->tex_idx == tex_idx
              && cur->clip_rect.x == clip.x && cur->clip_rect.y == clip.y
              && cur->clip_rect.w == clip.w && cur->clip_rect.h == clip.h )
-            return;    /* can append to existing command */
+            return; /* can append to existing command */
     }
 
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
@@ -136,10 +136,12 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
 static void
 draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr )
 {
-    /* top */    draw_push_rect_filled( x,         y,         w,     t,     0,0,1,1, tex_idx, abgr );
-    /* bottom */ draw_push_rect_filled( x,         y + h - t, w,     t,     0,0,1,1, tex_idx, abgr );
-    /* left */   draw_push_rect_filled( x,         y + t,     t,     h-2*t, 0,0,1,1, tex_idx, abgr );
-    /* right */  draw_push_rect_filled( x + w - t, y + t,     t,     h-2*t, 0,0,1,1, tex_idx, abgr );
+    /* this math prevents corners from double blending on alpha < 1 */
+
+    /* top    */ draw_push_rect_filled( x,         y,         w, t,     0,0,1,1, tex_idx, abgr );
+    /* bottom */ draw_push_rect_filled( x,         y + h - t, w, t,     0,0,1,1, tex_idx, abgr );
+    /* left   */ draw_push_rect_filled( x,         y + t,     t, h-2*t, 0,0,1,1, tex_idx, abgr );
+    /* right  */ draw_push_rect_filled( x + w - t, y + t,     t, h-2*t, 0,0,1,1, tex_idx, abgr );
 }
 
 /*----------------------------------------------------------------------------------------------
