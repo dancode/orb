@@ -119,7 +119,8 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
 
     imgui_rect_t clip = draw_current_clip();
     draw_ensure_cmd( tex_idx, clip );
-    if ( s_draw.cmd_count == 0 ) return;
+    if ( s_draw.cmd_count == 0 )
+         return;
 
     u16 base = (u16)s_draw.vert_count;
 

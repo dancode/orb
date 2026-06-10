@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <ctype.h>
 
 #define STB_RECT_PACK_IMPLEMENTATION
 #include "tools/font_tool/stb_rect_pack.h"
@@ -363,6 +364,26 @@ path_has_c_ext( const char* path )
 }
 
 /*==============================================================================================
+    path_has_orb_font_ext -- returns 1 if path ends in ".orb_font" (case-insensitive).
+==============================================================================================*/
+
+static int
+path_has_orb_font_ext( const char* path )
+{
+    static const char ext[] = ".orb_font";
+    size_t            n      = strlen( path );
+    size_t            e      = sizeof( ext ) - 1;
+    if ( n < e )
+        return 0;
+
+    const char* tail = path + ( n - e );
+    for ( size_t i = 0; i < e; ++i )
+        if ( tolower( (unsigned char)tail[ i ] ) != ext[ i ] )
+            return 0;
+    return 1;
+}
+
+/*==============================================================================================
     main
 ==============================================================================================*/
 
@@ -393,20 +414,26 @@ main( int argc, char** argv )
         for ( const char* p = out_arg; *p; ++p )
             if ( *p == '/' || *p == '\\' ) { has_dir = 1; break; }
 
-        if ( has_dir )
+        /* Paths with a directory are used as-is; bare filenames are redirected into fonts\. */
+        int n = has_dir ? snprintf( s_out_buf, sizeof( s_out_buf ), "%s", out_arg )
+                        : snprintf( s_out_buf, sizeof( s_out_buf ), "fonts\\%s", out_arg );
+        if ( n <= 0 || n >= (int)sizeof( s_out_buf ) )
         {
-            out_path = out_arg;
+            fprintf( stderr, "error: output path too long\n" );
+            return 1;
         }
-        else
+
+        /* Default the extension to .orb_font when the user omitted a recognized one. */
+        if ( !path_has_orb_font_ext( s_out_buf ) && !path_has_c_ext( s_out_buf ) )
         {
-            int n = snprintf( s_out_buf, sizeof( s_out_buf ), "fonts\\%s", out_arg );
-            if ( n <= 0 || n >= (int)sizeof( s_out_buf ) )
+            int m = snprintf( s_out_buf + n, sizeof( s_out_buf ) - (size_t)n, ".orb_font" );
+            if ( m <= 0 || m >= (int)sizeof( s_out_buf ) - n )
             {
                 fprintf( stderr, "error: output path too long\n" );
                 return 1;
             }
-            out_path = s_out_buf;
         }
+        out_path = s_out_buf;
     }
     else
     {

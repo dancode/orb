@@ -21,13 +21,13 @@
     Layout accessors  (read from s_layout, computed by layout_compute() in imgui.c)
 ----------------------------------------------------------------------------------------------*/
 
-#define WIDGET_H      ( (f32)s_layout.line_size      )
-#define WIDGET_GAP    ( (f32)s_layout.widget_gap     )
-#define WIDGET_PAD    ( (f32)s_layout.widget_pad     )
-#define WIN_TITLE_H   ( (f32)s_layout.win_title_h    )
-#define WIN_BORDER    ( (f32)s_layout.win_border     )
-#define CHECKBOX_SZ   ( (f32)s_layout.checkbox_sz    )
-#define SLIDER_KNOB_W ( (f32)s_layout.slider_knob_w  )
+#define WIDGET_H      ( (f32)s_layout.line_size     )
+#define WIDGET_GAP    ( (f32)s_layout.widget_gap    )
+#define WIDGET_PAD    ( (f32)s_layout.widget_pad    )
+#define WIN_TITLE_H   ( (f32)s_layout.win_title_h   )
+#define WIN_BORDER    ( (f32)s_layout.win_border    )
+#define CHECKBOX_SZ   ( (f32)s_layout.checkbox_sz   )
+#define SLIDER_KNOB_W ( (f32)s_layout.slider_knob_w )
 
 /*----------------------------------------------------------------------------------------------
     Color palette (IMGUI_COLOR: byte order R,G,B,A in memory = ABGR u32)
