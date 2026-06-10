@@ -33,7 +33,7 @@
     Color palette (IMGUI_COLOR: byte order R,G,B,A in memory = ABGR u32)
 ----------------------------------------------------------------------------------------------*/
 
-#define COL_WIN_BG       IMGUI_COLOR( 0x28, 0x28, 0x28, 0xE8 )
+#define COL_WIN_BG       IMGUI_COLOR( 0x20, 0x20, 0x20, 0xE8 )
 #define COL_TITLE_BG     IMGUI_COLOR( 0x10, 0x60, 0xA0, 0xFF )
 #define COL_BORDER       IMGUI_COLOR( 0x80, 0x80, 0x80, 0xFF )
 #define COL_TEXT         IMGUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF )

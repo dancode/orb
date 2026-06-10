@@ -179,11 +179,9 @@ main( int argc, char** argv )
 
         if ( app()->key_pressed( APP_KEY_P ) )
         {
-            static int font_select = 0;
-            font_select = font_select == 0 ? 1 : 0;
-            {
-                imgui()->set_font( font_select == 1 ? IMGUI_FONT_BITMAP_8 : IMGUI_FONT_BITMAP_12 );
-            }
+            static int font_select = 1;
+            font_select = ( font_select + 1 ) % 4;
+            imgui()->set_font( (imgui_font_t)font_select );
         }
 
 

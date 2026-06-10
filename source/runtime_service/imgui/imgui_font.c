@@ -171,29 +171,34 @@ tt_font_load( const char* path )
     font_init / font_shutdown
 ----------------------------------------------------------------------------------------------*/
 
-static bool
-font_init( void )
-{
-    if ( !bitmap_atlas_init( &s_bitmap_8 ) )
-        return false;
-    if ( !bitmap_atlas_init( &s_bitmap_12 ) )
-    {
-        bitmap_atlas_shutdown( &s_bitmap_8 );
-        return false;
-    }
-    bitmap_font_select( IMGUI_FONT_BITMAP_12 );
-    return true;
-}
-
 static void
 font_shutdown( void )
 {
     tt_font_unload();
+    bitmap_atlas_shutdown( &s_bitmap_16_consola );
+    bitmap_atlas_shutdown( &s_bitmap_16_cascadia );
     bitmap_atlas_shutdown( &s_bitmap_12 );
     bitmap_atlas_shutdown( &s_bitmap_8 );
     s_bitmap_active = NULL;
     s_font          = NULL;
 }
+
+static bool
+font_init( void )
+{
+    /* bitmap_atlas_shutdown is safe on uninitialized fonts, so any failure here
+       can just delegate to font_shutdown for a single cleanup path. */
+    bool ok = bitmap_atlas_init( &s_bitmap_8 )
+           && bitmap_atlas_init( &s_bitmap_12 )
+           && bitmap_atlas_init( &s_bitmap_16_cascadia )
+           && bitmap_atlas_init( &s_bitmap_16_consola );
+
+    if ( !ok ) { font_shutdown(); return false; }
+
+    bitmap_font_select( IMGUI_FONT_BITMAP_12 );
+    return true;
+}
+
 
 /*----------------------------------------------------------------------------------------------
     font_char_w / font_char_h / font_line_h / font_text_w / font_atlas_idx
