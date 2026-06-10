@@ -133,14 +133,9 @@ main( int argc, char** argv )
         return 1;
     }
     
-    imgui()->load_font( "fonts/cascadia_mono_16.orb_font" );
-    // imgui()->load_font( "fonts/cascadia_mono_20.orb_font" );
-    // imgui()->load_font( "bin/segoeui_16.orb_font" );
-    // imgui()->set_font( IMGUI_FONT_BITMAP_8 );
-    // imgui()->set_font( IMGUI_FONT_BITMAP_12 );
-    // imgui()->set_bmp_scale( 2 );
-
-    // imgui()->set_font( IMGUI_FONT_BITMAP_8 );    
+    // imgui()->load_font( "fonts/cascadia_mono_16.orb_font" );    
+    imgui()->load_font( "fonts/cascadia_mono_20.orb_font" );
+    
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
@@ -171,7 +166,7 @@ main( int argc, char** argv )
         if ( app()->key_pressed( APP_KEY_S ) )
         {            
             static int bmp_scale = 1;
-            bmp_scale = bmp_scale == 1 ? 2 : 1;
+            bmp_scale = bmp_scale == 1 ? 2 : ( bmp_scale == 2 ? 3 : 1 );
             {                
                 imgui()->set_bmp_scale( bmp_scale );
             }

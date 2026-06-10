@@ -19,6 +19,8 @@
 
     Link deps: freetype.lib (import lib for freetype.dll)
 
+    Fonts are usually in: C:\WINDOWS\FONTS\<font_name>.ttf
+
 ==============================================================================================*/
 
 #include <stdio.h>
@@ -38,38 +40,41 @@
     Constants
 ==============================================================================================*/
 
-#define GLYPH_FIRST   32u
-#define GLYPH_LAST   126u
+#define GLYPH_FIRST   32u       // ASCII space; codepoints below this are control chars.
+#define GLYPH_LAST    126u      // ASCII tilde; codepoints above this are non-ASCII.
+
 #define GLYPH_MAX    ( GLYPH_LAST - GLYPH_FIRST + 1u )   /* 95 */
 
-#define GLYPH_PAD     1          /* gap between packed rects (prevents filter bleed) */
-#define ATLAS_W       512
-#define ATLAS_H       512
+#define GLYPH_PAD     1         // gap between packed rects (prevents filter bleed)
+#define ATLAS_W       512       // atlas width in pixels
+#define ATLAS_H       512       // atlas height in pixels
 
 /*==============================================================================================
     Internal types
 ==============================================================================================*/
 
 /* Rasterized glyph before atlas placement. */
-typedef struct
+
+typedef struct raw_glyph_s
 {
-    uint32_t  codepoint;
-    uint8_t*  bitmap;    /* malloc'd row-major pixels (w * h bytes); NULL for empty glyphs */
-    uint32_t  w;
-    uint32_t  h;
-    int16_t   bearing_x;
-    int16_t   bearing_y;
-    uint16_t  advance;
+    uint32_t  codepoint;        // Unicode codepoint
+    uint8_t*  bitmap;           // malloc'd row-major pixels (w * h bytes); NULL for empty glyphs
+    uint32_t  w;                // bitmap width in pixels
+    uint32_t  h;                // bitmap height in pixels
+    int16_t   bearing_x;        // cursor-to-left-edge offset in pixels
+    int16_t   bearing_y;        // baseline-to-top-edge offset in pixels (positive up)
+    uint16_t  advance;          // horizontal advance in pixels
+
 } raw_glyph_t;
 
 /*==============================================================================================
     Static storage (256 KB atlas lives in BSS, not the stack)
 ==============================================================================================*/
 
-static raw_glyph_t       s_raw[ GLYPH_MAX ];
-static uint8_t           s_atlas[ ATLAS_H * ATLAS_W ];
-static orb_font_glyph_t  s_out_glyphs[ GLYPH_MAX ];
-static stbrp_node        s_nodes[ ATLAS_W ];
+static raw_glyph_t       s_raw          [ GLYPH_MAX ];
+static orb_font_glyph_t  s_out_glyphs   [ GLYPH_MAX ];
+static stbrp_node        s_nodes        [ ATLAS_W ];
+static uint8_t           s_atlas        [ ATLAS_W * ATLAS_H ];
 
 /*==============================================================================================
     write_c_export -- emit a .c file with a bit-packed glyph table.
@@ -83,7 +88,7 @@ static stbrp_node        s_nodes[ ATLAS_W ];
 ==============================================================================================*/
 
 /* Maximum atlas pixel count that bitmap_atlas_init can handle (fixed stack buffer). */
-#define BITMAP_ATLAS_PIXELS_MAX  ( 192u * 96u )
+#define BITMAP_ATLAS_PIXELS_MAX  ( 256u * 128u )
 
 static int
 write_c_export( const char* out_path, int size_px,
@@ -112,6 +117,7 @@ write_c_export( const char* out_path, int size_px,
     stem[ stem_len ] = '\0';
 
     /* Cell dimensions from global FreeType metrics and max glyph advance. */
+
     int32_t  cell_h_s = ascent - descent;  /* signed; descent is negative */
     uint32_t cell_w   = 0;
     for ( uint32_t i = 0; i < raw_count; ++i )
@@ -133,12 +139,14 @@ write_c_export( const char* out_path, int size_px,
         return 1;
     }
 
-    uint32_t cell_h     = (uint32_t)cell_h_s;
-    uint32_t row_stride = ( cell_w <= 8 ) ? 1u : 2u;
-    uint32_t glyphs_row = 16u;
-    uint32_t glyph_count = 96u;          /* ASCII 32..127 */
-    uint32_t atlas_w    = glyphs_row * cell_w;
-    uint32_t atlas_h    = 6u * cell_h;   /* ceil(96/16) = 6 rows */
+    /* Atlas size is hard coded 16 in a row, 6 columns = 96 characters */
+
+    uint32_t cell_h      = (uint32_t)cell_h_s;
+    uint32_t row_stride = ( cell_w <= 8 ) ? 1u : 2u; /* cell_w in bytes ( 1/2 = 8/16 bits) */
+    uint32_t glyphs_row  = 16u;                      /* 16 glyphs per row = 16x16 = 256w */
+    uint32_t glyph_count = 96u;                      /* ASCII 32..127 */
+    uint32_t atlas_w     = glyphs_row * cell_w;      /* 16 cols = 16 glyphs/row * cell_w px/glyph */
+    uint32_t atlas_h     = 6u * cell_h;              /* ceil(96/16) = 6 rows */
 
     /* Reject atlases that would overflow the fixed pixel buffer in bitmap_atlas_init. */
     if ( atlas_w * atlas_h > BITMAP_ATLAS_PIXELS_MAX )
@@ -149,7 +157,8 @@ write_c_export( const char* out_path, int size_px,
         return 1;
     }
 
-    /* Flat bit-packed table: data[glyph * cell_h + row] is row_stride bytes. */
+    /* Flat bit-packed table: data[ glyph * cell_h + row ] is row_stride bytes. */
+
     uint8_t* table = (uint8_t*)calloc( glyph_count * cell_h * row_stride, 1 );
     if ( !table )
     {
@@ -180,6 +189,7 @@ write_c_export( const char* out_path, int size_px,
         {
             if ( s_raw[ i ].codepoint == cp ) { rg = &s_raw[ i ]; break; }
         }
+
         /* Space and whitespace glyphs have no bitmap; leave cell zeroed. */
         if ( !rg || !rg->bitmap ) continue;
 
@@ -223,7 +233,7 @@ write_c_export( const char* out_path, int size_px,
     fprintf( f, "/*------------------------------------------------------------------\n" );
     fprintf( f, "    Generated by font_tool -- %d px bitmap font export.\n", size_px );
     fprintf( f, "    cell: %u x %u px  atlas: %u x %u px  row_stride: %u\n",
-             cell_w, cell_h, atlas_w, atlas_h, row_stride );
+                     cell_w, cell_h, atlas_w, atlas_h, row_stride );
     fprintf( f, "    Drop into imgui_font_builtin.c and add a bitmap_font_t instance.\n" );
     fprintf( f, "------------------------------------------------------------------*/\n\n" );
 
@@ -240,7 +250,7 @@ write_c_export( const char* out_path, int size_px,
         char label[ 8 ];
         if      ( cp == '\'' ) { label[ 0 ] = '\\'; label[ 1 ] = '\''; label[ 2 ] = '\0'; }
         else if ( cp == '\\' ) { label[ 0 ] = '\\'; label[ 1 ] = '\\'; label[ 2 ] = '\0'; }
-        else if ( cp == 127u ) { label[ 0 ] = 'D'; label[ 1 ] = 'E'; label[ 2 ] = 'L'; label[ 3 ] = '\0'; }
+        else if ( cp == 127u ) { label[ 0 ] = 'D';  label[ 1 ] = 'E';  label[ 2 ] = 'L'; label[ 3 ] = '\0'; }
         else                   { label[ 0 ] = (char)cp; label[ 1 ] = '\0'; }
 
         fprintf( f, "    /* 0x%02X '%s' */ {", cp, label );
@@ -281,7 +291,8 @@ write_c_export( const char* out_path, int size_px,
     printf( "font_tool: stem '%s', 96 glyphs, cell %ux%u, atlas %ux%u, %s rows -> '%s'\n",
             stem, cell_w, cell_h, atlas_w, atlas_h,
             ( row_stride == 1 ) ? "u8" : "u16", out_path );
-    return 0;
+
+    return 0; /* success! */
 }
 
 /*==============================================================================================

@@ -15,10 +15,17 @@
 ==============================================================================================*/
 
 typedef u32 imgui_id_t;
-#define IMGUI_ID_NONE  0u
+#define IMGUI_ID_NONE 0u
 
-typedef struct { f32 x, y; }          imgui_vec2_t;
-typedef struct { f32 x, y, w, h; }    imgui_rect_t;
+typedef struct
+{
+    f32 x, y;
+} imgui_vec2_t;
+
+typedef struct
+{
+    f32 x, y, w, h;
+} imgui_rect_t;
 
 /*==============================================================================================
     Color packing
@@ -28,7 +35,7 @@ typedef struct { f32 x, y, w, h; }    imgui_rect_t;
 ==============================================================================================*/
 
 #define IMGUI_COLOR( r, g, b, a ) \
-    ( ( (u32)( a ) << 24 ) | ( (u32)( b ) << 16 ) | ( (u32)( g ) << 8 ) | (u32)( r ) )
+    ( ( ( u32 )( a ) << 24 ) | ( ( u32 )( b ) << 16 ) | ( ( u32 )( g ) << 8 ) | ( u32 )( r ) )
 
 /*==============================================================================================
     Draw vertex  (20 bytes, single interleaved binding)
@@ -41,9 +48,9 @@ typedef struct { f32 x, y, w, h; }    imgui_rect_t;
 
 typedef struct
 {
-    f32 x, y;    /* pixel position */
-    f32 u, v;    /* texture UV     */
-    u32 abgr;    /* packed color   */
+    f32 x, y; /* pixel position */
+    f32 u, v; /* texture UV     */
+    u32 abgr; /* packed color   */
 
 } imgui_draw_vert_t;
 
@@ -56,9 +63,9 @@ typedef struct
 
 typedef struct
 {
-    u32          elem_count;    /* number of indices to emit */
-    u32          tex_idx;       /* bindless texture slot     */
-    imgui_rect_t clip_rect;     /* scissor rect (pixels)     */
+    u32          elem_count; /* number of indices to emit */
+    u32          tex_idx;    /* bindless texture slot     */
+    imgui_rect_t clip_rect;  /* scissor rect (pixels)     */
 
 } imgui_draw_cmd_t;
 
@@ -69,18 +76,18 @@ typedef struct
     verifies this at compile time.
 ==============================================================================================*/
 
-#define IMGUI_KEY_COUNT  128
+#define IMGUI_KEY_COUNT 128
 
 typedef struct
 {
-    f32  mouse_x, mouse_y;                  /* client-area cursor position        */
-    f32  mouse_wheel;                       /* signed scroll delta this frame     */
-    bool mouse_down[ 3 ];                   /* left=0 right=1 middle=2, held      */
-    bool mouse_pressed[ 3 ];                /* true only on the first down frame  */
-    bool mouse_released[ 3 ];               /* true only on the first up frame    */
+    f32  mouse_x, mouse_y;    /* client-area cursor position        */
+    f32  mouse_wheel;         /* signed scroll delta this frame     */
+    bool mouse_down[ 3 ];     /* left=0 right=1 middle=2, held      */
+    bool mouse_pressed[ 3 ];  /* true only on the first down frame  */
+    bool mouse_released[ 3 ]; /* true only on the first up frame    */
     bool keys_down[ IMGUI_KEY_COUNT ];
     bool keys_pressed[ IMGUI_KEY_COUNT ];
-    char text[ 32 ];                        /* UTF-8 printable chars (NUL-term'd) */
+    char text[ 32 ]; /* UTF-8 printable chars (NUL-term'd) */
     f32  dt;
     i32  display_w, display_h;
 
@@ -90,10 +97,10 @@ typedef struct
     Limits
 ==============================================================================================*/
 
-#define IMGUI_MAX_VERTS   ( 64 * 1024 )
-#define IMGUI_MAX_IDX     ( IMGUI_MAX_VERTS * 3 )
-#define IMGUI_MAX_CMDS    1024
-#define IMGUI_CLIP_DEPTH  32
+#define IMGUI_MAX_VERTS  ( 64 * 1024 )
+#define IMGUI_MAX_IDX    ( IMGUI_MAX_VERTS * 3 )
+#define IMGUI_MAX_CMDS   1024
+#define IMGUI_CLIP_DEPTH 32
 
 /*==============================================================================================
     Font selection
@@ -104,11 +111,13 @@ typedef struct
 
 typedef enum
 {
-    IMGUI_FONT_BITMAP_8  = 0,   /* 8x8  pixel glyphs -- compact, pixel-perfect at native size  */
-    IMGUI_FONT_BITMAP_12 = 1,   /* 8x12 pixel glyphs -- default, pixel-perfect at native size  */
-    IMGUI_FONT_BITMAP_12_CONSOLA = 2, /* 8x12 pixel glyphs -- Consolas, pixel-perfect at native size */
-    IMGUI_FONT_BITMAP_16_CASCADIA = 3,   /* 12x16 pixel glyphs -- large, readable on high-DPI displays  */
-    IMGUI_FONT_BITMAP_16_ORB = 4, /* 10x16 pixel glyphs -- hand-authored blocky face, highly legible */
+    IMGUI_FONT_BITMAP_8 = 0,        /* 8x8   pixel glyphs -- compact, pixel-perfect at native size */
+    IMGUI_FONT_BITMAP_16,           /* 16x16 pixel glyphs -- 2x larger version of 8x8 */
+    IMGUI_FONT_BITMAP_12,           /* 8x12  pixel glyphs -- default, pixel-perfect at native size */    
+    IMGUI_FONT_BITMAP_16_CLEAN,     /* 10x16 pixel glyphs -- blocky face, highly legible */
+
+    IMGUI_FONT_BITMAP_12_CONSOLA,   /* 8x12 pixel glyphs -- Consolas, pixel-perfect at native size */    
+    IMGUI_FONT_BITMAP_MAX,          /* number of built-in bitmap fonts; */
 
 } imgui_font_t;
 

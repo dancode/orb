@@ -20,7 +20,7 @@
 ==============================================================================================*/
 // clang-format off
 
-#include "tools/font_tool/orb_font.h"
+#include "tools/font_tool/orb_font.h" /* font file formats and on-disk structure */
 
 /*----------------------------------------------------------------------------------------------
     tt_font_t -- runtime state for one loaded TrueType font (.orb_font file)
@@ -77,7 +77,8 @@ tt_font_load( const char* path )
     if ( !f )
         return false;
 
-    /* Validate header. */
+    /* Validate orb font format header */
+
     orb_font_header_t hdr;
     if ( fread( &hdr, sizeof( hdr ), 1, f ) != 1
          || hdr.magic   != ORB_FONT_MAGIC
@@ -90,6 +91,7 @@ tt_font_load( const char* path )
     }
 
     /* Build lookup table from glyph records. */
+
     memset( s_tt_font.lookup, 0, sizeof( s_tt_font.lookup ) );
     for ( u32 i = 0; i < hdr.glyph_count; ++i )
     {
@@ -175,11 +177,8 @@ static void
 font_shutdown( void )
 {
     tt_font_unload();
-    bitmap_atlas_shutdown( &s_bitmap_16_orb_mono );
-    bitmap_atlas_shutdown( &s_bitmap_16_consola );
-    bitmap_atlas_shutdown( &s_bitmap_16_cascadia );
-    bitmap_atlas_shutdown( &s_bitmap_12 );
-    bitmap_atlas_shutdown( &s_bitmap_8 );
+    for ( u32 i = 0; i < IMGUI_FONT_BITMAP_MAX; ++i )
+        bitmap_atlas_shutdown( &s_bitmaps[ i ] );
     s_bitmap_active = NULL;
     s_font          = NULL;
 }
@@ -189,11 +188,9 @@ font_init( void )
 {
     /* bitmap_atlas_shutdown is safe on uninitialized fonts, so any failure here
        can just delegate to font_shutdown for a single cleanup path. */
-    bool ok = bitmap_atlas_init( &s_bitmap_8 )
-           && bitmap_atlas_init( &s_bitmap_12 )
-           && bitmap_atlas_init( &s_bitmap_16_cascadia )
-           && bitmap_atlas_init( &s_bitmap_16_consola )
-           && bitmap_atlas_init( &s_bitmap_16_orb_mono );
+    bool ok = true;
+    for ( u32 i = 0; i < IMGUI_FONT_BITMAP_MAX; ++i )
+        ok = ok && bitmap_atlas_init( &s_bitmaps[ i ] );
 
     if ( !ok ) { font_shutdown(); return false; }
 

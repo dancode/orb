@@ -35,6 +35,7 @@ MOD_USE_APP;
 
 /*==============================================================================================
     Layout
+
     All dimensions are integer pixel counts derived from the active font and line_size.
     Defaults match the bitmap 8x12 font (fs=12) with a 20px line height.
 ==============================================================================================*/
@@ -57,6 +58,7 @@ typedef struct
 /* Font size used by layout_compute; updated by set_font() / load_font(). */
 static u32 s_font_size = 12;
 
+/* Default values */
 static imgui_layout_t s_layout =
 {
     .line_size     = 20,
@@ -70,6 +72,9 @@ static imgui_layout_t s_layout =
     .cursor_w      = 1,    /* 12 / 8                     */
     .cursor_inset  = 3,    /* 12 / 4                     */
 };
+
+/* Calculate new layout values based on the given line size and current font size.  
+   Called by set_font() and load_font(). */
 
 static void
 layout_compute( u32 ls )
