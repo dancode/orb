@@ -175,6 +175,7 @@ static void
 font_shutdown( void )
 {
     tt_font_unload();
+    bitmap_atlas_shutdown( &s_bitmap_16_orb_mono );
     bitmap_atlas_shutdown( &s_bitmap_16_consola );
     bitmap_atlas_shutdown( &s_bitmap_16_cascadia );
     bitmap_atlas_shutdown( &s_bitmap_12 );
@@ -191,7 +192,8 @@ font_init( void )
     bool ok = bitmap_atlas_init( &s_bitmap_8 )
            && bitmap_atlas_init( &s_bitmap_12 )
            && bitmap_atlas_init( &s_bitmap_16_cascadia )
-           && bitmap_atlas_init( &s_bitmap_16_consola );
+           && bitmap_atlas_init( &s_bitmap_16_consola )
+           && bitmap_atlas_init( &s_bitmap_16_orb_mono );
 
     if ( !ok ) { font_shutdown(); return false; }
 

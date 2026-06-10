@@ -107,7 +107,8 @@ typedef enum
     IMGUI_FONT_BITMAP_8  = 0,   /* 8x8  pixel glyphs -- compact, pixel-perfect at native size  */
     IMGUI_FONT_BITMAP_12 = 1,   /* 8x12 pixel glyphs -- default, pixel-perfect at native size  */
     IMGUI_FONT_BITMAP_12_CONSOLA = 2, /* 8x12 pixel glyphs -- Consolas, pixel-perfect at native size */
-    IMGUI_FONT_BITMAP_16 = 3,   /* 12x16 pixel glyphs -- large, readable on high-DPI displays  */
+    IMGUI_FONT_BITMAP_16_CASCADIA = 3,   /* 12x16 pixel glyphs -- large, readable on high-DPI displays  */
+    IMGUI_FONT_BITMAP_16_ORB = 4, /* 10x16 pixel glyphs -- hand-authored blocky face, highly legible */
 
 } imgui_font_t;
 

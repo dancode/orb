@@ -180,7 +180,7 @@ main( int argc, char** argv )
         if ( app()->key_pressed( APP_KEY_P ) )
         {
             static int font_select = 1;
-            font_select = ( font_select + 1 ) % 4;
+            font_select = ( font_select + 1 ) % 5;
             imgui()->set_font( (imgui_font_t)font_select );
         }
 
@@ -234,8 +234,10 @@ main( int argc, char** argv )
                     imgui()->text( "here we go..." );
 
                     imgui()->text( "this is some text" );
-                    imgui()->text( "this is more text" );
+                    imgui()->text( "THIS is more text" );
                     imgui()->text( "the last line!" );
+                    imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
+                    imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
 
                     imgui()->end_window();
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
@@ -272,4 +274,5 @@ main( int argc, char** argv )
 }
 
 /*============================================================================================*/
+
 

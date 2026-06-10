@@ -75,6 +75,8 @@ typedef struct
 #include "runtime_service/imgui/font/cascadia_mono_16.c"
 //  C:\WINDOWS\FONTS\CONSOLA.TTF 12 consola_12.c
 #include "runtime_service/imgui/font/consola_16.c"
+// Hand-authored blocky 10x16 face -- no source TTF.
+#include "runtime_service/imgui/font/orb_mono_16.c"
 
 /*----------------------------------------------------------------------------------------------
     GPU atlas instances
@@ -84,6 +86,7 @@ static bitmap_font_t  s_bitmap_8            = { .def = &s_def_8  };
 static bitmap_font_t  s_bitmap_12           = { .def = &s_def_12 };
 static bitmap_font_t  s_bitmap_16_cascadia  = { .def = &s_def_cascadia_mono_16 };
 static bitmap_font_t  s_bitmap_16_consola   = { .def = &s_def_consola_16 };
+static bitmap_font_t  s_bitmap_16_orb_mono  = { .def = &s_def_orb_mono_16 };
 static bitmap_font_t* s_bitmap_active = NULL;
 
 static imgui_font_t s_bmp_font  = IMGUI_FONT_BITMAP_12;
@@ -100,11 +103,13 @@ bitmap_font_select( imgui_font_t font )
             s_bitmap_active = &s_bitmap_8; break;
         case IMGUI_FONT_BITMAP_12:
             s_bitmap_active = &s_bitmap_12; break;
-        case IMGUI_FONT_BITMAP_16: 
+        case IMGUI_FONT_BITMAP_16_CASCADIA: 
             s_bitmap_active = &s_bitmap_16_cascadia; break;
         case IMGUI_FONT_BITMAP_12_CONSOLA:
             s_bitmap_active = &s_bitmap_16_consola; break;
-        default: 
+        case IMGUI_FONT_BITMAP_16_ORB:
+            s_bitmap_active = &s_bitmap_16_orb_mono; break;
+        default:
             s_bitmap_active = &s_bitmap_12; break;
     };        
 
