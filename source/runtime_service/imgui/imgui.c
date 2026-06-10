@@ -56,7 +56,7 @@ typedef struct
 } imgui_layout_t;
 
 /* Font size used by layout_compute; updated by set_font() / load_font(). */
-static u32 s_font_size = 12;
+static u32 s_font_size = 0;
 
 /* Default values */
 static imgui_layout_t s_layout =

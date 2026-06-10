@@ -107,16 +107,22 @@ typedef struct
 
     imgui_font_t selects which built-in bitmap atlas to use.
     The TrueType path is activated separately via imgui()->load_font(path).
+
+    The number of the pixel height (not font size in .ttf)
 ==============================================================================================*/
 
 typedef enum
 {
     IMGUI_FONT_BITMAP_8 = 0,        /* 8x8   pixel glyphs -- compact, pixel-perfect at native size */
     IMGUI_FONT_BITMAP_16,           /* 16x16 pixel glyphs -- 2x larger version of 8x8 */
-    IMGUI_FONT_BITMAP_12,           /* 8x12  pixel glyphs -- default, pixel-perfect at native size */    
-    IMGUI_FONT_BITMAP_16_CLEAN,     /* 10x16 pixel glyphs -- blocky face, highly legible */
-
-    IMGUI_FONT_BITMAP_12_CONSOLA,   /* 8x12 pixel glyphs -- Consolas, pixel-perfect at native size */    
+    IMGUI_FONT_BITMAP_12,           /* 8x12  pixel glyphs -- default, pixel-perfect at native size */
+    IMGUI_FONT_BITMAP_16_PROGGY,    /* 9x16  tiny font */  
+    IMGUI_FONT_BITMAP_20_PROGGY,    /* 12x20 tiny font */
+    IMGUI_FONT_BITMAP_16_JETBOLD,   /* 10x16 pixel glyphs */
+    IMGUI_FONT_BITMAP_20_JETBOLD,   /* 12x12 pixel glyphs */
+    IMGUI_FONT_BITMAP_24_JETBOLD,   /* 14x33 pixel glyphs */
+    IMGUI_FONT_BITMAP_24_CONSOLA,   /* 13x25 pixel glyphs */    
+    
     IMGUI_FONT_BITMAP_MAX,          /* number of built-in bitmap fonts; */
 
 } imgui_font_t;

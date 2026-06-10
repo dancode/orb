@@ -167,7 +167,8 @@ imgui_button( const char* label )
     /* Centered label. */
     f32 lw = font_text_w( label );
     f32 lx = r.x + ( r.w - lw  ) * 0.5f;
-    f32 ly = r.y + ( r.h - font_char_h() ) * 0.5f;
+    f32 y_shift = ( r.h - font_char_h() ) * 0.5f;
+    f32 ly = r.y + y_shift;
     draw_push_text( lx, ly, COL_TEXT, label );
 
     return widget_clicked( id );

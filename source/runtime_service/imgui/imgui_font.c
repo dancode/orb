@@ -186,6 +186,8 @@ font_shutdown( void )
 static bool
 font_init( void )
 {
+    bitmap_show_sizes();
+
     /* bitmap_atlas_shutdown is safe on uninitialized fonts, so any failure here
        can just delegate to font_shutdown for a single cleanup path. */
     bool ok = true;

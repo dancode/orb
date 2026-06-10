@@ -133,8 +133,7 @@ main( int argc, char** argv )
         return 1;
     }
     
-    // imgui()->load_font( "fonts/cascadia_mono_16.orb_font" );    
-    imgui()->load_font( "fonts/cascadia_mono_20.orb_font" );
+    imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
     
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
@@ -175,7 +174,7 @@ main( int argc, char** argv )
         if ( app()->key_pressed( APP_KEY_P ) )
         {
             static int font_select = 1;
-            font_select = ( font_select + 1 ) % 5;
+            font_select = ( font_select + 1 ) % IMGUI_FONT_BITMAP_MAX;
             imgui()->set_font( (imgui_font_t)font_select );
         }
 
@@ -216,10 +215,12 @@ main( int argc, char** argv )
                 {
                     imgui()->new_frame( win_w, win_h, 4 );
                     imgui()->begin_window( "Debug", 10, 10, 640, 480 );
-                    if ( imgui()->button( "Reload" ) )
+                    if ( imgui()->button( "Reload$" ) )
                     {
 
                     }
+                    if ( imgui()->button( "JsjperR1234q" ) )
+                    {}
                     imgui()->text( "this is some text" );
                     static float scale = 1.0f;
                     if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) )
@@ -233,6 +234,7 @@ main( int argc, char** argv )
                     imgui()->text( "the last line!" );
                     imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
                     imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
+                    imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
 
                     imgui()->end_window();
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass

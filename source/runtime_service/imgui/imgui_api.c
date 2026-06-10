@@ -61,7 +61,6 @@ void imgui_set_font( imgui_font_t font )
 
     printf( "[imgui] set font '%s : %s' (char_h=%.1f line_h=%.1f)\n",
             s_font->proportional ? "TrueType" : "Bitmap", def->debug_name,s_font->char_h, s_font->line_h );
-
 }
 
 void imgui_set_bmp_scale( u32 scale )

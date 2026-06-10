@@ -22,6 +22,7 @@
     Fonts are usually in: C:\WINDOWS\FONTS\<font_name>.ttf
 
 ==============================================================================================*/
+// clang-format off
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,7 +89,8 @@ static uint8_t           s_atlas        [ ATLAS_W * ATLAS_H ];
 ==============================================================================================*/
 
 /* Maximum atlas pixel count that bitmap_atlas_init can handle (fixed stack buffer). */
-#define BITMAP_ATLAS_PIXELS_MAX  ( 256u * 128u )
+// #define BITMAP_ATLAS_PIXELS_MAX  ( 256u * 128u )
+#define BITMAP_ATLAS_PIXELS_MAX  ( 256u * 256u )
 
 static int
 write_c_export( const char* out_path, int size_px,
@@ -104,8 +106,10 @@ write_c_export( const char* out_path, int size_px,
     size_t stem_len = strlen( base );
     if ( stem_len >= 2 && base[ stem_len - 2 ] == '.'
          && ( base[ stem_len - 1 ] == 'c' || base[ stem_len - 1 ] == 'C' ) )
-        stem_len -= 2;
-    if ( stem_len >= 60 ) stem_len = 60;
+              stem_len -= 2;
+
+    if ( stem_len >= 60 ) 
+          stem_len = 60;
 
     char stem[ 64 ];
     for ( size_t si = 0; si < stem_len; ++si )
@@ -142,6 +146,20 @@ write_c_export( const char* out_path, int size_px,
     /* Atlas size is hard coded 16 in a row, 6 columns = 96 characters */
 
     uint32_t cell_h      = (uint32_t)cell_h_s;
+
+    /* Rename the symbol stem to reflect the actual cell height instead of the ttf size:
+       strip any trailing "_<digits>" group, then append "_<cell_h>".  The export comment
+       still records the source ttf size.  (e.g. consola_16 -> s_def_consola_18) */
+    {
+        size_t sl = strlen( stem );
+        while ( sl > 0 && stem[ sl - 1 ] >= '0' && stem[ sl - 1 ] <= '9' )  /* drop digits    */
+            --sl;
+        if ( sl > 0 && stem[ sl - 1 ] == '_' )                              /* drop separator */
+            --sl;
+        if ( sl > 60 ) sl = 60;            /* leave room for "_" + up to 2 digits + NUL */
+        snprintf( stem + sl, sizeof( stem ) - sl, "_%u", cell_h );
+    }
+
     uint32_t row_stride = ( cell_w <= 8 ) ? 1u : 2u; /* cell_w in bytes ( 1/2 = 8/16 bits) */
     uint32_t glyphs_row  = 16u;                      /* 16 glyphs per row = 16x16 = 256w */
     uint32_t glyph_count = 96u;                      /* ASCII 32..127 */
@@ -164,6 +182,43 @@ write_c_export( const char* out_path, int size_px,
     {
         fprintf( stderr, "error: out of memory\n" );
         return 1;
+    }
+
+    /* Vertical centering shift.
+
+       Glyphs bake on the baseline at row `ascent`, so the full descender band
+       (|descent| rows) sits empty at the bottom while the top only has
+       `ascent - cap_height` empty rows.  For typical UI text (caps, digits,
+       non-descending lowercase) that asymmetry makes the line read a pixel high
+       when the engine centers the cell.  Measure the real ink envelope across
+       all glyphs and shift every glyph down so the slack is balanced top and
+       bottom.  Ties round downward (the engine centers the cell, so this favors
+       using the spare bottom pixel).  Because v_shift is bounded by the measured
+       bottom padding, descenders can never clip. */
+
+    int32_t ink_top = (int32_t)cell_h;   /* topmost row carrying ink   */
+    int32_t ink_bot = -1;                /* bottommost row carrying ink */
+    for ( uint32_t i = 0; i < raw_count; ++i )
+    {
+        raw_glyph_t* rg = &s_raw[ i ];
+        if ( !rg->bitmap ) continue;
+
+        int32_t top = ascent - (int32_t)rg->bearing_y;
+        int32_t bot = top + (int32_t)rg->h - 1;
+        if ( top < 0 )                    top = 0;
+        if ( bot > (int32_t)cell_h - 1 )  bot = (int32_t)cell_h - 1;
+        if ( top < ink_top ) ink_top = top;
+        if ( bot > ink_bot ) ink_bot = bot;
+    }
+
+    int32_t v_shift = 0;
+    if ( ink_bot >= ink_top )   /* at least one glyph had ink */
+    {
+        int32_t top_pad   = ink_top;
+        int32_t bot_pad   = (int32_t)cell_h - 1 - ink_bot;
+        int32_t imbalance = bot_pad - top_pad;   /* >0: more slack below */
+        v_shift = ( imbalance >= 0 ) ? ( imbalance + 1 ) / 2   /* round ties downward */
+                                     : imbalance / 2;          /* (negative) nudge up  */
     }
 
     for ( uint32_t g = 0; g < glyph_count; ++g )
@@ -193,9 +248,10 @@ write_c_export( const char* out_path, int size_px,
         /* Space and whitespace glyphs have no bitmap; leave cell zeroed. */
         if ( !rg || !rg->bitmap ) continue;
 
-        /* Place bitmap: x_off = bearing_x, y_off = ascent - bearing_y (top of cell = row 0). */
+        /* Place bitmap: x_off = bearing_x, y_off = ascent - bearing_y (top of cell = row 0),
+           plus v_shift to vertically center the glyph envelope within the cell. */
         int32_t x_off = (int32_t)rg->bearing_x;
-        int32_t y_off = ascent - (int32_t)rg->bearing_y;
+        int32_t y_off = ascent - (int32_t)rg->bearing_y + v_shift;
 
         for ( uint32_t r = 0; r < rg->h; ++r )
         {
@@ -232,8 +288,8 @@ write_c_export( const char* out_path, int size_px,
     /* Header comment. */
     fprintf( f, "/*------------------------------------------------------------------\n" );
     fprintf( f, "    Generated by font_tool -- %d px bitmap font export.\n", size_px );
-    fprintf( f, "    cell: %u x %u px  atlas: %u x %u px  row_stride: %u\n",
-                     cell_w, cell_h, atlas_w, atlas_h, row_stride );
+    fprintf( f, "    cell: %u x %u px  atlas: %u x %u px  row_stride: %u  v_shift: %d px\n",
+                     cell_w, cell_h, atlas_w, atlas_h, row_stride, v_shift );
     fprintf( f, "    Drop into imgui_font_builtin.c and add a bitmap_font_t instance.\n" );
     fprintf( f, "------------------------------------------------------------------*/\n\n" );
 
@@ -288,9 +344,9 @@ write_c_export( const char* out_path, int size_px,
     fclose( f );
     free( table );
 
-    printf( "font_tool: stem '%s', 96 glyphs, cell %ux%u, atlas %ux%u, %s rows -> '%s'\n",
+    printf( "font_tool: stem '%s', 96 glyphs, cell %ux%u, atlas %ux%u, %s rows, v_shift %d -> '%s'\n",
             stem, cell_w, cell_h, atlas_w, atlas_h,
-            ( row_stride == 1 ) ? "u8" : "u16", out_path );
+            ( row_stride == 1 ) ? "u8" : "u16", v_shift, out_path );
 
     return 0; /* success! */
 }
@@ -571,3 +627,6 @@ main( int argc, char** argv )
             raw_count, ATLAS_W, ATLAS_H, size_px, out_path );
     return 0;
 }
+
+/*============================================================================================*/
+// clang-format on
