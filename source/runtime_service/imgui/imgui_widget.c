@@ -291,9 +291,9 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
 
     /* Click focuses this widget. */
     if ( rect_hit( box_r ) )
-        s_ctx.hot_id = id;
+         s_ctx.hot_id = id;
     if ( s_ctx.hot_id == id && s_io.mouse_pressed[ 0 ] )
-        s_ctx.focused_id = id;
+         s_ctx.focused_id = id;
 
     bool focused = ( s_ctx.focused_id == id );
     bool enter   = false;

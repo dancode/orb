@@ -43,6 +43,13 @@ static f32  s_pending_wheel;
 void
 imgui_add_input_char( u32 codepoint )
 {
+    /* Ignore control characters.  Windows posts WM_CHAR for backspace (0x08), tab,
+       enter, escape, DEL (0x7F) etc.; those are handled via key state, not inserted
+       as text -- without this, backspace would append '\b' that its own delete then
+       removes, so it appears to do nothing. */
+    if ( codepoint < 0x20u || codepoint == 0x7Fu )
+        return;
+
     /* ASCII only: codepoints >127 collapse to '?'. */
     if ( s_pending_text_len + 1u < sizeof( s_pending_text ) )
     {

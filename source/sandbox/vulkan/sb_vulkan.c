@@ -263,7 +263,7 @@ main( int argc, char** argv )
                 }          
             }
 
-            rhi()->frame_end( ctx );            
+            rhi()->frame_end( ctx );
         }
 
         /* ------------------------------------------------------------------------------ */
@@ -275,7 +275,7 @@ main( int argc, char** argv )
        context_destroy calls vk_device_wait_idle before tearing down sync/swapchain; after
        it returns the GPU is idle and pipeline/buffer destroy calls are safe. */
 
-    rhi()->context_destroy( ctx );      // finish rendering and free swapchain + sync objects (first)
+    rhi()->context_destroy( ctx ); // finish rendering and free swapchain + sync objects (first)
 
     imgui()->shutdown();
 
