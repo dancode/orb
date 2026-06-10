@@ -45,6 +45,14 @@ typedef struct imgui_api_s
     void ( *new_frame )( i32 win_w, i32 win_h, f32 dt );
     void ( *render    )( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
+    /* Host input feeders -- the host owns the app event ring drain and forwards
+       text + scroll here, before new_frame() for the same frame.
+       add_input_char()  -- append a typed character (UTF-32; >127 -> '?').
+       add_mouse_wheel() -- accumulate a scroll delta for this frame. */
+
+    void ( *add_input_char  )( u32 codepoint );
+    void ( *add_mouse_wheel )( f32 delta );
+
     /* Panels -- open a window panel; must be matched with end_window().
        x, y are the panel's top-left pixel position; w, h are its dimensions. */
 

@@ -148,15 +148,29 @@ main( int argc, char** argv )
     /* Main loop. */
     while ( app()->pump_events() )
     {
-        /* Forward resize events to the context. */
+        /* Drain the app event ring once: the host applies resizes itself and
+           forwards text + scroll to imgui (imgui no longer drains the ring). */
         app_event_t ev;
         while ( app()->next_event( &ev ) )
         {
-            if ( ev.type == APP_EV_WIN_RESIZE )
+            switch ( ev.type )
             {
-                win_w = ev.data.win_resize.w;
-                win_h = ev.data.win_resize.h;
-                rhi()->context_resize( ctx, win_w, win_h );
+                case APP_EV_WIN_RESIZE:
+                    win_w = ev.data.win_resize.w;
+                    win_h = ev.data.win_resize.h;
+                    rhi()->context_resize( ctx, win_w, win_h );
+                    break;
+
+                case APP_EV_CHAR:
+                    imgui()->add_input_char( ev.data.text.codepoint );
+                    break;
+
+                case APP_EV_MOUSE_WHEEL:
+                    imgui()->add_mouse_wheel( (f32)ev.data.mouse_wheel.delta );
+                    break;
+
+                default:
+                    break;
             }
         }
 
@@ -215,7 +229,7 @@ main( int argc, char** argv )
                 if ( imgui() )
                 {
                     imgui()->new_frame( win_w, win_h, 4 );
-                    imgui()->begin_window( "Debug", 10, 10, 640, 480 );
+                    imgui()->begin_window( "Debug", 10, 10, 640, 640 );
                     if ( imgui()->button( "Reload$" ) )
                     {
 
@@ -236,6 +250,13 @@ main( int argc, char** argv )
                     imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
                     imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
                     imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
+
+                    static bool checked = false;
+                    imgui()->checkbox( "Checkbox", &checked );
+
+                    static char buffer[ 32 ] = { 0 };
+                    imgui()->input_text( "Input Text", buffer, sizeof( buffer ));
+
 
                     imgui()->end_window();
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass

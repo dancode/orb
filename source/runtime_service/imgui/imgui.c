@@ -84,7 +84,10 @@ layout_compute( u32 ls )
     if ( fs < 8u ) fs = 8u;
     if ( ls < fs ) ls = fs;
 
-    u32 csz = fs + fs / 2u;    /* checkbox_sz = fs * 3/2 */
+    /* Checkbox indicator must fit inside the widget row, so size it from the row
+       height (line_size), not the glyph height -- 4/5 of the row leaves a small
+       margin top and bottom and scales with the font. */
+    u32 csz = ( ls * 4u ) / 5u;
 
     s_layout.line_size     = ls;
     s_layout.widget_gap    = ls / 6u < 2u ? 2u : ls / 6u;
