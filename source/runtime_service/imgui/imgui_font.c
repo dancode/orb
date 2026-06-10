@@ -205,10 +205,10 @@ font_init( void )
     Dispatch helpers -- all read from s_font, set by bitmap_font_select() or tt_font_load().
 ----------------------------------------------------------------------------------------------*/
 
-static f32 font_char_w( void )    { return s_font->char_w;    }
-static f32 font_char_h( void )    { return s_font->char_h;    }
-static f32 font_line_h( void )    { return s_font->line_h;    }
-static u32 font_atlas_idx( void ) { return s_font->atlas_idx; }
+static f32 font_char_w      ( void ) { return s_font->char_w;    }
+static f32 font_char_h      ( void ) { return s_font->char_h;    }
+static f32 font_line_h      ( void ) { return s_font->line_h;    }
+static u32 font_atlas_idx   ( void ) { return s_font->atlas_idx; }
 
 static f32
 font_text_w( const char* str )
