@@ -281,7 +281,7 @@ write_c_export( const char* out_path, int size_px,
     fprintf( f, "    .glyphs_row  = %u,\n", glyphs_row );
     fprintf( f, "    .glyph_count = %u,\n", glyph_count );
     fprintf( f, "    .row_stride  = %u,\n", row_stride );
-    fprintf( f, data_fmt, stem );
+    fprintf( f,                             data_fmt, stem );
     fprintf( f, "    .debug_name  = \"imgui_builtin_%s\",\n", stem );
     fprintf( f, "};\n" );
 
@@ -325,6 +325,7 @@ main( int argc, char** argv )
 
     /* If the output path is a bare filename (no directory separator), redirect it into fonts\.
        If omitted entirely, derive the filename from the input TTF stem. */
+
     static char s_out_buf[ 512 ];
     const char* out_arg = ( argc == 4 ) ? argv[ 3 ] : NULL;
     const char* out_path;
@@ -354,6 +355,7 @@ main( int argc, char** argv )
     else
     {
         /* No output given -- derive stem from input TTF. */
+
         const char* base = ttf_path;
         for ( const char* p = ttf_path; *p; ++p )
             if ( *p == '/' || *p == '\\' ) base = p + 1;
@@ -397,6 +399,7 @@ main( int argc, char** argv )
         return 1;
     }
 
+    /* Set pixel size; 0 for width means "same as height". */
     FT_Set_Pixel_Sizes( face, 0, (FT_UInt)size_px );
 
     /* global metrics -- FreeType uses 26.6 fixed-point, >> 6 converts to integer pixels */
