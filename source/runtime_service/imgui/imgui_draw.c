@@ -17,15 +17,23 @@
 
 static struct
 {
-    imgui_draw_vert_t  verts[ IMGUI_MAX_VERTS ];
-    u16                indices[ IMGUI_MAX_IDX ];
-    imgui_draw_cmd_t   cmds[ IMGUI_MAX_CMDS ];
-    u32                vert_count;
-    u32                idx_count;
-    u32                cmd_count;
+    imgui_draw_vert_t  verts        [ IMGUI_MAX_VERTS ];
+    u16                indices      [ IMGUI_MAX_IDX ];
+    imgui_draw_cmd_t   cmds         [ IMGUI_MAX_CMDS ];
 
-    imgui_rect_t       clip_stack[ IMGUI_CLIP_DEPTH ];
+    u32                vert_count;  // verts currently in the list (up to IMGUI_MAX_VERTS)
+    u32                idx_count;   // indices currently in the list (up to IMGUI_MAX_IDX)
+    u32                cmd_count;   // draw commands currently in the list (up to IMGUI_MAX_CMDS)
+
+    imgui_rect_t       clip_stack   [ IMGUI_CLIP_DEPTH ];
     u32                clip_depth;
+
+    /* Usage tracking (lifetime; draw_reset clears only the per-frame overflow flag). */
+
+    u32                vert_hwm;       // peak vert_count seen across all frames
+    u32                idx_hwm;        // peak idx_count  seen across all frames
+    bool               overflow;       // a push was dropped this frame (cleared each frame)
+    bool               overflow_ever;  // overflow happened at least once this run
 
 } s_draw;
 
@@ -40,6 +48,9 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.idx_count  = 0;
     s_draw.cmd_count  = 0;
     s_draw.clip_depth = 1;
+    s_draw.overflow   = false;   /* per-frame; hwm + overflow_ever persist */
+
+    /* first is a default "no clip" rect covering the whole display; never popped off the stack. */
     s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
 }
 
@@ -105,8 +116,12 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
                        f32 u0, f32 v0, f32 u1, f32 v1,
                        u32 tex_idx, u32 abgr )
 {
-    if ( s_draw.vert_count + 4 > IMGUI_MAX_VERTS ) return;
-    if ( s_draw.idx_count  + 6 > IMGUI_MAX_IDX   ) return;
+    /* Drop the quad if it would exceed either buffer; flag so flush can warn once. */
+    if ( s_draw.vert_count + 4 > IMGUI_MAX_VERTS || s_draw.idx_count + 6 > IMGUI_MAX_IDX )
+    {
+        s_draw.overflow = true;
+        return;
+    }
 
     /* Pixel-grid snap: round the quad origin to the nearest integer pixel.  The
        ortho maps integer coords exactly onto pixel boundaries, so a snapped origin
@@ -161,8 +176,12 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
 static void
 draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr )
 {
-    if ( s_draw.vert_count + 3 > IMGUI_MAX_VERTS ) return;
-    if ( s_draw.idx_count  + 3 > IMGUI_MAX_IDX   ) return;
+    /* Drop the triangle if it would exceed either buffer; flag so flush can warn once. */
+    if ( s_draw.vert_count + 3 > IMGUI_MAX_VERTS || s_draw.idx_count + 3 > IMGUI_MAX_IDX )
+    {
+        s_draw.overflow = true;
+        return;
+    }
 
     imgui_rect_t clip = draw_current_clip();
     draw_ensure_cmd( tex_idx, clip );

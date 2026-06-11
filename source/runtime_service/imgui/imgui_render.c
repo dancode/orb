@@ -270,6 +270,12 @@ imgui_render_print_memory( void )
 static void
 imgui_render_shutdown( void )
 {
+    /* Peak draw-list usage over the run, so the caps can be tuned with real numbers. */
+    printf( "[imgui] peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%)%s\n",
+            s_draw.vert_hwm, IMGUI_MAX_VERTS, 100.0f * s_draw.vert_hwm / (f32)IMGUI_MAX_VERTS,
+            s_draw.idx_hwm,  IMGUI_MAX_IDX,   100.0f * s_draw.idx_hwm  / (f32)IMGUI_MAX_IDX,
+            s_draw.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
+
     if ( s_render.white_tex_idx )
         rhi()->unregister_texture( s_render.white_tex_idx );
     if ( rhi_handle_valid( s_render.white_tex ) )
@@ -305,19 +311,40 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;
 
+    /* Track peak usage for the shutdown report.  Warn once on the first overflow:
+       the draw-list push sites already drop geometry past the cap, so this just makes
+       that visible.  Persistent overflow is summarized at shutdown rather than spammed. */
+    if ( s_draw.vert_count > s_draw.vert_hwm ) s_draw.vert_hwm = s_draw.vert_count;
+    if ( s_draw.idx_count  > s_draw.idx_hwm  ) s_draw.idx_hwm  = s_draw.idx_count;
+
+    if ( s_draw.overflow && !s_draw.overflow_ever )
+    {
+        printf( "[imgui] WARNING: draw list overflow -- geometry dropped this frame "
+                "(verts capped at %u, idx capped at %u). Raise IMGUI_MAX_VERTS / IMGUI_MAX_IDX.\n",
+                IMGUI_MAX_VERTS, IMGUI_MAX_IDX );
+    }
+    if ( s_draw.overflow )
+         s_draw.overflow_ever = true;
+
     /* Select this frame's geometry region so the upload cannot clobber data the GPU
        is still reading for another in-flight frame. */
     u32 frame  = rhi()->cmd_frame_index( cmd );
     u32 vb_off = frame * (u32)IMGUI_VB_REGION_BYTES;
     u32 ib_off = frame * (u32)IMGUI_IB_REGION_BYTES;
 
+    /* Clamp to the region capacity before writing.  The push sites already enforce this,
+       so the clamp is defensive -- it guarantees the upload never exceeds the per-frame
+       region even if that invariant is ever broken upstream. */
+    u32 vert_count = s_draw.vert_count < IMGUI_MAX_VERTS ? s_draw.vert_count : IMGUI_MAX_VERTS;
+    u32 idx_count  = s_draw.idx_count  < IMGUI_MAX_IDX   ? s_draw.idx_count  : IMGUI_MAX_IDX;
+
     /* Upload vertex + index data into this frame's region. */
     rhi()->buffer_write( s_render.vb,
                          s_draw.verts,
-                         s_draw.vert_count * sizeof( imgui_draw_vert_t ), vb_off );
+                         vert_count * sizeof( imgui_draw_vert_t ), vb_off );
     rhi()->buffer_write( s_render.ib,
                          s_draw.indices,
-                         s_draw.idx_count * sizeof( u16 ), ib_off );
+                         idx_count * sizeof( u16 ), ib_off );
 
     /* Open a LOAD pass on the swapchain color target (no depth needed). */
     rhi_color_attachment_t color_att = {

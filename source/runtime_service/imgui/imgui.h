@@ -97,6 +97,7 @@ typedef struct
    aligned, so each frame-in-flight region stays independently addressable -- note
    that this only matters if the VB/IB are ever moved off HOST_COHERENT memory, in
    which case regions would need rounding up to nonCoherentAtomSize to flush apart. */
+
 #define IMGUI_MAX_VERTS  ( 16 * 1024 )
 #define IMGUI_MAX_IDX    ( IMGUI_MAX_VERTS * 3 )
 #define IMGUI_MAX_CMDS   1024
