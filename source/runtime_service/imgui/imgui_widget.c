@@ -177,6 +177,7 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
 
     /* Commit resolved geometry for the widgets and end_window. */
     s_ctx.win_id     = id;
+    s_ctx.win_title  = title;   /* cached for end_window's deferred chrome */
     s_ctx.win_x      = win->x;
     s_ctx.win_y      = win->y;
     s_ctx.win_w      = win->w;
@@ -184,19 +185,15 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     s_ctx.content_x  = win->x + WIDGET_PAD;
     s_ctx.content_w  = win->w - 2.0f * WIDGET_PAD;
 
+    /* One clip rect for the whole window: background, content, and the titlebar/border
+       chrome deferred to end_window all share it, so the window flushes as a single draw
+       command.  Content scrolled into the titlebar or border region is overpainted by the
+       chrome end_window draws last; anything past the outer edge is clipped here. */
+
+    draw_push_clip_rect( win->x, win->y, win->w, win->h );
+
     /* Window background. */
     draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
-
-    /* Title bar. */
-    draw_push_rect_filled( win->x, win->y, win->w, WIN_TITLE_H, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
-    draw_push_text( win->x + WIDGET_PAD, win->y + ( WIN_TITLE_H - font_char_h() ) * 0.5f, COL_TEXT, title );
-
-    /* Border. */
-    draw_push_rect_outline( win->x, win->y, win->w, win->h, WIN_BORDER, 0, COL_BORDER );
-
-    /* Clip content area. */
-    draw_push_clip_rect( win->x + WIN_BORDER, win->y + WIN_TITLE_H,
-                         win->w - 2.0f * WIN_BORDER, win->h - WIN_TITLE_H - WIN_BORDER );
 
     /* Start the layout cursor at the content origin. */
     s_ctx.cursor_x = win->x + WIDGET_PAD;
@@ -206,6 +203,13 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
 void
 imgui_end_window( void )
 {
+    /* Deferred chrome: titlebar, title text, and border paint last under the window's
+       single clip rect, so they overdraw any content that scrolled beneath them while
+       still merging into the one window draw command. */
+    draw_push_rect_filled( s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, WIN_TITLE_H, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
+    draw_push_text( s_ctx.win_x + WIDGET_PAD, s_ctx.win_y + ( WIN_TITLE_H - font_char_h() ) * 0.5f, COL_TEXT, s_ctx.win_title );
+    draw_push_rect_outline( s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_h, WIN_BORDER, 0, COL_BORDER );
+
     draw_pop_clip_rect();
 
     /* Subsequent draws (low-level API, the next window) revert to the background key. */

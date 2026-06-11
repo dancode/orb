@@ -295,7 +295,7 @@ main( int argc, char** argv )
 
                     imgui()->end_window();
 
-                    if ( 0 ) {
+                    if ( 1 ) {
                         /* Second, overlapping window -- click either to bring it to the
                            front (z-order); drag to reposition. */
                         imgui()->begin_window( "Inspector", 360, 240, 360, 280 );

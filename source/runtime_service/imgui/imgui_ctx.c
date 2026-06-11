@@ -33,6 +33,7 @@ static struct
     u32         next_hover_win_z;
 
     imgui_id_t  win_id;       /* id of the window currently between begin/end_window   */
+    const char* win_title;    /* title string, cached for end_window's deferred chrome */
 
     f32  cursor_x;            /* layout pen, top-left of the next widget               */
     f32  cursor_y;
