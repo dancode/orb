@@ -108,7 +108,9 @@
       "Bash(./bin/build_tool.exe -config Debug -target rhi)",
       "Bash(bin/build_tool.exe -config Debug -target rhi)",
       "Bash(bin/build_tool.exe -config Debug -target imgui)",
-      "Bash(bin/build_tool.exe -config Debug -target sb_engine_vulkan)"
+      "Bash(bin/build_tool.exe -config Debug -target sb_engine_vulkan)",
+      "Bash(where cl *)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

@@ -21,12 +21,13 @@ static struct
     imgui_id_t  focused_id;   /* widget that owns keyboard input                       */
 
     /* Window occlusion is resolved one frame deferred: the single window the cursor is
-       over (front-most by z) is only known after every window has been submitted.  Each
-       begin_window nominates itself into next_hover_win; ctx_new_frame promotes it to
+       over (front-most by z) is only known after every window has been submitted.  
+       Each begin_window nominates itself into next_hover_win; ctx_new_frame promotes it to
        hover_win.  Next frame a window compares its id against hover_win at entry -- if it
        isn't the hover window it cannot be hit, so it (and all its widgets) skip hit-testing
        entirely.  Only the hover window does widget hit-testing, and within one window
        widgets don't overlap, so widget hover can be resolved immediately (no deferral). */
+
     imgui_id_t  hover_win;      /* the window the cursor is over (resolved last frame)   */
     imgui_id_t  next_hover_win; /* front-most window nominee gathered this frame         */
     u32         next_hover_win_z;

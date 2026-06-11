@@ -142,6 +142,16 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
         return;
     }
 
+    /* tex_idx 0 is the solid-color convention: point at the font atlas's white texel so
+       solid fills carry the same texture as text and merge into one draw command. */
+    if ( tex_idx == 0 )
+    {
+        tex_idx = font_atlas_idx();
+        font_white_uv( &u0, &v0 );
+        u1 = u0;
+        v1 = v0;
+    }
+
     /* Pixel-grid snap: round the quad origin to the nearest integer pixel.  The
        ortho maps integer coords exactly onto pixel boundaries, so a snapped origin
        keeps thin edges (1px borders, slider/checkbox outlines, the text cursor) and
@@ -202,15 +212,27 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
         return;
     }
 
+    /* tex_idx 0 is the solid-color convention: route all three verts to the font
+       atlas's white texel so the triangle merges with surrounding solid/text draws. */
+    f32 u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 0.0f, u2 = 0.5f, v2 = 1.0f;
+    if ( tex_idx == 0 )
+    {
+        tex_idx = font_atlas_idx();
+        f32 wu, wv;
+        font_white_uv( &wu, &wv );
+        u0 = u1 = u2 = wu;
+        v0 = v1 = v2 = wv;
+    }
+
     imgui_rect_t clip = draw_current_clip();
     draw_ensure_cmd( tex_idx, clip );
     if ( s_draw.cmd_count == 0 ) return;
 
     u16 base = (u16)s_draw.vert_count;
 
-    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ ax, ay, 0.0f, 0.0f, abgr };
-    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ bx, by, 1.0f, 0.0f, abgr };
-    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ cx, cy, 0.5f, 1.0f, abgr };
+    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ ax, ay, u0, v0, abgr };
+    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ bx, by, u1, v1, abgr };
+    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ cx, cy, u2, v2, abgr };
 
     s_draw.indices[ s_draw.idx_count++ ] = base + 0;
     s_draw.indices[ s_draw.idx_count++ ] = base + 1;

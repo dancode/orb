@@ -49,8 +49,6 @@ static struct
     rhi_pipeline_t  pipeline;           // compiled pipeline with imgui shaders + vertex layout + alpha blend
     rhi_sampler_t   font_sampler;       // sampler for font textures (point clamp)
     u32             font_sampler_idx;   // bindless slot for font_sampler
-    rhi_texture_t   white_tex;          // 1x1 opaque white texture for solid colour draws
-    u32             white_tex_idx;      // bindless slot for white_tex
 
 } s_render;
 
@@ -185,7 +183,9 @@ imgui_render_init( void )
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
 
-    /* Font atlas texture -- handled by imgui_font.c. */
+    /* Font atlas texture -- handled by imgui_font.c.  Each atlas carries an opaque
+       white texel (appended row) that solid-color draws sample, so no separate white
+       texture is needed -- solids and text share the atlas and merge into one draw. */
     if ( !font_init() )
     {
         rhi()->unregister_sampler( s_render.font_sampler_idx );
@@ -195,35 +195,6 @@ imgui_render_init( void )
         rhi()->buffer_destroy( s_render.vb );
         return false;
     }
-
-    /* 1x1 opaque white RGBA8 texture for solid-color draws.
-       Fragment formula: out = ( srgb_to_linear(v_color.rgb), v_color.a * sample.r );
-       with s.r=1.0 the white pixel does not attenuate, so the vertex color drives the draw. */
-    s_render.white_tex = rhi()->texture_create( &( rhi_texture_desc_t ){
-        .width        = 1,
-        .height       = 1,
-        .depth        = 1,
-        .mip_levels   = 1,
-        .array_layers = 1,
-        .format       = RHI_FORMAT_RGBA8_UNORM,
-        .usage        = RHI_TEXTURE_USAGE_SAMPLED | RHI_TEXTURE_USAGE_TRANSFER_DST,
-        .memory       = RHI_MEMORY_GPU_ONLY,
-        .debug_name   = "imgui_white",
-    } );
-    if ( !rhi_handle_valid( s_render.white_tex ) )
-    {
-        font_shutdown();
-        rhi()->unregister_sampler( s_render.font_sampler_idx );
-        rhi()->sampler_destroy( s_render.font_sampler );
-        rhi()->pipeline_destroy( s_render.pipeline );
-        rhi()->buffer_destroy( s_render.ib );
-        rhi()->buffer_destroy( s_render.vb );
-        return false;
-    }
-
-    const u8 white[ 4 ] = { 0xFF, 0xFF, 0xFF, 0xFF };
-    rhi()->upload_texture( s_render.white_tex, white, sizeof( white ), 0, 0 );
-    s_render.white_tex_idx = rhi()->register_texture( s_render.white_tex );
 
     return true;
 }
@@ -241,7 +212,7 @@ imgui_render_memory( void )
     imgui_mem_stats_t s;
     s.vertex_bytes  = RHI_MAX_FRAMES_IN_FLIGHT * (u32)IMGUI_VB_REGION_BYTES;
     s.index_bytes   = RHI_MAX_FRAMES_IN_FLIGHT * (u32)IMGUI_IB_REGION_BYTES;
-    s.texture_bytes = font_atlas_bytes() + 4u;   /* atlases + 1x1 RGBA8 white pixel */
+    s.texture_bytes = font_atlas_bytes();   /* atlases include their appended white row */
     s.total_bytes   = s.vertex_bytes + s.index_bytes + s.texture_bytes;
     return s;
 }
@@ -275,11 +246,6 @@ imgui_render_shutdown( void )
             s_draw.vert_hwm, IMGUI_MAX_VERTS, 100.0f * s_draw.vert_hwm / (f32)IMGUI_MAX_VERTS,
             s_draw.idx_hwm,  IMGUI_MAX_IDX,   100.0f * s_draw.idx_hwm  / (f32)IMGUI_MAX_IDX,
             s_draw.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
-
-    if ( s_render.white_tex_idx )
-        rhi()->unregister_texture( s_render.white_tex_idx );
-    if ( rhi_handle_valid( s_render.white_tex ) )
-        rhi()->texture_destroy( s_render.white_tex );
 
     font_shutdown();
 
@@ -432,6 +398,18 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
             i32 sy0 = (i32)floorf( dc->clip_rect.y );
             i32 sx1 = (i32)ceilf ( dc->clip_rect.x + dc->clip_rect.w );
             i32 sy1 = (i32)ceilf ( dc->clip_rect.y + dc->clip_rect.h );
+
+            /* Clamp to the framebuffer: a window dragged past the left/top edge yields a
+               negative origin, which Vulkan rejects (offset must be >= 0).  Clamp the near
+               edge up to 0 and the far edge down to the window extent, then guard against an
+               inverted rect (fully off-screen) producing a negative width/height. */
+            if ( sx0 < 0 ) sx0 = 0;
+            if ( sy0 < 0 ) sy0 = 0;
+            if ( sx1 > win_w ) sx1 = win_w;
+            if ( sy1 > win_h ) sy1 = win_h;
+            if ( sx1 < sx0 ) sx1 = sx0;
+            if ( sy1 < sy0 ) sy1 = sy0;
+
             rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){
                 .x      = sx0,
                 .y      = sy0,
@@ -439,8 +417,8 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
                 .height = sy1 - sy0,
             } );
 
-            /* Resolve texture index: 0 means use white pixel (solid-color draw). */
-            push.tex_idx = ( dc->tex_idx != 0 ) ? dc->tex_idx : s_render.white_tex_idx;
+            /* tex_idx is resolved at push time (solids already point at the atlas white texel). */
+            push.tex_idx = dc->tex_idx;
             rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
             rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){

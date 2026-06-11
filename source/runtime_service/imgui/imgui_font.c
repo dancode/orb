@@ -101,12 +101,18 @@ tt_font_load( const char* path )
             s_tt_font.lookup[ g.codepoint - 32 ] = g;
     }
 
-    /* Read pixel data and upload to GPU. */
-    u32 pixel_count = hdr.atlas_w * hdr.atlas_h;
+    /* Read pixel data and upload to GPU.  The atlas is staged one row taller than the
+       file: the appended bottom row is filled opaque (0xFF) as the white texel for
+       solid-color draws, so solid fills sample this atlas and merge with text.
+       Glyph V coords divide by the padded height (atlas_h below), so the white row
+       never bleeds into the bottom glyph row. */
+    u32 tex_h       = hdr.atlas_h + 1u;
+    u32 glyph_bytes = hdr.atlas_w * hdr.atlas_h;
+    u32 pixel_count = hdr.atlas_w * tex_h;
     u8* pixels      = (u8*)malloc( pixel_count );
     if ( !pixels ) { fclose( f ); return false; }
 
-    if ( fread( pixels, 1, pixel_count, f ) != pixel_count )
+    if ( fread( pixels, 1, glyph_bytes, f ) != glyph_bytes )
     {
         free( pixels );
         fclose( f );
@@ -114,11 +120,14 @@ tt_font_load( const char* path )
     }
     fclose( f );
 
+    /* White texel strip: fill the appended bottom row opaque. */
+    memset( &pixels[ glyph_bytes ], 0xFF, hdr.atlas_w );
+
     /* create the render texture and upload the atlas pixels */
 
     s_tt_font.atlas = rhi()->texture_create( &( rhi_texture_desc_t ){
         .width        = hdr.atlas_w,
-        .height       = hdr.atlas_h,
+        .height       = tex_h,
         .depth        = 1,
         .mip_levels   = 1,
         .array_layers = 1,
@@ -151,7 +160,7 @@ tt_font_load( const char* path )
     s_tt_font.ascent  = hdr.ascent;
     s_tt_font.descent = hdr.descent;
     s_tt_font.atlas_w = hdr.atlas_w;
-    s_tt_font.atlas_h = hdr.atlas_h;
+    s_tt_font.atlas_h = tex_h;          /* padded: glyph UV math divides by the uploaded height */
     s_tt_font.active  = true;
 
     s_tt_font.metrics = ( font_metrics_t ){
@@ -160,6 +169,9 @@ tt_font_load( const char* path )
         .char_w       = 0.0f,
         .atlas_idx    = s_tt_font.atlas_idx,
         .proportional = true,
+        /* White texel: center of the appended bottom row (pixel row hdr.atlas_h). */
+        .white_u      = 0.5f / (f32)hdr.atlas_w,
+        .white_v      = ( (f32)hdr.atlas_h + 0.5f ) / (f32)tex_h,
     };
     s_font = &s_tt_font.metrics;
 
@@ -211,6 +223,9 @@ static f32 font_char_h      ( void ) { return s_font->char_h;    }
 static f32 font_line_h      ( void ) { return s_font->line_h;    }
 static u32 font_atlas_idx   ( void ) { return s_font->atlas_idx; }
 
+/* UV of the active atlas's white texel (appended bottom row) for solid-color draws. */
+static void font_white_uv( f32* u, f32* v ) { *u = s_font->white_u; *v = s_font->white_v; }
+
 /* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel):
    every initialized bitmap atlas, plus the TrueType atlas when one is loaded. */
 static u32
@@ -221,7 +236,7 @@ font_atlas_bytes( void )
     {
         const bitmap_font_t* bf = &s_bitmaps[ i ];
         if ( rhi_handle_valid( bf->atlas ) )
-            bytes += bf->def->atlas_w * bf->def->atlas_h;
+            bytes += bf->def->atlas_w * bf->tex_h;   /* tex_h includes the white row */
     }
     if ( s_tt_font.active )
         bytes += s_tt_font.atlas_w * s_tt_font.atlas_h;
@@ -293,10 +308,13 @@ font_glyph( u8 ch,
         u32 col = idx % def->glyphs_row;
         u32 row = idx / def->glyphs_row;
 
+        /* V divides by the padded upload height (tex_h), not the glyph-grid height,
+           so the appended white row stays outside every glyph's UV range. */
+        f32 tex_h = (f32)s_bitmap_active->tex_h;
         *u0 = (f32)( col * def->glyph_w ) / (f32)def->atlas_w;
-        *v0 = (f32)( row * def->glyph_h ) / (f32)def->atlas_h;
+        *v0 = (f32)( row * def->glyph_h ) / tex_h;
         *u1 = *u0 + (f32)def->glyph_w     / (f32)def->atlas_w;
-        *v1 = *v0 + (f32)def->glyph_h     / (f32)def->atlas_h;
+        *v1 = *v0 + (f32)def->glyph_h     / tex_h;
 
         *ox      = 0.0f;
         *oy      = 0.0f;

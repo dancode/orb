@@ -31,6 +31,9 @@ typedef struct
     u32  atlas_idx;     // bindless texture index
     bool proportional;  // true = use per-glyph advance from lookup[]
 
+    f32  white_u;       // UV of a guaranteed-opaque texel in this atlas (solid-fill draws)
+    f32  white_v;       // sampling it gives r=1.0 so the vertex color drives the draw
+
 } font_metrics_t;
 
 static font_metrics_t* s_font = NULL;  // points to the active font's metrics
@@ -60,6 +63,7 @@ typedef struct
     const bitmap_font_def_t*    def;
     rhi_texture_t               atlas;
     u32                         atlas_idx;
+    u32                         tex_h;     // uploaded atlas height (= def->atlas_h + 1 white row)
 
 } bitmap_font_t;
 
@@ -172,6 +176,9 @@ bitmap_font_select( imgui_font_t font )
         .char_w       = (f32)( def->glyph_w * s ),
         .atlas_idx    = s_bitmap_active->atlas_idx,
         .proportional = false,
+        /* White texel: center of the appended bottom row (pixel row atlas_h). */
+        .white_u      = 0.5f / (f32)def->atlas_w,
+        .white_v      = ( (f32)def->atlas_h + 0.5f ) / (f32)s_bitmap_active->tex_h,
     };
     s_font = &s_bitmap_active->metrics;
 }
@@ -208,11 +215,17 @@ bitmap_atlas_init( bitmap_font_t* bf )
 {
     const bitmap_font_def_t* def = bf->def;
 
+    /* Atlas is uploaded one row taller than the glyph grid: the extra bottom row is
+       filled opaque (0xFF) and serves as the white texel for solid-color draws, so
+       solid fills sample the same atlas as text and merge into one draw command.
+       Glyph V coords divide by tex_h (below), so this row never bleeds into glyphs. */
+    u32 tex_h = def->atlas_h + 1u;
+
     /* Fixed-size pixel staging buffer; font_tool enforces the same limit at generation time.
-       Sized to the largest built-in atlas (16x16 font: 256x128 atlas) */
-    ORB_ASSERT( def->atlas_w * def->atlas_h <= 256u * 256u );
+       Sized to the largest built-in atlas (16x16 font: 256x128 atlas) plus the white row. */
+    ORB_ASSERT( def->atlas_w * tex_h <= 256u * 256u );
     u8  pixels[ 256 * 256 ];
-    memset( pixels, 0, def->atlas_w * def->atlas_h );
+    memset( pixels, 0, def->atlas_w * tex_h );
 
     for ( u32 g = 0; g < def->glyph_count; ++g )
     {
@@ -238,9 +251,13 @@ bitmap_atlas_init( bitmap_font_t* bf )
         }
     }
 
+    /* White texel strip: fill the appended bottom row opaque. */
+    memset( &pixels[ def->atlas_h * def->atlas_w ], 0xFF, def->atlas_w );
+    bf->tex_h = tex_h;
+
     bf->atlas = rhi()->texture_create( &( rhi_texture_desc_t ){
         .width        = def->atlas_w,
-        .height       = def->atlas_h,
+        .height       = tex_h,
         .depth        = 1,
         .mip_levels   = 1,
         .array_layers = 1,
@@ -252,7 +269,7 @@ bitmap_atlas_init( bitmap_font_t* bf )
     if ( !rhi_handle_valid( bf->atlas ) )
         return false;
 
-    if ( !rhi()->upload_texture( bf->atlas, pixels, def->atlas_w * def->atlas_h, 0, 0 ) )
+    if ( !rhi()->upload_texture( bf->atlas, pixels, def->atlas_w * tex_h, 0, 0 ) )
     {
         rhi()->texture_destroy( bf->atlas );
         bf->atlas = ( rhi_texture_t ){ 0 };
