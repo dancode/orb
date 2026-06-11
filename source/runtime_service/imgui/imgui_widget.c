@@ -68,33 +68,63 @@ widget_next_rect( f32 h )
     return r;
 }
 
-/* Update hot/active for a simple non-keyboard widget. */
-static void
-widget_interact( imgui_id_t id, imgui_rect_t r )
+/* Interaction class for a widget, selected at the call site.  Only the press-time
+   behavior differs between widgets; everything else (hot/active/click) is uniform. */
+typedef enum
 {
+    WIDGET_KIND_BUTTON    = 0,   /* press captures active; reports clicked   */
+    WIDGET_KIND_DRAG      = 1,   /* press captures active; held for dragging */
+    WIDGET_KIND_FOCUSABLE = 2,   /* press also claims keyboard focus         */
+
+} widget_kind_t;
+
+/* Result of one frame of interaction for a widget.  Every widget drives its
+   visuals and value changes from these flags instead of touching s_ctx directly. */
+typedef struct
+{
+    bool hot;       /* cursor is over the widget this frame                  */
+    bool active;    /* primary button held with this widget as the target    */
+    bool pressed;   /* primary button went down on the widget this frame     */
+    bool clicked;   /* press + release completed with the cursor still over  */
+    bool focused;   /* widget owns keyboard input (focusable widgets)        */
+
+} widget_state_t;
+
+/* Unified hot/active/focus/click state machine.  Call once per widget with the
+   hit rect and the desired interaction kind; the returned flags are all a widget
+   needs for drawing and value updates. */
+static widget_state_t
+widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
+{
+    widget_state_t st = { 0 };
+
+    /* Hot: cursor inside the hit rect. */
     if ( rect_hit( r ) )
         s_ctx.hot_id = id;
 
-    /* Capture on press if hot. */
+    /* Press: capture active (and focus for focusable widgets) on button-down. */
     if ( s_ctx.hot_id == id && s_io.mouse_pressed[ 0 ] )
-         s_ctx.active_id = id;
+    {
+        s_ctx.active_id = id;
+        st.pressed      = true;
+        if ( kind == WIDGET_KIND_FOCUSABLE )
+            s_ctx.focused_id = id;
+    }
+
+    st.hot     = ( s_ctx.hot_id == id );
+    st.active  = ( s_ctx.active_id == id );
+    st.focused = ( s_ctx.focused_id == id );
+    st.clicked = s_io.mouse_released[ 0 ] && s_ctx.hot_id == id && s_ctx.active_id == id;
+
+    return st;
 }
 
-/* Returns true when the widget was clicked (pressed + released while hot). */
-static bool
-widget_clicked( imgui_id_t id )
-{
-    return s_io.mouse_released[ 0 ]
-        && s_ctx.hot_id    == id
-        && s_ctx.active_id == id;
-}
-
-/* Color for a pushbutton-style widget. */
+/* Background color for a pushbutton / knob style widget, from its interaction state. */
 static u32
-button_color( imgui_id_t id )
+widget_bg_color( widget_state_t st )
 {
-    if ( s_ctx.active_id == id ) return COL_WIDGET_ACT;
-    if ( s_ctx.hot_id    == id ) return COL_WIDGET_HOT;
+    if ( st.active ) return COL_WIDGET_ACT;
+    if ( st.hot    ) return COL_WIDGET_HOT;
     return COL_WIDGET_BG;
 }
 
@@ -158,10 +188,10 @@ imgui_button( const char* label )
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
-    widget_interact( id, r );
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
     /* Background. */
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, button_color( id ) );
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
 
     /* Centered label. */
     f32 lw = font_text_w( label );
@@ -170,7 +200,7 @@ imgui_button( const char* label )
     f32 ly = r.y + y_shift;
     draw_push_text( lx, ly, COL_TEXT, label );
 
-    return widget_clicked( id );
+    return st.clicked;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -183,7 +213,7 @@ imgui_checkbox( const char* label, bool* v )
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
-    widget_interact( id, r );
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
     /* Box on the left. */
     f32 bx = r.x;
@@ -205,7 +235,7 @@ imgui_checkbox( const char* label, bool* v )
                     COL_TEXT, label );
 
     bool changed = false;
-    if ( widget_clicked( id ) )
+    if ( st.clicked )
     {
         *v    = !( *v );
         changed = true;
@@ -230,11 +260,11 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
     if ( track_w < min_w ) track_w = min_w;
 
     imgui_rect_t track_r = { r.x, r.y, track_w, r.h };
-    widget_interact( id, track_r );
+    widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
 
     /* Drag: update value when active. */
     bool changed = false;
-    if ( s_ctx.active_id == id )
+    if ( st.active )
     {
         f32 t = ( s_io.mouse_x - track_r.x ) / track_r.w;
         t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
@@ -262,7 +292,7 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
     /* Draw knob. */
     f32 knob_x = track_r.x + t_cur * ( track_r.w - SLIDER_KNOB_W );
     draw_push_rect_filled( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
-                           0,0,1,1, 0, button_color( id ) );
+                           0,0,1,1, 0, widget_bg_color( st ) );
 
     /* Label. */
     draw_push_text( track_r.x + track_r.w + WIDGET_PAD,
@@ -289,14 +319,10 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
     if ( box_w < min_box ) box_w = min_box;
     imgui_rect_t box_r = { r.x, r.y, box_w, r.h };
 
-    /* Click focuses this widget. */
-    if ( rect_hit( box_r ))
-         s_ctx.hot_id = id;
+    /* Click focuses this widget (focus claim handled by the behavior helper). */
+    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
 
-    if ( s_ctx.hot_id == id && s_io.mouse_pressed[ 0 ] )
-         s_ctx.focused_id = id;
-
-    bool focused = ( s_ctx.focused_id == id );
+    bool focused = st.focused;
     bool enter   = false;
 
     /* Text input when focused. */
