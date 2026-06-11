@@ -57,7 +57,7 @@ static struct
 /* Manual debug toggle: flip to true (debugger, or at startup) to print the per-frame
    draw-call count every flush.  The high-water mark is always tracked and reported at
    shutdown regardless of this flag. */
-static bool s_render_debug_draw_calls = false;
+static bool s_render_debug_draw_calls = true;
 
 /*----------------------------------------------------------------------------------------------
     render_ortho -- column-major pixel-space orthographic matrix.

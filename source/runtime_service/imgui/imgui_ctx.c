@@ -14,6 +14,10 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
+/* Forward tag: the full definition lives in imgui_window.c (included after this file).
+   end_window writes scroll_y / content_h back through this pointer. */
+struct imgui_window_t;
+
 static struct
 {
     imgui_id_t  hover_id;       /* widget under the cursor this frame (rebuilt each frame) */
@@ -32,8 +36,9 @@ static struct
     imgui_id_t  next_hover_win; /* front-most window nominee gathered this frame         */
     u32         next_hover_win_z;
 
-    imgui_id_t  win_id;       /* id of the window currently between begin/end_window   */
-    const char* win_title;    /* title string, cached for end_window's deferred chrome */
+    imgui_id_t  win_id;             /* id of the window currently between begin/end_window   */
+    const char* win_title;          /* title string, cached for end_window's deferred chrome */
+    struct imgui_window_t* cur_win; /* persisted window record; scroll write-back target */
 
     f32  cursor_x;            /* layout pen, top-left of the next widget               */
     f32  cursor_y;
@@ -106,13 +111,13 @@ ctx_new_frame( void )
        press+release pair this frame; it clears on the following frame when the
        button is neither down nor just released. */
     if ( !s_io.mouse_down[ 0 ] && !s_io.mouse_released[ 0 ] )
-        s_ctx.active_id = IMGUI_ID_NONE;
+         s_ctx.active_id = IMGUI_ID_NONE;
 
     /* Drop keyboard focus on any press; the widget under the cursor re-claims
        it the same frame (input_text sets focused_id from hover_id + press).
        A press on a button or empty space thus leaves focus cleared. */
     if ( s_io.mouse_pressed[ 0 ] )
-        s_ctx.focused_id = IMGUI_ID_NONE;
+         s_ctx.focused_id = IMGUI_ID_NONE;
 }
 
 // clang-format on

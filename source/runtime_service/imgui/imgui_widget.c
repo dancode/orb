@@ -48,6 +48,10 @@
 #define COL_INPUT_FOCUS  IMGUI_COLOR( 0x20, 0x50, 0x70, 0xFF )
 #define COL_CURSOR       IMGUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF )
 
+/* Derive the scrollbar's widget id from the window id by XOR -- a stable per-window id
+   that never collides with a title-hashed widget id in the same window. */
+#define IMGUI_SCROLLBAR_SALT  0x5C011B01u
+
 /*----------------------------------------------------------------------------------------------
     Helpers
 ----------------------------------------------------------------------------------------------*/
@@ -102,8 +106,14 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     /* Hot only when this widget belongs to the window the cursor is over (hover_win,
        resolved last frame).  Widgets in any other window short-circuit before rect_hit,
        so occluded windows do no hit-testing at all -- occlusion is decided once, at the
-       window level, not per widget. */
-    if ( s_ctx.win_id == s_ctx.hover_win && rect_hit( r ) )
+       window level, not per widget.
+
+       Modal-while-dragging: once any item owns active_id (a slider, scrollbar, or window
+       drag is in flight) every other item is frozen -- only the active item may hover.
+       The active item keeps interacting through st.active below, which reads active_id
+       directly, so a drag stays live while the cursor sweeps over inert neighbours. */
+    bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == id );
+    if ( can_hover && s_ctx.win_id == s_ctx.hover_win && rect_hit( r ) )
         s_ctx.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
@@ -175,15 +185,35 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
        windows back-to-front regardless of begin_window call order. */
     draw_set_sort_key( win->z );
 
+    /* Vertical scroll.  content_h was measured last frame (end_window); use it to clamp
+       and to decide whether the scrollbar gutter steals content width this frame.  The
+       layout origin below is biased by -scroll_y, so all widgets slide under the clip;
+       the scrollbar itself is drawn and dragged in end_window once geometry is known. */
+    const f32 scroll_step = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
+
+    f32 view_h     = win->h - WIN_TITLE_H - WIN_BORDER;
+    f32 max_scroll = win->content_h - view_h;
+    if ( max_scroll < 0.0f ) max_scroll = 0.0f;
+
+    /* Wheel scrolls only the hovered window, and never mid-drag (modal). */
+    if ( s_ctx.hover_win == id && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_wheel != 0.0f )
+        win->scroll_y -= s_io.mouse_wheel * scroll_step;
+
+    if ( win->scroll_y < 0.0f )       win->scroll_y = 0.0f;
+    if ( win->scroll_y > max_scroll ) win->scroll_y = max_scroll;
+
+    f32 sb_w = ( win->content_h > view_h ) ? (f32)s_layout.slider_knob_w : 0.0f;
+
     /* Commit resolved geometry for the widgets and end_window. */
     s_ctx.win_id     = id;
     s_ctx.win_title  = title;   /* cached for end_window's deferred chrome */
+    s_ctx.cur_win    = win;     /* scroll write-back target for end_window */
     s_ctx.win_x      = win->x;
     s_ctx.win_y      = win->y;
     s_ctx.win_w      = win->w;
     s_ctx.win_h      = win->h;
     s_ctx.content_x  = win->x + WIDGET_PAD;
-    s_ctx.content_w  = win->w - 2.0f * WIDGET_PAD;
+    s_ctx.content_w  = win->w - 2.0f * WIDGET_PAD - sb_w;   /* leave room for the gutter */
 
     /* One clip rect for the whole window: background, content, and the titlebar/border
        chrome deferred to end_window all share it, so the window flushes as a single draw
@@ -195,14 +225,57 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     /* Window background. */
     draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
-    /* Start the layout cursor at the content origin. */
+    /* Start the layout cursor at the content origin, biased up by the scroll offset. */
     s_ctx.cursor_x = win->x + WIDGET_PAD;
-    s_ctx.cursor_y = win->y + WIN_TITLE_H + WIDGET_GAP;
+    s_ctx.cursor_y = win->y + WIN_TITLE_H + WIDGET_GAP - win->scroll_y;
 }
 
 void
 imgui_end_window( void )
 {
+    imgui_window_t* win = s_ctx.cur_win;
+
+    /* Content extent = how far the layout cursor travelled from the (unscrolled) origin.
+       Adding scroll_y back cancels the bias begin_window applied.  Stored for next frame's
+       clamp, gutter decision, and the knob proportions just below. */
+    f32 view_h   = s_ctx.win_h - WIN_TITLE_H - WIN_BORDER;
+    f32 origin_y = s_ctx.win_y + WIN_TITLE_H + WIDGET_GAP;
+    win->content_h = ( s_ctx.cursor_y + win->scroll_y ) - origin_y;
+
+    /* Scrollbar: only when content overflows the view.  Drawn before the chrome so the
+       border can frame it; handled before the window drag-grab below so a press on the
+       knob claims active_id first and the window itself does not start dragging. */
+    if ( win->content_h > view_h )
+    {
+        f32 max_scroll = win->content_h - view_h;
+        f32 sb_w       = (f32)s_layout.slider_knob_w;
+        f32 track_x    = s_ctx.win_x + s_ctx.win_w - WIN_BORDER - sb_w;
+        f32 track_y    = s_ctx.win_y + WIN_TITLE_H;
+        imgui_rect_t track_r = { track_x, track_y, sb_w, view_h };
+
+        imgui_id_t     sb_id = s_ctx.win_id ^ IMGUI_SCROLLBAR_SALT;
+        widget_state_t st    = widget_behavior( sb_id, track_r, WIDGET_KIND_DRAG );
+
+        /* Knob height tracks the visible fraction; min-clamped so it stays grabbable. */
+        f32 knob_h = view_h * ( view_h / win->content_h );
+        if ( knob_h < sb_w ) knob_h = sb_w;
+        f32 travel = view_h - knob_h;
+
+        /* Drag maps the cursor (knob centre) back into scroll_y, mirroring slider_float. */
+        if ( st.active )
+        {
+            f32 t = ( travel > 0.0f ) ? ( s_io.mouse_y - track_y - knob_h * 0.5f ) / travel : 0.0f;
+            t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
+            win->scroll_y = t * max_scroll;
+        }
+
+        f32 t_cur  = ( max_scroll > 0.0f ) ? win->scroll_y / max_scroll : 0.0f;
+        f32 knob_y = track_y + t_cur * travel;
+
+        draw_push_rect_filled( track_x, track_y, sb_w, view_h, 0,0,1,1, 0, COL_SLIDER_TRACK );
+        draw_push_rect_filled( track_x, knob_y, sb_w, knob_h, 0,0,1,1, 0, widget_bg_color( st ) );
+    }
+
     /* Deferred chrome: titlebar, title text, and border paint last under the window's
        single clip rect, so they overdraw any content that scrolled beneath them while
        still merging into the one window draw command. */

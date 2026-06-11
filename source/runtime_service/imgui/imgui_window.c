@@ -22,28 +22,34 @@
 
 #define IMGUI_MAX_WINDOWS 64
 
-/* One persisted window.  Geometry is owned here after the first appearance. */
-typedef struct
+/* One persisted window.  Geometry is owned here after the first appearance.
+   The struct is tagged so imgui_ctx.c (included earlier) can hold a pointer to it. */
+typedef struct imgui_window_t
 {
-    imgui_id_t id;          /* id_hash(title); 0 = free slot                 */
+    imgui_id_t id;          /* id_hash(title); 0 = free slot                  */
     f32        x, y;        /* persisted top-left (updated by dragging)       */
     f32        w, h;        /* persisted dimensions                           */
     u32        z;           /* paint order: higher = more recently raised = in front */
 
+    f32        scroll_y;    /* vertical scroll offset; 0 = top                */
+    f32        content_h;   /* total content height measured last frame       */
+
 } imgui_window_t;
 
-static imgui_window_t s_windows[ IMGUI_MAX_WINDOWS ];
-static u32            s_window_count;
-static imgui_window_t s_window_scratch;   /* fallback when the table is full (not persisted) */
+static imgui_window_t       s_windows[ IMGUI_MAX_WINDOWS ];
+static u32                  s_window_count;
+static imgui_window_t       s_window_scratch;   /* fallback when the table is full (not persisted) */
 
 /* Monotonic z dispenser.  Each new or raised window takes the next value, so the
    most recently raised window always has the highest z and sorts to the front. */
-static u32 s_z_counter;
+
+static u32                  s_z_counter;
 
 /* Drag configuration + in-flight drag offset (mouse - window pos at grab time).
    The window currently being dragged is tracked via s_ctx.active_id == window id. */
-static imgui_win_drag_t s_win_drag_mode = IMGUI_WIN_DRAG_TITLEBAR;
-static f32              s_drag_off_x, s_drag_off_y;
+
+static imgui_win_drag_t     s_win_drag_mode = IMGUI_WIN_DRAG_TITLEBAR;
+static f32                  s_drag_off_x, s_drag_off_y;
 
 /*----------------------------------------------------------------------------------------------
     window_get -- find the window for this id, or create it from the initial geometry.
