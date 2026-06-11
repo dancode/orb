@@ -50,7 +50,14 @@ static struct
     rhi_sampler_t   font_sampler;       // sampler for font textures (point clamp)
     u32             font_sampler_idx;   // bindless slot for font_sampler
 
+    u32             draw_call_hwm;      // peak indexed draw calls emitted in a single frame
+
 } s_render;
+
+/* Manual debug toggle: flip to true (debugger, or at startup) to print the per-frame
+   draw-call count every flush.  The high-water mark is always tracked and reported at
+   shutdown regardless of this flag. */
+static bool s_render_debug_draw_calls = false;
 
 /*----------------------------------------------------------------------------------------------
     render_ortho -- column-major pixel-space orthographic matrix.
@@ -247,6 +254,9 @@ imgui_render_shutdown( void )
             s_draw.idx_hwm,  IMGUI_MAX_IDX,   100.0f * s_draw.idx_hwm  / (f32)IMGUI_MAX_IDX,
             s_draw.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
 
+    /* Peak draw calls in a single frame -- a measure of batching effectiveness. */
+    printf( "[imgui] peak draw calls in a frame: %u\n", s_render.draw_call_hwm );
+
     font_shutdown();
 
     if ( s_render.font_sampler_idx )
@@ -382,6 +392,8 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
 
     push.samp_idx = s_render.font_sampler_idx;
 
+    u32 draw_calls = 0;   /* indexed draws actually emitted this frame (one per non-empty command) */
+
     for ( u32 r = 0; r < run_count; ++r )
     {
         u32 first_index = runs[ r ].first_index;
@@ -428,12 +440,19 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
                 .vertex_offset  = 0,
                 .first_instance = 0,
             } );
+            ++draw_calls;
 
             first_index += dc->elem_count;
         }
     }
 
     rhi()->cmd_end_rendering( cmd );
+
+    /* Track the peak draw-call count for the shutdown report; optionally print per frame. */
+    if ( draw_calls > s_render.draw_call_hwm )
+        s_render.draw_call_hwm = draw_calls;
+    if ( s_render_debug_draw_calls )
+        printf( "[imgui] draw calls this frame: %u (peak %u)\n", draw_calls, s_render.draw_call_hwm );
 }
 
 // clang-format on

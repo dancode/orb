@@ -262,6 +262,7 @@ main( int argc, char** argv )
                 if ( imgui() && show_ui )
                 {
                     imgui()->new_frame( win_w, win_h, 4 );
+
                     imgui()->begin_window( "Debug", 10, 10, 640, 640 );
                     if ( imgui()->button( "Reload$" ) )
                     {
@@ -294,15 +295,16 @@ main( int argc, char** argv )
 
                     imgui()->end_window();
 
-                    /* Second, overlapping window -- click either to bring it to the
-                       front (z-order); drag to reposition. */
-                    imgui()->begin_window( "Inspector", 360, 240, 360, 280 );
-                    imgui()->text( "Second window." );
-                    imgui()->textf( "drag mode keys: 1 title  2 body  3 none" );
-                    static bool toggle = false;
-                    imgui()->checkbox( "Overlap toggle", &toggle );
-                    imgui()->end_window();
-
+                    if ( 0 ) {
+                        /* Second, overlapping window -- click either to bring it to the
+                           front (z-order); drag to reposition. */
+                        imgui()->begin_window( "Inspector", 360, 240, 360, 280 );
+                        imgui()->text( "Second window." );
+                        imgui()->textf( "drag mode keys: 1 title  2 body  3 none" );
+                        static bool toggle = false;
+                        imgui()->checkbox( "Overlap toggle", &toggle );
+                        imgui()->end_window();
+                    }
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
                 }
 
