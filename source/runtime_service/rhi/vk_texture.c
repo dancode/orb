@@ -165,12 +165,13 @@ vk_texture_destroy( rhi_texture_t handle )
 
     vk_texture_slot_t* slot = &vk.textures[ handle.id ];
 
-    if ( slot->view   != VK_NULL_HANDLE )
-        vkDestroyImageView( vk.device, slot->view,   vk.alloc_cb );
-    if ( slot->image  != VK_NULL_HANDLE )
-        vkDestroyImage    ( vk.device, slot->image,  vk.alloc_cb );
-    if ( slot->memory != VK_NULL_HANDLE )
-        vkFreeMemory      ( vk.device, slot->memory, vk.alloc_cb );
+    /* Defer the vkDestroy* until in-flight frames that may still reference this image have
+       drained; freeing it synchronously risks VK_ERROR_DEVICE_LOST.  See vk_garbage.c. */
+    vk_garbage_push( &( vk_garbage_t ){
+        .image  = slot->image,
+        .view   = slot->view,
+        .memory = slot->memory,
+    } );
 
     slot->image  = VK_NULL_HANDLE;
     slot->view   = VK_NULL_HANDLE;
@@ -247,7 +248,8 @@ vk_sampler_destroy( rhi_sampler_t handle )
 
     vk_sampler_slot_t* slot = &vk.samplers[ handle.id ];
 
-    vkDestroySampler( vk.device, slot->sampler, vk.alloc_cb );
+    /* Deferred destroy: a sampler may still be bound by in-flight frames.  See vk_garbage.c. */
+    vk_garbage_push( &( vk_garbage_t ){ .sampler = slot->sampler } );
 
     slot->sampler = VK_NULL_HANDLE;
 }

@@ -122,19 +122,18 @@ vk_buffer_destroy( rhi_buffer_t handle )
 
     vk_buffer_slot_t* slot = &vk.buffers[ handle.id ];
 
-    if ( slot->mapped )
-    {
-        vkUnmapMemory( vk.device, slot->memory );
-        slot->mapped = NULL;
-    }
-    if ( slot->buffer != VK_NULL_HANDLE )
-        vkDestroyBuffer( vk.device, slot->buffer, vk.alloc_cb );
-    if ( slot->memory != VK_NULL_HANDLE )
-        vkFreeMemory   ( vk.device, slot->memory, vk.alloc_cb );
+    /* Deferred destroy: an in-flight frame may still read this buffer.  The unmap is deferred
+       with it (entry carries the mapped pointer) so the memory stays valid meanwhile. */
+    vk_garbage_push( &( vk_garbage_t ){
+        .buffer = slot->buffer,
+        .memory = slot->memory,
+        .mapped = slot->mapped,
+    } );
 
     slot->buffer = VK_NULL_HANDLE;
     slot->memory = VK_NULL_HANDLE;
-    slot->size       = 0;
+    slot->mapped = NULL;
+    slot->size   = 0;
 }
 
 static void

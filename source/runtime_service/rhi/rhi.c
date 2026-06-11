@@ -134,6 +134,7 @@
 #include "runtime_service/rhi/vk_convert.c"
 
 #include "runtime_service/rhi/vk_memory.c"
+#include "runtime_service/rhi/vk_garbage.c"
 #include "runtime_service/rhi/vk_texture.c"
 #include "runtime_service/rhi/vk_buffer.c"
 #include "runtime_service/rhi/vk_shader.c"

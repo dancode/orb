@@ -21,6 +21,7 @@
 #include "runtime_service/imgui/imgui_host.h"
 #include "sb_vulkan_boot.h"
 
+// clang-format off
 /*==============================================================================================
     main
 ==============================================================================================*/
@@ -174,7 +175,11 @@ main( int argc, char** argv )
         if ( app()->key_pressed( APP_KEY_ESCAPE ) )
             break;
 
-        if ( app()->key_pressed( APP_KEY_EQUAL ) )
+        /* ------------------------------------------------------------------------------ */
+        /* imgui testing keys */
+
+
+        if ( app()->key_pressed( APP_KEY_NP_DOT ) )
         {            
             static int bmp_scale = 1;
             bmp_scale = bmp_scale == 1 ? 2 : ( bmp_scale == 2 ? 3 : 1 );
@@ -183,11 +188,17 @@ main( int argc, char** argv )
             }
         }
 
-        if ( app()->key_pressed( APP_KEY_MINUS ) )
-        {
-            static int font_select = 1;
+        static u8 font_select = 1;
+
+        if ( app()->key_pressed( APP_KEY_NP_ADD ) )
+        {            
             font_select = ( font_select + 1 ) % IMGUI_FONT_BITMAP_MAX;
             imgui()->set_font( (imgui_font_t)font_select );
+        }
+        if ( app()->key_pressed( APP_KEY_NP_SUB ) )
+        {
+            font_select = ( font_select - 1 ) % IMGUI_FONT_BITMAP_MAX;
+            imgui()->set_font( ( imgui_font_t )font_select );
         }
         
         /* ------------------------------------------------------------------------------ */
@@ -222,7 +233,12 @@ main( int argc, char** argv )
                     draw()->end_pass();
                 }
 
-                if ( imgui() )
+                static bool show_ui = true;
+
+                if ( app()->key_pressed( APP_KEY_MINUS ) ) { show_ui = false; }
+                if ( app()->key_pressed( APP_KEY_EQUAL ) ) { show_ui = true; }
+                
+                if ( imgui() && show_ui )
                 {
                     imgui()->new_frame( win_w, win_h, 4 );
                     imgui()->begin_window( "Debug", 10, 10, 640, 640 );
@@ -256,10 +272,13 @@ main( int argc, char** argv )
 
                     imgui()->end_window();
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
-                }          
-            }
+                }
 
-            rhi()->frame_end( ctx );
+                /* Only end a frame we actually began.  frame_begin returns an invalid handle
+                   without recording (minimized, swapchain out-of-date) -- calling frame_end then
+                   would record into a command buffer that was never begun. */
+                rhi()->frame_end( ctx );
+            }
         }
 
         /* ------------------------------------------------------------------------------ */
@@ -289,5 +308,4 @@ main( int argc, char** argv )
 }
 
 /*============================================================================================*/
-
-
+// clang-format on

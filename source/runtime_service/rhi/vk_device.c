@@ -391,6 +391,10 @@ vk_device_destroy( void )
        validation errors and potential crashes if the GPU is mid-flight. */
     vk_device_wait_idle();
 
+    /* GPU is idle: free any resources still queued for deferred destruction before tearing
+       down the device that owns them.  force=true ignores the epoch gate.  See vk_garbage.c. */
+    vk_garbage_collect( true );
+
     /* Reverse init order: upload holds staging buffers in device memory, so it tears down
        before descriptor (pipeline layout + bindless pool), which tears down before the device. */
     vk_upload_shutdown();

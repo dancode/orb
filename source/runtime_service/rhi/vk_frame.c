@@ -128,6 +128,10 @@ vk_frame_begin( i32 ctx_id )
     /* Return deferred bindless slots whose GPU references have expired. */
     vk_descriptor_flush_retired();
 
+    /* Free backing GPU objects (images/buffers/samplers) whose in-flight references have
+       expired -- same epoch timeline as the descriptor slots above.  See vk_garbage.c. */
+    vk_garbage_collect( false );
+
     /* --- Step 3: Acquire the next swapchain image. ---
 
        The swapchain is a pool of images the GPU renders into and the display engine scans
