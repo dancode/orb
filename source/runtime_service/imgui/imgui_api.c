@@ -52,8 +52,8 @@ void imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
 {
     input_update( win_w, win_h, dt );
     draw_reset( win_w, win_h );
-    ctx_new_frame();             /* promotes last frame's hot_win */
-    window_raise_on_press();     /* a press raises the hot window (takes effect this frame) */
+    ctx_new_frame();             /* promotes last frame's hover_win */
+    window_raise_on_press();     /* a press raises the hover window (takes effect this frame) */
 }
 
 void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )

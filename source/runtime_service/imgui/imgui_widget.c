@@ -6,8 +6,8 @@
     starts at the content area top-left of the active window and advances downward.
     Every widget advances cursor_y by its height + WIDGET_GAP after drawing.
 
-    Widget interaction uses the classic hot/active/focused state machine:
-        hot    : mouse is hovering over the widget
+    Widget interaction uses the classic hover/active/focused state machine:
+        hover    : mouse is hovering over the widget
         active : primary mouse button is held with this widget as the target
         focused: this widget owns keyboard input (input_text)
 
@@ -69,7 +69,7 @@ widget_next_rect( f32 h )
 }
 
 /* Interaction class for a widget, selected at the call site.  Only the press-time
-   behavior differs between widgets; everything else (hot/active/click) is uniform. */
+   behavior differs between widgets; everything else (hover/active/click) is uniform. */
 typedef enum
 {
     WIDGET_KIND_BUTTON    = 0,   /* press captures active; reports clicked   */
@@ -82,7 +82,7 @@ typedef enum
    visuals and value changes from these flags instead of touching s_ctx directly. */
 typedef struct
 {
-    bool hot;       /* cursor is over the widget this frame                  */
+    bool hover;       /* cursor is over the widget this frame                  */
     bool active;    /* primary button held with this widget as the target    */
     bool pressed;   /* primary button went down on the widget this frame     */
     bool clicked;   /* press + release completed with the cursor still over  */
@@ -90,7 +90,7 @@ typedef struct
 
 } widget_state_t;
 
-/* Unified hot/active/focus/click state machine.  Call once per widget with the
+/* Unified hover/active/focus/click state machine.  Call once per widget with the
    hit rect and the desired interaction kind; the returned flags are all a widget
    needs for drawing and value updates. */
 
@@ -99,15 +99,15 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 {
     widget_state_t st = { 0 };
 
-    /* Hot only when this widget belongs to the window the cursor is over (hot_win,
+    /* Hot only when this widget belongs to the window the cursor is over (hover_win,
        resolved last frame).  Widgets in any other window short-circuit before rect_hit,
        so occluded windows do no hit-testing at all -- occlusion is decided once, at the
        window level, not per widget. */
-    if ( s_ctx.win_id == s_ctx.hot_win && rect_hit( r ) )
-        s_ctx.hot_id = id;
+    if ( s_ctx.win_id == s_ctx.hover_win && rect_hit( r ) )
+        s_ctx.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
-    if ( s_ctx.hot_id == id && s_io.mouse_pressed[ 0 ] )
+    if ( s_ctx.hover_id == id && s_io.mouse_pressed[ 0 ] )
     {
         s_ctx.active_id = id;
         st.pressed      = true;
@@ -115,10 +115,10 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
             s_ctx.focused_id = id;
     }
 
-    st.hot     = ( s_ctx.hot_id == id );
+    st.hover     = ( s_ctx.hover_id == id );
     st.active  = ( s_ctx.active_id == id );
     st.focused = ( s_ctx.focused_id == id );
-    st.clicked = s_io.mouse_released[ 0 ] && s_ctx.hot_id == id && s_ctx.active_id == id;
+    st.clicked = s_io.mouse_released[ 0 ] && s_ctx.hover_id == id && s_ctx.active_id == id;
 
     return st;
 }
@@ -128,7 +128,7 @@ static u32
 widget_bg_color( widget_state_t st )
 {
     if ( st.active ) return COL_WIDGET_ACT;
-    if ( st.hot    ) return COL_WIDGET_HOT;
+    if ( st.hover    ) return COL_WIDGET_HOT;
     return COL_WIDGET_BG;
 }
 
@@ -167,9 +167,9 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     }
 
     /* Nominate this window as the one under the cursor (front-most by z wins).  The
-       winner becomes hot_win next frame; that single fact gates all widget hit-testing
+       winner becomes hover_win next frame; that single fact gates all widget hit-testing
        and the drag grab below, so occlusion is resolved once per frame, not per widget. */
-    window_nominate_hot( id, ( imgui_rect_t ){ win->x, win->y, win->w, win->h }, win->z );
+    window_nominate_hover( id, ( imgui_rect_t ){ win->x, win->y, win->w, win->h }, win->z );
 
     /* All of this window's geometry is stamped with its z so flush can paint
        windows back-to-front regardless of begin_window call order. */
@@ -211,12 +211,12 @@ imgui_end_window( void )
     /* Subsequent draws (low-level API, the next window) revert to the background key. */
     draw_set_sort_key( 0 );
 
-    /* Drag grab.  Decided here, after this window's widgets have run, so hot_id tells us
+    /* Drag grab.  Decided here, after this window's widgets have run, so hover_id tells us
        whether the press landed on a widget: this window is the one under the cursor
-       (hot_win) and no widget of it took the hover (hot_id == NONE) means the press is on
+       (hover_win) and no widget of it took the hover (hover_id == NONE) means the press is on
        empty window space.  BODY drags from anywhere empty; TITLEBAR only from the bar.
        The move itself starts next frame in begin_window (one-frame grab latency). */
-    if ( s_ctx.win_id == s_ctx.hot_win && s_ctx.hot_id == IMGUI_ID_NONE
+    if ( s_ctx.win_id == s_ctx.hover_win && s_ctx.hover_id == IMGUI_ID_NONE
          && s_io.mouse_pressed[ 0 ] && s_ctx.active_id == IMGUI_ID_NONE
          && s_win_drag_mode != IMGUI_WIN_DRAG_NONE )
     {

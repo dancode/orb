@@ -11,7 +11,7 @@
     where the layout dimensions (title-bar height, padding) are in scope.  This file owns
     the table, the active drag mode, the in-flight drag offset, and raise-to-front.
 
-    Included by imgui.c after imgui_ctx.c so s_ctx (hot_win) and s_io are in scope.
+    Included by imgui.c after imgui_ctx.c so s_ctx (hover_win) and s_io are in scope.
 
 ==============================================================================================*/
 // clang-format off
@@ -73,20 +73,20 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
 /*----------------------------------------------------------------------------------------------
     window_raise_on_press -- a press brings the window under the cursor to the front.
 
-    hot_win (the window the cursor is over) was resolved last frame, so this runs at the
+    hover_win (the window the cursor is over) was resolved last frame, so this runs at the
     top of the frame -- before any begin_window stamps its z -- and the raise therefore
     takes effect this same frame: clicking a window's exposed area brings it up at once.
-    Called from imgui_new_frame() right after ctx_new_frame() promotes hot_win.
+    Called from imgui_new_frame() right after ctx_new_frame() promotes hover_win.
 ----------------------------------------------------------------------------------------------*/
 
 static void
 window_raise_on_press( void )
 {
-    if ( !s_io.mouse_pressed[ 0 ] || s_ctx.hot_win == IMGUI_ID_NONE )
+    if ( !s_io.mouse_pressed[ 0 ] || s_ctx.hover_win == IMGUI_ID_NONE )
         return;
 
     for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == s_ctx.hot_win )
+        if ( s_windows[ i ].id == s_ctx.hover_win )
         {
             /* Already on top?  Don't burn a z value. */
             if ( s_windows[ i ].z != s_z_counter )
