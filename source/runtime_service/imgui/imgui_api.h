@@ -15,7 +15,8 @@
 ==============================================================================================*/
 
 #include "runtime_service/imgui/imgui.h"
-#include "runtime_service/rhi/rhi.h"    /* rhi_cmd_t for render() */
+#include "runtime_service/rhi/rhi.h"    /* rhi_cmd_t for render()    */
+#include "engine/app/app.h"             /* app_event_t for event()   */
 #include "engine/mod/mod_import.h"
 
 // clang-format off
@@ -45,13 +46,13 @@ typedef struct imgui_api_s
     void ( *new_frame )( i32 win_w, i32 win_h, f32 dt );
     void ( *render    )( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
-    /* Host input feeders -- the host owns the app event ring drain and forwards
-       text + scroll here, before new_frame() for the same frame.
-       add_input_char()  -- append a typed character (UTF-32; >127 -> '?').
-       add_mouse_wheel() -- accumulate a scroll delta for this frame. */
+    /* Host input -- the host owns the app event ring drain and forwards each
+       event here before new_frame() for the same frame.
+       event() -- forward one drained app_event_t; imgui unpacks the input events
+                  it cares about (text + scroll) and returns true if it consumed
+                  the event, letting the host skip its own handling for it. */
 
-    void ( *add_input_char  )( u32 codepoint );
-    void ( *add_mouse_wheel )( f32 delta );
+    bool ( *event )( const app_event_t* ev );
 
     /* Panels -- open a window panel; must be matched with end_window().
        x, y are the panel's top-left pixel position; w, h are its dimensions. */

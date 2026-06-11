@@ -148,25 +148,20 @@ main( int argc, char** argv )
     /* Main loop. */
     while ( app()->pump_events() )
     {
-        /* Drain the app event ring once: the host applies resizes itself and
-           forwards text + scroll to imgui (imgui no longer drains the ring). */
+        /* Drain the app event ring once: imgui consumes the input events it cares
+           about (text + scroll); the host handles the rest (resize). */
         app_event_t ev;
         while ( app()->next_event( &ev ) )
         {
+            if ( imgui()->event( &ev ) )
+                continue;
+
             switch ( ev.type )
             {
                 case APP_EV_WIN_RESIZE:
                     win_w = ev.data.win_resize.w;
                     win_h = ev.data.win_resize.h;
                     rhi()->context_resize( ctx, win_w, win_h );
-                    break;
-
-                case APP_EV_CHAR:
-                    imgui()->add_input_char( ev.data.text.codepoint );
-                    break;
-
-                case APP_EV_MOUSE_WHEEL:
-                    imgui()->add_mouse_wheel( (f32)ev.data.mouse_wheel.delta );
                     break;
 
                 default:

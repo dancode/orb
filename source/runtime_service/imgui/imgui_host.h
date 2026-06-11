@@ -30,8 +30,7 @@ bool imgui_load_font( const char* path );
 void imgui_new_frame( i32 win_w, i32 win_h, f32 dt );
 void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
-void imgui_add_input_char( u32 codepoint );
-void imgui_add_mouse_wheel( f32 delta );
+bool imgui_event( const app_event_t* ev );
 
 void imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h );
 void imgui_end_window( void );
