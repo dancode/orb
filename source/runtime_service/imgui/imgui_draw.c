@@ -20,10 +20,13 @@ static struct
     imgui_draw_vert_t  verts        [ IMGUI_MAX_VERTS ];
     u16                indices      [ IMGUI_MAX_IDX ];
     imgui_draw_cmd_t   cmds         [ IMGUI_MAX_CMDS ];
+    u32                cmd_z        [ IMGUI_MAX_CMDS ];  // per-command sort key (z), parallel to cmds[]
 
     u32                vert_count;  // verts currently in the list (up to IMGUI_MAX_VERTS)
     u32                idx_count;   // indices currently in the list (up to IMGUI_MAX_IDX)
     u32                cmd_count;   // draw commands currently in the list (up to IMGUI_MAX_CMDS)
+
+    u32                cur_z;       // sort key stamped onto new commands (set by begin/end_window)
 
     imgui_rect_t       clip_stack   [ IMGUI_CLIP_DEPTH ];
     u32                clip_depth;
@@ -47,6 +50,7 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.vert_count = 0;
     s_draw.idx_count  = 0;
     s_draw.cmd_count  = 0;
+    s_draw.cur_z      = 0;       /* background; windows raise it via draw_set_sort_key */
     s_draw.clip_depth = 1;
     s_draw.overflow   = false;   /* per-frame; hwm + overflow_ever persist */
 
@@ -79,7 +83,18 @@ draw_pop_clip_rect( void )
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_ensure_cmd -- open a new command when texture or clip changes
+    draw_set_sort_key -- stamp subsequent commands with this z (window paint order).
+    Set to the window's z in begin_window and back to 0 (background) in end_window.
+----------------------------------------------------------------------------------------------*/
+
+static void
+draw_set_sort_key( u32 z )
+{
+    s_draw.cur_z = z;
+}
+
+/*----------------------------------------------------------------------------------------------
+    draw_ensure_cmd -- open a new command when texture, clip, or sort key changes
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -88,7 +103,10 @@ draw_ensure_cmd( u32 tex_idx, imgui_rect_t clip )
     if ( s_draw.cmd_count > 0 )
     {
         const imgui_draw_cmd_t* cur = &s_draw.cmds[ s_draw.cmd_count - 1 ];
-        if ( cur->tex_idx == tex_idx
+        /* A sort-key change must break the command so flush can reorder the two
+           ranges independently -- never merge across windows. */
+        if ( s_draw.cmd_z[ s_draw.cmd_count - 1 ] == s_draw.cur_z
+             && cur->tex_idx == tex_idx
              && cur->clip_rect.x == clip.x && cur->clip_rect.y == clip.y
              && cur->clip_rect.w == clip.w && cur->clip_rect.h == clip.h )
             return; /* can append to existing command */
@@ -97,6 +115,7 @@ draw_ensure_cmd( u32 tex_idx, imgui_rect_t clip )
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
 
+    s_draw.cmd_z[ s_draw.cmd_count ] = s_draw.cur_z;
     s_draw.cmds[ s_draw.cmd_count++ ] = ( imgui_draw_cmd_t ){
         .elem_count = 0,
         .tex_idx    = tex_idx,

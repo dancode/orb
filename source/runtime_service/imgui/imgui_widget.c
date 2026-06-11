@@ -177,6 +177,13 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
         }
     }
 
+    /* A press anywhere in the window nominates it to be raised to the front. */
+    window_note_press( win );
+
+    /* All of this window's geometry is stamped with its z so flush can paint
+       windows back-to-front regardless of begin_window call order. */
+    draw_set_sort_key( win->z );
+
     /* Commit resolved geometry for the widgets and end_window. */
     s_ctx.win_id     = id;
     s_ctx.win_x      = win->x;
@@ -209,6 +216,9 @@ void
 imgui_end_window( void )
 {
     draw_pop_clip_rect();
+
+    /* Subsequent draws (low-level API, the next window) revert to the background key. */
+    draw_set_sort_key( 0 );
 
     /* Body grab (whole-window mode).  Deferred to here because a body press may land
        on a widget: widgets run between begin/end and claim active_id on press, so by

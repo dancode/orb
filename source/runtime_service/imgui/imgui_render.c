@@ -373,44 +373,82 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
     imgui_push_t push;
     render_ortho( push.mvp, (f32)win_w, (f32)win_h );
 
-    u32 first_index = 0;
-    for ( u32 i = 0; i < s_draw.cmd_count; ++i )
+    /* Group commands into runs of one sort key, then paint runs back-to-front by z.
+
+       Commands sharing a sort key are contiguous in the list (immediate mode emits
+       one window completely before the next), so a single forward pass collects the
+       runs and the absolute first_index at each run's start.  The runs are then
+       stable-sorted by z -- vertices and indices never move, only the order in which
+       command ranges are replayed -- so a higher-z (raised) window paints last and
+       therefore on top, with equal-z runs keeping their original order. */
+
+    typedef struct { u32 start, count, first_index, z; } draw_run_t;
+    static draw_run_t runs[ IMGUI_MAX_CMDS ];   /* single-threaded; avoids a large stack frame */
+    u32 run_count = 0;
+
+    for ( u32 i = 0, first_index = 0; i < s_draw.cmd_count; )
     {
-        const imgui_draw_cmd_t* dc = &s_draw.cmds[ i ];
-        if ( dc->elem_count == 0 )
+        u32 z      = s_draw.cmd_z[ i ];
+        u32 start  = i;
+        u32 run_fi = first_index;
+        while ( i < s_draw.cmd_count && s_draw.cmd_z[ i ] == z )
+            first_index += s_draw.cmds[ i++ ].elem_count;
+
+        runs[ run_count++ ] = ( draw_run_t ){ start, i - start, run_fi, z };
+    }
+
+    /* Stable insertion sort by z (ascending = back-to-front; run_count is small). */
+    for ( u32 a = 1; a < run_count; ++a )
+    {
+        draw_run_t key = runs[ a ];
+        u32        b   = a;
+        while ( b > 0 && runs[ b - 1 ].z > key.z )
         {
-            first_index += dc->elem_count;
-            continue;
+            runs[ b ] = runs[ b - 1 ];
+            --b;
         }
+        runs[ b ] = key;
+    }
 
-        /* Scissor to the draw command's clip rect.  Floor the origin and ceil the
-           far edge (rather than truncating both) so a fractional clip rect never
-           rounds inward and shaves a pixel off the visible content at a border. */
-        i32 sx0 = (i32)floorf( dc->clip_rect.x );
-        i32 sy0 = (i32)floorf( dc->clip_rect.y );
-        i32 sx1 = (i32)ceilf ( dc->clip_rect.x + dc->clip_rect.w );
-        i32 sy1 = (i32)ceilf ( dc->clip_rect.y + dc->clip_rect.h );
-        rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){
-            .x      = sx0,
-            .y      = sy0,
-            .width  = sx1 - sx0,
-            .height = sy1 - sy0,
-        } );
+    push.samp_idx = s_render.font_sampler_idx;
 
-        /* Resolve texture index: 0 means use white pixel (solid-color draw). */
-        push.tex_idx  = ( dc->tex_idx != 0 ) ? dc->tex_idx : s_render.white_tex_idx;
-        push.samp_idx = s_render.font_sampler_idx;
-        rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
+    for ( u32 r = 0; r < run_count; ++r )
+    {
+        u32 first_index = runs[ r ].first_index;
+        for ( u32 k = 0; k < runs[ r ].count; ++k )
+        {
+            const imgui_draw_cmd_t* dc = &s_draw.cmds[ runs[ r ].start + k ];
+            if ( dc->elem_count == 0 )
+                continue;
 
-        rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){
-            .index_count    = dc->elem_count,
-            .instance_count = 1,
-            .first_index    = first_index,
-            .vertex_offset  = 0,
-            .first_instance = 0,
-        } );
+            /* Scissor to the draw command's clip rect.  Floor the origin and ceil the
+               far edge (rather than truncating both) so a fractional clip rect never
+               rounds inward and shaves a pixel off the visible content at a border. */
+            i32 sx0 = (i32)floorf( dc->clip_rect.x );
+            i32 sy0 = (i32)floorf( dc->clip_rect.y );
+            i32 sx1 = (i32)ceilf ( dc->clip_rect.x + dc->clip_rect.w );
+            i32 sy1 = (i32)ceilf ( dc->clip_rect.y + dc->clip_rect.h );
+            rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){
+                .x      = sx0,
+                .y      = sy0,
+                .width  = sx1 - sx0,
+                .height = sy1 - sy0,
+            } );
 
-        first_index += dc->elem_count;
+            /* Resolve texture index: 0 means use white pixel (solid-color draw). */
+            push.tex_idx = ( dc->tex_idx != 0 ) ? dc->tex_idx : s_render.white_tex_idx;
+            rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
+
+            rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){
+                .index_count    = dc->elem_count,
+                .instance_count = 1,
+                .first_index    = first_index,
+                .vertex_offset  = 0,
+                .first_instance = 0,
+            } );
+
+            first_index += dc->elem_count;
+        }
     }
 
     rhi()->cmd_end_rendering( cmd );

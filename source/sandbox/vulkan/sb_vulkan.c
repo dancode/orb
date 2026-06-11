@@ -214,6 +214,19 @@ main( int argc, char** argv )
                 {
                     sb_vk_boot_render( &boot, cmd, win_w, win_h );
                 }
+                else
+                {
+                    /* No scene this frame -- clear the swapchain so imgui's LOAD pass
+                       composites over a fresh background instead of last frame's pixels
+                       (otherwise dragging a window smears: hall-of-mirrors). */
+                    rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
+                        .texture  = { .id = RHI_SWAPCHAIN_COLOR },
+                        .load_op  = RHI_LOAD_OP_CLEAR,
+                        .store_op = RHI_STORE_OP_STORE,
+                        .clear    = { 0.05f, 0.05f, 0.08f, 1.0f },
+                    }, 1, NULL );
+                    rhi()->cmd_end_rendering( cmd );
+                }
 
                 if ( 0 )
                 {
@@ -237,7 +250,15 @@ main( int argc, char** argv )
 
                 if ( app()->key_pressed( APP_KEY_MINUS ) ) { show_ui = false; }
                 if ( app()->key_pressed( APP_KEY_EQUAL ) ) { show_ui = true; }
-                
+
+                /* Drag-mode test: 1 = title bar only, 2 = whole window, 3 = fixed. */
+                if ( imgui() )
+                {
+                    if ( app()->key_pressed( APP_KEY_1 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_TITLEBAR );
+                    if ( app()->key_pressed( APP_KEY_2 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_BODY );
+                    if ( app()->key_pressed( APP_KEY_3 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_NONE );
+                }
+
                 if ( imgui() && show_ui )
                 {
                     imgui()->new_frame( win_w, win_h, 4 );
@@ -272,6 +293,16 @@ main( int argc, char** argv )
 
 
                     imgui()->end_window();
+
+                    /* Second, overlapping window -- click either to bring it to the
+                       front (z-order); drag to reposition. */
+                    imgui()->begin_window( "Inspector", 360, 240, 360, 280 );
+                    imgui()->text( "Second window." );
+                    imgui()->textf( "drag mode keys: 1 title  2 body  3 none" );
+                    static bool toggle = false;
+                    imgui()->checkbox( "Overlap toggle", &toggle );
+                    imgui()->end_window();
+
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
                 }
 
