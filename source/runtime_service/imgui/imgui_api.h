@@ -65,10 +65,15 @@ typedef struct imgui_api_s
     void ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h );
     void ( *end_window   )( void );
 
+    /* set_window_drag() -- select how windows may be dragged (global default TITLEBAR).
+       Call between frames; affects every window. */
+    void ( *set_window_drag )( imgui_win_drag_t mode );
+
     /* Widgets -- return true on the frame they are activated or changed.
        All widgets must be called between a matched begin_window / end_window pair. */
 
     void ( *text        )( const char* str );
+    void ( *textf       )( const char* fmt, ... );
     bool ( *button      )( const char* label );
     bool ( *checkbox    )( const char* label, bool* v );
     bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );

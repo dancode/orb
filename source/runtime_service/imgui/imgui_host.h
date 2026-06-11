@@ -36,8 +36,10 @@ bool imgui_event( const app_event_t* ev );
 
 void imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h );
 void imgui_end_window( void );
+void imgui_set_window_drag( imgui_win_drag_t mode );
 
 void imgui_text( const char* str );
+void imgui_textf( const char* fmt, ... );
 bool imgui_button( const char* label );
 bool imgui_checkbox( const char* label, bool* v );
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );

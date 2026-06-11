@@ -255,6 +255,7 @@ main( int argc, char** argv )
 
                     }
                     imgui()->text( "here we go..." );
+                    imgui()->textf( "formatted number: %.2f", 123.456f );
 
                     imgui()->text( "this is some text" );
                     imgui()->text( "THIS is more text" );

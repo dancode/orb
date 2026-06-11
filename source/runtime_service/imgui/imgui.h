@@ -22,6 +22,19 @@ typedef struct { f32 x, y; }        imgui_vec2_t;
 typedef struct { f32 x, y, w, h; }  imgui_rect_t;
 
 /*==============================================================================================
+    Window drag mode -- how a window may be repositioned by the mouse.
+    Selected globally via imgui()->set_window_drag(); default is TITLEBAR.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_WIN_DRAG_NONE     = 0,    /* windows are fixed in place                          */
+    IMGUI_WIN_DRAG_TITLEBAR = 1,    /* drag only by the title bar (default)                */
+    IMGUI_WIN_DRAG_BODY     = 2,    /* drag from anywhere in the window not over a widget  */
+
+} imgui_win_drag_t;
+
+/*==============================================================================================
     Color packing
 
     IMGUI_COLOR(r,g,b,a) packs 0-255 byte values into a u32 such that memory byte order
@@ -74,16 +87,16 @@ typedef struct
 
 typedef struct
 {
-    f32  mouse_x, mouse_y;    /* client-area cursor position        */
-    f32  mouse_wheel;         /* signed scroll delta this frame     */
-    bool mouse_down[ 3 ];     /* left=0 right=1 middle=2, held      */
-    bool mouse_pressed[ 3 ];  /* true only on the first down frame  */
-    bool mouse_released[ 3 ]; /* true only on the first up frame    */
-    bool keys_down[ IMGUI_KEY_COUNT ];
-    bool keys_pressed[ IMGUI_KEY_COUNT ];
-    char text[ 32 ]; /* UTF-8 printable chars (NUL-term'd) */
-    f32  dt;
-    i32  display_w, display_h;
+    f32     mouse_x, mouse_y;                       // client-area cursor position        
+    f32     mouse_wheel;                            // signed scroll delta this frame     
+    bool    mouse_down      [ 3 ];                  // left=0 right=1 middle=2, held      
+    bool    mouse_pressed   [ 3 ];                  // true only on the first down frame  
+    bool    mouse_released  [ 3 ];                  // true only on the first up frame    
+    bool    keys_down       [ IMGUI_KEY_COUNT ];    // held keys, indexed by app_key_t
+    bool    keys_pressed    [ IMGUI_KEY_COUNT ];    // true only on the first down frame
+    char    text[ 32 ];                             // UTF-8 printable chars (NUL-term'd)
+    f32     dt;                                     // delta time in seconds (for animations, etc.)
+    i32     display_w, display_h;                   // current display size in pixels (for window-relative coords, etc.)
 
 } imgui_io_t;
 

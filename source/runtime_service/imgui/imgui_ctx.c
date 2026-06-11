@@ -20,6 +20,8 @@ static struct
     imgui_id_t  active_id;    /* widget with the mouse button held (drag / hold)       */
     imgui_id_t  focused_id;   /* widget that owns keyboard input                       */
 
+    imgui_id_t  win_id;       /* id of the window currently between begin/end_window   */
+
     f32  cursor_x;            /* layout pen, top-left of the next widget               */
     f32  cursor_y;
     f32  win_x, win_y;        /* current window top-left (outer frame)                 */

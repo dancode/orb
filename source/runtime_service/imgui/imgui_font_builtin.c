@@ -38,28 +38,28 @@ static font_metrics_t* s_font = NULL;  // points to the active font's metrics
 /* Compile-time description of one bitmap font. */
 typedef struct
 {
-    u32         atlas_w;            // width of the font atlas in pixels
-    u32         atlas_h;            // height of the font atlas in pixels
-    u32         glyph_w;            // width of each glyph cell in pixels (including padding; 0 for whitespace)
-    u32         glyph_h;            // height of each glyph cell in pixels (including padding)
+    u32             atlas_w;            // width of the font atlas in pixels
+    u32             atlas_h;            // height of the font atlas in pixels
+    u32             glyph_w;            // width of each glyph cell in pixels (including padding; 0 for whitespace)
+    u32             glyph_h;            // height of each glyph cell in pixels (including padding)
 
-    u32         glyphs_row;         // number of glyphs per row in the atlas (16 for our built-in fonts)
-    u32         glyph_count;        // number of glyphs in the atlas (96 for our built-in fonts; 0 for whitespace-only)
-    u32         row_stride;         // bytes per glyph row: 1 for 8-wide fonts (u8), 2 for 12/16-wide fonts (u16 LE)
+    u32             glyphs_row;         // number of glyphs per row in the atlas (16 for our built-in fonts)
+    u32             glyph_count;        // number of glyphs in the atlas (96 for our built-in fonts; 0 for whitespace-only)
+    u32             row_stride;         // bytes per glyph row: 1 for 8-wide fonts (u8), 2 for 12/16-wide fonts (u16 LE)
 
-    const u8*   data;
-    const char* debug_name;
+    const u8*       data;
+    const char*     debug_name;
 
 } bitmap_font_def_t;
 
 /* Runtime GPU resources for one bitmap font. */
 typedef struct
 {
-    font_metrics_t           metrics;   // first: common resolved values (char_h, char_w, etc.)
+    font_metrics_t              metrics;   // first: common resolved values (char_h, char_w, etc.)
 
-    const bitmap_font_def_t* def;
-    rhi_texture_t            atlas;
-    u32                      atlas_idx;
+    const bitmap_font_def_t*    def;
+    rhi_texture_t               atlas;
+    u32                         atlas_idx;
 
 } bitmap_font_t;
 

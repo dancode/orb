@@ -10,6 +10,7 @@
         imgui_render.c  -- GPU flush: imgui_render_init/shutdown/flush
         imgui_input.c   -- app->IO snapshot: input_update, s_io
         imgui_ctx.c     -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
+        imgui_window.c  -- persistent per-window state: imgui_window_t, window_get, drag mode
         imgui_widget.c  -- widget implementations: widget_*
         imgui_api.c     -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
@@ -18,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>    /* va_list / va_start -- printf-style textf() widget       */
 #include <math.h>      /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 
 #include "orb.h"
@@ -112,6 +114,7 @@ layout_compute( u32 ls )
 #include "runtime_service/imgui/imgui_render.c"
 #include "runtime_service/imgui/imgui_input.c"
 #include "runtime_service/imgui/imgui_ctx.c"
+#include "runtime_service/imgui/imgui_window.c"
 #include "runtime_service/imgui/imgui_widget.c"
 #include "runtime_service/imgui/imgui_api.c"
 

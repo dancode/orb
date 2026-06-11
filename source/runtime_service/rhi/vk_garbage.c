@@ -42,8 +42,8 @@ typedef struct vk_garbage_s
 } vk_garbage_t;
 
 static vk_garbage_t g_garbage[ VK_GARBAGE_CAP ];
-static u32          g_garbage_head;   /* next entry to collect */
-static u32          g_garbage_tail;   /* next entry to write   */
+static u32          g_garbage_head;                 /* next entry to collect */
+static u32          g_garbage_tail;                 /* next entry to write   */
 
 /* Destroy one entry's objects immediately.  Order respects lifetime: unmap before free,
    view before its image. */

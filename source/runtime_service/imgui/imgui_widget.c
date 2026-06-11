@@ -93,6 +93,7 @@ typedef struct
 /* Unified hot/active/focus/click state machine.  Call once per widget with the
    hit rect and the desired interaction kind; the returned flags are all a widget
    needs for drawing and value updates. */
+
 static widget_state_t
 widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 {
@@ -132,39 +133,98 @@ widget_bg_color( widget_state_t st )
     begin_window / end_window     
 ----------------------------------------------------------------------------------------------*/
 
+/* Keep a dragged window reachable: clamp so its top edge stays on-screen and at
+   least one title-bar's worth of the window remains within the display bounds. */
+static void
+window_clamp( imgui_window_t* win )
+{
+    const f32 margin = WIN_TITLE_H;
+    const f32 max_x  = (f32)s_io.display_w - margin;
+    const f32 max_y  = (f32)s_io.display_h - margin;
+
+    if ( win->x > max_x )          win->x = max_x;
+    if ( win->y > max_y )          win->y = max_y;
+    if ( win->x < margin - win->w ) win->x = margin - win->w;
+    if ( win->y < 0.0f )            win->y = 0.0f;
+}
+
 void
 imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
 {
-    s_ctx.win_x      = x;
-    s_ctx.win_y      = y;
-    s_ctx.win_w      = w;
-    s_ctx.win_h      = h;
-    s_ctx.content_x  = x + WIDGET_PAD;
-    s_ctx.content_w  = w - 2.0f * WIDGET_PAD;
+    /* x/y/w/h are the initial geometry; the registry owns position after that. */
+    imgui_id_t      id  = id_hash( title );
+    imgui_window_t* win = window_get( id, x, y, w, h );
+
+    /* Apply an in-progress drag: this window holds active_id while the button is down. */
+    if ( s_ctx.active_id == id )
+    {
+        win->x = s_io.mouse_x - s_drag_off_x;
+        win->y = s_io.mouse_y - s_drag_off_y;
+        window_clamp( win );
+    }
+
+    /* Title-bar grab.  Safe to claim at press time -- the title bar has no child
+       widgets to compete with.  Active in both TITLEBAR and BODY modes. */
+    if ( s_win_drag_mode != IMGUI_WIN_DRAG_NONE && s_io.mouse_pressed[ 0 ]
+         && s_ctx.active_id == IMGUI_ID_NONE )
+    {
+        imgui_rect_t title_r = { win->x, win->y, win->w, WIN_TITLE_H };
+        if ( rect_hit( title_r ) )
+        {
+            s_ctx.active_id = id;
+            s_drag_off_x    = s_io.mouse_x - win->x;
+            s_drag_off_y    = s_io.mouse_y - win->y;
+        }
+    }
+
+    /* Commit resolved geometry for the widgets and end_window. */
+    s_ctx.win_id     = id;
+    s_ctx.win_x      = win->x;
+    s_ctx.win_y      = win->y;
+    s_ctx.win_w      = win->w;
+    s_ctx.win_h      = win->h;
+    s_ctx.content_x  = win->x + WIDGET_PAD;
+    s_ctx.content_w  = win->w - 2.0f * WIDGET_PAD;
 
     /* Window background. */
-    draw_push_rect_filled( x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
+    draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
     /* Title bar. */
-    draw_push_rect_filled( x, y, w, WIN_TITLE_H, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
-    draw_push_text( x + WIDGET_PAD, y + ( WIN_TITLE_H - font_char_h() ) * 0.5f, COL_TEXT, title );
+    draw_push_rect_filled( win->x, win->y, win->w, WIN_TITLE_H, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
+    draw_push_text( win->x + WIDGET_PAD, win->y + ( WIN_TITLE_H - font_char_h() ) * 0.5f, COL_TEXT, title );
 
     /* Border. */
-    draw_push_rect_outline( x, y, w, h, WIN_BORDER, 0, COL_BORDER );
+    draw_push_rect_outline( win->x, win->y, win->w, win->h, WIN_BORDER, 0, COL_BORDER );
 
     /* Clip content area. */
-    draw_push_clip_rect( x + WIN_BORDER, y + WIN_TITLE_H,
-                         w - 2.0f * WIN_BORDER, h - WIN_TITLE_H - WIN_BORDER );
+    draw_push_clip_rect( win->x + WIN_BORDER, win->y + WIN_TITLE_H,
+                         win->w - 2.0f * WIN_BORDER, win->h - WIN_TITLE_H - WIN_BORDER );
 
     /* Start the layout cursor at the content origin. */
-    s_ctx.cursor_x = x + WIDGET_PAD;
-    s_ctx.cursor_y = y + WIN_TITLE_H + WIDGET_GAP;
+    s_ctx.cursor_x = win->x + WIDGET_PAD;
+    s_ctx.cursor_y = win->y + WIN_TITLE_H + WIDGET_GAP;
 }
 
 void
 imgui_end_window( void )
 {
     draw_pop_clip_rect();
+
+    /* Body grab (whole-window mode).  Deferred to here because a body press may land
+       on a widget: widgets run between begin/end and claim active_id on press, so by
+       now active_id == NONE means the press hit empty window space, not a widget.
+       The move itself starts next frame in begin_window (one-frame grab latency). */
+    if ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY && s_io.mouse_pressed[ 0 ]
+         && s_ctx.active_id == IMGUI_ID_NONE )
+    {
+        imgui_rect_t win_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_h };
+        if ( rect_hit( win_r ) )
+        {
+            s_ctx.active_id = s_ctx.win_id;
+            s_drag_off_x    = s_io.mouse_x - s_ctx.win_x;
+            s_drag_off_y    = s_io.mouse_y - s_ctx.win_y;
+        }
+    }
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -176,6 +236,24 @@ imgui_text( const char* str )
 {
     imgui_rect_t r = widget_next_rect( font_char_h() );
     draw_push_text( r.x, r.y, COL_TEXT, str );
+}
+
+/*----------------------------------------------------------------------------------------------
+    textf -- printf-style text label (no overloading, so distinct from text())
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_textf( const char* fmt, ... )
+{
+    /* Format into a frame-local buffer; oversized output is truncated, not wrapped. */
+    char buf[ 1024 ];
+
+    va_list ap;
+    va_start( ap, fmt );
+    vsnprintf( buf, sizeof( buf ), fmt, ap );
+    va_end( ap );
+
+    imgui_text( buf );
 }
 
 /*----------------------------------------------------------------------------------------------
