@@ -60,9 +60,19 @@ typedef struct imgui_api_s
     bool ( *event )( const app_event_t* ev );
 
     /* Panels -- open a window panel; must be matched with end_window().
-       x, y are the panel's top-left pixel position; w, h are its dimensions. */
+       x, y are the panel's top-left pixel position; w, h are its dimensions.
 
-    void ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h );
+       begin_window() returns false when the window is collapsed (title bar only).  Guard
+       the body widgets with it -- skipped widgets cost nothing -- but always call
+       end_window() regardless of the return value:
+
+           if ( imgui()->begin_window( "Tools", 10, 10, 240, 320 ) )
+           {
+               imgui()->text( "..." );          // skipped while collapsed
+           }
+           imgui()->end_window();               // always called */
+
+    bool ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h );
     void ( *end_window   )( void );
 
     /* set_window_drag() -- select how windows may be dragged (global default TITLEBAR).
@@ -70,7 +80,8 @@ typedef struct imgui_api_s
     void ( *set_window_drag )( imgui_win_drag_t mode );
 
     /* Widgets -- return true on the frame they are activated or changed.
-       All widgets must be called between a matched begin_window / end_window pair. */
+       All widgets must be called between a matched begin_window / end_window pair.
+       A widget called while its window is collapsed does nothing and returns false. */
 
     void ( *text        )( const char* str );
     void ( *textf       )( const char* fmt, ... );

@@ -39,6 +39,7 @@ static struct
     imgui_id_t  win_id;             /* id of the window currently between begin/end_window   */
     const char* win_title;          /* title string, cached for end_window's deferred chrome */
     bool        win_collapsed;      /* current window is collapsed (title bar only this frame) */
+    bool        skip_items;         /* suppress widgets: set while the current window is collapsed */
     struct imgui_window_t* cur_win; /* persisted window record; scroll write-back target */
 
     f32  cursor_x;            /* layout pen, top-left of the next widget               */

@@ -113,7 +113,8 @@
       "Bash(echo \"EXIT=$?\")",
       "Read(//c/Program Files/Microsoft Visual Studio/18/Insiders/VC/Auxiliary/Build/**)",
       "Read(//c/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/**)",
-      "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\_build_check.bat\" 2>&1 | Select-Object -Last 50)"
+      "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\_build_check.bat\" 2>&1 | Select-Object -Last 50)",
+      "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\_build_check.bat > F:\\\\orb\\\\build_log.txt 2>&1\"; Write-Output \"exit=$LASTEXITCODE\")"
     ]
   }
 }

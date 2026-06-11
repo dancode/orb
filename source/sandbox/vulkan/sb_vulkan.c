@@ -267,53 +267,56 @@ main( int argc, char** argv )
                 {
                     imgui()->new_frame( win_w, win_h, 4 );
 
-                    imgui()->begin_window( "Debug", 10, 10, 640, 640 );
-                    if ( imgui()->button( "Reload$" ) )
+                    if ( imgui()->begin_window( "Debug", 10, 10, 640, 640 ) )
                     {
-                        // empty
-                    }
-                    if ( imgui()->button( "JsjperR1234q" ) )
-                    {
-                        // empty
-                    }
-                    imgui()->text( "this is some text" );
-                    static float scale = 1.0f;
-                    if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) )
-                    {
-                        // empty
-                    }
-                    imgui()->text( "here we go..." );
-                    imgui()->textf( "formatted number: %.2f", 123.456f );
+                        if ( imgui()->button( "Reload$" ) )
+                        {
+                            // empty
+                        }
+                        if ( imgui()->button( "JsjperR1234q" ) )
+                        {
+                            // empty
+                        }
+                        imgui()->text( "this is some text" );
+                        static float scale = 1.0f;
+                        if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) )
+                        {
+                            // empty
+                        }
+                        imgui()->text( "here we go..." );
+                        imgui()->textf( "formatted number: %.2f", 123.456f );
 
-                    imgui()->text( "this is some text" );
-                    imgui()->text( "THIS is more text" );
-                    imgui()->text( "the last line!" );
-                    imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
-                    imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
-                    imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
+                        imgui()->text( "this is some text" );
+                        imgui()->text( "THIS is more text" );
+                        imgui()->text( "the last line!" );
+                        imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
+                        imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
+                        imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
 
-                    for ( int i = 0 ; i < 32; i++ )
-                    {
-                        imgui()->textf( "text widdget %d", i );
-                    }
+                        for ( int i = 0 ; i < 32; i++ )
+                        {
+                            imgui()->textf( "text widdget %d", i );
+                        }
 
-                    static bool checked = false;
-                    imgui()->checkbox( "Checkbox", &checked );
+                        static bool checked = false;
+                        imgui()->checkbox( "Checkbox", &checked );
 
-                    static char buffer[ 32 ] = { 0 };
-                    imgui()->input_text( "Input Text", buffer, sizeof( buffer ));
-
+                        static char buffer[ 32 ] = { 0 };
+                        imgui()->input_text( "Input Text", buffer, sizeof( buffer ));
+                    }   /* begin_window( "Debug" ) -- body skipped while collapsed */
 
                     imgui()->end_window();
 
                     if ( 1 ) {
                         /* Second, overlapping window -- click either to bring it to the
                            front (z-order); drag to reposition. */
-                        imgui()->begin_window( "Inspector", 360, 240, 360, 280 );
-                        imgui()->text( "Second window." );
-                        imgui()->textf( "drag mode keys: 1 title  2 body  3 none" );
-                        static bool toggle = false;
-                        imgui()->checkbox( "Overlap toggle", &toggle );
+                        if ( imgui()->begin_window( "Inspector", 360, 240, 360, 280 ) )
+                        {
+                            imgui()->text( "Second window." );
+                            imgui()->textf( "drag mode keys: 1 title  2 body  3 none" );
+                            static bool toggle = false;
+                            imgui()->checkbox( "Overlap toggle", &toggle );
+                        }
                         imgui()->end_window();
                     }
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
