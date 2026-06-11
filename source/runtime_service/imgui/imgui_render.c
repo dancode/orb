@@ -25,18 +25,32 @@ typedef struct
 } imgui_push_t;     /* total 72 bytes -- well within RHI_MAX_PUSH_CONST_SIZE */
 
 /*----------------------------------------------------------------------------------------------
-    Static state
+    Per-frame geometry regions
+
+    The CPU records up to RHI_MAX_FRAMES_IN_FLIGHT frames ahead of the GPU, so the VB/IB
+    are sized to hold one independent region per in-flight slot.  Each frame writes and
+    binds only its own region (selected by cmd_frame_index), so this frame's upload never
+    overwrites geometry the GPU is still reading for a previous in-flight frame.
+----------------------------------------------------------------------------------------------*/
+
+#define IMGUI_VB_REGION_BYTES  ( IMGUI_MAX_VERTS * sizeof( imgui_draw_vert_t ) )
+#define IMGUI_IB_REGION_BYTES  ( IMGUI_MAX_IDX   * sizeof( u16 ) )
+
+/*----------------------------------------------------------------------------------------------
+    Static state : GPU resources that persist across frames.  
+
+    All are created in imgui_render_init() and destroyed in imgui_render_shutdown().
 ----------------------------------------------------------------------------------------------*/
 
 static struct
 {
-    rhi_buffer_t   vb;
-    rhi_buffer_t   ib;
-    rhi_pipeline_t pipeline;
-    rhi_sampler_t  font_sampler;
-    u32            font_sampler_idx;
-    rhi_texture_t  white_tex;
-    u32            white_tex_idx;
+    rhi_buffer_t    vb;                 // CPU_TO_GPU vertex buffer (imgui_draw_vert_t)
+    rhi_buffer_t    ib;                 // CPU_TO_GPU index buffer (u16)
+    rhi_pipeline_t  pipeline;           // compiled pipeline with imgui shaders + vertex layout + alpha blend
+    rhi_sampler_t   font_sampler;       // sampler for font textures (point clamp)
+    u32             font_sampler_idx;   // bindless slot for font_sampler
+    rhi_texture_t   white_tex;          // 1x1 opaque white texture for solid colour draws
+    u32             white_tex_idx;      // bindless slot for white_tex
 
 } s_render;
 
@@ -63,9 +77,9 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
 static bool
 imgui_render_init( void )
 {
-    /* Vertex buffer (CPU_TO_GPU, updated every frame via buffer_write). */
+    /* Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame. */
     s_render.vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = IMGUI_MAX_VERTS * sizeof( imgui_draw_vert_t ),
+        .size       = RHI_MAX_FRAMES_IN_FLIGHT * IMGUI_VB_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_VERTEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "imgui_vb",
@@ -73,9 +87,9 @@ imgui_render_init( void )
     if ( !rhi_handle_valid( s_render.vb ) )
         return false;
 
-    /* Index buffer (CPU_TO_GPU, u16 indices). */
+    /* Index buffer (CPU_TO_GPU, u16 indices): one region per frame-in-flight. */
     s_render.ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = IMGUI_MAX_IDX * sizeof( u16 ),
+        .size       = RHI_MAX_FRAMES_IN_FLIGHT * IMGUI_IB_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_INDEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "imgui_ib",
@@ -215,6 +229,41 @@ imgui_render_init( void )
 }
 
 /*----------------------------------------------------------------------------------------------
+    imgui_render_memory -- report GPU resource memory held by imgui (bytes).
+
+    Buffers are sized at init and fixed; the font atlas total reflects the currently
+    initialized atlases (see font_atlas_bytes).  The 1x1 white pixel is RGBA8 (4 bytes).
+----------------------------------------------------------------------------------------------*/
+
+static imgui_mem_stats_t
+imgui_render_memory( void )
+{
+    imgui_mem_stats_t s;
+    s.vertex_bytes  = RHI_MAX_FRAMES_IN_FLIGHT * (u32)IMGUI_VB_REGION_BYTES;
+    s.index_bytes   = RHI_MAX_FRAMES_IN_FLIGHT * (u32)IMGUI_IB_REGION_BYTES;
+    s.texture_bytes = font_atlas_bytes() + 4u;   /* atlases + 1x1 RGBA8 white pixel */
+    s.total_bytes   = s.vertex_bytes + s.index_bytes + s.texture_bytes;
+    return s;
+}
+
+/*----------------------------------------------------------------------------------------------
+    imgui_render_print_memory -- dump the memory breakdown to stdout (one line per bucket).
+----------------------------------------------------------------------------------------------*/
+
+static void
+imgui_render_print_memory( void )
+{
+    imgui_mem_stats_t s = imgui_render_memory();
+    const f32 kb = 1024.0f;
+
+    printf( "[imgui] GPU memory usage:\n" );
+    printf( "  vertex : %8u B  (%7.1f KB)\n", s.vertex_bytes,  s.vertex_bytes  / kb );
+    printf( "  index  : %8u B  (%7.1f KB)\n", s.index_bytes,   s.index_bytes   / kb );
+    printf( "  texture: %8u B  (%7.1f KB)\n", s.texture_bytes, s.texture_bytes / kb );
+    printf( "  total  : %8u B  (%7.1f KB)\n", s.total_bytes,   s.total_bytes   / kb );
+}
+
+/*----------------------------------------------------------------------------------------------
     imgui_render_shutdown -- destroy all GPU resources.  Call before rhi()->shutdown().
 ----------------------------------------------------------------------------------------------*/
 
@@ -256,13 +305,19 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;
 
-    /* Upload vertex + index data. */
+    /* Select this frame's geometry region so the upload cannot clobber data the GPU
+       is still reading for another in-flight frame. */
+    u32 frame  = rhi()->cmd_frame_index( cmd );
+    u32 vb_off = frame * (u32)IMGUI_VB_REGION_BYTES;
+    u32 ib_off = frame * (u32)IMGUI_IB_REGION_BYTES;
+
+    /* Upload vertex + index data into this frame's region. */
     rhi()->buffer_write( s_render.vb,
                          s_draw.verts,
-                         s_draw.vert_count * sizeof( imgui_draw_vert_t ), 0 );
+                         s_draw.vert_count * sizeof( imgui_draw_vert_t ), vb_off );
     rhi()->buffer_write( s_render.ib,
                          s_draw.indices,
-                         s_draw.idx_count * sizeof( u16 ), 0 );
+                         s_draw.idx_count * sizeof( u16 ), ib_off );
 
     /* Open a LOAD pass on the swapchain color target (no depth needed). */
     rhi_color_attachment_t color_att = {
@@ -283,8 +338,9 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
 
     rhi()->cmd_bind_pipeline( cmd, s_render.pipeline );
     rhi()->cmd_bind_bindless( cmd );
-    rhi()->cmd_bind_vertex_buffer( cmd, s_render.vb, 0 );
-    rhi()->cmd_bind_index_buffer( cmd, s_render.ib, 0, RHI_INDEX_TYPE_UINT16 );
+    /* Bind this frame's region; index values and first_index stay region-relative. */
+    rhi()->cmd_bind_vertex_buffer( cmd, s_render.vb, vb_off );
+    rhi()->cmd_bind_index_buffer( cmd, s_render.ib, ib_off, RHI_INDEX_TYPE_UINT16 );
 
     /* Ortho matrix: pixel [0,w]x[0,h] -> NDC [-1,+1]x[-1,+1]. */
     imgui_push_t push;

@@ -229,6 +229,13 @@ vk_cmd_bind_index_buffer( rhi_cmd_t cmd, rhi_buffer_t buf, u32 offset,
     vkCmdBindIndexBuffer( cmd->vk_cmd, vkb, offset, vkt );
 }
 
+/* Frame-in-flight slot this command list records into; see rhi_api.h. */
+static u32
+vk_cmd_frame_index( rhi_cmd_t cmd )
+{
+    return cmd ? cmd->frame : 0u;
+}
+
 /*==============================================================================================
     Draw calls
 ==============================================================================================*/

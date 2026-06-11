@@ -57,6 +57,12 @@ typedef struct rhi_cmd_s* rhi_cmd_t;
 #define RHI_CTX_INVALID  ( -1 )
 #define RHI_CTX_MAX      4        /* must match APP_WIN_MAX */
 
+/* Number of frames the CPU may record ahead of the GPU.  Any per-frame dynamic
+   resource (e.g. a UI vertex buffer rewritten every frame) must be N-buffered by
+   this count and indexed via cmd_frame_index(), or the CPU will overwrite data the
+   GPU is still reading for an in-flight frame. */
+#define RHI_MAX_FRAMES_IN_FLIGHT  2
+
 /*==============================================================================================
     Pixel formats
 

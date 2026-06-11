@@ -76,6 +76,12 @@ typedef struct rhi_api_s
        RHI_CMD_INVALID. */
     void (*frame_end)( i32 ctx_id );
 
+    /* Returns the frame-in-flight slot index [0, RHI_MAX_FRAMES_IN_FLIGHT) that the
+       given command list records into.  Use it to select the per-frame region of an
+       N-buffered dynamic resource before writing and binding it.  Returns 0 for an
+       invalid command list. */
+    u32 (*cmd_frame_index)( rhi_cmd_t cmd );
+
     /* ---- Buffer ---- */
 
     /* Allocates a GPU buffer according to desc.  Memory type and usage flags must be

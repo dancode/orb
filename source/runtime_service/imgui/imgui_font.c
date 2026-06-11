@@ -190,16 +190,15 @@ font_init( void )
 
     /* bitmap_atlas_shutdown is safe on uninitialized fonts, so any failure here
        can just delegate to font_shutdown for a single cleanup path. */
+
     bool ok = true;
     for ( u32 i = 0; i < IMGUI_FONT_BITMAP_MAX; ++i )
         ok = ok && bitmap_atlas_init( &s_bitmaps[ i ] );
-
     if ( !ok ) { font_shutdown(); return false; }
-
     bitmap_font_select( IMGUI_FONT_BITMAP_12 );
-    return true;
-}
 
+    return true; /* built in fonts initialized successfully */
+}
 
 /*----------------------------------------------------------------------------------------------
     font_char_w / font_char_h / font_line_h / font_text_w / font_atlas_idx
@@ -211,6 +210,23 @@ static f32 font_char_w      ( void ) { return s_font->char_w;    }
 static f32 font_char_h      ( void ) { return s_font->char_h;    }
 static f32 font_line_h      ( void ) { return s_font->line_h;    }
 static u32 font_atlas_idx   ( void ) { return s_font->atlas_idx; }
+
+/* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel):
+   every initialized bitmap atlas, plus the TrueType atlas when one is loaded. */
+static u32
+font_atlas_bytes( void )
+{
+    u32 bytes = 0;
+    for ( u32 i = 0; i < IMGUI_FONT_BITMAP_MAX; ++i )
+    {
+        const bitmap_font_t* bf = &s_bitmaps[ i ];
+        if ( rhi_handle_valid( bf->atlas ) )
+            bytes += bf->def->atlas_w * bf->def->atlas_h;
+    }
+    if ( s_tt_font.active )
+        bytes += s_tt_font.atlas_w * s_tt_font.atlas_h;
+    return bytes;
+}
 
 static f32
 font_text_w( const char* str )

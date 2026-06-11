@@ -36,6 +36,11 @@ typedef struct imgui_api_s
     void ( *shutdown  )( void );
     bool ( *load_font )( const char* path );
 
+    /* GPU resource memory currently held by imgui, in bytes (buffers + atlases).
+       print_mem_stats() dumps the same breakdown to stdout. */
+    imgui_mem_stats_t ( *mem_stats       )( void );
+    void              ( *print_mem_stats )( void );
+
     /* Frame lifecycle.
        new_frame() -- reset draw list and translate app input into the IO snapshot.
                       Call once at the top of the frame, before any widget calls.

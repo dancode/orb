@@ -28,6 +28,7 @@
         location 0 out vec4 out_color;
         main: vec4 s = texture(sampler2D(u_textures[tex_idx], u_samplers[samp_idx]), v_uv);
               out_color = vec4(srgb_to_linear(v_color.rgb), v_color.a * s.r);
+
         Note: the swapchain is a _SRGB format, so colors are authored in sRGB and
         decoded to linear here -- the GPU then blends in linear space and re-encodes
         on store (the standard game-engine color path).  s.r is 1.0 for the white-pixel

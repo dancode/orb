@@ -136,6 +136,8 @@ main( int argc, char** argv )
     imgui()->load_font( "fonts/jetbrains_regular_24.orb_font" );
     // imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
     
+    imgui()->print_mem_stats();
+
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
@@ -187,7 +189,7 @@ main( int argc, char** argv )
             font_select = ( font_select + 1 ) % IMGUI_FONT_BITMAP_MAX;
             imgui()->set_font( (imgui_font_t)font_select );
         }
-
+        
         /* ------------------------------------------------------------------------------ */
         /* Render frame -- skip entirely while minimized to avoid 0x0 swapchain churn. */
 

@@ -29,6 +29,7 @@ const rhi_api_t g_rhi_api_struct =
     /* Frame */
     .frame_begin                = vk_frame_begin,
     .frame_end                  = vk_frame_end,
+    .cmd_frame_index            = vk_cmd_frame_index,
 
     /* Buffer */
     .buffer_create              = vk_buffer_create,

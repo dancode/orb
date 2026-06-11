@@ -38,6 +38,16 @@ void imgui_shutdown( void )
     imgui_render_shutdown();
 }
 
+imgui_mem_stats_t imgui_mem_stats( void )
+{
+    return imgui_render_memory();
+}
+
+void imgui_print_mem_stats( void )
+{
+    imgui_render_print_memory();
+}
+
 void imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
 {
     input_update( win_w, win_h, dt );
@@ -90,6 +100,8 @@ void imgui_pop_clip( void )
 const imgui_api_t g_imgui_api_struct = {
     .init          = imgui_init,
     .shutdown      = imgui_shutdown,
+    .mem_stats       = imgui_mem_stats,
+    .print_mem_stats = imgui_print_mem_stats,
     .load_font     = imgui_load_font,
     .new_frame      = imgui_new_frame,
     .render         = imgui_render,

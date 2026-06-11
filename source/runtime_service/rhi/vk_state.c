@@ -43,6 +43,9 @@ struct rhi_cmd_s
 ==============================================================================================*/
 
 #define VK_MAX_FRAMES_IN_FLIGHT     2
+ORB_STATIC_ASSERT( VK_MAX_FRAMES_IN_FLIGHT == RHI_MAX_FRAMES_IN_FLIGHT,
+                   "VK frames-in-flight must match the public RHI_MAX_FRAMES_IN_FLIGHT" );
+
 #define VK_MAX_SWAPCHAIN_IMAGES     3
 
 #define VK_MAX_BUFFERS              1024

@@ -10,6 +10,7 @@
 
 #include "orb.h"
 
+// clang-format off
 /*==============================================================================================
     ID / geometry
 ==============================================================================================*/
@@ -17,15 +18,8 @@
 typedef u32 imgui_id_t;
 #define IMGUI_ID_NONE 0u
 
-typedef struct
-{
-    f32 x, y;
-} imgui_vec2_t;
-
-typedef struct
-{
-    f32 x, y, w, h;
-} imgui_rect_t;
+typedef struct { f32 x, y; }        imgui_vec2_t;
+typedef struct { f32 x, y, w, h; }  imgui_rect_t;
 
 /*==============================================================================================
     Color packing
@@ -97,10 +91,29 @@ typedef struct
     Limits
 ==============================================================================================*/
 
-#define IMGUI_MAX_VERTS  ( 64 * 1024 )
+/* 16K verts is far above what a debug UI emits per frame, and keeps vertex indices
+   well within u16 range (64K would sit right at the 65535 ceiling).  The per-frame
+   region sizes that fall out of these (VB 320 KB, IB 96 KB) are both 256-byte
+   aligned, so each frame-in-flight region stays independently addressable -- note
+   that this only matters if the VB/IB are ever moved off HOST_COHERENT memory, in
+   which case regions would need rounding up to nonCoherentAtomSize to flush apart. */
+#define IMGUI_MAX_VERTS  ( 16 * 1024 )
 #define IMGUI_MAX_IDX    ( IMGUI_MAX_VERTS * 3 )
 #define IMGUI_MAX_CMDS   1024
 #define IMGUI_CLIP_DEPTH 32
+
+/*==============================================================================================
+    GPU resource memory usage (bytes), reported by imgui()->mem_stats().
+==============================================================================================*/
+
+typedef struct
+{
+    u32 vertex_bytes;   /* vertex buffer -- all frames-in-flight regions */
+    u32 index_bytes;    /* index buffer  -- all frames-in-flight regions */
+    u32 texture_bytes;  /* font atlases + 1x1 white pixel                */
+    u32 total_bytes;    /* sum of the above                              */
+
+} imgui_mem_stats_t;
 
 /*==============================================================================================
     Font selection
@@ -127,5 +140,6 @@ typedef enum
 
 } imgui_font_t;
 
+// clang-format on
 /*============================================================================================*/
 #endif    // IMGUI_H

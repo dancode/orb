@@ -104,7 +104,8 @@
       "PowerShell(cmd /c \"F:\\\\orb\\\\_build_imgui_tmp.bat\" 2>&1 | Select-Object -Last 40)",
       "Bash(bin/build_tool.exe -config Debug -target sb_vulkan)",
       "Bash(./bin/build_tool.exe -config Debug -target imgui)",
-      "Bash(./bin/build_tool.exe -config Debug -target sb_vulkan)"
+      "Bash(./bin/build_tool.exe -config Debug -target sb_vulkan)",
+      "Bash(./bin/build_tool.exe -config Debug -target rhi)"
     ]
   }
 }
