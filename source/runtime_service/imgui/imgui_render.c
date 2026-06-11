@@ -347,6 +347,10 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
                          idx_count * sizeof( u16 ), ib_off );
 
     /* Open a LOAD pass on the swapchain color target (no depth needed). */
+    /* This is required to preserve the scene content rendered before this call; otherwise the entire
+       swapchain image would be cleared and repainted with the UI every frame, which is
+       very bad for performance when the UI covers only a small portion of the screen. */
+
     rhi_color_attachment_t color_att = {
         .texture  = { .id = RHI_SWAPCHAIN_COLOR },
         .load_op  = RHI_LOAD_OP_LOAD,

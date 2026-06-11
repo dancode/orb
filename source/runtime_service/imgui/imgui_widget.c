@@ -99,8 +99,11 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 {
     widget_state_t st = { 0 };
 
-    /* Hot: cursor inside the hit rect. */
-    if ( rect_hit( r ) )
+    /* Hot only when this widget belongs to the window the cursor is over (hot_win,
+       resolved last frame).  Widgets in any other window short-circuit before rect_hit,
+       so occluded windows do no hit-testing at all -- occlusion is decided once, at the
+       window level, not per widget. */
+    if ( s_ctx.win_id == s_ctx.hot_win && rect_hit( r ) )
         s_ctx.hot_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
@@ -163,22 +166,10 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
         window_clamp( win );
     }
 
-    /* Title-bar grab.  Safe to claim at press time -- the title bar has no child
-       widgets to compete with.  Active in both TITLEBAR and BODY modes. */
-    if ( s_win_drag_mode != IMGUI_WIN_DRAG_NONE && s_io.mouse_pressed[ 0 ]
-         && s_ctx.active_id == IMGUI_ID_NONE )
-    {
-        imgui_rect_t title_r = { win->x, win->y, win->w, WIN_TITLE_H };
-        if ( rect_hit( title_r ) )
-        {
-            s_ctx.active_id = id;
-            s_drag_off_x    = s_io.mouse_x - win->x;
-            s_drag_off_y    = s_io.mouse_y - win->y;
-        }
-    }
-
-    /* A press anywhere in the window nominates it to be raised to the front. */
-    window_note_press( win );
+    /* Nominate this window as the one under the cursor (front-most by z wins).  The
+       winner becomes hot_win next frame; that single fact gates all widget hit-testing
+       and the drag grab below, so occlusion is resolved once per frame, not per widget. */
+    window_nominate_hot( id, ( imgui_rect_t ){ win->x, win->y, win->w, win->h }, win->z );
 
     /* All of this window's geometry is stamped with its z so flush can paint
        windows back-to-front regardless of begin_window call order. */
@@ -220,15 +211,17 @@ imgui_end_window( void )
     /* Subsequent draws (low-level API, the next window) revert to the background key. */
     draw_set_sort_key( 0 );
 
-    /* Body grab (whole-window mode).  Deferred to here because a body press may land
-       on a widget: widgets run between begin/end and claim active_id on press, so by
-       now active_id == NONE means the press hit empty window space, not a widget.
+    /* Drag grab.  Decided here, after this window's widgets have run, so hot_id tells us
+       whether the press landed on a widget: this window is the one under the cursor
+       (hot_win) and no widget of it took the hover (hot_id == NONE) means the press is on
+       empty window space.  BODY drags from anywhere empty; TITLEBAR only from the bar.
        The move itself starts next frame in begin_window (one-frame grab latency). */
-    if ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY && s_io.mouse_pressed[ 0 ]
-         && s_ctx.active_id == IMGUI_ID_NONE )
+    if ( s_ctx.win_id == s_ctx.hot_win && s_ctx.hot_id == IMGUI_ID_NONE
+         && s_io.mouse_pressed[ 0 ] && s_ctx.active_id == IMGUI_ID_NONE
+         && s_win_drag_mode != IMGUI_WIN_DRAG_NONE )
     {
-        imgui_rect_t win_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_h };
-        if ( rect_hit( win_r ) )
+        imgui_rect_t title_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, WIN_TITLE_H };
+        if ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) )
         {
             s_ctx.active_id = s_ctx.win_id;
             s_drag_off_x    = s_io.mouse_x - s_ctx.win_x;
