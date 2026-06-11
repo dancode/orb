@@ -52,6 +52,9 @@
    that never collides with a title-hashed widget id in the same window. */
 #define IMGUI_SCROLLBAR_SALT  0x5C011B01u
 
+/* Same trick for the collapse arrow: a distinct stable per-window widget id. */
+#define IMGUI_COLLAPSE_SALT   0xC011A95Eu
+
 /*----------------------------------------------------------------------------------------------
     Helpers
 ----------------------------------------------------------------------------------------------*/
@@ -125,7 +128,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
             s_ctx.focused_id = id;
     }
 
-    st.hover     = ( s_ctx.hover_id == id );
+    st.hover   = ( s_ctx.hover_id == id );
     st.active  = ( s_ctx.active_id == id );
     st.focused = ( s_ctx.focused_id == id );
     st.clicked = s_io.mouse_released[ 0 ] && s_ctx.hover_id == id && s_ctx.active_id == id;
@@ -161,12 +164,30 @@ window_clamp( imgui_window_t* win )
     if ( win->y < 0.0f )            win->y = 0.0f;
 }
 
+/* Collapse toggle glyph: a small triangle centered in a title-bar-height square.  Points
+   down when the window is expanded, right when it is collapsed (the title follows it). */
+static void
+draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
+{
+    f32 cx = box.x + box.w * 0.5f;
+    f32 cy = box.y + box.h * 0.5f;
+    f32 s  = floorf( box.h * 0.22f );   /* triangle half-extent */
+
+    if ( collapsed )
+        /* pointing right:  |>  */
+        draw_push_triangle( cx - s, cy - s, cx - s, cy + s, cx + s, cy, 0, color );
+    else
+        /* pointing down:   \/  */
+        draw_push_triangle( cx - s, cy - s, cx + s, cy - s, cx, cy + s, 0, color );
+}
+
 void
 imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
 {
     /* x/y/w/h are the initial geometry; the registry owns position after that. */
-    imgui_id_t      id  = id_hash( title );
-    imgui_window_t* win = window_get( id, x, y, w, h );
+    imgui_id_t      id        = id_hash( title );
+    imgui_window_t* win       = window_get( id, x, y, w, h );
+    bool            collapsed = win->collapsed;
 
     /* Apply an in-progress drag: this window holds active_id while the button is down. */
     if ( s_ctx.active_id == id )
@@ -176,54 +197,68 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
         window_clamp( win );
     }
 
-    /* Nominate this window as the one under the cursor (front-most by z wins).  The
-       winner becomes hover_win next frame; that single fact gates all widget hit-testing
+    /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
+       preserved so reopening restores the previous size.  disp_h is the height actually
+       shown this frame and drives the hover rect, clip, and border. */
+    f32 disp_h = collapsed ? WIN_TITLE_H : win->h;
+
+    /* Nominate this window as the one under the cursor (front-most by z wins) using the
+       displayed rect, so a collapsed window only captures the cursor over its title bar.
+       The winner becomes hover_win next frame; that single fact gates all widget hit-testing
        and the drag grab below, so occlusion is resolved once per frame, not per widget. */
-    window_nominate_hover( id, ( imgui_rect_t ){ win->x, win->y, win->w, win->h }, win->z );
+    window_nominate_hover( id, ( imgui_rect_t ){ win->x, win->y, win->w, disp_h }, win->z );
 
     /* All of this window's geometry is stamped with its z so flush can paint
        windows back-to-front regardless of begin_window call order. */
     draw_set_sort_key( win->z );
 
-    /* Vertical scroll.  content_h was measured last frame (end_window); use it to clamp
-       and to decide whether the scrollbar gutter steals content width this frame.  The
-       layout origin below is biased by -scroll_y, so all widgets slide under the clip;
-       the scrollbar itself is drawn and dragged in end_window once geometry is known. */
-    const f32 scroll_step = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
+    /* Vertical scroll (expanded only -- a collapsed window shows no content).  content_h was
+       measured last frame (end_window); use it to clamp and to decide whether the scrollbar
+       gutter steals content width this frame.  The layout origin below is biased by
+       -scroll_y, so all widgets slide under the clip; the scrollbar itself is drawn and
+       dragged in end_window once geometry is known. */
+    f32 sb_w = 0.0f;
+    if ( !collapsed )
+    {
+        const f32 scroll_step = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
 
-    f32 view_h     = win->h - WIN_TITLE_H - WIN_BORDER;
-    f32 max_scroll = win->content_h - view_h;
-    if ( max_scroll < 0.0f ) max_scroll = 0.0f;
+        f32 view_h     = win->h - WIN_TITLE_H - WIN_BORDER;
+        f32 max_scroll = win->content_h - view_h;
+        if ( max_scroll < 0.0f ) max_scroll = 0.0f;
 
-    /* Wheel scrolls only the hovered window, and never mid-drag (modal). */
-    if ( s_ctx.hover_win == id && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_wheel != 0.0f )
-        win->scroll_y -= s_io.mouse_wheel * scroll_step;
+        /* Wheel scrolls only the hovered window, and never mid-drag (modal). */
+        if ( s_ctx.hover_win == id && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_wheel != 0.0f )
+            win->scroll_y -= s_io.mouse_wheel * scroll_step;
 
-    if ( win->scroll_y < 0.0f )       win->scroll_y = 0.0f;
-    if ( win->scroll_y > max_scroll ) win->scroll_y = max_scroll;
+        if ( win->scroll_y < 0.0f )       win->scroll_y = 0.0f;
+        if ( win->scroll_y > max_scroll ) win->scroll_y = max_scroll;
 
-    f32 sb_w = ( win->content_h > view_h ) ? (f32)s_layout.slider_knob_w : 0.0f;
+        sb_w = ( win->content_h > view_h ) ? (f32)s_layout.slider_knob_w : 0.0f;
+    }
 
     /* Commit resolved geometry for the widgets and end_window. */
-    s_ctx.win_id     = id;
-    s_ctx.win_title  = title;   /* cached for end_window's deferred chrome */
-    s_ctx.cur_win    = win;     /* scroll write-back target for end_window */
-    s_ctx.win_x      = win->x;
-    s_ctx.win_y      = win->y;
-    s_ctx.win_w      = win->w;
-    s_ctx.win_h      = win->h;
-    s_ctx.content_x  = win->x + WIDGET_PAD;
-    s_ctx.content_w  = win->w - 2.0f * WIDGET_PAD - sb_w;   /* leave room for the gutter */
+    s_ctx.win_id        = id;
+    s_ctx.win_title     = title;   /* cached for end_window's deferred chrome */
+    s_ctx.win_collapsed = collapsed;
+    s_ctx.cur_win       = win;     /* scroll write-back target for end_window */
+    s_ctx.win_x         = win->x;
+    s_ctx.win_y         = win->y;
+    s_ctx.win_w         = win->w;
+    s_ctx.win_h         = disp_h;  /* displayed height (title bar only when collapsed) */
+    s_ctx.content_x     = win->x + WIDGET_PAD;
+    s_ctx.content_w     = win->w - 2.0f * WIDGET_PAD - sb_w;   /* leave room for the gutter */
 
-    /* One clip rect for the whole window: background, content, and the titlebar/border
-       chrome deferred to end_window all share it, so the window flushes as a single draw
-       command.  Content scrolled into the titlebar or border region is overpainted by the
-       chrome end_window draws last; anything past the outer edge is clipped here. */
+    /* One clip rect for the whole displayed window: background, content, and the
+       titlebar/border chrome deferred to end_window all share it, so the window flushes as a
+       single draw command.  When collapsed the clip is just the title bar, so any widget the
+       caller emits between begin/end is clipped away.  Content scrolled into the titlebar or
+       border region is overpainted by the chrome end_window draws last. */
 
-    draw_push_clip_rect( win->x, win->y, win->w, win->h );
+    draw_push_clip_rect( win->x, win->y, win->w, disp_h );
 
-    /* Window background. */
-    draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
+    /* Window body background (skipped when collapsed -- only the title bar shows). */
+    if ( !collapsed )
+        draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
     /* Start the layout cursor at the content origin, biased up by the scroll offset. */
     s_ctx.cursor_x = win->x + WIDGET_PAD;
@@ -235,52 +270,71 @@ imgui_end_window( void )
 {
     imgui_window_t* win = s_ctx.cur_win;
 
-    /* Content extent = how far the layout cursor travelled from the (unscrolled) origin.
-       Adding scroll_y back cancels the bias begin_window applied.  Stored for next frame's
-       clamp, gutter decision, and the knob proportions just below. */
-    f32 view_h   = s_ctx.win_h - WIN_TITLE_H - WIN_BORDER;
-    f32 origin_y = s_ctx.win_y + WIN_TITLE_H + WIDGET_GAP;
-    win->content_h = ( s_ctx.cursor_y + win->scroll_y ) - origin_y;
-
-    /* Scrollbar: only when content overflows the view.  Drawn before the chrome so the
-       border can frame it; handled before the window drag-grab below so a press on the
-       knob claims active_id first and the window itself does not start dragging. */
-    if ( win->content_h > view_h )
+    /* Content + scrollbar are expanded-only.  A collapsed window measures nothing and keeps
+       win->content_h from its last expanded frame, so scroll state survives a collapse. */
+    if ( !s_ctx.win_collapsed )
     {
-        f32 max_scroll = win->content_h - view_h;
-        f32 sb_w       = (f32)s_layout.slider_knob_w;
-        f32 track_x    = s_ctx.win_x + s_ctx.win_w - WIN_BORDER - sb_w;
-        f32 track_y    = s_ctx.win_y + WIN_TITLE_H;
-        imgui_rect_t track_r = { track_x, track_y, sb_w, view_h };
+        /* Content extent = how far the layout cursor travelled from the (unscrolled) origin.
+           Adding scroll_y back cancels the bias begin_window applied.  Stored for next
+           frame's clamp, gutter decision, and the knob proportions just below. */
+        f32 view_h   = s_ctx.win_h - WIN_TITLE_H - WIN_BORDER;
+        f32 origin_y = s_ctx.win_y + WIN_TITLE_H + WIDGET_GAP;
+        win->content_h = ( s_ctx.cursor_y + win->scroll_y ) - origin_y;
 
-        imgui_id_t     sb_id = s_ctx.win_id ^ IMGUI_SCROLLBAR_SALT;
-        widget_state_t st    = widget_behavior( sb_id, track_r, WIDGET_KIND_DRAG );
-
-        /* Knob height tracks the visible fraction; min-clamped so it stays grabbable. */
-        f32 knob_h = view_h * ( view_h / win->content_h );
-        if ( knob_h < sb_w ) knob_h = sb_w;
-        f32 travel = view_h - knob_h;
-
-        /* Drag maps the cursor (knob centre) back into scroll_y, mirroring slider_float. */
-        if ( st.active )
+        /* Scrollbar: only when content overflows the view.  Drawn before the chrome so the
+           border can frame it; handled before the window drag-grab below so a press on the
+           knob claims active_id first and the window itself does not start dragging. */
+        if ( win->content_h > view_h )
         {
-            f32 t = ( travel > 0.0f ) ? ( s_io.mouse_y - track_y - knob_h * 0.5f ) / travel : 0.0f;
-            t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
-            win->scroll_y = t * max_scroll;
+            f32 max_scroll = win->content_h - view_h;
+            f32 sb_w       = (f32)s_layout.slider_knob_w;
+            f32 track_x    = s_ctx.win_x + s_ctx.win_w - WIN_BORDER - sb_w;
+            f32 track_y    = s_ctx.win_y + WIN_TITLE_H;
+            imgui_rect_t track_r = { track_x, track_y, sb_w, view_h };
+
+            imgui_id_t     sb_id = s_ctx.win_id ^ IMGUI_SCROLLBAR_SALT;
+            widget_state_t st    = widget_behavior( sb_id, track_r, WIDGET_KIND_DRAG );
+
+            /* Knob height tracks the visible fraction; min-clamped so it stays grabbable. */
+            f32 knob_h = view_h * ( view_h / win->content_h );
+            if ( knob_h < sb_w ) knob_h = sb_w;
+            f32 travel = view_h - knob_h;
+
+            /* Drag maps the cursor (knob centre) back into scroll_y, mirroring slider_float. */
+            if ( st.active )
+            {
+                f32 t = ( travel > 0.0f ) ? ( s_io.mouse_y - track_y - knob_h * 0.5f ) / travel : 0.0f;
+                t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
+                win->scroll_y = t * max_scroll;
+            }
+
+            f32 t_cur  = ( max_scroll > 0.0f ) ? win->scroll_y / max_scroll : 0.0f;
+            f32 knob_y = track_y + t_cur * travel;
+
+            draw_push_rect_filled( track_x, track_y, sb_w, view_h, 0,0,1,1, 0, COL_SLIDER_TRACK );
+            draw_push_rect_filled( track_x, knob_y, sb_w, knob_h, 0,0,1,1, 0, widget_bg_color( st ) );
         }
-
-        f32 t_cur  = ( max_scroll > 0.0f ) ? win->scroll_y / max_scroll : 0.0f;
-        f32 knob_y = track_y + t_cur * travel;
-
-        draw_push_rect_filled( track_x, track_y, sb_w, view_h, 0,0,1,1, 0, COL_SLIDER_TRACK );
-        draw_push_rect_filled( track_x, knob_y, sb_w, knob_h, 0,0,1,1, 0, widget_bg_color( st ) );
     }
 
-    /* Deferred chrome: titlebar, title text, and border paint last under the window's
-       single clip rect, so they overdraw any content that scrolled beneath them while
-       still merging into the one window draw command. */
+    /* Deferred chrome: titlebar, collapse arrow, title text, and border paint last under the
+       window's single clip rect, so they overdraw any content that scrolled beneath them
+       while still merging into the one window draw command. */
     draw_push_rect_filled( s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, WIN_TITLE_H, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
-    draw_push_text( s_ctx.win_x + WIDGET_PAD, s_ctx.win_y + ( WIN_TITLE_H - font_char_h() ) * 0.5f, COL_TEXT, s_ctx.win_title );
+
+    /* Collapse toggle: a triangle in a title-bar-height square at the bar's left edge.  A
+       click flips win->collapsed, taking effect next frame like the drag grab.  Claiming
+       hover/active here also keeps the title-bar drag grab below from firing on the same
+       press.  The icon is drawn from this frame's state (s_ctx.win_collapsed) so it matches
+       the body shown this frame, not the pending toggle. */
+    imgui_rect_t   arrow_r  = { s_ctx.win_x, s_ctx.win_y, WIN_TITLE_H, WIN_TITLE_H };
+    imgui_id_t     arrow_id = s_ctx.win_id ^ IMGUI_COLLAPSE_SALT;
+    widget_state_t arrow_st = widget_behavior( arrow_id, arrow_r, WIDGET_KIND_BUTTON );
+    if ( arrow_st.clicked )
+        win->collapsed = !win->collapsed;
+    draw_collapse_arrow( arrow_r, s_ctx.win_collapsed, arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
+
+    /* Title text follows the arrow icon (left edge one title-bar height in). */
+    draw_push_text( s_ctx.win_x + WIN_TITLE_H, s_ctx.win_y + ( WIN_TITLE_H - font_char_h() ) * 0.5f, COL_TEXT, s_ctx.win_title );
     draw_push_rect_outline( s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_h, WIN_BORDER, 0, COL_BORDER );
 
     draw_pop_clip_rect();

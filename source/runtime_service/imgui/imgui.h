@@ -35,6 +35,40 @@ typedef enum
 } imgui_win_drag_t;
 
 /*==============================================================================================
+    Window flags
+
+    Window flags are set per-window via the title string in begin_window.
+    Can be set globally to set the starting default for all windows.
+==============================================================================================*/
+
+// typedef union window_flags_s            /* internal representation of window flags */
+// {
+//     u32 bits;
+//     struct
+//     {
+//         u32 no_titlebar         : 1; /* disable title bar (and thus window dragging) */
+//         // u32 no_resize        : 1; /* disable user resizing with the mouse */
+//         // u32 no_close         : 1; /* disable user closing with the mouse (no effect on app-driven close) */
+//         // u32 no_scrollbar     : 1; /* disable automatic vertical scrollbar when content exceeds window height */
+//         // u32 no_scroll        : 1; /* disable all scrolling (content that exceeds window height is inaccessible) */
+//     };
+// 
+// } window_flags_t;
+
+typedef enum imgui_win_flags_e
+{
+    IMGUI_WIN_NOTITLEBAR   = 1 << 0,    /* disable title bar (and thus window dragging) */
+ // IMGUI_WIN_NOCOLLAPSE   = 1 << 1,    /* ... */
+ // IMGUI_WIN_NOMOVE       = 1 << 2,
+ // IMGUI_WIN_AUTORESIZE   = 1 << 3,
+ // IMGUI_WIN_MENUBAR      = 1 << 4,
+ // IMGUI_WIN_NOINPUT      = 1 << 5,
+ // IMGUI_WIN_HSCROLL      = 1 << 6,
+ // IMGUI_WIN_NOSCROLL     = 1 << 7,
+
+} imgui_win_flags_t;
+
+/*==============================================================================================
     Color packing
 
     IMGUI_COLOR(r,g,b,a) packs 0-255 byte values into a u32 such that memory byte order

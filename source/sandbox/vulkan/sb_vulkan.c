@@ -259,6 +259,10 @@ main( int argc, char** argv )
                     if ( app()->key_pressed( APP_KEY_3 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_NONE );
                 }
 
+                // imgui_win_flags_t flags = { 0 };
+                // flags.no_titlebar = true;
+                // UNUSED( flags );
+
                 if ( imgui() && show_ui )
                 {
                     imgui()->new_frame( win_w, win_h, 4 );
@@ -266,15 +270,17 @@ main( int argc, char** argv )
                     imgui()->begin_window( "Debug", 10, 10, 640, 640 );
                     if ( imgui()->button( "Reload$" ) )
                     {
-
+                        // empty
                     }
                     if ( imgui()->button( "JsjperR1234q" ) )
-                    {}
+                    {
+                        // empty
+                    }
                     imgui()->text( "this is some text" );
                     static float scale = 1.0f;
                     if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) )
                     {
-
+                        // empty
                     }
                     imgui()->text( "here we go..." );
                     imgui()->textf( "formatted number: %.2f", 123.456f );
@@ -285,6 +291,11 @@ main( int argc, char** argv )
                     imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
                     imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
                     imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
+
+                    for ( int i = 0 ; i < 32; i++ )
+                    {
+                        imgui()->textf( "text widdget %d", i );
+                    }
 
                     static bool checked = false;
                     imgui()->checkbox( "Checkbox", &checked );

@@ -34,6 +34,8 @@ typedef struct imgui_window_t
     f32        scroll_y;    /* vertical scroll offset; 0 = top                */
     f32        content_h;   /* total content height measured last frame       */
 
+    bool       collapsed;   /* title-bar-only when set; toggled by the arrow  */
+
 } imgui_window_t;
 
 static imgui_window_t       s_windows[ IMGUI_MAX_WINDOWS ];
@@ -67,12 +69,13 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
     imgui_window_t* win = ( s_window_count < IMGUI_MAX_WINDOWS )
                         ? &s_windows[ s_window_count++ ]
                         : &s_window_scratch;   /* table full: transient, not persisted */
-    win->id = id;
-    win->x  = x;
-    win->y  = y;
-    win->w  = w;
-    win->h  = h;
-    win->z  = ++s_z_counter;
+    win->id        = id;
+    win->x         = x;
+    win->y         = y;
+    win->w         = w;
+    win->h         = h;
+    win->z         = ++s_z_counter;
+    win->collapsed = false;   /* reset matters only for a reused scratch slot */
     return win;
 }
 
