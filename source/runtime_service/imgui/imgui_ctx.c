@@ -63,9 +63,18 @@ ctx_new_frame( void )
     /* hot_id is re-established every frame by widget calls; clear it now. */
     s_ctx.hot_id = IMGUI_ID_NONE;
 
-    /* Release active_id when the primary mouse button is no longer held. */
-    if ( !s_io.mouse_down[ 0 ] )
+    /* Release active_id once the primary button is up.  Keep it alive on the
+       release-edge frame (mouse_released) so widgets can still observe the
+       press+release pair this frame; it clears on the following frame when the
+       button is neither down nor just released. */
+    if ( !s_io.mouse_down[ 0 ] && !s_io.mouse_released[ 0 ] )
         s_ctx.active_id = IMGUI_ID_NONE;
+
+    /* Drop keyboard focus on any press; the widget under the cursor re-claims
+       it the same frame (input_text sets focused_id from hot_id + press).
+       A press on a button or empty space thus leaves focus cleared. */
+    if ( s_io.mouse_pressed[ 0 ] )
+        s_ctx.focused_id = IMGUI_ID_NONE;
 }
 
 // clang-format on

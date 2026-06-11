@@ -290,8 +290,9 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
     imgui_rect_t box_r = { r.x, r.y, box_w, r.h };
 
     /* Click focuses this widget. */
-    if ( rect_hit( box_r ) )
+    if ( rect_hit( box_r ))
          s_ctx.hot_id = id;
+
     if ( s_ctx.hot_id == id && s_io.mouse_pressed[ 0 ] )
          s_ctx.focused_id = id;
 

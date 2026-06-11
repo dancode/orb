@@ -177,7 +177,7 @@ main( int argc, char** argv )
         if ( app()->key_pressed( APP_KEY_ESCAPE ) )
             break;
 
-        if ( app()->key_pressed( APP_KEY_S ) )
+        if ( app()->key_pressed( APP_KEY_EQUAL ) )
         {            
             static int bmp_scale = 1;
             bmp_scale = bmp_scale == 1 ? 2 : ( bmp_scale == 2 ? 3 : 1 );
@@ -186,13 +186,12 @@ main( int argc, char** argv )
             }
         }
 
-        if ( app()->key_pressed( APP_KEY_P ) )
+        if ( app()->key_pressed( APP_KEY_MINUS ) )
         {
             static int font_select = 1;
             font_select = ( font_select + 1 ) % IMGUI_FONT_BITMAP_MAX;
             imgui()->set_font( (imgui_font_t)font_select );
         }
-
 
         /* ------------------------------------------------------------------------------ */
         /* Render frame -- skip entirely while minimized to avoid 0x0 swapchain churn. */
