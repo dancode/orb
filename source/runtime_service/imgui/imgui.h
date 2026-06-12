@@ -37,30 +37,18 @@ typedef enum
 /*==============================================================================================
     Window flags
 
-    Window flags are set per-window via the title string in begin_window.
-    Can be set globally to set the starting default for all windows.
+    Passed as the final argument to begin_window to customize a single window's behavior.
+    They mostly switch off default behavior; pass 0 (IMGUI_WIN_NONE) for the defaults.
 ==============================================================================================*/
 
-// typedef union window_flags_s            /* internal representation of window flags */
-// {
-//     u32 bits;
-//     struct
-//     {
-//         u32 no_titlebar         : 1; /* disable title bar (and thus window dragging) */
-//         // u32 no_resize        : 1; /* disable user resizing with the mouse */
-//         // u32 no_close         : 1; /* disable user closing with the mouse (no effect on app-driven close) */
-//         // u32 no_scrollbar     : 1; /* disable automatic vertical scrollbar when content exceeds window height */
-//         // u32 no_scroll        : 1; /* disable all scrolling (content that exceeds window height is inaccessible) */
-//     };
-// 
-// } window_flags_t;
-
-typedef enum imgui_win_flags_e
+typedef enum
 {
-    IMGUI_WIN_NOTITLEBAR   = 1 << 0,    /* disable title bar (and thus window dragging) */
- // IMGUI_WIN_NOCOLLAPSE   = 1 << 1,    /* ... */
- // IMGUI_WIN_NOMOVE       = 1 << 2,
- // IMGUI_WIN_AUTORESIZE   = 1 << 3,
+    IMGUI_WIN_NONE         = 0,         /* default behavior */
+    IMGUI_WIN_NOTITLEBAR   = 1 << 0,    /* no title bar: body fills the top; no collapse, no titlebar drag */
+    IMGUI_WIN_NOCOLLAPSE   = 1 << 1,    /* no collapse arrow; the window stays expanded */
+    IMGUI_WIN_NORESIZE     = 1 << 2,    /* disable user resizing from the border edges */
+
+ // IMGUI_WIN_NOMOVE       = 1 << 3,
  // IMGUI_WIN_MENUBAR      = 1 << 4,
  // IMGUI_WIN_NOINPUT      = 1 << 5,
  // IMGUI_WIN_HSCROLL      = 1 << 6,

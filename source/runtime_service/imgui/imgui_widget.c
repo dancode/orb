@@ -44,6 +44,7 @@
 #define COL_WIDGET_FG    IMGUI_COLOR( 0x20, 0x90, 0xD0, 0xFF )
 #define COL_CHECK_MARK   IMGUI_COLOR( 0x20, 0xC0, 0x60, 0xFF )
 #define COL_SLIDER_TRACK IMGUI_COLOR( 0x30, 0x30, 0x30, 0xFF )
+#define COL_RESIZE_HOT   IMGUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF )   /* bold edge line when a resize border is hot */
 #define COL_INPUT_BG     IMGUI_COLOR( 0x38, 0x38, 0x38, 0xFF )
 #define COL_INPUT_FOCUS  IMGUI_COLOR( 0x20, 0x50, 0x70, 0xFF )
 #define COL_CURSOR       IMGUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF )
@@ -54,6 +55,17 @@
 
 /* Same trick for the collapse arrow: a distinct stable per-window widget id. */
 #define IMGUI_COLLAPSE_SALT   0xC011A95Eu
+
+/* And for the edge-resize grab: while a resize is in flight the window owns
+   active_id == (win id ^ IMGUI_RESIZE_SALT), distinct from its drag (the bare id),
+   its scrollbar, and its collapse arrow. */
+#define IMGUI_RESIZE_SALT     0x5152E001u
+
+/* Edge bits for s_resize_edges -- combined on a corner grab (e.g. R|B). */
+#define IMGUI_RESIZE_L  ( 1u << 0 )
+#define IMGUI_RESIZE_R  ( 1u << 1 )
+#define IMGUI_RESIZE_T  ( 1u << 2 )
+#define IMGUI_RESIZE_B  ( 1u << 3 )
 
 /*----------------------------------------------------------------------------------------------
     Helpers
@@ -164,6 +176,120 @@ window_clamp( imgui_window_t* win )
     if ( win->y < 0.0f )            win->y = 0.0f;
 }
 
+/*----------------------------------------------------------------------------------------------
+    Edge resize
+
+    A window may be resized by grabbing within a thin band inside any edge or corner.  The
+    grab is detected in end_window (after the body widgets, so a press that landed on a widget
+    or the scrollbar is excluded) and the resize itself is applied at the top of the next
+    begin_window, mirroring how the title-bar drag is grabbed and applied one frame apart.
+----------------------------------------------------------------------------------------------*/
+
+/* Grab band thickness: reuse the content padding so it scales with the font. */
+#define WIN_RESIZE_GRAB  WIDGET_PAD
+
+/* Smallest width a window may be shrunk to. */
+static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
+
+/* Smallest height: always keeps the title bar fully visible plus one widget row of body, so
+   a resize never eats into the title bar vertically.  title_h is 0 for a NOTITLEBAR window. */
+static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER; }
+
+/* Which edges of rect r the cursor is within the grab band of (0 = none).  Restricted to the
+   window the cursor is over so only the front-most window reports a hit.  Collapsed windows
+   report horizontal edges only -- their height is pinned to the title bar. */
+static u8
+window_resize_hit( imgui_id_t id, imgui_rect_t r, bool collapsed )
+{
+    if ( s_ctx.hover_win != id || !rect_hit( r ) )
+        return 0;
+
+    const f32 g  = WIN_RESIZE_GRAB;
+    const f32 mx = s_io.mouse_x;
+    const f32 my = s_io.mouse_y;
+
+    u8 e = 0;
+    if ( mx <= r.x + g )           e |= IMGUI_RESIZE_L;
+    if ( mx >= r.x + r.w - g )     e |= IMGUI_RESIZE_R;
+    if ( !collapsed )
+    {
+        if ( my <= r.y + g )       e |= IMGUI_RESIZE_T;
+        if ( my >= r.y + r.h - g ) e |= IMGUI_RESIZE_B;
+    }
+    return e;
+}
+
+/* Apply the in-flight resize to win's geometry, clamped to the minimum size.  Moving edges
+   (left/top) shift the origin while pinning the opposite edge recorded at grab time. */
+static void
+window_apply_resize( imgui_window_t* win, f32 title_h )
+{
+    const f32 min_w = window_min_w();
+    const f32 min_h = window_min_h( title_h );
+
+    if ( s_resize_edges & IMGUI_RESIZE_R )
+        win->w = ( s_io.mouse_x - s_resize_off_x ) - win->x;
+
+    if ( s_resize_edges & IMGUI_RESIZE_L )
+    {
+        win->x = s_io.mouse_x - s_resize_off_x;
+        win->w = s_resize_fix_x - win->x;
+    }
+
+    if ( s_resize_edges & IMGUI_RESIZE_B )
+        win->h = ( s_io.mouse_y - s_resize_off_y ) - win->y;
+
+    if ( s_resize_edges & IMGUI_RESIZE_T )
+    {
+        win->y = s_io.mouse_y - s_resize_off_y;
+        win->h = s_resize_fix_y - win->y;
+    }
+
+    /* Clamp to minimum; a moving edge stops against the pinned far edge. */
+    if ( win->w < min_w )
+    {
+        if ( s_resize_edges & IMGUI_RESIZE_L ) win->x = s_resize_fix_x - min_w;
+        win->w = min_w;
+    }
+    if ( win->h < min_h )
+    {
+        if ( s_resize_edges & IMGUI_RESIZE_T ) win->y = s_resize_fix_y - min_h;
+        win->h = min_h;
+    }
+}
+
+/* Paint a bold line over each hot edge of the window outline so it is obvious that the border
+   is grabbable and which side will move.  Drawn just inside the rect, over the thin border. */
+static void
+window_draw_resize_highlight( imgui_rect_t r, u8 edges )
+{
+    const f32 t = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */
+
+    if ( edges & IMGUI_RESIZE_L ) draw_push_rect_filled( r.x,             r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & IMGUI_RESIZE_R ) draw_push_rect_filled( r.x + r.w - t,   r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & IMGUI_RESIZE_T ) draw_push_rect_filled( r.x,             r.y,             r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & IMGUI_RESIZE_B ) draw_push_rect_filled( r.x,             r.y + r.h - t,   r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
+}
+
+/* On a press inside the resize band, claim active_id and record the grab anchors: an offset
+   that keeps the grabbed edge under the cursor and the absolute position of the pinned edge. */
+static void
+window_resize_grab( imgui_window_t* win, imgui_id_t id, u8 edges )
+{
+    s_ctx.active_id = id ^ IMGUI_RESIZE_SALT;
+    s_resize_edges  = edges;
+
+    s_resize_off_x = ( edges & IMGUI_RESIZE_L ) ? ( s_io.mouse_x - win->x )
+                   : ( edges & IMGUI_RESIZE_R ) ? ( s_io.mouse_x - ( win->x + win->w ) )
+                   : 0.0f;
+    s_resize_off_y = ( edges & IMGUI_RESIZE_T ) ? ( s_io.mouse_y - win->y )
+                   : ( edges & IMGUI_RESIZE_B ) ? ( s_io.mouse_y - ( win->y + win->h ) )
+                   : 0.0f;
+
+    s_resize_fix_x = win->x + win->w;   /* pinned right edge for a left-edge drag  */
+    s_resize_fix_y = win->y + win->h;   /* pinned bottom edge for a top-edge drag  */
+}
+
 /* Collapse toggle glyph: a small triangle centered in a title-bar-height square.  Points
    down when the window is expanded, right when it is collapsed (the title follows it). */
 static void
@@ -182,12 +308,21 @@ draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
 }
 
 bool
-imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
+imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags )
 {
     /* x/y/w/h are the initial geometry; the registry owns position after that. */
-    imgui_id_t      id        = id_hash( title );
-    imgui_window_t* win       = window_get( id, x, y, w, h );
-    bool            collapsed = win->collapsed;
+    imgui_id_t      id  = id_hash( title );
+    imgui_window_t* win = window_get( id, x, y, w, h );
+    win->flags          = flags;
+
+    /* NOTITLEBAR removes the bar entirely (title_h 0); content then starts at the top edge.
+       Collapsing lives on the title bar, so NOTITLEBAR and NOCOLLAPSE both pin the window
+       open -- any stale collapsed state is cleared so it cannot resurface if the flag drops. */
+    bool has_titlebar = !( flags & IMGUI_WIN_NOTITLEBAR );
+    f32  title_h      = has_titlebar ? WIN_TITLE_H : 0.0f;
+    bool can_collapse = has_titlebar && !( flags & IMGUI_WIN_NOCOLLAPSE );
+    if ( !can_collapse ) win->collapsed = false;
+    bool collapsed = win->collapsed;
 
     /* Apply an in-progress drag: this window holds active_id while the button is down. */
     if ( s_ctx.active_id == id )
@@ -197,10 +332,15 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
         window_clamp( win );
     }
 
+    /* Apply an in-progress edge resize (active_id is the resize-salted window id).  Runs after
+       the drag apply -- the two are mutually exclusive, only one can own active_id at a time. */
+    if ( s_ctx.active_id == ( id ^ IMGUI_RESIZE_SALT ) )
+        window_apply_resize( win, title_h );
+
     /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
        preserved so reopening restores the previous size.  disp_h is the height actually
        shown this frame and drives the hover rect, clip, and border. */
-    f32 disp_h = collapsed ? WIN_TITLE_H : win->h;
+    f32 disp_h = collapsed ? title_h : win->h;
 
     /* Nominate this window as the one under the cursor (front-most by z wins) using the
        displayed rect, so a collapsed window only captures the cursor over its title bar.
@@ -222,7 +362,7 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     {
         const f32 scroll_step = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
 
-        f32 view_h     = win->h - WIN_TITLE_H - WIN_BORDER;
+        f32 view_h     = win->h - title_h - WIN_BORDER;
         f32 max_scroll = win->content_h - view_h;
         if ( max_scroll < 0.0f ) max_scroll = 0.0f;
 
@@ -240,6 +380,8 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     s_ctx.win_id        = id;
     s_ctx.win_title     = title;   /* cached for end_window's deferred chrome */
     s_ctx.win_collapsed = collapsed;
+    s_ctx.win_flags     = flags;   /* end_window reads these for chrome + resize grab */
+    s_ctx.win_title_h   = title_h; /* 0 when NOTITLEBAR */
     s_ctx.cur_win       = win;     /* scroll write-back target for end_window */
     s_ctx.win_x         = win->x;
     s_ctx.win_y         = win->y;
@@ -267,7 +409,7 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
 
     /* Start the layout cursor at the content origin, biased up by the scroll offset. */
     s_ctx.cursor_x = win->x + WIDGET_PAD;
-    s_ctx.cursor_y = win->y + WIN_TITLE_H + WIDGET_GAP - win->scroll_y;
+    s_ctx.cursor_y = win->y + title_h + WIDGET_GAP - win->scroll_y;
 
     /* false tells the caller to skip its body widgets (they would do nothing anyway). */
     return !collapsed;
@@ -285,8 +427,8 @@ imgui_end_window( void )
         /* Content extent = how far the layout cursor travelled from the (unscrolled) origin.
            Adding scroll_y back cancels the bias begin_window applied.  Stored for next
            frame's clamp, gutter decision, and the knob proportions just below. */
-        f32 view_h   = s_ctx.win_h - WIN_TITLE_H - WIN_BORDER;
-        f32 origin_y = s_ctx.win_y + WIN_TITLE_H + WIDGET_GAP;
+        f32 view_h   = s_ctx.win_h - s_ctx.win_title_h - WIN_BORDER;
+        f32 origin_y = s_ctx.win_y + s_ctx.win_title_h + WIDGET_GAP;
         win->content_h = ( s_ctx.cursor_y + win->scroll_y ) - origin_y;
 
         /* Scrollbar: only when content overflows the view.  Drawn before the chrome so the
@@ -297,7 +439,7 @@ imgui_end_window( void )
             f32 max_scroll = win->content_h - view_h;
             f32 sb_w       = (f32)s_layout.slider_knob_w;
             f32 track_x    = s_ctx.win_x + s_ctx.win_w - WIN_BORDER - sb_w;
-            f32 track_y    = s_ctx.win_y + WIN_TITLE_H;
+            f32 track_y    = s_ctx.win_y + s_ctx.win_title_h;
             imgui_rect_t track_r = { track_x, track_y, sb_w, view_h };
 
             imgui_id_t     sb_id = s_ctx.win_id ^ IMGUI_SCROLLBAR_SALT;
@@ -326,24 +468,53 @@ imgui_end_window( void )
 
     /* Deferred chrome: titlebar, collapse arrow, title text, and border paint last under the
        window's single clip rect, so they overdraw any content that scrolled beneath them
-       while still merging into the one window draw command. */
-    draw_push_rect_filled( s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, WIN_TITLE_H, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
+       while still merging into the one window draw command.  A NOTITLEBAR window (title_h 0)
+       skips the bar entirely and keeps only the border. */
+    if ( s_ctx.win_title_h > 0.0f )
+    {
+        f32 title_h = s_ctx.win_title_h;
+        draw_push_rect_filled( s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, title_h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
 
-    /* Collapse toggle: a triangle in a title-bar-height square at the bar's left edge.  A
-       click flips win->collapsed, taking effect next frame like the drag grab.  Claiming
-       hover/active here also keeps the title-bar drag grab below from firing on the same
-       press.  The icon is drawn from this frame's state (s_ctx.win_collapsed) so it matches
-       the body shown this frame, not the pending toggle. */
-    imgui_rect_t   arrow_r  = { s_ctx.win_x, s_ctx.win_y, WIN_TITLE_H, WIN_TITLE_H };
-    imgui_id_t     arrow_id = s_ctx.win_id ^ IMGUI_COLLAPSE_SALT;
-    widget_state_t arrow_st = widget_behavior( arrow_id, arrow_r, WIDGET_KIND_BUTTON );
-    if ( arrow_st.clicked )
-        win->collapsed = !win->collapsed;
-    draw_collapse_arrow( arrow_r, s_ctx.win_collapsed, arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
+        /* Collapse toggle: a triangle in a title-bar-height square at the bar's left edge.  A
+           click flips win->collapsed, taking effect next frame like the drag grab.  Claiming
+           hover/active here also keeps the title-bar drag grab below from firing on the same
+           press.  Omitted (and the title slides left to the padding) when NOCOLLAPSE is set.
+           The icon is drawn from this frame's state so it matches the body shown this frame. */
+        f32 text_x = s_ctx.win_x + WIDGET_PAD;
+        if ( !( s_ctx.win_flags & IMGUI_WIN_NOCOLLAPSE ) )
+        {
+            imgui_rect_t   arrow_r  = { s_ctx.win_x, s_ctx.win_y, title_h, title_h };
+            imgui_id_t     arrow_id = s_ctx.win_id ^ IMGUI_COLLAPSE_SALT;
+            widget_state_t arrow_st = widget_behavior( arrow_id, arrow_r, WIDGET_KIND_BUTTON );
+            if ( arrow_st.clicked )
+                win->collapsed = !win->collapsed;
+            draw_collapse_arrow( arrow_r, s_ctx.win_collapsed, arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
+            text_x = s_ctx.win_x + title_h;   /* title follows the arrow square */
+        }
 
-    /* Title text follows the arrow icon (left edge one title-bar height in). */
-    draw_push_text( s_ctx.win_x + WIN_TITLE_H, s_ctx.win_y + ( WIN_TITLE_H - font_char_h() ) * 0.5f, COL_TEXT, s_ctx.win_title );
-    draw_push_rect_outline( s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_h, WIN_BORDER, 0, COL_BORDER );
+        /* Title text. */
+        draw_push_text( text_x, s_ctx.win_y + ( title_h - font_char_h() ) * 0.5f, COL_TEXT, s_ctx.win_title );
+    }
+
+    /* Border frames the whole window, with or without a title bar. */
+    imgui_rect_t win_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_h };
+    draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
+
+    /* Resize affordance: bold the outline on any edge that is hot -- lit while a resize is in
+       flight (the grabbed edges) and, otherwise, when the cursor is hovering a grabbable
+       border with nothing else captured.  NORESIZE windows never light up. */
+    if ( !( s_ctx.win_flags & IMGUI_WIN_NORESIZE ) )
+    {
+        imgui_id_t resize_id = s_ctx.win_id ^ IMGUI_RESIZE_SALT;
+        u8 hot_edges = 0;
+        if ( s_ctx.active_id == resize_id )
+            hot_edges = s_resize_edges;     /* keep the grabbed edges lit through the drag */
+        else if ( s_ctx.active_id == IMGUI_ID_NONE && s_ctx.hover_id == IMGUI_ID_NONE )
+            hot_edges = window_resize_hit( s_ctx.win_id, win_r, s_ctx.win_collapsed );
+
+        if ( hot_edges )
+            window_draw_resize_highlight( win_r, hot_edges );
+    }
 
     /* Balance the clip push, which begin_window only made for an expanded window. */
     if ( !s_ctx.win_collapsed )
@@ -352,21 +523,35 @@ imgui_end_window( void )
     /* Subsequent draws (low-level API, the next window) revert to the background key. */
     draw_set_sort_key( 0 );
 
-    /* Drag grab.  Decided here, after this window's widgets have run, so hover_id tells us
-       whether the press landed on a widget: this window is the one under the cursor
+    /* Resize / drag grab.  Decided here, after this window's widgets have run, so hover_id
+       tells us whether the press landed on a widget: this window is the one under the cursor
        (hover_win) and no widget of it took the hover (hover_id == NONE) means the press is on
-       empty window space.  BODY drags from anywhere empty; TITLEBAR only from the bar.
-       The move itself starts next frame in begin_window (one-frame grab latency). */
+       empty window space.  The move/resize itself starts next frame in begin_window. */
     if ( s_ctx.win_id == s_ctx.hover_win && s_ctx.hover_id == IMGUI_ID_NONE
-         && s_io.mouse_pressed[ 0 ] && s_ctx.active_id == IMGUI_ID_NONE
-         && s_win_drag_mode != IMGUI_WIN_DRAG_NONE )
+         && s_io.mouse_pressed[ 0 ] && s_ctx.active_id == IMGUI_ID_NONE )
     {
-        imgui_rect_t title_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, WIN_TITLE_H };
-        if ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) )
+        /* An edge grab takes priority over a move, so a press on a border resizes rather than
+           drags.  NORESIZE suppresses it; the body/title drag below then handles the press.
+           win_r (the displayed window rect) was set up by the border draw above. */
+        u8 edges = ( s_ctx.win_flags & IMGUI_WIN_NORESIZE )
+                 ? 0u
+                 : window_resize_hit( s_ctx.win_id, win_r, s_ctx.win_collapsed );
+
+        if ( edges )
         {
-            s_ctx.active_id = s_ctx.win_id;
-            s_drag_off_x    = s_io.mouse_x - s_ctx.win_x;
-            s_drag_off_y    = s_io.mouse_y - s_ctx.win_y;
+            window_resize_grab( win, s_ctx.win_id, edges );
+        }
+        else if ( s_win_drag_mode != IMGUI_WIN_DRAG_NONE )
+        {
+            /* BODY drags from anywhere empty; TITLEBAR only from the bar (a NOTITLEBAR window
+               has title_h 0, so its title_r never hits and TITLEBAR mode cannot move it). */
+            imgui_rect_t title_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_title_h };
+            if ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) )
+            {
+                s_ctx.active_id = s_ctx.win_id;
+                s_drag_off_x    = s_io.mouse_x - s_ctx.win_x;
+                s_drag_off_y    = s_io.mouse_y - s_ctx.win_y;
+            }
         }
     }
 }

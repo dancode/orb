@@ -259,15 +259,11 @@ main( int argc, char** argv )
                     if ( app()->key_pressed( APP_KEY_3 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_NONE );
                 }
 
-                // imgui_win_flags_t flags = { 0 };
-                // flags.no_titlebar = true;
-                // UNUSED( flags );
-
                 if ( imgui() && show_ui )
                 {
                     imgui()->new_frame( win_w, win_h, 4 );
 
-                    if ( imgui()->begin_window( "Debug", 10, 10, 640, 640 ) )
+                    if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NONE ) )
                     {
                         if ( imgui()->button( "Reload$" ) )
                         {
@@ -310,7 +306,7 @@ main( int argc, char** argv )
                     if ( 1 ) {
                         /* Second, overlapping window -- click either to bring it to the
                            front (z-order); drag to reposition. */
-                        if ( imgui()->begin_window( "Inspector", 360, 240, 360, 280 ) )
+                        if ( imgui()->begin_window( "Inspector", 360, 240, 360, 280, IMGUI_WIN_NORESIZE ) )
                         {
                             imgui()->text( "Second window." );
                             imgui()->textf( "drag mode keys: 1 title  2 body  3 none" );

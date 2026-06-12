@@ -39,6 +39,8 @@ static struct
     imgui_id_t  win_id;             /* id of the window currently between begin/end_window   */
     const char* win_title;          /* title string, cached for end_window's deferred chrome */
     bool        win_collapsed;      /* current window is collapsed (title bar only this frame) */
+    imgui_win_flags_t win_flags;    /* current window's behavior flags (begin_window arg)   */
+    f32         win_title_h;        /* current window's title bar height (0 if NOTITLEBAR)  */
     struct imgui_window_t* cur_win; /* persisted window record; scroll write-back target */
 
     f32  cursor_x;            /* layout pen, top-left of the next widget               */

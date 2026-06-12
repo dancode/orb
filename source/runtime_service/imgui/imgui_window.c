@@ -36,6 +36,8 @@ typedef struct imgui_window_t
 
     bool       collapsed;   /* title-bar-only when set; toggled by the arrow  */
 
+    imgui_win_flags_t flags; /* behavior flags supplied to begin_window        */
+
 } imgui_window_t;
 
 static imgui_window_t       s_windows[ IMGUI_MAX_WINDOWS ];
@@ -52,6 +54,15 @@ static u32                  s_z_counter;
 
 static imgui_win_drag_t     s_win_drag_mode = IMGUI_WIN_DRAG_TITLEBAR;
 static f32                  s_drag_off_x, s_drag_off_y;
+
+/* In-flight edge resize.  The window being resized holds active_id == (id ^ RESIZE_SALT);
+   s_resize_edges names which edges follow the cursor (IMGUI_RESIZE_* bits, set in
+   imgui_widget.c).  s_resize_off keeps the grabbed edge under the cursor without a jump;
+   s_resize_fix pins the opposite edge so a left/top drag grows from the far side. */
+
+static u8                   s_resize_edges;
+static f32                  s_resize_off_x, s_resize_off_y;
+static f32                  s_resize_fix_x, s_resize_fix_y;
 
 /*----------------------------------------------------------------------------------------------
     window_get -- find the window for this id, or create it from the initial geometry.

@@ -61,18 +61,20 @@ typedef struct imgui_api_s
 
     /* Panels -- open a window panel; must be matched with end_window().
        x, y are the panel's top-left pixel position; w, h are its dimensions.
+       flags is a bitmask of imgui_win_flags_t (0 / IMGUI_WIN_NONE for the defaults) that
+       switches off built-in behavior per window -- title bar, collapse, or edge resize.
 
        begin_window() returns false when the window is collapsed (title bar only).  Guard
        the body widgets with it -- skipped widgets cost nothing -- but always call
        end_window() regardless of the return value:
 
-           if ( imgui()->begin_window( "Tools", 10, 10, 240, 320 ) )
+           if ( imgui()->begin_window( "Tools", 10, 10, 240, 320, IMGUI_WIN_NONE ) )
            {
                imgui()->text( "..." );          // skipped while collapsed
            }
            imgui()->end_window();               // always called */
 
-    bool ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h );
+    bool ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
     void ( *end_window   )( void );
 
     /* set_window_drag() -- select how windows may be dragged (global default TITLEBAR).

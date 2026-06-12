@@ -114,7 +114,11 @@
       "Read(//c/Program Files/Microsoft Visual Studio/18/Insiders/VC/Auxiliary/Build/**)",
       "Read(//c/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/**)",
       "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\_build_check.bat\" 2>&1 | Select-Object -Last 50)",
-      "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\_build_check.bat > F:\\\\orb\\\\build_log.txt 2>&1\"; Write-Output \"exit=$LASTEXITCODE\")"
+      "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\_build_check.bat > F:\\\\orb\\\\build_log.txt 2>&1\"; Write-Output \"exit=$LASTEXITCODE\")",
+      "Bash(cmd *)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target imgui')",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target imgui & echo EXITCODE=%errorlevel%')",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_vulkan & echo EXITCODE=%errorlevel%')"
     ]
   }
 }
