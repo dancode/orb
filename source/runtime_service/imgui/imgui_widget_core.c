@@ -130,10 +130,12 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
        drag is in flight) every other item is frozen -- only the active item may hover.
        The active item keeps interacting through st.active below, which reads active_id
        directly, so a drag stays live while the cursor sweeps over inert neighbours. */
+
     bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == id );
-    if ( can_hover && s_ctx.win_id == s_ctx.hover_win && !s_ctx.win_resize_hot
-         && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
-        s_ctx.hover_id = id;
+    bool win_hover = ( s_ctx.win_id == s_ctx.hover_win );
+    if ( can_hover && win_hover && !s_ctx.win_resize_hot && 
+         rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
+         s_ctx.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
     if ( s_ctx.hover_id == id && s_io.mouse_pressed[ 0 ] )
@@ -156,9 +158,11 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
        from the overlay too, rather than drawing an interaction rect outside the clip box. */
 #ifdef IMGUI_DEBUG_OVERLAY
     {
-        imgui_rect_t vis = rect_intersect( r, s_ctx.clip_rect );
-        if ( vis.w > 0.0f && vis.h > 0.0f )
-            DBG_WIDGET( id, vis, st.hover, st.active );
+        if ( can_hover && win_hover && !s_ctx.win_resize_hot ) {
+            imgui_rect_t vis = rect_intersect( r, s_ctx.clip_rect );
+            if ( vis.w > 0.0f && vis.h > 0.0f )
+                 DBG_WIDGET( id, vis, st.hover, st.active );
+        }
     }
 #endif
 
