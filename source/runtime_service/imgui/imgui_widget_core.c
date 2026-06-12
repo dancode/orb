@@ -70,6 +70,54 @@ widget_track_width( f32 right_x )
         lf()->content_max_x = right_x;
 }
 
+/* Baseline y to vertically center one line of glyphs in a row of height h starting at y.
+   Used by every labeled widget and the window title so the centering math lives in one place. */
+static f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
+
+/*----------------------------------------------------------------------------------------------
+    Widget label grammar  (Dear ImGui style)
+
+        "Text"        -> display "Text",  id = hash("Text")
+        "Text##key"   -> display "Text",  id = hash("Text##key")   distinct ids, same visible text
+        "pre###key"   -> display "pre",   id = hash("###key")      id ignores a dynamic prefix
+
+    The visible span ends at the first "##".  A "###" additionally re-roots the id hash at that
+    "###", so a label whose visible part changes every frame (a counter, a name) keeps one stable
+    id.  Every labeled widget routes its display through label_width / draw_label and its id
+    through widget_id, so the grammar is honored uniformly in one place.
+----------------------------------------------------------------------------------------------*/
+
+/* Visible byte count: up to the first "##" marker, or the whole string. */
+static u32
+label_vis_len( const char* s )
+{
+    u32 i = 0;
+    while ( s[ i ] )
+    {
+        if ( s[ i ] == '#' && s[ i + 1 ] == '#' )    /* s[i+1] is at worst the NUL: safe */
+            break;
+        ++i;
+    }
+    return i;
+}
+
+/* The substring hashed for the id: the whole label, unless a "###" tail re-roots it there. */
+static const char*
+label_id_str( const char* s )
+{
+    for ( u32 i = 0; s[ i ]; ++i )
+        if ( s[ i ] == '#' && s[ i + 1 ] == '#' && s[ i + 2 ] == '#' )    /* reads stop at NUL */
+            return s + i;
+    return s;
+}
+
+/* The id for a labeled widget: the active scope seed combined with the label's id key. */
+static imgui_id_t widget_id( const char* label ) { return id_combine( id_seed(), id_hash( label_id_str( label ) ) ); }
+
+/* Width / draw of a label's visible span (markers stripped). */
+static f32  label_width( const char* s )                        { return font_text_w_n( s, label_vis_len( s ) ); }
+static void draw_label ( f32 x, f32 y, u32 c, const char* s )    { draw_push_text_n( x, y, c, s, label_vis_len( s ) ); }
+
 /* Begin a new widget row; returns the rect for the full widget. */
 static imgui_rect_t
 widget_next_rect( f32 h )
@@ -84,6 +132,28 @@ widget_next_rect( f32 h )
     f->cursor_y += h + WIDGET_GAP;
     widget_track_width( r.x + r.w );   /* baseline extent: a full-width row reaches the view edge */
     return r;
+}
+
+/* Split a labeled widget row into a left-hand control rect and a right-hand label.  The label
+   keeps its natural width pinned at the row's right-of-control edge; the control takes the rest
+   of the row, never shrinking below min_control_w so it stays usable when the label is long
+   (the control then overruns under the label, matching the prior per-widget behavior).  Draws
+   the label here, vertically centered in the given color, and returns the control rect for the
+   caller to interact with and fill.  The single seam every "control + trailing label" widget
+   (slider_float, input_text, future combo / drag / color widgets) routes through, so row
+   proportions can be retuned in one place. */
+static imgui_rect_t
+widget_split_label( imgui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
+{
+    f32 label_w   = label_width( label );
+    f32 control_w = row.w - label_w - WIDGET_PAD;
+    if ( control_w < min_control_w ) control_w = min_control_w;
+
+    imgui_rect_t control = { row.x, row.y, control_w, row.h };
+
+    draw_label( control.x + control.w + WIDGET_PAD, text_center_y( row.y, row.h ),
+                label_color, label );
+    return control;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -133,8 +203,8 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 
     bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == id );
     bool win_hover = ( s_ctx.win_id == s_ctx.hover_win );
-    if ( can_hover && win_hover && !s_ctx.win_resize_hot && 
-         rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
+    bool eligible  = can_hover && win_hover && !s_ctx.win_resize_hot;
+    if ( eligible && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
          s_ctx.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
@@ -158,7 +228,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
        from the overlay too, rather than drawing an interaction rect outside the clip box. */
 #ifdef IMGUI_DEBUG_OVERLAY
     {
-        if ( can_hover && win_hover && !s_ctx.win_resize_hot ) {
+        if ( eligible ) {
             imgui_rect_t vis = rect_intersect( r, s_ctx.clip_rect );
             if ( vis.w > 0.0f && vis.h > 0.0f )
                  DBG_WIDGET( id, vis, st.hover, st.active );

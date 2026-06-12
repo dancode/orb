@@ -10,7 +10,7 @@
 
     The scroll mechanics here -- two-pass gutter reservation, wheel handling, clamping, content
     measurement, and the scrollbar widget -- were lifted out of the window so windows and child
-    regions share one engine.  window_scrollbar() is axis-generic and id-parameterized; it is
+    regions share one engine.  region_scrollbar() is axis-generic and id-parameterized; it is
     used for every bar on every region.
 
     Included by imgui.c after imgui_widget_core.c so widget_behavior, widget_bg_color, the COL_*
@@ -78,7 +78,20 @@ region_get( imgui_id_t id )
 }
 
 /*----------------------------------------------------------------------------------------------
-    window_scrollbar -- one scrollbar track + knob along an axis; folds a knob drag into *scroll.
+    scroll_clamp -- pin a scroll offset into [0, content - view].  The one place the scroll range
+    is defined; shared by the gutter reservation (push), the wheel (pop), and any future caller.
+----------------------------------------------------------------------------------------------*/
+
+static void
+scroll_clamp( f32* scroll, f32 content, f32 view )
+{
+    f32 max = content - view;
+    if ( max < 0.0f ) max = 0.0f;
+    *scroll = clampf( *scroll, 0.0f, max );
+}
+
+/*----------------------------------------------------------------------------------------------
+    region_scrollbar -- one scrollbar track + knob along an axis; folds a knob drag into *scroll.
 
     `vertical` picks the axis; `track` is the full track rect, `content`/`view` the measured and
     visible extents along that axis, and `mouse_along` the live cursor coordinate on it.  The
@@ -87,7 +100,7 @@ region_get( imgui_id_t id )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-window_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
+region_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
                   f32 content, f32 view, f32 mouse_along, f32* scroll )
 {
     f32 max_scroll = content - view;
@@ -99,7 +112,9 @@ window_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
     widget_state_t st = widget_behavior( id, track, WIDGET_KIND_DRAG );
 
     /* Knob length is the visible fraction of the track, clamped to a grabbable minimum
-       and never longer than the track itself (content <= view => full-length knob). */
+       and never longer than the track itself (content <= view => full-length knob).  The
+       min-then-cap order matters: a track shorter than the minimum collapses to track_len,
+       so it is not folded into one clampf (whose bounds would invert). */
     f32 knob_len = ( content > 0.0f ) ? track_len * ( view / content ) : track_len;
     f32 min_len  = (f32)s_layout.slider_knob_w;
     if ( knob_len < min_len )   knob_len = min_len;
@@ -109,8 +124,7 @@ window_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
     /* Drag maps the cursor (knob centre) back into the scroll offset. */
     if ( st.active && travel > 0.0f )
     {
-        f32 t = ( mouse_along - track_org - knob_len * 0.5f ) / travel;
-        t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
+        f32 t = saturate( ( mouse_along - track_org - knob_len * 0.5f ) / travel );
         *scroll = t * max_scroll;
     }
 
@@ -150,7 +164,12 @@ static void
 layout_push_region( imgui_id_t id, imgui_rect_t outer, f32 pad, imgui_win_flags_t flags,
                     f32* scroll_x, f32* scroll_y, f32* content_w, f32* content_h, bool own_clip )
 {
-    layout_frame_t* f = &s_layout_stack[ s_layout_sp++ ];
+    /* Cap the write slot at the top of the stack so an over-deep nesting aliases the deepest
+       frame rather than writing past the array; s_layout_sp still counts truthfully so each
+       push stays paired with its pop (and lf() clamps its read the same way). */
+    u32 slot = s_layout_sp < IMGUI_LAYOUT_DEPTH ? s_layout_sp : IMGUI_LAYOUT_DEPTH - 1;
+    ++s_layout_sp;
+    layout_frame_t* f = &s_layout_stack[ slot ];
 
     f->region_id  = id;
     f->outer      = outer;
@@ -161,6 +180,12 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, f32 pad, imgui_win_flags_
     f->pcontent_w = content_w;
     f->pcontent_h = content_h;
     f->parent_clip = s_ctx.clip_rect;
+
+    /* Seed the id scope with this region's id, so leaf widgets combine their label against it
+       (identical labels in different regions never collide).  id_restore unwinds the scope -- and
+       any push_id the caller left unbalanced -- at pop, so a leak cannot corrupt the parent. */
+    f->id_restore = s_id_sp;
+    id_push( id );
 
     const f32 knob = (f32)s_layout.slider_knob_w;
 
@@ -193,12 +218,8 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, f32 pad, imgui_win_flags_
     f->view_h = view_h;
 
     /* Clamp scroll against the gutter-adjusted views (last frame's content). */
-    f32 max_y = last_h - view_h;  if ( max_y < 0.0f ) max_y = 0.0f;
-    f32 max_x = last_w - view_w;  if ( max_x < 0.0f ) max_x = 0.0f;
-    if ( *scroll_y < 0.0f )   *scroll_y = 0.0f;
-    if ( *scroll_y > max_y )  *scroll_y = max_y;
-    if ( *scroll_x < 0.0f )   *scroll_x = 0.0f;
-    if ( *scroll_x > max_x )  *scroll_x = max_x;
+    scroll_clamp( scroll_y, last_h, view_h );
+    scroll_clamp( scroll_x, last_w, view_w );
 
     /* Content column + pen.  origin_* is the unscrolled top-left used to measure extent at pop;
        the live pen is biased by -scroll so widgets slide under the clip. */
@@ -264,14 +285,14 @@ layout_pop_region( void )
     {
         imgui_rect_t track = { f->outer.x + f->outer.w - WIN_BORDER - f->sb_w,
                                f->outer.y, f->sb_w, f->view_h };
-        window_scrollbar( f->region_id ^ IMGUI_SCROLLBAR_SALT, track, true,
+        region_scrollbar( id_combine( f->region_id, IMGUI_SCROLLBAR_SALT ), track, true,
                           content_h, f->view_h, s_io.mouse_y, f->scroll_y );
     }
     if ( f->show_h )
     {
         imgui_rect_t track = { f->outer.x + WIN_BORDER,
                                f->outer.y + f->outer.h - WIN_BORDER - f->sb_h, f->view_w, f->sb_h };
-        window_scrollbar( f->region_id ^ IMGUI_HSCROLLBAR_SALT, track, false,
+        region_scrollbar( id_combine( f->region_id, IMGUI_HSCROLLBAR_SALT ), track, false,
                           content_w, f->view_w, s_io.mouse_x, f->scroll_x );
     }
 
@@ -290,18 +311,16 @@ layout_pop_region( void )
         if ( shift ) *f->scroll_x -= s_io.mouse_wheel * step;
         else         *f->scroll_y -= s_io.mouse_wheel * step;
 
-        f32 max_y = content_h - f->view_h;  if ( max_y < 0.0f ) max_y = 0.0f;
-        f32 max_x = content_w - f->view_w;  if ( max_x < 0.0f ) max_x = 0.0f;
-        if ( *f->scroll_y < 0.0f )  *f->scroll_y = 0.0f;
-        if ( *f->scroll_y > max_y ) *f->scroll_y = max_y;
-        if ( *f->scroll_x < 0.0f )  *f->scroll_x = 0.0f;
-        if ( *f->scroll_x > max_x ) *f->scroll_x = max_x;
+        /* Re-clamp against this frame's measured content. */
+        scroll_clamp( f->scroll_y, content_h, f->view_h );
+        scroll_clamp( f->scroll_x, content_w, f->view_w );
 
         s_ctx.wheel_used = true;
     }
 
     /* Pop the frame and advance the parent pen past the region box, so the parent's next
        widget lands directly below it.  The root region (a window body) has no parent frame. */
+    s_id_sp = f->id_restore;   /* unwind this region's id scope (and any leaked push_id) */
     imgui_rect_t outer = f->outer;
     --s_layout_sp;
     if ( s_layout_sp > 0 )
@@ -327,9 +346,9 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 {
     layout_frame_t* parent = lf();
 
-    /* Combine the parent region id so the same child label nests safely under different
-       parents (and never collides with a window id, which is its own region id). */
-    imgui_id_t id = id_hash( id_str ) ^ ( parent->region_id * 0x9E3779B1u + 0x85EBCA77u );
+    /* Combine against the active id scope (the parent region, plus any push_id) so the same child
+       label nests safely under different parents and never collides with a window id. */
+    imgui_id_t id = id_combine( id_seed(), id_hash( id_str ) );
 
     if ( w <= 0.0f ) w = parent->content_w;   /* default: fill the remaining content width */
 
@@ -356,6 +375,19 @@ imgui_end_child( void )
 {
     layout_pop_region();
 }
+
+/*----------------------------------------------------------------------------------------------
+    push_id / pop_id -- add a temporary id-scope level for repeated widgets within one region.
+
+    Widget ids are already region-seeded, so this is only needed to separate widgets that share a
+    label in the same region (e.g. list rows keyed by index).  push_id combines its key onto the
+    current scope; pop_id removes one level.  Always balance them -- a region pop restores the
+    scope depth anyway, so a stray push cannot escape its region, but balancing keeps ids stable.
+----------------------------------------------------------------------------------------------*/
+
+void imgui_push_id    ( const char* str ) { id_push( id_combine( id_seed(), id_hash( str ) ) ); }
+void imgui_push_id_int( i32 i )           { id_push( id_combine( id_seed(), (u32)i ) ); }
+void imgui_pop_id     ( void )            { id_pop(); }
 
 // clang-format on
 /*============================================================================================*/

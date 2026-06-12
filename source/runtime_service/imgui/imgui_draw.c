@@ -75,12 +75,7 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
        can never scissor outside its parent.  The push always happens -- a fully clipped-out
        region pushes a zero-size rect, which simply draws nothing -- so every push still has a
        matching pop and the stack stays balanced. */
-    imgui_rect_t p  = draw_current_clip();
-    f32 x0 = x > p.x ? x : p.x;
-    f32 y0 = y > p.y ? y : p.y;
-    f32 x1 = ( x + w < p.x + p.w ) ? x + w : p.x + p.w;
-    f32 y1 = ( y + h < p.y + p.h ) ? y + h : p.y + p.h;
-    imgui_rect_t c = { x0, y0, x1 - x0 > 0.0f ? x1 - x0 : 0.0f, y1 - y0 > 0.0f ? y1 - y0 : 0.0f };
+    imgui_rect_t c = rect_intersect( ( imgui_rect_t ){ x, y, w, h }, draw_current_clip() );
 
     if ( s_draw.clip_depth < IMGUI_CLIP_DEPTH )
         s_draw.clip_stack[ s_draw.clip_depth++ ] = c;
@@ -259,19 +254,27 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
     draw_push_text -- push glyph quads for a NUL-terminated string
 ----------------------------------------------------------------------------------------------*/
 
+/* Emit at most n bytes of str (stops early at a NUL).  Labels draw only their visible span --
+   the bytes before a "##" marker -- through this; draw_push_text is the whole-string case. */
 static void
-draw_push_text( f32 x, f32 y, u32 abgr, const char* str )
+draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
 {
     f32 cx = x;
-    for ( ; *str; ++str )
+    for ( u32 i = 0; i < n && str[ i ]; ++i )
     {
-        u8  ch = (u8)*str;
+        u8  ch = (u8)str[ i ];
         f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
         font_glyph( ch, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
         if ( gw > 0.0f && gh > 0.0f )
             draw_push_rect_filled( cx + ox, y + oy, gw, gh, u0, v0, u1, v1, font_atlas_idx(), abgr );
         cx += advance;
     }
+}
+
+static void
+draw_push_text( f32 x, f32 y, u32 abgr, const char* str )
+{
+    draw_push_text_n( x, y, abgr, str, 0xFFFFFFFFu );
 }
 
 // clang-format on

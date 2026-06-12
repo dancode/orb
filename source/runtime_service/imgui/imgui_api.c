@@ -35,8 +35,7 @@ bool imgui_load_font( const char* path )
     /* update global font size */
     s_font_size = (u32)s_font->char_h;
 
-    /* update supporting layout dimensions */
-    // layout_compute( s_font_size );
+    /* update supporting layout dimensions (driven by the font's line height) */
     layout_compute( (u32)s_font->line_h );
     return true;
 }
@@ -128,6 +127,9 @@ const imgui_api_t g_imgui_api_struct = {
     .end_window    = imgui_end_window,
     .begin_child   = imgui_begin_child,
     .end_child     = imgui_end_child,
+    .push_id       = imgui_push_id,
+    .push_id_int   = imgui_push_id_int,
+    .pop_id        = imgui_pop_id,
     .set_window_drag = imgui_set_window_drag,
     .text          = imgui_text,
     .textf         = imgui_textf,

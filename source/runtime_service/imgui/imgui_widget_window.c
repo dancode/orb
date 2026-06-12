@@ -167,7 +167,7 @@ window_draw_resize_highlight( imgui_rect_t r, u8 edges )
 static void
 window_resize_grab( imgui_window_t* win, imgui_id_t id, u8 edges )
 {
-    s_ctx.active_id = id ^ IMGUI_RESIZE_SALT;
+    s_ctx.active_id = id_combine( id, IMGUI_RESIZE_SALT );
     s_resize_edges  = edges;
 
     s_resize_off_x = ( edges & IMGUI_RESIZE_L ) ? ( s_io.mouse_x - win->x )
@@ -225,7 +225,7 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
 
     /* Apply an in-progress edge resize (active_id is the resize-salted window id).  Runs after
        the drag apply -- the two are mutually exclusive, only one can own active_id at a time. */
-    if ( s_ctx.active_id == ( id ^ IMGUI_RESIZE_SALT ) )
+    if ( s_ctx.active_id == id_combine( id, IMGUI_RESIZE_SALT ) )
         window_apply_resize( win, title_h );
 
     /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
@@ -238,7 +238,7 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
        every widget hover in this window, and a press grabs the resize before any widget can.
        Gated on hover_win (last frame's front-most), so only the top window's edges go hot. */
     imgui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
-    imgui_id_t   resize_id = id ^ IMGUI_RESIZE_SALT;
+    imgui_id_t   resize_id = id_combine( id, IMGUI_RESIZE_SALT );
     u8           resize_hot = 0;
     bool         resizeable = !( flags & IMGUI_WIN_NORESIZE );
     if ( resizeable && s_ctx.hover_win == id
@@ -350,7 +350,7 @@ imgui_end_window( void )
         if ( !( s_ctx.win_flags & IMGUI_WIN_NOCOLLAPSE ) )
         {
             imgui_rect_t   arrow_r  = { s_ctx.win_x, s_ctx.win_y, title_h, title_h };
-            imgui_id_t     arrow_id = s_ctx.win_id ^ IMGUI_COLLAPSE_SALT;
+            imgui_id_t     arrow_id = id_combine( s_ctx.win_id, IMGUI_COLLAPSE_SALT );
             widget_state_t arrow_st = widget_behavior( arrow_id, arrow_r, WIDGET_KIND_BUTTON );
             if ( arrow_st.clicked )
                 win->collapsed = !win->collapsed;
@@ -369,7 +369,7 @@ imgui_end_window( void )
         }
 
         /* Title text. */
-        draw_push_text( text_x, s_ctx.win_y + ( title_h - font_char_h() ) * 0.5f, COL_TEXT, s_ctx.win_title );
+        draw_push_text( text_x, text_center_y( s_ctx.win_y, title_h ), COL_TEXT, s_ctx.win_title );
     }
 
     /* Border frames the whole window, with or without a title bar. */
@@ -383,7 +383,7 @@ imgui_end_window( void )
        grabbed edges stay lit even if the cursor drifts off them; otherwise use win_resize_hot,
        the hover set computed in begin_window (already NORESIZE- and hover_win-gated). */
     {
-        u8 hot_edges = ( s_ctx.active_id == ( s_ctx.win_id ^ IMGUI_RESIZE_SALT ) )
+        u8 hot_edges = ( s_ctx.active_id == id_combine( s_ctx.win_id, IMGUI_RESIZE_SALT ) )
                      ? s_resize_edges
                      : s_ctx.win_resize_hot;
         if ( hot_edges )

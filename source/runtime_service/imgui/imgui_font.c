@@ -243,25 +243,33 @@ font_atlas_bytes( void )
     return bytes;
 }
 
+/* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
+   span this way -- the bytes before a "##" marker -- so reserved label space matches what draws. */
 static f32
-font_text_w( const char* str )
+font_text_w_n( const char* str, u32 n )
 {
     f32 w = 0.0f;
     if ( s_font->proportional )
     {
-        for ( ; *str; ++str )
+        for ( u32 i = 0; i < n && str[ i ]; ++i )
         {
-            u8 ch = (u8)*str;
+            u8 ch = (u8)str[ i ];
             if ( ch >= 32 && ch <= 126 )
                 w += (f32)s_tt_font.lookup[ ch - 32 ].advance;
         }
     }
     else
     {
-        for ( ; *str; ++str )
+        for ( u32 i = 0; i < n && str[ i ]; ++i )
             w += s_font->char_w;
     }
     return w;
+}
+
+static f32
+font_text_w( const char* str )
+{
+    return font_text_w_n( str, 0xFFFFFFFFu );
 }
 
 /*----------------------------------------------------------------------------------------------

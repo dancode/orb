@@ -54,7 +54,7 @@ imgui_textf( const char* fmt, ... )
 bool
 imgui_button( const char* label )
 {
-    imgui_id_t   id = id_hash( label );
+    imgui_id_t   id = widget_id( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
@@ -63,11 +63,9 @@ imgui_button( const char* label )
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
 
     /* Centered label. */
-    f32 lw = font_text_w( label );
+    f32 lw = label_width( label );
     f32 lx = r.x + ( r.w - lw  ) * 0.5f;
-    f32 y_shift = ( r.h - font_char_h() ) * 0.5f;
-    f32 ly = r.y + y_shift;
-    draw_push_text( lx, ly, COL_TEXT, label );
+    draw_label( lx, text_center_y( r.y, r.h ), COL_TEXT, label );
 
     return st.clicked;
 }
@@ -79,7 +77,7 @@ imgui_button( const char* label )
 bool
 imgui_checkbox( const char* label, bool* v )
 {
-    imgui_id_t   id = id_hash( label );
+    imgui_id_t   id = widget_id( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
@@ -100,8 +98,7 @@ imgui_checkbox( const char* label, bool* v )
     }
 
     /* Label to the right of the box. */
-    draw_push_text( bx + CHECKBOX_SZ + WIDGET_PAD, r.y + ( r.h - font_char_h() ) * 0.5f,
-                    COL_TEXT, label );
+    draw_label( bx + CHECKBOX_SZ + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label );
 
     bool changed = false;
     if ( st.clicked )
@@ -119,24 +116,19 @@ imgui_checkbox( const char* label, bool* v )
 bool
 imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 {
-    imgui_id_t   id = id_hash( label );
+    imgui_id_t   id = widget_id( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
-    /* Label to the right of the track; track takes the left portion. */
-    f32 label_w = font_text_w( label );
-    f32 track_w = r.w - label_w - WIDGET_PAD;
-    f32 min_w   = (f32)( s_layout.slider_knob_w * 3u );
-    if ( track_w < min_w ) track_w = min_w;
-
-    imgui_rect_t track_r = { r.x, r.y, track_w, r.h };
+    /* Track takes the left portion; the label sits at the right.  The min track width keeps the
+       knob travel usable when the label is long. */
+    imgui_rect_t track_r = widget_split_label( r, label, (f32)( s_layout.slider_knob_w * 3u ), COL_TEXT );
     widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
 
     /* Drag: update value when active. */
     bool changed = false;
     if ( st.active )
     {
-        f32 t = ( s_io.mouse_x - track_r.x ) / track_r.w;
-        t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
+        f32 t = saturate( ( s_io.mouse_x - track_r.x ) / track_r.w );
         f32 nv = lo + t * ( hi - lo );
         if ( nv != *v )
         {
@@ -163,11 +155,6 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
     draw_push_rect_filled( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
                            0,0,1,1, 0, widget_bg_color( st ) );
 
-    /* Label. */
-    draw_push_text( track_r.x + track_r.w + WIDGET_PAD,
-                    r.y + ( r.h - font_char_h() ) * 0.5f,
-                    COL_TEXT, label );
-
     return changed;
 }
 
@@ -178,15 +165,12 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 bool
 imgui_input_text( const char* label, char* buf, u32 bufsz )
 {
-    imgui_id_t   id = id_hash( label );
+    imgui_id_t   id = widget_id( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
-    /* Box takes the left portion; label on the right. */
-    f32 label_w = font_text_w( label );
-    f32 box_w    = r.w - label_w - WIDGET_PAD;
-    f32 min_box  = s_font->char_h * 3.0f;
-    if ( box_w < min_box ) box_w = min_box;
-    imgui_rect_t box_r = { r.x, r.y, box_w, r.h };
+    /* Box takes the left portion; the (dim) label sits at the right.  Min box width keeps a
+       few glyphs of edit space visible when the label is long. */
+    imgui_rect_t box_r = widget_split_label( r, label, s_font->char_h * 3.0f, COL_TEXT_DIM );
 
     /* Click focuses this widget (focus claim handled by the behavior helper). */
     widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
@@ -239,9 +223,7 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
                             focused ? COL_WIDGET_HOT : COL_BORDER );
 
     /* Buffer contents. */
-    draw_push_text( box_r.x + WIDGET_PAD,
-                    box_r.y + ( box_r.h - font_char_h() ) * 0.5f,
-                    COL_TEXT, buf );
+    draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf );
 
     /* Blinking cursor (always visible when focused for simplicity). */
     if ( focused )
@@ -255,11 +237,6 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
                                    cur_w, box_r.h - inset * 2.0f,
                                    0,0,1,1, 0, COL_CURSOR );
     }
-
-    /* Label. */
-    draw_push_text( box_r.x + box_r.w + WIDGET_PAD,
-                    r.y + ( r.h - font_char_h() ) * 0.5f,
-                    COL_TEXT_DIM, label );
 
     return enter;
 }
@@ -277,7 +254,7 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
 bool
 imgui_selectable( const char* label, bool* selected )
 {
-    imgui_id_t   id = id_hash( label );
+    imgui_id_t   id = widget_id( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
@@ -290,8 +267,8 @@ imgui_selectable( const char* label, bool* selected )
                                on ? COL_WIDGET_ACT : COL_WIDGET_HOT );
 
     /* Label, left-aligned with the standard padding. */
-    draw_push_text( r.x + WIDGET_PAD, r.y + ( r.h - font_char_h() ) * 0.5f, COL_TEXT, label );
-    widget_track_width( r.x + WIDGET_PAD + font_text_w( label ) );   /* natural width may exceed the row */
+    draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label );
+    widget_track_width( r.x + WIDGET_PAD + label_width( label ) );   /* natural width may exceed the row */
 
     if ( st.clicked && selected )
         *selected = !( *selected );

@@ -154,6 +154,34 @@ layout_compute( u32 ls )
 }
 
 /*==============================================================================================
+    Shared scalar + geometry helpers
+
+    Small stateless helpers used across the constituent files below.  They live here, ahead of
+    the unity includes, so every file (starting with imgui_draw.c) can use them.  rect_hit needs
+    the input snapshot and so stays in imgui_ctx.c; these need nothing but their arguments.
+==============================================================================================*/
+
+/* Clamp t to [0,1] -- the saturate used by slider + scrollbar drag mapping. */
+static f32 saturate( f32 t ) { return t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t ); }
+
+/* Clamp v to [lo,hi]. */
+static f32 clampf( f32 v, f32 lo, f32 hi ) { return v < lo ? lo : ( v > hi ? hi : v ); }
+
+/* Overlap of two rects (zero-size when they do not overlap).  Nested regions intersect their
+   clip with the parent so a child never scissors or hit-tests past it. */
+static imgui_rect_t
+rect_intersect( imgui_rect_t a, imgui_rect_t b )
+{
+    f32 x0 = a.x > b.x ? a.x : b.x;
+    f32 y0 = a.y > b.y ? a.y : b.y;
+    f32 x1 = ( a.x + a.w < b.x + b.w ) ? a.x + a.w : b.x + b.w;
+    f32 y1 = ( a.y + a.h < b.y + b.h ) ? a.y + a.h : b.y + b.h;
+    f32 w  = x1 - x0 > 0.0f ? x1 - x0 : 0.0f;
+    f32 h  = y1 - y0 > 0.0f ? y1 - y0 : 0.0f;
+    return ( imgui_rect_t ){ x0, y0, w, h };
+}
+
+/*==============================================================================================
     Unity build
 ==============================================================================================*/
 

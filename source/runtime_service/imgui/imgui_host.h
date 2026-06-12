@@ -40,6 +40,10 @@ bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_child( void );
 void imgui_set_window_drag( imgui_win_drag_t mode );
 
+void imgui_push_id( const char* str );
+void imgui_push_id_int( i32 i );
+void imgui_pop_id( void );
+
 void imgui_text( const char* str );
 void imgui_textf( const char* fmt, ... );
 bool imgui_button( const char* label );

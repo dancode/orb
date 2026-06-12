@@ -96,6 +96,7 @@ typedef struct
     f32* pcontent_h;
 
     imgui_rect_t parent_clip;   /* s_ctx.clip_rect to restore at pop                        */
+    u32          id_restore;    /* id-scope depth to restore at pop (see id stack below)    */
 
 } layout_frame_t;
 
@@ -104,9 +105,17 @@ static u32            s_layout_sp;   /* active frame count; top = s_layout_sp - 
 
 /* Top layout frame.  Valid between a begin_window/begin_child and its matching end.  When the
    stack is empty (a caller emitted a widget into a collapsed window despite the false return)
-   slot 0 -- which ctx_new_frame leaves zeroed -- is returned instead of indexing out of
-   bounds, so the stray widget draws a harmless zero-size rect rather than crashing. */
-static layout_frame_t* lf( void ) { return &s_layout_stack[ s_layout_sp ? s_layout_sp - 1 : 0 ]; }
+   slot 0 is returned instead of indexing out of bounds -- the stray widget draws into whatever
+   the last frame's root region left there rather than crashing.  The read index is also clamped
+   to the top slot so an over-deep nesting (capped in layout_push_region) never reads past the
+   array. */
+static layout_frame_t*
+lf( void )
+{
+    u32 i = s_layout_sp ? s_layout_sp - 1 : 0;
+    if ( i >= IMGUI_LAYOUT_DEPTH ) i = IMGUI_LAYOUT_DEPTH - 1;
+    return &s_layout_stack[ i ];
+}
 
 /* Monotonic frame index, bumped each new_frame.  The region pool stamps entries with it and
    recycles the least-recently-seen slot, so transient child ids do not leak the pool. */
@@ -126,6 +135,62 @@ id_hash( const char* str )
 }
 
 /*----------------------------------------------------------------------------------------------
+    id_combine -- mix a scope seed with a local key into one id (boost-style hash_combine).
+
+    The single rule for how an id is namespaced: every sub-id (a leaf widget under a region, a
+    child region under its parent, a window's chrome control) is id_combine(scope, key).  Unlike
+    a bare XOR it avalanches and is order-dependent, so distinct (scope, key) pairs stay distinct.
+----------------------------------------------------------------------------------------------*/
+
+static imgui_id_t
+id_combine( imgui_id_t seed, u32 key )
+{
+    u32 h = seed ^ ( key + 0x9E3779B9u + ( seed << 6 ) + ( seed >> 2 ) );
+    return h ? h : 1u;    /* never return IMGUI_ID_NONE (0) */
+}
+
+/*----------------------------------------------------------------------------------------------
+    Id-scope stack
+
+    The top of this stack is the seed every widget id combines against, so identical labels in
+    different scopes never collide.  Regions seed it automatically (layout_push_region pushes the
+    region id, layout_pop_region restores), and push_id / pop_id add temporary levels for repeated
+    widgets inside one region (e.g. list rows keyed by index).  Reset to empty each frame.
+
+    Over-deep pushes alias the top slot rather than writing past the array, and id_seed clamps its
+    read the same way -- mirroring the layout stack, so deep nesting degrades instead of crashing.
+----------------------------------------------------------------------------------------------*/
+
+#define IMGUI_ID_STACK_DEPTH 32
+
+static imgui_id_t s_id_stack[ IMGUI_ID_STACK_DEPTH ];
+static u32        s_id_sp;
+
+/* Current scope seed -- top of the stack, or NONE when empty (a bare top-level widget). */
+static imgui_id_t
+id_seed( void )
+{
+    if ( s_id_sp == 0 ) return IMGUI_ID_NONE;
+    u32 i = s_id_sp - 1;
+    if ( i >= IMGUI_ID_STACK_DEPTH ) i = IMGUI_ID_STACK_DEPTH - 1;
+    return s_id_stack[ i ];
+}
+
+static void
+id_push( imgui_id_t id )
+{
+    if ( s_id_sp < IMGUI_ID_STACK_DEPTH )
+        s_id_stack[ s_id_sp ] = id;
+    ++s_id_sp;    /* count truthfully so push/pop stay paired even past the cap */
+}
+
+static void
+id_pop( void )
+{
+    if ( s_id_sp ) --s_id_sp;
+}
+
+/*----------------------------------------------------------------------------------------------
     rect_hit -- true when the mouse cursor (from s_io) is inside the given rect
 ----------------------------------------------------------------------------------------------*/
 
@@ -136,22 +201,8 @@ rect_hit( imgui_rect_t r )
         && s_io.mouse_y >= r.y && s_io.mouse_y < r.y + r.h;
 }
 
-/*----------------------------------------------------------------------------------------------
-    rect_intersect -- the overlap of two rects (zero-size when they do not overlap).
-    Nested regions intersect their clip with the parent so a child never spills past it.
-----------------------------------------------------------------------------------------------*/
-
-static imgui_rect_t
-rect_intersect( imgui_rect_t a, imgui_rect_t b )
-{
-    f32 x0 = a.x > b.x ? a.x : b.x;
-    f32 y0 = a.y > b.y ? a.y : b.y;
-    f32 x1 = ( a.x + a.w < b.x + b.w ) ? a.x + a.w : b.x + b.w;
-    f32 y1 = ( a.y + a.h < b.y + b.h ) ? a.y + a.h : b.y + b.h;
-    f32 w  = x1 - x0 > 0.0f ? x1 - x0 : 0.0f;
-    f32 h  = y1 - y0 > 0.0f ? y1 - y0 : 0.0f;
-    return ( imgui_rect_t ){ x0, y0, w, h };
-}
+/* rect_intersect (rect overlap) is a shared geometry helper defined in imgui.c, ahead of the
+   unity includes, so imgui_draw.c can use it for clip intersection too. */
 
 /*----------------------------------------------------------------------------------------------
     window_nominate_hover -- begin_window calls this with its rect + z.  Keeps the front-most
@@ -183,6 +234,7 @@ ctx_new_frame( void )
        The interaction clip starts at the full display, and the wheel is unclaimed -- the
        innermost scrollable region the cursor sits in consumes it (claimed at region pop). */
     s_layout_sp       = 0;
+    s_id_sp           = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_ctx.wheel_used  = false;
     s_ctx.clip_rect   = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++s_frame_counter;

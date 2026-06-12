@@ -87,6 +87,25 @@ typedef struct imgui_api_s
     bool ( *begin_child )( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
     void ( *end_child   )( void );
 
+    /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
+       seeded by the enclosing window / child region automatically, so identical labels in
+       different regions never collide; push_id adds a temporary scope level for repeated widgets
+       within one region (e.g. rows in a list keyed by index).  Always pair with pop_id.
+
+           for ( i = 0; i < n; ++i ) {
+               imgui()->push_id_int( i );
+               imgui()->selectable( name[i], &sel[i] );   // distinct id even if name[] repeats
+               imgui()->pop_id();
+           }
+
+       The "##" / "###" label suffixes are the per-call alternative: "Text##key" displays "Text"
+       but ids from the whole string; "pre###key" ids only from "###key", so a changing visible
+       prefix (a counter) keeps a stable id. */
+
+    void ( *push_id     )( const char* str );
+    void ( *push_id_int )( i32 i );
+    void ( *pop_id      )( void );
+
     /* set_window_drag() -- select how windows may be dragged (global default TITLEBAR).
        Call between frames; affects every window. */
     void ( *set_window_drag )( imgui_win_drag_t mode );
