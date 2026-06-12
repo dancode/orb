@@ -258,18 +258,18 @@ main( int argc, char** argv )
                 if ( app()->key_pressed( APP_KEY_EQUAL ) ) { show_ui = true; }
 
                 /* Drag-mode test: 1 = title bar only, 2 = whole window, 3 = fixed. */
-                if ( imgui() )
-                {
-                    if ( app()->key_pressed( APP_KEY_1 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_TITLEBAR );
-                    if ( app()->key_pressed( APP_KEY_2 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_BODY );
-                    if ( app()->key_pressed( APP_KEY_3 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_NONE );
-                }
+                // if ( imgui() )
+                // {
+                //     if ( app()->key_pressed( APP_KEY_1 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_TITLEBAR );
+                //     if ( app()->key_pressed( APP_KEY_2 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_BODY );
+                //     if ( app()->key_pressed( APP_KEY_3 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_NONE );
+                // }
 
                 if ( imgui() && show_ui )
                 {
                     imgui()->new_frame( win_w, win_h, dt );
 
-                    if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NOMOUSESCROLL ) )
+                    if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NONE ) )
                     {
                         if ( imgui()->button( "Reload$" ) )
                         {
