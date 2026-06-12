@@ -88,14 +88,17 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
 
         /* style: no CS_HREDRAW/CS_VREDRAW -- RHI owns pixels, suppress resize invalidation */
         /* .hbrBackground: no brush -- renderer is responsible for all pixel content */
+        /* .hCursor: standard arrow -- without it DefWindowProc leaves the border resize
+           cursor active over the client area on WM_SETCURSOR. Non-client borders still
+           get their resize cursors (resolved by hit-test before the class cursor). */
 
         WNDCLASSEXW wc = {
             .cbSize        = sizeof( wc ),
-            .style         = 0, 
+            .style         = 0,
             .lpfnWndProc   = app_wnd_proc,
             .hInstance     = g_pool.hinst,
-            .hCursor       = NULL,
-            .hbrBackground = NULL, 
+            .hCursor       = LoadCursorW( NULL, ( LPCWSTR )IDC_ARROW ),
+            .hbrBackground = NULL,
             .lpszClassName = APP_WINDOW_CLASS_W,
         };
 
