@@ -32,7 +32,9 @@ typedef struct imgui_window_t
     u32        z;               /* paint order: higher = more recently raised = in front */
 
     f32        scroll_y;        /* vertical scroll offset; 0 = top                */
+    f32        scroll_x;        /* horizontal scroll offset; 0 = left             */
     f32        content_h;       /* total content height measured last frame       */
+    f32        content_w;       /* total content width measured last frame        */
 
     bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
 

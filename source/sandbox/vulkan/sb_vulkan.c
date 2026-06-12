@@ -269,7 +269,7 @@ main( int argc, char** argv )
                 {
                     imgui()->new_frame( win_w, win_h, dt );
 
-                    if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NONE ) )
+                    if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NOMOUSESCROLL ) )
                     {
                         if ( imgui()->button( "Reload$" ) )
                         {
@@ -295,7 +295,7 @@ main( int argc, char** argv )
                         imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
                         imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
 
-                        for ( int i = 0 ; i < 32; i++ )
+                        for ( int i = 0 ; i < 10; i++ )
                         {
                             imgui()->textf( "text widdget %d", i );
                         }

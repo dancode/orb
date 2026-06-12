@@ -45,6 +45,14 @@ static struct
     u8          win_resize_hot;     /* resize edges hot this frame -- suppresses widget hover */
     struct imgui_window_t* cur_win; /* persisted window record; scroll write-back target */
 
+    /* Scrollbar policy resolved in begin_window, consumed by end_window for drawing.  The
+       gutters reserved here must match what end_window draws, so both axes are decided once. */
+    bool        win_show_v;         /* vertical scrollbar shown this frame (forced or overflow) */
+    bool        win_show_h;         /* horizontal scrollbar shown this frame                */
+    f32         win_sb_w;           /* vertical gutter width reserved (0 when hidden)       */
+    f32         win_sb_h;           /* horizontal gutter height reserved (0 when hidden)    */
+    f32         content_max_x;      /* rightmost widget edge drawn this frame -- drives hscroll */
+
     f32  cursor_x;            /* layout pen, top-left of the next widget               */
     f32  cursor_y;
     f32  win_x, win_y;        /* current window top-left (outer frame)                 */

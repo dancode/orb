@@ -50,8 +50,10 @@
 #define COL_CURSOR       IMGUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF )
 
 /* Derive the scrollbar's widget id from the window id by XOR -- a stable per-window id
-   that never collides with a title-hashed widget id in the same window. */
+   that never collides with a title-hashed widget id in the same window.  The horizontal
+   bar takes a distinct salt so the two tracks never share an id within one window. */
 #define IMGUI_SCROLLBAR_SALT  0x5C011B01u
+#define IMGUI_HSCROLLBAR_SALT 0x5C011B02u
 
 /* Same trick for the collapse arrow: a distinct stable per-window widget id. */
 #define IMGUI_COLLAPSE_SALT   0xC011A95Eu
@@ -73,6 +75,18 @@
 
 static f32 widget_right( void ) { return s_ctx.content_x + s_ctx.content_w; }
 
+/* Grow the window's measured horizontal extent to include a widget that draws out to
+   right_x (in screen coords).  end_window cancels the scroll bias and compares the total
+   against the view to decide the horizontal scrollbar, mirroring how cursor_y travel
+   measures content height.  Most widgets fill content_w, but text draws its natural width
+   and can reach past the view -- that overflow is what the horizontal bar scrolls. */
+static void
+widget_track_width( f32 right_x )
+{
+    if ( right_x > s_ctx.content_max_x )
+        s_ctx.content_max_x = right_x;
+}
+
 /* Begin a new widget row; returns the rect for the full widget. */
 static imgui_rect_t
 widget_next_rect( f32 h )
@@ -84,6 +98,7 @@ widget_next_rect( f32 h )
         .h = h,
     };
     s_ctx.cursor_y += h + WIDGET_GAP;
+    widget_track_width( r.x + r.w );   /* baseline extent: a full-width row reaches the view edge */
     return r;
 }
 
@@ -153,7 +168,7 @@ static u32
 widget_bg_color( widget_state_t st )
 {
     if ( st.active ) return COL_WIDGET_ACT;
-    if ( st.hover    ) return COL_WIDGET_HOT;
+    if ( st.hover  ) return COL_WIDGET_HOT;
     return COL_WIDGET_BG;
 }
 
@@ -193,7 +208,7 @@ window_clamp( imgui_window_t* win )
 
 /* Grab band straddling the border: a few pixels inside and a few outside. */
 #define WIN_RESIZE_INNER  ( 4.0f )                  /* reach inside the border  */
-#define WIN_RESIZE_OUTER  ( WIN_BORDER + 3.0f )     /* and just outside it      */
+#define WIN_RESIZE_OUTER  ( WIN_BORDER + 6.0f )     /* and just outside it      */
 
 /* Smallest width a window may be shrunk to. */
 static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
@@ -317,6 +332,49 @@ draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
         draw_push_triangle( cx - s, cy - s, cx + s, cy - s, cx, cy + s, 0, color );
 }
 
+/* Draw one scrollbar track + knob along an axis and fold any knob drag back into *scroll.
+   `vertical` picks the axis; `track` is the full track rect, `content`/`view` the measured
+   and visible extents along that axis, and `mouse_along` the live cursor coordinate on it.
+   The knob length tracks the visible fraction (min-clamped so it stays grabbable) and the
+   drag maps the cursor back into scroll, mirroring slider_float.  Shared by both bars. */
+static void
+window_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
+                  f32 content, f32 view, f32 mouse_along, f32* scroll )
+{
+    f32 max_scroll = content - view;
+    if ( max_scroll < 0.0f ) max_scroll = 0.0f;
+
+    f32 track_len = vertical ? track.h : track.w;
+    f32 track_org = vertical ? track.y : track.x;
+
+    widget_state_t st = widget_behavior( id, track, WIDGET_KIND_DRAG );
+
+    /* Knob length is the visible fraction of the track, clamped to a grabbable minimum
+       and never longer than the track itself (content <= view => full-length knob). */
+    f32 knob_len = ( content > 0.0f ) ? track_len * ( view / content ) : track_len;
+    f32 min_len  = (f32)s_layout.slider_knob_w;
+    if ( knob_len < min_len )   knob_len = min_len;
+    if ( knob_len > track_len ) knob_len = track_len;
+    f32 travel = track_len - knob_len;
+
+    /* Drag maps the cursor (knob centre) back into the scroll offset. */
+    if ( st.active && travel > 0.0f )
+    {
+        f32 t = ( mouse_along - track_org - knob_len * 0.5f ) / travel;
+        t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
+        *scroll = t * max_scroll;
+    }
+
+    f32 t_cur    = ( max_scroll > 0.0f ) ? *scroll / max_scroll : 0.0f;
+    f32 knob_off = track_org + t_cur * travel;
+
+    draw_push_rect_filled( track.x, track.y, track.w, track.h, 0,0,1,1, 0, COL_SLIDER_TRACK );
+    if ( vertical )
+        draw_push_rect_filled( track.x, knob_off, track.w, knob_len, 0,0,1,1, 0, widget_bg_color( st ) );
+    else
+        draw_push_rect_filled( knob_off, track.y, knob_len, track.h, 0,0,1,1, 0, widget_bg_color( st ) );
+}
+
 bool
 imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags )
 {
@@ -383,28 +441,64 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
        windows back-to-front regardless of begin_window call order. */
     draw_set_sort_key( win->z );
 
-    /* Vertical scroll (expanded only -- a collapsed window shows no content).  content_h was
-       measured last frame (end_window); use it to clamp and to decide whether the scrollbar
-       gutter steals content width this frame.  The layout origin below is biased by
-       -scroll_y, so all widgets slide under the clip; the scrollbar itself is drawn and
-       dragged in end_window once geometry is known. */
-    f32 sb_w = 0.0f;
+    /* Scrollbars (expanded only -- a collapsed window shows no content).  content_h/content_w
+       were measured last frame (end_window); they drive both the gutter reservation here and
+       the bar drawing in end_window.  The layout origin below is biased by -scroll_y/-scroll_x
+       so all widgets slide under the clip; the bars themselves are drawn and dragged in
+       end_window once geometry is known.
+
+       Policy from the flags (see imgui.h): ALWAYS_* force a static bar on; NOSCROLL hides every
+       bar (wheel input still works); otherwise dynamic -- vertical defaults on, horizontal only
+       when HSCROLL is requested.  The two bars are mutually dependent (each gutter shrinks the
+       cross view, which can tip the other axis into overflow), so resolve in two passes. */
+    f32  sb_w = 0.0f, sb_h = 0.0f;   /* reserved gutter sizes (0 = no bar this frame) */
+    bool show_v = false, show_h = false;
     if ( !collapsed )
     {
         const f32 scroll_step = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
+        const f32 knob        = (f32)s_layout.slider_knob_w;
 
-        f32 view_h     = win->h - title_h - WIN_BORDER;
-        f32 max_scroll = win->content_h - view_h;
-        if ( max_scroll < 0.0f ) max_scroll = 0.0f;
+        bool no_bars  = ( flags & IMGUI_WIN_NOSCROLL ) != 0;
+        bool v_static = ( flags & IMGUI_WIN_ALWAYS_VSCROLL ) != 0;
+        bool h_static = ( flags & IMGUI_WIN_ALWAYS_HSCROLL ) != 0;
+        bool v_dyn    = !no_bars && !v_static;                               /* on by default */
+        bool h_dyn    = !no_bars && !h_static && ( ( flags & IMGUI_WIN_HSCROLL ) != 0 );
 
-        /* Wheel scrolls only the hovered window, and never mid-drag (modal). */
-        if ( s_ctx.hover_win == id && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_wheel != 0.0f )
-            win->scroll_y -= s_io.mouse_wheel * scroll_step;
+        /* View extents inside the chrome, before reserving any gutter. */
+        f32 view_h = win->h - title_h - WIN_BORDER;
+        f32 view_w = win->w - 2.0f * WIN_BORDER;
 
-        if ( win->scroll_y < 0.0f )       win->scroll_y = 0.0f;
-        if ( win->scroll_y > max_scroll ) win->scroll_y = max_scroll;
+        /* First pass: a forced or already-overflowing bar claims its gutter. */
+        show_v = v_static || ( v_dyn && win->content_h > view_h );
+        show_h = h_static || ( h_dyn && win->content_w > view_w );
+        if ( show_v ) view_w -= knob;
+        if ( show_h ) view_h -= knob;
 
-        sb_w = ( win->content_h > view_h ) ? (f32)s_layout.slider_knob_w : 0.0f;
+        /* Second pass: a gutter just reserved may have pushed the cross axis into overflow. */
+        if ( !show_v && v_dyn && win->content_h > view_h ) { show_v = true; view_w -= knob; }
+        if ( !show_h && h_dyn && win->content_w > view_w ) { show_h = true; view_h -= knob; }
+
+        sb_w = show_v ? knob : 0.0f;
+        sb_h = show_h ? knob : 0.0f;
+
+        /* Wheel scrolls the hovered window: vertical by default, horizontal with Shift held.
+           Disabled by NOMOUSESCROLL, frozen mid-drag (modal), only for the window under cursor. */
+        if ( !( flags & IMGUI_WIN_NOMOUSESCROLL )
+             && s_ctx.hover_win == id && s_ctx.active_id == IMGUI_ID_NONE
+             && s_io.mouse_wheel != 0.0f )
+        {
+            bool shift = s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ];
+            if ( shift ) win->scroll_x -= s_io.mouse_wheel * scroll_step;
+            else         win->scroll_y -= s_io.mouse_wheel * scroll_step;
+        }
+
+        /* Clamp both offsets to their overflow against the gutter-adjusted views. */
+        f32 max_y = win->content_h - view_h;  if ( max_y < 0.0f ) max_y = 0.0f;
+        f32 max_x = win->content_w - view_w;  if ( max_x < 0.0f ) max_x = 0.0f;
+        if ( win->scroll_y < 0.0f )   win->scroll_y = 0.0f;
+        if ( win->scroll_y > max_y )  win->scroll_y = max_y;
+        if ( win->scroll_x < 0.0f )   win->scroll_x = 0.0f;
+        if ( win->scroll_x > max_x )  win->scroll_x = max_x;
     }
 
     /* Commit resolved geometry for the widgets and end_window. */
@@ -418,8 +512,13 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
     s_ctx.win_y         = win->y;
     s_ctx.win_w         = win->w;
     s_ctx.win_h         = disp_h;  /* displayed height (title bar only when collapsed) */
-    s_ctx.content_x     = win->x + WIDGET_PAD;
-    s_ctx.content_w     = win->w - 2.0f * WIDGET_PAD - sb_w;   /* leave room for the gutter */
+    s_ctx.win_show_v    = show_v;  /* scrollbar policy resolved above; end_window draws it */
+    s_ctx.win_show_h    = show_h;
+    s_ctx.win_sb_w      = sb_w;
+    s_ctx.win_sb_h      = sb_h;
+    s_ctx.content_x     = win->x + WIDGET_PAD - win->scroll_x;     /* biased by horizontal scroll */
+    s_ctx.content_w     = win->w - 2.0f * WIDGET_PAD - sb_w;       /* leave room for the gutter */
+    s_ctx.content_max_x = s_ctx.content_x;     /* seed extent at the origin -> empty body measures 0 */
 
     /* A collapsed window emits no body: the caller is expected to skip its widgets on the
        false return, so there is nothing below the title bar to clip.  The fixed-size chrome
@@ -438,8 +537,8 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
         draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
     }
 
-    /* Start the layout cursor at the content origin, biased up by the scroll offset. */
-    s_ctx.cursor_x = win->x + WIDGET_PAD;
+    /* Start the layout cursor at the content origin, biased by both scroll offsets. */
+    s_ctx.cursor_x = win->x + WIDGET_PAD - win->scroll_x;
     s_ctx.cursor_y = win->y + title_h + WIDGET_GAP - win->scroll_y;
 
     /* false tells the caller to skip its body widgets (they would do nothing anyway). */
@@ -451,49 +550,41 @@ imgui_end_window( void )
 {
     imgui_window_t* win = s_ctx.cur_win;
 
-    /* Content + scrollbar are expanded-only.  A collapsed window measures nothing and keeps
-       win->content_h from its last expanded frame, so scroll state survives a collapse. */
+    /* Content + scrollbars are expanded-only.  A collapsed window measures nothing and keeps
+       its content extents from the last expanded frame, so scroll state survives a collapse. */
     if ( !s_ctx.win_collapsed )
     {
-        /* Content extent = how far the layout cursor travelled from the (unscrolled) origin.
-           Adding scroll_y back cancels the bias begin_window applied.  Stored for next
-           frame's clamp, gutter decision, and the knob proportions just below. */
-        f32 view_h   = s_ctx.win_h - s_ctx.win_title_h - WIN_BORDER;
+        /* Content extent = how far the layout pen travelled from the (unscrolled) origin.
+           Adding the scroll offset back cancels the bias begin_window applied.  Stored for
+           next frame's clamp and gutter decision, and the knob proportions just below. */
         f32 origin_y = s_ctx.win_y + s_ctx.win_title_h + WIDGET_GAP;
-        win->content_h = ( s_ctx.cursor_y + win->scroll_y ) - origin_y;
+        f32 origin_x = s_ctx.win_x + WIDGET_PAD;
+        win->content_h = ( s_ctx.cursor_y      + win->scroll_y ) - origin_y;
+        win->content_w = ( s_ctx.content_max_x + win->scroll_x ) - origin_x;
 
-        /* Scrollbar: only when content overflows the view.  Drawn before the chrome so the
-           border can frame it; handled before the window drag-grab below so a press on the
-           knob claims active_id first and the window itself does not start dragging. */
-        if ( win->content_h > view_h )
+        /* Gutter-adjusted views must match begin_window's reservation exactly, so the drawn
+           bars line up with the space already stolen from the content this frame. */
+        f32 view_h = s_ctx.win_h - s_ctx.win_title_h - WIN_BORDER - s_ctx.win_sb_h;
+        f32 view_w = s_ctx.win_w - 2.0f * WIN_BORDER - s_ctx.win_sb_w;
+
+        /* Bars are drawn before the chrome so the border frames them, and before the window
+           drag-grab below so a press on a knob claims active_id and the window does not drag.
+           Each is inset by the border; the reserved gutters keep them clear of the corner. */
+        if ( s_ctx.win_show_v )
         {
-            f32 max_scroll = win->content_h - view_h;
-            f32 sb_w       = (f32)s_layout.slider_knob_w;
-            f32 track_x    = s_ctx.win_x + s_ctx.win_w - WIN_BORDER - sb_w;
-            f32 track_y    = s_ctx.win_y + s_ctx.win_title_h;
-            imgui_rect_t track_r = { track_x, track_y, sb_w, view_h };
-
-            imgui_id_t     sb_id = s_ctx.win_id ^ IMGUI_SCROLLBAR_SALT;
-            widget_state_t st    = widget_behavior( sb_id, track_r, WIDGET_KIND_DRAG );
-
-            /* Knob height tracks the visible fraction; min-clamped so it stays grabbable. */
-            f32 knob_h = view_h * ( view_h / win->content_h );
-            if ( knob_h < sb_w ) knob_h = sb_w;
-            f32 travel = view_h - knob_h;
-
-            /* Drag maps the cursor (knob centre) back into scroll_y, mirroring slider_float. */
-            if ( st.active )
-            {
-                f32 t = ( travel > 0.0f ) ? ( s_io.mouse_y - track_y - knob_h * 0.5f ) / travel : 0.0f;
-                t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
-                win->scroll_y = t * max_scroll;
-            }
-
-            f32 t_cur  = ( max_scroll > 0.0f ) ? win->scroll_y / max_scroll : 0.0f;
-            f32 knob_y = track_y + t_cur * travel;
-
-            draw_push_rect_filled( track_x, track_y, sb_w, view_h, 0,0,1,1, 0, COL_SLIDER_TRACK );
-            draw_push_rect_filled( track_x, knob_y, sb_w, knob_h, 0,0,1,1, 0, widget_bg_color( st ) );
+            f32 sb_w = s_ctx.win_sb_w;
+            imgui_rect_t track = { s_ctx.win_x + s_ctx.win_w - WIN_BORDER - sb_w,
+                                   s_ctx.win_y + s_ctx.win_title_h, sb_w, view_h };
+            window_scrollbar( s_ctx.win_id ^ IMGUI_SCROLLBAR_SALT, track, true,
+                              win->content_h, view_h, s_io.mouse_y, &win->scroll_y );
+        }
+        if ( s_ctx.win_show_h )
+        {
+            f32 sb_h = s_ctx.win_sb_h;
+            imgui_rect_t track = { s_ctx.win_x + WIN_BORDER,
+                                   s_ctx.win_y + s_ctx.win_h - WIN_BORDER - sb_h, view_w, sb_h };
+            window_scrollbar( s_ctx.win_id ^ IMGUI_HSCROLLBAR_SALT, track, false,
+                              win->content_w, view_w, s_io.mouse_x, &win->scroll_x );
         }
     }
 
@@ -602,6 +693,7 @@ imgui_text( const char* str )
 {
     imgui_rect_t r = widget_next_rect( font_char_h() );
     draw_push_text( r.x, r.y, COL_TEXT, str );
+    widget_track_width( r.x + font_text_w( str ) );   /* natural width may exceed the row */
 }
 
 /*----------------------------------------------------------------------------------------------
