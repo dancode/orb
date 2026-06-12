@@ -7,9 +7,10 @@
     position so it survives across frames -- the foundation for dragging (now) and for
     collapse / scroll / saved-layout state (later).  Windows are keyed by id_hash(title).
 
-    Drag interaction itself lives in imgui_widget.c alongside begin_window / end_window,
-    where the layout dimensions (title-bar height, padding) are in scope.  This file owns
-    the table, the active drag mode, the in-flight drag offset, and raise-to-front.
+    Drag / resize / scrollbar interaction lives in imgui_widget_window.c alongside
+    begin_window / end_window, where the layout dimensions (title-bar height, padding) are in
+    scope.  This file owns the table, the active drag mode, the in-flight drag and resize
+    offsets, and raise-to-front -- the state those interactions read and write.
 
     Included by imgui.c after imgui_ctx.c so s_ctx (hover_win) and s_io are in scope.
 

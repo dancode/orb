@@ -10,8 +10,10 @@
         imgui_render.c  -- GPU flush: imgui_render_init/shutdown/flush
         imgui_input.c   -- app->IO snapshot: input_update, s_io
         imgui_ctx.c     -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
-        imgui_window.c  -- persistent per-window state: imgui_window_t, window_get, drag mode
-        imgui_widget.c  -- widget implementations: widget_*
+        imgui_window.c       -- persistent per-window state: imgui_window_t, window_get, drag mode
+        imgui_widget_core.c  -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
+        imgui_widget.c       -- leaf widgets: text, button, checkbox, slider, input_text
+        imgui_widget_window.c-- the window as a widget: begin/end_window + chrome (resize, scrollbars)
         imgui_api.c     -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/
@@ -115,7 +117,12 @@ layout_compute( u32 ls )
 #include "runtime_service/imgui/imgui_input.c"
 #include "runtime_service/imgui/imgui_ctx.c"
 #include "runtime_service/imgui/imgui_window.c"
+#include "runtime_service/imgui/imgui_widget_core.c"
 #include "runtime_service/imgui/imgui_widget.c"
-#include "runtime_service/imgui/imgui_api.c"
+#include "runtime_service/imgui/imgui_widget_window.c"
+
+#ifndef IMGUI_API_C_PRELUDE
+    #include "runtime_service/imgui/imgui_api.c"
+#endif
 
 /*============================================================================================*/

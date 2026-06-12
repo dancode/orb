@@ -47,6 +47,7 @@ static struct
 
     /* Scrollbar policy resolved in begin_window, consumed by end_window for drawing.  The
        gutters reserved here must match what end_window draws, so both axes are decided once. */
+
     bool        win_show_v;         /* vertical scrollbar shown this frame (forced or overflow) */
     bool        win_show_h;         /* horizontal scrollbar shown this frame                */
     f32         win_sb_w;           /* vertical gutter width reserved (0 when hidden)       */

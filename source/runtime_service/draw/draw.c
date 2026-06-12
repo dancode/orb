@@ -20,11 +20,15 @@ MOD_USE_RHI
     Unity build
 ==============================================================================================*/
 
-#include "draw_geo.c"
-#include "draw_batch.c"
-#include "draw_material.c"
-#include "draw_cmd.c"
-#include "draw_helper.c"
-#include "draw_api.c"
+#include "runtime_service/draw/draw_geo.c"
+#include "runtime_service/draw/draw_batch.c"
+#include "runtime_service/draw/draw_material.c"
+#include "runtime_service/draw/draw_cmd.c"
+#include "runtime_service/draw/draw_helper.c"
+
+#ifndef DRAW_API_C_PRELUDE
+    #include "runtime_service/draw/draw_api.c"
+#endif
+
 
 /*============================================================================================*/
