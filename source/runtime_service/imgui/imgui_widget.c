@@ -265,6 +265,40 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
 }
 
 /*----------------------------------------------------------------------------------------------
+    selectable -- a full-width row that highlights on hover and fills when selected.
+
+    The building block for list boxes: emit one per item (typically inside a begin_child
+    region so they scroll and clip independently).  When `selected` is non-NULL a click
+    toggles it; pass NULL for a click-only row.  Returns true on the frame it is clicked, so
+    a caller managing single-selection can set its own index from the return without relying
+    on the toggle.
+----------------------------------------------------------------------------------------------*/
+
+bool
+imgui_selectable( const char* label, bool* selected )
+{
+    imgui_id_t   id = id_hash( label );
+    imgui_rect_t r  = widget_next_rect( WIDGET_H );
+
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+
+    /* Fill: selected rows use the active tint, a hovered row the hot tint; otherwise the row
+       is transparent so the region background shows through. */
+    bool on = ( selected && *selected );
+    if ( on || st.hover )
+        draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
+                               on ? COL_WIDGET_ACT : COL_WIDGET_HOT );
+
+    /* Label, left-aligned with the standard padding. */
+    draw_push_text( r.x + WIDGET_PAD, r.y + ( r.h - font_char_h() ) * 0.5f, COL_TEXT, label );
+    widget_track_width( r.x + WIDGET_PAD + font_text_w( label ) );   /* natural width may exceed the row */
+
+    if ( st.clicked && selected )
+        *selected = !( *selected );
+    return st.clicked;
+}
+
+/*----------------------------------------------------------------------------------------------
     Low-level draw_rect / draw_text
 ----------------------------------------------------------------------------------------------*/
 

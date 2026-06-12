@@ -36,6 +36,8 @@ bool imgui_event( const app_event_t* ev );
 
 bool imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_window( void );
+bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
+void imgui_end_child( void );
 void imgui_set_window_drag( imgui_win_drag_t mode );
 
 void imgui_text( const char* str );
@@ -44,6 +46,7 @@ bool imgui_button( const char* label );
 bool imgui_checkbox( const char* label, bool* v );
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
+bool imgui_selectable( const char* label, bool* selected );
 
 void imgui_set_font      ( imgui_font_t font );
 void imgui_set_bmp_scale ( u32 scale );

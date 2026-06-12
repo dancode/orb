@@ -320,6 +320,25 @@ main( int argc, char** argv )
 
                         static char buffer[ 32 ] = { 0 };
                         imgui()->input_text( "Input Text", buffer, sizeof( buffer ));
+
+                        /* List box test: a child region with its own scrollbar, filled with
+                           selectable rows.  Scroll/clip is independent of the window; the
+                           widgets after end_child must resume directly below the box. */
+                        imgui()->text( "List box (child region):" );
+                        static int  sel_row = -1;
+                        if ( imgui()->begin_child( "row_list", 0, 160, IMGUI_WIN_NONE ) )
+                        {
+                            for ( int i = 0; i < 30; i++ )
+                            {
+                                char row[ 32 ];
+                                snprintf( row, sizeof( row ), "row item %02d", i );
+                                bool on = ( sel_row == i );
+                                if ( imgui()->selectable( row, &on ) )
+                                    sel_row = on ? i : -1;   /* single-selection */
+                            }
+                        }
+                        imgui()->end_child();
+                        imgui()->textf( "selected row: %d (this text is below the box)", sel_row );
                     }   /* begin_window( "Debug" ) -- body skipped while collapsed */
 
                     imgui()->end_window();

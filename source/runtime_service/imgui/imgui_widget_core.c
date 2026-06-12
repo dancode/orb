@@ -36,6 +36,7 @@
 ----------------------------------------------------------------------------------------------*/
 
 #define COL_WIN_BG       IMGUI_COLOR( 0x24, 0x24, 0x24, 0xE8 )
+#define COL_CHILD_BG     IMGUI_COLOR( 0x1C, 0x1C, 0x1C, 0xFF )   /* child region body, inset darker than the window */
 #define COL_TITLE_BG     IMGUI_COLOR( 0x10, 0x60, 0xA0, 0xFF )
 #define COL_BORDER       IMGUI_COLOR( 0x80, 0x80, 0x80, 0xFF )
 #define COL_TEXT         IMGUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF )
@@ -55,31 +56,32 @@
     Layout cursor helpers
 ----------------------------------------------------------------------------------------------*/
 
-static f32 widget_right( void ) { return s_ctx.content_x + s_ctx.content_w; }
+static f32 widget_right( void ) { return lf()->content_x + lf()->content_w; }
 
-/* Grow the window's measured horizontal extent to include a widget that draws out to
-   right_x (in screen coords).  end_window cancels the scroll bias and compares the total
-   against the view to decide the horizontal scrollbar, mirroring how cursor_y travel
+/* Grow the active region's measured horizontal extent to include a widget that draws out to
+   right_x (in screen coords).  layout_pop_region cancels the scroll bias and compares the
+   total against the view to decide the horizontal scrollbar, mirroring how cursor_y travel
    measures content height.  Most widgets fill content_w, but text draws its natural width
    and can reach past the view -- that overflow is what the horizontal bar scrolls. */
 static void
 widget_track_width( f32 right_x )
 {
-    if ( right_x > s_ctx.content_max_x )
-        s_ctx.content_max_x = right_x;
+    if ( right_x > lf()->content_max_x )
+        lf()->content_max_x = right_x;
 }
 
 /* Begin a new widget row; returns the rect for the full widget. */
 static imgui_rect_t
 widget_next_rect( f32 h )
 {
+    layout_frame_t* f = lf();
     imgui_rect_t r = {
-        .x = s_ctx.content_x,
-        .y = s_ctx.cursor_y,
-        .w = s_ctx.content_w,
+        .x = f->content_x,
+        .y = f->cursor_y,
+        .w = f->content_w,
         .h = h,
     };
-    s_ctx.cursor_y += h + WIDGET_GAP;
+    f->cursor_y += h + WIDGET_GAP;
     widget_track_width( r.x + r.w );   /* baseline extent: a full-width row reaches the view edge */
     return r;
 }
@@ -129,7 +131,8 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
        The active item keeps interacting through st.active below, which reads active_id
        directly, so a drag stays live while the cursor sweeps over inert neighbours. */
     bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == id );
-    if ( can_hover && s_ctx.win_id == s_ctx.hover_win && !s_ctx.win_resize_hot && rect_hit( r ) )
+    if ( can_hover && s_ctx.win_id == s_ctx.hover_win && !s_ctx.win_resize_hot
+         && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
         s_ctx.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
@@ -147,8 +150,17 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     st.clicked = s_io.mouse_released[ 0 ] && s_ctx.hover_id == id && s_ctx.active_id == id;
 
     /* Debug overlay: every interactive widget passes through here, so this one site captures
-       the full set of hit rects -- tinted by hover/active so the live interaction is visible. */
-    DBG_WIDGET( id, r, st.hover, st.active );
+       the hit rects -- tinted by hover/active so the live interaction is visible.  Capture the
+       *visible* rect (the widget clipped to the active region clip): a row scrolled fully
+       outside its child box has an empty intersection and is not hit-testable, so it is dropped
+       from the overlay too, rather than drawing an interaction rect outside the clip box. */
+#ifdef IMGUI_DEBUG_OVERLAY
+    {
+        imgui_rect_t vis = rect_intersect( r, s_ctx.clip_rect );
+        if ( vis.w > 0.0f && vis.h > 0.0f )
+            DBG_WIDGET( id, vis, st.hover, st.active );
+    }
+#endif
 
     return st;
 }

@@ -71,11 +71,22 @@ draw_current_clip( void )
 static void
 draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
 {
+    /* Intersect with the enclosing clip so a nested region (a child box near a window edge)
+       can never scissor outside its parent.  The push always happens -- a fully clipped-out
+       region pushes a zero-size rect, which simply draws nothing -- so every push still has a
+       matching pop and the stack stays balanced. */
+    imgui_rect_t p  = draw_current_clip();
+    f32 x0 = x > p.x ? x : p.x;
+    f32 y0 = y > p.y ? y : p.y;
+    f32 x1 = ( x + w < p.x + p.w ) ? x + w : p.x + p.w;
+    f32 y1 = ( y + h < p.y + p.h ) ? y + h : p.y + p.h;
+    imgui_rect_t c = { x0, y0, x1 - x0 > 0.0f ? x1 - x0 : 0.0f, y1 - y0 > 0.0f ? y1 - y0 : 0.0f };
+
     if ( s_draw.clip_depth < IMGUI_CLIP_DEPTH )
-        s_draw.clip_stack[ s_draw.clip_depth++ ] = ( imgui_rect_t ){ x, y, w, h };
+        s_draw.clip_stack[ s_draw.clip_depth++ ] = c;
 
     /* Debug overlay: record this clip rect, colored by its new stack depth. */
-    DBG_CLIP( ( ( imgui_rect_t ){ x, y, w, h } ), s_draw.clip_depth );
+    DBG_CLIP( c, s_draw.clip_depth );
 }
 
 static void
