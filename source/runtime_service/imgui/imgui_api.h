@@ -80,8 +80,9 @@ typedef struct imgui_api_s
     void ( *set_window_drag )( imgui_win_drag_t mode );
 
     /* Widgets -- return true on the frame they are activated or changed.
-       All widgets must be called between a matched begin_window / end_window pair.
-       A widget called while its window is collapsed does nothing and returns false. */
+       All widgets must be called between a matched begin_window / end_window pair, and only
+       when begin_window returned true -- a collapsed window draws no clip, so widgets emitted
+       into it render straight onto the screen.  The bool guard is the caller's job. */
 
     void ( *text        )( const char* str );
     void ( *textf       )( const char* fmt, ... );

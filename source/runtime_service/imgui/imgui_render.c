@@ -57,7 +57,13 @@ static struct
 /* Manual debug toggle: flip to true (debugger, or at startup) to print the per-frame
    draw-call count every flush.  The high-water mark is always tracked and reported at
    shutdown regardless of this flag. */
-static bool s_render_debug_draw_calls = true;
+static bool s_render_debug_draw_calls = false;
+
+/* Manual debug toggle: flip to true to print the per-frame emitted geometry (vertex /
+   index counts) every flush -- a direct read on render density, so the effect of UI state
+   changes (e.g. collapsing a window) is visible live in the console.  Peaks are tracked in
+   s_draw regardless of this flag and reported at shutdown. */
+static bool s_render_debug_geometry = false;
 
 /*----------------------------------------------------------------------------------------------
     render_ortho -- column-major pixel-space orthographic matrix.
@@ -448,11 +454,29 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
 
     rhi()->cmd_end_rendering( cmd );
 
-    /* Track the peak draw-call count for the shutdown report; optionally print per frame. */
+    /* Track the peak draw-call count for the shutdown report; optionally print per frame.
+       Only print when the count changes from last frame, so a steady UI does not spam. */
     if ( draw_calls > s_render.draw_call_hwm )
         s_render.draw_call_hwm = draw_calls;
-    if ( s_render_debug_draw_calls )
+    static u32 prev_draw_calls = ~0u;   /* sentinel: forces a print on the first frame */
+    if ( s_render_debug_draw_calls && draw_calls != prev_draw_calls )
+    {
         printf( "[imgui] draw calls this frame: %u (peak %u)\n", draw_calls, s_render.draw_call_hwm );
+        prev_draw_calls = draw_calls;
+    }
+
+    /* Per-frame emitted geometry -- the verts/indices this frame actually pushed into the
+       draw list (peaks vs. the caps shown for context).  Watch these move as UI state
+       changes; printed only when the counts differ from last frame to filter the spam. */
+    static u32 prev_verts = ~0u, prev_idx = ~0u;   /* sentinel: forces a print on the first frame */
+    if ( s_render_debug_geometry && ( s_draw.vert_count != prev_verts || s_draw.idx_count != prev_idx ) )
+    {
+        printf( "[imgui] geometry this frame: verts %u/%u (peak %u), idx %u/%u (peak %u)\n",
+                s_draw.vert_count, IMGUI_MAX_VERTS, s_draw.vert_hwm,
+                s_draw.idx_count,  IMGUI_MAX_IDX,   s_draw.idx_hwm );
+        prev_verts = s_draw.vert_count;
+        prev_idx   = s_draw.idx_count;
+    }
 }
 
 // clang-format on

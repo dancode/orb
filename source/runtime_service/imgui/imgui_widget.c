@@ -240,7 +240,6 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     s_ctx.win_id        = id;
     s_ctx.win_title     = title;   /* cached for end_window's deferred chrome */
     s_ctx.win_collapsed = collapsed;
-    s_ctx.skip_items    = collapsed;   /* widgets early-out while collapsed (ImGui SkipItems) */
     s_ctx.cur_win       = win;     /* scroll write-back target for end_window */
     s_ctx.win_x         = win->x;
     s_ctx.win_y         = win->y;
@@ -249,10 +248,11 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h )
     s_ctx.content_x     = win->x + WIDGET_PAD;
     s_ctx.content_w     = win->w - 2.0f * WIDGET_PAD - sb_w;   /* leave room for the gutter */
 
-    /* A collapsed window emits no body at all: the caller skips its widgets on the false
-       return and skip_items guards any that slip through, so there is nothing below the
-       title bar to clip.  The fixed-size chrome end_window draws is wholly inside the app
-       bounds, so the collapsed path needs no clip rect and pushes none. */
+    /* A collapsed window emits no body: the caller is expected to skip its widgets on the
+       false return, so there is nothing below the title bar to clip.  The fixed-size chrome
+       end_window draws is wholly inside the app bounds, so the collapsed path needs no clip
+       rect and pushes none.  (A caller that ignores the return and emits widgets anyway gets
+       visibly wrong output -- there is deliberately no guard to mask that.) */
     if ( !collapsed )
     {
         /* One clip rect for the whole window: background, content, and the titlebar/border
@@ -349,9 +349,7 @@ imgui_end_window( void )
     if ( !s_ctx.win_collapsed )
         draw_pop_clip_rect();
 
-    /* Window scope is over: stop suppressing widgets and revert the sort key so subsequent
-       draws (low-level API, the next window) land on the background layer. */
-    s_ctx.skip_items = false;
+    /* Subsequent draws (low-level API, the next window) revert to the background key. */
     draw_set_sort_key( 0 );
 
     /* Drag grab.  Decided here, after this window's widgets have run, so hover_id tells us
@@ -380,7 +378,6 @@ imgui_end_window( void )
 void
 imgui_text( const char* str )
 {
-    if ( s_ctx.skip_items ) return;
     imgui_rect_t r = widget_next_rect( font_char_h() );
     draw_push_text( r.x, r.y, COL_TEXT, str );
 }
@@ -392,8 +389,6 @@ imgui_text( const char* str )
 void
 imgui_textf( const char* fmt, ... )
 {
-    if ( s_ctx.skip_items ) return;   /* skip the formatting work too, not just the draw */
-
     /* Format into a frame-local buffer; oversized output is truncated, not wrapped. */
     char buf[ 1024 ];
 
@@ -412,7 +407,6 @@ imgui_textf( const char* fmt, ... )
 bool
 imgui_button( const char* label )
 {
-    if ( s_ctx.skip_items ) return false;
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
@@ -438,7 +432,6 @@ imgui_button( const char* label )
 bool
 imgui_checkbox( const char* label, bool* v )
 {
-    if ( s_ctx.skip_items ) return false;
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
@@ -479,7 +472,6 @@ imgui_checkbox( const char* label, bool* v )
 bool
 imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 {
-    if ( s_ctx.skip_items ) return false;
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
@@ -539,7 +531,6 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 bool
 imgui_input_text( const char* label, char* buf, u32 bufsz )
 {
-    if ( s_ctx.skip_items ) return false;
     imgui_id_t   id = id_hash( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
@@ -633,14 +624,12 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
 void
 imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr )
 {
-    if ( s_ctx.skip_items ) return;   /* inside a collapsed window: suppressed */
     draw_push_rect_filled( x, y, w, h, 0,0,1,1, 0, abgr );
 }
 
 void
 imgui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
 {
-    if ( s_ctx.skip_items ) return;   /* inside a collapsed window: suppressed */
     draw_push_text( x, y, abgr, str );
 }
 
