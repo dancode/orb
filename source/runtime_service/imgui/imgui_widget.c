@@ -521,6 +521,16 @@ imgui_end_window( void )
                 win->collapsed = !win->collapsed;
             draw_collapse_arrow( arrow_r, s_ctx.win_collapsed, arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
             text_x = s_ctx.win_x + title_h;   /* title follows the arrow square */
+
+            /* Double-click anywhere on the bar (but not the arrow, which hovers, nor a hot
+               resize edge) does the same toggle -- the familiar "double-click titlebar to
+               collapse" gesture.  hover_id == NONE excludes the arrow; win_resize_hot excludes
+               the edges; the toggle lands next frame like the arrow click and the drag grab. */
+            imgui_rect_t bar_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, title_h };
+            if ( s_io.mouse_double[ 0 ] && !s_ctx.win_resize_hot
+                 && s_ctx.win_id == s_ctx.hover_win && s_ctx.hover_id == IMGUI_ID_NONE
+                 && rect_hit( bar_r ) )
+                win->collapsed = !win->collapsed;
         }
 
         /* Title text. */

@@ -34,6 +34,16 @@ static char s_pending_text[ sizeof( ( (imgui_io_t*)0 )->text ) ];
 static u32  s_pending_text_len;
 static f32  s_pending_wheel;
 
+/* Double-click detection.  imgui has no clock of its own, so the second press of a pair is
+   recognised from the dt fed to new_frame: a press counts as a double-click when it lands
+   within DOUBLE_CLICK_TIME seconds of the previous press and within DOUBLE_CLICK_DIST pixels.
+   s_click_elapsed grows by dt each frame and resets on every fresh press. */
+#define DOUBLE_CLICK_TIME  0.30f    /* seconds between the two presses */
+#define DOUBLE_CLICK_DIST  6.0f     /* max cursor travel between them (pixels) */
+
+static f32 s_click_elapsed[ 3 ] = { 1.0e9f, 1.0e9f, 1.0e9f };   /* start "long ago" */
+static f32 s_click_x[ 3 ], s_click_y[ 3 ];
+
 /*----------------------------------------------------------------------------------------------
     Internal input feeders -- fed by imgui_event() as it unpacks the app event ring,
     before imgui_new_frame() for the same frame.  Not part of the public API.
@@ -112,6 +122,34 @@ input_update( i32 win_w, i32 win_h, f32 dt )
             s_io.mouse_down     [ i ] = app()->mouse_button_down     ( map[ i ] );
             s_io.mouse_pressed  [ i ] = app()->mouse_button_pressed  ( map[ i ] );
             s_io.mouse_released [ i ] = app()->mouse_button_released ( map[ i ] );
+        }
+    }
+
+    /* Double-click: a press soon after, and close to, the previous press.  Done before the
+       text/scroll merge below so it is ready for the widget code this frame. */
+    for ( u32 i = 0; i < 3; ++i )
+    {
+        s_io.mouse_double[ i ] = false;
+        s_click_elapsed[ i ]  += dt;
+
+        if ( s_io.mouse_pressed[ i ] )
+        {
+            f32 dx = s_io.mouse_x - s_click_x[ i ];
+            f32 dy = s_io.mouse_y - s_click_y[ i ];
+            bool in_time = s_click_elapsed[ i ] <= DOUBLE_CLICK_TIME;
+            bool in_dist = ( dx * dx + dy * dy ) <= DOUBLE_CLICK_DIST * DOUBLE_CLICK_DIST;
+
+            if ( in_time && in_dist )
+            {
+                s_io.mouse_double[ i ] = true;
+                s_click_elapsed[ i ]   = 1.0e9f;   /* consume: a 3rd press is a fresh single */
+            }
+            else
+            {
+                s_click_elapsed[ i ] = 0.0f;       /* first press of a potential pair */
+            }
+            s_click_x[ i ] = s_io.mouse_x;
+            s_click_y[ i ] = s_io.mouse_y;
         }
     }
 

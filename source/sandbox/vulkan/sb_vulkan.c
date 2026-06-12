@@ -149,8 +149,14 @@ main( int argc, char** argv )
     i32 win_h = 720;
 
     /* Main loop. */
+    f64 last_time = sys_tick_seconds();
     while ( app()->pump_events() )
     {
+        /* Real frame delta (seconds) -- drives imgui animation + double-click timing. */
+        f64 now_time = sys_tick_seconds();
+        f32 dt       = (f32)( now_time - last_time );
+        last_time    = now_time;
+
         /* Drain the app event ring once: imgui consumes the input events it cares
            about (text + scroll); the host handles the rest (resize). */
         app_event_t ev;
@@ -261,7 +267,7 @@ main( int argc, char** argv )
 
                 if ( imgui() && show_ui )
                 {
-                    imgui()->new_frame( win_w, win_h, 4 );
+                    imgui()->new_frame( win_w, win_h, dt );
 
                     if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NONE ) )
                     {
