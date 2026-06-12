@@ -52,5 +52,8 @@ void imgui_draw_text( f32 x, f32 y, u32 abgr, const char* str );
 void imgui_push_clip( f32 x, f32 y, f32 w, f32 h );
 void imgui_pop_clip( void );
 
+void imgui_debug_set_layers( u32 layers );
+u32  imgui_debug_get_layers( void );
+
 /*============================================================================================*/
 #endif    // IMGUI_HOST_H

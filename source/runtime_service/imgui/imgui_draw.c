@@ -73,6 +73,9 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
 {
     if ( s_draw.clip_depth < IMGUI_CLIP_DEPTH )
         s_draw.clip_stack[ s_draw.clip_depth++ ] = ( imgui_rect_t ){ x, y, w, h };
+
+    /* Debug overlay: record this clip rect, colored by its new stack depth. */
+    DBG_CLIP( ( ( imgui_rect_t ){ x, y, w, h } ), s_draw.clip_depth );
 }
 
 static void

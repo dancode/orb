@@ -62,10 +62,32 @@ typedef enum
     
  // IMGUI_WIN_MENUBAR      = 1 << 4,
  // IMGUI_WIN_NOINPUT      = 1 << 5,
- 
- 
+
+
 
 } imgui_win_flags_t;
+
+/*==============================================================================================
+    Debug overlay layers
+
+    Bitmask passed to imgui()->debug_set_layers().  Each bit enables one bolt-on debug
+    visualization, emitted into a separate draw list and painted last, on top of the UI.
+    The overlay is compiled in for Debug builds only (IMGUI_DEBUG_OVERLAY); in a Release
+    build set_layers is a no-op and get_layers returns 0.  These constants stay defined in
+    every build so call sites compile unchanged.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_DBG_NONE     = 0,         /* overlay off                                          */
+    IMGUI_DBG_WINDOW   = 1 << 0,    /* window outer frames; the hover window stands out     */
+    IMGUI_DBG_INTERACT = 1 << 1,    /* per-widget interaction rects (hover/active tinted)   */
+    IMGUI_DBG_RESIZE   = 1 << 2,    /* window edge-resize grab bands; hot when armed        */
+    IMGUI_DBG_CLIP     = 1 << 3,    /* clip (scissor) rectangle stack, colored by depth     */
+
+    IMGUI_DBG_ALL      = IMGUI_DBG_WINDOW | IMGUI_DBG_INTERACT | IMGUI_DBG_RESIZE | IMGUI_DBG_CLIP,
+
+} imgui_dbg_layer_t;
 
 /*==============================================================================================
     Color packing

@@ -15,7 +15,15 @@
 
 bool imgui_init( void )
 {
-    return imgui_render_init();
+    if ( !imgui_render_init() )
+        return false;
+
+#ifdef IMGUI_DEBUG_OVERLAY
+    /* Debug overlay GPU buffers.  Non-fatal: a failure just leaves the overlay dark. */
+    if ( !imgui_debug_init() )
+        printf( "[imgui] WARNING: debug overlay buffers failed; overlay disabled\n" );
+#endif
+    return true;
 }
 
 bool imgui_load_font( const char* path )
@@ -35,6 +43,9 @@ bool imgui_load_font( const char* path )
 
 void imgui_shutdown( void )
 {
+#ifdef IMGUI_DEBUG_OVERLAY
+    imgui_debug_shutdown();
+#endif
     imgui_render_shutdown();
 }
 
@@ -52,6 +63,9 @@ void imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
 {
     input_update( win_w, win_h, dt );
     draw_reset( win_w, win_h );
+#ifdef IMGUI_DEBUG_OVERLAY
+    imgui_debug_reset();         /* clear the overlay's per-frame geometry */
+#endif
     ctx_new_frame();             /* promotes last frame's hover_win */
     window_raise_on_press();     /* a press raises the hover window (takes effect this frame) */
 }
@@ -59,6 +73,9 @@ void imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
 void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     imgui_render_flush( cmd, win_w, win_h );
+#ifdef IMGUI_DEBUG_OVERLAY
+    imgui_debug_flush( cmd, win_w, win_h );   /* bolt-on overlay, painted last (on top) */
+#endif
 }
 
 void imgui_set_font( imgui_font_t font )
@@ -122,6 +139,8 @@ const imgui_api_t g_imgui_api_struct = {
     .draw_text     = imgui_draw_text,
     .push_clip     = imgui_push_clip,
     .pop_clip      = imgui_pop_clip,
+    .debug_set_layers = imgui_debug_set_layers,
+    .debug_get_layers = imgui_debug_get_layers,
 };
 
 /*----------------------------------------------------------------------------------------------

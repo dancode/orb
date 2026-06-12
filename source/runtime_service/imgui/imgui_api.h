@@ -111,6 +111,15 @@ typedef struct imgui_api_s
     void ( *push_clip )( f32 x, f32 y, f32 w, f32 h );
     void ( *pop_clip  )( void );
 
+    /* Debug overlay -- a separate draw list painted last, on top of the UI.  Pass a bitmask
+       of imgui_dbg_layer_t to debug_set_layers() to choose which visualizations show; pass
+       IMGUI_DBG_NONE (0) to turn it off.  Compiled in for Debug builds only: in Release,
+       set_layers is a no-op and get_layers returns 0.  The two slots stay in the vtable in
+       every build so func_api_size is identical across a hot-reload. */
+
+    void ( *debug_set_layers )( u32 layers );
+    u32  ( *debug_get_layers )( void );
+
 } imgui_api_t;
 
 /*============================================================================================*/

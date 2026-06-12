@@ -8,6 +8,7 @@
         imgui_font.c         -- font management + dispatch: tt_font_t, tt_font_load, font_glyph, font_*
         imgui_draw.c         -- CPU draw list: draw_reset, draw_push_*, s_draw
         imgui_render.c  -- GPU flush: imgui_render_init/shutdown/flush
+        imgui_debug.c   -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
         imgui_input.c   -- app->IO snapshot: input_update, s_io
         imgui_ctx.c     -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
         imgui_window.c       -- persistent per-window state: imgui_window_t, window_get, drag mode
@@ -37,6 +38,52 @@
 // API access pointers -- wired at module init/reload time
 MOD_USE_RHI;
 MOD_USE_APP;
+
+/*==============================================================================================
+    Debug overlay build switch
+
+    The debug overlay (imgui_debug.c) is a bolt-on second draw list, painted on top of the
+    UI, that visualizes interaction rects, resize bands, window frames, and clip rects.  It
+    is compiled in for Debug builds only: the build tool defines IMGUI_DEBUG_OVERLAY for the
+    Debug config, but as a fallback it is also enabled from the MSVC _DEBUG macro so the
+    feature tracks the configuration even before a build_tool regen.  Define
+    IMGUI_NO_DEBUG_OVERLAY to force it off in any build.
+==============================================================================================*/
+
+#if defined( _DEBUG ) && !defined( IMGUI_DEBUG_OVERLAY ) && !defined( IMGUI_NO_DEBUG_OVERLAY )
+    #define IMGUI_DEBUG_OVERLAY
+#endif
+#if defined( IMGUI_NO_DEBUG_OVERLAY ) && defined( IMGUI_DEBUG_OVERLAY )
+    #undef IMGUI_DEBUG_OVERLAY
+#endif
+
+/*----------------------------------------------------------------------------------------------
+    Capture hooks
+
+    The constituent files below call these macros at the points where the data to visualize
+    is already in hand (clip pushes in imgui_draw.c, every widget rect in imgui_widget_core.c,
+    window frames + resize bands in imgui_widget_window.c).  With the overlay compiled in they
+    forward to the static capture functions defined in imgui_debug.c (included later in this
+    unity TU -- hence the forward declarations); compiled out, they vanish to nothing, so the
+    instrumentation costs zero in Release.
+----------------------------------------------------------------------------------------------*/
+
+#ifdef IMGUI_DEBUG_OVERLAY
+    static void dbg_capture_widget( imgui_id_t id, imgui_rect_t r, bool hover, bool active );
+    static void dbg_capture_clip  ( imgui_rect_t r, u32 depth );
+    static void dbg_capture_window( imgui_rect_t r, bool is_hover );
+    static void dbg_capture_resize( imgui_rect_t band, u8 hot_edges );
+
+    #define DBG_WIDGET( id, r, hov, act ) dbg_capture_widget( ( id ), ( r ), ( hov ), ( act ) )
+    #define DBG_CLIP( r, depth )          dbg_capture_clip( ( r ), ( depth ) )
+    #define DBG_WINDOW( r, is_hover )     dbg_capture_window( ( r ), ( is_hover ) )
+    #define DBG_RESIZE( band, hot )       dbg_capture_resize( ( band ), ( hot ) )
+#else
+    #define DBG_WIDGET( id, r, hov, act ) ( (void)0 )
+    #define DBG_CLIP( r, depth )          ( (void)0 )
+    #define DBG_WINDOW( r, is_hover )     ( (void)0 )
+    #define DBG_RESIZE( band, hot )       ( (void)0 )
+#endif
 
 /*==============================================================================================
     Layout
@@ -114,6 +161,7 @@ layout_compute( u32 ls )
 #include "runtime_service/imgui/imgui_font.c"
 #include "runtime_service/imgui/imgui_draw.c"
 #include "runtime_service/imgui/imgui_render.c"
+#include "runtime_service/imgui/imgui_debug.c"
 #include "runtime_service/imgui/imgui_input.c"
 #include "runtime_service/imgui/imgui_ctx.c"
 #include "runtime_service/imgui/imgui_window.c"

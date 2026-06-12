@@ -206,6 +206,7 @@ const char* g_defines_always[] = {
 
 const char* g_defines_debug[] = {
     "_DEBUG",
+    "IMGUI_DEBUG_OVERLAY",   /* compile the imgui debug overlay into Debug builds only */
     NULL,
 };
 

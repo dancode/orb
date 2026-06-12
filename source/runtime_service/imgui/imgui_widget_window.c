@@ -304,6 +304,12 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
     window_nominate_hover( id, ( imgui_rect_t ){ win->x - ox, win->y - oy,
                                                  win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z );
 
+    /* Debug overlay: show the outer edge-resize grab band (the catch region just outside the
+       border), brightened while an edge is armed.  Only meaningful for a resizeable window. */
+    if ( resizeable )
+        DBG_RESIZE( ( ( imgui_rect_t ){ win->x - ox, win->y - oy,
+                                        win->w + 2.0f * ox, disp_h + 2.0f * oy } ), resize_hot );
+
     /* All of this window's geometry is stamped with its z so flush can paint
        windows back-to-front regardless of begin_window call order. */
     draw_set_sort_key( win->z );
@@ -498,6 +504,9 @@ imgui_end_window( void )
     /* Border frames the whole window, with or without a title bar. */
     imgui_rect_t win_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_h };
     draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
+
+    /* Debug overlay: trace the window frame; the front-most (hover) window stands out. */
+    DBG_WINDOW( win_r, ( s_ctx.win_id == s_ctx.hover_win ) );
 
     /* Resize affordance: bold the outline on any hot edge.  While a resize is in flight, the
        grabbed edges stay lit even if the cursor drifts off them; otherwise use win_resize_hot,

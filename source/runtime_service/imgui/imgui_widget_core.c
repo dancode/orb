@@ -146,6 +146,10 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     st.focused = ( s_ctx.focused_id == id );
     st.clicked = s_io.mouse_released[ 0 ] && s_ctx.hover_id == id && s_ctx.active_id == id;
 
+    /* Debug overlay: every interactive widget passes through here, so this one site captures
+       the full set of hit rects -- tinted by hover/active so the live interaction is visible. */
+    DBG_WIDGET( id, r, st.hover, st.active );
+
     return st;
 }
 

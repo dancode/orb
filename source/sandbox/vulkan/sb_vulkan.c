@@ -206,7 +206,22 @@ main( int argc, char** argv )
             font_select = ( font_select - 1 ) % IMGUI_FONT_BITMAP_MAX;
             imgui()->set_font( ( imgui_font_t )font_select );
         }
-        
+
+        /* Debug overlay layers (Debug build only): toggle each with the 1-4 number keys.
+           1 window frames   2 widget interaction rects   3 resize bands   4 clip rects. */
+        {
+            const struct { app_key_t key; u32 bit; } dbg_keys[] = {
+                { APP_KEY_1, IMGUI_DBG_WINDOW   },
+                { APP_KEY_2, IMGUI_DBG_INTERACT },
+                { APP_KEY_3, IMGUI_DBG_RESIZE   },
+                { APP_KEY_4, IMGUI_DBG_CLIP     },
+            };
+            for ( u32 i = 0; i < 4; ++i )
+                if ( app()->key_pressed( dbg_keys[ i ].key ) )
+                    imgui()->debug_set_layers( imgui()->debug_get_layers() ^ dbg_keys[ i ].bit );
+        }
+
+
         /* ------------------------------------------------------------------------------ */
         /* Render frame -- skip entirely while minimized to avoid 0x0 swapchain churn. */
 
