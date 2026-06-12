@@ -83,7 +83,6 @@ typedef struct
     imgui_rect_t outer;         /* the region box in screen space                          */
     f32          origin_x;      /* unscrolled content origin -- measures content extent     */
     f32          origin_y;
-    f32          pad;           /* inner content padding                                    */
     f32          view_w, view_h;/* gutter-adjusted visible extents (must match the bars)    */
     f32          sb_w, sb_h;    /* reserved gutter sizes (0 = no bar this frame)            */
     bool         show_v, show_h;/* a bar is shown this axis                                 */
@@ -171,7 +170,7 @@ static imgui_id_t
 id_seed( void )
 {
     if ( s_id_sp == 0 ) return IMGUI_ID_NONE;
-    u32 i = s_id_sp - 1;
+    u32  i = s_id_sp - 1;
     if ( i >= IMGUI_ID_STACK_DEPTH ) i = IMGUI_ID_STACK_DEPTH - 1;
     return s_id_stack[ i ];
 }

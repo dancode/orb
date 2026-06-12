@@ -173,7 +173,6 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, f32 pad, imgui_win_flags_
 
     f->region_id  = id;
     f->outer      = outer;
-    f->pad        = pad;
     f->flags      = flags;
     f->scroll_x   = scroll_x;
     f->scroll_y   = scroll_y;
