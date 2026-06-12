@@ -41,6 +41,7 @@ static struct
     bool        win_collapsed;      /* current window is collapsed (title bar only this frame) */
     imgui_win_flags_t win_flags;    /* current window's behavior flags (begin_window arg)   */
     f32         win_title_h;        /* current window's title bar height (0 if NOTITLEBAR)  */
+    u8          win_resize_hot;     /* resize edges hot this frame -- suppresses widget hover */
     struct imgui_window_t* cur_win; /* persisted window record; scroll write-back target */
 
     f32  cursor_x;            /* layout pen, top-left of the next widget               */

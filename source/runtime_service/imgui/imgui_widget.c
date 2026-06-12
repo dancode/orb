@@ -128,7 +128,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
        The active item keeps interacting through st.active below, which reads active_id
        directly, so a drag stays live while the cursor sweeps over inert neighbours. */
     bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == id );
-    if ( can_hover && s_ctx.win_id == s_ctx.hover_win && rect_hit( r ) )
+    if ( can_hover && s_ctx.win_id == s_ctx.hover_win && !s_ctx.win_resize_hot && rect_hit( r ) )
         s_ctx.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
@@ -179,14 +179,21 @@ window_clamp( imgui_window_t* win )
 /*----------------------------------------------------------------------------------------------
     Edge resize
 
-    A window may be resized by grabbing within a thin band inside any edge or corner.  The
-    grab is detected in end_window (after the body widgets, so a press that landed on a widget
-    or the scrollbar is excluded) and the resize itself is applied at the top of the next
-    begin_window, mirroring how the title-bar drag is grabbed and applied one frame apart.
+    A window may be resized by grabbing a band that straddles any edge or corner -- reaching a
+    little inside the border and a little outside it, OS-style, so the grip is easy to land on.
+    The hover/grab is resolved up front in begin_window (using last frame's hover_win) so it
+    takes priority over the scrollbar and collapse arrow underneath; the resize itself is
+    applied at the top of the next begin_window, one frame later, mirroring the title-bar drag.
+
+    Reaching outside the border needs an exception to the normal hover rule: a resizeable
+    window nominates an outer-expanded rect for hover_win so the cursor still counts as "over"
+    it within the outer band -- otherwise the edge would go cold the instant the cursor crossed
+    the border.  The expansion is only the few outer pixels, so occlusion is barely affected.
 ----------------------------------------------------------------------------------------------*/
 
-/* Grab band thickness: reuse the content padding so it scales with the font. */
-#define WIN_RESIZE_GRAB  WIDGET_PAD
+/* Grab band straddling the border: a few pixels inside and a few outside. */
+#define WIN_RESIZE_INNER  ( 4.0f )                  /* reach inside the border  */
+#define WIN_RESIZE_OUTER  ( WIN_BORDER + 3.0f )     /* and just outside it      */
 
 /* Smallest width a window may be shrunk to. */
 static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
@@ -195,26 +202,29 @@ static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
    a resize never eats into the title bar vertically.  title_h is 0 for a NOTITLEBAR window. */
 static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER; }
 
-/* Which edges of rect r the cursor is within the grab band of (0 = none).  Restricted to the
-   window the cursor is over so only the front-most window reports a hit.  Collapsed windows
-   report horizontal edges only -- their height is pinned to the title bar. */
+/* Which edges of rect r the cursor is within the grab band of (0 = none).  The band spans
+   [edge - OUTER, edge + INNER] on each side, so the cursor catches an edge from just outside
+   the border as well as just inside.  Caller gates on hover_win, so no occlusion test here.
+   Collapsed windows report horizontal edges only -- their height is pinned to the title bar. */
 static u8
-window_resize_hit( imgui_id_t id, imgui_rect_t r, bool collapsed )
+window_resize_hit( imgui_rect_t r, bool collapsed )
 {
-    if ( s_ctx.hover_win != id || !rect_hit( r ) )
-        return 0;
+    const f32 in  = WIN_RESIZE_INNER;
+    const f32 out = WIN_RESIZE_OUTER;
+    const f32 mx  = s_io.mouse_x;
+    const f32 my  = s_io.mouse_y;
 
-    const f32 g  = WIN_RESIZE_GRAB;
-    const f32 mx = s_io.mouse_x;
-    const f32 my = s_io.mouse_y;
+    /* Outside the outer-expanded rect entirely -> no edge. */
+    if ( mx < r.x - out || mx > r.x + r.w + out ) return 0;
+    if ( my < r.y - out || my > r.y + r.h + out ) return 0;
 
     u8 e = 0;
-    if ( mx <= r.x + g )           e |= IMGUI_RESIZE_L;
-    if ( mx >= r.x + r.w - g )     e |= IMGUI_RESIZE_R;
+    if ( mx <= r.x + in )           e |= IMGUI_RESIZE_L;
+    if ( mx >= r.x + r.w - in )     e |= IMGUI_RESIZE_R;
     if ( !collapsed )
     {
-        if ( my <= r.y + g )       e |= IMGUI_RESIZE_T;
-        if ( my >= r.y + r.h - g ) e |= IMGUI_RESIZE_B;
+        if ( my <= r.y + in )       e |= IMGUI_RESIZE_T;
+        if ( my >= r.y + r.h - in ) e |= IMGUI_RESIZE_B;
     }
     return e;
 }
@@ -342,11 +352,32 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
        shown this frame and drives the hover rect, clip, and border. */
     f32 disp_h = collapsed ? title_h : win->h;
 
-    /* Nominate this window as the one under the cursor (front-most by z wins) using the
-       displayed rect, so a collapsed window only captures the cursor over its title bar.
-       The winner becomes hover_win next frame; that single fact gates all widget hit-testing
-       and the drag grab below, so occlusion is resolved once per frame, not per widget. */
-    window_nominate_hover( id, ( imgui_rect_t ){ win->x, win->y, win->w, disp_h }, win->z );
+    /* Edge resize, resolved here so it pre-empts the scrollbar and collapse arrow (resolved in
+       end_window) underneath: while the cursor sits on a hot edge, win_resize_hot suppresses
+       every widget hover in this window, and a press grabs the resize before any widget can.
+       Gated on hover_win (last frame's front-most), so only the top window's edges go hot. */
+    imgui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
+    imgui_id_t   resize_id = id ^ IMGUI_RESIZE_SALT;
+    u8           resize_hot = 0;
+    bool         resizeable = !( flags & IMGUI_WIN_NORESIZE );
+    if ( resizeable && s_ctx.hover_win == id
+         && ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == resize_id ) )
+    {
+        resize_hot = window_resize_hit( disp_r, collapsed );
+        if ( resize_hot && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
+            window_resize_grab( win, id, resize_hot );
+    }
+    s_ctx.win_resize_hot = resize_hot;   /* read by widget_behavior + end_window's highlight */
+
+    /* Nominate this window as the one under the cursor (front-most by z wins).  A resizeable
+       window expands its nominee rect by the outer grab band (horizontally only when collapsed,
+       since its height is pinned) so the cursor still counts as "over" it just outside the
+       border -- that is what keeps an edge hot as the cursor crosses to the outside.  The
+       winner becomes hover_win next frame; that single fact gates all widget hit-testing. */
+    f32 ox = resizeable ? WIN_RESIZE_OUTER : 0.0f;
+    f32 oy = ( resizeable && !collapsed ) ? WIN_RESIZE_OUTER : 0.0f;
+    window_nominate_hover( id, ( imgui_rect_t ){ win->x - ox, win->y - oy,
+                                                 win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z );
 
     /* All of this window's geometry is stamped with its z so flush can paint
        windows back-to-front regardless of begin_window call order. */
@@ -500,18 +531,13 @@ imgui_end_window( void )
     imgui_rect_t win_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_h };
     draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
 
-    /* Resize affordance: bold the outline on any edge that is hot -- lit while a resize is in
-       flight (the grabbed edges) and, otherwise, when the cursor is hovering a grabbable
-       border with nothing else captured.  NORESIZE windows never light up. */
-    if ( !( s_ctx.win_flags & IMGUI_WIN_NORESIZE ) )
+    /* Resize affordance: bold the outline on any hot edge.  While a resize is in flight, the
+       grabbed edges stay lit even if the cursor drifts off them; otherwise use win_resize_hot,
+       the hover set computed in begin_window (already NORESIZE- and hover_win-gated). */
     {
-        imgui_id_t resize_id = s_ctx.win_id ^ IMGUI_RESIZE_SALT;
-        u8 hot_edges = 0;
-        if ( s_ctx.active_id == resize_id )
-            hot_edges = s_resize_edges;     /* keep the grabbed edges lit through the drag */
-        else if ( s_ctx.active_id == IMGUI_ID_NONE && s_ctx.hover_id == IMGUI_ID_NONE )
-            hot_edges = window_resize_hit( s_ctx.win_id, win_r, s_ctx.win_collapsed );
-
+        u8 hot_edges = ( s_ctx.active_id == ( s_ctx.win_id ^ IMGUI_RESIZE_SALT ) )
+                     ? s_resize_edges
+                     : s_ctx.win_resize_hot;
         if ( hot_edges )
             window_draw_resize_highlight( win_r, hot_edges );
     }
@@ -523,35 +549,23 @@ imgui_end_window( void )
     /* Subsequent draws (low-level API, the next window) revert to the background key. */
     draw_set_sort_key( 0 );
 
-    /* Resize / drag grab.  Decided here, after this window's widgets have run, so hover_id
-       tells us whether the press landed on a widget: this window is the one under the cursor
-       (hover_win) and no widget of it took the hover (hover_id == NONE) means the press is on
-       empty window space.  The move/resize itself starts next frame in begin_window. */
+    /* Drag grab.  Decided here, after this window's widgets have run, so hover_id tells us
+       whether the press landed on a widget: this window is the one under the cursor (hover_win)
+       and no widget of it took the hover (hover_id == NONE) means the press is on empty window
+       space.  An edge press never reaches here -- begin_window already grabbed the resize (and
+       set active_id) before the widgets ran, so the active_id == NONE test below excludes it.
+       BODY drags from anywhere empty; TITLEBAR only from the bar (a NOTITLEBAR window has
+       title_h 0, so its title_r never hits and TITLEBAR mode cannot move it). */
     if ( s_ctx.win_id == s_ctx.hover_win && s_ctx.hover_id == IMGUI_ID_NONE
-         && s_io.mouse_pressed[ 0 ] && s_ctx.active_id == IMGUI_ID_NONE )
+         && s_io.mouse_pressed[ 0 ] && s_ctx.active_id == IMGUI_ID_NONE
+         && s_win_drag_mode != IMGUI_WIN_DRAG_NONE )
     {
-        /* An edge grab takes priority over a move, so a press on a border resizes rather than
-           drags.  NORESIZE suppresses it; the body/title drag below then handles the press.
-           win_r (the displayed window rect) was set up by the border draw above. */
-        u8 edges = ( s_ctx.win_flags & IMGUI_WIN_NORESIZE )
-                 ? 0u
-                 : window_resize_hit( s_ctx.win_id, win_r, s_ctx.win_collapsed );
-
-        if ( edges )
+        imgui_rect_t title_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_title_h };
+        if ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) )
         {
-            window_resize_grab( win, s_ctx.win_id, edges );
-        }
-        else if ( s_win_drag_mode != IMGUI_WIN_DRAG_NONE )
-        {
-            /* BODY drags from anywhere empty; TITLEBAR only from the bar (a NOTITLEBAR window
-               has title_h 0, so its title_r never hits and TITLEBAR mode cannot move it). */
-            imgui_rect_t title_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_title_h };
-            if ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) )
-            {
-                s_ctx.active_id = s_ctx.win_id;
-                s_drag_off_x    = s_io.mouse_x - s_ctx.win_x;
-                s_drag_off_y    = s_io.mouse_y - s_ctx.win_y;
-            }
+            s_ctx.active_id = s_ctx.win_id;
+            s_drag_off_x    = s_io.mouse_x - s_ctx.win_x;
+            s_drag_off_y    = s_io.mouse_y - s_ctx.win_y;
         }
     }
 }
