@@ -26,17 +26,17 @@
    The struct is tagged so imgui_ctx.c (included earlier) can hold a pointer to it. */
 typedef struct imgui_window_t
 {
-    imgui_id_t id;          /* id_hash(title); 0 = free slot                  */
-    f32        x, y;        /* persisted top-left (updated by dragging)       */
-    f32        w, h;        /* persisted dimensions                           */
-    u32        z;           /* paint order: higher = more recently raised = in front */
+    imgui_id_t id;              /* id_hash(title); 0 = free slot                  */
+    f32        x, y;            /* persisted top-left (updated by dragging)       */
+    f32        w, h;            /* persisted dimensions                           */
+    u32        z;               /* paint order: higher = more recently raised = in front */
 
-    f32        scroll_y;    /* vertical scroll offset; 0 = top                */
-    f32        content_h;   /* total content height measured last frame       */
+    f32        scroll_y;        /* vertical scroll offset; 0 = top                */
+    f32        content_h;       /* total content height measured last frame       */
 
-    bool       collapsed;   /* title-bar-only when set; toggled by the arrow  */
+    bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
 
-    imgui_win_flags_t flags; /* behavior flags supplied to begin_window        */
+    imgui_win_flags_t flags;    /* behavior flags supplied to begin_window        */
 
 } imgui_window_t;
 
@@ -102,7 +102,10 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
 static void
 window_raise_on_press( void )
 {
-    if ( !s_io.mouse_pressed[ 0 ] || s_ctx.hover_win == IMGUI_ID_NONE )
+    /* Either button raises: left for the normal click/drag, middle for the convenience move
+       grab (imgui_widget.c end_window), so a middle-grabbed window also comes to the front. */
+    if ( ( !s_io.mouse_pressed[ 0 ] && !s_io.mouse_pressed[ 2 ] )
+         || s_ctx.hover_win == IMGUI_ID_NONE )
         return;
 
     for ( u32 i = 0; i < s_window_count; ++i )

@@ -559,23 +559,36 @@ imgui_end_window( void )
     /* Subsequent draws (low-level API, the next window) revert to the background key. */
     draw_set_sort_key( 0 );
 
-    /* Drag grab.  Decided here, after this window's widgets have run, so hover_id tells us
-       whether the press landed on a widget: this window is the one under the cursor (hover_win)
-       and no widget of it took the hover (hover_id == NONE) means the press is on empty window
-       space.  An edge press never reaches here -- begin_window already grabbed the resize (and
-       set active_id) before the widgets ran, so the active_id == NONE test below excludes it.
-       BODY drags from anywhere empty; TITLEBAR only from the bar (a NOTITLEBAR window has
-       title_h 0, so its title_r never hits and TITLEBAR mode cannot move it). */
-    if ( s_ctx.win_id == s_ctx.hover_win && s_ctx.hover_id == IMGUI_ID_NONE
-         && s_io.mouse_pressed[ 0 ] && s_ctx.active_id == IMGUI_ID_NONE
-         && s_win_drag_mode != IMGUI_WIN_DRAG_NONE )
+    /* Window move grab.  Decided here, after this window's widgets have run, and pinned off
+       entirely by NOMOVE (fixed-position widgets).  This window must be the one under the
+       cursor (hover_win) and nothing must already own active_id -- an edge press never reaches
+       here, since begin_window grabbed the resize before the widgets ran.  Two buttons grab:
+
+       Left button obeys the global drag mode and only on empty window space (hover_id == NONE,
+       so a press on a widget drives the widget, not a drag): BODY drags from anywhere empty,
+       TITLEBAR only from the bar (a NOTITLEBAR window has title_h 0, so its title_r never hits
+       and TITLEBAR mode cannot move it).
+
+       Middle button is a convenience grab: it moves the front window from anywhere over it --
+       even atop a widget, since no widget consumes the middle button -- ignoring the drag mode,
+       so the window is always easy to pick up and reposition without aiming for the bar. */
+    if ( s_ctx.win_id == s_ctx.hover_win && s_ctx.active_id == IMGUI_ID_NONE
+         && !( s_ctx.win_flags & IMGUI_WIN_NOMOVE ) )
     {
         imgui_rect_t title_r = { s_ctx.win_x, s_ctx.win_y, s_ctx.win_w, s_ctx.win_title_h };
-        if ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) )
+
+        bool left_grab = s_io.mouse_pressed[ 0 ] && s_ctx.hover_id == IMGUI_ID_NONE
+                      && s_win_drag_mode != IMGUI_WIN_DRAG_NONE
+                      && ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) );
+
+        bool mid_grab = s_io.mouse_pressed[ 2 ];
+
+        if ( left_grab || mid_grab )
         {
-            s_ctx.active_id = s_ctx.win_id;
-            s_drag_off_x    = s_io.mouse_x - s_ctx.win_x;
-            s_drag_off_y    = s_io.mouse_y - s_ctx.win_y;
+            s_ctx.active_id     = s_ctx.win_id;
+            s_ctx.active_button = mid_grab ? 2 : 0;   /* release tracks the grabbing button */
+            s_drag_off_x        = s_io.mouse_x - s_ctx.win_x;
+            s_drag_off_y        = s_io.mouse_y - s_ctx.win_y;
         }
     }
 }

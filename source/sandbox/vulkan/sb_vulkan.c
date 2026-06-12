@@ -312,7 +312,7 @@ main( int argc, char** argv )
                     if ( 1 ) {
                         /* Second, overlapping window -- click either to bring it to the
                            front (z-order); drag to reposition. */
-                        if ( imgui()->begin_window( "Inspector", 360, 240, 360, 280, IMGUI_WIN_NORESIZE ) )
+                        if ( imgui()->begin_window( "Inspector", 360, 240, 360, 280, IMGUI_WIN_NOTITLEBAR ) )
                         {
                             imgui()->text( "Second window." );
                             imgui()->textf( "drag mode keys: 1 title  2 body  3 none" );

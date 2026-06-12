@@ -47,8 +47,8 @@ typedef enum
     IMGUI_WIN_NOTITLEBAR   = 1 << 0,    /* no title bar: body fills the top; no collapse, no titlebar drag */
     IMGUI_WIN_NOCOLLAPSE   = 1 << 1,    /* no collapse arrow; the window stays expanded */
     IMGUI_WIN_NORESIZE     = 1 << 2,    /* disable user resizing from the border edges */
+    IMGUI_WIN_NOMOVE       = 1 << 3,    /* disable user drag moving the window from anywhere */
 
- // IMGUI_WIN_NOMOVE       = 1 << 3,
  // IMGUI_WIN_MENUBAR      = 1 << 4,
  // IMGUI_WIN_NOINPUT      = 1 << 5,
  // IMGUI_WIN_HSCROLL      = 1 << 6,

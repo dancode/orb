@@ -22,6 +22,7 @@ static struct
 {
     imgui_id_t  hover_id;       /* widget under the cursor this frame (rebuilt each frame) */
     imgui_id_t  active_id;    /* widget with the mouse button held (drag / hold)       */
+    u8          active_button;  /* which button holds active_id (0=left); reset to 0 on release */
     imgui_id_t  focused_id;   /* widget that owns keyboard input                       */
 
     /* Window occlusion is resolved one frame deferred: the single window the cursor is
@@ -110,12 +111,18 @@ ctx_new_frame( void )
     s_ctx.next_hover_win   = IMGUI_ID_NONE;
     s_ctx.next_hover_win_z = 0;
 
-    /* Release active_id once the primary button is up.  Keep it alive on the
-       release-edge frame (mouse_released) so widgets can still observe the
-       press+release pair this frame; it clears on the following frame when the
-       button is neither down nor just released. */
-    if ( !s_io.mouse_down[ 0 ] && !s_io.mouse_released[ 0 ] )
-         s_ctx.active_id = IMGUI_ID_NONE;
+    /* Release active_id once its initiating button is up.  Most grabs use the left button
+       (active_button 0); a middle-button window move sets active_button 2 so it releases on
+       the middle button instead.  Keep it alive on the release-edge frame (mouse_released)
+       so widgets can still observe the press+release pair this frame; it clears on the
+       following frame.  Resetting active_button to 0 on release means every left-button grab
+       site needs no bookkeeping -- only the middle grab raises it. */
+    u8 ab = s_ctx.active_button;
+    if ( !s_io.mouse_down[ ab ] && !s_io.mouse_released[ ab ] )
+    {
+         s_ctx.active_id     = IMGUI_ID_NONE;
+         s_ctx.active_button = 0;
+    }
 
     /* Drop keyboard focus on any press; the widget under the cursor re-claims
        it the same frame (input_text sets focused_id from hover_id + press).
