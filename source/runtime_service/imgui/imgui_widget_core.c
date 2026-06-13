@@ -83,9 +83,11 @@ widget_track_width( f32 right_x )
 ----------------------------------------------------------------------------------------------*/
 
 /* Resolve a track list into pixel [pos,size] pairs along one axis.  `n` tracks (>= 1) are laid
-   from `origin` across `extent`, with `gap` between each.  Units: >1 fixed px, (0,1] fraction of
-   the gap-adjusted extent, 0 flex (equal share of the leftover).  Gaps are removed before the
-   split, so a fraction is of usable space and cells tile exactly. */
+   from `origin` across `extent`, with `gap` between each.  Units (see imgui_layout_t): >1 fixed px,
+   ==1 fill (equal share of the leftover -- several fills split it), (0,1) fraction of the gap-
+   adjusted extent, ==0 natural.  This is a pre-divide (up-front) resolve with no content in hand,
+   so a 0/natural track collapses to zero width here -- natural only has a measure in pack mode.
+   Gaps are removed before the split, so a fraction is of usable space and cells tile exactly. */
 static void
 layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
                        f32* out_pos, f32* out_size )
@@ -93,26 +95,31 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
     f32 avail = extent - gap * (f32)( n - 1 );
     if ( avail < 0.0f ) avail = 0.0f;
 
-    /* Pass 1: fixed + fractional consume space; flex tracks share what's left. */
+    /* Pass 1: fixed px + fractions consume space; fill (==1) tracks share what's left; natural
+       (==0) contributes nothing in a pre-divide. */
     f32 used = 0.0f;
-    u32 flex = 0;
+    u32 fill = 0;
     for ( u32 i = 0; i < n; ++i )
     {
         f32 t = tracks[ i ];
-        if      ( t == 0.0f ) ++flex;
-        else if ( t <= 1.0f ) used += t * avail;
-        else                  used += t;
+        if      ( t == 1.0f ) ++fill;            /* fill -- equal share of the leftover */
+        else if ( t >  1.0f ) used += t;         /* fixed px                            */
+        else if ( t >  0.0f ) used += t * avail; /* fraction (0,1)                      */
+        /* t == 0.0f : natural -- no content to measure here, contributes 0             */
     }
     f32 leftover  = avail - used;
     if ( leftover < 0.0f ) leftover = 0.0f;
-    f32 flex_each = flex ? leftover / (f32)flex : 0.0f;
+    f32 fill_each = fill ? leftover / (f32)fill : 0.0f;
 
     /* Pass 2: place left-to-right, gap between cells (not before the first / after the last). */
     f32 pos = origin;
     for ( u32 i = 0; i < n; ++i )
     {
         f32 t  = tracks[ i ];
-        f32 sz = ( t == 0.0f ) ? flex_each : ( t <= 1.0f ? t * avail : t );
+        f32 sz = ( t == 1.0f ) ? fill_each
+               : ( t >  1.0f ) ? t
+               : ( t >  0.0f ) ? t * avail
+               :                 0.0f;           /* natural -> zero-width track in pre-divide */
         out_pos [ i ] = pos;
         out_size[ i ] = sz;
         pos += sz + gap;
@@ -139,16 +146,45 @@ layout_copy_tracks( const f32* src, f32* out )
     u32 n = 0;
     if ( src )
         while ( n < IMGUI_LAYOUT_COLS && src[ n ] >= 0.0f ) { out[ n ] = src[ n ]; ++n; }
-    if ( n == 0 ) { out[ 0 ] = 0.0f; n = 1; }   /* default to a single flex track */
+    if ( n == 0 ) { out[ 0 ] = 1.0f; n = 1; }   /* default to a single fill track (full extent) */
     return n;
 }
 
-/* Install the region's default template: one flex column, auto height -- the classic stack.
-   Resolves immediately (content_x/content_w must already be set), so the single column fills the
-   content width with no gap.  Called when a region opens and by imgui_pad after re-insetting. */
+/* Open a region UNDECLARED: zero the template state and leave the mode NONE so the first layout
+   header (stack / columns / grid / ...) installs real geometry.  A widget emitted before any
+   header trips the guard in widget_next_rect_w.  Called when a region or sub-layout opens (the
+   old silent single-column default is gone) and by imgui_pad after re-insetting -- the modifiers
+   (gaps reset to the theme, field split + align cleared) start from a known state every region. */
+static void
+layout_clear( layout_frame_t* f )
+{
+    f->mode              = IMGUI_MODE_NONE;
+    f->lay_ncols         = 0;             /* no template -- first header resolves one */
+    f->lay_nrows         = 0;
+    f->lay_row_h         = 0.0f;
+    f->lay_gap_x         = WIDGET_GAP;
+    f->lay_gap_y         = WIDGET_GAP;
+    f->lay_field_side    = 0;             /* trailing label until field_split / field_label_* */
+    f->lay_field_label   = 0.0f;
+    f->lay_field_control = 0.0f;
+    f->lay_align         = 0;             /* LEFT | TOP until align() / layout.align sets it */
+    f->col               = 0;
+    f->row               = 0;
+    f->prev_item         = ( imgui_rect_t ){ 0 };   /* no same_line anchor in a fresh region */
+    f->cont_line         = false;
+    f->pack_dir          = 0;             /* pack pen is seeded by pack(); only the pending size */
+    f->pack_size_next    = -1.0f;         /* matters before then -- unset means natural          */
+}
+
+/* Install the region's default template: one flex column, auto height -- the classic stack, mode
+   STACK.  Resolves immediately (content_x/content_w must already be set), so the single column
+   fills the content width with no gap.  This is the full reset (clears field split + align too):
+   it backs imgui_layout_default and the emit-before-header guard's release fallback.  The plain
+   stack() header keeps modifiers and routes through layout_set instead. */
 static void
 layout_set_default( layout_frame_t* f )
 {
+    f->mode            = IMGUI_MODE_STACK;
     f->lay_ncols       = 1;
     f->lay_nrows       = 0;               /* flow mode */
     f->lay_row_h       = 0.0f;
@@ -173,6 +209,7 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
     layout_frame_t* f = lf();
     layout_row_break( f );
 
+    f->mode         = IMGUI_MODE_COLUMNS;   /* a flow template; stack()/row() override to STACK */
     f->lay_row_h    = row_h;
     f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
     f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
@@ -197,6 +234,7 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
     layout_frame_t* f = lf();
     layout_row_break( f );          /* finish any flow row above the grid band */
 
+    f->mode         = IMGUI_MODE_GRID;
     f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
     f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
 
@@ -326,6 +364,56 @@ grid_next_rect( layout_frame_t* f )
    mode the matrix is already resolved, so it just walks (see above).  The widget just fills the
    rect; it never sees columns or gaps. */
 
+/* Place one item in pack mode (bar / strip): the print run.  The widget's natural size feeds the
+   main axis (width for a horizontal bar, height for a vertical strip); the cross axis takes its
+   natural extent on that axis, or fills the column when it has none.  A pending pack_size overrides
+   the main extent, resolved against the space left on the current line (0 = natural, 1 = fill the
+   rest, (0,1) a fraction of the remainder, >1 px); it is consumed (back to natural) after one item.
+   pack_main advances along the axis; cursor_y is kept at the content bottom so the region measures
+   its height correctly without a trailing pack_nextline. */
+static imgui_rect_t
+pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
+{
+    bool horiz = ( f->pack_dir == IMGUI_PACK_HORIZONTAL );
+
+    /* Natural extents per axis from the widget's preferred size.  A fill widget (no natural width,
+       natural_w <= 0) has no main extent of its own: it defaults to filling the rest of the line. */
+    f32 nat_main  = horiz ? ( natural_w > 0.0f ? natural_w : 0.0f ) : h;
+    f32 cross_ext = horiz ? h : ( natural_w > 0.0f ? natural_w : f->content_w );
+
+    f32 main_avail = ( horiz ? ( f->content_x + f->content_w ) : f->content_y_max ) - f->pack_main;
+    if ( main_avail < 0.0f ) main_avail = 0.0f;
+
+    f32 u = f->pack_size_next;
+    f32 main_ext;
+    if      ( u <  0.0f ) main_ext = ( nat_main > 0.0f ) ? nat_main : main_avail; /* unset: natural, or fill if none */
+    else if ( u == 0.0f ) main_ext = nat_main;                                    /* explicit natural               */
+    else if ( u == 1.0f ) main_ext = main_avail;                                  /* fill the rest of the line      */
+    else if ( u <  1.0f ) main_ext = u * main_avail;                              /* fraction of the remainder      */
+    else                  main_ext = u;                                           /* fixed px                       */
+    f->pack_size_next = -1.0f;                                                    /* consume -> next item is natural */
+
+    imgui_rect_t r;
+    if ( horiz )
+    {
+        r            = ( imgui_rect_t ){ f->pack_main, f->pack_cross, main_ext, cross_ext };
+        f->pack_main += main_ext + f->lay_gap_x;
+        if ( cross_ext > f->pack_line ) f->pack_line = cross_ext;
+        f->cursor_y   = f->pack_cross + f->pack_line;   /* content bottom = current line's bottom */
+    }
+    else
+    {
+        r            = ( imgui_rect_t ){ f->pack_cross, f->pack_main, cross_ext, main_ext };
+        f->pack_main += main_ext + f->lay_gap_y;
+        if ( cross_ext > f->pack_line ) f->pack_line = cross_ext;
+        f->cursor_y   = f->pack_main;                   /* content bottom = the running y pen */
+    }
+
+    widget_track_width( r.x + r.w );
+    f->prev_item = r;
+    return r;
+}
+
 /* Width-aware form.  `natural_w` is the widget's preferred width, used only when a same_line is
    pending (the widget then sits at the running x sized to natural_w, or fills to the content edge
    when natural_w <= 0); in normal column flow / grid it is ignored and the track cell width wins.
@@ -334,7 +422,21 @@ static imgui_rect_t
 widget_next_rect_w( f32 natural_w, f32 h )
 {
     layout_frame_t* f = lf();
-    if ( f->lay_ncols == 0 ) layout_set_default( f );   /* repair a stray-emit (empty) frame */
+
+    /* Emit-before-header guard: a region opens UNDECLARED (mode NONE), and the first layout header
+       names the mode.  A widget emitted before any header is a usage error -- assert in debug so it
+       is caught at the call site, and fall back to a stack in release so a shipped build degrades
+       rather than faults (mirrors how the layout / id stacks clamp instead of crashing). */
+    if ( f->mode == IMGUI_MODE_NONE )
+    {
+        ORB_ASSERT( f->mode != IMGUI_MODE_NONE );   /* declare a mode (stack/columns/grid/...) first */
+        layout_set_default( f );                    /* release fallback: behave as a plain stack */
+    }
+
+    /* Pack mode (bar / strip): the print run places items along its axis, ignoring same_line and the
+       column walk -- pack_nextline is its line break. */
+    if ( f->mode == IMGUI_MODE_PACK )
+        return pack_next_rect( f, natural_w, h );
 
     /* same_line: place on the previous item's line at the running x, sized to natural_w (or the
        remaining content width).  Bypasses the column walk; the column cursor restarts below the

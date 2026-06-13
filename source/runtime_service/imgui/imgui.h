@@ -32,8 +32,9 @@ typedef struct { f32 l, r, t, b; }  imgui_pad_t;
 
     A region (a window body or a begin_child box) lays widgets out by carving its content area
     into cells.  imgui_layout() installs a template that *persists and repeats*: every widget
-    fills the next cell.  The default -- a single flex column of auto height -- is the classic
-    vertical stack, so existing code needs no changes.
+    fills the next cell.  A region opens UNDECLARED (no template): the first layout header in its
+    body names the mode -- stack() for the single flex column of auto height (the classic vertical
+    stack), or columns / grid / form for the others.  See imgui_layout_mode_t.
 
     Two modes, chosen by whether `rows` is set:
 
@@ -46,10 +47,14 @@ typedef struct { f32 l, r, t, b; }  imgui_pad_t;
                              scrolls.  Titlebars, toolbars, split panes, dashboards, image grids.
 
     Column / row sizes use one overloaded f32 (the same rule on both axes):
-        > 1.0       fixed pixels
-        (0.0, 1.0]  fraction of the gap-adjusted available extent
-        == 0.0      flex -- an equal share of whatever space is left
-        <  0.0      IMGUI_END, the track-list terminator
+        > 1.0         fixed pixels
+        == 1.0        fill -- an equal share of the leftover (several fills split it evenly)
+        (0.0, 1.0)    fraction of the gap-adjusted available extent
+        == 0.0        natural -- the item's own content size.  This only has a measure where the
+                      content is known at resolve time (pack mode, resolved per item); a pre-divided
+                      column / grid track is resolved up front with no content, so a 0 there
+                      collapses to a zero-width track -- use fill / fraction / px in columns + grid.
+        <  0.0        IMGUI_END, the track-list terminator
 
     Gaps sit *between* cells and are subtracted before distribution, so a widget never sees or
     reasons about spacing -- it just fills the rect it is handed.
@@ -91,6 +96,38 @@ typedef struct
     imgui_align_t   align;                      // content alignment within each cell (0 = LEFT | TOP)
 
 } imgui_layout_t;
+
+/*==============================================================================================
+    Layout mode -- the next-item methodology a region is laying out under.
+
+    A region opens UNDECLARED (NONE): the first layout header names the mode (stack / columns /
+    grid / ...), and a widget emitted before any header is a usage error (debug assert; a release
+    build falls back to STACK rather than faulting).  This replaces the old silent single-column
+    default -- the mode is now always explicit at the top of a region body.  The mode is the
+    "next item methodology"; the per-cell sizing inside it is still the one overloaded unit rule.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_MODE_NONE = 0,    /* no header declared yet -- emitting a widget here is a usage error */
+    IMGUI_MODE_STACK,       /* single flex column, rows accumulate + scroll (the vertical list)  */
+    IMGUI_MODE_COLUMNS,     /* N pre-divided column tracks, rows accumulate + scroll             */
+    IMGUI_MODE_GRID,        /* bounded cols x rows matrix, both axes fixed, nothing scrolls      */
+    IMGUI_MODE_PACK,        /* natural-size print run, placed item-by-item along an axis (bar/strip) */
+
+} imgui_layout_mode_t;
+
+/*==============================================================================================
+    Pack direction -- the axis a pack() run places items along, item-by-item at natural size.
+    bar() is the horizontal pack (a toolbar); strip() is the vertical pack.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_PACK_HORIZONTAL = 0,    /* bar:   items flow left to right, nextline wraps down    */
+    IMGUI_PACK_VERTICAL   = 1,    /* strip: items flow top to bottom, nextline wraps across  */
+
+} imgui_pack_dir_t;
 
 /*==============================================================================================
     Field label side -- where a labeled value widget (input_text / slider_float / checkbox) puts

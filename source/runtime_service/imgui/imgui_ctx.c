@@ -83,6 +83,7 @@ typedef struct
        region opens with the default -- one flex column, auto height -- so a plain vertical
        stack needs no layout call.  See imgui_layout_t in imgui.h for the unit rule. */
 
+    imgui_layout_mode_t mode;                    // declared next-item methodology; NONE until a header
     u32         lay_ncols;                       // column count
     f32         lay_row_h;                       // flow row height: 0 = auto, >0 = pixels
     f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
@@ -127,6 +128,18 @@ typedef struct
     imgui_rect_t prev_item;                 // last cell emitted this region (same_line anchor)
     bool         cont_line;                 // next widget continues on prev_item's line
     f32          cont_x;                    // x at which the continued widget is placed
+
+    /* Pack mode (bar / strip): a print run placing items along pack_dir at natural size -- or a
+       pack_size override resolved against the space remaining on the current line -- with
+       pack_nextline breaking to a fresh line.  pack_main is the running pen along the axis,
+       pack_cross the current line's origin on the other axis, pack_line its max cross extent. */
+
+    u8  pack_dir;                           // imgui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
+    f32 pack_main;                          // running main-axis pen (absolute)
+    f32 pack_cross;                         // current line's cross-axis origin (absolute)
+    f32 pack_line;                          // current line's max cross extent
+    f32 pack_origin_main;                   // main-axis start, for the nextline reset
+    f32 pack_size_next;                     // pending main-axis size unit; < 0 = unset (natural)
 
     /* Resolve context, set at push and read at pop. */
 

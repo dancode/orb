@@ -209,17 +209,14 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, i
     f->cursor_y      = outer.y + region_pad.t - *scroll_y;
     f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
 
-    /* No previous item and no pending same_line until a widget emits in this fresh region. */
-    f->prev_item = ( imgui_rect_t ){ 0 };
-    f->cont_line = false;
-
     /* Bottom of the content area (mirror of content_w on the vertical axis): the end of a grid's
        band, so a grid fills from the pen down to here.  Unscrolled -- grids do not scroll. */
     f->content_y_max = outer.y + outer.h - region_pad.b - f->sb_h;
 
-    /* Open with the default template: a single flex column of auto height (the classic stack).
-       imgui_layout / the row sugar replace it; a fresh region always starts from the default. */
-    layout_set_default( f );
+    /* Open UNDECLARED: no template, mode NONE (this also clears the same_line anchor).  The first
+       layout header in the region body (stack / columns / grid / ...) installs the geometry; a
+       widget emitted before then trips the guard in widget_next_rect_w. */
+    layout_clear( f );
 
     /* Own clip (children only): scissor contents to the gutter-adjusted view; draw_push_clip_rect
        intersects it with the enclosing clip so a child near an edge cannot draw past its parent.
@@ -400,7 +397,7 @@ imgui_end_child( void )
     advances (column, row wrap, same_line anchor) the instant push_layout is called, and on pop it
     resumes at the following cell -- then opens a transient layout frame whose content area *is*
     that cell.  Inside, shape it with the normal verbs (row / row_cols / grid / widgets); a fresh
-    sub-layout opens with the default single flex column.  This is the recursive completion of the
+    sub-layout opens undeclared, so name its mode inside (stack / columns / ...).  This is the recursive completion of the
     cell model: a cell can host a layout, the way a window or child does, but with none of the
     weight -- no scroll, no clip, no persistent state, no frame.
 
@@ -459,10 +456,7 @@ imgui_push_layout( void )
     f->content_max_x = cell.x;
     f->content_y_max = cell.y + cell.h;
 
-    layout_set_default( f );                 /* single flex column at the cell width */
-
-    f->prev_item = ( imgui_rect_t ){ 0 };    /* fresh same_line anchor inside the sub-layout */
-    f->cont_line = false;
+    layout_clear( f );                       /* sub-layout opens undeclared -- declare a mode inside */
 }
 
 void
@@ -493,11 +487,23 @@ imgui_layout( imgui_layout_t desc )
     lf()->lay_align = (u8)desc.align;   /* full template carries the content alignment too */
 }
 
-/* Single full-width column of height row_h (0 = auto) -- back to the classic vertical stack. */
+/* stack -- the explicit header for a single full-width flex column, rows accumulating + scrolling
+   (the everyday vertical list).  This is the canonical name for what a region used to do silently
+   by default; it must now be declared.  Keeps the orthogonal modifiers (align, field split) as
+   they stand -- use layout_default() for the full reset. */
+void
+imgui_stack( void )
+{
+    layout_set( NULL, 0.0f, 0.0f, 0.0f );
+    lf()->mode = IMGUI_MODE_STACK;   /* a single full-width column is a stack, not columns */
+}
+
+/* Single full-width column of height row_h (0 = auto) -- a stack with an explicit row height. */
 void
 imgui_row( f32 row_h )
 {
     layout_set( NULL, row_h, 0.0f, 0.0f );
+    lf()->mode = IMGUI_MODE_STACK;
 }
 
 /* Reset the active region's layout to the state it opened with: one flex column of auto height,
@@ -521,7 +527,7 @@ imgui_row_cols( f32 row_h, u32 n )
     if ( n > IMGUI_LAYOUT_COLS )  n = IMGUI_LAYOUT_COLS;
 
     f32 cols[ IMGUI_LAYOUT_COLS + 1 ];
-    for ( u32 i = 0; i < n; ++i ) cols[ i ] = 0.0f;   /* all flex -> equal split */
+    for ( u32 i = 0; i < n; ++i ) cols[ i ] = 1.0f;   /* all fill -> equal split */
     cols[ n ] = IMGUI_END;
     layout_set( cols, row_h, 0.0f, 0.0f );
 }
@@ -533,9 +539,25 @@ imgui_row_track( f32 row_h, const f32* cols )
     layout_set( cols, row_h, 0.0f, 0.0f );
 }
 
+/* columns -- the explicit header for N pre-divided column tracks (IMGUI_END-terminated, overloaded
+   units), auto height, rows accumulating + scrolling.  The canonical name for the multi-column flow
+   template; row_track is the same with an explicit row height. */
+void
+imgui_columns( const f32* tracks )
+{
+    layout_set( tracks, 0.0f, 0.0f, 0.0f );
+}
+
+/* cols_n -- N equal flex columns, auto height: the everyday uniform split (a wrapper over row_cols). */
+void
+imgui_cols_n( u32 n )
+{
+    imgui_row_cols( 0.0f, n );
+}
+
 /* Fixed-arity weighted rows -- the everyday 2/3/4-column split without a track array or its
-   IMGUI_END terminator.  Each width takes the overloaded unit (>1 px, (0,1] fraction, 0 flex),
-   so row2( 0.3f, 0.7f ) is a 30/70 split and row2( 120, 0 ) is a 120px column plus a flex fill.
+   IMGUI_END terminator.  Each width takes the overloaded unit (>1 px, 1 fill, (0,1) fraction, 0
+   natural), so row2( 0.3f, 0.7f ) is a 30/70 split and row2( 120, 1 ) is a 120px column plus a fill.
    Auto height (the common case); reach for row_track / layout when a fixed height or >4 columns
    is needed. */
 
@@ -560,11 +582,19 @@ imgui_same_line( f32 spacing )
     f->cont_line = true;
 }
 
+/* stack_sameline -- the mode-prefixed name for same_line; identical behavior.  The stack_ spelling
+   groups the "keep the next widget on this line" verb with the stack() header. */
+void
+imgui_stack_sameline( f32 spacing )
+{
+    imgui_same_line( spacing );
+}
+
 /* Field split -- the labeled value widgets (input_text, slider_float, checkbox) split their cell
    into a label track + a control track and lay out as an aligned "Label  [control]" form from a
    single call.  `side` places the label on the left or right; `label` / `control` are two sizes in
-   the same overloaded unit as columns (>1 px, (0,1] fraction, 0 flex), so field_split( LEFT, 0.4f,
-   0.6f ) is a 40/60 split and field_split( LEFT, 120, 0 ) is a 120px label plus a flex control.
+   the same overloaded unit as columns (>1 px, 1 fill, (0,1) fraction, 0 natural), so field_split(
+   LEFT, 0.4f, 0.6f ) is a 40/60 split and field_split( LEFT, 120, 1 ) is a 120px label + fill control.
    Pass IMGUI_LABEL_NONE to turn it off (back to the trailing natural-width label).  Set once on a
    region; it persists like the row template until changed, and is resolved against whatever cell
    each widget is handed -- a full row or a single column. */
@@ -579,8 +609,27 @@ imgui_field_split( imgui_label_side_t side, f32 label, f32 control )
 
 /* field_split sugar -- a fixed-width label column with a flex control filling the rest, on the
    left or the right.  width <= 0 turns the field split off (restores the trailing label). */
-void imgui_field_label_left ( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_LEFT  : IMGUI_LABEL_NONE, width, 0.0f ); }
-void imgui_field_label_right( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_RIGHT : IMGUI_LABEL_NONE, width, 0.0f ); }
+void imgui_field_label_left ( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_LEFT  : IMGUI_LABEL_NONE, width, 1.0f ); }
+void imgui_field_label_right( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_RIGHT : IMGUI_LABEL_NONE, width, 1.0f ); }
+
+/* form_split -- the mode-prefixed name for field_split; identical behavior.  The form_* spelling
+   groups the label/control split with the form() header. */
+void
+imgui_form_split( imgui_label_side_t side, f32 label, f32 control )
+{
+    imgui_field_split( side, label, control );
+}
+
+/* form -- a stack of aligned "Label  [control]" rows: a single flex column (stack) with a field
+   split installed in one call.  label_w is the fixed label-track width on `side`, the control
+   flex-fills the rest; label_w <= 0 turns the split off (a plain stack).  The reflection-tweaker /
+   settings-panel header. */
+void
+imgui_form( imgui_label_side_t side, f32 label_w )
+{
+    imgui_stack();
+    imgui_field_split( label_w > 0.0f ? side : IMGUI_LABEL_NONE, label_w, 1.0f );   /* label px + fill control */
+}
 
 /* Content alignment -- where each widget's natural-sized content sits inside its cell (a label, an
    image, a text run; a frame-filling widget like button / input still fills the cell and only its
@@ -615,16 +664,92 @@ imgui_grid_cells( u32 nc, u32 nr )
 
     f32 cols[ IMGUI_LAYOUT_COLS + 1 ];
     f32 rows[ IMGUI_LAYOUT_COLS + 1 ];
-    for ( u32 i = 0; i < nc; ++i ) cols[ i ] = 0.0f;   /* all flex -> equal columns */
-    for ( u32 i = 0; i < nr; ++i ) rows[ i ] = 0.0f;   /* all flex -> equal rows    */
+    for ( u32 i = 0; i < nc; ++i ) cols[ i ] = 1.0f;   /* all fill -> equal columns */
+    for ( u32 i = 0; i < nr; ++i ) rows[ i ] = 1.0f;   /* all fill -> equal rows    */
     cols[ nc ] = IMGUI_END;
     rows[ nr ] = IMGUI_END;
     layout_set_grid( cols, rows, 0.0f, 0.0f );
 }
 
-/* Region padding: re-inset the current region's content area and reset to the default template
-   at the padded top-left.  Call right after opening a region, before setting a layout (it resets
-   the template, so set the row / grid afterward). */
+/*----------------------------------------------------------------------------------------------
+    Pack mode -- the print run: place items one after another along an axis at their natural size.
+
+    pack( dir ) opens a run; bar() is the horizontal pack (a toolbar), strip() the vertical one.
+    Each widget takes its natural main-axis size unless pack_size() overrides the next one, resolved
+    against the space left on the line (0 natural, 1 fill the rest, (0,1) a fraction, >1 px).  A
+    widget with no natural width (slider / input / selectable) fills the remainder of the line by
+    default.  pack_nextline() breaks to a fresh line.  Mode persists like any other until re-set.
+----------------------------------------------------------------------------------------------*/
+
+/* pack -- open a print run along `dir`.  Finishes any flow row above it, then seeds the pack pen
+   at the current layout position: the main axis runs along dir from there, the cross axis from the
+   content edge.  Fill it with widgets (bar / strip are the sugar). */
+void
+imgui_pack( imgui_pack_dir_t dir )
+{
+    layout_frame_t* f = lf();
+    layout_row_break( f );            /* finish any flow row above the run */
+
+    f->mode           = IMGUI_MODE_PACK;
+    f->pack_dir       = (u8)dir;
+    f->pack_size_next = -1.0f;        /* next item is natural until pack_size() */
+    f->lay_ncols      = 1;            /* non-zero: pack bypasses the column walk */
+    f->lay_nrows      = 0;
+    f->col            = 0;
+    f->row            = 0;
+    f->pack_line      = 0.0f;
+    f->prev_item      = ( imgui_rect_t ){ 0 };
+    f->cont_line      = false;
+
+    if ( dir == IMGUI_PACK_HORIZONTAL )
+    {
+        f->pack_main  = f->content_x;     /* x pen runs along the line     */
+        f->pack_cross = f->cursor_y;      /* y top of the current line     */
+    }
+    else
+    {
+        f->pack_main  = f->cursor_y;      /* y pen runs down the column    */
+        f->pack_cross = f->content_x;     /* x left of the current column  */
+    }
+    f->pack_origin_main = f->pack_main;
+}
+
+/* bar -- horizontal pack: items left to right (the toolbar). */
+void imgui_bar( void ) { imgui_pack( IMGUI_PACK_HORIZONTAL ); }
+
+/* strip -- vertical pack: items top to bottom at their natural height. */
+void imgui_strip( void ) { imgui_pack( IMGUI_PACK_VERTICAL ); }
+
+/* pack_size -- set the next packed item's main-axis measure (overloaded unit, resolved against the
+   space remaining on the current line); cleared back to natural after that one item. */
+void imgui_pack_size( f32 unit ) { lf()->pack_size_next = unit; }
+
+/* pack_nextline -- break to a fresh line: reset the main pen to the line start and step the cross
+   axis past the line just laid.  No-op outside pack mode. */
+void
+imgui_pack_nextline( void )
+{
+    layout_frame_t* f = lf();
+    if ( f->mode != IMGUI_MODE_PACK ) return;
+
+    if ( f->pack_dir == IMGUI_PACK_HORIZONTAL )
+    {
+        f->pack_cross += f->pack_line + f->lay_gap_y;   /* drop below the line */
+        f->pack_main   = f->content_x;                  /* back to the left    */
+        f->cursor_y    = f->pack_cross;
+    }
+    else
+    {
+        f->pack_cross += f->pack_line + f->lay_gap_x;   /* move past the column */
+        f->pack_main   = f->pack_origin_main;           /* back to the top      */
+    }
+    f->pack_line = 0.0f;
+    f->prev_item = ( imgui_rect_t ){ 0 };
+}
+
+/* Region padding: re-inset the current region's content area and clear the template back to
+   undeclared at the padded top-left.  Call right after opening a region; declare a mode header
+   (stack / columns / grid / ...) afterward, since pad() leaves the region with no template. */
 void
 imgui_pad( imgui_pad_t p )
 {
@@ -638,7 +763,7 @@ imgui_pad( imgui_pad_t p )
     f->content_max_x = f->content_x;
     f->content_y_max = f->outer.y + f->outer.h - p.b - f->sb_h;   /* grid band end, new bottom pad */
 
-    layout_set_default( f );   /* re-resolve against the new content rect (single flex column) */
+    layout_clear( f );   /* re-inset clears the template -- declare a mode header again after pad() */
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -21,9 +21,9 @@
 /*==============================================================================================
     1. Widgets -- the basic interactive controls.
 
-    text / button / checkbox / slider_float / input_text, each on its own auto-height row (the
-    default single-column stack).  Every widget returns true on the frame it is activated or its
-    value changes; here we just feed that back into a little bit of state so the effect is visible.
+    text / button / checkbox / slider_float / input_text, each on its own auto-height row in a
+    stack() (the single-column vertical list).  Every widget returns true on the frame it is
+    activated or its value changes; here we just feed that back into a little state so it shows.
 ==============================================================================================*/
 
 static void
@@ -31,6 +31,7 @@ demo_widgets( void )
 {
     if ( imgui()->begin_window( "Widgets", 60, 60, 360, 420, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();                       /* declare the mode: a vertical list */
         imgui()->text( "Basic interactive widgets:" );
         imgui()->separator();
 
@@ -73,6 +74,7 @@ demo_text( void )
 {
     if ( imgui()->begin_window( "Text & Sections", 60, 60, 380, 460, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();
         imgui()->text( "Plain text line." );
         imgui()->textf( "Formatted: pi ~= %.4f, frame %d", 3.14159f, 42 );
 
@@ -103,9 +105,10 @@ demo_text( void )
 /*==============================================================================================
     3. Layout rows -- shaping the repeating row template.
 
-    A region opens as a single flex column; row / row_cols / row2..4 / row_track replace that
-    template, and it persists and repeats for every following widget until set again.  Sizes use
-    one overloaded f32: > 1 pixels, (0,1] a fraction, 0 an equal flex share.
+    A region declares its mode with a header: stack() is the single flex column, while row_cols /
+    row2..4 / row_track install a multi-column flow template.  The template persists and repeats
+    for every following widget until set again.  Sizes use one overloaded f32: > 1 pixels, 1.0
+    fill (equal share of the leftover), (0,1) a fraction, 0 natural.
 ==============================================================================================*/
 
 static void
@@ -113,6 +116,7 @@ demo_layout_rows( void )
 {
     if ( imgui()->begin_window( "Layout Rows", 60, 60, 440, 420, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();                         /* heading lines sit in a plain stack */
         imgui()->text( "row_cols( 0, 3 ) -- three equal columns:" );
         imgui()->row_cols( 0, 3 );
         imgui()->button( "A" );
@@ -126,10 +130,10 @@ demo_layout_rows( void )
         imgui()->button( "70%" );
         imgui()->row( 0 );
 
-        imgui()->text( "row_track -- 120px + flex + 80px:" );
-        imgui()->row_track( 0, ( f32[] ){ 120, 0, 80, IMGUI_END } );
+        imgui()->text( "row_track -- 120px + fill + 80px:" );
+        imgui()->row_track( 0, ( f32[] ){ 120, 1, 80, IMGUI_END } );
         imgui()->button( "fixed 120" );
-        imgui()->button( "flex" );
+        imgui()->button( "fill" );
         imgui()->button( "80" );
         imgui()->row( 0 );
 
@@ -160,6 +164,7 @@ demo_fields( void )
 
     if ( imgui()->begin_window( "Field Forms", 60, 60, 400, 420, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();
         /* Each section reuses the "Name"/"Enabled" labels, so scope them with push_id to keep
            the widget ids distinct (ids are seeded by label within a region). */
         imgui()->text( "field_label_left( 90 ) -- labels in a 90px gutter:" );
@@ -202,6 +207,7 @@ demo_grid( void )
 {
     if ( imgui()->begin_window( "Grid", 60, 60, 420, 440, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();
         imgui()->text( "grid_cells( 3, 3 ) -- 3x3, row-major:" );
 
         /* The grid fills the remaining content box, so put it in a fixed-height child
@@ -241,11 +247,13 @@ demo_child_list( void )
 {
     if ( imgui()->begin_window( "Child / List Box", 60, 60, 360, 440, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();
         imgui()->text( "List box (scrolls independently):" );
 
         static int sel = -1;
         if ( imgui()->begin_child( "rows", 0, 240, IMGUI_WIN_NONE ) )
         {
+            imgui()->stack();                     /* the child is its own region -- declare its mode */
             for ( int i = 0; i < 40; i++ )
             {
                 imgui()->push_id_int( i );        /* distinct id even though labels repeat */
@@ -277,6 +285,7 @@ demo_align( void )
 {
     if ( imgui()->begin_window( "Align & Spacing", 60, 60, 380, 400, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();
         imgui()->text( "align() across two columns:" );
 
         imgui()->row2( 0.5f, 0.5f );
@@ -317,6 +326,7 @@ demo_sublayout( void )
 {
     if ( imgui()->begin_window( "Sub-layout", 60, 60, 400, 360, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();
         imgui()->text( "row_cols( 0, 2 ): col 0 is a sub-layout" );
         imgui()->separator();
 
@@ -324,6 +334,7 @@ demo_sublayout( void )
 
         /* Column 0: open a sub-layout and stack three buttons inside the single cell. */
         imgui()->push_layout();
+            imgui()->stack();                     /* the sub-layout is a region too -- declare its mode */
             imgui()->text( "stacked:" );
             imgui()->button( "one" );
             imgui()->button( "two" );
@@ -334,6 +345,48 @@ demo_sublayout( void )
         imgui()->text( "single cell" );
 
         imgui()->row( 0 );
+    }
+    imgui()->end_window();
+}
+
+/*==============================================================================================
+    8b. Pack / bar -- the print run: natural-size widgets placed one after another.
+
+    bar() packs items left to right at their natural width (a toolbar); pack_size() sets the next
+    item's measure (1 = fill the rest of the line), and pack_nextline() wraps to a new line.  Here
+    the widget sizes itself, unlike columns / grid where the cell sizes the widget.
+==============================================================================================*/
+
+static void
+demo_pack( void )
+{
+    if ( imgui()->begin_window( "Pack / Bar", 60, 60, 440, 320, IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        imgui()->text( "bar() -- buttons at natural width, then a fill search box:" );
+
+        imgui()->bar();
+        imgui()->button( "New" );
+        imgui()->button( "Open" );
+        imgui()->button( "Save" );
+        static char find[ 32 ] = "";
+        imgui()->pack_size( 1.0f );                   /* the next item fills the rest of the line */
+        imgui()->input_text( "##find", find, sizeof( find ) );
+
+        imgui()->stack();
+        imgui()->spacing( 0 );
+        imgui()->text( "pack_nextline() wraps the run -- three per line:" );
+
+        imgui()->bar();
+        for ( int i = 0; i < 9; i++ )
+        {
+            imgui()->push_id_int( i );
+            char b[ 12 ];
+            snprintf( b, sizeof( b ), "btn %d", i );
+            imgui()->button( b );
+            if ( i % 3 == 2 ) imgui()->pack_nextline();
+            imgui()->pop_id();
+        }
     }
     imgui()->end_window();
 }
@@ -350,6 +403,7 @@ demo_windows( void )
 {
     if ( imgui()->begin_window( "Default Window", 80, 80, 280, 200, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();
         imgui()->text( "Default flags." );
         imgui()->text( "Title bar, collapse, resize." );
         imgui()->text( "Click another window to raise it." );
@@ -358,6 +412,7 @@ demo_windows( void )
 
     if ( imgui()->begin_window( "No Title Bar", 220, 180, 280, 180, IMGUI_WIN_NOTITLEBAR ) )
     {
+        imgui()->stack();
         imgui()->text( "IMGUI_WIN_NOTITLEBAR" );
         static bool t = false;
         imgui()->checkbox( "a toggle", &t );
@@ -367,6 +422,7 @@ demo_windows( void )
     if ( imgui()->begin_window( "Fixed", 360, 280, 260, 160,
                                 IMGUI_WIN_NORESIZE | IMGUI_WIN_NOMOVE ) )
     {
+        imgui()->stack();
         imgui()->text( "IMGUI_WIN_NORESIZE | NOMOVE" );
         imgui()->text( "cannot be moved or resized." );
     }
@@ -391,6 +447,7 @@ demo_autosize( void )
     {
         static int rows = 3;
 
+        imgui()->stack();
         imgui()->text( "ALWAYS_AUTOSIZE: window fits content." );
         imgui()->row2( 0.5f, 0.5f );
         if ( imgui()->button( "Add row" ) )    rows++;
@@ -406,6 +463,7 @@ demo_autosize( void )
     if ( imgui()->begin_window( "Double-click grip", 360, 60, 300, 320,
                                 IMGUI_WIN_CAN_AUTOSIZE ) )
     {
+        imgui()->stack();
         imgui()->text( "CAN_AUTOSIZE: drag the triangle" );
         imgui()->text( "grip in the corner to resize," );
         imgui()->text( "or double-click it to snap back" );
@@ -416,9 +474,11 @@ demo_autosize( void )
     /* (c) Auto-height child (h <= 0) + content_avail(). */
     if ( imgui()->begin_window( "Auto child", 360, 420, 320, 260, IMGUI_WIN_NONE ) )
     {
+        imgui()->stack();
         imgui()->text( "begin_child with h <= 0 hugs content:" );
         if ( imgui()->begin_child( "auto", 0, 0, IMGUI_WIN_NOSCROLL ) )
         {
+            imgui()->stack();                     /* the child region declares its own mode */
             imgui()->text( "I am exactly as tall" );
             imgui()->text( "as my three lines." );
             imgui()->bullet_text( "no fixed height" );
@@ -445,6 +505,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Child / List", "begin_child / selectable / push_id",             demo_child_list  },
     { "Align",        "align / same_line / spacing / separator",        demo_align       },
     { "Sub-layout",   "push_layout / pop_layout",                       demo_sublayout   },
+    { "Pack / Bar",   "bar / pack_size / pack_nextline",                demo_pack        },
     { "Windows",      "multiple windows / flags / z-order",             demo_windows     },
     { "Auto-size",    "ALWAYS_AUTOSIZE / CAN_AUTOSIZE / auto child",    demo_autosize    },
     { NULL,           NULL,                                             NULL             },
@@ -471,6 +532,7 @@ sb_imgui_demo_picker( int active )
 
     if ( imgui()->begin_window( "Demos", 940, 20, 320, 360, IMGUI_WIN_NOCOLLAPSE ) )
     {
+        imgui()->stack();
         imgui()->text( "Keys: 1-9 select  +/- step  ESC quit" );
         imgui()->separator();
 

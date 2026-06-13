@@ -104,19 +104,27 @@ typedef struct imgui_api_s
     void ( *pop_layout  )( void );
     void ( *end_child   )( void );
 
-    /* Layout -- shape the active region's repeating row template.  A region opens as a single
-       flex column of auto height (the classic vertical stack); these replace that template, and
-       it persists + repeats for every widget until set again.  Sizes use one overloaded f32:
-       >1 px, (0,1] fraction of the available space, 0 flex (equal share of the rest), <0 ends
-       the list (IMGUI_END).  Widgets fill whatever cell they are handed, agnostic to the shape.
+    /* Layout -- declare the active region's next-item methodology (its "mode"), then shape it.
+       A region opens UNDECLARED: the first header below names the mode (stack / columns / grid /
+       form / ...), and a widget emitted before any header is a usage error (debug assert; release
+       falls back to a stack).  The template then persists + repeats for every widget until set
+       again.  Sizes use one overloaded f32: >1 px, (0,1] fraction of the available space, 0 flex
+       (equal share of the rest), <0 ends the list (IMGUI_END).  Widgets fill whatever cell they
+       are handed, agnostic to the shape.
 
            imgui()->row_cols( 0, 2 );  imgui()->button("A");  imgui()->button("B");  // two columns
            imgui()->row_track( 24, (f32[]){ 200, 0, IMGUI_END } );                    // 200px + fill
 
+       stack()      -- single full-width flex column, scrolling: the canonical vertical-list header
+                         (what a region used to be by default; now declared explicitly).
+       columns()    -- N explicit column tracks (IMGUI_END-terminated), auto height, scrolling.
+       cols_n()     -- n equal flex columns, auto height.
+       form()       -- a stack with a fixed-width label track on `side`: the "Label  [control]"
+                         form header (label_w <= 0 = plain stack).  form_split() = field_split.
        layout()     -- full flow template (columns, row height, item padding, gaps) in one struct.
-       layout_default() -- clear back to the open default (one flex column, no field split); the
+       layout_default() -- clear back to a plain stack (one flex column, no field split); the
                          single "reset everything" verb.  Padding is untouched (use pad()).
-       row()        -- single full-width column of height row_h (0 = auto).
+       row()        -- a stack with an explicit row height (0 = auto).
        row_cols()   -- n equal columns of height row_h.
        row2/3/4()   -- fixed-arity weighted columns (auto height): row2( 0.3f, 0.7f ).
        row_track()  -- explicit per-column widths (IMGUI_END-terminated).
@@ -129,27 +137,47 @@ typedef struct imgui_api_s
 
        Grid mode -- cols x rows partition a bounded box (the region content from the pen to its
        bottom) into a fixed matrix, both axes resolved up front; widgets fill cells row-major and
-       nothing scrolls.  For titlebars, toolbars, split panes (cell -> begin_child), dashboards,
-       image grids.  grid() takes the full descriptor (cols + rows); grid_cells() is the uniform
-       nc x nr case.
+       nothing scrolls.  For titlebars, split panes (cell -> begin_child), dashboards, image grids.
+       grid() takes the full descriptor (cols + rows); grid_cells() is the uniform nc x nr case.
 
            imgui()->grid_cells( 3, 2 );  for (i<6) imgui()->button(name[i]);  // 3x2 of buttons
-       grid()       -- cols x rows from the descriptor (row_h ignored; grid uses rows). */
+       grid()       -- cols x rows from the descriptor (row_h ignored; grid uses rows).
+
+       Pack mode -- the print run: place items one after another along an axis at natural size, the
+       widget sizing itself (vs columns/grid, where the cell sizes the widget).  pack_size() overrides
+       the next item's main-axis measure (resolved against the space left on the line); pack_nextline()
+       breaks to a fresh line.  The toolbar / tag-row / inline-controls case.
+
+           imgui()->bar();  imgui()->button("Save");  imgui()->button("Open");   // a toolbar
+       pack()       -- open a run along dir (HORIZONTAL / VERTICAL).
+       bar() / strip() -- pack sugar: horizontal (toolbar) / vertical run.
+       pack_size()  -- next packed item's main-axis size (0 natural, 1 fill, (0,1) frac, >1 px).
+       pack_nextline() -- break the run to a new line. */
 
     void ( *layout         )( imgui_layout_t desc );
     void ( *layout_default )( void );
+    void ( *stack          )( void );
     void ( *row            )( f32 row_h );
+    void ( *columns      )( const f32* tracks );
+    void ( *cols_n       )( u32 n );
     void ( *row_cols     )( f32 row_h, u32 n );
     void ( *row2         )( f32 a, f32 b );
     void ( *row3         )( f32 a, f32 b, f32 c );
     void ( *row4         )( f32 a, f32 b, f32 c, f32 d );
     void ( *row_track    )( f32 row_h, const f32* cols );
+    void ( *form         )( imgui_label_side_t side, f32 label_w );
+    void ( *form_split   )( imgui_label_side_t side, f32 label, f32 control );
     void ( *field_split  )( imgui_label_side_t side, f32 label, f32 control );
     void ( *field_label_left  )( f32 width );
     void ( *field_label_right )( f32 width );
     void ( *pad          )( imgui_pad_t region_pad );
     void ( *grid       )( imgui_layout_t desc );
     void ( *grid_cells )( u32 ncols, u32 nrows );
+    void ( *pack          )( imgui_pack_dir_t dir );
+    void ( *bar           )( void );
+    void ( *strip         )( void );
+    void ( *pack_size     )( f32 unit );
+    void ( *pack_nextline )( void );
 
     /* align() -- set the content alignment within each cell (imgui_align_t, LEFT | TOP by default).
        Persists like the row template and is independent of the columns: row() / row_cols() leave it
@@ -172,6 +200,7 @@ typedef struct imgui_api_s
 
     void ( *align      )( imgui_align_t a );
     void ( *same_line  )( f32 spacing );
+    void ( *stack_sameline )( f32 spacing );
     void ( *skip       )( void );
     void ( *spacing    )( f32 h );
     void ( *separator  )( void );
