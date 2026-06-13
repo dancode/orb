@@ -24,7 +24,8 @@ typedef struct { f32 x, y, w, h; }  imgui_rect_t;
 /* Edge insets, in pixels.  Two roles in the layout system (see imgui_layout_t):
      region padding -- the gap between a region's box and where its layout starts.
      item padding   -- breathing room wrapped around every item (adds to the row height). */
-typedef struct { f32 l, r, t, b; } imgui_pad_t;
+
+typedef struct { f32 l, r, t, b; }  imgui_pad_t;
 
 /*==============================================================================================
     Layout template

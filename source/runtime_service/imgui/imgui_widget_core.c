@@ -292,6 +292,7 @@ grid_next_rect( layout_frame_t* f )
    call returns one cell -- inset by item_pad -- and advances, wrapping to a fresh row when the
    columns run out.  In grid mode the matrix is already resolved, so it just walks (see above).
    The widget just fills the rect; it never sees columns, gaps, or padding. */
+
 static imgui_rect_t
 widget_next_rect( f32 h )
 {
