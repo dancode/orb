@@ -268,7 +268,7 @@ typedef enum
     IMGUI_FONT_BITMAP_16_PROGGY,    /* 9x16  tiny font */  
     IMGUI_FONT_BITMAP_20_PROGGY,    /* 12x20 tiny font */
     IMGUI_FONT_BITMAP_16_JETBOLD,   /* 10x16 pixel glyphs */
-    IMGUI_FONT_BITMAP_20_JETBOLD,   /* 12x12 pixel glyphs */
+    IMGUI_FONT_BITMAP_20_JETBOLD,   /* 12x20 pixel glyphs */
     IMGUI_FONT_BITMAP_24_JETBOLD,   /* 14x33 pixel glyphs */
     IMGUI_FONT_BITMAP_24_CONSOLA,   /* 13x25 pixel glyphs */    
     
