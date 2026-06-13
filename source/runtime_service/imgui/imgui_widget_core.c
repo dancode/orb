@@ -242,6 +242,24 @@ rect_align( imgui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
     return ( imgui_rect_t ){ x, y, nat_w, nat_h };
 }
 
+/* Collapse toggle glyph: a small triangle centered in a square box.  Points down when expanded,
+   right when collapsed (the following label reads as the thing being toggled).  Shared by the
+   window title bar and collapsing_header, so the arrow looks identical wherever a region folds. */
+static void
+draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
+{
+    f32 cx = box.x + box.w * 0.5f;
+    f32 cy = box.y + box.h * 0.5f;
+    f32 s  = floorf( box.h * 0.22f );   /* triangle half-extent */
+
+    if ( collapsed )
+        /* pointing right:  |>  */
+        draw_push_triangle( cx - s, cy - s, cx - s, cy + s, cx + s, cy, 0, color );
+    else
+        /* pointing down:   \/  */
+        draw_push_triangle( cx - s, cy - s, cx + s, cy - s, cx, cy + s, 0, color );
+}
+
 /*----------------------------------------------------------------------------------------------
     Widget label grammar  (Dear ImGui style)
 
@@ -308,36 +326,72 @@ grid_next_rect( layout_frame_t* f )
    mode the matrix is already resolved, so it just walks (see above).  The widget just fills the
    rect; it never sees columns or gaps. */
 
+/* Width-aware form.  `natural_w` is the widget's preferred width, used only when a same_line is
+   pending (the widget then sits at the running x sized to natural_w, or fills to the content edge
+   when natural_w <= 0); in normal column flow / grid it is ignored and the track cell width wins.
+   Every emit records f->prev_item so same_line() can anchor the next widget to this one's line. */
 static imgui_rect_t
-widget_next_rect( f32 h )
+widget_next_rect_w( f32 natural_w, f32 h )
 {
     layout_frame_t* f = lf();
     if ( f->lay_ncols == 0 ) layout_set_default( f );   /* repair a stray-emit (empty) frame */
 
-    if ( f->lay_nrows > 0 ) return grid_next_rect( f );   /* grid: fixed matrix, both axes set */
-
-    /* Cells (cellx/cellw) were resolved at install and are constant for every row; only the row
-       top and height are per-row, set here on the first cell.  Auto height takes the first
-       widget's h; a fixed row_h overrides it. */
-    if ( f->col == 0 )
+    /* same_line: place on the previous item's line at the running x, sized to natural_w (or the
+       remaining content width).  Bypasses the column walk; the column cursor restarts below the
+       line, and cursor_y is pushed past the tallest item so following rows clear it. */
+    if ( f->cont_line )
     {
-        f->row_y     = f->cursor_y;
-        f->row_h_cur = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : h;   /* auto: first widget sets it */
+        f->cont_line = false;
+        f32 right    = f->content_x + f->content_w;
+        f32 x        = f->cont_x;
+        f32 w        = ( natural_w > 0.0f ) ? natural_w : ( right - x );
+        if ( w < 0.0f ) w = 0.0f;
+        imgui_rect_t r = { x, f->prev_item.y, w, h };
+
+        f32 line_h   = ( h > f->prev_item.h ) ? h : f->prev_item.h;
+        f32 bottom   = f->prev_item.y + line_h + f->lay_gap_y;
+        if ( bottom > f->cursor_y ) f->cursor_y = bottom;
+        f->col       = 0;                                   /* next normal widget starts a row */
+
+        widget_track_width( x + w );
+        f->prev_item = r;
+        return r;
     }
 
-    u32          c = f->col;
-    imgui_rect_t r = { f->cellx[ c ], f->row_y, f->cellw[ c ], f->row_h_cur };
-
-    widget_track_width( f->cellx[ c ] + f->cellw[ c ] );   /* this cell's right edge -> hscroll */
-
-    /* Advance; wrap to a fresh row when the template's columns are exhausted. */
-    if ( ++f->col >= f->lay_ncols )
+    imgui_rect_t r;
+    if ( f->lay_nrows > 0 )
     {
-        f->cursor_y = f->row_y + f->row_h_cur + f->lay_gap_y;
-        f->col      = 0;
+        r = grid_next_rect( f );                            /* grid: fixed matrix, both axes set */
     }
+    else
+    {
+        /* Cells (cellx/cellw) were resolved at install and are constant for every row; only the row
+           top and height are per-row, set here on the first cell.  Auto height takes the first
+           widget's h; a fixed row_h overrides it. */
+        if ( f->col == 0 )
+        {
+            f->row_y     = f->cursor_y;
+            f->row_h_cur = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : h;
+        }
+
+        u32 c = f->col;
+        r = ( imgui_rect_t ){ f->cellx[ c ], f->row_y, f->cellw[ c ], f->row_h_cur };
+        widget_track_width( f->cellx[ c ] + f->cellw[ c ] );   /* cell right edge -> hscroll */
+
+        /* Advance; wrap to a fresh row when the template's columns are exhausted. */
+        if ( ++f->col >= f->lay_ncols )
+        {
+            f->cursor_y = f->row_y + f->row_h_cur + f->lay_gap_y;
+            f->col      = 0;
+        }
+    }
+
+    f->prev_item = r;
     return r;
 }
+
+/* The common case: fill the track cell (natural_w < 0 => no same_line preference). */
+static imgui_rect_t widget_next_rect( f32 h ) { return widget_next_rect_w( -1.0f, h ); }
 
 /* Split a labeled widget row into a left-hand control rect and a right-hand label.  The label
    keeps its natural width pinned at the row's right-of-control edge; the control takes the rest

@@ -181,22 +181,7 @@ window_resize_grab( imgui_window_t* win, imgui_id_t id, u8 edges )
     s_resize_fix_y = win->y + win->h;   /* pinned bottom edge for a top-edge drag  */
 }
 
-/* Collapse toggle glyph: a small triangle centered in a title-bar-height square.  Points
-   down when the window is expanded, right when it is collapsed (the title follows it). */
-static void
-draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
-{
-    f32 cx = box.x + box.w * 0.5f;
-    f32 cy = box.y + box.h * 0.5f;
-    f32 s  = floorf( box.h * 0.22f );   /* triangle half-extent */
-
-    if ( collapsed )
-        /* pointing right:  |>  */
-        draw_push_triangle( cx - s, cy - s, cx - s, cy + s, cx + s, cy, 0, color );
-    else
-        /* pointing down:   \/  */
-        draw_push_triangle( cx - s, cy - s, cx + s, cy - s, cx, cy + s, 0, color );
-}
+/* draw_collapse_arrow lives in imgui_widget_core.c (shared with collapsing_header). */
 
 bool
 imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags )

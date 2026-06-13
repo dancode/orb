@@ -209,6 +209,10 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, i
     f->cursor_y      = outer.y + region_pad.t - *scroll_y;
     f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
 
+    /* No previous item and no pending same_line until a widget emits in this fresh region. */
+    f->prev_item = ( imgui_rect_t ){ 0 };
+    f->cont_line = false;
+
     /* Bottom of the content area (mirror of content_w on the vertical axis): the end of a grid's
        band, so a grid fills from the pen down to here.  Unscrolled -- grids do not scroll. */
     f->content_y_max = outer.y + outer.h - region_pad.b - f->sb_h;
@@ -447,6 +451,23 @@ imgui_row_track( f32 row_h, const f32* cols )
 void imgui_row2( f32 a, f32 b )                { f32 c[ 3 ] = { a, b, IMGUI_END };       layout_set( c, 0.0f, 0.0f, 0.0f ); }
 void imgui_row3( f32 a, f32 b, f32 c )         { f32 t[ 4 ] = { a, b, c, IMGUI_END };    layout_set( t, 0.0f, 0.0f, 0.0f ); }
 void imgui_row4( f32 a, f32 b, f32 c, f32 d )  { f32 t[ 5 ] = { a, b, c, d, IMGUI_END }; layout_set( t, 0.0f, 0.0f, 0.0f ); }
+
+/* same_line -- keep the next widget on the line of the one just emitted, instead of breaking to a
+   new row.  It is placed just past the previous item: `spacing` is the pixel gap (0 = flush; < 0 =
+   the theme's default widget gap).  The widget takes its natural width (a button to its label, text
+   to its glyphs); a widget with no natural width fills to the content's right edge.  The next plain
+   widget after it resumes a fresh row below the line.  No-op before any widget has emitted in the
+   region.  Mirrors ImGui::SameLine; built entirely on the cell engine's prev_item anchor. */
+void
+imgui_same_line( f32 spacing )
+{
+    layout_frame_t* f = lf();
+    if ( f->prev_item.w <= 0.0f && f->prev_item.h <= 0.0f ) return;   /* nothing to continue from */
+
+    f32 gap   = ( spacing >= 0.0f ) ? spacing : WIDGET_GAP;
+    f->cont_x = f->prev_item.x + f->prev_item.w + gap;
+    f->cont_line = true;
+}
 
 /* Field split -- the labeled value widgets (input_text, slider_float, checkbox) split their cell
    into a label track + a control track and lay out as an aligned "Label  [control]" form from a

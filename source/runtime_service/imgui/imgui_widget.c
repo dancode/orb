@@ -25,11 +25,11 @@
 void
 imgui_text( const char* str )
 {
-    imgui_rect_t r  = widget_next_rect( font_char_h() );
+    f32          tw = font_text_w( str );
+    imgui_rect_t r  = widget_next_rect_w( tw, font_char_h() );   /* natural width feeds same_line */
 
     /* Place the run inside its cell per the region's content alignment (default LEFT | TOP, the
        original top-left).  A row tall enough for the glyph centers vertically when asked. */
-    f32          tw = font_text_w( str );
     imgui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->lay_align );
     draw_push_text( tr.x, tr.y, COL_TEXT, str );
     widget_track_width( tr.x + tw );   /* natural width may exceed the row */
@@ -54,6 +54,29 @@ imgui_textf( const char* fmt, ... )
 }
 
 /*----------------------------------------------------------------------------------------------
+    bullet_text -- a bullet glyph followed by a text run, the building block of a bulleted list.
+    The bullet is a small filled square vertically centered against the glyph line.
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_bullet_text( const char* str )
+{
+    f32 ch  = font_char_h();
+    f32 bsz = floorf( ch * 0.35f );  if ( bsz < 2.0f ) bsz = 2.0f;   /* bullet side */
+    f32 tw  = font_text_w( str );
+    f32 gap = WIDGET_PAD;
+
+    /* Natural width = bullet + gap + text, so a same_line bullet item shrinks to its content. */
+    imgui_rect_t r = widget_next_rect_w( bsz + gap + tw, ch );
+
+    /* Bullet square, vertically centered in the row; then the run just past it. */
+    imgui_rect_t br = rect_align( r, bsz, bsz, IMGUI_ALIGN_VCENTER );
+    draw_push_rect_filled( br.x, br.y, bsz, bsz, 0,0,1,1, 0, COL_TEXT );
+    draw_push_text( r.x + bsz + gap, r.y, COL_TEXT, str );
+    widget_track_width( r.x + bsz + gap + tw );   /* natural width may exceed the row */
+}
+
+/*----------------------------------------------------------------------------------------------
     button -- returns true on the frame the button is released while hovered
 ----------------------------------------------------------------------------------------------*/
 
@@ -61,7 +84,9 @@ bool
 imgui_button( const char* label )
 {
     imgui_id_t   id = widget_id( label );
-    imgui_rect_t r  = widget_next_rect( WIDGET_H );
+
+    /* Natural width = label plus breathing room, so a same_line button shrinks to its text. */
+    imgui_rect_t r  = widget_next_rect_w( label_width( label ) + 2.0f * WIDGET_PAD, WIDGET_H );
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
@@ -84,7 +109,9 @@ bool
 imgui_checkbox( const char* label, bool* v )
 {
     imgui_id_t   id = widget_id( label );
-    imgui_rect_t r  = widget_next_rect( WIDGET_H );
+
+    /* Natural width = box + gap + label, so a same_line checkbox shrinks to fit. */
+    imgui_rect_t r  = widget_next_rect_w( CHECKBOX_SZ + WIDGET_PAD + label_width( label ), WIDGET_H );
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
@@ -295,6 +322,37 @@ imgui_selectable( const char* label, bool* selected )
 }
 
 /*----------------------------------------------------------------------------------------------
+    collapsing_header -- a full-width clickable bar with a fold arrow that toggles a section open
+    or closed, returning the open state.  There is no end call: the caller guards its body with the
+    return ( if ( header(...) ) { widgets } ), exactly like begin_window's collapse, so a closed
+    header simply skips emitting its contents.  The open flag persists across frames in the keyed
+    state pool, keyed by the header id -- the same store windows, tree nodes, and combos use; this
+    is the smallest example of it.  Closed by default (zeroed on first sight). */
+
+typedef struct { bool open; } imgui_header_state_t;
+
+bool
+imgui_collapsing_header( const char* label )
+{
+    imgui_id_t   id = widget_id( label );
+    imgui_rect_t r  = widget_next_rect( WIDGET_H );
+
+    imgui_header_state_t* hs = IMGUI_STATE( imgui_header_state_t, id );
+
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    if ( st.clicked ) hs->open = !hs->open;
+
+    /* Clickable bar with hover/active feedback, an arrow box on the left, then the label. */
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
+
+    imgui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* a square the height of the bar */
+    draw_collapse_arrow( arrow, !hs->open, COL_TEXT );    /* closed -> points right */
+    draw_label( r.x + r.h, text_center_y( r.y, r.h ), COL_TEXT, label );
+
+    return hs->open;
+}
+
+/*----------------------------------------------------------------------------------------------
     Spacers -- cell-consuming widgets that emit no interaction.
 
     Each takes the next cell from the active template exactly like a real widget, so they compose
@@ -325,6 +383,27 @@ imgui_separator( void )
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
     imgui_rect_t ln = rect_align( r, r.w, WIN_BORDER, IMGUI_ALIGN_VCENTER );
     draw_push_rect_filled( ln.x, ln.y, ln.w, ln.h, 0,0,1,1, 0, COL_BORDER );
+}
+
+/* A labeled rule: a short leading rule, the text, then a rule filling the rest -- "-- Text ----".
+   The visible span obeys the "##" / "###" label grammar (markers stripped) like every label. */
+void
+imgui_separator_text( const char* label )
+{
+    imgui_rect_t r   = widget_next_rect( WIDGET_H );
+    f32          ly  = r.y + r.h * 0.5f;                 /* line centre */
+    f32          tw  = label_width( label );
+    f32          pre = 2.0f * WIDGET_PAD;                /* short leading rule before the text */
+
+    draw_push_rect_filled( r.x, ly, pre, WIN_BORDER, 0,0,1,1, 0, COL_BORDER );
+
+    f32 tx = r.x + pre + WIDGET_PAD;
+    draw_label( tx, text_center_y( r.y, r.h ), COL_TEXT, label );
+
+    f32 rx = tx + tw + WIDGET_PAD;                       /* trailing rule to the right edge */
+    f32 rw = ( r.x + r.w ) - rx;
+    if ( rw > 0.0f )
+        draw_push_rect_filled( rx, ly, rw, WIN_BORDER, 0,0,1,1, 0, COL_BORDER );
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -142,12 +142,19 @@ typedef struct imgui_api_s
 
            imgui()->row2( 0.5f, 0.5f );  imgui()->align( IMGUI_ALIGN_RIGHT );   // right-aligned columns
 
+       same_line() -- keep the next widget on the line just emitted instead of breaking to a new
+                      row; it takes its natural width.  `spacing` is the gap in pixels (0 = flush,
+                      < 0 = the theme default).  Mirrors ImGui::SameLine.
+
+           imgui()->button("OK");  imgui()->same_line( 0.0f );  imgui()->button("Cancel");
+
        Spacers -- cell-consuming composition that emits nothing interactive:
        skip()      -- leave one blank cell (a hole; the natural way to step over a grid slot).
        spacing()   -- a blank gap of height h (<= 0 = default gap).
        separator() -- a thin horizontal rule centered in its cell. */
 
     void ( *align      )( imgui_align_t a );
+    void ( *same_line  )( f32 spacing );
     void ( *skip       )( void );
     void ( *spacing    )( f32 h );
     void ( *separator  )( void );
@@ -197,6 +204,7 @@ typedef struct imgui_api_s
 
     void ( *text        )( const char* str );
     void ( *textf       )( const char* fmt, ... );
+    void ( *bullet_text )( const char* str );
     bool ( *button      )( const char* label );
     bool ( *checkbox    )( const char* label, bool* v );
     bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );
@@ -206,6 +214,13 @@ typedef struct imgui_api_s
        list-box building block.  A click toggles *selected (pass NULL for click-only); returns
        true on the clicked frame so a caller managing single-selection can set its own index. */
     bool ( *selectable  )( const char* label, bool* selected );
+
+    /* collapsing_header -- a clickable fold bar (arrow + label) that returns its open state; the
+       caller guards the section body with the return ( if ( header(...) ) {...} ), so a closed
+       header skips its contents.  Open state persists by id; closed by default.
+       separator_text   -- a labeled horizontal rule, "-- Text --------". */
+    bool ( *collapsing_header )( const char* label );
+    void ( *separator_text    )( const char* label );
 
     /* Font -- select the active font; call between frames (outside new_frame / render).
        set_font()      -- select a built-in bitmap font; also unloads any active TrueType font.

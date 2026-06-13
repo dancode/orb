@@ -120,6 +120,14 @@ typedef struct
     f32 row_h_cur;                          // resolved height of the current flow row
     f32 content_y_max;                      // bottom of the content area -- grid band end
 
+    /* same_line: pin the next widget to the previous item's line instead of breaking to a new row.
+       prev_item is the last cell handed out; same_line() arms cont_line and sets cont_x to the
+       continuation x (just past prev_item).  See widget_next_rect_w. */
+
+    imgui_rect_t prev_item;                 // last cell emitted this region (same_line anchor)
+    bool         cont_line;                 // next widget continues on prev_item's line
+    f32          cont_x;                    // x at which the continued widget is placed
+
     /* Resolve context, set at push and read at pop. */
 
     imgui_id_t          region_id;          // base id for the region's scrollbar widget ids

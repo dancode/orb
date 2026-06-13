@@ -54,6 +54,7 @@ void imgui_pad( imgui_pad_t region_pad );
 void imgui_grid( imgui_layout_t desc );
 void imgui_grid_cells( u32 ncols, u32 nrows );
 void imgui_align( imgui_align_t a );
+void imgui_same_line( f32 spacing );
 void imgui_skip( void );
 void imgui_spacing( f32 h );
 void imgui_separator( void );
@@ -72,11 +73,14 @@ void imgui_pop_id( void );
 
 void imgui_text( const char* str );
 void imgui_textf( const char* fmt, ... );
+void imgui_bullet_text( const char* str );
 bool imgui_button( const char* label );
 bool imgui_checkbox( const char* label, bool* v );
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
 bool imgui_selectable( const char* label, bool* selected );
+bool imgui_collapsing_header( const char* label );
+void imgui_separator_text( const char* label );
 
 void imgui_set_font      ( imgui_font_t font );
 void imgui_set_bmp_scale ( u32 scale );
