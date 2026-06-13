@@ -44,6 +44,8 @@ void imgui_row( f32 row_h );
 void imgui_row_cols( f32 row_h, u32 n );
 void imgui_row_track( f32 row_h, const f32* cols );
 void imgui_pad( imgui_pad_t region_pad );
+void imgui_grid( imgui_layout_t desc );
+void imgui_grid_cells( u32 ncols, u32 nrows );
 
 f32 imgui_line_h( void );
 f32 imgui_text_w( const char* s );

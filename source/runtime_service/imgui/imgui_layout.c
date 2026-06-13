@@ -232,6 +232,10 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, i
     f->cursor_y      = outer.y + region_pad.t - *scroll_y;
     f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
 
+    /* Bottom of the content area (mirror of content_w on the vertical axis): the end of a grid's
+       band, so a grid fills from the pen down to here.  Unscrolled -- grids do not scroll. */
+    f->content_y_max = outer.y + outer.h - region_pad.b - f->sb_h;
+
     /* Open with the default template: a single flex column of auto height (the classic stack).
        imgui_layout / the row sugar replace it; a fresh region always starts from the default. */
     layout_set_default( f );
@@ -351,19 +355,25 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 {
     layout_frame_t* parent = lf();
 
-    /* A child always starts on its own line: finish any open row in the parent template first,
-       so the box lands at the pen rather than overlapping a half-filled multi-column row. */
-    layout_row_break( parent );
-
     /* Combine against the active id scope (the parent region, plus any push_id) so the same child
        label nests safely under different parents and never collides with a window id. */
     imgui_id_t id = id_combine( id_seed(), id_hash( id_str ) );
 
-    if ( w <= 0.0f ) w = parent->content_w;   /* default: fill the remaining content width */
-
-    /* Box reserved at the current pen.  The parent pen is advanced by layout_pop_region, not
-       here, so the advance accounts for the whole box exactly once. */
-    imgui_rect_t box = { parent->content_x, parent->cursor_y, w, h };
+    /* Where the child box lands: in a grid parent it takes the next cell (w / h ignored -- the
+       cell sizes it, the natural way to drop a scroll region into a split pane); in flow it sits
+       at the pen, on its own line.  The parent pen / grid cursor is advanced by layout_pop_region
+       for flow, but the grid cursor must step here since pop does not touch (col,row). */
+    imgui_rect_t box;
+    if ( parent->lay_nrows > 0 )
+    {
+        box = grid_next_rect( parent );   /* item_pad-inset cell; advances the matrix cursor */
+    }
+    else
+    {
+        layout_row_break( parent );       /* a flow child starts on its own line */
+        if ( w <= 0.0f ) w = parent->content_w;   /* default: fill the remaining content width */
+        box = ( imgui_rect_t ){ parent->content_x, parent->cursor_y, w, h };
+    }
 
     imgui_region_t* rg = region_get( id );
 
@@ -395,7 +405,8 @@ imgui_end_child( void )
     and where the layout starts -- distinct from the item padding carried in the template.
 ----------------------------------------------------------------------------------------------*/
 
-/* Full template: columns, row height, item padding, and gaps in one call. */
+/* Full flow template: columns, row height, item padding, and gaps in one call.  (rows[] is for
+   grid mode -- use imgui_grid; a zero-initialized descriptor is flow, so this ignores rows.) */
 void
 imgui_layout( imgui_layout_t desc )
 {
@@ -427,6 +438,33 @@ void
 imgui_row_track( f32 row_h, const f32* cols )
 {
     layout_set( cols, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
+}
+
+/* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
+   (both IMGUI_END-terminated, overloaded units).  Uses cols, rows, item_pad, and gaps; row_h is
+   flow-only and ignored.  Widgets then fill cells row-major; nothing scrolls. */
+void
+imgui_grid( imgui_layout_t desc )
+{
+    layout_set_grid( desc.cols, desc.rows, desc.item_pad, desc.gap_x, desc.gap_y );
+}
+
+/* nc x nr equal flex cells filling the band -- the uniform grid (image grids, dashboards). */
+void
+imgui_grid_cells( u32 nc, u32 nr )
+{
+    if ( nc == 0 )                nc = 1;
+    if ( nr == 0 )                nr = 1;
+    if ( nc > IMGUI_LAYOUT_COLS ) nc = IMGUI_LAYOUT_COLS;
+    if ( nr > IMGUI_LAYOUT_COLS ) nr = IMGUI_LAYOUT_COLS;
+
+    f32 cols[ IMGUI_LAYOUT_COLS + 1 ];
+    f32 rows[ IMGUI_LAYOUT_COLS + 1 ];
+    for ( u32 i = 0; i < nc; ++i ) cols[ i ] = 0.0f;   /* all flex -> equal columns */
+    for ( u32 i = 0; i < nr; ++i ) rows[ i ] = 0.0f;   /* all flex -> equal rows    */
+    cols[ nc ] = IMGUI_END;
+    rows[ nr ] = IMGUI_END;
+    layout_set_grid( cols, rows, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
 }
 
 /* Region padding: re-inset the current region's content column and reset the pen to the padded

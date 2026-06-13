@@ -141,7 +141,9 @@ layout_set_default( layout_frame_t* f )
     f->lay_item_pad  = ( imgui_pad_t ){ 0 };
     f->lay_gap_x     = WIDGET_GAP;
     f->lay_gap_y     = WIDGET_GAP;
+    f->lay_nrows     = 0;                  /* flow mode */
     f->col           = 0;
+    f->row           = 0;
 }
 
 /* Replace the active row template on the current frame.  Finishes any open row first, copies the
@@ -163,7 +165,50 @@ layout_set( const f32* cols, f32 row_h, imgui_pad_t item_pad, f32 gap_x, f32 gap
     f->lay_item_pad = item_pad;
     f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
     f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
+    f->lay_nrows    = 0;            /* flow mode */
     f->col          = 0;
+    f->row          = 0;
+}
+
+/* Install a grid template on the current frame.  cols x rows partition a bounded box -- from the
+   current pen down to the region's content bottom -- into a fixed matrix, both axes resolved up
+   front (the defining difference from flow, where each row resolves lazily as the pen advances).
+   Widgets then fill cells row-major; nothing scrolls.  Empty / NULL on either axis => one flex
+   track.  Persists until another template is set, exactly like the flow row. */
+static void
+layout_set_grid( const f32* cols, const f32* rows, imgui_pad_t item_pad, f32 gap_x, f32 gap_y )
+{
+    layout_frame_t* f = lf();
+    layout_row_break( f );          /* finish any flow row above the grid band */
+
+    f->lay_item_pad = item_pad;
+    f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
+    f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
+
+    u32 nc = 0;
+    if ( cols )
+        while ( nc < IMGUI_LAYOUT_COLS && cols[ nc ] >= 0.0f ) { f->lay_cols[ nc ] = cols[ nc ]; ++nc; }
+    if ( nc == 0 ) { f->lay_cols[ 0 ] = 0.0f; nc = 1; }
+    f->lay_ncols = nc;
+
+    u32 nr = 0;
+    if ( rows )
+        while ( nr < IMGUI_LAYOUT_COLS && rows[ nr ] >= 0.0f ) { f->lay_rows[ nr ] = rows[ nr ]; ++nr; }
+    if ( nr == 0 ) { f->lay_rows[ 0 ] = 0.0f; nr = 1; }
+    f->lay_nrows = nr;
+
+    /* Resolve both axes now: columns across the content column, rows across the band from the
+       pen to the content bottom.  An empty band (content already overflowed) clamps to zero. */
+    layout_resolve_tracks( f->lay_cols, nc, f->content_x, f->content_w, f->lay_gap_x,
+                           f->cellx, f->cellw );
+    f32 grid_top = f->cursor_y;
+    f32 grid_h   = f->content_y_max - grid_top;
+    if ( grid_h < 0.0f ) grid_h = 0.0f;
+    layout_resolve_tracks( f->lay_rows, nr, grid_top, grid_h, f->lay_gap_y,
+                           f->rowy, f->rowh );
+
+    f->col = 0;
+    f->row = 0;
 }
 
 /* Baseline y to vertically center one line of glyphs in a row of height h starting at y.
@@ -211,19 +256,43 @@ label_id_str( const char* s )
 static imgui_id_t widget_id( const char* label ) { return id_combine( id_seed(), id_hash( label_id_str( label ) ) ); }
 
 /* Width / draw of a label's visible span (markers stripped). */
-static f32  label_width( const char* s )                        { return font_text_w_n( s, label_vis_len( s ) ); }
+static f32  label_width( const char* s )                         { return font_text_w_n( s, label_vis_len( s ) ); }
 static void draw_label ( f32 x, f32 y, u32 c, const char* s )    { draw_push_text_n( x, y, c, s, label_vis_len( s ) ); }
 
-/* Hand the next cell to a widget.  `h` is the widget's natural height; in an auto-height row
+/* Cell a grid hands to a widget: a fixed (col,row) slot of the pre-resolved matrix, inset by
+   item_pad, then advance row-major.  Past the last cell the cursor clamps to it, so overflow
+   widgets stack harmlessly in the final slot rather than reading out of bounds. */
+static imgui_rect_t
+grid_next_rect( layout_frame_t* f )
+{
+    if ( f->row >= f->lay_nrows ) f->row = f->lay_nrows - 1;   /* clamp overflow to the last row */
+
+    u32         c = f->col, rr = f->row;
+    imgui_pad_t p = f->lay_item_pad;
+    imgui_rect_t r = {
+        .x = f->cellx[ c ] + p.l,
+        .y = f->rowy [ rr ] + p.t,
+        .w = f->cellw[ c ] - p.l - p.r,
+        .h = f->rowh [ rr ] - p.t - p.b,
+    };
+
+    if ( ++f->col >= f->lay_ncols ) { f->col = 0; ++f->row; }   /* next slot, row-major */
+    return r;
+}
+
+/* Hand the next cell to a widget.  `h` is the widget's natural height; in an auto-height flow row
    (row_h == 0) the *first* widget's h sets the height for the whole row, and the rest of the
    columns conform.  A fixed row_h overrides it.  The row resolves once at column 0, then each
    call returns one cell -- inset by item_pad -- and advances, wrapping to a fresh row when the
-   columns run out.  The widget just fills the rect; it never sees columns, gaps, or padding. */
+   columns run out.  In grid mode the matrix is already resolved, so it just walks (see above).
+   The widget just fills the rect; it never sees columns, gaps, or padding. */
 static imgui_rect_t
 widget_next_rect( f32 h )
 {
     layout_frame_t* f = lf();
     if ( f->lay_ncols == 0 ) layout_set_default( f );   /* repair a stray-emit (empty) frame */
+
+    if ( f->lay_nrows > 0 ) return grid_next_rect( f );   /* grid: fixed matrix, both axes set */
 
     /* Resolve the row on its first cell: cell rects, top, and height for the whole row. */
     if ( f->col == 0 )

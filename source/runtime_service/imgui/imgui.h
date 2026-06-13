@@ -30,12 +30,21 @@ typedef struct { f32 l, r, t, b; } imgui_pad_t;
     Layout template
 
     A region (a window body or a begin_child box) lays widgets out by carving its content area
-    into cells.  imgui_layout() installs a row template that *persists and repeats*: every widget
-    fills the next cell, and when a row's columns are exhausted it wraps to a fresh row of the
-    same shape.  The default template -- a single flex column of auto height -- is the classic
+    into cells.  imgui_layout() installs a template that *persists and repeats*: every widget
+    fills the next cell.  The default -- a single flex column of auto height -- is the classic
     vertical stack, so existing code needs no changes.
 
-    Column / row sizes use one overloaded f32 (the same rule everywhere):
+    Two modes, chosen by whether `rows` is set:
+
+      Flow  (rows empty)  -- `cols` describe one row; it repeats *downward*, the pen accumulates,
+                             and content grows + scrolls.  The everyday lists / forms / panels.
+
+      Grid  (rows set)    -- `cols` x `rows` partition a *bounded* box (the region's content area
+                             from the current pen to its bottom) into a fixed matrix, resolved up
+                             front.  Widgets fill cells row-major; both axes are fixed, nothing
+                             scrolls.  Titlebars, toolbars, split panes, dashboards, image grids.
+
+    Column / row sizes use one overloaded f32 (the same rule on both axes):
         > 1.0       fixed pixels
         (0.0, 1.0]  fraction of the gap-adjusted available extent
         == 0.0      flex -- an equal share of whatever space is left
@@ -45,14 +54,15 @@ typedef struct { f32 l, r, t, b; } imgui_pad_t;
     reasons about spacing -- it just fills the rect it is handed.
 ==============================================================================================*/
 
-#define IMGUI_LAYOUT_COLS 16        /* max columns in one row template */
+#define IMGUI_LAYOUT_COLS 16        /* max tracks on one axis (columns or rows) */
 #define IMGUI_END (-1.0f)           /* track-list terminator (any negative value) */
 
 typedef struct
 {
     f32         cols[ IMGUI_LAYOUT_COLS ];  /* column tracks, IMGUI_END-terminated (see unit rule) */
-    f32         row_h;                       /* row height: 0 = auto (from the widget), >0 = pixels  */
-    imgui_pad_t item_pad;                    /* padding wrapped around every item in the row         */
+    f32         rows[ IMGUI_LAYOUT_COLS ];  /* row tracks; empty/NULL => flow mode, else grid mode  */
+    f32         row_h;                       /* flow only -- row height: 0 = auto, >0 = pixels       */
+    imgui_pad_t item_pad;                    /* padding wrapped around every item / cell             */
     f32         gap_x, gap_y;                /* inter-cell spacing; 0 = theme default                */
 
 } imgui_layout_t;
@@ -98,7 +108,6 @@ typedef enum
     
  // IMGUI_WIN_MENUBAR      = 1 << 4,
  // IMGUI_WIN_NOINPUT      = 1 << 5,
-
 
 
 } imgui_win_flags_t;

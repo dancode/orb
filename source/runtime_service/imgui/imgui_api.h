@@ -96,17 +96,28 @@ typedef struct imgui_api_s
            imgui()->row_cols( 0, 2 );  imgui()->button("A");  imgui()->button("B");  // two columns
            imgui()->row_track( 24, (f32[]){ 200, 0, IMGUI_END } );                    // 200px + fill
 
-       layout()    -- full template (columns, row height, item padding, gaps) in one struct.
-       row()       -- single full-width column of height row_h (0 = auto).
-       row_cols()  -- n equal columns of height row_h.
-       row_track() -- explicit per-column widths (IMGUI_END-terminated).
-       pad()       -- region padding: the inset between the region box and the layout start. */
+       layout()     -- full flow template (columns, row height, item padding, gaps) in one struct.
+       row()        -- single full-width column of height row_h (0 = auto).
+       row_cols()   -- n equal columns of height row_h.
+       row_track()  -- explicit per-column widths (IMGUI_END-terminated).
+       pad()        -- region padding: the inset between the region box and the layout start.
 
-    void ( *layout    )( imgui_layout_t desc );
-    void ( *row       )( f32 row_h );
-    void ( *row_cols  )( f32 row_h, u32 n );
-    void ( *row_track )( f32 row_h, const f32* cols );
-    void ( *pad       )( imgui_pad_t region_pad );
+       Grid mode -- cols x rows partition a bounded box (the region content from the pen to its
+       bottom) into a fixed matrix, both axes resolved up front; widgets fill cells row-major and
+       nothing scrolls.  For titlebars, toolbars, split panes (cell -> begin_child), dashboards,
+       image grids.  grid() takes the full descriptor (cols + rows); grid_cells() is the uniform
+       nc x nr case.
+
+           imgui()->grid_cells( 3, 2 );  for (i<6) imgui()->button(name[i]);  // 3x2 of buttons
+       grid()       -- cols x rows from the descriptor (row_h ignored; grid uses rows). */
+
+    void ( *layout     )( imgui_layout_t desc );
+    void ( *row        )( f32 row_h );
+    void ( *row_cols   )( f32 row_h, u32 n );
+    void ( *row_track  )( f32 row_h, const f32* cols );
+    void ( *pad        )( imgui_pad_t region_pad );
+    void ( *grid       )( imgui_layout_t desc );
+    void ( *grid_cells )( u32 ncols, u32 nrows );
 
     /* Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
        line_h / text_w are the raw font metrics; h_min / w_min are the standard margin a row /

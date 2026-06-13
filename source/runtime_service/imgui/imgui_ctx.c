@@ -20,10 +20,10 @@ struct imgui_window_t;
 
 static struct
 {
-    imgui_id_t  hover_id;       /* widget under the cursor this frame (rebuilt each frame) */
-    imgui_id_t  active_id;    /* widget with the mouse button held (drag / hold)       */
-    u8          active_button;  /* which button holds active_id (0=left); reset to 0 on release */
-    imgui_id_t  focused_id;   /* widget that owns keyboard input                       */
+    imgui_id_t  hover_id;       // widget under the cursor this frame (rebuilt each frame)
+    imgui_id_t  active_id;    // widget with the mouse button held (drag / hold)
+    u8          active_button;  // which button holds active_id (0=left); reset to 0 on release
+    imgui_id_t  focused_id;   // widget that owns keyboard input
 
     /* Window occlusion is resolved one frame deferred: the single window the cursor is
        over (front-most by z) is only known after every window has been submitted.  
@@ -33,92 +33,108 @@ static struct
        entirely.  Only the hover window does widget hit-testing, and within one window
        widgets don't overlap, so widget hover can be resolved immediately (no deferral). */
 
-    imgui_id_t  hover_win;      /* the window the cursor is over (resolved last frame)   */
-    imgui_id_t  next_hover_win; /* front-most window nominee gathered this frame         */
+    imgui_id_t  hover_win;      // the window the cursor is over (resolved last frame)
+    imgui_id_t  next_hover_win; // front-most window nominee gathered this frame
     u32         next_hover_win_z;
 
-    imgui_id_t  win_id;             /* id of the window currently between begin/end_window   */
-    const char* win_title;          /* title string, cached for end_window's deferred chrome */
-    bool        win_collapsed;      /* current window is collapsed (title bar only this frame) */
-    imgui_win_flags_t win_flags;    /* current window's behavior flags (begin_window arg)   */
-    f32         win_title_h;        /* current window's title bar height (0 if NOTITLEBAR)  */
-    u8          win_resize_hot;     /* resize edges hot this frame -- suppresses widget hover */
-    struct imgui_window_t* cur_win; /* persisted window record; scroll write-back target */
+    imgui_id_t  win_id;             // id of the window currently between begin/end_window
+    const char* win_title;          // title string, cached for end_window's deferred chrome
+    bool        win_collapsed;      // current window is collapsed (title bar only this frame)
+    imgui_win_flags_t win_flags;    // current window's behavior flags (begin_window arg)
+    f32         win_title_h;        // current window's title bar height (0 if NOTITLEBAR)
+    u8          win_resize_hot;     // resize edges hot this frame -- suppresses widget hover
+    struct imgui_window_t* cur_win; // persisted window record; scroll write-back target
 
-    f32  win_x, win_y;        /* current window top-left (outer frame)                 */
-    f32  win_w, win_h;        /* current window dimensions                             */
+    f32  win_x, win_y;        // current window top-left (outer frame)
+    f32  win_w, win_h;        // current window dimensions
 
     /* Layout pen + scroll region state now live on the layout-frame stack below; the
        window is just the root frame.  s_ctx keeps only the cross-cutting interaction
        state the chrome and widgets read regardless of which region is active. */
 
-    imgui_rect_t clip_rect;   /* active interaction clip -- widget hover is gated by it */
-    bool         wheel_used;  /* a region consumed the wheel this frame (innermost wins) */
+    imgui_rect_t clip_rect;   // active interaction clip -- widget hover is gated by it
+    bool         wheel_used;  // a region consumed the wheel this frame (innermost wins)
 
 } s_ctx;
 
 /*----------------------------------------------------------------------------------------------
     Layout-frame stack
 
-    Every scrollable region (a window body or a begin_child box) pushes one frame.  The top
-    frame owns the layout pen and the content column the leaf widgets emit into; the rest of
-    the struct is the resolve context layout_pop_region needs to measure content and draw the
-    region's scrollbars.  The pen fields used to live flat in s_ctx; nesting moved them here.
+    - Every scrollable region (a window body or a begin_child box) pushes one frame.  
+    - The top frame owns the layout pen and the content column the leaf widgets emit into.
+    - The rest of the struct is the resolve context layout_pop_region needs to measure 
+      content and draw the region's scrollbars.
+    - The pen fields used to live flat in s_ctx; nesting moved them here.
 
-    Memory is just the fixed array -- a frame carries only what is needed to emit widget rects
-    and resolve scroll at pop, so a deep nesting costs nothing beyond these slots.
+    - Memory is just the fixed array -- a frame carries only what is needed to emit widget 
+      rects and resolve scroll at pop, so a deep nesting costs nothing beyond these slots.
 ----------------------------------------------------------------------------------------------*/
 
-#define IMGUI_LAYOUT_DEPTH 16
+#define IMGUI_LAYOUT_DEPTH 8    // max nested scroll regions (windows or children)
 
 typedef struct
 {
-    f32 cursor_x, cursor_y;     /* layout pen, top-left of the next widget (scroll-biased) */
-    f32 content_x, content_w;   /* widget-row left edge + available width                  */
-    f32 content_max_x;          /* rightmost edge reached this frame -- drives hscroll      */
+    f32 cursor_x, cursor_y;     // layout pen, top-left of the next widget (scroll-biased)
+    f32 content_x, content_w;   // widget-row left edge + available width
+    f32 content_max_x;          // rightmost edge reached this frame -- drives hscroll
 
     /* Active row template (imgui_layout / row sugar).  Persists and repeats: each widget fills
        the next cell, wrapping to a fresh row of the same shape when the columns run out.  A
        region opens with the default -- one flex column, auto height -- so a plain vertical
        stack needs no layout call.  See imgui_layout_t in imgui.h for the unit rule. */
-    f32         lay_cols[ IMGUI_LAYOUT_COLS ];  /* column tracks (overloaded units), copied  */
-    u32         lay_ncols;                       /* column count                              */
-    f32         lay_row_h;                       /* row height: 0 = auto, >0 = fixed pixels   */
-    imgui_pad_t lay_item_pad;                    /* padding wrapped around every item         */
-    f32         lay_gap_x, lay_gap_y;            /* inter-cell spacing (resolved to a number) */
 
-    /* Row iteration cursor.  The row is resolved once, when its first cell is taken (col 0);
-       the rest of the row reuses cellx/cellw, and a wrap advances cursor_y past row_h_cur. */
-    u32 col;                                /* next column to emit (0 = at a row start)      */
-    f32 cellx[ IMGUI_LAYOUT_COLS ];         /* resolved cell left edges for the current row  */
-    f32 cellw[ IMGUI_LAYOUT_COLS ];         /* resolved cell widths for the current row      */
-    f32 row_y;                              /* top of the current row                        */
-    f32 row_h_cur;                          /* resolved height of the current row            */
+    f32         lay_cols[ IMGUI_LAYOUT_COLS ];   // column tracks (overloaded units), copied
+    u32         lay_ncols;                       // column count
+    f32         lay_row_h;                       // flow row height: 0 = auto, >0 = pixels
+    imgui_pad_t lay_item_pad;                    // padding wrapped around every item / cell
+    f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
+
+    /* Grid mode (lay_nrows > 0): cols x rows partition a bounded band up front; widgets fill the
+       fixed matrix row-major.  Flow mode (lay_nrows == 0): cols describe one repeating row. */
+
+    f32 lay_rows[ IMGUI_LAYOUT_COLS ];      // row tracks (grid only)
+    u32 lay_nrows;                          // row count; 0 => flow mode
+    f32 rowy[ IMGUI_LAYOUT_COLS ];          // resolved cell tops    (grid, set at install)
+    f32 rowh[ IMGUI_LAYOUT_COLS ];          // resolved cell heights (grid, set at install)
+    u32 row;                                // current grid row (with col, walks row-major)
+
+    /* Iteration cursor.  Flow: the row resolves when its first cell is taken (col 0), the rest
+       reuse cellx/cellw, and a wrap advances cursor_y past row_h_cur.  Grid: cellx/cellw and
+       rowy/rowh are all resolved at install, and (col,row) walk the matrix. */
+
+    u32 col;                                // next column to emit (0 = at a row start)
+    f32 cellx[ IMGUI_LAYOUT_COLS ];         // resolved cell left edges
+    f32 cellw[ IMGUI_LAYOUT_COLS ];         // resolved cell widths
+    f32 row_y;                              // top of the current flow row
+    f32 row_h_cur;                          // resolved height of the current flow row
+    f32 content_y_max;                      // bottom of the content area -- grid band end
 
     /* Resolve context, set at push and read at pop. */
-    imgui_id_t   region_id;     /* base id for the region's scrollbar widget ids           */
-    imgui_win_flags_t flags;    /* scroll policy bits (IMGUI_WIN_*SCROLL), reused          */
-    imgui_rect_t outer;         /* the region box in screen space                          */
-    f32          origin_x;      /* unscrolled content origin -- measures content extent     */
-    f32          origin_y;
-    f32          view_w, view_h;/* gutter-adjusted visible extents (must match the bars)    */
-    f32          sb_w, sb_h;    /* reserved gutter sizes (0 = no bar this frame)            */
-    bool         show_v, show_h;/* a bar is shown this axis                                 */
-    bool         pushed_clip;   /* a draw clip was pushed (balance at pop)                  */
+
+    imgui_id_t          region_id;          // base id for the region's scrollbar widget ids
+    imgui_win_flags_t   flags;              // scroll policy bits (IMGUI_WIN_*SCROLL), reused
+    imgui_rect_t        outer;              // the region box in screen space
+    f32                 origin_x;           // unscrolled content origin -- measures content extent
+    f32                 origin_y;
+    f32                 view_w, view_h;     // gutter-adjusted visible extents (must match the bars)
+    f32                 sb_w, sb_h;         // reserved gutter sizes (0 = no bar this frame)
+    bool                show_v, show_h;     // a bar is shown this axis
+    bool                pushed_clip;        // a draw clip was pushed (balance at pop)
 
     /* Persistent scroll state, owned by the caller (window record or region pool entry). */
+
     f32* scroll_x;
     f32* scroll_y;
-    f32* pcontent_w;            /* write-back: measured content extent for next frame       */
+    f32* pcontent_w;                // write-back: measured content extent for next frame
     f32* pcontent_h;
 
-    imgui_rect_t parent_clip;   /* s_ctx.clip_rect to restore at pop                        */
-    u32          id_restore;    /* id-scope depth to restore at pop (see id stack below)    */
+    imgui_rect_t parent_clip;       // s_ctx.clip_rect to restore at pop
+    u32          id_restore;        // id-scope depth to restore at pop (see id stack below)
 
 } layout_frame_t;
 
 static layout_frame_t s_layout_stack[ IMGUI_LAYOUT_DEPTH ];
-static u32            s_layout_sp;   /* active frame count; top = s_layout_sp - 1 */
+static u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
 
 /* Top layout frame.  Valid between a begin_window/begin_child and its matching end.  When the
    stack is empty (a caller emitted a widget into a collapsed window despite the false return)
@@ -126,6 +142,7 @@ static u32            s_layout_sp;   /* active frame count; top = s_layout_sp - 
    the last frame's root region left there rather than crashing.  The read index is also clamped
    to the top slot so an over-deep nesting (capped in layout_push_region) never reads past the
    array. */
+
 static layout_frame_t*
 lf( void )
 {
