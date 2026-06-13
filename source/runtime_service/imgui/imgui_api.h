@@ -85,6 +85,23 @@ typedef struct imgui_api_s
        widgets (e.g. selectable rows for a list box).  begin_child always returns true. */
 
     bool ( *begin_child )( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
+
+    /* Sub-layout -- carve the next cell into its own little layout, the way a window or child hosts
+       one, but transient: no scroll, no clip, no persistent state, no frame.  push_layout consumes
+       one cell (advancing the parent like any widget), opens a layout filling it (default single
+       column; shape it with row / grid / widgets inside), and pop_layout closes it -- the parent
+       resumes at the following cell.  The cell is one standard line tall unless the row height was
+       declared larger first; the sub-layout does not grow the parent to fit, and does not clip.
+       Always pair, like push_id / pop_id.
+
+           imgui()->row_cols( 0, 3 );                       // 3 columns
+           imgui()->push_layout();                          // column 0 becomes a sub-layout...
+               imgui()->button("A"); imgui()->button("B");  // ...stacked inside that one cell
+           imgui()->pop_layout();
+           imgui()->text("col 1");  imgui()->text("col 2"); */
+
+    void ( *push_layout )( void );
+    void ( *pop_layout  )( void );
     void ( *end_child   )( void );
 
     /* Layout -- shape the active region's repeating row template.  A region opens as a single

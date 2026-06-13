@@ -38,6 +38,8 @@ bool imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_wi
 void imgui_end_window( void );
 bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_child( void );
+void imgui_push_layout( void );
+void imgui_pop_layout( void );
 
 void imgui_layout( imgui_layout_t desc );
 void imgui_layout_default( void );

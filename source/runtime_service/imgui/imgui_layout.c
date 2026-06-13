@@ -384,6 +384,87 @@ imgui_end_child( void )
 }
 
 /*----------------------------------------------------------------------------------------------
+    push_layout / pop_layout -- a sub-layout that fills one cell.
+
+    Consumes the next cell of the active template exactly as a widget would -- so the parent
+    advances (column, row wrap, same_line anchor) the instant push_layout is called, and on pop it
+    resumes at the following cell -- then opens a transient layout frame whose content area *is*
+    that cell.  Inside, shape it with the normal verbs (row / row_cols / grid / widgets); a fresh
+    sub-layout opens with the default single flex column.  This is the recursive completion of the
+    cell model: a cell can host a layout, the way a window or child does, but with none of the
+    weight -- no scroll, no clip, no persistent state, no frame.
+
+    A sub-layout obeys the same sizing rules as any widget: it gets one standard-height cell unless
+    the row height was declared larger up front (row( calc_row(...) ) / a fixed row_h).  It does not
+    grow the parent row to fit its contents -- fitting them inside the cell is the caller's job, and
+    overflow is not clipped.  Always pair with pop_layout, like push_id / pop_id.
+
+    Id scope is left unchanged, so a widget inside the sub-layout shares the parent region's ids;
+    use push_id / "##" to disambiguate repeats, exactly as anywhere else.
+----------------------------------------------------------------------------------------------*/
+
+/* Sink for a sub-layout's unused scroll / content-measure fields -- it never scrolls and its extent
+   feeds nothing back, so these only ever hold zero / discard.  Shared by every push_layout frame. */
+static f32 s_sublayout_sink[ 4 ];
+
+void
+imgui_push_layout( void )
+{
+    /* Take the next cell on the parent template -- this advances the parent like any widget emit. */
+    imgui_rect_t cell = widget_next_rect( WIDGET_H );
+
+    /* Cap the write slot at the top of the stack (mirroring layout_push_region) so an over-deep
+       nesting aliases the deepest frame rather than writing past the array; sp still counts true. */
+    u32 slot = s_layout_sp < IMGUI_LAYOUT_DEPTH ? s_layout_sp : IMGUI_LAYOUT_DEPTH - 1;
+    ++s_layout_sp;
+    layout_frame_t* f = &s_layout_stack[ slot ];
+
+    /* Transient frame: no scroll, no clip, no own id scope.  The unused region fields point at the
+       shared sink, and parent_clip / id_restore are saved only so pop is symmetric. */
+    f->region_id   = IMGUI_ID_NONE;
+    f->outer       = cell;
+    f->flags       = IMGUI_WIN_NOSCROLL;
+    f->parent_clip = s_ctx.clip_rect;
+    f->pushed_clip = false;
+    f->id_restore  = s_id_sp;
+
+    s_sublayout_sink[ 0 ] = s_sublayout_sink[ 1 ] = 0.0f;
+    f->scroll_x   = &s_sublayout_sink[ 0 ];
+    f->scroll_y   = &s_sublayout_sink[ 1 ];
+    f->pcontent_w = &s_sublayout_sink[ 2 ];
+    f->pcontent_h = &s_sublayout_sink[ 3 ];
+
+    f->sb_w = f->sb_h = 0.0f;
+    f->show_v = f->show_h = false;
+    f->view_w = cell.w;
+    f->view_h = cell.h;
+
+    /* Content area = the cell.  content_y_max is the cell bottom, so a grid sub-layout fills it. */
+    f->origin_x      = cell.x;
+    f->origin_y      = cell.y;
+    f->content_x     = cell.x;
+    f->content_w     = cell.w;
+    f->cursor_x      = cell.x;
+    f->cursor_y      = cell.y;
+    f->content_max_x = cell.x;
+    f->content_y_max = cell.y + cell.h;
+
+    layout_set_default( f );                 /* single flex column at the cell width */
+
+    f->prev_item = ( imgui_rect_t ){ 0 };    /* fresh same_line anchor inside the sub-layout */
+    f->cont_line = false;
+}
+
+void
+imgui_pop_layout( void )
+{
+    layout_frame_t* f = lf();
+    s_id_sp         = f->id_restore;         /* unwind any push_id the body left open */
+    s_ctx.clip_rect = f->parent_clip;        /* unchanged, but symmetric with push */
+    if ( s_layout_sp ) --s_layout_sp;        /* parent already advanced at push -- nothing more */
+}
+
+/*----------------------------------------------------------------------------------------------
     Public layout API -- shape the active region's repeating row template.
 
     These set the template on the current region; it persists and repeats for every subsequent
