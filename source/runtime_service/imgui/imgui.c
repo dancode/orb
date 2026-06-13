@@ -102,6 +102,7 @@ typedef struct
     u32 win_border;     /* window / widget outline thickness                 */
     u32 checkbox_sz;    /* checkbox indicator side                           */
     u32 slider_knob_w;  /* slider draggable knob width                       */
+    u32 min_cell_w;     /* floor a flex/fraction track shrinks to before overflow */
     u32 checkmark_pad;  /* inset of filled square inside the checkbox        */
     u32 cursor_w;       /* input text cursor width                           */
     u32 cursor_inset;   /* input text cursor top/bottom inset                */
@@ -121,6 +122,7 @@ static imgui_metrics_t s_layout =
     .win_border    = 1,
     .checkbox_sz   = 18,   /* 12 + 12/2                  */
     .slider_knob_w = 12,   /* = fs                       */
+    .min_cell_w    = 40,   /* 20 * 2                     */
     .checkmark_pad = 4,    /* 18 / 4                     */
     .cursor_w      = 1,    /* 12 / 8                     */
     .cursor_inset  = 3,    /* 12 / 4                     */
@@ -148,6 +150,10 @@ layout_compute( u32 ls )
     s_layout.win_border    = 1u;
     s_layout.checkbox_sz   = csz;
     s_layout.slider_knob_w = fs;
+    /* Smallest width a shrinking flex/fraction track stops at before it overflows the row
+       (clipped at the region edge).  Two row-heights keeps a control just grabbable; fixed-px
+       tracks are never floored -- an explicit pixel size is the author's choice. */
+    s_layout.min_cell_w    = ls * 2u;
     s_layout.checkmark_pad = csz / 4u;
     s_layout.cursor_w      = fs / 8u < 1u ? 1u : fs / 8u;
     s_layout.cursor_inset  = fs / 4u < 1u ? 1u : fs / 4u;

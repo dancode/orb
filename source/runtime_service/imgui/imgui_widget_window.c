@@ -437,8 +437,10 @@ imgui_end_window( void )
                 win->collapsed = !win->collapsed;
         }
 
-        /* Title text. */
-        draw_push_text( text_x, text_center_y( s_ctx.win_y, title_h ), COL_TEXT, s_ctx.win_title );
+        /* Title text, fitted to the room between the arrow square and the bar's right edge so a
+           narrow (shrunk) window ellipsizes the title instead of bleeding it under the border. */
+        draw_text_fit_n( text_x, text_center_y( s_ctx.win_y, title_h ), COL_TEXT, s_ctx.win_title,
+                         0xFFFFFFFFu, ( s_ctx.win_x + s_ctx.win_w - WIDGET_PAD ) - text_x );
     }
 
     /* Border frames the whole window, with or without a title bar. */

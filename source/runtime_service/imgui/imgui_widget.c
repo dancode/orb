@@ -93,10 +93,20 @@ imgui_button( const char* label )
     /* Background. */
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
 
-    /* Centered label -- a button always centers, independent of the region's content align. */
-    f32          lw = label_width( label );
-    imgui_rect_t lr = rect_align( r, lw, font_char_h(), IMGUI_ALIGN_CENTER );
-    draw_label( lr.x, lr.y, COL_TEXT, label );
+    /* Centered label -- a button always centers, independent of the region's content align.  When
+       the label outgrows the button (a squeezed cell), fall back to a left-anchored ellipsized fit
+       so it truncates cleanly instead of spilling past both edges. */
+    f32 lw    = label_width( label );
+    f32 avail = r.w - 2.0f * WIDGET_PAD;
+    if ( lw <= avail )
+    {
+        imgui_rect_t lr = rect_align( r, lw, font_char_h(), IMGUI_ALIGN_CENTER );
+        draw_label( lr.x, lr.y, COL_TEXT, label );
+    }
+    else
+    {
+        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label, avail );
+    }
 
     return st.clicked;
 }
@@ -118,10 +128,10 @@ imgui_checkbox( const char* label, bool* v )
     /* Field split mode aligns with the other labeled widgets: the label takes its track and the
        box sits at the start of the control track.  Default mode keeps the box on the left with the
        label trailing it.  The box only needs CHECKBOX_SZ of the control track. */
-    f32          label_x;
+    f32          label_x, label_w;
     imgui_rect_t control;
     f32          bx;
-    if ( field_split_resolve( r, CHECKBOX_SZ, &label_x, &control ) )
+    if ( field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control ) )
     {
         bx = control.x;
     }
@@ -129,6 +139,7 @@ imgui_checkbox( const char* label, bool* v )
     {
         bx      = r.x;
         label_x = bx + CHECKBOX_SZ + WIDGET_PAD;   /* default: label just right of the box */
+        label_w = ( r.x + r.w ) - label_x;         /* trails to the cell's right edge      */
     }
 
     f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, IMGUI_ALIGN_VCENTER ).y;
@@ -144,7 +155,7 @@ imgui_checkbox( const char* label, bool* v )
                                0,0,1,1, 0, COL_CHECK_MARK );
     }
 
-    draw_label( label_x, text_center_y( r.y, r.h ), COL_TEXT, label );
+    draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, label_w );
 
     bool changed = false;
     if ( st.clicked )

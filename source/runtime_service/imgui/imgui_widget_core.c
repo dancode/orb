@@ -30,6 +30,7 @@
 #define WIN_BORDER    ( (f32)s_layout.win_border    )
 #define CHECKBOX_SZ   ( (f32)s_layout.checkbox_sz   )
 #define SLIDER_KNOB_W ( (f32)s_layout.slider_knob_w )
+#define WIDGET_MIN_W  ( (f32)s_layout.min_cell_w    )
 
 /* Default region padding (the inset every window body / child opens with): pad columns by
    WIDGET_PAD left and right, offset the first row by WIDGET_GAP, no bottom reserve. */
@@ -87,11 +88,21 @@ widget_track_width( f32 right_x )
    ==1 fill (equal share of the leftover -- several fills split it), (0,1) fraction of the gap-
    adjusted extent, ==0 natural.  This is a pre-divide (up-front) resolve with no content in hand,
    so a 0/natural track collapses to zero width here -- natural only has a measure in pack mode.
-   Gaps are removed before the split, so a fraction is of usable space and cells tile exactly. */
+   Gaps are removed before the split, so a fraction is of usable space and cells tile exactly.
+
+   Minimum width: a fill / fraction track that the available space squeezes below WIDGET_MIN_W is
+   floored there and the row simply overflows -- it stops shrinking at a still-usable size and the
+   surplus cells push out past the content edge, where the region clip cuts them (no auto-scroll;
+   the scroll flags stay the author's choice).  Fixed-px tracks are never floored: an explicit
+   pixel width is taken as intent, even when small.  All fills share one floor and hit it together,
+   so a flat post-clamp matches a freeze-and-redistribute here; per-track minimums would need the
+   iterative form. */
 static void
 layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
                        f32* out_pos, f32* out_size )
 {
+    const f32 min_w = WIDGET_MIN_W;
+
     f32 avail = extent - gap * (f32)( n - 1 );
     if ( avail < 0.0f ) avail = 0.0f;
 
@@ -120,6 +131,12 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
                : ( t >  1.0f ) ? t
                : ( t >  0.0f ) ? t * avail
                :                 0.0f;           /* natural -> zero-width track in pre-divide */
+
+        /* Floor a shrinking flex / fraction track at the usable minimum; let the row overflow
+           rather than crush the cell.  Fixed-px ( t > 1 ) and natural ( t == 0 ) are left as-is. */
+        if ( ( t == 1.0f || ( t > 0.0f && t < 1.0f ) ) && sz < min_w )
+            sz = min_w;
+
         out_pos [ i ] = pos;
         out_size[ i ] = sz;
         pos += sz + gap;
@@ -342,6 +359,54 @@ static imgui_id_t widget_id( const char* label ) { return id_combine( id_seed(),
 static f32  label_width( const char* s )                         { return font_text_w_n( s, label_vis_len( s ) ); }
 static void draw_label ( f32 x, f32 y, u32 c, const char* s )    { draw_push_text_n( x, y, c, s, label_vis_len( s ) ); }
 
+/* Draw at most `len` bytes of s left-anchored at x, fitted into max_w: when the run is wider than
+   max_w, truncate on a glyph boundary and mark the cut with an ellipsis ("...") so a compressed
+   widget reads as deliberately clipped rather than bleeding mid-glyph under the region clip.  When
+   not even the ellipsis fits, the leading glyphs that do are drawn and the rest dropped -- never
+   worse than a hard clip.  max_w <= 0 draws nothing.  Cheap: one width walk, no extra clip / draw
+   command (so draw batching is untouched).  draw_label_fit is the label-grammar wrapper; callers
+   with a raw string (the window title) pass the whole length through here directly. */
+static void
+draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w )
+{
+    if ( max_w <= 0.0f ) return;
+
+    /* Fits whole -- the common path: draw the span as-is. */
+    if ( font_text_w_n( s, len ) <= max_w )
+    {
+        draw_push_text_n( x, y, c, s, len );
+        return;
+    }
+
+    /* Too wide: reserve the ellipsis (dropped if even it will not fit), then take the longest
+       glyph prefix that fits in the remaining budget. */
+    f32  ell    = font_char_advance( (u8)'.' ) * 3.0f;
+    bool dots   = ( ell <= max_w );
+    f32  budget = dots ? max_w - ell : max_w;
+
+    f32 w = 0.0f;
+    u32 n = 0;
+    while ( n < len && s[ n ] )
+    {
+        f32 adv = font_char_advance( (u8)s[ n ] );
+        if ( w + adv > budget ) break;
+        w += adv;
+        ++n;
+    }
+
+    draw_push_text_n( x, y, c, s, n );
+    if ( dots )
+        draw_push_text_n( x + w, y, c, "...", 3u );
+}
+
+/* Clean-shrink companion to draw_label: fit a label's visible span (markers stripped) into max_w,
+   ellipsizing when a cell squeezes it below its natural width.  Used by the labeled widgets. */
+static void
+draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
+{
+    draw_text_fit_n( x, y, c, s, label_vis_len( s ), max_w );
+}
+
 /* Cell a grid hands to a widget: a fixed (col,row) slot of the pre-resolved matrix, then advance
    row-major.  Past the last cell the cursor clamps to it, so overflow widgets stack harmlessly in
    the final slot rather than reading out of bounds. */
@@ -512,7 +577,8 @@ static imgui_rect_t widget_next_rect( f32 h ) { return widget_next_rect_w( -1.0f
    control is floored at min_control_w so it stays usable (overrunning under the label, as before).
    Returns false when no field split is set, leaving the caller on its default layout. */
 static bool
-field_split_resolve( imgui_rect_t cell, f32 min_control_w, f32* out_label_x, imgui_rect_t* out_control )
+field_split_resolve( imgui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* out_label_w,
+                     imgui_rect_t* out_control )
 {
     layout_frame_t* f = lf();
     if ( f->lay_field_side == 0 ) return false;
@@ -536,6 +602,7 @@ field_split_resolve( imgui_rect_t cell, f32 min_control_w, f32* out_label_x, img
     if ( control_w < min_control_w ) control_w = min_control_w;
 
     *out_label_x = pos[ lab_i ];
+    *out_label_w = size[ lab_i ];
     *out_control = ( imgui_rect_t ){ pos[ ctl_i ], cell.y, control_w, cell.h };
     return true;
 }
@@ -544,24 +611,28 @@ static imgui_rect_t
 widget_split_label( imgui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
 {
     /* Field split mode: the label sits in its track at full strength (the trailing-label dim hint,
-       label_color, does not apply -- a field label reads as primary); the control fills the rest. */
-    f32          label_x;
+       label_color, does not apply -- a field label reads as primary); the control fills the rest.
+       The label is fitted to its track width so a narrow (fraction-shrunk) track ellipsizes it. */
+    f32          label_x, label_w;
     imgui_rect_t control;
-    if ( field_split_resolve( row, min_control_w, &label_x, &control ) )
+    if ( field_split_resolve( row, min_control_w, &label_x, &label_w, &control ) )
     {
-        draw_label( label_x, text_center_y( row.y, row.h ), COL_TEXT, label );
+        draw_label_fit( label_x, text_center_y( row.y, row.h ), COL_TEXT, label, label_w );
         return control;
     }
 
-    /* Default: control on the left, the label trailing at its natural width on the right. */
-    f32 label_w   = label_width( label );
+    /* Default: control on the left, the label trailing at its natural width on the right.  When the
+       control floors at min_control_w the label space narrows; fit it so it ellipsizes there
+       instead of bleeding under the row's right edge. */
+    label_w       = label_width( label );
     f32 control_w = row.w - label_w - WIDGET_PAD;
     if ( control_w < min_control_w ) control_w = min_control_w;
 
     control = ( imgui_rect_t ){ row.x, row.y, control_w, row.h };
 
-    draw_label( control.x + control.w + WIDGET_PAD, text_center_y( row.y, row.h ),
-                label_color, label );
+    f32 trail_x = control.x + control.w + WIDGET_PAD;
+    draw_label_fit( trail_x, text_center_y( row.y, row.h ), label_color, label,
+                    ( row.x + row.w ) - trail_x );
     return control;
 }
 
