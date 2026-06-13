@@ -35,46 +35,23 @@
     Child regions need their scroll offset and last-measured content size to survive across
     frames, keyed by id, exactly the way windows keep those fields inline in imgui_window_t.
     Windows do not use this pool -- they pass pointers to their own record -- so only begin_child
-    allocates here.  Entries are stamped with the frame they were last seen and the
-    least-recently-seen slot is recycled, so transient ids do not leak the pool.
+    fetches a record, from the shared keyed state pool (imgui_ctx.c) by region id.  No dedicated
+    table or recycling logic lives here: the pool stamps the slot each frame and reclaims it once
+    the id goes cold, and hands back zeroed storage on first sight so a new child opens at the top
+    with no measured size.
 ----------------------------------------------------------------------------------------------*/
-
-#define IMGUI_MAX_REGIONS 128
 
 typedef struct
 {
-    imgui_id_t id;                  /* 0 = free slot                                   */
-    f32        scroll_x, scroll_y;  /* persisted scroll offset                         */
-    f32        content_w, content_h;/* content extent measured last frame              */
-    u32        seen_frame;          /* last frame touched -- drives recycling          */
+    f32 scroll_x, scroll_y;     /* persisted scroll offset            */
+    f32 content_w, content_h;   /* content extent measured last frame */
 
 } imgui_region_t;
 
-static imgui_region_t s_regions[ IMGUI_MAX_REGIONS ];
-
-/* Find the region for this id, or claim a slot for it (free first, else least-recently-seen).
-   A freshly claimed slot starts zeroed, so a new child opens at the top with no measured size. */
 static imgui_region_t*
 region_get( imgui_id_t id )
 {
-    imgui_region_t* freeslot = NULL;
-    imgui_region_t* oldest   = &s_regions[ 0 ];
-
-    for ( u32 i = 0; i < IMGUI_MAX_REGIONS; ++i )
-    {
-        imgui_region_t* r = &s_regions[ i ];
-        if ( r->id == id )
-        {
-            r->seen_frame = s_frame_counter;
-            return r;
-        }
-        if ( r->id == 0 && !freeslot )            freeslot = r;
-        if ( r->seen_frame < oldest->seen_frame ) oldest   = r;
-    }
-
-    imgui_region_t* r = freeslot ? freeslot : oldest;
-    *r = ( imgui_region_t ){ .id = id, .seen_frame = s_frame_counter };
-    return r;
+    return IMGUI_STATE( imgui_region_t, id );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -377,9 +354,10 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 
     imgui_region_t* rg = region_get( id );
 
-    /* Child frame: body fill + border, drawn under the parent clip before the region clips in. */
+    /* Child body fill, drawn under the parent clip before the region clips in.  The border is
+       deferred to end_child (after the scrollbars) so the bar tracks cannot overdraw it -- the
+       same deferral end_window uses for the window frame. */
     draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, COL_CHILD_BG );
-    draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
 
     layout_push_region( id, box, REGION_PAD_DEFAULT, flags,
                         &rg->scroll_x, &rg->scroll_y, &rg->content_w, &rg->content_h,
@@ -392,7 +370,13 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 void
 imgui_end_child( void )
 {
+    /* Capture the box before layout_pop_region unwinds the frame, then draw the border after it
+       has painted the scrollbars.  The bar tracks are inset by WIN_BORDER and butt against the
+       frame, so drawing the outline last keeps it solid where a track meets the box edge.  The
+       region clip is already popped, so this paints under the parent clip, like begin_child did. */
+    imgui_rect_t box = lf()->outer;
     layout_pop_region();
+    draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
 }
 
 /*----------------------------------------------------------------------------------------------

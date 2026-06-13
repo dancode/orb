@@ -365,10 +365,7 @@ main( int argc, char** argv )
                         imgui()->button( "1/3" );
                         imgui()->button( "1/4" );
                         imgui()->button( "1/5" );
-
-                        /* One call clears both the column template and any field split back to the
-                           region default -- the plain single-column stack the list box wants. */
-                        imgui()->layout_default();
+                        imgui()->row( 0 );               /* back to the single-column stack */
 
                         /* List box test: a child region with its own scrollbar, filled with
                            selectable rows.  Scroll/clip is independent of the window; the

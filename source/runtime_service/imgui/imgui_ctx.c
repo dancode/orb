@@ -158,9 +158,92 @@ lf( void )
     return &s_layout_stack[ i ];
 }
 
-/* Monotonic frame index, bumped each new_frame.  The region pool stamps entries with it and
-   recycles the least-recently-seen slot, so transient child ids do not leak the pool. */
+/* Monotonic frame index, bumped each new_frame.  The keyed state pool below stamps entries with
+   it and reclaims slots gone cold, so transient ids do not leak the pool. */
 static u32 s_frame_counter;
+
+/*----------------------------------------------------------------------------------------------
+    Keyed state pool -- persistent per-id widget state.
+
+    The single store a widget uses to keep a few bytes alive across frames, keyed by its id: a
+    region's scroll offset, a tree node's open flag, a combo's popup state.  imgui_state_get hands
+    back a stable, zero-on-create pointer to `size` bytes for `id`; the IMGUI_STATE( T, id ) sugar
+    casts it to a typed struct.  The contract is the immediate-mode norm -- fetch your state every
+    frame you are live and the pointer is stable; an id left unfetched goes cold and its slot is
+    recycled, so there is nothing to free and nothing leaks.
+
+    Storage is an open-addressing hash table keyed by id (ids already avalanche, so id & mask is a
+    good bucket).  A lookup probes linearly from the home bucket to the first empty slot -- O(1) at
+    the low load factor a UI runs at.  A slot untouched for more than one frame is a tombstone the
+    next insert on its chain reclaims; reclamation only ever overwrites one occupied slot with
+    another, never empties one, so no probe chain is broken and no sweep or free list is needed.
+    The "more than one frame" gate (not "one or more") is deliberate: a slot seen last frame may
+    still be revisited later this frame, so only entries two+ frames cold are fair game.
+----------------------------------------------------------------------------------------------*/
+
+#define IMGUI_STATE_SLOTS 512                       // open-addressing capacity (power of two)
+#define IMGUI_STATE_MASK  ( IMGUI_STATE_SLOTS - 1 ) // bucket = id & mask
+#define IMGUI_STATE_CAP   32                        // payload bytes per slot (max state struct)
+
+typedef struct
+{
+    imgui_id_t id;          // 0 = empty slot
+    u32        seen_frame;  // frame last touched -- drives stale reclamation
+    union                   // force max alignment so any payload struct is correctly aligned
+    {
+        void* _p;
+        f64   _d;
+        u8    bytes[ IMGUI_STATE_CAP ];
+    } data;
+
+} imgui_state_slot_t;
+
+static imgui_state_slot_t s_state[ IMGUI_STATE_SLOTS ];
+
+/* Stable storage for `id`: the same pointer every frame the id stays live, zeroed the frame it is
+   first seen or recycled.  size must fit IMGUI_STATE_CAP.  Never returns NULL. */
+static void*
+imgui_state_get( imgui_id_t id, u32 size )
+{
+    ORB_ASSERT( size <= IMGUI_STATE_CAP );
+    if ( id == IMGUI_ID_NONE ) id = 1u;             // never key on the empty sentinel
+    (void)size;
+
+    u32                 bucket = id & IMGUI_STATE_MASK;
+    imgui_state_slot_t* reuse  = NULL;              // first tombstone (cold slot) seen on the chain
+    imgui_state_slot_t* dst    = NULL;              // where a fresh entry lands when id is absent
+
+    for ( u32 i = 0; i < IMGUI_STATE_SLOTS; ++i )
+    {
+        imgui_state_slot_t* s = &s_state[ ( bucket + i ) & IMGUI_STATE_MASK ];
+
+        if ( s->id == id )                          // live hit: restamp and hand back the storage
+        {
+            s->seen_frame = s_frame_counter;
+            return s->data.bytes;
+        }
+        if ( s->id == IMGUI_ID_NONE )               // empty ends the probe: id is absent
+        {
+            dst = reuse ? reuse : s;                // reclaim a tombstone if we passed one, else grow
+            break;
+        }
+        if ( !reuse && s_frame_counter - s->seen_frame > 1u )
+            reuse = s;                              // two+ frames cold -> reclaimable in place
+    }
+
+    /* Absent: settle into dst.  If the table is wall-to-wall live entries (no empty slot and no
+       tombstone -- 512 distinct persistent widgets in one frame), clobber the home bucket: a rare
+       degradation rather than an overflow.  reuse covers the no-empty-but-some-cold case. */
+    if ( !dst ) dst = reuse ? reuse : &s_state[ bucket ];
+
+    dst->id         = id;
+    dst->seen_frame = s_frame_counter;
+    memset( dst->data.bytes, 0, sizeof dst->data.bytes );
+    return dst->data.bytes;
+}
+
+/* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= IMGUI_STATE_CAP. */
+#define IMGUI_STATE( T, id ) ( (T*)imgui_state_get( ( id ), (u32)sizeof( T ) ) )
 
 /*----------------------------------------------------------------------------------------------
     id_hash -- FNV-1a 32-bit hash of a NUL-terminated string
