@@ -612,7 +612,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 
     bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == id );
     bool win_hover = ( s_ctx.win_id == s_ctx.hover_win );
-    bool eligible  = can_hover && win_hover && !s_ctx.win_resize_hot;
+    bool eligible  = can_hover && win_hover && !s_ctx.win_resize_hot && !s_ctx.win_grip_hot;
     if ( eligible && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
          s_ctx.hover_id = id;
 

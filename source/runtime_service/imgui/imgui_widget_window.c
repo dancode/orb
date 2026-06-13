@@ -293,6 +293,22 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
     }
     s_ctx.win_resize_hot = resize_hot;   /* read by widget_behavior + end_window's highlight */
 
+    /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
+       same way the edge band reserves the borders.  The grip square overlaps the scroll gutter,
+       but the scrollbar runs first (in layout_pop_region), so without this it would claim the
+       press and the grip -- drawn and grabbed later in end_window -- would sit dead behind it.
+       Suppressing widget hover over the grip rect leaves active_id free for end_window to grab.
+       Gated on hover_win and a free/own active_id, mirroring the edge resize above. */
+    bool grip_hot = false;
+    if ( ( flags & IMGUI_WIN_CAN_AUTOSIZE ) && !collapsed && s_ctx.hover_win == id
+         && ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == resize_id ) )
+    {
+        f32          g  = WIDGET_H;   /* grip leg length -- matches end_window's grip rect */
+        imgui_rect_t gr = { win->x + win->w - g, win->y + disp_h - g, g, g };
+        grip_hot = rect_hit( gr );
+    }
+    s_ctx.win_grip_hot = grip_hot;   /* read by widget_behavior to defer the corner to the grip */
+
     /* Nominate this window as the one under the cursor (front-most by z wins).  A resizeable
        window expands its nominee rect by the outer grab band (horizontally only when collapsed,
        since its height is pinned) so the cursor still counts as "over" it just outside the
@@ -355,6 +371,16 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
         layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags,
                             &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
                             /* own_clip */ false );
+    }
+    else
+    {
+        /* Collapsed: no body region opens and no draw clip is pushed, but end_window still
+           hit-tests the collapse arrow through s_ctx.clip_rect.  Left unset it would inherit
+           whatever clip the previously drawn window left behind -- which need not cover this
+           title bar, so the arrow goes intermittently dead (it only "works" when the stale clip
+           happens to contain it).  Point it at the shown title-bar rect so the arrow is always
+           hittable; the deferred chrome in end_window draws within these bounds without a clip. */
+        s_ctx.clip_rect = ( imgui_rect_t ){ win->x, win->y, win->w, disp_h };
     }
 
     /* false tells the caller to skip its body widgets (they would do nothing anyway). */

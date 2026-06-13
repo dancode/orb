@@ -43,6 +43,7 @@ static struct
     imgui_win_flags_t win_flags;    // current window's behavior flags (begin_window arg)
     f32         win_title_h;        // current window's title bar height (0 if NOTITLEBAR)
     u8          win_resize_hot;     // resize edges hot this frame -- suppresses widget hover
+    bool        win_grip_hot;       // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
     struct imgui_window_t* cur_win; // persisted window record; scroll write-back target
 
     f32  win_x, win_y;        // current window top-left (outer frame)
