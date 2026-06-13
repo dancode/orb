@@ -300,6 +300,11 @@ main( int argc, char** argv )
                         {
                             // empty
                         }
+                        if ( imgui()->slider_float( "ScaleScale", &scale, 1.0f, 3.0f ) )
+                        {
+                            // empty
+                        }
+
                         imgui()->text( "here we go..." );
                         imgui()->textf( "formatted number: %.2f", 123.456f );
 
@@ -320,6 +325,50 @@ main( int argc, char** argv )
 
                         static char buffer[ 32 ] = { 0 };
                         imgui()->input_text( "Input Text", buffer, sizeof( buffer ));
+
+                        /* Field form test: field_label_left/right() / field_split() fix a label
+                           track so each labeled widget lays out as an aligned "Label  [control]" row
+                           from a single call -- no per-row track array, no text()+widget pairing.
+                           The split persists until changed, so it is cleared with field_label_left( 0 )
+                           once the form ends.  row2/row3 then show weighted columns without an
+                           (f32[]){...} literal. */
+                        static char  f_name[ 32 ] = { 0 };
+                        static float f_speed      = 5.0f;
+                        static bool  f_enabled    = true;
+
+                        /* Left labels in a fixed 110px gutter (field_label_left sugar). */
+                        imgui()->text( "Field form (label gutter, left):" );
+                        imgui()->field_label_left( 110.0f );
+                        imgui()->input_text  ( "Name",    f_name, sizeof( f_name ) );
+                        imgui()->slider_float( "Speed",   &f_speed, 0.0f, 10.0f );
+                        imgui()->checkbox    ( "Enabled", &f_enabled );
+
+                        /* Right-side labels (field_label_right) -- the opposing-side sugar. */
+                        imgui()->text( "Field form (label gutter, right):" );
+                        imgui()->field_label_right( 110.0f );
+                        imgui()->input_text  ( "Name",    f_name, sizeof( f_name ) );
+                        imgui()->checkbox    ( "Enabled", &f_enabled );
+
+                        /* Fractional split via the general field_split: 40% label / 60% control. */
+                        imgui()->text( "Field form (field_split 40/60):" );
+                        imgui()->field_split( IMGUI_LABEL_LEFT, 0.4f, 0.6f );
+                        imgui()->slider_float( "Volume", &f_speed, 0.0f, 10.0f );
+
+                        imgui()->field_label_left( 0.0f );   /* back to trailing labels for the rest */
+
+                        /* Weighted columns the easy way: a 30/70 split, then equal thirds. */
+                        imgui()->text( "Weighted rows (row2 / row3):" );
+                        imgui()->row2( 0.3f, 0.7f );
+                        imgui()->button( "Left 30%" );
+                        imgui()->button( "Right 70%" );
+                        imgui()->row3( 0, 0, 0 );
+                        imgui()->button( "1/3" );
+                        imgui()->button( "1/4" );
+                        imgui()->button( "1/5" );
+
+                        /* One call clears both the column template and any field split back to the
+                           region default -- the plain single-column stack the list box wants. */
+                        imgui()->layout_default();
 
                         /* List box test: a child region with its own scrollbar, filled with
                            selectable rows.  Scroll/clip is independent of the window; the
@@ -343,7 +392,8 @@ main( int argc, char** argv )
 
                     imgui()->end_window();
 
-                    if ( 1 ) {
+                    if ( 1 ) 
+                    {
                         /* Second, overlapping window -- click either to bring it to the
                            front (z-order); drag to reposition. */
                         if ( imgui()->begin_window( "Inspector", 360, 240, 360, 280, IMGUI_WIN_NOTITLEBAR ) )
@@ -355,6 +405,7 @@ main( int argc, char** argv )
                         }
                         imgui()->end_window();
                     }
+
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
                 }
 

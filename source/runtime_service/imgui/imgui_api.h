@@ -97,9 +97,17 @@ typedef struct imgui_api_s
            imgui()->row_track( 24, (f32[]){ 200, 0, IMGUI_END } );                    // 200px + fill
 
        layout()     -- full flow template (columns, row height, item padding, gaps) in one struct.
+       layout_default() -- clear back to the open default (one flex column, no field split); the
+                         single "reset everything" verb.  Padding is untouched (use pad()).
        row()        -- single full-width column of height row_h (0 = auto).
        row_cols()   -- n equal columns of height row_h.
+       row2/3/4()   -- fixed-arity weighted columns (auto height): row2( 0.3f, 0.7f ).
        row_track()  -- explicit per-column widths (IMGUI_END-terminated).
+       field_split()  -- labeled widgets split their cell into a label + control track (overloaded
+                         units, label left or right); input_text / slider_float / checkbox then lay
+                         out as an aligned "Label  [control]" form from a single call.
+       field_label_left() / field_label_right() -- field_split sugar: a fixed-width label column on
+                         the left / right with a flex control filling the rest (0 = off).
        pad()        -- region padding: the inset between the region box and the layout start.
 
        Grid mode -- cols x rows partition a bounded box (the region content from the pen to its
@@ -111,11 +119,18 @@ typedef struct imgui_api_s
            imgui()->grid_cells( 3, 2 );  for (i<6) imgui()->button(name[i]);  // 3x2 of buttons
        grid()       -- cols x rows from the descriptor (row_h ignored; grid uses rows). */
 
-    void ( *layout     )( imgui_layout_t desc );
-    void ( *row        )( f32 row_h );
-    void ( *row_cols   )( f32 row_h, u32 n );
-    void ( *row_track  )( f32 row_h, const f32* cols );
-    void ( *pad        )( imgui_pad_t region_pad );
+    void ( *layout         )( imgui_layout_t desc );
+    void ( *layout_default )( void );
+    void ( *row            )( f32 row_h );
+    void ( *row_cols     )( f32 row_h, u32 n );
+    void ( *row2         )( f32 a, f32 b );
+    void ( *row3         )( f32 a, f32 b, f32 c );
+    void ( *row4         )( f32 a, f32 b, f32 c, f32 d );
+    void ( *row_track    )( f32 row_h, const f32* cols );
+    void ( *field_split  )( imgui_label_side_t side, f32 label, f32 control );
+    void ( *field_label_left  )( f32 width );
+    void ( *field_label_right )( f32 width );
+    void ( *pad          )( imgui_pad_t region_pad );
     void ( *grid       )( imgui_layout_t desc );
     void ( *grid_cells )( u32 ncols, u32 nrows );
 

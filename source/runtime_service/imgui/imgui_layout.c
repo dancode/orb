@@ -420,6 +420,19 @@ imgui_row( f32 row_h )
     layout_set( NULL, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
 }
 
+/* Reset the active region's layout to the state it opened with: one flex column of auto height,
+   no field split, default gaps.  Finishes any open row first and leaves the region padding intact
+   (use pad() to re-inset).  The single "clear everything" verb -- row( 0 ) only resets the columns
+   and field_label_left( 0 ) only the field split, so this is the way back to the plain stack when
+   both a template and a field split are in play. */
+void
+imgui_layout_default( void )
+{
+    layout_frame_t* f = lf();
+    layout_row_break( f );      /* finish any partially-filled row before clearing */
+    layout_set_default( f );    /* single flex column, no field split, default gaps */
+}
+
 /* n equal flex columns of height row_h (0 = auto, one standard line). */
 void
 imgui_row_cols( f32 row_h, u32 n )
@@ -439,6 +452,38 @@ imgui_row_track( f32 row_h, const f32* cols )
 {
     layout_set( cols, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
 }
+
+/* Fixed-arity weighted rows -- the everyday 2/3/4-column split without a track array or its
+   IMGUI_END terminator.  Each width takes the overloaded unit (>1 px, (0,1] fraction, 0 flex),
+   so row2( 0.3f, 0.7f ) is a 30/70 split and row2( 120, 0 ) is a 120px column plus a flex fill.
+   Auto height (the common case); reach for row_track / layout when a fixed height or >4 columns
+   is needed. */
+
+void imgui_row2( f32 a, f32 b )                { f32 c[ 3 ] = { a, b, IMGUI_END };       layout_set( c, 0.0f, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f ); }
+void imgui_row3( f32 a, f32 b, f32 c )         { f32 t[ 4 ] = { a, b, c, IMGUI_END };    layout_set( t, 0.0f, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f ); }
+void imgui_row4( f32 a, f32 b, f32 c, f32 d )  { f32 t[ 5 ] = { a, b, c, d, IMGUI_END }; layout_set( t, 0.0f, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f ); }
+
+/* Field split -- the labeled value widgets (input_text, slider_float, checkbox) split their cell
+   into a label track + a control track and lay out as an aligned "Label  [control]" form from a
+   single call.  `side` places the label on the left or right; `label` / `control` are two sizes in
+   the same overloaded unit as columns (>1 px, (0,1] fraction, 0 flex), so field_split( LEFT, 0.4f,
+   0.6f ) is a 40/60 split and field_split( LEFT, 120, 0 ) is a 120px label plus a flex control.
+   Pass IMGUI_LABEL_NONE to turn it off (back to the trailing natural-width label).  Set once on a
+   region; it persists like the row template until changed, and is resolved against whatever cell
+   each widget is handed -- a full row or a single column. */
+void
+imgui_field_split( imgui_label_side_t side, f32 label, f32 control )
+{
+    layout_frame_t* f   = lf();
+    f->lay_field_side    = (u8)side;
+    f->lay_field_label   = label;
+    f->lay_field_control = control;
+}
+
+/* field_split sugar -- a fixed-width label column with a flex control filling the rest, on the
+   left or the right.  width <= 0 turns the field split off (restores the trailing label). */
+void imgui_field_label_left ( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_LEFT  : IMGUI_LABEL_NONE, width, 0.0f ); }
+void imgui_field_label_right( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_RIGHT : IMGUI_LABEL_NONE, width, 0.0f ); }
 
 /* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
    (both IMGUI_END-terminated, overloaded units).  Uses cols, rows, item_pad, and gaps; row_h is

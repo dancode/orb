@@ -69,6 +69,22 @@ typedef struct
 } imgui_layout_t;
 
 /*==============================================================================================
+    Field label side -- where a labeled value widget (input_text / slider_float / checkbox) puts
+    its label when a field split is active (imgui()->field_split / field_label_left).  The label and
+    control are two tracks resolved across the widget's cell with the same overloaded unit as
+    columns; `side` only decides which track sits on which edge.  NONE is the default: the label
+    trails the control at its natural width on the right.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_LABEL_NONE  = 0,      /* off -- natural-width label trailing on the right (default) */
+    IMGUI_LABEL_LEFT  = 1,      /* label track on the left, control fills the right */
+    IMGUI_LABEL_RIGHT = 2,      /* label track on the right, control fills the left */
+
+} imgui_label_side_t;
+
+/*==============================================================================================
     Window drag mode -- how a window may be repositioned by the mouse.
     Selected globally via imgui()->set_window_drag(); default is TITLEBAR.
 ==============================================================================================*/

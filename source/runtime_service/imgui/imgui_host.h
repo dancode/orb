@@ -40,9 +40,16 @@ bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_child( void );
 
 void imgui_layout( imgui_layout_t desc );
+void imgui_layout_default( void );
 void imgui_row( f32 row_h );
 void imgui_row_cols( f32 row_h, u32 n );
+void imgui_row2( f32 a, f32 b );
+void imgui_row3( f32 a, f32 b, f32 c );
+void imgui_row4( f32 a, f32 b, f32 c, f32 d );
 void imgui_row_track( f32 row_h, const f32* cols );
+void imgui_field_split( imgui_label_side_t side, f32 label, f32 control );
+void imgui_field_label_left( f32 width );
+void imgui_field_label_right( f32 width );
 void imgui_pad( imgui_pad_t region_pad );
 void imgui_grid( imgui_layout_t desc );
 void imgui_grid_cells( u32 ncols, u32 nrows );

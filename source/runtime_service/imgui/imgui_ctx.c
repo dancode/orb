@@ -89,6 +89,14 @@ typedef struct
     f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
     u32         lay_nrows;                       // row count; 0 => flow mode, else grid
 
+    /* Field split (field_split / field_label_left): a labeled value widget splits its cell into a
+       label track + a control track, resolved with the column unit rule.  side 0 = off (the
+       label trails the control); 1 = label-left; 2 = label-right. */
+
+    u8          lay_field_side;                  // imgui_label_side_t: 0 off, 1 left, 2 right
+    f32         lay_field_label;                 // label track size   (overloaded unit)
+    f32         lay_field_control;               // control track size (overloaded unit)
+
     /* Resolved cell geometry, computed once when a template is installed (the source track lists
        are not kept -- they are only needed to produce these).  Flow uses cellx/cellw for every
        row; grid uses cellx/cellw x rowy/rowh as the fixed matrix.  cols indexes [0,lay_ncols),

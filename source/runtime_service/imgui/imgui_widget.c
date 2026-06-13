@@ -83,8 +83,22 @@ imgui_checkbox( const char* label, bool* v )
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
-    /* Box on the left. */
-    f32 bx = r.x;
+    /* Field split mode aligns with the other labeled widgets: the label takes its track and the
+       box sits at the start of the control track.  Default mode keeps the box on the left with the
+       label trailing it.  The box only needs CHECKBOX_SZ of the control track. */
+    f32          label_x;
+    imgui_rect_t control;
+    f32          bx;
+    if ( field_split_resolve( r, CHECKBOX_SZ, &label_x, &control ) )
+    {
+        bx = control.x;
+    }
+    else
+    {
+        bx      = r.x;
+        label_x = bx + CHECKBOX_SZ + WIDGET_PAD;   /* default: label just right of the box */
+    }
+
     f32 by = r.y + ( r.h - CHECKBOX_SZ ) * 0.5f;
     draw_push_rect_filled( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, COL_WIDGET_BG );
     draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER );
@@ -98,8 +112,7 @@ imgui_checkbox( const char* label, bool* v )
                                0,0,1,1, 0, COL_CHECK_MARK );
     }
 
-    /* Label to the right of the box. */
-    draw_label( bx + CHECKBOX_SZ + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label );
+    draw_label( label_x, text_center_y( r.y, r.h ), COL_TEXT, label );
 
     bool changed = false;
     if ( st.clicked )

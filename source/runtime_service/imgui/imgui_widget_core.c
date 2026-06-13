@@ -149,12 +149,15 @@ layout_copy_tracks( const f32* src, f32* out )
 static void
 layout_set_default( layout_frame_t* f )
 {
-    f->lay_ncols    = 1;
-    f->lay_nrows    = 0;                  /* flow mode */
-    f->lay_row_h    = 0.0f;
-    f->lay_item_pad = ( imgui_pad_t ){ 0 };
-    f->lay_gap_x    = WIDGET_GAP;
-    f->lay_gap_y    = WIDGET_GAP;
+    f->lay_ncols       = 1;
+    f->lay_nrows       = 0;               /* flow mode */
+    f->lay_row_h       = 0.0f;
+    f->lay_item_pad    = ( imgui_pad_t ){ 0 };
+    f->lay_gap_x       = WIDGET_GAP;
+    f->lay_gap_y       = WIDGET_GAP;
+    f->lay_field_side    = 0;             /* trailing label until field_split / field_label_* */
+    f->lay_field_label   = 0.0f;
+    f->lay_field_control = 0.0f;
     f->cellx[ 0 ]   = f->content_x;       /* one flex column == the whole content width */
     f->cellw[ 0 ]   = f->content_w;
     f->col          = 0;
@@ -339,14 +342,62 @@ widget_next_rect( f32 h )
    caller to interact with and fill.  The single seam every "control + trailing label" widget
    (slider_float, input_text, future combo / drag / color widgets) routes through, so row
    proportions can be retuned in one place. */
+
+/* Resolve a labeled widget's cell into a label position + a control rect when a field split is
+   active (field_split / field_label_*).  The label and control are two tracks laid across the cell
+   by the same resolver columns use, so a field split obeys the overloaded unit rule and adapts to
+   whatever width the widget is handed -- a full row or a single column cell.  `side` flips which
+   track sits left.  Draws nothing; the caller places its label + control from the outputs.  The
+   control is floored at min_control_w so it stays usable (overrunning under the label, as before).
+   Returns false when no field split is set, leaving the caller on its default layout. */
+static bool
+field_split_resolve( imgui_rect_t cell, f32 min_control_w, f32* out_label_x, imgui_rect_t* out_control )
+{
+    layout_frame_t* f = lf();
+    if ( f->lay_field_side == 0 ) return false;
+
+    /* Order the two tracks by side so the resolver lays them left-to-right correctly. */
+    f32 tracks[ 2 ];
+    u32 lab_i, ctl_i;
+    if ( f->lay_field_side == IMGUI_LABEL_LEFT )
+    {
+        tracks[ 0 ] = f->lay_field_label;   tracks[ 1 ] = f->lay_field_control;   lab_i = 0; ctl_i = 1;
+    }
+    else /* IMGUI_LABEL_RIGHT */
+    {
+        tracks[ 0 ] = f->lay_field_control; tracks[ 1 ] = f->lay_field_label;     ctl_i = 0; lab_i = 1;
+    }
+
+    f32 pos[ 2 ], size[ 2 ];
+    layout_resolve_tracks( tracks, 2, cell.x, cell.w, WIDGET_PAD, pos, size );
+
+    f32 control_w = size[ ctl_i ];
+    if ( control_w < min_control_w ) control_w = min_control_w;
+
+    *out_label_x = pos[ lab_i ];
+    *out_control = ( imgui_rect_t ){ pos[ ctl_i ], cell.y, control_w, cell.h };
+    return true;
+}
+
 static imgui_rect_t
 widget_split_label( imgui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
 {
+    /* Field split mode: the label sits in its track at full strength (the trailing-label dim hint,
+       label_color, does not apply -- a field label reads as primary); the control fills the rest. */
+    f32          label_x;
+    imgui_rect_t control;
+    if ( field_split_resolve( row, min_control_w, &label_x, &control ) )
+    {
+        draw_label( label_x, text_center_y( row.y, row.h ), COL_TEXT, label );
+        return control;
+    }
+
+    /* Default: control on the left, the label trailing at its natural width on the right. */
     f32 label_w   = label_width( label );
     f32 control_w = row.w - label_w - WIDGET_PAD;
     if ( control_w < min_control_w ) control_w = min_control_w;
 
-    imgui_rect_t control = { row.x, row.y, control_w, row.h };
+    control = ( imgui_rect_t ){ row.x, row.y, control_w, row.h };
 
     draw_label( control.x + control.w + WIDGET_PAD, text_center_y( row.y, row.h ),
                 label_color, label );
