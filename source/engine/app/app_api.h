@@ -66,6 +66,13 @@ typedef struct app_api_s
     /* Enable key-repeat events (text mode). Default false = game mode (repeats suppressed). */
     void ( *key_repeat_set )( bool enabled );
 
+    /* ---- Clipboard ---- */
+
+    /* Copy NUL-terminated `text` to the OS clipboard (the outbound half: cut / copy).
+       The inbound half (paste) is delivered as an APP_EV_CLIPBOARD event when the user
+       presses the paste gesture, so reading the clipboard needs no polling API. */
+    void ( *clipboard_set )( const char* text );
+
 } app_api_t;
 
 /*============================================================================================*/

@@ -569,7 +569,8 @@ widget_bg_color( widget_state_t st )
     - Home/End
     - Shift+any of the above to extend selection
     - Ctrl+A to select all
-    - Ctrl+C / Ctrl+X / Ctrl+V cut / copy / paste through the imgui io clipboard
+    - Ctrl+C / Ctrl+X copy / cut to the OS clipboard; paste applied from s_io.paste (the
+      platform posts APP_EV_CLIPBOARD on the paste gesture; no Ctrl+V check needed here)
     - Backspace and Delete both at caret and over selection
     - Character insertion at caret, or selection replacement on first char
     - Blinking caret (reset to visible on any keypress or click)
@@ -707,10 +708,11 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
         bool ctrl  = s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ];
         bool blink_reset = false;
 
-        /* Clipboard (imgui io buffer, see imgui_clipboard_set/get).  Resolved first so it acts
-           on the selection as the user sees it this frame, before any navigation moves it.
-           Copy / cut need a live selection; paste replaces the selection (or inserts at the
-           caret) with the stored text, control characters already stripped at store time. */
+        /* Clipboard.  Copy / cut are key-driven (only this field knows the selection) and push
+           to the OS clipboard via imgui_clipboard_set.  Paste is event-driven: the platform
+           already read the OS clipboard on the paste gesture and delivered it in s_io.paste, so
+           there is no Ctrl+V key check here -- a non-empty s_io.paste IS the paste.  Resolved
+           first so it acts on the selection as the user sees it, before navigation moves it. */
 
         if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_C ] )
         {
@@ -729,7 +731,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
             blink_reset = true;
         }
 
-        if ( ctrl && s_io.keys_pressed[ APP_KEY_V ] )
+        if ( s_io.paste[ 0 ] )
         {
             /* Drop the selection first so the paste lands where it was. */
             if ( has_sel )
@@ -739,9 +741,11 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                 es->cursor = es->anchor = sel_lo;
                 has_sel = false; sel_lo = sel_hi = es->cursor;
             }
-            /* Insert each clipboard byte at the advancing caret, stopping at capacity. */
-            for ( const char* c = imgui_clipboard_get(); *c && len + 1u < bufsz; ++c )
+            /* Insert each pasted byte at the advancing caret, skipping control characters
+               (a single-line field rejects newlines / tabs) and stopping at capacity. */
+            for ( const char* c = s_io.paste; *c && len + 1u < bufsz; ++c )
             {
+                if ( (u8)*c < 0x20u || (u8)*c == 0x7Fu ) continue;
                 memmove( buf + es->cursor + 1u, buf + es->cursor, len - es->cursor + 1u );
                 buf[ es->cursor ] = *c;
                 ++len; ++es->cursor;

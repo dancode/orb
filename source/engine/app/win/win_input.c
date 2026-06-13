@@ -107,6 +107,84 @@ win_post_event( const app_event_t* ev )
 }
 
 /*==============================================================================================
+    Clipboard (Win32, CF_TEXT)
+
+    The engine is ASCII-only, so CF_TEXT (ANSI) is the natural exchange format.  win_clipboard_set
+    publishes a string to the OS clipboard; win_clipboard_read pulls the current text into a static
+    staging buffer whose lifetime spans only until the next read — long enough for the host to copy
+    it out of the APP_EV_CLIPBOARD event the same frame it is posted (see input_handle_paste).
+==============================================================================================*/
+
+#define WIN_CLIPBOARD_MAX 1024   /* staging cap for a single paste (single-line fields are tiny) */
+
+static char s_clipboard_staging[ WIN_CLIPBOARD_MAX ];
+
+/* Publish NUL-terminated `text` to the OS clipboard as CF_TEXT.  Silently no-ops if the
+   clipboard cannot be opened (another process owns it) -- a copy is best-effort, never fatal. */
+static void
+win_clipboard_set( const char* text )
+{
+    if ( !text ) return;
+    if ( !OpenClipboard( NULL ) ) return;
+
+    EmptyClipboard();
+
+    size_t n = 0;
+    while ( text[ n ] ) ++n;                            /* length, sans the NUL */
+
+    HGLOBAL mem = GlobalAlloc( GMEM_MOVEABLE, n + 1u ); /* +1 for the NUL terminator */
+    if ( mem )
+    {
+        char* dst = ( char* )GlobalLock( mem );
+        if ( dst )
+        {
+            for ( size_t i = 0; i < n; ++i ) dst[ i ] = text[ i ];
+            dst[ n ] = '\0';
+            GlobalUnlock( mem );
+            SetClipboardData( CF_TEXT, mem );           /* clipboard now owns `mem` */
+        }
+        else
+        {
+            GlobalFree( mem );
+        }
+    }
+
+    CloseClipboard();
+}
+
+/* Read the OS clipboard text into the staging buffer and return it (always NUL-terminated;
+   empty string when the clipboard holds no text or cannot be opened).  Control characters are
+   left intact here -- the single-line consumer strips them, matching the CHAR-event contract. */
+static const char*
+win_clipboard_read( void )
+{
+    s_clipboard_staging[ 0 ] = '\0';
+
+    if ( !IsClipboardFormatAvailable( CF_TEXT ) ) return s_clipboard_staging;
+    if ( !OpenClipboard( NULL ) )                 return s_clipboard_staging;
+
+    HGLOBAL mem = GetClipboardData( CF_TEXT );
+    if ( mem )
+    {
+        const char* src = ( const char* )GlobalLock( mem );
+        if ( src )
+        {
+            u32 i = 0;
+            while ( src[ i ] && i + 1u < sizeof( s_clipboard_staging ) )
+            {
+                s_clipboard_staging[ i ] = src[ i ];
+                ++i;
+            }
+            s_clipboard_staging[ i ] = '\0';
+            GlobalUnlock( mem );
+        }
+    }
+
+    CloseClipboard();
+    return s_clipboard_staging;
+}
+
+/*==============================================================================================
     Virtual key code → app_key_t mapping
 ==============================================================================================*/
 /* clang-format off */
@@ -231,6 +309,17 @@ input_handle_char( WPARAM wp, win_id_t win_id )
     app_event_t ev         = win_make_event( APP_EV_CHAR, win_id );
     ev.data.text.codepoint = ( u32 )wp;
     ev.data.text.mod       = win_get_mod();
+    win_post_event( &ev );
+}
+
+/* Paste gesture: snapshot the OS clipboard into the staging buffer and post an
+   APP_EV_CLIPBOARD event pointing at it.  The host drains the ring the same frame and copies
+   the text out (imgui_event), so the staging pointer's short lifetime is sufficient. */
+static void
+input_handle_paste( win_id_t win_id )
+{
+    app_event_t ev          = win_make_event( APP_EV_CLIPBOARD, win_id );
+    ev.data.clipboard.text  = win_clipboard_read();
     win_post_event( &ev );
 }
 
@@ -363,6 +452,12 @@ static void
 app_key_repeat_set( bool enabled )
 {
     g_key_repeat = enabled;
+}
+
+static void
+app_clipboard_set( const char* text )
+{
+    win_clipboard_set( text );
 }
 
 static bool

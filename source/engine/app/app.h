@@ -99,6 +99,7 @@ typedef enum app_event_type_e
     APP_EV_KEY_DOWN,    // key pressed (no auto-repeat)
     APP_EV_KEY_UP,      // key released
     APP_EV_CHAR,        // printable Unicode codepoint (UTF-32)
+    APP_EV_CLIPBOARD,   // paste gesture: data.clipboard.text holds the OS clipboard contents
 
     APP_EV_MOUSE_MOVE,
     APP_EV_MOUSE_DOWN,
@@ -174,6 +175,15 @@ typedef struct app_mouse_wheel_event_s /* 8 bytes */
 
 } app_mouse_wheel_event_t;
 
+/* Clipboard paste. `text` points at a NUL-terminated buffer owned by the platform backend,
+   valid only until the next pump_events; consumers must copy it out while draining the ring
+   (imgui does this in imgui_event).  Carrying a pointer keeps the payload within 8 bytes. */
+typedef struct app_clipboard_event_s /* 8 bytes (x64) */
+{
+    const char* text;
+
+} app_clipboard_event_t;
+
 typedef struct app_win_resize_event_s /* 8 bytes */
 {
     i32 w, h; /* new client area dimensions                 */
@@ -203,6 +213,7 @@ typedef struct app_event_s
         app_mouse_btn_event_t   mouse_btn;
         app_mouse_wheel_event_t mouse_wheel;
         app_win_resize_event_t  win_resize;
+        app_clipboard_event_t   clipboard;
 
     } data;
 

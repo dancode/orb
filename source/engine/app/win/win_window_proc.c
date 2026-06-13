@@ -98,6 +98,18 @@ win_proc_keyboard( app_window_t* win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp 
                 return true;
             }
 
+            /* Paste gesture (Ctrl+V or Shift+Insert): the platform owns the paste keybinding,
+               reads the OS clipboard, and posts it as an APP_EV_CLIPBOARD event for consumers
+               to apply.  Copy / cut stay with the consumer (only it knows the selection) and
+               travel back out through app_clipboard_set.  The key-down event still fires below,
+               so callers that watch raw keys are unaffected. */
+            {
+                bool ctrl  = ( GetKeyState( VK_CONTROL ) & 0x8000 ) != 0;
+                bool shift = ( GetKeyState( VK_SHIFT )   & 0x8000 ) != 0;
+                if ( ( ctrl && wp == 'V' ) || ( shift && wp == VK_INSERT ) )
+                    input_handle_paste( win->id );
+            }
+
             if ( repeat )
             {
                 if ( !g_key_repeat )

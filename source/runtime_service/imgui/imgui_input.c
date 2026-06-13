@@ -34,6 +34,7 @@ typedef struct
     bool  keys_down     [ IMGUI_KEY_COUNT ];
     bool  keys_pressed  [ IMGUI_KEY_COUNT ];
     char  text[ 32 ];
+    char  paste[ 256 ];   /* clipboard text delivered this frame (APP_EV_CLIPBOARD), else empty */
     f32   dt;
     i32   display_w, display_h;
 
@@ -56,6 +57,8 @@ static imgui_io_t s_io;
 static char s_pending_text[ sizeof( ( (imgui_io_t*)0 )->text ) ];
 static u32  s_pending_text_len;
 static f32  s_pending_wheel;
+static char s_pending_paste[ sizeof( ( (imgui_io_t*)0 )->paste ) ];
+static bool s_pending_paste_set;   /* a paste arrived this frame (distinguishes "" paste) */
 
 /* Double-click detection.  imgui has no clock of its own, so the second press of a pair is
    recognised from the dt fed to new_frame: a press counts as a double-click when it lands
@@ -68,35 +71,41 @@ static f32 s_click_elapsed[ 3 ] = { 1.0e9f, 1.0e9f, 1.0e9f };   /* start "long a
 static f32 s_click_x[ 3 ], s_click_y[ 3 ];
 
 /*----------------------------------------------------------------------------------------------
-    Clipboard -- a small imgui-local text buffer living in the IO layer.
+    Clipboard
 
-    Cut / copy / paste in the text editor (input_field_edit) route through these two helpers
-    rather than the OS clipboard, so the feature is fully cross-platform and adds no app/sys
-    API surface (the imgui_api_t vtable stays ABI-frozen for hot-reload).  A host that wants
-    to bridge the OS clipboard can mirror its contents in and out through imgui_event the same
-    way it forwards CHAR / WHEEL events -- this buffer is the single point it would sync.
-    Single-line by contract: control characters are stripped on the way in.
+    Outbound (cut / copy) goes straight to the OS clipboard through the app module
+    (app()->clipboard_set), so copied text is available to other applications.  Inbound (paste)
+    is event-driven: the platform reads the OS clipboard on the paste gesture and posts an
+    APP_EV_CLIPBOARD event, which imgui_event copies into the pending-paste buffer below; the
+    next input_update promotes it to s_io.paste for the widget code to consume.  imgui owns no
+    clipboard buffer of its own -- it is a pure conduit between the OS and the focused field.
 ----------------------------------------------------------------------------------------------*/
 
-static char s_clipboard[ 256 ];
-
-/* Copy n bytes of `s` into the clipboard, dropping control characters (a multi-line OS
-   clipboard pasted into a single-line field must not carry newlines).  Always NUL-terminates. */
+/* Copy n bytes of `s` to the OS clipboard, dropping control characters (a single-line field's
+   selection never legitimately contains any, but this keeps the published text clean).  Builds
+   a NUL-terminated temporary because the source is a slice of a larger buffer. */
 static void
 imgui_clipboard_set( const char* s, u32 n )
 {
-    u32 w = 0;
-    for ( u32 i = 0; i < n && w + 1u < sizeof( s_clipboard ); ++i )
+    char tmp[ sizeof( ( (imgui_io_t*)0 )->paste ) ];
+    u32  w = 0;
+    for ( u32 i = 0; i < n && w + 1u < sizeof( tmp ); ++i )
         if ( (u8)s[ i ] >= 0x20u && (u8)s[ i ] != 0x7Fu )
-            s_clipboard[ w++ ] = s[ i ];
-    s_clipboard[ w ] = '\0';
+            tmp[ w++ ] = s[ i ];
+    tmp[ w ] = '\0';
+    app()->clipboard_set( tmp );
 }
 
-/* Current clipboard text (never NULL; empty string when nothing has been copied). */
-static const char*
-imgui_clipboard_get( void )
+/* Stage pasted text arriving via APP_EV_CLIPBOARD; promoted to s_io.paste by input_update. */
+static void
+add_paste_text( const char* text )
 {
-    return s_clipboard;
+    u32 i = 0;
+    if ( text )
+        for ( ; text[ i ] && i + 1u < sizeof( s_pending_paste ); ++i )
+            s_pending_paste[ i ] = text[ i ];
+    s_pending_paste[ i ]  = '\0';
+    s_pending_paste_set   = true;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -145,6 +154,10 @@ imgui_event( const app_event_t* ev )
 
         case APP_EV_MOUSE_WHEEL:
             add_mouse_wheel( (f32)ev->data.mouse_wheel.delta );
+            return true;
+
+        case APP_EV_CLIPBOARD:
+            add_paste_text( ev->data.clipboard.text );
             return true;
 
         default:
@@ -215,14 +228,23 @@ input_update( i32 win_w, i32 win_h, f32 dt )
         s_io.keys_pressed [ k ] = app()->key_pressed ( (app_key_t)k );
     }
 
-    /* Text + scroll arrive via the host-fed pending state (the host owns the event
-       ring drain).  Move it into the frame snapshot, then clear it for next frame. */
+    /* Text + scroll + paste arrive via the host-fed pending state (the host owns the event
+       ring drain).  Move it into the frame snapshot, then clear it for next frame.  s_io.paste
+       is non-empty only on the single frame a paste event was seen, so the focused field
+       applies it exactly once. */
     memcpy( s_io.text, s_pending_text, (size_t)s_pending_text_len + 1u );
     s_io.mouse_wheel = s_pending_wheel;
 
-    s_pending_text[ 0 ] = '\0';
-    s_pending_text_len  = 0;
-    s_pending_wheel     = 0.0f;
+    if ( s_pending_paste_set )
+        memcpy( s_io.paste, s_pending_paste, sizeof( s_io.paste ) );
+    else
+        s_io.paste[ 0 ] = '\0';
+
+    s_pending_text[ 0 ]  = '\0';
+    s_pending_text_len   = 0;
+    s_pending_wheel      = 0.0f;
+    s_pending_paste[ 0 ] = '\0';
+    s_pending_paste_set  = false;
 
     s_io.display_w = win_w;
     s_io.display_h = win_h;
