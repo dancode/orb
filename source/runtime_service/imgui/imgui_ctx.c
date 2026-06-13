@@ -83,28 +83,27 @@ typedef struct
        region opens with the default -- one flex column, auto height -- so a plain vertical
        stack needs no layout call.  See imgui_layout_t in imgui.h for the unit rule. */
 
-    f32         lay_cols[ IMGUI_LAYOUT_COLS ];   // column tracks (overloaded units), copied
     u32         lay_ncols;                       // column count
     f32         lay_row_h;                       // flow row height: 0 = auto, >0 = pixels
     imgui_pad_t lay_item_pad;                    // padding wrapped around every item / cell
     f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
+    u32         lay_nrows;                       // row count; 0 => flow mode, else grid
 
-    /* Grid mode (lay_nrows > 0): cols x rows partition a bounded band up front; widgets fill the
-       fixed matrix row-major.  Flow mode (lay_nrows == 0): cols describe one repeating row. */
+    /* Resolved cell geometry, computed once when a template is installed (the source track lists
+       are not kept -- they are only needed to produce these).  Flow uses cellx/cellw for every
+       row; grid uses cellx/cellw x rowy/rowh as the fixed matrix.  cols indexes [0,lay_ncols),
+       rows [0,lay_nrows). */
 
-    f32 lay_rows[ IMGUI_LAYOUT_COLS ];      // row tracks (grid only)
-    u32 lay_nrows;                          // row count; 0 => flow mode
-    f32 rowy[ IMGUI_LAYOUT_COLS ];          // resolved cell tops    (grid, set at install)
-    f32 rowh[ IMGUI_LAYOUT_COLS ];          // resolved cell heights (grid, set at install)
-    u32 row;                                // current grid row (with col, walks row-major)
-
-    /* Iteration cursor.  Flow: the row resolves when its first cell is taken (col 0), the rest
-       reuse cellx/cellw, and a wrap advances cursor_y past row_h_cur.  Grid: cellx/cellw and
-       rowy/rowh are all resolved at install, and (col,row) walk the matrix. */
-
-    u32 col;                                // next column to emit (0 = at a row start)
     f32 cellx[ IMGUI_LAYOUT_COLS ];         // resolved cell left edges
     f32 cellw[ IMGUI_LAYOUT_COLS ];         // resolved cell widths
+    f32 rowy [ IMGUI_LAYOUT_COLS ];         // resolved cell tops    (grid only)
+    f32 rowh [ IMGUI_LAYOUT_COLS ];         // resolved cell heights (grid only)
+
+    /* Iteration cursor.  Flow: (col) walks one row; a wrap advances cursor_y past row_h_cur and
+       row_y/row_h_cur describe the live row.  Grid: (col,row) walk the pre-resolved matrix. */
+
+    u32 col;                                // next column to emit (0 = at a row start)
+    u32 row;                                // current grid row (with col, walks row-major)
     f32 row_y;                              // top of the current flow row
     f32 row_h_cur;                          // resolved height of the current flow row
     f32 content_y_max;                      // bottom of the content area -- grid band end
@@ -123,13 +122,13 @@ typedef struct
 
     /* Persistent scroll state, owned by the caller (window record or region pool entry). */
 
-    f32* scroll_x;
-    f32* scroll_y;
-    f32* pcontent_w;                // write-back: measured content extent for next frame
-    f32* pcontent_h;
+    f32*                scroll_x;
+    f32*                scroll_y;
+    f32*                pcontent_w;         // write-back: measured content extent for next frame
+    f32*                pcontent_h;
 
-    imgui_rect_t parent_clip;       // s_ctx.clip_rect to restore at pop
-    u32          id_restore;        // id-scope depth to restore at pop (see id stack below)
+    imgui_rect_t        parent_clip;        // s_ctx.clip_rect to restore at pop
+    u32                 id_restore;         // id-scope depth to restore at pop (see id stack below)
 
 } layout_frame_t;
 

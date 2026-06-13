@@ -130,49 +130,63 @@ layout_row_break( layout_frame_t* f )
     f->col      = 0;
 }
 
+/* Count an IMGUI_END-terminated track list into out[] (capped), substituting a single flex track
+   for an empty / NULL list.  Returns the count.  The source list is never stored -- callers
+   resolve it straight into cell geometry, so the template arrays do not live on the frame. */
+static u32
+layout_copy_tracks( const f32* src, f32* out )
+{
+    u32 n = 0;
+    if ( src )
+        while ( n < IMGUI_LAYOUT_COLS && src[ n ] >= 0.0f ) { out[ n ] = src[ n ]; ++n; }
+    if ( n == 0 ) { out[ 0 ] = 0.0f; n = 1; }   /* default to a single flex track */
+    return n;
+}
+
 /* Install the region's default template: one flex column, auto height -- the classic stack.
-   Called when a region opens (no row in progress yet, so no break needed). */
+   Resolves immediately (content_x/content_w must already be set), so the single column fills the
+   content width with no gap.  Called when a region opens and by imgui_pad after re-insetting. */
 static void
 layout_set_default( layout_frame_t* f )
 {
-    f->lay_cols[ 0 ] = 0.0f;
-    f->lay_ncols     = 1;
-    f->lay_row_h     = 0.0f;
-    f->lay_item_pad  = ( imgui_pad_t ){ 0 };
-    f->lay_gap_x     = WIDGET_GAP;
-    f->lay_gap_y     = WIDGET_GAP;
-    f->lay_nrows     = 0;                  /* flow mode */
-    f->col           = 0;
-    f->row           = 0;
+    f->lay_ncols    = 1;
+    f->lay_nrows    = 0;                  /* flow mode */
+    f->lay_row_h    = 0.0f;
+    f->lay_item_pad = ( imgui_pad_t ){ 0 };
+    f->lay_gap_x    = WIDGET_GAP;
+    f->lay_gap_y    = WIDGET_GAP;
+    f->cellx[ 0 ]   = f->content_x;       /* one flex column == the whole content width */
+    f->cellw[ 0 ]   = f->content_w;
+    f->col          = 0;
+    f->row          = 0;
 }
 
-/* Replace the active row template on the current frame.  Finishes any open row first, copies the
-   IMGUI_END-terminated columns (empty / NULL => one flex column), and resolves gaps (0 => theme
-   default).  The next widget starts a fresh row of the new shape; it repeats until set again. */
+/* Replace the active flow template on the current frame.  Finishes any open row first, then
+   resolves the columns into cell geometry once (they are constant for every row of the template).
+   The next widget starts a fresh row of the new shape; it repeats until set again. */
 static void
 layout_set( const f32* cols, f32 row_h, imgui_pad_t item_pad, f32 gap_x, f32 gap_y )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );
 
-    u32 n = 0;
-    if ( cols )
-        while ( n < IMGUI_LAYOUT_COLS && cols[ n ] >= 0.0f ) { f->lay_cols[ n ] = cols[ n ]; ++n; }
-    if ( n == 0 ) { f->lay_cols[ 0 ] = 0.0f; n = 1; }    /* default to a single flex column */
-
-    f->lay_ncols    = n;
     f->lay_row_h    = row_h;
     f->lay_item_pad = item_pad;
     f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
     f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
     f->lay_nrows    = 0;            /* flow mode */
-    f->col          = 0;
-    f->row          = 0;
+
+    f32 tracks[ IMGUI_LAYOUT_COLS ];
+    f->lay_ncols = layout_copy_tracks( cols, tracks );
+    layout_resolve_tracks( tracks, f->lay_ncols, f->content_x, f->content_w, f->lay_gap_x,
+                           f->cellx, f->cellw );
+    f->col = 0;
+    f->row = 0;
 }
 
 /* Install a grid template on the current frame.  cols x rows partition a bounded box -- from the
    current pen down to the region's content bottom -- into a fixed matrix, both axes resolved up
-   front (the defining difference from flow, where each row resolves lazily as the pen advances).
+   front (the defining difference from flow, where the row height resolves lazily per row).
    Widgets then fill cells row-major; nothing scrolls.  Empty / NULL on either axis => one flex
    track.  Persists until another template is set, exactly like the flow row. */
 static void
@@ -185,26 +199,18 @@ layout_set_grid( const f32* cols, const f32* rows, imgui_pad_t item_pad, f32 gap
     f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
     f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
 
-    u32 nc = 0;
-    if ( cols )
-        while ( nc < IMGUI_LAYOUT_COLS && cols[ nc ] >= 0.0f ) { f->lay_cols[ nc ] = cols[ nc ]; ++nc; }
-    if ( nc == 0 ) { f->lay_cols[ 0 ] = 0.0f; nc = 1; }
-    f->lay_ncols = nc;
-
-    u32 nr = 0;
-    if ( rows )
-        while ( nr < IMGUI_LAYOUT_COLS && rows[ nr ] >= 0.0f ) { f->lay_rows[ nr ] = rows[ nr ]; ++nr; }
-    if ( nr == 0 ) { f->lay_rows[ 0 ] = 0.0f; nr = 1; }
-    f->lay_nrows = nr;
-
-    /* Resolve both axes now: columns across the content column, rows across the band from the
-       pen to the content bottom.  An empty band (content already overflowed) clamps to zero. */
-    layout_resolve_tracks( f->lay_cols, nc, f->content_x, f->content_w, f->lay_gap_x,
+    /* Resolve columns across the content column and rows across the band from the pen to the
+       content bottom.  An empty band (content already overflowed) clamps to zero. */
+    f32 tracks[ IMGUI_LAYOUT_COLS ];
+    f->lay_ncols = layout_copy_tracks( cols, tracks );
+    layout_resolve_tracks( tracks, f->lay_ncols, f->content_x, f->content_w, f->lay_gap_x,
                            f->cellx, f->cellw );
+
+    f->lay_nrows = layout_copy_tracks( rows, tracks );
     f32 grid_top = f->cursor_y;
     f32 grid_h   = f->content_y_max - grid_top;
     if ( grid_h < 0.0f ) grid_h = 0.0f;
-    layout_resolve_tracks( f->lay_rows, nr, grid_top, grid_h, f->lay_gap_y,
+    layout_resolve_tracks( tracks, f->lay_nrows, grid_top, grid_h, f->lay_gap_y,
                            f->rowy, f->rowh );
 
     f->col = 0;
@@ -294,11 +300,11 @@ widget_next_rect( f32 h )
 
     if ( f->lay_nrows > 0 ) return grid_next_rect( f );   /* grid: fixed matrix, both axes set */
 
-    /* Resolve the row on its first cell: cell rects, top, and height for the whole row. */
+    /* Cells (cellx/cellw) were resolved at install and are constant for every row; only the row
+       top and height are per-row, set here on the first cell.  Auto height takes the first
+       widget's h; a fixed row_h overrides it. */
     if ( f->col == 0 )
     {
-        layout_resolve_tracks( f->lay_cols, f->lay_ncols, f->content_x, f->content_w,
-                               f->lay_gap_x, f->cellx, f->cellw );
         f->row_y     = f->cursor_y;
         f32 base     = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : h;   /* auto: first widget sets it */
         f->row_h_cur = base + f->lay_item_pad.t + f->lay_item_pad.b;

@@ -54,16 +54,16 @@ typedef struct { f32 l, r, t, b; } imgui_pad_t;
     reasons about spacing -- it just fills the rect it is handed.
 ==============================================================================================*/
 
-#define IMGUI_LAYOUT_COLS 16        /* max tracks on one axis (columns or rows) */
-#define IMGUI_END (-1.0f)           /* track-list terminator (any negative value) */
+#define IMGUI_LAYOUT_COLS 8                     // max tracks on one axis (columns or rows)
+#define IMGUI_END (-1.0f)                       // track-list terminator (any negative value)s
 
 typedef struct
 {
-    f32         cols[ IMGUI_LAYOUT_COLS ];  /* column tracks, IMGUI_END-terminated (see unit rule) */
-    f32         rows[ IMGUI_LAYOUT_COLS ];  /* row tracks; empty/NULL => flow mode, else grid mode  */
-    f32         row_h;                       /* flow only -- row height: 0 = auto, >0 = pixels       */
-    imgui_pad_t item_pad;                    /* padding wrapped around every item / cell             */
-    f32         gap_x, gap_y;                /* inter-cell spacing; 0 = theme default                */
+    f32             cols[ IMGUI_LAYOUT_COLS ];  // column tracks, IMGUI_END-terminated (see unit rule)
+    f32             rows[ IMGUI_LAYOUT_COLS ];  // row tracks; empty/NULL => flow mode, else grid mode
+    f32             row_h;                      // flow only -- row height: 0 = auto, >0 = pixels
+    imgui_pad_t     item_pad;                   // padding wrapped around every item / cell
+    f32             gap_x, gap_y;               // inter-cell spacing; 0 = theme default
 
 } imgui_layout_t;
 

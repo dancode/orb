@@ -467,8 +467,9 @@ imgui_grid_cells( u32 nc, u32 nr )
     layout_set_grid( cols, rows, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
 }
 
-/* Region padding: re-inset the current region's content column and reset the pen to the padded
-   top-left.  Call right after opening a region (l/r/t take effect this frame). */
+/* Region padding: re-inset the current region's content area and reset to the default template
+   at the padded top-left.  Call right after opening a region, before setting a layout (it resets
+   the template, so set the row / grid afterward). */
 void
 imgui_pad( imgui_pad_t p )
 {
@@ -480,7 +481,9 @@ imgui_pad( imgui_pad_t p )
     f->cursor_x      = f->content_x;
     f->cursor_y      = f->outer.y + p.t - *f->scroll_y;
     f->content_max_x = f->content_x;
-    f->col           = 0;
+    f->content_y_max = f->outer.y + f->outer.h - p.b - f->sb_h;   /* grid band end, new bottom pad */
+
+    layout_set_default( f );   /* re-resolve against the new content rect (single flex column) */
 }
 
 /*----------------------------------------------------------------------------------------------
