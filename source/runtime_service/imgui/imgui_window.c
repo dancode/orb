@@ -21,7 +21,7 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-#define IMGUI_MAX_WINDOWS 64
+#define IMGUI_MAX_WINDOWS 32
 
 /* One persisted window.  Geometry is owned here after the first appearance.
    The struct is tagged so imgui_ctx.c (included earlier) can hold a pointer to it. */

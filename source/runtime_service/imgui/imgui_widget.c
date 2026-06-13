@@ -205,86 +205,31 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 }
 
 /*----------------------------------------------------------------------------------------------
-    input_text -- single-line text field; returns true when Enter is pressed
+    input_text -- single-line text field; returns true when Enter is pressed.
+
+    Delegates all editing logic to input_field_edit (imgui_widget_core.c): cursor movement,
+    selection, insertion, deletion, horizontal scroll, and rendering.  This wrapper is
+    responsible only for the label split, the box background / border, and the focus claim.
 ----------------------------------------------------------------------------------------------*/
 
 bool
 imgui_input_text( const char* label, char* buf, u32 bufsz )
 {
-    imgui_id_t   id = widget_id( label );
-    imgui_rect_t r  = widget_next_rect( WIDGET_H );
-
-    /* Box takes the left portion; the (dim) label sits at the right.  Min box width keeps a
-       few glyphs of edit space visible when the label is long. */
+    imgui_id_t   id    = widget_id( label );
+    imgui_rect_t r     = widget_next_rect( WIDGET_H );
     imgui_rect_t box_r = widget_split_label( r, label, s_font->char_h * 3.0f, COL_TEXT_DIM );
 
-    /* Click focuses this widget (focus claim handled by the behavior helper). */
     widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
 
-    bool focused = st.focused;
-    bool enter   = false;
-
-    /* Text input when focused. */
-    if ( focused )
-    {
-        /* Printable chars from s_io.text. */
-        for ( const char* ch = s_io.text; *ch; ++ch )
-        {
-            u32 len = 0;
-            while ( len < bufsz - 1 && buf[ len ] ) ++len;
-            if ( len + 1 < bufsz )
-            {
-                buf[ len     ] = *ch;
-                buf[ len + 1 ] = '\0';
-            }
-        }
-
-        /* Backspace. */
-        if ( s_io.keys_pressed[ APP_KEY_BACKSPACE ] )
-        {
-            u32 len = 0;
-            while ( len < bufsz - 1 && buf[ len ] ) ++len;
-            if ( len > 0 )
-                buf[ len - 1 ] = '\0';
-        }
-
-        /* Enter submits. */
-        if ( s_io.keys_pressed[ APP_KEY_ENTER ] )
-        {
-            s_ctx.focused_id = IMGUI_ID_NONE;
-            enter = true;
-        }
-
-        /* Escape cancels focus. */
-        if ( s_io.keys_pressed[ APP_KEY_ESCAPE ] )
-            s_ctx.focused_id = IMGUI_ID_NONE;
-    }
-
-    /* Background. */
     draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
-                           0,0,1,1, 0,
-                           focused ? COL_INPUT_FOCUS : COL_INPUT_BG );
+                           0, 0, 1, 1, 0,
+                           st.focused ? COL_INPUT_FOCUS : COL_INPUT_BG );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
                             WIN_BORDER, 0,
-                            focused ? COL_WIDGET_HOT : COL_BORDER );
+                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
-    /* Buffer contents. */
-    draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf );
-
-    /* Blinking cursor (always visible when focused for simplicity). */
-    if ( focused )
-    {
-        f32 tw      = font_text_w( buf );
-        f32 cx      = box_r.x + WIDGET_PAD + tw;
-        f32 inset   = (f32)s_layout.cursor_inset;
-        f32 cur_w   = (f32)s_layout.cursor_w;
-        if ( cx + cur_w < box_r.x + box_r.w )
-            draw_push_rect_filled( cx, box_r.y + inset,
-                                   cur_w, box_r.h - inset * 2.0f,
-                                   0,0,1,1, 0, COL_CURSOR );
-    }
-
-    return enter;
+    input_field_result_t res = input_field_edit( id, box_r, st.focused, buf, bufsz );
+    return res.enter;
 }
 
 /*----------------------------------------------------------------------------------------------

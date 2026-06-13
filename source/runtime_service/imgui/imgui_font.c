@@ -223,6 +223,19 @@ static f32 font_char_h      ( void ) { return s_font->char_h;    }
 static f32 font_line_h      ( void ) { return s_font->line_h;    }
 static u32 font_atlas_idx   ( void ) { return s_font->atlas_idx; }
 
+/* Horizontal advance of one character in the active font.  Used by the text edit engine to
+   measure glyph positions without emitting draw geometry (cursor placement, click-to-offset). */
+static f32
+font_char_advance( u8 ch )
+{
+    if ( s_font->proportional )
+    {
+        if ( ch < 32 || ch > 126 ) ch = (u8)'?';
+        return (f32)s_tt_font.lookup[ ch - 32 ].advance;
+    }
+    return s_font->char_w;
+}
+
 /* UV of the active atlas's white texel (appended bottom row) for solid-color draws. */
 static void font_white_uv( f32* u, f32* v ) { *u = s_font->white_u; *v = s_font->white_v; }
 
