@@ -21,9 +21,9 @@ typedef u32 imgui_id_t;
 typedef struct { f32 x, y; }        imgui_vec2_t;
 typedef struct { f32 x, y, w, h; }  imgui_rect_t;
 
-/* Edge insets, in pixels.  Two roles in the layout system (see imgui_layout_t):
-     region padding -- the gap between a region's box and where its layout starts.
-     item padding   -- breathing room wrapped around every item (adds to the row height). */
+/* Edge insets, in pixels.  Region padding -- the gap between a region's box and where its layout
+   starts (see imgui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
+   (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */
 
 typedef struct { f32 l, r, t, b; }  imgui_pad_t;
 
@@ -87,7 +87,6 @@ typedef struct
     f32             cols[ IMGUI_LAYOUT_COLS ];  // column tracks, IMGUI_END-terminated (see unit rule)
     f32             rows[ IMGUI_LAYOUT_COLS ];  // row tracks; empty/NULL => flow mode, else grid mode
     f32             row_h;                      // flow only -- row height: 0 = auto, >0 = pixels
-    imgui_pad_t     item_pad;                   // padding wrapped around every item / cell
     f32             gap_x, gap_y;               // inter-cell spacing; 0 = theme default
     imgui_align_t   align;                      // content alignment within each cell (0 = LEFT | TOP)
 

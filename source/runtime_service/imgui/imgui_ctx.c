@@ -85,7 +85,6 @@ typedef struct
 
     u32         lay_ncols;                       // column count
     f32         lay_row_h;                       // flow row height: 0 = auto, >0 = pixels
-    imgui_pad_t lay_item_pad;                    // padding wrapped around every item / cell
     f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
     u32         lay_nrows;                       // row count; 0 => flow mode, else grid
 

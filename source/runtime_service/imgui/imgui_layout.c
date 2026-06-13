@@ -343,7 +343,7 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
     imgui_rect_t box;
     if ( parent->lay_nrows > 0 )
     {
-        box = grid_next_rect( parent );   /* item_pad-inset cell; advances the matrix cursor */
+        box = grid_next_rect( parent );   /* the next matrix cell; advances the matrix cursor */
     }
     else
     {
@@ -389,12 +389,12 @@ imgui_end_child( void )
     and where the layout starts -- distinct from the item padding carried in the template.
 ----------------------------------------------------------------------------------------------*/
 
-/* Full flow template: columns, row height, item padding, and gaps in one call.  (rows[] is for
-   grid mode -- use imgui_grid; a zero-initialized descriptor is flow, so this ignores rows.) */
+/* Full flow template: columns, row height, gaps, and alignment in one call.  (rows[] is for grid
+   mode -- use imgui_grid; a zero-initialized descriptor is flow, so this ignores rows.) */
 void
 imgui_layout( imgui_layout_t desc )
 {
-    layout_set( desc.cols, desc.row_h, desc.item_pad, desc.gap_x, desc.gap_y );
+    layout_set( desc.cols, desc.row_h, desc.gap_x, desc.gap_y );
     lf()->lay_align = (u8)desc.align;   /* full template carries the content alignment too */
 }
 
@@ -402,7 +402,7 @@ imgui_layout( imgui_layout_t desc )
 void
 imgui_row( f32 row_h )
 {
-    layout_set( NULL, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
+    layout_set( NULL, row_h, 0.0f, 0.0f );
 }
 
 /* Reset the active region's layout to the state it opened with: one flex column of auto height,
@@ -428,14 +428,14 @@ imgui_row_cols( f32 row_h, u32 n )
     f32 cols[ IMGUI_LAYOUT_COLS + 1 ];
     for ( u32 i = 0; i < n; ++i ) cols[ i ] = 0.0f;   /* all flex -> equal split */
     cols[ n ] = IMGUI_END;
-    layout_set( cols, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
+    layout_set( cols, row_h, 0.0f, 0.0f );
 }
 
 /* Explicit per-column widths (IMGUI_END-terminated, overloaded units) of height row_h. */
 void
 imgui_row_track( f32 row_h, const f32* cols )
 {
-    layout_set( cols, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
+    layout_set( cols, row_h, 0.0f, 0.0f );
 }
 
 /* Fixed-arity weighted rows -- the everyday 2/3/4-column split without a track array or its
@@ -444,9 +444,9 @@ imgui_row_track( f32 row_h, const f32* cols )
    Auto height (the common case); reach for row_track / layout when a fixed height or >4 columns
    is needed. */
 
-void imgui_row2( f32 a, f32 b )                { f32 c[ 3 ] = { a, b, IMGUI_END };       layout_set( c, 0.0f, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f ); }
-void imgui_row3( f32 a, f32 b, f32 c )         { f32 t[ 4 ] = { a, b, c, IMGUI_END };    layout_set( t, 0.0f, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f ); }
-void imgui_row4( f32 a, f32 b, f32 c, f32 d )  { f32 t[ 5 ] = { a, b, c, d, IMGUI_END }; layout_set( t, 0.0f, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f ); }
+void imgui_row2( f32 a, f32 b )                { f32 c[ 3 ] = { a, b, IMGUI_END };       layout_set( c, 0.0f, 0.0f, 0.0f ); }
+void imgui_row3( f32 a, f32 b, f32 c )         { f32 t[ 4 ] = { a, b, c, IMGUI_END };    layout_set( t, 0.0f, 0.0f, 0.0f ); }
+void imgui_row4( f32 a, f32 b, f32 c, f32 d )  { f32 t[ 5 ] = { a, b, c, d, IMGUI_END }; layout_set( t, 0.0f, 0.0f, 0.0f ); }
 
 /* Field split -- the labeled value widgets (input_text, slider_float, checkbox) split their cell
    into a label track + a control track and lay out as an aligned "Label  [control]" form from a
@@ -483,12 +483,12 @@ imgui_align( imgui_align_t a )
 }
 
 /* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
-   (both IMGUI_END-terminated, overloaded units).  Uses cols, rows, item_pad, and gaps; row_h is
+   (both IMGUI_END-terminated, overloaded units).  Uses cols, rows, gaps, and align; row_h is
    flow-only and ignored.  Widgets then fill cells row-major; nothing scrolls. */
 void
 imgui_grid( imgui_layout_t desc )
 {
-    layout_set_grid( desc.cols, desc.rows, desc.item_pad, desc.gap_x, desc.gap_y );
+    layout_set_grid( desc.cols, desc.rows, desc.gap_x, desc.gap_y );
     lf()->lay_align = (u8)desc.align;   /* full template carries the content alignment too */
 }
 
@@ -507,7 +507,7 @@ imgui_grid_cells( u32 nc, u32 nr )
     for ( u32 i = 0; i < nr; ++i ) rows[ i ] = 0.0f;   /* all flex -> equal rows    */
     cols[ nc ] = IMGUI_END;
     rows[ nr ] = IMGUI_END;
-    layout_set_grid( cols, rows, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
+    layout_set_grid( cols, rows, 0.0f, 0.0f );
 }
 
 /* Region padding: re-inset the current region's content area and reset to the default template
