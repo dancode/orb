@@ -196,15 +196,13 @@ main( int argc, char** argv )
 
         static u8 font_select = 1;
 
-        if ( app()->key_pressed( APP_KEY_NP_ADD ) )
-        {            
-            font_select = ( font_select + 1 ) % IMGUI_FONT_BITMAP_MAX;
-            imgui()->set_font( (imgui_font_t)font_select );
+        if ( app()->key_pressed( APP_KEY_NP_ADD ) ) {            
+             font_select = ( font_select + 1 ) % IMGUI_FONT_BITMAP_MAX;
+             imgui()->set_font( (imgui_font_t)font_select );
         }
-        if ( app()->key_pressed( APP_KEY_NP_SUB ) )
-        {
-            font_select = ( font_select - 1 ) % IMGUI_FONT_BITMAP_MAX;
-            imgui()->set_font( ( imgui_font_t )font_select );
+        if ( app()->key_pressed( APP_KEY_NP_SUB ) ) {
+             font_select = ( font_select - 1 ) % IMGUI_FONT_BITMAP_MAX;
+             imgui()->set_font( ( imgui_font_t )font_select );
         }
 
         /* Debug overlay layers (Debug build only): toggle each with the 1-4 number keys.
@@ -220,7 +218,6 @@ main( int argc, char** argv )
                 if ( app()->key_pressed( dbg_keys[ i ].key ) )
                     imgui()->debug_set_layers( imgui()->debug_get_layers() ^ dbg_keys[ i ].bit );
         }
-
 
         /* ------------------------------------------------------------------------------ */
         /* Render frame -- skip entirely while minimized to avoid 0x0 swapchain churn. */
@@ -269,8 +266,8 @@ main( int argc, char** argv )
 
                 static bool show_ui = true;
 
-                if ( app()->key_pressed( APP_KEY_MINUS ) ) { show_ui = false; }
-                if ( app()->key_pressed( APP_KEY_EQUAL ) ) { show_ui = true; }
+                // if ( app()->key_pressed( APP_KEY_MINUS ) ) { show_ui = false; }
+                // if ( app()->key_pressed( APP_KEY_EQUAL ) ) { show_ui = true; }
 
                 /* Drag-mode test: 1 = title bar only, 2 = whole window, 3 = fixed. */
                 // if ( imgui() )
@@ -283,111 +280,114 @@ main( int argc, char** argv )
                 if ( imgui() && show_ui )
                 {
                     imgui()->new_frame( win_w, win_h, dt );
-
-                    if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NONE ) )
+                 
+                    if ( 0 ) 
                     {
-                        if ( imgui()->button( "Reload$" ) )
+                        if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NONE ) )
                         {
-                            // empty
-                        }
-                        if ( imgui()->button( "JsjperR1234q" ) )
-                        {
-                            // empty
-                        }
-                        imgui()->text( "this is some text" );
-                        static float scale = 1.0f;
-                        if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) )
-                        {
-                            // empty
-                        }
-                        if ( imgui()->slider_float( "ScaleScale", &scale, 1.0f, 3.0f ) )
-                        {
-                            // empty
-                        }
-
-                        imgui()->text( "here we go..." );
-                        imgui()->textf( "formatted number: %.2f", 123.456f );
-
-                        imgui()->text( "this is some text" );
-                        imgui()->text( "THIS is more text" );
-                        imgui()->text( "the last line!" );
-                        imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
-                        imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
-                        imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
-
-                        for ( int i = 0 ; i < 10; i++ )
-                        {
-                            imgui()->textf( "text widdget %d", i );
-                        }
-
-                        static bool checked = false;
-                        imgui()->checkbox( "Checkbox", &checked );
-
-                        static char buffer[ 32 ] = { 0 };
-                        imgui()->input_text( "Input Text", buffer, sizeof( buffer ));
-
-                        /* Field form test: field_label_left/right() / field_split() fix a label
-                           track so each labeled widget lays out as an aligned "Label  [control]" row
-                           from a single call -- no per-row track array, no text()+widget pairing.
-                           The split persists until changed, so it is cleared with field_label_left( 0 )
-                           once the form ends.  row2/row3 then show weighted columns without an
-                           (f32[]){...} literal. */
-                        static char  f_name[ 32 ] = { 0 };
-                        static float f_speed      = 5.0f;
-                        static bool  f_enabled    = true;
-
-                        /* Left labels in a fixed 110px gutter (field_label_left sugar). */
-                        imgui()->text( "Field form (label gutter, left):" );
-                        imgui()->field_label_left( 110.0f );
-                        imgui()->input_text  ( "Name",    f_name, sizeof( f_name ) );
-                        imgui()->slider_float( "Speed",   &f_speed, 0.0f, 10.0f );
-                        imgui()->checkbox    ( "Enabled", &f_enabled );
-
-                        /* Right-side labels (field_label_right) -- the opposing-side sugar. */
-                        imgui()->text( "Field form (label gutter, right):" );
-                        imgui()->field_label_right( 110.0f );
-                        imgui()->input_text  ( "Name",    f_name, sizeof( f_name ) );
-                        imgui()->checkbox    ( "Enabled", &f_enabled );
-
-                        /* Fractional split via the general field_split: 40% label / 60% control. */
-                        imgui()->text( "Field form (field_split 40/60):" );
-                        imgui()->field_split( IMGUI_LABEL_LEFT, 0.4f, 0.6f );
-                        imgui()->slider_float( "Volume", &f_speed, 0.0f, 10.0f );
-
-                        imgui()->field_label_left( 0.0f );   /* back to trailing labels for the rest */
-
-                        /* Weighted columns the easy way: a 30/70 split, then equal thirds. */
-                        imgui()->text( "Weighted rows (row2 / row3):" );
-                        imgui()->row2( 0.3f, 0.7f );
-                        imgui()->button( "Left 30%" );
-                        imgui()->button( "Right 70%" );
-                        imgui()->row3( 0, 0, 0 );
-                        imgui()->button( "1/3" );
-                        imgui()->button( "1/4" );
-                        imgui()->button( "1/5" );
-                        imgui()->row( 0 );               /* back to the single-column stack */
-
-                        /* List box test: a child region with its own scrollbar, filled with
-                           selectable rows.  Scroll/clip is independent of the window; the
-                           widgets after end_child must resume directly below the box. */
-                        imgui()->text( "List box (child region):" );
-                        static int  sel_row = -1;
-                        if ( imgui()->begin_child( "row_list", 0, 160, IMGUI_WIN_NONE ) )
-                        {
-                            for ( int i = 0; i < 30; i++ )
+                            if ( imgui()->button( "Reload$" ) )
                             {
-                                char row[ 32 ];
-                                snprintf( row, sizeof( row ), "row item %02d", i );
-                                bool on = ( sel_row == i );
-                                if ( imgui()->selectable( row, &on ) )
-                                    sel_row = on ? i : -1;   /* single-selection */
+                                // empty
                             }
-                        }
-                        imgui()->end_child();
-                        imgui()->textf( "selected row: %d (this text is below the box)", sel_row );
-                    }   /* begin_window( "Debug" ) -- body skipped while collapsed */
+                            if ( imgui()->button( "JsjperR1234q" ) )
+                            {
+                                // empty
+                            }
+                            imgui()->text( "this is some text" );
+                            static float scale = 1.0f;
+                            if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) )
+                            {
+                                // empty
+                            }
+                            if ( imgui()->slider_float( "ScaleScale", &scale, 1.0f, 3.0f ) )
+                            {
+                                // empty
+                            }
 
-                    imgui()->end_window();
+                            imgui()->text( "here we go..." );
+                            imgui()->textf( "formatted number: %.2f", 123.456f );
+
+                            imgui()->text( "this is some text" );
+                            imgui()->text( "THIS is more text" );
+                            imgui()->text( "the last line!" );
+                            imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
+                            imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
+                            imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
+
+                            for ( int i = 0 ; i < 10; i++ )
+                            {
+                                imgui()->textf( "text widdget %d", i );
+                            }
+
+                            static bool checked = false;
+                            imgui()->checkbox( "Checkbox", &checked );
+
+                            static char buffer[ 32 ] = { 0 };
+                            imgui()->input_text( "Input Text", buffer, sizeof( buffer ));
+
+                            /* Field form test: field_label_left/right() / field_split() fix a label
+                               track so each labeled widget lays out as an aligned "Label  [control]" row
+                               from a single call -- no per-row track array, no text()+widget pairing.
+                               The split persists until changed, so it is cleared with field_label_left( 0 )
+                               once the form ends.  row2/row3 then show weighted columns without an
+                               (f32[]){...} literal. */
+                            static char  f_name[ 32 ] = { 0 };
+                            static float f_speed      = 5.0f;
+                            static bool  f_enabled    = true;
+
+                            /* Left labels in a fixed 110px gutter (field_label_left sugar). */
+                            imgui()->text( "Field form (label gutter, left):" );
+                            imgui()->field_label_left( 110.0f );
+                            imgui()->input_text  ( "Name",    f_name, sizeof( f_name ) );
+                            imgui()->slider_float( "Speed",   &f_speed, 0.0f, 10.0f );
+                            imgui()->checkbox    ( "Enabled", &f_enabled );
+
+                            /* Right-side labels (field_label_right) -- the opposing-side sugar. */
+                            imgui()->text( "Field form (label gutter, right):" );
+                            imgui()->field_label_right( 110.0f );
+                            imgui()->input_text  ( "Name",    f_name, sizeof( f_name ) );
+                            imgui()->checkbox    ( "Enabled", &f_enabled );
+
+                            /* Fractional split via the general field_split: 40% label / 60% control. */
+                            imgui()->text( "Field form (field_split 40/60):" );
+                            imgui()->field_split( IMGUI_LABEL_LEFT, 0.4f, 0.6f );
+                            imgui()->slider_float( "Volume", &f_speed, 0.0f, 10.0f );
+
+                            imgui()->field_label_left( 0.0f );   /* back to trailing labels for the rest */
+
+                            /* Weighted columns the easy way: a 30/70 split, then equal thirds. */
+                            imgui()->text( "Weighted rows (row2 / row3):" );
+                            imgui()->row2( 0.3f, 0.7f );
+                            imgui()->button( "Left 30%" );
+                            imgui()->button( "Right 70%" );
+                            imgui()->row3( 0, 0, 0 );
+                            imgui()->button( "1/3" );
+                            imgui()->button( "1/4" );
+                            imgui()->button( "1/5" );
+                            imgui()->row( 0 );               /* back to the single-column stack */
+
+                            /* List box test: a child region with its own scrollbar, filled with
+                               selectable rows.  Scroll/clip is independent of the window; the
+                               widgets after end_child must resume directly below the box. */
+                            imgui()->text( "List box (child region):" );
+                            static int  sel_row = -1;
+                            if ( imgui()->begin_child( "row_list", 0, 160, IMGUI_WIN_NONE ) )
+                            {
+                                for ( int i = 0; i < 30; i++ )
+                                {
+                                    char row[ 32 ];
+                                    snprintf( row, sizeof( row ), "row item %02d", i );
+                                    bool on = ( sel_row == i );
+                                    if ( imgui()->selectable( row, &on ) )
+                                        sel_row = on ? i : -1;   /* single-selection */
+                                }
+                            }
+                            imgui()->end_child();
+                            imgui()->textf( "selected row: %d (this text is below the box)", sel_row );
+                        }   /* begin_window( "Debug" ) -- body skipped while collapsed */
+
+                        imgui()->end_window();
+                    }
 
                     if ( 1 ) 
                     {
@@ -405,6 +405,7 @@ main( int argc, char** argv )
 
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
                 }
+                
 
                 /* Only end a frame we actually began.  frame_begin returns an invalid handle
                    without recording (minimized, swapchain out-of-date) -- calling frame_end then
