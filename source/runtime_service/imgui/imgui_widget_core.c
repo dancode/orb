@@ -569,10 +569,12 @@ widget_bg_color( widget_state_t st )
     - Home/End
     - Shift+any of the above to extend selection
     - Ctrl+A to select all
+    - Ctrl+C / Ctrl+X / Ctrl+V cut / copy / paste through the imgui io clipboard
     - Backspace and Delete both at caret and over selection
     - Character insertion at caret, or selection replacement on first char
     - Blinking caret (reset to visible on any keypress or click)
     - Click-to-caret positioning (also fires on the focus-gaining click)
+    - Click-drag to select, double-click to select the word under the cursor
     - Horizontal scroll that keeps the caret visible whenever it moves
     - Draw clip so scrolled text never bleeds past the box border
 
@@ -621,6 +623,32 @@ text_offset_at( const char* buf, u32 len, f32 px )
     return len;
 }
 
+/* Character class for double-click word selection: a click extends over the maximal run of
+   one class.  0 = whitespace, 1 = word (alphanumeric or underscore), 2 = punctuation/other --
+   the classic "select word, or select a run of symbols" split. */
+static int
+char_class( u8 c )
+{
+    if ( c == ' ' || c == '\t' )                                  return 0;
+    if ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
+         ( c >= '0' && c <= '9' ) || c == '_' )                   return 1;
+    return 2;
+}
+
+/* Word bounds [*lo,*hi) around byte `off`: the run of same-class characters containing it.
+   Used by double-click to snap the selection to a whole word.  A click past the end (off ==
+   len) collapses to an empty range at len so a double-click in empty space selects nothing. */
+static void
+word_bounds( const char* buf, u32 len, u32 off, u32* lo, u32* hi )
+{
+    if ( off >= len ) { *lo = *hi = len; return; }
+    int cls = char_class( (u8)buf[ off ] );
+    u32 a = off, b = off;
+    while ( a > 0   && char_class( (u8)buf[ a - 1u ] ) == cls ) --a;
+    while ( b < len && char_class( (u8)buf[ b ]      ) == cls ) ++b;
+    *lo = a; *hi = b;
+}
+
 /*----------------------------------------------------------------------------------------------
     input_field_edit -- generic single-line text editing inside a caller-supplied rect.
 
@@ -632,24 +660,34 @@ text_offset_at( const char* buf, u32 len, f32 px )
     The caller is responsible for:
         - carving `box` from the layout (widget_next_rect has already been called),
         - drawing the box background and border (so the visual treatment is widget-specific),
-        - obtaining `focused` from widget_behavior (this function never claims focus itself).
+        - obtaining `st` from widget_behavior with WIDGET_KIND_FOCUSABLE.
     On Enter or Escape the function drops focus by clearing s_ctx.focused_id.
 
-    id      -- widget id; keys the persisted imgui_edit_state_t (cursor, anchor, scroll, blink).
-    box     -- pixel rect the text renders into; text is inset by WIDGET_PAD on left / right.
-    focused -- true when this field owns keyboard input (caller passes st.focused).
-    buf     -- caller-owned NUL-terminated buffer, modified in-place by keyboard input.
-    bufsz   -- total byte capacity of buf, including the NUL terminator.
+    Mouse capture: widget_behavior already claims active_id on the press (for every widget
+    kind), and that single mechanism is the engine's general-purpose mouse grab -- while a
+    widget owns active_id every other widget is frozen (can_hover is false for them) and no
+    hover fires elsewhere, so a drag stays bound to this field until the button is released.
+    This function leans on exactly that: it tracks the selection drag from st.active and never
+    re-tests whether the cursor is still inside the box, so the drag survives the cursor
+    leaving the field -- identical in spirit to how the scrollbar knob drags.
+
+    id   -- widget id; keys the persisted imgui_edit_state_t (cursor, anchor, scroll, blink).
+    box  -- pixel rect the text renders into; text is inset by WIDGET_PAD on left / right.
+    st   -- interaction state from widget_behavior: focused gates keyboard input, pressed marks
+            the grab frame, active is held true for the life of the mouse-capture drag.
+    buf  -- caller-owned NUL-terminated buffer, modified in-place by keyboard input.
+    bufsz-- total byte capacity of buf, including the NUL terminator.
 
     Returns { .changed = true } on any buffer modification this frame, { .enter = true } when
     Enter is pressed.
 ----------------------------------------------------------------------------------------------*/
 
 static input_field_result_t
-input_field_edit( imgui_id_t id, imgui_rect_t box, bool focused, char* buf, u32 bufsz )
+input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf, u32 bufsz )
 {
-    imgui_edit_state_t*  es  = IMGUI_STATE( imgui_edit_state_t, id );
-    input_field_result_t res = { false, false };
+    imgui_edit_state_t*  es      = IMGUI_STATE( imgui_edit_state_t, id );
+    input_field_result_t res     = { false, false };
+    bool                 focused = st.focused;
 
     u32 len = 0;
     while ( len < bufsz - 1u && buf[ len ] ) ++len;
@@ -668,6 +706,50 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, bool focused, char* buf, u32 
         bool shift = s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ];
         bool ctrl  = s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ];
         bool blink_reset = false;
+
+        /* Clipboard (imgui io buffer, see imgui_clipboard_set/get).  Resolved first so it acts
+           on the selection as the user sees it this frame, before any navigation moves it.
+           Copy / cut need a live selection; paste replaces the selection (or inserts at the
+           caret) with the stored text, control characters already stripped at store time. */
+
+        if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_C ] )
+        {
+            imgui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
+            blink_reset = true;
+        }
+
+        if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_X ] )
+        {
+            imgui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
+            memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
+            len -= ( sel_hi - sel_lo );
+            es->cursor = es->anchor = sel_lo;
+            has_sel = false; sel_lo = sel_hi = es->cursor;
+            res.changed = true;
+            blink_reset = true;
+        }
+
+        if ( ctrl && s_io.keys_pressed[ APP_KEY_V ] )
+        {
+            /* Drop the selection first so the paste lands where it was. */
+            if ( has_sel )
+            {
+                memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
+                len -= ( sel_hi - sel_lo );
+                es->cursor = es->anchor = sel_lo;
+                has_sel = false; sel_lo = sel_hi = es->cursor;
+            }
+            /* Insert each clipboard byte at the advancing caret, stopping at capacity. */
+            for ( const char* c = imgui_clipboard_get(); *c && len + 1u < bufsz; ++c )
+            {
+                memmove( buf + es->cursor + 1u, buf + es->cursor, len - es->cursor + 1u );
+                buf[ es->cursor ] = *c;
+                ++len; ++es->cursor;
+            }
+            es->anchor  = es->cursor;
+            res.changed = true;
+            blink_reset = true;
+        }
 
         /* Navigation: Left / Right collapse or extend the selection; Home / End jump. */
 
@@ -748,8 +830,10 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, bool focused, char* buf, u32 
 
         /* Character input: replace the selection with the first incoming char, then insert
            any remaining chars at the advancing caret.  Selection is cleared after the first
-           replacement so subsequent chars in the same frame insert normally. */
-        for ( const char* ch = s_io.text; *ch; ++ch )
+           replacement so subsequent chars in the same frame insert normally.  Skipped while
+           Ctrl is held so shortcut combos (Ctrl+C/V/X/A) never leak a stray glyph -- the OS
+           filters their control codes too, but this keeps the contract explicit. */
+        for ( const char* ch = ctrl ? "" : s_io.text; *ch; ++ch )
         {
             if ( has_sel )
             {
@@ -779,15 +863,34 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, bool focused, char* buf, u32 
         if ( s_io.keys_pressed[ APP_KEY_ESCAPE ] )
             s_ctx.focused_id = IMGUI_ID_NONE;
 
-        /* Click to reposition the caret (also fires on the frame the field gains focus via
-           click, since widget_behavior already set focused_id = id by this point). */
-        if ( s_io.mouse_pressed[ 0 ] && rect_hit( box ) )
+        /* Mouse.  st.pressed is the grab frame (also the focus-gaining click, since
+           widget_behavior set focused_id = id by now); st.active stays true for the whole
+           capture, so the drag below keeps extending the selection even after the cursor
+           leaves the box.  text_offset_at clamps a cursor past either edge to 0 / len, so a
+           drag past the ends selects to the start / end naturally. */
         {
             f32 px  = s_io.mouse_x - ( box.x + WIDGET_PAD ) + es->scroll_x;
             u32 off = text_offset_at( buf, len, px );
-            es->cursor = off;
-            if ( !shift ) es->anchor = off;
-            blink_reset = true;
+
+            if ( st.pressed && s_io.mouse_double[ 0 ] )
+            {
+                /* Double-click: snap the selection to the word under the cursor. */
+                word_bounds( buf, len, off, &es->anchor, &es->cursor );
+                blink_reset = true;
+            }
+            else if ( st.pressed )
+            {
+                /* Single press: caret to the click; Shift keeps the anchor to extend. */
+                es->cursor = off;
+                if ( !shift ) es->anchor = off;
+                blink_reset = true;
+            }
+            else if ( st.active )
+            {
+                /* Drag: move the caret, leaving the anchor put, so the selection grows. */
+                es->cursor  = off;
+                blink_reset = true;
+            }
         }
 
         /* Recompute selection bounds after all edits this frame. */

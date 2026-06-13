@@ -68,6 +68,38 @@ static f32 s_click_elapsed[ 3 ] = { 1.0e9f, 1.0e9f, 1.0e9f };   /* start "long a
 static f32 s_click_x[ 3 ], s_click_y[ 3 ];
 
 /*----------------------------------------------------------------------------------------------
+    Clipboard -- a small imgui-local text buffer living in the IO layer.
+
+    Cut / copy / paste in the text editor (input_field_edit) route through these two helpers
+    rather than the OS clipboard, so the feature is fully cross-platform and adds no app/sys
+    API surface (the imgui_api_t vtable stays ABI-frozen for hot-reload).  A host that wants
+    to bridge the OS clipboard can mirror its contents in and out through imgui_event the same
+    way it forwards CHAR / WHEEL events -- this buffer is the single point it would sync.
+    Single-line by contract: control characters are stripped on the way in.
+----------------------------------------------------------------------------------------------*/
+
+static char s_clipboard[ 256 ];
+
+/* Copy n bytes of `s` into the clipboard, dropping control characters (a multi-line OS
+   clipboard pasted into a single-line field must not carry newlines).  Always NUL-terminates. */
+static void
+imgui_clipboard_set( const char* s, u32 n )
+{
+    u32 w = 0;
+    for ( u32 i = 0; i < n && w + 1u < sizeof( s_clipboard ); ++i )
+        if ( (u8)s[ i ] >= 0x20u && (u8)s[ i ] != 0x7Fu )
+            s_clipboard[ w++ ] = s[ i ];
+    s_clipboard[ w ] = '\0';
+}
+
+/* Current clipboard text (never NULL; empty string when nothing has been copied). */
+static const char*
+imgui_clipboard_get( void )
+{
+    return s_clipboard;
+}
+
+/*----------------------------------------------------------------------------------------------
     Internal input feeders -- fed by imgui_event() as it unpacks the app event ring,
     before imgui_new_frame() for the same frame.  Not part of the public API.
 ----------------------------------------------------------------------------------------------*/

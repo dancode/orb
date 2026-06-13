@@ -228,7 +228,7 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
                             WIN_BORDER, 0,
                             st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
-    input_field_result_t res = input_field_edit( id, box_r, st.focused, buf, bufsz );
+    input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz );
     return res.enter;
 }
 
