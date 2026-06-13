@@ -158,6 +158,7 @@ layout_set_default( layout_frame_t* f )
     f->lay_field_side    = 0;             /* trailing label until field_split / field_label_* */
     f->lay_field_label   = 0.0f;
     f->lay_field_control = 0.0f;
+    f->lay_align         = 0;             /* LEFT | TOP until align() / layout.align sets it */
     f->cellx[ 0 ]   = f->content_x;       /* one flex column == the whole content width */
     f->cellw[ 0 ]   = f->content_w;
     f->col          = 0;
@@ -221,8 +222,28 @@ layout_set_grid( const f32* cols, const f32* rows, imgui_pad_t item_pad, f32 gap
 }
 
 /* Baseline y to vertically center one line of glyphs in a row of height h starting at y.
-   Used by every labeled widget and the window title so the centering math lives in one place. */
+   Used by every labeled widget and the window title so the centering math lives in one place.
+   (The text_center_y( y, h ) form is the VCENTER case of rect_align below, kept as a scalar
+   convenience because most labeled widgets only need the y and already own their x.) */
 static f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
+
+/* Place a natural nat_w x nat_h box inside `cell` per the alignment flags (imgui_align_t).  The
+   single seam for positioning sub-cell content -- a button's label, a checkbox box, an aligned
+   text run, a separator line -- so every widget edges / centers content the same way and a
+   region's align setting flows through one place.  Returns the placed rect (w/h are nat_*). */
+static imgui_rect_t
+rect_align( imgui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
+{
+    f32 x = cell.x;                                                            /* LEFT (default) */
+    if      ( align & IMGUI_ALIGN_HCENTER ) x = cell.x + ( cell.w - nat_w ) * 0.5f;
+    else if ( align & IMGUI_ALIGN_RIGHT   ) x = cell.x +   cell.w - nat_w;
+
+    f32 y = cell.y;                                                            /* TOP (default)  */
+    if      ( align & IMGUI_ALIGN_VCENTER ) y = cell.y + ( cell.h - nat_h ) * 0.5f;
+    else if ( align & IMGUI_ALIGN_BOTTOM  ) y = cell.y +   cell.h - nat_h;
+
+    return ( imgui_rect_t ){ x, y, nat_w, nat_h };
+}
 
 /*----------------------------------------------------------------------------------------------
     Widget label grammar  (Dear ImGui style)

@@ -53,6 +53,10 @@ void imgui_field_label_right( f32 width );
 void imgui_pad( imgui_pad_t region_pad );
 void imgui_grid( imgui_layout_t desc );
 void imgui_grid_cells( u32 ncols, u32 nrows );
+void imgui_align( imgui_align_t a );
+void imgui_skip( void );
+void imgui_spacing( f32 h );
+void imgui_separator( void );
 
 f32 imgui_line_h( void );
 f32 imgui_text_w( const char* s );

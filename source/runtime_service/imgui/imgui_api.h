@@ -134,6 +134,24 @@ typedef struct imgui_api_s
     void ( *grid       )( imgui_layout_t desc );
     void ( *grid_cells )( u32 ncols, u32 nrows );
 
+    /* align() -- set the content alignment within each cell (imgui_align_t, LEFT | TOP by default).
+       Persists like the row template and is independent of the columns: row() / row_cols() leave it
+       untouched, layout_default() clears it.  Governs where natural-sized content sits (a text run, a
+       checkbox box, a button's label); a frame-filling widget still fills its cell.  The `align`
+       field of layout() / grid() sets the same thing as part of a full descriptor.
+
+           imgui()->row2( 0.5f, 0.5f );  imgui()->align( IMGUI_ALIGN_RIGHT );   // right-aligned columns
+
+       Spacers -- cell-consuming composition that emits nothing interactive:
+       skip()      -- leave one blank cell (a hole; the natural way to step over a grid slot).
+       spacing()   -- a blank gap of height h (<= 0 = default gap).
+       separator() -- a thin horizontal rule centered in its cell. */
+
+    void ( *align      )( imgui_align_t a );
+    void ( *skip       )( void );
+    void ( *spacing    )( f32 h );
+    void ( *separator  )( void );
+
     /* Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
        line_h / text_w are the raw font metrics; h_min / w_min are the standard margin a row /
        cell adds around its content (the "size without content"); calc_row / calc_col add that

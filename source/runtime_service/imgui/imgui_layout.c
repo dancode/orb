@@ -395,6 +395,7 @@ void
 imgui_layout( imgui_layout_t desc )
 {
     layout_set( desc.cols, desc.row_h, desc.item_pad, desc.gap_x, desc.gap_y );
+    lf()->lay_align = (u8)desc.align;   /* full template carries the content alignment too */
 }
 
 /* Single full-width column of height row_h (0 = auto) -- back to the classic vertical stack. */
@@ -469,6 +470,18 @@ imgui_field_split( imgui_label_side_t side, f32 label, f32 control )
 void imgui_field_label_left ( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_LEFT  : IMGUI_LABEL_NONE, width, 0.0f ); }
 void imgui_field_label_right( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_RIGHT : IMGUI_LABEL_NONE, width, 0.0f ); }
 
+/* Content alignment -- where each widget's natural-sized content sits inside its cell (a label, an
+   image, a text run; a frame-filling widget like button / input still fills the cell and only its
+   label follows).  Set once on a region; it persists like the row template and the field split
+   until changed, and is independent of the columns -- row() / row_cols() leave it untouched, while
+   layout_default() clears it back to LEFT | TOP.  Orthogonal to field_split, which positions a
+   label *track*; align positions content *within* whatever cell a widget is handed. */
+void
+imgui_align( imgui_align_t a )
+{
+    lf()->lay_align = (u8)a;
+}
+
 /* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
    (both IMGUI_END-terminated, overloaded units).  Uses cols, rows, item_pad, and gaps; row_h is
    flow-only and ignored.  Widgets then fill cells row-major; nothing scrolls. */
@@ -476,6 +489,7 @@ void
 imgui_grid( imgui_layout_t desc )
 {
     layout_set_grid( desc.cols, desc.rows, desc.item_pad, desc.gap_x, desc.gap_y );
+    lf()->lay_align = (u8)desc.align;   /* full template carries the content alignment too */
 }
 
 /* nc x nr equal flex cells filling the band -- the uniform grid (image grids, dashboards). */

@@ -25,9 +25,14 @@
 void
 imgui_text( const char* str )
 {
-    imgui_rect_t r = widget_next_rect( font_char_h() );
-    draw_push_text( r.x, r.y, COL_TEXT, str );
-    widget_track_width( r.x + font_text_w( str ) );   /* natural width may exceed the row */
+    imgui_rect_t r  = widget_next_rect( font_char_h() );
+
+    /* Place the run inside its cell per the region's content alignment (default LEFT | TOP, the
+       original top-left).  A row tall enough for the glyph centers vertically when asked. */
+    f32          tw = font_text_w( str );
+    imgui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->lay_align );
+    draw_push_text( tr.x, tr.y, COL_TEXT, str );
+    widget_track_width( tr.x + tw );   /* natural width may exceed the row */
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -63,10 +68,10 @@ imgui_button( const char* label )
     /* Background. */
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
 
-    /* Centered label. */
-    f32 lw = label_width( label );
-    f32 lx = r.x + ( r.w - lw  ) * 0.5f;
-    draw_label( lx, text_center_y( r.y, r.h ), COL_TEXT, label );
+    /* Centered label -- a button always centers, independent of the region's content align. */
+    f32          lw = label_width( label );
+    imgui_rect_t lr = rect_align( r, lw, font_char_h(), IMGUI_ALIGN_CENTER );
+    draw_label( lr.x, lr.y, COL_TEXT, label );
 
     return st.clicked;
 }
@@ -99,7 +104,7 @@ imgui_checkbox( const char* label, bool* v )
         label_x = bx + CHECKBOX_SZ + WIDGET_PAD;   /* default: label just right of the box */
     }
 
-    f32 by = r.y + ( r.h - CHECKBOX_SZ ) * 0.5f;
+    f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, IMGUI_ALIGN_VCENTER ).y;
     draw_push_rect_filled( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, COL_WIDGET_BG );
     draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER );
 
@@ -287,6 +292,39 @@ imgui_selectable( const char* label, bool* selected )
     if ( st.clicked && selected )
         *selected = !( *selected );
     return st.clicked;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Spacers -- cell-consuming widgets that emit no interaction.
+
+    Each takes the next cell from the active template exactly like a real widget, so they compose
+    with rows and grids the same way: skip() leaves a hole (a blank cell of one standard line, the
+    natural way to step over a grid slot), spacing() inserts a blank gap of a chosen height, and
+    separator() draws a thin rule centered in its cell.  That these fall out as one-liners on
+    widget_next_rect is the point of the cell model -- "advance one slot" needs no special case.
+----------------------------------------------------------------------------------------------*/
+
+/* Consume one cell and draw nothing -- a blank slot of one standard line height. */
+void
+imgui_skip( void )
+{
+    widget_next_rect( WIDGET_H );
+}
+
+/* Consume one cell of height h (<= 0 falls back to the default gap) and draw nothing. */
+void
+imgui_spacing( f32 h )
+{
+    widget_next_rect( h > 0.0f ? h : WIDGET_GAP );
+}
+
+/* A horizontal rule: a thin line spanning the cell width, centered in a standard-height cell. */
+void
+imgui_separator( void )
+{
+    imgui_rect_t r  = widget_next_rect( WIDGET_H );
+    imgui_rect_t ln = rect_align( r, r.w, WIN_BORDER, IMGUI_ALIGN_VCENTER );
+    draw_push_rect_filled( ln.x, ln.y, ln.w, ln.h, 0,0,1,1, 0, COL_BORDER );
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -58,6 +58,30 @@ typedef struct { f32 l, r, t, b; }  imgui_pad_t;
 #define IMGUI_LAYOUT_COLS 8                     // max tracks on one axis (columns or rows)
 #define IMGUI_END (-1.0f)                       // track-list terminator (any negative value)s
 
+/*----------------------------------------------------------------------------------------------
+    Content alignment -- where a widget's natural-sized content sits inside the cell it is handed.
+
+    Two independent axes, ORed together; 0 (LEFT | TOP) is the default and matches the original
+    behavior.  A region carries one alignment (imgui()->align, or the `align` field of a layout
+    descriptor), persisting like the row template until changed.  It governs *content* placement
+    (a text label, an image) -- a widget whose frame fills the cell (button, input) still fills it,
+    and only its label/glyphs follow the alignment.  rect_align() is the single placement seam.
+----------------------------------------------------------------------------------------------*/
+
+typedef enum
+{
+    IMGUI_ALIGN_LEFT    = 0,            /* horizontal: against the left edge (default)  */
+    IMGUI_ALIGN_HCENTER = 1 << 0,       /* horizontal: centered                         */
+    IMGUI_ALIGN_RIGHT   = 1 << 1,       /* horizontal: against the right edge           */
+
+    IMGUI_ALIGN_TOP     = 0,            /* vertical: against the top edge (default)      */
+    IMGUI_ALIGN_VCENTER = 1 << 2,       /* vertical: centered                            */
+    IMGUI_ALIGN_BOTTOM  = 1 << 3,       /* vertical: against the bottom edge             */
+
+    IMGUI_ALIGN_CENTER  = IMGUI_ALIGN_HCENTER | IMGUI_ALIGN_VCENTER,   /* both axes centered */
+
+} imgui_align_t;
+
 typedef struct
 {
     f32             cols[ IMGUI_LAYOUT_COLS ];  // column tracks, IMGUI_END-terminated (see unit rule)
@@ -65,6 +89,7 @@ typedef struct
     f32             row_h;                      // flow only -- row height: 0 = auto, >0 = pixels
     imgui_pad_t     item_pad;                   // padding wrapped around every item / cell
     f32             gap_x, gap_y;               // inter-cell spacing; 0 = theme default
+    imgui_align_t   align;                      // content alignment within each cell (0 = LEFT | TOP)
 
 } imgui_layout_t;
 

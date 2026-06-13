@@ -97,6 +97,11 @@ typedef struct
     f32         lay_field_label;                 // label track size   (overloaded unit)
     f32         lay_field_control;               // control track size (overloaded unit)
 
+    /* Content alignment (align / layout.align): where a widget's natural-sized content sits in
+       its cell.  Persists like the row template; 0 = LEFT | TOP (the original top-left). */
+
+    u8          lay_align;                       // imgui_align_t flags
+
     /* Resolved cell geometry, computed once when a template is installed (the source track lists
        are not kept -- they are only needed to produce these).  Flow uses cellx/cellw for every
        row; grid uses cellx/cellw x rowy/rowh as the fixed matrix.  cols indexes [0,lay_ncols),
