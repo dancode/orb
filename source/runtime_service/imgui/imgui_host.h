@@ -44,6 +44,13 @@ void imgui_row( f32 row_h );
 void imgui_row_cols( f32 row_h, u32 n );
 void imgui_row_track( f32 row_h, const f32* cols );
 void imgui_pad( imgui_pad_t region_pad );
+
+f32 imgui_line_h( void );
+f32 imgui_text_w( const char* s );
+f32 imgui_h_min( void );
+f32 imgui_w_min( void );
+f32 imgui_calc_row( f32 content_h );
+f32 imgui_calc_col( f32 content_w );
 void imgui_set_window_drag( imgui_win_drag_t mode );
 
 void imgui_push_id( const char* str );

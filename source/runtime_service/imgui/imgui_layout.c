@@ -446,6 +446,34 @@ imgui_pad( imgui_pad_t p )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
+
+    line_h / text_w are the raw font metrics a caller cannot compute itself.  h_min / w_min are
+    the standard margin a row / cell puts around its content -- the "size without content".
+    calc_row / calc_col add that margin to a content pixel size, giving a fixed dimension that
+    fits the content plus breathing room:
+
+        imgui()->row( imgui()->calc_row( 128 ) );          // a row sized for a 128px image
+        f32 w = imgui()->calc_col( imgui()->text_w("X") ); // a column sized to a label
+----------------------------------------------------------------------------------------------*/
+
+/* Height of one line of text in the active font. */
+f32 imgui_line_h( void ) { return font_line_h(); }
+
+/* Pixel width of a string in the active font (whole string, no "##" handling). */
+f32 imgui_text_w( const char* s ) { return font_text_w( s ); }
+
+/* Standard vertical margin a row adds around its content (so calc_row( char_h ) == one row). */
+f32 imgui_h_min( void ) { f32 m = WIDGET_H - font_char_h(); return m > 0.0f ? m : 0.0f; }
+
+/* Standard horizontal margin a cell adds around its content (a left + right content inset). */
+f32 imgui_w_min( void ) { return 2.0f * WIDGET_PAD; }
+
+/* Fixed row height / column width that fits content_* pixels plus the standard margin. */
+f32 imgui_calc_row( f32 content_h ) { return content_h + imgui_h_min(); }
+f32 imgui_calc_col( f32 content_w ) { return content_w + imgui_w_min(); }
+
+/*----------------------------------------------------------------------------------------------
     push_id / pop_id -- add a temporary id-scope level for repeated widgets within one region.
 
     Widget ids are already region-seeded, so this is only needed to separate widgets that share a

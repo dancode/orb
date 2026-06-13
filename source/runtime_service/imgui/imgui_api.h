@@ -108,6 +108,21 @@ typedef struct imgui_api_s
     void ( *row_track )( f32 row_h, const f32* cols );
     void ( *pad       )( imgui_pad_t region_pad );
 
+    /* Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
+       line_h / text_w are the raw font metrics; h_min / w_min are the standard margin a row /
+       cell adds around its content (the "size without content"); calc_row / calc_col add that
+       margin to a content pixel size, giving a fixed dimension that fits content plus margin:
+
+           imgui()->row( imgui()->calc_row( 128 ) );             // a row sized for a 128px image
+           f32 w = imgui()->calc_col( imgui()->text_w("Name") ); // a column sized to a label */
+
+    f32 ( *line_h   )( void );
+    f32 ( *text_w   )( const char* s );
+    f32 ( *h_min    )( void );
+    f32 ( *w_min    )( void );
+    f32 ( *calc_row )( f32 content_h );
+    f32 ( *calc_col )( f32 content_w );
+
     /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
        seeded by the enclosing window / child region automatically, so identical labels in
        different regions never collide; push_id adds a temporary scope level for repeated widgets

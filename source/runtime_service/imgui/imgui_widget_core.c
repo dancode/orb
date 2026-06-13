@@ -214,11 +214,11 @@ static imgui_id_t widget_id( const char* label ) { return id_combine( id_seed(),
 static f32  label_width( const char* s )                        { return font_text_w_n( s, label_vis_len( s ) ); }
 static void draw_label ( f32 x, f32 y, u32 c, const char* s )    { draw_push_text_n( x, y, c, s, label_vis_len( s ) ); }
 
-/* Hand the next cell to a widget.  `h` is the widget's natural height, honored only when the row
-   is auto-height and single-column (the classic stack); a fixed row_h or a multi-column row sets
-   the height instead.  The row resolves once at column 0, then each call returns one cell --
-   inset by item_pad -- and advances, wrapping to a fresh row when the columns run out.  The
-   widget just fills the rect; it never sees columns, gaps, or padding. */
+/* Hand the next cell to a widget.  `h` is the widget's natural height; in an auto-height row
+   (row_h == 0) the *first* widget's h sets the height for the whole row, and the rest of the
+   columns conform.  A fixed row_h overrides it.  The row resolves once at column 0, then each
+   call returns one cell -- inset by item_pad -- and advances, wrapping to a fresh row when the
+   columns run out.  The widget just fills the rect; it never sees columns, gaps, or padding. */
 static imgui_rect_t
 widget_next_rect( f32 h )
 {
@@ -231,8 +231,7 @@ widget_next_rect( f32 h )
         layout_resolve_tracks( f->lay_cols, f->lay_ncols, f->content_x, f->content_w,
                                f->lay_gap_x, f->cellx, f->cellw );
         f->row_y     = f->cursor_y;
-        f32 base     = ( f->lay_row_h > 0.0f ) ? f->lay_row_h
-                     : ( f->lay_ncols == 1 ? h : WIDGET_H );   /* multi-col auto = one line  */
+        f32 base     = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : h;   /* auto: first widget sets it */
         f->row_h_cur = base + f->lay_item_pad.t + f->lay_item_pad.b;
     }
 
