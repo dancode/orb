@@ -87,6 +87,27 @@ typedef struct imgui_api_s
     bool ( *begin_child )( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
     void ( *end_child   )( void );
 
+    /* Layout -- shape the active region's repeating row template.  A region opens as a single
+       flex column of auto height (the classic vertical stack); these replace that template, and
+       it persists + repeats for every widget until set again.  Sizes use one overloaded f32:
+       >1 px, (0,1] fraction of the available space, 0 flex (equal share of the rest), <0 ends
+       the list (IMGUI_END).  Widgets fill whatever cell they are handed, agnostic to the shape.
+
+           imgui()->row_cols( 0, 2 );  imgui()->button("A");  imgui()->button("B");  // two columns
+           imgui()->row_track( 24, (f32[]){ 200, 0, IMGUI_END } );                    // 200px + fill
+
+       layout()    -- full template (columns, row height, item padding, gaps) in one struct.
+       row()       -- single full-width column of height row_h (0 = auto).
+       row_cols()  -- n equal columns of height row_h.
+       row_track() -- explicit per-column widths (IMGUI_END-terminated).
+       pad()       -- region padding: the inset between the region box and the layout start. */
+
+    void ( *layout    )( imgui_layout_t desc );
+    void ( *row       )( f32 row_h );
+    void ( *row_cols  )( f32 row_h, u32 n );
+    void ( *row_track )( f32 row_h, const f32* cols );
+    void ( *pad       )( imgui_pad_t region_pad );
+
     /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
        seeded by the enclosing window / child region automatically, so identical labels in
        different regions never collide; push_id adds a temporary scope level for repeated widgets

@@ -106,13 +106,13 @@ typedef struct
     u32 cursor_w;       /* input text cursor width                           */
     u32 cursor_inset;   /* input text cursor top/bottom inset                */
 
-} imgui_layout_t;
+} imgui_metrics_t;
 
 /* Font size used by layout_compute; updated by set_font() / load_font(). */
 static u32 s_font_size = 0;
 
 /* Default values */
-static imgui_layout_t s_layout =
+static imgui_metrics_t s_layout =
 {
     .line_size     = 20,
     .widget_gap    = 3,    /* 20 / 6                     */

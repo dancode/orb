@@ -4,8 +4,9 @@
 
     The everyday controls a caller emits between begin_window / end_window: text, button,
     checkbox, slider, text input, plus the low-level draw_rect / draw_text escape hatches.
-    Each is positioned by the layout cursor (s_ctx.cursor_x / cursor_y), which starts at the
-    content area top-left of the active window and advances downward by height + WIDGET_GAP.
+    Each takes its rect from widget_next_rect, which carves the next cell out of the active
+    region's row template (imgui_widget_core.c) -- a plain vertical stack by default, or any
+    multi-column shape set via imgui_layout / the row sugar.  The widget just fills the rect.
 
     The window itself is a compound widget and lives in imgui_widget_window.c; the shared
     interaction state machine, theme, and layout macros these widgets build on live in

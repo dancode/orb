@@ -21,6 +21,42 @@ typedef u32 imgui_id_t;
 typedef struct { f32 x, y; }        imgui_vec2_t;
 typedef struct { f32 x, y, w, h; }  imgui_rect_t;
 
+/* Edge insets, in pixels.  Two roles in the layout system (see imgui_layout_t):
+     region padding -- the gap between a region's box and where its layout starts.
+     item padding   -- breathing room wrapped around every item (adds to the row height). */
+typedef struct { f32 l, r, t, b; } imgui_pad_t;
+
+/*==============================================================================================
+    Layout template
+
+    A region (a window body or a begin_child box) lays widgets out by carving its content area
+    into cells.  imgui_layout() installs a row template that *persists and repeats*: every widget
+    fills the next cell, and when a row's columns are exhausted it wraps to a fresh row of the
+    same shape.  The default template -- a single flex column of auto height -- is the classic
+    vertical stack, so existing code needs no changes.
+
+    Column / row sizes use one overloaded f32 (the same rule everywhere):
+        > 1.0       fixed pixels
+        (0.0, 1.0]  fraction of the gap-adjusted available extent
+        == 0.0      flex -- an equal share of whatever space is left
+        <  0.0      IMGUI_END, the track-list terminator
+
+    Gaps sit *between* cells and are subtracted before distribution, so a widget never sees or
+    reasons about spacing -- it just fills the rect it is handed.
+==============================================================================================*/
+
+#define IMGUI_LAYOUT_COLS 16        /* max columns in one row template */
+#define IMGUI_END (-1.0f)           /* track-list terminator (any negative value) */
+
+typedef struct
+{
+    f32         cols[ IMGUI_LAYOUT_COLS ];  /* column tracks, IMGUI_END-terminated (see unit rule) */
+    f32         row_h;                       /* row height: 0 = auto (from the widget), >0 = pixels  */
+    imgui_pad_t item_pad;                    /* padding wrapped around every item in the row         */
+    f32         gap_x, gap_y;                /* inter-cell spacing; 0 = theme default                */
+
+} imgui_layout_t;
+
 /*==============================================================================================
     Window drag mode -- how a window may be repositioned by the mouse.
     Selected globally via imgui()->set_window_drag(); default is TITLEBAR.

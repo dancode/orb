@@ -309,7 +309,7 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
            reuses the window's single clip.  Bias-from-scroll, gutter reservation, and clamping
            all live there now. */
         imgui_rect_t body = { win->x, win->y + title_h, win->w, win->h - title_h };
-        layout_push_region( id, body, WIDGET_PAD, flags,
+        layout_push_region( id, body, REGION_PAD_DEFAULT, flags,
                             &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
                             /* own_clip */ false );
     }

@@ -77,6 +77,24 @@ typedef struct
     f32 content_x, content_w;   /* widget-row left edge + available width                  */
     f32 content_max_x;          /* rightmost edge reached this frame -- drives hscroll      */
 
+    /* Active row template (imgui_layout / row sugar).  Persists and repeats: each widget fills
+       the next cell, wrapping to a fresh row of the same shape when the columns run out.  A
+       region opens with the default -- one flex column, auto height -- so a plain vertical
+       stack needs no layout call.  See imgui_layout_t in imgui.h for the unit rule. */
+    f32         lay_cols[ IMGUI_LAYOUT_COLS ];  /* column tracks (overloaded units), copied  */
+    u32         lay_ncols;                       /* column count                              */
+    f32         lay_row_h;                       /* row height: 0 = auto, >0 = fixed pixels   */
+    imgui_pad_t lay_item_pad;                    /* padding wrapped around every item         */
+    f32         lay_gap_x, lay_gap_y;            /* inter-cell spacing (resolved to a number) */
+
+    /* Row iteration cursor.  The row is resolved once, when its first cell is taken (col 0);
+       the rest of the row reuses cellx/cellw, and a wrap advances cursor_y past row_h_cur. */
+    u32 col;                                /* next column to emit (0 = at a row start)      */
+    f32 cellx[ IMGUI_LAYOUT_COLS ];         /* resolved cell left edges for the current row  */
+    f32 cellw[ IMGUI_LAYOUT_COLS ];         /* resolved cell widths for the current row      */
+    f32 row_y;                              /* top of the current row                        */
+    f32 row_h_cur;                          /* resolved height of the current row            */
+
     /* Resolve context, set at push and read at pop. */
     imgui_id_t   region_id;     /* base id for the region's scrollbar widget ids           */
     imgui_win_flags_t flags;    /* scroll policy bits (IMGUI_WIN_*SCROLL), reused          */

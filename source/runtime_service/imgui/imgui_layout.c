@@ -161,7 +161,7 @@ region_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
 ----------------------------------------------------------------------------------------------*/
 
 static void
-layout_push_region( imgui_id_t id, imgui_rect_t outer, f32 pad, imgui_win_flags_t flags,
+layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, imgui_win_flags_t flags,
                     f32* scroll_x, f32* scroll_y, f32* content_w, f32* content_h, bool own_clip )
 {
     /* Cap the write slot at the top of the stack so an over-deep nesting aliases the deepest
@@ -220,15 +220,21 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, f32 pad, imgui_win_flags_
     scroll_clamp( scroll_y, last_h, view_h );
     scroll_clamp( scroll_x, last_w, view_w );
 
-    /* Content column + pen.  origin_* is the unscrolled top-left used to measure extent at pop;
-       the live pen is biased by -scroll so widgets slide under the clip. */
-    f->origin_x      = outer.x + pad;
-    f->origin_y      = outer.y + WIDGET_GAP;
-    f->content_x     = outer.x + pad - *scroll_x;
-    f->content_w     = outer.w - 2.0f * pad - f->sb_w;
+    /* Content column + pen.  region_pad is the inset between the region box and where the layout
+       starts (l/r narrow the column, t offsets the first row); origin_* is the unscrolled
+       top-left used to measure extent at pop; the live pen is biased by -scroll so widgets slide
+       under the clip.  (region_pad.b reserves bottom space only in a fixed grid, none yet.) */
+    f->origin_x      = outer.x + region_pad.l;
+    f->origin_y      = outer.y + region_pad.t;
+    f->content_x     = outer.x + region_pad.l - *scroll_x;
+    f->content_w     = outer.w - region_pad.l - region_pad.r - f->sb_w;
     f->cursor_x      = f->content_x;
-    f->cursor_y      = outer.y + WIDGET_GAP - *scroll_y;
+    f->cursor_y      = outer.y + region_pad.t - *scroll_y;
     f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
+
+    /* Open with the default template: a single flex column of auto height (the classic stack).
+       imgui_layout / the row sugar replace it; a fresh region always starts from the default. */
+    layout_set_default( f );
 
     /* Own clip (children only): scissor contents to the gutter-adjusted view; draw_push_clip_rect
        intersects it with the enclosing clip so a child near an edge cannot draw past its parent.
@@ -345,6 +351,10 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 {
     layout_frame_t* parent = lf();
 
+    /* A child always starts on its own line: finish any open row in the parent template first,
+       so the box lands at the pen rather than overlapping a half-filled multi-column row. */
+    layout_row_break( parent );
+
     /* Combine against the active id scope (the parent region, plus any push_id) so the same child
        label nests safely under different parents and never collides with a window id. */
     imgui_id_t id = id_combine( id_seed(), id_hash( id_str ) );
@@ -361,7 +371,7 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
     draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, COL_CHILD_BG );
     draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
 
-    layout_push_region( id, box, WIDGET_PAD, flags,
+    layout_push_region( id, box, REGION_PAD_DEFAULT, flags,
                         &rg->scroll_x, &rg->scroll_y, &rg->content_w, &rg->content_h,
                         /* own_clip */ true );   /* the child's own scissor -- second clip in the window */
 
@@ -373,6 +383,66 @@ void
 imgui_end_child( void )
 {
     layout_pop_region();
+}
+
+/*----------------------------------------------------------------------------------------------
+    Public layout API -- shape the active region's repeating row template.
+
+    These set the template on the current region; it persists and repeats for every subsequent
+    widget until set again (or the region ends).  No push/pop: a region opens with the default
+    (one flex column, auto height), and each call simply replaces it.  See imgui_layout_t for
+    the column unit rule.  imgui_pad sets the region padding -- the inset between the region box
+    and where the layout starts -- distinct from the item padding carried in the template.
+----------------------------------------------------------------------------------------------*/
+
+/* Full template: columns, row height, item padding, and gaps in one call. */
+void
+imgui_layout( imgui_layout_t desc )
+{
+    layout_set( desc.cols, desc.row_h, desc.item_pad, desc.gap_x, desc.gap_y );
+}
+
+/* Single full-width column of height row_h (0 = auto) -- back to the classic vertical stack. */
+void
+imgui_row( f32 row_h )
+{
+    layout_set( NULL, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
+}
+
+/* n equal flex columns of height row_h (0 = auto, one standard line). */
+void
+imgui_row_cols( f32 row_h, u32 n )
+{
+    if ( n == 0 )                 n = 1;
+    if ( n > IMGUI_LAYOUT_COLS )  n = IMGUI_LAYOUT_COLS;
+
+    f32 cols[ IMGUI_LAYOUT_COLS + 1 ];
+    for ( u32 i = 0; i < n; ++i ) cols[ i ] = 0.0f;   /* all flex -> equal split */
+    cols[ n ] = IMGUI_END;
+    layout_set( cols, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
+}
+
+/* Explicit per-column widths (IMGUI_END-terminated, overloaded units) of height row_h. */
+void
+imgui_row_track( f32 row_h, const f32* cols )
+{
+    layout_set( cols, row_h, ( imgui_pad_t ){ 0 }, 0.0f, 0.0f );
+}
+
+/* Region padding: re-inset the current region's content column and reset the pen to the padded
+   top-left.  Call right after opening a region (l/r/t take effect this frame). */
+void
+imgui_pad( imgui_pad_t p )
+{
+    layout_frame_t* f = lf();
+    f->content_x     = f->outer.x + p.l - *f->scroll_x;
+    f->content_w     = f->outer.w - p.l - p.r - f->sb_w;
+    f->origin_x      = f->outer.x + p.l;
+    f->origin_y      = f->outer.y + p.t;
+    f->cursor_x      = f->content_x;
+    f->cursor_y      = f->outer.y + p.t - *f->scroll_y;
+    f->content_max_x = f->content_x;
+    f->col           = 0;
 }
 
 /*----------------------------------------------------------------------------------------------

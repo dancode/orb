@@ -38,6 +38,12 @@ bool imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_wi
 void imgui_end_window( void );
 bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_child( void );
+
+void imgui_layout( imgui_layout_t desc );
+void imgui_row( f32 row_h );
+void imgui_row_cols( f32 row_h, u32 n );
+void imgui_row_track( f32 row_h, const f32* cols );
+void imgui_pad( imgui_pad_t region_pad );
 void imgui_set_window_drag( imgui_win_drag_t mode );
 
 void imgui_push_id( const char* str );

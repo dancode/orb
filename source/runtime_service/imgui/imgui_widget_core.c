@@ -31,6 +31,10 @@
 #define CHECKBOX_SZ   ( (f32)s_layout.checkbox_sz   )
 #define SLIDER_KNOB_W ( (f32)s_layout.slider_knob_w )
 
+/* Default region padding (the inset every window body / child opens with): pad columns by
+   WIDGET_PAD left and right, offset the first row by WIDGET_GAP, no bottom reserve. */
+#define REGION_PAD_DEFAULT ( ( imgui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, 0.0f } )
+
 /*----------------------------------------------------------------------------------------------
     Color palette (IMGUI_COLOR: byte order R,G,B,A in memory = ABGR u32)
 ----------------------------------------------------------------------------------------------*/
@@ -68,6 +72,98 @@ widget_track_width( f32 right_x )
 {
     if ( right_x > lf()->content_max_x )
         lf()->content_max_x = right_x;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Layout engine -- carve a region's content area into cells from a repeating row template.
+
+    One resolver does both axes (here, only columns are wired); the row template lives on the
+    layout frame and persists until changed, so widgets emit cell-by-cell while staying wholly
+    agnostic to the layout shape.  See imgui_layout_t (imgui.h) for the overloaded unit rule.
+----------------------------------------------------------------------------------------------*/
+
+/* Resolve a track list into pixel [pos,size] pairs along one axis.  `n` tracks (>= 1) are laid
+   from `origin` across `extent`, with `gap` between each.  Units: >1 fixed px, (0,1] fraction of
+   the gap-adjusted extent, 0 flex (equal share of the leftover).  Gaps are removed before the
+   split, so a fraction is of usable space and cells tile exactly. */
+static void
+layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
+                       f32* out_pos, f32* out_size )
+{
+    f32 avail = extent - gap * (f32)( n - 1 );
+    if ( avail < 0.0f ) avail = 0.0f;
+
+    /* Pass 1: fixed + fractional consume space; flex tracks share what's left. */
+    f32 used = 0.0f;
+    u32 flex = 0;
+    for ( u32 i = 0; i < n; ++i )
+    {
+        f32 t = tracks[ i ];
+        if      ( t == 0.0f ) ++flex;
+        else if ( t <= 1.0f ) used += t * avail;
+        else                  used += t;
+    }
+    f32 leftover  = avail - used;
+    if ( leftover < 0.0f ) leftover = 0.0f;
+    f32 flex_each = flex ? leftover / (f32)flex : 0.0f;
+
+    /* Pass 2: place left-to-right, gap between cells (not before the first / after the last). */
+    f32 pos = origin;
+    for ( u32 i = 0; i < n; ++i )
+    {
+        f32 t  = tracks[ i ];
+        f32 sz = ( t == 0.0f ) ? flex_each : ( t <= 1.0f ? t * avail : t );
+        out_pos [ i ] = pos;
+        out_size[ i ] = sz;
+        pos += sz + gap;
+    }
+}
+
+/* Finish a partially-filled row: advance the pen past it and return to column 0.  No-op at a
+   row start.  Called before the template changes or a child region opens, so the next thing
+   lands on a fresh line rather than overlapping the open row. */
+static void
+layout_row_break( layout_frame_t* f )
+{
+    if ( f->col == 0 ) return;
+    f->cursor_y = f->row_y + f->row_h_cur + f->lay_gap_y;
+    f->col      = 0;
+}
+
+/* Install the region's default template: one flex column, auto height -- the classic stack.
+   Called when a region opens (no row in progress yet, so no break needed). */
+static void
+layout_set_default( layout_frame_t* f )
+{
+    f->lay_cols[ 0 ] = 0.0f;
+    f->lay_ncols     = 1;
+    f->lay_row_h     = 0.0f;
+    f->lay_item_pad  = ( imgui_pad_t ){ 0 };
+    f->lay_gap_x     = WIDGET_GAP;
+    f->lay_gap_y     = WIDGET_GAP;
+    f->col           = 0;
+}
+
+/* Replace the active row template on the current frame.  Finishes any open row first, copies the
+   IMGUI_END-terminated columns (empty / NULL => one flex column), and resolves gaps (0 => theme
+   default).  The next widget starts a fresh row of the new shape; it repeats until set again. */
+static void
+layout_set( const f32* cols, f32 row_h, imgui_pad_t item_pad, f32 gap_x, f32 gap_y )
+{
+    layout_frame_t* f = lf();
+    layout_row_break( f );
+
+    u32 n = 0;
+    if ( cols )
+        while ( n < IMGUI_LAYOUT_COLS && cols[ n ] >= 0.0f ) { f->lay_cols[ n ] = cols[ n ]; ++n; }
+    if ( n == 0 ) { f->lay_cols[ 0 ] = 0.0f; n = 1; }    /* default to a single flex column */
+
+    f->lay_ncols    = n;
+    f->lay_row_h    = row_h;
+    f->lay_item_pad = item_pad;
+    f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
+    f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
+    f->col          = 0;
 }
 
 /* Baseline y to vertically center one line of glyphs in a row of height h starting at y.
@@ -118,19 +214,45 @@ static imgui_id_t widget_id( const char* label ) { return id_combine( id_seed(),
 static f32  label_width( const char* s )                        { return font_text_w_n( s, label_vis_len( s ) ); }
 static void draw_label ( f32 x, f32 y, u32 c, const char* s )    { draw_push_text_n( x, y, c, s, label_vis_len( s ) ); }
 
-/* Begin a new widget row; returns the rect for the full widget. */
+/* Hand the next cell to a widget.  `h` is the widget's natural height, honored only when the row
+   is auto-height and single-column (the classic stack); a fixed row_h or a multi-column row sets
+   the height instead.  The row resolves once at column 0, then each call returns one cell --
+   inset by item_pad -- and advances, wrapping to a fresh row when the columns run out.  The
+   widget just fills the rect; it never sees columns, gaps, or padding. */
 static imgui_rect_t
 widget_next_rect( f32 h )
 {
     layout_frame_t* f = lf();
+    if ( f->lay_ncols == 0 ) layout_set_default( f );   /* repair a stray-emit (empty) frame */
+
+    /* Resolve the row on its first cell: cell rects, top, and height for the whole row. */
+    if ( f->col == 0 )
+    {
+        layout_resolve_tracks( f->lay_cols, f->lay_ncols, f->content_x, f->content_w,
+                               f->lay_gap_x, f->cellx, f->cellw );
+        f->row_y     = f->cursor_y;
+        f32 base     = ( f->lay_row_h > 0.0f ) ? f->lay_row_h
+                     : ( f->lay_ncols == 1 ? h : WIDGET_H );   /* multi-col auto = one line  */
+        f->row_h_cur = base + f->lay_item_pad.t + f->lay_item_pad.b;
+    }
+
+    u32         c = f->col;
+    imgui_pad_t p = f->lay_item_pad;
     imgui_rect_t r = {
-        .x = f->content_x,
-        .y = f->cursor_y,
-        .w = f->content_w,
-        .h = h,
+        .x = f->cellx[ c ] + p.l,
+        .y = f->row_y      + p.t,
+        .w = f->cellw[ c ] - p.l - p.r,
+        .h = f->row_h_cur  - p.t - p.b,
     };
-    f->cursor_y += h + WIDGET_GAP;
-    widget_track_width( r.x + r.w );   /* baseline extent: a full-width row reaches the view edge */
+
+    widget_track_width( f->cellx[ c ] + f->cellw[ c ] );   /* this cell's right edge -> hscroll */
+
+    /* Advance; wrap to a fresh row when the template's columns are exhausted. */
+    if ( ++f->col >= f->lay_ncols )
+    {
+        f->cursor_y = f->row_y + f->row_h_cur + f->lay_gap_y;
+        f->col      = 0;
+    }
     return r;
 }
 
