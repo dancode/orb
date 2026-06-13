@@ -154,6 +154,7 @@ const imgui_api_t g_imgui_api_struct = {
     .w_min         = imgui_w_min,
     .calc_row      = imgui_calc_row,
     .calc_col      = imgui_calc_col,
+    .content_avail = imgui_content_avail,
     .push_id       = imgui_push_id,
     .push_id_int   = imgui_push_id_int,
     .pop_id        = imgui_pop_id,

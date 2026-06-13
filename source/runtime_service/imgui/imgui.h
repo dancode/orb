@@ -147,6 +147,11 @@ typedef enum
     IMGUI_WIN_ALWAYS_VSCROLL    = 1 << 7,    /* always show vertical scroll bar -- override*/
     IMGUI_WIN_ALWAYS_HSCROLL    = 1 << 8,    /* always show horizontal scroll bar -- override */
     
+    /* auto-resize -- size the window to its content instead of a fixed w/h */
+
+    IMGUI_WIN_ALWAYS_AUTOSIZE   = 1 << 9,    /* hug content every frame: no user resize, no scrollbars */
+    IMGUI_WIN_CAN_AUTOSIZE      = 1 << 10,   /* show a corner size-grip; double-click it to fit content */
+
  // IMGUI_WIN_MENUBAR      = 1 << 4,
  // IMGUI_WIN_NOINPUT      = 1 << 5,
 

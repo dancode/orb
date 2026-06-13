@@ -386,6 +386,7 @@ target sb_vulkan						# vulkan development and testing
     folder      09_SANDBOX/VULKAN
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
+    unit        sb_vulkan_imgui.c
     dep         sys ref mod core app
 	dep 		run rhi draw imgui
 	mono_dep 	render	

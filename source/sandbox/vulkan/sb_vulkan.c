@@ -20,6 +20,7 @@
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_service/imgui/imgui_host.h"
 #include "sb_vulkan_boot.h"
+#include "sb_vulkan_imgui.h"
 
 // clang-format off
 /*==============================================================================================
@@ -142,11 +143,15 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
-    printf( "[sb_vulkan] running -- ESC or close window to quit\n" );
+    printf( "[sb_vulkan] running -- ESC to quit\n" );
+    printf( "[sb_vulkan] imgui demos: 1-9 select, +/- step, F1-F4 debug overlay, NP. font scale\n" );
 
     /* Track window size for viewport/scissor updates. */
     i32 win_w = 1280;
     i32 win_h = 720;
+
+    /* Active imgui demo index (see sb_vulkan_imgui.c); switched live with the keys below. */
+    int active_demo = 0;
 
     /* Main loop. */
     f64 last_time = sys_tick_seconds();
@@ -182,37 +187,37 @@ main( int argc, char** argv )
             break;
 
         /* ------------------------------------------------------------------------------ */
-        /* imgui testing keys */
+        /* imgui demo selection.
+           Number keys 1-9 jump straight to a demo; +/- step back and forth through the
+           table (with wrap).  The active demo is drawn below, inside the imgui frame. */
 
+        const int demo_count = sb_imgui_demo_count();
 
+        for ( int i = 0; i < demo_count && i < 9; ++i )
+            if ( app()->key_pressed( (app_key_t)( APP_KEY_1 + i ) ) )
+                active_demo = i;
+
+        if ( app()->key_pressed( APP_KEY_NP_ADD ) )
+            active_demo = ( active_demo + 1 ) % demo_count;
+        if ( app()->key_pressed( APP_KEY_NP_SUB ) )
+            active_demo = ( active_demo + demo_count - 1 ) % demo_count;
+
+        /* Bitmap font scale cycle (1x/2x/3x) stays handy on the numpad dot. */
         if ( app()->key_pressed( APP_KEY_NP_DOT ) )
-        {            
+        {
             static int bmp_scale = 1;
             bmp_scale = bmp_scale == 1 ? 2 : ( bmp_scale == 2 ? 3 : 1 );
-            {                
-                imgui()->set_bmp_scale( bmp_scale );
-            }
+            imgui()->set_bmp_scale( bmp_scale );
         }
 
-        static u8 font_select = 1;
-
-        if ( app()->key_pressed( APP_KEY_NP_ADD ) ) {            
-             font_select = ( font_select + 1 ) % IMGUI_FONT_BITMAP_MAX;
-             imgui()->set_font( (imgui_font_t)font_select );
-        }
-        if ( app()->key_pressed( APP_KEY_NP_SUB ) ) {
-             font_select = ( font_select - 1 ) % IMGUI_FONT_BITMAP_MAX;
-             imgui()->set_font( ( imgui_font_t )font_select );
-        }
-
-        /* Debug overlay layers (Debug build only): toggle each with the 1-4 number keys.
-           1 window frames   2 widget interaction rects   3 resize bands   4 clip rects. */
+        /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
+           F1 window frames   F2 widget interaction rects   F3 resize bands   F4 clip rects. */
         {
             const struct { app_key_t key; u32 bit; } dbg_keys[] = {
-                { APP_KEY_1, IMGUI_DBG_WINDOW   },
-                { APP_KEY_2, IMGUI_DBG_INTERACT },
-                { APP_KEY_3, IMGUI_DBG_RESIZE   },
-                { APP_KEY_4, IMGUI_DBG_CLIP     },
+                { APP_KEY_F1, IMGUI_DBG_WINDOW   },
+                { APP_KEY_F2, IMGUI_DBG_INTERACT },
+                { APP_KEY_F3, IMGUI_DBG_RESIZE   },
+                { APP_KEY_F4, IMGUI_DBG_CLIP     },
             };
             for ( u32 i = 0; i < 4; ++i )
                 if ( app()->key_pressed( dbg_keys[ i ].key ) )
@@ -264,144 +269,15 @@ main( int argc, char** argv )
                     draw()->end_pass();
                 }
 
-                static bool show_ui = true;
-
-                // if ( app()->key_pressed( APP_KEY_MINUS ) ) { show_ui = false; }
-                // if ( app()->key_pressed( APP_KEY_EQUAL ) ) { show_ui = true; }
-
-                /* Drag-mode test: 1 = title bar only, 2 = whole window, 3 = fixed. */
-                // if ( imgui() )
-                // {
-                //     if ( app()->key_pressed( APP_KEY_1 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_TITLEBAR );
-                //     if ( app()->key_pressed( APP_KEY_2 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_BODY );
-                //     if ( app()->key_pressed( APP_KEY_3 ) ) imgui()->set_window_drag( IMGUI_WIN_DRAG_NONE );
-                // }
-
-                if ( imgui() && show_ui )
+                /* imgui frame: draw the active feature demo plus the picker overlay.  Each
+                   demo lives in sb_vulkan_imgui.c and owns its own window(s); the host just
+                   dispatches the selected one between new_frame() and render(). */
+                if ( imgui() )
                 {
                     imgui()->new_frame( win_w, win_h, dt );
-                 
-                    if ( 0 ) 
-                    {
-                        if ( imgui()->begin_window( "Debug", 10, 10, 640, 640, IMGUI_WIN_NONE ) )
-                        {
-                            if ( imgui()->button( "Reload$" ) )
-                            {
-                                // empty
-                            }
-                            if ( imgui()->button( "JsjperR1234q" ) )
-                            {
-                                // empty
-                            }
-                            imgui()->text( "this is some text" );
-                            static float scale = 1.0f;
-                            if ( imgui()->slider_float( "Scale", &scale, 1.0f, 3.0f ) )
-                            {
-                                // empty
-                            }
-                            if ( imgui()->slider_float( "ScaleScale", &scale, 1.0f, 3.0f ) )
-                            {
-                                // empty
-                            }
 
-                            imgui()->text( "here we go..." );
-                            imgui()->textf( "formatted number: %.2f", 123.456f );
-
-                            imgui()->text( "this is some text" );
-                            imgui()->text( "THIS is more text" );
-                            imgui()->text( "the last line!" );
-                            imgui()->text( "abcdefghijklmnopqrstuvwxyz" );
-                            imgui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
-                            imgui()->text( "`!@$%^&*&()_+~<>,./?'\\"";:[{--}]" );
-
-                            for ( int i = 0 ; i < 10; i++ )
-                            {
-                                imgui()->textf( "text widdget %d", i );
-                            }
-
-                            static bool checked = false;
-                            imgui()->checkbox( "Checkbox", &checked );
-
-                            static char buffer[ 32 ] = { 0 };
-                            imgui()->input_text( "Input Text", buffer, sizeof( buffer ));
-
-                            /* Field form test: field_label_left/right() / field_split() fix a label
-                               track so each labeled widget lays out as an aligned "Label  [control]" row
-                               from a single call -- no per-row track array, no text()+widget pairing.
-                               The split persists until changed, so it is cleared with field_label_left( 0 )
-                               once the form ends.  row2/row3 then show weighted columns without an
-                               (f32[]){...} literal. */
-                            static char  f_name[ 32 ] = { 0 };
-                            static float f_speed      = 5.0f;
-                            static bool  f_enabled    = true;
-
-                            /* Left labels in a fixed 110px gutter (field_label_left sugar). */
-                            imgui()->text( "Field form (label gutter, left):" );
-                            imgui()->field_label_left( 110.0f );
-                            imgui()->input_text  ( "Name",    f_name, sizeof( f_name ) );
-                            imgui()->slider_float( "Speed",   &f_speed, 0.0f, 10.0f );
-                            imgui()->checkbox    ( "Enabled", &f_enabled );
-
-                            /* Right-side labels (field_label_right) -- the opposing-side sugar. */
-                            imgui()->text( "Field form (label gutter, right):" );
-                            imgui()->field_label_right( 110.0f );
-                            imgui()->input_text  ( "Name",    f_name, sizeof( f_name ) );
-                            imgui()->checkbox    ( "Enabled", &f_enabled );
-
-                            /* Fractional split via the general field_split: 40% label / 60% control. */
-                            imgui()->text( "Field form (field_split 40/60):" );
-                            imgui()->field_split( IMGUI_LABEL_LEFT, 0.4f, 0.6f );
-                            imgui()->slider_float( "Volume", &f_speed, 0.0f, 10.0f );
-
-                            imgui()->field_label_left( 0.0f );   /* back to trailing labels for the rest */
-
-                            /* Weighted columns the easy way: a 30/70 split, then equal thirds. */
-                            imgui()->text( "Weighted rows (row2 / row3):" );
-                            imgui()->row2( 0.3f, 0.7f );
-                            imgui()->button( "Left 30%" );
-                            imgui()->button( "Right 70%" );
-                            imgui()->row3( 0, 0, 0 );
-                            imgui()->button( "1/3" );
-                            imgui()->button( "1/4" );
-                            imgui()->button( "1/5" );
-                            imgui()->row( 0 );               /* back to the single-column stack */
-
-                            /* List box test: a child region with its own scrollbar, filled with
-                               selectable rows.  Scroll/clip is independent of the window; the
-                               widgets after end_child must resume directly below the box. */
-                            imgui()->text( "List box (child region):" );
-                            static int  sel_row = -1;
-                            if ( imgui()->begin_child( "row_list", 0, 160, IMGUI_WIN_NONE ) )
-                            {
-                                for ( int i = 0; i < 30; i++ )
-                                {
-                                    char row[ 32 ];
-                                    snprintf( row, sizeof( row ), "row item %02d", i );
-                                    bool on = ( sel_row == i );
-                                    if ( imgui()->selectable( row, &on ) )
-                                        sel_row = on ? i : -1;   /* single-selection */
-                                }
-                            }
-                            imgui()->end_child();
-                            imgui()->textf( "selected row: %d (this text is below the box)", sel_row );
-                        }   /* begin_window( "Debug" ) -- body skipped while collapsed */
-
-                        imgui()->end_window();
-                    }
-
-                    if ( 1 ) 
-                    {
-                        /* Second, overlapping window -- click either to bring it to the
-                           front (z-order); drag to reposition. */
-                        if ( imgui()->begin_window( "Inspector", 360, 240, 360, 280, IMGUI_WIN_NOTITLEBAR ) )
-                        {
-                            imgui()->text( "Second window." );
-                            imgui()->textf( "drag mode keys: 1 title  2 body  3 none" );
-                            static bool toggle = false;
-                            imgui()->checkbox( "Overlap toggle", &toggle );
-                        }
-                        imgui()->end_window();
-                    }
+                    sb_imgui_demos[ active_demo ].fn();              // selected feature demo
+                    active_demo = sb_imgui_demo_picker( active_demo ); // demo list + key hints (clickable)
 
                     imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
                 }

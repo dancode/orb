@@ -191,6 +191,11 @@ typedef struct imgui_api_s
     f32 ( *calc_row )( f32 content_h );
     f32 ( *calc_col )( f32 content_w );
 
+    /* content_avail() -- remaining free space in the current region from the layout pen: the width
+       a flex widget would fill and the height left before the region bottom.  The ImGui
+       GetContentRegionAvail analogue -- size a begin_child to the leftover, or lay out by hand. */
+    imgui_vec2_t ( *content_avail )( void );
+
     /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
        seeded by the enclosing window / child region automatically, so identical labels in
        different regions never collide; push_id adds a temporary scope level for repeated widgets

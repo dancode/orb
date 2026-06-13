@@ -83,6 +83,51 @@ static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
    a resize never eats into the title bar vertically.  title_h is 0 for a NOTITLEBAR window. */
 static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER; }
 
+/*----------------------------------------------------------------------------------------------
+    Auto-resize
+
+    window_fit_size computes the window geometry that hugs its measured content.  The content
+    extent (content_w / content_h) is what the body region measured last frame -- the width
+    reached by the widgets and the total stacked height of the pen travel -- so this is purely a
+    function of that measurement plus the fixed chrome.
+
+    Height hugs tightly: content_h is the pen travel, independent of the window's own height, so
+    sizing to it never feeds back.  Width hugs the *natural* content -- text and bullet runs report
+    their glyph width, so a text window shrinks to its longest line -- but a flex widget (button,
+    slider, input) fills its cell and reports the full column width, so a window of those keeps the
+    width it already has.  That is stable (no oscillation), just not shrink-to-button.
+
+    Used by ALWAYS_AUTOSIZE every frame (from last frame's content) and by the CAN_AUTOSIZE grip on
+    a double-click (from this frame's content).  Never narrower than the title bar or the resize
+    minimum so the chrome stays legible.
+----------------------------------------------------------------------------------------------*/
+
+static void
+window_fit_size( const char* title, f32 title_h, bool collapsible,
+                 f32 content_w, f32 content_h, f32* out_w, f32* out_h )
+{
+    /* Width: content + the symmetric left/right region padding.  Height: title bar + the content
+       stack + one gap of bottom breathing + the bottom border (the top pad lives inside the body
+       region, the trailing gap inside content_h). */
+    f32 want_w = content_w + 2.0f * WIDGET_PAD;
+    f32 want_h = title_h + content_h + WIDGET_GAP + WIN_BORDER;
+
+    /* Stay wide enough for the title bar: the collapse-arrow lead (or the left pad) + the title
+       text + a trailing pad.  Keeps the title from being clipped when the body is narrow. */
+    if ( title && title_h > 0.0f )
+    {
+        f32 lead    = collapsible ? title_h : WIDGET_PAD;
+        f32 title_w = lead + font_text_w( title ) + WIDGET_PAD;
+        if ( want_w < title_w ) want_w = title_w;
+    }
+
+    f32 min_w = window_min_w();
+    if ( want_w < min_w ) want_w = min_w;
+
+    *out_w = want_w;
+    *out_h = want_h;
+}
+
 /* Which edges of rect r the cursor is within the grab band of (0 = none).  The band spans
    [edge - OUTER, edge + INNER] on each side, so the cursor catches an edge from just outside
    the border as well as just inside.  Caller gates on hover_win, so no occlusion test here.
@@ -200,6 +245,12 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
     if ( !can_collapse ) win->collapsed = false;
     bool collapsed = win->collapsed;
 
+    /* ALWAYS_AUTOSIZE owns its own geometry: it cannot be user-resized and shows no scrollbars
+       (the body always fits), and its size is recomputed below from the measured content.  The
+       body region is opened with NOSCROLL so it never reserves a gutter -- a clean content_w. */
+    bool autosize = ( flags & IMGUI_WIN_ALWAYS_AUTOSIZE ) != 0;
+    imgui_win_flags_t body_flags = autosize ? ( flags | IMGUI_WIN_NOSCROLL ) : flags;
+
     /* Apply an in-progress drag: this window holds active_id while the button is down. */
     if ( s_ctx.active_id == id )
     {
@@ -213,6 +264,13 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
     if ( s_ctx.active_id == id_combine( id, IMGUI_RESIZE_SALT ) )
         window_apply_resize( win, title_h );
 
+    /* ALWAYS_AUTOSIZE: hug the content measured last frame (held in win->content_*).  Skipped while
+       collapsed (the title-bar-only height is preserved) and on the very first appearance, before
+       any content has been measured -- then the caller's initial w/h stands for one frame. */
+    if ( autosize && !collapsed && win->content_h > 0.0f )
+        window_fit_size( title, title_h, can_collapse, win->content_w, win->content_h,
+                         &win->w, &win->h );
+
     /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
        preserved so reopening restores the previous size.  disp_h is the height actually
        shown this frame and drives the hover rect, clip, and border. */
@@ -225,7 +283,7 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
     imgui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
     imgui_id_t   resize_id = id_combine( id, IMGUI_RESIZE_SALT );
     u8           resize_hot = 0;
-    bool         resizeable = !( flags & IMGUI_WIN_NORESIZE );
+    bool         resizeable = !( flags & IMGUI_WIN_NORESIZE ) && !autosize;
     if ( resizeable && s_ctx.hover_win == id
          && ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == resize_id ) )
     {
@@ -294,7 +352,7 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
            reuses the window's single clip.  Bias-from-scroll, gutter reservation, and clamping
            all live there now. */
         imgui_rect_t body = { win->x, win->y + title_h, win->w, win->h - title_h };
-        layout_push_region( id, body, REGION_PAD_DEFAULT, flags,
+        layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags,
                             &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
                             /* own_clip */ false );
     }
@@ -373,6 +431,40 @@ imgui_end_window( void )
                      : s_ctx.win_resize_hot;
         if ( hot_edges )
             window_draw_resize_highlight( win_r, hot_edges );
+    }
+
+    /* CAN_AUTOSIZE: a size-grip triangle hugging the bottom-right corner -- both a resize handle
+       and an auto-fit button.  Drag it to resize the window (it grabs the same right+bottom edge
+       resize the border band uses, so begin_window applies it next frame); double-click it to snap
+       the window to this frame's measured content (win->content_* was just written back by
+       layout_pop_region).  Only one of the two fires per press, and the double-click never starts a
+       drag.  The grip resizes regardless of NORESIZE -- it is the window's own explicit handle. */
+    if ( ( s_ctx.win_flags & IMGUI_WIN_CAN_AUTOSIZE ) && !s_ctx.win_collapsed && win )
+    {
+        f32          g         = WIDGET_H;           /* grip leg length */
+        imgui_rect_t gr        = { s_ctx.win_x + s_ctx.win_w - g, s_ctx.win_y + s_ctx.win_h - g, g, g };
+        imgui_id_t   resize_id = id_combine( s_ctx.win_id, IMGUI_RESIZE_SALT );
+        bool         resizing  = ( s_ctx.active_id == resize_id );
+        bool         hot       = ( s_ctx.win_id == s_ctx.hover_win ) && rect_hit( gr );
+
+        if ( hot && s_ctx.active_id == IMGUI_ID_NONE )
+        {
+            if ( s_io.mouse_double[ 0 ] )
+            {
+                bool collapsible = ( s_ctx.win_title_h > 0.0f ) && !( s_ctx.win_flags & IMGUI_WIN_NOCOLLAPSE );
+                window_fit_size( s_ctx.win_title, s_ctx.win_title_h, collapsible,
+                                 win->content_w, win->content_h, &win->w, &win->h );
+            }
+            else if ( s_io.mouse_pressed[ 0 ] )
+            {
+                window_resize_grab( win, s_ctx.win_id, IMGUI_RESIZE_R | IMGUI_RESIZE_B );
+                resizing = true;
+            }
+        }
+
+        /* Filled right-angle triangle, lit while hovered or actively resizing. */
+        draw_push_triangle( gr.x + g, gr.y, gr.x + g, gr.y + g, gr.x, gr.y + g,
+                            0, ( hot || resizing ) ? COL_RESIZE_HOT : COL_TEXT_DIM );
     }
 
     /* Balance the clip push, which begin_window only made for an expanded window. */

@@ -67,6 +67,7 @@ f32 imgui_h_min( void );
 f32 imgui_w_min( void );
 f32 imgui_calc_row( f32 content_h );
 f32 imgui_calc_col( f32 content_w );
+imgui_vec2_t imgui_content_avail( void );
 void imgui_set_window_drag( imgui_win_drag_t mode );
 
 void imgui_push_id( const char* str );

@@ -340,6 +340,10 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
        label nests safely under different parents and never collides with a window id. */
     imgui_id_t id = id_combine( id_seed(), id_hash( id_str ) );
 
+    /* Persistent state (scroll offset + last-measured content extent), keyed by id.  Fetched up
+       front because an auto-sized (h <= 0) child reads its measured content_h to size the box. */
+    imgui_region_t* rg = region_get( id );
+
     /* Where the child box lands: in a grid parent it takes the next cell (w / h ignored -- the
        cell sizes it, the natural way to drop a scroll region into a split pane); in flow it sits
        at the pen, on its own line.  The parent pen / grid cursor is advanced by layout_pop_region
@@ -353,10 +357,16 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
     {
         layout_row_break( parent );       /* a flow child starts on its own line */
         if ( w <= 0.0f ) w = parent->content_w;   /* default: fill the remaining content width */
+
+        /* h <= 0 auto-sizes the height to the content measured last frame (the AutoResizeY case):
+           the box hugs its widgets, like an ALWAYS_AUTOSIZE window on the vertical axis.  Before
+           any content is measured (first frame) it opens one widget-row tall and settles next
+           frame.  flags carry no scroll policy here -- an auto-sized child has nothing to scroll. */
+        if ( h <= 0.0f )
+            h = ( rg->content_h > 0.0f ) ? rg->content_h + WIDGET_GAP + WIN_BORDER : WIDGET_H;
+
         box = ( imgui_rect_t ){ parent->content_x, parent->cursor_y, w, h };
     }
-
-    imgui_region_t* rg = region_get( id );
 
     /* Child body fill, drawn under the parent clip before the region clips in.  The border is
        deferred to end_child (after the scrollbars) so the bar tracks cannot overdraw it -- the
@@ -658,6 +668,22 @@ f32 imgui_w_min( void ) { return 2.0f * WIDGET_PAD; }
 /* Fixed row height / column width that fits content_* pixels plus the standard margin. */
 f32 imgui_calc_row( f32 content_h ) { return content_h + imgui_h_min(); }
 f32 imgui_calc_col( f32 content_w ) { return content_w + imgui_w_min(); }
+
+/* Remaining free space in the current region from the layout pen -- the GetContentRegionAvail
+   analogue.  Width is what a flex widget would fill (the content column from the pen to its right
+   edge); height is the room left before the region bottom (the grid band end / view bottom).  Use
+   it to size a begin_child to the leftover space, or to lay widgets out by hand.  Measured from the
+   pen, so call it where the next widget would land; the height is most meaningful before scrolling. */
+imgui_vec2_t
+imgui_content_avail( void )
+{
+    layout_frame_t* f = lf();
+    f32 w = ( f->content_x + f->content_w ) - f->cursor_x;
+    f32 h = f->content_y_max - f->cursor_y;
+    if ( w < 0.0f ) w = 0.0f;
+    if ( h < 0.0f ) h = 0.0f;
+    return ( imgui_vec2_t ){ w, h };
+}
 
 /*----------------------------------------------------------------------------------------------
     push_id / pop_id -- add a temporary id-scope level for repeated widgets within one region.
