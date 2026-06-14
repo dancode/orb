@@ -159,6 +159,30 @@ typedef enum
 } imgui_win_drag_t;
 
 /*==============================================================================================
+    Apply condition -- when a queued set_next_window_* value takes effect on its target window.
+
+    Passed to set_next_window_pos / set_next_window_size.  The value and the condition are two
+    separate axes: the same window can be seeded once, forced every frame, or re-applied whenever
+    it re-appears, by changing only the condition -- the reason geometry is a side channel rather
+    than fixed begin_window parameters.  Bit values so a window can mask the conditions it still
+    permits.  A 0 (unset) condition is treated as ALWAYS.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_COND_ONCE      = 1 << 0,   /* apply once for this window, then never again -- the same
+                                        seed-on-create behavior begin_window's x/y/w/h give (akin to
+                                        Dear ImGui's FirstUseEver until a saved-layout system lands) */
+    IMGUI_COND_ALWAYS    = 1 << 1,   /* apply every frame the value is queued -- forced geometry for
+                                        layout managers, snapping, animation; pair with NOMOVE /
+                                        NORESIZE so a user drag does not fight it */
+    IMGUI_COND_APPEARING = 1 << 2,   /* apply each time the window appears -- on creation and again
+                                        whenever it is shown after a frame of absence (e.g. re-center
+                                        a reopened popup / modal) */
+
+} imgui_cond_t;
+
+/*==============================================================================================
     Window flags
 
     Passed as the final argument to begin_window to customize a single window's behavior.

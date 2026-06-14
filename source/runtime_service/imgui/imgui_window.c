@@ -41,6 +41,12 @@ typedef struct imgui_window_t
 
     imgui_win_flags_t flags;    /* behavior flags supplied to begin_window        */
 
+    /* Next-window channel bookkeeping (see set_next_window_pos / _size).  last_frame drives the
+       "appearing" test; the allow masks track which conditions a queued value may still fire. */
+    u32        last_frame;      /* frame index last begun; 0 = never begun        */
+    u8         set_pos_allow;   /* conds still permitted to set position (imgui_cond_t bits) */
+    u8         set_size_allow;  /* conds still permitted to set size              */
+
 } imgui_window_t;
 
 static imgui_window_t       s_windows[ IMGUI_MAX_WINDOWS ];
@@ -90,7 +96,93 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->h         = h;
     win->z         = ++s_z_counter;
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
+
+    /* Next-window state for a fresh window: never begun (so the first begin is "appearing"), and
+       ONCE / ALWAYS permitted but APPEARING withheld -- begin_window grants APPEARING only on the
+       frames the window actually (re)appears.  Reset here so a reused scratch slot starts clean. */
+    win->last_frame     = 0u;
+    win->set_pos_allow  = (u8)( IMGUI_COND_ONCE | IMGUI_COND_ALWAYS );
+    win->set_size_allow = (u8)( IMGUI_COND_ONCE | IMGUI_COND_ALWAYS );
     return win;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Next-window channel -- queued geometry for the next begin_window, consumed and cleared by it.
+
+    set_next_window_pos / set_next_window_size write here; the following begin_window applies each
+    field to its target window per the field's condition (imgui_cond_t), then clears the channel.
+    This decouples the value from when it is applied -- the reason the geometry is a side channel
+    rather than fixed begin_window parameters.  Only the next window is affected; an unconsumed
+    queue (no begin_window follows) simply carries to whichever window is begun next.
+----------------------------------------------------------------------------------------------*/
+
+static struct
+{
+    bool         has_pos, has_size;     /* a value is queued on this axis */
+    imgui_cond_t pos_cond, size_cond;   /* when to apply it               */
+    f32          pos_x, pos_y;
+    f32          size_w, size_h;
+
+} s_next_win;
+
+void
+imgui_set_next_window_pos( f32 x, f32 y, imgui_cond_t cond )
+{
+    s_next_win.has_pos  = true;
+    s_next_win.pos_cond = cond ? cond : IMGUI_COND_ALWAYS;   /* unset cond -> force */
+    s_next_win.pos_x    = x;
+    s_next_win.pos_y    = y;
+}
+
+void
+imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond )
+{
+    s_next_win.has_size  = true;
+    s_next_win.size_cond = cond ? cond : IMGUI_COND_ALWAYS;
+    s_next_win.size_w    = w;
+    s_next_win.size_h    = h;
+}
+
+/* Resolve one queued axis against the window's remaining permissions.  Returns whether to apply
+   the value this frame; on a match it consumes the one-shot conditions (keeping only ALWAYS, so a
+   forced value keeps firing while ONCE / APPEARING fire just the once). */
+static bool
+window_cond_apply( u8* allow, imgui_cond_t cond )
+{
+    if ( !( (u8)cond & *allow ) ) return false;
+    *allow &= (u8)IMGUI_COND_ALWAYS;
+    return true;
+}
+
+/* Apply (and clear) the next-window channel onto win.  `appearing` gates the one-shot APPEARING
+   permission: granted on (re)appearance frames and withheld otherwise, so an APPEARING-conditioned
+   value fires on exactly those frames and never on a steady-state one. */
+static void
+window_apply_next( imgui_window_t* win, bool appearing )
+{
+    if ( appearing )
+    {
+        win->set_pos_allow  |= (u8)IMGUI_COND_APPEARING;
+        win->set_size_allow |= (u8)IMGUI_COND_APPEARING;
+    }
+    else
+    {
+        win->set_pos_allow  &= (u8)~IMGUI_COND_APPEARING;
+        win->set_size_allow &= (u8)~IMGUI_COND_APPEARING;
+    }
+
+    if ( s_next_win.has_pos && window_cond_apply( &win->set_pos_allow, s_next_win.pos_cond ) )
+    {
+        win->x = s_next_win.pos_x;
+        win->y = s_next_win.pos_y;
+    }
+    if ( s_next_win.has_size && window_cond_apply( &win->set_size_allow, s_next_win.size_cond ) )
+    {
+        win->w = s_next_win.size_w;
+        win->h = s_next_win.size_h;
+    }
+
+    s_next_win.has_pos = s_next_win.has_size = false;   /* the queue targets only the next window */
 }
 
 /*----------------------------------------------------------------------------------------------

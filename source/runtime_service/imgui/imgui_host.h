@@ -34,6 +34,8 @@ void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
 bool imgui_event( const app_event_t* ev );
 
+void imgui_set_next_window_pos ( f32 x, f32 y, imgui_cond_t cond );
+void imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond );
 bool imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_window( void );
 bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );

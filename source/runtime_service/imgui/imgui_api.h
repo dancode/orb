@@ -74,6 +74,15 @@ typedef struct imgui_api_s
            }
            imgui()->end_window();               // always called */
 
+    /* set_next_window_pos / _size -- queue geometry for the NEXT begin_window, applied per the
+       condition (imgui_cond_t) and then cleared.  Decouples the value from when it is applied:
+       ONCE seeds an initial position/size (the same effect as begin_window's x/y/w/h), ALWAYS
+       forces it every frame (layout managers, snapping, animation -- pair with NOMOVE / NORESIZE),
+       APPEARING re-applies it each time the window is shown after being absent.  Call immediately
+       before begin_window; the throwaway x/y/w/h there can stay (ONCE) or be ignored (ALWAYS). */
+    void ( *set_next_window_pos  )( f32 x, f32 y, imgui_cond_t cond );
+    void ( *set_next_window_size )( f32 w, f32 h, imgui_cond_t cond );
+
     bool ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
     void ( *end_window   )( void );
 

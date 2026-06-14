@@ -236,6 +236,14 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
     imgui_window_t* win = window_get( id, x, y, w, h );
     win->flags          = flags;
 
+    /* Next-window channel: apply any queued set_next_window_pos / _size before this frame's drag,
+       resize, and autosize act on the geometry, so a ONCE / APPEARING seed becomes the incoming
+       state the user then interacts with.  `appearing` is the first begin (last_frame 0) or the
+       first begin after a frame of absence -- it renews the one-shot APPEARING permission. */
+    bool appearing = ( win->last_frame == 0u ) || ( win->last_frame != s_frame_counter - 1u );
+    window_apply_next( win, appearing );
+    win->last_frame = s_frame_counter;
+
     /* NOTITLEBAR removes the bar entirely (title_h 0); content then starts at the top edge.
        Collapsing lives on the title bar, so NOTITLEBAR and NOCOLLAPSE both pin the window
        open -- any stale collapsed state is cleared so it cannot resurface if the flag drops. */
