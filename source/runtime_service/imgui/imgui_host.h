@@ -87,11 +87,16 @@ void imgui_push_id( const char* str );
 void imgui_push_id_int( i32 i );
 void imgui_pop_id( void );
 
+void imgui_push_item_flag( imgui_item_flags_t flag, bool enable );
+void imgui_pop_item_flag( void );
+void imgui_next_item_flag( imgui_item_flags_t flag, bool enable );
+
 void imgui_text( const char* str );
 void imgui_textf( const char* fmt, ... );
 void imgui_bullet_text( const char* str );
 bool imgui_button( const char* label );
 bool imgui_checkbox( const char* label, bool* v );
+bool imgui_radio_button( const char* label, i32* v, i32 value );
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
 bool imgui_selectable( const char* label, bool* selected );

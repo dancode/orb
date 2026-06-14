@@ -31,6 +31,11 @@ static struct
     imgui_rect_t       clip_stack   [ IMGUI_CLIP_DEPTH ];
     u32                clip_depth;
 
+    /* Global opacity multiplier applied to every pushed quad / triangle (and so to text, which
+       routes through the quad path).  1.0 normally; lowered for the span of a disabled item so
+       it dims with no per-widget code, then reset by the item / chrome seams.  See draw_set_alpha. */
+    f32                alpha;
+
     /* Usage tracking (lifetime; draw_reset clears only the per-frame overflow flag). */
 
     u32                vert_hwm;       // peak vert_count seen across all frames
@@ -53,6 +58,7 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.cur_z      = 0;       /* background; windows raise it via draw_set_sort_key */
     s_draw.clip_depth = 1;
     s_draw.overflow   = false;   /* per-frame; hwm + overflow_ever persist */
+    s_draw.alpha      = 1.0f;    /* opaque; lowered per-item for disabled draws */
 
     /* first is a default "no clip" rect covering the whole display; never popped off the stack. */
     s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
@@ -103,6 +109,30 @@ draw_set_sort_key( u32 z )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Global alpha -- a per-item opacity multiplier folded into every quad / triangle.
+
+    draw_set_alpha installs the multiplier (clamped to [0,1]); draw_apply_alpha scales a packed
+    color's A byte by it.  The item-flag resolver lowers it for the span of a disabled widget so
+    the whole widget dims with no per-widget code, and the frame / chrome seams reset it to 1.0
+    (chrome is not an item, so it always paints opaque).  At 1.0 the byte is returned unchanged.
+----------------------------------------------------------------------------------------------*/
+
+static void
+draw_set_alpha( f32 a )
+{
+    s_draw.alpha = a < 0.0f ? 0.0f : ( a > 1.0f ? 1.0f : a );
+}
+
+static u32
+draw_apply_alpha( u32 abgr )
+{
+    if ( s_draw.alpha >= 1.0f ) return abgr;                /* opaque -- the common path */
+    u32 a = ( abgr >> 24 ) & 0xFFu;
+    a = (u32)( (f32)a * s_draw.alpha + 0.5f );              /* scale + round the alpha byte */
+    return ( abgr & 0x00FFFFFFu ) | ( a << 24 );
+}
+
+/*----------------------------------------------------------------------------------------------
     draw_ensure_cmd -- open a new command when texture, clip, or sort key changes
 ----------------------------------------------------------------------------------------------*/
 
@@ -150,6 +180,8 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
         s_draw.overflow = true;
         return;
     }
+
+    abgr = draw_apply_alpha( abgr );   /* fold in the per-item opacity (disabled dim) */
 
     /* tex_idx 0 is the solid-color convention: point at the font atlas's white texel so
        solid fills carry the same texture as text and merge into one draw command. */
@@ -221,6 +253,8 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
         return;
     }
 
+    abgr = draw_apply_alpha( abgr );   /* fold in the per-item opacity (disabled dim) */
+
     /* tex_idx 0 is the solid-color convention: route all three verts to the font
        atlas's white texel so the triangle merges with surrounding solid/text draws. */
     f32 u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 0.0f, u2 = 0.5f, v2 = 1.0f;
@@ -248,6 +282,32 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
     s_draw.indices[ s_draw.idx_count++ ] = base + 2;
 
     s_draw.cmds[ s_draw.cmd_count - 1 ].elem_count += 3;
+}
+
+/*----------------------------------------------------------------------------------------------
+    draw_push_circle_filled -- a solid disc as a triangle fan around its center.
+
+    `segments` facets approximate the circle; ~16 reads as round at widget sizes.  Built on
+    draw_push_triangle so it inherits the solid-color white-texel routing, clipping, and overflow
+    guard -- the engine keeps "all geometry is rects or triangles" with no new vertex path.  A
+    radio button stacks two of these (border ring + inner well) plus a third for the selected dot.
+----------------------------------------------------------------------------------------------*/
+
+static void
+draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
+{
+    if ( segments < 3 ) segments = 3;
+
+    f32 step = 6.2831853f / (f32)segments;   /* 2*pi / n */
+    f32 px = cx + r, py = cy;                 /* vertex at angle 0 */
+    for ( u32 i = 1; i <= segments; ++i )
+    {
+        f32 a  = step * (f32)i;
+        f32 nx = cx + cosf( a ) * r;
+        f32 ny = cy + sinf( a ) * r;
+        draw_push_triangle( cx, cy, px, py, nx, ny, 0, abgr );
+        px = nx; py = ny;
+    }
 }
 
 /*----------------------------------------------------------------------------------------------

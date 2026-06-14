@@ -220,6 +220,38 @@ typedef enum
 } imgui_win_flags_t;
 
 /*==============================================================================================
+    Item flags
+
+    A push-model of per-item behavior tweaks, the ImGui ItemFlags analogue.  Instead of widening
+    every widget signature with a new parameter, behavior is tuned through a flag set the widget
+    reads at emit time, so a feature can be added without touching any call site.
+
+    Two layers merge into the flags a widget sees:
+
+      Stack    -- push_item_flag( flag, enable ) / pop_item_flag(): affects every widget until
+                  popped (disable a run of buttons, mark a section read-only).  Nests; pop restores.
+      Next     -- next_item_flag( flag, enable ): a one-shot override consumed by the very next
+                  widget only, no pop needed.  Overrides the stack for that one item (it can force
+                  a bit off even when the stack has it on).
+
+    The merged value is resolved once per widget; a widget that does not care about a given flag
+    simply ignores it, so unknown / future flags are inert by construction.  Bit values so several
+    can be combined; 0 (IMGUI_ITEM_NONE) is the default no-op set.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_ITEM_NONE     = 0,         /* no tweaks -- the default behavior */
+    IMGUI_ITEM_DISABLED = 1 << 0,    /* inert + dimmed: no hover/active/focus/click, drawn at
+                                        reduced opacity.  Honored uniformly by widget_behavior and
+                                        the draw list, so it applies to every widget at once. */
+
+ /* Room to grow without disturbing call sites or the vtable -- e.g. a future
+    IMGUI_ITEM_READ_ONLY (editable widgets show but reject input), IMGUI_ITEM_NO_NAV, etc. */
+
+} imgui_item_flags_t;
+
+/*==============================================================================================
     Debug overlay layers
 
     Bitmask passed to imgui()->debug_set_layers().  Each bit enables one bolt-on debug

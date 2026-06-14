@@ -56,7 +56,94 @@ static struct
     imgui_rect_t clip_rect;   // active interaction clip -- widget hover is gated by it
     bool         wheel_used;  // a region consumed the wheel this frame (innermost wins)
 
+    /* Item flags -- the push-model behavior set a widget reads at emit time (see imgui_item_flags_t).
+       item_flags is the merged top of the push/pop stack; next_set / next_val are the one-shot
+       override for the next widget (which bits it controls + their values); cur_item_flags is the
+       value resolved for the widget currently being emitted, latched by item_flags_resolve and read
+       by widget_behavior and the widgets.  All reset to 0 each frame. */
+
+    imgui_item_flags_t item_flags;       // merged top-of-stack item flags
+    imgui_item_flags_t next_set;         // bits the next-item override controls
+    imgui_item_flags_t next_val;         // their values
+    imgui_item_flags_t cur_item_flags;   // flags resolved for the item being emitted
+
 } s_ctx;
+
+/*----------------------------------------------------------------------------------------------
+    Item-flag stack
+
+    push_item_flag saves the current merged value here and pop_item_flag restores it, so a push
+    nests cleanly regardless of which bits it touched.  An over-deep push aliases the top slot and
+    is still counted truthfully, mirroring the id / layout stacks, so push/pop stay paired.
+----------------------------------------------------------------------------------------------*/
+
+#define IMGUI_ITEM_FLAG_DEPTH 16
+
+static imgui_item_flags_t s_item_flag_stack[ IMGUI_ITEM_FLAG_DEPTH ];
+static u32                s_item_flag_sp;
+
+/* Disabled items draw at this opacity (the rest of the dim is in the draw list's global alpha). */
+#define IMGUI_DISABLED_ALPHA 0.5f
+
+/* Push: save the current merged flags, then set or clear `flag` in the live set. */
+static void
+item_flag_push( imgui_item_flags_t flag, bool enable )
+{
+    if ( s_item_flag_sp < IMGUI_ITEM_FLAG_DEPTH )
+        s_item_flag_stack[ s_item_flag_sp ] = s_ctx.item_flags;
+    ++s_item_flag_sp;    /* count truthfully so push/pop stay paired even past the cap */
+
+    if ( enable ) s_ctx.item_flags |=  flag;
+    else          s_ctx.item_flags &= ~flag;
+}
+
+/* Pop: restore the merged flags saved by the matching push. */
+static void
+item_flag_pop( void )
+{
+    if ( s_item_flag_sp == 0 ) return;
+    --s_item_flag_sp;
+    u32 i = s_item_flag_sp < IMGUI_ITEM_FLAG_DEPTH ? s_item_flag_sp : IMGUI_ITEM_FLAG_DEPTH - 1;
+    s_ctx.item_flags = s_item_flag_stack[ i ];
+}
+
+/* Next-item override: mark `flag` as controlled for the next widget, with its on/off value.
+   Consumed (and cleared) by item_flags_resolve when that widget emits -- no pop needed. */
+static void
+item_flag_next( imgui_item_flags_t flag, bool enable )
+{
+    s_ctx.next_set |= flag;
+    if ( enable ) s_ctx.next_val |=  flag;
+    else          s_ctx.next_val &= ~flag;
+}
+
+/* Resolve the flags for the item now emitting: the stack value with the one-shot next-item override
+   applied over it (the override wins on the bits it controls), then clear the override.  Latches the
+   result for widget_behavior / widgets to read, and sets the draw alpha so a disabled item dims with
+   no per-widget code.  Called once per item from widget_next_rect_w (the universal emit seam). */
+static imgui_item_flags_t
+item_flags_resolve( void )
+{
+    imgui_item_flags_t f = ( s_ctx.item_flags & ~s_ctx.next_set ) | ( s_ctx.next_val & s_ctx.next_set );
+    s_ctx.next_set = 0;
+    s_ctx.next_val = 0;
+    s_ctx.cur_item_flags = f;
+
+    draw_set_alpha( ( f & IMGUI_ITEM_DISABLED ) ? IMGUI_DISABLED_ALPHA : 1.0f );
+    return f;
+}
+
+/* Clear the per-item state before chrome runs.  Window/child borders, scrollbars, titlebars, and
+   the collapse arrow are not items -- they never go through widget_next_rect_w, so without this they
+   would inherit whatever the last body widget latched (a disabled trailing widget would dim the
+   border and deaden the scrollbar).  Called at the chrome seams (begin/end_window, begin_child,
+   layout_pop_region) so chrome always interacts undisabled and paints opaque. */
+static void
+item_flags_chrome_reset( void )
+{
+    s_ctx.cur_item_flags = IMGUI_ITEM_NONE;
+    draw_set_alpha( 1.0f );
+}
 
 /*----------------------------------------------------------------------------------------------
     Layout-frame stack
@@ -75,7 +162,7 @@ static struct
 
 typedef struct
 {
-    f32 cursor_x, cursor_y;     // layout pen, top-left of the next widget (scroll-biased)
+    f32 cursor_x,  cursor_y;    // layout pen, top-left of the next widget (scroll-biased)
     f32 content_x, content_w;   // widget-row left edge + available width
     f32 content_max_x;          // rightmost edge reached this frame -- drives hscroll
 
@@ -85,6 +172,7 @@ typedef struct
        stack needs no layout call.  See imgui_layout_t in imgui.h for the unit rule. */
 
     imgui_layout_mode_t mode;                    // declared next-item methodology; NONE until a header
+
     u32         lay_ncols;                       // column count
     f32         lay_row_h;                       // flow row height: 0 = auto, >0 = pixels
     f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
@@ -387,6 +475,13 @@ ctx_new_frame( void )
     s_layout_sp       = 0;
     s_id_sp           = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_ctx.wheel_used  = false;
+
+    /* Fresh item-flag state each frame: empty stack, no next-item override, nothing disabled. */
+    s_item_flag_sp       = 0;
+    s_ctx.item_flags     = IMGUI_ITEM_NONE;
+    s_ctx.next_set       = IMGUI_ITEM_NONE;
+    s_ctx.next_val       = IMGUI_ITEM_NONE;
+    s_ctx.cur_item_flags = IMGUI_ITEM_NONE;
     s_ctx.clip_rect   = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++s_frame_counter;
 

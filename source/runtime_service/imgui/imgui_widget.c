@@ -167,6 +167,72 @@ imgui_checkbox( const char* label, bool* v )
 }
 
 /*----------------------------------------------------------------------------------------------
+    radio_button -- one option of a mutually-exclusive set.  `v` holds the selected value and
+    `value` is the one this button stands for: the button shows "on" while *v == value, and a click
+    sets *v = value.  Emit several against the same v (commonly with same_line between them) to form
+    a radio group; returns true only on the frame a click changes the selection.
+
+        static i32 e = 0;
+        imgui()->radio_button( "a", &e, 0 ); imgui()->same_line( -1 );
+        imgui()->radio_button( "b", &e, 1 ); imgui()->same_line( -1 );
+        imgui()->radio_button( "c", &e, 2 );
+
+    The round sibling of checkbox: the same cell split (indicator in the control track, label
+    trailing) and the same natural width, but a disc indicator -- a border ring, a hover-tinted
+    well, and a filled centre dot when selected -- instead of the square box + check. */
+
+bool
+imgui_radio_button( const char* label, i32* v, i32 value )
+{
+    imgui_id_t   id = widget_id( label );
+
+    /* Natural width = disc + gap + label, so a same_line radio shrinks to fit (a group on one row). */
+    imgui_rect_t r  = widget_next_rect_w( CHECKBOX_SZ + WIDGET_PAD + label_width( label ), WIDGET_H );
+
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+
+    /* Same label/control split as checkbox: the disc sits at the start of the control track. */
+    f32          label_x, label_w;
+    imgui_rect_t control;
+    f32          bx;
+    if ( field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control ) )
+    {
+        bx = control.x;
+    }
+    else
+    {
+        bx      = r.x;
+        label_x = bx + CHECKBOX_SZ + WIDGET_PAD;   /* default: label just right of the disc */
+        label_w = ( r.x + r.w ) - label_x;         /* trails to the cell's right edge        */
+    }
+
+    /* Disc centred in a CHECKBOX_SZ box, vertically centred in the row. */
+    f32 by  = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, IMGUI_ALIGN_VCENTER ).y;
+    f32 cx  = bx + CHECKBOX_SZ * 0.5f;
+    f32 cy  = by + CHECKBOX_SZ * 0.5f;
+    f32 rad = CHECKBOX_SZ * 0.5f;
+
+    const u32 segs = 16;   /* facets -- round at widget sizes */
+    bool      on   = ( v && *v == value );
+
+    /* Border ring, then the well (hover/active tinted like a button knob), then the selected dot. */
+    draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER );
+    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, widget_bg_color( st ) );
+    if ( on )
+        draw_push_circle_filled( cx, cy, rad - (f32)s_layout.checkmark_pad, segs, COL_CHECK_MARK );
+
+    draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, label_w );
+
+    bool changed = false;
+    if ( st.clicked && v && *v != value )
+    {
+        *v      = value;
+        changed = true;
+    }
+    return changed;
+}
+
+/*----------------------------------------------------------------------------------------------
     slider_float -- draggable horizontal slider; returns true while dragging
 ----------------------------------------------------------------------------------------------*/
 

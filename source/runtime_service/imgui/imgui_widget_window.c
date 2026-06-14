@@ -337,6 +337,10 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
        windows back-to-front regardless of begin_window call order. */
     draw_set_sort_key( win->z );
 
+    /* Window chrome (background, titlebar, border) is not an item: clear any disabled latch a prior
+       window's trailing widget left, so this window paints opaque and its chrome interacts. */
+    item_flags_chrome_reset();
+
     /* Commit window chrome state for the widgets and end_window.  The layout pen, content
        column, scroll, and scrollbars are all owned by the body region opened below -- the
        window no longer resolves any of that itself; it is just the root region plus chrome. */
@@ -399,6 +403,11 @@ void
 imgui_end_window( void )
 {
     imgui_window_t* win = s_ctx.cur_win;
+
+    /* Chrome below (scrollbars via layout_pop_region, collapse arrow, border, size grip) is not an
+       item.  layout_pop_region resets too, but a collapsed window opens no region and skips it, so
+       reset here to cover that case and the deferred chrome either way. */
+    item_flags_chrome_reset();
 
     /* Close the body scroll region (expanded only -- a collapsed window opened none).  This
        measures the content extent, pops the inner content clip, draws the scrollbars, and

@@ -502,6 +502,11 @@ widget_next_rect_w( f32 natural_w, f32 h )
 {
     layout_frame_t* f = lf();
 
+    /* An item is being emitted: resolve its flags (stack + the one-shot next-item override) and
+       latch them for widget_behavior / the widget to read.  This is the single per-item seam every
+       widget passes through, so the push-model needs no plumbing at the individual call sites. */
+    item_flags_resolve();
+
     /* Emit-before-header guard: a region opens UNDECLARED (mode NONE), and the first layout header
        names the mode.  A widget emitted before any header is a usage error -- assert in debug so it
        is caught at the call site, and fall back to a stack in release so a shipped build degrades
@@ -684,6 +689,13 @@ static widget_state_t
 widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 {
     widget_state_t st = { 0 };
+
+    /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
+       state here is the one place that suppresses interaction for every widget, the behavioral half
+       of IMGUI_ITEM_DISABLED (the visual dim is the draw list's global alpha, set at resolve).  The
+       flags were latched by widget_next_rect_w just before this call. */
+    if ( s_ctx.cur_item_flags & IMGUI_ITEM_DISABLED )
+        return st;
 
     /* Hot only when this widget belongs to the window the cursor is over (hover_win,
        resolved last frame).  Widgets in any other window short-circuit before rect_hit,

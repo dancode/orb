@@ -253,6 +253,10 @@ layout_pop_region( void )
 {
     layout_frame_t* f = lf();
 
+    /* Chrome (the scrollbars below) is not an item: drop any disabled latch a trailing body widget
+       left so the bars interact and paint normally. */
+    item_flags_chrome_reset();
+
     /* Content extent = how far the pen travelled from the unscrolled origin (add the scroll
        back to cancel the bias).  Stored for next frame's gutter decision + knob proportions. */
     f32 content_h = ( f->cursor_y      + *f->scroll_y ) - f->origin_y;
@@ -364,6 +368,10 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 
         box = ( imgui_rect_t ){ parent->content_x, parent->cursor_y, w, h };
     }
+
+    /* The child box is chrome, not an item: paint its frame opaque even if a disabled widget
+       precedes the begin_child call. */
+    item_flags_chrome_reset();
 
     /* Child body fill, drawn under the parent clip before the region clips in.  The border is
        deferred to end_child (after the scrollbars) so the bar tracks cannot overdraw it -- the
@@ -859,6 +867,26 @@ imgui_unindent( f32 w )
 void imgui_push_id    ( const char* str ) { id_push( id_combine( id_seed(), id_hash( str ) ) ); }
 void imgui_push_id_int( i32 i )           { id_push( id_combine( id_seed(), (u32)i ) ); }
 void imgui_pop_id     ( void )            { id_pop(); }
+
+/*----------------------------------------------------------------------------------------------
+    push_item_flag / pop_item_flag / next_item_flag -- the push-model per-item behavior set.
+
+    push/pop affect every widget until popped (and nest); next_item_flag is a one-shot override the
+    very next widget consumes, no pop needed.  The merged value is resolved once per widget at emit
+    time and read by widget_behavior / the widget, so a new flag never touches a call site or the
+    vtable layout consumers see.  See imgui_item_flags_t in imgui.h for the model and the flags.
+
+        imgui()->push_item_flag( IMGUI_ITEM_DISABLED, true );
+        imgui()->button( "Off A" );  imgui()->button( "Off B" );   // both disabled
+        imgui()->pop_item_flag();
+
+        imgui()->next_item_flag( IMGUI_ITEM_DISABLED, true );
+        imgui()->button( "Only this one is disabled" );
+----------------------------------------------------------------------------------------------*/
+
+void imgui_push_item_flag( imgui_item_flags_t flag, bool enable ) { item_flag_push( flag, enable ); }
+void imgui_pop_item_flag ( void )                                 { item_flag_pop(); }
+void imgui_next_item_flag( imgui_item_flags_t flag, bool enable ) { item_flag_next( flag, enable ); }
 
 // clang-format on
 /*============================================================================================*/

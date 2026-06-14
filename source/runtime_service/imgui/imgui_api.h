@@ -253,6 +253,23 @@ typedef struct imgui_api_s
     void ( *push_id_int )( i32 i );
     void ( *pop_id      )( void );
 
+    /* Item flags -- the push-model per-item behavior set (imgui_item_flags_t).  push/pop tune every
+       widget until popped (and nest); next_item_flag is a one-shot override the very next widget
+       consumes, no pop needed.  The mechanism is callsite-free: widgets read the resolved flags at
+       emit time, so a new flag never changes a widget signature.  IMGUI_ITEM_DISABLED is honored
+       for every widget today (inert + dimmed).
+
+           imgui()->push_item_flag( IMGUI_ITEM_DISABLED, true );
+           imgui()->button( "A" );  imgui()->button( "B" );    // both disabled
+           imgui()->pop_item_flag();
+
+           imgui()->next_item_flag( IMGUI_ITEM_DISABLED, true );
+           imgui()->button( "Only this one" );                 // disabled, no pop needed */
+
+    void ( *push_item_flag )( imgui_item_flags_t flag, bool enable );
+    void ( *pop_item_flag  )( void );
+    void ( *next_item_flag )( imgui_item_flags_t flag, bool enable );
+
     /* set_window_drag() -- select how windows may be dragged (global default TITLEBAR).
        Call between frames; affects every window. */
     void ( *set_window_drag )( imgui_win_drag_t mode );
@@ -267,6 +284,11 @@ typedef struct imgui_api_s
     void ( *bullet_text )( const char* str );
     bool ( *button      )( const char* label );
     bool ( *checkbox    )( const char* label, bool* v );
+
+    /* radio_button -- one option of a mutually-exclusive set: shows on while *v == value, a click
+       sets *v = value.  Emit several against the same v (same_line between them for a row) to form
+       a group; returns true only on the frame a click changes the selection. */
+    bool ( *radio_button )( const char* label, i32* v, i32 value );
     bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );
     bool ( *input_text  )( const char* label, char* buf, u32 bufsz );
 
