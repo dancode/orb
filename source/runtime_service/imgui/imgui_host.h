@@ -96,6 +96,10 @@ bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
 bool imgui_selectable( const char* label, bool* selected );
 bool imgui_collapsing_header( const char* label );
+bool imgui_tree_node( const char* label );
+void imgui_tree_pop( void );
+void imgui_indent( f32 w );
+void imgui_unindent( f32 w );
 void imgui_separator_text( const char* label );
 
 void imgui_set_font      ( imgui_font_t font );

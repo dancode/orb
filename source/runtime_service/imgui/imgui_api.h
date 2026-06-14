@@ -282,6 +282,25 @@ typedef struct imgui_api_s
     bool ( *collapsing_header )( const char* label );
     void ( *separator_text    )( const char* label );
 
+    /* tree_node / tree_pop -- a collapsing_header without the frame: an arrow + label row that
+       folds and indents a nested block while open (file explorers, outline views).  Guard the body
+       with the return and, when true, close it with tree_pop, which removes the indent the open
+       node added:
+
+           if ( imgui()->tree_node( "Parent" ) )
+           {
+               imgui()->text( "Child" );
+               imgui()->tree_pop();
+           }
+
+       indent / unindent -- shift the content column right (or back) by w pixels (w <= 0 = one row
+       height) so a block of widgets lays out inset; the mechanism behind tree_node, usable alone.
+       Balance every indent with an unindent of the same width.  Flow layouts only. */
+    bool ( *tree_node )( const char* label );
+    void ( *tree_pop  )( void );
+    void ( *indent    )( f32 w );
+    void ( *unindent  )( f32 w );
+
     /* Font -- select the active font; call between frames (outside new_frame / render).
        set_font()      -- select a built-in bitmap font; also unloads any active TrueType font.
                          Widget layout dimensions are recomputed from the new font's char_h.

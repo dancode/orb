@@ -89,6 +89,7 @@ typedef struct
     f32         lay_row_h;                       // flow row height: 0 = auto, >0 = pixels
     f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
     u32         lay_nrows;                       // row count; 0 => flow mode, else grid
+    f32         lay_cols[ IMGUI_LAYOUT_COLS ];   // source column units, kept so indent can re-resolve
 
     /* Field split (field_split / field_label_left): a labeled value widget splits its cell into a
        label track + a control track, resolved with the column unit rule.  side 0 = off (the

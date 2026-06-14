@@ -811,6 +811,43 @@ imgui_content_avail( void )
 }
 
 /*----------------------------------------------------------------------------------------------
+    indent / unindent -- shift the active region's content column right (or back), so subsequent
+    rows lay out inset.  The single mechanism behind tree_node's nesting, but usable on its own to
+    inset any block of widgets.  w <= 0 uses the standard step (one row height, so a tree child
+    lines up under its parent's label, past the fold arrow).  Finishes any open row first, moves
+    the pen to the new column edge, and re-resolves the flow template against the narrowed width;
+    always balance an indent with an unindent of the same width.  Flow layouts (stack / columns)
+    only -- a grid / pack carries its own resolved geometry and ignores the reflow.
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_indent( f32 w )
+{
+    layout_frame_t* f = lf();
+    if ( w <= 0.0f ) w = WIDGET_H;       /* default step: one row height (aligns under the arrow) */
+
+    layout_row_break( f );               /* close the current row before shifting the column */
+    f->content_x += w;
+    f->content_w -= w;
+    if ( f->content_w < 0.0f ) f->content_w = 0.0f;
+    f->cursor_x   = f->content_x;
+    layout_reflow( f );
+}
+
+void
+imgui_unindent( f32 w )
+{
+    layout_frame_t* f = lf();
+    if ( w <= 0.0f ) w = WIDGET_H;
+
+    layout_row_break( f );
+    f->content_x -= w;
+    f->content_w += w;
+    f->cursor_x   = f->content_x;
+    layout_reflow( f );
+}
+
+/*----------------------------------------------------------------------------------------------
     push_id / pop_id -- add a temporary id-scope level for repeated widgets within one region.
 
     Widget ids are already region-seeded, so this is only needed to separate widgets that share a

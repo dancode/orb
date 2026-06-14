@@ -211,6 +211,7 @@ layout_set_default( layout_frame_t* f )
     f->lay_field_label   = 0.0f;
     f->lay_field_control = 0.0f;
     f->lay_align         = 0;             /* LEFT | TOP until align() / layout.align sets it */
+    f->lay_cols[ 0 ] = 1.0f;              /* single flex track, kept so indent can re-resolve */
     f->cellx[ 0 ]   = f->content_x;       /* one flex column == the whole content width */
     f->cellw[ 0 ]   = f->content_w;
     f->col          = 0;
@@ -234,10 +235,23 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
 
     f32 tracks[ IMGUI_LAYOUT_COLS ];
     f->lay_ncols = layout_copy_tracks( cols, tracks );
+    for ( u32 i = 0; i < f->lay_ncols; ++i ) f->lay_cols[ i ] = tracks[ i ];   /* kept for indent reflow */
     layout_resolve_tracks( tracks, f->lay_ncols, f->content_x, f->content_w, f->lay_gap_x,
                            f->cellx, f->cellw );
     f->col = 0;
     f->row = 0;
+}
+
+/* Re-resolve a flow template's cells from the current content column -- used after indent /
+   unindent shifts content_x / content_w so subsequent rows land at the new inset.  Flow only
+   (STACK / COLUMNS); a grid carries a pre-resolved matrix and a pack its own pen, neither of which
+   is re-indented mid-iteration, so they are left untouched. */
+static void
+layout_reflow( layout_frame_t* f )
+{
+    if ( f->mode == IMGUI_MODE_STACK || f->mode == IMGUI_MODE_COLUMNS )
+        layout_resolve_tracks( f->lay_cols, f->lay_ncols, f->content_x, f->content_w,
+                               f->lay_gap_x, f->cellx, f->cellw );
 }
 
 /* Install a grid template on the current frame.  cols x rows partition a bounded box -- from the

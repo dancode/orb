@@ -309,6 +309,59 @@ imgui_collapsing_header( const char* label )
 }
 
 /*----------------------------------------------------------------------------------------------
+    tree_node / tree_pop -- a collapsing_header without the frame: an arrow + label row that folds
+    a nested block and indents it while open.  The unframed sibling of collapsing_header (no filled
+    bar; it highlights only on hover, so a tree reads as rows rather than stacked headers) and the
+    building block for file explorers / outline views.  Guard the body with the return and, when it
+    is true, close it with tree_pop -- which removes exactly the indent the open node added:
+
+        if ( imgui()->tree_node( "Parent" ) )
+        {
+            imgui()->text( "Child" );
+            if ( imgui()->tree_node( "Nested" ) ) { imgui()->text( "Deep" ); imgui()->tree_pop(); }
+            imgui()->tree_pop();
+        }
+
+    Open state persists per id in the keyed pool, like collapsing_header.  The indent step is one
+    row height, so a child's content lines up under the parent label just past the fold arrow. */
+
+bool
+imgui_tree_node( const char* label )
+{
+    imgui_id_t   id = widget_id( label );
+    imgui_rect_t r  = widget_next_rect( WIDGET_H );
+
+    imgui_header_state_t* hs = IMGUI_STATE( imgui_header_state_t, id );
+
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    if ( st.clicked ) hs->open = !hs->open;
+
+    /* No framed bar: tint only on hover / active (like selectable), so a tree is a list of rows. */
+    if ( st.hover || st.active )
+        draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
+
+    imgui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* fold arrow in a square at the left */
+    draw_collapse_arrow( arrow, !hs->open, COL_TEXT );    /* closed -> points right */
+
+    f32 label_x = r.x + r.h;
+    draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, ( r.x + r.w ) - label_x );
+    widget_track_width( label_x + label_width( label ) );   /* natural width may exceed the row */
+
+    /* Indent the body while open; tree_pop removes the matching step.  Done here so children land
+       inset the instant the caller starts emitting them under the true return. */
+    if ( hs->open )
+        imgui_indent( WIDGET_H );
+
+    return hs->open;
+}
+
+void
+imgui_tree_pop( void )
+{
+    imgui_unindent( WIDGET_H );
+}
+
+/*----------------------------------------------------------------------------------------------
     Spacers -- cell-consuming widgets that emit no interaction.
 
     Each takes the next cell from the active template exactly like a real widget, so they compose
