@@ -270,6 +270,25 @@ typedef struct imgui_api_s
     void ( *pop_item_flag  )( void );
     void ( *next_item_flag )( imgui_item_flags_t flag, bool enable );
 
+    /* Style stacks -- the push-model theme override (imgui_col_t colors, imgui_style_var_t metrics).
+       push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
+       overrides for just the next widget, no pop.  Colors are abgr (IMGUI_COLOR); vars are f32 px.
+       Like the item flags, this is callsite-free: every widget already reads the palette + metrics
+       through the resolver, so an override reaches them without any widget change.
+
+           imgui()->push_style_color( IMGUI_COL_WIDGET_BG, IMGUI_COLOR( 0xFF, 0, 0, 0xFF ) );
+           imgui()->push_style_var( IMGUI_VAR_WIDGET_PAD, 20.0f );
+           imgui()->button( "Big Red" );
+           imgui()->pop_style_var( 1 );
+           imgui()->pop_style_color( 1 ); */
+
+    void ( *push_style_color )( imgui_col_t slot, u32 abgr );
+    void ( *pop_style_color  )( u32 count );
+    void ( *next_style_color )( imgui_col_t slot, u32 abgr );
+    void ( *push_style_var   )( imgui_style_var_t var, f32 value );
+    void ( *pop_style_var    )( u32 count );
+    void ( *next_style_var   )( imgui_style_var_t var, f32 value );
+
     /* set_window_drag() -- select how windows may be dragged (global default TITLEBAR).
        Call between frames; affects every window. */
     void ( *set_window_drag )( imgui_win_drag_t mode );
@@ -282,7 +301,18 @@ typedef struct imgui_api_s
     void ( *text        )( const char* str );
     void ( *textf       )( const char* fmt, ... );
     void ( *bullet_text )( const char* str );
+
+    /* label_text -- a read-only "value + label" row that lays out like the labeled value widgets
+       (label track / control track under a form or field_split, trailing label otherwise) but is
+       pure display.  For information rows that align with the editable widgets around them. */
+    void ( *label_text  )( const char* label, const char* value );
     bool ( *button      )( const char* label );
+
+    /* arrow_button -- a square, framed, non-text button drawing a triangle pointing `dir`.  The id
+       comes from the label (use a "##id" string, nothing is displayed).  Combine with
+       push_item_flag( IMGUI_ITEM_BUTTON_REPEAT, true ) for press-and-hold stepping (spin buttons). */
+    bool ( *arrow_button )( const char* id_str, imgui_dir_t dir );
+
     bool ( *checkbox    )( const char* label, bool* v );
 
     /* radio_button -- one option of a mutually-exclusive set: shows on while *v == value, a click

@@ -23,14 +23,17 @@
     Layout accessors  (read from s_layout, computed by layout_compute() in imgui.c)
 ----------------------------------------------------------------------------------------------*/
 
-#define WIDGET_H      ( (f32)s_layout.line_size     )
-#define WIDGET_GAP    ( (f32)s_layout.widget_gap    )
-#define WIDGET_PAD    ( (f32)s_layout.widget_pad    )
-#define WIN_TITLE_H   ( (f32)s_layout.win_title_h   )
-#define WIN_BORDER    ( (f32)s_layout.win_border    )
-#define CHECKBOX_SZ   ( (f32)s_layout.checkbox_sz   )
-#define SLIDER_KNOB_W ( (f32)s_layout.slider_knob_w )
-#define WIDGET_MIN_W  ( (f32)s_layout.min_cell_w    )
+/* Each resolves through style_var (imgui_style.c): the font-derived base with any push_style_var /
+   next_style_var override applied, so every read here honors the style stacks with no call-site
+   change.  See imgui_style_var_t for the slots. */
+#define WIDGET_H      style_var( IMGUI_VAR_LINE_SIZE     )
+#define WIDGET_GAP    style_var( IMGUI_VAR_WIDGET_GAP    )
+#define WIDGET_PAD    style_var( IMGUI_VAR_WIDGET_PAD    )
+#define WIN_TITLE_H   style_var( IMGUI_VAR_WIN_TITLE_H   )
+#define WIN_BORDER    style_var( IMGUI_VAR_WIN_BORDER    )
+#define CHECKBOX_SZ   style_var( IMGUI_VAR_CHECKBOX_SZ   )
+#define SLIDER_KNOB_W style_var( IMGUI_VAR_SLIDER_KNOB_W )
+#define WIDGET_MIN_W  style_var( IMGUI_VAR_MIN_CELL_W    )
 
 /* Default region padding (the inset every window body / child opens with): pad columns by
    WIDGET_PAD left and right, offset the first row by WIDGET_GAP, no bottom reserve. */
@@ -40,22 +43,26 @@
     Color palette (IMGUI_COLOR: byte order R,G,B,A in memory = ABGR u32)
 ----------------------------------------------------------------------------------------------*/
 
-#define COL_WIN_BG       IMGUI_COLOR( 0x24, 0x24, 0x24, 0xE8 )
-#define COL_CHILD_BG     IMGUI_COLOR( 0x1C, 0x1C, 0x1C, 0xFF )   /* child region body, inset darker than the window */
-#define COL_TITLE_BG     IMGUI_COLOR( 0x10, 0x60, 0xA0, 0xFF )
-#define COL_BORDER       IMGUI_COLOR( 0x80, 0x80, 0x80, 0xFF )
-#define COL_TEXT         IMGUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF )
-#define COL_TEXT_DIM     IMGUI_COLOR( 0xA0, 0xA0, 0xA0, 0xFF )
-#define COL_WIDGET_BG    IMGUI_COLOR( 0x40, 0x40, 0x40, 0xFF )
-#define COL_WIDGET_HOT   IMGUI_COLOR( 0x50, 0x80, 0xB0, 0xFF )
-#define COL_WIDGET_ACT   IMGUI_COLOR( 0x30, 0x60, 0x90, 0xFF )
-#define COL_WIDGET_FG    IMGUI_COLOR( 0x20, 0x90, 0xD0, 0xFF )
-#define COL_CHECK_MARK   IMGUI_COLOR( 0x20, 0xC0, 0x60, 0xFF )
-#define COL_SLIDER_TRACK IMGUI_COLOR( 0x30, 0x30, 0x30, 0xFF )
-#define COL_RESIZE_HOT   IMGUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF )   /* bold edge line when a resize border is hot */
-#define COL_INPUT_BG     IMGUI_COLOR( 0x38, 0x38, 0x38, 0xFF )
-#define COL_INPUT_FOCUS  IMGUI_COLOR( 0x20, 0x50, 0x70, 0xFF )
-#define COL_CURSOR       IMGUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF )
+/* Each resolves through style_col (imgui_style.c): the theme default with any push_style_color /
+   next_style_color override applied.  The defaults themselves live in k_col_default there; these
+   names stay so every existing draw site keeps reading COL_* while gaining override support.
+   See imgui_col_t for the slots. */
+#define COL_WIN_BG       style_col( IMGUI_COL_WINDOW_BG    )
+#define COL_CHILD_BG     style_col( IMGUI_COL_CHILD_BG     )
+#define COL_TITLE_BG     style_col( IMGUI_COL_TITLE_BG     )
+#define COL_BORDER       style_col( IMGUI_COL_BORDER       )
+#define COL_TEXT         style_col( IMGUI_COL_TEXT         )
+#define COL_TEXT_DIM     style_col( IMGUI_COL_TEXT_DIM     )
+#define COL_WIDGET_BG    style_col( IMGUI_COL_WIDGET_BG    )
+#define COL_WIDGET_HOT   style_col( IMGUI_COL_WIDGET_HOT   )
+#define COL_WIDGET_ACT   style_col( IMGUI_COL_WIDGET_ACT   )
+#define COL_WIDGET_FG    style_col( IMGUI_COL_WIDGET_FG    )
+#define COL_CHECK_MARK   style_col( IMGUI_COL_CHECK_MARK   )
+#define COL_SLIDER_TRACK style_col( IMGUI_COL_SLIDER_TRACK )
+#define COL_RESIZE_HOT   style_col( IMGUI_COL_RESIZE_HOT   )
+#define COL_INPUT_BG     style_col( IMGUI_COL_INPUT_BG     )
+#define COL_INPUT_FOCUS  style_col( IMGUI_COL_INPUT_FOCUS  )
+#define COL_CURSOR       style_col( IMGUI_COL_CURSOR       )
 
 /*----------------------------------------------------------------------------------------------
     Layout cursor helpers
@@ -327,6 +334,25 @@ draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
     else
         /* pointing down:   \/  */
         draw_push_triangle( cx - s, cy - s, cx + s, cy - s, cx, cy + s, 0, color );
+}
+
+/* Directional arrow glyph: a filled triangle pointing `dir`, centered in `box`.  The four-way
+   generalization of draw_collapse_arrow, used by arrow_button (and reusable for combo / spinner
+   chrome).  Same half-extent sizing so an arrow button matches the collapse / header arrows. */
+static void
+draw_arrow( imgui_rect_t box, imgui_dir_t dir, u32 color )
+{
+    f32 cx = box.x + box.w * 0.5f;
+    f32 cy = box.y + box.h * 0.5f;
+    f32 s  = floorf( box.h * 0.22f );   /* triangle half-extent */
+
+    switch ( dir )
+    {
+        case IMGUI_DIR_LEFT:  draw_push_triangle( cx - s, cy,     cx + s, cy - s, cx + s, cy + s, 0, color ); break;
+        case IMGUI_DIR_RIGHT: draw_push_triangle( cx + s, cy,     cx - s, cy - s, cx - s, cy + s, 0, color ); break;
+        case IMGUI_DIR_UP:    draw_push_triangle( cx,     cy - s, cx - s, cy + s, cx + s, cy + s, 0, color ); break;
+        case IMGUI_DIR_DOWN:  draw_push_triangle( cx,     cy + s, cx - s, cy - s, cx + s, cy - s, 0, color ); break;
+    }
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -681,6 +707,36 @@ typedef struct
 
 } widget_state_t;
 
+/* Auto-repeat cadence for a held button (IMGUI_ITEM_BUTTON_REPEAT): the pause before the first
+   repeat, then the interval between repeats.  Seconds; matches the familiar key-repeat feel. */
+#define REPEAT_DELAY 0.30f
+#define REPEAT_RATE  0.05f
+
+/* One tick of the held-button repeat clock (state in s_ctx, since only one widget is active at a
+   time).  Fires immediately on the press frame, then again once repeat_t crosses the initial delay
+   and thereafter each rate interval.  Returns true on a fire frame; the caller routes it to
+   st.clicked.  Subtracting the threshold (vs zeroing) keeps the cadence steady across uneven dt. */
+static bool
+widget_repeat_tick( bool pressed )
+{
+    if ( pressed )
+    {
+        s_ctx.repeat_t  = 0.0f;
+        s_ctx.repeat_on = false;   /* the next fire waits the longer initial delay */
+        return true;               /* press itself is the first fire */
+    }
+
+    s_ctx.repeat_t += s_io.dt;
+    f32 thresh = s_ctx.repeat_on ? REPEAT_RATE : REPEAT_DELAY;
+    if ( s_ctx.repeat_t >= thresh )
+    {
+        s_ctx.repeat_t -= thresh;
+        s_ctx.repeat_on = true;    /* past the delay -- switch to the faster rate */
+        return true;
+    }
+    return false;
+}
+
 /* Unified hover/active/focus/click state machine.  Call once per widget with the
    hit rect and the desired interaction kind; the returned flags are all a widget
    needs for drawing and value updates. */
@@ -726,6 +782,12 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     st.active  = ( s_ctx.active_id == id );
     st.focused = ( s_ctx.focused_id == id );
     st.clicked = s_io.mouse_released[ 0 ] && s_ctx.hover_id == id && s_ctx.active_id == id;
+
+    /* Auto-repeat (IMGUI_ITEM_BUTTON_REPEAT): while held with the cursor still over it, fire on the
+       press then repeatedly on the timed cadence -- replacing the release-click for this widget.
+       Gated on the cursor being over it so sliding off pauses the repeat, like a real spin button. */
+    if ( ( s_ctx.cur_item_flags & IMGUI_ITEM_BUTTON_REPEAT ) && st.active && s_ctx.hover_id == id )
+        st.clicked = widget_repeat_tick( st.pressed );
 
     /* Debug overlay: every interactive widget passes through here, so this one site captures
        the hit rects -- tinted by hover/active so the live interaction is visible.  Capture the

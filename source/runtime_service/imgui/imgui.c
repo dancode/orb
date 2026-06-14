@@ -10,6 +10,7 @@
         imgui_render.c  -- GPU flush: imgui_render_init/shutdown/flush
         imgui_debug.c   -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
         imgui_input.c   -- app->IO snapshot: input_update, s_io
+        imgui_style.c   -- style stacks: colors + metrics, style_col/style_var, push/pop/next
         imgui_ctx.c     -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
         imgui_window.c       -- persistent per-window state: imgui_window_t, window_get, drag mode
         imgui_widget_core.c  -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
@@ -198,6 +199,7 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 #include "runtime_service/imgui/imgui_render.c"
 #include "runtime_service/imgui/imgui_debug.c"
 #include "runtime_service/imgui/imgui_input.c"
+#include "runtime_service/imgui/imgui_style.c"
 #include "runtime_service/imgui/imgui_ctx.c"
 #include "runtime_service/imgui/imgui_window.c"
 #include "runtime_service/imgui/imgui_widget_core.c"

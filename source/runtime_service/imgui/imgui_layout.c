@@ -93,7 +93,7 @@ region_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
        min-then-cap order matters: a track shorter than the minimum collapses to track_len,
        so it is not folded into one clampf (whose bounds would invert). */
     f32 knob_len = ( content > 0.0f ) ? track_len * ( view / content ) : track_len;
-    f32 min_len  = (f32)s_layout.slider_knob_w;
+    f32 min_len  = SLIDER_KNOB_W;
     if ( knob_len < min_len )   knob_len = min_len;
     if ( knob_len > track_len ) knob_len = track_len;
     f32 travel = track_len - knob_len;
@@ -163,7 +163,7 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, i
     f->id_restore = s_id_sp;
     id_push( id );
 
-    const f32 knob = (f32)s_layout.slider_knob_w;
+    const f32 knob = SLIDER_KNOB_W;
 
     /* Policy: ALWAYS_* force a static bar; NOSCROLL hides every bar (wheel still works);
        otherwise dynamic -- vertical defaults on, horizontal only when HSCROLL is requested. */
@@ -887,6 +887,32 @@ void imgui_pop_id     ( void )            { id_pop(); }
 void imgui_push_item_flag( imgui_item_flags_t flag, bool enable ) { item_flag_push( flag, enable ); }
 void imgui_pop_item_flag ( void )                                 { item_flag_pop(); }
 void imgui_next_item_flag( imgui_item_flags_t flag, bool enable ) { item_flag_next( flag, enable ); }
+
+/*----------------------------------------------------------------------------------------------
+    push_style_color / push_style_var (+ pop / next) -- the push-model theme override.
+
+    push overrides a slot for every widget until the matching pop; pop takes a count, so two pushes
+    are undone with one pop_style_*( 2 ), mirroring ImGui.  next_style_* overrides a slot for just
+    the next widget, no pop needed.  Colors are abgr (IMGUI_COLOR); vars are f32 pixels.  The slots
+    are imgui_col_t / imgui_style_var_t.  See imgui_style.c for the resolution model.
+
+        imgui()->push_style_color( IMGUI_COL_WIDGET_BG,  IMGUI_COLOR( 0xFF,0,0,0xFF ) );  // red
+        imgui()->push_style_color( IMGUI_COL_WIDGET_HOT, IMGUI_COLOR( 0xFF,0x40,0x40,0xFF ) );
+        imgui()->button( "Red Button" );
+        imgui()->pop_style_color( 2 );                                                    // both
+
+        imgui()->push_style_var( IMGUI_VAR_WIDGET_PAD, 20.0f );
+        imgui()->button( "Roomy" );
+        imgui()->pop_style_var( 1 );
+----------------------------------------------------------------------------------------------*/
+
+void imgui_push_style_color( imgui_col_t slot, u32 abgr )       { style_push_color( slot, abgr ); }
+void imgui_pop_style_color ( u32 count )                        { style_pop_color( count ); }
+void imgui_next_style_color( imgui_col_t slot, u32 abgr )       { style_next_color( slot, abgr ); }
+
+void imgui_push_style_var( imgui_style_var_t var, f32 value )   { style_push_var( var, value ); }
+void imgui_pop_style_var ( u32 count )                          { style_pop_var( count ); }
+void imgui_next_style_var( imgui_style_var_t var, f32 value )   { style_next_var( var, value ); }
 
 // clang-format on
 /*============================================================================================*/

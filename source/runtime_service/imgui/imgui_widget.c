@@ -112,6 +112,37 @@ imgui_button( const char* label )
 }
 
 /*----------------------------------------------------------------------------------------------
+    arrow_button -- a small square button with a directional triangle instead of a text label.
+
+    The non-text button: same interaction and framed background as button(), but it draws an arrow
+    pointing `dir` and sizes to a square row-height cell (so a same_line pair sits snug, the spinner
+    layout).  Pass a label for the id only -- "##left" / "##right" -- since nothing is displayed.
+    Pairs naturally with the IMGUI_ITEM_BUTTON_REPEAT flag for press-and-hold stepping:
+
+        imgui()->push_item_flag( IMGUI_ITEM_BUTTON_REPEAT, true );
+        if ( imgui()->arrow_button( "##left",  IMGUI_DIR_LEFT  ) ) counter--;
+        imgui()->same_line( spacing );
+        if ( imgui()->arrow_button( "##right", IMGUI_DIR_RIGHT ) ) counter++;
+        imgui()->pop_item_flag();
+----------------------------------------------------------------------------------------------*/
+
+bool
+imgui_arrow_button( const char* id_str, imgui_dir_t dir )
+{
+    imgui_id_t   id = widget_id( id_str );
+
+    /* Square natural size (row height), so a same_line row of arrows packs tightly. */
+    imgui_rect_t r  = widget_next_rect_w( WIDGET_H, WIDGET_H );
+
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
+    draw_arrow( r, dir, COL_TEXT );
+
+    return st.clicked;
+}
+
+/*----------------------------------------------------------------------------------------------
     checkbox -- returns true when the value toggles
 ----------------------------------------------------------------------------------------------*/
 
@@ -244,7 +275,7 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 
     /* Track takes the left portion; the label sits at the right.  The min track width keeps the
        knob travel usable when the label is long. */
-    imgui_rect_t track_r = widget_split_label( r, label, (f32)( s_layout.slider_knob_w * 3u ), COL_TEXT );
+    imgui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
     widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
 
     /* Drag: update value when active. */
@@ -307,6 +338,31 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
 
     input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz );
     return res.enter;
+}
+
+/*----------------------------------------------------------------------------------------------
+    label_text -- a read-only "value + label" row, the display sibling of the labeled value widgets.
+
+    Lays out exactly like input_text / slider_float -- the label takes its side of the cell (its
+    track under a form / field_split, or trailing on the right by default) and the value sits where
+    the control would -- but nothing is interactive: it just presents information that lines up with
+    the editable rows around it.  The ImGui LabelText analogue.
+
+        imgui()->form( IMGUI_LABEL_LEFT, 90.0f );
+        imgui()->label_text( "Mode",   "Edit" );      // read-only rows...
+        imgui()->slider_float( "Gain", &gain, 0, 1 ); // ...aligned with editable ones
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_label_text( const char* label, const char* value )
+{
+    imgui_rect_t r       = widget_next_rect( WIDGET_H );
+    imgui_rect_t control = widget_split_label( r, label, 0.0f, COL_TEXT_DIM );
+
+    /* The value is the primary content: draw it where a control would sit, vertically centered and
+       fitted (ellipsized) to the track width.  Plain text -- no "##" grammar -- so it shows as-is. */
+    draw_text_fit_n( control.x, text_center_y( control.y, control.h ), COL_TEXT,
+                     value, 0xFFFFFFFFu, control.w );
 }
 
 /*----------------------------------------------------------------------------------------------

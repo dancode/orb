@@ -241,15 +241,97 @@ typedef enum
 
 typedef enum
 {
-    IMGUI_ITEM_NONE     = 0,         /* no tweaks -- the default behavior */
-    IMGUI_ITEM_DISABLED = 1 << 0,    /* inert + dimmed: no hover/active/focus/click, drawn at
+    IMGUI_ITEM_NONE          = 0,    /* no tweaks -- the default behavior */
+    IMGUI_ITEM_DISABLED      = 1 << 0, /* inert + dimmed: no hover/active/focus/click, drawn at
                                         reduced opacity.  Honored uniformly by widget_behavior and
                                         the draw list, so it applies to every widget at once. */
+    IMGUI_ITEM_BUTTON_REPEAT = 1 << 1, /* a held button fires repeatedly: once on press, then after
+                                        an initial delay at a steady rate (spinner / scroll arrows),
+                                        instead of once on release.  Honored by widget_behavior, so
+                                        any button-kind widget under the flag auto-repeats. */
 
  /* Room to grow without disturbing call sites or the vtable -- e.g. a future
     IMGUI_ITEM_READ_ONLY (editable widgets show but reject input), IMGUI_ITEM_NO_NAV, etc. */
 
 } imgui_item_flags_t;
+
+/*==============================================================================================
+    Direction -- a cardinal direction, the ImGuiDir analogue.  Passed to arrow_button (and any
+    future directional widget) to pick which way the glyph points.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_DIR_LEFT,
+    IMGUI_DIR_RIGHT,
+    IMGUI_DIR_UP,
+    IMGUI_DIR_DOWN,
+
+} imgui_dir_t;
+
+/*==============================================================================================
+    Style colors
+
+    The themeable color slots, the ImGuiCol_ analogue.  Each names one entry of the shared palette
+    the widgets draw from; push_style_color( slot, abgr ) overrides it for every widget until the
+    matching pop_style_color, next_style_color overrides it for just the next widget, and a slot
+    left unpushed uses the theme default.  Colors are packed with IMGUI_COLOR (byte order R,G,B,A).
+
+    The palette is shared rather than per-widget-type (one IMGUI_COL_WIDGET_BG, not Button +
+    Checkbox + ...), matching the engine's single-palette theme: to recolor one button, bracket it
+    with push/pop (only that button draws between them), or use next_style_color for a one-shot.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_COL_TEXT,           /* label / glyph text                          */
+    IMGUI_COL_TEXT_DIM,       /* secondary text (trailing labels)            */
+    IMGUI_COL_WINDOW_BG,      /* window body background                      */
+    IMGUI_COL_CHILD_BG,       /* child region background                     */
+    IMGUI_COL_TITLE_BG,       /* window title bar                            */
+    IMGUI_COL_BORDER,         /* window / widget outlines                    */
+    IMGUI_COL_WIDGET_BG,      /* idle widget body (button, checkbox, knob)   */
+    IMGUI_COL_WIDGET_HOT,     /* hovered widget body                         */
+    IMGUI_COL_WIDGET_ACT,     /* pressed / active widget body                */
+    IMGUI_COL_WIDGET_FG,      /* widget foreground accent (slider fill)      */
+    IMGUI_COL_CHECK_MARK,     /* checkbox tick / radio dot                   */
+    IMGUI_COL_SLIDER_TRACK,   /* slider + scrollbar track                    */
+    IMGUI_COL_RESIZE_HOT,     /* hot resize edge / size grip                 */
+    IMGUI_COL_INPUT_BG,       /* text input field background                 */
+    IMGUI_COL_INPUT_FOCUS,    /* focused text input field background         */
+    IMGUI_COL_CURSOR,         /* text input caret                           */
+
+    IMGUI_COL_COUNT,          /* slot count -- not a color                   */
+
+} imgui_col_t;
+
+/*==============================================================================================
+    Style vars
+
+    The tunable layout metrics, the ImGuiStyleVar_ analogue.  Each names one scalar pixel metric
+    the layout + widgets read; push_style_var( var, value ) overrides it until the matching
+    pop_style_var, next_style_var for just the next widget, and an unpushed var uses the
+    font-derived default (recomputed when the font changes).  Values are f32 pixels.
+
+    Only metrics that flow through the shared accessor are listed, so every slot here is honored
+    uniformly everywhere it is read; purely cosmetic internals (caret width, checkmark inset) are
+    intentionally left off rather than exposed as half-working knobs.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_VAR_LINE_SIZE,      /* widget row height (the frame height)        */
+    IMGUI_VAR_WIDGET_GAP,     /* gap between consecutive widgets / cells     */
+    IMGUI_VAR_WIDGET_PAD,     /* content padding inside a frame (FramePadding)*/
+    IMGUI_VAR_WIN_TITLE_H,    /* window title bar height                     */
+    IMGUI_VAR_WIN_BORDER,     /* window / widget outline thickness           */
+    IMGUI_VAR_CHECKBOX_SZ,    /* checkbox / radio indicator side             */
+    IMGUI_VAR_SLIDER_KNOB_W,  /* slider knob + scrollbar thickness           */
+    IMGUI_VAR_MIN_CELL_W,     /* min width a flex cell shrinks to            */
+
+    IMGUI_VAR_COUNT,          /* var count -- not a metric                   */
+
+} imgui_style_var_t;
 
 /*==============================================================================================
     Debug overlay layers

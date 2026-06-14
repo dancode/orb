@@ -25,6 +25,13 @@ static struct
     u8          active_button;  // which button holds active_id (0=left); reset to 0 on release
     imgui_id_t  focused_id;   // widget that owns keyboard input
 
+    /* Auto-repeat timing for the held button (IMGUI_ITEM_BUTTON_REPEAT).  Only one widget is active
+       at a time, so a single timer suffices: repeat_t accumulates held time since the last fire, and
+       repeat_on flips true once the initial delay has elapsed (switching to the faster rate).  Both
+       are reset on the press frame, so a new button starts its own cadence. */
+    f32         repeat_t;
+    bool        repeat_on;
+
     /* Window occlusion is resolved one frame deferred: the single window the cursor is
        over (front-most by z) is only known after every window has been submitted.  
        Each begin_window nominates itself into next_hover_win; ctx_new_frame promotes it to
@@ -129,6 +136,10 @@ item_flags_resolve( void )
     s_ctx.next_val = 0;
     s_ctx.cur_item_flags = f;
 
+    /* Same seam for the style stacks: promote any next_style_* override into the active per-item
+       layer so it applies for this widget's whole draw, then clears for the following one. */
+    style_item_commit();
+
     draw_set_alpha( ( f & IMGUI_ITEM_DISABLED ) ? IMGUI_DISABLED_ALPHA : 1.0f );
     return f;
 }
@@ -143,6 +154,7 @@ item_flags_chrome_reset( void )
 {
     s_ctx.cur_item_flags = IMGUI_ITEM_NONE;
     draw_set_alpha( 1.0f );
+    style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -482,6 +494,9 @@ ctx_new_frame( void )
     s_ctx.next_set       = IMGUI_ITEM_NONE;
     s_ctx.next_val       = IMGUI_ITEM_NONE;
     s_ctx.cur_item_flags = IMGUI_ITEM_NONE;
+
+    /* Fresh style stacks each frame: working set re-seeded from the theme, stacks + next cleared. */
+    style_new_frame();
     s_ctx.clip_rect   = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++s_frame_counter;
 

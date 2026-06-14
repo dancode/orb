@@ -91,10 +91,19 @@ void imgui_push_item_flag( imgui_item_flags_t flag, bool enable );
 void imgui_pop_item_flag( void );
 void imgui_next_item_flag( imgui_item_flags_t flag, bool enable );
 
+void imgui_push_style_color( imgui_col_t slot, u32 abgr );
+void imgui_pop_style_color( u32 count );
+void imgui_next_style_color( imgui_col_t slot, u32 abgr );
+void imgui_push_style_var( imgui_style_var_t var, f32 value );
+void imgui_pop_style_var( u32 count );
+void imgui_next_style_var( imgui_style_var_t var, f32 value );
+
 void imgui_text( const char* str );
 void imgui_textf( const char* fmt, ... );
 void imgui_bullet_text( const char* str );
+void imgui_label_text( const char* label, const char* value );
 bool imgui_button( const char* label );
+bool imgui_arrow_button( const char* id_str, imgui_dir_t dir );
 bool imgui_checkbox( const char* label, bool* v );
 bool imgui_radio_button( const char* label, i32* v, i32 value );
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
