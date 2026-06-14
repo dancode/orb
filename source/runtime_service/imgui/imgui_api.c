@@ -66,6 +66,8 @@ void imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
     imgui_debug_reset();         /* clear the overlay's per-frame geometry */
 #endif
     ctx_new_frame();             /* promotes last frame's hover_win */
+    popup_close_check();         /* stale-close + click-outside, BEFORE any user open_popup */
+    popup_apply_modal();         /* fence interaction behind an open modal (steals hover_win) */
     window_raise_on_press();     /* a press raises the hover window (takes effect this frame) */
 }
 
@@ -127,6 +129,17 @@ const imgui_api_t g_imgui_api_struct = {
     .set_next_window_size = imgui_set_next_window_size,
     .begin_window  = imgui_begin_window,
     .end_window    = imgui_end_window,
+    .open_popup          = imgui_open_popup,
+    .begin_popup         = imgui_begin_popup,
+    .begin_popup_modal   = imgui_begin_popup_modal,
+    .end_popup           = imgui_end_popup,
+    .close_current_popup = imgui_close_current_popup,
+    .is_popup_open        = imgui_is_popup_open,
+    .begin_popup_context_item   = imgui_begin_popup_context_item,
+    .begin_popup_context_window = imgui_begin_popup_context_window,
+    .set_item_tooltip = imgui_set_item_tooltip,
+    .begin_tooltip    = imgui_begin_tooltip,
+    .end_tooltip      = imgui_end_tooltip,
     .begin_child   = imgui_begin_child,
     .end_child     = imgui_end_child,
     .push_layout   = imgui_push_layout,

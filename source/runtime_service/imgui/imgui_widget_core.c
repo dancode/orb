@@ -746,6 +746,11 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 {
     widget_state_t st = { 0 };
 
+    /* Latch the most recent item id for context menus / tooltips (begin_popup_context_item,
+       set_item_tooltip).  Done before the disabled early-out so a disabled widget still counts
+       as the last item -- the anchor is "what was just emitted", regardless of its state. */
+    s_ctx.last_item_id = id;
+
     /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
        state here is the one place that suppresses interaction for every widget, the behavioral half
        of IMGUI_ITEM_DISABLED (the visual dim is the draw list's global alpha, set at resolve).  The

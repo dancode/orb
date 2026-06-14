@@ -108,6 +108,25 @@ draw_set_sort_key( u32 z )
     s_draw.cur_z = z;
 }
 
+/* Current sort key -- saved by the popup layer so an overlay window can restore the parent's
+   paint order on close (begin/end_window drive cur_z, which is a single global). */
+static u32
+draw_sort_key( void )
+{
+    return s_draw.cur_z;
+}
+
+/* draw_push_clip_root -- push the full-display clip (clip_stack[0]) as a fresh top, WITHOUT
+   intersecting the current clip.  A popup is a top-level overlay: it must escape the enclosing
+   window's clip, so the popup layer pushes this before opening the popup window (whose own clip
+   then intersects the display, not the parent) and pops it after.  Balanced with draw_pop_clip_rect. */
+static void
+draw_push_clip_root( void )
+{
+    if ( s_draw.clip_depth < IMGUI_CLIP_DEPTH )
+        s_draw.clip_stack[ s_draw.clip_depth++ ] = s_draw.clip_stack[ 0 ];
+}
+
 /*----------------------------------------------------------------------------------------------
     Global alpha -- a per-item opacity multiplier folded into every quad / triangle.
 

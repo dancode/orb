@@ -228,11 +228,16 @@ window_resize_grab( imgui_window_t* win, imgui_id_t id, u8 edges )
 
 /* draw_collapse_arrow lives in imgui_widget_core.c (shared with collapsing_header). */
 
-bool
-imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags )
+/* window_begin_ex -- the shared body of begin_window, with the window id supplied explicitly and
+   the title used only for display + chrome (NULL = no title text).  imgui_begin_window hashes the
+   title for its id; the popup layer (imgui_popup.c) passes a salted popup id and its own title (or
+   NULL), so a popup reuses the entire window path -- record, geometry, region, clip, scroll,
+   auto-resize, chrome -- with nothing duplicated.  The caller is responsible for any overlay
+   save/restore needed when this is begun inside another window (popups detach via imgui_overlay_*). */
+static bool
+window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags )
 {
     /* x/y/w/h are the initial geometry; the registry owns position after that. */
-    imgui_id_t      id  = id_hash( title );
     imgui_window_t* win = window_get( id, x, y, w, h );
     win->flags          = flags;
 
@@ -397,6 +402,12 @@ imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_fla
 
     /* false tells the caller to skip its body widgets (they would do nothing anyway). */
     return !collapsed;
+}
+
+bool
+imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags )
+{
+    return window_begin_ex( id_hash( title ), title, x, y, w, h, flags );
 }
 
 void

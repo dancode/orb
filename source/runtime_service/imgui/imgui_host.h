@@ -38,6 +38,19 @@ void imgui_set_next_window_pos ( f32 x, f32 y, imgui_cond_t cond );
 void imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond );
 bool imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_window( void );
+
+void imgui_open_popup( const char* id );
+bool imgui_begin_popup( const char* id, imgui_win_flags_t flags );
+bool imgui_begin_popup_modal( const char* id, const char* title, imgui_win_flags_t flags );
+void imgui_end_popup( void );
+void imgui_close_current_popup( void );
+bool imgui_is_popup_open( const char* id );
+bool imgui_begin_popup_context_item( const char* id );
+bool imgui_begin_popup_context_window( const char* id );
+void imgui_set_item_tooltip( const char* text );
+bool imgui_begin_tooltip( void );
+void imgui_end_tooltip( void );
+
 bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_child( void );
 void imgui_push_layout( void );

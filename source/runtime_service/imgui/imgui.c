@@ -17,6 +17,7 @@
         imgui_layout.c       -- layout-region engine: region pool, scrollbar, push/pop_region, begin/end_child
         imgui_widget.c       -- leaf widgets: text, button, checkbox, slider, input_text, selectable
         imgui_widget_window.c-- the window as a widget: begin/end_window + chrome (resize); body is a region
+        imgui_popup.c        -- popups / context menus / tooltips: overlay windows on a reserved z-band
         imgui_api.c     -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/
@@ -206,6 +207,7 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 #include "runtime_service/imgui/imgui_layout.c"
 #include "runtime_service/imgui/imgui_widget.c"
 #include "runtime_service/imgui/imgui_widget_window.c"
+#include "runtime_service/imgui/imgui_popup.c"
 
 #ifndef IMGUI_API_C_PRELUDE
     #include "runtime_service/imgui/imgui_api.c"

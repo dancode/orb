@@ -86,6 +86,55 @@ typedef struct imgui_api_s
     bool ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
     void ( *end_window   )( void );
 
+    /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when
+       the user clicks outside it; a modal blocks input behind it and dims the background, closing
+       only via close_current_popup.  The string id namespaces both the open request and the body,
+       so open_popup("x") and begin_popup("x") must use the same id.  Popups stack (a popup opened
+       while inside another nests under it); a click keeps the deepest popup under the cursor and
+       closes the rest.  Popup / tooltip bodies lay out like a window body: declare a layout header
+       (stack / columns / ...) before emitting widgets.
+
+           if ( imgui()->button( "Open" ) )    imgui()->open_popup( "menu" );
+           if ( imgui()->begin_popup( "menu", IMGUI_WIN_NONE ) ) {
+               imgui()->stack();
+               if ( imgui()->selectable( "Cut",  NULL ) ) { ... }
+               if ( imgui()->selectable( "Copy", NULL ) ) { ... }
+               imgui()->end_popup();
+           }
+
+       begin_popup / begin_popup_modal return true only when the popup is open AND visible -- guard
+       the body and call end_popup only on a true return (like begin_window's collapsed contract).
+       Auto-sized popups (the default) measure their content on the appearing frame off-screen and
+       snap into place the next frame, so there is no first-frame size pop. */
+
+    void ( *open_popup          )( const char* id );
+    bool ( *begin_popup         )( const char* id, imgui_win_flags_t flags );
+    bool ( *begin_popup_modal   )( const char* id, const char* title, imgui_win_flags_t flags );
+    void ( *end_popup           )( void );
+    void ( *close_current_popup )( void );
+    bool ( *is_popup_open        )( const char* id );
+
+    /* Context menus -- open a popup on a right-click.  _item binds to the previous widget (the one
+       emitted just before the call); _window binds to empty space in the current window.  Use them
+       in place of the open_popup + begin_popup pair:
+
+           imgui()->selectable( "Row", NULL );
+           if ( imgui()->begin_popup_context_item( "row_ctx" ) ) { ...; imgui()->end_popup(); } */
+
+    bool ( *begin_popup_context_item   )( const char* id );
+    bool ( *begin_popup_context_window )( const char* id );
+
+    /* Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
+       hovered.  set_item_tooltip is the one-liner; begin_tooltip / end_tooltip wrap a multi-widget
+       body (guard the body on the true return, always call end_tooltip).
+
+           imgui()->button( "Hover me" );
+           imgui()->set_item_tooltip( "Does the thing" ); */
+
+    void ( *set_item_tooltip )( const char* text );
+    bool ( *begin_tooltip    )( void );
+    void ( *end_tooltip      )( void );
+
     /* Child regions -- a nested scrollable layout box inside the current window (or another
        child).  begin_child carves a box of height h (width w, or the remaining content width
        when w <= 0) from the layout pen, clips and scrolls its contents independently, and

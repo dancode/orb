@@ -24,6 +24,7 @@ static struct
     imgui_id_t  active_id;    // widget with the mouse button held (drag / hold)
     u8          active_button;  // which button holds active_id (0=left); reset to 0 on release
     imgui_id_t  focused_id;   // widget that owns keyboard input
+    imgui_id_t  last_item_id;   // id of the most recent widget emitted -- context-menu / tooltip anchor
 
     /* Auto-repeat timing for the held button (IMGUI_ITEM_BUTTON_REPEAT).  Only one widget is active
        at a time, so a single timer suffices: repeat_t accumulates held time since the last fire, and
@@ -290,6 +291,67 @@ lf( void )
 static u32 s_frame_counter;
 
 /*----------------------------------------------------------------------------------------------
+    Popup stack
+
+    The set of currently-open popups *is* a stack, ordered parent -> child: index 0 is the
+    top-level popup, each deeper index a popup opened while inside the one above.  This single
+    array is the source of truth for open / close, nesting, and the click-outside policy; the
+    popups themselves are rendered as ordinary windows on a reserved high z-band (see imgui_popup.c).
+
+      s_popup_open_count  -- persists across frames; the live open set is [0, count).
+      s_popup_begin_count -- rebuilt each frame; the current popup nesting depth while emitting
+                             (0 at top level, 1 inside one begin_popup, ...).  open_popup writes
+                             a request at this depth; begin_popup matches its id against it.
+
+    A popup is a *top-level overlay*: it is begun while a parent window is still open, but it must
+    lay out, clip, and paint independent of that parent (a context menu escapes the window's
+    bounds, paints above it, and must not disturb its layout pen).  imgui_overlay_save_t snapshots
+    exactly the cross-cutting state begin/end_window mutate -- the flat window context, the
+    interaction clip, the draw sort key, and the parent's top layout frame -- so end_popup can
+    restore the parent verbatim.  The stack *counters* (layout / id / clip depth) are left intact
+    and balance naturally through the normal push/pop, so no slot is ever reused or lost. */
+
+#define IMGUI_POPUP_DEPTH 8     // max nested popups (menus + submenus)
+
+typedef struct
+{
+    /* Flat window context (s_ctx) the popup's begin_window clobbers. */
+    imgui_id_t             win_id;
+    const char*            win_title;
+    bool                   win_collapsed;
+    imgui_win_flags_t      win_flags;
+    f32                    win_title_h;
+    u8                     win_resize_hot;
+    bool                   win_grip_hot;
+    struct imgui_window_t* cur_win;
+    f32                    win_x, win_y, win_w, win_h;
+    imgui_rect_t           clip_rect;     // s_ctx.clip_rect (interaction clip)
+
+    /* Draw cursor + the parent's top layout frame. */
+    u32                    sort_key;      // s_draw.cur_z
+    bool                   had_parent;    // a layout region was open (parent frame valid)
+    layout_frame_t         parent_frame;  // the parent's top frame, restored after the popup
+
+} imgui_overlay_save_t;
+
+typedef struct
+{
+    imgui_id_t   id;            // popup window id (salted; matches s_ctx.win_id / hover_win)
+    bool         modal;         // blocks input behind it + dims the background
+    f32          anchor_x;      // open point -- where a non-modal popup is placed
+    f32          anchor_y;
+    u32          open_frame;    // frame open_popup ran -- "appearing" detection
+    u32          begun_frame;   // last frame begin_popup ran -- drives stale-close
+    imgui_rect_t rect;          // on-screen rect last frame -- drives click-outside
+    imgui_overlay_save_t saved; // parent context to restore at end_popup
+
+} imgui_popup_t;
+
+static imgui_popup_t s_popups_open[ IMGUI_POPUP_DEPTH ];  // open set, persists across frames
+static u32           s_popup_open_count;                  // live open count
+static u32           s_popup_begin_count;                 // current nesting depth (per frame)
+
+/*----------------------------------------------------------------------------------------------
     Keyed state pool -- persistent per-id widget state.
 
     The single store a widget uses to keep a few bytes alive across frames, keyed by its id: a
@@ -487,6 +549,9 @@ ctx_new_frame( void )
     s_layout_sp       = 0;
     s_id_sp           = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_ctx.wheel_used  = false;
+
+    /* Popup nesting depth is rebuilt as begin_popup / end_popup run; the open set persists. */
+    s_popup_begin_count = 0;
 
     /* Fresh item-flag state each frame: empty stack, no next-item override, nothing disabled. */
     s_item_flag_sp       = 0;
