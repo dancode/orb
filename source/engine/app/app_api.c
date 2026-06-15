@@ -41,6 +41,7 @@ const app_api_t g_app_api_struct = {
 
     /* Input mode */
     .key_repeat_set = app_key_repeat_set,
+    .key_repeat_get = app_key_repeat_get,
 
     /* Clipboard */
     .clipboard_set = app_clipboard_set,

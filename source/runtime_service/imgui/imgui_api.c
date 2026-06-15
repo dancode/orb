@@ -233,6 +233,8 @@ const imgui_api_t g_imgui_api_struct = {
     .get_mouse_wheel         = imgui_get_mouse_wheel,
     .get_delta_time          = imgui_get_delta_time,
     .get_time                = imgui_get_time,
+    .set_key_repeat          = imgui_set_key_repeat,
+    .key_repeat_enabled      = imgui_key_repeat_enabled,
 };
 
 /*----------------------------------------------------------------------------------------------

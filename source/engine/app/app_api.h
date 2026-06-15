@@ -63,8 +63,12 @@ typedef struct app_api_s
     bool ( *mouse_button_pressed  )( app_mouse_button_t btn );
     bool ( *mouse_button_released )( app_mouse_button_t btn );
 
-    /* Enable key-repeat events (text mode). Default false = game mode (repeats suppressed). */
+    /* Key-repeat (text) mode.  Default false = game mode: OS auto-repeats are suppressed, so a
+       held key reads as a single press.  When true, each OS repeat re-fires key_pressed at the
+       system repeat rate -- the natural source for held-key actions (backspace, arrows, spinners).
+       key_repeat_get returns the current mode so a consumer (e.g. imgui) can query it. */
     void ( *key_repeat_set )( bool enabled );
+    bool ( *key_repeat_get )( void );
 
     /* ---- Clipboard ---- */
 

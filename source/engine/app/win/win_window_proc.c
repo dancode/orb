@@ -110,14 +110,12 @@ win_proc_keyboard( app_window_t* win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp 
                     input_handle_paste( win->id );
             }
 
-            if ( repeat )
-            {
-                if ( !g_key_repeat )
-                    return true; /* game mode: suppress repeats */
-
-                /* Text mode: synthesize an up so key_pressed fires again. */
-                input_handle_key_up( wp, lp, win->id );
-            }
+            /* Game mode (default): drop OS auto-repeats entirely -- a held key is one press.
+               Text mode: let the repeat through; input_handle_key_down re-arms the per-frame
+               press flag so key_pressed re-fires on each repeat (no synthesized key-up needed --
+               the key never actually went up, so reporting a release would be a lie to consumers). */
+            if ( repeat && !g_key_repeat )
+                return true;
 
             input_handle_key_down( wp, lp, win->id );
             return true;

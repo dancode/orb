@@ -645,5 +645,13 @@ f32  imgui_get_mouse_wheel( void )           { return s_io.mouse_wheel; }
 f32  imgui_get_delta_time ( void )           { return s_io.dt; }
 f64  imgui_get_time       ( void )           { return s_io.time; }
 
+/* Key-repeat (text) mode -- forwarded to the app layer, which owns the OS repeat machinery (it
+   drives the rate from the user's system settings).  Turn it on while editing text so is_key_pressed
+   re-fires on a held backspace / arrow at the OS rate; leave it off for game-style "one held key =
+   one press".  The mode is global to the app, so a caller that flips it for a transient purpose
+   should restore the previous value (query it via key_repeat_enabled). */
+void imgui_set_key_repeat    ( bool enabled ) { app()->key_repeat_set( enabled ); }
+bool imgui_key_repeat_enabled( void )         { return app()->key_repeat_get(); }
+
 // clang-format on
 /*============================================================================================*/

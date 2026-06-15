@@ -450,8 +450,13 @@ typedef struct imgui_api_s
 
        The is_key_* / is_mouse_* / get_* readers return the same per-frame state the widgets use
        (keyed by app_key_t / app_mouse_button_t).  is_key_pressed / is_mouse_clicked are the down-
-       edge this frame; is_key_pressed has no auto-repeat yet (repeat=false in Dear ImGui terms).
-       get_time is seconds since the first frame (accumulated dt); get_delta_time is this frame's. */
+       edge this frame.  get_time is seconds since the first frame (accumulated dt); get_delta_time
+       is this frame's.
+
+       Key repeat: is_key_pressed re-fires on a held key only while key-repeat mode is on -- the OS
+       drives the rate (the user's system setting).  set_key_repeat toggles it (forwarded to the app
+       layer; global to the app, so restore the previous value after a transient change); turn it on
+       around text editing and off for game input.  key_repeat_enabled queries the current mode. */
 
     bool ( *want_capture_mouse       )( void );
     bool ( *want_capture_keyboard    )( void );
@@ -466,6 +471,8 @@ typedef struct imgui_api_s
     f32  ( *get_mouse_wheel          )( void );
     f32  ( *get_delta_time           )( void );
     f64  ( *get_time                 )( void );
+    void ( *set_key_repeat           )( bool enabled );
+    bool ( *key_repeat_enabled       )( void );
 
 } imgui_api_t;
 

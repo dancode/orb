@@ -153,6 +153,8 @@ void imgui_get_mouse_pos( f32* x, f32* y );
 f32  imgui_get_mouse_wheel( void );
 f32  imgui_get_delta_time( void );
 f64  imgui_get_time( void );
+void imgui_set_key_repeat( bool enabled );
+bool imgui_key_repeat_enabled( void );
 
 /*============================================================================================*/
 #endif    // IMGUI_HOST_H
