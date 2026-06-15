@@ -29,19 +29,16 @@ const app_api_t g_app_api_struct = {
     .should_quit = app_should_quit,
 
     /* Keyboard */
-    .key_down     = app_key_down,
-    .key_pressed  = app_key_pressed,
-    .key_released = app_key_released,
+    .key_down            = app_key_down,
+    .key_pressed         = app_key_pressed,
+    .key_pressed_repeat  = app_key_pressed_repeat,
+    .key_released        = app_key_released,
 
     /* Mouse */
     .mouse_position        = app_mouse_position,
     .mouse_button_down     = app_mouse_button_down,
     .mouse_button_pressed  = app_mouse_button_pressed,
     .mouse_button_released = app_mouse_button_released,
-
-    /* Input mode */
-    .key_repeat_set = app_key_repeat_set,
-    .key_repeat_get = app_key_repeat_get,
 
     /* Clipboard */
     .clipboard_set = app_clipboard_set,

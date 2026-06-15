@@ -31,9 +31,10 @@ typedef struct
     bool  mouse_pressed [ 3 ];
     bool  mouse_released[ 3 ];
     bool  mouse_double  [ 3 ];
-    bool  keys_down     [ IMGUI_KEY_COUNT ];
-    bool  keys_pressed  [ IMGUI_KEY_COUNT ];
-    bool  keys_released [ IMGUI_KEY_COUNT ];
+    bool  keys_down          [ IMGUI_KEY_COUNT ];
+    bool  keys_pressed       [ IMGUI_KEY_COUNT ];   /* initial press only                  */
+    bool  keys_pressed_repeat[ IMGUI_KEY_COUNT ];   /* initial press + OS auto-repeat ticks */
+    bool  keys_released      [ IMGUI_KEY_COUNT ];
     char  text[ 32 ];
     char  paste[ 256 ];   /* clipboard text delivered this frame (APP_EV_CLIPBOARD), else empty */
     f32   dt;
@@ -223,12 +224,14 @@ input_update( i32 win_w, i32 win_h, f32 dt )
         }
     }
 
-    /* Key state snapshot. */
+    /* Key state snapshot.  keys_pressed is the initial press; keys_pressed_repeat also catches OS
+       auto-repeat ticks (held backspace / arrows in a text field), the caller picking which it reads. */
     for ( i32 k = 0; k < APP_KEY_COUNT; ++k )
     {
-        s_io.keys_down     [ k ] = app()->key_down     ( (app_key_t)k );
-        s_io.keys_pressed  [ k ] = app()->key_pressed  ( (app_key_t)k );
-        s_io.keys_released [ k ] = app()->key_released ( (app_key_t)k );
+        s_io.keys_down           [ k ] = app()->key_down           ( (app_key_t)k );
+        s_io.keys_pressed        [ k ] = app()->key_pressed        ( (app_key_t)k );
+        s_io.keys_pressed_repeat [ k ] = app()->key_pressed_repeat ( (app_key_t)k );
+        s_io.keys_released       [ k ] = app()->key_released       ( (app_key_t)k );
     }
 
     /* Text + scroll + paste arrive via the host-fed pending state (the host owns the event

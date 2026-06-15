@@ -110,14 +110,11 @@ win_proc_keyboard( app_window_t* win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp 
                     input_handle_paste( win->id );
             }
 
-            /* Game mode (default): drop OS auto-repeats entirely -- a held key is one press.
-               Text mode: let the repeat through; input_handle_key_down re-arms the per-frame
-               press flag so key_pressed re-fires on each repeat (no synthesized key-up needed --
-               the key never actually went up, so reporting a release would be a lie to consumers). */
-            if ( repeat && !g_key_repeat )
-                return true;
-
-            input_handle_key_down( wp, lp, win->id );
+            /* Always deliver the key-down, tagging OS auto-repeats.  The repeat feeds only
+               key_pressed_repeat (and an event with repeat=1); a consumer reading key_pressed
+               sees one press per physical key.  No synthesized key-up -- the key never went up,
+               so reporting a release would be a lie to consumers. */
+            input_handle_key_down( wp, lp, repeat, win->id );
             return true;
         }
 
@@ -127,14 +124,10 @@ win_proc_keyboard( app_window_t* win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp 
             return true;
 
         case WM_CHAR:
-        {
-            bool repeat = ( HIWORD( lp ) & KF_REPEAT ) != 0;
-            if ( repeat && !g_key_repeat )
-                return true; /* suppress repeated chars in game mode */
-
+            /* Deliver every char, including OS auto-repeats -- a focused text consumer wants held-
+               key repeat; anything not editing text simply ignores CHAR events. */
             input_handle_char( wp, win->id );
             return true;
-        }
 
         case WM_SYSCOMMAND:
         case WM_COMMAND:

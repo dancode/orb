@@ -143,6 +143,7 @@ print_event( const app_event_t* ev )
         case APP_EV_KEY_DOWN:
         case APP_EV_KEY_UP:
             printf( " key=%s", key_name( ev->data.key.key ) );
+            if ( ev->data.key.repeat ) printf( " [repeat]" );
             print_mod( ev->data.key.mod );
             break;
 
@@ -244,8 +245,8 @@ typedef enum
     MODE_MENU          = 0,
     MODE_WIN_STATE     = 1,    /* all state bit transitions                         */
     MODE_FILLSCREEN    = 2,    /* F / Alt+Enter fullscreen toggle                   */
-    MODE_KEYS_GAME     = 3,    /* KEY_DOWN / KEY_UP, repeat suppressed              */
-    MODE_KEYS_TEXT     = 4,    /* KEY_DOWN / KEY_UP, OS key-repeat enabled          */
+    MODE_KEYS_GAME     = 3,    /* KEY_DOWN / KEY_UP, repeat ticks filtered out       */
+    MODE_KEYS_TEXT     = 4,    /* KEY_DOWN / KEY_UP, repeat ticks shown as [repeat]  */
     MODE_CHAR_INPUT    = 5,    /* CHAR events, printable codepoints, Ctrl combos    */
     MODE_MOUSE_MOVE    = 6,    /* MOUSE_MOVE with client-area xy and frame delta    */
     MODE_MOUSE_BUTTONS = 7,    /* MOUSE_DOWN / MOUSE_UP / MOUSE_WHEEL               */
@@ -327,8 +328,8 @@ print_menu( void )
     printf( "\n=== sb_engine_app -- select a test ===========================\n" );
     printf( "  1  Window State Monitor      (focus/min/max/restore/fill/hide)\n" );
     printf( "  2  Fillscreen Toggle         (F key / Alt+Enter)\n" );
-    printf( "  3  Key Events -- Game Mode    (no repeat; left/right modifiers)\n" );
-    printf( "  4  Key Repeat -- Text Mode    (OS key-repeat enabled)\n" );
+    printf( "  3  Key Events -- Game Read    (repeats filtered; left/right modifiers)\n" );
+    printf( "  4  Key Repeat -- Text Read    (repeats shown as [repeat])\n" );
     printf( "  5  Char / Text Input         (CHAR events, Ctrl+C, Ctrl+V, Ctrl+Z)\n" );
     printf( "  6  Mouse Move Tracking       (client-area xy and per-frame delta)\n" );
     printf( "  7  Mouse Buttons & Wheel     (all 5 buttons; signed scroll delta)\n" );
@@ -360,8 +361,6 @@ close_extra_win( void )
 static void
 leave_mode( test_mode_t m )
 {
-    if ( m == MODE_KEYS_TEXT )
-        app()->key_repeat_set( false );
     if ( m == MODE_MULTI_WIN )
         close_extra_win();
 }
@@ -407,8 +406,9 @@ enter_mode( test_mode_t m )
             break;
 
         case MODE_KEYS_GAME:
-            printf( "--- [3] Key Events -- Game Mode (no repeat) ---------------------\n" );
-            printf( "  Repeat:   OFF -- holding a key produces exactly one KEY_DOWN\n" );
+            printf( "--- [3] Key Events -- Game Read (ignore repeats) ---------------\n" );
+            printf( "  Read:     this mode filters out repeat=1 events, as game code does\n" );
+            printf( "            (key_pressed ignores OS repeats)\n" );
             printf( "  Try:      press and hold any letter -- verify exactly ONE KEY_DOWN fires\n" );
             printf( "  Try:      release -- verify exactly ONE KEY_UP fires\n" );
             printf( "  Try:      Shift+A -- mod field should show [shift]; check key=A\n" );
@@ -417,19 +417,17 @@ enter_mode( test_mode_t m )
             printf( "  Try:      LAlt vs RAlt, LCtrl vs RCtrl -- same left/right distinction\n" );
             printf( "  NOTE:     Alt+F4 and Alt+Enter are consumed before this ring\n" );
             printf( "  S = full snapshot   ESC = back to menu\n" );
-            app()->key_repeat_set( false );
             break;
 
         case MODE_KEYS_TEXT:
-            printf( "--- [4] Key Repeat -- Text Mode ----------------------------------\n" );
-            printf( "  Repeat:   ON -- holding a key fires repeated KEY_DOWN events\n" );
-            printf( "  Try:      hold any letter -- watch the stream of repeat KEY_DOWNs\n" );
+            printf( "--- [4] Key Repeat -- Text Read (honor repeats) -----------------\n" );
+            printf( "  Read:     this mode shows every KEY_DOWN, marking [repeat] ticks\n" );
+            printf( "            (key_pressed_repeat honors them)\n" );
+            printf( "  Try:      hold any letter -- watch the stream of [repeat] KEY_DOWNs\n" );
             printf( "  Try:      hold Backspace or Delete -- repeat should fire\n" );
             printf( "  Try:      hold a modifier key alone (Shift) -- modifier also repeats\n" );
             printf( "  NOTE:     initial delay and repeat rate are OS keyboard settings\n" );
-            printf( "  NOTE:     repeat = UP then DOWN pair per tick so key_pressed re-fires\n" );
             printf( "  S = full snapshot   ESC = back to menu\n" );
-            app()->key_repeat_set( true );
             break;
 
         case MODE_CHAR_INPUT:
@@ -642,6 +640,11 @@ main( int argc, char** argv )
                 close_extra_win();
                 continue;
             }
+
+            /* Game read drops OS auto-repeat ticks, exactly as key_pressed does; text read keeps
+               them (they show as [repeat]).  The filter is the only difference between the modes. */
+            if ( g_mode == MODE_KEYS_GAME && ev.type == APP_EV_KEY_DOWN && ev.data.key.repeat )
+                continue;
 
             if ( mode_show_event( g_mode, ev.type ) )
                 print_event( &ev );

@@ -13,15 +13,19 @@
         button_pressed(b)  = current[b] && !previous[b]
         button_released(b) = !current[b] && previous[b]
 
-    Keys carry a third array, `pressed_keys`, set on every WM_KEYDOWN and cleared
-    each frame in input_snapshot.  key_pressed reads that flag instead of the
-    current/previous edge, so an OS auto-repeat (text mode -- see win_window_proc.c)
-    re-fires key_pressed by re-posting a key-down, which a frame-boundary edge could
-    not observe (current was already high).  down/released stay edge-derived:
+    Keys carry two per-frame flag arrays, cleared each frame in input_snapshot and
+    set as WM_KEYDOWNs arrive: `pressed_keys` on an initial press, `repeat_keys` on
+    an OS auto-repeat tick.  key_pressed reads `pressed_keys` (a flag, not a
+    current/previous edge -- an edge cannot see a repeat, which arrives while current
+    is already high); key_pressed_repeat ORs in `repeat_keys` so a held key re-fires
+    at the OS rate.  This is per-query: the caller chooses repeat or not, so there is
+    no global mode -- game code reads key_pressed (one press per key), text / nav code
+    reads key_pressed_repeat.  down/released stay edge-derived:
 
-        key_down(k)     = current[k]
-        key_pressed(k)  = pressed_keys[k]   (initial press, plus each OS repeat)
-        key_released(k) = !current[k] && previous[k]
+        key_down(k)           = current[k]
+        key_pressed(k)        = pressed_keys[k]                  (initial press only)
+        key_pressed_repeat(k) = pressed_keys[k] || repeat_keys[k]  (+ each OS repeat)
+        key_released(k)       = !current[k] && previous[k]
 
     Focus loss
     ----------
@@ -48,7 +52,8 @@ typedef struct app_input_s
 {
     bool current_keys[ APP_KEY_COUNT ];
     bool previous_keys[ APP_KEY_COUNT ];
-    bool pressed_keys[ APP_KEY_COUNT ];   /* a key-down arrived this frame (incl. OS repeats) */
+    bool pressed_keys[ APP_KEY_COUNT ];   /* an initial (non-repeat) key-down arrived this frame */
+    bool repeat_keys[ APP_KEY_COUNT ];    /* an OS auto-repeat key-down arrived this frame        */
 
     bool current_mouse[ APP_MOUSE_BUTTON_COUNT ];
     bool previous_mouse[ APP_MOUSE_BUTTON_COUNT ];
@@ -75,7 +80,6 @@ typedef struct app_event_ring_s
 
 static app_event_ring_t g_events;
 static bool             g_app_quit;
-static bool             g_key_repeat;    /* false = game mode (suppress repeats); true = text mode */
 
 /*==============================================================================================
     Helpers visible to win_window.c (included after this file in the unity build)
@@ -283,18 +287,23 @@ vk_to_app_key( WPARAM vk, LPARAM lp )
 ==============================================================================================*/
 
 static void
-input_handle_key_down( WPARAM vk, LPARAM lp, win_id_t win_id )
+input_handle_key_down( WPARAM vk, LPARAM lp, bool repeat, win_id_t win_id )
 {
     app_key_t k = vk_to_app_key( vk, lp );
     if ( k == APP_KEY_NONE )
         return;
 
     g_input.current_keys[ k ] = true;
-    g_input.pressed_keys[ k ] = true;   /* re-armed on each OS repeat so key_pressed re-fires */
+
+    /* Route the press to the flag the matching query reads: an initial press feeds key_pressed,
+       a repeat feeds only key_pressed_repeat.  The caller decides which it wants -- no global mode. */
+    if ( repeat ) g_input.repeat_keys[ k ]  = true;
+    else          g_input.pressed_keys[ k ] = true;
 
     app_event_t ev            = win_make_event( APP_EV_KEY_DOWN, win_id );
     ev.data.key.key           = ( i32 )k;
     ev.data.key.press         = 255;
+    ev.data.key.repeat        = repeat ? 1u : 0u;
     ev.data.key.mod           = win_get_mod();
     win_post_event( &ev );
 }
@@ -384,6 +393,7 @@ input_clear_all_state( void )
 {
     for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.current_keys[ i ] = false;
     for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.pressed_keys[ i ] = false;
+    for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.repeat_keys[ i ]  = false;
     for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.current_mouse[ i ] = false;
 }
 
@@ -396,9 +406,10 @@ input_snapshot( void )
 {
     for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.previous_keys[ i ] = g_input.current_keys[ i ];
 
-    /* Clear the per-frame press flags; each WM_KEYDOWN (initial or repeat) re-sets them
-       during this frame's message drain, which follows this snapshot in pump_events. */
+    /* Clear the per-frame press flags; each WM_KEYDOWN (initial or repeat) re-sets the
+       matching array during this frame's message drain, which follows this snapshot. */
     for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.pressed_keys[ i ] = false;
+    for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.repeat_keys[ i ]  = false;
 
     for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i )
         g_input.previous_mouse[ i ] = g_input.current_mouse[ i ];
@@ -421,7 +432,15 @@ app_key_pressed( app_key_t key )
 {
     if ( key <= APP_KEY_NONE || key >= APP_KEY_COUNT )
         return false;
-    return g_input.pressed_keys[ key ];   /* set on each key-down this frame, incl. OS repeats */
+    return g_input.pressed_keys[ key ];   /* initial press only -- OS repeats excluded */
+}
+
+static bool
+app_key_pressed_repeat( app_key_t key )
+{
+    if ( key <= APP_KEY_NONE || key >= APP_KEY_COUNT )
+        return false;
+    return g_input.pressed_keys[ key ] || g_input.repeat_keys[ key ];   /* initial + OS repeats */
 }
 
 static bool
@@ -463,18 +482,6 @@ app_mouse_button_released( app_mouse_button_t btn )
     if ( ( int )btn < 0 || ( int )btn >= APP_MOUSE_BUTTON_COUNT )
         return false;
     return !g_input.current_mouse[ btn ] && g_input.previous_mouse[ btn ];
-}
-
-static void
-app_key_repeat_set( bool enabled )
-{
-    g_key_repeat = enabled;
-}
-
-static bool
-app_key_repeat_get( void )
-{
-    return g_key_repeat;
 }
 
 static void

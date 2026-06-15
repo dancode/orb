@@ -453,15 +453,16 @@ typedef struct imgui_api_s
        edge this frame.  get_time is seconds since the first frame (accumulated dt); get_delta_time
        is this frame's.
 
-       Key repeat: is_key_pressed re-fires on a held key only while key-repeat mode is on -- the OS
-       drives the rate (the user's system setting).  set_key_repeat toggles it (forwarded to the app
-       layer; global to the app, so restore the previous value after a transient change); turn it on
-       around text editing and off for game input.  key_repeat_enabled queries the current mode. */
+       Key repeat is per-query (no mode to set): is_key_pressed is the initial press only, while
+       is_key_pressed_repeat also fires on each OS auto-repeat tick at the user's system rate -- the
+       Dear ImGui IsKeyPressed(key, repeat=true) case.  Use the repeat reader for held-key actions
+       (text nav, a spinner); use the plain one for discrete actions that must fire once per press. */
 
     bool ( *want_capture_mouse       )( void );
     bool ( *want_capture_keyboard    )( void );
     bool ( *is_key_down              )( app_key_t key );
     bool ( *is_key_pressed           )( app_key_t key );
+    bool ( *is_key_pressed_repeat    )( app_key_t key );
     bool ( *is_key_released          )( app_key_t key );
     bool ( *is_mouse_down            )( app_mouse_button_t b );
     bool ( *is_mouse_clicked         )( app_mouse_button_t b );
@@ -471,8 +472,6 @@ typedef struct imgui_api_s
     f32  ( *get_mouse_wheel          )( void );
     f32  ( *get_delta_time           )( void );
     f64  ( *get_time                 )( void );
-    void ( *set_key_repeat           )( bool enabled );
-    bool ( *key_repeat_enabled       )( void );
 
 } imgui_api_t;
 

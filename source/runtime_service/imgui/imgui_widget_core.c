@@ -1023,14 +1023,16 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
 
         /* Navigation: Left / Right collapse or extend the selection; Home / End jump. */
 
-        if ( s_io.keys_pressed[ APP_KEY_LEFT ] )
+        /* Navigation + deletion read keys_pressed_repeat so a held key repeats at the OS rate;
+           submit / escape / select-all read the initial-press snapshot (they must fire once). */
+        if ( s_io.keys_pressed_repeat[ APP_KEY_LEFT ] )
         {
             if ( !shift && has_sel ) { es->cursor = es->anchor = sel_lo; }
             else if ( es->cursor > 0 ) { --es->cursor; if ( !shift ) es->anchor = es->cursor; }
             blink_reset = true;
         }
 
-        if ( s_io.keys_pressed[ APP_KEY_RIGHT ] )
+        if ( s_io.keys_pressed_repeat[ APP_KEY_RIGHT ] )
         {
             if ( !shift && has_sel ) { es->cursor = es->anchor = sel_hi; }
             else if ( es->cursor < len ) { ++es->cursor; if ( !shift ) es->anchor = es->cursor; }
@@ -1057,7 +1059,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
         }
 
         /* Backspace: delete the selection, or the character before the caret. */
-        if ( s_io.keys_pressed[ APP_KEY_BACKSPACE ] )
+        if ( s_io.keys_pressed_repeat[ APP_KEY_BACKSPACE ] )
         {
             if ( has_sel )
             {
@@ -1079,7 +1081,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
         }
 
         /* Delete: delete the selection, or the character after the caret. */
-        if ( s_io.keys_pressed[ APP_KEY_DELETE ] )
+        if ( s_io.keys_pressed_repeat[ APP_KEY_DELETE ] )
         {
             if ( has_sel )
             {

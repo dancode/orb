@@ -144,6 +144,7 @@ bool imgui_want_capture_mouse( void );
 bool imgui_want_capture_keyboard( void );
 bool imgui_is_key_down( app_key_t key );
 bool imgui_is_key_pressed( app_key_t key );
+bool imgui_is_key_pressed_repeat( app_key_t key );
 bool imgui_is_key_released( app_key_t key );
 bool imgui_is_mouse_down( app_mouse_button_t b );
 bool imgui_is_mouse_clicked( app_mouse_button_t b );
@@ -153,8 +154,6 @@ void imgui_get_mouse_pos( f32* x, f32* y );
 f32  imgui_get_mouse_wheel( void );
 f32  imgui_get_delta_time( void );
 f64  imgui_get_time( void );
-void imgui_set_key_repeat( bool enabled );
-bool imgui_key_repeat_enabled( void );
 
 /*============================================================================================*/
 #endif    // IMGUI_HOST_H

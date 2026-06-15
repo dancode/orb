@@ -623,12 +623,14 @@ imgui_want_capture_keyboard( void )
 
 /* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t
    range is bounded by APP_KEY_COUNT <= IMGUI_KEY_COUNT (asserted in imgui_input.c).  is_key_pressed
-   is the down-edge this frame (no auto-repeat yet -- repeat=false in Dear ImGui terms). */
+   is the initial press this frame; is_key_pressed_repeat also fires on each OS auto-repeat tick (the
+   Dear ImGui repeat=true case) -- the user's system rate drives it. */
 static bool key_in_range( app_key_t key ) { return (i32)key >= 0 && (i32)key < APP_KEY_COUNT; }
 
-bool imgui_is_key_down    ( app_key_t key ) { return key_in_range( key ) && s_io.keys_down    [ key ]; }
-bool imgui_is_key_pressed ( app_key_t key ) { return key_in_range( key ) && s_io.keys_pressed [ key ]; }
-bool imgui_is_key_released( app_key_t key ) { return key_in_range( key ) && s_io.keys_released[ key ]; }
+bool imgui_is_key_down          ( app_key_t key ) { return key_in_range( key ) && s_io.keys_down          [ key ]; }
+bool imgui_is_key_pressed       ( app_key_t key ) { return key_in_range( key ) && s_io.keys_pressed       [ key ]; }
+bool imgui_is_key_pressed_repeat( app_key_t key ) { return key_in_range( key ) && s_io.keys_pressed_repeat[ key ]; }
+bool imgui_is_key_released      ( app_key_t key ) { return key_in_range( key ) && s_io.keys_released      [ key ]; }
 
 /* Per-button mouse state; app_mouse_button_t (0=left,1=right,2=middle) indexes the snapshot
    directly.  is_mouse_clicked is the press-down edge, mirroring ImGui::IsMouseClicked. */
@@ -644,14 +646,6 @@ void imgui_get_mouse_pos  ( f32* x, f32* y ) { if ( x ) *x = s_io.mouse_x; if ( 
 f32  imgui_get_mouse_wheel( void )           { return s_io.mouse_wheel; }
 f32  imgui_get_delta_time ( void )           { return s_io.dt; }
 f64  imgui_get_time       ( void )           { return s_io.time; }
-
-/* Key-repeat (text) mode -- forwarded to the app layer, which owns the OS repeat machinery (it
-   drives the rate from the user's system settings).  Turn it on while editing text so is_key_pressed
-   re-fires on a held backspace / arrow at the OS rate; leave it off for game-style "one held key =
-   one press".  The mode is global to the app, so a caller that flips it for a transient purpose
-   should restore the previous value (query it via key_repeat_enabled). */
-void imgui_set_key_repeat    ( bool enabled ) { app()->key_repeat_set( enabled ); }
-bool imgui_key_repeat_enabled( void )         { return app()->key_repeat_get(); }
 
 // clang-format on
 /*============================================================================================*/

@@ -224,6 +224,7 @@ const imgui_api_t g_imgui_api_struct = {
     .want_capture_keyboard   = imgui_want_capture_keyboard,
     .is_key_down             = imgui_is_key_down,
     .is_key_pressed          = imgui_is_key_pressed,
+    .is_key_pressed_repeat   = imgui_is_key_pressed_repeat,
     .is_key_released         = imgui_is_key_released,
     .is_mouse_down           = imgui_is_mouse_down,
     .is_mouse_clicked        = imgui_is_mouse_clicked,
@@ -233,8 +234,6 @@ const imgui_api_t g_imgui_api_struct = {
     .get_mouse_wheel         = imgui_get_mouse_wheel,
     .get_delta_time          = imgui_get_delta_time,
     .get_time                = imgui_get_time,
-    .set_key_repeat          = imgui_set_key_repeat,
-    .key_repeat_enabled      = imgui_key_repeat_enabled,
 };
 
 /*----------------------------------------------------------------------------------------------

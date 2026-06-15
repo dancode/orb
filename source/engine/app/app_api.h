@@ -54,21 +54,18 @@ typedef struct app_api_s
 
     /* ---- Input snapshot ---- */
 
-    bool ( *key_down     )( app_key_t key );
-    bool ( *key_pressed  )( app_key_t key );
-    bool ( *key_released )( app_key_t key );
+    /* key_pressed is the initial press only; key_pressed_repeat also fires on each OS auto-repeat
+       tick (at the user's system rate).  Per-query, so there is no input mode to set: game-style
+       actions read key_pressed (one press per physical key), text / nav reads key_pressed_repeat. */
+    bool ( *key_down            )( app_key_t key );
+    bool ( *key_pressed         )( app_key_t key );
+    bool ( *key_pressed_repeat  )( app_key_t key );
+    bool ( *key_released        )( app_key_t key );
 
     void ( *mouse_position        )( i32* out_x, i32* out_y );
     bool ( *mouse_button_down     )( app_mouse_button_t btn );
     bool ( *mouse_button_pressed  )( app_mouse_button_t btn );
     bool ( *mouse_button_released )( app_mouse_button_t btn );
-
-    /* Key-repeat (text) mode.  Default false = game mode: OS auto-repeats are suppressed, so a
-       held key reads as a single press.  When true, each OS repeat re-fires key_pressed at the
-       system repeat rate -- the natural source for held-key actions (backspace, arrows, spinners).
-       key_repeat_get returns the current mode so a consumer (e.g. imgui) can query it. */
-    void ( *key_repeat_set )( bool enabled );
-    bool ( *key_repeat_get )( void );
 
     /* ---- Clipboard ---- */
 

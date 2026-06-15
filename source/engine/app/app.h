@@ -96,7 +96,7 @@ typedef enum app_event_type_e
 {
     APP_EV_NONE = 0,
 
-    APP_EV_KEY_DOWN,    // key pressed (no auto-repeat)
+    APP_EV_KEY_DOWN,    // key pressed; data.key.repeat = 1 on an OS auto-repeat tick
     APP_EV_KEY_UP,      // key released
     APP_EV_CHAR,        // printable Unicode codepoint (UTF-32)
     APP_EV_CLIPBOARD,   // paste gesture: data.clipboard.text holds the OS clipboard contents
@@ -139,9 +139,9 @@ typedef union app_mod_u
 
 typedef struct app_key_event_s /* 8 bytes */
 {
-    i32       key;   /* app_key_t                              */
-    u8        press; /* 0 = released, 255 = pressed            */
-    u8        pad;
+    i32       key;    /* app_key_t                             */
+    u8        press;  /* 0 = released, 255 = pressed           */
+    u8        repeat; /* 1 = OS auto-repeat tick, 0 = initial  */
     app_mod_t mod;
 
 } app_key_event_t;
