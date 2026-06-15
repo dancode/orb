@@ -129,11 +129,19 @@ typedef struct imgui_api_s
        body (guard the body on the true return, always call end_tooltip).
 
            imgui()->button( "Hover me" );
-           imgui()->set_item_tooltip( "Does the thing" ); */
+           imgui()->set_item_tooltip( "Does the thing" );
+
+       help_marker draws a dim "(?)" hint that pops `text` on hover -- the Dear ImGui footnote,
+       typically emitted on the same line after a control:
+
+           imgui()->checkbox( "No mouse", &flag );
+           imgui()->same_line( 0.0f );
+           imgui()->help_marker( "Disable mouse inputs and interactions." ); */
 
     void ( *set_item_tooltip )( const char* text );
     bool ( *begin_tooltip    )( void );
     void ( *end_tooltip      )( void );
+    void ( *help_marker      )( const char* text );
 
     /* Child regions -- a nested scrollable layout box inside the current window (or another
        child).  begin_child carves a box of height h (width w, or the remaining content width

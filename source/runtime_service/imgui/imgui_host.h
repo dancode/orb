@@ -128,6 +128,7 @@ void imgui_tree_pop( void );
 void imgui_indent( f32 w );
 void imgui_unindent( f32 w );
 void imgui_separator_text( const char* label );
+void imgui_help_marker( const char* text );
 
 void imgui_set_font      ( imgui_font_t font );
 void imgui_set_bmp_scale ( u32 scale );

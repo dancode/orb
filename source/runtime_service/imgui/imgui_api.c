@@ -140,6 +140,7 @@ const imgui_api_t g_imgui_api_struct = {
     .set_item_tooltip = imgui_set_item_tooltip,
     .begin_tooltip    = imgui_begin_tooltip,
     .end_tooltip      = imgui_end_tooltip,
+    .help_marker      = imgui_help_marker,
     .begin_child   = imgui_begin_child,
     .end_child     = imgui_end_child,
     .push_layout   = imgui_push_layout,

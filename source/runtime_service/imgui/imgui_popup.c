@@ -393,6 +393,41 @@ imgui_set_item_tooltip( const char* text )
 }
 
 /*----------------------------------------------------------------------------------------------
+    help_marker -- a dim "(?)" hint that reveals `text` in a tooltip on hover (no click).
+
+    The Dear ImGui idiom: emit it on the same line after a control to footnote it.
+
+        imgui()->checkbox( "No mouse", &flag );
+        imgui()->same_line( 0.0f );
+        imgui()->help_marker( "Disable mouse inputs and interactions." );
+
+    It is a leaf item like text(), but registers an id so the tooltip can bind to it -- the
+    glyphs are the hover area.  It never captures the click (purely visual): widget_behavior is
+    used only to drive the hover, and the mark brightens from dim to full text while pointed at.
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_help_marker( const char* text )
+{
+    const char* mark = "(?)";
+    imgui_id_t  id   = id_combine( id_seed(), id_hash( text ) );
+
+    /* Carve a natural-width cell for the mark and place it per the region alignment, like text(). */
+    f32          mw = font_text_w( mark );
+    f32          mh = font_char_h();
+    imgui_rect_t r  = widget_next_rect_w( mw, mh );
+    imgui_rect_t tr = rect_align( r, mw, mh, lf()->lay_align );
+
+    /* Hoverable but inert: the returned click is ignored, only st.hover drives the brighten. */
+    widget_state_t st = widget_behavior( id, tr, WIDGET_KIND_BUTTON );
+    draw_push_text( tr.x, tr.y, st.hover ? COL_TEXT : COL_TEXT_DIM, mark );
+    widget_track_width( tr.x + mw );
+
+    /* Bind the tooltip to the mark just emitted (last_item_id / hover_id were set above). */
+    imgui_set_item_tooltip( text );
+}
+
+/*----------------------------------------------------------------------------------------------
     popup_close_check -- stale-close + click-outside, run at frame top before any user code.
 
     Stale: an open popup whose begin_popup was not called last frame (the caller stopped emitting
