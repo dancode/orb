@@ -592,5 +592,58 @@ ctx_new_frame( void )
          s_ctx.focused_id = IMGUI_ID_NONE;
 }
 
+/*----------------------------------------------------------------------------------------------
+    Public IO accessors
+
+    The frame-coherent input snapshot the widgets see, exposed for UI / tool code that wants to
+    read keys, the mouse, or the clock without re-querying app() -- which bypasses imgui's frame
+    timing and, more importantly, its input capture.
+
+    want_capture_* are the fence: gate any direct app() input read in non-UI code on them, so
+    gameplay never acts on a keystroke imgui consumed (typing in a field) or a click that was
+    really a widget / window drag.  Both read the interaction state resolved in s_ctx, not the raw
+    device, which is exactly what only imgui knows.
+----------------------------------------------------------------------------------------------*/
+
+/* True when the cursor is over an imgui window, or a widget owns the mouse (a drag in flight) --
+   the signal that a click belongs to the UI, not the scene behind it.  hover_win lags the cursor
+   by one frame (the deferred occlusion resolve), matching how the widgets gate their own hover. */
+bool
+imgui_want_capture_mouse( void )
+{
+    return s_ctx.hover_win != IMGUI_ID_NONE || s_ctx.active_id != IMGUI_ID_NONE;
+}
+
+/* True when a widget owns the keyboard (an input_text is focused) -- keystrokes belong to it. */
+bool
+imgui_want_capture_keyboard( void )
+{
+    return s_ctx.focused_id != IMGUI_ID_NONE;
+}
+
+/* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t
+   range is bounded by APP_KEY_COUNT <= IMGUI_KEY_COUNT (asserted in imgui_input.c).  is_key_pressed
+   is the down-edge this frame (no auto-repeat yet -- repeat=false in Dear ImGui terms). */
+static bool key_in_range( app_key_t key ) { return (i32)key >= 0 && (i32)key < APP_KEY_COUNT; }
+
+bool imgui_is_key_down    ( app_key_t key ) { return key_in_range( key ) && s_io.keys_down    [ key ]; }
+bool imgui_is_key_pressed ( app_key_t key ) { return key_in_range( key ) && s_io.keys_pressed [ key ]; }
+bool imgui_is_key_released( app_key_t key ) { return key_in_range( key ) && s_io.keys_released[ key ]; }
+
+/* Per-button mouse state; app_mouse_button_t (0=left,1=right,2=middle) indexes the snapshot
+   directly.  is_mouse_clicked is the press-down edge, mirroring ImGui::IsMouseClicked. */
+static bool mb_in_range( app_mouse_button_t b ) { return (i32)b >= 0 && (i32)b < 3; }
+
+bool imgui_is_mouse_down          ( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_down    [ b ]; }
+bool imgui_is_mouse_clicked       ( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_pressed [ b ]; }
+bool imgui_is_mouse_released      ( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_released[ b ]; }
+bool imgui_is_mouse_double_clicked( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_double  [ b ]; }
+
+/* Pointer position, wheel delta, and timing straight from the snapshot. */
+void imgui_get_mouse_pos  ( f32* x, f32* y ) { if ( x ) *x = s_io.mouse_x; if ( y ) *y = s_io.mouse_y; }
+f32  imgui_get_mouse_wheel( void )           { return s_io.mouse_wheel; }
+f32  imgui_get_delta_time ( void )           { return s_io.dt; }
+f64  imgui_get_time       ( void )           { return s_io.time; }
+
 // clang-format on
 /*============================================================================================*/

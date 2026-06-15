@@ -220,6 +220,19 @@ const imgui_api_t g_imgui_api_struct = {
     .pop_clip      = imgui_pop_clip,
     .debug_set_layers = imgui_debug_set_layers,
     .debug_get_layers = imgui_debug_get_layers,
+    .want_capture_mouse      = imgui_want_capture_mouse,
+    .want_capture_keyboard   = imgui_want_capture_keyboard,
+    .is_key_down             = imgui_is_key_down,
+    .is_key_pressed          = imgui_is_key_pressed,
+    .is_key_released         = imgui_is_key_released,
+    .is_mouse_down           = imgui_is_mouse_down,
+    .is_mouse_clicked        = imgui_is_mouse_clicked,
+    .is_mouse_released       = imgui_is_mouse_released,
+    .is_mouse_double_clicked = imgui_is_mouse_double_clicked,
+    .get_mouse_pos           = imgui_get_mouse_pos,
+    .get_mouse_wheel         = imgui_get_mouse_wheel,
+    .get_delta_time          = imgui_get_delta_time,
+    .get_time                = imgui_get_time,
 };
 
 /*----------------------------------------------------------------------------------------------

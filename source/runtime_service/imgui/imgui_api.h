@@ -437,6 +437,36 @@ typedef struct imgui_api_s
     void ( *debug_set_layers )( u32 layers );
     u32  ( *debug_get_layers )( void );
 
+    /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that
+       would otherwise re-query app() and so bypass imgui's frame timing and its input capture.
+
+       want_capture_mouse / want_capture_keyboard are the fence: a true return means imgui owns the
+       device this frame (the cursor is over a window, a widget is dragging, or a field is focused),
+       so non-UI code should NOT also act on it.  Gate direct app() input reads in gameplay / tools
+       on the inverse:
+
+           if ( !imgui()->want_capture_keyboard() && app()->key_pressed( APP_KEY_SPACE ) )
+               jump();
+
+       The is_key_* / is_mouse_* / get_* readers return the same per-frame state the widgets use
+       (keyed by app_key_t / app_mouse_button_t).  is_key_pressed / is_mouse_clicked are the down-
+       edge this frame; is_key_pressed has no auto-repeat yet (repeat=false in Dear ImGui terms).
+       get_time is seconds since the first frame (accumulated dt); get_delta_time is this frame's. */
+
+    bool ( *want_capture_mouse       )( void );
+    bool ( *want_capture_keyboard    )( void );
+    bool ( *is_key_down              )( app_key_t key );
+    bool ( *is_key_pressed           )( app_key_t key );
+    bool ( *is_key_released          )( app_key_t key );
+    bool ( *is_mouse_down            )( app_mouse_button_t b );
+    bool ( *is_mouse_clicked         )( app_mouse_button_t b );
+    bool ( *is_mouse_released        )( app_mouse_button_t b );
+    bool ( *is_mouse_double_clicked  )( app_mouse_button_t b );
+    void ( *get_mouse_pos            )( f32* x, f32* y );
+    f32  ( *get_mouse_wheel          )( void );
+    f32  ( *get_delta_time           )( void );
+    f64  ( *get_time                 )( void );
+
 } imgui_api_t;
 
 /*============================================================================================*/

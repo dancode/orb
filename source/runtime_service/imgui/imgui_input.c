@@ -33,9 +33,11 @@ typedef struct
     bool  mouse_double  [ 3 ];
     bool  keys_down     [ IMGUI_KEY_COUNT ];
     bool  keys_pressed  [ IMGUI_KEY_COUNT ];
+    bool  keys_released [ IMGUI_KEY_COUNT ];
     char  text[ 32 ];
     char  paste[ 256 ];   /* clipboard text delivered this frame (APP_EV_CLIPBOARD), else empty */
     f32   dt;
+    f64   time;           /* seconds since the first frame -- dt accumulated; backs get_time() */
     i32   display_w, display_h;
 
 } imgui_io_t;
@@ -224,8 +226,9 @@ input_update( i32 win_w, i32 win_h, f32 dt )
     /* Key state snapshot. */
     for ( i32 k = 0; k < APP_KEY_COUNT; ++k )
     {
-        s_io.keys_down    [ k ] = app()->key_down    ( (app_key_t)k );
-        s_io.keys_pressed [ k ] = app()->key_pressed ( (app_key_t)k );
+        s_io.keys_down     [ k ] = app()->key_down     ( (app_key_t)k );
+        s_io.keys_pressed  [ k ] = app()->key_pressed  ( (app_key_t)k );
+        s_io.keys_released [ k ] = app()->key_released ( (app_key_t)k );
     }
 
     /* Text + scroll + paste arrive via the host-fed pending state (the host owns the event
@@ -249,6 +252,7 @@ input_update( i32 win_w, i32 win_h, f32 dt )
     s_io.display_w = win_w;
     s_io.display_h = win_h;
     s_io.dt        = dt;
+    s_io.time     += (f64)dt;   /* monotonic frame clock for get_time() */
 }
 
 // clang-format on
