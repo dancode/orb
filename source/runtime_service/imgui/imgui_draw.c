@@ -304,6 +304,52 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
 }
 
 /*----------------------------------------------------------------------------------------------
+    draw_prim_begin / draw_prim_commit -- raw vertex/index reservation for custom geometry.
+
+    The rect / triangle pushers above each build one fixed shape with a single color.  Stroking a
+    line or path needs per-vertex colors (the antialiased edge fades a vertex's alpha to 0) and a
+    variable vertex count, so it writes the buffers directly: draw_prim_begin guards overflow,
+    reserves nv verts and ni indices, opens the solid-white draw command, and hands back write
+    pointers, the base vertex index, and the white-texel UV every vertex must carry.  The caller
+    fills [*out_v .. nv) and [*out_i .. ni) then calls draw_prim_commit with the same counts.
+
+    Indices are written relative to *out_base (the absolute first vertex), so a stroke builder adds
+    its local 0..nv-1 vertex numbers to that base.  Used by imgui_draw_path.c.
+----------------------------------------------------------------------------------------------*/
+
+static bool
+draw_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
+                 imgui_draw_vert_t** out_v, u16** out_i, u16* out_base )
+{
+    if ( s_draw.vert_count + nv > IMGUI_MAX_VERTS || s_draw.idx_count + ni > IMGUI_MAX_IDX )
+    {
+        s_draw.overflow = true;
+        return false;
+    }
+
+    /* Solid geometry rides the font atlas's white texel, same convention as the rect/tri path. */
+    u32          tex  = font_atlas_idx();
+    imgui_rect_t clip = draw_current_clip();
+    draw_ensure_cmd( tex, clip );
+    if ( s_draw.cmd_count == 0 )
+        return false;
+
+    font_white_uv( wu, wv );
+    *out_base = (u16)s_draw.vert_count;
+    *out_v    = &s_draw.verts[ s_draw.vert_count ];
+    *out_i    = &s_draw.indices[ s_draw.idx_count ];
+    return true;
+}
+
+static void
+draw_prim_commit( u32 nv, u32 ni )
+{
+    s_draw.vert_count += nv;
+    s_draw.idx_count  += ni;
+    s_draw.cmds[ s_draw.cmd_count - 1 ].elem_count += ni;
+}
+
+/*----------------------------------------------------------------------------------------------
     draw_push_circle_filled -- a solid disc as a triangle fan around its center.
 
     `segments` facets approximate the circle; ~16 reads as round at widget sizes.  Built on

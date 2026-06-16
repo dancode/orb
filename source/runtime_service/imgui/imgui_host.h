@@ -87,6 +87,7 @@ void imgui_stack_sameline( f32 spacing );
 void imgui_skip( void );
 void imgui_spacing( f32 h );
 void imgui_separator( void );
+imgui_rect_t imgui_canvas( f32 height );
 
 f32 imgui_line_h( void );
 f32 imgui_text_w( const char* s );
@@ -121,6 +122,8 @@ bool imgui_arrow_button( const char* id_str, imgui_dir_t dir );
 bool imgui_checkbox( const char* label, bool* v );
 bool imgui_radio_button( const char* label, i32* v, i32 value );
 bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
+bool imgui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step );
+bool imgui_slider_int( const char* label, i32* v, i32 lo, i32 hi );
 bool imgui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
 bool imgui_selectable( const char* label, bool* selected );
@@ -136,6 +139,12 @@ void imgui_set_font      ( imgui_font_t font );
 void imgui_set_bmp_scale ( u32 scale );
 void imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );
 void imgui_draw_text( f32 x, f32 y, u32 abgr, const char* str );
+void imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+void imgui_draw_polyline( const imgui_vec2_t* pts, u32 count, f32 thickness,
+                          imgui_stroke_align_t align, bool closed, u32 abgr );
+void imgui_path_clear( void );
+void imgui_path_line_to( f32 x, f32 y );
+void imgui_path_stroke( f32 thickness, imgui_stroke_align_t align, bool closed, u32 abgr );
 void imgui_push_clip( f32 x, f32 y, f32 w, f32 h );
 void imgui_pop_clip( void );
 

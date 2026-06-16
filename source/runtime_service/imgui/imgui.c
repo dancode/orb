@@ -7,6 +7,7 @@
         imgui_font_builtin.c -- hardcoded bitmap fonts: bitmap_font_def_t/t, bitmap_atlas_*, s_bitmap_*
         imgui_font.c         -- font management + dispatch: tt_font_t, tt_font_load, font_glyph, font_*
         imgui_draw.c         -- CPU draw list: draw_reset, draw_push_*, s_draw
+        imgui_draw_path.c    -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
         imgui_render.c  -- GPU flush: imgui_render_init/shutdown/flush
         imgui_debug.c   -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
         imgui_input.c   -- app->IO snapshot: input_update, s_io
@@ -197,6 +198,7 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 #include "runtime_service/imgui/imgui_font_builtin.c"
 #include "runtime_service/imgui/imgui_font.c"
 #include "runtime_service/imgui/imgui_draw.c"
+#include "runtime_service/imgui/imgui_draw_path.c"
 #include "runtime_service/imgui/imgui_render.c"
 #include "runtime_service/imgui/imgui_debug.c"
 #include "runtime_service/imgui/imgui_input.c"

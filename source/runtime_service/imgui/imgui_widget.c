@@ -264,11 +264,49 @@ imgui_radio_button( const char* label, i32* v, i32 value )
 }
 
 /*----------------------------------------------------------------------------------------------
-    slider_float -- draggable horizontal slider; returns true while dragging
+    slider_float / slider_int -- draggable horizontal sliders; return true while dragging.
+
+    All three flavours share one body: claim the cell, run the drag behavior, map the cursor's
+    normalized track position to the caller's value type (snapping to a step or to whole integers),
+    then draw the track + fill + knob + centered value text through slider_render.  The only
+    per-flavour parts are the value mapping and the printf form, so they stay tiny wrappers.
 ----------------------------------------------------------------------------------------------*/
 
+/* Draw a slider's track, the fill bar up to t (0..1), the knob, and -- unless IMGUI_ITEM_NO_VALUE_TEXT
+   is set -- value_text centered on top, fitted to the inner width. */
+static void
+slider_render( imgui_rect_t track_r, widget_state_t st, f32 t, const char* value_text )
+{
+    t = saturate( t );
+
+    draw_push_rect_filled( track_r.x, track_r.y, track_r.w, track_r.h,
+                           0,0,1,1, 0, COL_SLIDER_TRACK );
+    draw_push_rect_outline( track_r.x, track_r.y, track_r.w, track_r.h,
+                            WIN_BORDER, 0, COL_BORDER );
+
+    f32 fill_w = t * ( track_r.w - SLIDER_KNOB_W );
+    if ( fill_w > 0.0f )
+        draw_push_rect_filled( track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f,
+                               0,0,1,1, 0, COL_WIDGET_FG );
+
+    f32 knob_x = track_r.x + t * ( track_r.w - SLIDER_KNOB_W );
+    draw_push_rect_filled( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
+                           0,0,1,1, 0, widget_bg_color( st ) );
+
+    if ( value_text && !( s_ctx.cur_item_flags & IMGUI_ITEM_NO_VALUE_TEXT ) )
+    {
+        f32 inner = track_r.w - 2.0f * WIDGET_PAD;
+        f32 tw    = font_text_w_n( value_text, 0xFFFFFFFFu );
+        f32 tx    = track_r.x + ( track_r.w - tw ) * 0.5f;
+        if ( tx < track_r.x + WIDGET_PAD ) tx = track_r.x + WIDGET_PAD;
+        draw_text_fit_n( tx, text_center_y( track_r.y, track_r.h ), COL_TEXT, value_text, 0xFFFFFFFFu, inner );
+    }
+}
+
+/* slider_float_step -- slider_float quantized to `step` (e.g. 0.25 lands the value on 1/4 marks);
+   step <= 0 leaves it continuous, so plain slider_float just forwards with step 0. */
 bool
-imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
+imgui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
 {
     imgui_id_t   id = widget_id( label );
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
@@ -278,37 +316,64 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
     imgui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
     widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
 
-    /* Drag: update value when active. */
+    /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
     bool changed = false;
     if ( st.active )
     {
-        f32 t = saturate( ( s_io.mouse_x - track_r.x ) / track_r.w );
+        f32 t  = saturate( ( s_io.mouse_x - track_r.x ) / track_r.w );
         f32 nv = lo + t * ( hi - lo );
+        if ( step > 0.0f )
+            nv = lo + floorf( ( nv - lo ) / step + 0.5f ) * step;   /* nearest step from lo */
+        if ( nv < lo ) nv = lo;
+        if ( nv > hi ) nv = hi;
         if ( nv != *v )
         {
-            *v     = nv;
+            *v      = nv;
             changed = true;
         }
     }
 
-    /* Draw track. */
-    draw_push_rect_filled( track_r.x, track_r.y, track_r.w, track_r.h,
-                           0,0,1,1, 0, COL_SLIDER_TRACK );
-    draw_push_rect_outline( track_r.x, track_r.y, track_r.w, track_r.h,
-                            WIN_BORDER, 0, COL_BORDER );
+    f32  t_cur = ( hi > lo ) ? ( ( *v - lo ) / ( hi - lo ) ) : 0.0f;
+    char buf[ 32 ];
+    snprintf( buf, sizeof( buf ), "%.3f", *v );
+    slider_render( track_r, st, t_cur, buf );
+    return changed;
+}
 
-    /* Draw fill bar up to the current value. */
-    f32 t_cur    = ( hi > lo ) ? ( ( *v - lo ) / ( hi - lo ) ) : 0.0f;
-    f32 fill_w   = t_cur * ( track_r.w - SLIDER_KNOB_W );
-    if ( fill_w > 0.0f )
-        draw_push_rect_filled( track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f,
-                               0,0,1,1, 0, COL_WIDGET_FG );
+bool
+imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
+{
+    return imgui_slider_float_step( label, v, lo, hi, 0.0f );
+}
 
-    /* Draw knob. */
-    f32 knob_x = track_r.x + t_cur * ( track_r.w - SLIDER_KNOB_W );
-    draw_push_rect_filled( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
-                           0,0,1,1, 0, widget_bg_color( st ) );
+/* slider_int -- the integer slider; every track position lands on a whole value in [lo,hi]. */
+bool
+imgui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
+{
+    imgui_id_t   id = widget_id( label );
+    imgui_rect_t r  = widget_next_rect( WIDGET_H );
 
+    imgui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
+    widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
+
+    bool changed = false;
+    if ( st.active )
+    {
+        f32 t  = saturate( ( s_io.mouse_x - track_r.x ) / track_r.w );
+        i32 nv = lo + (i32)floorf( t * (f32)( hi - lo ) + 0.5f );    /* nearest whole step */
+        if ( nv < lo ) nv = lo;
+        if ( nv > hi ) nv = hi;
+        if ( nv != *v )
+        {
+            *v      = nv;
+            changed = true;
+        }
+    }
+
+    f32  t_cur = ( hi > lo ) ? ( (f32)( *v - lo ) / (f32)( hi - lo ) ) : 0.0f;
+    char buf[ 32 ];
+    snprintf( buf, sizeof( buf ), "%d", *v );
+    slider_render( track_r, st, t_cur, buf );
     return changed;
 }
 
@@ -571,6 +636,19 @@ void
 imgui_spacing( f32 h )
 {
     widget_next_rect( h > 0.0f ? h : WIDGET_GAP );
+}
+
+/* Reserve a rectangular drawing area in the layout and hand back its screen rect, for custom
+   geometry (draw_line / draw_polyline / draw_rect / draw_text).  Consumes one cell like any
+   widget -- full content width, `height` pixels tall (height <= 0 fills the remaining region
+   height) -- so it flows in the vertical list and the pen resumes below it.  The returned rect is
+   in the same screen space the draw_* calls take, and the enclosing window clips it. */
+imgui_rect_t
+imgui_canvas( f32 height )
+{
+    if ( height <= 0.0f )
+        height = imgui_content_avail().y;
+    return widget_next_rect( height );
 }
 
 /* A horizontal rule: a thin line spanning the cell width, centered in a standard-height cell. */

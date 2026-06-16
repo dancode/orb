@@ -284,6 +284,11 @@ typedef struct imgui_api_s
     void ( *spacing    )( f32 h );
     void ( *separator  )( void );
 
+    /* canvas() -- reserve a full-width drawing area of `height` px in the layout (height <= 0 fills
+       the rest of the region) and return its screen rect, for custom geometry drawn with the
+       draw_* / path_* calls.  It flows like any widget and the window clips it. */
+    imgui_rect_t ( *canvas )( f32 height );
+
     /* Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
        line_h / text_w are the raw font metrics; h_min / w_min are the standard margin a row /
        cell adds around its content (the "size without content"); calc_row / calc_col add that
@@ -389,7 +394,18 @@ typedef struct imgui_api_s
        sets *v = value.  Emit several against the same v (same_line between them for a row) to form
        a group; returns true only on the frame a click changes the selection. */
     bool ( *radio_button )( const char* label, i32* v, i32 value );
+    /* slider_float -- draggable [lo,hi] slider; returns true while dragging.  The current value is
+       drawn centered on the track by default ("%.3f"); set IMGUI_ITEM_NO_VALUE_TEXT (push or
+       next_item_flag) to hide it for a bare slider. */
     bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );
+
+    /* slider_float_step -- slider_float that quantizes the value to `step` (e.g. 0.25 snaps to the
+       quarter marks); step <= 0 is continuous, identical to slider_float. */
+    bool ( *slider_float_step)( const char* label, f32* v, f32 lo, f32 hi, f32 step );
+
+    /* slider_int -- integer slider over [lo,hi]; every track position lands on a whole value, drawn
+       centered ("%d").  Same IMGUI_ITEM_NO_VALUE_TEXT suppression as slider_float. */
+    bool ( *slider_int  )( const char* label, i32* v, i32 lo, i32 hi );
 
     /* drag_int -- a framed integer field driven by a left/right drag (the DragInt analogue): no
        track, so no max travel -- v_speed units of value per pixel.  v_min < v_max bounds it; both
@@ -445,6 +461,25 @@ typedef struct imgui_api_s
 
     void ( *draw_rect )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
     void ( *draw_text )( f32 x, f32 y, u32 abgr, const char* str );
+
+    /* Line / path stroking (imgui_stroke_align_t; see imgui.h for the pixel model).
+       draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
+       draw_polyline -- a connected point array with miter-limited corners (always antialiased);
+                        `closed` joins the last point back to the first (rect / polygon outlines).
+       path_*        -- the retained form: clear, append points with path_line_to, then path_stroke
+                        (which strokes and clears the buffer).  Up to IMGUI_PATH_MAX points.
+
+           imgui()->draw_line( 10, 10, 200, 80, 2.0f, col );      // a 2px antialiased diagonal
+           imgui()->path_line_to( x0, y0 ); imgui()->path_line_to( x1, y1 ); ...
+           imgui()->path_stroke( 1.5f, IMGUI_STROKE_CENTER, false, col ); */
+
+    void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+    void ( *draw_polyline )( const imgui_vec2_t* pts, u32 count, f32 thickness,
+                             imgui_stroke_align_t align, bool closed, u32 abgr );
+    void ( *path_clear    )( void );
+    void ( *path_line_to  )( f32 x, f32 y );
+    void ( *path_stroke   )( f32 thickness, imgui_stroke_align_t align, bool closed, u32 abgr );
+
     void ( *push_clip )( f32 x, f32 y, f32 w, f32 h );
     void ( *pop_clip  )( void );
 

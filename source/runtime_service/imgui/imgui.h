@@ -259,6 +259,9 @@ typedef enum
                                         an initial delay at a steady rate (spinner / scroll arrows),
                                         instead of once on release.  Honored by widget_behavior, so
                                         any button-kind widget under the flag auto-repeats. */
+    IMGUI_ITEM_NO_VALUE_TEXT = 1 << 2, /* slider_float: suppress the value text drawn centered on the
+                                        track.  The value is shown by default; set this (push or
+                                        next_item_flag) to hide it for a bare / compact slider. */
 
  /* Room to grow without disturbing call sites or the vtable -- e.g. a future
     IMGUI_ITEM_READ_ONLY (editable widgets show but reject input), IMGUI_ITEM_NO_NAV, etc. */
@@ -374,6 +377,37 @@ typedef enum
 
 #define IMGUI_COLOR( r, g, b, a ) \
     ( ( ( u32 )( a ) << 24 ) | ( ( u32 )( b ) << 16 ) | ( ( u32 )( g ) << 8 ) | ( u32 )( r ) )
+
+/*==============================================================================================
+    Line / path stroking
+
+    Thickness, pixel-snapping, and where a stroke sits relative to the ideal path it is drawn from.
+    Implementation in imgui_draw_path.c.
+
+    Pixel model: integer coordinates fall on the lines *between* pixels, so a crisp axis-aligned
+    stroke is one whose two edges both land on integers.  draw_line strokes a single segment: a
+    horizontal / vertical one snaps to the pixel grid and renders perfectly crisp (like a
+    separator); any other angle is stroked with a 1px antialiased edge so diagonals stay smooth.
+    draw_polyline / path_stroke connect several points with miter-limited corners (always
+    antialiased) -- use them for multi-segment outlines, arrows, and diagonal runs.
+==============================================================================================*/
+
+/* Where the stroke sits across the ideal path (the line the coordinates describe).  CENTER runs
+   the path down the middle of the stroke; INSIDE / OUTSIDE push the whole width onto one side (the
+   left-hand normal of travel is the "inside").  CENTER_BIASED is CENTER plus a parity-aware snap so
+   an odd-thickness axis-aligned line lands on whole pixels instead of straddling two -- the crisp
+   default for UI rules and borders.  (The snap only bites on axis-aligned single segments; a
+   diagonal or a multi-segment polyline treats CENTER_BIASED as CENTER and relies on antialiasing.) */
+typedef enum
+{
+    IMGUI_STROKE_CENTER_BIASED = 0,   /* centered + snapped to the pixel grid (default) */
+    IMGUI_STROKE_CENTER,              /* centered on the path, no snap                  */
+    IMGUI_STROKE_INSIDE,              /* whole width on the interior side of a CW-screen ring */
+    IMGUI_STROKE_OUTSIDE,             /* whole width on the exterior side of a CW-screen ring */
+
+} imgui_stroke_align_t;
+
+#define IMGUI_PATH_MAX 256            /* max points path_line_to accumulates before a stroke */
 
 /*==============================================================================================
     Draw vertex  (20 bytes, single interleaved binding)

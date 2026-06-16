@@ -12,6 +12,7 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <math.h>      /* cosf / sinf -- the diagonal fan + polygon in demo_lines */
 
 #include "sb_vulkan_imgui.h"
 #include "runtime_service/imgui/imgui_host.h"
@@ -526,6 +527,229 @@ demo_autosize( void )
 }
 
 /*==============================================================================================
+    12. Lines & paths -- draw_line / draw_polyline / path_stroke.
+
+    A drawing demo rather than a widget one: each example reserves a canvas() block in the normal
+    vertical list and strokes directly into the screen rect it returns.  The Thickness slider and
+    the alignment radio drive the examples live: pixel-crisp axis-aligned lines, antialiased
+    diagonals, the four stroke alignments against the ideal path, closed shapes (square / circle),
+    adjustable mitered corners, and a path-built polygon / star.
+==============================================================================================*/
+
+/* Palette shared by the line canvases. */
+#define LINE_INK    IMGUI_COLOR( 0xE6, 0xE6, 0xE6, 0xFF )   /* near-white stroke    */
+#define LINE_CYAN   IMGUI_COLOR( 0x4F, 0xC3, 0xF7, 0xFF )   /* cool accent          */
+#define LINE_AMBR   IMGUI_COLOR( 0xFF, 0xB0, 0x40, 0xFF )   /* warm accent (opaque) */
+#define LINE_AMBR_T IMGUI_COLOR( 0xFF, 0xB0, 0x40, 0xC8 )   /* warm, translucent    */
+#define LINE_PATH   IMGUI_COLOR( 0xFF, 0xFF, 0xFF, 0xFF )   /* the ideal path / guide */
+#define LINE_BG     IMGUI_COLOR( 0x1E, 0x1E, 0x1E, 0xFF )   /* canvas backdrop      */
+
+static const f32 PI = 3.14159265f;
+
+/* Stroke a closed point ring: optionally the ideal path as a 1px white guide, then the thick
+   selected stroke translucent on top -- so inside / center / outside reads against the guide. */
+static void
+line_shape( const imgui_vec2_t* pts, u32 n, f32 thickness, imgui_stroke_align_t align, bool guide )
+{
+    if ( guide )
+        imgui()->draw_polyline( pts, n, 1.0f, IMGUI_STROKE_CENTER, true, LINE_PATH );
+    imgui()->draw_polyline( pts, n, thickness, align, true, LINE_AMBR_T );
+}
+
+static void
+demo_lines( void )
+{
+    /* Interactive parameters driven by the widgets below. */
+    static i32  thickness_px = 6;     /* shared stroke width (integer-snapped via slider_int) */
+    static int  align_idx = 0;        /* index into the alignment table      */
+    static f32  spread    = 1.0f;     /* zig-zag corner amplitude (0..1)     */
+    static int  poly_pts  = 5;        /* sides of the path-built polygon     */
+    static bool star_mode = true;     /* star vs convex polygon              */
+    static bool show_guides = true;   /* draw the 1px white ideal-path guides */
+
+    static const char*           align_names[ 4 ] = { "CENTER_BIASED", "CENTER", "INSIDE", "OUTSIDE" };
+    static const imgui_stroke_align_t align_mode[ 4 ] = {
+        IMGUI_STROKE_CENTER_BIASED, IMGUI_STROKE_CENTER, IMGUI_STROKE_INSIDE, IMGUI_STROKE_OUTSIDE };
+
+    if ( imgui()->begin_window( "Lines & Paths", 80, 40, 480, 660, IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        imgui()->text( "draw_line / draw_polyline / path_stroke into a canvas()." );
+
+        /* ---- controls ---- */
+        imgui()->separator_text( "Parameters" );
+        imgui()->slider_int( "Thickness", &thickness_px, 0, 16 );   /* 0 hides the stroke -> guide only */
+        f32 thickness = (f32)thickness_px;                          /* used as f32 by the draw calls */
+        imgui()->textf( "alignment: %s", align_names[ align_idx ] );
+
+        imgui()->bar();                                  /* a horizontal run of radio buttons */
+        imgui()->radio_button( "Biased",  &align_idx, 0 );
+        imgui()->radio_button( "Center",  &align_idx, 1 );
+        imgui()->radio_button( "Inside",  &align_idx, 2 );
+        imgui()->radio_button( "Outside", &align_idx, 3 );
+        imgui()->stack();                                /* back to the vertical list */
+
+        imgui()->checkbox( "Show guide lines", &show_guides );
+
+        /* ---- (a) crisp axis-aligned ladder ---- */
+        imgui()->separator_text( "Axis-aligned: crisp 1..6 px (pixel-snapped)" );
+        {
+            imgui_rect_t r = imgui()->canvas( 168.0f );
+            imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );
+
+            /* Reserve a right-hand label gutter sized to the widest tag, so the lines stop short of
+               it and the text always lands inside the canvas (no guessed pixel offsets). */
+            f32 pad = 12.0f;
+            f32 lh  = imgui()->line_h();
+            f32 gut = imgui()->text_w( "16 px" ) + pad;
+            f32 lx  = r.x + pad;
+            f32 lw  = r.w - 2.0f * pad - gut;
+            f32 yy  = r.y + 20.0f;
+            for ( int t = 1; t <= 6; ++t )
+            {
+                char tag[ 8 ];
+                snprintf( tag, sizeof( tag ), "%d px", t );
+                imgui()->draw_line( lx, yy, lx + lw, yy, (f32)t, LINE_INK );
+                imgui()->draw_text( lx + lw + pad, yy - lh * 0.5f, LINE_INK, tag );
+                yy += 24.0f;                              /* a full text row per rung */
+            }
+        }
+
+        /* ---- (b) antialiased diagonal fan (uses Thickness) ---- */
+        imgui()->separator_text( "Antialiased diagonals (Thickness)" );
+        {
+            imgui_rect_t r = imgui()->canvas( 140.0f );
+            imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );
+            f32 cx  = r.x + 24.0f;
+            f32 cy  = r.y + r.h - 20.0f;
+            f32 len = ( r.h - 36.0f );
+            for ( int i = 0; i <= 8; ++i )
+            {
+                f32 a = ( PI * 0.5f ) * (f32)i / 8.0f;     /* sweep 0..90 deg */
+                imgui()->draw_line( cx, cy, cx + cosf( a ) * len, cy - sinf( a ) * len,
+                                    thickness, LINE_CYAN );
+            }
+        }
+
+        /* ---- (c) the four alignments against the ideal path (uses Thickness + the radio) ---- */
+        imgui()->separator_text( "Stroke alignment vs the ideal path" );
+        {
+            imgui_rect_t r = imgui()->canvas( 162.0f );
+            imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );
+
+            f32 pad = 12.0f;
+            f32 lh  = imgui()->line_h();
+
+            /* Caption, right-aligned by its measured width so it stays inside the canvas. */
+            if ( show_guides )
+            {
+                const char* cap = "white = ideal path";
+                imgui()->draw_text( r.x + r.w - pad - imgui()->text_w( cap ), r.y + 6.0f, LINE_PATH, cap );
+            }
+
+            /* Left label column sized to the widest name -- the segments start past it, so a long
+               label like CENTER_BIASED can never run under the lines. */
+            f32 label_w = 0.0f;
+            for ( int i = 0; i < 4; ++i )
+            {
+                f32 w = imgui()->text_w( align_names[ i ] );
+                if ( w > label_w ) label_w = w;
+            }
+            f32 x0 = r.x + pad + label_w + pad;          /* segment start: clear of the label column */
+            f32 x1 = r.x + r.w - pad;                    /* segment end:   canvas right margin       */
+            for ( int i = 0; i < 4; ++i )
+            {
+                f32 ly = r.y + 36.0f + (f32)i * 30.0f;
+                imgui_vec2_t seg[ 2 ] = { { x0, ly }, { x1, ly } };
+                imgui()->draw_polyline( seg, 2, thickness, align_mode[ i ], false, LINE_AMBR_T );
+                if ( show_guides )
+                    imgui()->draw_line( x0, ly, x1, ly, 1.0f, LINE_PATH ); /* ideal-path guide on top */
+                imgui()->draw_text( r.x + pad, ly - lh * 0.5f,
+                                    i == align_idx ? LINE_CYAN : LINE_INK, align_names[ i ] );
+            }
+        }
+
+        /* ---- (d) closed shapes: square + circle (uses Thickness + alignment radio) ---- */
+        imgui()->separator_text( "Closed shapes: draw_polyline (square / circle)" );
+        {
+            imgui_rect_t r = imgui()->canvas( 200.0f );
+            imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );
+            f32 cy = r.y + r.h * 0.5f - 6.0f;
+
+            /* square -- four corners, the same "shape technique" as any polygon */
+            f32 sx = r.x + r.w * 0.27f, hs = 44.0f;
+            imgui_vec2_t sq[ 4 ] = {
+                { sx - hs, cy - hs }, { sx + hs, cy - hs },
+                { sx + hs, cy + hs }, { sx - hs, cy + hs } };
+            line_shape( sq, 4, thickness, align_mode[ align_idx ], show_guides );
+            imgui()->draw_text( sx - 22.0f, cy + hs + 14.0f, LINE_INK, "square" );
+
+            /* circle -- a many-sided closed ring */
+            f32 ox = r.x + r.w * 0.70f, rr = 48.0f;
+            imgui_vec2_t cir[ 48 ];
+            for ( int i = 0; i < 48; ++i )
+            {
+                f32 a = ( 2.0f * PI ) * (f32)i / 48.0f;
+                cir[ i ] = ( imgui_vec2_t ){ ox + cosf( a ) * rr, cy + sinf( a ) * rr };
+            }
+            line_shape( cir, 48, thickness, align_mode[ align_idx ], show_guides );
+            imgui()->draw_text( ox - 20.0f, cy + rr + 14.0f, LINE_INK, "circle" );
+        }
+
+        /* ---- (e) mitered polyline corners, with an adjustable spread (uses Thickness) ---- */
+        imgui()->separator_text( "Polyline: mitered corners" );
+        imgui()->slider_float( "Corner spread", &spread, 0.05f, 1.0f );
+        {
+            imgui_rect_t r = imgui()->canvas( 130.0f );
+            imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );
+            f32 cy   = r.y + r.h * 0.5f;
+            f32 amp  = ( r.h * 0.5f - 16.0f ) * spread;      /* spread closes / opens the V's */
+            f32 x    = r.x + 24.0f;
+            f32 step = ( r.w - 48.0f ) / 6.0f;
+            imgui_vec2_t zig[ 7 ];
+            for ( int i = 0; i < 7; ++i )
+                zig[ i ] = ( imgui_vec2_t ){ x + step * (f32)i, cy + ( ( i & 1 ) ? -amp : amp ) };
+            imgui()->draw_polyline( zig, 7, thickness, IMGUI_STROKE_CENTER, false, LINE_CYAN );
+        }
+
+        /* ---- (f) closed path via the retained builder: polygon / star ---- */
+        imgui()->separator_text( "Closed path: path_stroke (polygon / star)" );
+        imgui()->checkbox( "Star", &star_mode ); imgui()->same_line( 12.0f );
+        imgui()->drag_int( "Points", &poly_pts, 0.1f, 3, 10, "%d" );
+        {
+            imgui_rect_t r = imgui()->canvas( 200.0f );
+            imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );
+            f32 pcx = r.x + r.w * 0.5f;
+            f32 pcy = r.y + r.h * 0.5f;
+            f32 pr  = ( r.h * 0.5f ) - 22.0f;
+
+            imgui()->path_clear();
+            if ( star_mode )
+            {
+                /* alternate outer / inner radius for a star */
+                int n = poly_pts * 2;
+                for ( int i = 0; i < n; ++i )
+                {
+                    f32 a  = -PI * 0.5f + ( 2.0f * PI ) * (f32)i / (f32)n;
+                    f32 rr = ( i & 1 ) ? pr * 0.45f : pr;
+                    imgui()->path_line_to( pcx + cosf( a ) * rr, pcy + sinf( a ) * rr );
+                }
+            }
+            else
+            {
+                for ( int i = 0; i < poly_pts; ++i )
+                {
+                    f32 a = -PI * 0.5f + ( 2.0f * PI ) * (f32)i / (f32)poly_pts;
+                    imgui()->path_line_to( pcx + cosf( a ) * pr, pcy + sinf( a ) * pr );
+                }
+            }
+            imgui()->path_stroke( thickness, IMGUI_STROKE_CENTER, true, LINE_AMBR );
+        }
+    }
+    imgui()->end_window();
+}
+
+/*==============================================================================================
     Demo table -- the menu the host steps through.
 ==============================================================================================*/
 
@@ -542,6 +766,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Pack / Bar",   "bar / pack_size / pack_nextline",                demo_pack        },
     { "Windows",      "multiple windows / flags / z-order",             demo_windows     },
     { "Auto-size",    "ALWAYS_AUTOSIZE / CAN_AUTOSIZE / auto child",    demo_autosize    },
+    { "Lines / Paths","draw_line / draw_polyline / path_stroke",        demo_lines       },
     { NULL,           NULL,                                             NULL             },
 };
 
