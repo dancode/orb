@@ -73,6 +73,12 @@ static u8                   s_resize_edges;
 static f32                  s_resize_off_x, s_resize_off_y;
 static f32                  s_resize_fix_x, s_resize_fix_y;
 
+/* The salt, edge bits, grab-band constants, and the record-agnostic hit-test / highlight helpers
+   live in imgui_widget_core.c -- they need the style macros (WIN_BORDER, COL_RESIZE_HOT) defined
+   there, and that file is still ahead of imgui_layout.c, so begin_child can reuse them.  The
+   s_resize_* state above stays here; the window-record apply / grab / fit stay in
+   imgui_widget_window.c. */
+
 /*----------------------------------------------------------------------------------------------
     window_get -- find the window for this id, or create it from the initial geometry.
     Never returns NULL; an overflowing table falls back to a transient scratch entry.

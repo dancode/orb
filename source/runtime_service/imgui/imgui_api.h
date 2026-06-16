@@ -146,9 +146,12 @@ typedef struct imgui_api_s
     /* Child regions -- a nested scrollable layout box inside the current window (or another
        child).  begin_child carves a box of height h (width w, or the remaining content width
        when w <= 0) from the layout pen, clips and scrolls its contents independently, and
-       gives it its own scrollbar; flags take the IMGUI_WIN_*SCROLL policy bits.  Always pair
-       with end_child -- the parent layout resumes directly below the box.  Fill it with any
-       widgets (e.g. selectable rows for a list box).  begin_child always returns true. */
+       gives it its own scrollbar; flags take the IMGUI_WIN_*SCROLL policy bits.  h <= 0
+       auto-sizes the height to the content (AutoResizeY).  IMGUI_WIN_CHILD_RESIZE_X / _Y add a
+       draggable grip on the right / bottom border (flow children only): that axis becomes
+       user-owned and persisted, seeded from w/h then driven by the drag, the way a window owns
+       its size.  Always pair with end_child -- the parent layout resumes directly below the box.
+       Fill it with any widgets (e.g. selectable rows for a list box).  Always returns true. */
 
     bool ( *begin_child )( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 

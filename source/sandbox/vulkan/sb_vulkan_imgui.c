@@ -268,6 +268,19 @@ demo_child_list( void )
         imgui()->end_child();
 
         imgui()->textf( "selected: %d (this line is below the box)", sel );
+
+        /* Vertically resizeable child: drag the bottom border to change its height.  The size is
+           user-owned and persisted, so the rows below it move as the box grows / shrinks. */
+        imgui()->help_marker( "Drag the bottom border to resize this box vertically." );
+        if ( imgui()->begin_child( "resizeable", 0, 120, IMGUI_WIN_CHILD_RESIZE_Y ) )
+        {
+            imgui()->stack();
+            for ( int i = 0; i < 12; i++ )
+                imgui()->textf( "resizeable line %02d", i );
+        }
+        imgui()->end_child();
+
+        imgui()->text( "this line sits below the resizeable box" );
     }
     imgui()->end_window();
 }

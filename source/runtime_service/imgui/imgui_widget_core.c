@@ -65,6 +65,71 @@
 #define COL_CURSOR       style_col( IMGUI_COL_CURSOR       )
 
 /*----------------------------------------------------------------------------------------------
+    Shared edge-resize geometry
+
+    The salt, edge bits, grab-band constants, and the two record-agnostic helpers (hit-test +
+    highlight).  They sit here -- they need the style macros above, and this file is still ahead of
+    imgui_layout.c -- so both the window chrome (imgui_widget_window.c) and a resizeable begin_child
+    (imgui_layout.c) share one resize feel.  The s_resize_* in-flight state lives in imgui_window.c;
+    the pieces that read or write a window *record* (apply / grab / fit) stay in
+    imgui_widget_window.c.  These touch only a rect and the cursor.
+----------------------------------------------------------------------------------------------*/
+
+/* Edge-resize grab: while a resize is in flight the owner holds active_id == (id ^
+   IMGUI_RESIZE_SALT), distinct from a window drag (the bare id), scrollbar, and collapse arrow. */
+#define IMGUI_RESIZE_SALT     0x5152E001u
+
+/* Edge bits for s_resize_edges -- combined on a corner grab (e.g. R|B). */
+#define IMGUI_RESIZE_L  ( 1u << 0 )
+#define IMGUI_RESIZE_R  ( 1u << 1 )
+#define IMGUI_RESIZE_T  ( 1u << 2 )
+#define IMGUI_RESIZE_B  ( 1u << 3 )
+
+/* Grab band straddling the border: a few pixels inside and a few outside. */
+#define WIN_RESIZE_INNER  ( 4.0f )                  /* reach inside the border  */
+#define WIN_RESIZE_OUTER  ( WIN_BORDER + 6.0f )     /* and just outside it      */
+
+/* Which edges of rect r the cursor is within the grab band of (0 = none).  The band spans
+   [edge - OUTER, edge + INNER] on each side, so the cursor catches an edge from just outside
+   the border as well as just inside.  Caller gates on hover_win, so no occlusion test here.
+   `pin_v` reports horizontal edges only -- a collapsed window (height pinned to the title bar). */
+static u8
+window_resize_hit( imgui_rect_t r, bool pin_v )
+{
+    const f32 in  = WIN_RESIZE_INNER;
+    const f32 out = WIN_RESIZE_OUTER;
+    const f32 mx  = s_io.mouse_x;
+    const f32 my  = s_io.mouse_y;
+
+    /* Outside the outer-expanded rect entirely -> no edge. */
+    if ( mx < r.x - out || mx > r.x + r.w + out ) return 0;
+    if ( my < r.y - out || my > r.y + r.h + out ) return 0;
+
+    u8 e = 0;
+    if ( mx <= r.x + in )           e |= IMGUI_RESIZE_L;
+    if ( mx >= r.x + r.w - in )     e |= IMGUI_RESIZE_R;
+    if ( !pin_v )
+    {
+        if ( my <= r.y + in )       e |= IMGUI_RESIZE_T;
+        if ( my >= r.y + r.h - in ) e |= IMGUI_RESIZE_B;
+    }
+    return e;
+}
+
+/* Paint a bold line over each hot edge of an outline so it is obvious that the border is
+   grabbable and which side will move.  Drawn just inside the rect, over the thin border. */
+static void
+window_draw_resize_highlight( imgui_rect_t r, u8 edges )
+{
+    const f32 t = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */
+
+    if ( edges & IMGUI_RESIZE_L ) draw_push_rect_filled( r.x,             r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & IMGUI_RESIZE_R ) draw_push_rect_filled( r.x + r.w - t,   r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & IMGUI_RESIZE_T ) draw_push_rect_filled( r.x,             r.y,             r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & IMGUI_RESIZE_B ) draw_push_rect_filled( r.x,             r.y + r.h - t,   r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
+}
+
+/*----------------------------------------------------------------------------------------------
     Layout cursor helpers
 ----------------------------------------------------------------------------------------------*/
 

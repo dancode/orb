@@ -28,15 +28,10 @@
 /* Collapse arrow: a distinct stable per-window widget id. */
 #define IMGUI_COLLAPSE_SALT   0xC011A95Eu
 
-/* Edge-resize grab: while a resize is in flight the window owns active_id == (win id ^
-   IMGUI_RESIZE_SALT), distinct from its drag (the bare id), scrollbar, and collapse arrow. */
-#define IMGUI_RESIZE_SALT     0x5152E001u
-
-/* Edge bits for s_resize_edges -- combined on a corner grab (e.g. R|B). */
-#define IMGUI_RESIZE_L  ( 1u << 0 )
-#define IMGUI_RESIZE_R  ( 1u << 1 )
-#define IMGUI_RESIZE_T  ( 1u << 2 )
-#define IMGUI_RESIZE_B  ( 1u << 3 )
+/* IMGUI_RESIZE_SALT, the IMGUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
+   record-agnostic window_resize_hit / window_draw_resize_highlight helpers now live in
+   imgui_window.c (alongside the s_resize_* state, and ahead of imgui_layout.c) so begin_child can
+   reuse them for child-border resize.  The window-record-specific apply / grab stay below. */
 
 /*----------------------------------------------------------------------------------------------
     begin_window / end_window
@@ -71,10 +66,6 @@ window_clamp( imgui_window_t* win )
     it within the outer band -- otherwise the edge would go cold the instant the cursor crossed
     the border.  The expansion is only the few outer pixels, so occlusion is barely affected.
 ----------------------------------------------------------------------------------------------*/
-
-/* Grab band straddling the border: a few pixels inside and a few outside. */
-#define WIN_RESIZE_INNER  ( 4.0f )                  /* reach inside the border  */
-#define WIN_RESIZE_OUTER  ( WIN_BORDER + 6.0f )     /* and just outside it      */
 
 /* Smallest width a window may be shrunk to. */
 static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
@@ -128,33 +119,6 @@ window_fit_size( const char* title, f32 title_h, bool collapsible,
     *out_h = want_h;
 }
 
-/* Which edges of rect r the cursor is within the grab band of (0 = none).  The band spans
-   [edge - OUTER, edge + INNER] on each side, so the cursor catches an edge from just outside
-   the border as well as just inside.  Caller gates on hover_win, so no occlusion test here.
-   Collapsed windows report horizontal edges only -- their height is pinned to the title bar. */
-static u8
-window_resize_hit( imgui_rect_t r, bool collapsed )
-{
-    const f32 in  = WIN_RESIZE_INNER;
-    const f32 out = WIN_RESIZE_OUTER;
-    const f32 mx  = s_io.mouse_x;
-    const f32 my  = s_io.mouse_y;
-
-    /* Outside the outer-expanded rect entirely -> no edge. */
-    if ( mx < r.x - out || mx > r.x + r.w + out ) return 0;
-    if ( my < r.y - out || my > r.y + r.h + out ) return 0;
-
-    u8 e = 0;
-    if ( mx <= r.x + in )           e |= IMGUI_RESIZE_L;
-    if ( mx >= r.x + r.w - in )     e |= IMGUI_RESIZE_R;
-    if ( !collapsed )
-    {
-        if ( my <= r.y + in )       e |= IMGUI_RESIZE_T;
-        if ( my >= r.y + r.h - in ) e |= IMGUI_RESIZE_B;
-    }
-    return e;
-}
-
 /* Apply the in-flight resize to win's geometry, clamped to the minimum size.  Moving edges
    (left/top) shift the origin while pinning the opposite edge recorded at grab time. */
 static void
@@ -192,19 +156,6 @@ window_apply_resize( imgui_window_t* win, f32 title_h )
         if ( s_resize_edges & IMGUI_RESIZE_T ) win->y = s_resize_fix_y - min_h;
         win->h = min_h;
     }
-}
-
-/* Paint a bold line over each hot edge of the window outline so it is obvious that the border
-   is grabbable and which side will move.  Drawn just inside the rect, over the thin border. */
-static void
-window_draw_resize_highlight( imgui_rect_t r, u8 edges )
-{
-    const f32 t = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */
-
-    if ( edges & IMGUI_RESIZE_L ) draw_push_rect_filled( r.x,             r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & IMGUI_RESIZE_R ) draw_push_rect_filled( r.x + r.w - t,   r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & IMGUI_RESIZE_T ) draw_push_rect_filled( r.x,             r.y,             r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & IMGUI_RESIZE_B ) draw_push_rect_filled( r.x,             r.y + r.h - t,   r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
 }
 
 /* On a press inside the resize band, claim active_id and record the grab anchors: an offset

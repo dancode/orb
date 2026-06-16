@@ -213,6 +213,16 @@ typedef enum
     IMGUI_WIN_ALWAYS_AUTOSIZE   = 1 << 9,    /* hug content every frame: no user resize, no scrollbars */
     IMGUI_WIN_CAN_AUTOSIZE      = 1 << 10,   /* show a corner size-grip; double-click it to fit content */
 
+    /* child resize -- begin_child only (the ImGuiChildFlags_ResizeX / _ResizeY analogue).  A
+       draggable grip on the child's right / bottom border; the size on that axis then becomes
+       user-owned and persisted -- seeded once from the begin_child w/h, thereafter set by the
+       drag -- overriding the passed value.  RESIZE_Y supersedes the h<=0 auto-size on that axis.
+       A real window ignores these (it owns its geometry already), as does a grid-cell child
+       (the cell sizes it).  Vertical is the common case; both axes may be combined. */
+
+    IMGUI_WIN_CHILD_RESIZE_X    = 1 << 11,   /* child: drag the right border to resize width   */
+    IMGUI_WIN_CHILD_RESIZE_Y    = 1 << 12,   /* child: drag the bottom border to resize height  */
+
  // IMGUI_WIN_MENUBAR      = 1 << 4,
  // IMGUI_WIN_NOINPUT      = 1 << 5,
 

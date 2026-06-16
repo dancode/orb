@@ -45,6 +45,7 @@ typedef struct
 {
     f32 scroll_x, scroll_y;     /* persisted scroll offset            */
     f32 content_w, content_h;   /* content extent measured last frame */
+    f32 user_w, user_h;         /* user-resized size (CHILD_RESIZE_*); 0 = none, use the passed w/h */
 
 } imgui_region_t;
 
@@ -330,7 +331,17 @@ layout_pop_region( void )
     parent pen, draws its frame, and opens a region inside it.  Fill it with any widgets (e.g.
     selectable rows for a list box); they scroll and clip within the box and get their own
     scrollbar.  Always pair with end_child; the parent layout resumes directly below the box.
+
+    CHILD_RESIZE_X / _Y add a draggable grip on the right / bottom border (flow children only).
+    The size on a resizeable axis is then user-owned and persisted in the region record -- seeded
+    once from the begin_child w/h, thereafter driven by the drag -- so it overrides the passed
+    value and survives across frames, exactly the way a real window owns its geometry.  The grip
+    grows from the top-left (origin pinned), so only the right and bottom edges are live.
 ----------------------------------------------------------------------------------------------*/
+
+/* Smallest a resizeable child may be dragged to: a couple of rows wide, one row plus border tall. */
+#define CHILD_MIN_W ( WIDGET_H * 3.0f )
+#define CHILD_MIN_H ( WIDGET_H + WIN_BORDER )
 
 bool
 imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
@@ -341,9 +352,16 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
        label nests safely under different parents and never collides with a window id. */
     imgui_id_t id = id_combine( id_seed(), id_hash( id_str ) );
 
-    /* Persistent state (scroll offset + last-measured content extent), keyed by id.  Fetched up
-       front because an auto-sized (h <= 0) child reads its measured content_h to size the box. */
+    /* Persistent state (scroll offset, last-measured content extent, user-resized size), keyed by
+       id.  Fetched up front: an auto-sized (h <= 0) child reads content_h, a resizeable one reads
+       the user size, to fix the box. */
     imgui_region_t* rg = region_get( id );
+
+    /* Resize is a flow-child affordance: a grid cell sizes its own child, so the flags are inert
+       there.  resize_id is the active_id this child holds while its border is being dragged. */
+    bool       resize_x  = ( flags & IMGUI_WIN_CHILD_RESIZE_X ) && parent->lay_nrows == 0;
+    bool       resize_y  = ( flags & IMGUI_WIN_CHILD_RESIZE_Y ) && parent->lay_nrows == 0;
+    imgui_id_t resize_id = id_combine( id, IMGUI_RESIZE_SALT );
 
     /* Where the child box lands: in a grid parent it takes the next cell (w / h ignored -- the
        cell sizes it, the natural way to drop a scroll region into a split pane); in flow it sits
@@ -359,14 +377,67 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
         layout_row_break( parent );       /* a flow child starts on its own line */
         if ( w <= 0.0f ) w = parent->content_w;   /* default: fill the remaining content width */
 
-        /* h <= 0 auto-sizes the height to the content measured last frame (the AutoResizeY case):
-           the box hugs its widgets, like an ALWAYS_AUTOSIZE window on the vertical axis.  Before
-           any content is measured (first frame) it opens one widget-row tall and settles next
-           frame.  flags carry no scroll policy here -- an auto-sized child has nothing to scroll. */
-        if ( h <= 0.0f )
+        /* A resizeable axis takes its size from the persisted user value, seeded once from the
+           incoming w/h (a sensible 8-row default when h <= 0 -- RESIZE_Y supersedes auto-size). */
+        if ( resize_x )
+        {
+            if ( rg->user_w <= 0.0f ) rg->user_w = w;
+            w = rg->user_w;
+        }
+        if ( resize_y )
+        {
+            if ( rg->user_h <= 0.0f ) rg->user_h = ( h > 0.0f ) ? h : WIDGET_H * 8.0f;
+            h = rg->user_h;
+        }
+        /* h <= 0 (and not RESIZE_Y) auto-sizes the height to the content measured last frame (the
+           AutoResizeY case): the box hugs its widgets, like an ALWAYS_AUTOSIZE window on the
+           vertical axis.  Before any content is measured (first frame) it opens one widget-row
+           tall and settles next frame.  An auto-sized child has nothing to scroll. */
+        else if ( h <= 0.0f )
             h = ( rg->content_h > 0.0f ) ? rg->content_h + WIDGET_GAP + WIN_BORDER : WIDGET_H;
 
         box = ( imgui_rect_t ){ parent->content_x, parent->cursor_y, w, h };
+    }
+
+    /* Edge-resize interaction, resolved here -- before the body widgets -- so a press on the grip
+       band pre-empts a body widget under it, mirroring how begin_window resolves the window edge
+       first.  Gated on the owning window being front-most and a free or self-owned active_id.
+       Apply an in-flight drag to the persisted size, then re-derive the box so the frame painted
+       below tracks the cursor this frame (the right/bottom edges only -- the origin stays put). */
+    u8 resize_hot = 0;
+    if ( ( resize_x || resize_y ) && s_ctx.win_id == s_ctx.hover_win
+         && ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == resize_id ) )
+    {
+        if ( s_ctx.active_id == resize_id )
+        {
+            if ( s_resize_edges & IMGUI_RESIZE_R )
+            {
+                rg->user_w = ( s_io.mouse_x - s_resize_off_x ) - box.x;
+                if ( rg->user_w < CHILD_MIN_W ) rg->user_w = CHILD_MIN_W;
+                box.w = rg->user_w;
+            }
+            if ( s_resize_edges & IMGUI_RESIZE_B )
+            {
+                rg->user_h = ( s_io.mouse_y - s_resize_off_y ) - box.y;
+                if ( rg->user_h < CHILD_MIN_H ) rg->user_h = CHILD_MIN_H;
+                box.h = rg->user_h;
+            }
+        }
+
+        /* Hot edges under the cursor, narrowed to this child's resizeable axes -- and only the
+           grow-from-origin pair (right + bottom), since the child's top-left is pinned. */
+        u8 allow   = (u8)( ( resize_x ? IMGUI_RESIZE_R : 0u ) | ( resize_y ? IMGUI_RESIZE_B : 0u ) );
+        resize_hot = (u8)( window_resize_hit( box, false ) & allow );
+
+        /* Grab on press: claim the resize active_id and record the offset that keeps the grabbed
+           edge under the cursor (so the size does not jump by the band width at grab time). */
+        if ( resize_hot && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
+        {
+            s_ctx.active_id = resize_id;
+            s_resize_edges  = resize_hot;
+            s_resize_off_x  = ( resize_hot & IMGUI_RESIZE_R ) ? ( s_io.mouse_x - ( box.x + box.w ) ) : 0.0f;
+            s_resize_off_y  = ( resize_hot & IMGUI_RESIZE_B ) ? ( s_io.mouse_y - ( box.y + box.h ) ) : 0.0f;
+        }
     }
 
     /* The child box is chrome, not an item: paint its frame opaque even if a disabled widget
@@ -382,6 +453,14 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
                         &rg->scroll_x, &rg->scroll_y, &rg->content_w, &rg->content_h,
                         /* own_clip */ true );   /* the child's own scissor -- second clip in the window */
 
+    /* Stamp the child's resize bookkeeping on its just-pushed frame, and suppress body-widget hover
+       under a hot/armed edge for the child's duration (the edges stay armed mid-drag even if the
+       cursor drifts off).  end_child restores the saved hot, so siblings below are unaffected. */
+    layout_frame_t* f         = lf();
+    f->child_resize_edge      = ( s_ctx.active_id == resize_id ) ? s_resize_edges : resize_hot;
+    f->child_resize_saved_hot = s_ctx.win_resize_hot;
+    if ( f->child_resize_edge ) s_ctx.win_resize_hot = f->child_resize_edge;
+
     /* No collapse concept for a child: always returns true, always pair with end_child. */
     return true;
 }
@@ -389,13 +468,24 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 void
 imgui_end_child( void )
 {
-    /* Capture the box before layout_pop_region unwinds the frame, then draw the border after it
-       has painted the scrollbars.  The bar tracks are inset by WIN_BORDER and butt against the
-       frame, so drawing the outline last keeps it solid where a track meets the box edge.  The
-       region clip is already popped, so this paints under the parent clip, like begin_child did. */
-    imgui_rect_t box = lf()->outer;
+    /* Capture the box + resize state before layout_pop_region unwinds the frame, then draw the
+       border after it has painted the scrollbars.  The bar tracks are inset by WIN_BORDER and butt
+       against the frame, so drawing the outline last keeps it solid where a track meets the box
+       edge.  The region clip is already popped, so this paints under the parent clip. */
+    layout_frame_t* f     = lf();
+    imgui_rect_t    box   = f->outer;
+    u8              edges = f->child_resize_edge;
+    u8              saved = f->child_resize_saved_hot;
+
     layout_pop_region();
+
+    s_ctx.win_resize_hot = saved;   /* lift the body-widget suppression this child raised */
+
     draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
+
+    /* Resize affordance: bold the hot/armed edge so the border reads as draggable. */
+    if ( edges )
+        window_draw_resize_highlight( box, edges );
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -266,6 +266,14 @@ typedef struct
     imgui_rect_t        parent_clip;        // s_ctx.clip_rect to restore at pop
     u32                 id_restore;         // id-scope depth to restore at pop (see id stack below)
 
+    /* Child edge-resize (begin_child CHILD_RESIZE_*): the armed/hot edges of this child's border
+       and the s_ctx.win_resize_hot to restore at end_child.  begin_child sets both (0 for a
+       non-resizeable child); end_child bolds child_resize_edge and restores the saved hot, so a
+       hot edge suppresses body widgets only while inside this child, never its siblings. */
+
+    u8                  child_resize_edge;       // hot/armed resize edges for this child (0 = none)
+    u8                  child_resize_saved_hot;  // s_ctx.win_resize_hot to restore at end_child
+
 } layout_frame_t;
 
 static layout_frame_t s_layout_stack[ IMGUI_LAYOUT_DEPTH ];
