@@ -337,11 +337,46 @@ layout_pop_region( void )
     once from the begin_child w/h, thereafter driven by the drag -- so it overrides the passed
     value and survives across frames, exactly the way a real window owns its geometry.  The grip
     grows from the top-left (origin pinned), so only the right and bottom edges are live.
+
+    set_next_window_size_constraints latches a one-shot [min,max] box consumed by the next
+    begin_child: it bounds the resolved width / height, so an auto-sized (h <= 0) box grows with
+    its content only up to max_h and then scrolls, never collapses below min_h, and a resize drag
+    cannot leave that range.  A 0 (or non-positive) bound is "unconstrained" on that side.
 ----------------------------------------------------------------------------------------------*/
 
 /* Smallest a resizeable child may be dragged to: a couple of rows wide, one row plus border tall. */
 #define CHILD_MIN_W ( WIDGET_H * 3.0f )
 #define CHILD_MIN_H ( WIDGET_H + WIN_BORDER )
+
+/* Next-child size constraints (the Dear ImGui SetNextWindowSizeConstraints analogue): a one-shot
+   [min,max] box consumed by the next begin_child.  Set by imgui_set_next_window_size_constraints,
+   cleared on consume so it targets exactly one child.  A bound <= 0 means unconstrained on that
+   side; the absolute CHILD_MIN floors still apply to a resize drag. */
+static struct
+{
+    bool has;
+    f32  min_w, min_h, max_w, max_h;
+
+} s_next_child_con;
+
+void
+imgui_set_next_window_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h )
+{
+    s_next_child_con.has   = true;
+    s_next_child_con.min_w = min_w;
+    s_next_child_con.min_h = min_h;
+    s_next_child_con.max_w = max_w;
+    s_next_child_con.max_h = max_h;
+}
+
+/* Clamp v into [mn, mx], treating a non-positive bound as unconstrained on that side. */
+static f32
+child_con_clamp( f32 v, f32 mn, f32 mx )
+{
+    if ( mn > 0.0f && v < mn ) v = mn;
+    if ( mx > 0.0f && v > mx ) v = mx;
+    return v;
+}
 
 bool
 imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
@@ -362,6 +397,17 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
     bool       resize_x  = ( flags & IMGUI_WIN_CHILD_RESIZE_X ) && parent->lay_nrows == 0;
     bool       resize_y  = ( flags & IMGUI_WIN_CHILD_RESIZE_Y ) && parent->lay_nrows == 0;
     imgui_id_t resize_id = id_combine( id, IMGUI_RESIZE_SALT );
+
+    /* Consume any next-child size constraints up front (cleared so they bind only this child).  A
+       grid cell sizes its own child, so the bounds, like the resize flags, are inert there; in flow
+       they clamp the resolved size below and the resize-drag apply that follows. */
+    f32 con_min_w = 0.0f, con_min_h = 0.0f, con_max_w = 0.0f, con_max_h = 0.0f;
+    if ( s_next_child_con.has )
+    {
+        con_min_w = s_next_child_con.min_w;  con_min_h = s_next_child_con.min_h;
+        con_max_w = s_next_child_con.max_w;  con_max_h = s_next_child_con.max_h;
+        s_next_child_con.has = false;
+    }
 
     /* Where the child box lands: in a grid parent it takes the next cell (w / h ignored -- the
        cell sizes it, the natural way to drop a scroll region into a split pane); in flow it sits
@@ -396,6 +442,11 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
         else if ( h <= 0.0f )
             h = ( rg->content_h > 0.0f ) ? rg->content_h + WIDGET_GAP + WIN_BORDER : WIDGET_H;
 
+        /* Bound the resolved size by any next-child constraints: an auto-sized box hugs content up
+           to max_h then the default vertical scrollbar takes over, and never shrinks below min_h. */
+        w = child_con_clamp( w, con_min_w, con_max_w );
+        h = child_con_clamp( h, con_min_h, con_max_h );
+
         box = ( imgui_rect_t ){ parent->content_x, parent->cursor_y, w, h };
     }
 
@@ -413,12 +464,14 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
             if ( s_resize_edges & IMGUI_RESIZE_R )
             {
                 rg->user_w = ( s_io.mouse_x - s_resize_off_x ) - box.x;
+                rg->user_w = child_con_clamp( rg->user_w, con_min_w, con_max_w );
                 if ( rg->user_w < CHILD_MIN_W ) rg->user_w = CHILD_MIN_W;
                 box.w = rg->user_w;
             }
             if ( s_resize_edges & IMGUI_RESIZE_B )
             {
                 rg->user_h = ( s_io.mouse_y - s_resize_off_y ) - box.y;
+                rg->user_h = child_con_clamp( rg->user_h, con_min_h, con_max_h );
                 if ( rg->user_h < CHILD_MIN_H ) rg->user_h = CHILD_MIN_H;
                 box.h = rg->user_h;
             }

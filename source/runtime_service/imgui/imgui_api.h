@@ -83,6 +83,14 @@ typedef struct imgui_api_s
     void ( *set_next_window_pos  )( f32 x, f32 y, imgui_cond_t cond );
     void ( *set_next_window_size )( f32 w, f32 h, imgui_cond_t cond );
 
+    /* set_next_window_size_constraints -- queue a one-shot [min,max] size box for the NEXT
+       begin_child, then cleared.  The Dear ImGui SetNextWindowSizeConstraints analogue, in its
+       most useful form: it bounds the child's resolved width / height, so an auto-sized (h <= 0)
+       box grows with its content up to max_h and then scrolls, never collapses below min_h, and a
+       CHILD_RESIZE_* drag cannot leave the range.  A bound <= 0 is "unconstrained" on that side
+       (e.g. 0, 0, 0, max_h to cap height only).  Call immediately before begin_child. */
+    void ( *set_next_window_size_constraints )( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
+
     bool ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
     void ( *end_window   )( void );
 
@@ -150,8 +158,10 @@ typedef struct imgui_api_s
        auto-sizes the height to the content (AutoResizeY).  IMGUI_WIN_CHILD_RESIZE_X / _Y add a
        draggable grip on the right / bottom border (flow children only): that axis becomes
        user-owned and persisted, seeded from w/h then driven by the drag, the way a window owns
-       its size.  Always pair with end_child -- the parent layout resumes directly below the box.
-       Fill it with any widgets (e.g. selectable rows for a list box).  Always returns true. */
+       its size.  set_next_window_size_constraints (above) bounds the resolved size, so an
+       auto-sized box can grow with its content up to a max height and then scroll.  Always pair
+       with end_child -- the parent layout resumes directly below the box.  Fill it with any
+       widgets (e.g. selectable rows for a list box).  Always returns true. */
 
     bool ( *begin_child )( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 
@@ -380,6 +390,13 @@ typedef struct imgui_api_s
        a group; returns true only on the frame a click changes the selection. */
     bool ( *radio_button )( const char* label, i32* v, i32 value );
     bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );
+
+    /* drag_int -- a framed integer field driven by a left/right drag (the DragInt analogue): no
+       track, so no max travel -- v_speed units of value per pixel.  v_min < v_max bounds it; both
+       equal leaves it unbounded.  format is the printf form of the shown value ("%d" when NULL,
+       e.g. "HP: %d").  Returns true only on frames the drag changes the value. */
+    bool ( *drag_int    )( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
+
     bool ( *input_text  )( const char* label, char* buf, u32 bufsz );
 
     /* selectable -- a full-width row that highlights on hover and fills when selected; the

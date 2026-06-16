@@ -281,6 +281,27 @@ demo_child_list( void )
         imgui()->end_child();
 
         imgui()->text( "this line sits below the resizeable box" );
+
+        /* Auto-resize with a height cap: the box hugs its content (AutoResizeY, h <= 0) but
+           set_next_window_size_constraints caps it at max_lines rows -- beyond that it stops
+           growing and scrolls.  The two sliders drive the emitted line count and the cap so the
+           transition from hugging to scrolling is visible. */
+        imgui()->separator_text( "Auto-resize with constraints" );
+
+        static i32 draw_lines = 3;
+        static i32 max_lines  = 10;
+        imgui()->drag_int( "Lines Count",     &draw_lines, 0.2f, 0,  30, "%d" );
+        imgui()->drag_int( "Max (in lines)",  &max_lines,  0.2f, 1,  20, "%d" );
+
+        f32 line = imgui()->line_h() + imgui()->h_min();   /* one row plus its standard margin */
+        imgui()->set_next_window_size_constraints( 0.0f, line, 0.0f, line * (f32)max_lines );
+        if ( imgui()->begin_child( "constrained", 0, 0, IMGUI_WIN_NONE ) )
+        {
+            imgui()->stack();
+            for ( i32 n = 0; n < draw_lines; n++ )
+                imgui()->textf( "Line %04d", n );
+        }
+        imgui()->end_child();
     }
     imgui()->end_window();
 }

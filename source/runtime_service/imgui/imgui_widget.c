@@ -313,6 +313,72 @@ imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 }
 
 /*----------------------------------------------------------------------------------------------
+    drag_int -- a framed integer field whose value is changed by dragging left / right (the Dear
+    ImGui DragInt analogue).  No track travel: the value is relative to where the press landed,
+    so it has no max -- v_speed units of value per pixel dragged.  v_min < v_max bounds it; both
+    equal (e.g. 0,0) leaves it unbounded.  format is the printf form for the displayed value
+    ("%d" when NULL/empty; embed a caption like "HP: %d").  Returns true only on the frames the
+    drag actually changes the value, so the caller can react to live edits.
+
+    Mouse capture works exactly like slider_float: widget_behavior claims active_id on the press
+    (WIDGET_KIND_DRAG), so the drag stays bound to this widget while the cursor sweeps off it and
+    no neighbour can steal it.  The press anchor is s_click_x[0] (recorded by the input snapshot)
+    paired with the value captured here at press time; re-deriving from that anchor every frame
+    keeps the drag exact and drift-free.
+----------------------------------------------------------------------------------------------*/
+
+/* Value at the press that started the active drag.  Single-slot: only one widget owns active_id
+   at a time, the same reason the resize / repeat scratch state is a lone static. */
+static i32 s_drag_anchor_v;
+
+bool
+imgui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
+{
+    if ( v_speed <= 0.0f ) v_speed = 1.0f;
+    if ( !format || !format[ 0 ] ) format = "%d";
+
+    imgui_id_t   id    = widget_id( label );
+    imgui_rect_t r     = widget_next_rect( WIDGET_H );
+    imgui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
+
+    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
+
+    /* Capture the value at the grab, then map total cursor displacement since the press into a new
+       value each frame (recomputed from the anchor, so rounding never accumulates drift). */
+    if ( st.pressed )
+        s_drag_anchor_v = *v;
+
+    bool changed = false;
+    if ( st.active )
+    {
+        f32 acc = (f32)s_drag_anchor_v + ( s_io.mouse_x - s_click_x[ 0 ] ) * v_speed;
+        i32 nv  = (i32)floorf( acc + 0.5f );                  /* nearest int */
+        if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
+        if ( nv != *v )
+        {
+            *v      = nv;
+            changed = true;
+        }
+    }
+
+    /* Frame: a slider-track box that brightens on hover / active so the drag affordance reads. */
+    u32 bg = st.active ? COL_WIDGET_ACT : ( st.hover ? COL_WIDGET_HOT : COL_SLIDER_TRACK );
+    draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0, COL_BORDER );
+
+    /* Formatted value, centered in the box and fitted (ellipsized) to its inner width. */
+    char buf[ 64 ];
+    snprintf( buf, sizeof( buf ), format, *v );
+    f32 inner = box_r.w - 2.0f * WIDGET_PAD;
+    f32 tw    = font_text_w_n( buf, 0xFFFFFFFFu );
+    f32 tx    = box_r.x + ( box_r.w - tw ) * 0.5f;
+    if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
+    draw_text_fit_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu, inner );
+
+    return changed;
+}
+
+/*----------------------------------------------------------------------------------------------
     input_text -- single-line text field; returns true when Enter is pressed.
 
     Delegates all editing logic to input_field_edit (imgui_widget_core.c): cursor movement,
