@@ -29,9 +29,11 @@
 #define IMGUI_COLLAPSE_SALT   0xC011A95Eu
 
 /* IMGUI_RESIZE_SALT, the IMGUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
-   record-agnostic window_resize_hit / window_draw_resize_highlight helpers now live in
-   imgui_window.c (alongside the s_resize_* state, and ahead of imgui_layout.c) so begin_child can
-   reuse them for child-border resize.  The window-record-specific apply / grab stay below. */
+   record-agnostic resize helpers (window_resize_hit, window_draw_resize_highlight, resize_grab,
+   resize_apply_edges) live in imgui_widget_core.c -- alongside the style macros they need and ahead
+   of imgui_layout.c -- so begin_child and a future dock splitter reuse the same mechanism.  Only the
+   window's size policy stays below: the min clamp with far-edge pinning (window_apply_resize) and
+   the content auto-fit (window_fit_size). */
 
 /*----------------------------------------------------------------------------------------------
     begin_window / end_window
@@ -119,31 +121,18 @@ window_fit_size( const char* title, f32 title_h, bool collapsible,
     *out_h = want_h;
 }
 
-/* Apply the in-flight resize to win's geometry, clamped to the minimum size.  Moving edges
-   (left/top) shift the origin while pinning the opposite edge recorded at grab time. */
+/* Apply the in-flight resize to win's geometry, clamped to the minimum size.  The raw edge-drag is
+   the shared resize_apply_edges (origin / pin math); the window then layers its own policy -- the
+   min clamp with a moving edge stopping against the pinned far edge. */
 static void
 window_apply_resize( imgui_window_t* win, f32 title_h )
 {
     const f32 min_w = window_min_w();
     const f32 min_h = window_min_h( title_h );
 
-    if ( s_resize_edges & IMGUI_RESIZE_R )
-        win->w = ( s_io.mouse_x - s_resize_off_x ) - win->x;
-
-    if ( s_resize_edges & IMGUI_RESIZE_L )
-    {
-        win->x = s_io.mouse_x - s_resize_off_x;
-        win->w = s_resize_fix_x - win->x;
-    }
-
-    if ( s_resize_edges & IMGUI_RESIZE_B )
-        win->h = ( s_io.mouse_y - s_resize_off_y ) - win->y;
-
-    if ( s_resize_edges & IMGUI_RESIZE_T )
-    {
-        win->y = s_io.mouse_y - s_resize_off_y;
-        win->h = s_resize_fix_y - win->y;
-    }
+    imgui_rect_t r = { win->x, win->y, win->w, win->h };
+    resize_apply_edges( &r, s_resize_edges );
+    win->x = r.x;  win->y = r.y;  win->w = r.w;  win->h = r.h;
 
     /* Clamp to minimum; a moving edge stops against the pinned far edge. */
     if ( win->w < min_w )
@@ -158,26 +147,8 @@ window_apply_resize( imgui_window_t* win, f32 title_h )
     }
 }
 
-/* On a press inside the resize band, claim active_id and record the grab anchors: an offset
-   that keeps the grabbed edge under the cursor and the absolute position of the pinned edge. */
-static void
-window_resize_grab( imgui_window_t* win, imgui_id_t id, u8 edges )
-{
-    s_ctx.active_id = id_combine( id, IMGUI_RESIZE_SALT );
-    s_resize_edges  = edges;
-
-    s_resize_off_x = ( edges & IMGUI_RESIZE_L ) ? ( s_io.mouse_x - win->x )
-                   : ( edges & IMGUI_RESIZE_R ) ? ( s_io.mouse_x - ( win->x + win->w ) )
-                   : 0.0f;
-    s_resize_off_y = ( edges & IMGUI_RESIZE_T ) ? ( s_io.mouse_y - win->y )
-                   : ( edges & IMGUI_RESIZE_B ) ? ( s_io.mouse_y - ( win->y + win->h ) )
-                   : 0.0f;
-
-    s_resize_fix_x = win->x + win->w;   /* pinned right edge for a left-edge drag  */
-    s_resize_fix_y = win->y + win->h;   /* pinned bottom edge for a top-edge drag  */
-}
-
-/* draw_collapse_arrow lives in imgui_widget_core.c (shared with collapsing_header). */
+/* resize_grab (the press-time anchor record) and draw_collapse_arrow live in imgui_widget_core.c,
+   shared with begin_child and collapsing_header respectively. */
 
 /* window_begin_ex -- the shared body of begin_window, with the window id supplied explicitly and
    the title used only for display + chrome (NULL = no title text).  imgui_begin_window hashes the
@@ -253,7 +224,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     {
         resize_hot = window_resize_hit( disp_r, collapsed );
         if ( resize_hot && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
-            window_resize_grab( win, id, resize_hot );
+            resize_grab( id, ( imgui_rect_t ){ win->x, win->y, win->w, win->h }, resize_hot );
     }
     s_ctx.win_resize_hot = resize_hot;   /* read by widget_behavior + end_window's highlight */
 
@@ -464,7 +435,8 @@ imgui_end_window( void )
             }
             else if ( s_io.mouse_pressed[ 0 ] )
             {
-                window_resize_grab( win, s_ctx.win_id, IMGUI_RESIZE_R | IMGUI_RESIZE_B );
+                resize_grab( s_ctx.win_id, ( imgui_rect_t ){ win->x, win->y, win->w, win->h },
+                             IMGUI_RESIZE_R | IMGUI_RESIZE_B );
                 resizing = true;
             }
         }

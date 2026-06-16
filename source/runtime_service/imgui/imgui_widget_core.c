@@ -67,12 +67,18 @@
 /*----------------------------------------------------------------------------------------------
     Shared edge-resize geometry
 
-    The salt, edge bits, grab-band constants, and the two record-agnostic helpers (hit-test +
-    highlight).  They sit here -- they need the style macros above, and this file is still ahead of
-    imgui_layout.c -- so both the window chrome (imgui_widget_window.c) and a resizeable begin_child
-    (imgui_layout.c) share one resize feel.  The s_resize_* in-flight state lives in imgui_window.c;
-    the pieces that read or write a window *record* (apply / grab / fit) stay in
-    imgui_widget_window.c.  These touch only a rect and the cursor.
+    The salt, edge bits, grab-band constants, and the record-agnostic helpers -- hit-test, highlight,
+    grab, and the raw edge-drag apply.  They sit here (they need the style macros above, and this file
+    is still ahead of imgui_layout.c) so the window chrome (imgui_widget_window.c), a resizeable
+    begin_child (imgui_layout.c), and a future dock splitter all share one resize feel from one
+    mechanism.  Each touches only a rect and the cursor; the s_resize_* in-flight state lives in
+    imgui_window.c (included earlier).
+
+    The split is mechanism vs policy: resize_grab records the anchors, resize_apply_edges maps the
+    cursor onto the edges, and the *caller* layers its own size policy on the result -- a window pins
+    the far edge and clamps to its min (window_apply_resize), a child clamps to its constraints and
+    persists the size (begin_child).  So the geometry is shared while the bounding stays where it
+    belongs, and a new consumer reuses the mechanism rather than copying it.
 ----------------------------------------------------------------------------------------------*/
 
 /* Edge-resize grab: while a resize is in flight the owner holds active_id == (id ^
@@ -127,6 +133,42 @@ window_draw_resize_highlight( imgui_rect_t r, u8 edges )
     if ( edges & IMGUI_RESIZE_R ) draw_push_rect_filled( r.x + r.w - t,   r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
     if ( edges & IMGUI_RESIZE_T ) draw_push_rect_filled( r.x,             r.y,             r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
     if ( edges & IMGUI_RESIZE_B ) draw_push_rect_filled( r.x,             r.y + r.h - t,   r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
+}
+
+/* Record the grab anchors for an edge-resize of `box`, keyed by `id` (resize-salted into active_id).
+   Stores the cursor offset that keeps each grabbed edge under the cursor, and the absolute position
+   of the far edges -- pinned when a left / top edge moves (a right / bottom-only drag never reads
+   them).  Record-agnostic: a window, a child, or a splitter grabs identically from its rect. */
+static void
+resize_grab( imgui_id_t id, imgui_rect_t box, u8 edges )
+{
+    s_ctx.active_id = id_combine( id, IMGUI_RESIZE_SALT );
+    s_resize_edges  = edges;
+
+    s_resize_off_x = ( edges & IMGUI_RESIZE_L ) ? ( s_io.mouse_x - box.x )
+                   : ( edges & IMGUI_RESIZE_R ) ? ( s_io.mouse_x - ( box.x + box.w ) )
+                   : 0.0f;
+    s_resize_off_y = ( edges & IMGUI_RESIZE_T ) ? ( s_io.mouse_y - box.y )
+                   : ( edges & IMGUI_RESIZE_B ) ? ( s_io.mouse_y - ( box.y + box.h ) )
+                   : 0.0f;
+
+    s_resize_fix_x = box.x + box.w;   /* pinned right edge for a left-edge drag  */
+    s_resize_fix_y = box.y + box.h;   /* pinned bottom edge for a top-edge drag  */
+}
+
+/* Map the in-flight cursor onto rect *r along the grabbed `edges`, using the offsets / pins recorded
+   at grab.  A right / bottom edge moves only the size out from the fixed origin; a left / top edge
+   shifts the origin and recovers the size against the pinned far edge.  No min / max clamp -- the
+   caller layers its own size policy on the result, so the raw geometry is shared and only the
+   bounding differs.  `edges` is a parameter (not read from s_resize_edges) so a caller can apply a
+   subset -- a child passes only its R / B. */
+static void
+resize_apply_edges( imgui_rect_t* r, u8 edges )
+{
+    if ( edges & IMGUI_RESIZE_R ) r->w = ( s_io.mouse_x - s_resize_off_x ) - r->x;
+    if ( edges & IMGUI_RESIZE_L ) { r->x = s_io.mouse_x - s_resize_off_x; r->w = s_resize_fix_x - r->x; }
+    if ( edges & IMGUI_RESIZE_B ) r->h = ( s_io.mouse_y - s_resize_off_y ) - r->y;
+    if ( edges & IMGUI_RESIZE_T ) { r->y = s_io.mouse_y - s_resize_off_y; r->h = s_resize_fix_y - r->y; }
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -383,27 +425,10 @@ rect_align( imgui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
     return ( imgui_rect_t ){ x, y, nat_w, nat_h };
 }
 
-/* Collapse toggle glyph: a small triangle centered in a square box.  Points down when expanded,
-   right when collapsed (the following label reads as the thing being toggled).  Shared by the
-   window title bar and collapsing_header, so the arrow looks identical wherever a region folds. */
-static void
-draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
-{
-    f32 cx = box.x + box.w * 0.5f;
-    f32 cy = box.y + box.h * 0.5f;
-    f32 s  = floorf( box.h * 0.22f );   /* triangle half-extent */
-
-    if ( collapsed )
-        /* pointing right:  |>  */
-        draw_push_triangle( cx - s, cy - s, cx - s, cy + s, cx + s, cy, 0, color );
-    else
-        /* pointing down:   \/  */
-        draw_push_triangle( cx - s, cy - s, cx + s, cy - s, cx, cy + s, 0, color );
-}
-
-/* Directional arrow glyph: a filled triangle pointing `dir`, centered in `box`.  The four-way
-   generalization of draw_collapse_arrow, used by arrow_button (and reusable for combo / spinner
-   chrome).  Same half-extent sizing so an arrow button matches the collapse / header arrows. */
+/* Directional arrow glyph: a filled triangle pointing `dir`, centered in `box`.  The one arrow
+   generator -- arrow_button draws through it, and draw_collapse_arrow (below) is just its DOWN /
+   RIGHT case, so a fold arrow, a header arrow, and an arrow button stay pixel-identical.  The
+   half-extent scales with the box so every arrow matches the others at any font size. */
 static void
 draw_arrow( imgui_rect_t box, imgui_dir_t dir, u32 color )
 {
@@ -418,6 +443,15 @@ draw_arrow( imgui_rect_t box, imgui_dir_t dir, u32 color )
         case IMGUI_DIR_UP:    draw_push_triangle( cx,     cy - s, cx - s, cy + s, cx + s, cy + s, 0, color ); break;
         case IMGUI_DIR_DOWN:  draw_push_triangle( cx,     cy + s, cx - s, cy - s, cx + s, cy - s, 0, color ); break;
     }
+}
+
+/* Collapse toggle glyph: points down when expanded, right when collapsed (the following label reads
+   as the thing being toggled).  Exactly the DOWN / RIGHT case of draw_arrow, so the window title bar
+   and collapsing_header fold with the identical glyph arrow_button draws.  Shared by both. */
+static void
+draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
+{
+    draw_arrow( box, collapsed ? IMGUI_DIR_RIGHT : IMGUI_DIR_DOWN, color );
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -461,17 +461,21 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
     {
         if ( s_ctx.active_id == resize_id )
         {
+            /* Shared raw edge-drag (R / B only -- the child's top-left is pinned); the child then
+               layers its own policy: clamp to the next-child constraints and the CHILD_MIN floor,
+               persist into the region record, and feed the result back into the box drawn below. */
+            imgui_rect_t rr = box;
+            resize_apply_edges( &rr, (u8)( s_resize_edges & ( IMGUI_RESIZE_R | IMGUI_RESIZE_B ) ) );
+
             if ( s_resize_edges & IMGUI_RESIZE_R )
             {
-                rg->user_w = ( s_io.mouse_x - s_resize_off_x ) - box.x;
-                rg->user_w = child_con_clamp( rg->user_w, con_min_w, con_max_w );
+                rg->user_w = child_con_clamp( rr.w, con_min_w, con_max_w );
                 if ( rg->user_w < CHILD_MIN_W ) rg->user_w = CHILD_MIN_W;
                 box.w = rg->user_w;
             }
             if ( s_resize_edges & IMGUI_RESIZE_B )
             {
-                rg->user_h = ( s_io.mouse_y - s_resize_off_y ) - box.y;
-                rg->user_h = child_con_clamp( rg->user_h, con_min_h, con_max_h );
+                rg->user_h = child_con_clamp( rr.h, con_min_h, con_max_h );
                 if ( rg->user_h < CHILD_MIN_H ) rg->user_h = CHILD_MIN_H;
                 box.h = rg->user_h;
             }
@@ -482,15 +486,11 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
         u8 allow   = (u8)( ( resize_x ? IMGUI_RESIZE_R : 0u ) | ( resize_y ? IMGUI_RESIZE_B : 0u ) );
         resize_hot = (u8)( window_resize_hit( box, false ) & allow );
 
-        /* Grab on press: claim the resize active_id and record the offset that keeps the grabbed
-           edge under the cursor (so the size does not jump by the band width at grab time). */
+        /* Grab on press: the shared resize_grab claims the resize active_id and records the offset
+           that keeps the grabbed edge under the cursor (so the size does not jump by the band width
+           at grab time).  resize_hot is only ever R / B here, so its far-edge pins go unused. */
         if ( resize_hot && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
-        {
-            s_ctx.active_id = resize_id;
-            s_resize_edges  = resize_hot;
-            s_resize_off_x  = ( resize_hot & IMGUI_RESIZE_R ) ? ( s_io.mouse_x - ( box.x + box.w ) ) : 0.0f;
-            s_resize_off_y  = ( resize_hot & IMGUI_RESIZE_B ) ? ( s_io.mouse_y - ( box.y + box.h ) ) : 0.0f;
-        }
+            resize_grab( id, box, resize_hot );
     }
 
     /* The child box is chrome, not an item: paint its frame opaque even if a disabled widget
