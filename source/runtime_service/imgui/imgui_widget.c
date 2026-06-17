@@ -501,6 +501,44 @@ imgui_input_text_ex( const char* label, char* buf, u32 bufsz,
 }
 
 /*----------------------------------------------------------------------------------------------
+    input_text_with_hint -- single-line text field with placeholder hint text.
+
+    Identical to input_text in layout and interaction.  When the buffer is empty and the field
+    is not focused, draws `hint` in the dim text color in place of normal content.  The hint
+    is purely cosmetic: it is never written to buf.  Returns true when Enter is pressed.
+----------------------------------------------------------------------------------------------*/
+
+bool
+imgui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 bufsz )
+{
+    imgui_id_t   id    = widget_id( label );
+    imgui_rect_t r     = widget_next_rect( WIDGET_H );
+    imgui_rect_t box_r = widget_split_label( r, label, s_font->char_h * 3.0f, COL_TEXT_DIM );
+
+    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
+
+    draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
+                           0, 0, 1, 1, 0,
+                           st.focused ? COL_INPUT_FOCUS : COL_INPUT_BG );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
+                            WIN_BORDER, 0,
+                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+
+    /* Draw hint when the buffer is empty and the field is not focused. */
+    if ( !st.focused && buf[ 0 ] == '\0' && hint && hint[ 0 ] )
+    {
+        draw_push_clip_rect( box_r.x + WIN_BORDER, box_r.y + WIN_BORDER,
+                             box_r.w - 2.0f * WIN_BORDER, box_r.h - 2.0f * WIN_BORDER );
+        draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ),
+                        COL_TEXT_DIM, hint );
+        draw_pop_clip_rect();
+    }
+
+    input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz, NULL, NULL );
+    return res.enter;
+}
+
+/*----------------------------------------------------------------------------------------------
     label_text -- a read-only "value + label" row, the display sibling of the labeled value widgets.
 
     Lays out exactly like input_text / slider_float -- the label takes its side of the cell (its

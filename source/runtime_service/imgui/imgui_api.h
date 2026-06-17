@@ -434,6 +434,10 @@ typedef struct imgui_api_s
     bool ( *input_text_ex )( const char* label, char* buf, u32 bufsz,
                               imgui_text_cb_fn on_change, void* cb_user );
 
+    /* input_text_with_hint -- like input_text but shows `hint` in dim text inside the box
+       when the buffer is empty and the field is not focused.  The hint is never written to buf. */
+    bool ( *input_text_with_hint )( const char* label, const char* hint, char* buf, u32 bufsz );
+
     /* selectable -- a full-width row that highlights on hover and fills when selected; the
        list-box building block.  A click toggles *selected (pass NULL for click-only); returns
        true on the clicked frame so a caller managing single-selection can set its own index. */

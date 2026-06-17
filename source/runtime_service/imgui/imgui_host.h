@@ -132,6 +132,7 @@ bool imgui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_ma
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
 bool imgui_input_text_ex( const char* label, char* buf, u32 bufsz,
                            imgui_text_cb_fn on_change, void* cb_user );
+bool imgui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 bufsz );
 bool imgui_selectable( const char* label, bool* selected );
 bool imgui_collapsing_header( const char* label );
 bool imgui_tree_node( const char* label );
