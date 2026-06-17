@@ -316,28 +316,33 @@ nav_item_register( imgui_id_t id, imgui_rect_t r, widget_state_t* st, widget_kin
         }
     }
 
-    /* Current item, while nav is engaged: draw the focus ring and apply a pending activation.  The
-       ring is drawn before the widget's own background (widget_behavior runs first), inset outward
-       by NAV_RING so the fill leaves the border visible. */
+    /* Current item: draw the outline ring whenever a nav cursor exists (even in mouse mode, so it
+       keeps its location), and -- only while the keyboard is the active instrument (nav_highlight)
+       -- give it the fill (st->nav, read by widget_bg_color / frame_bg_color) and apply a pending
+       activation.  The ring is drawn before the widget's own background (widget_behavior runs
+       first), inset outward by NAV_RING so the fill leaves the border visible. */
     if ( is_cur && s_ctx.nav_active )
     {
-        st->nav = true;
         draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
                                 r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
                                 WIN_BORDER, 0, COL_NAV );
 
-        if ( s_ctx.nav_activate )
+        if ( s_ctx.nav_highlight )
         {
-            st->pressed = st->clicked = true;
-            if ( kind == WIDGET_KIND_FOCUSABLE )
-                s_ctx.focused_id = id;          /* Enter on an input box -> enter text capture */
+            st->nav = true;
+            if ( s_ctx.nav_activate )
+            {
+                st->pressed = st->clicked = true;
+                if ( kind == WIDGET_KIND_FOCUSABLE )
+                    s_ctx.focused_id = id;      /* Enter on an input box -> enter text capture */
 
-            /* Consume the activating keys + any text so the item just focused does not also see
-               this frame's Enter (instant blur) or type the activating Space. */
-            s_ctx.nav_activate = false;
-            s_io.keys_pressed[ APP_KEY_ENTER ] = false;
-            s_io.keys_pressed[ APP_KEY_SPACE ] = false;
-            s_io.text[ 0 ] = '\0';
+                /* Consume the activating keys + any text so the item just focused does not also see
+                   this frame's Enter (instant blur) or type the activating Space. */
+                s_ctx.nav_activate = false;
+                s_io.keys_pressed[ APP_KEY_ENTER ] = false;
+                s_io.keys_pressed[ APP_KEY_SPACE ] = false;
+                s_io.text[ 0 ] = '\0';
+            }
         }
     }
 }
@@ -377,11 +382,11 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     bool win_hover = ( s_ctx.win_id == s_ctx.hover_win );
     bool eligible  = can_hover && win_hover && !s_ctx.win_resize_hot && !s_ctx.win_grip_hot;
 
-    /* While keyboard nav is engaged, the mouse does not set hover: the two cursors are mutually
-       exclusive, so a mouse-hovered item never lights alongside the nav item (which would show two
-       selected entries, the input going to only one).  nav_active is dropped by a mouse click (not
-       a mere move -- imgui_nav.c), so clicking re-enables hover that same frame. */
-    if ( eligible && !s_ctx.nav_active && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
+    /* While the keyboard is the active nav instrument (nav_highlight), the mouse does not set hover:
+       the fill is mutually exclusive, so a mouse-hovered item never fills alongside the nav item
+       (the nav ring still shows its location).  A mouse move or click drops nav_highlight
+       (imgui_nav.c), re-enabling hover that same frame. */
+    if ( eligible && !s_ctx.nav_highlight && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
          s_ctx.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
@@ -391,6 +396,11 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
         st.pressed      = true;
         if ( kind == WIDGET_KIND_FOCUSABLE )
             s_ctx.focused_id = id;
+
+        /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so
+           resuming the keyboard later continues from what was clicked (only once a ring exists). */
+        if ( s_ctx.nav_active )
+            s_ctx.nav_id = id;
     }
 
     st.hover   = ( s_ctx.hover_id == id );
@@ -435,6 +445,19 @@ widget_bg_color( widget_state_t st )
     if ( st.active )            return COL_WIDGET_ACT;
     if ( st.hover || st.nav )   return COL_WIDGET_HOT;   /* nav cursor lights the body like a hover */
     return COL_WIDGET_BG;
+}
+
+/* Frame-background tint for a "framed field" widget (checkbox box, slider track, drag box, input):
+   the same hover / nav / active response as a button, but over a caller-supplied idle base so the
+   field keeps its own resting colour.  Mouse hover and keyboard-nav highlight both light it -- one
+   at a time, since they are mutually exclusive -- so it is clear what is under the cursor, matching
+   how Dear ImGui's FrameBgHovered lifts every framed control, not just buttons. */
+static u32
+frame_bg_color( widget_state_t st, u32 idle )
+{
+    if ( st.active )            return COL_WIDGET_ACT;
+    if ( st.hover || st.nav )   return COL_WIDGET_HOT;
+    return idle;
 }
 
 // clang-format on

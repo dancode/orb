@@ -97,7 +97,15 @@ static struct
     imgui_id_t   nav_id;          // the highlighted item (keyboard cursor); persists across frames
     imgui_id_t   nav_win;         // window/popup nav is scoped to (the hover_win analogue)
     imgui_rect_t nav_ref_rect;    // nav_id's rect last frame -- the directional scoring origin
-    bool         nav_active;      // nav highlight engaged (an arrow/Tab was used; mouse move clears)
+
+    /* Two visual states, the Dear ImGui NavDisableHighlight split.  nav_active means a nav cursor
+       position exists -> the outline ring is drawn at nav_id (and follows clicks), persisting even
+       in mouse mode so it keeps its location.  nav_highlight means the keyboard is the *active*
+       instrument right now -> the nav item also takes the fill (like a hovered button), mouse hover
+       is suppressed (so the two never double-fill), and the keyboard is captured.  A nav key sets
+       both; a mouse move or click drops nav_highlight (back to ring-only), leaving nav_active. */
+    bool         nav_active;      // a nav cursor exists -> draw the ring (cleared rarely)
+    bool         nav_highlight;   // keyboard is the active instrument -> fill + hover-suppress
 
     i32          nav_move_dir;    // directional request this frame (imgui_dir_t, or -1 for none)
     i32          nav_tab;         // Tab linear move: +1 forward, -1 back, 0 none
@@ -715,7 +723,8 @@ imgui_want_capture_mouse( void )
 bool
 imgui_want_capture_keyboard( void )
 {
-    return s_ctx.focused_id != IMGUI_ID_NONE || s_ctx.nav_active || s_popup_open_count > 0;
+    return s_ctx.focused_id != IMGUI_ID_NONE || s_ctx.nav_highlight
+        || s_popup_open_count > 0 || s_ctx.nav_bar_win != IMGUI_ID_NONE;
 }
 
 /* True when the cursor is over rect r and r is actually interactable: it lies in the front-most

@@ -38,6 +38,10 @@ static imgui_id_t s_nav_window;
    toggle the menu bar -- distinguishes a bare Alt tap (toggle) from Alt+F (open the File menu). */
 static bool s_nav_alt_used;
 
+/* Last frame's cursor position -- a move drops nav_highlight (the keyboard stops being the active
+   instrument), so the mouse regains the fill while the nav ring keeps its place. */
+static f32 s_nav_mouse_x, s_nav_mouse_y;
+
 /*----------------------------------------------------------------------------------------------
     nav_choose_window -- pick the window/popup nav is scoped to this frame.
 ----------------------------------------------------------------------------------------------*/
@@ -202,6 +206,7 @@ nav_menu_enter( imgui_id_t bar )
     s_ctx.nav_menu_owner = IMGUI_ID_NONE;
     s_ctx.nav_id         = IMGUI_ID_NONE;   /* first bar entry takes focus */
     s_ctx.nav_active     = true;
+    s_ctx.nav_highlight  = true;            /* Alt makes the keyboard the active instrument */
 }
 
 /* Leave menu-bar mode: close the menu popups and restore nav to exactly where it was before Alt. */
@@ -308,17 +313,22 @@ nav_new_frame( void )
     s_ctx.nav_tab_next   = IMGUI_ID_NONE;
     s_ctx.nav_tab_take   = false;
 
-    /* A mouse click (any button) drops back to mouse mode -- the nav highlight clears and hover
-       re-enables this frame.  A bare mouse *move* leaves nav engaged, so the highlight persists
-       until a click (the requested behavior, vs dimming on every move). */
-    if ( s_io.mouse_pressed[ 0 ] || s_io.mouse_pressed[ 1 ] || s_io.mouse_pressed[ 2 ] )
+    /* Any mouse activity makes the mouse the active instrument: a move or a click drops
+       nav_highlight, so the nav item loses its fill (the ring stays, via nav_active) and the mouse
+       hover regains the fill.  A click additionally leaves menu-bar mode -- the user switched to
+       the mouse to drive the menus (which then track the cursor); the open popups close on their
+       own through popup_close_check. */
+    bool mouse_moved = ( s_io.mouse_x != s_nav_mouse_x || s_io.mouse_y != s_nav_mouse_y );
+    bool mouse_press = ( s_io.mouse_pressed[ 0 ] || s_io.mouse_pressed[ 1 ] || s_io.mouse_pressed[ 2 ] );
+    s_nav_mouse_x = s_io.mouse_x;
+    s_nav_mouse_y = s_io.mouse_y;
+
+    if ( mouse_moved || mouse_press )
+        s_ctx.nav_highlight = false;
+    if ( mouse_press && s_ctx.nav_bar_win != IMGUI_ID_NONE )
     {
-        s_ctx.nav_active = false;
-        if ( s_ctx.nav_bar_win != IMGUI_ID_NONE )
-        {
-            s_ctx.nav_bar_win  = IMGUI_ID_NONE;   /* leave menu mode; popups close on their own */
-            s_ctx.nav_in_menus = false;
-        }
+        s_ctx.nav_bar_win  = IMGUI_ID_NONE;
+        s_ctx.nav_in_menus = false;
     }
 
     /* Menu mode self-heals: if its bar window is gone, drop out. */
@@ -360,9 +370,10 @@ nav_new_frame( void )
         for ( u32 c = 0; c < 26u; ++c )
             if ( s_io.keys_pressed[ APP_KEY_A + c ] )
             {
-                s_ctx.nav_mnemonic = (u8)( 'A' + c );   /* begin_menu matches + opens the entry */
-                s_nav_alt_used     = true;
-                s_ctx.nav_active   = true;
+                s_ctx.nav_mnemonic  = (u8)( 'A' + c );  /* begin_menu matches + opens the entry */
+                s_nav_alt_used      = true;
+                s_ctx.nav_active    = true;
+                s_ctx.nav_highlight = true;
                 if ( s_ctx.nav_bar_win == IMGUI_ID_NONE )
                 {
                     imgui_id_t mb = nav_main_bar_win();
@@ -390,13 +401,24 @@ nav_new_frame( void )
     bool right = s_io.keys_pressed_repeat[ APP_KEY_RIGHT ];
     bool esc   = s_io.keys_pressed[ APP_KEY_ESCAPE ];
 
-    if ( up    ) { s_ctx.nav_move_dir = IMGUI_DIR_UP;    s_ctx.nav_active = true; }
-    if ( down  ) { s_ctx.nav_move_dir = IMGUI_DIR_DOWN;  s_ctx.nav_active = true; }
-    if ( left  ) { s_ctx.nav_move_dir = IMGUI_DIR_LEFT;  s_ctx.nav_active = true; }
-    if ( right ) { s_ctx.nav_move_dir = IMGUI_DIR_RIGHT; s_ctx.nav_active = true; }
-    if ( s_io.keys_pressed_repeat[ APP_KEY_TAB ] ) { s_ctx.nav_tab = shift ? -1 : +1; s_ctx.nav_active = true; }
-    if ( s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ] )
-    { s_ctx.nav_activate = true; s_ctx.nav_active = true; }
+    if ( up    ) s_ctx.nav_move_dir = IMGUI_DIR_UP;
+    if ( down  ) s_ctx.nav_move_dir = IMGUI_DIR_DOWN;
+    if ( left  ) s_ctx.nav_move_dir = IMGUI_DIR_LEFT;
+    if ( right ) s_ctx.nav_move_dir = IMGUI_DIR_RIGHT;
+
+    bool tab = s_io.keys_pressed_repeat[ APP_KEY_TAB ];
+    if ( tab ) s_ctx.nav_tab = shift ? -1 : +1;
+
+    bool act = s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ];
+    if ( act ) s_ctx.nav_activate = true;
+
+    /* Any nav key makes the keyboard the active instrument: show the ring (nav_active) AND the fill
+       (nav_highlight), and suppress mouse hover until the mouse moves again. */
+    if ( up || down || left || right || tab || act )
+    {
+        s_ctx.nav_active    = true;
+        s_ctx.nav_highlight = true;
+    }
 
     /* Menu-bar mode owns the bar/menu keys (traverse, descend, ascend-to-owner, Up-to-bar). */
     if ( s_ctx.nav_bar_win != IMGUI_ID_NONE )
@@ -430,9 +452,10 @@ nav_new_frame( void )
 void
 imgui_set_nav_window( const char* title )
 {
-    s_nav_window     = title ? id_hash( title ) : IMGUI_ID_NONE;
-    s_ctx.nav_id     = IMGUI_ID_NONE;   /* first item of the new window takes focus */
-    s_ctx.nav_active = true;
+    s_nav_window        = title ? id_hash( title ) : IMGUI_ID_NONE;
+    s_ctx.nav_id        = IMGUI_ID_NONE;   /* first item of the new window takes focus */
+    s_ctx.nav_active    = true;
+    s_ctx.nav_highlight = true;
 }
 
 // clang-format on

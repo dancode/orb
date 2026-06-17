@@ -174,7 +174,7 @@ imgui_checkbox( const char* label, bool* v )
     }
 
     f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, IMGUI_ALIGN_VCENTER ).y;
-    draw_push_rect_filled( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, COL_WIDGET_BG );
+    draw_push_rect_filled( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, widget_bg_color( st ) );
     draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER );
 
     if ( *v )
@@ -279,8 +279,13 @@ slider_render( imgui_rect_t track_r, widget_state_t st, f32 t, const char* value
 {
     t = saturate( t );
 
+    /* Track frame.  Unlike a button, a slider has a handle on top, so the frame must not take the
+       same hover/active colour the knob does (widget_bg_color below) or the highlight would swallow
+       the handle.  It lifts to a subtler tint -- distinct from the knob in every state -- so the
+       hover still reads as a fill while the knob stays clearly the brighter element. */
+    u32 track_col = ( st.hover || st.nav || st.active ) ? COL_INPUT_FOCUS : COL_SLIDER_TRACK;
     draw_push_rect_filled( track_r.x, track_r.y, track_r.w, track_r.h,
-                           0,0,1,1, 0, COL_SLIDER_TRACK );
+                           0,0,1,1, 0, track_col );
     draw_push_rect_outline( track_r.x, track_r.y, track_r.w, track_r.h,
                             WIN_BORDER, 0, COL_BORDER );
 
@@ -289,9 +294,13 @@ slider_render( imgui_rect_t track_r, widget_state_t st, f32 t, const char* value
         draw_push_rect_filled( track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f,
                                0,0,1,1, 0, COL_WIDGET_FG );
 
+    /* Knob (grab): the brighter hover/active element, outlined so its edge stays crisp against the
+       track and the fill bar regardless of how close their colours get. */
     f32 knob_x = track_r.x + t * ( track_r.w - SLIDER_KNOB_W );
-    draw_push_rect_filled( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
-                           0,0,1,1, 0, widget_bg_color( st ) );
+    draw_push_rect_filled ( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
+                            0,0,1,1, 0, widget_bg_color( st ) );
+    draw_push_rect_outline( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
+                            WIN_BORDER, 0, COL_BORDER );
 
     if ( value_text && !( s_ctx.cur_item_flags & IMGUI_ITEM_NO_VALUE_TEXT ) )
     {
@@ -426,8 +435,8 @@ imgui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, co
         }
     }
 
-    /* Frame: a slider-track box that brightens on hover / active so the drag affordance reads. */
-    u32 bg = st.active ? COL_WIDGET_ACT : ( st.hover ? COL_WIDGET_HOT : COL_SLIDER_TRACK );
+    /* Frame: a slider-track box that brightens on hover / nav / active so the drag affordance reads. */
+    u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
     draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0, COL_BORDER );
 
@@ -462,7 +471,7 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
 
     draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
                            0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : COL_INPUT_BG );
+                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
                             WIN_BORDER, 0,
                             st.focused ? COL_WIDGET_HOT : COL_BORDER );
@@ -491,7 +500,7 @@ imgui_input_text_ex( const char* label, char* buf, u32 bufsz,
 
     draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
                            0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : COL_INPUT_BG );
+                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
                             WIN_BORDER, 0,
                             st.focused ? COL_WIDGET_HOT : COL_BORDER );
@@ -519,7 +528,7 @@ imgui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 
 
     draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
                            0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : COL_INPUT_BG );
+                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
                             WIN_BORDER, 0,
                             st.focused ? COL_WIDGET_HOT : COL_BORDER );
@@ -592,7 +601,7 @@ input_num_field( imgui_id_t id, imgui_rect_t box_r, widget_state_t st,
     /* Box background and border. */
     draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
                            0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : COL_INPUT_BG );
+                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
                             WIN_BORDER, 0,
                             st.focused ? COL_WIDGET_HOT : COL_BORDER );
