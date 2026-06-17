@@ -623,6 +623,136 @@ demo_autosize( void )
 }
 
 /*==============================================================================================
+    11. Menus -- menu bars, menu entries, menu items, submenus, and context menus.
+
+    begin_menu_bar fills the strip a window reserves with IMGUI_WIN_MENUBAR; begin_menu opens a
+    submenu popup (horizontal in the bar, a row with an arrow inside a menu -- it nests); menu_item
+    is a leaf command (optional "shortcut" text on the right, optional bool* for a checkable item).
+    A menu_item click dismisses the whole menu chain.  Disabled items reuse the item-flag stack.
+    The same menu_item / begin_menu work inside any popup, so a right-click context menu is built
+    the same way, and begin_main_menu_bar pins a bar across the top of the display.
+==============================================================================================*/
+
+/* Shared across the bars + context menu so a chosen command is visible below. */
+static const char* s_menu_last   = "(none)";
+static bool        s_menu_grid    = true;
+static bool        s_menu_stats   = false;
+static bool        s_menu_mainbar = false;
+
+/* The File menu body, factored out so the menu bar and the context menu can both show it
+   (mirroring the Dear ImGui sample's ShowExampleMenuFile reuse). */
+static void
+demo_menu_file( void )
+{
+    if ( imgui()->menu_item( "New",  NULL,     NULL ) ) s_menu_last = "File / New";
+    if ( imgui()->menu_item( "Open", "Ctrl+O", NULL ) ) s_menu_last = "File / Open";
+
+    /* A submenu: begin_menu inside a menu renders a row with a right arrow and opens to the side. */
+    if ( imgui()->begin_menu( "Open Recent" ) )
+    {
+        if ( imgui()->menu_item( "scene.orb",  NULL, NULL ) ) s_menu_last = "Recent / scene.orb";
+        if ( imgui()->menu_item( "level_1.orb", NULL, NULL ) ) s_menu_last = "Recent / level_1.orb";
+        if ( imgui()->begin_menu( "More.." ) )            /* nested submenu */
+        {
+            if ( imgui()->menu_item( "old.orb",   NULL, NULL ) ) s_menu_last = "Recent / old.orb";
+            if ( imgui()->menu_item( "older.orb", NULL, NULL ) ) s_menu_last = "Recent / older.orb";
+            imgui()->end_menu();
+        }
+        imgui()->end_menu();
+    }
+
+    if ( imgui()->menu_item( "Save",    "Ctrl+S", NULL ) ) s_menu_last = "File / Save";
+    if ( imgui()->menu_item( "Save As..", NULL,   NULL ) ) s_menu_last = "File / Save As";
+    imgui()->separator();
+    if ( imgui()->menu_item( "Quit", "Alt+F4", NULL ) ) s_menu_last = "File / Quit";
+}
+
+static void
+demo_menus( void )
+{
+    /* (a) Optional full-width bar pinned to the top of the display.  Toggled from the body below;
+       drawn first (immediate mode), so the toggle takes effect the next frame. */
+    if ( s_menu_mainbar && imgui()->begin_main_menu_bar() )
+    {
+        if ( imgui()->begin_menu( "App" ) )
+        {
+            if ( imgui()->menu_item( "About", NULL,     NULL ) ) s_menu_last = "App / About";
+            if ( imgui()->menu_item( "Quit",  "Alt+F4", NULL ) ) s_menu_last = "App / Quit";
+            imgui()->end_menu();
+        }
+        if ( imgui()->begin_menu( "Help" ) )
+        {
+            if ( imgui()->menu_item( "Documentation", "F1", NULL ) ) s_menu_last = "Help / Docs";
+            imgui()->end_menu();
+        }
+        imgui()->end_main_menu_bar();
+    }
+
+    /* (b) A window with its own menu bar (IMGUI_WIN_MENUBAR reserves the strip). */
+    if ( imgui()->begin_window( "Menus", 60, 60, 420, 320, IMGUI_WIN_MENUBAR ) )
+    {
+        if ( imgui()->begin_menu_bar() )
+        {
+            if ( imgui()->begin_menu( "File" ) )
+            {
+                demo_menu_file();
+                imgui()->end_menu();
+            }
+            if ( imgui()->begin_menu( "Edit" ) )
+            {
+                if ( imgui()->menu_item( "Undo", "Ctrl+Z", NULL ) ) s_menu_last = "Edit / Undo";
+
+                /* A disabled item -- reuse the item-flag stack (no per-widget enabled param). */
+                imgui()->push_item_flag( IMGUI_ITEM_DISABLED, true );
+                imgui()->menu_item( "Redo", "Ctrl+Y", NULL );
+                imgui()->pop_item_flag();
+
+                imgui()->separator();
+                if ( imgui()->menu_item( "Cut",   "Ctrl+X", NULL ) ) s_menu_last = "Edit / Cut";
+                if ( imgui()->menu_item( "Copy",  "Ctrl+C", NULL ) ) s_menu_last = "Edit / Copy";
+                if ( imgui()->menu_item( "Paste", "Ctrl+V", NULL ) ) s_menu_last = "Edit / Paste";
+                imgui()->end_menu();
+            }
+            if ( imgui()->begin_menu( "View" ) )
+            {
+                /* Checkable items: pass a bool* -- the tick reflects + toggles the flag. */
+                imgui()->menu_item( "Show grid",  NULL, &s_menu_grid );
+                imgui()->menu_item( "Show stats", NULL, &s_menu_stats );
+                imgui()->end_menu();
+            }
+            imgui()->end_menu_bar();
+        }
+
+        imgui()->stack();
+        imgui()->text( "Use the menu bar above." );
+        imgui()->textf( "Last command: %s", s_menu_last );
+        imgui()->textf( "grid: %s   stats: %s",
+                        s_menu_grid ? "ON" : "off", s_menu_stats ? "ON" : "off" );
+        imgui()->separator();
+        imgui()->checkbox( "Show main menu bar (top of screen)", &s_menu_mainbar );
+        imgui()->spacing( 0 );
+        imgui()->text( "Right-click empty space for a context menu." );
+
+        /* (c) A context menu: begin_popup_context_window opens on a right-click in empty window
+           space, and is filled with the same menu_item / begin_menu calls. */
+        if ( imgui()->begin_popup_context_window( "ctx" ) )
+        {
+            imgui()->stack();                 /* a popup body declares its layout mode */
+            if ( imgui()->begin_menu( "File" ) )
+            {
+                demo_menu_file();
+                imgui()->end_menu();
+            }
+            imgui()->separator();
+            if ( imgui()->menu_item( "Reset grid", NULL, NULL ) ) { s_menu_grid = true;  s_menu_last = "ctx / Reset grid"; }
+            imgui()->menu_item( "Show stats", NULL, &s_menu_stats );
+            imgui()->end_popup();
+        }
+    }
+    imgui()->end_window();
+}
+
+/*==============================================================================================
     12. Lines & paths -- draw_line / draw_polyline / path_stroke.
 
     A drawing demo rather than a widget one: each example reserves a canvas() block in the normal
@@ -874,6 +1004,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Pack / Bar",   "bar / pack_size / pack_nextline",                demo_pack        },
     { "Windows",      "multiple windows / flags / z-order",             demo_windows     },
     { "Auto-size",    "ALWAYS_AUTOSIZE / CAN_AUTOSIZE / auto child",    demo_autosize    },
+    { "Menus",        "menu bar / begin_menu / menu_item / context",    demo_menus       },
     { "Lines / Paths","draw_line / draw_polyline / path_stroke",        demo_lines       },
     { NULL,           NULL,                                             NULL             },
 };
