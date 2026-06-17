@@ -308,8 +308,11 @@ typedef enum
     IMGUI_WIN_CHILD_RESIZE_X    = 1 << 11,   /* child: drag the right border to resize width   */
     IMGUI_WIN_CHILD_RESIZE_Y    = 1 << 12,   /* child: drag the bottom border to resize height  */
 
- // IMGUI_WIN_MENUBAR      = 1 << 4,
- // IMGUI_WIN_NOINPUT      = 1 << 5,
+    /* Menu bar -- reserve a one-row strip below the title bar that begin_menu_bar fills (the
+       ImGuiWindowFlags_MenuBar analogue).  The strip is carved from the top of the body before the
+       body scroll region opens, so it never scrolls; begin_menu_bar returns false unless set. */
+
+    IMGUI_WIN_MENUBAR           = 1 << 13,   /* reserve a non-scrolling menu-bar strip (begin_menu_bar) */
 
 
 } imgui_win_flags_t;
@@ -366,6 +369,30 @@ typedef enum
     IMGUI_DIR_DOWN,
 
 } imgui_dir_t;
+
+/*==============================================================================================
+    Combo flags
+
+    Passed to begin_combo to tune the dropdown.  The HEIGHT_* group caps the dropdown to a fixed
+    number of visible rows (then it scrolls) -- the ImGuiComboFlags_Height* analogue; they are
+    mutually exclusive, so set exactly one (an unset height defaults to REGULAR / 8 rows).  0
+    (IMGUI_COMBO_NONE) is the default no-tweak set.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_COMBO_NONE            = 0,         /* default behavior (REGULAR height) */
+
+    IMGUI_COMBO_HEIGHT_SMALL    = 1 << 0,    /* cap the dropdown to ~4 rows, then scroll   */
+    IMGUI_COMBO_HEIGHT_REGULAR  = 1 << 1,    /* cap to ~8 rows (the default), then scroll   */
+    IMGUI_COMBO_HEIGHT_LARGE    = 1 << 2,    /* cap to ~20 rows, then scroll                */
+    IMGUI_COMBO_HEIGHT_LARGEST  = 1 << 3,    /* no cap: as many rows as fit on screen       */
+
+    /* Mask of the height bits, to clear the group before setting one (the demo idiom). */
+    IMGUI_COMBO_HEIGHT_MASK     = IMGUI_COMBO_HEIGHT_SMALL | IMGUI_COMBO_HEIGHT_REGULAR
+                                | IMGUI_COMBO_HEIGHT_LARGE | IMGUI_COMBO_HEIGHT_LARGEST,
+
+} imgui_combo_flags_t;
 
 /*==============================================================================================
     Style colors

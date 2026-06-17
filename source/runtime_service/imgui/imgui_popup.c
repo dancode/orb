@@ -233,7 +233,8 @@ popup_set_anchor( imgui_id_t id, f32 ax, f32 ay )
 ----------------------------------------------------------------------------------------------*/
 
 static bool
-popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags, bool modal )
+popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags, bool modal,
+                       f32 fixed_w, f32 cap_h )
 {
     u32 depth = s_popup_begin_count;
 
@@ -251,9 +252,25 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
                                       IMGUI_POPUP_SEED_W, IMGUI_POPUP_SEED_H );
     win->z = IMGUI_POPUP_Z_BASE + depth;
 
+    /* Capped popup (combo dropdown): a fixed width with a height that hugs the measured content up
+       to cap_h, then scrolls -- the same hug-then-scroll behavior begin_child gets from a max-height
+       constraint, expressed for the window path.  Size is known up front (no off-screen premeasure):
+       seed from cap_h before any content, then track min(content + chrome, cap_h) each frame.  This
+       takes over the autosize path; the caller passes scroll-capable (non-autosize) flags. */
+    bool capped = ( fixed_w > 0.0f );
+    if ( capped )
+    {
+        f32 chrome = WIDGET_GAP + WIN_BORDER;   /* body top gap + bottom border (no title bar) */
+        f32 want_h = ( win->content_h > 0.0f ) ? win->content_h + chrome : cap_h;
+        if ( want_h > cap_h ) want_h = cap_h;
+        imgui_set_next_window_size( fixed_w, want_h, IMGUI_COND_ALWAYS );
+        win->w = fixed_w;       /* placement clamp below reads win->w/h; reflect the queued size */
+        win->h = want_h;
+    }
+
     /* Auto-size appearing frame: size is unknown until the body is measured, so park off-screen
        this frame (still measured, just invisible) and place it for real next frame.  A non-
-       auto-size popup has a known size and goes straight to its anchor. */
+       auto-size popup (capped or fixed) has a known size and goes straight to its anchor. */
     bool autosize   = ( flags & IMGUI_WIN_ALWAYS_AUTOSIZE ) != 0;
     bool premeasure = autosize && win->content_h <= 0.0f;
 
@@ -297,11 +314,12 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
     return vis;
 }
 
-/* String-keyed wrapper: hash + salt the caller's id string, then run the id-based core. */
+/* String-keyed wrapper: hash + salt the caller's id string, then run the id-based core (auto-size,
+   no fixed width / height cap -- the cap path is the combo dropdown's). */
 static bool
 popup_begin_common( const char* str, const char* title, imgui_win_flags_t flags, bool modal )
 {
-    return popup_begin_common_id( popup_id( str ), title, flags, modal );
+    return popup_begin_common_id( popup_id( str ), title, flags, modal, 0.0f, 0.0f );
 }
 
 bool

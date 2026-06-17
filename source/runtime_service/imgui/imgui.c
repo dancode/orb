@@ -219,6 +219,7 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 #include "runtime_service/imgui/imgui_widget_window.c"
 #include "runtime_service/imgui/imgui_popup.c"
 #include "runtime_service/imgui/imgui_widget_combo.c"
+#include "runtime_service/imgui/imgui_widget_menu.c"
 #include "runtime_service/imgui/imgui_stack_api.c"
 
 #ifndef IMGUI_API_C_PRELUDE

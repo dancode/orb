@@ -333,18 +333,38 @@ demo_combo_list( void )
         imgui()->same_line( -1.0f );
         imgui()->help_marker( "combo() over an array of strings; the dropdown drops below the box." );
 
-        /* Generic begin/end combo -- full control: here a default-focus highlight on the current
-           row, the BeginCombo() pattern.  A clicked row dismisses the combo automatically. */
+        /* Dropdown height cap (imgui_combo_flags_t HEIGHT_*): mutually exclusive, so pick with a
+           radio group.  Applied to the BeginCombo dropdown below. */
         imgui()->separator_text( "BeginCombo (full control)" );
-        static i32 sel_idx = 0;
-        const char* preview = items[ sel_idx ];
-        if ( imgui()->begin_combo( "combo 2", preview, IMGUI_WIN_NONE ) )
+        static i32 height_sel = 1;   /* 0 small, 1 regular, 2 large, 3 largest */
+        imgui()->text( "Popup height:" );
+        imgui()->radio_button( "Small",   &height_sel, 0 ); imgui()->same_line( -1.0f );
+        imgui()->radio_button( "Regular", &height_sel, 1 ); imgui()->same_line( -1.0f );
+        imgui()->radio_button( "Large",   &height_sel, 2 ); imgui()->same_line( -1.0f );
+        imgui()->radio_button( "Largest", &height_sel, 3 );
+
+        const imgui_combo_flags_t height_flags[] = {
+            IMGUI_COMBO_HEIGHT_SMALL, IMGUI_COMBO_HEIGHT_REGULAR,
+            IMGUI_COMBO_HEIGHT_LARGE, IMGUI_COMBO_HEIGHT_LARGEST,
+        };
+
+        /* Generic begin/end combo over a longer set so the height cap is visible (it scrolls past
+           the cap).  A clicked row dismisses the combo automatically. */
+        static const char* many[] = {
+            "Item 00", "Item 01", "Item 02", "Item 03", "Item 04", "Item 05", "Item 06", "Item 07",
+            "Item 08", "Item 09", "Item 10", "Item 11", "Item 12", "Item 13", "Item 14", "Item 15",
+            "Item 16", "Item 17", "Item 18", "Item 19", "Item 20", "Item 21", "Item 22", "Item 23",
+        };
+        const i32 n_many = (i32)( sizeof( many ) / sizeof( many[ 0 ] ) );
+        static i32  sel_idx = 0;
+        const char* preview = many[ sel_idx ];
+        if ( imgui()->begin_combo( "combo 2", preview, height_flags[ height_sel ] ) )
         {
-            for ( i32 i = 0; i < n_items; i++ )
+            for ( i32 i = 0; i < n_many; i++ )
             {
                 imgui()->push_id_int( i );
                 bool is_sel = ( sel_idx == i );
-                if ( imgui()->selectable( items[ i ], &is_sel ) )
+                if ( imgui()->selectable( many[ i ], &is_sel ) )
                     sel_idx = i;
                 imgui()->pop_id();
             }
@@ -378,7 +398,7 @@ demo_combo_list( void )
         }
 
         imgui()->textf( "combo=%s  combo2=%s  fruit=%s  row=%d",
-                        items[ combo_idx ], items[ sel_idx ], fruit[ fruit_idx ], row_idx );
+                        items[ combo_idx ], many[ sel_idx ], fruit[ fruit_idx ], row_idx );
     }
     imgui()->end_window();
 }

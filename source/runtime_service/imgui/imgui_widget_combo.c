@@ -37,7 +37,7 @@ typedef struct { u32 open_frame; } imgui_combo_state_t;
 
 /* The height a list of `n` selectable rows occupies in a stack body: each row is WIDGET_H with a
    WIDGET_GAP between rows, plus the region's top gap and the bottom border.  Shared by the combo
-   dropdown height intent (via the popup auto-size) and the list box default. */
+   dropdown height cap and the list box default. */
 static f32
 combo_rows_h( i32 n )
 {
@@ -45,8 +45,24 @@ combo_rows_h( i32 n )
     return (f32)n * WIDGET_H + ( (f32)n + 1.0f ) * WIDGET_GAP + WIN_BORDER;
 }
 
+/* Mandatory combo dropdown window behavior: fixed, uncollapsible, no title bar -- a popup but with
+   the vertical scrollbar left dynamic (so a height-capped dropdown scrolls past the cap). */
+#define IMGUI_COMBO_POPUP_FLAGS \
+    ( IMGUI_WIN_NOTITLEBAR | IMGUI_WIN_NOMOVE | IMGUI_WIN_NORESIZE | IMGUI_WIN_NOCOLLAPSE )
+
+/* Max visible rows for the dropdown from the height flag (0 = no cap -- "largest", auto-size).  An
+   unset height behaves as REGULAR, matching Dear ImGui's default popup height. */
+static i32
+combo_cap_items( imgui_combo_flags_t flags )
+{
+    if ( flags & IMGUI_COMBO_HEIGHT_SMALL   ) return 4;
+    if ( flags & IMGUI_COMBO_HEIGHT_LARGE   ) return 20;
+    if ( flags & IMGUI_COMBO_HEIGHT_LARGEST ) return 0;   /* no cap: as many as fit */
+    return 8;                                             /* REGULAR / unset default */
+}
+
 bool
-imgui_begin_combo( const char* label, const char* preview_value, imgui_win_flags_t flags )
+imgui_begin_combo( const char* label, const char* preview_value, imgui_combo_flags_t flags )
 {
     imgui_id_t   id  = widget_id( label );
     imgui_rect_t row = widget_next_rect( WIDGET_H );
@@ -91,10 +107,23 @@ imgui_begin_combo( const char* label, const char* preview_value, imgui_win_flags
                          COL_TEXT, preview_value, 0xFFFFFFFFu, avail );
     }
 
-    /* Open the dropdown.  Same path as begin_popup (auto-size, NOTITLEBAR, fixed, NOCOLLAPSE);
-       only the id-keyed open + box anchor above differ from a cursor-anchored popup. */
-    bool vis = popup_begin_common_id( pid, NULL,
-                                      flags | IMGUI_WIN_NOTITLEBAR | IMGUI_POPUP_BASE_FLAGS, false );
+    /* Open the dropdown.  A HEIGHT_* cap makes it a fixed-width (box-wide), height-capped scrolling
+       popup -- hug the rows up to the cap, then scroll; "largest" (cap 0) keeps the auto-size popup,
+       hugging all rows.  Both reuse the popup path; only the size policy differs. */
+    i32  cap = combo_cap_items( flags );
+    bool vis;
+    if ( cap > 0 )
+    {
+        vis = popup_begin_common_id( pid, NULL, IMGUI_COMBO_POPUP_FLAGS, false,
+                                     box.w, combo_rows_h( cap ) );
+    }
+    else
+    {
+        vis = popup_begin_common_id( pid, NULL,
+                                     IMGUI_COMBO_POPUP_FLAGS | IMGUI_WIN_ALWAYS_AUTOSIZE, false,
+                                     0.0f, 0.0f );
+    }
+
     if ( vis )
     {
         cs->open_frame   = s_frame_counter;   /* body emitted this frame -> "open" next frame */
@@ -102,10 +131,10 @@ imgui_begin_combo( const char* label, const char* preview_value, imgui_win_flags
 
         imgui_stack();                        /* the dropdown body is a vertical list */
 
-        /* Floor the dropdown's measured width to the box, so a popup of short items still lines up
-           under the box instead of shrinking to its content (auto-size reads this next frame). */
-        f32 min_w = box.w - 2.0f * WIDGET_PAD;
-        widget_track_width( lf()->content_x + min_w );
+        /* An auto-size ("largest") dropdown shrinks to its content; floor its measured width to the
+           box so short items still line up under it.  A capped dropdown is already box-wide. */
+        if ( cap <= 0 )
+            widget_track_width( lf()->content_x + ( box.w - 2.0f * WIDGET_PAD ) );
     }
     return vis;
 }

@@ -57,6 +57,8 @@ static struct
     f32  win_x, win_y;        // current window top-left (outer frame)
     f32  win_w, win_h;        // current window dimensions
 
+    imgui_rect_t menubar_rect; // reserved menu-bar strip for the current window (WIN_MENUBAR); begin_menu_bar fills it
+
     /* Layout pen + scroll region state now live on the layout-frame stack below; the
        window is just the root frame.  s_ctx keeps only the cross-cutting interaction
        state the chrome and widgets read regardless of which region is active. */

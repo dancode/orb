@@ -151,6 +151,42 @@ typedef struct imgui_api_s
     void ( *end_tooltip      )( void );
     void ( *help_marker      )( const char* text );
 
+    /* Menus -- a coordination layer over the popup stack.  A menu bar holds begin_menu entries;
+       each opens a submenu popup that holds menu_items and further begin_menu entries (nesting on
+       the popup stack).  Disabled state reuses the item-flag stack: push_item_flag(IMGUI_ITEM_DISABLED).
+
+       begin_main_menu_bar pins a bar across the top of the display; begin_menu_bar fills the strip a
+       window reserved with IMGUI_WIN_MENUBAR (and returns false on a window without the flag).  Both
+       return true only when visible -- guard the entries on the return and call the matching end only
+       then, exactly like begin_window / begin_popup.
+
+           if ( imgui()->begin_main_menu_bar() ) {
+               if ( imgui()->begin_menu( "File" ) ) {
+                   if ( imgui()->menu_item( "Open", "Ctrl+O", NULL ) ) { ... }
+                   imgui()->menu_item( "Show grid", NULL, &show_grid );   // checkable
+                   if ( imgui()->begin_menu( "Recent" ) ) {              // submenu
+                       imgui()->menu_item( "a.txt", NULL, NULL );
+                       imgui()->end_menu();
+                   }
+                   imgui()->end_menu();
+               }
+               imgui()->end_main_menu_bar();
+           }
+
+       begin_menu renders horizontally in a bar (its popup drops below) and as a full-width row with
+       a submenu arrow inside a menu (its popup opens to the side); the orientation follows the active
+       layout mode, so no flag is needed.  menu_item returns true on the clicked frame and dismisses
+       the whole menu chain; shortcut is display-only (may be NULL); selected may be NULL (a plain
+       command) or a bool* (a checkable item, toggled on click). */
+
+    bool ( *begin_main_menu_bar )( void );
+    void ( *end_main_menu_bar   )( void );
+    bool ( *begin_menu_bar      )( void );
+    void ( *end_menu_bar        )( void );
+    bool ( *begin_menu )( const char* label );
+    void ( *end_menu   )( void );
+    bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
+
     /* Child regions -- a nested scrollable layout box inside the current window (or another
        child).  begin_child carves a box of height h (width w, or the remaining content width
        when w <= 0) from the layout pen, clips and scrolls its contents independently, and
@@ -464,15 +500,17 @@ typedef struct imgui_api_s
        caller's current selection, usually items[current]).  A row clicked in the body dismisses the
        combo automatically, so emit selectables and set your selection from their return:
 
-           if ( imgui()->begin_combo( "mode", items[cur], IMGUI_WIN_NONE ) ) {
+           if ( imgui()->begin_combo( "mode", items[cur], IMGUI_COMBO_NONE ) ) {
                for ( i32 i = 0; i < n; ++i )
                    if ( imgui()->selectable( items[i], NULL ) ) cur = i;
                imgui()->end_combo();
            }
 
-       combo() is the one-liner over an array of strings (*current_item is the selected index;
-       out of range shows an empty preview).  Both return true on the frame the selection changes. */
-    bool ( *begin_combo )( const char* label, const char* preview_value, imgui_win_flags_t flags );
+       flags is imgui_combo_flags_t: the HEIGHT_* group caps the dropdown to a fixed row count
+       (then it scrolls), 0 (IMGUI_COMBO_NONE) is the ~8-row default.  combo() is the one-liner over
+       an array of strings (*current_item is the selected index; out of range shows an empty
+       preview).  Both return true on the frame the selection changes. */
+    bool ( *begin_combo )( const char* label, const char* preview_value, imgui_combo_flags_t flags );
     void ( *end_combo   )( void );
     bool ( *combo       )( const char* label, i32* current_item, const char* const items[], i32 count );
 

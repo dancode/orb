@@ -52,6 +52,14 @@ void imgui_set_item_tooltip( const char* text );
 bool imgui_begin_tooltip( void );
 void imgui_end_tooltip( void );
 
+bool imgui_begin_main_menu_bar( void );
+void imgui_end_main_menu_bar( void );
+bool imgui_begin_menu_bar( void );
+void imgui_end_menu_bar( void );
+bool imgui_begin_menu( const char* label );
+void imgui_end_menu( void );
+bool imgui_menu_item( const char* label, const char* shortcut, bool* selected );
+
 bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_child( void );
 void imgui_push_layout( void );
@@ -140,7 +148,7 @@ bool imgui_input_float2( const char* label, f32* v, const char* fmt );
 bool imgui_input_float3( const char* label, f32* v, const char* fmt );
 bool imgui_input_float4( const char* label, f32* v, const char* fmt );
 bool imgui_selectable( const char* label, bool* selected );
-bool imgui_begin_combo( const char* label, const char* preview_value, imgui_win_flags_t flags );
+bool imgui_begin_combo( const char* label, const char* preview_value, imgui_combo_flags_t flags );
 void imgui_end_combo( void );
 bool imgui_combo( const char* label, i32* current_item, const char* const items[], i32 count );
 bool imgui_begin_listbox( const char* label, f32 w, f32 h );

@@ -301,12 +301,19 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
         /* Window body background. */
         draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
+        /* Menu-bar strip: when WIN_MENUBAR is set, reserve one row below the title bar for
+           begin_menu_bar to fill.  Carved off the top of the body here -- before the scroll
+           region opens -- so it sits above the scrolling content and never moves.  The rect is
+           stashed in s_ctx for begin_menu_bar; mb_h is 0 (no reservation) otherwise. */
+        f32 mb_h = ( flags & IMGUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
+        s_ctx.menubar_rect = ( imgui_rect_t ){ win->x, win->y + title_h, win->w, mb_h };
+
         /* Open the body as a scroll region.  Its region id is the window id, so the body
            scrollbar ids stay exactly what the window used before unification.  The region owns
            the pen, content column, wheel, and bars until layout_pop_region in end_window, but
            reuses the window's single clip.  Bias-from-scroll, gutter reservation, and clamping
            all live there now. */
-        imgui_rect_t body = { win->x, win->y + title_h, win->w, win->h - title_h };
+        imgui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
         layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags,
                             &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
                             /* own_clip */ false );
