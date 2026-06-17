@@ -96,6 +96,10 @@ f32 imgui_w_min( void );
 f32 imgui_calc_row( f32 content_h );
 f32 imgui_calc_col( f32 content_w );
 imgui_vec2_t imgui_content_avail( void );
+imgui_vec2_t imgui_cursor_screen_pos( void );
+imgui_rect_t imgui_dummy( f32 w, f32 h );
+bool imgui_invisible_button( const char* id_str, imgui_rect_t r );
+bool imgui_is_mouse_hovering_rect( imgui_rect_t r );
 void imgui_set_window_drag( imgui_win_drag_t mode );
 
 void imgui_push_id( const char* str );
@@ -139,6 +143,9 @@ void imgui_set_font      ( imgui_font_t font );
 void imgui_set_bmp_scale ( u32 scale );
 void imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );
 void imgui_draw_text( f32 x, f32 y, u32 abgr, const char* str );
+imgui_vec2_t imgui_text_size( const char* s );
+void imgui_draw_text_in( imgui_rect_t r, imgui_align_t align, u32 col, const char* s );
+void imgui_draw_text_clipped( imgui_rect_t r, imgui_align_t align, u32 col, const char* s );
 void imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
 void imgui_draw_polyline( const imgui_vec2_t* pts, u32 count, f32 thickness,
                           imgui_stroke_align_t align, bool closed, u32 abgr );

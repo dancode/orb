@@ -629,6 +629,18 @@ imgui_want_capture_keyboard( void )
     return s_ctx.focused_id != IMGUI_ID_NONE;
 }
 
+/* True when the cursor is over rect r and r is actually interactable: it lies in the front-most
+   window (occlusion), inside the active region clip (scrolled-away content does not hover), and no
+   other widget owns a drag in flight.  The IsMouseHoveringRect analogue -- gates a hover tint or a
+   manual is_mouse_clicked test on custom-drawn geometry exactly as the widgets gate their own. */
+bool
+imgui_is_mouse_hovering_rect( imgui_rect_t r )
+{
+    bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE );
+    bool win_hover = ( s_ctx.win_id == s_ctx.hover_win );
+    return can_hover && win_hover && rect_hit( s_ctx.clip_rect ) && rect_hit( r );
+}
+
 /* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t
    range is bounded by APP_KEY_COUNT <= IMGUI_KEY_COUNT (asserted in imgui_input.c).  is_key_pressed
    is the initial press this frame; is_key_pressed_repeat also fires on each OS auto-repeat tick (the

@@ -591,27 +591,38 @@ demo_lines( void )
 
         imgui()->checkbox( "Show guide lines", &show_guides );
 
+        /* A custom-drawn, interactive control built entirely from the primitives: dummy() reserves a
+           cell, is_mouse_hovering_rect() drives the hover tint, draw_text_in() centers the caption,
+           and invisible_button() makes the same rect clickable -- cycling the alignment on a click. */
+        {
+            imgui_rect_t sw  = imgui()->dummy( 0.0f, 22.0f );        /* full-width strip, 22px tall */
+            bool         hot = imgui()->is_mouse_hovering_rect( sw );
+            imgui()->draw_rect( sw.x, sw.y, sw.w, sw.h, hot ? LINE_CYAN : LINE_BG );
+            imgui()->draw_text_in( sw, IMGUI_ALIGN_CENTER, LINE_INK, "click: cycle alignment" );
+            if ( imgui()->invisible_button( "cycle##align", sw ) )
+                align_idx = ( align_idx + 1 ) % 4;
+        }
+
         /* ---- (a) crisp axis-aligned ladder ---- */
         imgui()->separator_text( "Axis-aligned: crisp 1..6 px (pixel-snapped)" );
         {
             imgui_rect_t r = imgui()->canvas( 168.0f );
             imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );
 
-            /* Reserve a right-hand label gutter sized to the widest tag, so the lines stop short of
-               it and the text always lands inside the canvas (no guessed pixel offsets). */
-            f32 pad = 12.0f;
-            f32 lh  = imgui()->line_h();
-            f32 gut = imgui()->text_w( "16 px" ) + pad;
-            f32 lx  = r.x + pad;
-            f32 lw  = r.w - 2.0f * pad - gut;
-            f32 yy  = r.y + 20.0f;
+            /* Carve the canvas declaratively: pad it, then per rung cut a row off the top and a
+               label column off that row's right.  The line fills what is left, the tag aligns in the
+               column -- no absolute offsets, so nothing can spill the border. */
+            imgui_rect_t area = imgui_rect_pad( r, 12.0f );
+            f32          lblw = imgui()->text_w( "16 px" ) + 12.0f;
             for ( int t = 1; t <= 6; ++t )
             {
-                char tag[ 8 ];
+                imgui_rect_t row = imgui_rect_cut_top( &area, 24.0f );
+                imgui_rect_t lbl = imgui_rect_cut_right( &row, lblw );
+                f32          cy  = row.y + row.h * 0.5f;
+                char         tag[ 8 ];
                 snprintf( tag, sizeof( tag ), "%d px", t );
-                imgui()->draw_line( lx, yy, lx + lw, yy, (f32)t, LINE_INK );
-                imgui()->draw_text( lx + lw + pad, yy - lh * 0.5f, LINE_INK, tag );
-                yy += 24.0f;                              /* a full text row per rung */
+                imgui()->draw_line( row.x, cy, row.x + row.w, cy, (f32)t, LINE_INK );
+                imgui()->draw_text_in( lbl, IMGUI_ALIGN_LEFT | IMGUI_ALIGN_VCENTER, LINE_INK, tag );
             }
         }
 
@@ -637,35 +648,35 @@ demo_lines( void )
             imgui_rect_t r = imgui()->canvas( 162.0f );
             imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );
 
-            f32 pad = 12.0f;
-            f32 lh  = imgui()->line_h();
+            imgui_rect_t area = imgui_rect_pad( r, 12.0f );
 
-            /* Caption, right-aligned by its measured width so it stays inside the canvas. */
+            /* Caption: reserve a top strip (so the layout is stable whether or not it draws) and
+               right-align the text in it -- the spill is impossible, the rect owns the right edge. */
+            imgui_rect_t cap = imgui_rect_cut_top( &area, imgui()->line_h() );
             if ( show_guides )
-            {
-                const char* cap = "white = ideal path";
-                imgui()->draw_text( r.x + r.w - pad - imgui()->text_w( cap ), r.y + 6.0f, LINE_PATH, cap );
-            }
+                imgui()->draw_text_in( cap, IMGUI_ALIGN_RIGHT | IMGUI_ALIGN_VCENTER,
+                                       LINE_PATH, "white = ideal path" );
 
-            /* Left label column sized to the widest name -- the segments start past it, so a long
-               label like CENTER_BIASED can never run under the lines. */
+            /* Cut a label column sized to the widest name; `area` is left as the segment region, so a
+               long label like CENTER_BIASED can never run under the lines. */
             f32 label_w = 0.0f;
             for ( int i = 0; i < 4; ++i )
             {
                 f32 w = imgui()->text_w( align_names[ i ] );
                 if ( w > label_w ) label_w = w;
             }
-            f32 x0 = r.x + pad + label_w + pad;          /* segment start: clear of the label column */
-            f32 x1 = r.x + r.w - pad;                    /* segment end:   canvas right margin       */
+            imgui_rect_t labels = imgui_rect_cut_left( &area, label_w + 12.0f );
             for ( int i = 0; i < 4; ++i )
             {
-                f32 ly = r.y + 36.0f + (f32)i * 30.0f;
-                imgui_vec2_t seg[ 2 ] = { { x0, ly }, { x1, ly } };
+                f32          ly       = area.y + 16.0f + (f32)i * 30.0f;
+                imgui_vec2_t seg[ 2 ] = { { area.x, ly }, { area.x + area.w, ly } };
                 imgui()->draw_polyline( seg, 2, thickness, align_mode[ i ], false, LINE_AMBR_T );
                 if ( show_guides )
-                    imgui()->draw_line( x0, ly, x1, ly, 1.0f, LINE_PATH ); /* ideal-path guide on top */
-                imgui()->draw_text( r.x + pad, ly - lh * 0.5f,
-                                    i == align_idx ? LINE_CYAN : LINE_INK, align_names[ i ] );
+                    imgui()->draw_line( area.x, ly, area.x + area.w, ly, 1.0f, LINE_PATH );
+
+                imgui_rect_t lbl = { labels.x, ly - imgui()->line_h() * 0.5f, labels.w, imgui()->line_h() };
+                imgui()->draw_text_in( lbl, IMGUI_ALIGN_LEFT | IMGUI_ALIGN_VCENTER,
+                                       i == align_idx ? LINE_CYAN : LINE_INK, align_names[ i ] );
             }
         }
 

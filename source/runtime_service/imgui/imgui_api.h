@@ -309,6 +309,13 @@ typedef struct imgui_api_s
        GetContentRegionAvail analogue -- size a begin_child to the leftover, or lay out by hand. */
     imgui_vec2_t ( *content_avail )( void );
 
+    /* cursor_screen_pos -- screen position where the next item would land (GetCursorScreenPos): anchor
+       custom draw_* geometry to the pen.  dummy -- reserve a w x h block and return its screen rect
+       (Dummy): blank space, or a slot to fill with custom draw / make clickable with invisible_button.
+       `w` is the main-axis size (honored in pack / same_line; column flow sizes to the track). */
+    imgui_vec2_t ( *cursor_screen_pos )( void );
+    imgui_rect_t ( *dummy )( f32 w, f32 h );
+
     /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
        seeded by the enclosing window / child region automatically, so identical labels in
        different regions never collide; push_id adds a temporary scope level for repeated widgets
@@ -388,6 +395,12 @@ typedef struct imgui_api_s
        push_item_flag( IMGUI_ITEM_BUTTON_REPEAT, true ) for press-and-hold stepping (spin buttons). */
     bool ( *arrow_button )( const char* id_str, imgui_dir_t dir );
 
+    /* invisible_button -- standard button interaction (hover, press-capture, click) on an explicit
+       rect the caller already holds (a canvas() cut, a dummy() slot, any custom-drawn region); returns
+       true on the click frame.  Owns no layout reservation, so it composes with the rect helpers:
+       cut/draw a region, then make it clickable.  For only a hover tint, use is_mouse_hovering_rect. */
+    bool ( *invisible_button )( const char* id_str, imgui_rect_t r );
+
     bool ( *checkbox    )( const char* label, bool* v );
 
     /* radio_button -- one option of a mutually-exclusive set: shows on while *v == value, a click
@@ -462,6 +475,15 @@ typedef struct imgui_api_s
     void ( *draw_rect )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
     void ( *draw_text )( f32 x, f32 y, u32 abgr, const char* str );
 
+    /* text_size -- laid-out pixel size of s (widest line x line span; '\n' breaks).  CalcTextSize. */
+    imgui_vec2_t ( *text_size )( const char* s );
+
+    /* draw_text_in -- draw s aligned within rect r (imgui_align_t; multi-line, each line aligned).
+       The placement primitive: "right-align this caption in the canvas" with no hand-computed edge.
+       draw_text_clipped is the single-line variant that ellipsizes to r's width. */
+    void ( *draw_text_in      )( imgui_rect_t r, imgui_align_t align, u32 col, const char* s );
+    void ( *draw_text_clipped )( imgui_rect_t r, imgui_align_t align, u32 col, const char* s );
+
     /* Line / path stroking (imgui_stroke_align_t; see imgui.h for the pixel model).
        draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
        draw_polyline -- a connected point array with miter-limited corners (always antialiased);
@@ -515,6 +537,10 @@ typedef struct imgui_api_s
 
     bool ( *want_capture_mouse       )( void );
     bool ( *want_capture_keyboard    )( void );
+
+    /* is_mouse_hovering_rect -- cursor is over r and r is interactable (front-most window, inside the
+       region clip, no drag in flight): the IsMouseHoveringRect analogue for custom-drawn hit tests. */
+    bool ( *is_mouse_hovering_rect   )( imgui_rect_t r );
     bool ( *is_key_down              )( app_key_t key );
     bool ( *is_key_pressed           )( app_key_t key );
     bool ( *is_key_pressed_repeat    )( app_key_t key );

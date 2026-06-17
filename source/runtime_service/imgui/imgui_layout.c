@@ -961,6 +961,27 @@ imgui_content_avail( void )
     return ( imgui_vec2_t ){ w, h };
 }
 
+/* Screen position where the next item would be emitted -- the GetCursorScreenPos analogue.  Anchor
+   custom draw_* geometry to the layout pen without reserving a cell first; pair with content_avail()
+   for the space ahead.  (Read it where the next widget would land -- it advances as items emit.) */
+imgui_vec2_t
+imgui_cursor_screen_pos( void )
+{
+    layout_frame_t* f = lf();
+    return ( imgui_vec2_t ){ f->cursor_x, f->cursor_y };
+}
+
+/* Reserve a w x h block in the layout and return its screen rect, advancing the pen like any widget
+   (the Dummy analogue) -- blank space, or a slot to fill with custom draw_* geometry / make clickable
+   with invisible_button.  `w` is the main-axis size: honored in a pack run or on a same_line, while
+   column / grid flow sizes the width to the track as for every widget.  The returned rect is always
+   the actual reserved space, so draw into it rather than assuming w x h. */
+imgui_rect_t
+imgui_dummy( f32 w, f32 h )
+{
+    return widget_next_rect_w( w, h );
+}
+
 /*----------------------------------------------------------------------------------------------
     indent / unindent -- shift the active region's content column right (or back), so subsequent
     rows lay out inset.  The single mechanism behind tree_node's nesting, but usable on its own to

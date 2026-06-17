@@ -27,6 +27,86 @@ typedef struct { f32 x, y, w, h; }  imgui_rect_t;
 
 typedef struct { f32 l, r, t, b; }  imgui_pad_t;
 
+/*----------------------------------------------------------------------------------------------
+    Rect algebra -- pure helpers for custom-draw placement (canvas() regions).  Stateless, so they
+    live inline with the geometry types they operate on.  The cut_* family is the "rectcut" idiom:
+    each slices a strip off one edge of *r, shrinks *r to the remainder, and returns the slice --
+    chain them to carve a canvas into label columns / content panes the way the row / column tracks
+    carve a region, instead of hand-computing absolute offsets.
+
+        imgui_rect_t bar    = imgui_rect_cut_top( &r, 24.0f );   // 24px strip off the top; r shrinks
+        imgui_rect_t labels = imgui_rect_cut_left( &r, 80.0f );  // 80px label column; r is the rest
+----------------------------------------------------------------------------------------------*/
+
+/* Shrink r inward by per-edge insets. */
+static inline imgui_rect_t
+imgui_rect_inset( imgui_rect_t r, imgui_pad_t p )
+{
+    return ( imgui_rect_t ){ r.x + p.l, r.y + p.t, r.w - p.l - p.r, r.h - p.t - p.b };
+}
+
+/* Shrink r inward by the same margin on every edge (the common uniform-inset case). */
+static inline imgui_rect_t
+imgui_rect_pad( imgui_rect_t r, f32 a )
+{
+    return ( imgui_rect_t ){ r.x + a, r.y + a, r.w - 2.0f * a, r.h - 2.0f * a };
+}
+
+/* Center point of r. */
+static inline imgui_vec2_t
+imgui_rect_center( imgui_rect_t r )
+{
+    return ( imgui_vec2_t ){ r.x + r.w * 0.5f, r.y + r.h * 0.5f };
+}
+
+/* True when (x,y) lies in r -- left / top inclusive, right / bottom exclusive, so abutting rects
+   partition the plane with no overlap (the pixel-coverage convention). */
+static inline bool
+imgui_rect_contains( imgui_rect_t r, f32 x, f32 y )
+{
+    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+/* rectcut: slice `a` px off the left of *r, return the slice, leave *r as the remainder. */
+static inline imgui_rect_t
+imgui_rect_cut_left( imgui_rect_t* r, f32 a )
+{
+    if ( a > r->w ) a = r->w;
+    imgui_rect_t cut = ( imgui_rect_t ){ r->x, r->y, a, r->h };
+    r->x += a;
+    r->w -= a;
+    return cut;
+}
+
+/* rectcut: slice `a` px off the right of *r. */
+static inline imgui_rect_t
+imgui_rect_cut_right( imgui_rect_t* r, f32 a )
+{
+    if ( a > r->w ) a = r->w;
+    r->w -= a;
+    return ( imgui_rect_t ){ r->x + r->w, r->y, a, r->h };
+}
+
+/* rectcut: slice `a` px off the top of *r. */
+static inline imgui_rect_t
+imgui_rect_cut_top( imgui_rect_t* r, f32 a )
+{
+    if ( a > r->h ) a = r->h;
+    imgui_rect_t cut = ( imgui_rect_t ){ r->x, r->y, r->w, a };
+    r->y += a;
+    r->h -= a;
+    return cut;
+}
+
+/* rectcut: slice `a` px off the bottom of *r. */
+static inline imgui_rect_t
+imgui_rect_cut_bottom( imgui_rect_t* r, f32 a )
+{
+    if ( a > r->h ) a = r->h;
+    r->h -= a;
+    return ( imgui_rect_t ){ r->x, r->y + r->h, r->w, a };
+}
+
 /*==============================================================================================
     Layout template
 
