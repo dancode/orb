@@ -251,21 +251,17 @@ main( int argc, char** argv )
                     rhi()->cmd_end_rendering( cmd );
                 }
 
-                if ( 0 )
+                if ( 1 )
                 {
                     /* 2D draw pass -- positions in pixel space (0,0 = top-left). */
                     const f32 bg[ 4 ] = { 0.08f, 0.08f, 0.12f, 1.0f };
                     draw()->begin_pass( cmd, win_w, win_h, bg );
-
                     const f32 white[ 4 ] = { 1.0f, 1.0f, 1.0f, 1.0f };
                     draw()->rect( win_w * 0.5f, win_h * 0.5f, 200.0f, 100.0f, white );
-
                     const f32 red[ 4 ] = { 0.9f, 0.2f, 0.2f, 1.0f };
                     draw()->circle( 200.0f, 200.0f, 80.0f, 32, red );
-
                     const f32 blue[ 4 ] = { 0.2f, 0.4f, 0.9f, 1.0f };
                     draw()->rect( win_w - 160.0f, win_h - 80.0f, 120.0f, 60.0f, blue );
-
                     draw()->end_pass();
                 }
 

@@ -3,11 +3,11 @@
     runtime_service/imgui/imgui_widget_core.c -- Shared widget primitives + theme.
 
     The foundation the rest of the widget layer is built on: the layout-derived size
-    macros, the color palette, the shared edge-resize geometry, the label grammar + content
-    placement (rect_align / arrows), and the per-widget interaction state machine.  Both the
-    leaf widgets (imgui_widget.c) and the window chrome (imgui_widget_window.c) draw and
-    interact through these, so they live here, ahead of both in the unity build.  The layout
-    engine these feed (track resolver + cell emitters) is imgui_layout_core.c, included next.
+    macros, the color palette, the label grammar + content placement (rect_align / arrows),
+    and the per-widget interaction state machine.  Both the leaf widgets (imgui_widget.c) and
+    the window chrome (imgui_widget_window.c) draw and interact through these, so they live
+    here, ahead of both in the unity build.  The shared edge-resize geometry is imgui_resize.c
+    and the layout engine (track resolver + cell emitters) is imgui_layout_core.c, both next.
 
     Interaction uses the classic hover/active/focused model:
         hover   : the cursor is over the widget this frame
@@ -65,118 +65,27 @@
 #define COL_INPUT_FOCUS  style_col( IMGUI_COL_INPUT_FOCUS  )
 #define COL_CURSOR       style_col( IMGUI_COL_CURSOR       )
 
-/*----------------------------------------------------------------------------------------------
-    Shared edge-resize geometry
-
-    The salt, edge bits, grab-band constants, and the record-agnostic helpers -- hit-test, highlight,
-    grab, and the raw edge-drag apply.  They sit here (they need the style macros above, and this file
-    is still ahead of imgui_layout.c) so the window chrome (imgui_widget_window.c), a resizeable
-    begin_child (imgui_layout.c), and a future dock splitter all share one resize feel from one
-    mechanism.  Each touches only a rect and the cursor; the s_resize_* in-flight state lives in
-    imgui_window.c (included earlier).
-
-    The split is mechanism vs policy: resize_grab records the anchors, resize_apply_edges maps the
-    cursor onto the edges, and the *caller* layers its own size policy on the result -- a window pins
-    the far edge and clamps to its min (window_apply_resize), a child clamps to its constraints and
-    persists the size (begin_child).  So the geometry is shared while the bounding stays where it
-    belongs, and a new consumer reuses the mechanism rather than copying it.
-----------------------------------------------------------------------------------------------*/
-
-/* Edge-resize grab: while a resize is in flight the owner holds active_id == (id ^
-   IMGUI_RESIZE_SALT), distinct from a window drag (the bare id), scrollbar, and collapse arrow. */
-#define IMGUI_RESIZE_SALT     0x5152E001u
-
-/* Edge bits for s_resize_edges -- combined on a corner grab (e.g. R|B). */
-#define IMGUI_RESIZE_L  ( 1u << 0 )
-#define IMGUI_RESIZE_R  ( 1u << 1 )
-#define IMGUI_RESIZE_T  ( 1u << 2 )
-#define IMGUI_RESIZE_B  ( 1u << 3 )
-
-/* Grab band straddling the border: a few pixels inside and a few outside. */
-#define WIN_RESIZE_INNER  ( 4.0f )                  /* reach inside the border  */
-#define WIN_RESIZE_OUTER  ( WIN_BORDER + 6.0f )     /* and just outside it      */
-
-/* Which edges of rect r the cursor is within the grab band of (0 = none).  The band spans
-   [edge - OUTER, edge + INNER] on each side, so the cursor catches an edge from just outside
-   the border as well as just inside.  Caller gates on hover_win, so no occlusion test here.
-   `pin_v` reports horizontal edges only -- a collapsed window (height pinned to the title bar). */
-static u8
-window_resize_hit( imgui_rect_t r, bool pin_v )
-{
-    const f32 in  = WIN_RESIZE_INNER;
-    const f32 out = WIN_RESIZE_OUTER;
-    const f32 mx  = s_io.mouse_x;
-    const f32 my  = s_io.mouse_y;
-
-    /* Outside the outer-expanded rect entirely -> no edge. */
-    if ( mx < r.x - out || mx > r.x + r.w + out ) return 0;
-    if ( my < r.y - out || my > r.y + r.h + out ) return 0;
-
-    u8 e = 0;
-    if ( mx <= r.x + in )           e |= IMGUI_RESIZE_L;
-    if ( mx >= r.x + r.w - in )     e |= IMGUI_RESIZE_R;
-    if ( !pin_v )
-    {
-        if ( my <= r.y + in )       e |= IMGUI_RESIZE_T;
-        if ( my >= r.y + r.h - in ) e |= IMGUI_RESIZE_B;
-    }
-    return e;
-}
-
-/* Paint a bold line over each hot edge of an outline so it is obvious that the border is
-   grabbable and which side will move.  Drawn just inside the rect, over the thin border. */
-static void
-window_draw_resize_highlight( imgui_rect_t r, u8 edges )
-{
-    const f32 t = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */
-
-    if ( edges & IMGUI_RESIZE_L ) draw_push_rect_filled( r.x,             r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & IMGUI_RESIZE_R ) draw_push_rect_filled( r.x + r.w - t,   r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & IMGUI_RESIZE_T ) draw_push_rect_filled( r.x,             r.y,             r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & IMGUI_RESIZE_B ) draw_push_rect_filled( r.x,             r.y + r.h - t,   r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
-}
-
-/* Record the grab anchors for an edge-resize of `box`, keyed by `id` (resize-salted into active_id).
-   Stores the cursor offset that keeps each grabbed edge under the cursor, and the absolute position
-   of the far edges -- pinned when a left / top edge moves (a right / bottom-only drag never reads
-   them).  Record-agnostic: a window, a child, or a splitter grabs identically from its rect. */
-static void
-resize_grab( imgui_id_t id, imgui_rect_t box, u8 edges )
-{
-    s_ctx.active_id = id_combine( id, IMGUI_RESIZE_SALT );
-    s_resize_edges  = edges;
-
-    s_resize_off_x = ( edges & IMGUI_RESIZE_L ) ? ( s_io.mouse_x - box.x )
-                   : ( edges & IMGUI_RESIZE_R ) ? ( s_io.mouse_x - ( box.x + box.w ) )
-                   : 0.0f;
-    s_resize_off_y = ( edges & IMGUI_RESIZE_T ) ? ( s_io.mouse_y - box.y )
-                   : ( edges & IMGUI_RESIZE_B ) ? ( s_io.mouse_y - ( box.y + box.h ) )
-                   : 0.0f;
-
-    s_resize_fix_x = box.x + box.w;   /* pinned right edge for a left-edge drag  */
-    s_resize_fix_y = box.y + box.h;   /* pinned bottom edge for a top-edge drag  */
-}
-
-/* Map the in-flight cursor onto rect *r along the grabbed `edges`, using the offsets / pins recorded
-   at grab.  A right / bottom edge moves only the size out from the fixed origin; a left / top edge
-   shifts the origin and recovers the size against the pinned far edge.  No min / max clamp -- the
-   caller layers its own size policy on the result, so the raw geometry is shared and only the
-   bounding differs.  `edges` is a parameter (not read from s_resize_edges) so a caller can apply a
-   subset -- a child passes only its R / B. */
-static void
-resize_apply_edges( imgui_rect_t* r, u8 edges )
-{
-    if ( edges & IMGUI_RESIZE_R ) r->w = ( s_io.mouse_x - s_resize_off_x ) - r->x;
-    if ( edges & IMGUI_RESIZE_L ) { r->x = s_io.mouse_x - s_resize_off_x; r->w = s_resize_fix_x - r->x; }
-    if ( edges & IMGUI_RESIZE_B ) r->h = ( s_io.mouse_y - s_resize_off_y ) - r->y;
-    if ( edges & IMGUI_RESIZE_T ) { r->y = s_io.mouse_y - s_resize_off_y; r->h = s_resize_fix_y - r->y; }
-}
-
 /* Baseline y to vertically center one line of glyphs in a row of height h starting at y.
    Used by every labeled widget and the window title so the centering math lives in one place.
    (The text_center_y( y, h ) form is the VCENTER case of rect_align below, kept as a scalar
    convenience because most labeled widgets only need the y and already own their x.) */
 static f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
+
+/* Place an extent `len` within the span [org, org+avail) along one axis: centered, against the far
+   edge, or (default) the near edge.  The one axis primitive every aligned placement resolves
+   through -- rect_align below for a box, and draw_text_in (imgui_widget.c) per line of a text
+   block -- so a centered label, a right-flushed caption, and a bottom-anchored run share one rule. */
+static f32
+align_span( f32 org, f32 avail, f32 len, bool center, bool far )
+{
+    if ( center ) return org + ( avail - len ) * 0.5f;
+    if ( far )    return org +   avail - len;
+    return org;                                                   /* near edge -- LEFT / TOP default */
+}
+
+/* Horizontal / vertical placement within a cell span, reading the matching imgui_align_t bits. */
+static f32 align_x( f32 x, f32 w, f32 len, u32 a ) { return align_span( x, w, len, a & IMGUI_ALIGN_HCENTER, a & IMGUI_ALIGN_RIGHT  ); }
+static f32 align_y( f32 y, f32 h, f32 len, u32 a ) { return align_span( y, h, len, a & IMGUI_ALIGN_VCENTER, a & IMGUI_ALIGN_BOTTOM ); }
 
 /* Place a natural nat_w x nat_h box inside `cell` per the alignment flags (imgui_align_t).  The
    single seam for positioning sub-cell content -- a button's label, a checkbox box, an aligned
@@ -185,15 +94,8 @@ static f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.
 static imgui_rect_t
 rect_align( imgui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
 {
-    f32 x = cell.x;                                                            /* LEFT (default) */
-    if      ( align & IMGUI_ALIGN_HCENTER ) x = cell.x + ( cell.w - nat_w ) * 0.5f;
-    else if ( align & IMGUI_ALIGN_RIGHT   ) x = cell.x +   cell.w - nat_w;
-
-    f32 y = cell.y;                                                            /* TOP (default)  */
-    if      ( align & IMGUI_ALIGN_VCENTER ) y = cell.y + ( cell.h - nat_h ) * 0.5f;
-    else if ( align & IMGUI_ALIGN_BOTTOM  ) y = cell.y +   cell.h - nat_h;
-
-    return ( imgui_rect_t ){ x, y, nat_w, nat_h };
+    return ( imgui_rect_t ){ align_x( cell.x, cell.w, nat_w, align ),
+                             align_y( cell.y, cell.h, nat_h, align ), nat_w, nat_h };
 }
 
 /* Directional arrow glyph: a filled triangle pointing `dir`, centered in `box`.  The one arrow

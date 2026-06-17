@@ -745,24 +745,6 @@ imgui_text_size( const char* s )
     return ( imgui_vec2_t ){ max_w, font_char_h() + (f32)( lines - 1 ) * font_line_h() };
 }
 
-/* Top-left y to place a block of total height `h` inside r per the vertical align flags. */
-static f32
-text_block_y( imgui_rect_t r, f32 h, imgui_align_t align )
-{
-    if ( align & IMGUI_ALIGN_VCENTER ) return r.y + ( r.h - h ) * 0.5f;
-    if ( align & IMGUI_ALIGN_BOTTOM  ) return r.y +   r.h - h;
-    return r.y;                                                  /* TOP (default) */
-}
-
-/* Left x to place a run of width `w` inside r per the horizontal align flags. */
-static f32
-text_line_x( imgui_rect_t r, f32 w, imgui_align_t align )
-{
-    if ( align & IMGUI_ALIGN_HCENTER ) return r.x + ( r.w - w ) * 0.5f;
-    if ( align & IMGUI_ALIGN_RIGHT   ) return r.x +   r.w - w;
-    return r.x;                                                  /* LEFT (default) */
-}
-
 /* draw_text_in -- draw s aligned within rect r (imgui_align_t).  Multi-line: the block is placed by
    the vertical flag, each line by the horizontal flag, so RIGHT flushes every line to r's right edge. */
 void
@@ -770,14 +752,14 @@ imgui_draw_text_in( imgui_rect_t r, imgui_align_t align, u32 col, const char* s 
 {
     if ( !s ) return;
 
-    f32         y    = text_block_y( r, imgui_text_size( s ).y, align );
+    f32         y    = align_y( r.y, r.h, imgui_text_size( s ).y, align );
     const char* line = s;
     for ( const char* p = s; ; ++p )
     {
         if ( *p == '\n' || *p == '\0' )
         {
             u32 n = (u32)( p - line );
-            draw_push_text_n( text_line_x( r, font_text_w_n( line, n ), align ), y, col, line, n );
+            draw_push_text_n( align_x( r.x, r.w, font_text_w_n( line, n ), align ), y, col, line, n );
             if ( *p == '\0' ) break;
             y   += font_line_h();
             line = p + 1;
@@ -793,9 +775,9 @@ imgui_draw_text_clipped( imgui_rect_t r, imgui_align_t align, u32 col, const cha
     if ( !s ) return;
 
     f32 w = font_text_w( s );
-    f32 y = text_block_y( r, font_char_h(), align );
+    f32 y = align_y( r.y, r.h, font_char_h(), align );
     if ( w <= r.w )
-        draw_push_text( text_line_x( r, w, align ), y, col, s );
+        draw_push_text( align_x( r.x, r.w, w, align ), y, col, s );
     else
         draw_text_fit_n( r.x, y, col, s, 0xFFFFFFFFu, r.w );
 }
