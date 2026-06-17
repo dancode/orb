@@ -59,6 +59,9 @@ log_console_sink( const log_entry_t* entry, void* userdata )
         fprintf( stdout, "%s\n", s_separator );
         return;
     }
+    if ( (int)entry->level >= LOG_LEVEL_COUNT ) /* guard: level must index s_prefixes[] */
+        return;
+
     FILE* stream = ( entry->level >= LOG_LEVEL_WARN ) ? stderr : stdout;
     if ( entry->channel == NULL ) /* overflow continuation: no prefix */
     {
@@ -144,14 +147,13 @@ log_write( log_level_t level, const char* channel, const char* fmt, ... )
 
     va_list ap; 
     va_start( ap, fmt );
-    int full_len = vsnprintf( full, sizeof( full ), fmt, ap );
+    u32 full_len = vsnprintf( full, sizeof( full ), fmt, ap );
     va_end( ap );
 
     if ( full_len < 0 )     full_len = 0;
     if ( full_len >= 4096 ) full_len = 4096 - 1;
  
-    const int chunk_max = (int)sizeof( g_ring[ 0 ].msg ) - 1;
-    int offset = 0;
+    u32 offset = 0;
     do
     {
         u32 seq            = g_ring_seq++;
@@ -161,8 +163,10 @@ log_write( log_level_t level, const char* channel, const char* fmt, ... )
         entry->level   = level;
         entry->channel = ( offset == 0 ) ? ( channel ? channel : "?" ) : NULL;
 
-        int  to_copy = full_len - offset;
-        if ( to_copy > chunk_max ) to_copy = chunk_max;
+        u32  to_copy = full_len - offset;
+        if ( to_copy >= sizeof( entry->msg ))  
+             to_copy  = sizeof( entry->msg ) - 1;
+
         memcpy( entry->msg, full + offset, (size_t)to_copy );
         entry->msg[ to_copy ] = '\0';
         offset += to_copy;
