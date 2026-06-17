@@ -133,6 +133,12 @@ bool imgui_input_text( const char* label, char* buf, u32 bufsz );
 bool imgui_input_text_ex( const char* label, char* buf, u32 bufsz,
                            imgui_text_cb_fn on_change, void* cb_user );
 bool imgui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 bufsz );
+bool imgui_input_int   ( const char* label, i32* v, i32 step, i32 step_fast );
+bool imgui_input_float ( const char* label, f32* v, f32 step, f32 step_fast, const char* fmt );
+bool imgui_input_double( const char* label, f64* v, f64 step, f64 step_fast, const char* fmt );
+bool imgui_input_float2( const char* label, f32* v, const char* fmt );
+bool imgui_input_float3( const char* label, f32* v, const char* fmt );
+bool imgui_input_float4( const char* label, f32* v, const char* fmt );
 bool imgui_selectable( const char* label, bool* selected );
 bool imgui_collapsing_header( const char* label );
 bool imgui_tree_node( const char* label );

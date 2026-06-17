@@ -438,6 +438,20 @@ typedef struct imgui_api_s
        when the buffer is empty and the field is not focused.  The hint is never written to buf. */
     bool ( *input_text_with_hint )( const char* label, const char* hint, char* buf, u32 bufsz );
 
+    /* input_int / _float / _double -- numeric text field that parses on Enter or focus loss.
+       step != 0 shows [-][+] buttons at the right of the box; Ctrl uses step_fast.
+       fmt is the snprintf format for display and focus-seed ("%.3f" / "%d" when NULL).
+       Scientific notation is accepted ("1e+8").  Returns true when the value changes. */
+    bool ( *input_int    )( const char* label, i32* v, i32 step, i32 step_fast );
+    bool ( *input_float  )( const char* label, f32* v, f32 step, f32 step_fast, const char* fmt );
+    bool ( *input_double )( const char* label, f64* v, f64 step, f64 step_fast, const char* fmt );
+
+    /* input_floatN -- N-component float row: N equal text boxes across the control track.
+       fmt applies to every component (NULL -> "%.3f").  Returns true if any component changes. */
+    bool ( *input_float2 )( const char* label, f32* v, const char* fmt );
+    bool ( *input_float3 )( const char* label, f32* v, const char* fmt );
+    bool ( *input_float4 )( const char* label, f32* v, const char* fmt );
+
     /* selectable -- a full-width row that highlights on hover and fills when selected; the
        list-box building block.  A click toggles *selected (pass NULL for click-only); returns
        true on the clicked frame so a caller managing single-selection can set its own index. */
