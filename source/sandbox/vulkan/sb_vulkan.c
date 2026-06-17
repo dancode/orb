@@ -251,7 +251,7 @@ main( int argc, char** argv )
                     rhi()->cmd_end_rendering( cmd );
                 }
 
-                if ( 1 )
+                if ( 0 )
                 {
                     /* 2D draw pass -- positions in pixel space (0,0 = top-left). */
                     const f32 bg[ 4 ] = { 0.08f, 0.08f, 0.12f, 1.0f };

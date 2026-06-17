@@ -709,7 +709,7 @@ demo_lines( void )
 
         /* ---- (e) mitered polyline corners, with an adjustable spread (uses Thickness) ---- */
         imgui()->separator_text( "Polyline: mitered corners" );
-        imgui()->slider_float( "Corner spread", &spread, 0.05f, 1.0f );
+        imgui()->slider_float( "Corner spread", &spread, 0.0f, 1.0f );
         {
             imgui_rect_t r = imgui()->canvas( 130.0f );
             imgui()->draw_rect( r.x, r.y, r.w, r.h, LINE_BG );

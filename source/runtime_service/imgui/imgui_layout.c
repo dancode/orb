@@ -31,6 +31,10 @@
 #define IMGUI_SCROLLBAR_SALT  0x5C011B01u
 #define IMGUI_HSCROLLBAR_SALT 0x5C011B02u
 
+/* Grab offset within the knob at the moment of press.  Single-slot: only one scrollbar can be
+   active (own active_id) at a time, so this covers every bar on every region. */
+static f32 s_sb_grab_off = 0.0f;
+
 /*----------------------------------------------------------------------------------------------
     Persistent region state
 
@@ -89,8 +93,6 @@ region_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
     f32 track_len = vertical ? track.h : track.w;
     f32 track_org = vertical ? track.y : track.x;
 
-    widget_state_t st = widget_behavior( id, track, WIDGET_KIND_DRAG );
-
     /* Knob length is the visible fraction of the track, clamped to a grabbable minimum
        and never longer than the track itself (content <= view => full-length knob).  The
        min-then-cap order matters: a track shorter than the minimum collapses to track_len,
@@ -101,15 +103,32 @@ region_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
     if ( knob_len > track_len ) knob_len = track_len;
     f32 travel = track_len - knob_len;
 
-    /* Drag maps the cursor (knob centre) back into the scroll offset. */
-    if ( st.active && travel > 0.0f )
-    {
-        f32 t = saturate( ( mouse_along - track_org - knob_len * 0.5f ) / travel );
-        *scroll = t * max_scroll;
-    }
-
+    /* Derive the current knob position before any interaction this frame -- used for
+       press-hit-detection and (after possible update) for drawing. */
     f32 t_cur    = ( max_scroll > 0.0f ) ? *scroll / max_scroll : 0.0f;
     f32 knob_off = track_org + t_cur * travel;
+
+    widget_state_t st = widget_behavior( id, track, WIDGET_KIND_DRAG );
+
+    /* On the press frame, decide whether the cursor landed on the knob (drag from the grabbed
+       point) or in the gutter (jump: center the knob under the cursor).  s_sb_grab_off is the
+       offset from the knob's leading edge to the cursor and stays fixed for the whole drag. */
+    if ( st.pressed )
+    {
+        if ( mouse_along >= knob_off && mouse_along <= knob_off + knob_len )
+            s_sb_grab_off = mouse_along - knob_off;   /* preserve the grab point within handle */
+        else
+            s_sb_grab_off = knob_len * 0.5f;          /* gutter click: center knob on cursor  */
+    }
+
+    /* Drag maps the cursor back into the scroll offset via the grab offset. */
+    if ( st.active && travel > 0.0f )
+    {
+        f32 t = saturate( ( mouse_along - track_org - s_sb_grab_off ) / travel );
+        *scroll = t * max_scroll;
+        t_cur    = t;
+        knob_off = track_org + t_cur * travel;
+    }
 
     draw_push_rect_filled( track.x, track.y, track.w, track.h, 0,0,1,1, 0, COL_SLIDER_TRACK );
     if ( vertical )
