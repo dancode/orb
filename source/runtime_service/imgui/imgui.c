@@ -15,7 +15,9 @@
         imgui_ctx.c     -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
         imgui_window.c       -- persistent per-window state: imgui_window_t, window_get, drag mode
         imgui_widget_core.c  -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
+        imgui_layout_core.c  -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
         imgui_layout.c       -- layout-region engine: region pool, scrollbar, push/pop_region, begin/end_child
+        imgui_text_edit.c    -- single-line text editing engine: input_field_edit (behind input_text)
         imgui_widget.c       -- leaf widgets: text, button, checkbox, slider, input_text, selectable
         imgui_widget_window.c-- the window as a widget: begin/end_window + chrome (resize); body is a region
         imgui_popup.c        -- popups / context menus / tooltips: overlay windows on a reserved z-band
@@ -206,7 +208,9 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 #include "runtime_service/imgui/imgui_ctx.c"
 #include "runtime_service/imgui/imgui_window.c"
 #include "runtime_service/imgui/imgui_widget_core.c"
+#include "runtime_service/imgui/imgui_layout_core.c"
 #include "runtime_service/imgui/imgui_layout.c"
+#include "runtime_service/imgui/imgui_text_edit.c"
 #include "runtime_service/imgui/imgui_widget.c"
 #include "runtime_service/imgui/imgui_widget_window.c"
 #include "runtime_service/imgui/imgui_popup.c"

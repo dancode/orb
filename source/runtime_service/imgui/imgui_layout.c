@@ -13,10 +13,12 @@
     regions share one engine.  region_scrollbar() is axis-generic and id-parameterized; it is
     used for every bar on every region.
 
-    Included by imgui.c after imgui_widget_core.c so widget_behavior, widget_bg_color, the COL_*
-    palette, the WIDGET_/WIN_ layout macros, the layout-frame stack (lf / s_layout_stack), and
-    the draw + region helpers are all in scope.  Included before imgui_widget_window.c, which
-    calls layout_push_region / layout_pop_region for the window body.
+    Included by imgui.c after imgui_layout_core.c so the layout engine (layout_set / _grid,
+    widget_next_rect, field_split_resolve) and, through it, the imgui_widget_core primitives
+    (widget_behavior, widget_bg_color, the COL_* palette, the WIDGET_/WIN_ layout macros, the
+    layout-frame stack lf / s_layout_stack) and the draw + region helpers are all in scope.
+    Included before imgui_widget_window.c, which calls layout_push_region / layout_pop_region
+    for the window body.
 
 ==============================================================================================*/
 // clang-format off
