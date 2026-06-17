@@ -183,7 +183,7 @@ main( int argc, char** argv )
             }
         }
 
-        if ( app()->key_pressed( APP_KEY_ESCAPE ) )
+        if ( app()->key_pressed( APP_KEY_F12 ) )
             break;
 
         /* ------------------------------------------------------------------------------ */

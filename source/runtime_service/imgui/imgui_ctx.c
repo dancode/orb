@@ -86,6 +86,47 @@ static struct
     bool               combo_open;          // a combo dropdown body is currently being emitted
     bool               combo_item_clicked;  // a selectable in that body was clicked this frame
 
+    /* Keyboard navigation -- the nav cursor: the persistent analogue of hover_id, moved by the
+       arrow keys / Tab rather than the mouse.  nav_win is the window or popup it is scoped to,
+       chosen each frame the way hover_win is (popup captures it while open).  nav_id's movement is
+       resolved one frame deferred against nav_ref_rect, exactly like hover_win lags the cursor:
+       the request is set at nav_new_frame, every item in nav_win registers itself through
+       widget_behavior during emission, and the winner is committed at the next nav_new_frame.  See
+       imgui_nav.c for the driver; nav_item_register (imgui_widget_core.c) is the per-item seam. */
+
+    imgui_id_t   nav_id;          // the highlighted item (keyboard cursor); persists across frames
+    imgui_id_t   nav_win;         // window/popup nav is scoped to (the hover_win analogue)
+    imgui_rect_t nav_ref_rect;    // nav_id's rect last frame -- the directional scoring origin
+    bool         nav_active;      // nav highlight engaged (an arrow/Tab was used; mouse move clears)
+
+    i32          nav_move_dir;    // directional request this frame (imgui_dir_t, or -1 for none)
+    i32          nav_tab;         // Tab linear move: +1 forward, -1 back, 0 none
+    bool         nav_activate;    // Enter/Space -> fire nav_id like a click this frame
+
+    bool         nav_id_seen;     // nav_id was emitted in nav_win this frame (else it went stale)
+    imgui_id_t   nav_move_best;   // best-scored directional candidate this frame
+    f32          nav_move_score;  // its score (lower is better; reset to a large value each frame)
+    imgui_rect_t nav_move_rect;   // its rect -> next frame's nav_ref_rect
+    imgui_rect_t nav_self_rect;   // nav_id's own rect captured this frame (keeps ref_rect fresh)
+    imgui_id_t   nav_tab_first;   // first eligible item this frame (Tab wrap + first-focus)
+    imgui_id_t   nav_tab_prev;    // item emitted just before nav_id (Shift+Tab target)
+    imgui_id_t   nav_tab_next;    // item emitted just after nav_id (Tab target)
+    bool         nav_tab_take;    // the item just registered was nav_id -> grab the next as tab_next
+
+    /* Menu-bar navigation -- a small state machine layered on the nav cursor + popup stack, entered
+       by Alt (toggle) or an Alt+letter mnemonic.  While active, nav lives either on the bar entries
+       (nav_in_menus false: nav_win is the bar window, a highlighted entry drops its menu) or inside
+       the open menu popups (nav_in_menus true: nav_win is the top popup).  Down/Enter descend, Up at
+       a top item and Left/Esc ascend -- always landing back on nav_menu_owner so closing a menu
+       returns to the bar entry that opened it (not the first entry).  See imgui_nav.c + begin_menu. */
+
+    imgui_id_t   nav_bar_win;     // menu-bar window nav is driving; 0 = not in menu-bar mode
+    bool         nav_in_menus;    // menu mode: false = on the bar entries, true = inside the popups
+    imgui_id_t   nav_menu_owner;  // bar entry whose menu is open -- the ascend / close return target
+    imgui_id_t   nav_prev_win;    // nav target to restore when Alt toggles out of the menu bar
+    imgui_id_t   nav_prev_id;     // nav cursor to restore on Alt toggle-out (the last focus location)
+    u8           nav_mnemonic;    // pending Alt+letter mnemonic (uppercase ASCII); 0 = none
+
 } s_ctx;
 
 /*----------------------------------------------------------------------------------------------
@@ -537,6 +578,37 @@ rect_hit( imgui_rect_t r )
    unity includes, so imgui_draw.c can use it for clip intersection too. */
 
 /*----------------------------------------------------------------------------------------------
+    nav_score_dir -- directional-move cost from the current nav item (cur) to a candidate (cand)
+    along `dir`.  The Dear ImGui nav scorer in its simplest center-to-center form: project the
+    displacement onto the move axis (primary) and the perpendicular axis (secondary); a candidate
+    not on the correct side is rejected, and the rest are ranked by primary distance plus a weighted
+    perpendicular penalty so the item most directly ahead wins.  Reads only rects, so it is agnostic
+    to the layout mode that produced them.  Lower is better; a large value means "rejected".
+----------------------------------------------------------------------------------------------*/
+
+#define NAV_SCORE_REJECT 3.0e38f    /* effectively +inf -- candidate is not in the move direction */
+
+static f32
+nav_score_dir( imgui_rect_t cur, imgui_rect_t cand, imgui_dir_t dir )
+{
+    f32 ccx = cur.x  + cur.w  * 0.5f, ccy = cur.y  + cur.h  * 0.5f;
+    f32 ncx = cand.x + cand.w * 0.5f, ncy = cand.y + cand.h * 0.5f;
+    f32 dx  = ncx - ccx, dy = ncy - ccy;
+
+    f32 prim, secd;   /* primary = distance along the axis; secondary = perpendicular offset */
+    switch ( dir )
+    {
+        case IMGUI_DIR_UP:    prim = -dy; secd = dx < 0 ? -dx : dx; break;
+        case IMGUI_DIR_DOWN:  prim =  dy; secd = dx < 0 ? -dx : dx; break;
+        case IMGUI_DIR_LEFT:  prim = -dx; secd = dy < 0 ? -dy : dy; break;
+        case IMGUI_DIR_RIGHT: prim =  dx; secd = dy < 0 ? -dy : dy; break;
+        default:              return NAV_SCORE_REJECT;
+    }
+    if ( prim <= 0.0f ) return NAV_SCORE_REJECT;   /* behind / abreast -- not in this direction */
+    return prim + secd * 2.0f;                     /* weight misalignment so straight-ahead wins */
+}
+
+/*----------------------------------------------------------------------------------------------
     window_nominate_hover -- begin_window calls this with its rect + z.  Keeps the front-most
     (highest z) window the cursor is over; promoted to hover_win next frame.
 ----------------------------------------------------------------------------------------------*/
@@ -637,11 +709,13 @@ imgui_want_capture_mouse( void )
     return s_ctx.hover_win != IMGUI_ID_NONE || s_ctx.active_id != IMGUI_ID_NONE;
 }
 
-/* True when a widget owns the keyboard (an input_text is focused) -- keystrokes belong to it. */
+/* True when imgui owns the keyboard this frame -- a text field is focused, keyboard nav is engaged,
+   or a popup/menu is open -- so gameplay / tools must not also act on the same keystrokes (an arrow
+   driving the nav cursor, an Enter activating the nav item).  The fence for non-UI key reads. */
 bool
 imgui_want_capture_keyboard( void )
 {
-    return s_ctx.focused_id != IMGUI_ID_NONE;
+    return s_ctx.focused_id != IMGUI_ID_NONE || s_ctx.nav_active || s_popup_open_count > 0;
 }
 
 /* True when the cursor is over rect r and r is actually interactable: it lies in the front-most

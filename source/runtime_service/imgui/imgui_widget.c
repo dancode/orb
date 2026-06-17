@@ -799,7 +799,7 @@ imgui_selectable( const char* label, bool* selected )
     /* Fill: selected rows use the active tint, a hovered row the hot tint; otherwise the row
        is transparent so the region background shows through. */
     bool on = ( selected && *selected );
-    if ( on || st.hover )
+    if ( on || st.hover || st.nav )
         draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
                                on ? COL_WIDGET_ACT : COL_WIDGET_HOT );
 
@@ -877,8 +877,8 @@ imgui_tree_node( const char* label )
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
     if ( st.clicked ) hs->open = !hs->open;
 
-    /* No framed bar: tint only on hover / active (like selectable), so a tree is a list of rows. */
-    if ( st.hover || st.active )
+    /* No framed bar: tint only on hover / active / nav (like selectable), so a tree is a list of rows. */
+    if ( st.hover || st.active || st.nav )
         draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
 
     imgui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* fold arrow in a square at the left */

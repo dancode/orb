@@ -109,6 +109,7 @@ imgui_rect_t imgui_dummy( f32 w, f32 h );
 bool imgui_invisible_button( const char* id_str, imgui_rect_t r );
 bool imgui_is_mouse_hovering_rect( imgui_rect_t r );
 void imgui_set_window_drag( imgui_win_drag_t mode );
+void imgui_set_nav_window( const char* title );
 
 void imgui_push_id( const char* str );
 void imgui_push_id_int( i32 i );

@@ -73,13 +73,14 @@ imgui_menu_item( const char* label, const char* shortcut, bool* selected )
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
-    /* Pointing at a leaf row collapses any submenu open at this depth, so moving off a sibling
-       begin_menu onto a plain item closes that submenu -- the menu reads as one active path. */
-    if ( st.hover && s_popup_open_count > s_popup_begin_count )
+    /* Pointing at a leaf row -- by mouse or by the nav cursor -- collapses any submenu open at this
+       depth, so moving off a sibling begin_menu onto a plain item closes that submenu: the menu
+       reads as one active path under either input. */
+    if ( ( st.hover || st.nav ) && s_popup_open_count > s_popup_begin_count )
         s_popup_open_count = s_popup_begin_count;
 
-    /* Row highlight on hover (active tint while pressed). */
-    if ( st.hover )
+    /* Row highlight on hover / nav (active tint while pressed). */
+    if ( st.hover || st.nav )
         draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
 
     /* A fixed check-mark gutter on the left so checkable and plain items align; the tick (a filled
@@ -158,11 +159,36 @@ imgui_begin_menu( const char* label )
        sibling switches to it.  Menu: hovering or clicking a row opens its submenu.  A popup_open_id
        at this depth replaces whatever sibling was open and truncates anything deeper, so switching
        is automatic. */
+    /* Keyboard reflexes layered onto the mouse ones (driven by the menu-bar nav state in s_ctx):
+
+         bar_nav -- in menu-bar mode, the nav-highlighted bar entry drops its menu, so Left/Right
+                    traversal of the bar shows each menu in turn (the existing && !this_open guard
+                    keeps it from re-opening every frame).
+         mnem    -- an Alt+letter mnemonic matched this bar entry's leading letter: select + open it
+                    and consume the request (issue: Alt+F opens File).
+         nav_right -- inside a menu, a Right move on a submenu row opens it; nav descends next frame
+                    as the new popup becomes the top one and captures nav. */
+    bool bar_nav = in_bar && st.nav && s_ctx.nav_bar_win == s_ctx.win_id && !s_ctx.nav_in_menus;
+
+    u8   lead = ( label[ 0 ] != '#' )
+              ? (u8)( ( label[ 0 ] >= 'a' && label[ 0 ] <= 'z' ) ? label[ 0 ] - 32 : label[ 0 ] )
+              : 0u;
+    bool mnem = in_bar && s_ctx.nav_mnemonic != 0 && lead == s_ctx.nav_mnemonic;
+    if ( mnem )
+    {
+        s_ctx.nav_id       = id;                 /* highlight this entry from next frame on */
+        s_ctx.nav_bar_win  = s_ctx.win_id;       /* drive this window's bar */
+        s_ctx.nav_in_menus = false;
+        s_ctx.nav_mnemonic = 0;                  /* consume */
+    }
+
+    bool nav_right = ( st.nav && s_ctx.nav_move_dir == IMGUI_DIR_RIGHT );
+
     bool do_open;
     if ( in_bar )
-        do_open = st.clicked ? !was_open : ( sibling_open && st.hover );
+        do_open = st.clicked ? !was_open : ( ( sibling_open && st.hover ) || bar_nav || mnem );
     else
-        do_open = st.clicked || st.hover;
+        do_open = st.clicked || st.hover || nav_right;
 
     if ( do_open && !this_open )
         popup_open_id( pid, anchor_x, anchor_y );
@@ -172,8 +198,8 @@ imgui_begin_menu( const char* label )
     if ( popup_is_open_id( pid ) )
         popup_set_anchor( pid, anchor_x, anchor_y );
 
-    /* Entry visuals: lit while hovered or while its submenu is open. */
-    if ( st.hover || this_open )
+    /* Entry visuals: lit while hovered / nav-highlighted or while its submenu is open. */
+    if ( st.hover || st.nav || this_open )
         draw_push_rect_filled( box.x, box.y, box.w, box.h, 0,0,1,1, 0,
                                this_open ? COL_WIDGET_ACT : COL_WIDGET_HOT );
 

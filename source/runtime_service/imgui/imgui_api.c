@@ -69,6 +69,7 @@ void imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
     popup_close_check();         /* stale-close + click-outside, BEFORE any user open_popup */
     popup_apply_modal();         /* fence interaction behind an open modal (steals hover_win) */
     window_raise_on_press();     /* a press raises the hover window (takes effect this frame) */
+    nav_new_frame();             /* commit last frame's nav move + read this frame's nav keys */
 }
 
 void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )
@@ -206,6 +207,7 @@ const imgui_api_t g_imgui_api_struct = {
     .pop_style_var    = imgui_pop_style_var,
     .next_style_var   = imgui_next_style_var,
     .set_window_drag = imgui_set_window_drag,
+    .set_nav_window  = imgui_set_nav_window,
     .text          = imgui_text,
     .textf         = imgui_textf,
     .bullet_text   = imgui_bullet_text,

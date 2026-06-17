@@ -50,6 +50,7 @@ static const u32 k_col_default[ IMGUI_COL_COUNT ] = {
     [ IMGUI_COL_INPUT_BG     ] = IMGUI_COLOR( 0x38, 0x38, 0x38, 0xFF ),
     [ IMGUI_COL_INPUT_FOCUS  ] = IMGUI_COLOR( 0x20, 0x50, 0x70, 0xFF ),
     [ IMGUI_COL_CURSOR       ] = IMGUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
+    [ IMGUI_COL_NAV_HIGHLIGHT] = IMGUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
 };
 
 /* Base value of a style var -- read live from the font-derived metrics so a set_font / load_font

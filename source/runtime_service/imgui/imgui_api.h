@@ -411,6 +411,12 @@ typedef struct imgui_api_s
        Call between frames; affects every window. */
     void ( *set_window_drag )( imgui_win_drag_t mode );
 
+    /* set_nav_window() -- aim keyboard navigation at a window by title (the explicit-focus entry).
+       Clears the nav cursor so the window's first item takes focus and engages the nav highlight.
+       Nav otherwise follows the front-most window automatically; Ctrl+Tab cycles among windows and
+       Alt enters the main menu bar.  An open popup / menu always captures nav while it is open. */
+    void ( *set_nav_window )( const char* title );
+
     /* Widgets -- return true on the frame they are activated or changed.
        All widgets must be called between a matched begin_window / end_window pair, and only
        when begin_window returned true -- a collapsed window draws no clip, so widgets emitted

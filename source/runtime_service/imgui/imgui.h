@@ -425,6 +425,7 @@ typedef enum
     IMGUI_COL_INPUT_BG,       /* text input field background                 */
     IMGUI_COL_INPUT_FOCUS,    /* focused text input field background         */
     IMGUI_COL_CURSOR,         /* text input caret                           */
+    IMGUI_COL_NAV_HIGHLIGHT,  /* keyboard-nav focus ring around the nav item */
 
     IMGUI_COL_COUNT,          /* slot count -- not a color                   */
 

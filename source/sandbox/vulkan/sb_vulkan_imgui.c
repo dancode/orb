@@ -17,7 +17,7 @@
 #include "sb_vulkan_imgui.h"
 #include "runtime_service/imgui/imgui_host.h"
 
-// clang-format off
+// clang-format off 
 
 /*==============================================================================================
     1. Widgets -- the basic interactive controls.
@@ -30,9 +30,9 @@
 static void
 demo_widgets( void )
 {
-    if ( imgui()->begin_window( "Widgets", 60, 60, 360, 420, IMGUI_WIN_NONE ) )
+    if ( imgui()->begin_window( "Widgets", 60, 60, 360, 420, IMGUI_WIN_NONE ))
     {
-        imgui()->stack();                       /* declare the mode: a vertical list */
+        imgui()->stack();                                   /* declare the mode: a vertical list */
         imgui()->text( "Basic interactive widgets:" );
         imgui()->separator();
 
