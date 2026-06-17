@@ -426,7 +426,13 @@ typedef struct imgui_api_s
        e.g. "HP: %d").  Returns true only on frames the drag changes the value. */
     bool ( *drag_int    )( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
 
-    bool ( *input_text  )( const char* label, char* buf, u32 bufsz );
+    bool ( *input_text    )( const char* label, char* buf, u32 bufsz );
+
+    /* input_text_ex -- like input_text but with an on_change callback fired after any frame
+       that modifies the buffer.  Pass NULL for on_change to suppress.  cb_user is forwarded
+       verbatim to the callback. */
+    bool ( *input_text_ex )( const char* label, char* buf, u32 bufsz,
+                              imgui_text_cb_fn on_change, void* cb_user );
 
     /* selectable -- a full-width row that highlights on hover and fills when selected; the
        list-box building block.  A click toggles *selected (pass NULL for click-only); returns

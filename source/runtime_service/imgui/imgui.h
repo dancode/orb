@@ -21,6 +21,11 @@ typedef u32 imgui_id_t;
 typedef struct { f32 x, y; }        imgui_vec2_t;
 typedef struct { f32 x, y, w, h; }  imgui_rect_t;
 
+/* Callback fired by input_text_ex after any frame that modifies the buffer.
+   buf is the live caller-owned buffer (may be read or written); len is the current byte
+   length (excluding NUL); bufsz is the total buffer capacity. */
+typedef void ( *imgui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
+
 /* Edge insets, in pixels.  Region padding -- the gap between a region's box and where its layout
    starts (see imgui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
    (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */

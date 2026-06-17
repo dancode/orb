@@ -467,7 +467,36 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
                             WIN_BORDER, 0,
                             st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
-    input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz );
+    input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz, NULL, NULL );
+    return res.enter;
+}
+
+/*----------------------------------------------------------------------------------------------
+    input_text_ex -- single-line text field with an on_change callback.
+
+    Identical to input_text in layout and interaction; fires on_change( buf, len, bufsz, cb_user )
+    after any frame that modifies the buffer (insertions, deletions, paste, undo, revert, etc).
+    Returns true when Enter is pressed, same as input_text.
+----------------------------------------------------------------------------------------------*/
+
+bool
+imgui_input_text_ex( const char* label, char* buf, u32 bufsz,
+                     imgui_text_cb_fn on_change, void* cb_user )
+{
+    imgui_id_t   id    = widget_id( label );
+    imgui_rect_t r     = widget_next_rect( WIDGET_H );
+    imgui_rect_t box_r = widget_split_label( r, label, s_font->char_h * 3.0f, COL_TEXT_DIM );
+
+    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
+
+    draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
+                           0, 0, 1, 1, 0,
+                           st.focused ? COL_INPUT_FOCUS : COL_INPUT_BG );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
+                            WIN_BORDER, 0,
+                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+
+    input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz, on_change, cb_user );
     return res.enter;
 }
 

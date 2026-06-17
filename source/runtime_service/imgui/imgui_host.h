@@ -130,6 +130,8 @@ bool imgui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 ste
 bool imgui_slider_int( const char* label, i32* v, i32 lo, i32 hi );
 bool imgui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
+bool imgui_input_text_ex( const char* label, char* buf, u32 bufsz,
+                           imgui_text_cb_fn on_change, void* cb_user );
 bool imgui_selectable( const char* label, bool* selected );
 bool imgui_collapsing_header( const char* label );
 bool imgui_tree_node( const char* label );
