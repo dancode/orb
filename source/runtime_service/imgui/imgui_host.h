@@ -140,6 +140,13 @@ bool imgui_input_float2( const char* label, f32* v, const char* fmt );
 bool imgui_input_float3( const char* label, f32* v, const char* fmt );
 bool imgui_input_float4( const char* label, f32* v, const char* fmt );
 bool imgui_selectable( const char* label, bool* selected );
+bool imgui_begin_combo( const char* label, const char* preview_value, imgui_win_flags_t flags );
+void imgui_end_combo( void );
+bool imgui_combo( const char* label, i32* current_item, const char* const items[], i32 count );
+bool imgui_begin_listbox( const char* label, f32 w, f32 h );
+void imgui_end_listbox( void );
+bool imgui_listbox( const char* label, i32* current_item, const char* const items[], i32 count,
+                    i32 height_in_items );
 bool imgui_collapsing_header( const char* label );
 bool imgui_tree_node( const char* label );
 void imgui_tree_pop( void );

@@ -164,17 +164,20 @@ overlay_reattach( imgui_overlay_save_t s )
     The anchor is the cursor: a regular popup opens where the click landed.
 ----------------------------------------------------------------------------------------------*/
 
-void
-imgui_open_popup( const char* str )
+/* id-based open core: request `id` open at the current nesting depth, anchored at (ax,ay).  The
+   string API anchors at the cursor; the combo widget (imgui_widget_combo.c) anchors at its box and
+   keys the popup off the combo's widget id, so both drive this one routine. */
+static void
+popup_open_id( imgui_id_t id, f32 ax, f32 ay )
 {
     u32 depth = s_popup_begin_count;
     if ( depth >= IMGUI_POPUP_DEPTH ) return;
 
     imgui_popup_t* p = &s_popups_open[ depth ];
-    p->id          = popup_id( str );
+    p->id          = id;
     p->modal       = false;                 /* decided at begin; default until then */
-    p->anchor_x    = s_io.mouse_x;
-    p->anchor_y    = s_io.mouse_y;
+    p->anchor_x    = ax;
+    p->anchor_y    = ay;
     p->open_frame  = s_frame_counter;
     p->begun_frame = s_frame_counter;       /* guard the stale-close until begin runs */
     p->rect        = ( imgui_rect_t ){ 0 };
@@ -182,17 +185,42 @@ imgui_open_popup( const char* str )
     s_popup_open_count = depth + 1u;        /* opening closes anything deeper */
 }
 
+void
+imgui_open_popup( const char* str )
+{
+    popup_open_id( popup_id( str ), s_io.mouse_x, s_io.mouse_y );
+}
+
 /*----------------------------------------------------------------------------------------------
-    is_popup_open -- whether `str` is anywhere in the open stack.
+    is_popup_open -- whether `str` (or an explicit id) is anywhere in the open stack.
 ----------------------------------------------------------------------------------------------*/
+
+static bool
+popup_is_open_id( imgui_id_t id )
+{
+    for ( u32 i = 0; i < s_popup_open_count; ++i )
+        if ( s_popups_open[ i ].id == id ) return true;
+    return false;
+}
 
 bool
 imgui_is_popup_open( const char* str )
 {
-    imgui_id_t id = popup_id( str );
+    return popup_is_open_id( popup_id( str ) );
+}
+
+/* Re-place an open popup's anchor.  A combo re-stamps its box's bottom-left every frame so the
+   dropdown tracks the box when the parent window is dragged; a no-op if `id` is not open. */
+static void
+popup_set_anchor( imgui_id_t id, f32 ax, f32 ay )
+{
     for ( u32 i = 0; i < s_popup_open_count; ++i )
-        if ( s_popups_open[ i ].id == id ) return true;
-    return false;
+        if ( s_popups_open[ i ].id == id )
+        {
+            s_popups_open[ i ].anchor_x = ax;
+            s_popups_open[ i ].anchor_y = ay;
+            return;
+        }
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -205,10 +233,9 @@ imgui_is_popup_open( const char* str )
 ----------------------------------------------------------------------------------------------*/
 
 static bool
-popup_begin_common( const char* str, const char* title, imgui_win_flags_t flags, bool modal )
+popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags, bool modal )
 {
-    imgui_id_t id    = popup_id( str );
-    u32        depth = s_popup_begin_count;
+    u32 depth = s_popup_begin_count;
 
     /* Open at this depth?  The early-out that makes a closed popup free. */
     if ( depth >= IMGUI_POPUP_DEPTH || s_popup_open_count <= depth
@@ -268,6 +295,13 @@ popup_begin_common( const char* str, const char* title, imgui_win_flags_t flags,
 
     ++s_popup_begin_count;
     return vis;
+}
+
+/* String-keyed wrapper: hash + salt the caller's id string, then run the id-based core. */
+static bool
+popup_begin_common( const char* str, const char* title, imgui_win_flags_t flags, bool modal )
+{
+    return popup_begin_common_id( popup_id( str ), title, flags, modal );
 }
 
 bool

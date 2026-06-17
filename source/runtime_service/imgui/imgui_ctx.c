@@ -75,6 +75,15 @@ static struct
     imgui_item_flags_t next_val;         // their values
     imgui_item_flags_t cur_item_flags;   // flags resolved for the item being emitted
 
+    /* Combo dropdown coordination (imgui_widget_combo.c).  begin_combo sets combo_open true while
+       emitting its popup body; a selectable clicked in that body sets combo_item_clicked, and
+       end_combo closes the dropdown when it sees it -- so picking an item dismisses the combo with
+       no caller code, exactly as a selection should.  Both are scoped to the combo body and reset
+       each frame as a safety net. */
+
+    bool               combo_open;          // a combo dropdown body is currently being emitted
+    bool               combo_item_clicked;  // a selectable in that body was clicked this frame
+
 } s_ctx;
 
 /*----------------------------------------------------------------------------------------------
@@ -560,6 +569,10 @@ ctx_new_frame( void )
 
     /* Popup nesting depth is rebuilt as begin_popup / end_popup run; the open set persists. */
     s_popup_begin_count = 0;
+
+    /* Combo body coordination is per-frame and re-set by begin/end_combo; clear as a safety net. */
+    s_ctx.combo_open         = false;
+    s_ctx.combo_item_clicked = false;
 
     /* Fresh item-flag state each frame: empty stack, no next-item override, nothing disabled. */
     s_item_flag_sp       = 0;

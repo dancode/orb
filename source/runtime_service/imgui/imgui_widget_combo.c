@@ -1,0 +1,240 @@
+/*==============================================================================================
+
+    runtime_service/imgui/imgui_widget_combo.c -- Combo box + list box.
+
+    Two selection widgets built entirely out of the existing toolkit rather than new machinery:
+
+      Combo   -- a framed preview box (selected text + a down arrow on the right edge) with a
+                 trailing label.  Clicking it drops a popup of selectable rows below the box.  The
+                 dropdown is the popup layer (imgui_popup.c) keyed off the combo's widget id and
+                 anchored at the box, so occlusion, click-outside close, overlay detach, and z-band
+                 all come from there unchanged; only the box-anchored placement + a min width that
+                 matches the box are combo-specific.  A row clicked in the body dismisses the combo
+                 (selectable flags s_ctx.combo_item_clicked; end_combo closes on it).
+
+      List box -- a framed, independently scrolling box of selectable rows with a trailing label.
+                 It is a begin_child (which already frames, clips, and scrolls) plus the label drawn
+                 to its right -- no new region type.
+
+    Each comes in a generic Begin/End form (full control over the rows) and a one-liner over an
+    array of strings, mirroring Dear ImGui's BeginCombo/Combo and BeginListBox/ListBox split.
+
+    Included by imgui.c after imgui_popup.c, so the popup internals (popup_open_id, popup_is_open_id,
+    popup_set_anchor, popup_begin_common_id, IMGUI_POPUP_*) and every widget / layout helper above
+    are all in scope.
+
+==============================================================================================*/
+// clang-format off
+
+/*----------------------------------------------------------------------------------------------
+    Combo box
+----------------------------------------------------------------------------------------------*/
+
+/* Persistent per-combo state: the last frame the dropdown body emitted.  Used to tell an "open"
+   click (toggle closed) from a "closed" click (open), since popup_close_check has already dropped
+   the popup by the time begin_combo runs -- without it the same click would close then reopen. */
+typedef struct { u32 open_frame; } imgui_combo_state_t;
+
+/* The height a list of `n` selectable rows occupies in a stack body: each row is WIDGET_H with a
+   WIDGET_GAP between rows, plus the region's top gap and the bottom border.  Shared by the combo
+   dropdown height intent (via the popup auto-size) and the list box default. */
+static f32
+combo_rows_h( i32 n )
+{
+    if ( n < 1 ) n = 1;
+    return (f32)n * WIDGET_H + ( (f32)n + 1.0f ) * WIDGET_GAP + WIN_BORDER;
+}
+
+bool
+imgui_begin_combo( const char* label, const char* preview_value, imgui_win_flags_t flags )
+{
+    imgui_id_t   id  = widget_id( label );
+    imgui_rect_t row = widget_next_rect( WIDGET_H );
+
+    /* The box takes the control track and the label trails it (or sits in its field-split track),
+       exactly like the other labeled value widgets.  The min control width keeps room for the
+       arrow plus a little preview text when the cell is squeezed. */
+    imgui_rect_t box = widget_split_label( row, label, WIDGET_H + font_char_h() * 2.0f, COL_TEXT_DIM );
+
+    widget_state_t st = widget_behavior( id, box, WIDGET_KIND_BUTTON );
+
+    /* The dropdown is a popup keyed off the combo's widget id, so it inherits the id scope + the
+       "###" grammar and never collides with a same-titled combo elsewhere. */
+    imgui_id_t           pid = id_combine( id, IMGUI_POPUP_SALT );
+    imgui_combo_state_t* cs  = IMGUI_STATE( imgui_combo_state_t, id );
+
+    /* Toggle on click.  A click while open is the dismiss gesture: popup_close_check (frame top)
+       has already closed the dropdown as a click outside it, so only open when the body did NOT
+       emit last frame -- otherwise the one click would close then immediately reopen it. */
+    bool was_open = ( cs->open_frame + 1u == s_frame_counter );
+    if ( st.clicked && !was_open )
+        popup_open_id( pid, box.x, box.y + box.h );
+
+    /* Keep the dropdown pinned under the box every frame it is open (so it follows a dragged
+       parent window).  popup_clamp nudges it back on-screen, flipping it above the box near the
+       bottom edge -- the placement reuse that makes a dedicated combo window unnecessary. */
+    if ( popup_is_open_id( pid ) )
+        popup_set_anchor( pid, box.x, box.y + box.h );
+
+    /* Box frame: a button-tinted field, a down arrow boxed at the right edge, and the preview text
+       fitted into the room before the arrow. */
+    draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, widget_bg_color( st ) );
+    draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
+
+    imgui_rect_t arrow = { box.x + box.w - box.h, box.y, box.h, box.h };
+    draw_arrow( arrow, IMGUI_DIR_DOWN, COL_TEXT );
+
+    if ( preview_value && preview_value[ 0 ] )
+    {
+        f32 avail = arrow.x - ( box.x + WIDGET_PAD ) - WIDGET_PAD;
+        draw_text_fit_n( box.x + WIDGET_PAD, text_center_y( box.y, box.h ),
+                         COL_TEXT, preview_value, 0xFFFFFFFFu, avail );
+    }
+
+    /* Open the dropdown.  Same path as begin_popup (auto-size, NOTITLEBAR, fixed, NOCOLLAPSE);
+       only the id-keyed open + box anchor above differ from a cursor-anchored popup. */
+    bool vis = popup_begin_common_id( pid, NULL,
+                                      flags | IMGUI_WIN_NOTITLEBAR | IMGUI_POPUP_BASE_FLAGS, false );
+    if ( vis )
+    {
+        cs->open_frame   = s_frame_counter;   /* body emitted this frame -> "open" next frame */
+        s_ctx.combo_open = true;              /* a row clicked here dismisses the combo */
+
+        imgui_stack();                        /* the dropdown body is a vertical list */
+
+        /* Floor the dropdown's measured width to the box, so a popup of short items still lines up
+           under the box instead of shrinking to its content (auto-size reads this next frame). */
+        f32 min_w = box.w - 2.0f * WIDGET_PAD;
+        widget_track_width( lf()->content_x + min_w );
+    }
+    return vis;
+}
+
+void
+imgui_end_combo( void )
+{
+    /* A row clicked in the body dismisses the combo (selectable set the flag while combo_open). */
+    if ( s_ctx.combo_item_clicked )
+        imgui_close_current_popup();
+
+    s_ctx.combo_open         = false;
+    s_ctx.combo_item_clicked = false;
+
+    imgui_end_popup();
+}
+
+/* One-liner over an array of strings: the common "pick one of N" case.  *current_item is the
+   selected index (out of range shows an empty preview and selects nothing); returns true on the
+   frame the selection changes.  push_id_int keeps the row ids distinct when labels repeat. */
+bool
+imgui_combo( const char* label, i32* current_item, const char* const items[], i32 count )
+{
+    const char* preview = ( *current_item >= 0 && *current_item < count ) ? items[ *current_item ] : "";
+    bool        changed = false;
+
+    if ( imgui_begin_combo( label, preview, IMGUI_WIN_NONE ) )
+    {
+        for ( i32 i = 0; i < count; ++i )
+        {
+            imgui_push_id_int( i );
+            bool sel = ( *current_item == i );
+            if ( imgui_selectable( items[ i ], &sel ) )
+            {
+                *current_item = i;
+                changed       = true;
+            }
+            imgui_pop_id();
+        }
+        imgui_end_combo();
+    }
+    return changed;
+}
+
+/*----------------------------------------------------------------------------------------------
+    List box
+
+    A framed, independently scrolling box of selectable rows with a trailing label.  begin_listbox
+    is a begin_child sized to the box (defaulting to ~7 rows tall and filling the line minus the
+    label); the label is captured and drawn to the box's right at end_listbox.  A small stack
+    carries the label + box rect across the pair, the same way the tooltip save slot does, so the
+    boxes may nest.
+----------------------------------------------------------------------------------------------*/
+
+#define LISTBOX_DEPTH 4   /* nested list boxes (rare, but begin_child nests, so allow a few) */
+
+static struct { const char* label; imgui_rect_t box; } s_listbox_stack[ LISTBOX_DEPTH ];
+static u32 s_listbox_sp;
+
+bool
+imgui_begin_listbox( const char* label, f32 w, f32 h )
+{
+    /* Defaults: ~7 rows tall, and wide enough to fill the line after reserving the trailing label. */
+    if ( h <= 0.0f )
+        h = combo_rows_h( 7 );
+
+    f32 lab_w = ( label_vis_len( label ) > 0 ) ? label_width( label ) + WIDGET_PAD : 0.0f;
+    if ( w <= 0.0f )
+    {
+        w = imgui_content_avail().x - lab_w;
+        if ( w < WIDGET_H * 4.0f ) w = WIDGET_H * 4.0f;
+    }
+
+    /* The framed scrolling box is a plain child; the label is the only thing layered on top. */
+    imgui_begin_child( label, w, h, IMGUI_WIN_NONE );
+
+    u32 slot = s_listbox_sp < LISTBOX_DEPTH ? s_listbox_sp : LISTBOX_DEPTH - 1;
+    ++s_listbox_sp;
+    s_listbox_stack[ slot ].label = label;
+    s_listbox_stack[ slot ].box   = lf()->outer;   /* the child's box, for the trailing label */
+
+    imgui_stack();   /* the list body is a vertical stack of selectable rows */
+    return true;
+}
+
+void
+imgui_end_listbox( void )
+{
+    imgui_end_child();
+
+    if ( s_listbox_sp == 0 ) return;   /* unbalanced end_listbox -- ignore */
+    --s_listbox_sp;
+    u32          slot  = s_listbox_sp < LISTBOX_DEPTH ? s_listbox_sp : LISTBOX_DEPTH - 1;
+    const char*  label = s_listbox_stack[ slot ].label;
+    imgui_rect_t box   = s_listbox_stack[ slot ].box;
+
+    /* Trailing label, drawn past the box's right edge and aligned to its first row (markers
+       stripped by draw_label, like every label).  Drawn under the parent clip after end_child. */
+    if ( label_vis_len( label ) > 0 )
+        draw_label( box.x + box.w + WIDGET_PAD, text_center_y( box.y, WIDGET_H ), COL_TEXT, label );
+}
+
+/* One-liner over an array of strings: a scrolling list showing `height_in_items` rows (<= 0 picks
+   min(count, 7)).  *current_item is the selected index; returns true when the selection changes. */
+bool
+imgui_listbox( const char* label, i32* current_item, const char* const items[], i32 count,
+               i32 height_in_items )
+{
+    if ( height_in_items <= 0 )
+        height_in_items = ( count < 7 ) ? count : 7;
+
+    bool changed = false;
+    if ( imgui_begin_listbox( label, 0.0f, combo_rows_h( height_in_items ) ) )
+    {
+        for ( i32 i = 0; i < count; ++i )
+        {
+            imgui_push_id_int( i );
+            bool sel = ( *current_item == i );
+            if ( imgui_selectable( items[ i ], &sel ) )
+            {
+                *current_item = i;
+                changed       = true;
+            }
+            imgui_pop_id();
+        }
+        imgui_end_listbox();
+    }
+    return changed;
+}
+
+// clang-format on
+/*============================================================================================*/

@@ -308,6 +308,82 @@ demo_child_list( void )
 }
 
 /*==============================================================================================
+    6b. Combo box & list box -- single-selection from a set.
+
+    combo() drops a popup of rows below a framed preview box; listbox() shows a scrolling box of
+    rows.  Both come as a one-liner over a string array and a generic begin/end form that gives full
+    control over the rows (a filter, custom row widgets, a default-focus highlight).
+==============================================================================================*/
+
+static void
+demo_combo_list( void )
+{
+    if ( imgui()->begin_window( "Combo / List Box", 60, 60, 380, 460, IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+
+        static const char* items[] = { "AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF",
+                                       "GGGG", "HHHH", "IIIIIII", "JJJJ", "KKKKKKK" };
+        const i32          n_items  = (i32)( sizeof( items ) / sizeof( items[ 0 ] ) );
+
+        /* One-liner combo over the array -- the everyday case. */
+        imgui()->separator_text( "Combo (one-liner)" );
+        static i32 combo_idx = 0;
+        imgui()->combo( "combo", &combo_idx, items, n_items );
+        imgui()->same_line( -1.0f );
+        imgui()->help_marker( "combo() over an array of strings; the dropdown drops below the box." );
+
+        /* Generic begin/end combo -- full control: here a default-focus highlight on the current
+           row, the BeginCombo() pattern.  A clicked row dismisses the combo automatically. */
+        imgui()->separator_text( "BeginCombo (full control)" );
+        static i32 sel_idx = 0;
+        const char* preview = items[ sel_idx ];
+        if ( imgui()->begin_combo( "combo 2", preview, IMGUI_WIN_NONE ) )
+        {
+            for ( i32 i = 0; i < n_items; i++ )
+            {
+                imgui()->push_id_int( i );
+                bool is_sel = ( sel_idx == i );
+                if ( imgui()->selectable( items[ i ], &is_sel ) )
+                    sel_idx = i;
+                imgui()->pop_id();
+            }
+            imgui()->end_combo();
+        }
+
+        /* One-liner list box, height in items. */
+        imgui()->separator_text( "List box (one-liner)" );
+        static const char* fruit[] = { "Apple", "Banana", "Cherry", "Kiwi", "Mango",
+                                       "Orange", "Pineapple", "Strawberry", "Watermelon" };
+        const i32          n_fruit = (i32)( sizeof( fruit ) / sizeof( fruit[ 0 ] ) );
+        static i32         fruit_idx = 1;
+        imgui()->listbox( "listbox", &fruit_idx, fruit, n_fruit, 4 );
+
+        /* Generic begin/end list box -- emit the rows yourself (default size). */
+        imgui()->separator_text( "BeginListBox (full control)" );
+        static i32 row_idx = -1;
+        if ( imgui()->begin_listbox( "rows", 0.0f, 0.0f ) )
+        {
+            for ( i32 i = 0; i < 24; i++ )
+            {
+                imgui()->push_id_int( i );
+                char row[ 32 ];
+                snprintf( row, sizeof( row ), "list row %02d", i );
+                bool on = ( row_idx == i );
+                if ( imgui()->selectable( row, &on ) )
+                    row_idx = on ? i : -1;
+                imgui()->pop_id();
+            }
+            imgui()->end_listbox();
+        }
+
+        imgui()->textf( "combo=%s  combo2=%s  fruit=%s  row=%d",
+                        items[ combo_idx ], items[ sel_idx ], fruit[ fruit_idx ], row_idx );
+    }
+    imgui()->end_window();
+}
+
+/*==============================================================================================
     7. Alignment, same_line & spacers -- composition within a row.
 
     align() sets where natural-sized content sits in its cell (persists like the row template).
@@ -772,6 +848,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Field Forms",  "field_label_left/right / field_split",           demo_fields      },
     { "Grid",         "grid_cells / skip",                              demo_grid        },
     { "Child / List", "begin_child / selectable / push_id",             demo_child_list  },
+    { "Combo / List", "combo / listbox / begin_combo / begin_listbox",  demo_combo_list  },
     { "Align",        "align / same_line / spacing / separator",        demo_align       },
     { "Sub-layout",   "push_layout / pop_layout",                       demo_sublayout   },
     { "Pack / Bar",   "bar / pack_size / pack_nextline",                demo_pack        },

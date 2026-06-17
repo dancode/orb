@@ -457,6 +457,45 @@ typedef struct imgui_api_s
        true on the clicked frame so a caller managing single-selection can set its own index. */
     bool ( *selectable  )( const char* label, bool* selected );
 
+    /* Combo box -- a framed preview box (selected text + a down arrow) with a trailing label that
+       drops a popup of rows below it on click.  begin_combo opens the dropdown: it returns true
+       only while the dropdown is open, so -- like begin_window's collapse -- guard the rows on the
+       return and call end_combo only then.  preview_value is the text shown in the closed box (the
+       caller's current selection, usually items[current]).  A row clicked in the body dismisses the
+       combo automatically, so emit selectables and set your selection from their return:
+
+           if ( imgui()->begin_combo( "mode", items[cur], IMGUI_WIN_NONE ) ) {
+               for ( i32 i = 0; i < n; ++i )
+                   if ( imgui()->selectable( items[i], NULL ) ) cur = i;
+               imgui()->end_combo();
+           }
+
+       combo() is the one-liner over an array of strings (*current_item is the selected index;
+       out of range shows an empty preview).  Both return true on the frame the selection changes. */
+    bool ( *begin_combo )( const char* label, const char* preview_value, imgui_win_flags_t flags );
+    void ( *end_combo   )( void );
+    bool ( *combo       )( const char* label, i32* current_item, const char* const items[], i32 count );
+
+    /* List box -- a framed, independently scrolling box of selectable rows with a trailing label.
+       begin_listbox opens the box (w / h in pixels; w <= 0 fills the line after the label, h <= 0
+       is ~7 rows tall) and always returns true -- always pair with end_listbox, and fill it with
+       selectables exactly like a begin_child:
+
+           if ( imgui()->begin_listbox( "items", 0, 0 ) ) {
+               for ( i32 i = 0; i < n; ++i ) {
+                   bool sel = ( cur == i );
+                   if ( imgui()->selectable( names[i], &sel ) ) cur = i;
+               }
+               imgui()->end_listbox();
+           }
+
+       listbox() is the one-liner over an array of strings; height_in_items <= 0 picks
+       min(count, 7).  Returns true on the frame the selection changes. */
+    bool ( *begin_listbox )( const char* label, f32 w, f32 h );
+    void ( *end_listbox   )( void );
+    bool ( *listbox       )( const char* label, i32* current_item, const char* const items[],
+                             i32 count, i32 height_in_items );
+
     /* collapsing_header -- a clickable fold bar (arrow + label) that returns its open state; the
        caller guards the section body with the return ( if ( header(...) ) {...} ), so a closed
        header skips its contents.  Open state persists by id; closed by default.

@@ -22,6 +22,7 @@
         imgui_widget.c       -- leaf widgets: text, button, checkbox, slider, input_text, selectable
         imgui_widget_window.c-- the window as a widget: begin/end_window + chrome (resize); body is a region
         imgui_popup.c        -- popups / context menus / tooltips: overlay windows on a reserved z-band
+        imgui_widget_combo.c -- combo box + list box: a popup dropdown / a scrolling child of selectables
         imgui_stack_api.c    -- push-model public API: push/pop id, item flags, style color / var
         imgui_api.c     -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
@@ -217,6 +218,7 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 #include "runtime_service/imgui/imgui_widget.c"
 #include "runtime_service/imgui/imgui_widget_window.c"
 #include "runtime_service/imgui/imgui_popup.c"
+#include "runtime_service/imgui/imgui_widget_combo.c"
 #include "runtime_service/imgui/imgui_stack_api.c"
 
 #ifndef IMGUI_API_C_PRELUDE

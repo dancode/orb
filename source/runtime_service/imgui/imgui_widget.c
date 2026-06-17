@@ -809,6 +809,12 @@ imgui_selectable( const char* label, bool* selected )
 
     if ( st.clicked && selected )
         *selected = !( *selected );
+
+    /* Inside a combo dropdown a clicked row dismisses the combo: flag it for end_combo to close
+       (the popup machinery is not in scope here).  Inert for an ordinary list selectable. */
+    if ( st.clicked && s_ctx.combo_open )
+        s_ctx.combo_item_clicked = true;
+
     return st.clicked;
 }
 
