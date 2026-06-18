@@ -679,6 +679,57 @@ vk_upload_flush( void )
 }
 
 /*==============================================================================================
+    vk_upload_forget_image / vk_upload_forget_buffer
+
+    Drop every QFOT acquire entry referencing a resource that is being destroyed.  Called from
+    vk_garbage_push.  A pending acquire is only meaningful for a resource a future draw will
+    sample; once the resource is gone, the acquire is moot (an unmatched QFOT release on a
+    destroyed, never-sampled resource is harmless).  Without this, a resource freed while the
+    pending list is undrained -- e.g. every window minimized, so apply_acquires never runs --
+    is destroyed yet still injected as an acquire barrier later, referencing a dead handle.
+
+    Order within these unordered sets does not matter, so swap-remove keeps it O(n) and simple.
+==============================================================================================*/
+
+static void
+vk_upload_forget_image( VkImage img )
+{
+    if ( vk.transfer_queue_family == vk.graphics_queue_family )
+        return;   /* same family: no acquire lists are ever populated */
+
+    for ( u32 i = 0; i < g_recorded_image_count; )
+        if ( g_recorded_image_acquires[ i ].image == img )
+            g_recorded_image_acquires[ i ] = g_recorded_image_acquires[ --g_recorded_image_count ];
+        else
+            ++i;
+
+    for ( u32 i = 0; i < g_pending_image_count; )
+        if ( g_pending_image_acquires[ i ].image == img )
+            g_pending_image_acquires[ i ] = g_pending_image_acquires[ --g_pending_image_count ];
+        else
+            ++i;
+}
+
+static void
+vk_upload_forget_buffer( VkBuffer buf )
+{
+    if ( vk.transfer_queue_family == vk.graphics_queue_family )
+        return;
+
+    for ( u32 i = 0; i < g_recorded_buffer_count; )
+        if ( g_recorded_buffer_acquires[ i ] == buf )
+            g_recorded_buffer_acquires[ i ] = g_recorded_buffer_acquires[ --g_recorded_buffer_count ];
+        else
+            ++i;
+
+    for ( u32 i = 0; i < g_pending_buffer_count; )
+        if ( g_pending_buffer_acquires[ i ] == buf )
+            g_pending_buffer_acquires[ i ] = g_pending_buffer_acquires[ --g_pending_buffer_count ];
+        else
+            ++i;
+}
+
+/*==============================================================================================
     vk_upload_apply_acquires -- inject QFOT acquire barriers into a graphics command buffer.
 
     Called near the top of vk_frame_begin, before any draws.  Completes the ownership handshake

@@ -358,5 +358,14 @@ static vk_state_t vk =
 
 static vk_context_t* vk_ctx_get( i32 id );
 
+/*==============================================================================================
+    QFOT acquire bookkeeping lives in vk_upload.c (included after vk_garbage.c).  vk_garbage_push
+    must drop a resource from the pending/recorded acquire lists when it is destroyed, so these
+    are forward-declared here for the earlier-included garbage collector to call.
+==============================================================================================*/
+
+static void vk_upload_forget_image( VkImage img );
+static void vk_upload_forget_buffer( VkBuffer buf );
+
 /*============================================================================================*/
 // clang-format on
