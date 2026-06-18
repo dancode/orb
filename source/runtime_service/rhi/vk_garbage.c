@@ -117,6 +117,12 @@ vk_garbage_push( const vk_garbage_t* objs )
         next = ( g_garbage_tail + 1 ) % VK_GARBAGE_CAP;
     }
 
+    /* Drop any pending/recorded QFOT acquire that names this resource: it is being destroyed and
+       will never be sampled, so injecting an acquire for it later would reference a dead handle
+       (hit when the pending list went undrained, e.g. every window minimized). */
+    if ( objs->image  != VK_NULL_HANDLE ) vk_upload_forget_image ( objs->image  );
+    if ( objs->buffer != VK_NULL_HANDLE ) vk_upload_forget_buffer( objs->buffer );
+
     g_garbage[ g_garbage_tail ] = *objs;
 
     /* Graphics-queue gate (safe_at).  The normal case -- the last graphics reference was a draw

@@ -140,6 +140,14 @@ vk_frame_begin( i32 ctx_id )
                keeps a minimized window from stalling a sibling window's epoch, uploads, and reclaim. */
             vkWaitForFences( vk.device, VK_MAX_FRAMES_IN_FLIGHT, ctx->in_flight_fence, VK_TRUE, UINT64_MAX );
             vk_frame_epoch_checkin( ctx_id );
+
+            /* Reclaim runs here too, not just on the rendering path below.  Reclaim is gated on
+               global_epoch + the upload timeline (queue completion) -- it needs no command buffer
+               or swapchain image -- so it must keep pace even while every window is minimized.
+               Otherwise the host keeps freeing resources (pushing to the garbage ring) while
+               nothing ever collects, until the ring overflows into an emergency wait-idle drain. */
+            vk_descriptor_flush_retired();
+            vk_garbage_collect( false );
             return RHI_CMD_INVALID;
         }
 
