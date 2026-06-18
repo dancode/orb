@@ -3,34 +3,35 @@
     runtime_service/imgui/imgui.c -- Unity build entry for the imgui module.
 
     Include order matters: each file can reference statics from files included above it.
-        imgui_shader.h       -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
-        imgui_font_builtin.c -- hardcoded bitmap fonts: bitmap_font_def_t/t, bitmap_atlas_*, s_bitmap_*
-        imgui_font.c         -- font management + dispatch: tt_font_t, tt_font_load, font_glyph, font_*
-        imgui_draw.c         -- CPU draw list: draw_reset, draw_push_*, s_draw
-        imgui_draw_path.c    -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
-        imgui_render.c  -- GPU flush: imgui_render_init/shutdown/flush
-        imgui_debug.c   -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
-        imgui_input.c   -- app->IO snapshot: input_update, s_io
-        imgui_style.c   -- style stacks: colors + metrics, style_col/style_var, push/pop/next
-        imgui_ctx.c     -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
-        imgui_window.c       -- persistent per-window state: imgui_window_t, window_get, drag mode
-        imgui_widget_core.c  -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
-        imgui_resize.c       -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
-        imgui_layout_core.c  -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
-        imgui_layout.c       -- layout-region engine: region pool, scrollbar, push/pop_region, begin/end_child
-        imgui_text_edit.c    -- single-line text editing engine: input_field_edit (behind input_text)
-        imgui_widget.c       -- leaf widgets: text, button, checkbox, slider, input_text, selectable
-        imgui_widget_window.c-- the window as a widget: begin/end_window + chrome (resize); body is a region
-        imgui_popup.c        -- popups / context menus / tooltips: overlay windows on a reserved z-band
-        imgui_widget_combo.c -- combo box + list box: a popup dropdown / a scrolling child of selectables
-        imgui_stack_api.c    -- push-model public API: push/pop id, item flags, style color / var
-        imgui_api.c     -- vtable, mod_desc, MOD_DEFINE_EXPORTS
+
+    imgui_shader.h          -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
+    imgui_font_builtin.c    -- hardcoded bitmap fonts: bitmap_font_def_t/t, bitmap_atlas_*, s_bitmap_*
+    imgui_font.c            -- font management + dispatch: tt_font_t, tt_font_load, font_glyph, font_*
+    imgui_draw.c            -- CPU draw list: draw_reset, draw_push_*, s_draw
+    imgui_draw_path.c       -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
+    imgui_render.c          -- GPU flush: imgui_render_init/shutdown/flush
+    imgui_debug.c           -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
+    imgui_input.c           -- app->IO snapshot: input_update, s_io
+    imgui_style.c           -- style stacks: colors + metrics, style_col/style_var, push/pop/next
+    imgui_ctx.c             -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
+    imgui_window.c          -- persistent per-window state: imgui_window_t, window_get, drag mode
+    imgui_widget_core.c     -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
+    imgui_resize.c          -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
+    imgui_layout_core.c     -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
+    imgui_layout.c          -- layout-region engine: region pool, scrollbar, push/pop_region, begin/end_child
+    imgui_text_edit.c       -- single-line text editing engine: input_field_edit (behind input_text)
+    imgui_widget.c          -- leaf widgets: text, button, checkbox, slider, input_text, selectable
+    imgui_widget_window.c   -- the window as a widget: begin/end_window + chrome (resize); body is a region
+    imgui_popup.c           -- popups / context menus / tooltips: overlay windows on a reserved z-band
+    imgui_widget_combo.c    -- combo box + list box: a popup dropdown / a scrolling child of selectables
+    imgui_stack_api.c       -- push-model public API: push/pop id, item flags, style color / var
+    imgui_api.c             -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <string.h> 
 #include <stdarg.h>    /* va_list / va_start -- printf-style textf() widget       */
 #include <math.h>      /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 
