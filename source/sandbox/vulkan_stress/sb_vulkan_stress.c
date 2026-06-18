@@ -83,6 +83,24 @@
 #define STRESS_RESIZE_MAX_DIM      900               /* largest client edge driven by the storm    */
 #define STRESS_RESIZE_MIN_INTERVAL 37                /* frames between one window's min<->restore   */
 
+/* F6 ring pressure: drives two RHI fallback paths that no other mode reaches -- both "effectively
+   never" in normal use, hence currently untested.
+   (A) Staging blast: many large staged uploads in a single epoch overflow the 64 MB staging ring,
+       so vk_staging_alloc must report ring-full and upload_buffer must back out cleanly.
+   (B) Garbage flood: more deferred destroys in one frame than the garbage ring holds
+       (VK_GARBAGE_CAP, 4096), so vk_garbage_push must fall back to a vkDeviceWaitIdle + force drain.
+   The flood interleaves buffers + textures + samplers so it overflows the 4096-entry ring while
+   staying under the driver's maxMemoryAllocationCount / maxSamplerAllocationCount (each commonly
+   ~4096) -- a single-resource-type flood would hit those device limits first and never reach the
+   ring's fallback.  The flood runs on an interval (a wait-idle every frame would be pathological);
+   the blast runs every frame.  On a flood frame the blast first opens a transfer batch that the
+   flood's wait-idle drain then crosses -- the known-risky "overflow drain while an upload batch is
+   open" combination, which this is the first mode to actually exercise. */
+#define STRESS_F6_BIG_BYTES        ORB_MB( 12 )       /* one large staged upload                     */
+#define STRESS_F6_BIG_PER_FRAME    8                  /* 8 * 12MB = 96MB > 64MB slot -> ring full    */
+#define STRESS_F6_FLOOD_DESTROYS   5000               /* > VK_GARBAGE_CAP-1 so the ring overflows    */
+#define STRESS_F6_FLOOD_INTERVAL   120               /* frames between garbage floods               */
+
 /*==============================================================================================
     Per-window render context
 ==============================================================================================*/
@@ -365,6 +383,98 @@ resize_storm_tick( u64 frame )
 
         app()->window_resize( sw->win, w, h );
     }
+}
+
+/*==============================================================================================
+    F6 ring pressure -- drive the staging-ring-full and garbage-overflow fallback paths.
+==============================================================================================*/
+
+/* 12 MB of zeroed source for the staging blast (contents are irrelevant; only the byte count
+   matters for filling the ring).  Lives in BSS so it costs nothing until F6 is used. */
+static u8  s_f6_big_src[ STRESS_F6_BIG_BYTES ];
+
+/* Stats (printed by F2). */
+static u64 s_f6_ring_full_hits;   /* times vk_staging_alloc reported the ring full           */
+static u64 s_f6_garbage_floods;   /* garbage floods issued (each should trip one drain)      */
+
+/* (A) Fire large staged uploads into the single active staging slot until it overflows.  Each
+   upload that fits records a copy; the one that does not makes upload_buffer return false -- the
+   ring-full path under test.  Every big buffer is deferred-destroyed this frame (the aggressive
+   path, already proven), so it also feeds normal reclaim. */
+static void
+f6_staging_blast( void )
+{
+    for ( u32 i = 0; i < STRESS_F6_BIG_PER_FRAME; ++i )
+    {
+        rhi_buffer_t b = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+            .size       = STRESS_F6_BIG_BYTES,
+            .usage      = RHI_BUFFER_USAGE_STORAGE | RHI_BUFFER_USAGE_TRANSFER_DST,
+            .memory     = RHI_MEMORY_GPU_ONLY,
+            .debug_name = "f6_big",
+        } );
+        if ( !rhi_handle_valid( b ) )
+            break;   /* device out of memory under repeated large allocs -- stop for this frame */
+
+        if ( !rhi()->upload_buffer( b, s_f6_big_src, STRESS_F6_BIG_BYTES ) )
+            ++s_f6_ring_full_hits;   /* expected once the 64 MB slot is exhausted this epoch */
+
+        rhi()->buffer_destroy( b );
+    }
+}
+
+/* (B) Push more deferred destroys in one frame than the garbage ring can hold so vk_garbage_push
+   trips its wait-idle drain fallback.  None of these are collectible yet (their safe_at is this
+   epoch + N), so the ring genuinely fills.  Interleave buffer + texture + sampler so the count
+   spreads across three driver allocation limits rather than slamming one of them first. */
+static void
+f6_garbage_flood( void )
+{
+    u32 pushed = 0;
+    while ( pushed < STRESS_F6_FLOOD_DESTROYS )
+    {
+        rhi_buffer_t b = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+            .size       = 256,
+            .usage      = RHI_BUFFER_USAGE_STORAGE,
+            .memory     = RHI_MEMORY_GPU_ONLY,
+            .debug_name = "f6_flood_buf",
+        } );
+        if ( rhi_handle_valid( b ) ) { rhi()->buffer_destroy( b ); ++pushed; }
+
+        rhi_texture_t t = rhi()->texture_create( &( rhi_texture_desc_t ){
+            .width = 4, .height = 4, .depth = 1, .mip_levels = 1, .array_layers = 1,
+            .format     = RHI_FORMAT_RGBA8_UNORM,
+            .usage      = RHI_TEXTURE_USAGE_SAMPLED | RHI_TEXTURE_USAGE_TRANSFER_DST,
+            .memory     = RHI_MEMORY_GPU_ONLY,
+            .debug_name = "f6_flood_tex",
+        } );
+        if ( rhi_handle_valid( t ) ) { rhi()->texture_destroy( t ); ++pushed; }
+
+        rhi_sampler_t s = rhi()->sampler_create( &( rhi_sampler_desc_t ){
+            .min_filter = RHI_FILTER_NEAREST,
+            .mag_filter = RHI_FILTER_NEAREST,
+            .mip_filter = RHI_FILTER_NEAREST,
+            .address_u  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .address_v  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .address_w  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        } );
+        if ( rhi_handle_valid( s ) ) { rhi()->sampler_destroy( s ); ++pushed; }
+
+        /* All three failed this round -- pools/limits exhausted; nothing more to push. */
+        if ( !rhi_handle_valid( b ) && !rhi_handle_valid( t ) && !rhi_handle_valid( s ) )
+            break;
+    }
+    ++s_f6_garbage_floods;
+}
+
+/* Run both sub-tests.  Blast every frame; flood on an interval (each flood forces a device
+   wait-idle).  Order matters: the blast opens a transfer batch first so a flood frame crosses
+   the wait-idle drain with that batch still open. */
+static void
+ring_pressure_tick( u64 frame )
+{
+    f6_staging_blast();
+    if ( ( frame % STRESS_F6_FLOOD_INTERVAL ) == 0 )
+        f6_garbage_flood();
 }
 
 /*==============================================================================================
@@ -710,7 +820,7 @@ main( int argc, char** argv )
     assert( core() );
     assert( rhi() );
 
-    core()->log_set_min_level( LOG_LEVEL_WARN );
+    core()->log_set_min_level( LOG_LEVEL_WARN ); // LOG_LEVEL_TRACE
     core_log_fn( LOG_LEVEL_DEBUG, "sb_vulkan_stress", "modules loaded" );
 
     LOG_LINE();
@@ -785,7 +895,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Run. */
 
-    printf( "[sb_vulkan_stress] running %u windows -- ESC quit, F1 aggressive, F2 stats, F3 ctx-churn, F4 sampled, F5 resize-storm, +/- churn\n",
+    printf( "[sb_vulkan_stress] running %u windows -- ESC quit, F1 aggressive, F2 stats, F3 ctx-churn, F4 sampled, F5 resize-storm, F6 ring-pressure, +/- churn\n",
             open_window_count() );
 
     u32  churn        = STRESS_CHURN_DEFAULT;  /* assets created per context per frame */
@@ -793,6 +903,7 @@ main( int argc, char** argv )
     bool ctx_churn    = false;                 /* F3: periodically destroy+recreate one context */
     bool sample_mode  = false;                 /* F4: upload+register+sample textures in a draw */
     bool resize_storm = false;                 /* F5: storm context_resize + minimize<->restore */
+    bool ring_press   = false;                 /* F6: staging-ring-full + garbage-overflow paths */
     u64  frame_no     = 0;
 
     f64 last_time = sys_tick_seconds();
@@ -845,10 +956,13 @@ main( int argc, char** argv )
         }
 
         if ( app()->key_pressed( APP_KEY_F2 ) )
-            printf( "[sb_vulkan_stress] live=%u peak=%u created=%llu freed=%llu churn=%u/ctx\n",
+            printf( "[sb_vulkan_stress] live=%u peak=%u created=%llu freed=%llu churn=%u/ctx "
+                    "f6_ringfull=%llu f6_floods=%llu\n",
                     s_asset_count, s_peak_live,
                     (unsigned long long)s_total_created,
-                    (unsigned long long)s_total_freed, churn );
+                    (unsigned long long)s_total_freed, churn,
+                    (unsigned long long)s_f6_ring_full_hits,
+                    (unsigned long long)s_f6_garbage_floods );
 
         if ( app()->key_pressed( APP_KEY_F3 ) )
         {
@@ -871,6 +985,12 @@ main( int argc, char** argv )
         {
             resize_storm = !resize_storm;
             printf( "[sb_vulkan_stress] resize storm %s\n", resize_storm ? "ON" : "OFF" );
+        }
+
+        if ( app()->key_pressed( APP_KEY_F6 ) )
+        {
+            ring_press = !ring_press;
+            printf( "[sb_vulkan_stress] ring pressure %s\n", ring_press ? "ON" : "OFF" );
         }
 
         if ( app()->key_pressed( APP_KEY_NP_ADD ) && churn < STRESS_CHURN_MAX )
@@ -898,6 +1018,12 @@ main( int argc, char** argv )
            objects are recreated at the following frame_begin while siblings keep rendering. */
         if ( resize_storm )
             resize_storm_tick( frame_no );
+
+        /* ---- F6: ring pressure (staging-ring-full blast + periodic garbage-overflow flood) ----
+           Run before the render pass so the blast's uploads accumulate in the current epoch's
+           staging slot and a flood frame crosses the wait-idle drain with that batch still open. */
+        if ( ring_press )
+            ring_pressure_tick( frame_no );
 
         /* ---- F4: retire aged sampled textures (always, so the pool drains after F4 is toggled
            off) and spawn a fresh one each frame while sampled mode is on. ---- */

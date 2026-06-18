@@ -392,10 +392,10 @@ vk_staging_alloc( u32 size, u32 align, vk_staging_alloc_t* out )
     }
 
     /* Align the bump pointer and check that the allocation fits. */
-    u32 aligned_head = ( s->head + align - 1 ) & ~( align - 1 );
+    u32  aligned_head = ( s->head + align - 1 ) & ~( align - 1 );
     if ( aligned_head + size > VK_STAGING_SIZE )
     {
-        LOG_ERROR( "vk_staging_alloc: ring full (slot=%u used=%u req=%u cap=%u)",
+        LOG_ERROR( "ring full (slot=%u used=%u req=%u cap=%u)",
                    slot, aligned_head, size, (u32)VK_STAGING_SIZE );
         return false;
     }

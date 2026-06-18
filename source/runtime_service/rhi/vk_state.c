@@ -367,5 +367,11 @@ static vk_context_t* vk_ctx_get( i32 id );
 static void vk_upload_forget_image( VkImage img );
 static void vk_upload_forget_buffer( VkBuffer buf );
 
+/* Submit any open staged-upload batch.  The garbage-ring overflow fallback (vk_garbage_push) must
+   call this before its vkDeviceWaitIdle: an open batch holds recorded-but-unsubmitted copies whose
+   destination buffers may be in the ring about to be force-drained, and a wait-idle does not cover
+   un-submitted work.  Flushing first turns those copies into completed work the wait-idle drains. */
+static void vk_upload_flush( void );
+
 /*============================================================================================*/
 // clang-format on

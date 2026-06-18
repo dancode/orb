@@ -108,10 +108,17 @@ vk_garbage_push( const vk_garbage_t* objs )
     u32 next = ( g_garbage_tail + 1 ) % VK_GARBAGE_CAP;
 
     /* Ring full: drain everything safely so we never overflow.  Costs a full GPU stall, but
-       only triggers under thousands of destroys between two frames -- effectively never. */
+       only triggers under thousands of destroys between two frames -- effectively never.
+
+       Flush any open upload batch FIRST.  A batch open here holds recorded-but-unsubmitted transfer
+       copies whose destination buffers/images may be among the entries collect(true) is about to
+       free; vkDeviceWaitIdle does not wait for work that was never submitted, so freeing them would
+       destroy resources a later flush still references.  Submitting the batch now turns those copies
+       into in-flight work the wait-idle below actually drains, making the force-collect safe. */
     if ( next == g_garbage_head )
     {
-        LOG_WARN( "vk_garbage: ring full (%d entries); forcing wait-idle drain", VK_GARBAGE_CAP - 1 );
+        LOG_WARN( "ring full (%d entries); forcing wait-idle drain", VK_GARBAGE_CAP - 1 );
+        vk_upload_flush();
         vkDeviceWaitIdle( vk.device );
         vk_garbage_collect( true );
         next = ( g_garbage_tail + 1 ) % VK_GARBAGE_CAP;
