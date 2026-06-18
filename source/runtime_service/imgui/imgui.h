@@ -339,19 +339,26 @@ typedef enum
 
 typedef enum
 {
-    IMGUI_ITEM_NONE          = 0,    /* no tweaks -- the default behavior */
-    IMGUI_ITEM_DISABLED      = 1 << 0, /* inert + dimmed: no hover/active/focus/click, drawn at
-                                        reduced opacity.  Honored uniformly by widget_behavior and
-                                        the draw list, so it applies to every widget at once. */
-    IMGUI_ITEM_BUTTON_REPEAT = 1 << 1, /* a held button fires repeatedly: once on press, then after
-                                        an initial delay at a steady rate (spinner / scroll arrows),
-                                        instead of once on release.  Honored by widget_behavior, so
-                                        any button-kind widget under the flag auto-repeats. */
-    IMGUI_ITEM_NO_VALUE_TEXT = 1 << 2, /* slider_float: suppress the value text drawn centered on the
-                                        track.  The value is shown by default; set this (push or
-                                        next_item_flag) to hide it for a bare / compact slider. */
+    /* no tweaks -- the default behavior */
+    IMGUI_ITEM_NONE          = 0,       
 
- /* Room to grow without disturbing call sites or the vtable -- e.g. a future
+    /* inert + dimmed: no hover/active/focus/click, drawn at
+       reduced opacity.  Honored uniformly by widget_behavior and
+       the draw list, so it applies to every widget at once. */
+    IMGUI_ITEM_DISABLED      = 1 << 0,  
+
+    /* a held button fires repeatedly: once on press, then after
+       an initial delay at a steady rate (spinner / scroll arrows),
+       instead of once on release.  Honored by widget_behavior, so
+       any button-kind widget under the flag auto-repeats. */
+    IMGUI_ITEM_BUTTON_REPEAT = 1 << 1,  
+
+    /* slider_float: suppress the value text drawn centered on the
+       track.  The value is shown by default; set this (push or
+       next_item_flag) to hide it for a bare / compact slider. */
+    IMGUI_ITEM_NO_VALUE_TEXT = 1 << 2,  
+
+    /* Room to grow without disturbing call sites or the vtable -- e.g. a future
     IMGUI_ITEM_READ_ONLY (editable widgets show but reject input), IMGUI_ITEM_NO_NAV, etc. */
 
 } imgui_item_flags_t;

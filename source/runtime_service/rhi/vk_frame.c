@@ -37,21 +37,61 @@
     vk_frame_begin -- begin a new frame on the given context.
 
     Steps performed in order:
-      1. Handle any deferred swapchain resize.
+      1. Handle any deferred swapchain resize (a minimized window drains + checks in, then returns).
       2. Wait for the GPU to finish the previous job in this frame slot (CPU fence wait).
-      3. Epoch check-in: advance global_epoch when all contexts have checked in.
-      4. Flush staged uploads (once per epoch, not once per context).
-      5. Retire expired bindless descriptor slots.
-      6. Acquire the next presentable swapchain image.
-      7. Reset fence and command buffer.
-      8. Inject QFOT acquire barriers for resources uploaded on the transfer queue.
-      9. Issue layout transitions: color UNDEFINED->COLOR_ATTACHMENT_OPTIMAL each frame;
+      3. Epoch check-in + flush staged uploads (once per display frame).  Done AFTER the fence wait
+         (or after draining on a minimized early-out) so global_epoch -- which also gates garbage
+         collection -- advances only once a context's GPU work is drained, yet a non-rendering
+         context still checks in and never stalls a sibling window's epoch / uploads / reclaim.
+      4. Retire expired bindless descriptor + garbage slots.
+      5. Acquire the next presentable swapchain image.
+      6. Reset fence and command buffer.
+      7. Inject QFOT acquire barriers for resources uploaded on the transfer queue.
+      8. Issue layout transitions: color UNDEFINED->COLOR_ATTACHMENT_OPTIMAL each frame;
          depth UNDEFINED->DEPTH_ATTACHMENT_OPTIMAL on first use of each slot only.
 
     Returns an open command list with no active render pass.
     Returns RHI_CMD_INVALID on failure (swapchain out of date, fence error, etc.).
 
 ==============================================================================================*/
+
+/*==============================================================================================
+
+    vk_frame_epoch_checkin -- per-display-frame epoch ack + once-per-epoch upload flush.
+
+    "Epoch" means one display frame.  With more than one context (window), vk_upload_flush() must
+    fire exactly once per display frame, not once per context.  Each context calls this exactly once
+    per frame_begin: it sets its bit in epoch_ack_mask; when every live context (ctx_alloc) has
+    checked in, global_epoch advances and the mask resets, and the first context to observe the new
+    epoch flushes the staged uploads.
+
+    global_epoch is ALSO the reclaim clock for vk_garbage.c / vk_descriptor.c (safe_at =
+    global_epoch + FRAMES_IN_FLIGHT), which assumes "epoch advanced => every context's GPU work is
+    drained."  So a check-in is only valid once THIS context's GPU work is confirmed done.  Callers
+    therefore invoke this strictly after a fence wait:
+      - normal path : after the per-frame in_flight_fence[frame] wait;
+      - minimized   : after draining all of the context's fences (it has no slot to wait otherwise);
+    A non-rendering context still checks in (so it never stalls a sibling window's epoch / uploads /
+    reclamation), but only after proving its own GPU work is finished -- so the clock stays honest.
+
+==============================================================================================*/
+
+static void
+vk_frame_epoch_checkin( i32 ctx_id )
+{
+    vk.epoch_ack_mask |= ( 1u << ctx_id );
+    if ( vk.epoch_ack_mask == vk.ctx_alloc )
+    {
+        vk.global_epoch++;          // Every live context has checked in.
+        vk.epoch_ack_mask = 0;      // Reset for the next epoch.
+    }
+
+    if ( vk.upload_flush_epoch < vk.global_epoch )
+    {
+        vk.upload_flush_epoch = vk.global_epoch;
+        vk_upload_flush();
+    }
+}
 
 static rhi_cmd_t
 vk_frame_begin( i32 ctx_id )
@@ -78,7 +118,16 @@ vk_frame_begin( i32 ctx_id )
     if ( ctx->resize_pending )
     {
         if ( !vk_swapchain_recreate( ctx ) )
+        {
+            /* Minimized (zero surface extent): no render this frame.  vk_swapchain_recreate returns
+               on the zero-extent check WITHOUT draining, so wait this context's fences here to
+               confirm its prior GPU work is finished, then check in.  Draining first keeps
+               global_epoch an honest GPU-completion clock (it gates garbage collection); checking in
+               keeps a minimized window from stalling a sibling window's epoch, uploads, and reclaim. */
+            vkWaitForFences( vk.device, VK_MAX_FRAMES_IN_FLIGHT, ctx->in_flight_fence, VK_TRUE, UINT64_MAX );
+            vk_frame_epoch_checkin( ctx_id );
             return RHI_CMD_INVALID;
+        }
 
         vk_sync_destroy( ctx );
         vk_sync_create( ctx );
@@ -99,31 +148,17 @@ vk_frame_begin( i32 ctx_id )
     VkResult r = vkWaitForFences( vk.device, 1, &ctx->in_flight_fence[ frame ], VK_TRUE, UINT64_MAX );
     if ( r != VK_SUCCESS ) {
          LOG_ERROR( "frame_begin: vkWaitForFences: %s", string_VkResult( r ) );
+         vk_frame_epoch_checkin( ctx_id );   /* still ack so a transient error here doesn't stall siblings */
          return RHI_CMD_INVALID;
     }
 
-    /* --- Step 2: Epoch check-in and upload flush. ---
+    /* --- Step 2: Epoch check-in + upload flush. ---
 
-       "Epoch" means one display frame.  The engine may have more than one context (window),
-       and vk_upload_flush() must fire exactly once per display frame, not once per context.
+       Done here, AFTER the fence wait, so global_epoch advances only once this slot's GPU work is
+       drained -- keeping it a valid completion clock for the garbage / descriptor reclaim below.
+       See vk_frame_epoch_checkin. */
 
-       Each context sets its bit in epoch_ack_mask after its fence wait (proof that the GPU
-       slot is idle).  When every active context has checked in, global_epoch advances and
-       the mask resets.  upload_flush_epoch tracks when the flush last ran; if it lags behind
-       global_epoch, this is the first context of the new epoch -- flush, then update.
-       Every subsequent context in the same epoch skips the flush. */
-
-    vk.epoch_ack_mask |= ( 1u << ctx_id );
-    if ( vk.epoch_ack_mask == vk.ctx_alloc )
-    {
-        vk.global_epoch++;          // Every active context has checked in.
-        vk.epoch_ack_mask = 0;      // Reset for the next epoch.
-    }
-
-    if ( vk.upload_flush_epoch < vk.global_epoch ) {
-         vk.upload_flush_epoch = vk.global_epoch;
-         vk_upload_flush();
-    }
+    vk_frame_epoch_checkin( ctx_id );
 
     /* Return deferred bindless slots whose GPU references have expired. */
     vk_descriptor_flush_retired();
