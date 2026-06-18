@@ -498,6 +498,14 @@ typedef struct
 
 typedef struct
 {
+    /* Per-context id namespace seed.  XOR'd into id_hash's FNV basis (below), so the same string
+       hashes to a distinct id in each context and every id_combine built on it inherits the offset.
+       This is what keeps the ambient hover / active / focus ids -- which are compared globally, across
+       every context -- from confusing a widget in one viewport with an identically-named widget in
+       another.  0 is the default context's namespace and leaves id_hash byte-identical to the
+       unsalted hash, so a single-context build is unchanged. */
+    u32 id_salt;
+
     u32 frame;                                       // monotonic frame index, bumped each new_frame this
                                                      //   context is built; stamps + ages the pool below
     imgui_state_slot_t state[ IMGUI_STATE_SLOTS ];   // open-addressed keyed per-widget state
@@ -558,7 +566,10 @@ imgui_state_get( imgui_id_t id, u32 size )
 static imgui_id_t
 id_hash( const char* str )
 {
-    u32 h = 0x811C9DC5u;
+    /* Seed FNV-1a with the context's id salt so the same string hashes to a distinct id per context.
+       s_retained.id_salt is 0 for the default context -> the standard 0x811C9DC5 basis -> ids are
+       byte-identical to the unsalted hash, so single-context behavior is unchanged. */
+    u32 h = 0x811C9DC5u ^ s_retained.id_salt;
     for ( ; *str; ++str )
         h = ( h ^ (u8)*str ) * 0x01000193u;
     return h ? h : 1u;    /* never return IMGUI_ID_NONE (0) */
