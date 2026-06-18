@@ -114,9 +114,10 @@ static struct
     Keyboard navigation state (s_nav)
 
     The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather
-    than the mouse -- plus the menu-bar state machine layered on top of it.  Held in its own
-    struct, apart from s_interaction / s_build: imgui_nav.c drives it and nav_item_register
-    (imgui_widget_core.c) is the per-item seam.
+    than the mouse -- plus the menu-bar state machine layered on top of it.  The type is defined
+    here; the instance is a member of the bound context (imgui_context_t, below) reached via the
+    s_nav alias, apart from the ambient s_interaction / frame-scratch s_build.  imgui_nav.c drives
+    it and nav_item_register (imgui_widget_core.c) is the per-item seam.
 
     `win` is the window or popup nav is scoped to, chosen each frame the way hover_win is (a popup
     captures it while open).  Movement is resolved one frame deferred against `ref_rect`, exactly
@@ -170,7 +171,8 @@ typedef struct
 
 } nav_state_t;
 
-static nav_state_t s_nav;
+/* s_nav lives in the bound context (imgui_context_t, below) and is reached through the g_ctx alias,
+   so each context keeps its own nav cursor location. */
 
 /*----------------------------------------------------------------------------------------------
     Item-flag stack
@@ -446,8 +448,9 @@ typedef struct
 
 } imgui_popup_t;
 
-static imgui_popup_t s_popups_open[ IMGUI_POPUP_DEPTH ];  // open set, persists across frames
-static u32           s_popup_open_count;                  // live open count
+/* The open set (s_popups_open) and its live count (s_popup_open_count) are members of the bound
+   context (imgui_context_t, below), reached through the g_ctx alias -- popups persist per context.
+   s_popup_begin_count is per-frame scratch (rebuilt as begin/end_popup run) and stays a plain global. */
 static u32           s_popup_begin_count;                 // current nesting depth (per frame)
 
 /*----------------------------------------------------------------------------------------------
@@ -512,7 +515,49 @@ typedef struct
 
 } imgui_retained_t;
 
-static imgui_retained_t s_retained;
+/*----------------------------------------------------------------------------------------------
+    imgui_context_t -- the bound per-context retained state ("bind and use").
+
+    A context is the emission session the code binds once and emits ALL its windows into; it owns the
+    state that must persist between frames for that UI.  Every retained access in the module resolves
+    through g_ctx via the aliases below -- s_retained (id salt + frame clock + keyed state pool),
+    s_nav (the nav cursor location + menu mode), and the popup open-set -- so switching contexts is a
+    single pointer assignment (ctx_bind): no copy, no backup/restore.
+
+    The window pool (imgui_window.c) and the per-viewport surfaces (imgui_render.c) join here once
+    their record types -- defined in later-included files -- can be folded in; until then they remain
+    separate retained globals.
+
+    Ambient state (one user: s_interaction, s_io) and frame scratch (s_build, the stacks, s_draw) are
+    NOT per context -- they stay global and target whichever context is bound.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct imgui_context_t
+{
+    imgui_retained_t retained;                          // id salt, frame clock, keyed state pool
+    nav_state_t      nav;                               // nav cursor location + menu-bar mode
+    imgui_popup_t    popups_open[ IMGUI_POPUP_DEPTH ];  // open popup set, ordered parent -> child
+    u32              popup_open_count;                  // live open count
+
+} imgui_context_t;
+
+/* The default context, bound at startup.  g_ctx is the one indirection every retained access goes
+   through; the host points it at another context before emitting that context's windows. */
+static imgui_context_t  s_default_context;
+static imgui_context_t* g_ctx = &s_default_context;
+
+#define s_retained         ( g_ctx->retained )
+#define s_nav              ( g_ctx->nav )
+#define s_popups_open      ( g_ctx->popups_open )
+#define s_popup_open_count ( g_ctx->popup_open_count )
+
+/* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
+   default.  This is the whole multi-context seam -- no state is copied.  One context today. */
+static void
+ctx_bind( imgui_context_t* ctx )
+{
+    g_ctx = ctx ? ctx : &s_default_context;
+}
 
 /* Stable storage for `id`: the same pointer every frame the id stays live, zeroed the frame it is
    first seen or recycled.  size must fit IMGUI_STATE_CAP.  Never returns NULL. */

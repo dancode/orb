@@ -13,9 +13,11 @@
     Frame-lifecycle / style implementations (orchestrate across constituent files)
 ==============================================================================================*/
 
-bool 
+bool
 imgui_init( void )
 {
+    ctx_bind( &s_default_context );   /* bind the default context; the host may rebind before emitting */
+
     if ( !imgui_render_init() )
         return false;
 
