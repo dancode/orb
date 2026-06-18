@@ -389,8 +389,17 @@ target sb_vulkan						# vulkan development and testing
     unit        sb_vulkan_imgui.c
     dep         sys ref mod core app
 	dep 		run rhi draw imgui
-	mono_dep 	render	
+	mono_dep 	render
   # flag        reflect
+
+target sb_vulkan_stress					# multi-context rhi sync stress test
+
+    type        exe
+    root        source/sandbox/vulkan_stress
+    folder      09_SANDBOX/VULKAN
+    unit        sb_vulkan_stress.c
+    dep         sys ref mod core app
+	dep 		rhi
 
 # ==============================================================================
 # 09_SANDBOX -- EXAMPLE EXECUTABLE PROJECT TYPES
@@ -571,9 +580,10 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		draw 					# drawing using the rhi
 	add 		imgui 					# imgui lbrary
 	
-	add 		render 					# render dll	
-	
-	add 		sb_vulkan				# exe 
+	add 		render 					# render dll
+
+	add 		sb_vulkan				# exe
+	add 		sb_vulkan_stress		# multi-context sync stress exe
 
 
 solution orb_sandbox_engine				# developing engine libraries
