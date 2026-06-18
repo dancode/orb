@@ -38,7 +38,7 @@
 #include "orb.h"
 
 // internal API headers
-#include "engine/mod/mod_export.h"
+
 #include "runtime_service/imgui/imgui_host.h"
 
 // API function headers
@@ -238,6 +238,7 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 #include "runtime_service/imgui/imgui_stack_api.c"
 
 #ifndef IMGUI_API_C_PRELUDE
+    #include "engine/mod/mod_export.h"
     #include "runtime_service/imgui/imgui_api.c"
 #endif
 
