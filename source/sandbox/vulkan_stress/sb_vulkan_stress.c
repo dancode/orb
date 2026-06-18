@@ -24,6 +24,7 @@
         ESC      quit
         F1       toggle aggressive mode (free assets the same frame they are created)
         F2       print live asset / sync stats
+        F3+      various test modes. 
         + / -    raise / lower per-context asset churn each frame
 
 ==============================================================================================*/
@@ -99,7 +100,19 @@
 #define STRESS_F6_BIG_BYTES        ORB_MB( 12 )       /* one large staged upload                     */
 #define STRESS_F6_BIG_PER_FRAME    8                  /* 8 * 12MB = 96MB > 64MB slot -> ring full    */
 #define STRESS_F6_FLOOD_DESTROYS   5000               /* > VK_GARBAGE_CAP-1 so the ring overflows    */
-#define STRESS_F6_FLOOD_INTERVAL   120               /* frames between garbage floods               */
+#define STRESS_F6_FLOOD_INTERVAL   120                /* frames between garbage floods               */
+
+/* F8 bindless slot-recycle storm: holds a large pool of registered+sampled bindless textures near
+   the 2048-slot cap and recycles a batch every frame (unregister -> deferred-retire -> destroy, then
+   register a fresh texture into the freed slot).  Every live texture is sampled by a real draw each
+   frame, so a slot returned to the free list too early -- before the in-flight frames that still bind
+   it have drained -- is caught as a wrong-texture sample or a validation/use-after-free error.  The
+   pool size deliberately rides the cap: live + the deferred-retire backlog approaches 2047, so
+   register_texture also exercises the pool-exhausted (returns 0) path continuously.  Reuses F4's
+   shared pipeline / sampler / quad, so it needs f4_ok. */
+#define STRESS_F8_POOL             1900                /* bindless textures the storm tries to hold   */
+#define STRESS_F8_RECYCLE          96                 /* slots retired + respawned per frame         */
+#define STRESS_F8_DIM              8                  /* tiny texture (8x8 RGBA8)                     */
 
 /*==============================================================================================
     Per-window render context
@@ -743,6 +756,148 @@ f4_shutdown( void )
 }
 
 /*==============================================================================================
+    F8 bindless slot-recycle storm -- register/sample/retire bindless slots near the pool cap.
+
+    Distinct from F4 (which holds ~12 live to validate the upload->sample path): F8 scales the live
+    set toward the 2048 bindless cap and recycles a batch every frame, so the descriptor slot
+    allocator, the deferred-retire ring (vk_descriptor.c), and the slot-reuse epoch gate are all
+    driven at capacity.  Reuses F4's shared pipeline / sampler / unit quad.
+==============================================================================================*/
+
+typedef struct
+{
+    rhi_texture_t tex;
+    u32           idx;    /* bindless texture slot (0 == empty)    */
+    bool          live;
+
+} f8_slot_t;
+
+static f8_slot_t s_f8[ STRESS_F8_POOL ];
+static u32       s_f8_cursor;        /* round-robin recycle position                       */
+static u64       s_f8_reg_fail;      /* register_texture returned 0 (pool full) -- a stat   */
+static u64       s_f8_recycled;      /* successful (re)registrations -- a stat              */
+
+/* Drop a slot's bindless registration and defer-destroy its texture. */
+static void
+f8_retire_slot( u32 i )
+{
+    if ( !s_f8[ i ].live )
+        return;
+    rhi()->unregister_texture( s_f8[ i ].idx );
+    rhi()->texture_destroy( s_f8[ i ].tex );
+    s_f8[ i ] = ( f8_slot_t ){ 0 };
+}
+
+/* Create + upload + register a fresh texture into pool index i.  On a full bindless pool
+   register_texture returns 0; back the texture out and leave the slot empty (retried next pass). */
+static void
+f8_spawn_slot( u32 i, u64 frame )
+{
+    rhi_texture_t tex = rhi()->texture_create( &( rhi_texture_desc_t ){
+        .width        = STRESS_F8_DIM,
+        .height       = STRESS_F8_DIM,
+        .depth        = 1,
+        .mip_levels   = 1,
+        .array_layers = 1,
+        .format       = RHI_FORMAT_RGBA8_UNORM,
+        .usage        = RHI_TEXTURE_USAGE_SAMPLED | RHI_TEXTURE_USAGE_TRANSFER_DST,
+        .memory       = RHI_MEMORY_GPU_ONLY,
+        .debug_name   = "f8_tex",
+    } );
+    if ( !rhi_handle_valid( tex ) )
+        return;   /* texture handle pool momentarily full -- retire backlog; try again next pass */
+
+    /* Per-slot solid color keyed on index+frame so a wrong-texture sample (premature reuse) would
+       be visually distinct, not just silently identical. */
+    static u8 px[ STRESS_F8_DIM * STRESS_F8_DIM * 4 ];
+    u8 c = (u8)( i * 31 + (u32)frame * 7 + 40 );
+    for ( u32 p = 0; p < sizeof( px ); ++p )
+        px[ p ] = c;
+
+    if ( !rhi()->upload_texture( tex, px, sizeof( px ), 0, 0 ) )
+    {
+        rhi()->texture_destroy( tex );
+        return;
+    }
+
+    u32 idx = rhi()->register_texture( tex );
+    if ( idx == 0 )   /* bindless pool exhausted -- the cap-riding path under test */
+    {
+        rhi()->texture_destroy( tex );
+        ++s_f8_reg_fail;
+        return;
+    }
+
+    s_f8[ i ] = ( f8_slot_t ){ .tex = tex, .idx = idx, .live = true };
+    ++s_f8_recycled;
+}
+
+/* Recycle STRESS_F8_RECYCLE slots this frame: retire then immediately respawn each, advancing a
+   round-robin cursor so the whole pool cycles through fresh registrations over time. */
+static void
+f8_storm_tick( u64 frame )
+{
+    for ( u32 n = 0; n < STRESS_F8_RECYCLE; ++n )
+    {
+        u32 i = s_f8_cursor;
+        s_f8_cursor = ( s_f8_cursor + 1 ) % STRESS_F8_POOL;
+
+        f8_retire_slot( i );
+        f8_spawn_slot( i, frame );
+    }
+}
+
+/* Sample every live slot with a real draw -- this is what makes a premature slot reuse observable.
+   The quads are packed into a dense grid; visual layout is secondary to issuing the shader read. */
+static void
+f8_draw( rhi_cmd_t cmd, i32 win_w, i32 win_h )
+{
+    rhi()->cmd_set_viewport( cmd, &( rhi_viewport_t ){
+        .x = 0, .y = 0, .width = (f32)win_w, .height = (f32)win_h, .min_depth = 0, .max_depth = 1 } );
+    rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){ .x = 0, .y = 0, .width = win_w, .height = win_h } );
+    rhi()->cmd_bind_pipeline( cmd, s_f4_pipeline );
+    rhi()->cmd_bind_bindless( cmd );
+    rhi()->cmd_bind_vertex_buffer( cmd, s_f4_quad_vb, 0 );
+
+    /* Square-ish grid sized to the pool so every cell maps to one slot. */
+    i32 cols = 1;
+    while ( cols * cols < STRESS_F8_POOL ) ++cols;
+    const i32 rows = ( STRESS_F8_POOL + cols - 1 ) / cols;
+    const f32 cw   = (f32)win_w / (f32)cols;
+    const f32 ch   = (f32)win_h / (f32)rows;
+
+    for ( u32 i = 0; i < STRESS_F8_POOL; ++i )
+    {
+        if ( !s_f8[ i ].live )
+            continue;
+
+        f32 px = (f32)( (i32)i % cols ) * cw;
+        f32 py = (f32)( (i32)i / cols ) * ch;
+
+        f4_push_t push = { 0 };
+        push.mvp[  0 ] = 2.0f * cw / (f32)win_w;
+        push.mvp[  5 ] = 2.0f * ch / (f32)win_h;
+        push.mvp[ 10 ] = 1.0f;
+        push.mvp[ 12 ] = 2.0f * px / (f32)win_w - 1.0f;
+        push.mvp[ 13 ] = 2.0f * py / (f32)win_h - 1.0f;
+        push.mvp[ 15 ] = 1.0f;
+        push.tex_idx   = s_f8[ i ].idx;
+        push.samp_idx  = s_f4_sampler_idx;
+
+        rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
+        rhi()->cmd_draw( cmd, &( rhi_draw_args_t ){ .vertex_count = 6, .instance_count = 1 } );
+    }
+}
+
+/* Retire the whole pool (shutdown, after contexts are destroyed and the GPU is idle). */
+static void
+f8_retire_all( void )
+{
+    for ( u32 i = 0; i < STRESS_F8_POOL; ++i )
+        f8_retire_slot( i );
+}
+
+/*==============================================================================================
     Render one context
 
     No scene geometry -- a single animated clear is enough to drive the full frame_begin /
@@ -752,7 +907,7 @@ f4_shutdown( void )
 ==============================================================================================*/
 
 static bool
-render_context( const stress_win_t* sw, f64 t, bool draw_sampled )
+render_context( const stress_win_t* sw, f64 t, bool draw_sampled, bool draw_f8 )
 {
     /* Always call frame_begin, even for a minimized window: that is how this context checks
        into the shared epoch (vk_frame.c).  With multiple contexts the epoch only advances --
@@ -777,6 +932,10 @@ render_context( const stress_win_t* sw, f64 t, bool draw_sampled )
     /* F4: sample the uploaded textures with a real draw inside the same pass. */
     if ( draw_sampled )
         f4_draw( cmd, sw->w, sw->h );
+
+    /* F8: sample the whole live bindless pool so premature slot reuse is observable. */
+    if ( draw_f8 )
+        f8_draw( cmd, sw->w, sw->h );
 
     rhi()->cmd_end_rendering( cmd );
 
@@ -895,7 +1054,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Run. */
 
-    printf( "[sb_vulkan_stress] running %u windows -- ESC quit, F1 aggressive, F2 stats, F3 ctx-churn, F4 sampled, F5 resize-storm, F6 ring-pressure, +/- churn\n",
+    printf( "[sb_vulkan_stress] running %u windows -- ESC quit, F1 aggressive, F2 stats, F3 ctx-churn, F4 sampled, F5 resize-storm, F6 ring-pressure, F7 no-pacing, F8 slot-storm, +/- churn\n",
             open_window_count() );
 
     u32  churn        = STRESS_CHURN_DEFAULT;  /* assets created per context per frame */
@@ -904,7 +1063,14 @@ main( int argc, char** argv )
     bool sample_mode  = false;                 /* F4: upload+register+sample textures in a draw */
     bool resize_storm = false;                 /* F5: storm context_resize + minimize<->restore */
     bool ring_press   = false;                 /* F6: staging-ring-full + garbage-overflow paths */
+    bool no_pacing    = false;                 /* F7: drop the frame sleep -> flat-out throughput */
+    bool slot_storm   = false;                 /* F8: bindless slot recycle near the pool cap */
     u64  frame_no     = 0;
+
+    /* FPS readout for F7: with pacing removed the loop runs at GPU throughput, so report the
+       achieved rate once per wall-clock second to make the fence/semaphore turnover visible. */
+    f64 fps_time   = sys_tick_seconds();
+    u64 fps_frames = 0;
 
     f64 last_time = sys_tick_seconds();
 
@@ -957,12 +1123,14 @@ main( int argc, char** argv )
 
         if ( app()->key_pressed( APP_KEY_F2 ) )
             printf( "[sb_vulkan_stress] live=%u peak=%u created=%llu freed=%llu churn=%u/ctx "
-                    "f6_ringfull=%llu f6_floods=%llu\n",
+                    "f6_ringfull=%llu f6_floods=%llu f8_recycled=%llu f8_regfail=%llu\n",
                     s_asset_count, s_peak_live,
                     (unsigned long long)s_total_created,
                     (unsigned long long)s_total_freed, churn,
                     (unsigned long long)s_f6_ring_full_hits,
-                    (unsigned long long)s_f6_garbage_floods );
+                    (unsigned long long)s_f6_garbage_floods,
+                    (unsigned long long)s_f8_recycled,
+                    (unsigned long long)s_f8_reg_fail );
 
         if ( app()->key_pressed( APP_KEY_F3 ) )
         {
@@ -991,6 +1159,23 @@ main( int argc, char** argv )
         {
             ring_press = !ring_press;
             printf( "[sb_vulkan_stress] ring pressure %s\n", ring_press ? "ON" : "OFF" );
+        }
+
+        if ( app()->key_pressed( APP_KEY_F7 ) )
+        {
+            no_pacing = !no_pacing;
+            printf( "[sb_vulkan_stress] no-pacing (flat-out throughput) %s\n", no_pacing ? "ON" : "OFF" );
+        }
+
+        if ( app()->key_pressed( APP_KEY_F8 ) )
+        {
+            if ( f4_ok )
+            {
+                slot_storm = !slot_storm;
+                printf( "[sb_vulkan_stress] bindless slot-recycle storm %s\n", slot_storm ? "ON" : "OFF" );
+            }
+            else
+                printf( "[sb_vulkan_stress] slot storm unavailable (f4_init failed)\n" );
         }
 
         if ( app()->key_pressed( APP_KEY_NP_ADD ) && churn < STRESS_CHURN_MAX )
@@ -1034,6 +1219,11 @@ main( int argc, char** argv )
                 f4_spawn( frame_no );
         }
 
+        /* ---- F8: recycle a batch of bindless slots before the render pass, so the slots just
+           returned for reuse are exercised against the in-flight frames that still bind them. ---- */
+        if ( slot_storm )
+            f8_storm_tick( frame_no );
+
         /* ---- pump every live context (drives per-context sync + epoch check-in each frame) ----
            Note: minimized windows are NOT skipped here -- frame_begin must run on every context
            so it checks into the epoch.  render_context returns false when the swapchain was not
@@ -1045,7 +1235,7 @@ main( int argc, char** argv )
             if ( !sw->open || sw->ctx == RHI_CTX_INVALID )
                 continue;
 
-            if ( !render_context( sw, now_time, sample_mode ) )
+            if ( !render_context( sw, now_time, sample_mode, slot_storm ) )
                 continue;   /* minimized / not ready: checked in, but nothing to draw or churn */
 
             /* ---- asset churn for this context ---- */
@@ -1059,7 +1249,27 @@ main( int argc, char** argv )
         sweep_assets( frame_no, aggressive ? 0 : STRESS_FREE_DELAY );
 
         ++frame_no;
-        sys_sleep_milliseconds( 2 );
+
+        /* F7: skip the frame sleep entirely so the loop runs at GPU throughput -- the fence wait in
+           frame_begin becomes the only throttle, maximizing per-second sync-primitive turnover and
+           exposing any reuse-before-signal race the 2 ms sleep would otherwise mask. */
+        if ( no_pacing )
+        {
+            ++fps_frames;
+            f64 fnow = sys_tick_seconds();
+            if ( fnow - fps_time >= 1.0 )
+            {
+                printf( "[sb_vulkan_stress] no-pacing: %.0f fps (%llu frames/s across %u ctx)\n",
+                        (f64)fps_frames / ( fnow - fps_time ),
+                        (unsigned long long)fps_frames, open_window_count() );
+                fps_time   = fnow;
+                fps_frames = 0;
+            }
+        }
+        else
+        {
+            sys_sleep_milliseconds( 2 );
+        }
     }
 
     /* ------------------------------------------------------------------------------ */
@@ -1076,8 +1286,10 @@ main( int argc, char** argv )
     free_all_assets();
 
     /* Sampled textures + shared F4 resources: contexts are destroyed (GPU idle) above, so the
-       deferred destroys queued here are safe to force-drain in rhi()->shutdown(). */
+       deferred destroys queued here are safe to force-drain in rhi()->shutdown().  F8 shares F4's
+       pipeline/sampler/quad, so retire the F8 pool before f4_shutdown tears those down. */
     f4_retire_all();
+    f8_retire_all();
     f4_shutdown();
 
     rhi()->shutdown();

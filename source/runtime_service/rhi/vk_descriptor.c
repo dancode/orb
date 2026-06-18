@@ -49,15 +49,20 @@ static vk_bindless_free_t  g_samp_free;
 static void
 vk_bindless_free_init( vk_bindless_free_t* pool, u32 count )
 {
-    /* Pre-fill the free stack in reverse so index 1 is returned first.
-       Index 0 is reserved (invalid). 
-       
-       When done top = 1024, stack[1023] = 1, and stack[0] = 1024.
-       Our first alloc is --top = 1023 -> idx=1, 
-       last is --top=0 -> idx=1024, which is never used */
-        
+    /* Pre-fill the free stack in reverse so index 1 is returned first.  Index 0 is reserved
+       (invalid / "no resource"), and the descriptor array has `count` elements, so the highest
+       valid index is count-1.  Usable slots are therefore 1 .. count-1 -- (count-1) in all.
+
+       Pushing `count` itself (the old code did) hands out an out-of-range index on the final
+       allocation once the pool is fully drained: a descriptor write at array element `count`
+       runs past binding 0 and spills into binding 1 (the sampler), which validation flags and
+       which is undefined behavior.  It also breaks the deferred-retire ring's "(capacity-1)
+       slots max, so it never overflows" invariant.
+
+       After init: top = count-1, stack[count-2] = 1 (popped first), stack[0] = count-1 (last). */
+
     pool->top = 0;
-    for ( u32 i = count; i >= 1; --i )
+    for ( u32 i = count - 1; i >= 1; --i )
         pool->stack[ pool->top++ ] = i;
 }
 
