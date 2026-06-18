@@ -15,9 +15,8 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* Forward tag: the full definition lives in imgui_window.c (included after this file).
-   end_window writes scroll_y / content_h back through this pointer. */
-struct imgui_window_t;
+/* imgui_window_t is defined early in imgui.c (it is embedded by value in the context below);
+   s_build.cur_win points at a pool record so end_window can write scroll_y / content_h back. */
 
 /* Ambient interaction state -- the one user's live hover / active / focus, persisting across
    frames.  There is one pointer, one keyboard, one mouse, so none of this is ever duplicated per
@@ -539,6 +538,14 @@ typedef struct imgui_context_t
     imgui_popup_t    popups_open[ IMGUI_POPUP_DEPTH ];  // open popup set, ordered parent -> child
     u32              popup_open_count;                  // live open count
 
+    imgui_window_t   windows[ IMGUI_MAX_WINDOWS ];      // persisted window records (imgui_window.c behavior)
+    u32              window_count;                      // live records in the pool
+    imgui_window_t   window_scratch;                    // transient fallback when the pool is full
+    u32              z_counter;                         // monotonic paint-order dispenser
+
+    imgui_viewport_t viewports[ IMGUI_MAX_VIEWPORTS ];  // render surfaces: [0]=main swapchain, rest floaters
+    u32              viewport_count;                    // live viewports (imgui_render.c behavior)
+
 } imgui_context_t;
 
 /* The default context, bound at startup.  g_ctx is the one indirection every retained access goes
@@ -550,6 +557,10 @@ static imgui_context_t* g_ctx = &s_default_context;
 #define s_nav              ( g_ctx->nav )
 #define s_popups_open      ( g_ctx->popups_open )
 #define s_popup_open_count ( g_ctx->popup_open_count )
+#define s_windows          ( g_ctx->windows )
+#define s_window_count     ( g_ctx->window_count )
+#define s_window_scratch   ( g_ctx->window_scratch )
+#define s_z_counter        ( g_ctx->z_counter )
 
 /* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
    default.  This is the whole multi-context seam -- no state is copied.  One context today. */

@@ -18,8 +18,16 @@ imgui_init( void )
 {
     ctx_bind( &s_default_context );   /* bind the default context; the host may rebind before emitting */
 
-    if ( !imgui_render_init() )
+    if ( !imgui_render_init() )       /* shared pipeline / sampler / atlas */
         return false;
+
+    /* Main viewport: its own geometry buffers, painting the application swapchain. */
+    if ( !viewport_create( &g_ctx->viewports[ 0 ], ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR } ) )
+    {
+        imgui_render_shutdown();
+        return false;
+    }
+    g_ctx->viewport_count = 1;
 
 #ifdef IMGUI_DEBUG_OVERLAY
     /* Debug overlay GPU buffers.  Non-fatal: a failure just leaves the overlay dark. */
@@ -36,7 +44,8 @@ imgui_shutdown( void )
     imgui_debug_shutdown();
     #endif
 
-    imgui_render_shutdown();
+    viewport_destroy( &g_ctx->viewports[ 0 ] );   /* main viewport geometry buffers */
+    imgui_render_shutdown();                       /* shared pipeline / sampler / atlas */
 }
 
 /*==============================================================================================
@@ -77,7 +86,7 @@ imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
 void 
 imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
-    imgui_render_flush( &s_main_viewport, cmd, win_w, win_h );   /* one surface today; host loops viewports later */
+    imgui_render_flush( &g_ctx->viewports[ 0 ], cmd, win_w, win_h );   /* one surface today; host loops viewports later */
 #ifdef IMGUI_DEBUG_OVERLAY
     imgui_debug_flush( cmd, win_w, win_h );   /* bolt-on overlay, painted last (on top) */
 #endif

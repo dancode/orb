@@ -213,6 +213,43 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 }
 
 /*==============================================================================================
+    Internal record types shared into imgui_context_t
+
+    A few per-context record types are defined here, ahead of the unity includes, because the
+    context struct (imgui_ctx.c) embeds them by value and is itself referenced from files included
+    both before and after it.  Their behavior (the table, drag, raise-to-front) stays in the owning
+    .c file; only the layout lives here so the context can hold it.
+==============================================================================================*/
+
+#define IMGUI_MAX_WINDOWS 32
+
+/* One persisted window.  Geometry is owned here after the first appearance; the window pool that
+   holds these lives in the bound context (imgui_context_t).  Behavior is in imgui_window.c. */
+typedef struct imgui_window_t
+{
+    imgui_id_t id;              /* id_hash(title); 0 = free slot                  */
+    f32        x, y;            /* persisted top-left (updated by dragging)       */
+    f32        w, h;            /* persisted dimensions                           */
+    u32        z;               /* paint order: higher = more recently raised = in front */
+
+    f32        scroll_y;        /* vertical scroll offset; 0 = top                */
+    f32        scroll_x;        /* horizontal scroll offset; 0 = left             */
+    f32        content_h;       /* total content height measured last frame       */
+    f32        content_w;       /* total content width measured last frame        */
+
+    bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
+
+    imgui_win_flags_t flags;    /* behavior flags supplied to begin_window        */
+
+    /* Next-window channel bookkeeping (see set_next_window_pos / _size).  last_frame drives the
+       "appearing" test; the allow masks track which conditions a queued value may still fire. */
+    u32        last_frame;      /* frame index last begun; 0 = never begun        */
+    u8         set_pos_allow;   /* conds still permitted to set position (imgui_cond_t bits) */
+    u8         set_size_allow;  /* conds still permitted to set size              */
+
+} imgui_window_t;
+
+/*==============================================================================================
     Unity build
 ==============================================================================================*/
 

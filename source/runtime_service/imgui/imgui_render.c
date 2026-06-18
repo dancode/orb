@@ -2,7 +2,7 @@
 
     runtime_service/imgui/imgui_render.c -- GPU resource management and draw-list flush.
 
-    imgui_render_init  creates the main viewport's VB/IB plus the shared pipeline and font sampler.
+    imgui_render_init  creates the shared pipeline + font sampler; viewport_create makes a surface's VB/IB.
     imgui_render_flush opens a LOAD render pass on the viewport's target (preserves scene content),
                        writes the current frame's vertex/index data, and emits one indexed draw
                        call per draw command in s_draw.  imgui_render_shutdown destroys all GPU objects.
@@ -68,9 +68,12 @@ typedef struct
 
 } imgui_viewport_t;
 
-/* The main viewport -- the application swapchain.  One instance today; becomes the head of a
-   per-context viewport list once torn-off floaters and docking arrive. */
-static imgui_viewport_t s_main_viewport;
+/* Max viewports a context drives at once: the main swapchain + torn-off floaters. */
+#define IMGUI_MAX_VIEWPORTS 8
+
+/* The viewport list lives in the bound context (imgui_context_t, imgui_ctx.c): viewports[0] is the
+   main swapchain, created at init.  render.c only ever touches a viewport through a passed pointer
+   (viewport_create / viewport_destroy / imgui_render_flush), so it needs no instance of its own. */
 
 /* Shared GPU resources: created once in imgui_render_init(), destroyed in imgui_render_shutdown().
    Immutable across frames and shared by every viewport (and the debug overlay), so never a per-
@@ -117,45 +120,69 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
     imgui_render_init -- allocate all GPU resources.  Call once after rhi()->init().
 ----------------------------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------------------------
+    viewport_create / viewport_destroy -- a surface's own GPU geometry buffers.
+
+    Per viewport so each surface has an independent vb/ib ring (one region per frame-in-flight).
+    Called once per viewport: the main swapchain at init, a torn-off floater on tear-off.  The
+    shared pipeline / sampler / atlas are NOT here -- those are created once in imgui_render_init.
+----------------------------------------------------------------------------------------------*/
+
 static bool
-imgui_render_init( void )
+viewport_create( imgui_viewport_t* vp, rhi_texture_t target )
 {
-    /* The main viewport paints the application swapchain; dock_root stays NULL (free-float). */
-    s_main_viewport.target = ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR };
+    vp->target    = target;
+    vp->dock_root = NULL;       /* free-float until docking assigns a tree */
 
     /* Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame. */
-    s_main_viewport.vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+    vp->vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = RHI_MAX_FRAMES_IN_FLIGHT * IMGUI_VB_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_VERTEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "imgui_vb",
     } );
-    if ( !rhi_handle_valid( s_main_viewport.vb ) )
+    if ( !rhi_handle_valid( vp->vb ) )
         return false;
 
     /* Index buffer (CPU_TO_GPU, u16 indices): one region per frame-in-flight. */
-    s_main_viewport.ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+    vp->ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = RHI_MAX_FRAMES_IN_FLIGHT * IMGUI_IB_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_INDEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "imgui_ib",
     } );
-    if ( !rhi_handle_valid( s_main_viewport.ib ) )
+    if ( !rhi_handle_valid( vp->ib ) )
     {
-        rhi()->buffer_destroy( s_main_viewport.vb );
+        rhi()->buffer_destroy( vp->vb );
         return false;
     }
 
+    return true;
+}
+
+static void
+viewport_destroy( imgui_viewport_t* vp )
+{
+    if ( rhi_handle_valid( vp->ib ) ) rhi()->buffer_destroy( vp->ib );
+    if ( rhi_handle_valid( vp->vb ) ) rhi()->buffer_destroy( vp->vb );
+    vp->vb = ( rhi_buffer_t ){ 0 };
+    vp->ib = ( rhi_buffer_t ){ 0 };
+}
+
+/*----------------------------------------------------------------------------------------------
+    imgui_render_init -- create the shared GPU resources (pipeline, font sampler, atlas).
+    Per-viewport geometry buffers are created separately by viewport_create.
+----------------------------------------------------------------------------------------------*/
+
+static bool
+imgui_render_init( void )
+{
     /* Compile shaders from embedded SPIR-V. */
     rhi_shader_t vert = rhi()->shader_load_memory(
         s_imgui_vert_spirv, sizeof( s_imgui_vert_spirv ),
         RHI_SHADER_STAGE_VERTEX, "main", "imgui_vert" );
     if ( !rhi_handle_valid( vert ) )
-    {
-        rhi()->buffer_destroy( s_main_viewport.ib );
-        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
-    }
 
     rhi_shader_t frag = rhi()->shader_load_memory(
         s_imgui_frag_spirv, sizeof( s_imgui_frag_spirv ),
@@ -163,8 +190,6 @@ imgui_render_init( void )
     if ( !rhi_handle_valid( frag ) )
     {
         rhi()->shader_destroy( vert );
-        rhi()->buffer_destroy( s_main_viewport.ib );
-        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
 
@@ -207,11 +232,7 @@ imgui_render_init( void )
     rhi()->shader_destroy( vert );
 
     if ( !rhi_handle_valid( s_render.pipeline ) )
-    {
-        rhi()->buffer_destroy( s_main_viewport.ib );
-        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
-    }
 
     /* Font sampler: nearest filter, clamp-to-edge (no bleeding between atlas glyphs). */
     s_render.font_sampler = rhi()->sampler_create( &( rhi_sampler_desc_t ){
@@ -225,8 +246,6 @@ imgui_render_init( void )
     if ( !rhi_handle_valid( s_render.font_sampler ) )
     {
         rhi()->pipeline_destroy( s_render.pipeline );
-        rhi()->buffer_destroy( s_main_viewport.ib );
-        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
@@ -239,8 +258,6 @@ imgui_render_init( void )
         rhi()->unregister_sampler( s_render.font_sampler_idx );
         rhi()->sampler_destroy( s_render.font_sampler );
         rhi()->pipeline_destroy( s_render.pipeline );
-        rhi()->buffer_destroy( s_main_viewport.ib );
-        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
 
@@ -307,10 +324,8 @@ imgui_render_shutdown( void )
 
     if ( rhi_handle_valid( s_render.pipeline ) )
         rhi()->pipeline_destroy( s_render.pipeline );
-    if ( rhi_handle_valid( s_main_viewport.ib ) )
-        rhi()->buffer_destroy( s_main_viewport.ib );
-    if ( rhi_handle_valid( s_main_viewport.vb ) )
-        rhi()->buffer_destroy( s_main_viewport.vb );
+
+    /* Per-viewport geometry buffers are released by viewport_destroy (driven from imgui_shutdown). */
 
     memset( &s_render, 0, sizeof( s_render ) );
 }
@@ -319,7 +334,7 @@ imgui_render_shutdown( void )
     imgui_render_flush -- upload draw list to GPU and emit one draw call per command.
 
     Paints into `vp`: uploads s_draw into vp's own vb/ib region and opens a LOAD pass on vp->target,
-    so a surface's geometry and target travel together.  One viewport today (s_main_viewport); the
+    so a surface's geometry and target travel together.  One viewport today (g_ctx->viewports[0]); the
     multi-viewport host loop will call this once per surface, each with its partition of the list.
 
     Opens a LOAD render pass so the scene rendered before this call is preserved.

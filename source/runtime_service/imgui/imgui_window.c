@@ -21,42 +21,10 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-#define IMGUI_MAX_WINDOWS 32
-
-/* One persisted window.  Geometry is owned here after the first appearance.
-   The struct is tagged so imgui_ctx.c (included earlier) can hold a pointer to it. */
-typedef struct imgui_window_t
-{
-    imgui_id_t id;              /* id_hash(title); 0 = free slot                  */
-    f32        x, y;            /* persisted top-left (updated by dragging)       */
-    f32        w, h;            /* persisted dimensions                           */
-    u32        z;               /* paint order: higher = more recently raised = in front */
-
-    f32        scroll_y;        /* vertical scroll offset; 0 = top                */
-    f32        scroll_x;        /* horizontal scroll offset; 0 = left             */
-    f32        content_h;       /* total content height measured last frame       */
-    f32        content_w;       /* total content width measured last frame        */
-
-    bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
-
-    imgui_win_flags_t flags;    /* behavior flags supplied to begin_window        */
-
-    /* Next-window channel bookkeeping (see set_next_window_pos / _size).  last_frame drives the
-       "appearing" test; the allow masks track which conditions a queued value may still fire. */
-    u32        last_frame;      /* frame index last begun; 0 = never begun        */
-    u8         set_pos_allow;   /* conds still permitted to set position (imgui_cond_t bits) */
-    u8         set_size_allow;  /* conds still permitted to set size              */
-
-} imgui_window_t;
-
-static imgui_window_t       s_windows[ IMGUI_MAX_WINDOWS ];
-static u32                  s_window_count;
-static imgui_window_t       s_window_scratch;   /* fallback when the table is full (not persisted) */
-
-/* Monotonic z dispenser.  Each new or raised window takes the next value, so the
-   most recently raised window always has the highest z and sorts to the front. */
-
-static u32                  s_z_counter;
+/* imgui_window_t and IMGUI_MAX_WINDOWS are defined early in imgui.c so the bound context can hold
+   the window pool by value.  The pool itself -- s_windows / s_window_count / s_window_scratch and
+   the z dispenser s_z_counter -- are members of imgui_context_t (imgui_ctx.c), reached here through
+   the g_ctx aliases; the pool is per-context retained.  This file owns only their behavior. */
 
 /* Drag configuration + in-flight drag offset (mouse - window pos at grab time).
    The window currently being dragged is tracked via s_interaction.active_id == window id. */
