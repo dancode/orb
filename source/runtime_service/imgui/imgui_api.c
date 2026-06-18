@@ -32,11 +32,8 @@ bool imgui_load_font( const char* path )
     if ( !tt_font_load( path ) )
         return false;
 
-    /* update global font size */
-    s_font_size = (u32)s_font->char_h;
-
-    /* update supporting layout dimensions (driven by the font's line height) */
-    layout_compute( (u32)s_font->line_h );
+    /* recompute layout metrics from the font's type size, glyph box, and line advance */
+    layout_compute( (u32)s_font->size, (u32)s_font->char_h, (u32)s_font->line_h );
     return true;
 }
 
@@ -84,8 +81,7 @@ void imgui_set_font( imgui_font_t font )
 {
     tt_font_unload();
     bitmap_font_select( font );
-    s_font_size = (u32)s_font->char_h;
-    layout_compute( (u32)s_font->line_h );
+    layout_compute( (u32)s_font->size, (u32)s_font->char_h, (u32)s_font->line_h );
 
     const bitmap_font_def_t* def = s_bitmap_active->def;
 
@@ -97,10 +93,7 @@ void imgui_set_bmp_scale( u32 scale )
 {
     bitmap_scale_set( scale );
     if ( !s_tt_font.active )
-    {
-        s_font_size = (u32)s_font->char_h;
-        layout_compute( (u32)s_font->line_h );
-    }
+        layout_compute( (u32)s_font->size, (u32)s_font->char_h, (u32)s_font->line_h );
 }
 
 void imgui_push_clip( f32 x, f32 y, f32 w, f32 h )

@@ -97,8 +97,11 @@ MOD_USE_APP;
 /*==============================================================================================
     Layout
 
-    All dimensions are integer pixel counts derived from the active font and line_size.
-    Defaults match the bitmap 8x12 font (fs=12) with a 20px line height.
+    All dimensions are integer pixel counts derived from the active font's *type size* (em) --
+    not its glyph-box height (char_h = ascent + descent), which runs ~1.3x the em and would
+    inflate every padding.  The em is the design unit a typographer reasons in, so spacing,
+    padding, and control heights all scale off it and stay proportional across fonts.
+    Defaults match the bitmap 8x12 font (em=12).
 ==============================================================================================*/
 
 typedef struct
@@ -117,54 +120,64 @@ typedef struct
 
 } imgui_metrics_t;
 
-/* Font size used by layout_compute; updated by set_font() / load_font(). */
+/* Font type size (em) used by layout_compute; updated by set_font() / load_font(). */
 static u32 s_font_size = 0;
 
-/* Default values */
+/* Default values -- the em=12 bitmap result of layout_compute, for the pre-font-load state. */
 static imgui_metrics_t s_layout =
 {
-    .line_size     = 20,
-    .widget_gap    = 3,    /* 20 / 6                     */
-    .widget_pad    = 6,    /* 12 / 2  (fs=12 default)    */
+    .line_size     = 20,   /* 12 + 2*(12/3)              */
+    .widget_gap    = 3,    /* 12 / 4                     */
+    .widget_pad    = 6,    /* 12 / 2                     */
     .win_title_h   = 23,   /* 20 + 12/4                  */
     .win_border    = 1,
-    .checkbox_sz   = 18,   /* 12 + 12/2                  */
-    .slider_knob_w = 12,   /* = fs                       */
+    .checkbox_sz   = 16,   /* 20 * 4/5                   */
+    .slider_knob_w = 12,   /* = em                       */
     .min_cell_w    = 40,   /* 20 * 2                     */
-    .checkmark_pad = 4,    /* 18 / 4                     */
-    .cursor_w      = 1,    /* 12 / 8                     */
+    .checkmark_pad = 4,    /* 16 / 4                     */
+    .cursor_w      = 1,    /* 12 / 10                    */
     .cursor_inset  = 3,    /* 12 / 4                     */
 };
 
-/* Calculate new layout values based on the given line size and current font size.  
-   Called by set_font() and load_font(). */
+/* Recompute the layout metrics from a font's type size (em), glyph-box height (char_h), and
+   line advance (line_h).  Called by set_font() / load_font() / set_bmp_scale().  All paddings
+   scale off the em; the row height is floored to char_h and line_h so glyphs never clip. */
 
 static void
-layout_compute( u32 ls )
+layout_compute( u32 em, u32 char_h, u32 line_h )
 {
-    u32 fs = s_font_size;
-    if ( fs < 8u ) fs = 8u;
-    if ( ls < fs ) ls = fs;
+    if ( em < 8u ) em = 8u;
+    s_font_size = em;
 
-    /* Checkbox indicator must fit inside the widget row, so size it from the row
-       height (line_size), not the glyph height -- 4/5 of the row leaves a small
-       margin top and bottom and scales with the font. */
-    u32 csz = ( ls * 4u ) / 5u;
+    /* Frame padding around a control's text, scaled off the em.  Vertical padding is the
+       dominant aesthetic lever: a control's row is the em plus this top and bottom, so text
+       sits optically centered with breathing room instead of crowding the frame edge. */
+    u32 pad_y = em / 3u;                       /* ~0.33 em above / below the glyph */
 
-    s_layout.line_size     = ls;
-    s_layout.widget_gap    = ls / 6u < 2u ? 2u : ls / 6u;
-    s_layout.widget_pad    = fs / 2u;
-    s_layout.win_title_h   = ls + fs / 4u;
+    /* Row height = em + symmetric vertical padding, then floored to the font's glyph box and
+       line advance so a tall-boxed font (e.g. one with deep descenders) never clips and a
+       single line of text always fits.  This is THE knob the other heights cascade from. */
+    u32 row = em + 2u * pad_y;
+    if ( row < char_h ) row = char_h;
+    if ( row < line_h ) row = line_h;
+
+    /* Checkbox indicator: 4/5 of the row leaves a small margin top and bottom and tracks it. */
+    u32 csz = ( row * 4u ) / 5u;
+
+    s_layout.line_size     = row;
+    s_layout.widget_gap    = em / 4u < 2u ? 2u : em / 4u;   /* ~0.25 em between stacked rows */
+    s_layout.widget_pad    = em / 2u;                       /* horizontal text inset (~0.5 em) */
+    s_layout.win_title_h   = row + em / 4u;                 /* a touch taller than a body row */
     s_layout.win_border    = 1u;
     s_layout.checkbox_sz   = csz;
-    s_layout.slider_knob_w = fs;
+    s_layout.slider_knob_w = em;
     /* Smallest width a shrinking flex/fraction track stops at before it overflows the row
        (clipped at the region edge).  Two row-heights keeps a control just grabbable; fixed-px
        tracks are never floored -- an explicit pixel size is the author's choice. */
-    s_layout.min_cell_w    = ls * 2u;
+    s_layout.min_cell_w    = row * 2u;
     s_layout.checkmark_pad = csz / 4u;
-    s_layout.cursor_w      = fs / 8u < 1u ? 1u : fs / 8u;
-    s_layout.cursor_inset  = fs / 4u < 1u ? 1u : fs / 4u;
+    s_layout.cursor_w      = em / 10u < 1u ? 1u : em / 10u; /* thin caret (~0.1 em) */
+    s_layout.cursor_inset  = em / 4u  < 1u ? 1u : em / 4u;  /* caret top/bottom inset */
 }
 
 /*==============================================================================================

@@ -25,9 +25,10 @@
 /* Pre-resolved metrics shared by both font sources; callers read from s_font. */
 typedef struct
 {
-    f32  char_h;        // pixel height of the text area
+    f32  char_h;        // pixel height of the glyph box (ascent + descent)
     f32  line_h;        // total line advance
     f32  char_w;        // monospace advance (0 for proportional fonts)
+    f32  size;          // nominal type size (em) in pixels -- the base for layout proportions
     u32  atlas_idx;     // bindless texture index
     bool proportional;  // true = use per-glyph advance from lookup[]
 
@@ -174,6 +175,7 @@ bitmap_font_select( imgui_font_t font )
         .char_h       = (f32)( def->glyph_h * s ),
         .line_h       = (f32)( def->glyph_h + def->glyph_h / 4u ) * s,
         .char_w       = (f32)( def->glyph_w * s ),
+        .size         = (f32)( def->glyph_h * s ),   // bitmap em ~= the glyph cell height
         .atlas_idx    = s_bitmap_active->atlas_idx,
         .proportional = false,
         /* White texel: center of the appended bottom row (pixel row atlas_h). */

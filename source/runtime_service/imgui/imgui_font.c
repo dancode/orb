@@ -167,6 +167,7 @@ tt_font_load( const char* path )
         .char_h       = (f32)( hdr.ascent - hdr.descent ),
         .line_h       = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
         .char_w       = 0.0f,
+        .size         = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
         .atlas_idx    = s_tt_font.atlas_idx,
         .proportional = true,
         /* White texel: center of the appended bottom row (pixel row hdr.atlas_h). */
