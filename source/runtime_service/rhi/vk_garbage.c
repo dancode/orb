@@ -117,13 +117,23 @@ vk_garbage_push( const vk_garbage_t* objs )
         next = ( g_garbage_tail + 1 ) % VK_GARBAGE_CAP;
     }
 
-    g_garbage[ g_garbage_tail ]         = *objs;
-    g_garbage[ g_garbage_tail ].safe_at = vk.global_epoch + VK_MAX_FRAMES_IN_FLIGHT;
+    g_garbage[ g_garbage_tail ] = *objs;
 
-    /* Transfer-queue gate: if a staged upload referencing this resource is still recording, it
-       will complete at upload_counter+1 (signaled by the next flush); otherwise the last
-       flushed batch (upload_counter) covers it.  Holding until the timeline reaches this value
-       prevents freeing a VkImage/VkBuffer still in use by an in-flight transfer copy. */
+    /* Graphics-queue gate (safe_at).  The normal case -- the last graphics reference was a draw
+       this epoch -- drains at global_epoch + FRAMES_IN_FLIGHT.  But a resource uploaded via
+       staging this epoch also gets a QFOT acquire barrier injected into a graphics command
+       buffer at the NEXT flush (one epoch later, see vk_upload_apply_acquires), so that graphics
+       reference drains one epoch after a normal one.  upload_batch_open signals an open upload
+       batch, so add that extra epoch to cover the deferred acquire. */
+    u32 deferred_acquire = vk.upload_batch_open ? 1 : 0;
+    g_garbage[ g_garbage_tail ].safe_at = vk.global_epoch + VK_MAX_FRAMES_IN_FLIGHT + deferred_acquire;
+
+    /* Transfer-queue gate (upload_wait).  Backstop for the transfer copy itself: if a staged
+       upload referencing this resource is still recording it completes at upload_counter+1
+       (signaled by the next flush), otherwise the last flushed batch (upload_counter) covers it.
+       safe_at usually implies this (the graphics frame that consumes the upload waits on the
+       timeline before its fence signals), but this gate stays correct even when no graphics
+       frame drains the transfer -- e.g. every context minimized the whole time. */
     g_garbage[ g_garbage_tail ].upload_wait = vk.upload_counter + ( vk.upload_batch_open ? 1 : 0 );
 
     g_garbage_tail = next;
