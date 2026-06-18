@@ -67,13 +67,16 @@ typedef struct rhi_api_s
 
     /* Acquires the next swapchain image and opens the frame command buffer.
        Returns RHI_CMD_INVALID when the swapchain is not ready (minimized window, suboptimal
-       surface).  In that case skip all rendering commands but still call frame_end().
+       surface); in that case skip rendering AND skip frame_end() for this frame (the command
+       buffer was never begun).  frame_begin() must still be called every frame on every live
+       context regardless of result -- it performs the per-context epoch check-in that advances
+       upload flushing and deferred reclaim; skipping it on one context stalls all of them.
        The returned rhi_cmd_t is valid only until the matching frame_end() call. */
     rhi_cmd_t (*frame_begin)( i32 ctx_id );
 
     /* Submits the frame command buffer and queues the swapchain image for presentation.
-       Must be called exactly once per frame_begin(), even when frame_begin() returned
-       RHI_CMD_INVALID. */
+       Call exactly once after each frame_begin() that returned a VALID command list; do NOT
+       call it when frame_begin() returned RHI_CMD_INVALID. */
     void (*frame_end)( i32 ctx_id );
 
     /* Returns the frame-in-flight slot index [0, RHI_MAX_FRAMES_IN_FLIGHT) that the

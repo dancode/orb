@@ -151,6 +151,7 @@ typedef struct vk_context_s
 
     u32                 current_frame;          // [0..VK_MAX_FRAMES_IN_FLIGHT); ring index into per-frame arrays
     u32                 image_index;            // swapchain image index returned by vkAcquireNextImageKHR
+    bool                frame_open;             // true between a VALID frame_begin and its frame_end; guards pairing
 
     /* Surface and swapchain */
 

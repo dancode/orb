@@ -100,6 +100,20 @@ vk_frame_begin( i32 ctx_id )
     if ( !ctx )
         return RHI_CMD_INVALID;
 
+    /* --- Pairing guard. ---
+
+       frame_open is true only between a frame_begin that returned a VALID command list and its
+       matching frame_end.  Seeing it set on entry means the previous frame's valid frame_begin
+       was never closed with frame_end -- a host bug.  Flag it (and clear, so we don't cascade);
+       the assert stops debug builds at the offending caller. */
+
+    if ( ctx->frame_open )
+    {
+        LOG_ERROR( "frame_begin(ctx %d): previous frame_begin was not closed with frame_end", ctx_id );
+        assert( !"frame_begin called again without an intervening frame_end" );
+        ctx->frame_open = false;
+    }
+
     /* --- Handle deferred resize. ---
 
        A resize is never applied mid-frame -- always deferred to the next frame_begin so we
@@ -309,6 +323,9 @@ vk_frame_begin( i32 ctx_id )
     ctx->cmd_lists[ frame ].ctx_id = ctx_id;
     ctx->cmd_lists[ frame ].frame  = frame;
 
+    /* A valid frame is now open; frame_end must (and may only now) be called to close it. */
+    ctx->frame_open = true;
+
     /* Return a valid command recording handle for this frame on success */
     return &ctx->cmd_lists[ frame ];
 }
@@ -335,6 +352,22 @@ vk_frame_end( i32 ctx_id )
     vk_context_t* ctx = vk_ctx_get( ctx_id );
     if ( !ctx )
         return;
+
+    /* --- Pairing guard. ---
+
+       frame_end is only valid after a frame_begin that returned a VALID command list.  If the
+       frame is not open, frame_begin either was never called or returned RHI_CMD_INVALID
+       (minimized / out-of-date swapchain), in which case the command buffer was never begun --
+       recording into it here would corrupt it.  Reject the call: log, assert in debug, no-op.
+       Notably current_frame is NOT advanced, so the frame ring stays in sync. */
+
+    if ( !ctx->frame_open )
+    {
+        LOG_ERROR( "frame_end(ctx %d): no open frame (frame_begin missing or returned invalid)", ctx_id );
+        assert( !"frame_end called without a matching valid frame_begin" );
+        return;
+    }
+    ctx->frame_open = false;
 
     u32             frame   = ctx->current_frame;
     VkCommandBuffer cmd_buf = ctx->command_buffers[ frame ];

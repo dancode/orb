@@ -261,16 +261,17 @@ close_window( stress_win_t* sw )
     at a glance that every context is independently advancing.
 ==============================================================================================*/
 
-static void
+static bool
 render_context( const stress_win_t* sw, f64 t )
 {
+    /* Always call frame_begin, even for a minimized window: that is how this context checks
+       into the shared epoch (vk_frame.c).  With multiple contexts the epoch only advances --
+       and uploads only flush, garbage only reclaims -- once every live context has checked in.
+       Skipping frame_begin on one window starves all of them. */
     rhi_cmd_t cmd = rhi()->frame_begin( sw->ctx );
     if ( !rhi_cmd_valid( cmd ) )
-    {
-        /* Swapchain not ready (minimized / out-of-date) -- still must pair frame_end. */
-        rhi()->frame_end( sw->ctx );
-        return;
-    }
+        return false;   /* swapchain not ready (minimized / out-of-date); frame_begin already
+                           checked in, and the command buffer was never begun -- so NO frame_end */
 
     f32 r = 0.5f + 0.5f * (f32)sin( t * 1.1 + sw->phase );
     f32 g = 0.5f + 0.5f * (f32)sin( t * 1.7 + sw->phase + 2.0 );
@@ -285,6 +286,7 @@ render_context( const stress_win_t* sw, f64 t )
     rhi()->cmd_end_rendering( cmd );
 
     rhi()->frame_end( sw->ctx );
+    return true;
 }
 
 /*==============================================================================================
@@ -463,16 +465,19 @@ main( int argc, char** argv )
         if ( open_window_count() == 0 )
             break;
 
-        /* ---- render every live context (drives per-context sync each frame) ---- */
+        /* ---- pump every live context (drives per-context sync + epoch check-in each frame) ----
+           Note: minimized windows are NOT skipped here -- frame_begin must run on every context
+           so it checks into the epoch.  render_context returns false when the swapchain was not
+           ready (minimized), in which case we skip the asset churn for that window but the
+           check-in has still happened. */
         for ( u32 i = 0; i < STRESS_WINDOW_COUNT; ++i )
         {
             stress_win_t* sw = &s_wins[ i ];
             if ( !sw->open || sw->ctx == RHI_CTX_INVALID )
                 continue;
-            if ( app()->window_is_minimized( sw->win ) )
-                continue;
 
-            render_context( sw, now_time );
+            if ( !render_context( sw, now_time ) )
+                continue;   /* minimized / not ready: checked in, but nothing to draw or churn */
 
             /* ---- asset churn for this context ---- */
             for ( u32 c = 0; c < churn; ++c )
