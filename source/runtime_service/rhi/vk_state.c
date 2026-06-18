@@ -302,6 +302,7 @@ typedef struct vk_state_s
 
     VkSemaphore             upload_timeline;    // timeline semaphore; transfer queue signals this after each flush
     u64                     upload_counter;     // CPU mirror of the last signaled timeline value
+    bool                    upload_batch_open;  // true while a transfer batch is recording (will signal upload_counter+1)
 
     /* Display epoch: gates vk_upload_flush() to fire at most once per display frame,
        regardless of how many contexts call frame_begin in the same frame.
@@ -315,10 +316,9 @@ typedef struct vk_state_s
     u32                     epoch_ack_mask;     // bitmask: context i sets bit i; cleared when all check in
     u32                     upload_flush_epoch; // global_epoch value at the last vk_upload_flush call
 
-    /* Acquire tracking: ensures every context's command buffer receives the QFOT acquire barriers
-       before the global pending lists are cleared.  Same bitmask pattern as epoch_ack_mask.     */
-
-    u32                     acquire_ack_mask;   // bitmask: context i sets bit i after apply_acquires
+    /* QFOT acquires are injected exactly once -- into the first graphics command buffer recorded
+       after vk_upload_flush submits the matching releases (see vk_upload.c) -- so no per-context
+       acknowledgement bitmask is needed here. */
 
     /* Resource slot pools  --  indexed by the .id field of the corresponding rhi handle */
 

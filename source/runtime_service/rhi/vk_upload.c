@@ -110,10 +110,24 @@ typedef struct vk_upload_slot_s
 static vk_upload_slot_t g_upload[ VK_MAX_FRAMES_IN_FLIGHT ];
 static u32              g_upload_active_slot = 0;
 
-/* Pending queue-family ownership transfer acquires.
-   Populated by vk_upload_texture / vk_upload_buffer when a dedicated transfer queue is in use.
-   Drained by vk_upload_apply_acquires() at the top of each graphics command buffer.
-   Global (not per-slot) so acquires are not lost when a frame_begin returns early. */
+/* Queue-family ownership transfer (QFOT) acquires.
+
+   A QFOT is strictly one release : one acquire.  The release is recorded into the active
+   transfer command buffer by vk_upload_texture / vk_upload_buffer, but it is not *submitted*
+   to the transfer queue until the next vk_upload_flush().  An acquire is only legal once its
+   matching release has been submitted, so acquires move through two stages:
+
+     recorded[]  -- appended as releases are recorded, before the flush submits them.
+     pending[]   -- promoted from recorded[] by vk_upload_flush() at the instant it submits
+                    the releases.  Drained exactly once by vk_upload_apply_acquires() into the
+                    first graphics command buffer recorded after the flush.
+
+   Keeping the two stages separate guarantees an acquire is never injected before its release
+   has been queued for execution (the bug that otherwise fires under multi-context load), and
+   draining pending[] in a single command buffer keeps the transfer 1:1 -- all contexts share
+   one graphics queue family, so a resource need only be acquired into it once.
+
+   The lists are global (not per-slot) so acquires survive a frame_begin that returns early. */
 
 #define VK_MAX_UPLOAD_ACQUIRES 256
 
@@ -125,6 +139,13 @@ typedef struct vk_image_acquire_s
 
 } vk_image_acquire_t;
 
+/* recorded[]: releases recorded since the last flush, not yet submitted. */
+static vk_image_acquire_t g_recorded_image_acquires[ VK_MAX_UPLOAD_ACQUIRES ];
+static VkBuffer           g_recorded_buffer_acquires[ VK_MAX_UPLOAD_ACQUIRES ];
+static u32                g_recorded_image_count;
+static u32                g_recorded_buffer_count;
+
+/* pending[]: releases already submitted by flush, awaiting a single acquire injection. */
 static vk_image_acquire_t g_pending_image_acquires[ VK_MAX_UPLOAD_ACQUIRES ];
 static VkBuffer           g_pending_buffer_acquires[ VK_MAX_UPLOAD_ACQUIRES ];
 static u32                g_pending_image_count;
@@ -276,6 +297,13 @@ vk_upload_shutdown( void )
     }
     vk.upload_counter = 0;
 
+    /* Drop any acquires that were never injected (e.g. shutdown mid-epoch) so a later
+       re-init starts from a clean QFOT state. */
+    g_recorded_image_count  = 0;
+    g_recorded_buffer_count = 0;
+    g_pending_image_count   = 0;
+    g_pending_buffer_count  = 0;
+
     for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
     {
         if ( g_upload[ i ].pool != VK_NULL_HANDLE )
@@ -334,6 +362,11 @@ vk_upload_begin_recording( u32 slot )
         return;
     }
     up->is_recording = true;
+
+    /* A batch is now open; the uploads recorded into it will complete at upload_counter+1
+       (the value this slot signals at the next flush).  vk_garbage_push reads this flag to
+       hold any resource freed this frame until that transfer batch has finished. */
+    vk.upload_batch_open = true;
 }
 
 static bool
@@ -430,10 +463,12 @@ vk_upload_buffer( rhi_buffer_t dst, const void* data, u32 size )
         dep_rel.pBufferMemoryBarriers    = &release;
         vkCmdPipelineBarrier2( cmd, &dep_rel );
 
-        if ( g_pending_buffer_count < VK_MAX_UPLOAD_ACQUIRES )
-            g_pending_buffer_acquires[ g_pending_buffer_count++ ] = dst_buf;
+        /* Queue the acquire as recorded (not pending): it becomes eligible for injection only
+           once vk_upload_flush submits this release to the transfer queue. */
+        if ( g_recorded_buffer_count < VK_MAX_UPLOAD_ACQUIRES )
+            g_recorded_buffer_acquires[ g_recorded_buffer_count++ ] = dst_buf;
         else
-            LOG_WARN( "upload_buffer: pending acquire list full; buffer QFOT will be skipped" );
+            LOG_WARN( "upload_buffer: recorded acquire list full; buffer QFOT will be skipped" );
     }
 
     return true;
@@ -521,10 +556,12 @@ vk_upload_texture( rhi_texture_t dst, const void* data, u32 data_size, u16 mip, 
         dep_rel.pImageMemoryBarriers            = &release;
         vkCmdPipelineBarrier2( cmd, &dep_rel );
 
-        if ( g_pending_image_count < VK_MAX_UPLOAD_ACQUIRES )
-            g_pending_image_acquires[ g_pending_image_count++ ] = (vk_image_acquire_t){ tex->image, mip, layer };
+        /* Queue the acquire as recorded (not pending): it becomes eligible for injection only
+           once vk_upload_flush submits this release to the transfer queue. */
+        if ( g_recorded_image_count < VK_MAX_UPLOAD_ACQUIRES )
+            g_recorded_image_acquires[ g_recorded_image_count++ ] = (vk_image_acquire_t){ tex->image, mip, layer };
         else
-            LOG_WARN( "upload_texture: pending acquire list full; image will not transition to SHADER_READ" );
+            LOG_WARN( "upload_texture: recorded acquire list full; image will not transition to SHADER_READ" );
     }
     else
     {
@@ -606,6 +643,24 @@ vk_upload_flush( void )
             vk.staging[ slot ].last_submit_value = signal_value;
         }
 
+        /* The release barriers in this command buffer are now queued for execution on the
+           transfer queue, so their acquires become eligible for injection on the graphics
+           queue.  Promote recorded[] -> pending[]; vk_upload_apply_acquires drains pending[]
+           into the next graphics command buffer.  Appending (rather than overwriting) keeps
+           any acquires that an earlier flush left undrained -- e.g. when every context was
+           minimized and recorded no graphics work. */
+
+        for ( u32 i = 0; i < g_recorded_image_count
+                         && g_pending_image_count < VK_MAX_UPLOAD_ACQUIRES; ++i )
+            g_pending_image_acquires[ g_pending_image_count++ ] = g_recorded_image_acquires[ i ];
+
+        for ( u32 i = 0; i < g_recorded_buffer_count
+                         && g_pending_buffer_count < VK_MAX_UPLOAD_ACQUIRES; ++i )
+            g_pending_buffer_acquires[ g_pending_buffer_count++ ] = g_recorded_buffer_acquires[ i ];
+
+        g_recorded_image_count  = 0;
+        g_recorded_buffer_count = 0;
+
         /* Do NOT reset the command buffer here -- it is still Pending on the GPU.
            vk_staging_alloc waits on the timeline semaphore before recycling this slot,
            which guarantees the buffer has left Pending state.  vkBeginCommandBuffer in
@@ -613,6 +668,10 @@ vk_upload_flush( void )
            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT). */
         up->is_recording = false;
     }
+
+    /* The recorded batch (if any) has been submitted; no batch is open until the next upload
+       reopens one.  Resources freed from here on need only wait on the now-current counter. */
+    vk.upload_batch_open = false;
 
     /* Reset the bump allocator for this slot and advance to the next slot. */
     vk.staging[ slot ].head  = 0;
@@ -622,17 +681,23 @@ vk_upload_flush( void )
 /*==============================================================================================
     vk_upload_apply_acquires -- inject QFOT acquire barriers into a graphics command buffer.
 
-    Called at the top of every graphics command buffer in vk_frame_begin, before any draws.
-    Completes the two-step ownership handshake for resources uploaded on the transfer queue.
+    Called near the top of vk_frame_begin, before any draws.  Completes the ownership handshake
+    for resources whose releases vk_upload_flush has already submitted to the transfer queue
+    (the pending[] list).
 
-    The pending lists are global and cleared only after every active context has called this
-    function, so each context's command buffer receives the full set of acquire barriers
-    regardless of which context calls frame_begin first.
+    A queue-family ownership transfer is one release : one acquire.  All contexts share a single
+    graphics queue family, so each resource is acquired into it exactly once -- by the first
+    graphics command buffer recorded after the flush.  This function therefore injects the whole
+    pending[] set and clears it in one shot; later callers this epoch find it empty and no-op.
+    Resources sampled by other contexts the same epoch are already correctly owned and laid out,
+    and every context's frame_end waits on the upload timeline, so the data is visible to them.
 ==============================================================================================*/
 
 static void
 vk_upload_apply_acquires( VkCommandBuffer cmd, i32 ctx_id )
 {
+    UNUSED( ctx_id );
+
     /* Same-family path: no QFOTs were issued by vk_upload_texture / vk_upload_buffer. */
     if ( vk.transfer_queue_family == vk.graphics_queue_family )
         return;
@@ -706,18 +771,11 @@ vk_upload_apply_acquires( VkCommandBuffer cmd, i32 ctx_id )
     dep.pBufferMemoryBarriers        = buf_bars;
     vkCmdPipelineBarrier2( cmd, &dep );
 
-    /* Mark this context as done.  The pending lists are only cleared once every active
-       context has injected its acquire barriers, ensuring no context misses a resource
-       that was uploaded before its frame_begin ran.  acquire_ack_mask resets to 0 when
-       cleared, ready for the next epoch's uploads. */
+    /* The acquires are now in this command buffer -- the one-and-only acquire half of each
+       transfer's QFOT.  Clear pending[] so no other context re-acquires the same resources. */
 
-    vk.acquire_ack_mask |= ( 1u << ctx_id );
-    if ( vk.acquire_ack_mask == vk.ctx_alloc )
-    {
-        g_pending_image_count  = 0;
-        g_pending_buffer_count = 0;
-        vk.acquire_ack_mask    = 0;
-    }
+    g_pending_image_count  = 0;
+    g_pending_buffer_count = 0;
 }
 
 /*============================================================================================*/

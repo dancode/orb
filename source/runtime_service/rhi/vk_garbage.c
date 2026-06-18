@@ -13,8 +13,15 @@
     vk_*_destroy() hands its Vk handles here instead of calling vkDestroy* directly, tagged with
     a safe_at epoch (global_epoch + VK_MAX_FRAMES_IN_FLIGHT).  vk_garbage_collect(), called from
     vk_frame_begin right after the descriptor flush, frees entries once global_epoch has caught
-    up -- by which point every context has completed a full fence cycle and no in-flight command
-    buffer can still reference them.
+    up -- by which point every context has completed a full fence cycle and no in-flight graphics
+    command buffer can still reference them.
+
+    A resource can also be referenced by the transfer queue: anything uploaded via the staging
+    path (vk_upload.c) is copied by a transfer command buffer that is submitted at the next flush
+    and tracked by upload_timeline, a clock independent of global_epoch.  Each entry therefore
+    also carries an upload_wait timeline value and is freed only once that value has been reached.
+    Without this second gate, freeing a resource the same frame it was uploaded (before the DMA
+    copy has run) destroys a VkImage/VkBuffer still in use by the transfer command buffer.
 
     One entry holds all of a resource's backing objects (image + view + memory, or buffer +
     memory, or sampler), so queue depth is one slot per destroyed resource, not per Vk object.
@@ -33,6 +40,7 @@
 typedef struct vk_garbage_s
 {
     u32             safe_at;    /* global_epoch threshold at which destruction is safe      */
+    u64             upload_wait;/* upload_timeline value that must be reached before freeing */
     VkImage         image;      /* any field may be VK_NULL_HANDLE / NULL when unused       */
     VkImageView     view;
     VkBuffer        buffer;
@@ -67,11 +75,24 @@ vk_garbage_free_entry( vk_garbage_t* e )
 static void
 vk_garbage_collect( bool force )
 {
+    /* Two independent reclaim gates, because a resource can be referenced from two queues on
+       two different clocks:
+         - graphics: bounded by global_epoch (advances only after every context's fence wait);
+         - transfer: bounded by upload_timeline (a resource uploaded via staging is referenced
+           by a transfer command buffer submitted at the next flush, NOT yet drained when
+           global_epoch elapses -- this is what aggressive same-frame frees expose).
+       An entry is freed only once BOTH have caught up.  Both safe_at and upload_wait are
+       assigned monotonically in push order, so a plain FIFO stop-at-first-not-ready holds. */
+
+    u64 upload_done = 0;
+    if ( !force && vk.upload_timeline != VK_NULL_HANDLE )
+        vkGetSemaphoreCounterValue( vk.device, vk.upload_timeline, &upload_done );
+
     while ( g_garbage_head != g_garbage_tail )
     {
         vk_garbage_t* e = &g_garbage[ g_garbage_head ];
-        if ( !force && vk.global_epoch < e->safe_at )
-            break;  /* FIFO: every later entry has an equal-or-larger safe_at, so stop here. */
+        if ( !force && ( vk.global_epoch < e->safe_at || upload_done < e->upload_wait ) )
+            break;  /* FIFO: every later entry has equal-or-larger thresholds, so stop here. */
 
         vk_garbage_free_entry( e );
         g_garbage_head = ( g_garbage_head + 1 ) % VK_GARBAGE_CAP;
@@ -98,6 +119,13 @@ vk_garbage_push( const vk_garbage_t* objs )
 
     g_garbage[ g_garbage_tail ]         = *objs;
     g_garbage[ g_garbage_tail ].safe_at = vk.global_epoch + VK_MAX_FRAMES_IN_FLIGHT;
+
+    /* Transfer-queue gate: if a staged upload referencing this resource is still recording, it
+       will complete at upload_counter+1 (signaled by the next flush); otherwise the last
+       flushed batch (upload_counter) covers it.  Holding until the timeline reaches this value
+       prevents freeing a VkImage/VkBuffer still in use by an in-flight transfer copy. */
+    g_garbage[ g_garbage_tail ].upload_wait = vk.upload_counter + ( vk.upload_batch_open ? 1 : 0 );
+
     g_garbage_tail = next;
 }
 
