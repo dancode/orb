@@ -168,21 +168,21 @@ imgui_begin_menu( const char* label )
                     and consume the request (issue: Alt+F opens File).
          nav_right -- inside a menu, a Right move on a submenu row opens it; nav descends next frame
                     as the new popup becomes the top one and captures nav. */
-    bool bar_nav = in_bar && st.nav && s_ctx.nav_bar_win == s_ctx.win_id && !s_ctx.nav_in_menus;
+    bool bar_nav = in_bar && st.nav && s_nav.bar_win == s_ctx.win_id && !s_nav.in_menus;
 
     u8   lead = ( label[ 0 ] != '#' )
               ? (u8)( ( label[ 0 ] >= 'a' && label[ 0 ] <= 'z' ) ? label[ 0 ] - 32 : label[ 0 ] )
               : 0u;
-    bool mnem = in_bar && s_ctx.nav_mnemonic != 0 && lead == s_ctx.nav_mnemonic;
+    bool mnem = in_bar && s_nav.mnemonic != 0 && lead == s_nav.mnemonic;
     if ( mnem )
     {
-        s_ctx.nav_id       = id;                 /* highlight this entry from next frame on */
-        s_ctx.nav_bar_win  = s_ctx.win_id;       /* drive this window's bar */
-        s_ctx.nav_in_menus = false;
-        s_ctx.nav_mnemonic = 0;                  /* consume */
+        s_nav.id       = id;                 /* highlight this entry from next frame on */
+        s_nav.bar_win  = s_ctx.win_id;       /* drive this window's bar */
+        s_nav.in_menus = false;
+        s_nav.mnemonic = 0;                  /* consume */
     }
 
-    bool nav_right = ( st.nav && s_ctx.nav_move_dir == IMGUI_DIR_RIGHT );
+    bool nav_right = ( st.nav && s_nav.move_dir == IMGUI_DIR_RIGHT );
 
     bool do_open;
     if ( in_bar )

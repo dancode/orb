@@ -86,56 +86,73 @@ static struct
     bool               combo_open;          // a combo dropdown body is currently being emitted
     bool               combo_item_clicked;  // a selectable in that body was clicked this frame
 
-    /* Keyboard navigation -- the nav cursor: the persistent analogue of hover_id, moved by the
-       arrow keys / Tab rather than the mouse.  nav_win is the window or popup it is scoped to,
-       chosen each frame the way hover_win is (popup captures it while open).  nav_id's movement is
-       resolved one frame deferred against nav_ref_rect, exactly like hover_win lags the cursor:
-       the request is set at nav_new_frame, every item in nav_win registers itself through
-       widget_behavior during emission, and the winner is committed at the next nav_new_frame.  See
-       imgui_nav.c for the driver; nav_item_register (imgui_widget_core.c) is the per-item seam. */
+    /* Keyboard navigation state lives in its own subsystem struct (nav_state_t s_nav, below) so
+       s_ctx stays the cross-cutting interaction state and the nav block does not bloat it.  See
+       imgui_nav.c for the driver and nav_item_register (imgui_widget_core.c) for the per-item seam. */
 
-    imgui_id_t   nav_id;          // the highlighted item (keyboard cursor); persists across frames
-    imgui_id_t   nav_win;         // window/popup nav is scoped to (the hover_win analogue)
-    imgui_rect_t nav_ref_rect;    // nav_id's rect last frame -- the directional scoring origin
+} s_ctx;
 
-    /* Two visual states, the Dear ImGui NavDisableHighlight split.  nav_active means a nav cursor
-       position exists -> the outline ring is drawn at nav_id (and follows clicks), persisting even
-       in mouse mode so it keeps its location.  nav_highlight means the keyboard is the *active*
-       instrument right now -> the nav item also takes the fill (like a hovered button), mouse hover
-       is suppressed (so the two never double-fill), and the keyboard is captured.  A nav key sets
-       both; a mouse move or click drops nav_highlight (back to ring-only), leaving nav_active. */
-    bool         nav_active;      // a nav cursor exists -> draw the ring (cleared rarely)
-    bool         nav_highlight;   // keyboard is the active instrument -> fill + hover-suppress
+/*----------------------------------------------------------------------------------------------
+    Keyboard navigation state (s_nav)
 
-    i32          nav_move_dir;    // directional request this frame (imgui_dir_t, or -1 for none)
-    i32          nav_tab;         // Tab linear move: +1 forward, -1 back, 0 none
-    bool         nav_activate;    // Enter/Space -> fire nav_id like a click this frame
+    The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather
+    than the mouse -- plus the menu-bar state machine layered on top of it.  Held in its own
+    struct, not s_ctx: imgui_nav.c drives it and nav_item_register (imgui_widget_core.c) is the
+    per-item seam.
 
-    bool         nav_id_seen;     // nav_id was emitted in nav_win this frame (else it went stale)
-    imgui_id_t   nav_move_best;   // best-scored directional candidate this frame
-    f32          nav_move_score;  // its score (lower is better; reset to a large value each frame)
-    imgui_rect_t nav_move_rect;   // its rect -> next frame's nav_ref_rect
-    imgui_rect_t nav_self_rect;   // nav_id's own rect captured this frame (keeps ref_rect fresh)
-    imgui_id_t   nav_tab_first;   // first eligible item this frame (Tab wrap + first-focus)
-    imgui_id_t   nav_tab_prev;    // item emitted just before nav_id (Shift+Tab target)
-    imgui_id_t   nav_tab_next;    // item emitted just after nav_id (Tab target)
-    bool         nav_tab_take;    // the item just registered was nav_id -> grab the next as tab_next
+    `win` is the window or popup nav is scoped to, chosen each frame the way hover_win is (a popup
+    captures it while open).  Movement is resolved one frame deferred against `ref_rect`, exactly
+    like hover_win lags the cursor: the request is set at nav_new_frame, every item in `win`
+    registers itself through widget_behavior during emission, and the winner is committed at the
+    next nav_new_frame.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct
+{
+    imgui_id_t   id;            // the highlighted item (keyboard cursor); persists across frames
+    imgui_id_t   win;           // window/popup nav is scoped to (the hover_win analogue)
+    imgui_rect_t ref_rect;      // id's rect last frame -- the directional scoring origin
+
+    /* Two visual states, the Dear ImGui NavDisableHighlight split.  active means a nav cursor
+       position exists -> the outline ring is drawn at id (and follows clicks), persisting even in
+       mouse mode so it keeps its location.  highlight means the keyboard is the *active* instrument
+       right now -> the nav item also takes the fill (like a hovered button), mouse hover is
+       suppressed (so the two never double-fill), and the keyboard is captured.  A nav key sets both;
+       a mouse move or click drops highlight (back to ring-only), leaving active. */
+    bool         active;        // a nav cursor exists -> draw the ring (cleared rarely)
+    bool         highlight;     // keyboard is the active instrument -> fill + hover-suppress
+
+    i32          move_dir;      // directional request this frame (imgui_dir_t, or -1 for none)
+    i32          tab;           // Tab linear move: +1 forward, -1 back, 0 none
+    bool         activate;      // Enter/Space -> fire id like a click this frame
+
+    bool         id_seen;       // id was emitted in win this frame (else it went stale)
+    imgui_id_t   move_best;     // best-scored directional candidate this frame
+    f32          move_score;    // its score (lower is better; reset to a large value each frame)
+    imgui_rect_t move_rect;     // its rect -> next frame's ref_rect
+    imgui_rect_t self_rect;     // id's own rect captured this frame (keeps ref_rect fresh)
+    imgui_id_t   tab_first;     // first eligible item this frame (Tab wrap + first-focus)
+    imgui_id_t   tab_prev;      // item emitted just before id (Shift+Tab target)
+    imgui_id_t   tab_next;      // item emitted just after id (Tab target)
+    bool         tab_take;      // the item just registered was id -> grab the next as tab_next
 
     /* Menu-bar navigation -- a small state machine layered on the nav cursor + popup stack, entered
        by Alt (toggle) or an Alt+letter mnemonic.  While active, nav lives either on the bar entries
-       (nav_in_menus false: nav_win is the bar window, a highlighted entry drops its menu) or inside
-       the open menu popups (nav_in_menus true: nav_win is the top popup).  Down/Enter descend, Up at
-       a top item and Left/Esc ascend -- always landing back on nav_menu_owner so closing a menu
-       returns to the bar entry that opened it (not the first entry).  See imgui_nav.c + begin_menu. */
+       (in_menus false: win is the bar window, a highlighted entry drops its menu) or inside the open
+       menu popups (in_menus true: win is the top popup).  Down/Enter descend, Up at a top item and
+       Left/Esc ascend -- always landing back on menu_owner so closing a menu returns to the bar
+       entry that opened it (not the first entry).  See imgui_nav.c + begin_menu. */
 
-    imgui_id_t   nav_bar_win;     // menu-bar window nav is driving; 0 = not in menu-bar mode
-    bool         nav_in_menus;    // menu mode: false = on the bar entries, true = inside the popups
-    imgui_id_t   nav_menu_owner;  // bar entry whose menu is open -- the ascend / close return target
-    imgui_id_t   nav_prev_win;    // nav target to restore when Alt toggles out of the menu bar
-    imgui_id_t   nav_prev_id;     // nav cursor to restore on Alt toggle-out (the last focus location)
-    u8           nav_mnemonic;    // pending Alt+letter mnemonic (uppercase ASCII); 0 = none
+    imgui_id_t   bar_win;       // menu-bar window nav is driving; 0 = not in menu-bar mode
+    bool         in_menus;      // menu mode: false = on the bar entries, true = inside the popups
+    imgui_id_t   menu_owner;    // bar entry whose menu is open -- the ascend / close return target
+    imgui_id_t   prev_win;      // nav target to restore when Alt toggles out of the menu bar
+    imgui_id_t   prev_id;       // nav cursor to restore on Alt toggle-out (the last focus location)
+    u8           mnemonic;      // pending Alt+letter mnemonic (uppercase ASCII); 0 = none
 
-} s_ctx;
+} nav_state_t;
+
+static nav_state_t s_nav;
 
 /*----------------------------------------------------------------------------------------------
     Item-flag stack
@@ -723,8 +740,8 @@ imgui_want_capture_mouse( void )
 bool
 imgui_want_capture_keyboard( void )
 {
-    return s_ctx.focused_id != IMGUI_ID_NONE || s_ctx.nav_highlight
-        || s_popup_open_count > 0 || s_ctx.nav_bar_win != IMGUI_ID_NONE;
+    return s_ctx.focused_id != IMGUI_ID_NONE || s_nav.highlight
+        || s_popup_open_count > 0 || s_nav.bar_win != IMGUI_ID_NONE;
 }
 
 /* True when the cursor is over rect r and r is actually interactable: it lies in the front-most

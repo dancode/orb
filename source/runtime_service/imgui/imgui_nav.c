@@ -2,7 +2,7 @@
 
     runtime_service/imgui/imgui_nav.c -- Keyboard navigation driver.
 
-    The per-frame brain behind the nav cursor (s_ctx.nav_id, the persistent keyboard analogue of
+    The per-frame brain behind the nav cursor (s_nav.id, the persistent keyboard analogue of
     hover_id).  Three jobs, run once per frame from imgui_new_frame after the popup state settles:
 
       1. Commit the move resolved during the previous frame's emission (nav_commit_prev).  The
@@ -52,11 +52,11 @@ nav_choose_window( void )
     /* Menu-bar mode (Alt / mnemonic): nav lives on the bar window while on the entries, or on the
        top open popup once descended into the menus -- so Left/Right traverse the bar and Up/Down
        walk the open menu, both through the one nav cursor. */
-    if ( s_ctx.nav_bar_win != IMGUI_ID_NONE )
+    if ( s_nav.bar_win != IMGUI_ID_NONE )
     {
-        s_ctx.nav_win = ( s_ctx.nav_in_menus && s_popup_open_count > 0 )
+        s_nav.win = ( s_nav.in_menus && s_popup_open_count > 0 )
                       ? s_popups_open[ s_popup_open_count - 1u ].id
-                      : s_ctx.nav_bar_win;
+                      : s_nav.bar_win;
         return;
     }
 
@@ -64,7 +64,7 @@ nav_choose_window( void )
        hover_win -- so mouse-opened menus, combos, and context menus capture the arrows too. */
     if ( s_popup_open_count > 0 )
     {
-        s_ctx.nav_win = s_popups_open[ s_popup_open_count - 1u ].id;
+        s_nav.win = s_popups_open[ s_popup_open_count - 1u ].id;
         return;
     }
 
@@ -80,7 +80,7 @@ nav_choose_window( void )
         if ( s_windows[ i ].id == s_nav_window )      have_explicit = true;
         if ( s_windows[ i ].z >= frontz ) { frontz = s_windows[ i ].z; front = s_windows[ i ].id; }
     }
-    s_ctx.nav_win = have_explicit ? s_nav_window : front;
+    s_nav.win = have_explicit ? s_nav_window : front;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -139,8 +139,8 @@ nav_cycle_window( i32 dir )
             s_windows[ i ].z = ++s_z_counter;
 
     s_nav_window     = pick;
-    s_ctx.nav_id     = IMGUI_ID_NONE;
-    s_ctx.nav_active = true;
+    s_nav.id     = IMGUI_ID_NONE;
+    s_nav.active = true;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -151,31 +151,31 @@ static void
 nav_commit_prev( void )
 {
     /* Directional winner -> adopt it and carry its rect as the next scoring origin. */
-    if ( s_ctx.nav_move_dir >= 0 && s_ctx.nav_move_best != IMGUI_ID_NONE )
+    if ( s_nav.move_dir >= 0 && s_nav.move_best != IMGUI_ID_NONE )
     {
-        s_ctx.nav_id       = s_ctx.nav_move_best;
-        s_ctx.nav_ref_rect = s_ctx.nav_move_rect;
-        s_ctx.nav_id_seen  = true;
+        s_nav.id       = s_nav.move_best;
+        s_nav.ref_rect = s_nav.move_rect;
+        s_nav.id_seen  = true;
     }
     /* Tab winner (emission order; wraps through the first item). */
-    else if ( s_ctx.nav_tab != 0 )
+    else if ( s_nav.tab != 0 )
     {
-        imgui_id_t t = ( s_ctx.nav_tab > 0 )
-            ? ( s_ctx.nav_tab_next != IMGUI_ID_NONE ? s_ctx.nav_tab_next : s_ctx.nav_tab_first )
-            : ( s_ctx.nav_tab_prev != IMGUI_ID_NONE ? s_ctx.nav_tab_prev : s_ctx.nav_tab_first );
-        if ( t != IMGUI_ID_NONE ) s_ctx.nav_id = t;
+        imgui_id_t t = ( s_nav.tab > 0 )
+            ? ( s_nav.tab_next != IMGUI_ID_NONE ? s_nav.tab_next : s_nav.tab_first )
+            : ( s_nav.tab_prev != IMGUI_ID_NONE ? s_nav.tab_prev : s_nav.tab_first );
+        if ( t != IMGUI_ID_NONE ) s_nav.id = t;
     }
 
     /* No directional move this commit: keep the scoring origin pinned to where the cursor item
        actually sat this past frame (it may have scrolled / the window moved). */
-    if ( s_ctx.nav_move_dir < 0 && s_ctx.nav_id_seen )
-        s_ctx.nav_ref_rect = s_ctx.nav_self_rect;
+    if ( s_nav.move_dir < 0 && s_nav.id_seen )
+        s_nav.ref_rect = s_nav.self_rect;
 
     /* First-focus / recovery: nav is engaged but its cursor item was not emitted (window just
        focused, popup opened, list shrank) -- land on the first eligible item in nav_win. */
-    if ( s_ctx.nav_active && !s_ctx.nav_id_seen && s_ctx.nav_move_best == IMGUI_ID_NONE
-         && s_ctx.nav_tab_first != IMGUI_ID_NONE )
-        s_ctx.nav_id = s_ctx.nav_tab_first;
+    if ( s_nav.active && !s_nav.id_seen && s_nav.move_best == IMGUI_ID_NONE
+         && s_nav.tab_first != IMGUI_ID_NONE )
+        s_nav.id = s_nav.tab_first;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -199,14 +199,14 @@ nav_main_bar_win( void )
 static void
 nav_menu_enter( imgui_id_t bar )
 {
-    s_ctx.nav_prev_win   = s_nav_window;
-    s_ctx.nav_prev_id    = s_ctx.nav_id;    /* remember the focus to toggle back to */
-    s_ctx.nav_bar_win    = bar;
-    s_ctx.nav_in_menus   = false;
-    s_ctx.nav_menu_owner = IMGUI_ID_NONE;
-    s_ctx.nav_id         = IMGUI_ID_NONE;   /* first bar entry takes focus */
-    s_ctx.nav_active     = true;
-    s_ctx.nav_highlight  = true;            /* Alt makes the keyboard the active instrument */
+    s_nav.prev_win   = s_nav_window;
+    s_nav.prev_id    = s_nav.id;    /* remember the focus to toggle back to */
+    s_nav.bar_win    = bar;
+    s_nav.in_menus   = false;
+    s_nav.menu_owner = IMGUI_ID_NONE;
+    s_nav.id         = IMGUI_ID_NONE;   /* first bar entry takes focus */
+    s_nav.active     = true;
+    s_nav.highlight  = true;            /* Alt makes the keyboard the active instrument */
 }
 
 /* Leave menu-bar mode: close the menu popups and restore nav to exactly where it was before Alt. */
@@ -214,11 +214,11 @@ static void
 nav_menu_exit( void )
 {
     s_popup_open_count   = 0;                 /* drop the open menus */
-    s_ctx.nav_bar_win    = IMGUI_ID_NONE;
-    s_ctx.nav_in_menus   = false;
-    s_ctx.nav_menu_owner = IMGUI_ID_NONE;
-    s_nav_window         = s_ctx.nav_prev_win;
-    s_ctx.nav_id         = s_ctx.nav_prev_id;   /* back to the last focus location */
+    s_nav.bar_win    = IMGUI_ID_NONE;
+    s_nav.in_menus   = false;
+    s_nav.menu_owner = IMGUI_ID_NONE;
+    s_nav_window         = s_nav.prev_win;
+    s_nav.id         = s_nav.prev_id;   /* back to the last focus location */
 }
 
 /* Ascend from the open menus back to the bar entry that owns them (the close / Up-to-bar return),
@@ -226,9 +226,9 @@ nav_menu_exit( void )
 static void
 nav_menu_ascend_to_bar( void )
 {
-    s_ctx.nav_in_menus = false;
-    s_ctx.nav_id       = s_ctx.nav_menu_owner;
-    s_ctx.nav_move_dir = -1;                  /* consume the move that triggered the ascend */
+    s_nav.in_menus = false;
+    s_nav.id       = s_nav.menu_owner;
+    s_nav.move_dir = -1;                  /* consume the move that triggered the ascend */
 }
 
 /* Bar/menu key handling while in menu-bar mode.  `first_prev` is last frame's first emitted item,
@@ -237,20 +237,20 @@ nav_menu_ascend_to_bar( void )
 static void
 nav_menu_keys( bool down, bool up, bool left, bool esc, imgui_id_t first_prev )
 {
-    if ( !s_ctx.nav_in_menus )
+    if ( !s_nav.in_menus )
     {
         /* On the bar: the highlighted entry drops its menu (begin_menu).  Down / Enter descend into
            it; Esc leaves menu mode.  Left/Right stay as a directional move for the scorer. */
-        if ( down || s_ctx.nav_activate )
+        if ( down || s_nav.activate )
         {
             if ( s_popup_open_count > 0 )      /* a menu is dropped -> step into it */
             {
-                s_ctx.nav_menu_owner = s_ctx.nav_id;
-                s_ctx.nav_in_menus   = true;
-                s_ctx.nav_id         = IMGUI_ID_NONE;   /* first item */
+                s_nav.menu_owner = s_nav.id;
+                s_nav.in_menus   = true;
+                s_nav.id         = IMGUI_ID_NONE;   /* first item */
             }
-            s_ctx.nav_move_dir = -1;
-            s_ctx.nav_activate = false;        /* do not also "click" (toggle-close) the bar entry */
+            s_nav.move_dir = -1;
+            s_nav.activate = false;        /* do not also "click" (toggle-close) the bar entry */
         }
         else if ( esc )
         {
@@ -263,7 +263,7 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, imgui_id_t first_prev )
            Esc close one level, ascending to the owning bar entry at the top level. */
         u32 depth = s_popup_open_count;
 
-        if ( up && depth <= 1 && first_prev != IMGUI_ID_NONE && s_ctx.nav_id == first_prev )
+        if ( up && depth <= 1 && first_prev != IMGUI_ID_NONE && s_nav.id == first_prev )
         {
             nav_menu_ascend_to_bar();
         }
@@ -272,13 +272,13 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, imgui_id_t first_prev )
             if ( depth >= 2 )                  /* close a submenu, back to its parent menu */
             {
                 --s_popup_open_count;
-                s_ctx.nav_id = IMGUI_ID_NONE;
+                s_nav.id = IMGUI_ID_NONE;
             }
             else                               /* top level: back to the owning bar entry */
             {
                 nav_menu_ascend_to_bar();
             }
-            s_ctx.nav_move_dir = -1;
+            s_nav.move_dir = -1;
         }
         /* Down / Up (mid-list) move via the scorer; Right opens a submenu in begin_menu; Enter
            activates through the synthesized click. */
@@ -297,21 +297,21 @@ nav_new_frame( void )
 
     /* Last frame's first emitted item -- captured before the reset for the "Up at the top of a
        dropdown returns to the bar" test. */
-    imgui_id_t first_prev = s_ctx.nav_tab_first;
+    imgui_id_t first_prev = s_nav.tab_first;
 
     /* Reset the per-frame request + scoring accumulator (kept intact until here so the commit
        above could read last frame's result). */
-    s_ctx.nav_move_dir   = -1;
-    s_ctx.nav_tab        = 0;
-    s_ctx.nav_activate   = false;
-    s_ctx.nav_mnemonic   = 0;
-    s_ctx.nav_move_best  = IMGUI_ID_NONE;
-    s_ctx.nav_move_score = NAV_SCORE_REJECT;
-    s_ctx.nav_id_seen    = false;
-    s_ctx.nav_tab_first  = IMGUI_ID_NONE;
-    s_ctx.nav_tab_prev   = IMGUI_ID_NONE;
-    s_ctx.nav_tab_next   = IMGUI_ID_NONE;
-    s_ctx.nav_tab_take   = false;
+    s_nav.move_dir   = -1;
+    s_nav.tab        = 0;
+    s_nav.activate   = false;
+    s_nav.mnemonic   = 0;
+    s_nav.move_best  = IMGUI_ID_NONE;
+    s_nav.move_score = NAV_SCORE_REJECT;
+    s_nav.id_seen    = false;
+    s_nav.tab_first  = IMGUI_ID_NONE;
+    s_nav.tab_prev   = IMGUI_ID_NONE;
+    s_nav.tab_next   = IMGUI_ID_NONE;
+    s_nav.tab_take   = false;
 
     /* Any mouse activity makes the mouse the active instrument: a move or a click drops
        nav_highlight, so the nav item loses its fill (the ring stays, via nav_active) and the mouse
@@ -324,19 +324,19 @@ nav_new_frame( void )
     s_nav_mouse_y = s_io.mouse_y;
 
     if ( mouse_moved || mouse_press )
-        s_ctx.nav_highlight = false;
-    if ( mouse_press && s_ctx.nav_bar_win != IMGUI_ID_NONE )
+        s_nav.highlight = false;
+    if ( mouse_press && s_nav.bar_win != IMGUI_ID_NONE )
     {
-        s_ctx.nav_bar_win  = IMGUI_ID_NONE;
-        s_ctx.nav_in_menus = false;
+        s_nav.bar_win  = IMGUI_ID_NONE;
+        s_nav.in_menus = false;
     }
 
     /* Menu mode self-heals: if its bar window is gone, drop out. */
-    if ( s_ctx.nav_bar_win != IMGUI_ID_NONE )
+    if ( s_nav.bar_win != IMGUI_ID_NONE )
     {
         bool alive = false;
         for ( u32 i = 0; i < s_window_count; ++i )
-            if ( s_windows[ i ].id == s_ctx.nav_bar_win ) { alive = true; break; }
+            if ( s_windows[ i ].id == s_nav.bar_win ) { alive = true; break; }
         if ( !alive ) nav_menu_exit();
     }
 
@@ -370,11 +370,11 @@ nav_new_frame( void )
         for ( u32 c = 0; c < 26u; ++c )
             if ( s_io.keys_pressed[ APP_KEY_A + c ] )
             {
-                s_ctx.nav_mnemonic  = (u8)( 'A' + c );  /* begin_menu matches + opens the entry */
+                s_nav.mnemonic  = (u8)( 'A' + c );  /* begin_menu matches + opens the entry */
                 s_nav_alt_used      = true;
-                s_ctx.nav_active    = true;
-                s_ctx.nav_highlight = true;
-                if ( s_ctx.nav_bar_win == IMGUI_ID_NONE )
+                s_nav.active    = true;
+                s_nav.highlight = true;
+                if ( s_nav.bar_win == IMGUI_ID_NONE )
                 {
                     imgui_id_t mb = nav_main_bar_win();
                     if ( mb != IMGUI_ID_NONE ) nav_menu_enter( mb );
@@ -385,7 +385,7 @@ nav_new_frame( void )
     if ( ( s_io.keys_released[ APP_KEY_LALT ] || s_io.keys_released[ APP_KEY_RALT ] )
          && !s_nav_alt_used )
     {
-        if ( s_ctx.nav_bar_win != IMGUI_ID_NONE )
+        if ( s_nav.bar_win != IMGUI_ID_NONE )
             nav_menu_exit();                      /* toggle out -> restore the prior focus */
         else
         {
@@ -401,27 +401,27 @@ nav_new_frame( void )
     bool right = s_io.keys_pressed_repeat[ APP_KEY_RIGHT ];
     bool esc   = s_io.keys_pressed[ APP_KEY_ESCAPE ];
 
-    if ( up    ) s_ctx.nav_move_dir = IMGUI_DIR_UP;
-    if ( down  ) s_ctx.nav_move_dir = IMGUI_DIR_DOWN;
-    if ( left  ) s_ctx.nav_move_dir = IMGUI_DIR_LEFT;
-    if ( right ) s_ctx.nav_move_dir = IMGUI_DIR_RIGHT;
+    if ( up    ) s_nav.move_dir = IMGUI_DIR_UP;
+    if ( down  ) s_nav.move_dir = IMGUI_DIR_DOWN;
+    if ( left  ) s_nav.move_dir = IMGUI_DIR_LEFT;
+    if ( right ) s_nav.move_dir = IMGUI_DIR_RIGHT;
 
     bool tab = s_io.keys_pressed_repeat[ APP_KEY_TAB ];
-    if ( tab ) s_ctx.nav_tab = shift ? -1 : +1;
+    if ( tab ) s_nav.tab = shift ? -1 : +1;
 
     bool act = s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ];
-    if ( act ) s_ctx.nav_activate = true;
+    if ( act ) s_nav.activate = true;
 
     /* Any nav key makes the keyboard the active instrument: show the ring (nav_active) AND the fill
        (nav_highlight), and suppress mouse hover until the mouse moves again. */
     if ( up || down || left || right || tab || act )
     {
-        s_ctx.nav_active    = true;
-        s_ctx.nav_highlight = true;
+        s_nav.active    = true;
+        s_nav.highlight = true;
     }
 
     /* Menu-bar mode owns the bar/menu keys (traverse, descend, ascend-to-owner, Up-to-bar). */
-    if ( s_ctx.nav_bar_win != IMGUI_ID_NONE )
+    if ( s_nav.bar_win != IMGUI_ID_NONE )
     {
         nav_menu_keys( down, up, left, esc, first_prev );
     }
@@ -432,13 +432,13 @@ nav_new_frame( void )
         if ( esc )
         {
             --s_popup_open_count;
-            s_ctx.nav_id = IMGUI_ID_NONE;
+            s_nav.id = IMGUI_ID_NONE;
         }
-        else if ( s_ctx.nav_move_dir == IMGUI_DIR_LEFT && s_popup_open_count >= 2 )
+        else if ( s_nav.move_dir == IMGUI_DIR_LEFT && s_popup_open_count >= 2 )
         {
             --s_popup_open_count;
-            s_ctx.nav_move_dir = -1;
-            s_ctx.nav_id       = IMGUI_ID_NONE;
+            s_nav.move_dir = -1;
+            s_nav.id       = IMGUI_ID_NONE;
         }
     }
 
@@ -453,9 +453,9 @@ void
 imgui_set_nav_window( const char* title )
 {
     s_nav_window        = title ? id_hash( title ) : IMGUI_ID_NONE;
-    s_ctx.nav_id        = IMGUI_ID_NONE;   /* first item of the new window takes focus */
-    s_ctx.nav_active    = true;
-    s_ctx.nav_highlight = true;
+    s_nav.id        = IMGUI_ID_NONE;   /* first item of the new window takes focus */
+    s_nav.active    = true;
+    s_nav.highlight = true;
 }
 
 // clang-format on

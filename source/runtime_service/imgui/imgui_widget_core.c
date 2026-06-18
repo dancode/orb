@@ -278,7 +278,7 @@ widget_repeat_tick( bool pressed )
 }
 
 /* Keyboard-nav per-item seam.  Called from widget_behavior for every item that belongs to the nav
-   window (s_ctx.win_id == s_ctx.nav_win), the keyboard mirror of the hover hit-test above.  It does
+   window (s_ctx.win_id == s_nav.win), the keyboard mirror of the hover hit-test above.  It does
    four things, all reading/writing the nav accumulator in s_ctx (committed at the next nav_new_frame,
    imgui_nav.c): records this frame's rect for the current nav item, tracks emission order for Tab,
    scores the item as a directional-move candidate, and -- for the current nav item -- lights the
@@ -290,29 +290,29 @@ widget_repeat_tick( bool pressed )
 static void
 nav_item_register( imgui_id_t id, imgui_rect_t r, widget_state_t* st, widget_kind_t kind )
 {
-    bool is_cur = ( id == s_ctx.nav_id );
+    bool is_cur = ( id == s_nav.id );
     if ( is_cur )
     {
-        s_ctx.nav_id_seen   = true;
-        s_ctx.nav_self_rect = r;
+        s_nav.id_seen   = true;
+        s_nav.self_rect = r;
     }
 
     /* Tab walks emission order (reading order here): first item, the predecessor of the current
        item, and the item right after it. */
-    if ( s_ctx.nav_tab_first == IMGUI_ID_NONE ) s_ctx.nav_tab_first = id;
-    if ( s_ctx.nav_tab_take ) { s_ctx.nav_tab_next = id; s_ctx.nav_tab_take = false; }
-    if ( is_cur )                    s_ctx.nav_tab_take = true;       /* next item becomes tab_next */
-    else if ( !s_ctx.nav_id_seen )   s_ctx.nav_tab_prev = id;        /* last one before the current */
+    if ( s_nav.tab_first == IMGUI_ID_NONE ) s_nav.tab_first = id;
+    if ( s_nav.tab_take ) { s_nav.tab_next = id; s_nav.tab_take = false; }
+    if ( is_cur )                    s_nav.tab_take = true;       /* next item becomes tab_next */
+    else if ( !s_nav.id_seen )   s_nav.tab_prev = id;        /* last one before the current */
 
     /* Directional move: score against last frame's nav_ref_rect (the deferred resolve). */
-    if ( s_ctx.nav_move_dir >= 0 && !is_cur )
+    if ( s_nav.move_dir >= 0 && !is_cur )
     {
-        f32 sc = nav_score_dir( s_ctx.nav_ref_rect, r, (imgui_dir_t)s_ctx.nav_move_dir );
-        if ( sc < s_ctx.nav_move_score )
+        f32 sc = nav_score_dir( s_nav.ref_rect, r, (imgui_dir_t)s_nav.move_dir );
+        if ( sc < s_nav.move_score )
         {
-            s_ctx.nav_move_score = sc;
-            s_ctx.nav_move_best  = id;
-            s_ctx.nav_move_rect  = r;
+            s_nav.move_score = sc;
+            s_nav.move_best  = id;
+            s_nav.move_rect  = r;
         }
     }
 
@@ -321,16 +321,16 @@ nav_item_register( imgui_id_t id, imgui_rect_t r, widget_state_t* st, widget_kin
        -- give it the fill (st->nav, read by widget_bg_color / frame_bg_color) and apply a pending
        activation.  The ring is drawn before the widget's own background (widget_behavior runs
        first), inset outward by NAV_RING so the fill leaves the border visible. */
-    if ( is_cur && s_ctx.nav_active )
+    if ( is_cur && s_nav.active )
     {
         draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
                                 r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
                                 WIN_BORDER, 0, COL_NAV );
 
-        if ( s_ctx.nav_highlight )
+        if ( s_nav.highlight )
         {
             st->nav = true;
-            if ( s_ctx.nav_activate )
+            if ( s_nav.activate )
             {
                 st->pressed = st->clicked = true;
                 if ( kind == WIDGET_KIND_FOCUSABLE )
@@ -338,7 +338,7 @@ nav_item_register( imgui_id_t id, imgui_rect_t r, widget_state_t* st, widget_kin
 
                 /* Consume the activating keys + any text so the item just focused does not also see
                    this frame's Enter (instant blur) or type the activating Space. */
-                s_ctx.nav_activate = false;
+                s_nav.activate = false;
                 s_io.keys_pressed[ APP_KEY_ENTER ] = false;
                 s_io.keys_pressed[ APP_KEY_SPACE ] = false;
                 s_io.text[ 0 ] = '\0';
@@ -386,7 +386,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
        the fill is mutually exclusive, so a mouse-hovered item never fills alongside the nav item
        (the nav ring still shows its location).  A mouse move or click drops nav_highlight
        (imgui_nav.c), re-enabling hover that same frame. */
-    if ( eligible && !s_ctx.nav_highlight && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
+    if ( eligible && !s_nav.highlight && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
          s_ctx.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
@@ -399,8 +399,8 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 
         /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so
            resuming the keyboard later continues from what was clicked (only once a ring exists). */
-        if ( s_ctx.nav_active )
-            s_ctx.nav_id = id;
+        if ( s_nav.active )
+            s_nav.id = id;
     }
 
     st.hover   = ( s_ctx.hover_id == id );
@@ -411,7 +411,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     /* Keyboard nav: an item in the nav window registers as a candidate and, if it is the nav
        cursor, takes a synthesized click from an Enter/Space activation -- the keyboard mirror of
        the mouse hit-test above, through the same one seam every widget already passes through. */
-    if ( s_ctx.win_id == s_ctx.nav_win )
+    if ( s_ctx.win_id == s_nav.win )
         nav_item_register( id, r, &st, kind );
 
     /* Auto-repeat (IMGUI_ITEM_BUTTON_REPEAT): while held with the cursor still over it, fire on the
