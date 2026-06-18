@@ -75,7 +75,7 @@ imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
 void 
 imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
-    imgui_render_flush( cmd, win_w, win_h );
+    imgui_render_flush( &s_main_viewport, cmd, win_w, win_h );   /* one surface today; host loops viewports later */
 #ifdef IMGUI_DEBUG_OVERLAY
     imgui_debug_flush( cmd, win_w, win_h );   /* bolt-on overlay, painted last (on top) */
 #endif

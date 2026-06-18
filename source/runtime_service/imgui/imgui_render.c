@@ -2,8 +2,8 @@
 
     runtime_service/imgui/imgui_render.c -- GPU resource management and draw-list flush.
 
-    imgui_render_init  creates the VB, IB, pipeline, font sampler, and a 1x1 white pixel texture.
-    imgui_render_flush opens a LOAD render pass on the swapchain (preserves scene content),
+    imgui_render_init  creates the main viewport's VB/IB plus the shared pipeline and font sampler.
+    imgui_render_flush opens a LOAD render pass on the viewport's target (preserves scene content),
                        writes the current frame's vertex/index data, and emits one indexed draw
                        call per draw command in s_draw.  imgui_render_shutdown destroys all GPU objects.
 
@@ -37,20 +37,52 @@ typedef struct
 #define IMGUI_IB_REGION_BYTES  ( IMGUI_MAX_IDX   * sizeof( u16 ) )
 
 /*----------------------------------------------------------------------------------------------
-    Static state : GPU resources that persist across frames.  
+    Static GPU state : per-viewport surfaces (geometry + target) and the shared resources.
 
     All are created in imgui_render_init() and destroyed in imgui_render_shutdown().
 ----------------------------------------------------------------------------------------------*/
 
+/* ---- Per-viewport surface (imgui_viewport_t) ----
+   A viewport is a render TARGET that windows are dispatched to, not an owner of windows.  The one
+   context emits every window; flush routes each window's geometry to the viewport hosting it.  So a
+   viewport is a pure surface -- its own GPU geometry buffers and the color target it paints into --
+   and it never assumes a single window.  There is one today (the application swapchain); a torn-off
+   window will get its own, and docking will later let several windows share one.  Per-viewport so a
+   surface's geometry persists between its own presents, independent of any other viewport's cadence. */
+
+struct imgui_dock_node_t;   /* forward: the dock tree, populated when docking is implemented */
+
+typedef struct
+{
+    rhi_buffer_t  vb;                   // CPU_TO_GPU vertex buffer, one region per frame-in-flight
+    rhi_buffer_t  ib;                   // CPU_TO_GPU index buffer (u16), one region per frame-in-flight
+
+    /* Color target flush paints into: RHI_SWAPCHAIN_COLOR for the main viewport, a floater's own
+       swapchain image otherwise.  Held per viewport so flush is target-agnostic. */
+    rhi_texture_t target;
+
+    /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's
+       overlapping windows); non-NULL = a dock tree tiling/tabbing the windows on this surface.
+       Inert until docking lands -- a documented placement hook, no machinery yet. */
+    struct imgui_dock_node_t* dock_root;
+
+} imgui_viewport_t;
+
+/* The main viewport -- the application swapchain.  One instance today; becomes the head of a
+   per-context viewport list once torn-off floaters and docking arrive. */
+static imgui_viewport_t s_main_viewport;
+
+/* Shared GPU resources: created once in imgui_render_init(), destroyed in imgui_render_shutdown().
+   Immutable across frames and shared by every viewport (and the debug overlay), so never a per-
+   viewport or per-frame bottleneck. */
+
 static struct
 {
-    rhi_buffer_t    vb;                 // CPU_TO_GPU vertex buffer (imgui_draw_vert_t)
-    rhi_buffer_t    ib;                 // CPU_TO_GPU index buffer (u16)
     rhi_pipeline_t  pipeline;           // compiled pipeline with imgui shaders + vertex layout + alpha blend
     rhi_sampler_t   font_sampler;       // sampler for font textures (point clamp)
     u32             font_sampler_idx;   // bindless slot for font_sampler
 
-    u32             draw_call_hwm;      // peak indexed draw calls emitted in a single frame
+    u32             draw_call_hwm;      // peak indexed draw calls in a single frame (global stat)
 
 } s_render;
 
@@ -88,26 +120,29 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
 static bool
 imgui_render_init( void )
 {
+    /* The main viewport paints the application swapchain; dock_root stays NULL (free-float). */
+    s_main_viewport.target = ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR };
+
     /* Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame. */
-    s_render.vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+    s_main_viewport.vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = RHI_MAX_FRAMES_IN_FLIGHT * IMGUI_VB_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_VERTEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "imgui_vb",
     } );
-    if ( !rhi_handle_valid( s_render.vb ) )
+    if ( !rhi_handle_valid( s_main_viewport.vb ) )
         return false;
 
     /* Index buffer (CPU_TO_GPU, u16 indices): one region per frame-in-flight. */
-    s_render.ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+    s_main_viewport.ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = RHI_MAX_FRAMES_IN_FLIGHT * IMGUI_IB_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_INDEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "imgui_ib",
     } );
-    if ( !rhi_handle_valid( s_render.ib ) )
+    if ( !rhi_handle_valid( s_main_viewport.ib ) )
     {
-        rhi()->buffer_destroy( s_render.vb );
+        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
 
@@ -117,8 +152,8 @@ imgui_render_init( void )
         RHI_SHADER_STAGE_VERTEX, "main", "imgui_vert" );
     if ( !rhi_handle_valid( vert ) )
     {
-        rhi()->buffer_destroy( s_render.ib );
-        rhi()->buffer_destroy( s_render.vb );
+        rhi()->buffer_destroy( s_main_viewport.ib );
+        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
 
@@ -128,8 +163,8 @@ imgui_render_init( void )
     if ( !rhi_handle_valid( frag ) )
     {
         rhi()->shader_destroy( vert );
-        rhi()->buffer_destroy( s_render.ib );
-        rhi()->buffer_destroy( s_render.vb );
+        rhi()->buffer_destroy( s_main_viewport.ib );
+        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
 
@@ -173,8 +208,8 @@ imgui_render_init( void )
 
     if ( !rhi_handle_valid( s_render.pipeline ) )
     {
-        rhi()->buffer_destroy( s_render.ib );
-        rhi()->buffer_destroy( s_render.vb );
+        rhi()->buffer_destroy( s_main_viewport.ib );
+        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
 
@@ -190,8 +225,8 @@ imgui_render_init( void )
     if ( !rhi_handle_valid( s_render.font_sampler ) )
     {
         rhi()->pipeline_destroy( s_render.pipeline );
-        rhi()->buffer_destroy( s_render.ib );
-        rhi()->buffer_destroy( s_render.vb );
+        rhi()->buffer_destroy( s_main_viewport.ib );
+        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
@@ -204,8 +239,8 @@ imgui_render_init( void )
         rhi()->unregister_sampler( s_render.font_sampler_idx );
         rhi()->sampler_destroy( s_render.font_sampler );
         rhi()->pipeline_destroy( s_render.pipeline );
-        rhi()->buffer_destroy( s_render.ib );
-        rhi()->buffer_destroy( s_render.vb );
+        rhi()->buffer_destroy( s_main_viewport.ib );
+        rhi()->buffer_destroy( s_main_viewport.vb );
         return false;
     }
 
@@ -272,10 +307,10 @@ imgui_render_shutdown( void )
 
     if ( rhi_handle_valid( s_render.pipeline ) )
         rhi()->pipeline_destroy( s_render.pipeline );
-    if ( rhi_handle_valid( s_render.ib ) )
-        rhi()->buffer_destroy( s_render.ib );
-    if ( rhi_handle_valid( s_render.vb ) )
-        rhi()->buffer_destroy( s_render.vb );
+    if ( rhi_handle_valid( s_main_viewport.ib ) )
+        rhi()->buffer_destroy( s_main_viewport.ib );
+    if ( rhi_handle_valid( s_main_viewport.vb ) )
+        rhi()->buffer_destroy( s_main_viewport.vb );
 
     memset( &s_render, 0, sizeof( s_render ) );
 }
@@ -283,12 +318,16 @@ imgui_render_shutdown( void )
 /*----------------------------------------------------------------------------------------------
     imgui_render_flush -- upload draw list to GPU and emit one draw call per command.
 
+    Paints into `vp`: uploads s_draw into vp's own vb/ib region and opens a LOAD pass on vp->target,
+    so a surface's geometry and target travel together.  One viewport today (s_main_viewport); the
+    multi-viewport host loop will call this once per surface, each with its partition of the list.
+
     Opens a LOAD render pass so the scene rendered before this call is preserved.
     Sets full-window viewport; each draw command applies its own scissor rectangle.
 ----------------------------------------------------------------------------------------------*/
 
 static void
-imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
+imgui_render_flush( imgui_viewport_t* vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;
@@ -320,11 +359,11 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
     u32 vert_count = s_draw.vert_count < IMGUI_MAX_VERTS ? s_draw.vert_count : IMGUI_MAX_VERTS;
     u32 idx_count  = s_draw.idx_count  < IMGUI_MAX_IDX   ? s_draw.idx_count  : IMGUI_MAX_IDX;
 
-    /* Upload vertex + index data into this frame's region. */
-    rhi()->buffer_write( s_render.vb,
+    /* Upload vertex + index data into this viewport's frame region. */
+    rhi()->buffer_write( vp->vb,
                          s_draw.verts,
                          vert_count * sizeof( imgui_draw_vert_t ), vb_off );
-    rhi()->buffer_write( s_render.ib,
+    rhi()->buffer_write( vp->ib,
                          s_draw.indices,
                          idx_count * sizeof( u16 ), ib_off );
 
@@ -334,7 +373,7 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
        very bad for performance when the UI covers only a small portion of the screen. */
 
     rhi_color_attachment_t color_att = {
-        .texture  = { .id = RHI_SWAPCHAIN_COLOR },
+        .texture  = vp->target,
         .load_op  = RHI_LOAD_OP_LOAD,
         .store_op = RHI_STORE_OP_STORE,
     };
@@ -352,8 +391,8 @@ imgui_render_flush( rhi_cmd_t cmd, i32 win_w, i32 win_h )
     rhi()->cmd_bind_pipeline( cmd, s_render.pipeline );
     rhi()->cmd_bind_bindless( cmd );
     /* Bind this frame's region; index values and first_index stay region-relative. */
-    rhi()->cmd_bind_vertex_buffer( cmd, s_render.vb, vb_off );
-    rhi()->cmd_bind_index_buffer( cmd, s_render.ib, ib_off, RHI_INDEX_TYPE_UINT16 );
+    rhi()->cmd_bind_vertex_buffer( cmd, vp->vb, vb_off );
+    rhi()->cmd_bind_index_buffer( cmd, vp->ib, ib_off, RHI_INDEX_TYPE_UINT16 );
 
     /* Ortho matrix: pixel [0,w]x[0,h] -> NDC [-1,+1]x[-1,+1]. */
     imgui_push_t push;
