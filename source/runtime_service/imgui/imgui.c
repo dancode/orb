@@ -49,6 +49,7 @@
 MOD_USE_RHI;
 MOD_USE_APP;
 
+// clang-format off
 /*==============================================================================================
     Debug overlay build switch
 
@@ -190,10 +191,12 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 ==============================================================================================*/
 
 /* Clamp t to [0,1] -- the saturate used by slider + scrollbar drag mapping. */
-static f32 saturate( f32 t ) { return t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t ); }
+static f32 
+saturate( f32 t ) { return t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t ); }
 
 /* Clamp v to [lo,hi]. */
-static f32 clampf( f32 v, f32 lo, f32 hi ) { return v < lo ? lo : ( v > hi ? hi : v ); }
+static f32 
+clampf( f32 v, f32 lo, f32 hi ) { return v < lo ? lo : ( v > hi ? hi : v ); }
 
 /* Overlap of two rects (zero-size when they do not overlap).  Nested regions intersect their
    clip with the parent so a child never scissors or hit-tests past it. */
@@ -243,3 +246,4 @@ rect_intersect( imgui_rect_t a, imgui_rect_t b )
 #endif
 
 /*============================================================================================*/
+// clang-format on
