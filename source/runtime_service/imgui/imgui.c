@@ -13,7 +13,7 @@
     imgui_debug.c           -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
     imgui_input.c           -- app->IO snapshot: input_update, s_io
     imgui_style.c           -- style stacks: colors + metrics, style_col/style_var, push/pop/next
-    imgui_ctx.c             -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_ctx
+    imgui_ctx.c             -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_interaction/s_build
     imgui_window.c          -- persistent per-window state: imgui_window_t, window_get, drag mode
     imgui_widget_core.c     -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
     imgui_resize.c          -- shared edge-resize geometry: hit-test, highlight, grab, edge apply

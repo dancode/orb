@@ -67,7 +67,7 @@
     Helpers
 ----------------------------------------------------------------------------------------------*/
 
-/* Popup window id from the caller's string (salted; equals s_ctx.win_id / hover_win for it). */
+/* Popup window id from the caller's string (salted; equals s_build.win_id / hover_win for it). */
 static imgui_id_t
 popup_id( const char* str )
 {
@@ -109,17 +109,17 @@ overlay_detach( void )
 {
     imgui_overlay_save_t s;
 
-    s.win_id         = s_ctx.win_id;
-    s.win_title      = s_ctx.win_title;
-    s.win_collapsed  = s_ctx.win_collapsed;
-    s.win_flags      = s_ctx.win_flags;
-    s.win_title_h    = s_ctx.win_title_h;
-    s.win_resize_hot = s_ctx.win_resize_hot;
-    s.win_grip_hot   = s_ctx.win_grip_hot;
-    s.cur_win        = s_ctx.cur_win;
-    s.win_x = s_ctx.win_x; s.win_y = s_ctx.win_y;
-    s.win_w = s_ctx.win_w; s.win_h = s_ctx.win_h;
-    s.clip_rect      = s_ctx.clip_rect;
+    s.win_id         = s_build.win_id;
+    s.win_title      = s_build.win_title;
+    s.win_collapsed  = s_build.win_collapsed;
+    s.win_flags      = s_build.win_flags;
+    s.win_title_h    = s_build.win_title_h;
+    s.win_resize_hot = s_build.win_resize_hot;
+    s.win_grip_hot   = s_build.win_grip_hot;
+    s.cur_win        = s_build.cur_win;
+    s.win_x = s_build.win_x; s.win_y = s_build.win_y;
+    s.win_w = s_build.win_w; s.win_h = s_build.win_h;
+    s.clip_rect      = s_build.clip_rect;
     s.sort_key       = draw_sort_key();
 
     /* Save the parent's top layout frame so its pen survives the popup's region pop. */
@@ -143,17 +143,17 @@ overlay_reattach( imgui_overlay_save_t s )
     if ( s.had_parent )
         *lf() = s.parent_frame;
 
-    s_ctx.win_id         = s.win_id;
-    s_ctx.win_title      = s.win_title;
-    s_ctx.win_collapsed  = s.win_collapsed;
-    s_ctx.win_flags      = s.win_flags;
-    s_ctx.win_title_h    = s.win_title_h;
-    s_ctx.win_resize_hot = s.win_resize_hot;
-    s_ctx.win_grip_hot   = s.win_grip_hot;
-    s_ctx.cur_win        = s.cur_win;
-    s_ctx.win_x = s.win_x; s_ctx.win_y = s.win_y;
-    s_ctx.win_w = s.win_w; s_ctx.win_h = s.win_h;
-    s_ctx.clip_rect      = s.clip_rect;
+    s_build.win_id         = s.win_id;
+    s_build.win_title      = s.win_title;
+    s_build.win_collapsed  = s.win_collapsed;
+    s_build.win_flags      = s.win_flags;
+    s_build.win_title_h    = s.win_title_h;
+    s_build.win_resize_hot = s.win_resize_hot;
+    s_build.win_grip_hot   = s.win_grip_hot;
+    s_build.cur_win        = s.cur_win;
+    s_build.win_x = s.win_x; s_build.win_y = s.win_y;
+    s_build.win_w = s.win_w; s_build.win_h = s.win_h;
+    s_build.clip_rect      = s.clip_rect;
     draw_set_sort_key( s.sort_key );
 }
 
@@ -178,8 +178,8 @@ popup_open_id( imgui_id_t id, f32 ax, f32 ay )
     p->modal       = false;                 /* decided at begin; default until then */
     p->anchor_x    = ax;
     p->anchor_y    = ay;
-    p->open_frame  = s_frame_counter;
-    p->begun_frame = s_frame_counter;       /* guard the stale-close until begin runs */
+    p->open_frame  = s_retained.frame;
+    p->begun_frame = s_retained.frame;       /* guard the stale-close until begin runs */
     p->rect        = ( imgui_rect_t ){ 0 };
 
     s_popup_open_count = depth + 1u;        /* opening closes anything deeper */
@@ -245,7 +245,7 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
 
     imgui_popup_t* p = &s_popups_open[ depth ];
     p->modal       = modal;
-    p->begun_frame = s_frame_counter;
+    p->begun_frame = s_retained.frame;
 
     /* The popup's window record; force its z onto the reserved band (depth-stacked) every frame. */
     imgui_window_t* win = window_get( id, p->anchor_x, p->anchor_y,
@@ -365,15 +365,15 @@ imgui_close_current_popup( void )
 /*----------------------------------------------------------------------------------------------
     Context menus -- open a popup on a right-click.
 
-    _item binds to the previous widget (its id is latched in s_ctx.last_item_id by widget_behavior);
+    _item binds to the previous widget (its id is latched in s_build.last_item_id by widget_behavior);
     _window binds to empty space in the current window.  Both then render through begin_popup.
 ----------------------------------------------------------------------------------------------*/
 
 bool
 imgui_begin_popup_context_item( const char* str )
 {
-    imgui_id_t want = s_ctx.last_item_id;
-    if ( want != IMGUI_ID_NONE && s_ctx.hover_id == want && s_io.mouse_pressed[ 1 ] )
+    imgui_id_t want = s_build.last_item_id;
+    if ( want != IMGUI_ID_NONE && s_interaction.hover_id == want && s_io.mouse_pressed[ 1 ] )
         imgui_open_popup( str );
     return imgui_begin_popup( str, IMGUI_WIN_NONE );
 }
@@ -381,7 +381,7 @@ imgui_begin_popup_context_item( const char* str )
 bool
 imgui_begin_popup_context_window( const char* str )
 {
-    if ( s_ctx.win_id == s_ctx.hover_win && s_ctx.hover_id == IMGUI_ID_NONE
+    if ( s_build.win_id == s_interaction.hover_win && s_interaction.hover_id == IMGUI_ID_NONE
          && s_io.mouse_pressed[ 1 ] )
         imgui_open_popup( str );
     return imgui_begin_popup( str, IMGUI_WIN_NONE );
@@ -433,7 +433,7 @@ imgui_end_tooltip( void )
 void
 imgui_set_item_tooltip( const char* text )
 {
-    if ( s_ctx.last_item_id == IMGUI_ID_NONE || s_ctx.hover_id != s_ctx.last_item_id )
+    if ( s_build.last_item_id == IMGUI_ID_NONE || s_interaction.hover_id != s_build.last_item_id )
         return;
 
     if ( imgui_begin_tooltip() )
@@ -498,7 +498,7 @@ popup_close_check( void )
 
     /* Stale-close: not begun last frame nor this one (begun_frame + 1 < frame_counter). */
     while ( s_popup_open_count
-            && s_popups_open[ s_popup_open_count - 1u ].begun_frame + 1u < s_frame_counter )
+            && s_popups_open[ s_popup_open_count - 1u ].begun_frame + 1u < s_retained.frame )
         --s_popup_open_count;
 
     if ( !s_popup_open_count ) return;
@@ -521,7 +521,7 @@ popup_close_check( void )
 
     When a modal is open, anything not over the modal (or a popup opened on top of it) must be
     inert.  Stealing hover_win is the whole fence: widget_behavior gates all hover on
-    s_ctx.win_id == hover_win, so pointing hover_win at the modal freezes every window behind it
+    s_build.win_id == hover_win, so pointing hover_win at the modal freezes every window behind it
     with no per-widget code -- the window-scale analogue of active_id drag-modality.
 ----------------------------------------------------------------------------------------------*/
 
@@ -534,11 +534,11 @@ popup_apply_modal( void )
     if ( m < 0 ) return;
 
     /* Allow the modal and any deeper (later-opened, on-top) popup to keep interacting. */
-    imgui_id_t hw = s_ctx.hover_win;
+    imgui_id_t hw = s_interaction.hover_win;
     for ( u32 i = (u32)m; i < s_popup_open_count; ++i )
         if ( s_popups_open[ i ].id == hw ) return;
 
-    s_ctx.hover_win = s_popups_open[ m ].id;
+    s_interaction.hover_win = s_popups_open[ m ].id;
 }
 
 // clang-format on

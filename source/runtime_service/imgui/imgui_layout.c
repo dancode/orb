@@ -177,7 +177,7 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, i
     f->scroll_y   = scroll_y;
     f->pcontent_w = content_w;
     f->pcontent_h = content_h;
-    f->parent_clip = s_ctx.clip_rect;
+    f->parent_clip = s_build.clip_rect;
 
     /* Seed the id scope with this region's id, so leaf widgets combine their label against it
        (identical labels in different regions never collide).  id_restore unwinds the scope -- and
@@ -249,12 +249,12 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, i
         imgui_rect_t clip = { outer.x + WIN_BORDER, outer.y, view_w, view_h };
         draw_push_clip_rect( clip.x, clip.y, clip.w, clip.h );
         f->pushed_clip = true;
-        s_ctx.clip_rect = rect_intersect( f->parent_clip, clip );   /* hit-test clip = the box */
+        s_build.clip_rect = rect_intersect( f->parent_clip, clip );   /* hit-test clip = the box */
     }
     else
     {
         f->pushed_clip  = false;
-        /* s_ctx.clip_rect stays the enclosing clip -- the window body inherits it. */
+        /* s_build.clip_rect stays the enclosing clip -- the window body inherits it. */
     }
 }
 
@@ -291,7 +291,7 @@ layout_pop_region( void )
        interaction clip either way, so the bars (in the gutter, outside a child's box) hit-test. */
     if ( f->pushed_clip )
         draw_pop_clip_rect();
-    s_ctx.clip_rect = f->parent_clip;
+    s_build.clip_rect = f->parent_clip;
 
     /* Bars: inset by the border, in the reserved gutters, clear of the corner. */
     if ( f->show_v )
@@ -312,10 +312,10 @@ layout_pop_region( void )
     /* Wheel: the hovered region consumes it (vertical by default, horizontal with Shift).
        Gated by the owning window (hover_win), unclaimed-this-frame, no in-flight drag, and the
        cursor inside this region's box.  Re-clamp against this frame's measured content. */
-    if ( !s_ctx.wheel_used
+    if ( !s_build.wheel_used
          && !( f->flags & IMGUI_WIN_NOMOUSESCROLL )
-         && s_ctx.win_id == s_ctx.hover_win
-         && s_ctx.active_id == IMGUI_ID_NONE
+         && s_build.win_id == s_interaction.hover_win
+         && s_interaction.active_id == IMGUI_ID_NONE
          && s_io.mouse_wheel != 0.0f
          && rect_hit( f->outer ) )
     {
@@ -328,7 +328,7 @@ layout_pop_region( void )
         scroll_clamp( f->scroll_y, content_h, f->view_h );
         scroll_clamp( f->scroll_x, content_w, f->view_w );
 
-        s_ctx.wheel_used = true;
+        s_build.wheel_used = true;
     }
 
     /* Pop the frame and advance the parent pen past the region box, so the parent's next
@@ -477,10 +477,10 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
        Apply an in-flight drag to the persisted size, then re-derive the box so the frame painted
        below tracks the cursor this frame (the right/bottom edges only -- the origin stays put). */
     u8 resize_hot = 0;
-    if ( ( resize_x || resize_y ) && s_ctx.win_id == s_ctx.hover_win
-         && ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == resize_id ) )
+    if ( ( resize_x || resize_y ) && s_build.win_id == s_interaction.hover_win
+         && ( s_interaction.active_id == IMGUI_ID_NONE || s_interaction.active_id == resize_id ) )
     {
-        if ( s_ctx.active_id == resize_id )
+        if ( s_interaction.active_id == resize_id )
         {
             /* Shared raw edge-drag (R / B only -- the child's top-left is pinned); the child then
                layers its own policy: clamp to the next-child constraints and the CHILD_MIN floor,
@@ -510,7 +510,7 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
         /* Grab on press: the shared resize_grab claims the resize active_id and records the offset
            that keeps the grabbed edge under the cursor (so the size does not jump by the band width
            at grab time).  resize_hot is only ever R / B here, so its far-edge pins go unused. */
-        if ( resize_hot && s_ctx.active_id == IMGUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
+        if ( resize_hot && s_interaction.active_id == IMGUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
             resize_grab( id, box, resize_hot );
     }
 
@@ -531,9 +531,9 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
        under a hot/armed edge for the child's duration (the edges stay armed mid-drag even if the
        cursor drifts off).  end_child restores the saved hot, so siblings below are unaffected. */
     layout_frame_t* f         = lf();
-    f->child_resize_edge      = ( s_ctx.active_id == resize_id ) ? s_resize_edges : resize_hot;
-    f->child_resize_saved_hot = s_ctx.win_resize_hot;
-    if ( f->child_resize_edge ) s_ctx.win_resize_hot = f->child_resize_edge;
+    f->child_resize_edge      = ( s_interaction.active_id == resize_id ) ? s_resize_edges : resize_hot;
+    f->child_resize_saved_hot = s_build.win_resize_hot;
+    if ( f->child_resize_edge ) s_build.win_resize_hot = f->child_resize_edge;
 
     /* No collapse concept for a child: always returns true, always pair with end_child. */
     return true;
@@ -553,7 +553,7 @@ imgui_end_child( void )
 
     layout_pop_region();
 
-    s_ctx.win_resize_hot = saved;   /* lift the body-widget suppression this child raised */
+    s_build.win_resize_hot = saved;   /* lift the body-widget suppression this child raised */
 
     draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
 
@@ -603,7 +603,7 @@ imgui_push_layout( void )
     f->region_id   = IMGUI_ID_NONE;
     f->outer       = cell;
     f->flags       = IMGUI_WIN_NOSCROLL;
-    f->parent_clip = s_ctx.clip_rect;
+    f->parent_clip = s_build.clip_rect;
     f->pushed_clip = false;
     f->id_restore  = s_id_sp;
 
@@ -636,7 +636,7 @@ imgui_pop_layout( void )
 {
     layout_frame_t* f = lf();
     s_id_sp         = f->id_restore;         /* unwind any push_id the body left open */
-    s_ctx.clip_rect = f->parent_clip;        /* unchanged, but symmetric with push */
+    s_build.clip_rect = f->parent_clip;        /* unchanged, but symmetric with push */
     if ( s_layout_sp ) --s_layout_sp;        /* parent already advanced at push -- nothing more */
 }
 

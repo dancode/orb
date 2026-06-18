@@ -98,7 +98,7 @@ window_draw_resize_highlight( imgui_rect_t r, u8 edges )
 static void
 resize_grab( imgui_id_t id, imgui_rect_t box, u8 edges )
 {
-    s_ctx.active_id = id_combine( id, IMGUI_RESIZE_SALT );
+    s_interaction.active_id = id_combine( id, IMGUI_RESIZE_SALT );
     s_resize_edges  = edges;
 
     s_resize_off_x = ( edges & IMGUI_RESIZE_L ) ? ( s_io.mouse_x - box.x )

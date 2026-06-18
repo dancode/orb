@@ -22,7 +22,7 @@
 
       begin_main_menu_bar -- a helper window pinned across the top of the display, then a bar().
       begin_menu_bar      -- the strip a WIN_MENUBAR window reserved below its title bar (a region
-                             over s_ctx.menubar_rect, drawn outside the body's scrolling flow).
+                             over s_build.menubar_rect, drawn outside the body's scrolling flow).
 
     Included by imgui.c after imgui_widget_combo.c, so the popup internals (popup_open_id,
     popup_is_open_id, popup_set_anchor, popup_begin_common_id, the s_popups_open stack, the
@@ -150,7 +150,7 @@ imgui_begin_menu( const char* label )
     widget_state_t st = widget_behavior( id, box, WIDGET_KIND_BUTTON );
 
     imgui_menu_state_t* ms = IMGUI_STATE( imgui_menu_state_t, id );
-    bool was_open     = ( ms->open_frame + 1u == s_frame_counter );
+    bool was_open     = ( ms->open_frame + 1u == s_retained.frame );
     bool this_open    = popup_is_open_id( pid );
     bool sibling_open = ( s_popup_open_count > s_popup_begin_count );
 
@@ -159,7 +159,7 @@ imgui_begin_menu( const char* label )
        sibling switches to it.  Menu: hovering or clicking a row opens its submenu.  A popup_open_id
        at this depth replaces whatever sibling was open and truncates anything deeper, so switching
        is automatic. */
-    /* Keyboard reflexes layered onto the mouse ones (driven by the menu-bar nav state in s_ctx):
+    /* Keyboard reflexes layered onto the mouse ones (driven by the menu-bar nav state in s_nav):
 
          bar_nav -- in menu-bar mode, the nav-highlighted bar entry drops its menu, so Left/Right
                     traversal of the bar shows each menu in turn (the existing && !this_open guard
@@ -168,7 +168,7 @@ imgui_begin_menu( const char* label )
                     and consume the request (issue: Alt+F opens File).
          nav_right -- inside a menu, a Right move on a submenu row opens it; nav descends next frame
                     as the new popup becomes the top one and captures nav. */
-    bool bar_nav = in_bar && st.nav && s_nav.bar_win == s_ctx.win_id && !s_nav.in_menus;
+    bool bar_nav = in_bar && st.nav && s_nav.bar_win == s_build.win_id && !s_nav.in_menus;
 
     u8   lead = ( label[ 0 ] != '#' )
               ? (u8)( ( label[ 0 ] >= 'a' && label[ 0 ] <= 'z' ) ? label[ 0 ] - 32 : label[ 0 ] )
@@ -177,7 +177,7 @@ imgui_begin_menu( const char* label )
     if ( mnem )
     {
         s_nav.id       = id;                 /* highlight this entry from next frame on */
-        s_nav.bar_win  = s_ctx.win_id;       /* drive this window's bar */
+        s_nav.bar_win  = s_build.win_id;       /* drive this window's bar */
         s_nav.in_menus = false;
         s_nav.mnemonic = 0;                  /* consume */
     }
@@ -222,7 +222,7 @@ imgui_begin_menu( const char* label )
                                       false, 0.0f, 0.0f );
     if ( vis )
     {
-        ms->open_frame = s_frame_counter;   /* body emitted this frame -> "open" next frame */
+        ms->open_frame = s_retained.frame;   /* body emitted this frame -> "open" next frame */
         imgui_stack();                      /* a menu body is a vertical list */
     }
     return vis;
@@ -264,7 +264,7 @@ imgui_end_main_menu_bar( void )
     begin_menu_bar / end_menu_bar -- the strip a WIN_MENUBAR window reserved below its title bar.
 
     The strip rect was carved off the top of the body in window_begin_ex and stashed in
-    s_ctx.menubar_rect.  We open a transient pack region over it (outside the body's scrolling
+    s_build.menubar_rect.  We open a transient pack region over it (outside the body's scrolling
     flow) and restore the body pen on pop, so the body content lays out from its own origin
     regardless of the strip region's parent-pen advance.
 ----------------------------------------------------------------------------------------------*/
@@ -275,10 +275,10 @@ static f32 s_menubar_saved_cursor;  /* body pen to restore after the strip regio
 bool
 imgui_begin_menu_bar( void )
 {
-    if ( !( s_ctx.win_flags & IMGUI_WIN_MENUBAR ) )
+    if ( !( s_build.win_flags & IMGUI_WIN_MENUBAR ) )
         return false;
 
-    imgui_rect_t bar = s_ctx.menubar_rect;
+    imgui_rect_t bar = s_build.menubar_rect;
 
     /* Strip background, a touch distinct from the body. */
     draw_push_rect_filled( bar.x, bar.y, bar.w, bar.h, 0,0,1,1, 0, COL_TITLE_BG );
@@ -287,7 +287,7 @@ imgui_begin_menu_bar( void )
     s_menubar_saved_cursor = lf()->cursor_y;
 
     s_menubar_sink[ 0 ] = s_menubar_sink[ 1 ] = s_menubar_sink[ 2 ] = s_menubar_sink[ 3 ] = 0.0f;
-    layout_push_region( id_combine( s_ctx.win_id, IMGUI_MENUBAR_SALT ), bar,
+    layout_push_region( id_combine( s_build.win_id, IMGUI_MENUBAR_SALT ), bar,
                         ( imgui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIN_BORDER, 0.0f },
                         IMGUI_WIN_NOSCROLL,
                         &s_menubar_sink[ 0 ], &s_menubar_sink[ 1 ],
@@ -300,7 +300,7 @@ imgui_begin_menu_bar( void )
 void
 imgui_end_menu_bar( void )
 {
-    if ( !( s_ctx.win_flags & IMGUI_WIN_MENUBAR ) )
+    if ( !( s_build.win_flags & IMGUI_WIN_MENUBAR ) )
         return;
 
     layout_pop_region();

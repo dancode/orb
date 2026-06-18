@@ -342,7 +342,7 @@ nav_new_frame( void )
 
     /* A focused text field owns the keyboard: nav reads nothing (Tab/arrows/Enter are the editor's,
        which releases focus on Enter/Esc -- imgui_text_edit.c). */
-    if ( s_ctx.focused_id != IMGUI_ID_NONE )
+    if ( s_interaction.focused_id != IMGUI_ID_NONE )
     {
         nav_choose_window();
         return;

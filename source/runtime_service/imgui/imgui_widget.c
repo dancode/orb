@@ -302,7 +302,7 @@ slider_render( imgui_rect_t track_r, widget_state_t st, f32 t, const char* value
     draw_push_rect_outline( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
                             WIN_BORDER, 0, COL_BORDER );
 
-    if ( value_text && !( s_ctx.cur_item_flags & IMGUI_ITEM_NO_VALUE_TEXT ) )
+    if ( value_text && !( s_build.cur_item_flags & IMGUI_ITEM_NO_VALUE_TEXT ) )
     {
         f32 inner = track_r.w - 2.0f * WIDGET_PAD;
         f32 tw    = font_text_w_n( value_text, 0xFFFFFFFFu );
@@ -682,13 +682,13 @@ input_scalar( const char* label, double cur, double* out,
         imgui_rect_t minus_r = { bx,            ctrl.y, WIDGET_H, ctrl.h };
         imgui_rect_t plus_r  = { bx + WIDGET_H, ctrl.y, WIDGET_H, ctrl.h };
 
-        imgui_item_flags_t saved = s_ctx.cur_item_flags;
-        s_ctx.cur_item_flags = saved | IMGUI_ITEM_BUTTON_REPEAT;
+        imgui_item_flags_t saved = s_build.cur_item_flags;
+        s_build.cur_item_flags = saved | IMGUI_ITEM_BUTTON_REPEAT;
 
         if ( num_step_button( id_combine( id, 1u ), minus_r, true  ) ) { *out = base - inc; changed = true; }
         if ( num_step_button( id_combine( id, 2u ), plus_r,  false ) ) { *out = base + inc; changed = true; }
 
-        s_ctx.cur_item_flags = saved;
+        s_build.cur_item_flags = saved;
     }
 
     return changed;
@@ -821,8 +821,8 @@ imgui_selectable( const char* label, bool* selected )
 
     /* Inside a combo dropdown a clicked row dismisses the combo: flag it for end_combo to close
        (the popup machinery is not in scope here).  Inert for an ordinary list selectable. */
-    if ( st.clicked && s_ctx.combo_open )
-        s_ctx.combo_item_clicked = true;
+    if ( st.clicked && s_build.combo_open )
+        s_build.combo_item_clicked = true;
 
     return st.clicked;
 }

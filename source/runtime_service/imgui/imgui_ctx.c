@@ -2,8 +2,9 @@
 
     runtime_service/imgui/imgui_ctx.c -- Immediate-mode context state.
 
-    Tracks hover/active/focused widget IDs and the layout cursor.
-    All widget code in imgui_widget.c reads and writes s_ctx directly.
+    Tracks hover/active/focused widget IDs and the per-frame window-build cursor.
+    Interaction state (s_interaction) and frame-build scratch (s_build) are kept apart so the
+    multi-context model can bind the first per focus and reuse the second per frame.
 
     Included by imgui.c after imgui_input.c so s_io is in scope.
 
@@ -18,13 +19,18 @@
    end_window writes scroll_y / content_h back through this pointer. */
 struct imgui_window_t;
 
+/* Ambient interaction state -- the one user's live hover / active / focus, persisting across
+   frames.  There is one pointer, one keyboard, one mouse, so none of this is ever duplicated per
+   viewport: when the multi-context model lands this stays a single global the focused context is
+   bound to (an adapter), never per-context state.  Tier: ambient singular.  See the three-tier
+   note in imgui.c. */
+
 static struct
 {
     imgui_id_t  hover_id;       // widget under the cursor this frame (rebuilt each frame)
-    imgui_id_t  active_id;    // widget with the mouse button held (drag / hold)
+    imgui_id_t  active_id;      // widget with the mouse button held (drag / hold)
     u8          active_button;  // which button holds active_id (0=left); reset to 0 on release
-    imgui_id_t  focused_id;   // widget that owns keyboard input
-    imgui_id_t  last_item_id;   // id of the most recent widget emitted -- context-menu / tooltip anchor
+    imgui_id_t  focused_id;     // widget that owns keyboard input
 
     /* Auto-repeat timing for the held button (IMGUI_ITEM_BUTTON_REPEAT).  Only one widget is active
        at a time, so a single timer suffices: repeat_t accumulates held time since the last fire, and
@@ -34,7 +40,7 @@ static struct
     bool        repeat_on;
 
     /* Window occlusion is resolved one frame deferred: the single window the cursor is
-       over (front-most by z) is only known after every window has been submitted.  
+       over (front-most by z) is only known after every window has been submitted.
        Each begin_window nominates itself into next_hover_win; ctx_new_frame promotes it to
        hover_win.  Next frame a window compares its id against hover_win at entry -- if it
        isn't the hover window it cannot be hit, so it (and all its widgets) skip hit-testing
@@ -44,6 +50,18 @@ static struct
     imgui_id_t  hover_win;      // the window the cursor is over (resolved last frame)
     imgui_id_t  next_hover_win; // front-most window nominee gathered this frame
     u32         next_hover_win_z;
+
+} s_interaction;
+
+/* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
+   widget tree is walked.  Nothing here survives begin_frame: it is set and repopulated by the
+   begin_window / begin_child / widget calls, never read across a frame boundary.  Because contexts
+   build sequentially on one thread, this stays a single global builder reused by each context in
+   turn rather than per-context state.  Tier: frame scratch. */
+
+static struct
+{
+    imgui_id_t  last_item_id;   // id of the most recent widget emitted -- context-menu / tooltip anchor
 
     imgui_id_t  win_id;             // id of the window currently between begin/end_window
     const char* win_title;          // title string, cached for end_window's deferred chrome
@@ -60,8 +78,8 @@ static struct
     imgui_rect_t menubar_rect; // reserved menu-bar strip for the current window (WIN_MENUBAR); begin_menu_bar fills it
 
     /* Layout pen + scroll region state now live on the layout-frame stack below; the
-       window is just the root frame.  s_ctx keeps only the cross-cutting interaction
-       state the chrome and widgets read regardless of which region is active. */
+       window is just the root frame.  s_build keeps only the cross-cutting per-frame
+       context the chrome and widgets read regardless of which region is active. */
 
     imgui_rect_t clip_rect;   // active interaction clip -- widget hover is gated by it
     bool         wheel_used;  // a region consumed the wheel this frame (innermost wins)
@@ -87,18 +105,18 @@ static struct
     bool               combo_item_clicked;  // a selectable in that body was clicked this frame
 
     /* Keyboard navigation state lives in its own subsystem struct (nav_state_t s_nav, below) so
-       s_ctx stays the cross-cutting interaction state and the nav block does not bloat it.  See
-       imgui_nav.c for the driver and nav_item_register (imgui_widget_core.c) for the per-item seam. */
+       the per-frame build scratch does not bloat it.  See imgui_nav.c for the driver and
+       nav_item_register (imgui_widget_core.c) for the per-item seam. */
 
-} s_ctx;
+} s_build;
 
 /*----------------------------------------------------------------------------------------------
     Keyboard navigation state (s_nav)
 
     The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather
     than the mouse -- plus the menu-bar state machine layered on top of it.  Held in its own
-    struct, not s_ctx: imgui_nav.c drives it and nav_item_register (imgui_widget_core.c) is the
-    per-item seam.
+    struct, apart from s_interaction / s_build: imgui_nav.c drives it and nav_item_register
+    (imgui_widget_core.c) is the per-item seam.
 
     `win` is the window or popup nav is scoped to, chosen each frame the way hover_win is (a popup
     captures it while open).  Movement is resolved one frame deferred against `ref_rect`, exactly
@@ -175,11 +193,11 @@ static void
 item_flag_push( imgui_item_flags_t flag, bool enable )
 {
     if ( s_item_flag_sp < IMGUI_ITEM_FLAG_DEPTH )
-        s_item_flag_stack[ s_item_flag_sp ] = s_ctx.item_flags;
+        s_item_flag_stack[ s_item_flag_sp ] = s_build.item_flags;
     ++s_item_flag_sp;    /* count truthfully so push/pop stay paired even past the cap */
 
-    if ( enable ) s_ctx.item_flags |=  flag;
-    else          s_ctx.item_flags &= ~flag;
+    if ( enable ) s_build.item_flags |=  flag;
+    else          s_build.item_flags &= ~flag;
 }
 
 /* Pop: restore the merged flags saved by the matching push. */
@@ -189,7 +207,7 @@ item_flag_pop( void )
     if ( s_item_flag_sp == 0 ) return;
     --s_item_flag_sp;
     u32 i = s_item_flag_sp < IMGUI_ITEM_FLAG_DEPTH ? s_item_flag_sp : IMGUI_ITEM_FLAG_DEPTH - 1;
-    s_ctx.item_flags = s_item_flag_stack[ i ];
+    s_build.item_flags = s_item_flag_stack[ i ];
 }
 
 /* Next-item override: mark `flag` as controlled for the next widget, with its on/off value.
@@ -197,9 +215,9 @@ item_flag_pop( void )
 static void
 item_flag_next( imgui_item_flags_t flag, bool enable )
 {
-    s_ctx.next_set |= flag;
-    if ( enable ) s_ctx.next_val |=  flag;
-    else          s_ctx.next_val &= ~flag;
+    s_build.next_set |= flag;
+    if ( enable ) s_build.next_val |=  flag;
+    else          s_build.next_val &= ~flag;
 }
 
 /* Resolve the flags for the item now emitting: the stack value with the one-shot next-item override
@@ -209,10 +227,10 @@ item_flag_next( imgui_item_flags_t flag, bool enable )
 static imgui_item_flags_t
 item_flags_resolve( void )
 {
-    imgui_item_flags_t f = ( s_ctx.item_flags & ~s_ctx.next_set ) | ( s_ctx.next_val & s_ctx.next_set );
-    s_ctx.next_set = 0;
-    s_ctx.next_val = 0;
-    s_ctx.cur_item_flags = f;
+    imgui_item_flags_t f = ( s_build.item_flags & ~s_build.next_set ) | ( s_build.next_val & s_build.next_set );
+    s_build.next_set = 0;
+    s_build.next_val = 0;
+    s_build.cur_item_flags = f;
 
     /* Same seam for the style stacks: promote any next_style_* override into the active per-item
        layer so it applies for this widget's whole draw, then clears for the following one. */
@@ -230,7 +248,7 @@ item_flags_resolve( void )
 static void
 item_flags_chrome_reset( void )
 {
-    s_ctx.cur_item_flags = IMGUI_ITEM_NONE;
+    s_build.cur_item_flags = IMGUI_ITEM_NONE;
     draw_set_alpha( 1.0f );
     style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
 }
@@ -242,7 +260,7 @@ item_flags_chrome_reset( void )
     - The top frame owns the layout pen and the content column the leaf widgets emit into.
     - The rest of the struct is the resolve context layout_pop_region needs to measure 
       content and draw the region's scrollbars.
-    - The pen fields used to live flat in s_ctx; nesting moved them here.
+    - The pen fields used to live flat in the window context; nesting moved them here.
 
     - Memory is just the fixed array -- a frame carries only what is needed to emit widget 
       rects and resolve scroll at pop, so a deep nesting costs nothing beyond these slots.
@@ -340,16 +358,16 @@ typedef struct
     f32*                pcontent_w;         // write-back: measured content extent for next frame
     f32*                pcontent_h;
 
-    imgui_rect_t        parent_clip;        // s_ctx.clip_rect to restore at pop
+    imgui_rect_t        parent_clip;        // s_build.clip_rect to restore at pop
     u32                 id_restore;         // id-scope depth to restore at pop (see id stack below)
 
     /* Child edge-resize (begin_child CHILD_RESIZE_*): the armed/hot edges of this child's border
-       and the s_ctx.win_resize_hot to restore at end_child.  begin_child sets both (0 for a
+       and the s_build.win_resize_hot to restore at end_child.  begin_child sets both (0 for a
        non-resizeable child); end_child bolds child_resize_edge and restores the saved hot, so a
        hot edge suppresses body widgets only while inside this child, never its siblings. */
 
     u8                  child_resize_edge;       // hot/armed resize edges for this child (0 = none)
-    u8                  child_resize_saved_hot;  // s_ctx.win_resize_hot to restore at end_child
+    u8                  child_resize_saved_hot;  // s_build.win_resize_hot to restore at end_child
 
 } layout_frame_t;
 
@@ -370,10 +388,6 @@ lf( void )
     if ( i >= IMGUI_LAYOUT_DEPTH ) i = IMGUI_LAYOUT_DEPTH - 1;
     return &s_layout_stack[ i ];
 }
-
-/* Monotonic frame index, bumped each new_frame.  The keyed state pool below stamps entries with
-   it and reclaims slots gone cold, so transient ids do not leak the pool. */
-static u32 s_frame_counter;
 
 /*----------------------------------------------------------------------------------------------
     Popup stack
@@ -400,7 +414,7 @@ static u32 s_frame_counter;
 
 typedef struct
 {
-    /* Flat window context (s_ctx) the popup's begin_window clobbers. */
+    /* Flat window context (s_build) the popup's begin_window clobbers. */
     imgui_id_t             win_id;
     const char*            win_title;
     bool                   win_collapsed;
@@ -410,7 +424,7 @@ typedef struct
     bool                   win_grip_hot;
     struct imgui_window_t* cur_win;
     f32                    win_x, win_y, win_w, win_h;
-    imgui_rect_t           clip_rect;     // s_ctx.clip_rect (interaction clip)
+    imgui_rect_t           clip_rect;     // s_build.clip_rect (interaction clip)
 
     /* Draw cursor + the parent's top layout frame. */
     u32                    sort_key;      // s_draw.cur_z
@@ -421,7 +435,7 @@ typedef struct
 
 typedef struct
 {
-    imgui_id_t   id;            // popup window id (salted; matches s_ctx.win_id / hover_win)
+    imgui_id_t   id;            // popup window id (salted; matches s_build.win_id / hover_win)
     bool         modal;         // blocks input behind it + dims the background
     f32          anchor_x;      // open point -- where a non-modal popup is placed
     f32          anchor_y;
@@ -472,7 +486,25 @@ typedef struct
 
 } imgui_state_slot_t;
 
-static imgui_state_slot_t s_state[ IMGUI_STATE_SLOTS ];
+/* ---- First slice of per-context retained state ----
+   The keyed state pool and the frame clock that ages it are the first members of what will become
+   imgui_context_t.  They move together because the clock only has meaning relative to the pool it
+   stamps -- and, more pointedly, the clock must advance per context, not per app-frame: a context
+   not rebuilt on a given frame must not tick, or its live entries would read as cold and be
+   reclaimed (losing scroll / open state) while it is merely hidden.  Window / popup / combo
+   "appearing" detection keys off the same per-context clock for the same reason.  Bundling them now
+   makes the eventual lift into imgui_context_t a regrouping, not a rewrite.  Tier: per-context
+   retained. */
+
+typedef struct
+{
+    u32 frame;                                       // monotonic frame index, bumped each new_frame this
+                                                     //   context is built; stamps + ages the pool below
+    imgui_state_slot_t state[ IMGUI_STATE_SLOTS ];   // open-addressed keyed per-widget state
+
+} imgui_retained_t;
+
+static imgui_retained_t s_retained;
 
 /* Stable storage for `id`: the same pointer every frame the id stays live, zeroed the frame it is
    first seen or recycled.  size must fit IMGUI_STATE_CAP.  Never returns NULL. */
@@ -489,11 +521,11 @@ imgui_state_get( imgui_id_t id, u32 size )
 
     for ( u32 i = 0; i < IMGUI_STATE_SLOTS; ++i )
     {
-        imgui_state_slot_t* s = &s_state[ ( bucket + i ) & IMGUI_STATE_MASK ];
+        imgui_state_slot_t* s = &s_retained.state[ ( bucket + i ) & IMGUI_STATE_MASK ];
 
         if ( s->id == id )                          // live hit: restamp and hand back the storage
         {
-            s->seen_frame = s_frame_counter;
+            s->seen_frame = s_retained.frame;
             return s->data.bytes;
         }
         if ( s->id == IMGUI_ID_NONE )               // empty ends the probe: id is absent
@@ -501,17 +533,17 @@ imgui_state_get( imgui_id_t id, u32 size )
             dst = reuse ? reuse : s;                // reclaim a tombstone if we passed one, else grow
             break;
         }
-        if ( !reuse && s_frame_counter - s->seen_frame > 1u )
+        if ( !reuse && s_retained.frame - s->seen_frame > 1u )
             reuse = s;                              // two+ frames cold -> reclaimable in place
     }
 
     /* Absent: settle into dst.  If the table is wall-to-wall live entries (no empty slot and no
        tombstone -- 512 distinct persistent widgets in one frame), clobber the home bucket: a rare
        degradation rather than an overflow.  reuse covers the no-empty-but-some-cold case. */
-    if ( !dst ) dst = reuse ? reuse : &s_state[ bucket ];
+    if ( !dst ) dst = reuse ? reuse : &s_retained.state[ bucket ];
 
     dst->id         = id;
-    dst->seen_frame = s_frame_counter;
+    dst->seen_frame = s_retained.frame;
     memset( dst->data.bytes, 0, sizeof dst->data.bytes );
     return dst->data.bytes;
 }
@@ -642,10 +674,10 @@ static void
 window_nominate_hover( imgui_id_t id, imgui_rect_t r, u32 z )
 {
     /* Cheap z test gates the rect_hit; window z is unique so > / >= are equivalent. */
-    if ( z >= s_ctx.next_hover_win_z && rect_hit( r ) )
+    if ( z >= s_interaction.next_hover_win_z && rect_hit( r ) )
     {
-        s_ctx.next_hover_win   = id;
-        s_ctx.next_hover_win_z = z;
+        s_interaction.next_hover_win   = id;
+        s_interaction.next_hover_win_z = z;
     }
 }
 
@@ -657,40 +689,40 @@ static void
 ctx_new_frame( void )
 {
     /* Widget hover is rebuilt every frame by the hover window's widget calls; clear it now. */
-    s_ctx.hover_id = IMGUI_ID_NONE;
+    s_interaction.hover_id = IMGUI_ID_NONE;
 
     /* Fresh layout stack each frame; no region is open until a begin_window/begin_child.
        The interaction clip starts at the full display, and the wheel is unclaimed -- the
        innermost scrollable region the cursor sits in consumes it (claimed at region pop). */
     s_layout_sp       = 0;
     s_id_sp           = 0;       /* fresh id-scope stack; regions/push_id reseed it */
-    s_ctx.wheel_used  = false;
+    s_build.wheel_used  = false;
 
     /* Popup nesting depth is rebuilt as begin_popup / end_popup run; the open set persists. */
     s_popup_begin_count = 0;
 
     /* Combo body coordination is per-frame and re-set by begin/end_combo; clear as a safety net. */
-    s_ctx.combo_open         = false;
-    s_ctx.combo_item_clicked = false;
+    s_build.combo_open         = false;
+    s_build.combo_item_clicked = false;
 
     /* Fresh item-flag state each frame: empty stack, no next-item override, nothing disabled. */
     s_item_flag_sp       = 0;
-    s_ctx.item_flags     = IMGUI_ITEM_NONE;
-    s_ctx.next_set       = IMGUI_ITEM_NONE;
-    s_ctx.next_val       = IMGUI_ITEM_NONE;
-    s_ctx.cur_item_flags = IMGUI_ITEM_NONE;
+    s_build.item_flags     = IMGUI_ITEM_NONE;
+    s_build.next_set       = IMGUI_ITEM_NONE;
+    s_build.next_val       = IMGUI_ITEM_NONE;
+    s_build.cur_item_flags = IMGUI_ITEM_NONE;
 
     /* Fresh style stacks each frame: working set re-seeded from the theme, stacks + next cleared. */
     style_new_frame();
-    s_ctx.clip_rect   = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
-    ++s_frame_counter;
+    s_build.clip_rect   = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
+    ++s_retained.frame;
 
     /* Promote the window the cursor was over last frame, then start a fresh nomination.
        hover_win lags the cursor by one frame -- the only deferral, and it is what lets the
        front-most window be known before any widget hit-tests this frame. */
-    s_ctx.hover_win        = s_ctx.next_hover_win;
-    s_ctx.next_hover_win   = IMGUI_ID_NONE;
-    s_ctx.next_hover_win_z = 0;
+    s_interaction.hover_win        = s_interaction.next_hover_win;
+    s_interaction.next_hover_win   = IMGUI_ID_NONE;
+    s_interaction.next_hover_win_z = 0;
 
     /* Release active_id once its initiating button is up.  Most grabs use the left button
        (active_button 0); a middle-button window move sets active_button 2 so it releases on
@@ -698,18 +730,18 @@ ctx_new_frame( void )
        so widgets can still observe the press+release pair this frame; it clears on the
        following frame.  Resetting active_button to 0 on release means every left-button grab
        site needs no bookkeeping -- only the middle grab raises it. */
-    u8 ab = s_ctx.active_button;
+    u8 ab = s_interaction.active_button;
     if ( !s_io.mouse_down[ ab ] && !s_io.mouse_released[ ab ] )
     {
-         s_ctx.active_id     = IMGUI_ID_NONE;
-         s_ctx.active_button = 0;
+         s_interaction.active_id     = IMGUI_ID_NONE;
+         s_interaction.active_button = 0;
     }
 
     /* Drop keyboard focus on any press; the widget under the cursor re-claims
        it the same frame (input_text sets focused_id from hover_id + press).
        A press on a button or empty space thus leaves focus cleared. */
     if ( s_io.mouse_pressed[ 0 ] )
-         s_ctx.focused_id = IMGUI_ID_NONE;
+         s_interaction.focused_id = IMGUI_ID_NONE;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -721,7 +753,7 @@ ctx_new_frame( void )
 
     want_capture_* are the fence: gate any direct app() input read in non-UI code on them, so
     gameplay never acts on a keystroke imgui consumed (typing in a field) or a click that was
-    really a widget / window drag.  Both read the interaction state resolved in s_ctx, not the raw
+    really a widget / window drag.  Both read the interaction state resolved in s_interaction, not the raw
     device, which is exactly what only imgui knows.
 ----------------------------------------------------------------------------------------------*/
 
@@ -731,7 +763,7 @@ ctx_new_frame( void )
 bool
 imgui_want_capture_mouse( void )
 {
-    return s_ctx.hover_win != IMGUI_ID_NONE || s_ctx.active_id != IMGUI_ID_NONE;
+    return s_interaction.hover_win != IMGUI_ID_NONE || s_interaction.active_id != IMGUI_ID_NONE;
 }
 
 /* True when imgui owns the keyboard this frame -- a text field is focused, keyboard nav is engaged,
@@ -740,7 +772,7 @@ imgui_want_capture_mouse( void )
 bool
 imgui_want_capture_keyboard( void )
 {
-    return s_ctx.focused_id != IMGUI_ID_NONE || s_nav.highlight
+    return s_interaction.focused_id != IMGUI_ID_NONE || s_nav.highlight
         || s_popup_open_count > 0 || s_nav.bar_win != IMGUI_ID_NONE;
 }
 
@@ -751,9 +783,9 @@ imgui_want_capture_keyboard( void )
 bool
 imgui_is_mouse_hovering_rect( imgui_rect_t r )
 {
-    bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE );
-    bool win_hover = ( s_ctx.win_id == s_ctx.hover_win );
-    return can_hover && win_hover && rect_hit( s_ctx.clip_rect ) && rect_hit( r );
+    bool can_hover = ( s_interaction.active_id == IMGUI_ID_NONE );
+    bool win_hover = ( s_build.win_id == s_interaction.hover_win );
+    return can_hover && win_hover && rect_hit( s_build.clip_rect ) && rect_hit( r );
 }
 
 /* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t

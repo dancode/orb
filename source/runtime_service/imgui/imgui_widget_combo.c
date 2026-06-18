@@ -10,7 +10,7 @@
                  anchored at the box, so occlusion, click-outside close, overlay detach, and z-band
                  all come from there unchanged; only the box-anchored placement + a min width that
                  matches the box are combo-specific.  A row clicked in the body dismisses the combo
-                 (selectable flags s_ctx.combo_item_clicked; end_combo closes on it).
+                 (selectable flags s_build.combo_item_clicked; end_combo closes on it).
 
       List box -- a framed, independently scrolling box of selectable rows with a trailing label.
                  It is a begin_child (which already frames, clips, and scrolls) plus the label drawn
@@ -82,7 +82,7 @@ imgui_begin_combo( const char* label, const char* preview_value, imgui_combo_fla
     /* Toggle on click.  A click while open is the dismiss gesture: popup_close_check (frame top)
        has already closed the dropdown as a click outside it, so only open when the body did NOT
        emit last frame -- otherwise the one click would close then immediately reopen it. */
-    bool was_open = ( cs->open_frame + 1u == s_frame_counter );
+    bool was_open = ( cs->open_frame + 1u == s_retained.frame );
     if ( st.clicked && !was_open )
         popup_open_id( pid, box.x, box.y + box.h );
 
@@ -126,8 +126,8 @@ imgui_begin_combo( const char* label, const char* preview_value, imgui_combo_fla
 
     if ( vis )
     {
-        cs->open_frame   = s_frame_counter;   /* body emitted this frame -> "open" next frame */
-        s_ctx.combo_open = true;              /* a row clicked here dismisses the combo */
+        cs->open_frame   = s_retained.frame;   /* body emitted this frame -> "open" next frame */
+        s_build.combo_open = true;              /* a row clicked here dismisses the combo */
 
         imgui_stack();                        /* the dropdown body is a vertical list */
 
@@ -143,11 +143,11 @@ void
 imgui_end_combo( void )
 {
     /* A row clicked in the body dismisses the combo (selectable set the flag while combo_open). */
-    if ( s_ctx.combo_item_clicked )
+    if ( s_build.combo_item_clicked )
         imgui_close_current_popup();
 
-    s_ctx.combo_open         = false;
-    s_ctx.combo_item_clicked = false;
+    s_build.combo_open         = false;
+    s_build.combo_item_clicked = false;
 
     imgui_end_popup();
 }

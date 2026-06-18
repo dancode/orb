@@ -14,8 +14,8 @@
         active  : the primary button is held with this widget as the target
         focused : this widget owns keyboard input (input_text)
 
-    Included by imgui.c after imgui_window.c so s_ctx, s_io, s_layout, rect_hit, and the
-    draw helpers are all in scope.
+    Included by imgui.c after imgui_window.c so s_interaction, s_build, s_io, s_layout, rect_hit,
+    and the draw helpers are all in scope.
 
 ==============================================================================================*/
 // clang-format off
@@ -235,7 +235,7 @@ typedef enum
 } widget_kind_t;
 
 /* Result of one frame of interaction for a widget.  Every widget drives its
-   visuals and value changes from these flags instead of touching s_ctx directly. */
+   visuals and value changes from these flags instead of touching s_interaction directly. */
 typedef struct
 {
     bool hover;       /* cursor is over the widget this frame                  */
@@ -252,7 +252,7 @@ typedef struct
 #define REPEAT_DELAY 0.30f
 #define REPEAT_RATE  0.05f
 
-/* One tick of the held-button repeat clock (state in s_ctx, since only one widget is active at a
+/* One tick of the held-button repeat clock (state in s_interaction, since only one widget is active at a
    time).  Fires immediately on the press frame, then again once repeat_t crosses the initial delay
    and thereafter each rate interval.  Returns true on a fire frame; the caller routes it to
    st.clicked.  Subtracting the threshold (vs zeroing) keeps the cadence steady across uneven dt. */
@@ -261,25 +261,25 @@ widget_repeat_tick( bool pressed )
 {
     if ( pressed )
     {
-        s_ctx.repeat_t  = 0.0f;
-        s_ctx.repeat_on = false;   /* the next fire waits the longer initial delay */
+        s_interaction.repeat_t  = 0.0f;
+        s_interaction.repeat_on = false;   /* the next fire waits the longer initial delay */
         return true;               /* press itself is the first fire */
     }
 
-    s_ctx.repeat_t += s_io.dt;
-    f32 thresh = s_ctx.repeat_on ? REPEAT_RATE : REPEAT_DELAY;
-    if ( s_ctx.repeat_t >= thresh )
+    s_interaction.repeat_t += s_io.dt;
+    f32 thresh = s_interaction.repeat_on ? REPEAT_RATE : REPEAT_DELAY;
+    if ( s_interaction.repeat_t >= thresh )
     {
-        s_ctx.repeat_t -= thresh;
-        s_ctx.repeat_on = true;    /* past the delay -- switch to the faster rate */
+        s_interaction.repeat_t -= thresh;
+        s_interaction.repeat_on = true;    /* past the delay -- switch to the faster rate */
         return true;
     }
     return false;
 }
 
 /* Keyboard-nav per-item seam.  Called from widget_behavior for every item that belongs to the nav
-   window (s_ctx.win_id == s_nav.win), the keyboard mirror of the hover hit-test above.  It does
-   four things, all reading/writing the nav accumulator in s_ctx (committed at the next nav_new_frame,
+   window (s_build.win_id == s_nav.win), the keyboard mirror of the hover hit-test above.  It does
+   four things, all reading/writing the nav accumulator in s_nav (committed at the next nav_new_frame,
    imgui_nav.c): records this frame's rect for the current nav item, tracks emission order for Tab,
    scores the item as a directional-move candidate, and -- for the current nav item -- lights the
    focus ring and synthesizes a click from an Enter/Space activation so every widget activates from
@@ -334,7 +334,7 @@ nav_item_register( imgui_id_t id, imgui_rect_t r, widget_state_t* st, widget_kin
             {
                 st->pressed = st->clicked = true;
                 if ( kind == WIDGET_KIND_FOCUSABLE )
-                    s_ctx.focused_id = id;      /* Enter on an input box -> enter text capture */
+                    s_interaction.focused_id = id;      /* Enter on an input box -> enter text capture */
 
                 /* Consume the activating keys + any text so the item just focused does not also see
                    this frame's Enter (instant blur) or type the activating Space. */
@@ -359,13 +359,13 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     /* Latch the most recent item id for context menus / tooltips (begin_popup_context_item,
        set_item_tooltip).  Done before the disabled early-out so a disabled widget still counts
        as the last item -- the anchor is "what was just emitted", regardless of its state. */
-    s_ctx.last_item_id = id;
+    s_build.last_item_id = id;
 
     /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
        state here is the one place that suppresses interaction for every widget, the behavioral half
        of IMGUI_ITEM_DISABLED (the visual dim is the draw list's global alpha, set at resolve).  The
        flags were latched by widget_next_rect_w just before this call. */
-    if ( s_ctx.cur_item_flags & IMGUI_ITEM_DISABLED )
+    if ( s_build.cur_item_flags & IMGUI_ITEM_DISABLED )
         return st;
 
     /* Hot only when this widget belongs to the window the cursor is over (hover_win,
@@ -378,24 +378,24 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
        The active item keeps interacting through st.active below, which reads active_id
        directly, so a drag stays live while the cursor sweeps over inert neighbours. */
 
-    bool can_hover = ( s_ctx.active_id == IMGUI_ID_NONE || s_ctx.active_id == id );
-    bool win_hover = ( s_ctx.win_id == s_ctx.hover_win );
-    bool eligible  = can_hover && win_hover && !s_ctx.win_resize_hot && !s_ctx.win_grip_hot;
+    bool can_hover = ( s_interaction.active_id == IMGUI_ID_NONE || s_interaction.active_id == id );
+    bool win_hover = ( s_build.win_id == s_interaction.hover_win );
+    bool eligible  = can_hover && win_hover && !s_build.win_resize_hot && !s_build.win_grip_hot;
 
     /* While the keyboard is the active nav instrument (nav_highlight), the mouse does not set hover:
        the fill is mutually exclusive, so a mouse-hovered item never fills alongside the nav item
        (the nav ring still shows its location).  A mouse move or click drops nav_highlight
        (imgui_nav.c), re-enabling hover that same frame. */
-    if ( eligible && !s_nav.highlight && rect_hit( s_ctx.clip_rect ) && rect_hit( r ) )
-         s_ctx.hover_id = id;
+    if ( eligible && !s_nav.highlight && rect_hit( s_build.clip_rect ) && rect_hit( r ) )
+         s_interaction.hover_id = id;
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
-    if ( s_ctx.hover_id == id && s_io.mouse_pressed[ 0 ] )
+    if ( s_interaction.hover_id == id && s_io.mouse_pressed[ 0 ] )
     {
-        s_ctx.active_id = id;
+        s_interaction.active_id = id;
         st.pressed      = true;
         if ( kind == WIDGET_KIND_FOCUSABLE )
-            s_ctx.focused_id = id;
+            s_interaction.focused_id = id;
 
         /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so
            resuming the keyboard later continues from what was clicked (only once a ring exists). */
@@ -403,21 +403,21 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
             s_nav.id = id;
     }
 
-    st.hover   = ( s_ctx.hover_id == id );
-    st.active  = ( s_ctx.active_id == id );
-    st.focused = ( s_ctx.focused_id == id );
-    st.clicked = s_io.mouse_released[ 0 ] && s_ctx.hover_id == id && s_ctx.active_id == id;
+    st.hover   = ( s_interaction.hover_id == id );
+    st.active  = ( s_interaction.active_id == id );
+    st.focused = ( s_interaction.focused_id == id );
+    st.clicked = s_io.mouse_released[ 0 ] && s_interaction.hover_id == id && s_interaction.active_id == id;
 
     /* Keyboard nav: an item in the nav window registers as a candidate and, if it is the nav
        cursor, takes a synthesized click from an Enter/Space activation -- the keyboard mirror of
        the mouse hit-test above, through the same one seam every widget already passes through. */
-    if ( s_ctx.win_id == s_nav.win )
+    if ( s_build.win_id == s_nav.win )
         nav_item_register( id, r, &st, kind );
 
     /* Auto-repeat (IMGUI_ITEM_BUTTON_REPEAT): while held with the cursor still over it, fire on the
        press then repeatedly on the timed cadence -- replacing the release-click for this widget.
        Gated on the cursor being over it so sliding off pauses the repeat, like a real spin button. */
-    if ( ( s_ctx.cur_item_flags & IMGUI_ITEM_BUTTON_REPEAT ) && st.active && s_ctx.hover_id == id )
+    if ( ( s_build.cur_item_flags & IMGUI_ITEM_BUTTON_REPEAT ) && st.active && s_interaction.hover_id == id )
         st.clicked = widget_repeat_tick( st.pressed );
 
     /* Debug overlay: every interactive widget passes through here, so this one site captures
@@ -428,7 +428,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 #ifdef IMGUI_DEBUG_OVERLAY
     {
         if ( eligible ) {
-            imgui_rect_t vis = rect_intersect( r, s_ctx.clip_rect );
+            imgui_rect_t vis = rect_intersect( r, s_build.clip_rect );
             if ( vis.w > 0.0f && vis.h > 0.0f )
                  DBG_WIDGET( id, vis, st.hover, st.active );
         }

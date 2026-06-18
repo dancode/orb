@@ -12,7 +12,7 @@
     scope.  This file owns the table, the active drag mode, the in-flight drag and resize
     offsets, and raise-to-front -- the state those interactions read and write.
 
-    Included by imgui.c after imgui_ctx.c so s_ctx (hover_win) and s_io are in scope.
+    Included by imgui.c after imgui_ctx.c so s_interaction (hover_win) and s_io are in scope.
 
 ==============================================================================================*/
 // clang-format off
@@ -59,7 +59,7 @@ static imgui_window_t       s_window_scratch;   /* fallback when the table is fu
 static u32                  s_z_counter;
 
 /* Drag configuration + in-flight drag offset (mouse - window pos at grab time).
-   The window currently being dragged is tracked via s_ctx.active_id == window id. */
+   The window currently being dragged is tracked via s_interaction.active_id == window id. */
 
 static imgui_win_drag_t     s_win_drag_mode = IMGUI_WIN_DRAG_TITLEBAR;
 static f32                  s_drag_off_x, s_drag_off_y;
@@ -206,11 +206,11 @@ window_raise_on_press( void )
     /* Either button raises: left for the normal click/drag, middle for the convenience move
        grab (imgui_widget.c end_window), so a middle-grabbed window also comes to the front. */
     if ( ( !s_io.mouse_pressed[ 0 ] && !s_io.mouse_pressed[ 2 ] )
-         || s_ctx.hover_win == IMGUI_ID_NONE )
+         || s_interaction.hover_win == IMGUI_ID_NONE )
         return;
 
     for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == s_ctx.hover_win )
+        if ( s_windows[ i ].id == s_interaction.hover_win )
         {
             /* Already on top?  Don't burn a z value. */
             if ( s_windows[ i ].z != s_z_counter )

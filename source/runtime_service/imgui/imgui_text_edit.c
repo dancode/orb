@@ -251,7 +251,7 @@ undo_apply( imgui_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
         - carving `box` from the layout (widget_next_rect has already been called),
         - drawing the box background and border (so the visual treatment is widget-specific),
         - obtaining `st` from widget_behavior with WIDGET_KIND_FOCUSABLE.
-    On Enter or Escape the function drops focus by clearing s_ctx.focused_id.
+    On Enter or Escape the function drops focus by clearing s_interaction.focused_id.
 
     Mouse capture: widget_behavior already claims active_id on the press (for every widget
     kind), and that single mechanism is the engine's general-purpose mouse grab -- while a
@@ -547,7 +547,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
         if ( s_io.keys_pressed[ APP_KEY_ENTER ] )
         {
             s_undo.for_id    = IMGUI_ID_NONE;
-            s_ctx.focused_id = IMGUI_ID_NONE;
+            s_interaction.focused_id = IMGUI_ID_NONE;
             res.enter = true;
         }
         if ( s_io.keys_pressed[ APP_KEY_ESCAPE ] )
@@ -563,7 +563,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                 len = rv_len;
             }
             s_undo.for_id    = IMGUI_ID_NONE;
-            s_ctx.focused_id = IMGUI_ID_NONE;
+            s_interaction.focused_id = IMGUI_ID_NONE;
         }
 
         /* Mouse.  st.pressed is the grab frame (also the focus-gaining click, since
