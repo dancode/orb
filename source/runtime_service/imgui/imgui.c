@@ -37,8 +37,7 @@
 
 #include "orb.h"
 
-// internal API headers
-
+// API internal headers
 #include "runtime_service/imgui/imgui_host.h"
 
 // API function headers
@@ -243,6 +242,7 @@ typedef struct imgui_window_t
 
     /* Next-window channel bookkeeping (see set_next_window_pos / _size).  last_frame drives the
        "appearing" test; the allow masks track which conditions a queued value may still fire. */
+
     u32        last_frame;      /* frame index last begun; 0 = never begun        */
     u8         set_pos_allow;   /* conds still permitted to set position (imgui_cond_t bits) */
     u8         set_size_allow;  /* conds still permitted to set size              */
