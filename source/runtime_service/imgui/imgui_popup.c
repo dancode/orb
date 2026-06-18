@@ -121,6 +121,7 @@ overlay_detach( void )
     s.win_w = s_build.win_w; s.win_h = s_build.win_h;
     s.clip_rect      = s_build.clip_rect;
     s.sort_key       = draw_sort_key();
+    s.viewport       = draw_viewport();
 
     /* Save the parent's top layout frame so its pen survives the popup's region pop. */
     s.had_parent = ( s_layout_sp > 0 );
@@ -155,6 +156,7 @@ overlay_reattach( imgui_overlay_save_t s )
     s_build.win_w = s.win_w; s_build.win_h = s.win_h;
     s_build.clip_rect      = s.clip_rect;
     draw_set_sort_key( s.sort_key );
+    draw_set_viewport( s.viewport );
 }
 
 /*----------------------------------------------------------------------------------------------

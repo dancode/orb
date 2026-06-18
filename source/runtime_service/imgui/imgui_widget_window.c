@@ -261,8 +261,10 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
                                         win->w + 2.0f * ox, disp_h + 2.0f * oy } ), resize_hot );
 
     /* All of this window's geometry is stamped with its z so flush can paint
-       windows back-to-front regardless of begin_window call order. */
+       windows back-to-front regardless of begin_window call order, and with its
+       viewport so flush dispatches it to the surface hosting this window. */
     draw_set_sort_key( win->z );
+    draw_set_viewport( win->viewport );
 
     /* Window chrome (background, titlebar, border) is not an item: clear any disabled latch a prior
        window's trailing widget left, so this window paints opaque and its chrome interacts. */
@@ -457,8 +459,10 @@ imgui_end_window( void )
     if ( !s_build.win_collapsed )
         draw_pop_clip_rect();
 
-    /* Subsequent draws (low-level API, the next window) revert to the background key. */
+    /* Subsequent draws (low-level API, the next window) revert to the background key and the
+       main surface; the next begin_window re-routes them to its own viewport. */
     draw_set_sort_key( 0 );
+    draw_set_viewport( 0 );
 
     /* Window move grab.  Decided here, after this window's widgets have run, and pinned off
        entirely by NOMOVE (fixed-position widgets).  This window must be the one under the

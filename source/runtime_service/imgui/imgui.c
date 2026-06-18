@@ -230,6 +230,7 @@ typedef struct imgui_window_t
     f32        x, y;            /* persisted top-left (updated by dragging)       */
     f32        w, h;            /* persisted dimensions                           */
     u32        z;               /* paint order: higher = more recently raised = in front */
+    u32        viewport;        /* target surface index (0 = main swapchain); set via set_next_window_viewport */
 
     f32        scroll_y;        /* vertical scroll offset; 0 = top                */
     f32        scroll_x;        /* horizontal scroll offset; 0 = left             */

@@ -51,6 +51,21 @@ typedef struct imgui_api_s
     void ( *new_frame )( i32 win_w, i32 win_h, f32 dt );
     void ( *render    )( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
+    /* Multi-surface rendering.  One new_frame() builds every window's geometry into a single draw
+       list; flush then dispatches each window to the surface it was assigned (set_next_window_viewport).
+
+       viewport_open()  -- allocate a floater surface (its own geometry buffers), returning its index
+                           (1..) or -1 if the pool is full.  Its swapchain image is targeted per-context
+                           at flush time, so it is bound to a context by which cmd you pass render_viewport.
+       viewport_close() -- release a floater's geometry buffers (the host owns the OS window + rhi context).
+       render_viewport()-- flush one surface's partition: call between that context's frame_begin/frame_end
+                           with the context cmd and the surface's drawable size.  render() is the index-0
+                           convenience (it also paints the debug overlay).  Loop the rest per surface. */
+
+    void ( *render_viewport )( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+    i32  ( *viewport_open    )( void );
+    void ( *viewport_close   )( i32 index );
+
     /* Host input -- the host owns the app event ring drain and forwards each
        event here before new_frame() for the same frame.
        event() -- forward one drained app_event_t; imgui unpacks the input events
@@ -82,6 +97,11 @@ typedef struct imgui_api_s
        before begin_window; the throwaway x/y/w/h there can stay (ONCE) or be ignored (ALWAYS). */
     void ( *set_next_window_pos  )( f32 x, f32 y, imgui_cond_t cond );
     void ( *set_next_window_size )( f32 w, f32 h, imgui_cond_t cond );
+
+    /* set_next_window_viewport -- assign the NEXT begin_window to a surface opened with
+       viewport_open (0 = main swapchain).  Sticky: it lands on the window record and persists like
+       position, so the window stays on that surface until reassigned. */
+    void ( *set_next_window_viewport )( u32 index );
 
     /* set_next_window_size_constraints -- queue a one-shot [min,max] size box for the NEXT
        begin_child, then cleared.  The Dear ImGui SetNextWindowSizeConstraints analogue, in its

@@ -78,7 +78,6 @@ static bool
 win_proc_keyboard( app_window_t* win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
 {
     UNUSED( hwnd );
-
     switch ( msg )
     {
         case WM_SYSKEYDOWN:

@@ -44,7 +44,9 @@ imgui_shutdown( void )
     imgui_debug_shutdown();
     #endif
 
-    viewport_destroy( &g_ctx->viewports[ 0 ] );   /* main viewport geometry buffers */
+    /* Release every live surface's geometry (main + any floaters the host left open). */
+    for ( u32 i = 0; i < IMGUI_MAX_VIEWPORTS; ++i )
+        viewport_destroy( &g_ctx->viewports[ i ] );
     imgui_render_shutdown();                       /* shared pipeline / sampler / atlas */
 }
 
@@ -83,13 +85,60 @@ imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
     nav_new_frame();             /* commit last frame's nav move + read this frame's nav keys */
 }
 
-void 
+void
 imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
-    imgui_render_flush( &g_ctx->viewports[ 0 ], cmd, win_w, win_h );   /* one surface today; host loops viewports later */
+    imgui_render_flush( &g_ctx->viewports[ 0 ], 0u, cmd, win_w, win_h );   /* the main swapchain surface */
 #ifdef IMGUI_DEBUG_OVERLAY
-    imgui_debug_flush( cmd, win_w, win_h );   /* bolt-on overlay, painted last (on top) */
+    imgui_debug_flush( cmd, win_w, win_h );   /* bolt-on overlay, painted last (on top) of the main surface */
 #endif
+}
+
+/* Flush one surface's partition of the draw list.  The host opens a frame on that surface's rhi
+   context, calls this with the context cmd + the surface's drawable size, then ends the frame --
+   once per live viewport.  Index 0 is the main swapchain (the debug overlay rides imgui_render);
+   1.. are floaters opened with viewport_open.  Out-of-range is a no-op. */
+void
+imgui_render_viewport( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+{
+    if ( index < 0 || index >= IMGUI_MAX_VIEWPORTS )
+        return;
+    imgui_render_flush( &g_ctx->viewports[ index ], (u32)index, cmd, win_w, win_h );
+}
+
+/* Open a floater surface: allocate a free viewport slot (1..), create its geometry buffers, and
+   target the floater's own swapchain image.  RHI_SWAPCHAIN_COLOR resolves per-context at flush
+   time against the cmd the host passes, so the same sentinel serves every surface.  Returns the
+   viewport index to pass to set_next_window_viewport / render_viewport, or -1 if the pool is full
+   or buffer creation failed. */
+i32
+imgui_viewport_open( void )
+{
+    for ( u32 i = 1; i < IMGUI_MAX_VIEWPORTS; ++i )
+    {
+        imgui_viewport_t* vp = &g_ctx->viewports[ i ];
+        if ( rhi_handle_valid( vp->vb ) )
+            continue;   /* slot already live */
+
+        if ( !viewport_create( vp, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR } ) )
+            return -1;
+
+        if ( i + 1u > g_ctx->viewport_count )
+            g_ctx->viewport_count = i + 1u;
+        return (i32)i;
+    }
+    return -1;   /* viewport pool full */
+}
+
+/* Close a floater surface and release its geometry buffers.  Slot 0 (the main swapchain) is owned
+   by init/shutdown and is never closed here; an out-of-range index is ignored.  The host must
+   destroy the underlying rhi context + OS window itself -- imgui owns only the geometry. */
+void
+imgui_viewport_close( i32 index )
+{
+    if ( index <= 0 || index >= IMGUI_MAX_VIEWPORTS )
+        return;
+    viewport_destroy( &g_ctx->viewports[ index ] );
 }
 
 /*==============================================================================================
@@ -159,8 +208,12 @@ const imgui_api_t g_imgui_api_struct =
     .load_font                          = imgui_load_font,
     .new_frame                          = imgui_new_frame,
     .render                             = imgui_render,
+    .render_viewport                    = imgui_render_viewport,
+    .viewport_open                      = imgui_viewport_open,
+    .viewport_close                     = imgui_viewport_close,
     .event                              = imgui_event,
     .set_next_window_pos                = imgui_set_next_window_pos,
+    .set_next_window_viewport           = imgui_set_next_window_viewport,
     .set_next_window_size               = imgui_set_next_window_size,
     .set_next_window_size_constraints   = imgui_set_next_window_size_constraints,
     .begin_window                       = imgui_begin_window,

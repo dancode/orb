@@ -333,16 +333,23 @@ imgui_render_shutdown( void )
 /*----------------------------------------------------------------------------------------------
     imgui_render_flush -- upload draw list to GPU and emit one draw call per command.
 
-    Paints into `vp`: uploads s_draw into vp's own vb/ib region and opens a LOAD pass on vp->target,
-    so a surface's geometry and target travel together.  One viewport today (g_ctx->viewports[0]); the
-    multi-viewport host loop will call this once per surface, each with its partition of the list.
+    Paints into `vp` (the surface at index `vp_index`): uploads s_draw into vp's own vb/ib region
+    and opens a LOAD pass on vp->target, so a surface's geometry and target travel together.  The
+    host calls this once per live surface, each with the matching context cmd and that surface's
+    drawable size; the partition is by `vp_index` -- a draw command tagged for another viewport is
+    skipped here (its index range is stepped over so the kept commands keep the right offset).
+
+    The whole vertex/index list is uploaded to every surface's buffer (geometry is shared and
+    indices are absolute), and each surface draws only its own command ranges.  For the small
+    per-frame geometry a debug UI emits this is cheaper than re-packing a per-viewport buffer; a
+    later pass can compact it if a surface's share ever dominates.
 
     Opens a LOAD render pass so the scene rendered before this call is preserved.
     Sets full-window viewport; each draw command applies its own scissor rectangle.
 ----------------------------------------------------------------------------------------------*/
 
 static void
-imgui_render_flush( imgui_viewport_t* vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;
@@ -462,6 +469,15 @@ imgui_render_flush( imgui_viewport_t* vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
             const imgui_draw_cmd_t* dc = &s_draw.cmds[ runs[ r ].start + k ];
             if ( dc->elem_count == 0 )
                 continue;
+
+            /* Partition: a command bound for another surface is not drawn here, but its index
+               range is still stepped over so the commands kept on this surface address the right
+               slice of the (shared, absolute) index buffer. */
+            if ( s_draw.cmd_vp[ runs[ r ].start + k ] != vp_index )
+            {
+                first_index += dc->elem_count;
+                continue;
+            }
 
             /* Scissor to the draw command's clip rect.  Floor the origin and ceil the
                far edge (rather than truncating both) so a fractional clip rect never

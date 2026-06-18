@@ -21,12 +21,14 @@ static struct
     u16                indices      [ IMGUI_MAX_IDX ];
     imgui_draw_cmd_t   cmds         [ IMGUI_MAX_CMDS ];
     u32                cmd_z        [ IMGUI_MAX_CMDS ];  // per-command sort key (z), parallel to cmds[]
+    u32                cmd_vp       [ IMGUI_MAX_CMDS ];  // per-command target viewport index, parallel to cmds[]
 
     u32                vert_count;  // verts currently in the list (up to IMGUI_MAX_VERTS)
     u32                idx_count;   // indices currently in the list (up to IMGUI_MAX_IDX)
     u32                cmd_count;   // draw commands currently in the list (up to IMGUI_MAX_CMDS)
 
     u32                cur_z;       // sort key stamped onto new commands (set by begin/end_window)
+    u32                cur_vp;      // viewport index stamped onto new commands (set by begin/end_window)
 
     imgui_rect_t       clip_stack   [ IMGUI_CLIP_DEPTH ];
     u32                clip_depth;
@@ -56,6 +58,7 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.idx_count  = 0;
     s_draw.cmd_count  = 0;
     s_draw.cur_z      = 0;       /* background; windows raise it via draw_set_sort_key */
+    s_draw.cur_vp     = 0;       /* main viewport; windows route via draw_set_viewport */
     s_draw.clip_depth = 1;
     s_draw.overflow   = false;   /* per-frame; hwm + overflow_ever persist */
     s_draw.alpha      = 1.0f;    /* opaque; lowered per-item for disabled draws */
@@ -116,6 +119,29 @@ draw_sort_key( void )
     return s_draw.cur_z;
 }
 
+/*----------------------------------------------------------------------------------------------
+    draw_set_viewport -- route subsequent commands to viewport `vp` (the surface a window paints).
+
+    Set to the window's assigned viewport in begin_window and back to 0 (the main swapchain) in
+    end_window, exactly as draw_set_sort_key drives the paint order.  flush replays only the
+    commands tagged with its own viewport index, so one context can build every window's geometry
+    and dispatch each window to the surface hosting it.
+----------------------------------------------------------------------------------------------*/
+
+static void
+draw_set_viewport( u32 vp )
+{
+    s_draw.cur_vp = vp;
+}
+
+/* Current viewport -- saved/restored by the popup layer alongside the sort key, so an overlay
+   begun mid-window leaves the parent's routing intact (begin/end_window drive cur_vp globally). */
+static u32
+draw_viewport( void )
+{
+    return s_draw.cur_vp;
+}
+
 /* draw_push_clip_root -- push the full-display clip (clip_stack[0]) as a fresh top, WITHOUT
    intersecting the current clip.  A popup is a top-level overlay: it must escape the enclosing
    window's clip, so the popup layer pushes this before opening the popup window (whose own clip
@@ -161,9 +187,11 @@ draw_ensure_cmd( u32 tex_idx, imgui_rect_t clip )
     if ( s_draw.cmd_count > 0 )
     {
         const imgui_draw_cmd_t* cur = &s_draw.cmds[ s_draw.cmd_count - 1 ];
-        /* A sort-key change must break the command so flush can reorder the two
-           ranges independently -- never merge across windows. */
+        /* A sort-key OR viewport change must break the command: flush reorders ranges by z and
+           replays each viewport's ranges to a different surface, so neither may merge across the
+           boundary -- never merge across windows or across surfaces. */
         if ( s_draw.cmd_z[ s_draw.cmd_count - 1 ] == s_draw.cur_z
+             && s_draw.cmd_vp[ s_draw.cmd_count - 1 ] == s_draw.cur_vp
              && cur->tex_idx == tex_idx
              && cur->clip_rect.x == clip.x && cur->clip_rect.y == clip.y
              && cur->clip_rect.w == clip.w && cur->clip_rect.h == clip.h )
@@ -173,7 +201,8 @@ draw_ensure_cmd( u32 tex_idx, imgui_rect_t clip )
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
 
-    s_draw.cmd_z[ s_draw.cmd_count ] = s_draw.cur_z;
+    s_draw.cmd_z[ s_draw.cmd_count ]  = s_draw.cur_z;
+    s_draw.cmd_vp[ s_draw.cmd_count ] = s_draw.cur_vp;
     s_draw.cmds[ s_draw.cmd_count++ ] = ( imgui_draw_cmd_t ){
         .elem_count = 0,
         .tex_idx    = tex_idx,

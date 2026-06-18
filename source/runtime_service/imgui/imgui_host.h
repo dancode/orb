@@ -38,12 +38,18 @@ bool imgui_load_font( const char* path );
 void imgui_new_frame( i32 win_w, i32 win_h, f32 dt );
 void imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
+/* multi-surface render */
+void imgui_render_viewport( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+i32  imgui_viewport_open( void );
+void imgui_viewport_close( i32 index );
+
 /* io */
 bool imgui_event( const app_event_t* ev );
 
 /* window */
 void imgui_set_next_window_pos ( f32 x, f32 y, imgui_cond_t cond );
 void imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond );
+void imgui_set_next_window_viewport( u32 index );
 void imgui_set_next_window_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
 bool imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
 void imgui_end_window( void );

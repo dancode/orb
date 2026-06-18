@@ -69,6 +69,7 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->w         = w;
     win->h         = h;
     win->z         = ++s_z_counter;
+    win->viewport  = 0;       /* main swapchain until set_next_window_viewport reassigns it */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
 
     /* Next-window state for a fresh window: never begun (so the first begin is "appearing"), and
@@ -97,6 +98,9 @@ static struct
     f32          pos_x, pos_y;
     f32          size_w, size_h;
 
+    bool         has_viewport;          /* a viewport reassignment is queued for the next window */
+    u32          viewport;              /* its target surface index                              */
+
 } s_next_win;
 
 void
@@ -115,6 +119,17 @@ imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond )
     s_next_win.size_cond = cond ? cond : IMGUI_COND_ALWAYS;
     s_next_win.size_w    = w;
     s_next_win.size_h    = h;
+}
+
+/* Queue the surface the NEXT begin_window paints into (0 = main swapchain, 1.. = a torn-off
+   floater opened with viewport_open).  The assignment is sticky: it lands on the window record and
+   persists across frames like position, so a window stays on its surface until reassigned.  No
+   condition -- it applies on the next begin_window and is then cleared. */
+void
+imgui_set_next_window_viewport( u32 index )
+{
+    s_next_win.has_viewport = true;
+    s_next_win.viewport     = index;
 }
 
 /* Resolve one queued axis against the window's remaining permissions.  Returns whether to apply
@@ -156,7 +171,12 @@ window_apply_next( imgui_window_t* win, bool appearing )
         win->h = s_next_win.size_h;
     }
 
-    s_next_win.has_pos = s_next_win.has_size = false;   /* the queue targets only the next window */
+    /* Viewport reassignment is unconditional (no ONCE/ALWAYS/APPEARING) -- it simply lands and
+       sticks until the next set_next_window_viewport on this window. */
+    if ( s_next_win.has_viewport )
+        win->viewport = s_next_win.viewport;
+
+    s_next_win.has_pos = s_next_win.has_size = s_next_win.has_viewport = false;   /* the queue targets only the next window */
 }
 
 /*----------------------------------------------------------------------------------------------

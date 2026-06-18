@@ -94,6 +94,27 @@ main( int argc, char** argv )
     }
 
     /* ------------------------------------------------------------------------------ */
+    /* Second OS window + render context -- the surface imgui's viewport 1 paints into.
+       This is the multi-viewport proof: one imgui context builds every window, and the
+       windows assigned to viewport 1 are dispatched to this second swapchain.  Failure
+       here is non-fatal -- the test falls back to a single surface (has_second stays false). */
+
+    i32 win2_w = 800, win2_h = 600;
+    win_id_t win2 = app()->window_open( "sb_vulkan (viewport 1)", 120, 120, win2_w, win2_h, APP_WIN_DEFAULT );
+    i32      ctx2 = RHI_CTX_INVALID;
+    if ( win2 != APP_WIN_INVALID )
+    {
+        ctx2 = rhi()->context_create( win2, app()->window_handle( win2 ), win2_w, win2_h );
+        if ( ctx2 == RHI_CTX_INVALID )
+        {
+            app()->window_close( win2 );
+            win2 = APP_WIN_INVALID;
+        }
+    }
+    if ( win2 == APP_WIN_INVALID )
+        fprintf( stderr, "[sb_vulkan] second window/context unavailable; running single-surface\n" );
+
+    /* ------------------------------------------------------------------------------ */
     /* Setup Resources */
 
     const bool b_use_boot = false;  // skip bootstrap triangle pipeline
@@ -137,8 +158,16 @@ main( int argc, char** argv )
     
     imgui()->load_font( "fonts/jetbrains_regular_24.orb_font" );
     // imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
-    
+
     imgui()->print_mem_stats();
+
+    /* Open imgui's floater surface for the second window.  Returns the viewport index (>=1) used
+       both to assign windows (set_next_window_viewport) and to flush (render_viewport).  Bound to
+       ctx2 purely by which cmd we pass render_viewport below. */
+    i32  vp1         = ( ctx2 != RHI_CTX_INVALID ) ? imgui()->viewport_open() : -1;
+    bool has_second  = ( vp1 >= 0 );
+    if ( ctx2 != RHI_CTX_INVALID && !has_second )
+        fprintf( stderr, "[sb_vulkan] imgui viewport_open failed; running single-surface\n" );
 
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
@@ -173,10 +202,24 @@ main( int argc, char** argv )
             switch ( ev.type )
             {
                 case APP_EV_WIN_RESIZE:
-                    win_w = ev.data.win_resize.w;
-                    win_h = ev.data.win_resize.h;
-                    rhi()->context_resize( ctx, win_w, win_h );
+                    /* Route the resize to the context owning the window that received it. */
+                    if ( ev.win_id == win )
+                    {
+                        win_w = ev.data.win_resize.w;
+                        win_h = ev.data.win_resize.h;
+                        rhi()->context_resize( ctx, win_w, win_h );
+                    }
+                    else if ( has_second && ev.win_id == win2 )
+                    {
+                        win2_w = ev.data.win_resize.w;
+                        win2_h = ev.data.win_resize.h;
+                        rhi()->context_resize( ctx2, win2_w, win2_h );
+                    }
                     break;
+
+                case APP_EV_WIN_CLOSE:
+                    /* Either window's close button tears the whole test down. */
+                    goto shutdown;
 
                 default:
                     break;
@@ -225,11 +268,42 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
-        /* Render frame -- skip entirely while minimized to avoid 0x0 swapchain churn. */
+        /* Build the UI ONCE: one imgui context emits every window for every surface into a single
+           draw list.  The flush passes below dispatch each window to the surface it was assigned
+           (set_next_window_viewport).  new_frame() takes the main window's size for the display
+           clip; the viewport-1 window is placed within those bounds so it is not clipped. */
 
-        if ( !app()->window_is_minimized( win ))
+        imgui()->new_frame( win_w, win_h, dt );
+
+        sb_imgui_demos[ active_demo ].fn();                // selected feature demo (viewport 0)
+        active_demo = sb_imgui_demo_picker( active_demo );  // demo list + key hints (clickable)
+
+        /* A window routed to the second surface.  Same one-context API as any other window -- only
+           set_next_window_viewport differs -- so it appears in the second OS window. */
+        if ( has_second )
         {
-            /* valid command recording handle on success */
+            imgui()->set_next_window_viewport( (u32)vp1 );
+            imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+            imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
+            if ( imgui()->begin_window( "Second Surface", 60, 60, 360, 240, IMGUI_WIN_NONE ) )
+            {
+                imgui()->stack();
+                imgui()->text( "This panel is built by the same" );
+                imgui()->text( "imgui context as the main window," );
+                imgui()->text( "but dispatched to a second OS" );
+                imgui()->text( "window / swapchain by viewport." );
+                imgui()->separator();
+                imgui()->textf( "viewport index: %d", vp1 );
+            }
+            imgui()->end_window();
+        }
+
+        /* ------------------------------------------------------------------------------ */
+        /* Flush the main surface.  Skip while minimized to avoid 0x0 swapchain churn; frame_begin
+           returns an invalid handle then and we must not frame_end it. */
+
+        if ( !app()->window_is_minimized( win ) )
+        {
             rhi_cmd_t cmd = rhi()->frame_begin( ctx );
             if ( rhi_cmd_valid( cmd ) )
             {
@@ -239,9 +313,8 @@ main( int argc, char** argv )
                 }
                 else
                 {
-                    /* No scene this frame -- clear the swapchain so imgui's LOAD pass
-                       composites over a fresh background instead of last frame's pixels
-                       (otherwise dragging a window smears: hall-of-mirrors). */
+                    /* Clear so imgui's LOAD pass composites over a fresh background instead of last
+                       frame's pixels (otherwise dragging a window smears: hall-of-mirrors). */
                     rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
                         .texture  = { .id = RHI_SWAPCHAIN_COLOR },
                         .load_op  = RHI_LOAD_OP_CLEAR,
@@ -251,38 +324,30 @@ main( int argc, char** argv )
                     rhi()->cmd_end_rendering( cmd );
                 }
 
-                if ( 0 )
-                {
-                    /* 2D draw pass -- positions in pixel space (0,0 = top-left). */
-                    const f32 bg[ 4 ] = { 0.08f, 0.08f, 0.12f, 1.0f };
-                    draw()->begin_pass( cmd, win_w, win_h, bg );
-                    const f32 white[ 4 ] = { 1.0f, 1.0f, 1.0f, 1.0f };
-                    draw()->rect( win_w * 0.5f, win_h * 0.5f, 200.0f, 100.0f, white );
-                    const f32 red[ 4 ] = { 0.9f, 0.2f, 0.2f, 1.0f };
-                    draw()->circle( 200.0f, 200.0f, 80.0f, 32, red );
-                    const f32 blue[ 4 ] = { 0.2f, 0.4f, 0.9f, 1.0f };
-                    draw()->rect( win_w - 160.0f, win_h - 80.0f, 120.0f, 60.0f, blue );
-                    draw()->end_pass();
-                }
-
-                /* imgui frame: draw the active feature demo plus the picker overlay.  Each
-                   demo lives in sb_vulkan_imgui.c and owns its own window(s); the host just
-                   dispatches the selected one between new_frame() and render(). */
-                if ( imgui() )
-                {
-                    imgui()->new_frame( win_w, win_h, dt );
-
-                    sb_imgui_demos[ active_demo ].fn();              // selected feature demo
-                    active_demo = sb_imgui_demo_picker( active_demo ); // demo list + key hints (clickable)
-
-                    imgui()->render( cmd, win_w, win_h );    // opens LOAD pass on swapchain, flushes, closes pass
-                }
-                
-
-                /* Only end a frame we actually began.  frame_begin returns an invalid handle
-                   without recording (minimized, swapchain out-of-date) -- calling frame_end then
-                   would record into a command buffer that was never begun. */
+                imgui()->render( cmd, win_w, win_h );    // viewport 0 partition + debug overlay
                 rhi()->frame_end( ctx );
+            }
+        }
+
+        /* ------------------------------------------------------------------------------ */
+        /* Flush the second surface from the SAME draw list: open ctx2's frame, clear, and replay
+           only viewport 1's partition (render_viewport) onto ctx2's swapchain, then end. */
+
+        if ( has_second && !app()->window_is_minimized( win2 ) )
+        {
+            rhi_cmd_t cmd2 = rhi()->frame_begin( ctx2 );
+            if ( rhi_cmd_valid( cmd2 ) )
+            {
+                rhi()->cmd_begin_rendering( cmd2, &( rhi_color_attachment_t ){
+                    .texture  = { .id = RHI_SWAPCHAIN_COLOR },   /* resolves to ctx2's swapchain image */
+                    .load_op  = RHI_LOAD_OP_CLEAR,
+                    .store_op = RHI_STORE_OP_STORE,
+                    .clear    = { 0.08f, 0.06f, 0.05f, 1.0f },
+                }, 1, NULL );
+                rhi()->cmd_end_rendering( cmd2 );
+
+                imgui()->render_viewport( vp1, cmd2, win2_w, win2_h );
+                rhi()->frame_end( ctx2 );
             }
         }
 
@@ -291,11 +356,17 @@ main( int argc, char** argv )
         sys_sleep_milliseconds( 4 );
     }
 
-    /* Shutdown -- drain GPU first, then free all GPU resources, then device, then window.
-       context_destroy calls vk_device_wait_idle before tearing down sync/swapchain; after
-       it returns the GPU is idle and pipeline/buffer destroy calls are safe. */
+shutdown:
+    /* Shutdown -- drain GPU first, then free all GPU resources, then device, then windows.
+       context_destroy calls vk_device_wait_idle before tearing down sync/swapchain; after both
+       contexts return the GPU is idle and pipeline/buffer destroy calls are safe. */
 
-    rhi()->context_destroy( ctx ); // finish rendering and free swapchain + sync objects (first)
+    if ( has_second )
+        rhi()->context_destroy( ctx2 );   // idle + free the second swapchain/sync (before its buffers)
+    rhi()->context_destroy( ctx );        // idle + free the main swapchain/sync
+
+    if ( has_second )
+        imgui()->viewport_close( vp1 );   // free viewport 1's geometry buffers (GPU now idle)
 
     imgui()->shutdown();
 
@@ -307,6 +378,8 @@ main( int argc, char** argv )
     draw()->shutdown();                 // destroy draw resources
 
     rhi()->shutdown();                  // destroy device and instance (last)
+    if ( has_second )
+        app()->window_close( win2 );
     app()->window_close( win );
     mod_system_exit();
     return 0;
