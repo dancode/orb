@@ -31,6 +31,8 @@
 #include <stdio.h>
 #include <math.h>
 
+
+
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
@@ -71,6 +73,15 @@
 #define STRESS_SAMPLED_MAX      12                   /* live sampled textures at once (grid cells) */
 #define STRESS_SAMPLED_DIM      16                   /* sampled texture size (checker pattern)     */
 #define STRESS_SAMPLED_LIFETIME 24                   /* host frames before a sampled tex is retired */
+
+/* F5 resize storm: every frame each live window is driven to a fresh jittered client size, and
+   one rotating window is flipped between minimized and restored on an interval.  This hammers the
+   deferred swapchain recreate + sync-object recreation path (vk_frame.c / vk_swapchain.c) and the
+   resize_pending handshake, including the zero-extent (minimized) branch, far harder than a user
+   dragging a frame ever could -- the extent changes on (almost) every frame, on all windows. */
+#define STRESS_RESIZE_MIN_DIM      80                /* smallest client edge driven by the storm   */
+#define STRESS_RESIZE_MAX_DIM      900               /* largest client edge driven by the storm    */
+#define STRESS_RESIZE_MIN_INTERVAL 37                /* frames between one window's min<->restore   */
 
 /*==============================================================================================
     Per-window render context
@@ -304,6 +315,56 @@ recycle_context( stress_win_t* sw )
         return;
     }
     sw->ctx = ctx;
+}
+
+/*==============================================================================================
+    F5 resize storm -- drive a fresh client size on every window each frame, plus periodic
+    minimize<->restore on a rotating window.
+
+    Each call routes through the real app/OS path (window_resize -> SetWindowPos, window_minimize/
+    restore -> ShowWindow).  The WM_SIZE that generates is handled by the app WndProc, which posts
+    an APP_EV_WIN_RESIZE -- picked up by the main loop's event drain next frame and turned into a
+    rhi()->context_resize.  So this exercises the production resize path end to end: context_resize
+    sets resize_pending, and the next frame_begin recreates the swapchain and the per-context sync
+    objects between frames.  The minimize flip crosses the zero-extent branch where frame_begin
+    leaves resize_pending set, still checks into the epoch, and runs reclaim without a swapchain.
+==============================================================================================*/
+
+static void
+resize_storm_tick( u64 frame )
+{
+    for ( u32 i = 0; i < STRESS_WINDOW_COUNT; ++i )
+    {
+        stress_win_t* sw = &s_wins[ i ];
+        if ( !sw->open )
+            continue;
+
+        /* Periodic minimize<->restore on a single rotating window, so the zero-extent swapchain
+           path is crossed mid-storm rather than only on manual user input. */
+        if ( ( frame % STRESS_RESIZE_MIN_INTERVAL ) == 0 &&
+             ( frame / STRESS_RESIZE_MIN_INTERVAL ) % STRESS_WINDOW_COUNT == i )
+        {
+            if ( app()->window_is_minimized( sw->win ) )
+                app()->window_restore( sw->win );
+            else
+                app()->window_minimize( sw->win );
+            continue;   /* let the show-state change settle before resizing this window */
+        }
+
+        /* A minimized window has no client extent to resize into: SetWindowPos while iconic only
+           changes the stored restored-size and produces no swapchain churn -- skip it. */
+        if ( app()->window_is_minimized( sw->win ) )
+            continue;
+
+        /* Two out-of-phase sines so width and height move independently and the extent changes on
+           (almost) every frame, keeping resize_pending set for a sustained recreate storm. */
+        f32 fx = 0.5f + 0.5f * (f32)sin( (f64)frame * 0.31 + i * 1.7 );
+        f32 fy = 0.5f + 0.5f * (f32)sin( (f64)frame * 0.23 + i * 2.9 + 1.0 );
+        i32 w  = STRESS_RESIZE_MIN_DIM + (i32)( fx * ( STRESS_RESIZE_MAX_DIM - STRESS_RESIZE_MIN_DIM ) );
+        i32 h  = STRESS_RESIZE_MIN_DIM + (i32)( fy * ( STRESS_RESIZE_MAX_DIM - STRESS_RESIZE_MIN_DIM ) );
+
+        app()->window_resize( sw->win, w, h );
+    }
 }
 
 /*==============================================================================================
@@ -649,7 +710,7 @@ main( int argc, char** argv )
     assert( core() );
     assert( rhi() );
 
-    core()->log_set_min_level( LOG_LEVEL_TRACE );
+    core()->log_set_min_level( LOG_LEVEL_WARN );
     core_log_fn( LOG_LEVEL_DEBUG, "sb_vulkan_stress", "modules loaded" );
 
     LOG_LINE();
@@ -724,14 +785,15 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Run. */
 
-    printf( "[sb_vulkan_stress] running %u windows -- ESC quit, F1 aggressive, F2 stats, F3 ctx-churn, F4 sampled, +/- churn\n",
+    printf( "[sb_vulkan_stress] running %u windows -- ESC quit, F1 aggressive, F2 stats, F3 ctx-churn, F4 sampled, F5 resize-storm, +/- churn\n",
             open_window_count() );
 
-    u32  churn       = STRESS_CHURN_DEFAULT;   /* assets created per context per frame */
-    bool aggressive  = false;                  /* F1: free same-frame to probe deferred-free */
-    bool ctx_churn   = false;                  /* F3: periodically destroy+recreate one context */
-    bool sample_mode = false;                  /* F4: upload+register+sample textures in a draw */
-    u64  frame_no    = 0;
+    u32  churn        = STRESS_CHURN_DEFAULT;  /* assets created per context per frame */
+    bool aggressive   = false;                 /* F1: free same-frame to probe deferred-free */
+    bool ctx_churn    = false;                 /* F3: periodically destroy+recreate one context */
+    bool sample_mode  = false;                 /* F4: upload+register+sample textures in a draw */
+    bool resize_storm = false;                 /* F5: storm context_resize + minimize<->restore */
+    u64  frame_no     = 0;
 
     f64 last_time = sys_tick_seconds();
 
@@ -805,6 +867,12 @@ main( int argc, char** argv )
                 printf( "[sb_vulkan_stress] sampled mode unavailable (f4_init failed)\n" );
         }
 
+        if ( app()->key_pressed( APP_KEY_F5 ) )
+        {
+            resize_storm = !resize_storm;
+            printf( "[sb_vulkan_stress] resize storm %s\n", resize_storm ? "ON" : "OFF" );
+        }
+
         if ( app()->key_pressed( APP_KEY_NP_ADD ) && churn < STRESS_CHURN_MAX )
             printf( "[sb_vulkan_stress] churn = %u/ctx\n", ++churn );
         if ( app()->key_pressed( APP_KEY_NP_SUB ) && churn > 0 )
@@ -823,6 +891,13 @@ main( int argc, char** argv )
             u32 pick = (u32)( ( frame_no / STRESS_CTX_CHURN_INTERVAL ) % STRESS_WINDOW_COUNT );
             recycle_context( &s_wins[ pick ] );
         }
+
+        /* ---- F5: resize storm (drive new client sizes + periodic minimize<->restore) ----
+           Done before the render pass: the WM_SIZE these calls generate posts APP_EV_WIN_RESIZE,
+           drained on the next pump into rhi()->context_resize, so each window's swapchain + sync
+           objects are recreated at the following frame_begin while siblings keep rendering. */
+        if ( resize_storm )
+            resize_storm_tick( frame_no );
 
         /* ---- F4: retire aged sampled textures (always, so the pool drains after F4 is toggled
            off) and spawn a fresh one each frame while sampled mode is on. ---- */

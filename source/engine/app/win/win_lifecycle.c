@@ -102,6 +102,57 @@ app_window_toggle_fillscreen( win_id_t id )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Programmatic geometry / show-state — resize, minimize, restore.
+
+    All three drive the OS directly (SetWindowPos / ShowWindow), so the resulting WM_SIZE is
+    handled by the normal WndProc path: window state flags are updated and an APP_EV_WIN_RESIZE
+    is posted.  Callers therefore see the same event flow whether the user dragged the frame or
+    the app requested the change.
+----------------------------------------------------------------------------------------------*/
+
+static void
+app_window_resize( win_id_t id, i32 w, i32 h )
+{
+    app_window_t* win = win_get( id );
+    if ( !win || !win->hwnd || w <= 0 || h <= 0 )
+        return;
+
+    /* A minimized or maximized window has no normal client extent to resize into; bring it
+       back to the restored state first so the new size actually takes effect (and is what a
+       later restore returns to). */
+    if ( IsIconic( win->hwnd ) || IsZoomed( win->hwnd ) )
+        ShowWindow( win->hwnd, SW_RESTORE );
+
+    /* Convert the requested CLIENT size to the full window rect for the current chrome. */
+    DWORD style    = (DWORD)GetWindowLongW( win->hwnd, GWL_STYLE );
+    DWORD ex_style = (DWORD)GetWindowLongW( win->hwnd, GWL_EXSTYLE );
+
+    RECT rect = { 0, 0, w, h };
+    AdjustWindowRectEx( &rect, style, FALSE, ex_style );
+
+    /* Keep position and z-order; the WM_SIZE this generates updates win->w/h and posts the event. */
+    SetWindowPos( win->hwnd, NULL, 0, 0,
+                  rect.right - rect.left, rect.bottom - rect.top,
+                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE );
+}
+
+static void
+app_window_minimize( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    if ( win && win->hwnd )
+        ShowWindow( win->hwnd, SW_MINIMIZE );
+}
+
+static void
+app_window_restore( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    if ( win && win->hwnd )
+        ShowWindow( win->hwnd, SW_RESTORE );
+}
+
+/*----------------------------------------------------------------------------------------------
     Paint enable / toggle / query — controls default OS background erase.
 ----------------------------------------------------------------------------------------------*/
 

@@ -34,6 +34,15 @@ typedef struct app_api_s
     void            ( *window_set_fillscreen    )( win_id_t id, bool enabled );
     void            ( *window_toggle_fillscreen )( win_id_t id );
 
+    /* Programmatic geometry / show-state control.  Each routes through the OS so the
+       normal WM_SIZE path runs: window state is updated and an APP_EV_WIN_RESIZE is
+       posted, exactly as for a user-driven resize.  window_resize takes a CLIENT size
+       (the drawable area), restoring the window first if it is minimized/maximized so
+       the new size takes effect.  Sizes <= 0 are ignored. */
+    void ( *window_resize   )( win_id_t id, i32 w, i32 h );
+    void ( *window_minimize )( win_id_t id );
+    void ( *window_restore  )( win_id_t id );
+
     /* Default OS background paint/erase. When enabled, Windows fills the client
        area with the registered class brush on WM_ERASEBKGND. Disable once a
        renderer owns the window's pixels — leaving it on causes flicker. */
