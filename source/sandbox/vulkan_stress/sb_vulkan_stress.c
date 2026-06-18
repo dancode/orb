@@ -20,19 +20,38 @@
     There is no imgui, no draw service, and no hot-reload here -- this is purely about proving the
     RHI context + resource lifetime + synchronization machinery holds up under load.
 
-    Controls:
-        ESC      quit
-        F1       toggle aggressive mode (free assets the same frame they are created)
-        F2       print live asset / sync stats
-        F3+      various test modes. 
-        + / -    raise / lower per-context asset churn each frame
+    ------------------------------------------------------------------------------------------------
+    Test modes (each is a toggle, freely combinable; all pass clean under validation as of writing).
+    Every mode has a self-contained block below with a header comment explaining exactly what RHI
+    path it targets and why -- start there when diving back in.  F4..F9 share one pipeline/sampler/
+    quad built once in f4_init(); if that fails (f4_ok == false) those modes report unavailable.
+
+        ESC   quit
+        F1    aggressive free -- free transient assets the SAME frame they are created, probing the
+              deferred-destroy path (resource still referenced by an in-flight frame / pending copy).
+        F2    print live asset + sync stats (counts, peaks, per-mode hit counters).
+        F3    context churn -- periodically destroy + recreate one window's rhi context at runtime
+              while siblings keep rendering (ctx_alloc / epoch_ack_mask across a changing live count).
+        F4    sampled mode -- upload + register bindless + actually SAMPLE textures in a real draw,
+              exercising the QFOT acquire -> shader-read path end to end.
+        F5    resize storm -- drive a fresh jittered client size on every window each frame + rotate
+              minimize<->restore (deferred swapchain + sync-object recreate, zero-extent branch).
+        F6    ring pressure -- force two "effectively never" fallbacks: staging-ring-full (overflow
+              the 64MB slot) and garbage-ring overflow (> VK_GARBAGE_CAP destroys -> wait-idle drain).
+        F7    no-pacing -- drop the 2ms frame sleep so the loop runs flat out (fence wait is the only
+              throttle); reports achieved fps to make sync-primitive turnover visible.
+        F8    slot-recycle storm -- hold ~1900 registered+sampled bindless textures near the 2048 cap
+              and recycle a batch every frame (descriptor allocator + deferred-retire ring at capacity).
+        F9    cross-context ordering -- rotate which context records/submits FIRST each frame (so the
+              single QFOT acquire is injected by a shifting context) while a freshly uploaded texture
+              is sampled by every window the same frame; catches a mis-ordered / wrong-"first" acquire.
+        +/-   raise / lower per-context transient asset churn each frame.
+    ------------------------------------------------------------------------------------------------
 
 ==============================================================================================*/
 
 #include <stdio.h>
 #include <math.h>
-
-
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
@@ -898,6 +917,171 @@ f8_retire_all( void )
 }
 
 /*==============================================================================================
+    F9 cross-context ordering -- shift which context records (and submits) first each frame, while
+    a texture uploaded this frame is sampled by every window the same frame.
+
+    The QFOT acquire that makes an uploaded image SHADER_READ_ONLY on the graphics queue is injected
+    into exactly one command buffer: the first graphics cmd buffer recorded after the upload flush.
+    vk_upload_apply_acquires drains the global pending[] list into that buffer and clears it, so
+    every later context this epoch finds the list empty and no-ops.  Every other mode pumps the
+    windows in a fixed 0..N-1 order, so window 0 is always "first" and always the one that injects --
+    the shifting-first case is never reached.
+
+    F9 rotates the pump order every frame (start = frame % N), so the injecting context walks window
+    to window, while a freshly uploaded texture is sampled by all windows -- including windows whose
+    command buffers are submitted before the one that injected the acquire.  That makes the claim
+    "any context can be first; latecomers no-op, and the single injected acquire is still ordered
+    ahead of every sampler on the shared graphics queue" actually testable: a mis-ordered acquire
+    would surface as a TRANSFER_DST-layout sample (validation error / garbage) in whichever window is
+    sampled before the injector this frame.
+
+    The pool is kept small with a short lifetime so every sampled texture was uploaded within the
+    last few frames -- the QFOT acquire path stays hot, with a fresh acquire to inject every frame.
+    Reuses F4's shared pipeline / sampler / quad, so it needs f4_ok.
+==============================================================================================*/
+#define STRESS_F9_POOL      8                              /* recent uploads kept live (all sampled) */
+#define STRESS_F9_DIM       16                             /* sampled texture size (checker pattern) */
+#define STRESS_F9_LIFETIME  ( RHI_MAX_FRAMES_IN_FLIGHT + 2 ) /* retire fast: keep every tex fresh   */
+
+typedef struct
+{
+    rhi_texture_t tex;
+    u32           idx;    /* bindless texture slot */
+    u64           born;   /* host frame created    */
+    bool          live;
+
+} f9_sampled_t;
+
+static f9_sampled_t s_f9[ STRESS_F9_POOL ];
+static u64          s_f9_uploads;   /* textures uploaded + registered (stat) */
+
+/* Drop a slot's bindless registration and defer-destroy its texture. */
+static void
+f9_retire_slot( u32 i )
+{
+    if ( !s_f9[ i ].live )
+        return;
+    rhi()->unregister_texture( s_f9[ i ].idx );
+    rhi()->texture_destroy( s_f9[ i ].tex );
+    s_f9[ i ] = ( f9_sampled_t ){ 0 };
+}
+
+/* Upload exactly one fresh texture into a free pool slot (no-op when the pool is momentarily full).
+   This is the "texture uploaded this frame" that every window then samples the same frame. */
+static void
+f9_spawn( u64 frame )
+{
+    i32 slot = -1;
+    for ( u32 i = 0; i < STRESS_F9_POOL; ++i )
+        if ( !s_f9[ i ].live ) { slot = (i32)i; break; }
+    if ( slot < 0 )
+        return;   /* every slot still within its lifetime -- skip this frame */
+
+    rhi_texture_t tex = rhi()->texture_create( &( rhi_texture_desc_t ){
+        .width        = STRESS_F9_DIM,
+        .height       = STRESS_F9_DIM,
+        .depth        = 1,
+        .mip_levels   = 1,
+        .array_layers = 1,
+        .format       = RHI_FORMAT_RGBA8_UNORM,
+        .usage        = RHI_TEXTURE_USAGE_SAMPLED | RHI_TEXTURE_USAGE_TRANSFER_DST,
+        .memory       = RHI_MEMORY_GPU_ONLY,
+        .debug_name   = "f9_tex",
+    } );
+    if ( !rhi_handle_valid( tex ) )
+        return;
+
+    /* Checkerboard keyed on the frame so a wrong-layout / wrong-ordering sample is visibly distinct. */
+    static u8 px[ STRESS_F9_DIM * STRESS_F9_DIM * 4 ];
+    u32 phase = (u32)frame;
+    for ( u32 y = 0; y < STRESS_F9_DIM; ++y )
+        for ( u32 x = 0; x < STRESS_F9_DIM; ++x )
+        {
+            u8  c = ( ( ( x >> 1 ) ^ ( y >> 1 ) ^ phase ) & 1 ) ? 255 : 40;
+            u8* p = &px[ ( y * STRESS_F9_DIM + x ) * 4 ];
+            p[ 0 ] = c; p[ 1 ] = c; p[ 2 ] = c; p[ 3 ] = c;
+        }
+
+    if ( !rhi()->upload_texture( tex, px, sizeof( px ), 0, 0 ) )
+    {
+        rhi()->texture_destroy( tex );
+        return;
+    }
+
+    u32 idx = rhi()->register_texture( tex );
+    if ( idx == 0 )   /* bindless pool exhausted */
+    {
+        rhi()->texture_destroy( tex );
+        return;
+    }
+
+    s_f9[ slot ] = ( f9_sampled_t ){ .tex = tex, .idx = idx, .born = frame, .live = true };
+    ++s_f9_uploads;
+}
+
+/* Retire any texture older than its lifetime.  Runs every frame so the pool drains after F9 off. */
+static void
+f9_retire_aged( u64 frame )
+{
+    for ( u32 i = 0; i < STRESS_F9_POOL; ++i )
+        if ( s_f9[ i ].live && ( frame - s_f9[ i ].born ) >= STRESS_F9_LIFETIME )
+            f9_retire_slot( i );
+}
+
+/* Retire everything (shutdown, after contexts are destroyed and the GPU is idle). */
+static void
+f9_retire_all( void )
+{
+    for ( u32 i = 0; i < STRESS_F9_POOL; ++i )
+        f9_retire_slot( i );
+}
+
+/* Sample every live texture with a real draw -- the cross-context read of this frame's upload(s).
+   Called from every window's render pass, so a texture acquired by one window is sampled by all. */
+static void
+f9_draw( rhi_cmd_t cmd, i32 win_w, i32 win_h )
+{
+    rhi()->cmd_set_viewport( cmd, &( rhi_viewport_t ){
+        .x = 0, .y = 0, .width = (f32)win_w, .height = (f32)win_h, .min_depth = 0, .max_depth = 1 } );
+    rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){ .x = 0, .y = 0, .width = win_w, .height = win_h } );
+    rhi()->cmd_bind_pipeline( cmd, s_f4_pipeline );
+    rhi()->cmd_bind_bindless( cmd );
+    rhi()->cmd_bind_vertex_buffer( cmd, s_f4_quad_vb, 0 );
+
+    const i32 cols = 4;
+    const i32 rows = ( STRESS_F9_POOL + cols - 1 ) / cols;
+    i32       cell = 0;
+
+    for ( u32 i = 0; i < STRESS_F9_POOL; ++i )
+    {
+        if ( !s_f9[ i ].live )
+            continue;
+
+        f32 cw  = (f32)win_w / (f32)cols;
+        f32 ch  = (f32)win_h / (f32)rows;
+        f32 pad = cw * 0.12f;
+        f32 px  = ( cell % cols ) * cw + pad;
+        f32 py  = ( cell / cols ) * ch + pad;
+        f32 pw  = cw - 2.0f * pad;
+        f32 ph  = ch - 2.0f * pad;
+        ++cell;
+
+        f4_push_t push = { 0 };
+        push.mvp[  0 ] = 2.0f * pw / (f32)win_w;
+        push.mvp[  5 ] = 2.0f * ph / (f32)win_h;
+        push.mvp[ 10 ] = 1.0f;
+        push.mvp[ 12 ] = 2.0f * px / (f32)win_w - 1.0f;
+        push.mvp[ 13 ] = 2.0f * py / (f32)win_h - 1.0f;
+        push.mvp[ 15 ] = 1.0f;
+        push.tex_idx   = s_f9[ i ].idx;
+        push.samp_idx  = s_f4_sampler_idx;
+
+        rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
+        rhi()->cmd_draw( cmd, &( rhi_draw_args_t ){ .vertex_count = 6, .instance_count = 1 } );
+    }
+}
+
+/*==============================================================================================
     Render one context
 
     No scene geometry -- a single animated clear is enough to drive the full frame_begin /
@@ -907,7 +1091,7 @@ f8_retire_all( void )
 ==============================================================================================*/
 
 static bool
-render_context( const stress_win_t* sw, f64 t, bool draw_sampled, bool draw_f8 )
+render_context( const stress_win_t* sw, f64 t, bool draw_sampled, bool draw_f8, bool draw_f9 )
 {
     /* Always call frame_begin, even for a minimized window: that is how this context checks
        into the shared epoch (vk_frame.c).  With multiple contexts the epoch only advances --
@@ -936,6 +1120,12 @@ render_context( const stress_win_t* sw, f64 t, bool draw_sampled, bool draw_f8 )
     /* F8: sample the whole live bindless pool so premature slot reuse is observable. */
     if ( draw_f8 )
         f8_draw( cmd, sw->w, sw->h );
+
+    /* F9: sample this frame's freshly uploaded textures -- whichever context recorded first this
+       frame injected their QFOT acquire; every window relies on that single acquire being ordered
+       ahead of its sample on the shared graphics queue. */
+    if ( draw_f9 )
+        f9_draw( cmd, sw->w, sw->h );
 
     rhi()->cmd_end_rendering( cmd );
 
@@ -979,7 +1169,7 @@ main( int argc, char** argv )
     assert( core() );
     assert( rhi() );
 
-    core()->log_set_min_level( LOG_LEVEL_WARN ); // LOG_LEVEL_TRACE
+    core()->log_set_min_level( LOG_LEVEL_TRACE ); // LOG_LEVEL_TRACE LOG_LEVEL_WARN
     core_log_fn( LOG_LEVEL_DEBUG, "sb_vulkan_stress", "modules loaded" );
 
     LOG_LINE();
@@ -1054,7 +1244,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Run. */
 
-    printf( "[sb_vulkan_stress] running %u windows -- ESC quit, F1 aggressive, F2 stats, F3 ctx-churn, F4 sampled, F5 resize-storm, F6 ring-pressure, F7 no-pacing, F8 slot-storm, +/- churn\n",
+    printf( "[sb_vulkan_stress] running %u windows -- ESC quit, F1 aggressive, F2 stats, F3 ctx-churn, F4 sampled, F5 resize-storm, F6 ring-pressure, F7 no-pacing, F8 slot-storm, F9 cross-order, +/- churn\n",
             open_window_count() );
 
     u32  churn        = STRESS_CHURN_DEFAULT;  /* assets created per context per frame */
@@ -1065,6 +1255,7 @@ main( int argc, char** argv )
     bool ring_press   = false;                 /* F6: staging-ring-full + garbage-overflow paths */
     bool no_pacing    = false;                 /* F7: drop the frame sleep -> flat-out throughput */
     bool slot_storm   = false;                 /* F8: bindless slot recycle near the pool cap */
+    bool cross_order  = false;                 /* F9: rotate which context records/submits first */
     u64  frame_no     = 0;
 
     /* FPS readout for F7: with pacing removed the loop runs at GPU throughput, so report the
@@ -1123,14 +1314,15 @@ main( int argc, char** argv )
 
         if ( app()->key_pressed( APP_KEY_F2 ) )
             printf( "[sb_vulkan_stress] live=%u peak=%u created=%llu freed=%llu churn=%u/ctx "
-                    "f6_ringfull=%llu f6_floods=%llu f8_recycled=%llu f8_regfail=%llu\n",
+                    "f6_ringfull=%llu f6_floods=%llu f8_recycled=%llu f8_regfail=%llu f9_uploads=%llu\n",
                     s_asset_count, s_peak_live,
                     (unsigned long long)s_total_created,
                     (unsigned long long)s_total_freed, churn,
                     (unsigned long long)s_f6_ring_full_hits,
                     (unsigned long long)s_f6_garbage_floods,
                     (unsigned long long)s_f8_recycled,
-                    (unsigned long long)s_f8_reg_fail );
+                    (unsigned long long)s_f8_reg_fail,
+                    (unsigned long long)s_f9_uploads );
 
         if ( app()->key_pressed( APP_KEY_F3 ) )
         {
@@ -1176,6 +1368,17 @@ main( int argc, char** argv )
             }
             else
                 printf( "[sb_vulkan_stress] slot storm unavailable (f4_init failed)\n" );
+        }
+
+        if ( app()->key_pressed( APP_KEY_F9 ) )
+        {
+            if ( f4_ok )
+            {
+                cross_order = !cross_order;
+                printf( "[sb_vulkan_stress] cross-context ordering %s\n", cross_order ? "ON" : "OFF" );
+            }
+            else
+                printf( "[sb_vulkan_stress] cross-context ordering unavailable (f4_init failed)\n" );
         }
 
         if ( app()->key_pressed( APP_KEY_NP_ADD ) && churn < STRESS_CHURN_MAX )
@@ -1224,18 +1427,33 @@ main( int argc, char** argv )
         if ( slot_storm )
             f8_storm_tick( frame_no );
 
+        /* ---- F9: upload one fresh texture this frame; every window samples the recent set.  Retire
+           aged every frame so the pool drains after F9 is toggled off. ---- */
+        if ( f4_ok )
+        {
+            f9_retire_aged( frame_no );
+            if ( cross_order )
+                f9_spawn( frame_no );
+        }
+
         /* ---- pump every live context (drives per-context sync + epoch check-in each frame) ----
            Note: minimized windows are NOT skipped here -- frame_begin must run on every context
            so it checks into the epoch.  render_context returns false when the swapchain was not
            ready (minimized), in which case we skip the asset churn for that window but the
-           check-in has still happened. */
-        for ( u32 i = 0; i < STRESS_WINDOW_COUNT; ++i )
+           check-in has still happened.
+
+           F9 rotates the start index each frame so a different context records (and submits) first,
+           and therefore is the one that injects the shared QFOT acquire; every other mode keeps the
+           natural 0..N-1 order so window 0 is always first. */
+        u32 start = cross_order ? (u32)( frame_no % STRESS_WINDOW_COUNT ) : 0;
+        for ( u32 k = 0; k < STRESS_WINDOW_COUNT; ++k )
         {
+            u32           i  = ( start + k ) % STRESS_WINDOW_COUNT;
             stress_win_t* sw = &s_wins[ i ];
             if ( !sw->open || sw->ctx == RHI_CTX_INVALID )
                 continue;
 
-            if ( !render_context( sw, now_time, sample_mode, slot_storm ) )
+            if ( !render_context( sw, now_time, sample_mode, slot_storm, cross_order ) )
                 continue;   /* minimized / not ready: checked in, but nothing to draw or churn */
 
             /* ---- asset churn for this context ---- */
@@ -1287,9 +1505,10 @@ main( int argc, char** argv )
 
     /* Sampled textures + shared F4 resources: contexts are destroyed (GPU idle) above, so the
        deferred destroys queued here are safe to force-drain in rhi()->shutdown().  F8 shares F4's
-       pipeline/sampler/quad, so retire the F8 pool before f4_shutdown tears those down. */
+       pipeline/sampler/quad, so retire the F8 + F9 pools before f4_shutdown tears those down. */
     f4_retire_all();
     f8_retire_all();
+    f9_retire_all();
     f4_shutdown();
 
     rhi()->shutdown();
