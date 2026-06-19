@@ -113,6 +113,267 @@ static bool s_render_debug_draw_calls = false;
 static bool s_render_debug_geometry = false;
 
 /*----------------------------------------------------------------------------------------------
+    Tessellation state -- private vertex/index buffers populated from the semantic command list.
+
+    imgui_render_flush tessellates the frame's imgui_cmd_t list into s_tess, then uploads
+    s_tess.verts/indices to the GPU.  s_tess is backend-private; nothing above imgui_render.c
+    touches it.  The tessellation path activates in step 4 when s_draw is converted to semantic
+    commands; until then, flush reads s_draw.verts/indices directly (unchanged legacy path).
+
+    cur_clip/cur_z/cur_vp are written by tess_dispatch before each primitive so tess_ensure_gpu_cmd
+    can stamp the correct context onto new GPU commands without extra parameters.
+----------------------------------------------------------------------------------------------*/
+
+static struct
+{
+    imgui_draw_vert_t  verts  [ IMGUI_MAX_VERTS ];
+    u16                indices[ IMGUI_MAX_IDX   ];
+    imgui_gpu_cmd_t    cmds   [ IMGUI_MAX_CMDS  ];
+    u32                cmd_z  [ IMGUI_MAX_CMDS  ];
+    u32                cmd_vp [ IMGUI_MAX_CMDS  ];
+
+    u32 vert_count, idx_count, cmd_count;
+
+    imgui_rect_t cur_clip;   /* clip baked from the current semantic command being tessellated */
+    u32          cur_z;      /* sort key baked from the current semantic command              */
+    u32          cur_vp;     /* viewport baked from the current semantic command              */
+
+    u32  vert_hwm, idx_hwm;
+    bool overflow, overflow_ever;
+
+} s_tess;
+
+/*----------------------------------------------------------------------------------------------
+    Tessellation helpers -- mirrors of the draw_push_* functions in imgui_draw.c, but writing
+    into s_tess instead of s_draw.  These are the backend half of the command-list split.
+    Called from tess_dispatch; not called from anywhere else.
+----------------------------------------------------------------------------------------------*/
+
+static void
+tess_reset( void )
+{
+    s_tess.vert_count = 0;
+    s_tess.idx_count  = 0;
+    s_tess.cmd_count  = 0;
+    s_tess.overflow   = false;
+}
+
+/* Open a new GPU command when texture, clip, sort key, or viewport changes -- same batching
+   logic as draw_ensure_cmd, but operating on s_tess instead of s_draw. */
+static void
+tess_ensure_gpu_cmd( u32 tex_idx )
+{
+    if ( s_tess.cmd_count > 0 )
+    {
+        const imgui_gpu_cmd_t* cur = &s_tess.cmds[ s_tess.cmd_count - 1 ];
+        if ( s_tess.cmd_z [ s_tess.cmd_count - 1 ] == s_tess.cur_z
+          && s_tess.cmd_vp[ s_tess.cmd_count - 1 ] == s_tess.cur_vp
+          && cur->tex_idx       == tex_idx
+          && cur->clip_rect.x   == s_tess.cur_clip.x
+          && cur->clip_rect.y   == s_tess.cur_clip.y
+          && cur->clip_rect.w   == s_tess.cur_clip.w
+          && cur->clip_rect.h   == s_tess.cur_clip.h )
+            return;
+    }
+    if ( s_tess.cmd_count >= IMGUI_MAX_CMDS )
+        return;
+    s_tess.cmd_z [ s_tess.cmd_count ] = s_tess.cur_z;
+    s_tess.cmd_vp[ s_tess.cmd_count ] = s_tess.cur_vp;
+    s_tess.cmds  [ s_tess.cmd_count++ ] = ( imgui_gpu_cmd_t ){
+        .elem_count = 0,
+        .tex_idx    = tex_idx,
+        .clip_rect  = s_tess.cur_clip,
+    };
+}
+
+/* Raw vertex/index reservation for stroke tessellation -- mirror of draw_prim_begin/commit. */
+static bool
+tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
+                 imgui_draw_vert_t** out_v, u16** out_i, u16* out_base )
+{
+    if ( s_tess.vert_count + nv > IMGUI_MAX_VERTS || s_tess.idx_count + ni > IMGUI_MAX_IDX )
+    {
+        s_tess.overflow = true;
+        return false;
+    }
+    u32 tex = font_atlas_idx();
+    tess_ensure_gpu_cmd( tex );
+    if ( s_tess.cmd_count == 0 )
+        return false;
+    font_white_uv( wu, wv );
+    *out_base = (u16)s_tess.vert_count;
+    *out_v    = &s_tess.verts  [ s_tess.vert_count ];
+    *out_i    = &s_tess.indices[ s_tess.idx_count  ];
+    return true;
+}
+
+static void
+tess_prim_commit( u32 nv, u32 ni )
+{
+    s_tess.vert_count += nv;
+    s_tess.idx_count  += ni;
+    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += ni;
+}
+
+/* Tessellate a filled quad into s_tess.  abgr has alpha pre-baked by the emit side. */
+static void
+tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
+                  f32 u0, f32 v0, f32 u1, f32 v1,
+                  u32 tex_idx, u32 abgr )
+{
+    if ( s_tess.vert_count + 4 > IMGUI_MAX_VERTS || s_tess.idx_count + 6 > IMGUI_MAX_IDX )
+    {
+        s_tess.overflow = true;
+        return;
+    }
+    /* tex_idx 0 = solid-color convention: route to the font atlas's white texel. */
+    if ( tex_idx == 0 )
+    {
+        tex_idx = font_atlas_idx();
+        font_white_uv( &u0, &v0 );
+        u1 = u0; v1 = v0;
+    }
+    x = floorf( x + 0.5f );
+    y = floorf( y + 0.5f );
+    tess_ensure_gpu_cmd( tex_idx );
+    if ( s_tess.cmd_count == 0 )
+        return;
+
+    u16 base = (u16)s_tess.vert_count;
+    imgui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
+    v[ 0 ] = ( imgui_draw_vert_t ){ x,     y,     u0, v0, abgr };
+    v[ 1 ] = ( imgui_draw_vert_t ){ x + w, y,     u1, v0, abgr };
+    v[ 2 ] = ( imgui_draw_vert_t ){ x + w, y + h, u1, v1, abgr };
+    v[ 3 ] = ( imgui_draw_vert_t ){ x,     y + h, u0, v1, abgr };
+    s_tess.vert_count += 4;
+
+    u16* idx = &s_tess.indices[ s_tess.idx_count ];
+    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
+    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
+    s_tess.idx_count += 6;
+
+    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 6;
+}
+
+/* Tessellate a hollow rectangle as four edge quads. */
+static void
+tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
+{
+    tess_rect_filled( x,         y,         w, t,     0,0,1,1, 0, abgr );
+    tess_rect_filled( x,         y + h - t, w, t,     0,0,1,1, 0, abgr );
+    tess_rect_filled( x,         y + t,     t, h-2*t, 0,0,1,1, 0, abgr );
+    tess_rect_filled( x + w - t, y + t,     t, h-2*t, 0,0,1,1, 0, abgr );
+}
+
+/* Tessellate a solid triangle into s_tess. */
+static void
+tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
+{
+    if ( s_tess.vert_count + 3 > IMGUI_MAX_VERTS || s_tess.idx_count + 3 > IMGUI_MAX_IDX )
+    {
+        s_tess.overflow = true;
+        return;
+    }
+    f32 wu, wv;
+    font_white_uv( &wu, &wv );
+    u32 tex = font_atlas_idx();
+    tess_ensure_gpu_cmd( tex );
+    if ( s_tess.cmd_count == 0 )
+        return;
+
+    u16 base = (u16)s_tess.vert_count;
+    s_tess.verts[ s_tess.vert_count++ ] = ( imgui_draw_vert_t ){ ax, ay, wu, wv, abgr };
+    s_tess.verts[ s_tess.vert_count++ ] = ( imgui_draw_vert_t ){ bx, by, wu, wv, abgr };
+    s_tess.verts[ s_tess.vert_count++ ] = ( imgui_draw_vert_t ){ cx, cy, wu, wv, abgr };
+    s_tess.indices[ s_tess.idx_count++ ] = base + 0;
+    s_tess.indices[ s_tess.idx_count++ ] = base + 1;
+    s_tess.indices[ s_tess.idx_count++ ] = base + 2;
+    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 3;
+}
+
+/* Tessellate a filled disc as a triangle fan. */
+static void
+tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 segs, u32 abgr )
+{
+    if ( segs < 3 ) segs = 3;
+    f32 step = 6.2831853f / (f32)segs;
+    f32 px = pcx + r, py = pcy;
+    for ( u32 i = 1; i <= segs; ++i )
+    {
+        f32 a  = step * (f32)i;
+        f32 nx = pcx + cosf( a ) * r;
+        f32 ny = pcy + sinf( a ) * r;
+        tess_triangle( pcx, pcy, px, py, nx, ny, abgr );
+        px = nx; py = ny;
+    }
+}
+
+/* Tessellate a glyph run from the font atlas into s_tess. */
+static void
+tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
+{
+    f32 cx = x;
+    for ( u32 i = 0; i < n && str[ i ]; ++i )
+    {
+        u8  ch = (u8)str[ i ];
+        f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
+        font_glyph( ch, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
+        if ( gw > 0.0f && gh > 0.0f )
+            tess_rect_filled( cx + ox, y + oy, gw, gh, u0, v0, u1, v1, font_atlas_idx(), abgr );
+        cx += advance;
+    }
+}
+
+/* Tessellate one frame's semantic command list into s_tess geometry.
+   Called from imgui_render_flush once s_draw emits imgui_cmd_t (step 4+).
+   LINE and POLYLINE strokes are handled when stroke_poly_aa migrates to render side (step 6). */
+static void
+tess_dispatch( const imgui_cmd_t* cmds, u32 count )
+{
+    for ( u32 i = 0; i < count; ++i )
+    {
+        const imgui_cmd_t* c = &cmds[ i ];
+        s_tess.cur_clip = c->clip;
+        s_tess.cur_z    = c->z;
+        s_tess.cur_vp   = c->vp;
+
+        switch ( c->type )
+        {
+            case IMGUI_CMD_RECT_FILLED:
+                tess_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
+                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
+                                  c->rect.tex_idx, c->rect.abgr );
+                break;
+
+            case IMGUI_CMD_RECT_OUTLINE:
+                tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
+                                   c->rect_outline.w, c->rect_outline.h,
+                                   c->rect_outline.t, c->rect_outline.abgr );
+                break;
+
+            case IMGUI_CMD_TRIANGLE:
+                tess_triangle( c->tri.ax, c->tri.ay, c->tri.bx, c->tri.by,
+                               c->tri.cx, c->tri.cy, c->tri.abgr );
+                break;
+
+            case IMGUI_CMD_TEXT:
+                tess_text_n( c->text.x, c->text.y, c->text.abgr, c->text.str, c->text.len );
+                break;
+
+            case IMGUI_CMD_CIRCLE_FILLED:
+                tess_circle_filled( c->circle.cx, c->circle.cy, c->circle.r,
+                                    c->circle.segs, c->circle.abgr );
+                break;
+
+            case IMGUI_CMD_LINE:
+            case IMGUI_CMD_POLYLINE:
+                /* Stroke tessellation moves here from imgui_draw_path.c in step 6. */
+                break;
+        }
+    }
+}
+
+/*----------------------------------------------------------------------------------------------
     render_ortho -- column-major pixel-space orthographic matrix.
 
     Maps pixel coords ([0,w] x [0,h], origin top-left) to Vulkan NDC:
@@ -482,7 +743,7 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
         u32 first_index = runs[ r ].first_index;
         for ( u32 k = 0; k < runs[ r ].count; ++k )
         {
-            const imgui_draw_cmd_t* dc = &s_draw.cmds[ runs[ r ].start + k ];
+            const imgui_gpu_cmd_t* dc = &s_draw.cmds[ runs[ r ].start + k ];
             if ( dc->elem_count == 0 )
                 continue;
 

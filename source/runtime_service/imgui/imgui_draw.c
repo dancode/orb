@@ -12,6 +12,22 @@
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
+    imgui_gpu_cmd_t -- backend-private GPU draw command.
+
+    One bounded range of indices sharing a texture slot and scissor rect -- the unit the GPU
+    sees.  Not exposed in imgui.h.  The public imgui_cmd_t carries semantic shapes; the render
+    backend (imgui_render.c) tessellates those into these at flush time.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct
+{
+    u32          elem_count; /* number of indices to emit */
+    u32          tex_idx;    /* bindless texture slot     */
+    imgui_rect_t clip_rect;  /* scissor rect (pixels)     */
+
+} imgui_gpu_cmd_t;
+
+/*----------------------------------------------------------------------------------------------
     State
 ----------------------------------------------------------------------------------------------*/
 
@@ -19,7 +35,7 @@ static struct
 {
     imgui_draw_vert_t  verts        [ IMGUI_MAX_VERTS ];
     u16                indices      [ IMGUI_MAX_IDX ];
-    imgui_draw_cmd_t   cmds         [ IMGUI_MAX_CMDS ];
+    imgui_gpu_cmd_t    cmds         [ IMGUI_MAX_CMDS ];
     u32                cmd_z        [ IMGUI_MAX_CMDS ];  // per-command sort key (z), parallel to cmds[]
     u32                cmd_vp       [ IMGUI_MAX_CMDS ];  // per-command target viewport index, parallel to cmds[]
 
@@ -197,7 +213,7 @@ draw_ensure_cmd( u32 tex_idx, imgui_rect_t clip )
 {
     if ( s_draw.cmd_count > 0 )
     {
-        const imgui_draw_cmd_t* cur = &s_draw.cmds[ s_draw.cmd_count - 1 ];
+        const imgui_gpu_cmd_t* cur = &s_draw.cmds[ s_draw.cmd_count - 1 ];
         /* A sort-key OR viewport change must break the command: flush reorders ranges by z and
            replays each viewport's ranges to a different surface, so neither may merge across the
            boundary -- never merge across windows or across surfaces. */
@@ -214,7 +230,7 @@ draw_ensure_cmd( u32 tex_idx, imgui_rect_t clip )
 
     s_draw.cmd_z[ s_draw.cmd_count ]  = s_draw.cur_z;
     s_draw.cmd_vp[ s_draw.cmd_count ] = s_draw.cur_vp;
-    s_draw.cmds[ s_draw.cmd_count++ ] = ( imgui_draw_cmd_t ){
+    s_draw.cmds[ s_draw.cmd_count++ ] = ( imgui_gpu_cmd_t ){
         .elem_count = 0,
         .tex_idx    = tex_idx,
         .clip_rect  = clip,

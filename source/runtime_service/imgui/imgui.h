@@ -561,19 +561,49 @@ typedef struct
 } imgui_draw_vert_t;
 
 /*==============================================================================================
-    Draw command  (one GPU draw call)
+    Semantic draw commands
 
-    A new command is opened whenever the bound texture index or clip rectangle changes.
-    tex_idx == 0 means use the 1x1 opaque-white pixel (solid colour draws).
+    The UI build pass emits one imgui_cmd_t per visible shape into a list.  The render backend
+    (imgui_render.c) tessellates each command into vertices and indices at flush time.  This
+    separates the UI logic from any graphics API knowledge.
+
+    GPU draw commands (imgui_gpu_cmd_t) are a backend-private type defined in imgui_draw.c;
+    they carry index ranges and bind state for one GPU draw call.
 ==============================================================================================*/
 
+typedef enum
+{
+    IMGUI_CMD_RECT_FILLED,     /* filled rectangle or textured quad (glyph) */
+    IMGUI_CMD_RECT_OUTLINE,    /* hollow rectangle: four edge quads          */
+    IMGUI_CMD_TRIANGLE,        /* solid triangle                             */
+    IMGUI_CMD_TEXT,            /* glyph run from the font atlas              */
+    IMGUI_CMD_CIRCLE_FILLED,   /* filled disc (triangle fan)                 */
+    IMGUI_CMD_LINE,            /* single stroke segment                      */
+    IMGUI_CMD_POLYLINE,        /* multi-segment antialiased polyline         */
+
+} imgui_cmd_type_t;
+
+/* One semantic draw command.  clip, z, and vp are baked from the draw state at emit time.
+   The union carries the shape parameters; tex_idx == 0 in rect means solid color (white texel).
+   text.str must remain valid until imgui_render_flush is called (same-frame lifetime). */
 typedef struct
 {
-    u32          elem_count; /* number of indices to emit */
-    u32          tex_idx;    /* bindless texture slot     */
-    imgui_rect_t clip_rect;  /* scissor rect (pixels)     */
-
-} imgui_draw_cmd_t;
+    imgui_cmd_type_t type;      /* which shape to tessellate            */
+    imgui_rect_t     clip;      /* scissor rect, baked at emit time     */
+    u32              z;         /* sort key, baked at emit time         */
+    u32              vp;        /* target viewport index, baked at emit */
+    union
+    {
+        struct { f32 x, y, w, h, u0, v0, u1, v1; u32 tex_idx; u32 abgr; } rect;
+        struct { f32 x, y, w, h, t;                              u32 abgr; } rect_outline;
+        struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
+        struct { f32 x, y;  const char* str; u32 len;            u32 abgr; } text;
+        struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
+        struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
+        struct { u32 pt_offset; u32 pt_count; f32 thickness;
+                 imgui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
+    };
+} imgui_cmd_t;
 
 /*==============================================================================================
     Limits
@@ -588,7 +618,8 @@ typedef struct
 
 #define IMGUI_MAX_VERTS  ( 16 * 1024 )
 #define IMGUI_MAX_IDX    ( IMGUI_MAX_VERTS * 3 )
-#define IMGUI_MAX_CMDS   1024
+#define IMGUI_MAX_CMDS      1024
+#define IMGUI_MAX_PATH_PTS  8192     /* per-frame total polyline/path point pool */
 #define IMGUI_CLIP_DEPTH 32
 
 /*==============================================================================================
