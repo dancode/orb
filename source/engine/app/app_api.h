@@ -59,6 +59,43 @@ typedef struct app_api_s
     void ( *window_toggle_paint )( win_id_t id );
     bool ( *window_paint_enabled)( win_id_t id );
 
+    /* ---- Native-borderless window actions (window kind 3) ----
+
+       A borderless window has no Win32 non-client area, so the imgui titlebar /
+       borders stand in for it.  These hand a grab gesture back to the OS, which
+       runs its own modal move / resize loop (the fiber message pump keeps the
+       game loop rendering throughout).  All are no-ops on an invalid id. */
+
+    /* Begin a native move: imgui calls this when the cursor grabs the titlebar.
+       Drag-to-screen-edge Aero Snap and dragging follow for free. */
+    void ( *window_start_move )( win_id_t id );
+
+    /* Begin a native resize from the given border / corner zone. */
+    void ( *window_start_resize )( win_id_t id, app_win_zone_t zone );
+
+    /* Double-click-titlebar gesture: native maximize / restore toggle. */
+    void ( *window_title_event )( win_id_t id );
+
+    /* Show the native system menu at client-space (x,y) -- e.g. right-click on
+       the titlebar.  Leaves fillscreen first, then dispatches the chosen command. */
+    void ( *window_system_menu )( win_id_t id, i32 x, i32 y );
+
+    /* Primary custom-frame path: publish the borderless window's hit zones so the OS itself runs
+       move / resize / Aero Snap / double-click-maximize / system-menu (via WM_NCHITTEST), no per-
+       gesture calls needed.  imgui calls this each frame for an IMGUI_WIN_NATIVE window.  caption_h
+       is the titlebar drag-band height and border the edge-resize grab thickness, both client px
+       (<= 0 disables that part).  The start_move / start_resize / title_event / system_menu calls
+       above remain as programmatic escape hatches. */
+    void ( *window_set_native_frame )( win_id_t id, bool enabled, i32 caption_h, i32 border );
+
+    /* Add / remove the native sizing frame (controls whether border resize works). */
+    void ( *window_enable_resize )( win_id_t id, bool enabled );
+
+    /* Maximize / toggle.  Mirror the existing window_minimize / window_restore;
+       the min / max state is observable through window_state(). */
+    void ( *window_maximize        )( win_id_t id );
+    void ( *window_toggle_maximize )( win_id_t id );
+
     /* ---- Event loop ---- */
 
     /* Drain the OS message queue, snapshot input state, fill the event ring buffer.

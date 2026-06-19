@@ -152,6 +152,130 @@ app_window_restore( win_id_t id )
         ShowWindow( win->hwnd, SW_RESTORE );
 }
 
+static void
+app_window_maximize( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    if ( win && win->hwnd )
+        ShowWindow( win->hwnd, SW_MAXIMIZE );
+}
+
+static void
+app_window_toggle_maximize( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    if ( win && win->hwnd )
+        ShowWindow( win->hwnd, IsZoomed( win->hwnd ) ? SW_RESTORE : SW_MAXIMIZE );
+}
+
+/*----------------------------------------------------------------------------------------------
+    Native-borderless window actions.
+
+    A borderless window has no Win32 non-client area, so the imgui titlebar / borders stand in
+    for it.  Each grab is handed back to the OS via WM_NCLBUTTONDOWN (move / resize), which runs
+    its own blocking modal loop inside DefWindowProc.  That loop must execute on the MESSAGE fiber
+    so the timer can keep yielding to the game loop; the game-loop fiber (where imgui calls these)
+    cannot run it.  So the primitives only POST a private message -- non-blocking and fiber-safe --
+    and the WndProc (win_window_proc.c, on the message fiber) performs the actual modal call.
+
+    win_zone_to_win32 lives here because translating the imgui zone to a Win32 hit-test code is the
+    one piece that belongs to the caller side; the resulting code rides in the posted wParam.
+----------------------------------------------------------------------------------------------*/
+
+/* app_win_zone_t -> Win32 hit-test code.  Indexed directly by zone; order must match the enum. */
+static const LRESULT win_zone_to_win32[ APP_ZONE_COUNT ] = {
+    HTNOWHERE,     /* APP_ZONE_NONE        */
+    HTTOPLEFT,     /* APP_ZONE_TOPLEFT     */
+    HTTOP,         /* APP_ZONE_TOP         */
+    HTTOPRIGHT,    /* APP_ZONE_TOPRIGHT    */
+    HTLEFT,        /* APP_ZONE_LEFT        */
+    HTCLIENT,      /* APP_ZONE_CLIENT      */
+    HTRIGHT,       /* APP_ZONE_RIGHT       */
+    HTBOTTOMLEFT,  /* APP_ZONE_BOTTOMLEFT  */
+    HTBOTTOM,      /* APP_ZONE_BOTTOM      */
+    HTBOTTOMRIGHT, /* APP_ZONE_BOTTOMRIGHT */
+    HTCAPTION,     /* APP_ZONE_CAPTION     */
+    HTMINBUTTON,   /* APP_ZONE_MINBUTTON   */
+    HTMAXBUTTON,   /* APP_ZONE_MAXBUTTON   */
+    HTCLOSE,       /* APP_ZONE_CLOSE       */
+    HTSYSMENU,     /* APP_ZONE_SYSMENU     */
+};
+
+static void
+app_window_start_move( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    if ( win && win->hwnd )
+        PostMessageW( win->hwnd, APP_WM_START_MOVE, 0, 0 );
+}
+
+static void
+app_window_start_resize( win_id_t id, app_win_zone_t zone )
+{
+    app_window_t* win = win_get( id );
+    if ( !win || !win->hwnd )
+        return;
+    if ( zone <= APP_ZONE_NONE || zone >= APP_ZONE_COUNT )
+        return;
+    PostMessageW( win->hwnd, APP_WM_START_RESIZE, ( WPARAM )win_zone_to_win32[ zone ], 0 );
+}
+
+static void
+app_window_title_event( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    if ( win && win->hwnd )
+        PostMessageW( win->hwnd, APP_WM_TITLE_EVENT, 0, 0 );
+}
+
+static void
+app_window_system_menu( win_id_t id, i32 x, i32 y )
+{
+    app_window_t* win = win_get( id );
+    if ( win && win->hwnd )
+        PostMessageW( win->hwnd, APP_WM_SYSMENU, 0, ( LPARAM )MAKELONG( ( i16 )x, ( i16 )y ) );
+}
+
+static void
+app_window_enable_resize( win_id_t id, bool enabled )
+{
+    app_window_t* win = win_get( id );
+    if ( !win || !win->hwnd )
+        return;
+
+    win->has_resize = enabled;
+
+    DWORD style = ( DWORD )GetWindowLongW( win->hwnd, GWL_STYLE );
+    if ( enabled ) style |= WS_THICKFRAME;
+    else           style &= ~WS_THICKFRAME;
+    SetWindowLongW( win->hwnd, GWL_STYLE, style );
+
+    /* Apply the frame change without moving / resizing / restacking the window. */
+    SetWindowPos( win->hwnd, NULL, 0, 0, 0, 0,
+                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED );
+}
+
+/* Publish the custom-frame layout the WndProc hit-tests against (imgui calls this each frame for a
+   native-borderless window).  caption_h is the titlebar drag band height and border the edge resize
+   grab thickness, both client px; either <= 0 disables that interaction.  Toggling enabled changes
+   the non-client layout, so that case forces a WM_NCCALCSIZE recompute; metric-only updates do not. */
+static void
+app_window_set_native_frame( win_id_t id, bool enabled, i32 caption_h, i32 border )
+{
+    app_window_t* win = win_get( id );
+    if ( !win || !win->hwnd )
+        return;
+
+    bool was = win->native.enabled;
+    win->native.enabled   = enabled;
+    win->native.caption_h = caption_h > 0 ? caption_h : 0;
+    win->native.border    = border    > 0 ? border    : 0;
+
+    if ( was != enabled )
+        SetWindowPos( win->hwnd, NULL, 0, 0, 0, 0,
+                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED );
+}
+
 /*----------------------------------------------------------------------------------------------
     Paint enable / toggle / query — controls default OS background erase.
 ----------------------------------------------------------------------------------------------*/

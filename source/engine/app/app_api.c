@@ -28,6 +28,16 @@ const app_api_t g_app_api_struct = {
     .window_toggle_paint      = app_window_toggle_paint,
     .window_paint_enabled     = app_window_paint_enabled,
 
+    /* Native-borderless window actions */
+    .window_start_move        = app_window_start_move,
+    .window_start_resize      = app_window_start_resize,
+    .window_title_event       = app_window_title_event,
+    .window_system_menu       = app_window_system_menu,
+    .window_enable_resize     = app_window_enable_resize,
+    .window_maximize          = app_window_maximize,
+    .window_toggle_maximize   = app_window_toggle_maximize,
+    .window_set_native_frame  = app_window_set_native_frame,
+
     /* Event loop */
     .pump_events = app_pump_events,
     .next_event  = app_next_event,

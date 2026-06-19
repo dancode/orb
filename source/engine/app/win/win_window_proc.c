@@ -252,6 +252,113 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
                 return 1;
             return DefWindowProcW( hwnd, msg, wp, lp );
 
+        case WM_NCCALCSIZE:
+            /* Custom frame: claim the whole window rect as client so no visual non-client frame
+               remains.  Returning 0 with rgrc[0] unchanged does exactly that.  When maximized the
+               proposed rect overhangs the monitor by the frame thickness, so inset the client by it
+               -- otherwise the top row and the taskbar edge are clipped. */
+            if ( win->native.enabled && wp == TRUE )
+            {
+                NCCALCSIZE_PARAMS* p = ( NCCALCSIZE_PARAMS* )lp;
+                if ( IsZoomed( hwnd ) )
+                {
+                    int fx = GetSystemMetrics( SM_CXFRAME ) + GetSystemMetrics( SM_CXPADDEDBORDER );
+                    int fy = GetSystemMetrics( SM_CYFRAME ) + GetSystemMetrics( SM_CXPADDEDBORDER );
+                    p->rgrc[ 0 ].left   += fx;
+                    p->rgrc[ 0 ].right  -= fx;
+                    p->rgrc[ 0 ].top    += fy;
+                    p->rgrc[ 0 ].bottom -= fy;
+                }
+                return 0;
+            }
+            return DefWindowProcW( hwnd, msg, wp, lp );
+
+        case WM_NCHITTEST:
+        {
+            /* Report which zone the cursor is over so the OS runs the matching native action:
+               an edge / corner -> the resize loop with the right cursor; the caption band -> the
+               move loop (Aero Snap, double-click maximize, right-click system menu all follow from
+               DefWindowProc handling HTCAPTION); everything else -> HTCLIENT, where imgui sees the
+               normal client mouse messages.  Non-custom windows keep default behavior. */
+            if ( !win->native.enabled )
+                return DefWindowProcW( hwnd, msg, wp, lp );
+
+            POINT pt = { ( i16 )LOWORD( lp ), ( i16 )HIWORD( lp ) }; /* screen coords */
+            ScreenToClient( hwnd, &pt );                            /* client == window rect now */
+
+            RECT rc;
+            GetClientRect( hwnd, &rc );
+            i32 w = rc.right, h = rc.bottom;
+            i32 b = win->native.border;
+
+            /* No edge resize while maximized (the borders are off-screen / pinned). */
+            bool can_size = b > 0 && !IsZoomed( hwnd );
+            bool l = pt.x < b, r = pt.x >= w - b, t = pt.y < b, bot = pt.y >= h - b;
+
+            if ( can_size )
+            {
+                if ( t && l )   return HTTOPLEFT;
+                if ( t && r )   return HTTOPRIGHT;
+                if ( bot && l ) return HTBOTTOMLEFT;
+                if ( bot && r ) return HTBOTTOMRIGHT;
+                if ( l )        return HTLEFT;
+                if ( r )        return HTRIGHT;
+                if ( t )        return HTTOP;
+                if ( bot )      return HTBOTTOM;
+            }
+
+            if ( pt.y < win->native.caption_h )
+                return HTCAPTION;
+
+            return HTCLIENT;
+        }
+
+        /* Native-borderless actions, posted by the app_window_* primitives from the game-loop
+           fiber and handled here on the message fiber so their blocking modal loops keep the
+           game loop rendering (the fiber timer can only yield to it from this context).
+           ReleaseCapture first -- WM_NCLBUTTONDOWN is ignored while the window holds the mouse
+           capture, which the WndProc takes on button-held in win_proc_mouse. */
+        case APP_WM_START_MOVE:
+            ReleaseCapture();
+            win->state.captured = 0;
+            SendMessageW( hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0 );
+            return 0;
+
+        case APP_WM_START_RESIZE:
+            ReleaseCapture();
+            win->state.captured = 0;
+            SendMessageW( hwnd, WM_NCLBUTTONDOWN, wp /* HT* code */, 0 );
+            return 0;
+
+        case APP_WM_TITLE_EVENT:
+            /* Native caption double-click: the OS toggles maximize / restore. */
+            ReleaseCapture();
+            win->state.captured = 0;
+            SendMessageW( hwnd, WM_NCLBUTTONDBLCLK, HTCAPTION, 0 );
+            return 0;
+
+        case APP_WM_SYSMENU:
+        {
+            HMENU sys_menu = GetSystemMenu( hwnd, FALSE );
+            if ( !sys_menu )
+                return 0;
+
+            /* Client click -> screen position for the popup. */
+            POINT pos = { ( i16 )LOWORD( lp ), ( i16 )HIWORD( lp ) };
+            ClientToScreen( hwnd, &pos );
+
+            int cmd = ( int )TrackPopupMenu( sys_menu, TPM_TOPALIGN | TPM_LEFTBUTTON | TPM_RETURNCMD,
+                                             pos.x, pos.y, 0, hwnd, NULL );
+
+            /* Windows cannot transition out of fillscreen on its own; leave it first. */
+            if ( win->fill.is_enabled )
+                win_set_fillscreen( win, false );
+
+            if ( cmd > 0 )
+                SendMessageW( hwnd, WM_SYSCOMMAND, ( WPARAM )cmd, 0 );
+        }
+            return 0;
+
         default: return DefWindowProcW( hwnd, msg, wp, lp );
     }
 }

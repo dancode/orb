@@ -134,6 +134,14 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
         style    = WS_POPUP;
         ex_style = WS_EX_TOPMOST;
     }
+    else if ( flags & APP_WIN_BORDERLESS )
+    {
+        /* Borderless yet native-capable: WS_POPUP removes the caption/edge visuals
+           while WS_THICKFRAME / min-max box / sysmenu keep native resize, maximize,
+           Aero Snap and the system menu reachable through the window_* primitives.
+           The imgui titlebar drives all of it. */
+        style = WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+    }
     else if ( flags & APP_WIN_POPUP )
     {
         style = WS_POPUP;
@@ -146,6 +154,17 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     }
 
     if ( flags & APP_WIN_TOPMOST ) ex_style |= WS_EX_TOPMOST;
+
+    win->has_resize = ( style & WS_THICKFRAME ) != 0;
+
+    /* Custom-frame state: a borderless window claims its whole rect as client (WM_NCCALCSIZE) and
+       reports zones (WM_NCHITTEST).  caption_h starts 0 (no drag band until imgui publishes one);
+       the resize grab defaults to the OS sizing-frame width so the borders are draggable at once. */
+    win->native.enabled   = ( flags & APP_WIN_BORDERLESS ) != 0;
+    win->native.caption_h = 0;
+    win->native.border    = win->native.enabled
+                          ? GetSystemMetrics( SM_CXSIZEFRAME ) + GetSystemMetrics( SM_CXPADDEDBORDER )
+                          : 0;
 
     /* Determine client size — 0 then 50% of desktop work area */
     if ( w <= 0 || h <= 0 )
@@ -181,6 +200,12 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
 
     win->hwnd = hwnd;
     SetWindowLongPtrW( hwnd, GWLP_USERDATA, ( LONG_PTR )win );
+
+    /* The WM_NCCALCSIZE during CreateWindowExW ran before the back-pointer above was set, so the
+       custom frame was not yet stripped.  Re-fire it now that the WndProc can see win->native. */
+    if ( win->native.enabled )
+        SetWindowPos( hwnd, NULL, 0, 0, 0, 0,
+                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED );
 
     if ( g_pool.main_id == APP_WIN_INVALID )
     {

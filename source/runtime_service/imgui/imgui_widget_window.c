@@ -85,6 +85,22 @@ static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
 static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER; }
 
 /*----------------------------------------------------------------------------------------------
+    Native-borderless windows (IMGUI_WIN_NATIVE)
+
+    A native window IS its host OS window: its titlebar stands in for the Win32 caption and its
+    border for the sizing frame.  imgui does NOT hit-test or forward gestures -- it just publishes
+    the frame layout (caption band + resize border) to the app each frame; the OS then drives move,
+    resize, Aero Snap, double-click-maximize and the system menu itself through WM_NCHITTEST.  So
+    the imgui side only pins geometry, draws chrome, and calls window_set_native_frame.
+----------------------------------------------------------------------------------------------*/
+
+/* OS window hosting this window's viewport surface (-1 / APP_WIN_INVALID if unassociated). */
+static win_id_t window_native_id( const imgui_window_t* win )
+{
+    return ( win_id_t )g_ctx->viewports[ win->viewport ].win_id;
+}
+
+/*----------------------------------------------------------------------------------------------
     Auto-resize
 
     window_fit_size computes the window geometry that hugs its measured content.  The content
@@ -188,7 +204,29 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        open -- any stale collapsed state is cleared so it cannot resurface if the flag drops. */
     bool has_titlebar = !( flags & IMGUI_WIN_NOTITLEBAR );
     f32  title_h      = has_titlebar ? WIN_TITLE_H : 0.0f;
-    bool can_collapse = has_titlebar && !( flags & IMGUI_WIN_NOCOLLAPSE );
+
+    /* A native window IS its OS window: it cannot collapse (the OS window has no such state) and
+       its geometry is owned by the OS surface, not imgui -- pin it to the viewport so the imgui
+       window always exactly covers its host window.  Border/titlebar gestures route to the OS
+       (see the resize and move-grab sections below). */
+    bool native = ( flags & IMGUI_WIN_NATIVE ) != 0;
+    if ( native )
+    {
+        const imgui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
+        win->x = 0.0f;
+        win->y = 0.0f;
+        if ( vp->disp_w > 0 ) win->w = ( f32 )vp->disp_w;
+        if ( vp->disp_h > 0 ) win->h = ( f32 )vp->disp_h;
+
+        /* Publish the frame layout the OS hit-tests against: the titlebar height is the caption
+           drag band, WIN_RESIZE_OUTER the edge grab thickness (0 when NORESIZE).  The OS owns every
+           gesture from here -- imgui only draws the chrome below. */
+        i32 caption = ( flags & IMGUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
+        i32 border  = ( flags & IMGUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
+        app()->window_set_native_frame( window_native_id( win ), true, caption, border );
+    }
+
+    bool can_collapse = has_titlebar && !( flags & IMGUI_WIN_NOCOLLAPSE ) && !native;
     if ( !can_collapse ) win->collapsed = false;
     bool collapsed = win->collapsed;
 
@@ -303,7 +341,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     imgui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
     imgui_id_t   resize_id = id_combine( id, IMGUI_RESIZE_SALT );
     u8           resize_hot = 0;
-    bool         resizeable = !( flags & IMGUI_WIN_NORESIZE ) && !autosize;
+    bool         resizeable = !( flags & IMGUI_WIN_NORESIZE ) && !autosize && !native;
     if ( resizeable && s_interaction.hover_win == id
          && ( s_interaction.active_id == IMGUI_ID_NONE || s_interaction.active_id == resize_id ) )
     {
@@ -474,7 +512,7 @@ imgui_end_window( void )
            press.  Omitted (and the title slides left to the padding) when NOCOLLAPSE is set.
            The icon is drawn from this frame's state so it matches the body shown this frame. */
         f32 text_x = s_build.win_x + WIDGET_PAD;
-        if ( !( s_build.win_flags & IMGUI_WIN_NOCOLLAPSE ) )
+        if ( !( s_build.win_flags & ( IMGUI_WIN_NOCOLLAPSE | IMGUI_WIN_NATIVE ) ) )
         {
             imgui_rect_t   arrow_r  = { s_build.win_x, s_build.win_y, title_h, title_h };
             imgui_id_t     arrow_id = id_combine( s_build.win_id, IMGUI_COLLAPSE_SALT );
@@ -501,7 +539,7 @@ imgui_end_window( void )
            never show it.  Mirrors the collapse arrow on the left: claiming hover/active here keeps
            the title-bar drag and double-click-collapse from also firing on the same press. */
         f32 right_limit = s_build.win_x + s_build.win_w - WIDGET_PAD;
-        if ( !( s_build.win_flags & IMGUI_WIN_NOMOVE ) )
+        if ( !( s_build.win_flags & ( IMGUI_WIN_NOMOVE | IMGUI_WIN_NATIVE ) ) )
         {
             imgui_rect_t   det_r  = { s_build.win_x + s_build.win_w - title_h, s_build.win_y, title_h, title_h };
             imgui_id_t     det_id = id_combine( s_build.win_id, IMGUI_DETACH_SALT );
@@ -617,8 +655,11 @@ imgui_end_window( void )
        Middle button is a convenience grab: it moves the front window from anywhere over it --
        even atop a widget, since no widget consumes the middle button -- ignoring the drag mode,
        so the window is always easy to pick up and reposition without aiming for the bar. */
+    /* A native window's titlebar IS the OS caption: the OS owns move / snap / double-click / system
+       menu via WM_NCHITTEST (begin_window published the caption band), so imgui takes no drag grab
+       for it -- excluded here like a NOMOVE window. */
     if ( s_build.win_id == s_interaction.hover_win && s_interaction.active_id == IMGUI_ID_NONE
-         && !( s_build.win_flags & IMGUI_WIN_NOMOVE ) )
+         && !( s_build.win_flags & ( IMGUI_WIN_NOMOVE | IMGUI_WIN_NATIVE ) ) )
     {
         imgui_rect_t title_r = { s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_title_h };
 

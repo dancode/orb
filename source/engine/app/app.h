@@ -60,7 +60,44 @@ typedef enum app_win_flags_e
     APP_WIN_MINIMIZE   = 1 << 8, /* start minimized                            */
     APP_WIN_NOFOCUS    = 1 << 9, /* do not steal focus on creation             */
 
+    /* Borderless but native-capable: no Win32 caption/border, yet retains a
+       sizing frame, min/max box and system menu so the imgui titlebar can drive
+       native move / resize / maximize / system-menu via the window_* primitives
+       below.  This is window "kind 3" -- the imgui window acts as the OS window. */
+    APP_WIN_BORDERLESS = 1 << 10,
+
 } app_win_flags_t;
+
+/*==============================================================================================
+    Window action zones
+
+    A native-borderless window has no Win32 non-client area, so the imgui layer
+    hit-tests its own titlebar / border and reports which zone the cursor grabbed.
+    window_start_resize maps the zone to the matching native resize action.  Order
+    is fixed -- the Win32 backend indexes a translation table directly by zone.
+==============================================================================================*/
+
+typedef enum app_win_zone_e
+{
+    APP_ZONE_NONE = 0,
+    APP_ZONE_TOPLEFT,
+    APP_ZONE_TOP,
+    APP_ZONE_TOPRIGHT,
+    APP_ZONE_LEFT,
+    APP_ZONE_CLIENT,
+    APP_ZONE_RIGHT,
+    APP_ZONE_BOTTOMLEFT,
+    APP_ZONE_BOTTOM,
+    APP_ZONE_BOTTOMRIGHT,
+    APP_ZONE_CAPTION,
+    APP_ZONE_MINBUTTON,
+    APP_ZONE_MAXBUTTON,
+    APP_ZONE_CLOSE,
+    APP_ZONE_SYSMENU,
+
+    APP_ZONE_COUNT
+
+} app_win_zone_t;
 
 /*==============================================================================================
     Window state

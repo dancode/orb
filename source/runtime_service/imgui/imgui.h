@@ -328,6 +328,15 @@ typedef enum
 
     IMGUI_WIN_MENUBAR           = 1 << 13,   /* reserve a non-scrolling menu-bar strip (begin_menu_bar) */
 
+    /* Native-borderless: this window IS its host OS window (window kind 3).  Its titlebar stands in
+       for the Win32 caption and its border for the sizing frame, so titlebar drag / double-click /
+       right-click and border drags are routed to native OS window actions (app()->window_start_move
+       / window_title_event / window_system_menu / window_start_resize) instead of imgui's in-client
+       move, tear-off, collapse, and edge-resize.  The host OS window must have been opened with
+       APP_WIN_BORDERLESS.  Geometry is owned by the OS window (size follows WM_SIZE). */
+
+    IMGUI_WIN_NATIVE            = 1 << 14,
+
 
 } imgui_win_flags_t;
 

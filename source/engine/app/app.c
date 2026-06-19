@@ -45,6 +45,16 @@
     /* Timer ID used by the message fiber to re-enter the main fiber. */
     #define APP_FIBER_TIMER_ID 1
 
+    /* Private window messages: the native-borderless action primitives POST these (non-blocking,
+       safe from the game-loop fiber) so the actual WM_NCLBUTTONDOWN / TrackPopupMenu -- each of
+       which runs its own blocking modal loop -- is handled inside the WndProc on the MESSAGE fiber.
+       That is the only context where the fiber timer can yield to the game loop, so rendering keeps
+       ticking during the drag (calling SendMessage from the game-loop fiber would deadlock it). */
+    #define APP_WM_START_MOVE   ( WM_APP + 0 )
+    #define APP_WM_START_RESIZE ( WM_APP + 1 ) /* wParam = Win32 HT* hit-test code */
+    #define APP_WM_TITLE_EVENT  ( WM_APP + 2 )
+    #define APP_WM_SYSMENU      ( WM_APP + 3 ) /* lParam = MAKELPARAM(client x, client y) */
+
 #else
 
     #error "app: platform not implemented"
@@ -117,7 +127,21 @@ typedef struct app_window_s
     bool                resize_modal;   /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */
     bool                move_modal;
     bool                paint_enabled; /* WM_ERASEBKGND uses class brush when true              */
+    bool                has_resize;    /* native sizing frame present (borderless windows)     */
     win_fillscreen_t    fill;
+
+    /* Native-borderless custom frame (window kind 3).  When enabled, WM_NCCALCSIZE removes the
+       visual non-client frame (client fills the whole window) and WM_NCHITTEST reports zones from
+       these client-space metrics, so the OS drives move / resize / Aero Snap / double-click /
+       system-menu natively while imgui draws the chrome.  imgui publishes these each frame via
+       window_set_native_frame; WS_THICKFRAME (from APP_WIN_BORDERLESS) keeps the sizing loop live. */
+    struct
+    {
+        bool enabled;
+        i32  caption_h;   /* HTCAPTION band height from the top edge, client px (0 = none)   */
+        i32  border;      /* resize grab thickness at the edges, client px  (0 = no resize)  */
+
+    } native;
 
 } app_window_t;
 
