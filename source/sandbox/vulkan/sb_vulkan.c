@@ -144,6 +144,10 @@ main( int argc, char** argv )
         }
     }
 
+    /* Initial drawable sizes (updated by resize events in the loop below). */
+    i32 win_w = 1280;
+    i32 win_h = 720;
+
     /* Initialize imgui GPU resources and load TrueType font atlas. */
     if ( !imgui()->init() )
     {
@@ -157,34 +161,35 @@ main( int argc, char** argv )
     }
     
     imgui()->load_font( "fonts/jetbrains_regular_24.orb_font" );
-    // imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
-
+ // imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
     imgui()->print_mem_stats();
 
-    /* Associate the main window with surface 0 so its mouse events resolve to viewport 0 (the
-       single-window fallback would also pick 0, but tagging it is explicit and robust). */
-    imgui()->viewport_set_window( 0, win );
+    /* Open the primary viewport for the main window.  This creates its GPU geometry buffers and
+       associates win so mouse events from it route to surface 0. */
+    imgui_vp_t vp0 = imgui()->viewport_open( win, win_w, win_h );
+    if ( vp0 == IMGUI_VP_INVALID ) {
+        fprintf( stderr, "[sb_vulkan] imgui viewport_open (primary) failed\n" );
+        imgui()->shutdown();
+        draw()->shutdown();
+        rhi()->context_destroy( ctx );
+        rhi()->shutdown();
+        app()->window_close( win );
+        mod_system_exit();
+        return 1;
+    }
 
-    /* Open imgui's floater surface for the second window.  Returns the viewport index (>=1) used
-       to assign windows (set_next_window_viewport), to flush (render_viewport), and -- via the
-       win2 win_id passed here -- to route win2's mouse events to this surface.  Bound to ctx2
-       purely by which cmd we pass render_viewport below. */
-    i32  vp1         = ( ctx2 != RHI_CTX_INVALID ) ? imgui()->viewport_open( win2 ) : -1;
-    bool has_second  = ( vp1 >= 0 );
-    if ( has_second )
-        imgui()->viewport_resize( vp1, win2_w, win2_h );   /* seed the floater's clip extent */
+    /* Open a secondary viewport for the second window.  Bound to ctx2 at flush time by which cmd
+       we pass render(); win2's mouse events route here via its win_id. */
+    imgui_vp_t vp1        = ( ctx2 != RHI_CTX_INVALID ) ? imgui()->viewport_open( win2, win2_w, win2_h ) : IMGUI_VP_INVALID;
+    bool       has_second = ( vp1 != IMGUI_VP_INVALID );
     if ( ctx2 != RHI_CTX_INVALID && !has_second )
-        fprintf( stderr, "[sb_vulkan] imgui viewport_open failed; running single-surface\n" );
+        fprintf( stderr, "[sb_vulkan] imgui viewport_open (secondary) failed; running single-surface\n" );
 
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
     printf( "[sb_vulkan] running -- ESC to quit\n" );
     printf( "[sb_vulkan] imgui demos: 1-9 select, +/- step, F1-F4 debug overlay, NP. font scale\n" );
-
-    /* Track window size for viewport/scissor updates. */
-    i32 win_w = 1280;
-    i32 win_h = 720;
 
     /* Active imgui demo index (see sb_vulkan_imgui.c); switched live with the keys below. */
     int active_demo = 0;
@@ -209,19 +214,20 @@ main( int argc, char** argv )
             switch ( ev.type )
             {
                 case APP_EV_WIN_RESIZE:
-                    /* Route the resize to the context owning the window that received it. */
+                    /* Route the resize to the context and viewport owning the window. */
                     if ( ev.win_id == win )
                     {
                         win_w = ev.data.win_resize.w;
                         win_h = ev.data.win_resize.h;
                         rhi()->context_resize( ctx, win_w, win_h );
+                        imgui()->viewport_resize( vp0, win_w, win_h );
                     }
                     else if ( has_second && ev.win_id == win2 )
                     {
                         win2_w = ev.data.win_resize.w;
                         win2_h = ev.data.win_resize.h;
                         rhi()->context_resize( ctx2, win2_w, win2_h );
-                        imgui()->viewport_resize( vp1, win2_w, win2_h );   /* keep the clip extent in sync */
+                        imgui()->viewport_resize( vp1, win2_w, win2_h );
                     }
                     break;
 
@@ -278,10 +284,9 @@ main( int argc, char** argv )
         /* ------------------------------------------------------------------------------ */
         /* Build the UI ONCE: one imgui context emits every window for every surface into a single
            draw list.  The flush passes below dispatch each window to the surface it was assigned
-           (set_next_window_viewport).  new_frame() takes the main window's size for the display
-           clip; the viewport-1 window is placed within those bounds so it is not clipped. */
+           (set_next_window_viewport, or inherited from whichever viewport was emitted into last). */
 
-        imgui()->new_frame( win_w, win_h, dt );
+        imgui()->new_frame( dt );
 
         sb_imgui_demos[ active_demo ].fn();                // selected feature demo (viewport 0)
         active_demo = sb_imgui_demo_picker( active_demo );  // demo list + key hints (clickable)
@@ -290,7 +295,7 @@ main( int argc, char** argv )
            set_next_window_viewport differs -- so it appears in the second OS window. */
         if ( has_second )
         {
-            imgui()->set_next_window_viewport( (u32)vp1 );
+            imgui()->set_next_window_viewport( vp1 );
             imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
             imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
             if ( imgui()->begin_window( "Second Surface", 60, 60, 360, 240, IMGUI_WIN_NONE ) )
@@ -332,14 +337,14 @@ main( int argc, char** argv )
                     rhi()->cmd_end_rendering( cmd );
                 }
 
-                imgui()->render( cmd, win_w, win_h );    // viewport 0 partition + debug overlay
+                imgui()->render( vp0, cmd );    // primary partition + debug overlay
                 rhi()->frame_end( ctx );
             }
         }
 
         /* ------------------------------------------------------------------------------ */
         /* Flush the second surface from the SAME draw list: open ctx2's frame, clear, and replay
-           only viewport 1's partition (render_viewport) onto ctx2's swapchain, then end. */
+           only the secondary viewport's partition onto ctx2's swapchain, then end. */
 
         if ( has_second && !app()->window_is_minimized( win2 ) )
         {
@@ -354,7 +359,7 @@ main( int argc, char** argv )
                 }, 1, NULL );
                 rhi()->cmd_end_rendering( cmd2 );
 
-                imgui()->render_viewport( vp1, cmd2, win2_w, win2_h );
+                imgui()->render( vp1, cmd2 );   /* secondary partition -- no overlay */
                 rhi()->frame_end( ctx2 );
             }
         }

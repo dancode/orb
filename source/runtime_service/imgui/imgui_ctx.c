@@ -62,6 +62,8 @@ static struct
 {
     imgui_id_t  last_item_id;   // id of the most recent widget emitted -- context-menu / tooltip anchor
 
+    u32         cur_viewport;       // ambient viewport for new-window inheritance (updated per window emitted)
+
     imgui_id_t  win_id;             // id of the window currently between begin/end_window
     const char* win_title;          // title string, cached for end_window's deferred chrome
     bool        win_collapsed;      // current window is collapsed (title bar only this frame)
@@ -787,9 +789,10 @@ ctx_new_frame( void )
     /* Fresh layout stack each frame; no region is open until a begin_window/begin_child.
        The interaction clip starts at the full display, and the wheel is unclaimed -- the
        innermost scrollable region the cursor sits in consumes it (claimed at region pop). */
-    s_layout_sp       = 0;
-    s_id_sp           = 0;       /* fresh id-scope stack; regions/push_id reseed it */
-    s_build.wheel_used  = false;
+    s_layout_sp           = 0;
+    s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
+    s_build.wheel_used    = false;
+    s_build.cur_viewport  = 0;       /* ambient viewport resets to primary each frame */
 
     /* Popup nesting depth is rebuilt as begin_popup / end_popup run; the open set persists. */
     s_popup_begin_count = 0;

@@ -3,6 +3,7 @@
 /*==============================================================================================
 
     runtime_service/imgui/imgui.h -- imgui module types.
+
     Include in DLL modules that use imgui through the vtable (imgui()->...).
     Include imgui_host.h instead for direct-call access (host, sandbox).
 
@@ -12,11 +13,24 @@
 
 // clang-format off
 /*==============================================================================================
-    ID / geometry
+    IMGUI: ID
 ==============================================================================================*/
+
+/* widget id -- a hashed value creates a unique value to identify a widget */
 
 typedef u32 imgui_id_t;
 #define IMGUI_ID_NONE 0u
+
+/* Opaque viewport handle -- a render surface backed by an OS window.  Returned by
+   viewport_open; passed to render, viewport_resize, viewport_close, and
+   set_next_window_viewport.  IMGUI_VP_INVALID (-1) signals failure or no assignment. */
+
+typedef i32  imgui_vp_t;
+#define IMGUI_VP_INVALID  (-1)
+
+/*==============================================================================================
+    IMGUI: Geometry
+==============================================================================================*/
 
 typedef struct { f32 x, y; }        imgui_vec2_t;
 typedef struct { f32 x, y, w, h; }  imgui_rect_t;

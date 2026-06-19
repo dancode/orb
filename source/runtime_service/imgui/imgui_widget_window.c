@@ -40,16 +40,21 @@
 ----------------------------------------------------------------------------------------------*/
 
 /* Keep a dragged window reachable: clamp so its top edge stays on-screen and at
-   least one title-bar's worth of the window remains within the display bounds. */
+   least one title-bar's worth of the window remains within the display bounds.
+   Uses the window's own viewport dimensions so dragging on a secondary surface
+   clamps against that surface, not the primary. */
 static void
 window_clamp( imgui_window_t* win )
 {
+    const imgui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
+    f32 dw = vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w;
+    f32 dh = vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h;
     const f32 margin = WIN_TITLE_H;
-    const f32 max_x  = (f32)s_io.display_w - margin;
-    const f32 max_y  = (f32)s_io.display_h - margin;
+    const f32 max_x  = dw - margin;
+    const f32 max_y  = dh - margin;
 
-    if ( win->x > max_x )          win->x = max_x;
-    if ( win->y > max_y )          win->y = max_y;
+    if ( win->x > max_x )           win->x = max_x;
+    if ( win->y > max_y )           win->y = max_y;
     if ( win->x < margin - win->w ) win->x = margin - win->w;
     if ( win->y < 0.0f )            win->y = 0.0f;
 }
@@ -163,6 +168,10 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     imgui_window_t* win = window_get( id, x, y, w, h );
     win->flags          = flags;
 
+    /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
+    if ( win->viewport > 0 && !rhi_handle_valid( g_ctx->viewports[ win->viewport ].vb ) )
+        win->viewport = 0;
+
     /* Next-window channel: apply any queued set_next_window_pos / _size before this frame's drag,
        resize, and autosize act on the geometry, so a ONCE / APPEARING seed becomes the incoming
        state the user then interacts with.  `appearing` is the first begin (last_frame 0) or the
@@ -266,6 +275,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        viewport so flush dispatches it to the surface hosting this window. */
     draw_set_sort_key( win->z );
     draw_set_viewport( win->viewport );
+    s_build.cur_viewport = win->viewport;   /* update ambient so new windows created after this inherit it */
 
     /* Clip this window against ITS surface's extent, not the main window's: the window clip pushed
        below intersects the base clip (clip_stack[0]), so seed that base with this viewport's drawable

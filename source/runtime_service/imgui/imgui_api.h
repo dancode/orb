@@ -44,36 +44,34 @@ typedef struct imgui_api_s
     /* Frame lifecycle.
        new_frame() -- reset draw list and translate app input into the IO snapshot.
                       Call once at the top of the frame, before any widget calls.
-       render()    -- flush the draw list to GPU; opens a LOAD render pass on the
-                      swapchain, emits all draw calls, and closes the pass.
-                      Call after all widget calls, before rhi()->frame_end(). */
+                      Surface dimensions are owned by each viewport (set at open and on resize);
+                      no size argument is needed here.
+       render()    -- flush one viewport's geometry partition to GPU; opens a LOAD render pass on
+                      that viewport's swapchain, emits all draw calls, and closes the pass.  Also
+                      paints the debug overlay when vp is the primary (index 0).
+                      Call once per live viewport, each with the matching context cmd. */
 
-    void ( *new_frame )( i32 win_w, i32 win_h, f32 dt );
-    void ( *render    )( rhi_cmd_t cmd, i32 win_w, i32 win_h );
+    void ( *new_frame )( f32 dt );
+    void ( *render    )( imgui_vp_t vp, rhi_cmd_t cmd );
 
-    /* Multi-surface rendering.  One new_frame() builds every window's geometry into a single draw
-       list; flush then dispatches each window to the surface it was assigned (set_next_window_viewport).
+    /* Viewport management.  A viewport is a render surface backed by an OS window.  One new_frame()
+       builds every window's geometry into a single draw list; render() dispatches each window's
+       partition to the viewport it is assigned to (set_next_window_viewport, or inherited from
+       whichever viewport was most recently emitted into this frame).
 
-       viewport_open()  -- allocate a floater surface (its own geometry buffers) for OS window win_id,
-                           returning its index (1..) or -1 if the pool is full.  Its swapchain image is
-                           targeted per-context at flush time, so it is bound to a context by which cmd
-                           you pass render_viewport; win_id binds its INPUT (mouse events from that
-                           window route here).  Pass -1 for win_id to leave it unassociated.
-       viewport_close() -- release a floater's geometry buffers (the host owns the OS window + rhi context).
-       viewport_set_window() -- associate the OS window hosting a surface (call for index 0, the main
-                           window, after init); viewport_open takes win_id directly for floaters.
-       viewport_resize() -- set a floater surface's drawable size so its windows clip against it (not
-                           the main window).  Call at open and on resize, BEFORE new_frame.  Surface 0
-                           is driven automatically by new_frame's win_w/win_h.
-       render_viewport()-- flush one surface's partition: call between that context's frame_begin/frame_end
-                           with the context cmd and the surface's drawable size.  render() is the index-0
-                           convenience (it also paints the debug overlay).  Loop the rest per surface. */
+       viewport_open()   -- open a surface for OS window win_id with initial drawable size w x h.
+                            Returns a handle (imgui_vp_t >= 0) or IMGUI_VP_INVALID if the pool is full.
+                            The first call creates the primary (index 0); call before any frames.
+                            win_id routes mouse events from that OS window to this surface.
+       viewport_close()  -- close a non-primary viewport and release its GPU geometry buffers.
+                            Windows on the closed viewport automatically fall back to the primary.
+                            The host owns the OS window and rhi context; imgui owns only the geometry.
+       viewport_resize() -- update a viewport's drawable size.  Call on OS resize BEFORE new_frame.
+                            Works identically for primary and secondary viewports. */
 
-    void ( *render_viewport     )( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
-    i32  ( *viewport_open        )( i32 win_id );
-    void ( *viewport_close       )( i32 index );
-    void ( *viewport_set_window  )( i32 index, i32 win_id );
-    void ( *viewport_resize      )( i32 index, i32 w, i32 h );
+    imgui_vp_t ( *viewport_open   )( i32 win_id, i32 w, i32 h );
+    void       ( *viewport_close  )( imgui_vp_t vp );
+    void       ( *viewport_resize )( imgui_vp_t vp, i32 w, i32 h );
 
     /* Host input -- the host owns the app event ring drain and forwards each
        event here before new_frame() for the same frame.
@@ -107,10 +105,12 @@ typedef struct imgui_api_s
     void ( *set_next_window_pos  )( f32 x, f32 y, imgui_cond_t cond );
     void ( *set_next_window_size )( f32 w, f32 h, imgui_cond_t cond );
 
-    /* set_next_window_viewport -- assign the NEXT begin_window to a surface opened with
-       viewport_open (0 = main swapchain).  Sticky: it lands on the window record and persists like
-       position, so the window stays on that surface until reassigned. */
-    void ( *set_next_window_viewport )( u32 index );
+    /* set_next_window_viewport -- assign the NEXT begin_window to a specific viewport.  Sticky: it
+       lands on the window record and persists across frames until reassigned.  Omit to inherit the
+       ambient viewport -- the one most recently emitted into this frame -- so windows created from
+       within a viewport's panels naturally land on the same surface without explicit assignment.
+       If the assigned viewport is later closed, the window automatically reverts to the primary. */
+    void ( *set_next_window_viewport )( imgui_vp_t vp );
 
     /* set_next_window_size_constraints -- queue a one-shot [min,max] size box for the NEXT
        begin_child, then cleared.  The Dear ImGui SetNextWindowSizeConstraints analogue, in its

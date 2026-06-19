@@ -69,7 +69,7 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->w         = w;
     win->h         = h;
     win->z         = ++s_z_counter;
-    win->viewport  = 0;       /* main swapchain until set_next_window_viewport reassigns it */
+    win->viewport  = s_build.cur_viewport;   /* inherit ambient; set_next_window_viewport overrides */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
 
     /* Next-window state for a fresh window: never begun (so the first begin is "appearing"), and
@@ -121,15 +121,14 @@ imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond )
     s_next_win.size_h    = h;
 }
 
-/* Queue the surface the NEXT begin_window paints into (0 = main swapchain, 1.. = a torn-off
-   floater opened with viewport_open).  The assignment is sticky: it lands on the window record and
-   persists across frames like position, so a window stays on its surface until reassigned.  No
-   condition -- it applies on the next begin_window and is then cleared. */
+/* Queue the surface the NEXT begin_window paints into.  Sticky: it lands on the window record and
+   persists across frames until reassigned.  Omit to use the ambient viewport (most recently emitted).
+   Invalid or negative vp is treated as the primary (0). */
 void
-imgui_set_next_window_viewport( u32 index )
+imgui_set_next_window_viewport( imgui_vp_t vp )
 {
     s_next_win.has_viewport = true;
-    s_next_win.viewport     = index;
+    s_next_win.viewport     = ( vp >= 0 ) ? (u32)vp : 0u;
 }
 
 /* Resolve one queued axis against the window's remaining permissions.  Returns whether to apply

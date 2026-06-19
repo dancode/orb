@@ -21,15 +21,8 @@ imgui_init( void )
     if ( !imgui_render_init() )       /* shared pipeline / sampler / atlas */
         return false;
 
-    /* Main viewport: its own geometry buffers, painting the application swapchain.  win_id is left
-       unassociated (-1); a multi-window host calls viewport_set_window(0, win) so main-window input
-       resolves to surface 0 explicitly.  A single-window host need not -- unmatched falls back to 0. */
-    if ( !viewport_create( &g_ctx->viewports[ 0 ], ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, -1 ) )
-    {
-        imgui_render_shutdown();
-        return false;
-    }
-    g_ctx->viewport_count = 1;
+    /* No viewports created here -- the host calls viewport_open() after init() for each OS window.
+       Viewports own their own geometry buffers and are opened explicitly before any frames. */
 
 #ifdef IMGUI_DEBUG_OVERLAY
     /* Debug overlay GPU buffers.  Non-fatal: a failure just leaves the overlay dark. */
@@ -73,15 +66,15 @@ imgui_print_mem_stats( void )
 ==============================================================================================*/
 
 void
-imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
+imgui_new_frame( f32 dt )
 {
-    /* The main surface's drawable size, so begin_window clips viewport-0 windows against it
-       (floaters are sized by the host via viewport_resize before this call). */
-    g_ctx->viewports[ 0 ].disp_w = win_w;
-    g_ctx->viewports[ 0 ].disp_h = win_h;
+    /* Primary viewport's stored dimensions drive the display clip and input snapshot.
+       Both are 0 before the first viewport_open() -- safe: no windows are emitted yet. */
+    i32 disp_w = g_ctx->viewport_count > 0 ? g_ctx->viewports[ 0 ].disp_w : 0;
+    i32 disp_h = g_ctx->viewport_count > 0 ? g_ctx->viewports[ 0 ].disp_h : 0;
 
-    input_update( win_w, win_h, dt );
-    draw_reset( win_w, win_h );
+    input_update( disp_w, disp_h, dt );
+    draw_reset( disp_w, disp_h );
 #ifdef IMGUI_DEBUG_OVERLAY
     imgui_debug_reset();         /* clear the overlay's per-frame geometry */
 #endif
@@ -92,85 +85,84 @@ imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
     nav_new_frame();             /* commit last frame's nav move + read this frame's nav keys */
 }
 
+/* Flush one viewport's geometry partition to GPU.  The host opens a frame on that viewport's rhi
+   context, calls render() with the context cmd, then ends the frame -- once per live viewport.
+   The viewport's stored disp_w/h drive the GPU viewport and scissor clamping.
+   The debug overlay is also painted when vp == 0 (the primary).  IMGUI_VP_INVALID is a no-op. */
 void
-imgui_render( rhi_cmd_t cmd, i32 win_w, i32 win_h )
+imgui_render( imgui_vp_t vp, rhi_cmd_t cmd )
 {
-    imgui_render_flush( &g_ctx->viewports[ 0 ], 0u, cmd, win_w, win_h );   /* the main swapchain surface */
+    if ( vp < 0 || vp >= IMGUI_MAX_VIEWPORTS )
+        return;
+    imgui_viewport_t* v = &g_ctx->viewports[ vp ];
+    imgui_render_flush( v, (u32)vp, cmd, v->disp_w, v->disp_h );
 #ifdef IMGUI_DEBUG_OVERLAY
-    imgui_debug_flush( cmd, win_w, win_h );   /* bolt-on overlay, painted last (on top) of the main surface */
+    if ( vp == 0 )
+        imgui_debug_flush( cmd, v->disp_w, v->disp_h );   /* overlay on primary only */
 #endif
 }
 
-/* Flush one surface's partition of the draw list.  The host opens a frame on that surface's rhi
-   context, calls this with the context cmd + the surface's drawable size, then ends the frame --
-   once per live viewport.  Index 0 is the main swapchain (the debug overlay rides imgui_render);
-   1.. are floaters opened with viewport_open.  Out-of-range is a no-op. */
-void
-imgui_render_viewport( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
-{
-    if ( index < 0 || index >= IMGUI_MAX_VIEWPORTS )
-        return;
-    imgui_render_flush( &g_ctx->viewports[ index ], (u32)index, cmd, win_w, win_h );
-}
+/*==============================================================================================
+    Viewport Open
 
-/* Open a floater surface: allocate a free viewport slot (1..), create its geometry buffers, and
-   target the floater's own swapchain image.  RHI_SWAPCHAIN_COLOR resolves per-context at flush
-   time against the cmd the host passes, so the same sentinel serves every surface.  Returns the
-   viewport index to pass to set_next_window_viewport / render_viewport, or -1 if the pool is full
-   or buffer creation failed.  `win_id` is the OS window (app win_id_t) this surface is hosted by,
-   so mouse events from that window route their input here; pass -1 to leave it unassociated. */
-i32
-imgui_viewport_open( i32 win_id )
+    Open a viewport: allocate a free slot, create its GPU geometry buffers, and record the
+    OS window and initial drawable size.  
+    
+    The first call claims index 0 (the primary swapchain surface); each
+    subsequent call claims the next free slot.  RHI_SWAPCHAIN_COLOR resolves per-context at flush time
+    so the same sentinel serves every surface -- which cmd you pass render() selects the swapchain.
+    Returns the handle to pass to render / viewport_resize / viewport_close / set_next_window_viewport,
+    or IMGUI_VP_INVALID if the pool is full or GPU buffer creation failed.
+    Must be called after init() and before new_frame(). 
+
+==============================================================================================*/
+
+imgui_vp_t
+imgui_viewport_open( i32 win_id, i32 w, i32 h )
 {
-    for ( u32 i = 1; i < IMGUI_MAX_VIEWPORTS; ++i )
+    for ( u32 i = 0; i < IMGUI_MAX_VIEWPORTS; ++i )
     {
         imgui_viewport_t* vp = &g_ctx->viewports[ i ];
         if ( rhi_handle_valid( vp->vb ) )
             continue;   /* slot already live */
 
         if ( !viewport_create( vp, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
-            return -1;
+            return IMGUI_VP_INVALID;
+
+        vp->disp_w = w;
+        vp->disp_h = h;
 
         if ( i + 1u > g_ctx->viewport_count )
             g_ctx->viewport_count = i + 1u;
-        return (i32)i;
+        return (imgui_vp_t)i;
     }
-    return -1;   /* viewport pool full */
+    return IMGUI_VP_INVALID;   /* viewport pool full */
 }
 
-/* Associate (or reassign) the OS window that hosts surface `index`, so mouse events from that
-   window route their input to it.  The host calls this for surface 0 (the main window) after init;
-   viewport_open takes the win_id directly for floaters.  Out-of-range index is ignored. */
+/* Update a viewport's drawable size.  Call on OS resize BEFORE new_frame.
+   Works identically for the primary (0) and secondary viewports.  IMGUI_VP_INVALID is a no-op. */
 void
-imgui_viewport_set_window( i32 index, i32 win_id )
+imgui_viewport_resize( imgui_vp_t vp, i32 w, i32 h )
 {
-    if ( index < 0 || index >= IMGUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= IMGUI_MAX_VIEWPORTS )
         return;
-    g_ctx->viewports[ index ].win_id = win_id;
+    g_ctx->viewports[ vp ].disp_w = w;
+    g_ctx->viewports[ vp ].disp_h = h;
 }
 
-/* Set a floater surface's drawable size so begin_window clips its windows against this surface (not
-   the main window).  The host calls this for floaters at open and on each resize, BEFORE new_frame
-   (the build reads it).  Surface 0 is driven by new_frame's win_w/win_h, but may be set here too.
-   Out-of-range index is ignored. */
+/* Close a non-primary viewport and release its GPU geometry buffers.  Windows that were assigned
+   to this surface automatically revert to the primary (index 0).  The primary (index 0) is managed
+   by init/shutdown and may not be closed here.  The host owns the OS window and rhi context. */
 void
-imgui_viewport_resize( i32 index, i32 w, i32 h )
+imgui_viewport_close( imgui_vp_t vp )
 {
-    if ( index < 0 || index >= IMGUI_MAX_VIEWPORTS )
+    if ( vp <= 0 || vp >= IMGUI_MAX_VIEWPORTS )
         return;
-    g_ctx->viewports[ index ].disp_w = w;
-    g_ctx->viewports[ index ].disp_h = h;
-}
-
-/* Close a floater surface and release its geometry buffers.  Slot 0 (the main swapchain) is owned
-   by init/shutdown and is never closed here; an out-of-range index is ignored.  The host must
-   destroy the underlying rhi context + OS window itself -- imgui owns only the geometry. */
-void
-imgui_viewport_close( i32 index )
-{
-    if ( index <= 0 || index >= IMGUI_MAX_VIEWPORTS )
-        return;
-    viewport_destroy( &g_ctx->viewports[ index ] );
+    viewport_destroy( &g_ctx->viewports[ vp ] );
+    /* Migrate any windows on this surface back to the primary. */
+    for ( u32 i = 0; i < s_window_count; ++i )
+        if ( s_windows[ i ].viewport == (u32)vp )
+            s_windows[ i ].viewport = 0;
 }
 
 /*==============================================================================================
@@ -240,10 +232,8 @@ const imgui_api_t g_imgui_api_struct =
     .load_font                          = imgui_load_font,
     .new_frame                          = imgui_new_frame,
     .render                             = imgui_render,
-    .render_viewport                    = imgui_render_viewport,
     .viewport_open                      = imgui_viewport_open,
     .viewport_close                     = imgui_viewport_close,
-    .viewport_set_window                = imgui_viewport_set_window,
     .viewport_resize                    = imgui_viewport_resize,
     .event                              = imgui_event,
     .set_next_window_pos                = imgui_set_next_window_pos,
