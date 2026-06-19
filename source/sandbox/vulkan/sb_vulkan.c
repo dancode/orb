@@ -160,10 +160,11 @@ main( int argc, char** argv )
         return 1;
     }
     
-    imgui()->load_font( "fonts/jetbrains_regular_24.orb_font" );
+    imgui()->load_font( "fonts/jetbrains_regular_16.orb_font" );
+ // imgui()->load_font( "fonts/jetbrains_regular_24.orb_font" );
  // imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
     imgui()->print_mem_stats();
-
+    
     /* Open the primary viewport for the main window.  This creates its GPU geometry buffers and
        associates win so mouse events from it route to surface 0. */
     imgui_vp_t vp0 = imgui()->viewport_open( win, win_w, win_h );
