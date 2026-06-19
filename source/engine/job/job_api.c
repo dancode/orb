@@ -1,19 +1,19 @@
 /*==============================================================================================
 
-    engine/jobs/jobs_api.c — Platform-agnostic jobs module wiring.
+    engine/job/job_api.c — Platform-agnostic job module wiring.
 
 ==============================================================================================*/
 #include "engine/mod/mod_export.h"
-#include "engine/jobs/jobs_api.h"
+#include "engine/job/job_api.h"
 
 /*==============================================================================================
     API struct
 ==============================================================================================*/
 
-const jobs_api_t g_jobs_api_struct = {
-    .dispatch = jobs_dispatch,
-    .wait     = jobs_wait,
-    .tick     = jobs_tick,
+const job_api_t g_job_api_struct = {
+    .dispatch = job_dispatch,
+    .wait     = job_wait,
+    .tick     = job_tick,
 };
 
 /*==============================================================================================
@@ -21,7 +21,7 @@ const jobs_api_t g_jobs_api_struct = {
 ==============================================================================================*/
 
 static bool
-jobs_mod_init( void* raw_state, get_api_fn get_api )
+job_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
     UNUSED( get_api );
@@ -29,7 +29,7 @@ jobs_mod_init( void* raw_state, get_api_fn get_api )
 }
 
 static void
-jobs_mod_exit( void* raw_state )
+job_mod_exit( void* raw_state )
 {
     UNUSED( raw_state );
 }
@@ -39,17 +39,17 @@ jobs_mod_exit( void* raw_state )
 ==============================================================================================*/
 
 mod_desc_t*
-jobs_get_mod_desc( void )
+job_get_mod_desc( void )
 {
     static mod_desc_t api = {
         .version       = 1,
         .state_size    = 0,
-        .func_api_size = sizeof( jobs_api_t ),
-        .func_api      = ( void* )&g_jobs_api_struct,
+        .func_api_size = sizeof( job_api_t ),
+        .func_api      = ( void* )&g_job_api_struct,
         .dep_count     = 0,
         .deps          = {},
-        .init          = jobs_mod_init,
-        .exit          = jobs_mod_exit,
+        .init          = job_mod_init,
+        .exit          = job_mod_exit,
         .reload        = NULL,
     };
     return &api;

@@ -139,11 +139,12 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     
     // if ( !mod_static( sys ) ) { }
 
-    /* Engine baseline — sys (clock + sleep), rs (reflection), jobs (scheduling), run (frame clock). */
+    /* Engine baseline — sys (clock + sleep), rs (reflection), job (scheduling), run (frame clock). */
     if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
          !mod_static_load( "ref", ref_get_mod_desc() ) ||
-         !mod_static_load( "jobs", jobs_get_mod_desc() ) ||
+         !mod_static_load( "job", job_get_mod_desc() ) ||
          !mod_static_load( "run", run_get_mod_desc() ) )
+
 
     {
         fprintf( stderr, "[host] baseline load failed: %s\n", mod_last_error() );
@@ -277,10 +278,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( console )
             sys_console_input_poll();
 
-        /* -- jobs dispatcher tick --------------------------------------- */
+        /* -- job dispatcher tick --------------------------------------- */
 
-        if ( jobs() )
-            jobs()->tick();
+        if ( job() )
+            job()->tick();
+
 
         /* -- host update ------------------------------------------------- */
 

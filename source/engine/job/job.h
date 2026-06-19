@@ -1,10 +1,10 @@
 /*==============================================================================================
 
-    engine/jobs/jobs.h — Job/task system type declarations.
+    engine/job/job.h — Job/task system type declarations.
 
 ==============================================================================================*/
-#ifndef JOBS_H
-#define JOBS_H
+#ifndef JOB_H
+#define JOB_H
 
 #include "orb.h"
 
@@ -29,4 +29,4 @@ typedef struct job_counter_s
 } job_counter_t;
 
 /*============================================================================================*/
-#endif    // JOBS_H
+#endif    // JOB_H

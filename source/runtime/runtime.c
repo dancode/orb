@@ -21,7 +21,8 @@
 
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
-#include "engine/jobs/jobs_host.h"
+#include "engine/job/job_host.h"
+
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_modules/render/render_api.h"
 

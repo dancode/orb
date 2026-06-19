@@ -78,7 +78,8 @@ target run
     root        source/runtime
     folder      03_RUNTIME
     unit        runtime.c
-    dep         mod sys ref core app jobs
+    dep         mod sys ref core app job
+
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
@@ -101,13 +102,14 @@ target draw
     unit        draw.c
 	dep 		rhi
 	
-target jobs
+target job
 
     type        static
-    root        source/engine/jobs
+    root        source/engine/job
     folder      02_ENGINE
-    unit        jobs.c
+    unit        job.c
     flag        host_only
+
 
 
 target imgui
@@ -253,7 +255,7 @@ target host_game
     root        source/host/game
     folder      08_Host
     unit        host_game_main.c
-	dep         mod sys ref core jobs app
+	dep         mod sys ref core job app
 	
 target host_editor
 
@@ -261,7 +263,7 @@ target host_editor
     root        source/host/editor
     folder      08_Host
     unit        host_editor_main.c
-	dep         mod sys ref core jobs app
+	dep         mod sys ref core job app
 	
 target host_tool
 
@@ -269,7 +271,7 @@ target host_tool
     root        source/host/tool
     folder      08_Host
     unit        host_tool_main.c
-	dep         mod sys ref core jobs app
+	dep         mod sys ref core job app
 	mono_dep	render
 
 target host_sandbox
@@ -278,7 +280,7 @@ target host_sandbox
     root        source/host/sandbox
     folder      08_Host
     unit        host_sandbox_main.c
-    dep         mod sys ref core jobs app
+    dep         mod sys ref core job app
 
 	
 # ==============================================================================
@@ -330,6 +332,15 @@ target sb_engine_core
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_core.c
     dep         core
+
+target sb_engine_job
+
+    type        exe
+    root        source/sandbox/engine/engine_job
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_job.c
+    dep         sys mod job
+
 
 # ==============================================================================
 # 09_SANDBOX -- REFLECT
@@ -390,7 +401,7 @@ target sb_vulkan						# vulkan development and testing
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
     unit        sb_vulkan_imgui.c
-    dep         sys ref mod core jobs app
+    dep         sys ref mod core job app
 	dep 		run rhi draw imgui
 	mono_dep 	render
   # flag        reflect
@@ -401,7 +412,7 @@ target sb_vulkan_stress					# multi-context rhi sync stress test
     root        source/sandbox/vulkan_stress
     folder      09_SANDBOX/VULKAN
     unit        sb_vulkan_stress.c
-    dep         sys ref mod core jobs app
+    dep         sys ref mod core job app
 	dep 		rhi
 
 
@@ -415,7 +426,7 @@ target sb_example_runtime
     root        source/sandbox/example/example_runtime
     folder      09_SANDBOX/EXAMPLE
     unit        example_runtime.c
-	dep 		mod ref sys core jobs app		# static engine
+	dep 		mod ref sys core job app		# static engine
     dep         run rhi						# static runtime + services
 	mono_dep	render example_reflect
 		
@@ -425,7 +436,7 @@ target sb_example_tool
     root        source/sandbox/example/example_tool
     folder      09_SANDBOX/EXAMPLE
     unit        example_tool.c
-	dep 		mod ref sys core jobs app
+	dep 		mod ref sys core job app
     dep         run
 	mono_dep	render rhi
 
@@ -435,7 +446,7 @@ target sb_example_server
     root        source/sandbox/example/example_server
     folder      09_SANDBOX/EXAMPLE
     unit        example_server.c
-	dep 		mod ref sys core jobs app
+	dep 		mod ref sys core job app
     dep         run
 	mono_dep	render rhi example
 
@@ -445,7 +456,7 @@ target sb_example_editor
     root        source/sandbox/example/example_editor
     folder      09_SANDBOX/EXAMPLE
     unit        example_editor.c
-	dep 		mod ref sys core jobs app
+	dep 		mod ref sys core job app
     dep         run rhi
 	mono_dep	render example
 
@@ -455,7 +466,7 @@ target sb_example_game
     root        source/sandbox/example/example_game
     folder      09_SANDBOX/EXAMPLE
     unit        example_game.c
-	dep 		mod ref sys core jobs app
+	dep 		mod ref sys core job app
     dep         run rhi
 	mono_dep	render
 
@@ -487,7 +498,7 @@ solution orb_dev
 	add 		base
 
 	# 			--- ENGINE --- 
-    add         sys ref mod app core jobs net
+    add         sys ref mod app core job net
 	
 	# 			--- RUNTIME --- 
     add         run
@@ -560,7 +571,7 @@ solution orb_sandbox_reflect			# developing reflection
     startup     sb_runtime_gen
 
     add         base
-	add         sys ref mod app core jobs net
+	add         sys ref mod app core job net
 
 	add 		sb_reflect				# unit test reflection (hand rolled)
 	
@@ -579,7 +590,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	startup     sb_vulkan
 
     add         base
-	add         sys ref mod app core jobs net
+	add         sys ref mod app core job net
 
 	add 		run
 	add 		rhi						# vulkan render library
@@ -597,7 +608,7 @@ solution orb_sandbox_engine				# developing engine libraries
     out         build/proj
     startup     sb_runtime_gen
 
-	add         sys ref mod app core jobs net
+	add         sys ref mod app core job net
 
 	# 			--- SANDBOX : BASE -- 
 
@@ -605,7 +616,9 @@ solution orb_sandbox_engine				# developing engine libraries
     add         sb_engine_mod 
 	add 		sb_engine_sys 
 	add 		sb_engine_core 
+	add 		sb_engine_job
 	add 		sb_engine_app
+
 	
 	# TOOD: engine test
 
@@ -630,7 +643,7 @@ solution orb_all
 # 	nav 		source
 
 	add 		base
-    add         sys ref mod app core jobs net
+    add         sys ref mod app core job net
 	
     add         run	
     add         rhi	
@@ -646,8 +659,9 @@ solution orb_all
 	add         sb_engine_mod 
 	add 		sb_engine_sys 
 	add 		sb_engine_core 
-
+	add 		sb_engine_job
 	add 		sb_engine_app
+
 	
 	# 			reflection testing
 	add 		sb_reflect sb_runtime_reflect sb_runtime_gen
