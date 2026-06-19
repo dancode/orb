@@ -269,6 +269,60 @@ imgui_owned_window_event( const app_event_t* ev )
 void
 imgui_update_platform_windows( void )
 {
+    /* (1) Tear-off / merge-back: a window whose title was dragged off its host surface (enqueued by
+       window_begin_ex) changes which surface hosts it. */
+    if ( s_vp_request.active )
+    {
+        s_vp_request.active     = false;
+        imgui_window_t* win     = window_find( s_vp_request.win_id );
+        if ( win && s_vp_request.from_vp == 0 )
+        {
+            /* Tear the window off the main surface into its own floater, placed so the panel keeps
+               its EXACT screen position: panel screen pos = main surface client origin + the panel's
+               position within it.  The floater is sized to the panel (client = win->w x win->h) and
+               its client corner set to that screen point, then the panel sits at (0,0) filling it --
+               so the panel's pixels do not move, it simply becomes its own OS window. */
+            i32 mx = 0, my = 0;
+            app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
+            i32 sx = mx + (i32)win->x;
+            i32 sy = my + (i32)win->y;
+
+            imgui_vp_t vp = viewport_spawn( s_vp_request.title ? s_vp_request.title : "panel",
+                                            sx, sy, (i32)win->w, (i32)win->h );
+            if ( vp != IMGUI_VP_INVALID )
+            {
+                /* window_open positions the FRAME; set_pos lands the CLIENT corner on (sx,sy) so
+                   the panel (drawn at client 0,0) appears exactly where it was. */
+                app()->window_set_pos( g_ctx->viewports[ vp ].win_id, sx, sy );
+                win->viewport = (u32)vp;
+                win->x        = 0.0f;
+                win->y        = 0.0f;
+            }
+        }
+        else if ( win )
+        {
+            /* Merge back: return the panel to the main surface at the same screen location it
+               occupies as a floater (its floater client origin minus the main surface client
+               origin), then free the floater if it now hosts no windows. */
+            u32 fvp = s_vp_request.from_vp;
+            i32 fx = 0, fy = 0, mx = 0, my = 0;
+            if ( fvp < IMGUI_MAX_VIEWPORTS )
+                app()->window_get_pos( g_ctx->viewports[ fvp ].win_id, &fx, &fy );
+            app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
+
+            win->viewport = 0;
+            win->x        = (f32)( fx - mx );
+            win->y        = (f32)( fy - my );
+
+            bool empty = true;
+            for ( u32 w = 0; w < s_window_count; ++w )
+                if ( s_windows[ w ].viewport == fvp ) { empty = false; break; }
+            if ( empty && fvp > 0 && fvp < IMGUI_MAX_VIEWPORTS && g_ctx->viewports[ fvp ].owned )
+                viewport_destroy( &g_ctx->viewports[ fvp ] );
+        }
+    }
+
+    /* (2) Owned floaters whose OS window the user closed (APP_EV_WIN_CLOSE -> pending_close). */
     for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
     {
         imgui_viewport_t* vp = &g_ctx->viewports[ i ];

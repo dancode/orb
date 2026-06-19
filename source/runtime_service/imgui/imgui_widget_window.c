@@ -28,6 +28,9 @@
 /* Collapse arrow: a distinct stable per-window widget id. */
 #define IMGUI_COLLAPSE_SALT   0xC011A95Eu
 
+/* Detach / reattach button (title-bar right edge): a distinct stable per-window widget id. */
+#define IMGUI_DETACH_SALT     0xDE7AC405u
+
 /* IMGUI_RESIZE_SALT, the IMGUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
    record-agnostic resize helpers (window_resize_hit, window_draw_resize_highlight, resize_grab,
    resize_apply_edges) live in imgui_widget_core.c -- alongside the style macros they need and ahead
@@ -201,6 +204,32 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
         win->x = s_io.mouse_x - s_drag_off_x;
         win->y = s_io.mouse_y - s_drag_off_y;
         window_clamp( win );
+    }
+
+    /* Tear-off / merge-back gesture.  A title-bar drag released with the cursor outside this
+       window's HOST surface client bounds reassigns the surface: from the main surface (viewport 0)
+       it tears off into a fresh floater, from a floater it merges back to the main surface.  The OS
+       mouse is captured by the host window for the whole drag, so its coords stay in that window's
+       client space and read out-of-bounds (negative or past the extent) exactly when the cursor has
+       left it -- the intentional "drag it off the window" gesture, no global cursor needed.
+
+       Detected here while the window still owns active_id (kept on the release frame, see
+       ctx_new_frame) and the release edge is live; enqueued for imgui_update_platform_windows to
+       service after the build (the safe point to create/destroy a surface).  One request at a time;
+       NOMOVE windows never tear off. */
+    if ( s_interaction.active_id == id && s_io.mouse_released[ 0 ]
+         && !( flags & IMGUI_WIN_NOMOVE ) && !s_vp_request.active )
+    {
+        const imgui_viewport_t* hv = &g_ctx->viewports[ win->viewport ];
+        f32 dw = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
+        f32 dh = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
+        if ( s_io.mouse_x < 0.0f || s_io.mouse_y < 0.0f || s_io.mouse_x >= dw || s_io.mouse_y >= dh )
+        {
+            s_vp_request.active  = true;
+            s_vp_request.win_id  = id;
+            s_vp_request.from_vp = win->viewport;
+            s_vp_request.title   = title;
+        }
     }
 
     /* Apply an in-progress edge resize (active_id is the resize-salted window id).  Runs after
@@ -419,10 +448,47 @@ imgui_end_window( void )
                 win->collapsed = !win->collapsed;
         }
 
-        /* Title text, fitted to the room between the arrow square and the bar's right edge so a
-           narrow (shrunk) window ellipsizes the title instead of bleeding it under the border. */
+        /* Detach / reattach button: a square at the title bar's right edge that pops the window out
+           into its own OS window (when it sits on the main surface) or back into the main surface
+           (when it is floating).  Movable windows only -- NOMOVE (popups, modals, fixed panels)
+           never show it.  Mirrors the collapse arrow on the left: claiming hover/active here keeps
+           the title-bar drag and double-click-collapse from also firing on the same press. */
+        f32 right_limit = s_build.win_x + s_build.win_w - WIDGET_PAD;
+        if ( !( s_build.win_flags & IMGUI_WIN_NOMOVE ) )
+        {
+            imgui_rect_t   det_r  = { s_build.win_x + s_build.win_w - title_h, s_build.win_y, title_h, title_h };
+            imgui_id_t     det_id = id_combine( s_build.win_id, IMGUI_DETACH_SALT );
+            widget_state_t det_st = widget_behavior( det_id, det_r, WIDGET_KIND_BUTTON );
+            if ( det_st.clicked && !s_vp_request.active )
+            {
+                /* Same channel the drag gesture uses: 0 = on the main surface -> tear off,
+                   else on a floater -> merge back.  Serviced by update_platform_windows. */
+                s_vp_request.active  = true;
+                s_vp_request.win_id  = s_build.win_id;
+                s_vp_request.from_vp = win ? win->viewport : 0u;
+                s_vp_request.title   = s_build.win_title;
+            }
+
+            /* Icon: an outlined box when docked (click to pop out), a filled box when floating
+               (click to dock back in). */
+            bool attached = !win || win->viewport == 0;
+            u32  icol     = det_st.hover ? COL_TEXT : COL_TEXT_DIM;
+            f32  isz      = title_h * 0.42f;
+            f32  ix       = det_r.x + ( det_r.w - isz ) * 0.5f;
+            f32  iy       = det_r.y + ( det_r.h - isz ) * 0.5f;
+            if ( attached )
+                draw_push_rect_outline( ix, iy, isz, isz, 1.0f, 0, icol );
+            else
+                draw_push_rect_filled( ix, iy, isz, isz, 0.0f, 0.0f, 1.0f, 1.0f, 0, icol );
+
+            right_limit = det_r.x - WIDGET_PAD;   /* keep the title text clear of the button */
+        }
+
+        /* Title text, fitted to the room between the arrow square and the detach button (or the
+           bar's right edge) so a narrow (shrunk) window ellipsizes the title instead of bleeding
+           it under the button / border. */
         draw_text_fit_n( text_x, text_center_y( s_build.win_y, title_h ), COL_TEXT, s_build.win_title,
-                         0xFFFFFFFFu, ( s_build.win_x + s_build.win_w - WIDGET_PAD ) - text_x );
+                         0xFFFFFFFFu, right_limit - text_x );
     }
 
     /* Border frames the whole window, with or without a title bar. */

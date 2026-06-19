@@ -176,6 +176,10 @@ main( int argc, char** argv )
     /* Active imgui demo index (see sb_vulkan_imgui.c); switched live with the keys below. */
     int active_demo = 0;
 
+    /* One-shot guard: pin the "Second Surface" window to vp1 only on its first frame (the
+       assignment is sticky), so the detach / reattach button can move it afterward. */
+    bool pinned_second = false;
+
     /* Main loop. */
     f64 last_time = sys_tick_seconds();
     while ( app()->pump_events() )
@@ -269,10 +273,13 @@ main( int argc, char** argv )
         active_demo = sb_imgui_demo_picker( active_demo );  // demo list + key hints (clickable)
 
         /* A window routed to the second surface.  Same one-context API as any other window -- only
-           set_next_window_viewport differs -- so it appears in the second OS window. */
+           set_next_window_viewport differs -- so it appears in the second OS window.  Pinned ONCE
+           (not every frame): the assignment is sticky, so forcing it each frame would fight the
+           detach / reattach button -- reattaching would bounce straight back to vp1.  Set once, the
+           window starts on the floater but can then be popped in/out freely. */
         if ( has_second )
         {
-            imgui()->set_next_window_viewport( vp1 );
+            if ( !pinned_second ) { imgui()->set_next_window_viewport( vp1 ); pinned_second = true; }
             imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
             imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
             if ( imgui()->begin_window( "Second Surface", 60, 60, 360, 240, IMGUI_WIN_NONE ) )

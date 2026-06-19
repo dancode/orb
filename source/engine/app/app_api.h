@@ -30,6 +30,15 @@ typedef struct app_api_s
     bool            ( *window_is_valid          )( win_id_t id );
     void*           ( *window_handle            )( win_id_t id ); /* HWND on Windows */
     bool            ( *window_is_minimized      )( win_id_t id );
+
+    /* Screen-space geometry.  window_get_pos returns the window's CLIENT-area top-left in
+       virtual-desktop screen coordinates; window_set_pos moves the window so its CLIENT corner
+       lands at the given screen point (frame offset handled internally).  Paired with
+       mouse_position_screen (below) these let a multi-window UI place / track a torn-off OS window
+       at an exact screen location, independent of which window the cursor is over. */
+    void            ( *window_get_pos           )( win_id_t id, i32* out_x, i32* out_y );
+    void            ( *window_set_pos           )( win_id_t id, i32 x, i32 y );
+
     app_win_state_t ( *window_state             )( win_id_t id );
     void            ( *window_set_fillscreen    )( win_id_t id, bool enabled );
     void            ( *window_toggle_fillscreen )( win_id_t id );
@@ -72,6 +81,7 @@ typedef struct app_api_s
     bool ( *key_released        )( app_key_t key );
 
     void ( *mouse_position        )( i32* out_x, i32* out_y );
+    void ( *mouse_position_screen )( i32* out_x, i32* out_y );  /* absolute desktop screen coords */
     bool ( *mouse_button_down     )( app_mouse_button_t btn );
     bool ( *mouse_button_pressed  )( app_mouse_button_t btn );
     bool ( *mouse_button_released )( app_mouse_button_t btn );

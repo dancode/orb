@@ -46,7 +46,7 @@
     The runtime host is the convergence point for everything above it. Each layer adds
     entries to k_modules[] and (optionally) does work in on_ready / on_update:
 
-        runtime_service/  - jobs, input, timing, asset i/o      (static services)
+        runtime_service/  - input, timing, asset i/o            (static services)
         runtime_modules/  - render, audio, physics, animation   (hot-reload DLLs)
 
         game/framework/   - world, entity, component, actor     (static; game-side base)
@@ -139,7 +139,6 @@ static const run_module_entry_t k_modules[] = {
     RUN_MODULE( example_reflect ),   /* example  module to test reflection */
 
     /* Future entries (commented out until those layers exist):
-        RUN_SERVICE( jobs       ),
         RUN_SERVICE( input      ),
         RUN_SERVICE( asset      ),
         RUN_MODULE ( audio      ),
@@ -149,6 +148,7 @@ static const run_module_entry_t k_modules[] = {
         RUN_SERVICE( world      ),    // game/framework
         RUN_MODULE ( gameplay   ),    // game_modules / project hot-reload DLLs
     */
+
 
     { 0 },
 };

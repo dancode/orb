@@ -279,6 +279,44 @@ app_window_is_minimized( win_id_t id )
     return win ? ( bool )win->state.minimized : false;
 }
 
+/* Window CLIENT-area top-left in virtual-desktop screen coordinates.  Client (not frame) origin so
+   it pairs exactly with window_set_pos and with the drawable area a renderer fills -- the screen
+   position of the pixel a window draws at (0,0).  (0,0) on an invalid / handle-less window. */
+static void
+app_window_get_pos( win_id_t id, i32* out_x, i32* out_y )
+{
+    app_window_t* win = win_get( id );
+    POINT         p   = { 0, 0 };
+    if ( win && win->hwnd )
+        ClientToScreen( win->hwnd, &p );   /* map client (0,0) -> screen */
+    if ( out_x ) *out_x = ( i32 )p.x;
+    if ( out_y ) *out_y = ( i32 )p.y;
+}
+
+/* Move a window so its CLIENT-area top-left lands at screen coordinates (x,y) -- the inverse of
+   window_get_pos.  The frame origin is derived from the current client offset (title bar + borders),
+   so a bordered window's CLIENT corner lands exactly on (x,y); a borderless window has a zero offset
+   and the frame moves there directly.  Size and z-order are left untouched.  No-op on an invalid id.
+   This is the move primitive a multi-window UI uses to keep a torn-off OS window tracking its panel. */
+static void
+app_window_set_pos( win_id_t id, i32 x, i32 y )
+{
+    app_window_t* win = win_get( id );
+    if ( !win || !win->hwnd )
+        return;
+
+    /* Frame-to-client offset = client origin - window (frame) origin, both in screen coords. */
+    RECT wr = { 0 };
+    GetWindowRect( win->hwnd, &wr );
+    POINT c = { 0, 0 };
+    ClientToScreen( win->hwnd, &c );
+    i32 off_x = ( i32 )c.x - ( i32 )wr.left;
+    i32 off_y = ( i32 )c.y - ( i32 )wr.top;
+
+    SetWindowPos( win->hwnd, NULL, x - off_x, y - off_y, 0, 0,
+                  SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE );
+}
+
 static app_win_state_t
 app_window_state( win_id_t id )
 {

@@ -82,6 +82,21 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
 }
 
 /*----------------------------------------------------------------------------------------------
+    window_find -- locate an existing window record by id, or NULL.  Unlike window_get this never
+    creates one; used by the post-build reconcile (update_platform_windows) to reach the window a
+    tear-off / merge-back gesture named, where creating a phantom record would be wrong.
+----------------------------------------------------------------------------------------------*/
+
+static imgui_window_t*
+window_find( imgui_id_t id )
+{
+    for ( u32 i = 0; i < s_window_count; ++i )
+        if ( s_windows[ i ].id == id )
+            return &s_windows[ i ];
+    return NULL;
+}
+
+/*----------------------------------------------------------------------------------------------
     Next-window channel -- queued geometry for the next begin_window, consumed and cleared by it.
 
     set_next_window_pos / set_next_window_size write here; the following begin_window applies each
@@ -102,6 +117,30 @@ static struct
     u32          viewport;              /* its target surface index                              */
 
 } s_next_win;
+
+/*----------------------------------------------------------------------------------------------
+    Tear-off / merge-back request
+
+    A window dragged by its title bar and released with the cursor outside its host surface's
+    client bounds changes which surface hosts it: from the main surface (viewport 0) it tears off
+    into a fresh floater; from a floater it merges back to the main surface.  window_begin_ex (in
+    imgui_widget_window.c) detects the released-outside gesture and fills this slot; the post-build
+    reconcile imgui_update_platform_windows (imgui_frame.c) services it -- the safe point to create
+    or destroy a surface, since the build is complete and no draw list is mid-flight.
+
+    A single slot suffices: only one window can own the drag (active_id) at a time.  `title` is the
+    dragged window's title string, borrowed for the same frame to name the spawned OS window (the
+    immediate-mode same-frame lifetime makes this safe -- it is consumed before the frame ends).
+----------------------------------------------------------------------------------------------*/
+
+static struct
+{
+    bool        active;     /* a request is queued this frame                                   */
+    imgui_id_t  win_id;     /* the dragged window record                                        */
+    u32         from_vp;    /* surface it was on (0 = main -> tear off; else floater -> merge)   */
+    const char* title;      /* window title, to label the spawned floater's OS window           */
+
+} s_vp_request;
 
 void
 imgui_set_next_window_pos( f32 x, f32 y, imgui_cond_t cond )

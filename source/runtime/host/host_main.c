@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     host_main.c — runtime host implementation.
 
@@ -74,6 +74,8 @@ MOD_USE_RUN;
 MOD_USE_RHI;
 MOD_USE_RENDER;
 
+
+
 static win_id_t     s_win_id = APP_WIN_INVALID;
 static i32          s_ctx_id = RHI_CTX_INVALID;
 
@@ -137,10 +139,12 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     
     // if ( !mod_static( sys ) ) { }
 
-    /* Engine baseline — sys (clock + sleep), rs (reflection), run (frame clock). */
+    /* Engine baseline — sys (clock + sleep), rs (reflection), jobs (scheduling), run (frame clock). */
     if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
          !mod_static_load( "ref", ref_get_mod_desc() ) ||
+         !mod_static_load( "jobs", jobs_get_mod_desc() ) ||
          !mod_static_load( "run", run_get_mod_desc() ) )
+
     {
         fprintf( stderr, "[host] baseline load failed: %s\n", mod_last_error() );
         mod_system_exit();
@@ -177,6 +181,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     */
 
     MOD_HOST_FETCH_API( render );
+
+
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*
@@ -271,6 +277,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( console )
             sys_console_input_poll();
 
+        /* -- jobs dispatcher tick --------------------------------------- */
+
+        if ( jobs() )
+            jobs()->tick();
+
         /* -- host update ------------------------------------------------- */
 
         /* Sandbox logic, game bootstrap, tool work. Lives at the top of the
@@ -278,6 +289,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( desc->on_update )
              desc->on_update( dt );
+
 
         /* -- render ------------------------------------------------------ */
 

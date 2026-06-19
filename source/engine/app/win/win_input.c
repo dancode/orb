@@ -460,6 +460,20 @@ app_mouse_position( i32* out_x, i32* out_y )
         *out_y = g_input.mouse_y;
 }
 
+/* Absolute cursor position in virtual-desktop screen coordinates (origin = primary monitor
+   top-left, spanning all monitors).  Unlike app_mouse_position -- which returns coords in the
+   hovered window's client space -- this is window-independent, so it stays correct across a
+   captured drag that leaves the origin window: the reference frame a multi-window UI needs to
+   place a torn-off OS window where the cursor actually is. */
+static void
+app_mouse_position_screen( i32* out_x, i32* out_y )
+{
+    POINT p = { 0, 0 };
+    GetCursorPos( &p );
+    if ( out_x ) *out_x = ( i32 )p.x;
+    if ( out_y ) *out_y = ( i32 )p.y;
+}
+
 static bool
 app_mouse_button_down( app_mouse_button_t btn )
 {
