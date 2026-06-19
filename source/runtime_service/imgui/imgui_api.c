@@ -97,8 +97,7 @@ imgui_render( imgui_vp_t vp, rhi_cmd_t cmd )
     imgui_viewport_t* v = &g_ctx->viewports[ vp ];
     imgui_render_flush( v, (u32)vp, cmd, v->disp_w, v->disp_h );
 #ifdef IMGUI_DEBUG_OVERLAY
-    if ( vp == 0 )
-        imgui_debug_flush( cmd, v->disp_w, v->disp_h );   /* overlay on primary only */
+    imgui_debug_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
 #endif
 }
 

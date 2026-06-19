@@ -264,18 +264,19 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
                                                  win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z,
                            win->viewport );
 
+    /* All of this window's geometry is stamped with its z so flush can paint
+       windows back-to-front regardless of begin_window call order, and with its
+       viewport so flush dispatches it to the surface hosting this window.
+       cur_viewport is updated first so DBG_RESIZE below captures to the correct per-viewport list. */
+    draw_set_sort_key( win->z );
+    draw_set_viewport( win->viewport );
+    s_build.cur_viewport = win->viewport;   /* update ambient so new windows created after this inherit it */
+
     /* Debug overlay: show the outer edge-resize grab band (the catch region just outside the
        border), brightened while an edge is armed.  Only meaningful for a resizeable window. */
     if ( resizeable )
         DBG_RESIZE( ( ( imgui_rect_t ){ win->x - ox, win->y - oy,
                                         win->w + 2.0f * ox, disp_h + 2.0f * oy } ), resize_hot );
-
-    /* All of this window's geometry is stamped with its z so flush can paint
-       windows back-to-front regardless of begin_window call order, and with its
-       viewport so flush dispatches it to the surface hosting this window. */
-    draw_set_sort_key( win->z );
-    draw_set_viewport( win->viewport );
-    s_build.cur_viewport = win->viewport;   /* update ambient so new windows created after this inherit it */
 
     /* Clip this window against ITS surface's extent, not the main window's: the window clip pushed
        below intersects the base clip (clip_stack[0]), so seed that base with this viewport's drawable

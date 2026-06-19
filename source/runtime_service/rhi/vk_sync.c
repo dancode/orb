@@ -52,7 +52,7 @@ vk_sync_create( vk_context_t* ctx )
         }
     }
 
-    LOG_INFO( "sync_create: OK (ctx %d, %u frame slots, %u image slots)",
+    LOG_TRACE( "sync_create: OK (ctx %d, %u frame slots, %u image slots)",
               ctx->id, VK_MAX_FRAMES_IN_FLIGHT, VK_MAX_SWAPCHAIN_IMAGES );
     return true;
 

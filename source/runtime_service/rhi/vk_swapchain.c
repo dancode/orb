@@ -422,10 +422,10 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
         }
     }
 
-    LOG_INFO( "vk_swapchain_create: OK (ctx %d, %ux%u, %u \n\t\timages,fmt=%s, mode=%s)",
-              ctx->id, extent.width, extent.height, ctx->swapchain_image_count,
-              string_VkFormat( ctx->surface_format.format ), 
-              string_VkPresentModeKHR( ctx->present_mode ) );
+    LOG_INFO( "vk_swapchain_create: OK (ctx_id: %d, %ux%u, image_count: %u)",
+              ctx->id, extent.width, extent.height, ctx->swapchain_image_count );
+    LOG_TRACE( "\tfmt=%s, mode=%s)", string_VkFormat( ctx->surface_format.format ), 
+                                     string_VkPresentModeKHR( ctx->present_mode ) );
 
     /* --- Create the depth buffer sized to match the swapchain --- */
 
@@ -470,7 +470,7 @@ vk_swapchain_recreate( vk_context_t* ctx )
          return false;
 
     LOG_LINE();
-    LOG_INFO( "swapchain_recreate: begin (ctx %d, %dx%d)", ctx->id, ctx->width, ctx->height );
+    LOG_INFO( "vk_swapchain_recreate: (ctx %d)", ctx->id);
 
     /* Save the old handle so we can pass it to vkCreateSwapchainKHR. The driver
        may reuse its presentation resources, avoiding a blank frame on resize. */
@@ -500,7 +500,7 @@ vk_swapchain_recreate( vk_context_t* ctx )
     vk_swapchain_destroy( ctx );
 
     bool ok = vk_swapchain_create( ctx, old_swapchain );
-    LOG_INFO( "swapchain_recreate: %s (ctx %d)", ok ? "OK" : "FAILED", ctx->id );
+    LOG_TRACE( "swapchain_recreate: %s (ctx %d)", ok ? "OK" : "FAILED", ctx->id );
     return ok;
 }
 
@@ -602,7 +602,7 @@ vk_depth_create( vk_context_t* ctx )
         ctx->depth_layout[ slot ] = VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
-    LOG_INFO( "vk_depth_create: OK (ctx %d, fmt=%s, %ux%u, %u slots)", ctx->id, 
+    LOG_TRACE( "vk_depth_create: OK (ctx %d, fmt=%s, %ux%u, %u slots)", ctx->id, 
                     string_VkFormat( ctx->depth_format ), ctx->swapchain_extent.width, 
                     ctx->swapchain_extent.height, (u32)VK_MAX_FRAMES_IN_FLIGHT );
     return true;

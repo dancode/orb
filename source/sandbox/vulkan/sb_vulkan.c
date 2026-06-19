@@ -61,24 +61,24 @@ main( int argc, char** argv )
     assert( draw() );
     assert( imgui() );
 
-    core()->log_set_min_level( LOG_LEVEL_TRACE );
+    core()->log_set_min_level( LOG_LEVEL_INFO ); // LOG_LEVEL_TRACE
     core_log_fn( LOG_LEVEL_DEBUG, "sb_vulkan", "debug log: modules loaded successfully" );
 
     LOG_LINE();
 
     /* ------------------------------------------------------------------------------ */
-    /* Setup Window + RHI */
+    /* Setup RHI + Window */
 
-    /* Open window. */
-    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );
-    if ( win == APP_WIN_INVALID ) {
+    /* Global RHI init (instance + device). */
+    if ( !rhi()->init() ) {
          mod_system_exit();
          return 1;
     }
 
-    /* Global RHI init (instance + device). */
-    if ( !rhi()->init() ) {
-         app()->window_close( win );
+    /* Open window. */
+    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );
+    if ( win == APP_WIN_INVALID ) {
+         rhi()->shutdown();
          mod_system_exit();
          return 1;
     }
