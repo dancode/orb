@@ -71,6 +71,18 @@ typedef struct
        known -- a window only hover-tests when the cursor is in the OS window hosting its viewport. */
     i32 win_id;
 
+    /* rhi context driving this surface's swapchain (RHI_CTX_INVALID if none).  Only set for an
+       imgui-OWNED surface (a torn-off floater imgui spawned): flush of a host-provided surface
+       resolves RHI_SWAPCHAIN_COLOR from the host's cmd, so the host viewport leaves this invalid.
+       An owned surface has no host driving it -- imgui runs frame_begin/end on this ctx itself. */
+    i32 rhi_ctx;
+
+    /* true when imgui created this surface's OS window + rhi context (tear-off floater) and must
+       therefore destroy them.  false for the host-provided main surface (index 0) and any surface
+       the host opened via viewport_open -- imgui frees only the GPU buffers for those, never the
+       window/context it does not own. */
+    bool owned;
+
     /* Drawable size of this surface in pixels.  Set by the host (viewport 0 from new_frame, floaters
        via viewport_resize) BEFORE the build so begin_window clips its windows against THIS surface's
        extent, not the main window's.  0 = unset -> begin_window falls back to the main display size
@@ -146,6 +158,8 @@ viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
 {
     vp->target    = target;
     vp->win_id    = win_id;     /* OS window hosting this surface; -1 = unassociated */
+    vp->rhi_ctx   = RHI_CTX_INVALID;  /* set only by viewport_spawn for an imgui-owned floater */
+    vp->owned     = false;      /* host-provided unless viewport_spawn flips it */
     vp->disp_w    = 0;          /* drawable size set by the host before build; 0 = fall back to main */
     vp->disp_h    = 0;
     vp->dock_root = NULL;       /* free-float until docking assigns a tree */
@@ -179,11 +193,27 @@ viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
 static void
 viewport_destroy( imgui_viewport_t* vp )
 {
+    /* Owned floater: destroy the rhi context FIRST.  context_destroy idles the GPU (waits the
+       device) before tearing down its swapchain/sync, so the geometry-buffer frees below are then
+       safe -- matching the host's own shutdown order (drain, free buffers, close window).  A
+       host-provided surface (owned == false) leaves its context to the host; imgui frees only the
+       GPU buffers it created via viewport_create. */
+    if ( vp->owned && vp->rhi_ctx != RHI_CTX_INVALID )
+        rhi()->context_destroy( vp->rhi_ctx );
+
     if ( rhi_handle_valid( vp->ib ) ) rhi()->buffer_destroy( vp->ib );
     if ( rhi_handle_valid( vp->vb ) ) rhi()->buffer_destroy( vp->vb );
-    vp->vb     = ( rhi_buffer_t ){ 0 };
-    vp->ib     = ( rhi_buffer_t ){ 0 };
-    vp->win_id = -1;            /* slot freed -> no window matches it for input routing */
+
+    /* Owned floater: close the OS window imgui opened.  Only after the context (and thus the
+       swapchain bound to this window's surface) is gone. */
+    if ( vp->owned && vp->win_id >= 0 )
+        app()->window_close( vp->win_id );
+
+    vp->vb      = ( rhi_buffer_t ){ 0 };
+    vp->ib      = ( rhi_buffer_t ){ 0 };
+    vp->win_id  = -1;                  /* slot freed -> no window matches it for input routing */
+    vp->rhi_ctx = RHI_CTX_INVALID;
+    vp->owned   = false;
 }
 
 /*----------------------------------------------------------------------------------------------
