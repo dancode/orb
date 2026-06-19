@@ -32,6 +32,7 @@
     imgui_popup.c             -- popups / context menus / tooltips: overlay windows on a reserved z-band
     imgui_widget_combo.c      -- combo box + list box: a popup dropdown / a scrolling child of selectables
     imgui_stack_api.c         -- push-model public API: push/pop id, item flags, style color / var
+    imgui_frame.c             -- frame lifecycle: init/shutdown, new_frame, render, viewport, font, clip
     imgui_api.c               -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/
@@ -301,6 +302,7 @@ static u32 viewport_index_for_window( i32 win_id );
 #include "runtime_service/imgui/imgui_widget_combo.c"
 #include "runtime_service/imgui/imgui_widget_menu.c"
 #include "runtime_service/imgui/imgui_stack_api.c"
+#include "runtime_service/imgui/imgui_frame.c"
 
 #ifndef IMGUI_API_C_PRELUDE
     #include "engine/mod/mod_export.h"

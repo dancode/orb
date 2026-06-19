@@ -350,7 +350,7 @@ main( int argc, char** argv )
         if ( has_second && !app()->window_is_minimized( win2 ) )
         {
             rhi_cmd_t cmd2 = rhi()->frame_begin( ctx2 );
-            if ( rhi_cmd_valid( cmd2 ) )
+            if ( rhi_cmd_valid( cmd2 ))
             {
                 rhi()->cmd_begin_rendering( cmd2, &( rhi_color_attachment_t ){
                     .texture  = { .id = RHI_SWAPCHAIN_COLOR },   /* resolves to ctx2's swapchain image */
