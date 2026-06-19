@@ -616,11 +616,12 @@ typedef struct
    that this only matters if the VB/IB are ever moved off HOST_COHERENT memory, in
    which case regions would need rounding up to nonCoherentAtomSize to flush apart. */
 
-#define IMGUI_MAX_VERTS  ( 16 * 1024 )
-#define IMGUI_MAX_IDX    ( IMGUI_MAX_VERTS * 3 )
-#define IMGUI_MAX_CMDS      1024
-#define IMGUI_MAX_PATH_PTS  8192     /* per-frame total polyline/path point pool */
-#define IMGUI_CLIP_DEPTH 32
+#define IMGUI_MAX_VERTS      ( 16 * 1024 )
+#define IMGUI_MAX_IDX        ( IMGUI_MAX_VERTS * 3 )
+#define IMGUI_MAX_CMDS       1024
+#define IMGUI_MAX_PATH_PTS   8192        /* per-frame total polyline/path point pool */
+#define IMGUI_MAX_TEXT_POOL  ( 16 * 1024 ) /* per-frame flat string copy pool for text cmds */
+#define IMGUI_CLIP_DEPTH     32
 
 /*==============================================================================================
     GPU resource memory usage (bytes), reported by imgui()->mem_stats().

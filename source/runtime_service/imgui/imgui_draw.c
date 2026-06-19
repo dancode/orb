@@ -33,33 +33,26 @@ typedef struct
 
 static struct
 {
-    imgui_draw_vert_t  verts        [ IMGUI_MAX_VERTS ];
-    u16                indices      [ IMGUI_MAX_IDX ];
-    imgui_gpu_cmd_t    cmds         [ IMGUI_MAX_CMDS ];
-    u32                cmd_z        [ IMGUI_MAX_CMDS ];  // per-command sort key (z), parallel to cmds[]
-    u32                cmd_vp       [ IMGUI_MAX_CMDS ];  // per-command target viewport index, parallel to cmds[]
+    imgui_cmd_t  cmds  [ IMGUI_MAX_CMDS   ];   /* semantic command list; one entry per shape      */
+    imgui_vec2_t points[ IMGUI_MAX_PATH_PTS ];  /* point pool for CMD_POLYLINE data; indexed by pt_offset */
 
-    u32                vert_count;  // verts currently in the list (up to IMGUI_MAX_VERTS)
-    u32                idx_count;   // indices currently in the list (up to IMGUI_MAX_IDX)
-    u32                cmd_count;   // draw commands currently in the list (up to IMGUI_MAX_CMDS)
+    /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
+       (textf, snprintf labels) remain valid until imgui_render_flush consumes them. */
+    char text_pool[ IMGUI_MAX_TEXT_POOL ];
+    u32  text_pool_used;
 
-    u32                cur_z;       // sort key stamped onto new commands (set by begin/end_window)
-    u32                cur_vp;      // viewport index stamped onto new commands (set by begin/end_window)
+    u32 cmd_count;   /* commands in the list this frame  */
+    u32 pt_count;    /* points in the pool this frame    */
 
-    imgui_rect_t       clip_stack   [ IMGUI_CLIP_DEPTH ];
-    u32                clip_depth;
+    u32 cur_z;       /* sort key stamped onto new commands (set by begin/end_window)        */
+    u32 cur_vp;      /* viewport index stamped onto new commands (set by begin/end_window)  */
 
-    /* Global opacity multiplier applied to every pushed quad / triangle (and so to text, which
-       routes through the quad path).  1.0 normally; lowered for the span of a disabled item so
-       it dims with no per-widget code, then reset by the item / chrome seams.  See draw_set_alpha. */
-    f32                alpha;
+    imgui_rect_t clip_stack[ IMGUI_CLIP_DEPTH ];
+    u32          clip_depth;
 
-    /* Usage tracking (lifetime; draw_reset clears only the per-frame overflow flag). */
-
-    u32                vert_hwm;       // peak vert_count seen across all frames
-    u32                idx_hwm;        // peak idx_count  seen across all frames
-    bool               overflow;       // a push was dropped this frame (cleared each frame)
-    bool               overflow_ever;  // overflow happened at least once this run
+    /* Global opacity multiplier applied to every pushed shape.  1.0 normally; lowered for the
+       span of a disabled item so it dims with no per-widget code; reset by item / chrome seams. */
+    f32 alpha;
 
 } s_draw;
 
@@ -70,14 +63,13 @@ static struct
 static void
 draw_reset( i32 display_w, i32 display_h )
 {
-    s_draw.vert_count = 0;
-    s_draw.idx_count  = 0;
-    s_draw.cmd_count  = 0;
-    s_draw.cur_z      = 0;       /* background; windows raise it via draw_set_sort_key */
-    s_draw.cur_vp     = 0;       /* main viewport; windows route via draw_set_viewport */
-    s_draw.clip_depth = 1;
-    s_draw.overflow   = false;   /* per-frame; hwm + overflow_ever persist */
-    s_draw.alpha      = 1.0f;    /* opaque; lowered per-item for disabled draws */
+    s_draw.cmd_count       = 0;
+    s_draw.pt_count        = 0;
+    s_draw.text_pool_used  = 0;
+    s_draw.cur_z           = 0;   /* background; windows raise it via draw_set_sort_key */
+    s_draw.cur_vp          = 0;   /* main viewport; windows route via draw_set_viewport */
+    s_draw.clip_depth      = 1;
+    s_draw.alpha           = 1.0f;
 
     /* first is a default "no clip" rect covering the whole display; never popped off the stack. */
     s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
@@ -205,43 +197,10 @@ draw_apply_alpha( u32 abgr )
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_ensure_cmd -- open a new command when texture, clip, or sort key changes
-----------------------------------------------------------------------------------------------*/
+    draw_push_rect_filled -- emit a filled / textured quad semantic command.
 
-static void
-draw_ensure_cmd( u32 tex_idx, imgui_rect_t clip )
-{
-    if ( s_draw.cmd_count > 0 )
-    {
-        const imgui_gpu_cmd_t* cur = &s_draw.cmds[ s_draw.cmd_count - 1 ];
-        /* A sort-key OR viewport change must break the command: flush reorders ranges by z and
-           replays each viewport's ranges to a different surface, so neither may merge across the
-           boundary -- never merge across windows or across surfaces. */
-        if ( s_draw.cmd_z[ s_draw.cmd_count - 1 ] == s_draw.cur_z
-             && s_draw.cmd_vp[ s_draw.cmd_count - 1 ] == s_draw.cur_vp
-             && cur->tex_idx == tex_idx
-             && cur->clip_rect.x == clip.x && cur->clip_rect.y == clip.y
-             && cur->clip_rect.w == clip.w && cur->clip_rect.h == clip.h )
-            return; /* can append to existing command */
-    }
-
-    if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
-        return;
-
-    s_draw.cmd_z[ s_draw.cmd_count ]  = s_draw.cur_z;
-    s_draw.cmd_vp[ s_draw.cmd_count ] = s_draw.cur_vp;
-    s_draw.cmds[ s_draw.cmd_count++ ] = ( imgui_gpu_cmd_t ){
-        .elem_count = 0,
-        .tex_idx    = tex_idx,
-        .clip_rect  = clip,
-    };
-}
-
-/*----------------------------------------------------------------------------------------------
-    draw_push_rect_filled -- push a textured / solid quad (6 indices, 4 vertices)
-
-    For solid-color draws pass the white-pixel tex_idx with u0=v0=0, u1=v1=1.
-    For glyph draws pass the atlas tex_idx with the glyph's UV rect.
+    tex_idx == 0 is the solid-color convention (resolved to the atlas white texel at tessellation
+    time).  Pixel-grid snapping and GPU batching happen at flush time in the tessellation pass.
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -249,207 +208,127 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
                        f32 u0, f32 v0, f32 u1, f32 v1,
                        u32 tex_idx, u32 abgr )
 {
-    /* Drop the quad if it would exceed either buffer; flag so flush can warn once. */
-    if ( s_draw.vert_count + 4 > IMGUI_MAX_VERTS || s_draw.idx_count + 6 > IMGUI_MAX_IDX )
-    {
-        s_draw.overflow = true;
+    if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
-    }
-
-    abgr = draw_apply_alpha( abgr );   /* fold in the per-item opacity (disabled dim) */
-
-    /* tex_idx 0 is the solid-color convention: point at the font atlas's white texel so
-       solid fills carry the same texture as text and merge into one draw command. */
-    if ( tex_idx == 0 )
-    {
-        tex_idx = font_atlas_idx();
-        font_white_uv( &u0, &v0 );
-        u1 = u0;
-        v1 = v0;
-    }
-
-    /* Pixel-grid snap: round the quad origin to the nearest integer pixel.  The
-       ortho maps integer coords exactly onto pixel boundaries, so a snapped origin
-       keeps thin edges (1px borders, slider/checkbox outlines, the text cursor) and
-       glyph quads crisp instead of straddling two pixels and blurring or vanishing.
-       Width/height are left intact -- with integer extents the far edge stays on the
-       grid too; fractional extents (e.g. a slider fill bar) keep their exact length. */
-    x = floorf( x + 0.5f );
-    y = floorf( y + 0.5f );
-
-    imgui_rect_t clip = draw_current_clip();
-    draw_ensure_cmd( tex_idx, clip );
-    if ( s_draw.cmd_count == 0 )
-         return;
-
-    u16 base = (u16)s_draw.vert_count;
-
-    imgui_draw_vert_t* v = &s_draw.verts[ s_draw.vert_count ];
-    v[ 0 ] = ( imgui_draw_vert_t ){ x,     y,     u0, v0, abgr };    /* top-left     */
-    v[ 1 ] = ( imgui_draw_vert_t ){ x + w, y,     u1, v0, abgr };    /* top-right    */
-    v[ 2 ] = ( imgui_draw_vert_t ){ x + w, y + h, u1, v1, abgr };    /* bottom-right */
-    v[ 3 ] = ( imgui_draw_vert_t ){ x,     y + h, u0, v1, abgr };    /* bottom-left  */
-    s_draw.vert_count += 4;
-
-    u16* idx = &s_draw.indices[ s_draw.idx_count ];
-    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
-    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
-    s_draw.idx_count += 6;
-
-    s_draw.cmds[ s_draw.cmd_count - 1 ].elem_count += 6;
+    imgui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type         = IMGUI_CMD_RECT_FILLED;
+    c->clip         = draw_current_clip();
+    c->z            = s_draw.cur_z;
+    c->vp           = s_draw.cur_vp;
+    c->rect.x       = x;
+    c->rect.y       = y;
+    c->rect.w       = w;
+    c->rect.h       = h;
+    c->rect.u0      = u0;
+    c->rect.v0      = v0;
+    c->rect.u1      = u1;
+    c->rect.v1      = v1;
+    c->rect.tex_idx = tex_idx;
+    c->rect.abgr    = draw_apply_alpha( abgr );
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_push_rect_outline -- hollow rectangle as four edge quads
+    draw_push_rect_outline -- emit a hollow rectangle semantic command.
 ----------------------------------------------------------------------------------------------*/
 
 static void
 draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr )
 {
-    /* this math prevents corners from double blending on alpha < 1 */
-
-    /* top    */ draw_push_rect_filled( x,         y,         w, t,     0,0,1,1, tex_idx, abgr );
-    /* bottom */ draw_push_rect_filled( x,         y + h - t, w, t,     0,0,1,1, tex_idx, abgr );
-    /* left   */ draw_push_rect_filled( x,         y + t,     t, h-2*t, 0,0,1,1, tex_idx, abgr );
-    /* right  */ draw_push_rect_filled( x + w - t, y + t,     t, h-2*t, 0,0,1,1, tex_idx, abgr );
+    (void)tex_idx;   /* outlines are always solid-color; tessellation uses the white texel */
+    if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
+        return;
+    imgui_cmd_t* c       = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type              = IMGUI_CMD_RECT_OUTLINE;
+    c->clip              = draw_current_clip();
+    c->z                 = s_draw.cur_z;
+    c->vp                = s_draw.cur_vp;
+    c->rect_outline.x    = x;
+    c->rect_outline.y    = y;
+    c->rect_outline.w    = w;
+    c->rect_outline.h    = h;
+    c->rect_outline.t    = t;
+    c->rect_outline.abgr = draw_apply_alpha( abgr );
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_push_triangle -- push a solid triangle (3 vertices, 3 indices)
+    draw_push_triangle -- emit a solid triangle semantic command.
 ----------------------------------------------------------------------------------------------*/
 
 static void
 draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr )
 {
-    /* Drop the triangle if it would exceed either buffer; flag so flush can warn once. */
-    if ( s_draw.vert_count + 3 > IMGUI_MAX_VERTS || s_draw.idx_count + 3 > IMGUI_MAX_IDX )
-    {
-        s_draw.overflow = true;
+    (void)tex_idx;   /* triangles are always solid-color */
+    if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
-    }
-
-    abgr = draw_apply_alpha( abgr );   /* fold in the per-item opacity (disabled dim) */
-
-    /* tex_idx 0 is the solid-color convention: route all three verts to the font
-       atlas's white texel so the triangle merges with surrounding solid/text draws. */
-    f32 u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 0.0f, u2 = 0.5f, v2 = 1.0f;
-    if ( tex_idx == 0 )
-    {
-        tex_idx = font_atlas_idx();
-        f32 wu, wv;
-        font_white_uv( &wu, &wv );
-        u0 = u1 = u2 = wu;
-        v0 = v1 = v2 = wv;
-    }
-
-    imgui_rect_t clip = draw_current_clip();
-    draw_ensure_cmd( tex_idx, clip );
-    if ( s_draw.cmd_count == 0 ) return;
-
-    u16 base = (u16)s_draw.vert_count;
-
-    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ ax, ay, u0, v0, abgr };
-    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ bx, by, u1, v1, abgr };
-    s_draw.verts[ s_draw.vert_count++ ] = ( imgui_draw_vert_t ){ cx, cy, u2, v2, abgr };
-
-    s_draw.indices[ s_draw.idx_count++ ] = base + 0;
-    s_draw.indices[ s_draw.idx_count++ ] = base + 1;
-    s_draw.indices[ s_draw.idx_count++ ] = base + 2;
-
-    s_draw.cmds[ s_draw.cmd_count - 1 ].elem_count += 3;
+    imgui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type        = IMGUI_CMD_TRIANGLE;
+    c->clip        = draw_current_clip();
+    c->z           = s_draw.cur_z;
+    c->vp          = s_draw.cur_vp;
+    c->tri.ax      = ax; c->tri.ay = ay;
+    c->tri.bx      = bx; c->tri.by = by;
+    c->tri.cx      = cx; c->tri.cy = cy;
+    c->tri.abgr    = draw_apply_alpha( abgr );
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_prim_begin / draw_prim_commit -- raw vertex/index reservation for custom geometry.
-
-    The rect / triangle pushers above each build one fixed shape with a single color.  Stroking a
-    line or path needs per-vertex colors (the antialiased edge fades a vertex's alpha to 0) and a
-    variable vertex count, so it writes the buffers directly: draw_prim_begin guards overflow,
-    reserves nv verts and ni indices, opens the solid-white draw command, and hands back write
-    pointers, the base vertex index, and the white-texel UV every vertex must carry.  The caller
-    fills [*out_v .. nv) and [*out_i .. ni) then calls draw_prim_commit with the same counts.
-
-    Indices are written relative to *out_base (the absolute first vertex), so a stroke builder adds
-    its local 0..nv-1 vertex numbers to that base.  Used by imgui_draw_path.c.
-----------------------------------------------------------------------------------------------*/
-
-static bool
-draw_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
-                 imgui_draw_vert_t** out_v, u16** out_i, u16* out_base )
-{
-    if ( s_draw.vert_count + nv > IMGUI_MAX_VERTS || s_draw.idx_count + ni > IMGUI_MAX_IDX )
-    {
-        s_draw.overflow = true;
-        return false;
-    }
-
-    /* Solid geometry rides the font atlas's white texel, same convention as the rect/tri path. */
-    u32          tex  = font_atlas_idx();
-    imgui_rect_t clip = draw_current_clip();
-    draw_ensure_cmd( tex, clip );
-    if ( s_draw.cmd_count == 0 )
-        return false;
-
-    font_white_uv( wu, wv );
-    *out_base = (u16)s_draw.vert_count;
-    *out_v    = &s_draw.verts[ s_draw.vert_count ];
-    *out_i    = &s_draw.indices[ s_draw.idx_count ];
-    return true;
-}
-
-static void
-draw_prim_commit( u32 nv, u32 ni )
-{
-    s_draw.vert_count += nv;
-    s_draw.idx_count  += ni;
-    s_draw.cmds[ s_draw.cmd_count - 1 ].elem_count += ni;
-}
-
-/*----------------------------------------------------------------------------------------------
-    draw_push_circle_filled -- a solid disc as a triangle fan around its center.
-
-    `segments` facets approximate the circle; ~16 reads as round at widget sizes.  Built on
-    draw_push_triangle so it inherits the solid-color white-texel routing, clipping, and overflow
-    guard -- the engine keeps "all geometry is rects or triangles" with no new vertex path.  A
-    radio button stacks two of these (border ring + inner well) plus a third for the selected dot.
+    draw_push_circle_filled -- emit a filled disc semantic command.
 ----------------------------------------------------------------------------------------------*/
 
 static void
 draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
 {
     if ( segments < 3 ) segments = 3;
-
-    f32 step = 6.2831853f / (f32)segments;   /* 2*pi / n */
-    f32 px = cx + r, py = cy;                 /* vertex at angle 0 */
-    for ( u32 i = 1; i <= segments; ++i )
-    {
-        f32 a  = step * (f32)i;
-        f32 nx = cx + cosf( a ) * r;
-        f32 ny = cy + sinf( a ) * r;
-        draw_push_triangle( cx, cy, px, py, nx, ny, 0, abgr );
-        px = nx; py = ny;
-    }
+    if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
+        return;
+    imgui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type        = IMGUI_CMD_CIRCLE_FILLED;
+    c->clip        = draw_current_clip();
+    c->z           = s_draw.cur_z;
+    c->vp          = s_draw.cur_vp;
+    c->circle.cx   = cx;
+    c->circle.cy   = cy;
+    c->circle.r    = r;
+    c->circle.segs = segments;
+    c->circle.abgr = draw_apply_alpha( abgr );
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_push_text -- push glyph quads for a NUL-terminated string
+    draw_push_text -- emit a glyph-run semantic command.
+
+    str must remain valid until imgui_render_flush (same-frame caller-owned lifetime).
+    n == 0xFFFFFFFF means "entire NUL-terminated string"; a smaller n limits the glyph count
+    (used to skip "##label" suffixes).
 ----------------------------------------------------------------------------------------------*/
 
-/* Emit at most n bytes of str (stops early at a NUL).  Labels draw only their visible span --
-   the bytes before a "##" marker -- through this; draw_push_text is the whole-string case. */
 static void
 draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
 {
-    f32 cx = x;
-    for ( u32 i = 0; i < n && str[ i ]; ++i )
-    {
-        u8  ch = (u8)str[ i ];
-        f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
-        font_glyph( ch, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
-        if ( gw > 0.0f && gh > 0.0f )
-            draw_push_rect_filled( cx + ox, y + oy, gw, gh, u0, v0, u1, v1, font_atlas_idx(), abgr );
-        cx += advance;
-    }
+    if ( !str || s_draw.cmd_count >= IMGUI_MAX_CMDS )
+        return;
+
+    /* Resolve length at push time (sentinel means NUL-terminated). */
+    u32 len = ( n == 0xFFFFFFFFu ) ? (u32)strlen( str ) : n;
+
+    /* Copy into the text pool so callers can use stack-local buffers (textf, snprintf labels).
+       The pool pointer is valid until draw_reset clears it at the top of the next new_frame. */
+    if ( s_draw.text_pool_used + len + 1 > IMGUI_MAX_TEXT_POOL )
+        return;   /* pool exhausted: drop the label rather than store a dangling pointer */
+    char* dst = s_draw.text_pool + s_draw.text_pool_used;
+    memcpy( dst, str, len );
+    dst[ len ]            = '\0';
+    s_draw.text_pool_used += len + 1;
+
+    imgui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type        = IMGUI_CMD_TEXT;
+    c->clip        = draw_current_clip();
+    c->z           = s_draw.cur_z;
+    c->vp          = s_draw.cur_vp;
+    c->text.x      = x;
+    c->text.y      = y;
+    c->text.str    = dst;
+    c->text.len    = len;   /* always an explicit byte count; never 0xFFFFFFFF after this point */
+    c->text.abgr   = draw_apply_alpha( abgr );
 }
 
 static void

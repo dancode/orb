@@ -117,8 +117,7 @@ static bool s_render_debug_geometry = false;
 
     imgui_render_flush tessellates the frame's imgui_cmd_t list into s_tess, then uploads
     s_tess.verts/indices to the GPU.  s_tess is backend-private; nothing above imgui_render.c
-    touches it.  The tessellation path activates in step 4 when s_draw is converted to semantic
-    commands; until then, flush reads s_draw.verts/indices directly (unchanged legacy path).
+    touches it.  s_draw holds only semantic commands (imgui_cmd_t) -- no vtx/idx buffers.
 
     cur_clip/cur_z/cur_vp are written by tess_dispatch before each primitive so tess_ensure_gpu_cmd
     can stamp the correct context onto new GPU commands without extra parameters.
@@ -324,9 +323,113 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
     }
 }
 
-/* Tessellate one frame's semantic command list into s_tess geometry.
-   Called from imgui_render_flush once s_draw emits imgui_cmd_t (step 4+).
-   LINE and POLYLINE strokes are handled when stroke_poly_aa migrates to render side (step 6). */
+/*----------------------------------------------------------------------------------------------
+    tess_stroke_poly_aa -- antialiased polyline tessellation for the render backend.
+
+    Mirrors the old stroke_poly_aa (removed from imgui_draw_path.c in step 4) but writes into
+    s_tess via tess_prim_begin/commit.  abgr is pre-baked (alpha folded in at emit time).
+    v2 / seg_normal / stroke_center_offset are defined in imgui_draw_path.c (included before
+    this file in the unity build) so they are visible here without forward declarations.
+----------------------------------------------------------------------------------------------*/
+
+static void
+tess_stroke_poly_aa( const imgui_vec2_t* pts, u32 n, f32 thickness, f32 center_off,
+                     bool closed, u32 abgr )
+{
+    if ( n < 2 )
+        return;
+    if ( n > IMGUI_MAX_PATH_PTS )
+        n = IMGUI_MAX_PATH_PTS;
+
+    /* Sub-pixel coverage: hold a 1px footprint, fade peak alpha by the requested thickness. */
+    f32 a_scale = 1.0f;
+    if ( thickness < 1.0f )
+    {
+        a_scale   = thickness < 0.0f ? 0.0f : thickness;
+        thickness = 1.0f;
+    }
+    u32 a_in = (u32)( ( ( abgr >> 24 ) & 0xFFu ) * a_scale + 0.5f );
+    u32 col  = ( abgr & 0x00FFFFFFu ) | ( a_in << 24 );   /* inner / solid color */
+    u32 col0 = ( abgr & 0x00FFFFFFu );                     /* outer feather, alpha 0 */
+
+    f32 half     = thickness * 0.5f;
+    f32 core_min = ( half < STROKE_CORE_MIN ) ? half : STROKE_CORE_MIN;
+    f32 inner    = half - STROKE_AA;
+    if ( inner < core_min )
+        inner = core_min;
+
+    u32 seg = closed ? n : n - 1;
+
+    /* Per-point miter normal; static avoids an 8K+ stack frame. Single-threaded. */
+    static imgui_vec2_t nrm[ IMGUI_MAX_PATH_PTS ];
+    for ( u32 i = 0; i < n; ++i )
+    {
+        imgui_vec2_t n0, n1;
+        if ( closed )
+        {
+            n0 = seg_normal( pts[ ( i + n - 1 ) % n ], pts[ i ] );
+            n1 = seg_normal( pts[ i ], pts[ ( i + 1 ) % n ] );
+        }
+        else
+        {
+            n0 = ( i > 0 )     ? seg_normal( pts[ i - 1 ], pts[ i ] ) : v2( 0.0f, 0.0f );
+            n1 = ( i < n - 1 ) ? seg_normal( pts[ i ], pts[ i + 1 ] ) : v2( 0.0f, 0.0f );
+        }
+
+        if ( !closed && i == 0 )         nrm[ i ] = n1;
+        else if ( !closed && i == n - 1 ) nrm[ i ] = n0;
+        else
+        {
+            imgui_vec2_t dm = v2( ( n0.x + n1.x ) * 0.5f, ( n0.y + n1.y ) * 0.5f );
+            f32 d2 = dm.x * dm.x + dm.y * dm.y;
+            if ( d2 > 1e-6f )
+            {
+                f32 inv = 1.0f / d2;
+                if ( inv > 100.0f ) inv = 100.0f;   /* miter limit */
+                dm.x *= inv; dm.y *= inv;
+                nrm[ i ] = dm;
+            }
+            else { nrm[ i ] = n1; }
+        }
+    }
+
+    u32 nv = 4u * n, ni = 18u * seg;
+    f32 wu, wv;
+    imgui_draw_vert_t* v;
+    u16* idx;
+    u16  base;
+    if ( !tess_prim_begin( nv, ni, &wu, &wv, &v, &idx, &base ) )
+        return;
+
+    for ( u32 i = 0; i < n; ++i )
+    {
+        imgui_vec2_t m  = nrm[ i ];
+        f32          cx = pts[ i ].x + m.x * center_off;
+        f32          cy = pts[ i ].y + m.y * center_off;
+        v[ 4*i+0 ] = ( imgui_draw_vert_t ){ cx + m.x*half,  cy + m.y*half,  wu, wv, col0 };
+        v[ 4*i+1 ] = ( imgui_draw_vert_t ){ cx + m.x*inner, cy + m.y*inner, wu, wv, col  };
+        v[ 4*i+2 ] = ( imgui_draw_vert_t ){ cx - m.x*inner, cy - m.y*inner, wu, wv, col  };
+        v[ 4*i+3 ] = ( imgui_draw_vert_t ){ cx - m.x*half,  cy - m.y*half,  wu, wv, col0 };
+    }
+
+    static const int band[ 3 ][ 2 ] = { { 0, 1 }, { 1, 2 }, { 2, 3 } };
+    u32 k = 0;
+    for ( u32 s = 0; s < seg; ++s )
+    {
+        u16 i0 = (u16)( base + 4u * s );
+        u16 i1 = (u16)( base + 4u * ( ( s + 1 ) % n ) );
+        for ( int q = 0; q < 3; ++q )
+        {
+            u16 a0 = (u16)( i0 + band[q][0] ), a1 = (u16)( i0 + band[q][1] );
+            u16 b0 = (u16)( i1 + band[q][0] ), b1 = (u16)( i1 + band[q][1] );
+            idx[k++]=a0; idx[k++]=a1; idx[k++]=b1;
+            idx[k++]=a0; idx[k++]=b1; idx[k++]=b0;
+        }
+    }
+    tess_prim_commit( nv, ni );
+}
+
+/* Tessellate one frame's semantic command list into s_tess geometry. */
 static void
 tess_dispatch( const imgui_cmd_t* cmds, u32 count )
 {
@@ -366,9 +469,20 @@ tess_dispatch( const imgui_cmd_t* cmds, u32 count )
                 break;
 
             case IMGUI_CMD_LINE:
-            case IMGUI_CMD_POLYLINE:
-                /* Stroke tessellation moves here from imgui_draw_path.c in step 6. */
+            {
+                imgui_vec2_t pts[ 2 ] = { { c->line.x0, c->line.y0 }, { c->line.x1, c->line.y1 } };
+                tess_stroke_poly_aa( pts, 2, c->line.thickness, 0.0f, false, c->line.abgr );
                 break;
+            }
+
+            case IMGUI_CMD_POLYLINE:
+            {
+                const imgui_vec2_t* pts = &s_draw.points[ c->polyline.pt_offset ];
+                f32 center_off = stroke_center_offset( c->polyline.align, c->polyline.thickness * 0.5f );
+                tess_stroke_poly_aa( pts, c->polyline.pt_count, c->polyline.thickness,
+                                     center_off, c->polyline.closed, c->polyline.abgr );
+                break;
+            }
         }
     }
 }
@@ -585,9 +699,9 @@ imgui_render_shutdown( void )
 {
     /* Peak draw-list usage over the run, so the caps can be tuned with real numbers. */
     printf( "[imgui] peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%)%s\n",
-            s_draw.vert_hwm, IMGUI_MAX_VERTS, 100.0f * s_draw.vert_hwm / (f32)IMGUI_MAX_VERTS,
-            s_draw.idx_hwm,  IMGUI_MAX_IDX,   100.0f * s_draw.idx_hwm  / (f32)IMGUI_MAX_IDX,
-            s_draw.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
+            s_tess.vert_hwm, IMGUI_MAX_VERTS, 100.0f * s_tess.vert_hwm / (f32)IMGUI_MAX_VERTS,
+            s_tess.idx_hwm,  IMGUI_MAX_IDX,   100.0f * s_tess.idx_hwm  / (f32)IMGUI_MAX_IDX,
+            s_tess.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
 
     /* Peak draw calls in a single frame -- a measure of batching effectiveness. */
     printf( "[imgui] peak draw calls in a frame: %u\n", s_render.draw_call_hwm );
@@ -631,20 +745,22 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;
 
-    /* Track peak usage for the shutdown report.  Warn once on the first overflow:
-       the draw-list push sites already drop geometry past the cap, so this just makes
-       that visible.  Persistent overflow is summarized at shutdown rather than spammed. */
-    if ( s_draw.vert_count > s_draw.vert_hwm ) s_draw.vert_hwm = s_draw.vert_count;
-    if ( s_draw.idx_count  > s_draw.idx_hwm  ) s_draw.idx_hwm  = s_draw.idx_count;
+    /* Tessellate semantic commands into vertex/index geometry (s_tess). */
+    tess_reset();
+    tess_dispatch( s_draw.cmds, s_draw.cmd_count );
 
-    if ( s_draw.overflow && !s_draw.overflow_ever )
+    /* Track peak tessellated geometry.  Warn once on the first overflow. */
+    if ( s_tess.vert_count > s_tess.vert_hwm ) s_tess.vert_hwm = s_tess.vert_count;
+    if ( s_tess.idx_count  > s_tess.idx_hwm  ) s_tess.idx_hwm  = s_tess.idx_count;
+
+    if ( s_tess.overflow && !s_tess.overflow_ever )
     {
         printf( "[imgui] WARNING: draw list overflow -- geometry dropped this frame "
                 "(verts capped at %u, idx capped at %u). Raise IMGUI_MAX_VERTS / IMGUI_MAX_IDX.\n",
                 IMGUI_MAX_VERTS, IMGUI_MAX_IDX );
     }
-    if ( s_draw.overflow )
-         s_draw.overflow_ever = true;
+    if ( s_tess.overflow )
+        s_tess.overflow_ever = true;
 
     /* Select this frame's geometry region so the upload cannot clobber data the GPU
        is still reading for another in-flight frame. */
@@ -652,18 +768,15 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     u32 vb_off = frame * (u32)IMGUI_VB_REGION_BYTES;
     u32 ib_off = frame * (u32)IMGUI_IB_REGION_BYTES;
 
-    /* Clamp to the region capacity before writing.  The push sites already enforce this,
-       so the clamp is defensive -- it guarantees the upload never exceeds the per-frame
-       region even if that invariant is ever broken upstream. */
-    u32 vert_count = s_draw.vert_count < IMGUI_MAX_VERTS ? s_draw.vert_count : IMGUI_MAX_VERTS;
-    u32 idx_count  = s_draw.idx_count  < IMGUI_MAX_IDX   ? s_draw.idx_count  : IMGUI_MAX_IDX;
+    u32 vert_count = s_tess.vert_count < IMGUI_MAX_VERTS ? s_tess.vert_count : IMGUI_MAX_VERTS;
+    u32 idx_count  = s_tess.idx_count  < IMGUI_MAX_IDX   ? s_tess.idx_count  : IMGUI_MAX_IDX;
 
-    /* Upload vertex + index data into this viewport's frame region. */
+    /* Upload tessellated vertex + index data into this viewport's frame region. */
     rhi()->buffer_write( vp->vb,
-                         s_draw.verts,
+                         s_tess.verts,
                          vert_count * sizeof( imgui_draw_vert_t ), vb_off );
     rhi()->buffer_write( vp->ib,
-                         s_draw.indices,
+                         s_tess.indices,
                          idx_count * sizeof( u16 ), ib_off );
 
     /* Open a LOAD pass on the swapchain color target (no depth needed). */
@@ -710,13 +823,13 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     static draw_run_t runs[ IMGUI_MAX_CMDS ];   /* single-threaded; avoids a large stack frame */
     u32 run_count = 0;
 
-    for ( u32 i = 0, first_index = 0; i < s_draw.cmd_count; )
+    for ( u32 i = 0, first_index = 0; i < s_tess.cmd_count; )
     {
-        u32 z      = s_draw.cmd_z[ i ];
+        u32 z      = s_tess.cmd_z[ i ];
         u32 start  = i;
         u32 run_fi = first_index;
-        while ( i < s_draw.cmd_count && s_draw.cmd_z[ i ] == z )
-            first_index += s_draw.cmds[ i++ ].elem_count;
+        while ( i < s_tess.cmd_count && s_tess.cmd_z[ i ] == z )
+            first_index += s_tess.cmds[ i++ ].elem_count;
 
         runs[ run_count++ ] = ( draw_run_t ){ start, i - start, run_fi, z };
     }
@@ -743,14 +856,14 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
         u32 first_index = runs[ r ].first_index;
         for ( u32 k = 0; k < runs[ r ].count; ++k )
         {
-            const imgui_gpu_cmd_t* dc = &s_draw.cmds[ runs[ r ].start + k ];
+            const imgui_gpu_cmd_t* dc = &s_tess.cmds[ runs[ r ].start + k ];
             if ( dc->elem_count == 0 )
                 continue;
 
             /* Partition: a command bound for another surface is not drawn here, but its index
                range is still stepped over so the commands kept on this surface address the right
                slice of the (shared, absolute) index buffer. */
-            if ( s_draw.cmd_vp[ runs[ r ].start + k ] != vp_index )
+            if ( s_tess.cmd_vp[ runs[ r ].start + k ] != vp_index )
             {
                 first_index += dc->elem_count;
                 continue;
@@ -816,13 +929,13 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
        draw list (peaks vs. the caps shown for context).  Watch these move as UI state
        changes; printed only when the counts differ from last frame to filter the spam. */
     static u32 prev_verts = ~0u, prev_idx = ~0u;   /* sentinel: forces a print on the first frame */
-    if ( s_render_debug_geometry && ( s_draw.vert_count != prev_verts || s_draw.idx_count != prev_idx ) )
+    if ( s_render_debug_geometry && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
     {
         printf( "[imgui] geometry this frame: verts %u/%u (peak %u), idx %u/%u (peak %u)\n",
-                s_draw.vert_count, IMGUI_MAX_VERTS, s_draw.vert_hwm,
-                s_draw.idx_count,  IMGUI_MAX_IDX,   s_draw.idx_hwm );
-        prev_verts = s_draw.vert_count;
-        prev_idx   = s_draw.idx_count;
+                s_tess.vert_count, IMGUI_MAX_VERTS, s_tess.vert_hwm,
+                s_tess.idx_count,  IMGUI_MAX_IDX,   s_tess.idx_hwm );
+        prev_verts = s_tess.vert_count;
+        prev_idx   = s_tess.idx_count;
     }
 }
 
