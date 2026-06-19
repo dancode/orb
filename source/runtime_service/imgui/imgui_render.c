@@ -61,6 +61,11 @@ typedef struct
        swapchain image otherwise.  Held per viewport so flush is target-agnostic. */
     rhi_texture_t target;
 
+    /* OS window this surface is hosted by (app win_id_t), or -1 (APP_WIN_INVALID) if unassociated.
+       Input routing maps a mouse event's win_id to this surface so the cursor's host viewport is
+       known -- a window only hover-tests when the cursor is in the OS window hosting its viewport. */
+    i32 win_id;
+
     /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's
        overlapping windows); non-NULL = a dock tree tiling/tabbing the windows on this surface.
        Inert until docking lands -- a documented placement hook, no machinery yet. */
@@ -129,9 +134,10 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
 ----------------------------------------------------------------------------------------------*/
 
 static bool
-viewport_create( imgui_viewport_t* vp, rhi_texture_t target )
+viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
 {
     vp->target    = target;
+    vp->win_id    = win_id;     /* OS window hosting this surface; -1 = unassociated */
     vp->dock_root = NULL;       /* free-float until docking assigns a tree */
 
     /* Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame. */
@@ -165,8 +171,9 @@ viewport_destroy( imgui_viewport_t* vp )
 {
     if ( rhi_handle_valid( vp->ib ) ) rhi()->buffer_destroy( vp->ib );
     if ( rhi_handle_valid( vp->vb ) ) rhi()->buffer_destroy( vp->vb );
-    vp->vb = ( rhi_buffer_t ){ 0 };
-    vp->ib = ( rhi_buffer_t ){ 0 };
+    vp->vb     = ( rhi_buffer_t ){ 0 };
+    vp->ib     = ( rhi_buffer_t ){ 0 };
+    vp->win_id = -1;            /* slot freed -> no window matches it for input routing */
 }
 
 /*----------------------------------------------------------------------------------------------

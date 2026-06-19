@@ -161,10 +161,15 @@ main( int argc, char** argv )
 
     imgui()->print_mem_stats();
 
+    /* Associate the main window with surface 0 so its mouse events resolve to viewport 0 (the
+       single-window fallback would also pick 0, but tagging it is explicit and robust). */
+    imgui()->viewport_set_window( 0, win );
+
     /* Open imgui's floater surface for the second window.  Returns the viewport index (>=1) used
-       both to assign windows (set_next_window_viewport) and to flush (render_viewport).  Bound to
-       ctx2 purely by which cmd we pass render_viewport below. */
-    i32  vp1         = ( ctx2 != RHI_CTX_INVALID ) ? imgui()->viewport_open() : -1;
+       to assign windows (set_next_window_viewport), to flush (render_viewport), and -- via the
+       win2 win_id passed here -- to route win2's mouse events to this surface.  Bound to ctx2
+       purely by which cmd we pass render_viewport below. */
+    i32  vp1         = ( ctx2 != RHI_CTX_INVALID ) ? imgui()->viewport_open( win2 ) : -1;
     bool has_second  = ( vp1 >= 0 );
     if ( ctx2 != RHI_CTX_INVALID && !has_second )
         fprintf( stderr, "[sb_vulkan] imgui viewport_open failed; running single-surface\n" );

@@ -252,7 +252,8 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     f32 ox = resizeable ? WIN_RESIZE_OUTER : 0.0f;
     f32 oy = ( resizeable && !collapsed ) ? WIN_RESIZE_OUTER : 0.0f;
     window_nominate_hover( id, ( imgui_rect_t ){ win->x - ox, win->y - oy,
-                                                 win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z );
+                                                 win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z,
+                           win->viewport );
 
     /* Debug overlay: show the outer edge-resize grab band (the catch region just outside the
        border), brightened while an edge is armed.  Only meaningful for a resizeable window. */

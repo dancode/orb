@@ -21,8 +21,10 @@ imgui_init( void )
     if ( !imgui_render_init() )       /* shared pipeline / sampler / atlas */
         return false;
 
-    /* Main viewport: its own geometry buffers, painting the application swapchain. */
-    if ( !viewport_create( &g_ctx->viewports[ 0 ], ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR } ) )
+    /* Main viewport: its own geometry buffers, painting the application swapchain.  win_id is left
+       unassociated (-1); a multi-window host calls viewport_set_window(0, win) so main-window input
+       resolves to surface 0 explicitly.  A single-window host need not -- unmatched falls back to 0. */
+    if ( !viewport_create( &g_ctx->viewports[ 0 ], ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, -1 ) )
     {
         imgui_render_shutdown();
         return false;
@@ -110,9 +112,10 @@ imgui_render_viewport( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
    target the floater's own swapchain image.  RHI_SWAPCHAIN_COLOR resolves per-context at flush
    time against the cmd the host passes, so the same sentinel serves every surface.  Returns the
    viewport index to pass to set_next_window_viewport / render_viewport, or -1 if the pool is full
-   or buffer creation failed. */
+   or buffer creation failed.  `win_id` is the OS window (app win_id_t) this surface is hosted by,
+   so mouse events from that window route their input here; pass -1 to leave it unassociated. */
 i32
-imgui_viewport_open( void )
+imgui_viewport_open( i32 win_id )
 {
     for ( u32 i = 1; i < IMGUI_MAX_VIEWPORTS; ++i )
     {
@@ -120,7 +123,7 @@ imgui_viewport_open( void )
         if ( rhi_handle_valid( vp->vb ) )
             continue;   /* slot already live */
 
-        if ( !viewport_create( vp, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR } ) )
+        if ( !viewport_create( vp, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
             return -1;
 
         if ( i + 1u > g_ctx->viewport_count )
@@ -128,6 +131,17 @@ imgui_viewport_open( void )
         return (i32)i;
     }
     return -1;   /* viewport pool full */
+}
+
+/* Associate (or reassign) the OS window that hosts surface `index`, so mouse events from that
+   window route their input to it.  The host calls this for surface 0 (the main window) after init;
+   viewport_open takes the win_id directly for floaters.  Out-of-range index is ignored. */
+void
+imgui_viewport_set_window( i32 index, i32 win_id )
+{
+    if ( index < 0 || index >= IMGUI_MAX_VIEWPORTS )
+        return;
+    g_ctx->viewports[ index ].win_id = win_id;
 }
 
 /* Close a floater surface and release its geometry buffers.  Slot 0 (the main swapchain) is owned
@@ -211,6 +225,7 @@ const imgui_api_t g_imgui_api_struct =
     .render_viewport                    = imgui_render_viewport,
     .viewport_open                      = imgui_viewport_open,
     .viewport_close                     = imgui_viewport_close,
+    .viewport_set_window                = imgui_viewport_set_window,
     .event                              = imgui_event,
     .set_next_window_pos                = imgui_set_next_window_pos,
     .set_next_window_viewport           = imgui_set_next_window_viewport,

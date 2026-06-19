@@ -54,17 +54,22 @@ typedef struct imgui_api_s
     /* Multi-surface rendering.  One new_frame() builds every window's geometry into a single draw
        list; flush then dispatches each window to the surface it was assigned (set_next_window_viewport).
 
-       viewport_open()  -- allocate a floater surface (its own geometry buffers), returning its index
-                           (1..) or -1 if the pool is full.  Its swapchain image is targeted per-context
-                           at flush time, so it is bound to a context by which cmd you pass render_viewport.
+       viewport_open()  -- allocate a floater surface (its own geometry buffers) for OS window win_id,
+                           returning its index (1..) or -1 if the pool is full.  Its swapchain image is
+                           targeted per-context at flush time, so it is bound to a context by which cmd
+                           you pass render_viewport; win_id binds its INPUT (mouse events from that
+                           window route here).  Pass -1 for win_id to leave it unassociated.
        viewport_close() -- release a floater's geometry buffers (the host owns the OS window + rhi context).
+       viewport_set_window() -- associate the OS window hosting a surface (call for index 0, the main
+                           window, after init); viewport_open takes win_id directly for floaters.
        render_viewport()-- flush one surface's partition: call between that context's frame_begin/frame_end
                            with the context cmd and the surface's drawable size.  render() is the index-0
                            convenience (it also paints the debug overlay).  Loop the rest per surface. */
 
-    void ( *render_viewport )( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
-    i32  ( *viewport_open    )( void );
-    void ( *viewport_close   )( i32 index );
+    void ( *render_viewport     )( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+    i32  ( *viewport_open        )( i32 win_id );
+    void ( *viewport_close       )( i32 index );
+    void ( *viewport_set_window  )( i32 index, i32 win_id );
 
     /* Host input -- the host owns the app event ring drain and forwards each
        event here before new_frame() for the same frame.

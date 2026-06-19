@@ -40,6 +40,7 @@ typedef struct
     f32   dt;
     f64   time;           /* seconds since the first frame -- dt accumulated; backs get_time() */
     i32   display_w, display_h;
+    u32   mouse_viewport; /* surface the cursor is in (resolved from mouse-event win_id); persists */
 
 } imgui_io_t;
 
@@ -62,6 +63,15 @@ static u32  s_pending_text_len;
 static f32  s_pending_wheel;
 static char s_pending_paste[ sizeof( ( (imgui_io_t*)0 )->paste ) ];
 static bool s_pending_paste_set;   /* a paste arrived this frame (distinguishes "" paste) */
+
+/* The OS window the cursor is currently in, learned from the win_id on mouse move/button/wheel
+   events (the polled position alone carries no window identity).  Win32 holds mouse capture on the
+   origin window while a button is down, so during a drag these events keep arriving from that
+   window -- the cursor's surface stays bound to where the drag began with no extra latching.  Only
+   updated when a mouse event arrives; otherwise the last value stands (the cursor has not moved
+   to another window). */
+static i32  s_pending_mouse_win;       /* win_id of the most recent mouse event this frame */
+static bool s_pending_mouse_win_set;   /* a mouse event arrived this frame -> resolve the viewport */
 
 /* Double-click detection.  imgui has no clock of its own, so the second press of a pair is
    recognised from the dt fed to new_frame: a press counts as a double-click when it lands
@@ -156,12 +166,25 @@ imgui_event( const app_event_t* ev )
             return true;
 
         case APP_EV_MOUSE_WHEEL:
+            s_pending_mouse_win     = ev->win_id;   /* route the wheel to the cursor's surface */
+            s_pending_mouse_win_set = true;
             add_mouse_wheel( (f32)ev->data.mouse_wheel.delta );
             return true;
 
         case APP_EV_CLIPBOARD:
             add_paste_text( ev->data.clipboard.text );
             return true;
+
+        /* Position + buttons are still resolved by input_update from the polled snapshot (client
+           coords of the window the cursor is in); these events carry the win_id that identifies
+           WHICH window that is, so the host viewport can be resolved.  Not consumed -- the
+           mouse-capture fence (want_capture_mouse) decides UI-vs-scene at read time, not here. */
+        case APP_EV_MOUSE_MOVE:
+        case APP_EV_MOUSE_DOWN:
+        case APP_EV_MOUSE_UP:
+            s_pending_mouse_win     = ev->win_id;
+            s_pending_mouse_win_set = true;
+            return false;
 
         default:
             return false;
@@ -175,12 +198,21 @@ imgui_event( const app_event_t* ev )
 static void
 input_update( i32 win_w, i32 win_h, f32 dt )
 {
-    /* Mouse position. */
+    /* Mouse position (polled): client coords of the window the cursor is in. */
     {
         i32 mx = 0, my = 0;
         app()->mouse_position( &mx, &my );
         s_io.mouse_x = (f32)mx;
         s_io.mouse_y = (f32)my;
+    }
+
+    /* Resolve the surface the cursor is in from the most recent mouse event's win_id.  Only when a
+       mouse event actually arrived this frame -- otherwise the cursor has not crossed to another
+       window, so the last resolved viewport still holds (s_io persists across frames). */
+    if ( s_pending_mouse_win_set )
+    {
+        s_io.mouse_viewport     = viewport_index_for_window( s_pending_mouse_win );
+        s_pending_mouse_win_set = false;
     }
 
     /* Mouse button snapshot (left=0, right=1, middle=2). */

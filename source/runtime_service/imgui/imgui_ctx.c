@@ -571,6 +571,20 @@ ctx_bind( imgui_context_t* ctx )
     g_ctx = ctx ? ctx : &s_default_context;
 }
 
+/* Resolve an app win_id to the index of the viewport hosting it (the surface created for that OS
+   window).  An unassociated window -- including the common single-window case where viewport 0 was
+   never tagged -- falls back to the main surface (index 0), so input keeps working with no host
+   setup.  Forward-declared in imgui.c; called by the mouse-input path in imgui_input.c. */
+static u32
+viewport_index_for_window( i32 win_id )
+{
+    if ( win_id >= 0 )
+        for ( u32 i = 0; i < IMGUI_MAX_VIEWPORTS; ++i )
+            if ( g_ctx->viewports[ i ].win_id == win_id )
+                return i;
+    return 0;   /* unmatched -> main swapchain surface */
+}
+
 /* Stable storage for `id`: the same pointer every frame the id stays live, zeroed the frame it is
    first seen or recycled.  size must fit IMGUI_STATE_CAP.  Never returns NULL. */
 static void*
@@ -734,13 +748,24 @@ nav_score_dir( imgui_rect_t cur, imgui_rect_t cand, imgui_dir_t dir )
 }
 
 /*----------------------------------------------------------------------------------------------
-    window_nominate_hover -- begin_window calls this with its rect + z.  Keeps the front-most
-    (highest z) window the cursor is over; promoted to hover_win next frame.
+    window_nominate_hover -- begin_window calls this with its rect + z + host viewport.  Keeps the
+    front-most (highest z) window the cursor is over; promoted to hover_win next frame.
+
+    The cursor lives in exactly one OS window/surface at a time (s_io.mouse_viewport, resolved from
+    the win_id on mouse events).  A window on any other surface cannot be under the cursor regardless
+    of where its rect sits in its own surface's coordinate space, so it is rejected before the rect
+    test -- this is the "physical window is a parent hover" rule: the surface must match first, then
+    the window rect within it.  Without this, the polled cursor position (client coords of whatever
+    window the mouse is in) would hit-test against identically-placed windows on every surface.
 ----------------------------------------------------------------------------------------------*/
 
 static void
-window_nominate_hover( imgui_id_t id, imgui_rect_t r, u32 z )
+window_nominate_hover( imgui_id_t id, imgui_rect_t r, u32 z, u32 viewport )
 {
+    /* Surface gate first: the cursor must be in the OS window hosting this window's viewport. */
+    if ( viewport != s_io.mouse_viewport )
+        return;
+
     /* Cheap z test gates the rect_hit; window z is unique so > / >= are equivalent. */
     if ( z >= s_interaction.next_hover_win_z && rect_hit( r ) )
     {

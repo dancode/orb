@@ -251,6 +251,16 @@ typedef struct imgui_window_t
 } imgui_window_t;
 
 /*==============================================================================================
+    Forward declarations across the unity boundary
+
+    The mouse-input path (imgui_input.c) resolves an event's app win_id to the viewport hosting it,
+    but the viewport pool lives on the bound context (g_ctx, imgui_ctx.c) which is included later.
+    One TU, so a forward declaration here lets input.c call the resolver defined after g_ctx.
+==============================================================================================*/
+
+static u32 viewport_index_for_window( i32 win_id );
+
+/*==============================================================================================
     Unity build
 ==============================================================================================*/
 
