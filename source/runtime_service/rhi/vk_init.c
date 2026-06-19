@@ -18,17 +18,13 @@
 ==============================================================================================*/
 
 static i32
-vk_ctx_alloc( void )
+vk_ctx_alloc( i32 win_id )
 {
-    for ( int i = 0; i < RHI_CTX_MAX; ++i )
-    {
-        if ( !( vk.ctx_alloc & ( 1u << i ) ) )
-        {
-            vk.ctx_alloc |= ( 1u << i );
-            return ( i32 )i;
-        }
-    }
-    return RHI_CTX_INVALID;
+    /* Slot index == win_id: an open window guarantees this context slot is free. */
+    ORB_ASSERT( win_id >= 0 && win_id < RHI_CTX_MAX );
+    ORB_ASSERT( !( vk.ctx_alloc & ( 1u << win_id ) ) );
+    vk.ctx_alloc |= ( 1u << win_id );
+    return win_id;
 }
 
 static void
@@ -168,11 +164,16 @@ vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
          return RHI_CTX_INVALID;
     }
 
-    i32  id = vk_ctx_alloc();
-    if ( id == RHI_CTX_INVALID ) {
-         LOG_ERROR( "pool full (max %d)\n", RHI_CTX_MAX );
-         return RHI_CTX_INVALID;
+    if ( win_id < 0 || win_id >= RHI_CTX_MAX ) {
+        LOG_ERROR( "win_id %d out of range (max %d)\n", win_id, RHI_CTX_MAX );
+        return RHI_CTX_INVALID;
     }
+    if ( vk.ctx_alloc & ( 1u << win_id ) ) {
+        LOG_ERROR( "context slot %d already live\n", win_id );
+        return RHI_CTX_INVALID;
+    }
+
+    i32  id = vk_ctx_alloc( win_id );
 
     vk_context_t* ctx   = &vk.contexts[ id ];
     ctx->id             = id;

@@ -105,38 +105,38 @@ imgui_render( imgui_vp_t vp, rhi_cmd_t cmd )
 /*==============================================================================================
     Viewport Open
 
-    Open a viewport: allocate a free slot, create its GPU geometry buffers, and record the
-    OS window and initial drawable size.  
-    
-    The first call claims index 0 (the primary swapchain surface); each
-    subsequent call claims the next free slot.  RHI_SWAPCHAIN_COLOR resolves per-context at flush time
-    so the same sentinel serves every surface -- which cmd you pass render() selects the swapchain.
+    Open a viewport: claim the slot at win_id (slot index == win_id), create its GPU geometry
+    buffers, and record the OS window and initial drawable size.
+
+    Slot alignment: win_id 0 = primary swapchain, win_id 1..N = secondary surfaces.  Since each
+    viewport requires a live OS window, the window pool guarantees the matching slot is free.
+    RHI_SWAPCHAIN_COLOR resolves per-context at flush time -- which cmd you pass render() selects
+    the swapchain.
     Returns the handle to pass to render / viewport_resize / viewport_close / set_next_window_viewport,
-    or IMGUI_VP_INVALID if the pool is full or GPU buffer creation failed.
-    Must be called after init() and before new_frame(). 
+    or IMGUI_VP_INVALID on bad win_id or GPU buffer failure.
+    Must be called after init() and before new_frame().
 
 ==============================================================================================*/
 
 imgui_vp_t
 imgui_viewport_open( i32 win_id, i32 w, i32 h )
 {
-    for ( u32 i = 0; i < IMGUI_MAX_VIEWPORTS; ++i )
-    {
-        imgui_viewport_t* vp = &g_ctx->viewports[ i ];
-        if ( rhi_handle_valid( vp->vb ) )
-            continue;   /* slot already live */
+    /* Slot index == win_id; an open window guarantees the slot is free. */
+    if ( win_id < 0 || win_id >= (i32)IMGUI_MAX_VIEWPORTS )
+        return IMGUI_VP_INVALID;
 
-        if ( !viewport_create( vp, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
-            return IMGUI_VP_INVALID;
+    imgui_viewport_t* vp = &g_ctx->viewports[ win_id ];
+    ORB_ASSERT( !rhi_handle_valid( vp->vb ) );   /* slot must be free */
 
-        vp->disp_w = w;
-        vp->disp_h = h;
+    if ( !viewport_create( vp, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
+        return IMGUI_VP_INVALID;
 
-        if ( i + 1u > g_ctx->viewport_count )
-            g_ctx->viewport_count = i + 1u;
-        return (imgui_vp_t)i;
-    }
-    return IMGUI_VP_INVALID;   /* viewport pool full */
+    vp->disp_w = w;
+    vp->disp_h = h;
+
+    if ( (u32)win_id + 1u > g_ctx->viewport_count )
+        g_ctx->viewport_count = (u32)win_id + 1u;
+    return (imgui_vp_t)win_id;
 }
 
 /* Update a viewport's drawable size.  Call on OS resize BEFORE new_frame.

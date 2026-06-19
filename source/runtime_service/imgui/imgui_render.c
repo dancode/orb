@@ -80,8 +80,8 @@ typedef struct
 
 } imgui_viewport_t;
 
-/* Max viewports a context drives at once: the main swapchain + torn-off floaters. */
-#define IMGUI_MAX_VIEWPORTS 8
+/* Max viewports a context drives at once.  Must match APP_WIN_MAX / RHI_CTX_MAX. */
+#define IMGUI_MAX_VIEWPORTS 4
 
 /* The viewport list lives in the bound context (imgui_context_t, imgui_ctx.c): viewports[0] is the
    main swapchain, created at init.  render.c only ever touches a viewport through a passed pointer

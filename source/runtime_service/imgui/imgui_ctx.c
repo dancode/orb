@@ -573,18 +573,15 @@ ctx_bind( imgui_context_t* ctx )
     g_ctx = ctx ? ctx : &s_default_context;
 }
 
-/* Resolve an app win_id to the index of the viewport hosting it (the surface created for that OS
-   window).  An unassociated window -- including the common single-window case where viewport 0 was
-   never tagged -- falls back to the main surface (index 0), so input keeps working with no host
-   setup.  Forward-declared in imgui.c; called by the mouse-input path in imgui_input.c. */
+/* Resolve an app win_id to the viewport index.  Slot index == win_id by construction;
+   out-of-range ids fall back to the main surface (0).
+   Forward-declared in imgui.c; called by the mouse-input path in imgui_input.c. */
 static u32
 viewport_index_for_window( i32 win_id )
 {
-    if ( win_id >= 0 )
-        for ( u32 i = 0; i < IMGUI_MAX_VIEWPORTS; ++i )
-            if ( g_ctx->viewports[ i ].win_id == win_id )
-                return i;
-    return 0;   /* unmatched -> main swapchain surface */
+    if ( win_id >= 0 && win_id < (i32)IMGUI_MAX_VIEWPORTS )
+        return (u32)win_id;
+    return 0;   /* invalid -> main swapchain surface */
 }
 
 /* Stable storage for `id`: the same pointer every frame the id stays live, zeroed the frame it is
