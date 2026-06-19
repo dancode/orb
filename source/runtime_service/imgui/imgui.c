@@ -4,28 +4,35 @@
 
     Include order matters: each file can reference statics from files included above it.
 
-    imgui_shader.h          -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
-    imgui_font_builtin.c    -- hardcoded bitmap fonts: bitmap_font_def_t/t, bitmap_atlas_*, s_bitmap_*
-    imgui_font.c            -- font management + dispatch: tt_font_t, tt_font_load, font_glyph, font_*
-    imgui_draw.c            -- CPU draw list: draw_reset, draw_push_*, s_draw
-    imgui_draw_path.c       -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
-    imgui_render.c          -- GPU flush: imgui_render_init/shutdown/flush
-    imgui_debug.c           -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
-    imgui_input.c           -- app->IO snapshot: input_update, s_io
-    imgui_style.c           -- style stacks: colors + metrics, style_col/style_var, push/pop/next
-    imgui_ctx.c             -- hot/active/focused state: ctx_new_frame, id_hash, rect_hit, s_interaction/s_build
-    imgui_window.c          -- persistent per-window state: imgui_window_t, window_get, drag mode
-    imgui_widget_core.c     -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
-    imgui_resize.c          -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
-    imgui_layout_core.c     -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
-    imgui_layout.c          -- layout-region engine: region pool, scrollbar, push/pop_region, begin/end_child
-    imgui_text_edit.c       -- single-line text editing engine: input_field_edit (behind input_text)
-    imgui_widget.c          -- leaf widgets: text, button, checkbox, slider, input_text, selectable
-    imgui_widget_window.c   -- the window as a widget: begin/end_window + chrome (resize); body is a region
-    imgui_popup.c           -- popups / context menus / tooltips: overlay windows on a reserved z-band
-    imgui_widget_combo.c    -- combo box + list box: a popup dropdown / a scrolling child of selectables
-    imgui_stack_api.c       -- push-model public API: push/pop id, item flags, style color / var
-    imgui_api.c             -- vtable, mod_desc, MOD_DEFINE_EXPORTS
+    imgui_shader.h            -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
+    imgui_font_builtin.c      -- hardcoded bitmap fonts: bitmap_font_def_t/t, bitmap_atlas_*, s_bitmap_*
+    imgui_font.c              -- font management + dispatch: tt_font_t, tt_font_load, font_glyph, font_*
+    imgui_draw.c              -- CPU draw list: draw_reset, draw_push_*, s_draw
+    imgui_draw_path.c         -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
+    imgui_render_tess.c       -- CPU tessellation engine: s_tess, tess_reset, tess_dispatch, all tess_* helpers
+    imgui_render.c            -- GPU flush: viewport_create/destroy, imgui_render_init/shutdown/flush
+    imgui_debug.c             -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
+    imgui_input.c             -- app->IO snapshot: input_update, s_io
+    imgui_style.c             -- style stacks: colors + metrics, style_col/style_var, push/pop/next
+    imgui_ctx.c               -- context state: s_interaction, s_build, layout_frame_t, imgui_context_t, ctx_new_frame
+    imgui_ctx_id.c            -- id system + state pool: id_hash, id_combine, id_seed/push/pop, imgui_state_get
+    imgui_ctx_io.c            -- public IO accessors: want_capture_*, is_key_*, is_mouse_*, get_mouse_pos
+    imgui_window.c            -- persistent per-window state: imgui_window_t, window_get, drag mode
+    imgui_widget_core.c       -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
+    imgui_resize.c            -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
+    imgui_layout_core.c       -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
+    imgui_layout_region.c     -- scrollable region engine: imgui_region_t, region_scrollbar, push/pop_region
+    imgui_layout_child.c      -- child box + sub-layout lifecycle: begin/end_child, push/pop_layout
+    imgui_layout.c            -- public layout API verbs: imgui_layout, imgui_stack, imgui_columns, imgui_grid
+    imgui_text_edit.c         -- single-line text editing engine: input_field_edit (behind input_text)
+    imgui_widget.c            -- core leaf widgets: text, button, checkbox, input_text, selectable
+    imgui_widget_slider.c     -- slider + drag widgets: slider_float/int, drag_int, slider_render
+    imgui_widget_numeric.c    -- numeric text inputs: input_int/float/double, input_float2/3/4
+    imgui_widget_window.c     -- the window as a widget: begin/end_window + chrome (resize); body is a region
+    imgui_popup.c             -- popups / context menus / tooltips: overlay windows on a reserved z-band
+    imgui_widget_combo.c      -- combo box + list box: a popup dropdown / a scrolling child of selectables
+    imgui_stack_api.c         -- push-model public API: push/pop id, item flags, style color / var
+    imgui_api.c               -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/
 
@@ -269,18 +276,25 @@ static u32 viewport_index_for_window( i32 win_id );
 #include "runtime_service/imgui/imgui_font.c"
 #include "runtime_service/imgui/imgui_draw.c"
 #include "runtime_service/imgui/imgui_draw_path.c"
+#include "runtime_service/imgui/imgui_render_tess.c"
 #include "runtime_service/imgui/imgui_render.c"
 #include "runtime_service/imgui/imgui_input.c"
 #include "runtime_service/imgui/imgui_style.c"
 #include "runtime_service/imgui/imgui_ctx.c"
+#include "runtime_service/imgui/imgui_ctx_id.c"
+#include "runtime_service/imgui/imgui_ctx_io.c"
 #include "runtime_service/imgui/imgui_debug.c"
 #include "runtime_service/imgui/imgui_window.c"
 #include "runtime_service/imgui/imgui_widget_core.c"
 #include "runtime_service/imgui/imgui_resize.c"
 #include "runtime_service/imgui/imgui_layout_core.c"
+#include "runtime_service/imgui/imgui_layout_region.c"
+#include "runtime_service/imgui/imgui_layout_child.c"
 #include "runtime_service/imgui/imgui_layout.c"
 #include "runtime_service/imgui/imgui_text_edit.c"
 #include "runtime_service/imgui/imgui_widget.c"
+#include "runtime_service/imgui/imgui_widget_slider.c"
+#include "runtime_service/imgui/imgui_widget_numeric.c"
 #include "runtime_service/imgui/imgui_widget_window.c"
 #include "runtime_service/imgui/imgui_popup.c"
 #include "runtime_service/imgui/imgui_nav.c"

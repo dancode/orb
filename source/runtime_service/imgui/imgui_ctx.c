@@ -1,10 +1,15 @@
 /*==============================================================================================
 
-    runtime_service/imgui/imgui_ctx.c -- Immediate-mode context state.
+    runtime_service/imgui/imgui_ctx.c -- Immediate-mode context state and per-frame drivers.
 
-    Tracks hover/active/focused widget IDs and the per-frame window-build cursor.
-    Interaction state (s_interaction) and frame-build scratch (s_build) are kept apart so the
-    multi-context model can bind the first per focus and reuse the second per frame.
+    Declares all persistent ambient and frame-scratch state (s_interaction, s_build, nav_state_t,
+    layout_frame_t, imgui_context_t) and drives the per-frame lifecycle via ctx_new_frame.
+
+    ID hashing and the keyed state pool (id_hash, id_combine, id_seed/push/pop, imgui_state_get,
+    IMGUI_STATE) are in imgui_ctx_id.c, included just after this file.
+
+    Public IO accessors (imgui_want_capture_*, imgui_is_key_*, imgui_is_mouse_*, etc.) are in
+    imgui_ctx_io.c, also included after this file.
 
     Included by imgui.c after imgui_input.c so s_io is in scope.
 
@@ -584,82 +589,6 @@ viewport_index_for_window( i32 win_id )
     return 0;   /* invalid -> main swapchain surface */
 }
 
-/* Stable storage for `id`: the same pointer every frame the id stays live, zeroed the frame it is
-   first seen or recycled.  size must fit IMGUI_STATE_CAP.  Never returns NULL. */
-static void*
-imgui_state_get( imgui_id_t id, u32 size )
-{
-    ORB_ASSERT( size <= IMGUI_STATE_CAP );
-    if ( id == IMGUI_ID_NONE ) id = 1u;             // never key on the empty sentinel
-    (void)size;
-
-    u32                 bucket = id & IMGUI_STATE_MASK;
-    imgui_state_slot_t* reuse  = NULL;              // first tombstone (cold slot) seen on the chain
-    imgui_state_slot_t* dst    = NULL;              // where a fresh entry lands when id is absent
-
-    for ( u32 i = 0; i < IMGUI_STATE_SLOTS; ++i )
-    {
-        imgui_state_slot_t* s = &s_retained.state[ ( bucket + i ) & IMGUI_STATE_MASK ];
-
-        if ( s->id == id )                          // live hit: restamp and hand back the storage
-        {
-            s->seen_frame = s_retained.frame;
-            return s->data.bytes;
-        }
-        if ( s->id == IMGUI_ID_NONE )               // empty ends the probe: id is absent
-        {
-            dst = reuse ? reuse : s;                // reclaim a tombstone if we passed one, else grow
-            break;
-        }
-        if ( !reuse && s_retained.frame - s->seen_frame > 1u )
-            reuse = s;                              // two+ frames cold -> reclaimable in place
-    }
-
-    /* Absent: settle into dst.  If the table is wall-to-wall live entries (no empty slot and no
-       tombstone -- 512 distinct persistent widgets in one frame), clobber the home bucket: a rare
-       degradation rather than an overflow.  reuse covers the no-empty-but-some-cold case. */
-    if ( !dst ) dst = reuse ? reuse : &s_retained.state[ bucket ];
-
-    dst->id         = id;
-    dst->seen_frame = s_retained.frame;
-    memset( dst->data.bytes, 0, sizeof dst->data.bytes );
-    return dst->data.bytes;
-}
-
-/* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= IMGUI_STATE_CAP. */
-#define IMGUI_STATE( T, id ) ( (T*)imgui_state_get( ( id ), (u32)sizeof( T ) ) )
-
-/*----------------------------------------------------------------------------------------------
-    id_hash -- FNV-1a 32-bit hash of a NUL-terminated string
-----------------------------------------------------------------------------------------------*/
-
-static imgui_id_t
-id_hash( const char* str )
-{
-    /* Seed FNV-1a with the context's id salt so the same string hashes to a distinct id per context.
-       s_retained.id_salt is 0 for the default context -> the standard 0x811C9DC5 basis -> ids are
-       byte-identical to the unsalted hash, so single-context behavior is unchanged. */
-    u32 h = 0x811C9DC5u ^ s_retained.id_salt;
-    for ( ; *str; ++str )
-        h = ( h ^ (u8)*str ) * 0x01000193u;
-    return h ? h : 1u;    /* never return IMGUI_ID_NONE (0) */
-}
-
-/*----------------------------------------------------------------------------------------------
-    id_combine -- mix a scope seed with a local key into one id (boost-style hash_combine).
-
-    The single rule for how an id is namespaced: every sub-id (a leaf widget under a region, a
-    child region under its parent, a window's chrome control) is id_combine(scope, key).  Unlike
-    a bare XOR it avalanches and is order-dependent, so distinct (scope, key) pairs stay distinct.
-----------------------------------------------------------------------------------------------*/
-
-static imgui_id_t
-id_combine( imgui_id_t seed, u32 key )
-{
-    u32 h = seed ^ ( key + 0x9E3779B9u + ( seed << 6 ) + ( seed >> 2 ) );
-    return h ? h : 1u;    /* never return IMGUI_ID_NONE (0) */
-}
-
 /*----------------------------------------------------------------------------------------------
     Id-scope stack
 
@@ -677,29 +606,9 @@ id_combine( imgui_id_t seed, u32 key )
 static imgui_id_t s_id_stack[ IMGUI_ID_STACK_DEPTH ];
 static u32        s_id_sp;
 
-/* Current scope seed -- top of the stack, or NONE when empty (a bare top-level widget). */
-static imgui_id_t
-id_seed( void )
-{
-    if ( s_id_sp == 0 ) return IMGUI_ID_NONE;
-    u32  i = s_id_sp - 1;
-    if ( i >= IMGUI_ID_STACK_DEPTH ) i = IMGUI_ID_STACK_DEPTH - 1;
-    return s_id_stack[ i ];
-}
-
-static void
-id_push( imgui_id_t id )
-{
-    if ( s_id_sp < IMGUI_ID_STACK_DEPTH )
-        s_id_stack[ s_id_sp ] = id;
-    ++s_id_sp;    /* count truthfully so push/pop stay paired even past the cap */
-}
-
-static void
-id_pop( void )
-{
-    if ( s_id_sp ) --s_id_sp;
-}
+/* id_seed, id_push, id_pop, id_hash, id_combine, imgui_state_get, and IMGUI_STATE are defined
+   in imgui_ctx_id.c (included immediately after this file).  They reference s_id_stack/s_id_sp
+   and s_retained (via g_ctx) which are defined here and visible in the unity build. */
 
 /*----------------------------------------------------------------------------------------------
     rect_hit -- true when the mouse cursor (from s_io) is inside the given rect
@@ -837,75 +746,10 @@ ctx_new_frame( void )
          s_interaction.focused_id = IMGUI_ID_NONE;
 }
 
-/*----------------------------------------------------------------------------------------------
-    Public IO accessors
-
-    The frame-coherent input snapshot the widgets see, exposed for UI / tool code that wants to
-    read keys, the mouse, or the clock without re-querying app() -- which bypasses imgui's frame
-    timing and, more importantly, its input capture.
-
-    want_capture_* are the fence: gate any direct app() input read in non-UI code on them, so
-    gameplay never acts on a keystroke imgui consumed (typing in a field) or a click that was
-    really a widget / window drag.  Both read the interaction state resolved in s_interaction, not the raw
-    device, which is exactly what only imgui knows.
-----------------------------------------------------------------------------------------------*/
-
-/* True when the cursor is over an imgui window, or a widget owns the mouse (a drag in flight) --
-   the signal that a click belongs to the UI, not the scene behind it.  hover_win lags the cursor
-   by one frame (the deferred occlusion resolve), matching how the widgets gate their own hover. */
-bool
-imgui_want_capture_mouse( void )
-{
-    return s_interaction.hover_win != IMGUI_ID_NONE || s_interaction.active_id != IMGUI_ID_NONE;
-}
-
-/* True when imgui owns the keyboard this frame -- a text field is focused, keyboard nav is engaged,
-   or a popup/menu is open -- so gameplay / tools must not also act on the same keystrokes (an arrow
-   driving the nav cursor, an Enter activating the nav item).  The fence for non-UI key reads. */
-bool
-imgui_want_capture_keyboard( void )
-{
-    return s_interaction.focused_id != IMGUI_ID_NONE || s_nav.highlight
-        || s_popup_open_count > 0 || s_nav.bar_win != IMGUI_ID_NONE;
-}
-
-/* True when the cursor is over rect r and r is actually interactable: it lies in the front-most
-   window (occlusion), inside the active region clip (scrolled-away content does not hover), and no
-   other widget owns a drag in flight.  The IsMouseHoveringRect analogue -- gates a hover tint or a
-   manual is_mouse_clicked test on custom-drawn geometry exactly as the widgets gate their own. */
-bool
-imgui_is_mouse_hovering_rect( imgui_rect_t r )
-{
-    bool can_hover = ( s_interaction.active_id == IMGUI_ID_NONE );
-    bool win_hover = ( s_build.win_id == s_interaction.hover_win );
-    return can_hover && win_hover && rect_hit( s_build.clip_rect ) && rect_hit( r );
-}
-
-/* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t
-   range is bounded by APP_KEY_COUNT <= IMGUI_KEY_COUNT (asserted in imgui_input.c).  is_key_pressed
-   is the initial press this frame; is_key_pressed_repeat also fires on each OS auto-repeat tick (the
-   Dear ImGui repeat=true case) -- the user's system rate drives it. */
-static bool key_in_range( app_key_t key ) { return (i32)key >= 0 && (i32)key < APP_KEY_COUNT; }
-
-bool imgui_is_key_down          ( app_key_t key ) { return key_in_range( key ) && s_io.keys_down          [ key ]; }
-bool imgui_is_key_pressed       ( app_key_t key ) { return key_in_range( key ) && s_io.keys_pressed       [ key ]; }
-bool imgui_is_key_pressed_repeat( app_key_t key ) { return key_in_range( key ) && s_io.keys_pressed_repeat[ key ]; }
-bool imgui_is_key_released      ( app_key_t key ) { return key_in_range( key ) && s_io.keys_released      [ key ]; }
-
-/* Per-button mouse state; app_mouse_button_t (0=left,1=right,2=middle) indexes the snapshot
-   directly.  is_mouse_clicked is the press-down edge, mirroring ImGui::IsMouseClicked. */
-static bool mb_in_range( app_mouse_button_t b ) { return (i32)b >= 0 && (i32)b < 3; }
-
-bool imgui_is_mouse_down          ( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_down    [ b ]; }
-bool imgui_is_mouse_clicked       ( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_pressed [ b ]; }
-bool imgui_is_mouse_released      ( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_released[ b ]; }
-bool imgui_is_mouse_double_clicked( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_double  [ b ]; }
-
-/* Pointer position, wheel delta, and timing straight from the snapshot. */
-void imgui_get_mouse_pos  ( f32* x, f32* y ) { if ( x ) *x = s_io.mouse_x; if ( y ) *y = s_io.mouse_y; }
-f32  imgui_get_mouse_wheel( void )           { return s_io.mouse_wheel; }
-f32  imgui_get_delta_time ( void )           { return s_io.dt; }
-f64  imgui_get_time       ( void )           { return s_io.time; }
+/* Public IO accessors (imgui_want_capture_*, imgui_is_key_*, imgui_is_mouse_*, imgui_get_*)
+   are defined in imgui_ctx_io.c, included immediately after imgui_ctx_id.c.
+   They read s_interaction, s_nav, s_popup_open_count, s_build, s_io, and rect_hit --
+   all visible in the unity build at that point. */
 
 // clang-format on
 /*============================================================================================*/
