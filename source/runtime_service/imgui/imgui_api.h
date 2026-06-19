@@ -73,6 +73,25 @@ typedef struct imgui_api_s
     void       ( *viewport_close  )( imgui_vp_t vp );
     void       ( *viewport_resize )( imgui_vp_t vp, i32 w, i32 h );
 
+    /* imgui-OWNED floater surfaces.  Where viewport_open hands imgui a host-created window+context
+       to flush into, these own the OS window + rhi context end to end -- imgui creates them on
+       spawn and tears them down on close.  This is the lifecycle the tear-off gesture will drive;
+       a host may also call viewport_spawn directly to place a panel in its own OS window.
+
+       viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
+                                    returns its viewport handle (assign windows via
+                                    set_next_window_viewport) or IMGUI_VP_INVALID.  Between frames.
+       update_platform_windows() -- reconcile owned floaters with their OS windows; call once per
+                                    frame AFTER the UI build and BEFORE rendering (the safe point to
+                                    tear a surface down -- destroys those the user closed).
+       render_floaters()         -- present every owned floater from the shared draw list, each on
+                                    its own rhi context (frame_begin/clear/flush/frame_end).  The
+                                    host still presents the main surface (index 0) via render(). */
+
+    imgui_vp_t ( *viewport_spawn          )( const char* title, i32 x, i32 y, i32 w, i32 h );
+    void       ( *update_platform_windows )( void );
+    void       ( *render_floaters         )( void );
+
     /* Host input -- the host owns the app event ring drain and forwards each
        event here before new_frame() for the same frame.
        event() -- forward one drained app_event_t; imgui unpacks the input events

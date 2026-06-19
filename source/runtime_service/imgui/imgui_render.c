@@ -83,6 +83,11 @@ typedef struct
        window/context it does not own. */
     bool owned;
 
+    /* Set when the user closes an owned floater's OS window (APP_EV_WIN_CLOSE): the surface is torn
+       down at the next update_platform_windows, a safe point between the build and the present, so
+       no in-flight draw list references a surface being freed.  Ignored for non-owned surfaces. */
+    bool pending_close;
+
     /* Drawable size of this surface in pixels.  Set by the host (viewport 0 from new_frame, floaters
        via viewport_resize) BEFORE the build so begin_window clips its windows against THIS surface's
        extent, not the main window's.  0 = unset -> begin_window falls back to the main display size
@@ -160,6 +165,7 @@ viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
     vp->win_id    = win_id;     /* OS window hosting this surface; -1 = unassociated */
     vp->rhi_ctx   = RHI_CTX_INVALID;  /* set only by viewport_spawn for an imgui-owned floater */
     vp->owned     = false;      /* host-provided unless viewport_spawn flips it */
+    vp->pending_close = false;  /* owned floater close request; serviced by update_platform_windows */
     vp->disp_w    = 0;          /* drawable size set by the host before build; 0 = fall back to main */
     vp->disp_h    = 0;
     vp->dock_root = NULL;       /* free-float until docking assigns a tree */
@@ -209,11 +215,12 @@ viewport_destroy( imgui_viewport_t* vp )
     if ( vp->owned && vp->win_id >= 0 )
         app()->window_close( vp->win_id );
 
-    vp->vb      = ( rhi_buffer_t ){ 0 };
-    vp->ib      = ( rhi_buffer_t ){ 0 };
-    vp->win_id  = -1;                  /* slot freed -> no window matches it for input routing */
-    vp->rhi_ctx = RHI_CTX_INVALID;
-    vp->owned   = false;
+    vp->vb            = ( rhi_buffer_t ){ 0 };
+    vp->ib            = ( rhi_buffer_t ){ 0 };
+    vp->win_id        = -1;            /* slot freed -> no window matches it for input routing */
+    vp->rhi_ctx       = RHI_CTX_INVALID;
+    vp->owned         = false;
+    vp->pending_close = false;
 }
 
 /*----------------------------------------------------------------------------------------------

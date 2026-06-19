@@ -186,6 +186,14 @@ imgui_event( const app_event_t* ev )
             s_pending_mouse_win_set = true;
             return false;
 
+        /* An imgui-OWNED floater's OS window resize/close is imgui's to service (it owns that
+           window + rhi context).  Delegate to the viewport-pool helper: it consumes the event
+           (returns true) only when win_id is an owned surface, so a host window's resize/close
+           still falls through to the host. */
+        case APP_EV_WIN_RESIZE:
+        case APP_EV_WIN_CLOSE:
+            return imgui_owned_window_event( ev );
+
         default:
             return false;
     }

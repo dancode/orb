@@ -43,6 +43,11 @@ imgui_vp_t imgui_viewport_open  ( i32 win_id, i32 w, i32 h );
 void       imgui_viewport_close ( imgui_vp_t vp );
 void       imgui_viewport_resize( imgui_vp_t vp, i32 w, i32 h );
 
+/* imgui-owned floater surfaces (window + context owned by imgui) */
+imgui_vp_t imgui_viewport_spawn         ( const char* title, i32 x, i32 y, i32 w, i32 h );
+void       imgui_update_platform_windows( void );
+void       imgui_render_floaters        ( void );
+
 /* io */
 bool imgui_event( const app_event_t* ev );
 

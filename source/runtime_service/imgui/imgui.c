@@ -268,6 +268,11 @@ typedef struct imgui_window_t
 
 static u32 viewport_index_for_window( i32 win_id );
 
+/* The OS resize / close events for an imgui-OWNED floater are serviced against the viewport pool
+   (g_ctx, included later) too, so imgui_event (input.c) delegates them here.  Defined in
+   imgui_frame.c after g_ctx; returns true when win_id is an owned viewport (event consumed). */
+static bool imgui_owned_window_event( const app_event_t* ev );
+
 /*==============================================================================================
     Unity build
 ==============================================================================================*/

@@ -165,6 +165,161 @@ imgui_viewport_close( imgui_vp_t vp )
 }
 
 /*==============================================================================================
+    Owned-floater lifecycle (imgui-owned surfaces)
+
+    Unlike viewport_open (the host hands imgui a window + context to flush into), these own the OS
+    window + rhi context end to end: imgui creates them on spawn and destroys them on close.  The
+    tear-off gesture (Phase 3) drives spawn/close; a host/sandbox may also call imgui_viewport_spawn
+    directly to place a panel in its own OS window.
+
+    viewport_spawn is defined here (not render.c) because it picks a slot from g_ctx->viewports and
+    bumps viewport_count -- and g_ctx lives in imgui_ctx.c, included after render.c.  render.c's
+    viewport_create / viewport_destroy stay g_ctx-agnostic (they take a vp pointer) for that reason.
+==============================================================================================*/
+
+/* Create a NEW imgui-owned floater surface: OS window + its rhi context (swapchain) + per-surface
+   geometry buffers.  The window's win_id doubles as the viewport slot index (APP_WIN_MAX ==
+   IMGUI_MAX_VIEWPORTS, so the id is always a valid slot, and the window pool guarantees it is
+   free) -- preserving the slot == win_id invariant the input router relies on.  Returns the
+   viewport index, or IMGUI_VP_INVALID on any failure (each step unwinds the previous). */
+static imgui_vp_t
+viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
+{
+    /* OS window first -- its win_id is the viewport slot index. */
+    i32 win_id = app()->window_open( title, x, y, w, h, APP_WIN_DEFAULT );
+    if ( win_id == APP_WIN_INVALID )
+        return IMGUI_VP_INVALID;
+    if ( win_id < 0 || win_id >= (i32)IMGUI_MAX_VIEWPORTS )
+    {
+        app()->window_close( win_id );    /* no viewport slot for this id */
+        return IMGUI_VP_INVALID;
+    }
+
+    imgui_viewport_t* vp = &g_ctx->viewports[ win_id ];
+    ORB_ASSERT( !rhi_handle_valid( vp->vb ) );   /* slot must be free (slot == win_id) */
+
+    /* This window's own render context (swapchain). */
+    i32 ctx = rhi()->context_create( win_id, app()->window_handle( win_id ), w, h );
+    if ( ctx == RHI_CTX_INVALID )
+    {
+        app()->window_close( win_id );
+        return IMGUI_VP_INVALID;
+    }
+
+    /* Per-surface geometry buffers; RHI_SWAPCHAIN_COLOR resolves to this ctx's image at flush. */
+    if ( !viewport_create( vp, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
+    {
+        rhi()->context_destroy( ctx );
+        app()->window_close( win_id );
+        return IMGUI_VP_INVALID;
+    }
+
+    vp->rhi_ctx = ctx;
+    vp->owned   = true;    /* imgui created the window + context -> imgui destroys them */
+    vp->disp_w  = w;
+    vp->disp_h  = h;
+
+    if ( (u32)win_id + 1u > g_ctx->viewport_count )
+        g_ctx->viewport_count = (u32)win_id + 1u;
+    return (imgui_vp_t)win_id;
+}
+
+/* Public spawn: open an imgui-owned floater hosting its own OS window at (x,y) sized w x h.
+   Returns the viewport handle to assign windows to (set_next_window_viewport), or
+   IMGUI_VP_INVALID.  Must be called between frames (it creates an OS window + rhi context). */
+imgui_vp_t
+imgui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
+{
+    return viewport_spawn( title, x, y, w, h );
+}
+
+/* Service an OS resize/close event for an imgui-owned floater (delegated from imgui_event, which
+   cannot see the viewport pool from input.c).  Resize updates the context + drawable size now;
+   close defers teardown to update_platform_windows (a safe point).  Returns true -- consuming the
+   event -- only when win_id matches an owned surface, so a host window's events fall through. */
+static bool
+imgui_owned_window_event( const app_event_t* ev )
+{
+    for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
+    {
+        imgui_viewport_t* vp = &g_ctx->viewports[ i ];
+        if ( !vp->owned || vp->win_id != ev->win_id )
+            continue;
+
+        if ( ev->type == APP_EV_WIN_RESIZE )
+        {
+            i32 w = ev->data.win_resize.w, h = ev->data.win_resize.h;
+            rhi()->context_resize( vp->rhi_ctx, w, h );
+            vp->disp_w = w;
+            vp->disp_h = h;
+        }
+        else /* APP_EV_WIN_CLOSE */
+        {
+            vp->pending_close = true;   /* torn down at the next update_platform_windows */
+        }
+        return true;   /* imgui owns this window -> event consumed */
+    }
+    return false;      /* not an imgui window -> host handles it */
+}
+
+/* Reconcile imgui-owned floater surfaces with their OS windows.  Call once per frame after the UI
+   build and BEFORE rendering: it is the safe point to tear surfaces down, since no in-flight draw
+   list references one being freed.  Today it destroys surfaces the user closed (pending_close);
+   Phase 3 will also service tear-off / merge-back requests enqueued during the build. */
+void
+imgui_update_platform_windows( void )
+{
+    for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
+    {
+        imgui_viewport_t* vp = &g_ctx->viewports[ i ];
+        if ( !( vp->owned && vp->pending_close ) )
+            continue;
+
+        /* Windows assigned to this surface revert to the primary, then free the surface
+           (viewport_destroy drains the GPU, frees buffers, destroys the ctx, closes the window). */
+        for ( u32 w = 0; w < s_window_count; ++w )
+            if ( s_windows[ w ].viewport == i )
+                s_windows[ w ].viewport = 0;
+        viewport_destroy( vp );
+    }
+}
+
+/* Present every imgui-owned floater surface from the shared draw list: open a frame on the
+   floater's own rhi context, clear, replay that viewport's partition, end.  The main surface
+   (index 0, host-owned) is presented by the host via render(); this loop handles only the surfaces
+   imgui spawned, so a single-window host stays a single-window present loop and tear-off "just
+   works".  A minimized floater is skipped (its frame_begin would hand back an invalid cmd). */
+void
+imgui_render_floaters( void )
+{
+    for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
+    {
+        imgui_viewport_t* vp = &g_ctx->viewports[ i ];
+        if ( !vp->owned || vp->rhi_ctx == RHI_CTX_INVALID )
+            continue;
+        if ( app()->window_is_minimized( vp->win_id ) )
+            continue;
+
+        rhi_cmd_t cmd = rhi()->frame_begin( vp->rhi_ctx );
+        if ( !rhi_cmd_valid( cmd ) )
+            continue;
+
+        /* Clear to the window background so the panel composites over a fresh surface (a floater
+           is just a UI surface; without the clear, dragging within it smears -- hall-of-mirrors). */
+        rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
+            .texture  = { .id = RHI_SWAPCHAIN_COLOR },   /* resolves to this ctx's swapchain image */
+            .load_op  = RHI_LOAD_OP_CLEAR,
+            .store_op = RHI_STORE_OP_STORE,
+            .clear    = { 0.05f, 0.05f, 0.08f, 1.0f },
+        }, 1, NULL );
+        rhi()->cmd_end_rendering( cmd );
+
+        imgui_render_flush( vp, i, cmd, vp->disp_w, vp->disp_h );
+        rhi()->frame_end( vp->rhi_ctx );
+    }
+}
+
+/*==============================================================================================
     Font API
 ==============================================================================================*/
 

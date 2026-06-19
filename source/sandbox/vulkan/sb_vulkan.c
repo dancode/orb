@@ -94,27 +94,6 @@ main( int argc, char** argv )
     }
 
     /* ------------------------------------------------------------------------------ */
-    /* Second OS window + render context -- the surface imgui's viewport 1 paints into.
-       This is the multi-viewport proof: one imgui context builds every window, and the
-       windows assigned to viewport 1 are dispatched to this second swapchain.  Failure
-       here is non-fatal -- the test falls back to a single surface (has_second stays false). */
-
-    i32 win2_w = 800, win2_h = 600;
-    win_id_t win2 = app()->window_open( "sb_vulkan (viewport 1)", 120, 120, win2_w, win2_h, APP_WIN_DEFAULT );
-    i32      ctx2 = RHI_CTX_INVALID;
-    if ( win2 != APP_WIN_INVALID )
-    {
-        ctx2 = rhi()->context_create( win2, app()->window_handle( win2 ), win2_w, win2_h );
-        if ( ctx2 == RHI_CTX_INVALID )
-        {
-            app()->window_close( win2 );
-            win2 = APP_WIN_INVALID;
-        }
-    }
-    if ( win2 == APP_WIN_INVALID )
-        fprintf( stderr, "[sb_vulkan] second window/context unavailable; running single-surface\n" );
-
-    /* ------------------------------------------------------------------------------ */
     /* Setup Resources */
 
     const bool b_use_boot = false;  // skip bootstrap triangle pipeline
@@ -179,12 +158,14 @@ main( int argc, char** argv )
         return 1;
     }
 
-    /* Open a secondary viewport for the second window.  Bound to ctx2 at flush time by which cmd
-       we pass render(); win2's mouse events route here via its win_id. */
-    imgui_vp_t vp1        = ( ctx2 != RHI_CTX_INVALID ) ? imgui()->viewport_open( win2, win2_w, win2_h ) : IMGUI_VP_INVALID;
+    /* Spawn an imgui-OWNED floater surface: imgui creates the OS window + rhi context + viewport,
+       and from here on drives its present loop (render_floaters) and its resize/close (consumed by
+       event()).  This is the lifecycle the tear-off gesture will use; the sandbox drives it
+       explicitly to exercise the owned path.  Failure is non-fatal -- fall back to single-surface. */
+    imgui_vp_t vp1        = imgui()->viewport_spawn( "sb_vulkan (viewport 1)", 120, 120, 800, 600 );
     bool       has_second = ( vp1 != IMGUI_VP_INVALID );
-    if ( ctx2 != RHI_CTX_INVALID && !has_second )
-        fprintf( stderr, "[sb_vulkan] imgui viewport_open (secondary) failed; running single-surface\n" );
+    if ( !has_second )
+        fprintf( stderr, "[sb_vulkan] imgui viewport_spawn (secondary) failed; running single-surface\n" );
 
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
@@ -215,7 +196,8 @@ main( int argc, char** argv )
             switch ( ev.type )
             {
                 case APP_EV_WIN_RESIZE:
-                    /* Route the resize to the context and viewport owning the window. */
+                    /* The main window's resize is the host's to route; the floater's is consumed by
+                       imgui()->event() above (imgui owns that window + context). */
                     if ( ev.win_id == win )
                     {
                         win_w = ev.data.win_resize.w;
@@ -223,17 +205,11 @@ main( int argc, char** argv )
                         rhi()->context_resize( ctx, win_w, win_h );
                         imgui()->viewport_resize( vp0, win_w, win_h );
                     }
-                    else if ( has_second && ev.win_id == win2 )
-                    {
-                        win2_w = ev.data.win_resize.w;
-                        win2_h = ev.data.win_resize.h;
-                        rhi()->context_resize( ctx2, win2_w, win2_h );
-                        imgui()->viewport_resize( vp1, win2_w, win2_h );
-                    }
                     break;
 
                 case APP_EV_WIN_CLOSE:
-                    /* Either window's close button tears the whole test down. */
+                    /* The floater's close is consumed by imgui()->event() (it tears down its own
+                       surface); only the main window's close reaches here and ends the test. */
                     goto shutdown;
 
                 default:
@@ -313,6 +289,12 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
+        /* Reconcile imgui-owned floaters with their OS windows (destroys any the user closed).
+           Runs after the build and before any present -- the safe point to tear a surface down. */
+
+        imgui()->update_platform_windows();
+
+        /* ------------------------------------------------------------------------------ */
         /* Flush the main surface.  Skip while minimized to avoid 0x0 swapchain churn; frame_begin
            returns an invalid handle then and we must not frame_end it. */
 
@@ -344,26 +326,11 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
-        /* Flush the second surface from the SAME draw list: open ctx2's frame, clear, and replay
-           only the secondary viewport's partition onto ctx2's swapchain, then end. */
+        /* Present every imgui-owned floater from the SAME draw list.  imgui opens each floater's
+           own rhi context frame, clears, replays that viewport's partition, and ends -- the host
+           no longer hand-drives the secondary surface. */
 
-        if ( has_second && !app()->window_is_minimized( win2 ) )
-        {
-            rhi_cmd_t cmd2 = rhi()->frame_begin( ctx2 );
-            if ( rhi_cmd_valid( cmd2 ))
-            {
-                rhi()->cmd_begin_rendering( cmd2, &( rhi_color_attachment_t ){
-                    .texture  = { .id = RHI_SWAPCHAIN_COLOR },   /* resolves to ctx2's swapchain image */
-                    .load_op  = RHI_LOAD_OP_CLEAR,
-                    .store_op = RHI_STORE_OP_STORE,
-                    .clear    = { 0.08f, 0.06f, 0.05f, 1.0f },
-                }, 1, NULL );
-                rhi()->cmd_end_rendering( cmd2 );
-
-                imgui()->render( vp1, cmd2 );   /* secondary partition -- no overlay */
-                rhi()->frame_end( ctx2 );
-            }
-        }
+        imgui()->render_floaters();
 
         /* ------------------------------------------------------------------------------ */
 
@@ -372,17 +339,13 @@ main( int argc, char** argv )
 
 shutdown:
     /* Shutdown -- drain GPU first, then free all GPU resources, then device, then windows.
-       context_destroy calls vk_device_wait_idle before tearing down sync/swapchain; after both
-       contexts return the GPU is idle and pipeline/buffer destroy calls are safe. */
+       context_destroy calls vk_device_wait_idle before tearing down sync/swapchain.  The main
+       context is the host's; the imgui-owned floater's context + window + geometry are torn down
+       inside imgui()->shutdown() (it owns them), so the host does not touch ctx2/win2/vp1. */
 
-    if ( has_second )
-        rhi()->context_destroy( ctx2 );   // idle + free the second swapchain/sync (before its buffers)
-    rhi()->context_destroy( ctx );        // idle + free the main swapchain/sync
+    rhi()->context_destroy( ctx );        // idle + free the main swapchain/sync (host-owned)
 
-    if ( has_second )
-        imgui()->viewport_close( vp1 );   // free viewport 1's geometry buffers (GPU now idle)
-
-    imgui()->shutdown();
+    imgui()->shutdown();                  // frees all geometry + the owned floater's ctx/window
 
     if ( b_use_boot )
     {
@@ -392,8 +355,6 @@ shutdown:
     draw()->shutdown();                 // destroy draw resources
 
     rhi()->shutdown();                  // destroy device and instance (last)
-    if ( has_second )
-        app()->window_close( win2 );
     app()->window_close( win );
     mod_system_exit();
     return 0;
