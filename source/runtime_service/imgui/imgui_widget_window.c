@@ -267,6 +267,17 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     draw_set_sort_key( win->z );
     draw_set_viewport( win->viewport );
 
+    /* Clip this window against ITS surface's extent, not the main window's: the window clip pushed
+       below intersects the base clip (clip_stack[0]), so seed that base with this viewport's drawable
+       size.  Falls back to the main display when the surface size is unset (single-window default).
+       end_window restores the main display for subsequent background / low-level draws. */
+    {
+        const imgui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
+        f32 rw = vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w;
+        f32 rh = vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h;
+        draw_set_root_clip( rw, rh );
+    }
+
     /* Window chrome (background, titlebar, border) is not an item: clear any disabled latch a prior
        window's trailing widget left, so this window paints opaque and its chrome interacts. */
     item_flags_chrome_reset();
@@ -461,9 +472,12 @@ imgui_end_window( void )
         draw_pop_clip_rect();
 
     /* Subsequent draws (low-level API, the next window) revert to the background key and the
-       main surface; the next begin_window re-routes them to its own viewport. */
+       main surface; the next begin_window re-routes them to its own viewport.  Restore the base
+       clip to the main display so background / low-level draws are not bounded by this window's
+       (possibly larger or smaller) surface. */
     draw_set_sort_key( 0 );
     draw_set_viewport( 0 );
+    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
 
     /* Window move grab.  Decided here, after this window's widgets have run, and pinned off
        entirely by NOMOVE (fixed-position widgets).  This window must be the one under the

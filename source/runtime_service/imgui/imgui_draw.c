@@ -100,6 +100,17 @@ draw_pop_clip_rect( void )
         --s_draw.clip_depth;
 }
 
+/* Set the base clip (clip_stack[0]) -- the rect every window clip intersects against -- to a given
+   surface size.  draw_reset seeds it to the main display; begin_window overwrites it with its own
+   viewport's drawable size so a window on a second surface is bounded by that surface, not the main
+   window (end_window restores the main display).  Only touches slot 0, so it is safe whenever the
+   stack is at base depth (between windows); a window's own clip pushes on top of it. */
+static void
+draw_set_root_clip( f32 w, f32 h )
+{
+    s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, w, h };
+}
+
 /*----------------------------------------------------------------------------------------------
     draw_set_sort_key -- stamp subsequent commands with this z (window paint order).
     Set to the window's z in begin_window and back to 0 (background) in end_window.

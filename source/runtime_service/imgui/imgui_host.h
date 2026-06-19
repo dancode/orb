@@ -43,6 +43,7 @@ void imgui_render_viewport( i32 index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 i32  imgui_viewport_open( i32 win_id );
 void imgui_viewport_close( i32 index );
 void imgui_viewport_set_window( i32 index, i32 win_id );
+void imgui_viewport_resize( i32 index, i32 w, i32 h );
 
 /* io */
 bool imgui_event( const app_event_t* ev );

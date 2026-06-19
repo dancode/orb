@@ -72,9 +72,14 @@ imgui_print_mem_stats( void )
     Frame API Helpers
 ==============================================================================================*/
 
-void 
+void
 imgui_new_frame( i32 win_w, i32 win_h, f32 dt )
 {
+    /* The main surface's drawable size, so begin_window clips viewport-0 windows against it
+       (floaters are sized by the host via viewport_resize before this call). */
+    g_ctx->viewports[ 0 ].disp_w = win_w;
+    g_ctx->viewports[ 0 ].disp_h = win_h;
+
     input_update( win_w, win_h, dt );
     draw_reset( win_w, win_h );
 #ifdef IMGUI_DEBUG_OVERLAY
@@ -142,6 +147,19 @@ imgui_viewport_set_window( i32 index, i32 win_id )
     if ( index < 0 || index >= IMGUI_MAX_VIEWPORTS )
         return;
     g_ctx->viewports[ index ].win_id = win_id;
+}
+
+/* Set a floater surface's drawable size so begin_window clips its windows against this surface (not
+   the main window).  The host calls this for floaters at open and on each resize, BEFORE new_frame
+   (the build reads it).  Surface 0 is driven by new_frame's win_w/win_h, but may be set here too.
+   Out-of-range index is ignored. */
+void
+imgui_viewport_resize( i32 index, i32 w, i32 h )
+{
+    if ( index < 0 || index >= IMGUI_MAX_VIEWPORTS )
+        return;
+    g_ctx->viewports[ index ].disp_w = w;
+    g_ctx->viewports[ index ].disp_h = h;
 }
 
 /* Close a floater surface and release its geometry buffers.  Slot 0 (the main swapchain) is owned
@@ -226,6 +244,7 @@ const imgui_api_t g_imgui_api_struct =
     .viewport_open                      = imgui_viewport_open,
     .viewport_close                     = imgui_viewport_close,
     .viewport_set_window                = imgui_viewport_set_window,
+    .viewport_resize                    = imgui_viewport_resize,
     .event                              = imgui_event,
     .set_next_window_pos                = imgui_set_next_window_pos,
     .set_next_window_viewport           = imgui_set_next_window_viewport,

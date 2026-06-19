@@ -171,6 +171,8 @@ main( int argc, char** argv )
        purely by which cmd we pass render_viewport below. */
     i32  vp1         = ( ctx2 != RHI_CTX_INVALID ) ? imgui()->viewport_open( win2 ) : -1;
     bool has_second  = ( vp1 >= 0 );
+    if ( has_second )
+        imgui()->viewport_resize( vp1, win2_w, win2_h );   /* seed the floater's clip extent */
     if ( ctx2 != RHI_CTX_INVALID && !has_second )
         fprintf( stderr, "[sb_vulkan] imgui viewport_open failed; running single-surface\n" );
 
@@ -219,6 +221,7 @@ main( int argc, char** argv )
                         win2_w = ev.data.win_resize.w;
                         win2_h = ev.data.win_resize.h;
                         rhi()->context_resize( ctx2, win2_w, win2_h );
+                        imgui()->viewport_resize( vp1, win2_w, win2_h );   /* keep the clip extent in sync */
                     }
                     break;
 

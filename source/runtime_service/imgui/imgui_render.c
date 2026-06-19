@@ -66,6 +66,13 @@ typedef struct
        known -- a window only hover-tests when the cursor is in the OS window hosting its viewport. */
     i32 win_id;
 
+    /* Drawable size of this surface in pixels.  Set by the host (viewport 0 from new_frame, floaters
+       via viewport_resize) BEFORE the build so begin_window clips its windows against THIS surface's
+       extent, not the main window's.  0 = unset -> begin_window falls back to the main display size
+       (single-window behavior).  Distinct from the win_w/win_h passed to flush, which only sets the
+       GPU viewport/scissor clamp at submit time; the clip baked into each draw command is built here. */
+    i32 disp_w, disp_h;
+
     /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's
        overlapping windows); non-NULL = a dock tree tiling/tabbing the windows on this surface.
        Inert until docking lands -- a documented placement hook, no machinery yet. */
@@ -138,6 +145,8 @@ viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
 {
     vp->target    = target;
     vp->win_id    = win_id;     /* OS window hosting this surface; -1 = unassociated */
+    vp->disp_w    = 0;          /* drawable size set by the host before build; 0 = fall back to main */
+    vp->disp_h    = 0;
     vp->dock_root = NULL;       /* free-float until docking assigns a tree */
 
     /* Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame. */

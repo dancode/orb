@@ -62,6 +62,9 @@ typedef struct imgui_api_s
        viewport_close() -- release a floater's geometry buffers (the host owns the OS window + rhi context).
        viewport_set_window() -- associate the OS window hosting a surface (call for index 0, the main
                            window, after init); viewport_open takes win_id directly for floaters.
+       viewport_resize() -- set a floater surface's drawable size so its windows clip against it (not
+                           the main window).  Call at open and on resize, BEFORE new_frame.  Surface 0
+                           is driven automatically by new_frame's win_w/win_h.
        render_viewport()-- flush one surface's partition: call between that context's frame_begin/frame_end
                            with the context cmd and the surface's drawable size.  render() is the index-0
                            convenience (it also paints the debug overlay).  Loop the rest per surface. */
@@ -70,6 +73,7 @@ typedef struct imgui_api_s
     i32  ( *viewport_open        )( i32 win_id );
     void ( *viewport_close       )( i32 index );
     void ( *viewport_set_window  )( i32 index, i32 win_id );
+    void ( *viewport_resize      )( i32 index, i32 w, i32 h );
 
     /* Host input -- the host owns the app event ring drain and forwards each
        event here before new_frame() for the same frame.
