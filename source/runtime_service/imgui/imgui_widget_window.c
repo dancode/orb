@@ -198,34 +198,81 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     bool autosize = ( flags & IMGUI_WIN_ALWAYS_AUTOSIZE ) != 0;
     imgui_win_flags_t body_flags = autosize ? ( flags | IMGUI_WIN_NOSCROLL ) : flags;
 
-    /* Apply an in-progress drag: this window holds active_id while the button is down. */
+    /* Apply an in-progress drag: this window holds active_id while the button is down.
+
+       On the main surface the panel slides within it (win->x/y).  On a floater the panel fills the
+       surface, so the drag instead moves the whole OS window in SCREEN space to follow the cursor --
+       the floater client origin tracks (screen cursor - grab offset), so the grabbed title point
+       stays pinned under the cursor as it crosses the desktop.  Screen cursor reads stay valid
+       because the origin window keeps OS mouse capture for the whole gesture (see the tear-off in
+       imgui_update_platform_windows). */
     if ( s_interaction.active_id == id )
     {
-        win->x = s_io.mouse_x - s_drag_off_x;
-        win->y = s_io.mouse_y - s_drag_off_y;
-        window_clamp( win );
+        if ( win->viewport == 0 )
+        {
+            win->x = s_io.mouse_x - s_drag_off_x;
+            win->y = s_io.mouse_y - s_drag_off_y;
+            window_clamp( win );
+        }
+        else
+        {
+            i32 cx = 0, cy = 0;
+            app()->mouse_position_screen( &cx, &cy );
+            app()->window_set_pos( g_ctx->viewports[ win->viewport ].win_id,
+                                   cx - (i32)s_drag_off_x, cy - (i32)s_drag_off_y );
+            win->x = 0.0f;
+            win->y = 0.0f;
+        }
     }
 
-    /* Tear-off / merge-back gesture.  A title-bar drag released with the cursor outside this
-       window's HOST surface client bounds reassigns the surface: from the main surface (viewport 0)
-       it tears off into a fresh floater, from a floater it merges back to the main surface.  The OS
-       mouse is captured by the host window for the whole drag, so its coords stay in that window's
-       client space and read out-of-bounds (negative or past the extent) exactly when the cursor has
-       left it -- the intentional "drag it off the window" gesture, no global cursor needed.
+    /* Seamless tear-off / merge-back gesture (Dear-ImGui style: no release required).  While a
+       title-bar drag is live (button still down, this window owns active_id), crossing a surface
+       boundary reassigns which surface hosts the window -- and the drag continues uninterrupted in
+       the new home.  The request is enqueued for imgui_update_platform_windows, the safe point to
+       create/destroy a surface; one request at a time, and NOMOVE windows never tear off.
 
-       Detected here while the window still owns active_id (kept on the release frame, see
-       ctx_new_frame) and the release edge is live; enqueued for imgui_update_platform_windows to
-       service after the build (the safe point to create/destroy a surface).  One request at a time;
-       NOMOVE windows never tear off. */
-    if ( s_interaction.active_id == id && s_io.mouse_released[ 0 ]
+       Attached (viewport 0): the OS mouse is captured by the main window, so s_io.mouse_x/y stay in
+       its client space and read out-of-bounds exactly when the cursor leaves it -- tear off into a
+       floater the moment that happens.
+
+       Floating: the floater follows the cursor, so the cursor never leaves IT; instead test the
+       SCREEN cursor against the main window's client rect and merge back when it re-enters.  Capture
+       remains on the main window throughout, so the screen-cursor read is valid here too. */
+    if ( s_interaction.active_id == id && s_io.mouse_down[ 0 ]
          && !( flags & IMGUI_WIN_NOMOVE ) && !s_vp_request.active )
     {
-        const imgui_viewport_t* hv = &g_ctx->viewports[ win->viewport ];
-        f32 dw = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
-        f32 dh = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
-        if ( s_io.mouse_x < 0.0f || s_io.mouse_y < 0.0f || s_io.mouse_x >= dw || s_io.mouse_y >= dh )
+        bool crossed = false;
+        if ( win->viewport == 0 )
+        {
+            f32 dw = s_io.display_w > 0 ? (f32)s_io.display_w : 1.0f;
+            f32 dh = s_io.display_h > 0 ? (f32)s_io.display_h : 1.0f;
+            const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
+            if ( hv->disp_w > 0 ) dw = (f32)hv->disp_w;
+            if ( hv->disp_h > 0 ) dh = (f32)hv->disp_h;
+            crossed = s_io.mouse_x < 0.0f || s_io.mouse_y < 0.0f
+                   || s_io.mouse_x >= dw || s_io.mouse_y >= dh;
+        }
+        else
+        {
+            /* Merge back when the screen cursor re-enters the main window's client rect, inset by a
+               title-bar margin.  The inset is hysteresis: tear-off fires at the exact main edge, so
+               without a dead-band a cursor hovering on the boundary would spawn and destroy a floater
+               every frame.  Re-entering only past the inset breaks that oscillation. */
+            i32 cx = 0, cy = 0, mx = 0, my = 0;
+            app()->mouse_position_screen( &cx, &cy );
+            app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
+            const imgui_viewport_t* mv = &g_ctx->viewports[ 0 ];
+            i32 mw = mv->disp_w > 0 ? (i32)mv->disp_w : (i32)s_io.display_w;
+            i32 mh = mv->disp_h > 0 ? (i32)mv->disp_h : (i32)s_io.display_h;
+            i32 inset = (i32)WIN_TITLE_H;
+            crossed = cx >= mx + inset && cy >= my + inset
+                   && cx < mx + mw - inset && cy < my + mh - inset;
+        }
+
+        if ( crossed )
         {
             s_vp_request.active  = true;
+            s_vp_request.by_drag = true;   /* place the floater under the cursor, keep it tracking */
             s_vp_request.win_id  = id;
             s_vp_request.from_vp = win->viewport;
             s_vp_request.title   = title;
@@ -464,6 +511,7 @@ imgui_end_window( void )
                 /* Same channel the drag gesture uses: 0 = on the main surface -> tear off,
                    else on a floater -> merge back.  Serviced by update_platform_windows. */
                 s_vp_request.active  = true;
+                s_vp_request.by_drag = false;   /* button click: keep the panel at its exact screen spot */
                 s_vp_request.win_id  = s_build.win_id;
                 s_vp_request.from_vp = win ? win->viewport : 0u;
                 s_vp_request.title   = s_build.win_title;

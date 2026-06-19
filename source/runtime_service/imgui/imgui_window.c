@@ -136,6 +136,7 @@ static struct
 static struct
 {
     bool        active;     /* a request is queued this frame                                   */
+    bool        by_drag;    /* true = seamless title-bar drag; false = detach-button click       */
     imgui_id_t  win_id;     /* the dragged window record                                        */
     u32         from_vp;    /* surface it was on (0 = main -> tear off; else floater -> merge)   */
     const char* title;      /* window title, to label the spawned floater's OS window           */

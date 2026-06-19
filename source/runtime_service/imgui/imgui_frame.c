@@ -183,10 +183,14 @@ imgui_viewport_close( imgui_vp_t vp )
    free) -- preserving the slot == win_id invariant the input router relies on.  Returns the
    viewport index, or IMGUI_VP_INVALID on any failure (each step unwinds the previous). */
 static imgui_vp_t
-viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
+viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate )
 {
-    /* OS window first -- its win_id is the viewport slot index. */
-    i32 win_id = app()->window_open( title, x, y, w, h, APP_WIN_DEFAULT );
+    /* OS window first -- its win_id is the viewport slot index.  no_activate (set for a mid-drag
+       tear-off) opens the floater with APP_WIN_NOFOCUS so it does NOT steal foreground from the
+       origin window -- on Windows, activating another top-level window releases that window's
+       mouse capture, which would sever the in-flight drag the moment the floater appeared. */
+    u32 open_flags = APP_WIN_DEFAULT | ( no_activate ? APP_WIN_NOFOCUS : 0u );
+    i32 win_id = app()->window_open( title, x, y, w, h, open_flags );
     if ( win_id == APP_WIN_INVALID )
         return IMGUI_VP_INVALID;
     if ( win_id < 0 || win_id >= (i32)IMGUI_MAX_VIEWPORTS )
@@ -230,7 +234,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
 imgui_vp_t
 imgui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
 {
-    return viewport_spawn( title, x, y, w, h );
+    return viewport_spawn( title, x, y, w, h, false );
 }
 
 /* Service an OS resize/close event for an imgui-owned floater (delegated from imgui_event, which
@@ -277,22 +281,39 @@ imgui_update_platform_windows( void )
         imgui_window_t* win     = window_find( s_vp_request.win_id );
         if ( win && s_vp_request.from_vp == 0 )
         {
-            /* Tear the window off the main surface into its own floater, placed so the panel keeps
-               its EXACT screen position: panel screen pos = main surface client origin + the panel's
-               position within it.  The floater is sized to the panel (client = win->w x win->h) and
-               its client corner set to that screen point, then the panel sits at (0,0) filling it --
-               so the panel's pixels do not move, it simply becomes its own OS window. */
-            i32 mx = 0, my = 0;
-            app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
-            i32 sx = mx + (i32)win->x;
-            i32 sy = my + (i32)win->y;
+            /* Tear the window off the main surface into its own floater.  Placement depends on how
+               the tear-off was requested:
+
+               by_drag -- a live title-bar drag (button still down).  Place the floater so the grab
+               point stays exactly beneath the cursor: client origin = screen cursor - the grab offset
+               recorded when the drag began.  Spawned no-activate so the origin window keeps its OS
+               mouse capture (activating would release it and sever the drag); the per-frame
+               floater-follow in begin_window then keeps the panel tracking the cursor.
+
+               else -- a detach-button click, no drag in flight.  Keep the panel at its EXACT screen
+               position (main client origin + the panel's position within it), so it pops out in place
+               rather than jumping to the cursor.  Activate normally; there is no capture to preserve. */
+            i32 sx, sy;
+            if ( s_vp_request.by_drag )
+            {
+                i32 cx = 0, cy = 0;
+                app()->mouse_position_screen( &cx, &cy );
+                sx = cx - (i32)s_drag_off_x;
+                sy = cy - (i32)s_drag_off_y;
+            }
+            else
+            {
+                i32 mx = 0, my = 0;
+                app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
+                sx = mx + (i32)win->x;
+                sy = my + (i32)win->y;
+            }
 
             imgui_vp_t vp = viewport_spawn( s_vp_request.title ? s_vp_request.title : "panel",
-                                            sx, sy, (i32)win->w, (i32)win->h );
+                                            sx, sy, (i32)win->w, (i32)win->h, s_vp_request.by_drag );
             if ( vp != IMGUI_VP_INVALID )
             {
-                /* window_open positions the FRAME; set_pos lands the CLIENT corner on (sx,sy) so
-                   the panel (drawn at client 0,0) appears exactly where it was. */
+                /* window_open positions the FRAME; set_pos lands the CLIENT corner on (sx,sy). */
                 app()->window_set_pos( g_ctx->viewports[ vp ].win_id, sx, sy );
                 win->viewport = (u32)vp;
                 win->x        = 0.0f;
@@ -301,18 +322,31 @@ imgui_update_platform_windows( void )
         }
         else if ( win )
         {
-            /* Merge back: return the panel to the main surface at the same screen location it
-               occupies as a floater (its floater client origin minus the main surface client
-               origin), then free the floater if it now hosts no windows. */
+            /* Merge back into the main surface.  Placement mirrors tear-off:
+
+               by_drag -- capture is held by the main window for the whole drag, so s_io.mouse_x/y are
+               already main-client coords; the panel lands at cursor - grab offset, continuous with the
+               in-flight drag, which the attached drag-apply in begin_window then carries on.
+
+               else -- a button click; keep the panel at the screen location the floater occupied (its
+               client origin minus the main client origin), so it docks in place rather than jumping. */
             u32 fvp = s_vp_request.from_vp;
-            i32 fx = 0, fy = 0, mx = 0, my = 0;
-            if ( fvp < IMGUI_MAX_VIEWPORTS )
-                app()->window_get_pos( g_ctx->viewports[ fvp ].win_id, &fx, &fy );
-            app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
 
             win->viewport = 0;
-            win->x        = (f32)( fx - mx );
-            win->y        = (f32)( fy - my );
+            if ( s_vp_request.by_drag )
+            {
+                win->x = s_io.mouse_x - s_drag_off_x;
+                win->y = s_io.mouse_y - s_drag_off_y;
+            }
+            else
+            {
+                i32 fx = 0, fy = 0, mx = 0, my = 0;
+                if ( fvp < IMGUI_MAX_VIEWPORTS )
+                    app()->window_get_pos( g_ctx->viewports[ fvp ].win_id, &fx, &fy );
+                app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
+                win->x = (f32)( fx - mx );
+                win->y = (f32)( fy - my );
+            }
 
             bool empty = true;
             for ( u32 w = 0; w < s_window_count; ++w )
