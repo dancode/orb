@@ -75,10 +75,18 @@ main( int argc, char** argv )
          return 1;
     }
 
-    /* Open window.  Borderless (window kind 3): no Win32 chrome -- a full-surface IMGUI_WIN_NATIVE
-       shell window (emitted first in the loop below) stands in as the frame, its titlebar driving OS
-       move + the min/max/close caption buttons and its borders resizing the window via WM_NCHITTEST. */
-    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_BORDERLESS ); // APP_WIN_DEFAULT APP_WIN_BORDERLESS
+    /* Main-window chrome mode -- flip this one bool to compare the two paths:
+
+         true  -- borderless (window kind 3): no Win32 chrome.  A full-surface IMGUI_WIN_NATIVE shell
+                  window (emitted first in the loop below) stands in as the frame: its titlebar drives
+                  OS move + the min/max/close caption buttons, its borders resize via WM_NCHITTEST.
+
+         false -- default OS window: Win32 draws the title bar, caption buttons, and borders.  The
+                  native frame-shell is NOT emitted; the demos draw straight over the cleared surface. */
+    const bool b_borderless = false;
+
+    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720,
+                                       b_borderless ? APP_WIN_BORDERLESS : APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID ) {
          rhi()->shutdown();
          mod_system_exit();
@@ -267,10 +275,13 @@ main( int argc, char** argv )
            it pins to the whole surface and publishes the caption band + button holes (titlebar moves
            the window, borders resize it, caption buttons minimize / maximize / close it, all
            OS-driven), but its body stays empty and click-through so the demo windows inside it remain
-           visible and selectable above it. */
-        imgui()->begin_window( "ORB -- sb_vulkan", 0, 0, (f32)win_w, (f32)win_h,
-                               IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
-        imgui()->end_window();
+           visible and selectable above it.  Skipped in default-chrome mode: the OS draws the frame. */
+        if ( b_borderless )
+        {
+            imgui()->begin_window( "ORB -- sb_vulkan", 0, 0, (f32)win_w, (f32)win_h,
+                                   IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+            imgui()->end_window();
+        }
 
         sb_imgui_demos[ active_demo ].fn();                // selected feature demo (viewport 0)
         active_demo = sb_imgui_demo_picker( active_demo );  // demo list + key hints (clickable)
