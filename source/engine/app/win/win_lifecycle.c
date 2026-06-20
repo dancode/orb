@@ -255,29 +255,21 @@ app_window_enable_resize( win_id_t id, bool enabled )
                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED );
 }
 
-/* Publish the custom-frame layout the WndProc hit-tests against (imgui calls this each frame for a
-   native-borderless window).  caption_h is the titlebar drag band height and border the edge resize
-   grab thickness, both client px; either <= 0 disables that interaction.  Toggling enabled changes
-   the non-client layout, so that case forces a WM_NCCALCSIZE recompute; metric-only updates do not. */
+/* Publish the border-resize grab thickness imgui measures each frame for a native-borderless window.
+   border is the edge-grab thickness in client px (<= 0 disables resize).  Toggling enabled changes
+   the non-client layout, so that case forces a WM_NCCALCSIZE recompute; metric-only updates do not.
+   imgui dispatches move / title / system-menu gestures itself via window_start_move etc., so no
+   caption_h or holes are needed here. */
 static void
-app_window_set_native_frame( win_id_t id, bool enabled, i32 caption_h, i32 border,
-                             const app_rect_t* holes, i32 hole_count )
+app_window_set_native_frame( win_id_t id, bool enabled, i32 border )
 {
     app_window_t* win = win_get( id );
     if ( !win || !win->hwnd )
         return;
 
     bool was = win->native.enabled;
-    win->native.enabled   = enabled;
-    win->native.caption_h = caption_h > 0 ? caption_h : 0;
-    win->native.border    = border    > 0 ? border    : 0;
-
-    /* Caption holes (HTCLIENT cut-outs for imgui's caption widgets), clamped to the fixed store. */
-    i32 hc = hole_count < 0 ? 0 : hole_count;
-    if ( hc > APP_WIN_NATIVE_HOLES_MAX ) hc = APP_WIN_NATIVE_HOLES_MAX;
-    win->native.hole_count = holes ? hc : 0;
-    for ( i32 i = 0; i < win->native.hole_count; ++i )
-        win->native.holes[ i ] = holes[ i ];
+    win->native.enabled = enabled;
+    win->native.border  = border > 0 ? border : 0;
 
     if ( was != enabled )
         SetWindowPos( win->hwnd, NULL, 0, 0, 0, 0,

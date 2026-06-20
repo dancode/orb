@@ -296,11 +296,12 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
 
         case WM_NCHITTEST:
         {
-            /* Report which zone the cursor is over so the OS runs the matching native action:
-               an edge / corner -> the resize loop with the right cursor; the caption band -> the
-               move loop (Aero Snap, double-click maximize, right-click system menu all follow from
-               DefWindowProc handling HTCAPTION); everything else -> HTCLIENT, where imgui sees the
-               normal client mouse messages.  Non-custom windows keep default behavior. */
+            /* Report edge / corner resize zones so the OS runs the matching native loop; return
+               HTCLIENT everywhere else.  imgui owns the entire caption band -- when the user grabs
+               the title bar imgui dispatches window_start_move (which posts APP_WM_START_MOVE below),
+               so OS move / Aero Snap / double-click-maximize / system-menu still work, but imgui
+               sees all clicks first and can run its own caption widgets without holes.
+               Non-custom windows keep default behavior. */
             if ( !win->native.enabled )
                 return DefWindowProcW( hwnd, msg, wp, lp );
 
@@ -326,20 +327,6 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
                 if ( r )        return HTRIGHT;
                 if ( t )        return HTTOP;
                 if ( bot )      return HTBOTTOM;
-            }
-
-            if ( pt.y < win->native.caption_h )
-            {
-                /* Caption holes punch HTCLIENT through the caption band so imgui's own caption
-                   widgets (min / max / close / pop-in) get the click instead of an OS move. */
-                for ( i32 i = 0; i < win->native.hole_count; ++i )
-                {
-                    const app_rect_t* hr = &win->native.holes[ i ];
-                    if ( pt.x >= hr->x && pt.x < hr->x + hr->w &&
-                         pt.y >= hr->y && pt.y < hr->y + hr->h )
-                        return HTCLIENT;
-                }
-                return HTCAPTION;
             }
 
             return HTCLIENT;

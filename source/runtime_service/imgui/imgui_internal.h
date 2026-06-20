@@ -469,14 +469,12 @@ typedef struct
        GPU viewport/scissor clamp at submit time; the clip baked into each draw command is built here. */
     i32 disp_w, disp_h;
 
-    /* Top band (pixels) reserved by this surface's native host caption, published each frame by the
-       IMGUI_WIN_NATIVE shell window that frames it (window_set_native_frame path).  The OS owns that
-       band via WM_NCHITTEST, so a normal window whose titlebar slid under it could no longer be
-       grabbed -- window_clamp keeps non-native windows' top edge at or below this inset, mimicking how
-       a child sits beneath a normal OS title bar.  0 until first published (no native shell or default
-       OS-chrome main window).  Sticky: NOT cleared each frame -- persists from the last frame the
-       native shell was active so update_platform_windows always has a valid top bound regardless of
-       whether it runs before or after the build. */
+    /* Top band (pixels) drawn by this surface's native host caption (the IMGUI_WIN_NATIVE shell
+       window's title bar height), published each frame by that shell.  window_clamp keeps non-native
+       windows' top edge at or below this inset so their title bars stay grabbable above the drawn
+       chrome band.  0 until first published (no native shell or default OS-chrome main window).
+       Sticky: NOT cleared each frame -- persists from the last frame the native shell was active so
+       update_platform_windows always has a valid top bound regardless of build ordering. */
     f32 caption_inset;
 
     /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's

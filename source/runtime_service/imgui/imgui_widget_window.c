@@ -353,29 +353,16 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
         if ( vp->disp_w > 0 ) win->w = ( f32 )vp->disp_w;
         if ( vp->disp_h > 0 ) win->h = ( f32 )vp->disp_h;
 
-        /* Publish the frame layout the OS hit-tests against: the titlebar height is the caption
-           drag band, WIN_RESIZE_OUTER the edge grab thickness (0 when NORESIZE).  The OS owns every
-           gesture from here -- imgui only draws the chrome below.
+        /* Publish the edge-resize grab thickness (the only metric the WndProc still needs; imgui now
+           owns the full caption band via HTCLIENT and dispatches move / title / system-menu itself).
+           NORESIZE disables edge dragging (border = 0). */
+        i32 border = ( flags & IMGUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
+        app()->window_set_native_frame( window_native_id( win ), true, border );
 
-           The caption buttons end_window draws sit inside the caption band, so publish their rects
-           as HTCLIENT holes -- otherwise the OS would treat a button click as a caption drag.  Same
-           layout end_window uses, so the holes line up with the drawn buttons exactly. */
+        /* Publish the caption-inset so panels on this surface clamp their title bars below the
+           drawn chrome band.  frame_only shells emit before the panels they frame, so the inset is
+           live by the time begin_window runs for each panel this frame. */
         i32 caption = ( flags & IMGUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
-        i32 border  = ( flags & IMGUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
-
-        native_btn_t btns[ NATIVE_BTN_MAX ];
-        i32          nb = native_caption_buttons( win, flags, win->x, win->y, win->w, ( f32 )caption, btns );
-        app_rect_t   holes[ NATIVE_BTN_MAX ];
-        for ( i32 i = 0; i < nb; ++i )
-            holes[ i ] = ( app_rect_t ){ ( i32 )btns[ i ].r.x, ( i32 )btns[ i ].r.y,
-                                         ( i32 )btns[ i ].r.w, ( i32 )btns[ i ].r.h };
-
-        app()->window_set_native_frame( window_native_id( win ), true, caption, border, holes, nb );
-
-        /* Publish the caption band so the normal windows sharing this surface clamp below it (the OS
-           owns that band; a titlebar slid under it could not be grabbed back out).  Set on the shell's
-           own viewport; a frame-only shell (the borderless main window) is emitted before the panels
-           it frames, so the inset is in place by the time their begin_window clamps this frame. */
         g_ctx->viewports[ win->viewport ].caption_inset = ( f32 )caption;
     }
 
@@ -646,7 +633,8 @@ imgui_end_window( void )
 
     /* Same native test begin_window used (flag or owned floater): a native window's titlebar/border
        is the OS frame, so its collapse arrow, detach button and imgui drag-grab are all suppressed. */
-    bool native = window_is_native( win, s_build.win_flags );
+    bool native     = window_is_native( win, s_build.win_flags );
+    bool frame_only = ( s_build.win_flags & IMGUI_WIN_NATIVE ) != 0;
 
     /* Chrome below (scrollbars via layout_pop_region, collapse arrow, border, size grip) is not an
        item.  layout_pop_region resets too, but a collapsed window opens no region and skips it, so
@@ -864,36 +852,50 @@ imgui_end_window( void )
     /* Window move grab.  Decided here, after this window's widgets have run, and pinned off
        entirely by NOMOVE (fixed-position widgets).  This window must be the one under the
        cursor (hover_win) and nothing must already own active_id -- an edge press never reaches
-       here, since begin_window grabbed the resize before the widgets ran.  Two buttons grab:
+       here, since begin_window grabbed the resize before the widgets ran.
 
-       Left button obeys the global drag mode and only on empty window space (hover_id == NONE,
-       so a press on a widget drives the widget, not a drag): BODY drags from anywhere empty,
-       TITLEBAR only from the bar (a NOTITLEBAR window has title_h 0, so its title_r never hits
-       and TITLEBAR mode cannot move it).
+       frame_only (IMGUI_WIN_NATIVE shell): imgui owns the full client surface via HTCLIENT, so
+       title-bar clicks land here instead of going to the OS.  Dispatch them: single press starts
+       an OS move (Aero Snap follows for free); double-click sends the maximize toggle; right-click
+       shows the system menu.  No active_id is set -- the OS modal loop runs in place of imgui drag.
 
-       Middle button is a convenience grab: it moves the front window from anywhere over it --
-       even atop a widget, since no widget consumes the middle button -- ignoring the drag mode,
-       so the window is always easy to pick up and reposition without aiming for the bar. */
-    /* A native window's titlebar IS the OS caption: the OS owns move / snap / double-click / system
-       menu via WM_NCHITTEST (begin_window published the caption band), so imgui takes no drag grab
-       for it -- excluded here like a NOMOVE window. */
+       All other windows (panels on main surface, floaters on owned viewports): imgui drag grab.
+       Left button obeys the global drag mode and only fires on empty space (hover_id == NONE, so a
+       widget press drives the widget).  Middle button grabs from anywhere -- no widget consumes it.
+       Floaters on owned viewports move their whole OS window each frame (see begin_window drag apply). */
     if ( s_build.win_id == s_interaction.hover_win && s_interaction.active_id == IMGUI_ID_NONE
-         && !( s_build.win_flags & IMGUI_WIN_NOMOVE ) && !native )
+         && !( s_build.win_flags & IMGUI_WIN_NOMOVE ) )
     {
         imgui_rect_t title_r = { s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_title_h };
 
-        bool left_grab = s_io.mouse_pressed[ 0 ] && s_interaction.hover_id == IMGUI_ID_NONE
-                      && s_win_drag_mode != IMGUI_WIN_DRAG_NONE
-                      && ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) );
-
-        bool mid_grab = s_io.mouse_pressed[ 2 ];
-
-        if ( left_grab || mid_grab )
+        if ( frame_only )
         {
-            s_interaction.active_id     = s_build.win_id;
-            s_interaction.active_button = mid_grab ? 2 : 0;   /* release tracks the grabbing button */
-            s_drag_off_x        = s_io.mouse_x - s_build.win_x;
-            s_drag_off_y        = s_io.mouse_y - s_build.win_y;
+            /* Native borderless shell: dispatch caption-band gestures to OS. */
+            win_id_t os = window_native_id( win );
+            if ( s_interaction.hover_id == IMGUI_ID_NONE && rect_hit( title_r ) )
+            {
+                if ( s_io.mouse_double[ 0 ] )
+                    app()->window_title_event( os );
+                else if ( s_io.mouse_pressed[ 0 ] )
+                    app()->window_start_move( os );
+                else if ( s_io.mouse_pressed[ 1 ] )
+                    app()->window_system_menu( os, ( i32 )s_io.mouse_x, ( i32 )s_io.mouse_y );
+            }
+        }
+        else
+        {
+            bool left_grab = s_io.mouse_pressed[ 0 ] && s_interaction.hover_id == IMGUI_ID_NONE
+                          && s_win_drag_mode != IMGUI_WIN_DRAG_NONE
+                          && ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) );
+            bool mid_grab = s_io.mouse_pressed[ 2 ];
+
+            if ( left_grab || mid_grab )
+            {
+                s_interaction.active_id     = s_build.win_id;
+                s_interaction.active_button = mid_grab ? 2 : 0;
+                s_drag_off_x        = s_io.mouse_x - s_build.win_x;
+                s_drag_off_y        = s_io.mouse_y - s_build.win_y;
+            }
         }
     }
 }

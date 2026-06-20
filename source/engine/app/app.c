@@ -131,21 +131,15 @@ typedef struct app_window_s
     win_fillscreen_t    fill;
 
     /* Native-borderless custom frame (window kind 3).  When enabled, WM_NCCALCSIZE removes the
-       visual non-client frame (client fills the whole window) and WM_NCHITTEST reports zones from
-       these client-space metrics, so the OS drives move / resize / Aero Snap / double-click /
-       system-menu natively while imgui draws the chrome.  imgui publishes these each frame via
-       window_set_native_frame; WS_THICKFRAME (from APP_WIN_BORDERLESS) keeps the sizing loop live. */
+       visual non-client frame (client fills the whole window) and WM_NCHITTEST returns HTCLIENT
+       everywhere except the edge-resize band, so imgui owns the entire caption area.  Move /
+       resize / Aero Snap / system-menu route through the window_start_move / window_start_resize /
+       window_title_event / window_system_menu dispatch primitives.  WS_THICKFRAME keeps the
+       sizing loop live; border is republished each frame by imgui via window_set_native_frame. */
     struct
     {
         bool enabled;
-        i32  caption_h;   /* HTCAPTION band height from the top edge, client px (0 = none)   */
         i32  border;      /* resize grab thickness at the edges, client px  (0 = no resize)  */
-
-        /* Caption holes: rects inside the caption band that hit-test as HTCLIENT instead of
-           HTCAPTION, so imgui-drawn caption widgets (min / max / close / pop-in buttons) receive
-           the click rather than starting an OS move.  Republished each frame by the imgui layer. */
-        i32        hole_count;
-        app_rect_t holes[ APP_WIN_NATIVE_HOLES_MAX ];
 
     } native;
 

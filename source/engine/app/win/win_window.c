@@ -163,11 +163,10 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     win->has_resize = ( style & WS_THICKFRAME ) != 0;
 
     /* Custom-frame state: a borderless window claims its whole rect as client (WM_NCCALCSIZE) and
-       reports zones (WM_NCHITTEST).  caption_h starts 0 (no drag band until imgui publishes one);
-       the resize grab defaults to the OS sizing-frame width so the borders are draggable at once. */
-    win->native.enabled   = ( flags & APP_WIN_BORDERLESS ) != 0;
-    win->native.caption_h = 0;
-    win->native.border    = win->native.enabled
+       returns HTCLIENT from WM_NCHITTEST for everything inside the edge-resize band.  The resize
+       grab defaults to the OS sizing-frame width so the borders are draggable at once. */
+    win->native.enabled = ( flags & APP_WIN_BORDERLESS ) != 0;
+    win->native.border  = win->native.enabled
                           ? GetSystemMetrics( SM_CXSIZEFRAME ) + GetSystemMetrics( SM_CXPADDEDBORDER )
                           : 0;
 
