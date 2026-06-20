@@ -28,20 +28,12 @@ stress_job_fn( void* arg )
 static void
 job_test_stress( void )
 {
-    // Initialize ORB's module loader system.
-    mod_system_init();
+    // Initialize sys manually.
+    sys_tick_init();
 
-    // Register static engine modules ('sys' and 'job').
-    if ( !mod_static( sys ) || !mod_static( job ) )
+    if ( !job_init() )
     {
-        fprintf( stderr, "Failed to load baseline engine modules: %s\n", mod_last_error() );
-        goto shutdown;
-    }
-
-    // Initialize all loaded modules.
-    if ( !mod_init_all() )
-    {
-        fprintf( stderr, "Failed to initialize modules: %s\n", mod_last_error() );
+        fprintf( stderr, "Failed to initialize job system locally.\n" );
         goto shutdown;
     }
 
@@ -65,8 +57,8 @@ job_test_stress( void )
             jobs[ i ].data = NULL;
         }
 
-        job_counter_t counter = job()->dispatch( jobs, STRESS_JOBS_PER_BATCH );
-        job()->wait( counter );
+        job_counter_t counter = job_dispatch( jobs, STRESS_JOBS_PER_BATCH );
+        job_wait( counter );
         
         free( jobs );
     }
@@ -83,9 +75,9 @@ job_test_stress( void )
         fprintf( stderr, "Stress test FAILED! Expected %d, got %d.\n", expected_count, final_count );
     }
 
-    job()->tick();
+    job_tick();
 
 shutdown:
-    // Clean up all modules.
-    mod_system_exit();
+    job_exit();
+    sys_tick_exit();
 }

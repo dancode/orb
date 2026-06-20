@@ -21,5 +21,11 @@
 
 mod_desc_t* job_get_mod_desc( void );
 
+bool          job_init( void );
+void          job_exit( void );
+job_counter_t job_dispatch( const job_decl_t* decls, uint32_t count );
+void          job_wait( job_counter_t counter );
+void          job_tick( void );
+
 /*============================================================================================*/
 #endif    // JOB_HOST_H

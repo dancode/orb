@@ -26,20 +26,13 @@ test_job_fn( void* arg )
 static void
 job_test_basic( void )
 {
-    // Step 1: Initialize ORB's module loader system.
-    mod_system_init();
+    // Initialize sys manually.
+    sys_tick_init();
 
-    // Step 2: Register static engine modules ('sys' and 'job').
-    if ( !mod_static( sys ) || !mod_static( job ) )
+    // Initialize job system locally.
+    if ( !job_init() )
     {
-        fprintf( stderr, "Failed to load baseline engine modules: %s\n", mod_last_error() );
-        goto shutdown;
-    }
-
-    // Step 3: Initialize all loaded modules (runs sys_mod_init and job_mod_init).
-    if ( !mod_init_all() )
-    {
-        fprintf( stderr, "Failed to initialize modules: %s\n", mod_last_error() );
+        fprintf( stderr, "Failed to initialize job system locally.\n" );
         goto shutdown;
     }
 
@@ -56,18 +49,18 @@ job_test_basic( void )
 
     printf( "Dispatching jobs...\n" );
     // Step 5: Dispatch the batch of tasks to the system.
-    job_counter_t counter = job()->dispatch( jobs, 3 );
+    job_counter_t counter = job_dispatch( jobs, 3 );
 
     printf( "Waiting for jobs to finish...\n" );
     // Step 6: Block until the counter hits zero.
-    job()->wait( counter );
+    job_wait( counter );
 
     printf( "Ticking job system...\n" );
-    job()->tick();
+    job_tick();
 
     printf( "Basic job system tests passed.\n" );
 
 shutdown:
-    // Step 7: Clean up all modules.
-    mod_system_exit();
+    job_exit();
+    sys_tick_exit();
 }

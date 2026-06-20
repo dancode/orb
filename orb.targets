@@ -339,7 +339,7 @@ target sb_engine_job
     root        source/sandbox/engine/engine_job
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_job.c
-    dep         sys mod job
+    dep         sys job
 
 
 # ==============================================================================

@@ -115,7 +115,7 @@ job_allocate_counter( i32 initial_value )
    2. Locks the queue, copies declarations into the ring buffer with the slot pointer.
    3. Unlocks the queue and wakes up workers by posting 'count' times to the semaphore.
 ==============================================================================================*/
-static job_counter_t
+job_counter_t
 job_dispatch( const job_decl_t* decls, uint32_t count )
 {
     if ( count == 0 )
@@ -169,7 +169,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
    - If the queue is empty, it yields its CPU time slice so other workers can run.
 ==============================================================================================*/
 
-static void
+void
 job_wait( job_counter_t counter )
 {
     // Null handle -- nothing to wait on.
@@ -232,20 +232,22 @@ job_wait( job_counter_t counter )
     }
 }
 
-/*
+/*==============================================================================================
    job_tick — Per-frame update hook. Unused in Tier I.
-*/
-static void
+==============================================================================================*/
+
+void
 job_tick( void )
 {
     // empty
 }
 
-/*
+/*==============================================================================================
    job_init — Sets up the thread pool and queue system.
    Invoked by the module lifecycle initialization callback.
-*/
-static bool
+==============================================================================================*/
+
+bool
 job_init( void )
 {
     // Reset indices.
@@ -296,11 +298,12 @@ job_init( void )
     return true;
 }
 
-/*
+/*==============================================================================================
    job_exit — Gracefully shuts down the thread pool and releases OS resources.
    Invoked by the module lifecycle exit callback.
-*/
-static void
+==============================================================================================*/
+
+void
 job_exit( void )
 {
     // Set is_running to 0 so workers exit their loop.
