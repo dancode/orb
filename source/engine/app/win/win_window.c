@@ -136,11 +136,15 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     }
     else if ( flags & APP_WIN_BORDERLESS )
     {
-        /* Borderless yet native-capable: WS_POPUP removes the caption/edge visuals
-           while WS_THICKFRAME / min-max box / sysmenu keep native resize, maximize,
-           Aero Snap and the system menu reachable through the window_* primitives.
-           The imgui titlebar drives all of it. */
-        style = WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+        /* Borderless yet native-capable.  Use a CAPTION-class (overlapped) style, NOT WS_POPUP:
+           the visible caption + borders are stripped in WM_NCCALCSIZE (client fills the whole
+           window), but keeping WS_CAPTION makes the OS treat this as a normal application window --
+           so it plays the native minimize / maximize / restore animations, gets a taskbar button,
+           and supports Aero Snap.  A pure WS_POPUP gets none of those (it pops in/out instantly and
+           minimizes to a legacy title-bar stub).  WS_THICKFRAME keeps the sizing loop live for the
+           border resize; the min/max box + sysmenu keep those native actions reachable.  The imgui
+           titlebar drives all of it through WM_NCHITTEST. */
+        style = WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
     }
     else if ( flags & APP_WIN_POPUP )
     {
@@ -175,8 +179,12 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
         if ( h <= 0 ) h = ( work.bottom - work.top  ) / 2;
     }
 
+    /* Frame size.  A native custom-frame window claims its whole rect as client (WM_NCCALCSIZE),
+       so window == client: skip AdjustWindowRectEx, or it would inflate the rect by the (about to be
+       stripped) caption + borders and the client would end up larger than the requested w x h. */
     RECT rect = { 0, 0, w, h };
-    AdjustWindowRectEx( &rect, style, FALSE, ex_style );
+    if ( !win->native.enabled )
+        AdjustWindowRectEx( &rect, style, FALSE, ex_style );
 
     /* x = y = 0 then OS positions (CW_USEDEFAULT) */
     i32 win_x = ( x == 0 && y == 0 ) ? CW_USEDEFAULT : x;
