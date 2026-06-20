@@ -81,6 +81,13 @@ typedef enum app_win_flags_e
        below.  This is window "kind 3" -- the imgui window acts as the OS window. */
     APP_WIN_BORDERLESS = 1 << 10,
 
+    /* Tool window: exclude from the OS task switcher (alt-tab) and taskbar.
+       Use for in-process popups, auxiliary palettes, or any secondary surface
+       that belongs to the app but is not a destination the user would alt-tab
+       to independently.  Torn-off floating panels should NOT use this flag --
+       they are first-class app windows in their own right. */
+    APP_WIN_TOOL = 1 << 11,
+
 } app_win_flags_t;
 
 /*==============================================================================================

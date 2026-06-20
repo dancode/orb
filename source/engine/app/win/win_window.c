@@ -158,6 +158,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     }
 
     if ( flags & APP_WIN_TOPMOST ) ex_style |= WS_EX_TOPMOST;
+    if ( flags & APP_WIN_TOOL   ) ex_style |= WS_EX_TOOLWINDOW;
 
     win->has_resize = ( style & WS_THICKFRAME ) != 0;
 

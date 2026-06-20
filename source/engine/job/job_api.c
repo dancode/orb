@@ -60,7 +60,7 @@ job_get_mod_desc( void )
 {
     static mod_desc_t api = {
         .version       = 1,
-        .state_size    = 0, // State is statically allocated in job.c BSS segment.
+        .state_size    = 0,
         .func_api_size = sizeof( job_api_t ),
         .func_api      = ( void* )&g_job_api_struct,
         .dep_count     = 1,

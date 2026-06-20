@@ -473,8 +473,10 @@ typedef struct
        IMGUI_WIN_NATIVE shell window that frames it (window_set_native_frame path).  The OS owns that
        band via WM_NCHITTEST, so a normal window whose titlebar slid under it could no longer be
        grabbed -- window_clamp keeps non-native windows' top edge at or below this inset, mimicking how
-       a child sits beneath a normal OS title bar.  0 when no native shell frames the surface (default
-       OS-chrome main window, or a host that emits no shell).  Reset each frame in new_frame. */
+       a child sits beneath a normal OS title bar.  0 until first published (no native shell or default
+       OS-chrome main window).  Sticky: NOT cleared each frame -- persists from the last frame the
+       native shell was active so update_platform_windows always has a valid top bound regardless of
+       whether it runs before or after the build. */
     f32 caption_inset;
 
     /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's

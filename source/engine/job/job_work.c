@@ -237,7 +237,9 @@ job_wait( job_counter_t counter )
 */
 static void
 job_tick( void )
-{}
+{
+    // empty
+}
 
 /*
    job_init — Sets up the thread pool and queue system.

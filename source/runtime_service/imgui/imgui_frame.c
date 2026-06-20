@@ -73,10 +73,12 @@ imgui_new_frame( f32 dt )
     i32 disp_w = g_ctx->viewport_count > 0 ? g_ctx->viewports[ 0 ].disp_w : 0;
     i32 disp_h = g_ctx->viewport_count > 0 ? g_ctx->viewports[ 0 ].disp_h : 0;
 
-    /* Native caption bands are republished by their shell windows during the build; clear them first
-       so a surface that loses its native shell this frame stops reserving the top band. */
-    for ( u32 i = 0; i < g_ctx->viewport_count; ++i )
-        g_ctx->viewports[ i ].caption_inset = 0.0f;
+    /* caption_inset is NOT cleared here.  Native shell windows republish it during the build, so
+       the field always reflects the last frame the shell was active.  Leaving it sticky means
+       update_platform_windows gets the correct top bound regardless of whether it is called before
+       or after the build this frame (both are valid host patterns for tear-off handling).  If the
+       native shell permanently disappears the stale inset is conservative -- windows stay clamped
+       below where the caption used to be -- and the viewport is destroyed shortly after anyway. */
 
     input_update( disp_w, disp_h, dt );
     draw_reset( disp_w, disp_h );
@@ -342,6 +344,18 @@ imgui_update_platform_windows( void )
             u32 fvp = s_vp_request.from_vp;
 
             win->viewport = 0;
+
+            /* Clamp the window to fit inside the host surface on any pop-in path.  Size first so
+               that position clamping below always has a non-negative travel range.  A panel that was
+               fullscreened while floating must not land with resize handles off-screen. */
+            const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
+            f32 dw  = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
+            f32 dh  = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
+            f32 top = hv->caption_inset;
+            f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
+            if ( win->w > dw )    win->w = dw;
+            if ( win->h > max_h ) win->h = max_h;
+
             if ( s_vp_request.by_drag )
             {
                 win->x = s_io.mouse_x - s_drag_off_x;
@@ -359,13 +373,10 @@ imgui_update_platform_windows( void )
                 /* Snap fully inside the host's client bounds: a floater docked from well clear of the
                    main window would otherwise land at a screen offset outside the visible area (the
                    button path never runs the per-frame window_clamp the drag path relies on).  Clamp
-                   so the whole panel sits within the surface when it fits, pinned to a corner if not. */
-                const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
-                f32 dw  = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
-                f32 dh  = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
-                f32 top = hv->caption_inset;   /* keep the docked panel below the host caption band */
-                f32 max_x = dw - win->w; if ( max_x < 0.0f )  max_x = 0.0f;
-                f32 max_y = dh - win->h; if ( max_y < top )   max_y = top;
+                   so the whole panel sits within the surface when it fits, pinned to a corner if not.
+                   Size was already clamped above, so max_x/max_y are guaranteed non-negative. */
+                f32 max_x = dw - win->w;
+                f32 max_y = dh - win->h; if ( max_y < top ) max_y = top;
                 win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
                 win->y = win->y < top  ? top  : ( win->y > max_y ? max_y : win->y );
             }
