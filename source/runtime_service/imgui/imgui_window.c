@@ -239,6 +239,11 @@ window_raise_on_press( void )
     for ( u32 i = 0; i < s_window_count; ++i )
         if ( s_windows[ i ].id == s_interaction.hover_win )
         {
+            /* A frame-only native shell (IMGUI_WIN_NATIVE) is the borderless viewport's backdrop
+               frame: it must stay behind the windows living inside it, so it never raises. */
+            if ( s_windows[ i ].flags & IMGUI_WIN_NATIVE )
+                break;
+
             /* Already on top?  Don't burn a z value. */
             if ( s_windows[ i ].z != s_z_counter )
                 s_windows[ i ].z = ++s_z_counter;

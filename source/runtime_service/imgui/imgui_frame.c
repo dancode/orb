@@ -189,7 +189,11 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
        tear-off) opens the floater with APP_WIN_NOFOCUS so it does NOT steal foreground from the
        origin window -- on Windows, activating another top-level window releases that window's
        mouse capture, which would sever the in-flight drag the moment the floater appeared. */
-    u32 open_flags = APP_WIN_DEFAULT | ( no_activate ? APP_WIN_NOFOCUS : 0u );
+    /* Owned floaters are native-borderless: a detached panel owns its OS window and acts as that
+       window's frame (begin_window treats any window on an owned viewport as IMGUI_WIN_NATIVE), so
+       the OS drives its move / resize / snap.  no_activate (mid-drag tear-off) adds APP_WIN_NOFOCUS
+       so spawning does not steal foreground and sever the origin window's mouse capture. */
+    u32 open_flags = APP_WIN_BORDERLESS | ( no_activate ? APP_WIN_NOFOCUS : 0u );
     i32 win_id = app()->window_open( title, x, y, w, h, open_flags );
     if ( win_id == APP_WIN_INVALID )
         return IMGUI_VP_INVALID;
@@ -346,6 +350,18 @@ imgui_update_platform_windows( void )
                 app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
                 win->x = (f32)( fx - mx );
                 win->y = (f32)( fy - my );
+
+                /* Snap fully inside the host's client bounds: a floater docked from well clear of the
+                   main window would otherwise land at a screen offset outside the visible area (the
+                   button path never runs the per-frame window_clamp the drag path relies on).  Clamp
+                   so the whole panel sits within the surface when it fits, pinned to a corner if not. */
+                const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
+                f32 dw = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
+                f32 dh = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
+                f32 max_x = dw - win->w; if ( max_x < 0.0f ) max_x = 0.0f;
+                f32 max_y = dh - win->h; if ( max_y < 0.0f ) max_y = 0.0f;
+                win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
+                win->y = win->y < 0.0f ? 0.0f : ( win->y > max_y ? max_y : win->y );
             }
 
             bool empty = true;

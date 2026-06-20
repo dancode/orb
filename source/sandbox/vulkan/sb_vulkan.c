@@ -75,8 +75,10 @@ main( int argc, char** argv )
          return 1;
     }
 
-    /* Open window. */
-    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_DEFAULT );
+    /* Open window.  Borderless (window kind 3): no Win32 chrome -- a full-surface IMGUI_WIN_NATIVE
+       shell window (emitted first in the loop below) stands in as the frame, its titlebar driving OS
+       move + the min/max/close caption buttons and its borders resizing the window via WM_NCHITTEST. */
+    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, APP_WIN_BORDERLESS ); // APP_WIN_DEFAULT APP_WIN_BORDERLESS
     if ( win == APP_WIN_INVALID ) {
          rhi()->shutdown();
          mod_system_exit();
@@ -158,14 +160,9 @@ main( int argc, char** argv )
         return 1;
     }
 
-    /* Spawn an imgui-OWNED floater surface: imgui creates the OS window + rhi context + viewport,
-       and from here on drives its present loop (render_floaters) and its resize/close (consumed by
-       event()).  This is the lifecycle the tear-off gesture will use; the sandbox drives it
-       explicitly to exercise the owned path.  Failure is non-fatal -- fall back to single-surface. */
-    imgui_vp_t vp1        = imgui()->viewport_spawn( "sb_vulkan (viewport 1)", 120, 120, 800, 600 );
-    bool       has_second = ( vp1 != IMGUI_VP_INVALID );
-    if ( !has_second )
-        fprintf( stderr, "[sb_vulkan] imgui viewport_spawn (secondary) failed; running single-surface\n" );
+    /* Single window at startup -- everything is built into the main viewport (0).  The detach
+       gesture (title-bar button, or dragging a panel past the window edge) spawns owned floaters
+       on demand, each a native-borderless OS window. */
 
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
@@ -175,10 +172,6 @@ main( int argc, char** argv )
 
     /* Active imgui demo index (see sb_vulkan_imgui.c); switched live with the keys below. */
     int active_demo = 0;
-
-    /* One-shot guard: pin the "Second Surface" window to vp1 only on its first frame (the
-       assignment is sticky), so the detach / reattach button can move it afterward. */
-    bool pinned_second = false;
 
     /* Main loop. */
     f64 last_time = sys_tick_seconds();
@@ -269,31 +262,37 @@ main( int argc, char** argv )
 
         imgui()->new_frame( dt );
 
+        /* Borderless main window: this full-surface native shell IS the OS window's frame.  Emitted
+           first so it sits behind the demo windows; IMGUI_WIN_NATIVE makes it a frame-only shell --
+           it pins to the whole surface and publishes the caption band + button holes (titlebar moves
+           the window, borders resize it, caption buttons minimize / maximize / close it, all
+           OS-driven), but its body stays empty and click-through so the demo windows inside it remain
+           visible and selectable above it. */
+        imgui()->begin_window( "ORB -- sb_vulkan", 0, 0, (f32)win_w, (f32)win_h,
+                               IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+        imgui()->end_window();
+
         sb_imgui_demos[ active_demo ].fn();                // selected feature demo (viewport 0)
         active_demo = sb_imgui_demo_picker( active_demo );  // demo list + key hints (clickable)
 
-        /* A window routed to the second surface.  Same one-context API as any other window -- only
-           set_next_window_viewport differs -- so it appears in the second OS window.  Pinned ONCE
-           (not every frame): the assignment is sticky, so forcing it each frame would fight the
-           detach / reattach button -- reattaching would bounce straight back to vp1.  Set once, the
-           window starts on the floater but can then be popped in/out freely. */
-        if ( has_second )
+        /* A detachable panel that starts inside the main window (viewport 0).  Its title-bar detach
+           button -- or dragging the title past the window edge -- pops it out into its OWN OS window.
+           That floater is native-borderless: the panel then acts as the window's frame, so its title
+           bar moves the OS window, its borders resize it, double-click maximizes, and right-click
+           shows the system menu -- all driven natively (WM_NCHITTEST), no second startup viewport. */
+        imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+        imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
+        if ( imgui()->begin_window( "Second Surface", 60, 60, 360, 240, IMGUI_WIN_NONE ) )
         {
-            if ( !pinned_second ) { imgui()->set_next_window_viewport( vp1 ); pinned_second = true; }
-            imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-            imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
-            if ( imgui()->begin_window( "Second Surface", 60, 60, 360, 240, IMGUI_WIN_NONE ) )
-            {
-                imgui()->stack();
-                imgui()->text( "This panel is built by the same" );
-                imgui()->text( "imgui context as the main window," );
-                imgui()->text( "but dispatched to a second OS" );
-                imgui()->text( "window / swapchain by viewport." );
-                imgui()->separator();
-                imgui()->textf( "viewport index: %d", vp1 );
-            }
-            imgui()->end_window();
+            imgui()->stack();
+            imgui()->text( "Detach me: click the title-bar button" );
+            imgui()->text( "or drag my title past the window edge." );
+            imgui()->separator();
+            imgui()->text( "Once detached I am a native borderless" );
+            imgui()->text( "window -- drag my title bar to move the" );
+            imgui()->text( "OS window, drag my borders to resize." );
         }
+        imgui()->end_window();
 
         /* ------------------------------------------------------------------------------ */
         /* Reconcile imgui-owned floaters with their OS windows (destroys any the user closed).

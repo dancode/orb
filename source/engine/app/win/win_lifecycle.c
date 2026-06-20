@@ -260,7 +260,8 @@ app_window_enable_resize( win_id_t id, bool enabled )
    grab thickness, both client px; either <= 0 disables that interaction.  Toggling enabled changes
    the non-client layout, so that case forces a WM_NCCALCSIZE recompute; metric-only updates do not. */
 static void
-app_window_set_native_frame( win_id_t id, bool enabled, i32 caption_h, i32 border )
+app_window_set_native_frame( win_id_t id, bool enabled, i32 caption_h, i32 border,
+                             const app_rect_t* holes, i32 hole_count )
 {
     app_window_t* win = win_get( id );
     if ( !win || !win->hwnd )
@@ -271,9 +272,27 @@ app_window_set_native_frame( win_id_t id, bool enabled, i32 caption_h, i32 borde
     win->native.caption_h = caption_h > 0 ? caption_h : 0;
     win->native.border    = border    > 0 ? border    : 0;
 
+    /* Caption holes (HTCLIENT cut-outs for imgui's caption widgets), clamped to the fixed store. */
+    i32 hc = hole_count < 0 ? 0 : hole_count;
+    if ( hc > APP_WIN_NATIVE_HOLES_MAX ) hc = APP_WIN_NATIVE_HOLES_MAX;
+    win->native.hole_count = holes ? hc : 0;
+    for ( i32 i = 0; i < win->native.hole_count; ++i )
+        win->native.holes[ i ] = holes[ i ];
+
     if ( was != enabled )
         SetWindowPos( win->hwnd, NULL, 0, 0, 0, 0,
                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED );
+}
+
+/* Request a graceful close (as if the user clicked the OS close button): post WM_CLOSE so the
+   normal close path runs -- main window sets the quit flag, an imgui-owned floater is torn down
+   through its APP_EV_WIN_CLOSE handler.  Distinct from window_close, which destroys immediately. */
+static void
+app_window_request_close( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    if ( win && win->hwnd )
+        PostMessageW( win->hwnd, WM_CLOSE, 0, 0 );
 }
 
 /*----------------------------------------------------------------------------------------------

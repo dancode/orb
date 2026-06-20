@@ -308,7 +308,18 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             }
 
             if ( pt.y < win->native.caption_h )
+            {
+                /* Caption holes punch HTCLIENT through the caption band so imgui's own caption
+                   widgets (min / max / close / pop-in) get the click instead of an OS move. */
+                for ( i32 i = 0; i < win->native.hole_count; ++i )
+                {
+                    const app_rect_t* hr = &win->native.holes[ i ];
+                    if ( pt.x >= hr->x && pt.x < hr->x + hr->w &&
+                         pt.y >= hr->y && pt.y < hr->y + hr->h )
+                        return HTCLIENT;
+                }
                 return HTCAPTION;
+            }
 
             return HTCLIENT;
         }

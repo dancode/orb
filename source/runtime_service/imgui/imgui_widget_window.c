@@ -31,6 +31,10 @@
 /* Detach / reattach button (title-bar right edge): a distinct stable per-window widget id. */
 #define IMGUI_DETACH_SALT     0xDE7AC405u
 
+/* Native caption buttons (min / max / close / pop-in): one base salt offset by the button kind so
+   each gets a distinct, stable per-window widget id (see native_caption_buttons below). */
+#define IMGUI_NATIVE_BTN_SALT 0xCA9710B0u
+
 /* IMGUI_RESIZE_SALT, the IMGUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
    record-agnostic resize helpers (window_resize_hit, window_draw_resize_highlight, resize_grab,
    resize_apply_edges) live in imgui_widget_core.c -- alongside the style macros they need and ahead
@@ -98,6 +102,113 @@ static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER;
 static win_id_t window_native_id( const imgui_window_t* win )
 {
     return ( win_id_t )g_ctx->viewports[ win->viewport ].win_id;
+}
+
+/* A window is native when it solely occupies an imgui-owned OS window: flagged explicitly (a
+   borderless main window) or living on an owned floater (a detached panel -- "detach = native").
+   A panel on the main viewport (0, never owned) is not native unless flagged.  begin_window and
+   end_window both gate on this, so it must be derived the same way in both. */
+static bool window_is_native( const imgui_window_t* win, imgui_win_flags_t flags )
+{
+    return ( flags & IMGUI_WIN_NATIVE ) != 0
+        || ( win && win->viewport != 0 && g_ctx->viewports[ win->viewport ].owned );
+}
+
+/*----------------------------------------------------------------------------------------------
+    Native caption buttons
+
+    The OS owns a native window's caption band (HTCAPTION), so its titlebar buttons cannot be
+    ordinary imgui widgets unless their rects are punched out as HTCLIENT "holes".  This one
+    layout function feeds both halves of that: begin_window publishes the rects as holes (via
+    window_set_native_frame) so the OS lets clicks through, and end_window draws the glyphs and
+    runs widget_behavior on the same rects.  Computing the layout in one place keeps the holes
+    exactly aligned with the drawn buttons.
+
+    Buttons are title-bar-height squares laid out right-to-left from the bar's right edge:
+    minimize, maximize/restore, then a primary action -- close for the main window, pop-in (merge
+    back into the main surface) for a detached floater.
+----------------------------------------------------------------------------------------------*/
+
+typedef enum
+{
+    NATIVE_BTN_MINIMIZE = 0,
+    NATIVE_BTN_MAXIMIZE,        /* maximize, or restore when already maximized */
+    NATIVE_BTN_CLOSE,           /* main window: request graceful close (quit)  */
+    NATIVE_BTN_POPIN,           /* floater: merge back into the main surface    */
+
+} native_btn_kind_t;
+
+#define NATIVE_BTN_MAX 3
+
+typedef struct
+{
+    imgui_rect_t      r;
+    native_btn_kind_t kind;
+
+} native_btn_t;
+
+/* Fill `out` with this native window's caption buttons; returns the count (0 when no title bar).
+   The primary (rightmost) button is pop-in for a floater (owned viewport) or close for the main
+   window.  out[count-1] is the leftmost button -- its x bounds the title text. */
+static i32
+native_caption_buttons( const imgui_window_t* win, f32 win_x, f32 win_y, f32 win_w, f32 title_h,
+                        native_btn_t out[ NATIVE_BTN_MAX ] )
+{
+    if ( title_h <= 0.0f )
+        return 0;
+
+    bool              floater = win && win->viewport != 0;   /* detached: pop back in, not close */
+    native_btn_kind_t primary = floater ? NATIVE_BTN_POPIN : NATIVE_BTN_CLOSE;
+
+    f32 x = win_x + win_w;   /* march leftward from the right edge */
+    i32 n = 0;
+    x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, primary };
+    x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MAXIMIZE };
+    x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MINIMIZE };
+    return n;
+}
+
+/* Draw the glyph for one caption button, centered in its square: a minimize bar, a maximize box
+   (two offset boxes when already maximized = restore), a close X, or a filled pop-in box. */
+static void
+native_btn_draw_glyph( native_btn_kind_t kind, imgui_rect_t r, bool maximized, u32 col )
+{
+    f32 cx = r.x + r.w * 0.5f;
+    f32 cy = r.y + r.h * 0.5f;
+    f32 s  = floorf( r.h * 0.18f );   /* glyph half-extent */
+    f32 t  = WIN_BORDER;
+
+    switch ( kind )
+    {
+        case NATIVE_BTN_MINIMIZE:
+            imgui_draw_line( cx - s, cy, cx + s, cy, t, col );
+            break;
+
+        case NATIVE_BTN_MAXIMIZE:
+            if ( maximized )
+            {
+                /* Restore: two overlapping boxes, a back one up-right and a front one down-left. */
+                f32 o = floorf( s * 0.5f );
+                draw_push_rect_outline( cx - s + o, cy - s - o, 2.0f * s, 2.0f * s, t, 0, col );
+                draw_push_rect_outline( cx - s - o, cy - s + o, 2.0f * s, 2.0f * s, t, 0, col );
+            }
+            else
+            {
+                draw_push_rect_outline( cx - s, cy - s, 2.0f * s, 2.0f * s, t, 0, col );
+            }
+            break;
+
+        case NATIVE_BTN_CLOSE:
+            imgui_draw_line( cx - s, cy - s, cx + s, cy + s, t, col );
+            imgui_draw_line( cx - s, cy + s, cx + s, cy - s, t, col );
+            break;
+
+        case NATIVE_BTN_POPIN:
+            /* Filled box: a docked target the floating panel snaps back into (mirrors the old
+               detach glyph, where a filled box meant "floating -- click to dock back in"). */
+            draw_push_rect_filled( cx - s, cy - s, 2.0f * s, 2.0f * s, 0, 0, 1, 1, 0, col );
+            break;
+    }
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -209,7 +320,15 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        its geometry is owned by the OS surface, not imgui -- pin it to the viewport so the imgui
        window always exactly covers its host window.  Border/titlebar gestures route to the OS
        (see the resize and move-grab sections below). */
-    bool native = ( flags & IMGUI_WIN_NATIVE ) != 0;
+    bool native = window_is_native( win, flags );
+
+    /* Frame-only shell: an explicitly IMGUI_WIN_NATIVE window stands in for a borderless OS window's
+       frame -- it draws the titlebar + border but leaves its body empty and click-through (no
+       background fill, hover nominated only over the titlebar, never raised).  That way the windows
+       living inside the borderless viewport stay visible and selectable above it.  A detached floater
+       is native too (via its owned viewport) but is real content, so it keeps a normal solid body. */
+    bool frame_only = ( flags & IMGUI_WIN_NATIVE ) != 0;
+
     if ( native )
     {
         const imgui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
@@ -220,10 +339,22 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
 
         /* Publish the frame layout the OS hit-tests against: the titlebar height is the caption
            drag band, WIN_RESIZE_OUTER the edge grab thickness (0 when NORESIZE).  The OS owns every
-           gesture from here -- imgui only draws the chrome below. */
+           gesture from here -- imgui only draws the chrome below.
+
+           The caption buttons end_window draws sit inside the caption band, so publish their rects
+           as HTCLIENT holes -- otherwise the OS would treat a button click as a caption drag.  Same
+           layout end_window uses, so the holes line up with the drawn buttons exactly. */
         i32 caption = ( flags & IMGUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
         i32 border  = ( flags & IMGUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
-        app()->window_set_native_frame( window_native_id( win ), true, caption, border );
+
+        native_btn_t btns[ NATIVE_BTN_MAX ];
+        i32          nb = native_caption_buttons( win, win->x, win->y, win->w, ( f32 )caption, btns );
+        app_rect_t   holes[ NATIVE_BTN_MAX ];
+        for ( i32 i = 0; i < nb; ++i )
+            holes[ i ] = ( app_rect_t ){ ( i32 )btns[ i ].r.x, ( i32 )btns[ i ].r.y,
+                                         ( i32 )btns[ i ].r.w, ( i32 )btns[ i ].r.h };
+
+        app()->window_set_native_frame( window_native_id( win ), true, caption, border, holes, nb );
     }
 
     bool can_collapse = has_titlebar && !( flags & IMGUI_WIN_NOCOLLAPSE ) && !native;
@@ -374,9 +505,15 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        winner becomes hover_win next frame; that single fact gates all widget hit-testing. */
     f32 ox = resizeable ? WIN_RESIZE_OUTER : 0.0f;
     f32 oy = ( resizeable && !collapsed ) ? WIN_RESIZE_OUTER : 0.0f;
-    window_nominate_hover( id, ( imgui_rect_t ){ win->x - ox, win->y - oy,
-                                                 win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z,
-                           win->viewport );
+    if ( frame_only )
+        /* Frame-only shell: only the titlebar (caption band + its buttons) is interactive; the body
+           is click-through so windows inside the viewport keep their own hover and selection. */
+        window_nominate_hover( id, ( imgui_rect_t ){ win->x, win->y, win->w, title_h },
+                               win->z, win->viewport );
+    else
+        window_nominate_hover( id, ( imgui_rect_t ){ win->x - ox, win->y - oy,
+                                                     win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z,
+                               win->viewport );
 
     /* All of this window's geometry is stamped with its z so flush can paint
        windows back-to-front regardless of begin_window call order, and with its
@@ -437,8 +574,10 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
         draw_push_clip_rect( win->x, win->y, win->w, disp_h );
         s_build.clip_rect = ( imgui_rect_t ){ win->x, win->y, win->w, disp_h };
 
-        /* Window body background. */
-        draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
+        /* Window body background.  Skipped for a frame-only shell: its body stays empty so the
+           borderless viewport shows the cleared surface (and the windows inside it) through it. */
+        if ( !frame_only )
+            draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
         /* Menu-bar strip: when WIN_MENUBAR is set, reserve one row below the title bar for
            begin_menu_bar to fill.  Carved off the top of the body here -- before the scroll
@@ -483,6 +622,10 @@ imgui_end_window( void )
 {
     imgui_window_t* win = s_build.cur_win;
 
+    /* Same native test begin_window used (flag or owned floater): a native window's titlebar/border
+       is the OS frame, so its collapse arrow, detach button and imgui drag-grab are all suppressed. */
+    bool native = window_is_native( win, s_build.win_flags );
+
     /* Chrome below (scrollbars via layout_pop_region, collapse arrow, border, size grip) is not an
        item.  layout_pop_region resets too, but a collapsed window opens no region and skips it, so
        reset here to cover that case and the deferred chrome either way. */
@@ -512,7 +655,7 @@ imgui_end_window( void )
            press.  Omitted (and the title slides left to the padding) when NOCOLLAPSE is set.
            The icon is drawn from this frame's state so it matches the body shown this frame. */
         f32 text_x = s_build.win_x + WIDGET_PAD;
-        if ( !( s_build.win_flags & ( IMGUI_WIN_NOCOLLAPSE | IMGUI_WIN_NATIVE ) ) )
+        if ( !( s_build.win_flags & IMGUI_WIN_NOCOLLAPSE ) && !native )
         {
             imgui_rect_t   arrow_r  = { s_build.win_x, s_build.win_y, title_h, title_h };
             imgui_id_t     arrow_id = id_combine( s_build.win_id, IMGUI_COLLAPSE_SALT );
@@ -539,7 +682,7 @@ imgui_end_window( void )
            never show it.  Mirrors the collapse arrow on the left: claiming hover/active here keeps
            the title-bar drag and double-click-collapse from also firing on the same press. */
         f32 right_limit = s_build.win_x + s_build.win_w - WIDGET_PAD;
-        if ( !( s_build.win_flags & ( IMGUI_WIN_NOMOVE | IMGUI_WIN_NATIVE ) ) )
+        if ( !( s_build.win_flags & IMGUI_WIN_NOMOVE ) && !native )
         {
             imgui_rect_t   det_r  = { s_build.win_x + s_build.win_w - title_h, s_build.win_y, title_h, title_h };
             imgui_id_t     det_id = id_combine( s_build.win_id, IMGUI_DETACH_SALT );
@@ -568,6 +711,59 @@ imgui_end_window( void )
                 draw_push_rect_filled( ix, iy, isz, isz, 0.0f, 0.0f, 1.0f, 1.0f, 0, icol );
 
             right_limit = det_r.x - WIDGET_PAD;   /* keep the title text clear of the button */
+        }
+
+        /* Native caption buttons (min / max / close / pop-in): a native window's titlebar IS the OS
+           caption, so its collapse arrow, detach button and imgui drag-grab are all suppressed above
+           -- instead it gets OS-window controls.  begin_window published these exact rects as
+           HTCLIENT holes, so a click here reaches imgui rather than starting an OS move.  The buttons
+           run right-to-left from the bar's right edge; the title text stops at the leftmost one. */
+        if ( native )
+        {
+            win_id_t     os   = window_native_id( win );
+            bool         zoom = app()->window_state( os ).maximized != 0;
+            native_btn_t btns[ NATIVE_BTN_MAX ];
+            i32          nb   = native_caption_buttons( win, s_build.win_x, s_build.win_y,
+                                                        s_build.win_w, title_h, btns );
+
+            for ( i32 i = 0; i < nb; ++i )
+            {
+                imgui_rect_t   br  = btns[ i ].r;
+                imgui_id_t     bid = id_combine( s_build.win_id,
+                                                 IMGUI_NATIVE_BTN_SALT + ( u32 )btns[ i ].kind );
+                widget_state_t bs  = widget_behavior( bid, br, WIDGET_KIND_BUTTON );
+
+                /* Hover/press background so the control reads as clickable. */
+                if ( bs.hover || bs.active )
+                    draw_push_rect_filled( br.x, br.y, br.w, br.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+
+                native_btn_draw_glyph( btns[ i ].kind, br, zoom, bs.hover ? COL_TEXT : COL_TEXT_DIM );
+
+                if ( bs.clicked )
+                {
+                    switch ( btns[ i ].kind )
+                    {
+                        case NATIVE_BTN_MINIMIZE: app()->window_minimize( os );        break;
+                        case NATIVE_BTN_MAXIMIZE: app()->window_toggle_maximize( os );  break;
+                        case NATIVE_BTN_CLOSE:    app()->window_request_close( os );    break;
+                        case NATIVE_BTN_POPIN:
+                            /* Same merge-back channel the drag / old detach button use; serviced by
+                               update_platform_windows.  by_drag false -> dock in place, no jump. */
+                            if ( !s_vp_request.active )
+                            {
+                                s_vp_request.active  = true;
+                                s_vp_request.by_drag = false;
+                                s_vp_request.win_id  = s_build.win_id;
+                                s_vp_request.from_vp = win ? win->viewport : 0u;
+                                s_vp_request.title   = s_build.win_title;
+                            }
+                            break;
+                    }
+                }
+            }
+
+            if ( nb > 0 )
+                right_limit = btns[ nb - 1 ].r.x - WIDGET_PAD;   /* leftmost button bounds the title */
         }
 
         /* Title text, fitted to the room between the arrow square and the detach button (or the
@@ -659,7 +855,7 @@ imgui_end_window( void )
        menu via WM_NCHITTEST (begin_window published the caption band), so imgui takes no drag grab
        for it -- excluded here like a NOMOVE window. */
     if ( s_build.win_id == s_interaction.hover_win && s_interaction.active_id == IMGUI_ID_NONE
-         && !( s_build.win_flags & ( IMGUI_WIN_NOMOVE | IMGUI_WIN_NATIVE ) ) )
+         && !( s_build.win_flags & IMGUI_WIN_NOMOVE ) && !native )
     {
         imgui_rect_t title_r = { s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_title_h };
 

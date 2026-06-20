@@ -42,6 +42,21 @@ typedef i32 win_id_t;
 #define APP_EVENT_MAX   64 /* ring buffer capacity — must be power of 2   */
 #define APP_EVENT_MASK  ( APP_EVENT_MAX - 1 )
 
+/* Max native-frame hit-test holes a window may publish (see window_set_native_frame). */
+#define APP_WIN_NATIVE_HOLES_MAX 8
+
+/*==============================================================================================
+    Client-space rectangle (px).  Used to publish native-frame hit-test holes -- regions of the
+    caption band where the OS should report HTCLIENT (so imgui caption widgets get the click)
+    instead of HTCAPTION (which would start an OS move).
+==============================================================================================*/
+
+typedef struct app_rect_s
+{
+    i32 x, y, w, h;
+
+} app_rect_t;
+
 /*==============================================================================================
     Window creation flags
 ==============================================================================================*/

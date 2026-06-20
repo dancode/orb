@@ -141,6 +141,12 @@ typedef struct app_window_s
         i32  caption_h;   /* HTCAPTION band height from the top edge, client px (0 = none)   */
         i32  border;      /* resize grab thickness at the edges, client px  (0 = no resize)  */
 
+        /* Caption holes: rects inside the caption band that hit-test as HTCLIENT instead of
+           HTCAPTION, so imgui-drawn caption widgets (min / max / close / pop-in buttons) receive
+           the click rather than starting an OS move.  Republished each frame by the imgui layer. */
+        i32        hole_count;
+        app_rect_t holes[ APP_WIN_NATIVE_HOLES_MAX ];
+
     } native;
 
 } app_window_t;

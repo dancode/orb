@@ -85,8 +85,18 @@ typedef struct app_api_s
        gesture calls needed.  imgui calls this each frame for an IMGUI_WIN_NATIVE window.  caption_h
        is the titlebar drag-band height and border the edge-resize grab thickness, both client px
        (<= 0 disables that part).  The start_move / start_resize / title_event / system_menu calls
-       above remain as programmatic escape hatches. */
-    void ( *window_set_native_frame )( win_id_t id, bool enabled, i32 caption_h, i32 border );
+       above remain as programmatic escape hatches.
+
+       holes / hole_count publish caption regions that hit-test as HTCLIENT instead of HTCAPTION,
+       so imgui's own caption widgets (min / max / close / pop-in buttons drawn inside the bar)
+       receive the click rather than starting an OS move.  Pass NULL / 0 for none; the array is
+       copied (clamped to APP_WIN_NATIVE_HOLES_MAX) and need not outlive the call. */
+    void ( *window_set_native_frame )( win_id_t id, bool enabled, i32 caption_h, i32 border,
+                                       const app_rect_t* holes, i32 hole_count );
+
+    /* Request a graceful close: post WM_CLOSE so the normal close path runs (main window quits,
+       an imgui-owned floater is torn down).  Unlike window_close it does not destroy immediately. */
+    void ( *window_request_close )( win_id_t id );
 
     /* Add / remove the native sizing frame (controls whether border resize works). */
     void ( *window_enable_resize )( win_id_t id, bool enabled );

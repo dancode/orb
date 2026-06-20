@@ -13,6 +13,7 @@ const app_api_t g_app_api_struct = {
     /* Window */
     .window_open              = app_window_open,
     .window_close             = app_window_close,
+    .window_request_close     = app_window_request_close,
     .window_is_valid          = app_window_is_valid,
     .window_handle            = app_window_handle,
     .window_is_minimized      = app_window_is_minimized,
