@@ -282,7 +282,7 @@ main( int argc, char** argv )
            shows the system menu -- all driven natively (WM_NCHITTEST), no second startup viewport. */
         imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
         imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
-        if ( imgui()->begin_window( "Second Surface", 60, 60, 360, 240, IMGUI_WIN_NONE ) )
+        if ( imgui()->begin_window( "Second Surface", 60, 60, 360, 240, IMGUI_WIN_NO_DETACH ) )
         {
             imgui()->stack();
             imgui()->text( "Detach me: click the title-bar button" );

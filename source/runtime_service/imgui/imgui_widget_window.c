@@ -126,7 +126,8 @@ static bool window_is_native( const imgui_window_t* win, imgui_win_flags_t flags
 
     Buttons are title-bar-height squares laid out right-to-left from the bar's right edge:
     minimize, maximize/restore, then a primary action -- close for the main window, pop-in (merge
-    back into the main surface) for a detached floater.
+    back into the main surface) for a detached floater.  IMGUI_WIN_NO_MINIMIZE / NO_MAXIMIZE drop the
+    matching button per-window (the primary is never dropped); the layout closes up around the gap.
 ----------------------------------------------------------------------------------------------*/
 
 typedef enum
@@ -149,9 +150,13 @@ typedef struct
 
 /* Fill `out` with this native window's caption buttons; returns the count (0 when no title bar).
    The primary (rightmost) button is pop-in for a floater (owned viewport) or close for the main
-   window.  out[count-1] is the leftmost button -- its x bounds the title text. */
+   window, and is always present.  Minimize / maximize are each suppressed by the matching NO_* flag,
+   so the set the OS hit-tests against (the holes begin_window publishes) and the set end_window draws
+   stay identical -- both call here with the same flags.  out[count-1] is the leftmost button -- its x
+   bounds the title text. */
 static i32
-native_caption_buttons( const imgui_window_t* win, f32 win_x, f32 win_y, f32 win_w, f32 title_h,
+native_caption_buttons( const imgui_window_t* win, imgui_win_flags_t flags,
+                        f32 win_x, f32 win_y, f32 win_w, f32 title_h,
                         native_btn_t out[ NATIVE_BTN_MAX ] )
 {
     if ( title_h <= 0.0f )
@@ -163,8 +168,14 @@ native_caption_buttons( const imgui_window_t* win, f32 win_x, f32 win_y, f32 win
     f32 x = win_x + win_w;   /* march leftward from the right edge */
     i32 n = 0;
     x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, primary };
-    x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MAXIMIZE };
-    x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MINIMIZE };
+    if ( !( flags & IMGUI_WIN_NO_MAXIMIZE ) )
+    {
+        x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MAXIMIZE };
+    }
+    if ( !( flags & IMGUI_WIN_NO_MINIMIZE ) )
+    {
+        x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MINIMIZE };
+    }
     return n;
 }
 
@@ -348,7 +359,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
         i32 border  = ( flags & IMGUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
 
         native_btn_t btns[ NATIVE_BTN_MAX ];
-        i32          nb = native_caption_buttons( win, win->x, win->y, win->w, ( f32 )caption, btns );
+        i32          nb = native_caption_buttons( win, flags, win->x, win->y, win->w, ( f32 )caption, btns );
         app_rect_t   holes[ NATIVE_BTN_MAX ];
         for ( i32 i = 0; i < nb; ++i )
             holes[ i ] = ( app_rect_t ){ ( i32 )btns[ i ].r.x, ( i32 )btns[ i ].r.y,
@@ -408,7 +419,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        SCREEN cursor against the main window's client rect and merge back when it re-enters.  Capture
        remains on the main window throughout, so the screen-cursor read is valid here too. */
     if ( s_interaction.active_id == id && s_io.mouse_down[ 0 ]
-         && !( flags & IMGUI_WIN_NOMOVE ) && !s_vp_request.active )
+         && !( flags & IMGUI_WIN_NOMOVE ) && !( flags & IMGUI_WIN_NO_DETACH ) && !s_vp_request.active )
     {
         bool crossed = false;
         if ( win->viewport == 0 )
@@ -682,7 +693,8 @@ imgui_end_window( void )
            never show it.  Mirrors the collapse arrow on the left: claiming hover/active here keeps
            the title-bar drag and double-click-collapse from also firing on the same press. */
         f32 right_limit = s_build.win_x + s_build.win_w - WIDGET_PAD;
-        if ( !( s_build.win_flags & IMGUI_WIN_NOMOVE ) && !native )
+        if ( !( s_build.win_flags & IMGUI_WIN_NOMOVE ) && !( s_build.win_flags & IMGUI_WIN_NO_DETACH )
+             && !native )
         {
             imgui_rect_t   det_r  = { s_build.win_x + s_build.win_w - title_h, s_build.win_y, title_h, title_h };
             imgui_id_t     det_id = id_combine( s_build.win_id, IMGUI_DETACH_SALT );
@@ -723,7 +735,7 @@ imgui_end_window( void )
             win_id_t     os   = window_native_id( win );
             bool         zoom = app()->window_state( os ).maximized != 0;
             native_btn_t btns[ NATIVE_BTN_MAX ];
-            i32          nb   = native_caption_buttons( win, s_build.win_x, s_build.win_y,
+            i32          nb   = native_caption_buttons( win, s_build.win_flags, s_build.win_x, s_build.win_y,
                                                         s_build.win_w, title_h, btns );
 
             for ( i32 i = 0; i < nb; ++i )
