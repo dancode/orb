@@ -111,13 +111,13 @@ target job
     flag        host_only
 
 
-
 target imgui
 
 	type        static
     root        source/runtime_service/imgui
     folder      03_RUNTIME/SERVICE
-    unit        imgui.c
+    unit        imgui.c             # UI / core unit
+    unit        imgui_backend.c     # render backend unit
 	dep 		rhi app
 	
 # ==============================================================================

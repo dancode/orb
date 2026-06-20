@@ -11,13 +11,15 @@
 #include "engine/sys/sys_host.h"
 #include "engine/job/job_host.h"
 
+/*============================================================================================*/
+
 #define MAX_JOBS_LIMIT 4096
 
 typedef struct worker_thread_s
 {
-    thread_t    handle;
-    uint32_t    index;
-    thread_id_t id;
+    thread_t        handle;
+    uint32_t        index;
+    thread_id_t     id;
 
 } worker_thread_t;
 
@@ -50,6 +52,10 @@ typedef struct job_state_s
 } job_state_t;
 
 static job_state_t* g_job_state = NULL;
+
+/*==============================================================================================
+    ...
+==============================================================================================*/
 
 static void
 job_worker_main( void* arg )
@@ -94,6 +100,8 @@ job_worker_main( void* arg )
     }
 }
 
+/*============================================================================================*/
+
 static job_counter_t*
 job_allocate_counter( i32 initial_value )
 {
@@ -109,6 +117,8 @@ job_allocate_counter( i32 initial_value )
     ORB_PANIC();
     return NULL;
 }
+
+/*============================================================================================*/
 
 static job_counter_t*
 job_dispatch( const job_decl_t* decls, uint32_t count )
@@ -144,6 +154,8 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
 
     return counter;
 }
+
+/*============================================================================================*/
 
 static void
 job_wait( job_counter_t* counter )
@@ -189,10 +201,14 @@ job_wait( job_counter_t* counter )
     }
 }
 
+/*============================================================================================*/
+
 static void
 job_tick( void )
 {
 }
+
+/*============================================================================================*/
 
 static bool
 job_init( void* raw_state )
@@ -240,6 +256,8 @@ job_init( void* raw_state )
     return true;
 }
 
+/*============================================================================================*/
+
 static void
 job_exit( void* raw_state )
 {
@@ -268,7 +286,11 @@ job_exit( void* raw_state )
     g_job_state = NULL;
 }
 
+/*============================================================================================*/
+
 #ifndef JOB_API_C_PRELUDE
 #define JOB_API_C_PRELUDE
 #endif
 #include "engine/job/job_api.c"
+
+/*============================================================================================*/

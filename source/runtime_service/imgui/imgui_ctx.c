@@ -118,6 +118,13 @@ static struct
 
 } s_build;
 
+#ifdef IMGUI_DEBUG_OVERLAY
+/* The debug overlay (imgui_debug.c) lives in the render backend unit and tags each captured rect
+   with the ambient build viewport.  s_build is private to this unit, so the overlay reads it
+   across the unit seam through this accessor (declared in imgui_backend.h, Debug builds only). */
+u32 imgui_dbg_build_viewport( void ) { return s_build.cur_viewport; }
+#endif
+
 /*----------------------------------------------------------------------------------------------
     Keyboard navigation state (s_nav)
 

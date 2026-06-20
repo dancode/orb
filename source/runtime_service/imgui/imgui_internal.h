@@ -530,6 +530,36 @@ static u32 viewport_index_for_window( i32 win_id );
    true when win_id is an owned viewport (event consumed). */
 static bool imgui_owned_window_event( const app_event_t* ev );
 
+/*==============================================================================================
+    Shared stateless helpers
+
+    Small pure scalar/geometry helpers used across both translation units (the UI unit and the
+    render backend unit -- imgui_draw.c needs rect_intersect for clip nesting).  static inline so
+    each TU gets its own copy with no linkage; they touch nothing but their arguments.
+==============================================================================================*/
+
+/* Clamp t to [0,1] -- the saturate used by slider + scrollbar drag mapping. */
+static inline f32
+saturate( f32 t ) { return t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t ); }
+
+/* Clamp v to [lo,hi]. */
+static inline f32
+clampf( f32 v, f32 lo, f32 hi ) { return v < lo ? lo : ( v > hi ? hi : v ); }
+
+/* Overlap of two rects (zero-size when they do not overlap).  Nested regions intersect their
+   clip with the parent so a child never scissors or hit-tests past it. */
+static inline imgui_rect_t
+rect_intersect( imgui_rect_t a, imgui_rect_t b )
+{
+    f32 x0 = a.x > b.x ? a.x : b.x;
+    f32 y0 = a.y > b.y ? a.y : b.y;
+    f32 x1 = ( a.x + a.w < b.x + b.w ) ? a.x + a.w : b.x + b.w;
+    f32 y1 = ( a.y + a.h < b.y + b.h ) ? a.y + a.h : b.y + b.h;
+    f32 w  = x1 - x0 > 0.0f ? x1 - x0 : 0.0f;
+    f32 h  = y1 - y0 > 0.0f ? y1 - y0 : 0.0f;
+    return ( imgui_rect_t ){ x0, y0, w, h };
+}
+
 // clang-format on
 /*============================================================================================*/
 #endif    // IMGUI_INTERNAL_H

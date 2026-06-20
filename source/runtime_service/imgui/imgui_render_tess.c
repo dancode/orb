@@ -11,7 +11,7 @@
     geometry it holds is the input to imgui_render_flush, which uploads it and emits draw
     calls.  No other file reads or writes s_tess.
 
-    Included by imgui.c after imgui_draw_path.c (provides v2, seg_normal,
+    Included by imgui_backend.c after imgui_draw_path.c (provides v2, seg_normal,
     stroke_center_offset, STROKE_* constants) and before imgui_render.c (which drives
     tess_reset / tess_dispatch from imgui_render_flush).
 

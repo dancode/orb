@@ -19,7 +19,7 @@
     solid path samples the white texel (alpha 1), so a vertex authored with alpha 0 contributes
     nothing -- the feather is pure geometry, no shader or vertex-format change.
 
-    Included by imgui.c immediately after imgui_draw.c (uses s_draw, draw_prim_begin/commit,
+    Included by imgui_backend.c immediately after imgui_draw.c (uses s_draw, draw_prim_begin/commit,
     draw_push_rect_filled, draw_apply_alpha).
 
 ==============================================================================================*/

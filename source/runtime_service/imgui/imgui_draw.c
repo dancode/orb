@@ -6,7 +6,7 @@
     draw_ensure_cmd opens a new draw command when the texture or clip rect changes.
     draw_push_text emits glyph quads from the font atlas.
 
-    Included by imgui.c after imgui_font.c so font_glyph / s_atlas_idx are in scope.
+    Included by imgui_backend.c after imgui_font.c so font_glyph / s_atlas_idx are in scope.
 
 ==============================================================================================*/
 // clang-format off
@@ -60,7 +60,7 @@ static struct
     draw_reset -- call at the top of new_frame
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_reset( i32 display_w, i32 display_h )
 {
     s_draw.cmd_count       = 0;
@@ -85,7 +85,7 @@ draw_current_clip( void )
     return s_draw.clip_stack[ s_draw.clip_depth - 1 ];
 }
 
-static void
+void
 draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
 {
     /* Intersect with the enclosing clip so a nested region (a child box near a window edge)
@@ -101,7 +101,7 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
     DBG_CLIP( c, s_draw.clip_depth );
 }
 
-static void
+void
 draw_pop_clip_rect( void )
 {
     if ( s_draw.clip_depth > 1 )
@@ -113,7 +113,7 @@ draw_pop_clip_rect( void )
    viewport's drawable size so a window on a second surface is bounded by that surface, not the main
    window (end_window restores the main display).  Only touches slot 0, so it is safe whenever the
    stack is at base depth (between windows); a window's own clip pushes on top of it. */
-static void
+void
 draw_set_root_clip( f32 w, f32 h )
 {
     s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, w, h };
@@ -124,7 +124,7 @@ draw_set_root_clip( f32 w, f32 h )
     Set to the window's z in begin_window and back to 0 (background) in end_window.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_set_sort_key( u32 z )
 {
     s_draw.cur_z = z;
@@ -132,7 +132,7 @@ draw_set_sort_key( u32 z )
 
 /* Current sort key -- saved by the popup layer so an overlay window can restore the parent's
    paint order on close (begin/end_window drive cur_z, which is a single global). */
-static u32
+u32
 draw_sort_key( void )
 {
     return s_draw.cur_z;
@@ -147,7 +147,7 @@ draw_sort_key( void )
     and dispatch each window to the surface hosting it.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_set_viewport( u32 vp )
 {
     s_draw.cur_vp = vp;
@@ -155,7 +155,7 @@ draw_set_viewport( u32 vp )
 
 /* Current viewport -- saved/restored by the popup layer alongside the sort key, so an overlay
    begun mid-window leaves the parent's routing intact (begin/end_window drive cur_vp globally). */
-static u32
+u32
 draw_viewport( void )
 {
     return s_draw.cur_vp;
@@ -165,7 +165,7 @@ draw_viewport( void )
    intersecting the current clip.  A popup is a top-level overlay: it must escape the enclosing
    window's clip, so the popup layer pushes this before opening the popup window (whose own clip
    then intersects the display, not the parent) and pops it after.  Balanced with draw_pop_clip_rect. */
-static void
+void
 draw_push_clip_root( void )
 {
     if ( s_draw.clip_depth < IMGUI_CLIP_DEPTH )
@@ -181,7 +181,7 @@ draw_push_clip_root( void )
     (chrome is not an item, so it always paints opaque).  At 1.0 the byte is returned unchanged.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_set_alpha( f32 a )
 {
     s_draw.alpha = a < 0.0f ? 0.0f : ( a > 1.0f ? 1.0f : a );
@@ -203,7 +203,7 @@ draw_apply_alpha( u32 abgr )
     time).  Pixel-grid snapping and GPU batching happen at flush time in the tessellation pass.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
                        f32 u0, f32 v0, f32 u1, f32 v1,
                        u32 tex_idx, u32 abgr )
@@ -231,7 +231,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     draw_push_rect_outline -- emit a hollow rectangle semantic command.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr )
 {
     (void)tex_idx;   /* outlines are always solid-color; tessellation uses the white texel */
@@ -254,7 +254,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     draw_push_triangle -- emit a solid triangle semantic command.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr )
 {
     (void)tex_idx;   /* triangles are always solid-color */
@@ -275,7 +275,7 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
     draw_push_circle_filled -- emit a filled disc semantic command.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
 {
     if ( segments < 3 ) segments = 3;
@@ -301,7 +301,7 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
     (used to skip "##label" suffixes).
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
 {
     if ( !str || s_draw.cmd_count >= IMGUI_MAX_CMDS )
@@ -331,7 +331,7 @@ draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
     c->text.abgr   = draw_apply_alpha( abgr );
 }
 
-static void
+void
 draw_push_text( f32 x, f32 y, u32 abgr, const char* str )
 {
     draw_push_text_n( x, y, abgr, str, 0xFFFFFFFFu );

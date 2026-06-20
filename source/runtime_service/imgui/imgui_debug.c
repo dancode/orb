@@ -21,8 +21,9 @@
 
     Active layers are chosen at runtime with imgui()->debug_set_layers( imgui_dbg_layer_t mask ).
 
-    Included by imgui.c after imgui_ctx.c so s_build and s_render, render_ortho, imgui_push_t,
-    and the font_* atlas helpers are all in scope.
+    Included by imgui_backend.c last, after imgui_render.c so s_render, render_ortho, imgui_push_t,
+    and the font_* atlas helpers are in scope.  The ambient build viewport it tags rects with lives
+    in the UI unit (s_build), reached across the unit seam via imgui_dbg_build_viewport().
 
 ==============================================================================================*/
 // clang-format off
@@ -117,19 +118,19 @@ dbg_push_outline( u32 vp, imgui_rect_t r, f32 thickness, u32 abgr )
 
 /*----------------------------------------------------------------------------------------------
     Capture entry points -- called via the DBG_* macros in imgui.c.
-    s_build.cur_viewport routes each command to the correct viewport.
+    imgui_dbg_build_viewport() routes each command to the correct viewport.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 dbg_capture_widget( imgui_id_t id, imgui_rect_t r, bool hover, bool active )
 {
     (void)id;
     if ( !( s_dbg.layers & IMGUI_DBG_INTERACT ) ) return;
     u32 c = active ? DBG_COL_ACTIVE : ( hover ? DBG_COL_HOVER : DBG_COL_WIDGET );
-    dbg_push_outline( s_build.cur_viewport, r, 1.0f, c );
+    dbg_push_outline( imgui_dbg_build_viewport(), r, 1.0f, c );
 }
 
-static void
+void
 dbg_capture_clip( imgui_rect_t r, u32 depth )
 {
     if ( !( s_dbg.layers & IMGUI_DBG_CLIP ) ) return;
@@ -140,26 +141,26 @@ dbg_capture_clip( imgui_rect_t r, u32 depth )
         IMGUI_COLOR( 0xC0, 0x60, 0xF0, 0xFF ),
         IMGUI_COLOR( 0x60, 0xF0, 0x90, 0xFF ),
     };
-    u32 vp = s_build.cur_viewport;
+    u32 vp = imgui_dbg_build_viewport();
     u32 c  = depth_rgb[ ( depth ? depth - 1u : 0u ) & 3u ];
     dbg_push_fill   ( vp, r, ( c & 0x00FFFFFFu ) | ( DBG_CLIP_FILL_A << 24 ) );
     dbg_push_outline( vp, r, 1.0f, c );
 }
 
-static void
+void
 dbg_capture_window( imgui_rect_t r, bool is_hover )
 {
     if ( !( s_dbg.layers & IMGUI_DBG_WINDOW ) ) return;
-    dbg_push_outline( s_build.cur_viewport, r,
+    dbg_push_outline( imgui_dbg_build_viewport(), r,
                       is_hover ? 2.0f : 1.0f,
                       is_hover ? DBG_COL_WIN_HOVER : DBG_COL_WIN );
 }
 
-static void
+void
 dbg_capture_resize( imgui_rect_t band, u8 hot_edges )
 {
     if ( !( s_dbg.layers & IMGUI_DBG_RESIZE ) ) return;
-    dbg_push_outline( s_build.cur_viewport, band,
+    dbg_push_outline( imgui_dbg_build_viewport(), band,
                       hot_edges ? 2.0f : 1.0f,
                       hot_edges ? DBG_COL_RESIZE_HOT : DBG_COL_RESIZE );
 }
@@ -168,7 +169,7 @@ dbg_capture_resize( imgui_rect_t band, u8 hot_edges )
     Lifecycle
 ----------------------------------------------------------------------------------------------*/
 
-static bool
+bool
 imgui_debug_init( void )
 {
     s_dbg.vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
@@ -194,7 +195,7 @@ imgui_debug_init( void )
     return true;
 }
 
-static void
+void
 imgui_debug_shutdown( void )
 {
     if ( rhi_handle_valid( s_dbg.ib ) ) rhi()->buffer_destroy( s_dbg.ib );
@@ -202,7 +203,7 @@ imgui_debug_shutdown( void )
     memset( &s_dbg, 0, sizeof( s_dbg ) );
 }
 
-static void
+void
 imgui_debug_reset( void )
 {
     s_dbg.cmd_count = 0;
@@ -236,7 +237,7 @@ dbg_expand_quad( f32 wu, f32 wv, f32 x, f32 y, f32 w, f32 h, u32 abgr,
     *ic += 6;
 }
 
-static void
+void
 imgui_debug_flush( imgui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( vp < 0 || vp >= (imgui_vp_t)IMGUI_MAX_VIEWPORTS ) return;

@@ -13,7 +13,7 @@
         col = idx % 16,  row = idx / 16
     UV: u0 = col*glyph_w/atlas_w,  v0 = row*glyph_h/atlas_h
 
-    Included by imgui.c before imgui_font.c.
+    Included by imgui_backend.c before imgui_font.c.
 
 ==============================================================================================*/
 // clang-format off
@@ -155,7 +155,7 @@ static bitmap_font_t*   s_bitmap_active     = NULL;
 static imgui_font_t     s_bmp_font          = IMGUI_FONT_BITMAP_16;
 static u32              s_bmp_scale         = 1;
 
-static void
+void
 bitmap_font_select( imgui_font_t font )
 {
     /* Out-of-range requests fall back to the default 8x12 atlas. */
@@ -185,7 +185,7 @@ bitmap_font_select( imgui_font_t font )
     s_font = &s_bitmap_active->metrics;
 }
 
-static void
+void
 bitmap_scale_set( u32 scale )
 {
     s_bmp_scale = ( scale < 1u ) ? 1u : scale;

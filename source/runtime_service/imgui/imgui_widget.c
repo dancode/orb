@@ -285,7 +285,7 @@ imgui_input_text( const char* label, char* buf, u32 bufsz )
 {
     imgui_id_t   id    = widget_id( label );
     imgui_rect_t r     = widget_next_rect( WIDGET_H );
-    imgui_rect_t box_r = widget_split_label( r, label, s_font->char_h * 3.0f, COL_TEXT_DIM );
+    imgui_rect_t box_r = widget_split_label( r, label, font_char_h() * 3.0f, COL_TEXT_DIM );
 
     widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
 
@@ -314,7 +314,7 @@ imgui_input_text_ex( const char* label, char* buf, u32 bufsz,
 {
     imgui_id_t   id    = widget_id( label );
     imgui_rect_t r     = widget_next_rect( WIDGET_H );
-    imgui_rect_t box_r = widget_split_label( r, label, s_font->char_h * 3.0f, COL_TEXT_DIM );
+    imgui_rect_t box_r = widget_split_label( r, label, font_char_h() * 3.0f, COL_TEXT_DIM );
 
     widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
 
@@ -342,7 +342,7 @@ imgui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 
 {
     imgui_id_t   id    = widget_id( label );
     imgui_rect_t r     = widget_next_rect( WIDGET_H );
-    imgui_rect_t box_r = widget_split_label( r, label, s_font->char_h * 3.0f, COL_TEXT_DIM );
+    imgui_rect_t box_r = widget_split_label( r, label, font_char_h() * 3.0f, COL_TEXT_DIM );
 
     widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
 

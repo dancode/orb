@@ -123,7 +123,7 @@ input_scalar( const char* label, double cur, double* out,
 
     bool has_steps = ( step != 0.0 );
     f32  btn_w     = has_steps ? 2.0f * WIDGET_H : 0.0f;
-    f32  min_ctrl  = s_font->char_h * 3.0f + btn_w;
+    f32  min_ctrl  = font_char_h() * 3.0f + btn_w;
     imgui_rect_t ctrl = widget_split_label( r, label, min_ctrl, COL_TEXT_DIM );
 
     imgui_rect_t   box_r = { ctrl.x, ctrl.y, ctrl.w - btn_w, ctrl.h };
@@ -191,7 +191,7 @@ input_float_n( const char* label, f32* v, u32 n, const char* fmt )
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
     imgui_id_t   id   = widget_id( label );
     imgui_rect_t r    = widget_next_rect( WIDGET_H );
-    imgui_rect_t ctrl = widget_split_label( r, label, s_font->char_h * 3.0f * (f32)n, COL_TEXT_DIM );
+    imgui_rect_t ctrl = widget_split_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT_DIM );
 
     bool changed = false;
     for ( u32 i = 0; i < n; ++i )

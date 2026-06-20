@@ -15,7 +15,7 @@
     Glyph lookup for the TrueType path:
         lookup[] indexed by (codepoint - 32); entries with advance == 0 are missing glyphs.
 
-    Included by imgui.c after imgui_font_builtin.c.
+    Included by imgui_backend.c after imgui_font_builtin.c.
 
 ==============================================================================================*/
 // clang-format off
@@ -48,7 +48,7 @@ static tt_font_t s_tt_font;
     tt_font_unload / tt_font_load
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 tt_font_unload( void )
 {
     if ( !s_tt_font.active )
@@ -68,7 +68,7 @@ tt_font_unload( void )
     s_font = &s_bitmap_active->metrics;
 }
 
-static bool
+bool
 tt_font_load( const char* path )
 {
     tt_font_unload();
@@ -220,13 +220,29 @@ font_init( void )
 ----------------------------------------------------------------------------------------------*/
 
 static f32 font_char_w      ( void ) { return s_font->char_w;    }
-static f32 font_char_h      ( void ) { return s_font->char_h;    }
-static f32 font_line_h      ( void ) { return s_font->line_h;    }
+f32 font_char_h      ( void ) { return s_font->char_h;    }
+f32 font_line_h      ( void ) { return s_font->line_h;    }
+f32 font_em          ( void ) { return s_font->size;      }   // nominal type size (em) -- layout base
 static u32 font_atlas_idx   ( void ) { return s_font->atlas_idx; }
+
+/* Whether a TrueType font is currently active (vs. a built-in bitmap).  The UI unit's font API
+   (imgui_set_bmp_scale) keys off this -- a bmp-scale change only re-derives layout when no TT
+   font overrides the bitmap. */
+bool font_is_tt( void ) { return s_tt_font.active; }
+
+/* Log the active font (type, name, metrics) -- the font internals (s_bitmap_active->def) live in
+   this unit, so the print does too; the UI unit's imgui_set_font just calls it. */
+void
+font_print_active( void )
+{
+    const bitmap_font_def_t* def = s_bitmap_active->def;
+    printf( "[imgui] set font '%s : %s' (char_h=%.1f line_h=%.1f)\n",
+            s_font->proportional ? "TrueType" : "Bitmap", def->debug_name, s_font->char_h, s_font->line_h );
+}
 
 /* Horizontal advance of one character in the active font.  Used by the text edit engine to
    measure glyph positions without emitting draw geometry (cursor placement, click-to-offset). */
-static f32
+f32
 font_char_advance( u8 ch )
 {
     if ( s_font->proportional )
@@ -259,7 +275,7 @@ font_atlas_bytes( void )
 
 /* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
    span this way -- the bytes before a "##" marker -- so reserved label space matches what draws. */
-static f32
+f32
 font_text_w_n( const char* str, u32 n )
 {
     f32 w = 0.0f;
@@ -280,7 +296,7 @@ font_text_w_n( const char* str, u32 n )
     return w;
 }
 
-static f32
+f32
 font_text_w( const char* str )
 {
     return font_text_w_n( str, 0xFFFFFFFFu );
@@ -296,7 +312,7 @@ font_text_w( const char* str )
         advance  horizontal cursor advance in pixels
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 font_glyph( u8 ch,
             f32* u0, f32* v0, f32* u1, f32* v1,
             f32* ox, f32* oy, f32* gw, f32* gh,

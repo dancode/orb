@@ -45,11 +45,13 @@ job_get_mod_desc( void )
         .state_size    = sizeof( job_state_t ),
         .func_api_size = sizeof( job_api_t ),
         .func_api      = ( void* )&g_job_api_struct,
-        .dep_count     = 0,
-        .deps          = {},
+        .dep_count     = 1,
+        .deps          = { "sys" },
         .init          = job_mod_init,
         .exit          = job_mod_exit,
         .reload        = NULL,
     };
     return &api;
 }
+
+/*============================================================================================*/

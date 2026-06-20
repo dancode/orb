@@ -11,7 +11,7 @@
         viewport's frame-region buffers, opens a LOAD render pass on the target, and emits
         one indexed draw call per GPU command.  imgui_render_shutdown destroys all GPU objects.
 
-    Included by imgui.c after imgui_render_tess.c (which defines s_tess, tess_reset,
+    Included by imgui_backend.c after imgui_render_tess.c (which defines s_tess, tess_reset,
     tess_dispatch and all tessellation helpers) and imgui_draw.c (s_draw).
 
 ==============================================================================================*/
@@ -112,7 +112,7 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
     shared pipeline / sampler / atlas are NOT here -- those are created once in imgui_render_init.
 ----------------------------------------------------------------------------------------------*/
 
-static bool
+bool
 viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
 {
     vp->target    = target;
@@ -151,7 +151,7 @@ viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
     return true;
 }
 
-static void
+void
 viewport_destroy( imgui_viewport_t* vp )
 {
     /* Owned floater: destroy the rhi context FIRST.  context_destroy idles the GPU (waits the
@@ -183,7 +183,7 @@ viewport_destroy( imgui_viewport_t* vp )
     Per-viewport geometry buffers are created separately by viewport_create.
 ----------------------------------------------------------------------------------------------*/
 
-static bool
+bool
 imgui_render_init( void )
 {
     /* Compile shaders from embedded SPIR-V. */
@@ -280,7 +280,7 @@ imgui_render_init( void )
     initialized atlases (see font_atlas_bytes).  The 1x1 white pixel is RGBA8 (4 bytes).
 ----------------------------------------------------------------------------------------------*/
 
-static imgui_mem_stats_t
+imgui_mem_stats_t
 imgui_render_memory( void )
 {
     imgui_mem_stats_t s;
@@ -295,7 +295,7 @@ imgui_render_memory( void )
     imgui_render_print_memory -- dump the memory breakdown to stdout (one line per bucket).
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 imgui_render_print_memory( void )
 {
     imgui_mem_stats_t s = imgui_render_memory();
@@ -312,7 +312,7 @@ imgui_render_print_memory( void )
     imgui_render_shutdown -- destroy all GPU resources.  Call before rhi()->shutdown().
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 imgui_render_shutdown( void )
 {
     /* Peak draw-list usage over the run, so the caps can be tuned with real numbers. */
@@ -357,7 +357,7 @@ imgui_render_shutdown( void )
     Sets full-window viewport; each draw command applies its own scissor rectangle.
 ----------------------------------------------------------------------------------------------*/
 
-static void
+void
 imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )

@@ -466,6 +466,11 @@ imgui_render_floaters( void )
     Font API
 ==============================================================================================*/
 
+/* The font metrics live in the render backend unit; this UI-unit API reads them through the
+   font_em / font_char_h / font_line_h accessors (imgui_backend.h) and feeds layout_compute
+   (this unit) -- the font -> layout bridge.  font_is_tt / font_print_active keep the remaining
+   font internals (s_tt_font, s_bitmap_active) on the backend side. */
+
 bool
 imgui_load_font( const char* path )
 {
@@ -473,7 +478,7 @@ imgui_load_font( const char* path )
         return false;
 
     /* Recompute layout metrics from the font's type size, glyph box, and line advance. */
-    layout_compute( (u32)s_font->size, (u32)s_font->char_h, (u32)s_font->line_h );
+    layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
     return true;
 }
 
@@ -482,20 +487,16 @@ imgui_set_font( imgui_font_t font )
 {
     tt_font_unload();
     bitmap_font_select( font );
-    layout_compute( (u32)s_font->size, (u32)s_font->char_h, (u32)s_font->line_h );
-
-    const bitmap_font_def_t* def = s_bitmap_active->def;
-
-    printf( "[imgui] set font '%s : %s' (char_h=%.1f line_h=%.1f)\n",
-            s_font->proportional ? "TrueType" : "Bitmap", def->debug_name, s_font->char_h, s_font->line_h );
+    layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
+    font_print_active();
 }
 
 void
 imgui_set_bmp_scale( u32 scale )
 {
     bitmap_scale_set( scale );
-    if ( !s_tt_font.active )
-        layout_compute( (u32)s_font->size, (u32)s_font->char_h, (u32)s_font->line_h );
+    if ( !font_is_tt() )
+        layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
 }
 
 /*==============================================================================================
