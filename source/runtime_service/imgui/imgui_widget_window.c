@@ -867,27 +867,51 @@ imgui_end_window( void )
          && !( s_build.win_flags & IMGUI_WIN_NOMOVE ) )
     {
         imgui_rect_t title_r = { s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_title_h };
+        win_id_t     os      = window_native_id( win );
 
-        if ( frame_only )
+        if ( frame_only || ( native && win && win->viewport != 0 ) )
         {
-            /* Native borderless shell: dispatch caption-band gestures to OS. */
-            win_id_t os = window_native_id( win );
+            /* Native title bar (frame-shell or floater): defer dispatch behind a drag threshold
+               so a fast double-click never triggers window_start_move or sets active_id on
+               click-1 -- either would absorb click-2 before mouse_double can be tested.
+               Right-click on the frame-shell opens the system menu (no double-click concern). */
             if ( s_interaction.hover_id == IMGUI_ID_NONE && rect_hit( title_r ) )
             {
                 if ( s_io.mouse_double[ 0 ] )
+                {
+                    s_titlebar_drag_pending = false;
                     app()->window_title_event( os );
+                }
                 else if ( s_io.mouse_pressed[ 0 ] )
-                    app()->window_start_move( os );
-                else if ( s_io.mouse_pressed[ 1 ] )
-                    app()->window_system_menu( os, ( i32 )s_io.mouse_x, ( i32 )s_io.mouse_y );
+                {
+                    s_titlebar_drag_pending = true;
+                    s_titlebar_drag_os      = frame_only;
+                    s_titlebar_drag_os_id   = os;
+                    s_titlebar_drag_imgui   = s_build.win_id;
+                    s_titlebar_drag_px      = s_io.mouse_x;
+                    s_titlebar_drag_py      = s_io.mouse_y;
+                }
+            }
+            if ( frame_only && s_io.mouse_pressed[ 1 ]
+                 && s_interaction.hover_id == IMGUI_ID_NONE && rect_hit( title_r ) )
+                app()->window_system_menu( os, ( i32 )s_io.mouse_x, ( i32 )s_io.mouse_y );
+
+            /* Middle button: immediate grab for floaters (middle has no double-click concern). */
+            if ( !frame_only && s_io.mouse_pressed[ 2 ] )
+            {
+                s_interaction.active_id     = s_build.win_id;
+                s_interaction.active_button = 2;
+                s_drag_off_x = s_io.mouse_x - s_build.win_x;
+                s_drag_off_y = s_io.mouse_y - s_build.win_y;
             }
         }
         else
         {
+            /* Regular panel: immediate drag grab. */
             bool left_grab = s_io.mouse_pressed[ 0 ] && s_interaction.hover_id == IMGUI_ID_NONE
                           && s_win_drag_mode != IMGUI_WIN_DRAG_NONE
                           && ( s_win_drag_mode == IMGUI_WIN_DRAG_BODY || rect_hit( title_r ) );
-            bool mid_grab = s_io.mouse_pressed[ 2 ];
+            bool mid_grab  = s_io.mouse_pressed[ 2 ];
 
             if ( left_grab || mid_grab )
             {
@@ -895,6 +919,38 @@ imgui_end_window( void )
                 s_interaction.active_button = mid_grab ? 2 : 0;
                 s_drag_off_x        = s_io.mouse_x - s_build.win_x;
                 s_drag_off_y        = s_io.mouse_y - s_build.win_y;
+            }
+        }
+    }
+
+    /* Native title-bar threshold: advance or commit outside the hover / active_id gate so
+       dragging off the title bar does not stall an in-flight drag.  Only acts on the window
+       that armed the pending state. */
+    if ( s_titlebar_drag_pending && s_titlebar_drag_imgui == s_build.win_id )
+    {
+        if ( !s_io.mouse_down[ 0 ] )
+        {
+            s_titlebar_drag_pending = false;   /* button released without dragging -- was a click */
+        }
+        else
+        {
+            f32 dx = s_io.mouse_x - s_titlebar_drag_px;
+            f32 dy = s_io.mouse_y - s_titlebar_drag_py;
+            if ( dx * dx + dy * dy >= TITLEBAR_DRAG_THRESH * TITLEBAR_DRAG_THRESH )
+            {
+                s_titlebar_drag_pending = false;
+                if ( s_titlebar_drag_os )
+                {
+                    app()->window_start_move( s_titlebar_drag_os_id );
+                }
+                else
+                {
+                    /* Floater: commit to imgui drag; begin_window applies via window_set_pos. */
+                    s_interaction.active_id     = s_build.win_id;
+                    s_interaction.active_button = 0;
+                    s_drag_off_x = s_io.mouse_x - s_build.win_x;
+                    s_drag_off_y = s_io.mouse_y - s_build.win_y;
+                }
             }
         }
     }

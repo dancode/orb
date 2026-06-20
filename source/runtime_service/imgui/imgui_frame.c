@@ -468,7 +468,7 @@ imgui_render_floaters( void )
         }, 1, NULL );
         rhi()->cmd_end_rendering( cmd );
 
-        imgui_render_flush( vp, i, cmd, vp->disp_w, vp->disp_h );
+        imgui_render( (imgui_vp_t)i, cmd );
         rhi()->frame_end( vp->rhi_ctx );
     }
 }

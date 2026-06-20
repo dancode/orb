@@ -32,6 +32,18 @@
 static imgui_win_drag_t     s_win_drag_mode = IMGUI_WIN_DRAG_TITLEBAR;
 static f32                  s_drag_off_x, s_drag_off_y;
 
+/* Native title-bar drag-threshold state: records a pending title-bar press until the cursor
+   moves far enough to commit it as a drag (vs. a click or a double-click).  Prevents the OS
+   modal move loop (frame_only) or active_id set (floater) from triggering on click-1 of a
+   double-click attempt, which would swallow click-2 before imgui can test mouse_double. */
+#define TITLEBAR_DRAG_THRESH 4.0f
+static bool       s_titlebar_drag_pending;
+static bool       s_titlebar_drag_os;     /* true: dispatch to OS (frame_only); false: imgui drag (floater) */
+static win_id_t   s_titlebar_drag_os_id;  /* OS win_id for frame_only dispatch */
+static imgui_id_t s_titlebar_drag_imgui;  /* imgui window id -- guards threshold check to the right window */
+static f32        s_titlebar_drag_px;
+static f32        s_titlebar_drag_py;
+
 /* In-flight edge resize.  The window being resized holds active_id == (id ^ RESIZE_SALT);
    s_resize_edges names which edges follow the cursor (IMGUI_RESIZE_* bits, set in
    imgui_widget.c).  s_resize_off keeps the grabbed edge under the cursor without a jump;
