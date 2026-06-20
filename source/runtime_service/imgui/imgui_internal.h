@@ -589,6 +589,11 @@ static bool imgui_owned_window_event( const app_event_t* ev );
 static imgui_dock_node_t* dock_find_window_node( imgui_id_t win );
 static void               dock_window_chrome( imgui_dock_node_t* node );
 
+/* Phase-2 mouse gestures, also defined in imgui_dock.c and called from imgui_widget_window.c: detect
+   + preview a drop target while a free window is dragged over a dockspace, and commit it on release. */
+static void dock_drag_detect( imgui_id_t win_id, imgui_window_t* win );
+static void dock_drag_commit( imgui_id_t win_id, const char* title );
+
 /*==============================================================================================
     Shared stateless helpers
 

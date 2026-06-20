@@ -541,6 +541,13 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
         }
     }
 
+    /* Drag-to-dock: while this free window is title-dragged over a dockspace on its own surface,
+       preview a drop target (per-node 5-way overlay).  Mutually exclusive with the tear-off above --
+       that fires only when the cursor leaves the surface, this only when it is inside over a leaf. */
+    if ( s_interaction.active_id == id && s_io.mouse_down[ 0 ]
+         && !( flags & IMGUI_WIN_NOMOVE ) && !s_vp_request.active )
+        dock_drag_detect( id, win );
+
     /* Apply an in-progress edge resize (active_id is the resize-salted window id).  Runs after
        the drag apply -- the two are mutually exclusive, only one can own active_id at a time. */
     if ( s_interaction.active_id == id_combine( id, IMGUI_RESIZE_SALT ) )
@@ -1076,6 +1083,12 @@ imgui_end_window( void )
             }
         }
     }
+
+    /* Drag-to-dock release: dock this window if it was released over a valid target (computed by
+       dock_drag_detect in begin_window).  Gating lives inside -- s_dock_drag is private to the dock
+       unit, included after this one -- so call it unconditionally; it no-ops unless this is the
+       dragged window on its release edge.  It renders docked from next frame. */
+    dock_drag_commit( s_build.win_id, s_build.win_title );
 }
 
 // clang-format on

@@ -1107,6 +1107,23 @@ demo_docking( void )
         imgui()->separator();
         imgui()->text( "Drag the gutters between regions to resize." );
         imgui()->text( "Click the Console / Assets tabs to switch." );
+        imgui()->text( "Drag a tab OUT to pop it into a floater." );
+        imgui()->text( "Drag the Palette window onto a pane to dock." );
+    }
+    imgui()->end_window();
+
+    /* A FREE (undocked) window to exercise the Phase-2 drag-to-dock gesture: drag its title bar over
+       any pane to see the 5-way overlay, then drop on center (tab in) or a side (split). */
+    imgui()->set_next_window_pos ( 980, 120, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 220, 150, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Palette", IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        imgui()->text( "I'm a floating window." );
+        imgui()->separator();
+        imgui()->text( "Drag my title bar over a" );
+        imgui()->text( "pane to dock me (center =" );
+        imgui()->text( "tab, sides = split)." );
     }
     imgui()->end_window();
 }
