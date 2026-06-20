@@ -14,6 +14,8 @@
     Included by imgui.c after imgui_input.c so s_io is in scope.
 
 ==============================================================================================*/
+#include "runtime_service/imgui/imgui_internal.h"   /* nav_state_t, layout_frame_t, imgui_popup_t,
+                                                        imgui_retained_t, imgui_viewport_t, imgui_context_t */
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
@@ -132,50 +134,7 @@ static struct
     next nav_new_frame.
 ----------------------------------------------------------------------------------------------*/
 
-typedef struct
-{
-    imgui_id_t   id;            // the highlighted item (keyboard cursor); persists across frames
-    imgui_id_t   win;           // window/popup nav is scoped to (the hover_win analogue)
-    imgui_rect_t ref_rect;      // id's rect last frame -- the directional scoring origin
-
-    /* Two visual states, the Dear ImGui NavDisableHighlight split.  active means a nav cursor
-       position exists -> the outline ring is drawn at id (and follows clicks), persisting even in
-       mouse mode so it keeps its location.  highlight means the keyboard is the *active* instrument
-       right now -> the nav item also takes the fill (like a hovered button), mouse hover is
-       suppressed (so the two never double-fill), and the keyboard is captured.  A nav key sets both;
-       a mouse move or click drops highlight (back to ring-only), leaving active. */
-    bool         active;        // a nav cursor exists -> draw the ring (cleared rarely)
-    bool         highlight;     // keyboard is the active instrument -> fill + hover-suppress
-
-    i32          move_dir;      // directional request this frame (imgui_dir_t, or -1 for none)
-    i32          tab;           // Tab linear move: +1 forward, -1 back, 0 none
-    bool         activate;      // Enter/Space -> fire id like a click this frame
-
-    bool         id_seen;       // id was emitted in win this frame (else it went stale)
-    imgui_id_t   move_best;     // best-scored directional candidate this frame
-    f32          move_score;    // its score (lower is better; reset to a large value each frame)
-    imgui_rect_t move_rect;     // its rect -> next frame's ref_rect
-    imgui_rect_t self_rect;     // id's own rect captured this frame (keeps ref_rect fresh)
-    imgui_id_t   tab_first;     // first eligible item this frame (Tab wrap + first-focus)
-    imgui_id_t   tab_prev;      // item emitted just before id (Shift+Tab target)
-    imgui_id_t   tab_next;      // item emitted just after id (Tab target)
-    bool         tab_take;      // the item just registered was id -> grab the next as tab_next
-
-    /* Menu-bar navigation -- a small state machine layered on the nav cursor + popup stack, entered
-       by Alt (toggle) or an Alt+letter mnemonic.  While active, nav lives either on the bar entries
-       (in_menus false: win is the bar window, a highlighted entry drops its menu) or inside the open
-       menu popups (in_menus true: win is the top popup).  Down/Enter descend, Up at a top item and
-       Left/Esc ascend -- always landing back on menu_owner so closing a menu returns to the bar
-       entry that opened it (not the first entry).  See imgui_nav.c + begin_menu. */
-
-    imgui_id_t   bar_win;       // menu-bar window nav is driving; 0 = not in menu-bar mode
-    bool         in_menus;      // menu mode: false = on the bar entries, true = inside the popups
-    imgui_id_t   menu_owner;    // bar entry whose menu is open -- the ascend / close return target
-    imgui_id_t   prev_win;      // nav target to restore when Alt toggles out of the menu bar
-    imgui_id_t   prev_id;       // nav cursor to restore on Alt toggle-out (the last focus location)
-    u8           mnemonic;      // pending Alt+letter mnemonic (uppercase ASCII); 0 = none
-
-} nav_state_t;
+/* nav_state_t (the nav cursor + menu-bar state machine) is defined in imgui_internal.h. */
 
 /* s_nav lives in the bound context (imgui_context_t, below) and is reached through the g_ctx alias,
    so each context keeps its own nav cursor location. */
@@ -274,110 +233,9 @@ item_flags_chrome_reset( void )
       rects and resolve scroll at pop, so a deep nesting costs nothing beyond these slots.
 ----------------------------------------------------------------------------------------------*/
 
-#define IMGUI_LAYOUT_DEPTH 8    // max nested scroll regions (windows or children)
+/* IMGUI_LAYOUT_DEPTH is defined in imgui_internal.h. */
 
-typedef struct
-{
-    f32 cursor_x,  cursor_y;    // layout pen, top-left of the next widget (scroll-biased)
-    f32 content_x, content_w;   // widget-row left edge + available width
-    f32 content_max_x;          // rightmost edge reached this frame -- drives hscroll
-
-    /* Active row template (imgui_layout / row sugar).  Persists and repeats: each widget fills
-       the next cell, wrapping to a fresh row of the same shape when the columns run out.  A
-       region opens with the default -- one flex column, auto height -- so a plain vertical
-       stack needs no layout call.  See imgui_layout_t in imgui.h for the unit rule. */
-
-    imgui_layout_mode_t mode;                    // declared next-item methodology; NONE until a header
-
-    u32         lay_ncols;                       // column count
-    f32         lay_row_h;                       // flow row height: 0 = auto, >0 = pixels
-    f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
-    u32         lay_nrows;                       // row count; 0 => flow mode, else grid
-    f32         lay_cols[ IMGUI_LAYOUT_COLS ];   // source column units, kept so indent can re-resolve
-
-    /* Field split (field_split / field_label_left): a labeled value widget splits its cell into a
-       label track + a control track, resolved with the column unit rule.  side 0 = off (the
-       label trails the control); 1 = label-left; 2 = label-right. */
-
-    u8          lay_field_side;                  // imgui_label_side_t: 0 off, 1 left, 2 right
-    f32         lay_field_label;                 // label track size   (overloaded unit)
-    f32         lay_field_control;               // control track size (overloaded unit)
-
-    /* Content alignment (align / layout.align): where a widget's natural-sized content sits in
-       its cell.  Persists like the row template; 0 = LEFT | TOP (the original top-left). */
-
-    u8          lay_align;                       // imgui_align_t flags
-
-    /* Resolved cell geometry, computed once when a template is installed (the source track lists
-       are not kept -- they are only needed to produce these).  Flow uses cellx/cellw for every
-       row; grid uses cellx/cellw x rowy/rowh as the fixed matrix.  cols indexes [0,lay_ncols),
-       rows [0,lay_nrows). */
-
-    f32 cellx[ IMGUI_LAYOUT_COLS ];         // resolved cell left edges
-    f32 cellw[ IMGUI_LAYOUT_COLS ];         // resolved cell widths
-    f32 rowy [ IMGUI_LAYOUT_COLS ];         // resolved cell tops    (grid only)
-    f32 rowh [ IMGUI_LAYOUT_COLS ];         // resolved cell heights (grid only)
-
-    /* Iteration cursor.  Flow: (col) walks one row; a wrap advances cursor_y past row_h_cur and
-       row_y/row_h_cur describe the live row.  Grid: (col,row) walk the pre-resolved matrix. */
-
-    u32 col;                                // next column to emit (0 = at a row start)
-    u32 row;                                // current grid row (with col, walks row-major)
-    f32 row_y;                              // top of the current flow row
-    f32 row_h_cur;                          // resolved height of the current flow row
-    f32 content_y_max;                      // bottom of the content area -- grid band end
-
-    /* same_line: pin the next widget to the previous item's line instead of breaking to a new row.
-       prev_item is the last cell handed out; same_line() arms cont_line and sets cont_x to the
-       continuation x (just past prev_item).  See widget_next_rect_w. */
-
-    imgui_rect_t prev_item;                 // last cell emitted this region (same_line anchor)
-    bool         cont_line;                 // next widget continues on prev_item's line
-    f32          cont_x;                    // x at which the continued widget is placed
-
-    /* Pack mode (bar / strip): a print run placing items along pack_dir at natural size -- or a
-       pack_size override resolved against the space remaining on the current line -- with
-       pack_nextline breaking to a fresh line.  pack_main is the running pen along the axis,
-       pack_cross the current line's origin on the other axis, pack_line its max cross extent. */
-
-    u8  pack_dir;                           // imgui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
-    f32 pack_main;                          // running main-axis pen (absolute)
-    f32 pack_cross;                         // current line's cross-axis origin (absolute)
-    f32 pack_line;                          // current line's max cross extent
-    f32 pack_origin_main;                   // main-axis start, for the nextline reset
-    f32 pack_size_next;                     // pending main-axis size unit; < 0 = unset (natural)
-
-    /* Resolve context, set at push and read at pop. */
-
-    imgui_id_t          region_id;          // base id for the region's scrollbar widget ids
-    imgui_win_flags_t   flags;              // scroll policy bits (IMGUI_WIN_*SCROLL), reused
-    imgui_rect_t        outer;              // the region box in screen space
-    f32                 origin_x;           // unscrolled content origin -- measures content extent
-    f32                 origin_y;
-    f32                 view_w, view_h;     // gutter-adjusted visible extents (must match the bars)
-    f32                 sb_w, sb_h;         // reserved gutter sizes (0 = no bar this frame)
-    bool                show_v, show_h;     // a bar is shown this axis
-    bool                pushed_clip;        // a draw clip was pushed (balance at pop)
-
-    /* Persistent scroll state, owned by the caller (window record or region pool entry). */
-
-    f32*                scroll_x;
-    f32*                scroll_y;
-    f32*                pcontent_w;         // write-back: measured content extent for next frame
-    f32*                pcontent_h;
-
-    imgui_rect_t        parent_clip;        // s_build.clip_rect to restore at pop
-    u32                 id_restore;         // id-scope depth to restore at pop (see id stack below)
-
-    /* Child edge-resize (begin_child CHILD_RESIZE_*): the armed/hot edges of this child's border
-       and the s_build.win_resize_hot to restore at end_child.  begin_child sets both (0 for a
-       non-resizeable child); end_child bolds child_resize_edge and restores the saved hot, so a
-       hot edge suppresses body widgets only while inside this child, never its siblings. */
-
-    u8                  child_resize_edge;       // hot/armed resize edges for this child (0 = none)
-    u8                  child_resize_saved_hot;  // s_build.win_resize_hot to restore at end_child
-
-} layout_frame_t;
+/* layout_frame_t (one scroll-region layout frame) is defined in imgui_internal.h. */
 
 static layout_frame_t s_layout_stack[ IMGUI_LAYOUT_DEPTH ];
 static u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
@@ -418,42 +276,11 @@ lf( void )
     restore the parent verbatim.  The stack *counters* (layout / id / clip depth) are left intact
     and balance naturally through the normal push/pop, so no slot is ever reused or lost. */
 
-#define IMGUI_POPUP_DEPTH 8     // max nested popups (menus + submenus)
+/* IMGUI_POPUP_DEPTH is defined in imgui_internal.h. */
 
-typedef struct
-{
-    /* Flat window context (s_build) the popup's begin_window clobbers. */
-    imgui_id_t             win_id;
-    const char*            win_title;
-    bool                   win_collapsed;
-    imgui_win_flags_t      win_flags;
-    f32                    win_title_h;
-    u8                     win_resize_hot;
-    bool                   win_grip_hot;
-    struct imgui_window_t* cur_win;
-    f32                    win_x, win_y, win_w, win_h;
-    imgui_rect_t           clip_rect;     // s_build.clip_rect (interaction clip)
+/* imgui_overlay_save_t (parent context a popup saves/restores) is defined in imgui_internal.h. */
 
-    /* Draw cursor + the parent's top layout frame. */
-    u32                    sort_key;      // s_draw.cur_z
-    u32                    viewport;      // s_draw.cur_vp (target surface routing)
-    bool                   had_parent;    // a layout region was open (parent frame valid)
-    layout_frame_t         parent_frame;  // the parent's top frame, restored after the popup
-
-} imgui_overlay_save_t;
-
-typedef struct
-{
-    imgui_id_t   id;            // popup window id (salted; matches s_build.win_id / hover_win)
-    bool         modal;         // blocks input behind it + dims the background
-    f32          anchor_x;      // open point -- where a non-modal popup is placed
-    f32          anchor_y;
-    u32          open_frame;    // frame open_popup ran -- "appearing" detection
-    u32          begun_frame;   // last frame begin_popup ran -- drives stale-close
-    imgui_rect_t rect;          // on-screen rect last frame -- drives click-outside
-    imgui_overlay_save_t saved; // parent context to restore at end_popup
-
-} imgui_popup_t;
+/* imgui_popup_t (one open popup record) is defined in imgui_internal.h. */
 
 /* The open set (s_popups_open) and its live count (s_popup_open_count) are members of the bound
    context (imgui_context_t, below), reached through the g_ctx alias -- popups persist per context.
@@ -479,22 +306,9 @@ static u32           s_popup_begin_count;                 // current nesting dep
     still be revisited later this frame, so only entries two+ frames cold are fair game.
 ----------------------------------------------------------------------------------------------*/
 
-#define IMGUI_STATE_SLOTS 512                       // open-addressing capacity (power of two)
-#define IMGUI_STATE_MASK  ( IMGUI_STATE_SLOTS - 1 ) // bucket = id & mask
-#define IMGUI_STATE_CAP   32                        // payload bytes per slot (max state struct)
+/* IMGUI_STATE_SLOTS / _MASK / _CAP are defined in imgui_internal.h. */
 
-typedef struct
-{
-    imgui_id_t id;          // 0 = empty slot
-    u32        seen_frame;  // frame last touched -- drives stale reclamation
-    union                   // force max alignment so any payload struct is correctly aligned
-    {
-        void* _p;
-        f64   _d;
-        u8    bytes[ IMGUI_STATE_CAP ];
-    } data;
-
-} imgui_state_slot_t;
+/* imgui_state_slot_t (one keyed-state-pool slot) is defined in imgui_internal.h. */
 
 /* ---- First slice of per-context retained state ----
    The keyed state pool and the frame clock that ages it are the first members of what will become
@@ -506,21 +320,7 @@ typedef struct
    makes the eventual lift into imgui_context_t a regrouping, not a rewrite.  Tier: per-context
    retained. */
 
-typedef struct
-{
-    /* Per-context id namespace seed.  XOR'd into id_hash's FNV basis (below), so the same string
-       hashes to a distinct id in each context and every id_combine built on it inherits the offset.
-       This is what keeps the ambient hover / active / focus ids -- which are compared globally, across
-       every context -- from confusing a widget in one viewport with an identically-named widget in
-       another.  0 is the default context's namespace and leaves id_hash byte-identical to the
-       unsalted hash, so a single-context build is unchanged. */
-    u32 id_salt;
-
-    u32 frame;                                       // monotonic frame index, bumped each new_frame this
-                                                     //   context is built; stamps + ages the pool below
-    imgui_state_slot_t state[ IMGUI_STATE_SLOTS ];   // open-addressed keyed per-widget state
-
-} imgui_retained_t;
+/* imgui_retained_t (id salt, frame clock, keyed state pool) is defined in imgui_internal.h. */
 
 /*----------------------------------------------------------------------------------------------
     imgui_context_t -- the bound per-context retained state ("bind and use").
@@ -539,22 +339,7 @@ typedef struct
     NOT per context -- they stay global and target whichever context is bound.
 ----------------------------------------------------------------------------------------------*/
 
-typedef struct imgui_context_t
-{
-    imgui_retained_t retained;                          // id salt, frame clock, keyed state pool
-    nav_state_t      nav;                               // nav cursor location + menu-bar mode
-    imgui_popup_t    popups_open[ IMGUI_POPUP_DEPTH ];  // open popup set, ordered parent -> child
-    u32              popup_open_count;                  // live open count
-
-    imgui_window_t   windows[ IMGUI_MAX_WINDOWS ];      // persisted window records (imgui_window.c behavior)
-    u32              window_count;                      // live records in the pool
-    imgui_window_t   window_scratch;                    // transient fallback when the pool is full
-    u32              z_counter;                         // monotonic paint-order dispenser
-
-    imgui_viewport_t viewports[ IMGUI_MAX_VIEWPORTS ];  // render surfaces: [0]=main swapchain, rest floaters
-    u32              viewport_count;                    // live viewports (imgui_render.c behavior)
-
-} imgui_context_t;
+/* imgui_context_t (the bound per-context retained state) is defined in imgui_internal.h. */
 
 /* The default context, bound at startup.  g_ctx is the one indirection every retained access goes
    through; the host points it at another context before emitting that context's windows. */

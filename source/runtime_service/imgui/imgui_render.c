@@ -15,6 +15,7 @@
     tess_dispatch and all tessellation helpers) and imgui_draw.c (s_draw).
 
 ==============================================================================================*/
+#include "runtime_service/imgui/imgui_internal.h"   /* imgui_viewport_t, imgui_context_t, IMGUI_MAX_VIEWPORTS */
 // clang-format off
 
 /*==============================================================================================
@@ -55,63 +56,8 @@ typedef struct
    window will get its own, and docking will later let several windows share one.  Per-viewport so a
    surface's geometry persists between its own presents, independent of any other viewport's cadence. */
 
-struct imgui_dock_node_t;   /* forward: the dock tree, populated when docking is implemented */
-
-typedef struct
-{
-    rhi_buffer_t  vb;           // CPU_TO_GPU vertex buffer, one region per frame-in-flight
-    rhi_buffer_t  ib;           // CPU_TO_GPU index buffer (u16), one region per frame-in-flight
-
-    /* Color target flush paints into: RHI_SWAPCHAIN_COLOR for the main viewport, a floater's own
-       swapchain image otherwise.  Held per viewport so flush is target-agnostic. */
-    rhi_texture_t target;
-
-    /* OS window this surface is hosted by (app win_id_t), or -1 (APP_WIN_INVALID) if unassociated.
-       Input routing maps a mouse event's win_id to this surface so the cursor's host viewport is
-       known -- a window only hover-tests when the cursor is in the OS window hosting its viewport. */
-    i32 win_id;
-
-    /* rhi context driving this surface's swapchain (RHI_CTX_INVALID if none).  Only set for an
-       imgui-OWNED surface (a torn-off floater imgui spawned): flush of a host-provided surface
-       resolves RHI_SWAPCHAIN_COLOR from the host's cmd, so the host viewport leaves this invalid.
-       An owned surface has no host driving it -- imgui runs frame_begin/end on this ctx itself. */
-    i32 rhi_ctx;
-
-    /* true when imgui created this surface's OS window + rhi context (tear-off floater) and must
-       therefore destroy them.  false for the host-provided main surface (index 0) and any surface
-       the host opened via viewport_open -- imgui frees only the GPU buffers for those, never the
-       window/context it does not own. */
-    bool owned;
-
-    /* Set when the user closes an owned floater's OS window (APP_EV_WIN_CLOSE): the surface is torn
-       down at the next update_platform_windows, a safe point between the build and the present, so
-       no in-flight draw list references a surface being freed.  Ignored for non-owned surfaces. */
-    bool pending_close;
-
-    /* Drawable size of this surface in pixels.  Set by the host (viewport 0 from new_frame, floaters
-       via viewport_resize) BEFORE the build so begin_window clips its windows against THIS surface's
-       extent, not the main window's.  0 = unset -> begin_window falls back to the main display size
-       (single-window behavior).  Distinct from the win_w/win_h passed to flush, which only sets the
-       GPU viewport/scissor clamp at submit time; the clip baked into each draw command is built here. */
-    i32 disp_w, disp_h;
-
-    /* Top band (pixels) reserved by this surface's native host caption, published each frame by the
-       IMGUI_WIN_NATIVE shell window that frames it (window_set_native_frame path).  The OS owns that
-       band via WM_NCHITTEST, so a normal window whose titlebar slid under it could no longer be
-       grabbed -- window_clamp keeps non-native windows' top edge at or below this inset, mimicking how
-       a child sits beneath a normal OS title bar.  0 when no native shell frames the surface (default
-       OS-chrome main window, or a host that emits no shell).  Reset each frame in new_frame. */
-    f32 caption_inset;
-
-    /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's
-       overlapping windows); non-NULL = a dock tree tiling/tabbing the windows on this surface.
-       Inert until docking lands -- a documented placement hook, no machinery yet. */
-    struct imgui_dock_node_t* dock_root;
-
-} imgui_viewport_t;
-
-/* Max viewports a context drives at once.  Must match APP_WIN_MAX / RHI_CTX_MAX. */
-#define IMGUI_MAX_VIEWPORTS 4
+/* imgui_viewport_t (the per-viewport surface record) and IMGUI_MAX_VIEWPORTS are defined in
+   imgui_internal.h, along with the struct imgui_dock_node_t forward declaration. */
 
 /* The viewport list lives in the bound context (imgui_context_t, imgui_ctx.c): viewports[0] is the
    main swapchain, created at init.  render.c only ever touches a viewport through a passed pointer

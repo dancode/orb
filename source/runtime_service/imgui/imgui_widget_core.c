@@ -18,6 +18,7 @@
     and the draw helpers are all in scope.
 
 ==============================================================================================*/
+#include "runtime_service/imgui/imgui_internal.h"   /* widget_kind_t, widget_state_t */
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
@@ -224,28 +225,8 @@ draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
     Interaction state machine
 ----------------------------------------------------------------------------------------------*/
 
-/* Interaction class for a widget, selected at the call site.  Only the press-time
-   behavior differs between widgets; everything else (hover/active/click) is uniform. */
-typedef enum
-{
-    WIDGET_KIND_BUTTON    = 0,   /* press captures active; reports clicked   */
-    WIDGET_KIND_DRAG      = 1,   /* press captures active; held for dragging */
-    WIDGET_KIND_FOCUSABLE = 2,   /* press also claims keyboard focus         */
-
-} widget_kind_t;
-
-/* Result of one frame of interaction for a widget.  Every widget drives its
-   visuals and value changes from these flags instead of touching s_interaction directly. */
-typedef struct
-{
-    bool hover;       /* cursor is over the widget this frame                  */
-    bool active;    /* primary button held with this widget as the target    */
-    bool pressed;   /* primary button went down on the widget this frame     */
-    bool clicked;   /* press + release completed with the cursor still over  */
-    bool focused;   /* widget owns keyboard input (focusable widgets)        */
-    bool nav;       /* widget is the keyboard-nav cursor, highlighted        */
-
-} widget_state_t;
+/* widget_kind_t (interaction class) and widget_state_t (per-frame interaction result) are
+   defined in imgui_internal.h. */
 
 /* Auto-repeat cadence for a held button (IMGUI_ITEM_BUTTON_REPEAT): the pause before the first
    repeat, then the interval between repeats.  Seconds; matches the familiar key-repeat feel. */

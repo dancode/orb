@@ -14,35 +14,10 @@
     Included by imgui.c after imgui_draw.c.
 
 ==============================================================================================*/
+#include "runtime_service/imgui/imgui_internal.h"   /* imgui_io_t, IMGUI_KEY_COUNT */
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
-    Internal IO snapshot type -- not exposed in the public header.
-    IMGUI_KEY_COUNT must cover the full app_key_t range; the static assert below verifies this.
-----------------------------------------------------------------------------------------------*/
-
-#define IMGUI_KEY_COUNT 128
-
-typedef struct
-{
-    f32   mouse_x, mouse_y;
-    f32   mouse_wheel;
-    bool  mouse_down    [ 3 ];
-    bool  mouse_pressed [ 3 ];
-    bool  mouse_released[ 3 ];
-    bool  mouse_double  [ 3 ];
-    bool  keys_down          [ IMGUI_KEY_COUNT ];
-    bool  keys_pressed       [ IMGUI_KEY_COUNT ];   /* initial press only                  */
-    bool  keys_pressed_repeat[ IMGUI_KEY_COUNT ];   /* initial press + OS auto-repeat ticks */
-    bool  keys_released      [ IMGUI_KEY_COUNT ];
-    char  text[ 32 ];
-    char  paste[ 256 ];   /* clipboard text delivered this frame (APP_EV_CLIPBOARD), else empty */
-    f32   dt;
-    f64   time;           /* seconds since the first frame -- dt accumulated; backs get_time() */
-    i32   display_w, display_h;
-    u32   mouse_viewport; /* surface the cursor is in (resolved from mouse-event win_id); persists */
-
-} imgui_io_t;
+/* The IO snapshot type (imgui_io_t) and IMGUI_KEY_COUNT are defined in imgui_internal.h. */
 
 /* Compile-time check: IMGUI_KEY_COUNT must be large enough to index all app keys. */
 ORB_STATIC_ASSERT( APP_KEY_COUNT <= IMGUI_KEY_COUNT,

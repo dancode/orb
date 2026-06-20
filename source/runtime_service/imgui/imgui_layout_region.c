@@ -19,6 +19,7 @@
     imgui_layout_child.c and imgui_layout.c which call layout_push/pop_region.
 
 ==============================================================================================*/
+#include "runtime_service/imgui/imgui_internal.h"   /* imgui_region_t, layout_frame_t, imgui_window_t */
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
@@ -45,13 +46,7 @@ static f32 s_sb_grab_off = 0.0f;
     with no measured size.
 ----------------------------------------------------------------------------------------------*/
 
-typedef struct
-{
-    f32 scroll_x, scroll_y;     /* persisted scroll offset            */
-    f32 content_w, content_h;   /* content extent measured last frame */
-    f32 user_w, user_h;         /* user-resized size (CHILD_RESIZE_*); 0 = none, use the passed w/h */
-
-} imgui_region_t;
+/* imgui_region_t (persistent begin_child scroll + content-size state) is defined in imgui_internal.h. */
 
 static imgui_region_t*
 region_get( imgui_id_t id )

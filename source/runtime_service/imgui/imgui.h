@@ -16,7 +16,7 @@
     IMGUI: ID
 ==============================================================================================*/
 
-/* widget id -- a hashed value creates a unique value to identify a widget */
+/* Widget id -- a hashed value creates a unique value to identify a widget */
 
 typedef u32 imgui_id_t;
 #define IMGUI_ID_NONE 0u

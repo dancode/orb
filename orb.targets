@@ -583,6 +583,15 @@ solution orb_sandbox_reflect			# developing reflection
 
 	add 		reflect_tool
 
+solution orb_sandbox_job				# developing reflection
+
+    out         build/proj
+    startup     sb_engine_job
+
+    add         base
+	add         sys ref mod app core job net
+
+	add 		sb_engine_job 			# test job system	
 
 solution orb_sandbox_vulkan				# developing rendering / vulkan
 
