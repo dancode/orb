@@ -123,7 +123,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     win->prev          = win->state;
     win->w             = w;
     win->h             = h;
-    win->paint_enabled = false;
+
 
     /* Map app flags → Win32 style */
     DWORD style    = 0;

@@ -235,6 +235,30 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             ev.data.win_resize.w = win->w;
             ev.data.win_resize.h = win->h;
             win_post_event( &ev );
+
+#ifdef APP_WIN_FIBER
+            /* Yield synchronously to the main game fiber so it processes the resize event
+               and renders/presents the new swapchain frame before the OS composites it. */
+            if ( g_pool.fiber_main && GetCurrentFiber() != g_pool.fiber_main )
+            {
+                SwitchToFiber( g_pool.fiber_main );
+            }
+#endif
+        }
+            return 0;
+
+        case WM_PAINT:
+        {
+            PAINTSTRUCT ps;
+            BeginPaint( hwnd, &ps );
+#ifdef APP_WIN_FIBER
+            /* Force a synchronous game frame update and present during OS repaint requests. */
+            if ( g_pool.fiber_main && GetCurrentFiber() != g_pool.fiber_main )
+            {
+                SwitchToFiber( g_pool.fiber_main );
+            }
+#endif
+            EndPaint( hwnd, &ps );
         }
             return 0;
 
@@ -246,11 +270,8 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             return 0;
 
         case WM_ERASEBKGND:
-            /* paint_enabled = true: let DefWindowProcW fill with the class brush.
-               paint_enabled = false: renderer owns the pixels — suppress to prevent flicker. */
-            if ( !win->paint_enabled )
-                return 1;
-            return DefWindowProcW( hwnd, msg, wp, lp );
+            /* The renderer owns the client pixels — suppress default OS erase to prevent flicker. */
+            return 1;
 
         case WM_NCCALCSIZE:
             /* Custom frame: claim the whole window rect as client so no visual non-client frame

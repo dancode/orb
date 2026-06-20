@@ -125,8 +125,8 @@ typedef struct app_window_s
     i32                 w, h;           /* cached client dimensions — valid even when minimized */
     bool                hover_tracking; /* TrackMouseEvent is armed                              */
     bool                resize_modal;   /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */
+
     bool                move_modal;
-    bool                paint_enabled; /* WM_ERASEBKGND uses class brush when true              */
     bool                has_resize;    /* native sizing frame present (borderless windows)     */
     win_fillscreen_t    fill;
 

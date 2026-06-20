@@ -52,12 +52,7 @@ typedef struct app_api_s
     void ( *window_minimize )( win_id_t id );
     void ( *window_restore  )( win_id_t id );
 
-    /* Default OS background paint/erase. When enabled, Windows fills the client
-       area with the registered class brush on WM_ERASEBKGND. Disable once a
-       renderer owns the window's pixels — leaving it on causes flicker. */
-    void ( *window_set_paint    )( win_id_t id, bool enabled );
-    void ( *window_toggle_paint )( win_id_t id );
-    bool ( *window_paint_enabled)( win_id_t id );
+
 
     /* ---- Native-borderless window actions (window kind 3) ----
 

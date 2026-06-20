@@ -207,14 +207,13 @@ print_state_full( win_id_t id )
 
     i32 mx = 0, my = 0;
     app()->mouse_position( &mx, &my );
-    printf( "         mouse (%d,%d)  L:%s R:%s M:%s X1:%s X2:%s  paint:%s\n",
+    printf( "         mouse (%d,%d)  L:%s R:%s M:%s X1:%s X2:%s\n",
             mx, my,
             app()->mouse_button_down( APP_MOUSE_LEFT   ) ? "1" : "0",
             app()->mouse_button_down( APP_MOUSE_RIGHT  ) ? "1" : "0",
             app()->mouse_button_down( APP_MOUSE_MIDDLE ) ? "1" : "0",
             app()->mouse_button_down( APP_MOUSE_X1     ) ? "1" : "0",
-            app()->mouse_button_down( APP_MOUSE_X2     ) ? "1" : "0",
-            app()->window_paint_enabled( id ) ? "on" : "off" );
+            app()->mouse_button_down( APP_MOUSE_X2     ) ? "1" : "0" );
 }
 
 /* Prints only bits within mask that changed between prev and now. */

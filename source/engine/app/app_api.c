@@ -25,9 +25,7 @@ const app_api_t g_app_api_struct = {
     .window_resize            = app_window_resize,
     .window_minimize          = app_window_minimize,
     .window_restore           = app_window_restore,
-    .window_set_paint         = app_window_set_paint,
-    .window_toggle_paint      = app_window_toggle_paint,
-    .window_paint_enabled     = app_window_paint_enabled,
+
 
     /* Native-borderless window actions */
     .window_start_move        = app_window_start_move,

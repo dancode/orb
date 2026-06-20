@@ -295,36 +295,6 @@ app_window_request_close( win_id_t id )
         PostMessageW( win->hwnd, WM_CLOSE, 0, 0 );
 }
 
-/*----------------------------------------------------------------------------------------------
-    Paint enable / toggle / query — controls default OS background erase.
-----------------------------------------------------------------------------------------------*/
 
-static void
-app_window_set_paint( win_id_t id, bool enabled )
-{
-    app_window_t* win = win_get( id );
-    if ( !win || win->paint_enabled == enabled )
-        return;
-    win->paint_enabled = enabled;
-    /* Force a repaint so the new erase policy is visible immediately. */
-    if ( win->hwnd )
-        InvalidateRect( win->hwnd, NULL, TRUE );
-}
-
-static void
-app_window_toggle_paint( win_id_t id )
-{
-    app_window_t* win = win_get( id );
-    if ( !win )
-        return;
-    app_window_set_paint( id, !win->paint_enabled );
-}
-
-static bool
-app_window_paint_enabled( win_id_t id )
-{
-    app_window_t* win = win_get( id );
-    return win ? win->paint_enabled : false;
-}
 
 /*============================================================================================*/
