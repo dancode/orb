@@ -66,9 +66,9 @@ typedef struct job_pool_slot_s
 */
 typedef struct job_item_s
 {
-    job_fn_t         function; // The task function to run.
-    void*            data;     // Argument to pass to the function.
-    job_pool_slot_t* slot;     // Pool slot tracking this batch's completion.
+    job_fn_t      function; // The task function to run.
+    void*         data;     // Argument to pass to the function.
+    job_counter_t counter;  // Handle tracking this batch's completion.
 
 } job_item_t;
 

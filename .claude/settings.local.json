@@ -123,7 +123,9 @@
       "PowerShell(tail *)",
       "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Preview\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 20)",
       "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 20)",
-      "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 10)"
+      "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 10)",
+      "Bash(bin/build_tool.exe -config Debug -target sb_engine_job)",
+      "Bash(bin/sb_engine_job.exe)"
     ]
   }
 }

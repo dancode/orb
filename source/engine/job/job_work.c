@@ -11,6 +11,33 @@
 #define JOB_HANDLE_MAKE( idx, gen )  ( (u32)(idx) | ( (u32)(gen) << 8 ) )
 
 /*==============================================================================================
+   job_complete_one — Signals one job's completion against its batch counter.
+
+   Decodes the handle, validates the slot generation, and decrements the live count. A
+   generation mismatch means the slot was already recycled, so we treat it as a safe no-op.
+==============================================================================================*/
+
+static void
+job_complete_one( job_counter_t counter )
+{
+    // Null handle -- this job was not tracked by a counter.
+    if ( counter.id == 0 )
+    {
+        return;
+    }
+
+    u32              index = JOB_HANDLE_INDEX( counter.id );
+    job_pool_slot_t* slot  = &g_job_state.counter_pool[ index ];
+
+    // Only decrement if the slot still belongs to this batch.
+    if ( slot->generation == ( u16 )JOB_HANDLE_GEN( counter.id ) )
+    {
+        // Decrement the batch counter atomically. When it hits 0 the slot is free.
+        sys_atomic_decrement( &slot->value );
+    }
+}
+
+/*==============================================================================================
    job_worker_main — The entry point and execution loop for every worker thread.
 
    1. Sleep on the semaphore until there is work available.
@@ -64,11 +91,8 @@ job_worker_main( void* arg )
                 // Run the job callback function with its argument data.
                 job.function( job.data );
             }
-            if ( job.slot )
-            {
-                // Decrement the batch counter atomically. When it hits 0 the slot is free.
-                sys_atomic_decrement( &job.slot->value );
-            }
+            // Signal completion against this job's batch counter.
+            job_complete_one( job.counter );
         }
     }
 }
@@ -125,7 +149,6 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
 
     // Allocate a pool slot tracking this batch.
     job_counter_t    handle = job_allocate_counter( ( i32 )count );
-    job_pool_slot_t* slot   = &g_job_state.counter_pool[ JOB_HANDLE_INDEX( handle.id ) ];
 
     mutex_lock( &g_job_state.queue_lock );
     // Ensure the queue does not overflow.
@@ -142,7 +165,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
         i32 index                           = g_job_state.queue_tail % MAX_JOBS_LIMIT;
         g_job_state.queue[ index ].function = decls[ i ].function;
         g_job_state.queue[ index ].data     = decls[ i ].data;
-        g_job_state.queue[ index ].slot     = slot;
+        g_job_state.queue[ index ].counter  = handle;
 
         g_job_state.queue_tail++;
         g_job_state.queue_count++;
@@ -188,8 +211,11 @@ job_wait( job_counter_t counter )
         return;
     }
 
-    // Spin-wait as long as the counter's value is greater than 0.
-    while ( sys_atomic_compare_exchange( &slot->value, 0, 0 ) > 0 )
+    // Spin-wait while the slot still belongs to our batch and has live jobs.
+    // Re-checking the generation each iteration guards against the slot being reclaimed
+    // by an unrelated batch the moment ours hits 0 -- without it we could end up waiting
+    // on a different batch's counter.
+    while ( slot->generation == gen && sys_atomic_compare_exchange( &slot->value, 0, 0 ) > 0 )
     {
         job_item_t job     = { 0 };
         bool       has_job = false;
@@ -217,11 +243,8 @@ job_wait( job_counter_t counter )
                 // Run the job payload inline.
                 job.function( job.data );
             }
-            if ( job.slot )
-            {
-                // Decrement the slot counter atomically.
-                sys_atomic_decrement( &job.slot->value );
-            }
+            // Signal completion against this job's batch counter.
+            job_complete_one( job.counter );
         }
         else
         {
