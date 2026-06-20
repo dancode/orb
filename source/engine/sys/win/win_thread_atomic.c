@@ -55,4 +55,28 @@ sys_atomic_write( volatile i32* target, i32 value )
     InterlockedExchange( ( volatile LONG* )target, ( LONG )value );
 }
 
+i64
+sys_atomic_exchange_add_64( volatile i64* target, i64 value )
+{
+    // InterlockedExchangeAdd64 adds value and returns the original value before addition.
+    return ( i64 )InterlockedExchangeAdd64( ( volatile LONG64* )target, ( LONG64 )value );
+}
+
+i64
+sys_atomic_compare_exchange_64( volatile i64* target, i64 exchange, i64 comperand )
+{
+    // InterlockedCompareExchange64 sets target to exchange only if target == comperand.
+    // Returns the original value of target.
+    return ( i64 )InterlockedCompareExchange64( ( volatile LONG64* )target, ( LONG64 )exchange,
+                                                ( LONG64 )comperand );
+}
+
+i64
+sys_atomic_read_64( volatile i64* target )
+{
+    // Atomic OR with 0 reads the value with an implicit hardware memory fence,
+    // ensuring up-to-date visibility across cores.
+    return ( i64 )InterlockedOr64( ( volatile LONG64* )target, 0 );
+}
+
 /*============================================================================================*/

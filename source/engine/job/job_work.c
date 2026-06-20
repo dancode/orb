@@ -10,6 +10,12 @@
 #define JOB_HANDLE_GEN( id )         ( (u32)(id) >> 8 & 0xFFFFu )
 #define JOB_HANDLE_MAKE( idx, gen )  ( (u32)(idx) | ( (u32)(gen) << 8 ) )
 
+// Pool-slot packing: generation in the high dword, live value in the low dword. Composed via
+// shifts (not memory aliasing) so the encoding is endianness-independent.
+#define JOB_SLOT_PACK( gen, val )    ( ( (i64)(u32)(gen) << 32 ) | (u32)(i32)(val) )
+#define JOB_SLOT_VALUE( packed )     ( (i32)(u32)( (u64)(packed) & 0xFFFFFFFFu ) )
+#define JOB_SLOT_GEN( packed )       ( (u32)( (u64)(packed) >> 32 ) )
+
 /*==============================================================================================
    job_complete_one — Signals one job's completion against its batch counter.
 
@@ -26,15 +32,12 @@ job_complete_one( job_counter_t counter )
         return;
     }
 
-    u32              index = JOB_HANDLE_INDEX( counter.id );
-    job_pool_slot_t* slot  = &g_job_state.counter_pool[ index ];
-
-    // Only decrement if the slot still belongs to this batch.
-    if ( slot->generation == ( u16 )JOB_HANDLE_GEN( counter.id ) )
-    {
-        // Decrement the batch counter atomically. When it hits 0 the slot is free.
-        sys_atomic_decrement( &slot->value );
-    }
+    // A job in flight keeps value > 0, so the slot cannot be reclaimed (and its generation
+    // cannot change) until every job has reported in. That invariant lets us decrement
+    // unconditionally: subtracting 1 from the packed word lowers the value (low dword) without
+    // borrowing into the generation (high dword). When value reaches 0 the slot is free.
+    job_pool_slot_t* slot = &g_job_state.counter_pool[ JOB_HANDLE_INDEX( counter.id ) ];
+    sys_atomic_exchange_add_64( &slot->packed, -1 );
 }
 
 /*==============================================================================================
@@ -114,16 +117,25 @@ job_allocate_counter( i32 initial_value )
         i32              index = sys_atomic_increment( &g_job_state.counter_pool_index ) % 256;
         job_pool_slot_t* slot  = &g_job_state.counter_pool[ index ];
 
-        // CAS: if slot->value is 0, claim it by setting initial_value.
-        // Only one thread will succeed; others continue scanning.
-        if ( sys_atomic_compare_exchange( &slot->value, initial_value, 0 ) == 0 )
+        // Snapshot the slot. A free slot has value (low dword) == 0.
+        i64 current = sys_atomic_read_64( &slot->packed );
+        if ( JOB_SLOT_VALUE( current ) != 0 )
         {
-            // Bump generation; skip 0 so null handle (id==0) stays distinct.
-            u16 gen = ++slot->generation;
-            if ( gen == 0 )
-            {
-                gen = ++slot->generation;
-            }
+            continue;    // Slot busy; keep scanning.
+        }
+
+        // Bump generation; skip 0 so the null handle (id==0) stays distinct after a 16-bit wrap.
+        u32 gen = ( JOB_SLOT_GEN( current ) + 1 ) & 0xFFFFu;
+        if ( gen == 0 )
+        {
+            gen = 1;
+        }
+
+        // CAS the whole word: claim the slot by writing (generation, initial_value) only if no
+        // other thread touched it since our snapshot. Only one thread wins; others rescan.
+        i64 desired = JOB_SLOT_PACK( gen, initial_value );
+        if ( sys_atomic_compare_exchange_64( &slot->packed, desired, current ) == current )
+        {
             return (job_counter_t){ .id = JOB_HANDLE_MAKE( index, gen ) };
         }
     }
@@ -136,7 +148,7 @@ job_allocate_counter( i32 initial_value )
    job_dispatch — Enqueues a batch of parallel jobs and returns an awaitable counter handle.
 
    1. Allocates a pool slot initialized to 'count'.
-   2. Locks the queue, copies declarations into the ring buffer with the slot pointer.
+   2. Locks the queue, copies declarations into the ring buffer with the counter handle.
    3. Unlocks the queue and wakes up workers by posting 'count' times to the semaphore.
 ==============================================================================================*/
 job_counter_t
@@ -202,21 +214,22 @@ job_wait( job_counter_t counter )
     }
 
     u32              index = JOB_HANDLE_INDEX( counter.id );
-    u16              gen   = ( u16 )JOB_HANDLE_GEN( counter.id );
+    u32              gen   = JOB_HANDLE_GEN( counter.id );
     job_pool_slot_t* slot  = &g_job_state.counter_pool[ index ];
 
-    // If the generation doesn't match, the slot was already recycled -- treat as done.
-    if ( slot->generation != gen )
+    // Spin-wait while the slot still belongs to our batch and has live jobs. Reading the packed
+    // word atomically yields a consistent {generation, value} snapshot, so we can never mistake
+    // an unrelated batch that recycled this slot the instant ours finished for our own work.
+    for ( ;; )
     {
-        return;
-    }
+        i64 snapshot = sys_atomic_read_64( &slot->packed );
 
-    // Spin-wait while the slot still belongs to our batch and has live jobs.
-    // Re-checking the generation each iteration guards against the slot being reclaimed
-    // by an unrelated batch the moment ours hits 0 -- without it we could end up waiting
-    // on a different batch's counter.
-    while ( slot->generation == gen && sys_atomic_compare_exchange( &slot->value, 0, 0 ) > 0 )
-    {
+        // Generation moved on -> slot recycled (our batch done); value <= 0 -> our batch done.
+        if ( JOB_SLOT_GEN( snapshot ) != gen || JOB_SLOT_VALUE( snapshot ) <= 0 )
+        {
+            return;
+        }
+
         job_item_t job     = { 0 };
         bool       has_job = false;
 

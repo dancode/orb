@@ -208,6 +208,17 @@ i32  sys_atomic_read( volatile i32* target );
 // Performs a thread-safe atomic write to target enforcing write memory barriers.
 void sys_atomic_write( volatile i32* target, i32 value );
 
+// Atomically adds value to the 64-bit integer at target.
+// Returns the original value of target prior to the addition.
+i64  sys_atomic_exchange_add_64( volatile i64* target, i64 value );
+
+// Atomically compares the 64-bit target with comperand. If equal, target is set to exchange.
+// Returns the original value of target prior to the comparison.
+i64  sys_atomic_compare_exchange_64( volatile i64* target, i64 exchange, i64 comperand );
+
+// Performs a thread-safe atomic read of the 64-bit target enforcing read memory barriers.
+i64  sys_atomic_read_64( volatile i64* target );
+
 
 /*==============================================================================================
 

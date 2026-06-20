@@ -51,18 +51,27 @@ typedef struct worker_thread_s
    job_pool_slot_t — Internal counter pool entry.
    Holds the live job count plus a generation number. The generation is bumped every time
    this slot is claimed, so callers holding old handles can detect recycled slots.
+
+   The two fields share a single 64-bit word ('packed') so the live count and generation can
+   be read as one atomic snapshot -- a waiter can never observe the count of an unrelated batch
+   that recycled this slot. Layout (little-endian): bits[31:0]=value, bits[63:32]=generation.
+   The named members are for direct/debugger access; concurrent code operates on 'packed'.
 */
-typedef struct job_pool_slot_s
+typedef union job_pool_slot_u
 {
-    volatile i32 value;      // Live job count; 0 means the slot is free.
-    u16          generation; // Incremented on each claim; wraps, skipping 0.
-    u16          _pad;
+    volatile i64 packed; // Atomic word combining value (low dword) and generation (high dword).
+    struct
+    {
+        volatile i32 value;      // Live job count; 0 means the slot is free.
+        volatile u32 generation; // Incremented on each claim; wraps, skipping 0.
+    };
 
 } job_pool_slot_t;
 
 /*
    job_item_t — An internal representation of a queued job.
-   Carries a direct pointer to the pool slot so the worker can decrement it on completion.
+   Carries the batch's counter handle so the worker can signal its completion. The handle
+   (index + generation) survives slot recycling and state relocation, unlike a raw pointer.
 */
 typedef struct job_item_s
 {
