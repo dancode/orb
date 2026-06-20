@@ -73,13 +73,14 @@ job_worker_main( void* arg )
     }
 }
 
-/*
+/*==============================================================================================
    job_allocate_counter — Claims a pool slot and returns an opaque counter handle.
 
    Loops the circular pool using CAS to find a free slot (value==0), then bumps its
    generation and returns a handle encoding (index, generation). Generation 0 is reserved
    for the null handle, so after a u16 wrap the allocator skips back to 1.
-*/
+==============================================================================================*/
+
 static job_counter_t
 job_allocate_counter( i32 initial_value )
 {
@@ -107,13 +108,13 @@ job_allocate_counter( i32 initial_value )
     return JOB_COUNTER_NULL;
 }
 
-/*
+/*==============================================================================================
    job_dispatch — Enqueues a batch of parallel jobs and returns an awaitable counter handle.
 
    1. Allocates a pool slot initialized to 'count'.
    2. Locks the queue, copies declarations into the ring buffer with the slot pointer.
    3. Unlocks the queue and wakes up workers by posting 'count' times to the semaphore.
-*/
+==============================================================================================*/
 static job_counter_t
 job_dispatch( const job_decl_t* decls, uint32_t count )
 {
@@ -154,7 +155,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
     return handle;
 }
 
-/*
+/*==============================================================================================   
    job_wait — Blocks the caller until the specified batch counter hits zero.
 
    Generation validation: if the handle's generation does not match the current slot
@@ -166,7 +167,8 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
 
    - If there are jobs in the queue, it pops and runs one.
    - If the queue is empty, it yields its CPU time slice so other workers can run.
-*/
+==============================================================================================*/
+
 static void
 job_wait( job_counter_t counter )
 {
@@ -330,3 +332,5 @@ job_exit( void* raw_state )
 
     g_job_state = NULL;
 }
+
+/*============================================================================================*/

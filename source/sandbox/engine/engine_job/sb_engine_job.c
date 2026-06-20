@@ -40,9 +40,10 @@ test_job_fn( void* arg )
     printf( "Job Executed: '%s' on Thread ID: %llu\n", message, ( unsigned long long )thread_current_id() );
 }
 
-/*
+/*==============================================================================================
    job_test — Main sandbox orchestration routine.
-*/
+==============================================================================================*/
+
 void
 job_test( void )
 {
@@ -52,8 +53,7 @@ job_test( void )
     // Step 2: Register static engine modules ('sys' and 'job').
     // Since this is a static monolithic sandbox build, modules are linked directly into the
     // executable. We load them by passing their module descriptors.
-    if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
-         !mod_static_load( "job", job_get_mod_desc() ) )
+    if ( !mod_static( sys ) || !mod_static( job ))
     {
         fprintf( stderr, "Failed to load baseline engine modules: %s\n", mod_last_error() );
         goto shutdown;
@@ -104,9 +104,10 @@ shutdown:
     mod_system_exit();
 }
 
-/*
+/*==============================================================================================
    main — Executable entry point.
-*/
+==============================================================================================*/
+
 int
 main( int argc, char** argv )
 {
@@ -118,3 +119,5 @@ main( int argc, char** argv )
     job_test();
     return 0;
 }
+
+/*============================================================================================*/
