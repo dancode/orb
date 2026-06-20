@@ -355,9 +355,12 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             return 0;
 
         case APP_WM_TITLE_EVENT:
-            /* Native caption double-click: the OS toggles maximize / restore. */
+            /* Native caption double-click: the OS toggles maximize / restore.
+               Synthesize button-up first: on restore the window shrinks, so the cursor
+               may land outside the new client rect and the real WM_LBUTTONUP goes elsewhere. */
             ReleaseCapture();
             win->state.captured = 0;
+            SendMessageW( hwnd, WM_LBUTTONUP, 0, 0 );
             SendMessageW( hwnd, WM_NCLBUTTONDBLCLK, HTCAPTION, 0 );
             return 0;
 
