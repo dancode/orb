@@ -372,15 +372,48 @@ imgui_update_platform_windows( void )
         }
     }
 
-    /* (2) Owned floaters whose OS window the user closed (APP_EV_WIN_CLOSE -> pending_close). */
+    /* (2) Tear down owned floaters for either reason:
+
+         pending_close -- the user closed the OS window (APP_EV_WIN_CLOSE).
+
+         abandoned     -- the window(s) the floater hosts stopped being emitted.  A floater is just a
+                          surface for the panel that was torn into it; if the caller hides that panel
+                          or quits drawing it, its begin_window stops running and last_frame freezes,
+                          leaving a hovering OS window with no UI and no controls.  Detect it by the
+                          same staleness rule popups use (popup_close_check): the freshest assigned
+                          window has missed a full frame (max last_frame + 1 < frame), or no window is
+                          bound at all.  One frame of grace tolerates a transient single-frame hide.
+
+       This runs after step (1), so a window just torn off / merged this frame already carries
+       last_frame == s_retained.frame on its new surface and never reads as abandoned. */
     for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
     {
         imgui_viewport_t* vp = &g_ctx->viewports[ i ];
-        if ( !( vp->owned && vp->pending_close ) )
+        if ( !vp->owned )
+            continue;
+
+        bool abandoned = false;
+        if ( !vp->pending_close )
+        {
+            /* Freshest emit among windows bound to this surface; no bound window stays abandoned. */
+            u32  max_lf = 0u;
+            bool any    = false;
+            for ( u32 w = 0; w < s_window_count; ++w )
+                if ( s_windows[ w ].viewport == i )
+                {
+                    any = true;
+                    if ( s_windows[ w ].last_frame > max_lf )
+                        max_lf = s_windows[ w ].last_frame;
+                }
+            abandoned = !any || ( max_lf + 1u < s_retained.frame );
+        }
+
+        if ( !( vp->pending_close || abandoned ) )
             continue;
 
         /* Windows assigned to this surface revert to the primary, then free the surface
-           (viewport_destroy drains the GPU, frees buffers, destroys the ctx, closes the window). */
+           (viewport_destroy drains the GPU, frees buffers, destroys the ctx, closes the window).
+           Reverting lets a panel re-emitted later reappear in the main window. */
         for ( u32 w = 0; w < s_window_count; ++w )
             if ( s_windows[ w ].viewport == i )
                 s_windows[ w ].viewport = 0;
