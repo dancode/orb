@@ -23,15 +23,14 @@ const job_api_t g_job_api_struct = {
 static bool
 job_mod_init( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( raw_state );
     UNUSED( get_api );
-    return true;
+    return job_init( raw_state );
 }
 
 static void
 job_mod_exit( void* raw_state )
 {
-    UNUSED( raw_state );
+    job_exit( raw_state );
 }
 
 /*==============================================================================================
@@ -43,7 +42,7 @@ job_get_mod_desc( void )
 {
     static mod_desc_t api = {
         .version       = 1,
-        .state_size    = 0,
+        .state_size    = sizeof( job_state_t ),
         .func_api_size = sizeof( job_api_t ),
         .func_api      = ( void* )&g_job_api_struct,
         .dep_count     = 0,

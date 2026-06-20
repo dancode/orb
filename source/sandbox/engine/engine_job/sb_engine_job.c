@@ -15,7 +15,7 @@ static void
 test_job_fn( void* arg )
 {
     const char* message = ( const char* )arg;
-    printf( "Job Executed: %s\n", message );
+    printf( "Job Executed: '%s' on Thread ID: %llu\n", message, ( unsigned long long )thread_current_id() );
 }
 
 void
@@ -36,6 +36,7 @@ job_test( void )
         goto shutdown;
     }
 
+    printf( "Main Thread ID: %llu\n", ( unsigned long long )thread_current_id() );
     printf( "Job system loaded successfully.\n" );
 
     /* Test dispatching jobs */

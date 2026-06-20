@@ -24,7 +24,7 @@ typedef struct job_decl_s
 /* Handle representing a group of dispatched jobs that can be awaited. */
 typedef struct job_counter_s
 {
-    uint32_t value;
+    volatile i32 value;
 
 } job_counter_t;
 

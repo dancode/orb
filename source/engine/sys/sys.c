@@ -58,6 +58,7 @@
 #    include "win/win_thread.c"
 #    include "win/win_thread_mutex.c"
 #    include "win/win_thread_sema.c"
+#    include "win/win_thread_atomic.c"
 #    include "win/win_process.c"
 #    include "win/win_sys.c"
 #    include "win/win_memory.c"

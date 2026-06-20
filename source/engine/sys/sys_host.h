@@ -179,6 +179,38 @@ void sema_post( sema_t* s, u32 count );
 
 /*==============================================================================================
 
+    Atomic - Platform-independent atomic operations
+
+    Use these functions to perform lock-free thread synchronization. All operations enforce
+    appropriate memory barriers to guarantee visibility and ordering across threads.
+
+==============================================================================================*/
+
+// Atomically increments the 32-bit integer at target.
+// Returns the resulting incremented value.
+i32  sys_atomic_increment( volatile i32* target );
+
+// Atomically decrements the 32-bit integer at target.
+// Returns the resulting decremented value.
+i32  sys_atomic_decrement( volatile i32* target );
+
+// Atomically adds value to target.
+// Returns the original value of target prior to the addition.
+i32  sys_atomic_exchange_add( volatile i32* target, i32 value );
+
+// Atomically compares target with comperand. If they are equal, target is set to exchange.
+// Returns the original value of target prior to the comparison.
+i32  sys_atomic_compare_exchange( volatile i32* target, i32 exchange, i32 comperand );
+
+// Performs a thread-safe atomic read of target enforcing read memory barriers.
+i32  sys_atomic_read( volatile i32* target );
+
+// Performs a thread-safe atomic write to target enforcing write memory barriers.
+void sys_atomic_write( volatile i32* target, i32 value );
+
+
+/*==============================================================================================
+
     Process - Synchronous child process execution with optional output capture
 
     Used by the hot-reload build invoker. Output capture uses a temp file to avoid
