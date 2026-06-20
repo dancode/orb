@@ -353,6 +353,12 @@ typedef enum
     IMGUI_WIN_NO_MAXIMIZE       = 1 << 16,   /* native: no maximize / restore caption button */
     IMGUI_WIN_NO_DETACH         = 1 << 17,   /* no pop-out: hide detach button, block tear-off drag */
 
+    /* Placement is managed externally (docking layout, animation, scripted snap).  Bypasses both
+       the per-drag margin clamp (window_clamp) and the merge-back fit-inside clamp so the system
+       can position and size the window freely without imgui fighting the placement.  Without this
+       flag both clamps apply unconditionally; with it neither does. */
+
+    IMGUI_WIN_NO_BOUNDARY_CLAMP = 1 << 18,
 
 } imgui_win_flags_t;
 

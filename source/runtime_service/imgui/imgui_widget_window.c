@@ -53,10 +53,14 @@
    native caption band (caption_inset): a window cannot slide its titlebar under
    the OS-owned caption, where the grab would be lost -- mirroring how a child
    stays below a normal OS title bar.  Inset is 0 with no native shell, so the
-   default-chrome path keeps the old top-of-surface behavior. */
+   default-chrome path keeps the old top-of-surface behavior.
+   IMGUI_WIN_NO_BOUNDARY_CLAMP bypasses this entirely. */
 static void
 window_clamp( imgui_window_t* win )
 {
+    if ( win->flags & IMGUI_WIN_NO_BOUNDARY_CLAMP )
+        return;
+
     const imgui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
     f32 dw = vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w;
     f32 dh = vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h;

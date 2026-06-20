@@ -119,7 +119,11 @@
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target imgui')",
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target imgui & echo EXITCODE=%errorlevel%')",
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_vulkan & echo EXITCODE=%errorlevel%')",
-      "Bash(cl)"
+      "Bash(cl)",
+      "PowerShell(tail *)",
+      "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Preview\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 20)",
+      "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 20)",
+      "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 10)"
     ]
   }
 }

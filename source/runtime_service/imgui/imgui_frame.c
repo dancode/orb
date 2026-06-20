@@ -347,14 +347,18 @@ imgui_update_platform_windows( void )
 
             /* Clamp the window to fit inside the host surface on any pop-in path.  Size first so
                that position clamping below always has a non-negative travel range.  A panel that was
-               fullscreened while floating must not land with resize handles off-screen. */
-            const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
-            f32 dw  = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
-            f32 dh  = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
-            f32 top = hv->caption_inset;
-            f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
-            if ( win->w > dw )    win->w = dw;
-            if ( win->h > max_h ) win->h = max_h;
+               fullscreened while floating must not land with resize handles off-screen.
+               Skipped for IMGUI_WIN_NO_BOUNDARY_CLAMP -- placement is externally managed. */
+            if ( !( win->flags & IMGUI_WIN_NO_BOUNDARY_CLAMP ) )
+            {
+                const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
+                f32 dw    = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
+                f32 dh    = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
+                f32 top   = hv->caption_inset;
+                f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
+                if ( win->w > dw )    win->w = dw;
+                if ( win->h > max_h ) win->h = max_h;
+            }
 
             if ( s_vp_request.by_drag )
             {
@@ -370,15 +374,21 @@ imgui_update_platform_windows( void )
                 win->x = (f32)( fx - mx );
                 win->y = (f32)( fy - my );
 
-                /* Snap fully inside the host's client bounds: a floater docked from well clear of the
+                /* Snap fully inside the host's client bounds: a floater merged from well clear of the
                    main window would otherwise land at a screen offset outside the visible area (the
-                   button path never runs the per-frame window_clamp the drag path relies on).  Clamp
-                   so the whole panel sits within the surface when it fits, pinned to a corner if not.
-                   Size was already clamped above, so max_x/max_y are guaranteed non-negative. */
-                f32 max_x = dw - win->w;
-                f32 max_y = dh - win->h; if ( max_y < top ) max_y = top;
-                win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
-                win->y = win->y < top  ? top  : ( win->y > max_y ? max_y : win->y );
+                   button path never runs the per-frame window_clamp the drag path relies on).
+                   Skipped for IMGUI_WIN_NO_BOUNDARY_CLAMP -- caller is responsible for placement. */
+                if ( !( win->flags & IMGUI_WIN_NO_BOUNDARY_CLAMP ) )
+                {
+                    const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
+                    f32 dw  = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
+                    f32 dh  = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
+                    f32 top = hv->caption_inset;
+                    f32 max_x = dw - win->w;
+                    f32 max_y = dh - win->h; if ( max_y < top ) max_y = top;
+                    win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
+                    win->y = win->y < top  ? top  : ( win->y > max_y ? max_y : win->y );
+                }
             }
 
             bool empty = true;

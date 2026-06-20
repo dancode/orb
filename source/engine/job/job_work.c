@@ -139,7 +139,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
     // Push the jobs into the ring buffer.
     for ( uint32_t i = 0; i < count; ++i )
     {
-        i32 index                            = g_job_state.queue_tail % MAX_JOBS_LIMIT;
+        i32 index                           = g_job_state.queue_tail % MAX_JOBS_LIMIT;
         g_job_state.queue[ index ].function = decls[ i ].function;
         g_job_state.queue[ index ].data     = decls[ i ].data;
         g_job_state.queue[ index ].slot     = slot;

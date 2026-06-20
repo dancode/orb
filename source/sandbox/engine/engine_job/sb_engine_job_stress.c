@@ -4,7 +4,7 @@
 
 ==============================================================================================*/
 
-#define STRESS_BATCH_COUNT 10
+#define STRESS_BATCH_COUNT 100
 #define STRESS_JOBS_PER_BATCH 4000
 
 static volatile i32 g_stress_counter = 0;

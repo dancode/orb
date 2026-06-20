@@ -5,6 +5,8 @@
     Maps platform-independent sys_atomic_* functions to Windows Interlocked* compiler
     intrinsics. Enforces full memory barriers (acquire/release semantics) on x86/x64.
 
+    Declare a: volatile i32 int_used_by_atomics = 0;
+
 ==============================================================================================*/
 
 i32
