@@ -83,7 +83,7 @@ main( int argc, char** argv )
 
          false -- default OS window: Win32 draws the title bar, caption buttons, and borders.  The
                   native frame-shell is NOT emitted; the demos draw straight over the cleared surface. */
-    const bool b_borderless = false;
+    const bool b_borderless = true;
 
     win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720,
                                        b_borderless ? APP_WIN_BORDERLESS : APP_WIN_DEFAULT );

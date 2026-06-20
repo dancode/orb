@@ -95,6 +95,14 @@ typedef struct
        GPU viewport/scissor clamp at submit time; the clip baked into each draw command is built here. */
     i32 disp_w, disp_h;
 
+    /* Top band (pixels) reserved by this surface's native host caption, published each frame by the
+       IMGUI_WIN_NATIVE shell window that frames it (window_set_native_frame path).  The OS owns that
+       band via WM_NCHITTEST, so a normal window whose titlebar slid under it could no longer be
+       grabbed -- window_clamp keeps non-native windows' top edge at or below this inset, mimicking how
+       a child sits beneath a normal OS title bar.  0 when no native shell frames the surface (default
+       OS-chrome main window, or a host that emits no shell).  Reset each frame in new_frame. */
+    f32 caption_inset;
+
     /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's
        overlapping windows); non-NULL = a dock tree tiling/tabbing the windows on this surface.
        Inert until docking lands -- a documented placement hook, no machinery yet. */
@@ -168,6 +176,7 @@ viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
     vp->pending_close = false;  /* owned floater close request; serviced by update_platform_windows */
     vp->disp_w    = 0;          /* drawable size set by the host before build; 0 = fall back to main */
     vp->disp_h    = 0;
+    vp->caption_inset = 0.0f;   /* no native shell band until one publishes it during the build */
     vp->dock_root = NULL;       /* free-float until docking assigns a tree */
 
     /* Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame. */

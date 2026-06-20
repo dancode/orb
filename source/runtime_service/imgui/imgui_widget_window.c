@@ -49,7 +49,11 @@
 /* Keep a dragged window reachable: clamp so its top edge stays on-screen and at
    least one title-bar's worth of the window remains within the display bounds.
    Uses the window's own viewport dimensions so dragging on a secondary surface
-   clamps against that surface, not the primary. */
+   clamps against that surface, not the primary.  The top bound is the host's
+   native caption band (caption_inset): a window cannot slide its titlebar under
+   the OS-owned caption, where the grab would be lost -- mirroring how a child
+   stays below a normal OS title bar.  Inset is 0 with no native shell, so the
+   default-chrome path keeps the old top-of-surface behavior. */
 static void
 window_clamp( imgui_window_t* win )
 {
@@ -57,13 +61,14 @@ window_clamp( imgui_window_t* win )
     f32 dw = vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w;
     f32 dh = vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h;
     const f32 margin = WIN_TITLE_H;
+    const f32 top    = vp->caption_inset;
     const f32 max_x  = dw - margin;
     const f32 max_y  = dh - margin;
 
     if ( win->x > max_x )           win->x = max_x;
     if ( win->y > max_y )           win->y = max_y;
     if ( win->x < margin - win->w ) win->x = margin - win->w;
-    if ( win->y < 0.0f )            win->y = 0.0f;
+    if ( win->y < top )             win->y = top;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -366,6 +371,12 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
                                          ( i32 )btns[ i ].r.w, ( i32 )btns[ i ].r.h };
 
         app()->window_set_native_frame( window_native_id( win ), true, caption, border, holes, nb );
+
+        /* Publish the caption band so the normal windows sharing this surface clamp below it (the OS
+           owns that band; a titlebar slid under it could not be grabbed back out).  Set on the shell's
+           own viewport; a frame-only shell (the borderless main window) is emitted before the panels
+           it frames, so the inset is in place by the time their begin_window clamps this frame. */
+        g_ctx->viewports[ win->viewport ].caption_inset = ( f32 )caption;
     }
 
     bool can_collapse = has_titlebar && !( flags & IMGUI_WIN_NOCOLLAPSE ) && !native;
