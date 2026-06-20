@@ -74,8 +74,6 @@ MOD_USE_RUN;
 MOD_USE_RHI;
 MOD_USE_RENDER;
 
-
-
 static win_id_t     s_win_id = APP_WIN_INVALID;
 static i32          s_ctx_id = RHI_CTX_INVALID;
 

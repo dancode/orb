@@ -12,7 +12,7 @@
         imgui_backend.c  -- the render backend unit: fonts, the CPU draw list, path stroking,
                             CPU tessellation, the GPU flush, and the debug overlay.  Owns
                             s_draw / s_tess / s_font / s_render.
-
+    
     The UI unit produces a semantic draw list by calling the draw_* / font_* primitives below;
     the backend unit tessellates and uploads it.  This header is the entire surface between them
     -- the functions the backend exports to the UI, plus the debug-overlay instrumentation both
@@ -31,31 +31,30 @@
 #include "runtime_service/imgui/imgui_internal.h"
 
 // clang-format off
-
 /*==============================================================================================
     Fonts (imgui_font.c / imgui_font_builtin.c)
 ==============================================================================================*/
 
-bool tt_font_load  ( const char* path );    // load a TrueType font as the active font
-void tt_font_unload( void );                // drop the loaded TrueType font, revert to bitmap
+bool tt_font_load       ( const char* path );       // load a TrueType font as the active font
+void tt_font_unload     ( void );                   // drop the loaded TrueType font, revert to bitmap
 
-void bitmap_font_select( imgui_font_t font ); // select a built-in bitmap font as active
-void bitmap_scale_set  ( u32 scale );         // integer upscale for the active bitmap font
+void bitmap_font_select ( imgui_font_t font );      // select a built-in bitmap font as active
+void bitmap_scale_set   ( u32 scale );              // integer upscale for the active bitmap font
 
-f32  font_char_h     ( void );              // glyph-box height of the active font (ascent+descent)
-f32  font_line_h     ( void );              // line advance of the active font
-f32  font_em         ( void );              // nominal type size (em) -- the layout proportion base
-f32  font_char_advance( u8 ch );            // horizontal advance of one glyph
-bool font_is_tt      ( void );              // true if a TrueType font is active (vs. a bitmap)
-void font_print_active( void );             // log the active font's type, name, and metrics
-f32  font_text_w     ( const char* str );             // pixel width of a NUL-terminated run
-f32  font_text_w_n   ( const char* str, u32 n );      // pixel width of the first n bytes
+f32  font_char_h        ( void );                   // glyph-box height of the active font (ascent+descent)
+f32  font_line_h        ( void );                   // line advance of the active font
+f32  font_em            ( void );                   // nominal type size (em) -- the layout proportion base
+f32  font_char_advance  ( u8 ch );                  // horizontal advance of one glyph
+bool font_is_tt         ( void );                   // true if a TrueType font is active (vs. a bitmap)
+void font_print_active  ( void );                   // log the active font's type, name, and metrics
+f32  font_text_w        ( const char* str );        // pixel width of a NUL-terminated run
+f32  font_text_w_n      ( const char* str, u32 n ); // pixel width of the first n bytes
 
 /* Glyph atlas lookup: UVs, pen offsets, glyph box, and advance for one character. */
-void font_glyph( u8 ch,
-                 f32* u0, f32* v0, f32* u1, f32* v1,
-                 f32* ox, f32* oy, f32* gw, f32* gh,
-                 f32* advance );
+void font_glyph         ( u8 ch,
+                          f32* u0, f32* v0, f32* u1, f32* v1,
+                          f32* ox, f32* oy, f32* gw, f32* gh,
+                          f32* advance );
 
 /*==============================================================================================
     CPU draw list (imgui_draw.c)
@@ -63,25 +62,25 @@ void font_glyph( u8 ch,
 
 void draw_reset( i32 display_w, i32 display_h );   // clear the list at the top of new_frame
 
-void draw_set_alpha   ( f32 a );    // global opacity multiplier folded into every pushed shape
-void draw_set_sort_key( u32 z );    // paint order stamped on new commands (window z)
-u32  draw_sort_key    ( void );     // current sort key (saved/restored by the popup layer)
-void draw_set_viewport( u32 vp );   // viewport index stamped on new commands (surface routing)
-u32  draw_viewport    ( void );     // current viewport index
+void draw_set_alpha     ( f32 a );    // global opacity multiplier folded into every pushed shape
+void draw_set_sort_key  ( u32 z );    // paint order stamped on new commands (window z)
+u32  draw_sort_key      ( void );     // current sort key (saved/restored by the popup layer)
+void draw_set_viewport  ( u32 vp );   // viewport index stamped on new commands (surface routing)
+u32  draw_viewport      ( void );     // current viewport index
 
 void draw_push_clip_rect ( f32 x, f32 y, f32 w, f32 h ); // push clip, intersected with the parent
 void draw_pop_clip_rect  ( void );                       // pop the top clip
 void draw_push_clip_root ( void );                       // push the full-display clip (popup escape)
 void draw_set_root_clip  ( f32 w, f32 h );               // set clip_stack[0] to a surface size
 
-void draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
-                            f32 u0, f32 v0, f32 u1, f32 v1,
-                            u32 tex_idx, u32 abgr );
-void draw_push_rect_outline ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
-void draw_push_triangle     ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr );
-void draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr );
-void draw_push_text  ( f32 x, f32 y, u32 abgr, const char* str );
-void draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n );
+void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h, 
+                                  f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
+
+void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
+void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr );
+void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr );
+void draw_push_text             ( f32 x, f32 y, u32 abgr, const char* str );
+void draw_push_text_n           ( f32 x, f32 y, u32 abgr, const char* str, u32 n );
 
 /*==============================================================================================
     GPU resources + flush (imgui_render.c)
@@ -134,7 +133,7 @@ void viewport_destroy( imgui_viewport_t* vp );                                  
     #define DBG_WINDOW( r, is_hover )     dbg_capture_window( ( r ), ( is_hover ) )
     #define DBG_RESIZE( band, hot )       dbg_capture_resize( ( band ), ( hot ) )
 
-    /* Ambient build viewport (s_build.cur_viewport, imgui_ctx.c) -- the capture functions live in
+    /* Ambient build viewport (s_build.cur_viewport, imgui_ctx.c) -- the capture functions live in/usage
        the backend unit, so they read it through this accessor rather than the UI-unit static. */
     u32 imgui_dbg_build_viewport( void );
 

@@ -61,6 +61,14 @@ target core
     dep         sys ref
     flag        reflect host_only
 
+target job
+
+    type        static
+    root        source/engine/job
+    folder      02_ENGINE
+    unit        job.c
+    flag        host_only
+
 target net
 
 	type        static
@@ -102,15 +110,6 @@ target draw
     unit        draw.c
 	dep 		rhi
 	
-target job
-
-    type        static
-    root        source/engine/job
-    folder      02_ENGINE
-    unit        job.c
-    flag        host_only
-
-
 target imgui
 
 	type        static
@@ -376,7 +375,7 @@ target sb_runtime_reflect					# load a dll with reflected types
     root        source/sandbox/reflect/runtime_reflect
     folder      09_SANDBOX/REFLECT
     unit        sb_runtime_reflect.c
-    dep         sys mod core ref
+    dep         sys ref mod core 
 	mono_dep 	example_reflect
 
 target sb_runtime_gen						# load a REF_MODULE() dll

@@ -28,26 +28,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>      /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
+#include <math.h> /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 
 #include "orb.h"
 
 // Shared internal types + the render-backend interface (pulls imgui_internal.h + rhi_api.h + app_api.h)
 #include "runtime_service/imgui/imgui_backend.h"
 
-// clang-format off
 /*==============================================================================================
     Unity build
 ==============================================================================================*/
 
-#include "runtime_service/imgui/imgui_shader.h"
-#include "runtime_service/imgui/imgui_font_builtin.c"
-#include "runtime_service/imgui/imgui_font.c"
-#include "runtime_service/imgui/imgui_draw.c"
-#include "runtime_service/imgui/imgui_draw_path.c"
-#include "runtime_service/imgui/imgui_render_tess.c"
-#include "runtime_service/imgui/imgui_render.c"
-#include "runtime_service/imgui/imgui_debug.c"
+#include "runtime_service/imgui/backend/imgui_shader.h"
+#include "runtime_service/imgui/backend/imgui_font_builtin.c"
+#include "runtime_service/imgui/backend/imgui_font.c"
+#include "runtime_service/imgui/backend/imgui_draw.c"
+#include "runtime_service/imgui/backend/imgui_draw_path.c"
+#include "runtime_service/imgui/backend/imgui_render_tess.c"
+#include "runtime_service/imgui/backend/imgui_render.c"
+#include "runtime_service/imgui/backend/imgui_debug.c"
 
 /*============================================================================================*/
 // clang-format on

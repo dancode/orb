@@ -64,7 +64,7 @@
 /* F4 sampled mode reuses imgui's pre-compiled bindless SPIR-V (self-contained u32 arrays:
    s_imgui_vert_spirv / s_imgui_frag_spirv).  This is bytecode only -- no imgui library linkage --
    so the stress test stays independent of imgui while still driving a real textured draw. */
-#include "runtime_service/imgui/imgui_shader.h"
+#include "runtime_service/imgui/backend/imgui_shader.h"
 
 // clang-format off
 
