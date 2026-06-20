@@ -5,12 +5,17 @@
 ==============================================================================================*/
 // clang-format off
 
+// Handle encoding: bits[7:0] = pool index (0-255), bits[23:8] = generation (1-65535; 0=null).
+#define JOB_HANDLE_INDEX( id )       ( (u32)(id) & 0xFFu )
+#define JOB_HANDLE_GEN( id )         ( (u32)(id) >> 8 & 0xFFFFu )
+#define JOB_HANDLE_MAKE( idx, gen )  ( (u32)(idx) | ( (u32)(gen) << 8 ) )
+
 /*==============================================================================================
    job_worker_main — The entry point and execution loop for every worker thread.
 
    1. Sleep on the semaphore until there is work available.
    2. Wake up, lock the queue mutex, and pop the next job from the head of the queue.
-   3. Unlock the mutex, run the job function, and decrement the associated counter.
+   3. Unlock the mutex, run the job function, and decrement the associated pool slot.
 ==============================================================================================*/
 
 static void
@@ -59,60 +64,67 @@ job_worker_main( void* arg )
                 // Run the job callback function with its argument data.
                 job.function( job.data );
             }
-            if ( job.counter )
+            if ( job.slot )
             {
-                // Decrement the counter associated with this job group atomically.
-                // Once all jobs in the group finish, the counter hits 0.
-                sys_atomic_decrement( &job.counter->value );
+                // Decrement the batch counter atomically. When it hits 0 the slot is free.
+                sys_atomic_decrement( &job.slot->value );
             }
         }
     }
 }
 
 /*
-   job_allocate_counter — Claims a job_counter_t from the pool for a new job group.
+   job_allocate_counter — Claims a pool slot and returns an opaque counter handle.
 
-   Loops through the circular counter pool, using Compare-And-Swap (CAS) to find
-   and claim a counter whose current value is 0 (inactive).
+   Loops the circular pool using CAS to find a free slot (value==0), then bumps its
+   generation and returns a handle encoding (index, generation). Generation 0 is reserved
+   for the null handle, so after a u16 wrap the allocator skips back to 1.
 */
-static job_counter_t*
+static job_counter_t
 job_allocate_counter( i32 initial_value )
 {
     for ( uint32_t i = 0; i < 256; ++i )
     {
         // Get the next index in the pool atomically.
-        i32            index   = sys_atomic_increment( &g_job_state->counter_pool_index ) % 256;
-        job_counter_t* counter = &g_job_state->counter_pool[ index ];
+        i32              index = sys_atomic_increment( &g_job_state->counter_pool_index ) % 256;
+        job_pool_slot_t* slot  = &g_job_state->counter_pool[ index ];
 
-        // CAS: If counter->value is 0, set it to initial_value and return it.
-        // This is safe: only one thread will successfully claim this counter.
-        if ( sys_atomic_compare_exchange( &counter->value, initial_value, 0 ) == 0 )
+        // CAS: if slot->value is 0, claim it by setting initial_value.
+        // Only one thread will succeed; others continue scanning.
+        if ( sys_atomic_compare_exchange( &slot->value, initial_value, 0 ) == 0 )
         {
-            return counter;
+            // Bump generation; skip 0 so null handle (id==0) stays distinct.
+            u16 gen = ++slot->generation;
+            if ( gen == 0 )
+            {
+                gen = ++slot->generation;
+            }
+            return (job_counter_t){ .id = JOB_HANDLE_MAKE( index, gen ) };
         }
     }
-    // Panic if all 256 counters are currently in use (pool exhausted).
+    // Panic if all 256 slots are currently in use (pool exhausted).
     ORB_PANIC();
-    return NULL;
+    return JOB_COUNTER_NULL;
 }
 
 /*
-   job_dispatch — Enqueues a batch of parallel jobs and returns an awaitable counter.
+   job_dispatch — Enqueues a batch of parallel jobs and returns an awaitable counter handle.
 
-   1. Allocates an active sync counter initialized to 'count'.
-   2. Locks the queue, copies the declarations into the queue ring buffer, and advances the tail.
+   1. Allocates a pool slot initialized to 'count'.
+   2. Locks the queue, copies declarations into the ring buffer with the slot pointer.
    3. Unlocks the queue and wakes up workers by posting 'count' times to the semaphore.
 */
-static job_counter_t*
+static job_counter_t
 job_dispatch( const job_decl_t* decls, uint32_t count )
 {
     if ( count == 0 )
     {
-        return NULL;
+        return JOB_COUNTER_NULL;
     }
 
-    // Allocate a counter tracking the completion of these 'count' tasks.
-    job_counter_t* counter = job_allocate_counter( ( i32 )count );
+    // Allocate a pool slot tracking this batch.
+    job_counter_t    handle = job_allocate_counter( ( i32 )count );
+    job_pool_slot_t* slot   = &g_job_state->counter_pool[ JOB_HANDLE_INDEX( handle.id ) ];
 
     mutex_lock( &g_job_state->queue_lock );
     // Ensure the queue does not overflow.
@@ -120,7 +132,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
     {
         mutex_unlock( &g_job_state->queue_lock );
         ORB_PANIC();
-        return NULL;
+        return JOB_COUNTER_NULL;
     }
 
     // Push the jobs into the ring buffer.
@@ -129,7 +141,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
         i32 index                            = g_job_state->queue_tail % MAX_JOBS_LIMIT;
         g_job_state->queue[ index ].function = decls[ i ].function;
         g_job_state->queue[ index ].data     = decls[ i ].data;
-        g_job_state->queue[ index ].counter  = counter;
+        g_job_state->queue[ index ].slot     = slot;
 
         g_job_state->queue_tail++;
         g_job_state->queue_count++;
@@ -139,11 +151,14 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
     // Signal the worker threads. Wakes up to 'count' sleeping threads.
     sema_post( &g_job_state->queue_semaphore, count );
 
-    return counter;
+    return handle;
 }
 
 /*
-   job_wait — Blocks the caller until the specified job group's counter hits zero.
+   job_wait — Blocks the caller until the specified batch counter hits zero.
+
+   Generation validation: if the handle's generation does not match the current slot
+   generation, the counter was already recycled and we return immediately.
 
    Wait-Stealing (Active waiting):
    Instead of block-sleeping the thread (which would waste CPU cycles), the thread entering
@@ -153,15 +168,26 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
    - If the queue is empty, it yields its CPU time slice so other workers can run.
 */
 static void
-job_wait( job_counter_t* counter )
+job_wait( job_counter_t counter )
 {
-    if ( !counter )
+    // Null handle -- nothing to wait on.
+    if ( counter.id == 0 )
+    {
+        return;
+    }
+
+    u32              index = JOB_HANDLE_INDEX( counter.id );
+    u16              gen   = ( u16 )JOB_HANDLE_GEN( counter.id );
+    job_pool_slot_t* slot  = &g_job_state->counter_pool[ index ];
+
+    // If the generation doesn't match, the slot was already recycled -- treat as done.
+    if ( slot->generation != gen )
     {
         return;
     }
 
     // Spin-wait as long as the counter's value is greater than 0.
-    while ( sys_atomic_compare_exchange( &counter->value, 0, 0 ) > 0 )
+    while ( sys_atomic_compare_exchange( &slot->value, 0, 0 ) > 0 )
     {
         job_item_t job     = { 0 };
         bool       has_job = false;
@@ -170,8 +196,8 @@ job_wait( job_counter_t* counter )
         mutex_lock( &g_job_state->queue_lock );
         if ( g_job_state->queue_count > 0 )
         {
-            i32 index = g_job_state->queue_head % MAX_JOBS_LIMIT;
-            job       = g_job_state->queue[ index ];
+            i32 idx = g_job_state->queue_head % MAX_JOBS_LIMIT;
+            job     = g_job_state->queue[ idx ];
             g_job_state->queue_head++;
             g_job_state->queue_count--;
             has_job = true;
@@ -189,10 +215,10 @@ job_wait( job_counter_t* counter )
                 // Run the job payload inline.
                 job.function( job.data );
             }
-            if ( job.counter )
+            if ( job.slot )
             {
-                // Decrement the counter atomically.
-                sys_atomic_decrement( &job.counter->value );
+                // Decrement the slot counter atomically.
+                sys_atomic_decrement( &job.slot->value );
             }
         }
         else

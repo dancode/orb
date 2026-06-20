@@ -18,11 +18,11 @@
 
 typedef struct job_api_s
 {
-    /* Dispatch a set of parallel jobs. Returns a counter that can be awaited. */
-    job_counter_t* ( *dispatch )( const job_decl_t* decls, uint32_t count );
+    /* Dispatch a set of parallel jobs. Returns a counter handle that can be awaited. */
+    job_counter_t ( *dispatch )( const job_decl_t* decls, uint32_t count );
 
-    /* Wait for a job counter to reach zero. */
-    void           ( *wait )( job_counter_t* counter );
+    /* Wait for a job group to finish. Handles stale/null counters safely. */
+    void          ( *wait )( job_counter_t counter );
 
     /* Frame-level dispatch function. Used by runtime host in main loop. */
     void           ( *tick )( void );

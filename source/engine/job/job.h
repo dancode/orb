@@ -27,17 +27,19 @@ typedef struct job_decl_s
 
 } job_decl_t;
 
-/* 
-   job_counter_t — A synchronization handle used to track active jobs.
-   When you dispatch a group of jobs, the system increments this counter's internal value.
-   As background worker threads finish running individual jobs, they atomically decrement
-   this value. You can block your calling thread and wait for this value to hit zero.
+/*
+   job_counter_t — An opaque synchronization handle returned by dispatch.
+   Encodes both a pool slot index and a generation number so stale handles can be detected.
+   Pass this by value to job()->wait(). JOB_COUNTER_NULL indicates no active batch.
 */
 typedef struct job_counter_s
 {
-    volatile i32 value; // The atomic/volatile count of active tasks remaining in this group.
+    u32 id; // Packed handle: bits[7:0]=pool index, bits[23:8]=generation (0=null).
 
 } job_counter_t;
+
+// Null/invalid counter handle; returned by dispatch when count==0.
+#define JOB_COUNTER_NULL ( (job_counter_t){ 0 } )
 
 /*============================================================================================*/
 #endif    // JOB_H

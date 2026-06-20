@@ -25,10 +25,11 @@
 #include "engine/sys/sys_host.h"
 #include "engine/job/job_host.h"
 
-/*
-   test_job_fn — The callback executed by the job system.
-   Prints the custom message argument along with the OS thread ID it executes on.
-*/
+/*==============================================================================================
+    test_job_fn — The callback executed by the job system.
+    Prints the custom message argument along with the OS thread ID it executes on.
+==============================================================================================*/
+
 static void
 test_job_fn( void* arg )
 {
@@ -82,8 +83,8 @@ job_test( void )
     printf( "Dispatching jobs...\n" );
     // Step 5: Dispatch the batch of tasks to the system.
     // The system pushes these tasks into the global queue, signals workers, and returns
-    // a synchronization counter.
-    job_counter_t* counter = job()->dispatch( jobs, 3 );
+    // an opaque counter handle encoding the pool slot and a generation number.
+    job_counter_t counter = job()->dispatch( jobs, 3 );
 
     printf( "Waiting for jobs to finish...\n" );
     // Step 6: Block until the counter hits zero.

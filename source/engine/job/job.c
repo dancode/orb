@@ -48,15 +48,27 @@ typedef struct worker_thread_s
 } worker_thread_t;
 
 /*
+   job_pool_slot_t — Internal counter pool entry.
+   Holds the live job count plus a generation number. The generation is bumped every time
+   this slot is claimed, so callers holding old handles can detect recycled slots.
+*/
+typedef struct job_pool_slot_s
+{
+    volatile i32 value;      // Live job count; 0 means the slot is free.
+    u16          generation; // Incremented on each claim; wraps, skipping 0.
+    u16          _pad;
+
+} job_pool_slot_t;
+
+/*
    job_item_t — An internal representation of a queued job.
-   Unlike the public job_decl_t, this structure carries a pointer to the job_counter_t.
-   This allows the worker thread to know exactly which counter to decrement upon completion.
+   Carries a direct pointer to the pool slot so the worker can decrement it on completion.
 */
 typedef struct job_item_s
 {
-    job_fn_t        function;                   // The task function to run.
-    void*           data;                       // Argument to pass to the function.
-    job_counter_t*  counter;                    // Counter tracking this task's completion.
+    job_fn_t         function; // The task function to run.
+    void*            data;     // Argument to pass to the function.
+    job_pool_slot_t* slot;     // Pool slot tracking this batch's completion.
 
 } job_item_t;
 
@@ -81,11 +93,9 @@ typedef struct job_state_s
     sema_t          queue_semaphore;            // Counting semaphore representing available jobs.
 
     // Sync Counter Pool
-    // To allow dispatching to return a counter that can be awaited, we need to allocate
-    // counters dynamically. We use a static pool of 256 counters to avoid heap allocation.
-    // When a counter is free, its value is 0.
-
-    job_counter_t   counter_pool[ 256 ];
+    // 256 slots; each slot tracks one active batch. slot->value==0 means free.
+    // Handles returned to callers encode (index, generation) so stale handles are detectable.
+    job_pool_slot_t counter_pool[ 256 ];
     volatile i32    counter_pool_index;         // Circular allocator index incremented atomically.
 
     volatile i32    is_running;                 // Set to 1 when active; set to 0 to trigger worker shutdown.
