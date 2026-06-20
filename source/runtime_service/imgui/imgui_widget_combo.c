@@ -161,7 +161,7 @@ imgui_combo( const char* label, i32* current_item, const char* const items[], i3
     const char* preview = ( *current_item >= 0 && *current_item < count ) ? items[ *current_item ] : "";
     bool        changed = false;
 
-    if ( imgui_begin_combo( label, preview, IMGUI_WIN_NONE ) )
+    if ( imgui_begin_combo( label, preview, IMGUI_COMBO_NONE ) )
     {
         for ( i32 i = 0; i < count; ++i )
         {
