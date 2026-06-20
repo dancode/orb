@@ -32,23 +32,25 @@ const job_api_t g_job_api_struct =
 static bool
 job_mod_init( void* raw_state, get_api_fn get_api )
 {
+    UNUSED( raw_state );
     UNUSED( get_api );
     // Delegates actual memory and thread pool initialization to job_init in job.c.
-    return job_init( raw_state );
+    return job_init();
 }
 
 static void
 job_mod_exit( void* raw_state )
 {
+    UNUSED( raw_state );
     // Cleans up active OS threads and handles during module shutdown in job.c.
-    job_exit( raw_state );
+    job_exit();
 }
 
 /*==============================================================================================
     Module descriptor
     
     This structure tells ORB's loader how to manage the job module:
-    - state_size: Informs the system to allocate and preserve 'job_state_t' bytes of memory.
+    - state_size: 0 since the state is statically allocated in job.c.
     - func_api: Points to the static interface struct defined above.
     - init/exit: Registration of startup and shutdown hooks.
 ==============================================================================================*/
@@ -58,7 +60,7 @@ job_get_mod_desc( void )
 {
     static mod_desc_t api = {
         .version       = 1,
-        .state_size    = sizeof( job_state_t ), // System allocates this state block for us.
+        .state_size    = 0, // State is statically allocated in job.c BSS segment.
         .func_api_size = sizeof( job_api_t ),
         .func_api      = ( void* )&g_job_api_struct,
         .dep_count     = 1,

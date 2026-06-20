@@ -25,14 +25,14 @@ job_worker_main( void* arg )
     self->id              = thread_current_id();    // Cache the thread's OS ID.
 
     // Keep running as long as the system is active.
-    while ( sys_atomic_read( &g_job_state->is_running ) )
+    while ( sys_atomic_read( &g_job_state.is_running ) )
     {
         // Block-sleep until the semaphore count is greater than 0.
         // When jobs are dispatched, sema_post raises this count, waking up workers.
-        sema_wait( &g_job_state->queue_semaphore );
+        sema_wait( &g_job_state.queue_semaphore );
 
         // If the system shut down while we were sleeping, exit the thread.
-        if ( !sys_atomic_read( &g_job_state->is_running ) )
+        if ( !sys_atomic_read( &g_job_state.is_running ) )
         {
             break;
         }
@@ -42,19 +42,19 @@ job_worker_main( void* arg )
 
         // Pop an item from the queue ring buffer. Must lock to avoid race conditions
         // with other worker threads popping, or external threads pushing.
-        mutex_lock( &g_job_state->queue_lock );
-        if ( g_job_state->queue_count > 0 )
+        mutex_lock( &g_job_state.queue_lock );
+        if ( g_job_state.queue_count > 0 )
         {
             // Calculate the ring buffer index using modulo.
-            i32 index = g_job_state->queue_head % MAX_JOBS_LIMIT;
-            job       = g_job_state->queue[ index ];
+            i32 index = g_job_state.queue_head % MAX_JOBS_LIMIT;
+            job       = g_job_state.queue[ index ];
 
             // Advance the monotonic head index.
-            g_job_state->queue_head++;
-            g_job_state->queue_count--;
+            g_job_state.queue_head++;
+            g_job_state.queue_count--;
             has_job = true;
         }
-        mutex_unlock( &g_job_state->queue_lock );
+        mutex_unlock( &g_job_state.queue_lock );
 
         // If we successfully popped a job, execute it.
         if ( has_job )
@@ -87,8 +87,8 @@ job_allocate_counter( i32 initial_value )
     for ( uint32_t i = 0; i < 256; ++i )
     {
         // Get the next index in the pool atomically.
-        i32              index = sys_atomic_increment( &g_job_state->counter_pool_index ) % 256;
-        job_pool_slot_t* slot  = &g_job_state->counter_pool[ index ];
+        i32              index = sys_atomic_increment( &g_job_state.counter_pool_index ) % 256;
+        job_pool_slot_t* slot  = &g_job_state.counter_pool[ index ];
 
         // CAS: if slot->value is 0, claim it by setting initial_value.
         // Only one thread will succeed; others continue scanning.
@@ -125,13 +125,13 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
 
     // Allocate a pool slot tracking this batch.
     job_counter_t    handle = job_allocate_counter( ( i32 )count );
-    job_pool_slot_t* slot   = &g_job_state->counter_pool[ JOB_HANDLE_INDEX( handle.id ) ];
+    job_pool_slot_t* slot   = &g_job_state.counter_pool[ JOB_HANDLE_INDEX( handle.id ) ];
 
-    mutex_lock( &g_job_state->queue_lock );
+    mutex_lock( &g_job_state.queue_lock );
     // Ensure the queue does not overflow.
-    if ( g_job_state->queue_count + ( i32 )count > MAX_JOBS_LIMIT )
+    if ( g_job_state.queue_count + ( i32 )count > MAX_JOBS_LIMIT )
     {
-        mutex_unlock( &g_job_state->queue_lock );
+        mutex_unlock( &g_job_state.queue_lock );
         ORB_PANIC();
         return JOB_COUNTER_NULL;
     }
@@ -139,18 +139,18 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
     // Push the jobs into the ring buffer.
     for ( uint32_t i = 0; i < count; ++i )
     {
-        i32 index                            = g_job_state->queue_tail % MAX_JOBS_LIMIT;
-        g_job_state->queue[ index ].function = decls[ i ].function;
-        g_job_state->queue[ index ].data     = decls[ i ].data;
-        g_job_state->queue[ index ].slot     = slot;
+        i32 index                            = g_job_state.queue_tail % MAX_JOBS_LIMIT;
+        g_job_state.queue[ index ].function = decls[ i ].function;
+        g_job_state.queue[ index ].data     = decls[ i ].data;
+        g_job_state.queue[ index ].slot     = slot;
 
-        g_job_state->queue_tail++;
-        g_job_state->queue_count++;
+        g_job_state.queue_tail++;
+        g_job_state.queue_count++;
     }
-    mutex_unlock( &g_job_state->queue_lock );
+    mutex_unlock( &g_job_state.queue_lock );
 
     // Signal the worker threads. Wakes up to 'count' sleeping threads.
-    sema_post( &g_job_state->queue_semaphore, count );
+    sema_post( &g_job_state.queue_semaphore, count );
 
     return handle;
 }
@@ -180,7 +180,7 @@ job_wait( job_counter_t counter )
 
     u32              index = JOB_HANDLE_INDEX( counter.id );
     u16              gen   = ( u16 )JOB_HANDLE_GEN( counter.id );
-    job_pool_slot_t* slot  = &g_job_state->counter_pool[ index ];
+    job_pool_slot_t* slot  = &g_job_state.counter_pool[ index ];
 
     // If the generation doesn't match, the slot was already recycled -- treat as done.
     if ( slot->generation != gen )
@@ -195,22 +195,22 @@ job_wait( job_counter_t counter )
         bool       has_job = false;
 
         // Try to pop a job to execute ourselves.
-        mutex_lock( &g_job_state->queue_lock );
-        if ( g_job_state->queue_count > 0 )
+        mutex_lock( &g_job_state.queue_lock );
+        if ( g_job_state.queue_count > 0 )
         {
-            i32 idx = g_job_state->queue_head % MAX_JOBS_LIMIT;
-            job     = g_job_state->queue[ idx ];
-            g_job_state->queue_head++;
-            g_job_state->queue_count--;
+            i32 idx = g_job_state.queue_head % MAX_JOBS_LIMIT;
+            job     = g_job_state.queue[ idx ];
+            g_job_state.queue_head++;
+            g_job_state.queue_count--;
             has_job = true;
         }
-        mutex_unlock( &g_job_state->queue_lock );
+        mutex_unlock( &g_job_state.queue_lock );
 
         if ( has_job )
         {
             // Since we popped a job directly without using sema_wait(), the semaphore
             // count is now off by 1. We consume a semaphore token to correct it.
-            sema_try_wait( &g_job_state->queue_semaphore );
+            sema_try_wait( &g_job_state.queue_semaphore );
 
             if ( job.function )
             {
@@ -244,22 +244,20 @@ job_tick( void )
    Invoked by the module lifecycle initialization callback.
 */
 static bool
-job_init( void* raw_state )
+job_init( void )
 {
-    g_job_state = ( job_state_t* )raw_state;
-
     // Reset indices.
-    g_job_state->queue_head         = 0;
-    g_job_state->queue_tail         = 0;
-    g_job_state->queue_count        = 0;
-    g_job_state->counter_pool_index = 0;
-    memset( ( void* )g_job_state->counter_pool, 0, sizeof( g_job_state->counter_pool ) );
+    g_job_state.queue_head         = 0;
+    g_job_state.queue_tail         = 0;
+    g_job_state.queue_count        = 0;
+    g_job_state.counter_pool_index = 0;
+    memset( ( void* )g_job_state.counter_pool, 0, sizeof( g_job_state.counter_pool ) );
 
     // Initialize OS threading primitives.
-    mutex_init( &g_job_state->queue_lock );
-    sema_init( &g_job_state->queue_semaphore, 0 );
+    mutex_init( &g_job_state.queue_lock );
+    sema_init( &g_job_state.queue_semaphore, 0 );
 
-    g_job_state->is_running = 1;
+    g_job_state.is_running = 1;
 
     // Determine the ideal number of threads.
     // Standard practice: Logical core count minus 1 (the main thread acts as the coordinator).
@@ -270,12 +268,12 @@ job_init( void* raw_state )
         worker_count = 32;    // Limit pool size to 32 worker threads.
     }
 
-    g_job_state->worker_count = worker_count;
+    g_job_state.worker_count = worker_count;
 
     // Spawn the worker threads.
     for ( uint32_t i = 0; i < worker_count; ++i )
     {
-        worker_thread_t* w = &g_job_state->workers[ i ];
+        worker_thread_t* w = &g_job_state.workers[ i ];
         w->index           = i;
 
         // Spawn the thread. 0 stack size specifies default stack.
@@ -301,25 +299,19 @@ job_init( void* raw_state )
    Invoked by the module lifecycle exit callback.
 */
 static void
-job_exit( void* raw_state )
+job_exit( void )
 {
-    UNUSED( raw_state );
-    if ( !g_job_state )
-    {
-        return;
-    }
-
     // Set is_running to 0 so workers exit their loop.
-    sys_atomic_write( &g_job_state->is_running, 0 );
+    sys_atomic_write( &g_job_state.is_running, 0 );
 
     // Post to the semaphore worker_count times to wake up all sleeping workers
     // so they can see is_running == 0 and exit cleanly.
-    sema_post( &g_job_state->queue_semaphore, g_job_state->worker_count );
+    sema_post( &g_job_state.queue_semaphore, g_job_state.worker_count );
 
     // Block and wait for all workers to shut down.
-    for ( uint32_t i = 0; i < g_job_state->worker_count; ++i )
+    for ( uint32_t i = 0; i < g_job_state.worker_count; ++i )
     {
-        worker_thread_t* w = &g_job_state->workers[ i ];
+        worker_thread_t* w = &g_job_state.workers[ i ];
         if ( thread_valid( w->handle ) )
         {
             thread_join( w->handle );    // Join blocking call.
@@ -327,10 +319,8 @@ job_exit( void* raw_state )
     }
 
     // Destroy OS primitives to prevent resource leaks.
-    mutex_destroy( &g_job_state->queue_lock );
-    sema_destroy( &g_job_state->queue_semaphore );
-
-    g_job_state = NULL;
+    mutex_destroy( &g_job_state.queue_lock );
+    sema_destroy( &g_job_state.queue_semaphore );
 }
 
 /*============================================================================================*/

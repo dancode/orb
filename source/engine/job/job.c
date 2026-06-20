@@ -102,8 +102,8 @@ typedef struct job_state_s
 
 } job_state_t;
 
-// Global pointer to the module's state.
-static job_state_t* g_job_state = NULL;
+// Global compile-time static instance of the state. Address is resolved at link time via RIP-relative offset.
+static job_state_t g_job_state;
 
 /*==============================================================================================
     Unity Includes
