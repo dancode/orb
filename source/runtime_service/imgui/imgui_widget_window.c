@@ -945,11 +945,25 @@ imgui_end_window( void )
                 }
                 else
                 {
-                    /* Floater: commit to imgui drag; begin_window applies via window_set_pos. */
+                    /* Floater: commit to imgui drag; begin_window applies via window_set_pos.
+                       If the floater is maximized, restore it first -- dragging a maximized OS
+                       window while calling window_set_pos leaves it in a bad state and produces
+                       a stale-chrome white bar across the titlebar.  Re-anchor the grab offset
+                       so the cursor lands at a natural title-bar position on the restored window
+                       (the maximized-viewport-local offsets would snap it to screen origin). */
+                    if ( app()->window_state( s_titlebar_drag_os_id ).maximized )
+                    {
+                        app()->window_restore( s_titlebar_drag_os_id );
+                        s_drag_off_x = s_build.win_title_h;
+                        s_drag_off_y = s_build.win_title_h * 0.5f;
+                    }
+                    else
+                    {
+                        s_drag_off_x = s_io.mouse_x - s_build.win_x;
+                        s_drag_off_y = s_io.mouse_y - s_build.win_y;
+                    }
                     s_interaction.active_id     = s_build.win_id;
                     s_interaction.active_button = 0;
-                    s_drag_off_x = s_io.mouse_x - s_build.win_x;
-                    s_drag_off_y = s_io.mouse_y - s_build.win_y;
                 }
             }
         }
