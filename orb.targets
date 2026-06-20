@@ -67,6 +67,7 @@ target job
     root        source/engine/job
     folder      02_ENGINE
     unit        job.c
+	dep 		sys
     flag        host_only
 
 target net
