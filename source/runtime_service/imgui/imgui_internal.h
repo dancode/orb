@@ -43,6 +43,10 @@
 #define IMGUI_LAYOUT_DEPTH  8       // max nested scroll regions (windows or children)
 #define IMGUI_KEY_COUNT     128     // imgui_io_t key arrays; must cover the full app_key_t range
 
+#define IMGUI_DOCK_MAX_NODES 48     // dock-tree nodes per context (imgui_context_t.dock_nodes pool)
+#define IMGUI_DOCK_TABS_MAX  8      // windows co-docked (tabbed) in one leaf node
+#define IMGUI_DOCK_NAME_CAP  28     // bytes of a tab's display name, copied at dock time
+
 #define IMGUI_STATE_SLOTS 512                       // keyed state pool capacity (power of two)
 #define IMGUI_STATE_MASK  ( IMGUI_STATE_SLOTS - 1 ) // bucket = id & mask
 #define IMGUI_STATE_CAP   32                        // payload bytes per slot (max state struct)
@@ -429,7 +433,7 @@ typedef struct
     [0] is the main swapchain; the rest are floaters.  Held by value in imgui_context_t.viewports.
 ==============================================================================================*/
 
-struct imgui_dock_node_t;   /* forward: the dock tree, populated when docking is implemented */
+struct imgui_dock_node_t;   /* the dock tree node -- defined in full after imgui_viewport_t below */
 
 typedef struct
 {
@@ -485,6 +489,49 @@ typedef struct
 } imgui_viewport_t;
 
 /*==============================================================================================
+    Dock node (behavior in imgui_dock.c)
+
+    One node of a viewport's dock tree -- the machinery behind the dock_root seam above.  A node is
+    either a LEAF (split == DOCK_SPLIT_NONE), which tabs one or more windows into a single region, or
+    an INTERNAL split (DOCK_SPLIT_X / _Y), which divides its rect between two children at `ratio` with
+    a draggable splitter between them.  Nodes live in a fixed per-context pool (imgui_context_t.
+    dock_nodes) so child / parent pointers stay valid across frames; a freed slot has id == 0.
+
+    rect / content are resolved every frame by dock_node_layout from the viewport extent down: rect is
+    the node's whole box, content is the leaf's body below its tab strip (where the active window draws).
+==============================================================================================*/
+
+typedef enum
+{
+    DOCK_SPLIT_NONE = 0,    /* leaf -- tabs windows; child[] unused                 */
+    DOCK_SPLIT_X,           /* internal -- vertical split, children side by side    */
+    DOCK_SPLIT_Y,           /* internal -- horizontal split, children top / bottom  */
+
+} imgui_dock_split_t;
+
+typedef struct imgui_dock_node_t
+{
+    imgui_id_t id;                          /* stable node handle; 0 = free pool slot            */
+    u32        viewport;                    /* surface (viewport index) this tree belongs to     */
+    u8         split;                       /* imgui_dock_split_t: NONE = leaf, else internal     */
+    f32        ratio;                       /* child[0]'s fraction of the split axis (0.5 default) */
+
+    struct imgui_dock_node_t* parent;       /* owning split, or NULL for the tree root           */
+    struct imgui_dock_node_t* child[ 2 ];   /* internal only (NULL on a leaf)                    */
+
+    /* Leaf payload: the windows tabbed into this node.  Names are copied at dock time so the tab
+       bar is self-sufficient (no dependence on a window emitting this frame or its title lifetime). */
+    imgui_id_t tabs [ IMGUI_DOCK_TABS_MAX ];
+    char       names[ IMGUI_DOCK_TABS_MAX ][ IMGUI_DOCK_NAME_CAP ];
+    u32        tab_count;
+    u32        active_tab;                   /* index of the visible tab                          */
+
+    imgui_rect_t rect;                       /* whole node box, resolved this frame               */
+    imgui_rect_t content;                    /* leaf body below the tab strip (active window's rect) */
+
+} imgui_dock_node_t;
+
+/*==============================================================================================
     imgui_context_t -- the bound per-context retained state ("bind and use").
 
     A context is the emission session the code binds once and emits ALL its windows into; it owns
@@ -511,6 +558,10 @@ typedef struct imgui_context_t
     imgui_viewport_t viewports[ IMGUI_MAX_VIEWPORTS ];  // render surfaces: [0]=main swapchain, rest floaters
     u32              viewport_count;                     // live viewports (imgui_render.c behavior)
 
+    imgui_dock_node_t dock_nodes[ IMGUI_DOCK_MAX_NODES ]; // dock-tree node pool (imgui_dock.c behavior)
+    u32               dock_node_count;                    // high-water slot count in the pool
+    u32               dock_id_seq;                         // monotonic node-id dispenser (0 = none)
+
 } imgui_context_t;
 
 /*==============================================================================================
@@ -529,6 +580,14 @@ static u32 viewport_index_for_window( i32 win_id );
    imgui_event (imgui_input.c) delegates them here.  Defined in imgui_frame.c after g_ctx; returns
    true when win_id is an owned viewport (event consumed). */
 static bool imgui_owned_window_event( const app_event_t* ev );
+
+/* The window chrome (imgui_widget_window.c) is included BEFORE the dock machinery (imgui_dock.c),
+   but begin_window / end_window must route a docked window into its node.  These two are defined in
+   imgui_dock.c and forward-declared here so the earlier file can call them: the lookup that decides
+   whether a window is docked, and the tab-strip + border chrome a docked window draws in place of a
+   title bar.  dock_window_chrome reads the current window rect from s_build. */
+static imgui_dock_node_t* dock_find_window_node( imgui_id_t win );
+static void               dock_window_chrome( imgui_dock_node_t* node );
 
 /*==============================================================================================
     Shared stateless helpers

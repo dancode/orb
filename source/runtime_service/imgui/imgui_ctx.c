@@ -80,6 +80,13 @@ static struct
     bool        win_grip_hot;       // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
     struct imgui_window_t* cur_win; // persisted window record; scroll write-back target
 
+    /* Docking (imgui_dock.c): the node hosting the current window, or NULL when it is free-floating.
+       When set, the window's geometry is owned by the node and its title bar is replaced by the
+       node's tab strip; win_dock_active distinguishes the visible tab (draws a body) from a window
+       that is docked but behind another tab (begin_window returns false, draws nothing). */
+    struct imgui_dock_node_t* cur_dock_node;
+    bool        win_dock_active;    // current docked window is its node's active (visible) tab
+
     f32  win_x, win_y;        // current window top-left (outer frame)
     f32  win_w, win_h;        // current window dimensions
 
@@ -361,6 +368,9 @@ static imgui_context_t* g_ctx = &s_default_context;
 #define s_window_count     ( g_ctx->window_count )
 #define s_window_scratch   ( g_ctx->window_scratch )
 #define s_z_counter        ( g_ctx->z_counter )
+#define s_dock_nodes       ( g_ctx->dock_nodes )
+#define s_dock_node_count  ( g_ctx->dock_node_count )
+#define s_dock_id_seq      ( g_ctx->dock_id_seq )
 
 /* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
    default.  This is the whole multi-context seam -- no state is copied.  One context today. */

@@ -28,6 +28,13 @@ typedef u32 imgui_id_t;
 typedef i32  imgui_vp_t;
 #define IMGUI_VP_INVALID  (-1)
 
+/* Opaque dock-node handle -- one region of a viewport's dock tree.  Returned by dockspace_over_viewport
+   (the tree root) and dock_split (the new sibling), and passed to dock_split / dock_window to name a
+   target region.  0 (IMGUI_DOCK_NONE) signals "no node" -- a failed call or an unassigned slot. */
+
+typedef u32  imgui_dock_id_t;
+#define IMGUI_DOCK_NONE  0u
+
 /*==============================================================================================
     IMGUI: Geometry
 ==============================================================================================*/
@@ -361,6 +368,20 @@ typedef enum
     IMGUI_WIN_NO_BOUNDARY_CLAMP = 1 << 18,
 
 } imgui_win_flags_t;
+
+/*==============================================================================================
+    Dockspace flags
+
+    Passed to dockspace_over_viewport.  0 (IMGUI_DOCKSPACE_NONE) is the default dockspace that fills
+    the viewport behind the free-floating windows.  Bit values so future policy bits (e.g. hide the
+    single-tab strip, no central-node auto-hide) can be ORed in without changing the call sites.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_DOCKSPACE_NONE = 0,    /* default: fill the viewport, draw splitters + tab bars */
+
+} imgui_dockspace_flags_t;
 
 /*==============================================================================================
     Item flags

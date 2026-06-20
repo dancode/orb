@@ -141,6 +141,36 @@ typedef struct imgui_api_s
     bool ( *begin_window )( const char* title, imgui_win_flags_t flags );
     void ( *end_window   )( void );
 
+    /* Docking -- tile + tab windows into a dock tree that fills a viewport (the DockSpaceOverViewport
+       analogue).  Phase 1 is programmatic: build a layout in code, then windows whose titles were
+       dock_window'd render into their node (no per-window title bar -- the node draws a shared tab
+       strip) instead of free-floating.  Free-floating windows still overlap on top of the dockspace.
+
+       dockspace_over_viewport() -- ensure viewport vp hosts a dock tree, lay it out over the surface,
+                                    draw + interact its splitters, and return the tree ROOT node id.
+                                    Call once per frame at the TOP of the build, before the docked
+                                    windows' begin_window (which read their resolved node rects).
+       dock_split()              -- split a LEAF node in two; returns the NEW empty leaf on the `dir`
+                                    side and writes the REMAINING node id to *out_remain (may be NULL).
+                                    `ratio` is the new side's fraction of the axis.  The DockBuilder
+                                    idiom -- keep splitting the returned remainder to carve a layout.
+       dock_window()             -- add a window (matched to begin_window by title) as a tab in a leaf,
+                                    moving it out of any node it was already in; it becomes active.
+       dock_undock()             -- remove a window from its node, returning it to free-floating.
+       is_window_docked()        -- true while the window is tabbed into some node.
+
+           imgui_dock_id_t root  = imgui()->dockspace_over_viewport( 0, IMGUI_DOCKSPACE_NONE );
+           imgui_dock_id_t left  = imgui()->dock_split( root, IMGUI_DIR_LEFT, 0.25f, &root );
+           imgui()->dock_window( "Scene Tree", left );
+           imgui()->dock_window( "Viewport",   root );   // center; tab more windows here with root */
+
+    imgui_dock_id_t ( *dockspace_over_viewport )( imgui_vp_t vp, imgui_dockspace_flags_t flags );
+    imgui_dock_id_t ( *dock_split )( imgui_dock_id_t node, imgui_dir_t dir, f32 ratio,
+                                     imgui_dock_id_t* out_remain );
+    void ( *dock_window )( const char* title, imgui_dock_id_t node );
+    void ( *dock_undock )( const char* title );
+    bool ( *is_window_docked )( const char* title );
+
     /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when
        the user clicks outside it; a modal blocks input behind it and dims the background, closing
        only via close_current_popup.  The string id namespaces both the open request and the body,

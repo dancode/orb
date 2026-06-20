@@ -305,6 +305,80 @@ window_apply_resize( imgui_window_t* win, f32 title_h )
 /* resize_grab (the press-time anchor record) and draw_collapse_arrow live in imgui_widget_core.c,
    shared with begin_child and collapsing_header respectively. */
 
+/* window_begin_docked -- the docked branch of begin_window.  A window whose id is in a dock leaf is
+   placed and chromed by its node, not free-floated: geometry is pinned to the node, the title bar is
+   replaced by the node's tab strip (drawn in end_window via dock_window_chrome), and only the node's
+   active tab opens a body.  Drag, edge-resize, tear-off, collapse and boundary-clamp are all skipped
+   -- the node and its splitters own placement.  Returns true only for the active tab (its body is
+   emitted); an inactive tab returns false and draws nothing, exactly like a collapsed window. */
+static bool
+window_begin_docked( imgui_window_t* win, imgui_id_t id, const char* title,
+                     imgui_win_flags_t flags, imgui_dock_node_t* node )
+{
+    bool active = ( node->active_tab < node->tab_count && node->tabs[ node->active_tab ] == id );
+
+    /* Geometry owned by the node; mirror it onto the record so a later undock resumes here. */
+    win->viewport   = node->viewport;
+    win->x          = node->rect.x;
+    win->y          = node->rect.y;
+    win->w          = node->rect.w;
+    win->h          = node->rect.h;
+    win->collapsed  = false;
+    win->last_frame = s_retained.frame;
+
+    f32 title_h = node->rect.h - node->content.h;   /* tab strip height (= WIN_TITLE_H, node-clamped) */
+
+    /* Route to the node's surface at a low z so docked content sits behind the free-floating windows. */
+    draw_set_sort_key( 0 );
+    draw_set_viewport( node->viewport );
+    s_build.cur_viewport = node->viewport;
+
+    /* Commit the docked window context end_window reads. */
+    s_build.win_id          = id;
+    s_build.win_title       = title;
+    s_build.win_collapsed   = false;
+    s_build.win_flags       = flags;
+    s_build.win_title_h     = title_h;
+    s_build.win_resize_hot  = 0;
+    s_build.win_grip_hot    = false;
+    s_build.cur_win         = win;
+    s_build.cur_dock_node   = node;
+    s_build.win_dock_active = active;
+    s_build.win_x = win->x;  s_build.win_y = win->y;
+    s_build.win_w = win->w;  s_build.win_h = win->h;
+
+    if ( !active )
+        return false;   /* behind another tab -- no body, no clip; end_window early-outs */
+
+    /* The active tab nominates hover over the whole node (strip + body) so its tab-strip widgets and
+       body widgets all resolve under one hover_win. */
+    window_nominate_hover( id, node->rect, 0u, node->viewport );
+
+    /* Clip against the node's surface, then the node rect; the body region reuses this clip. */
+    {
+        const imgui_viewport_t* vp = &g_ctx->viewports[ node->viewport ];
+        f32 rw = vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w;
+        f32 rh = vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h;
+        draw_set_root_clip( rw, rh );
+    }
+    item_flags_chrome_reset();
+
+    draw_push_clip_rect( win->x, win->y, win->w, win->h );
+    s_build.clip_rect = ( imgui_rect_t ){ win->x, win->y, win->w, win->h };
+
+    /* Body background fills the whole node; the tab strip is overpainted by dock_window_chrome last. */
+    draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
+
+    /* Phase 1: docked windows reserve no menu bar. */
+    s_build.menubar_rect = ( imgui_rect_t ){ win->x, win->y + title_h, win->w, 0.0f };
+
+    /* Open the body over the node's content rect -- the same region machinery a free window uses. */
+    layout_push_region( id, node->content, REGION_PAD_DEFAULT, flags,
+                        &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
+                        /* own_clip */ false );
+    return true;
+}
+
 /* window_begin_ex -- the shared body of begin_window, with the window id supplied explicitly and
    the title used only for display + chrome (NULL = no title text).  imgui_begin_window hashes the
    title for its id; the popup layer (imgui_popup.c) passes a salted popup id and its own title (or
@@ -321,6 +395,12 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
     if ( win->viewport > 0 && !rhi_handle_valid( g_ctx->viewports[ win->viewport ].vb ) )
         win->viewport = 0;
+
+    /* Docking: a window tabbed into a dock node is placed + chromed by the node, not free-floated.
+       The whole free-float path below (drag, resize, tear-off, chrome) is bypassed for it. */
+    imgui_dock_node_t* dock = dock_find_window_node( id );
+    if ( dock )
+        return window_begin_docked( win, id, title, flags, dock );
 
     /* Next-window channel: apply any queued set_next_window_pos / _size before this frame's drag,
        resize, and autosize act on the geometry, so a ONCE / APPEARING seed becomes the incoming
@@ -566,6 +646,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     s_build.win_flags     = flags;   /* end_window reads these for chrome + resize grab */
     s_build.win_title_h   = title_h; /* 0 when NOTITLEBAR */
     s_build.cur_win       = win;     /* collapse write-back target for end_window */
+    s_build.cur_dock_node = NULL;    /* free-floating: end_window takes the normal chrome path */
     s_build.win_x         = win->x;
     s_build.win_y         = win->y;
     s_build.win_w         = win->w;
@@ -634,6 +715,29 @@ void
 imgui_end_window( void )
 {
     imgui_window_t* win = s_build.cur_win;
+
+    /* Docked window: the node owns chrome, not the free-float path below.  An inactive tab opened
+       nothing (begin returned false), so there is nothing to close; the active tab closes its body
+       region, draws the tab strip + node border, and balances its clip.  Either way, restore the
+       ambient draw state and return before the free-float chrome runs. */
+    if ( s_build.cur_dock_node )
+    {
+        imgui_dock_node_t* node = s_build.cur_dock_node;
+        s_build.cur_dock_node = NULL;   /* consume for the next window */
+
+        if ( s_build.win_dock_active )
+        {
+            item_flags_chrome_reset();
+            layout_pop_region();        /* measure content, draw scrollbars, pop the inner clip */
+            dock_window_chrome( node ); /* tab strip + tabs + node border, under the window clip */
+            draw_pop_clip_rect();       /* balance the clip pushed in window_begin_docked */
+        }
+
+        draw_set_sort_key( 0 );
+        draw_set_viewport( 0 );
+        draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+        return;
+    }
 
     /* Same native test begin_window used (flag or owned floater): a native window's titlebar/border
        is the OS frame, so its collapse arrow, detach button and imgui drag-grab are all suppressed. */

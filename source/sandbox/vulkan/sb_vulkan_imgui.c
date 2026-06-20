@@ -1020,6 +1020,98 @@ demo_lines( void )
 }
 
 /*==============================================================================================
+    15. Docking -- tile + tab windows into a dockspace that fills the main viewport.
+
+    dockspace_over_viewport( 0, ... ) is called at the TOP of the build every frame: it lays the dock
+    tree out over the surface and draws + interacts its splitters.  The layout itself is built once
+    (programmatically) with dock_split / dock_window -- the DockBuilder idiom of splitting the shrinking
+    remainder.  The docked windows below then render into their nodes: no per-window title bar, a shared
+    tab strip instead (drag the splitters to resize; click the Console / Assets tabs to switch).  The
+    "Demos" picker and any other free window still float on top of the dockspace.
+==============================================================================================*/
+
+static void
+demo_docking( void )
+{
+    /* Lay out + interact the dockspace every frame (must precede the docked windows' begin_window). */
+    imgui_dock_id_t root = imgui()->dockspace_over_viewport( 0, IMGUI_DOCKSPACE_NONE );
+
+    /* Build the tree once: left rail, right inspector, a bottom strip, central viewport. */
+    static bool built = false;
+    if ( !built && root != IMGUI_DOCK_NONE )
+    {
+        imgui_dock_id_t left   = imgui()->dock_split( root, IMGUI_DIR_LEFT,  0.22f, &root );
+        imgui_dock_id_t right  = imgui()->dock_split( root, IMGUI_DIR_RIGHT, 0.28f, &root );
+        imgui_dock_id_t bottom = imgui()->dock_split( root, IMGUI_DIR_DOWN,  0.30f, &root );
+        imgui()->dock_window( "Scene Tree", left   );
+        imgui()->dock_window( "Inspector",  right  );
+        imgui()->dock_window( "Console",    bottom );
+        imgui()->dock_window( "Assets",     bottom );   /* tab alongside Console */
+        imgui()->dock_window( "Viewport",   root   );   /* central remainder */
+        built = true;
+    }
+
+    if ( imgui()->begin_window( "Scene Tree", IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        if ( imgui()->tree_node( "World" ) )
+        {
+            imgui()->text( "Camera" );
+            imgui()->text( "Sun Light" );
+            if ( imgui()->tree_node( "Props" ) )
+            {
+                imgui()->text( "Crate" );
+                imgui()->text( "Barrel" );
+                imgui()->tree_pop();
+            }
+            imgui()->tree_pop();
+        }
+    }
+    imgui()->end_window();
+
+    if ( imgui()->begin_window( "Inspector", IMGUI_WIN_NONE ) )
+    {
+        static char name[ 32 ] = "Crate";
+        static f32  pos[ 3 ]   = { 0.0f, 1.0f, 0.0f };
+        static bool visible    = true;
+        imgui()->stack();                     /* declare the layout mode before any widget */
+        imgui()->field_label_left( 80.0f );
+        imgui()->input_text  ( "Name",     name, sizeof( name ) );
+        imgui()->input_float3( "Position", pos, NULL );
+        imgui()->checkbox    ( "Visible",  &visible );
+    }
+    imgui()->end_window();
+
+    if ( imgui()->begin_window( "Console", IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        imgui()->text( "[info] engine started" );
+        imgui()->text( "[info] dock layout built" );
+        imgui()->text( "> _" );
+    }
+    imgui()->end_window();
+
+    if ( imgui()->begin_window( "Assets", IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        imgui()->bullet_text( "models/crate.obj" );
+        imgui()->bullet_text( "textures/wood.png" );
+        imgui()->bullet_text( "shaders/lit.glsl" );
+    }
+    imgui()->end_window();
+
+    if ( imgui()->begin_window( "Viewport", IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        imgui()->text( "Central viewport panel." );
+        imgui()->separator();
+        imgui()->text( "Drag the gutters between regions to resize." );
+        imgui()->text( "Click the Console / Assets tabs to switch." );
+    }
+    imgui()->end_window();
+}
+
+/*==============================================================================================
     Demo table -- the menu the host steps through.
 ==============================================================================================*/
 
@@ -1039,6 +1131,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Auto-size",    "ALWAYS_AUTOSIZE / CAN_AUTOSIZE / auto child",    demo_autosize    },
     { "Menus",        "menu bar / begin_menu / menu_item / context",    demo_menus       },
     { "Lines / Paths","draw_line / draw_polyline / path_stroke",        demo_lines       },
+    { "Docking",      "dockspace_over_viewport / dock_split / tabs",     demo_docking     },
     { NULL,           NULL,                                             NULL             },
 };
 

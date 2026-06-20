@@ -257,6 +257,11 @@ window_raise_on_press( void )
             if ( s_windows[ i ].flags & IMGUI_WIN_NATIVE )
                 break;
 
+            /* A docked window is tiled by its node, not stacked: it draws in a low z band behind the
+               free-floating windows and a click must never reorder the tile.  Leave its z untouched. */
+            if ( dock_find_window_node( s_windows[ i ].id ) )
+                break;
+
             /* Already on top?  Don't burn a z value. */
             if ( s_windows[ i ].z != s_z_counter )
                 s_windows[ i ].z = ++s_z_counter;

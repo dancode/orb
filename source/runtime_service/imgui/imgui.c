@@ -27,6 +27,7 @@
     imgui_widget_slider.c     -- slider + drag widgets: slider_float/int, drag_int, slider_render
     imgui_widget_numeric.c    -- numeric text inputs: input_int/float/double, input_float2/3/4
     imgui_widget_window.c     -- the window as a widget: begin/end_window + chrome (resize); body is a region
+    imgui_dock.c              -- docking: dock-node tree, splitters, tab strips, dockspace + build API
     imgui_popup.c             -- popups / context menus / tooltips: overlay windows on a reserved z-band
     imgui_widget_combo.c      -- combo box + list box: a popup dropdown / a scrolling child of selectables
     imgui_stack_api.c         -- push-model public API: push/pop id, item flags, style color / var
@@ -171,6 +172,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 #include "runtime_service/imgui/imgui_widget_slider.c"
 #include "runtime_service/imgui/imgui_widget_numeric.c"
 #include "runtime_service/imgui/imgui_widget_window.c"
+#include "runtime_service/imgui/imgui_dock.c"
 #include "runtime_service/imgui/imgui_popup.c"
 #include "runtime_service/imgui/imgui_nav.c"
 #include "runtime_service/imgui/imgui_widget_combo.c"
