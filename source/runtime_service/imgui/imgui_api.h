@@ -101,7 +101,6 @@ typedef struct imgui_api_s
     bool ( *event )( const app_event_t* ev );
 
     /* Panels -- open a window panel; must be matched with end_window().
-       x, y are the panel's top-left pixel position; w, h are its dimensions.
        flags is a bitmask of imgui_win_flags_t (0 / IMGUI_WIN_NONE for the defaults) that
        switches off built-in behavior per window -- title bar, collapse, or edge resize.
 
@@ -109,7 +108,7 @@ typedef struct imgui_api_s
        the body widgets with it -- skipped widgets cost nothing -- but always call
        end_window() regardless of the return value:
 
-           if ( imgui()->begin_window( "Tools", 10, 10, 240, 320, IMGUI_WIN_NONE ) )
+           if ( imgui()->begin_window( "Tools", IMGUI_WIN_NONE ) )
            {
                imgui()->text( "..." );          // skipped while collapsed
            }
@@ -117,10 +116,10 @@ typedef struct imgui_api_s
 
     /* set_next_window_pos / _size -- queue geometry for the NEXT begin_window, applied per the
        condition (imgui_cond_t) and then cleared.  Decouples the value from when it is applied:
-       ONCE seeds an initial position/size (the same effect as begin_window's x/y/w/h), ALWAYS
-       forces it every frame (layout managers, snapping, animation -- pair with NOMOVE / NORESIZE),
-       APPEARING re-applies it each time the window is shown after being absent.  Call immediately
-       before begin_window; the throwaway x/y/w/h there can stay (ONCE) or be ignored (ALWAYS). */
+       ONCE seeds an initial position/size (apply once on first appearance, then user-owned),
+       ALWAYS forces it every frame (layout managers, snapping, animation -- pair with NOMOVE /
+       NORESIZE), APPEARING re-applies it each time the window is shown after being absent.
+       Call immediately before begin_window. */
     void ( *set_next_window_pos  )( f32 x, f32 y, imgui_cond_t cond );
     void ( *set_next_window_size )( f32 w, f32 h, imgui_cond_t cond );
 
@@ -139,7 +138,7 @@ typedef struct imgui_api_s
        (e.g. 0, 0, 0, max_h to cap height only).  Call immediately before begin_child. */
     void ( *set_next_window_size_constraints )( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
 
-    bool ( *begin_window )( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
+    bool ( *begin_window )( const char* title, imgui_win_flags_t flags );
     void ( *end_window   )( void );
 
     /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when

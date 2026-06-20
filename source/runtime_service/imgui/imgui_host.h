@@ -56,7 +56,7 @@ void imgui_set_next_window_pos ( f32 x, f32 y, imgui_cond_t cond );
 void imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond );
 void imgui_set_next_window_viewport( imgui_vp_t vp );
 void imgui_set_next_window_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
-bool imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags );
+bool imgui_begin_window( const char* title, imgui_win_flags_t flags );
 void imgui_end_window( void );
 
 /* popup */

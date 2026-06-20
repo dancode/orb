@@ -621,9 +621,9 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
 }
 
 bool
-imgui_begin_window( const char* title, f32 x, f32 y, f32 w, f32 h, imgui_win_flags_t flags )
+imgui_begin_window( const char* title, imgui_win_flags_t flags )
 {
-    return window_begin_ex( id_hash( title ), title, x, y, w, h, flags );
+    return window_begin_ex( id_hash( title ), title, 60.0f, 60.0f, 240.0f, 320.0f, flags );
 }
 
 void

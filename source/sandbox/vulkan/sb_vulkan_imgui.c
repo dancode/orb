@@ -30,7 +30,9 @@
 static void
 demo_widgets( void )
 {
-    if ( imgui()->begin_window( "Widgets", 60, 60, 360, 420, IMGUI_WIN_NONE ))
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 360, 420, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Widgets", IMGUI_WIN_NONE ))
     {
         imgui()->stack();                                   /* declare the mode: a vertical list */
         imgui()->text( "Basic interactive widgets:" );
@@ -73,7 +75,9 @@ demo_widgets( void )
 static void
 demo_text( void )
 {
-    if ( imgui()->begin_window( "Text & Sections", 60, 60, 380, 460, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 380, 460, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Text & Sections", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "Plain text line." );
@@ -115,7 +119,9 @@ demo_text( void )
 static void
 demo_layout_rows( void )
 {
-    if ( imgui()->begin_window( "Layout Rows", 60, 60, 440, 420, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 440, 420, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Layout Rows", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();                         /* heading lines sit in a plain stack */
         imgui()->text( "row_cols( 0, 3 ) -- three equal columns:" );
@@ -163,7 +169,9 @@ demo_fields( void )
     static f32  f_volume     = 7.0f;
     static bool f_enabled    = true;
 
-    if ( imgui()->begin_window( "Field Forms", 60, 60, 400, 420, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 400, 420, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Field Forms", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         /* Each section reuses the "Name"/"Enabled" labels, so scope them with push_id to keep
@@ -206,7 +214,9 @@ demo_fields( void )
 static void
 demo_grid( void )
 {
-    if ( imgui()->begin_window( "Grid", 60, 60, 420, 440, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 420, 440, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Grid", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "grid_cells( 3, 3 ) -- 3x3, row-major:" );
@@ -246,7 +256,9 @@ demo_grid( void )
 static void
 demo_child_list( void )
 {
-    if ( imgui()->begin_window( "Child / List Box", 60, 60, 360, 440, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 360, 440, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Child / List Box", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "List box (scrolls independently):" );
@@ -318,7 +330,9 @@ demo_child_list( void )
 static void
 demo_combo_list( void )
 {
-    if ( imgui()->begin_window( "Combo / List Box", 60, 60, 380, 460, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 380, 460, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Combo / List Box", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
 
@@ -414,7 +428,9 @@ demo_combo_list( void )
 static void
 demo_align( void )
 {
-    if ( imgui()->begin_window( "Align & Spacing", 60, 60, 380, 400, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 380, 400, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Align & Spacing", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "align() across two columns:" );
@@ -455,7 +471,9 @@ demo_align( void )
 static void
 demo_sublayout( void )
 {
-    if ( imgui()->begin_window( "Sub-layout", 60, 60, 400, 360, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 400, 360, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Sub-layout", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "row_cols( 0, 2 ): col 0 is a sub-layout" );
@@ -491,7 +509,9 @@ demo_sublayout( void )
 static void
 demo_pack( void )
 {
-    if ( imgui()->begin_window( "Pack / Bar", 60, 60, 440, 320, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 440, 320, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Pack / Bar", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "bar() -- buttons at natural width, then a fill search box:" );
@@ -532,7 +552,9 @@ demo_pack( void )
 static void
 demo_windows( void )
 {
-    if ( imgui()->begin_window( "Default Window", 80, 80, 280, 200, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 80, 80, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 280, 200, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Default Window", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "Default flags." );
@@ -541,7 +563,9 @@ demo_windows( void )
     }
     imgui()->end_window();
 
-    if ( imgui()->begin_window( "No Title Bar", 220, 180, 280, 180, IMGUI_WIN_NOTITLEBAR ) )
+    imgui()->set_next_window_pos ( 220, 180, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 280, 180, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "No Title Bar", IMGUI_WIN_NOTITLEBAR ) )
     {
         imgui()->stack();
         imgui()->text( "IMGUI_WIN_NOTITLEBAR" );
@@ -550,8 +574,9 @@ demo_windows( void )
     }
     imgui()->end_window();
 
-    if ( imgui()->begin_window( "Fixed", 360, 280, 260, 160,
-                                IMGUI_WIN_NORESIZE | IMGUI_WIN_NOMOVE ) )
+    imgui()->set_next_window_pos ( 360, 280, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 260, 160, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Fixed", IMGUI_WIN_NORESIZE | IMGUI_WIN_NOMOVE ) )
     {
         imgui()->stack();
         imgui()->text( "IMGUI_WIN_NORESIZE | NOMOVE" );
@@ -574,7 +599,8 @@ static void
 demo_autosize( void )
 {
     /* (a) A window that always hugs its content -- the row count drives its height. */
-    if ( imgui()->begin_window( "Always Auto-size", 60, 60, 0, 0, IMGUI_WIN_ALWAYS_AUTOSIZE ) )
+    imgui()->set_next_window_pos( 60, 60, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Always Auto-size", IMGUI_WIN_ALWAYS_AUTOSIZE ) )
     {
         static int rows = 3;
 
@@ -591,8 +617,9 @@ demo_autosize( void )
     imgui()->end_window();
 
     /* (b) A normal window with a corner grip; double-click it to fit. */
-    if ( imgui()->begin_window( "Double-click grip", 360, 60, 300, 320,
-                                IMGUI_WIN_CAN_AUTOSIZE ) )
+    imgui()->set_next_window_pos ( 360, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 300, 320, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Double-click grip", IMGUI_WIN_CAN_AUTOSIZE ) )
     {
         imgui()->stack();
         imgui()->text( "CAN_AUTOSIZE: drag the triangle" );
@@ -603,7 +630,9 @@ demo_autosize( void )
     imgui()->end_window();
 
     /* (c) Auto-height child (h <= 0) + content_avail(). */
-    if ( imgui()->begin_window( "Auto child", 360, 420, 320, 260, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 360, 420, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 320, 260, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Auto child", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "begin_child with h <= 0 hugs content:" );
@@ -689,7 +718,9 @@ demo_menus( void )
     }
 
     /* (b) A window with its own menu bar (IMGUI_WIN_MENUBAR reserves the strip). */
-    if ( imgui()->begin_window( "Menus", 60, 60, 420, 320, IMGUI_WIN_MENUBAR ) )
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 420, 320, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Menus", IMGUI_WIN_MENUBAR ) )
     {
         if ( imgui()->begin_menu_bar() )
         {
@@ -797,7 +828,9 @@ demo_lines( void )
     static const imgui_stroke_align_t align_mode[ 4 ] = {
         IMGUI_STROKE_CENTER_BIASED, IMGUI_STROKE_CENTER, IMGUI_STROKE_INSIDE, IMGUI_STROKE_OUTSIDE };
 
-    if ( imgui()->begin_window( "Lines & Paths", 80, 40, 480, 660, IMGUI_WIN_NONE ) )
+    imgui()->set_next_window_pos ( 80, 40, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 480, 660, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Lines & Paths", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "draw_line / draw_polyline / path_stroke into a canvas()." );
@@ -1028,7 +1061,9 @@ sb_imgui_demo_picker( int active )
     const int count    = sb_imgui_demo_count();
     int       selected = active;                  /* unchanged unless a row is clicked */
 
-    if ( imgui()->begin_window( "Demos", 940, 20, 320, 360, IMGUI_WIN_NOCOLLAPSE ) )
+    imgui()->set_next_window_pos ( 940, 20, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 320, 360, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Demos", IMGUI_WIN_NOCOLLAPSE ) )
     {
         imgui()->stack();
         imgui()->text( "Keys: 1-9 select  +/- step  ESC quit" );

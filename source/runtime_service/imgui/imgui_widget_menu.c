@@ -246,7 +246,7 @@ imgui_begin_main_menu_bar( void )
     imgui_set_next_window_pos ( 0.0f, 0.0f, IMGUI_COND_ALWAYS );
     imgui_set_next_window_size( (f32)s_io.display_w, h, IMGUI_COND_ALWAYS );
 
-    bool vis = imgui_begin_window( "##MainMenuBar", 0.0f, 0.0f, (f32)s_io.display_w, h,
+    bool vis = imgui_begin_window( "##MainMenuBar",
                                    IMGUI_WIN_NOTITLEBAR | IMGUI_WIN_NOMOVE | IMGUI_WIN_NORESIZE
                                    | IMGUI_WIN_NOCOLLAPSE | IMGUI_WIN_NOSCROLL );
     if ( vis )

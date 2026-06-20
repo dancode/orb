@@ -269,9 +269,9 @@ typedef enum
 
 typedef enum
 {
-    IMGUI_COND_ONCE      = 1 << 0,   /* apply once for this window, then never again -- the same
-                                        seed-on-create behavior begin_window's x/y/w/h give (akin to
-                                        Dear ImGui's FirstUseEver until a saved-layout system lands) */
+    IMGUI_COND_ONCE      = 1 << 0,   /* apply once for this window, then never again -- seeds the
+                                        initial position/size on first appearance and never again
+                                        (akin to Dear ImGui's FirstUseEver until a saved-layout lands) */
     IMGUI_COND_ALWAYS    = 1 << 1,   /* apply every frame the value is queued -- forced geometry for
                                         layout managers, snapping, animation; pair with NOMOVE /
                                         NORESIZE so a user drag does not fight it */

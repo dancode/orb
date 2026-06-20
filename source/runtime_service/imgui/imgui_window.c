@@ -2,10 +2,11 @@
 
     runtime_service/imgui/imgui_window.c -- Persistent per-window state.
 
-    begin_window()'s x/y/w/h arguments are the window's *initial* geometry, used only
-    the first frame a given title is seen.  From then on this registry owns the window's
-    position so it survives across frames -- the foundation for dragging (now) and for
-    collapse / scroll / saved-layout state (later).  Windows are keyed by id_hash(title).
+    Windows are keyed by id_hash(title).  On first appearance the registry seeds the record
+    from any queued set_next_window_pos / _size (ONCE condition), falling back to a default
+    60x60 origin and 240x320 size.  From then on this registry owns the window's position so
+    it survives across frames -- the foundation for dragging (now) and for collapse / scroll /
+    saved-layout state (later).
 
     Drag / resize / scrollbar interaction lives in imgui_widget_window.c alongside
     begin_window / end_window, where the layout dimensions (title-bar height, padding) are in

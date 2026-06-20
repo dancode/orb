@@ -278,8 +278,7 @@ main( int argc, char** argv )
            visible and selectable above it.  Skipped in default-chrome mode: the OS draws the frame. */
         if ( b_borderless )
         {
-            imgui()->begin_window( "ORB -- sb_vulkan", 0, 0, (f32)win_w, (f32)win_h,
-                                   IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+            imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
             imgui()->end_window();
         }
 
@@ -293,7 +292,7 @@ main( int argc, char** argv )
            shows the system menu -- all driven natively (WM_NCHITTEST), no second startup viewport. */
         imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
         imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
-        if ( imgui()->begin_window( "Second Surface", 60, 60, 360, 240, IMGUI_WIN_NONE ) )
+        if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
         {
             imgui()->stack();
             imgui()->text( "Detach me: click the title-bar button" );
