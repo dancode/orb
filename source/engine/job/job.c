@@ -37,8 +37,8 @@ typedef struct job_state_s
     worker_thread_t workers[ 32 ];
 
     job_item_t      queue[ MAX_JOBS_LIMIT ];
-    i32             queue_head;
-    i32             queue_tail;
+    u32             queue_head;    /* free-running; mask with MAX_JOBS_LIMIT-1 to index. */
+    u32             queue_tail;    /* free-running; unsigned wrap is well-defined. */
     i32             queue_count;
 
     mutex_t         queue_lock;
@@ -78,7 +78,7 @@ job_worker_main( void* arg )
         mutex_lock( &g_job_state->queue_lock );
         if ( g_job_state->queue_count > 0 )
         {
-            i32 index = g_job_state->queue_head % MAX_JOBS_LIMIT;
+            u32 index = g_job_state->queue_head & ( MAX_JOBS_LIMIT - 1 );
             job = g_job_state->queue[ index ];
             g_job_state->queue_head++;
             g_job_state->queue_count--;
@@ -140,7 +140,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
 
     for ( uint32_t i = 0; i < count; ++i )
     {
-        i32 index = g_job_state->queue_tail % MAX_JOBS_LIMIT;
+        u32 index = g_job_state->queue_tail & ( MAX_JOBS_LIMIT - 1 );
         g_job_state->queue[ index ].function = decls[ i ].function;
         g_job_state->queue[ index ].data = decls[ i ].data;
         g_job_state->queue[ index ].counter = counter;
@@ -173,7 +173,7 @@ job_wait( job_counter_t* counter )
         mutex_lock( &g_job_state->queue_lock );
         if ( g_job_state->queue_count > 0 )
         {
-            i32 index = g_job_state->queue_head % MAX_JOBS_LIMIT;
+            u32 index = g_job_state->queue_head & ( MAX_JOBS_LIMIT - 1 );
             job = g_job_state->queue[ index ];
             g_job_state->queue_head++;
             g_job_state->queue_count--;
@@ -206,6 +206,7 @@ job_wait( job_counter_t* counter )
 static void
 job_tick( void )
 {
+    // empty
 }
 
 /*============================================================================================*/
@@ -245,7 +246,7 @@ job_init( void* raw_state )
             char name_buf[ 32 ];
             sprintf( name_buf, "ORB_Worker_%02u", i );
             thread_set_name( w->handle, name_buf );
-            w->id = 0;
+            /* w->id is written solely by the worker thread (job_worker_main). */
         }
         else
         {

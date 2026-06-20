@@ -11,12 +11,16 @@
 #include "engine/sys/sys_host.h"
 #include "engine/job/job_host.h"
 
+/*============================================================================================*/
+
 static void
 test_job_fn( void* arg )
 {
     const char* message = ( const char* )arg;
     printf( "Job Executed: '%s' on Thread ID: %llu\n", message, ( unsigned long long )thread_current_id() );
 }
+
+/*============================================================================================*/
 
 void
 job_test( void )
@@ -35,7 +39,7 @@ job_test( void )
         fprintf( stderr, "Failed to initialize modules: %s\n", mod_last_error() );
         goto shutdown;
     }
-
+  
     printf( "Main Thread ID: %llu\n", ( unsigned long long )thread_current_id() );
     printf( "Job system loaded successfully.\n" );
 
@@ -56,11 +60,13 @@ job_test( void )
     job()->tick();
 
     printf( "Job system tests passed.\n" );
+    
 
 shutdown:
     mod_system_exit();
 }
 
+/*============================================================================================*/
 int
 main( int argc, char** argv )
 {
@@ -69,3 +75,5 @@ main( int argc, char** argv )
     job_test();
     return 0;
 }
+
+/*============================================================================================*/
