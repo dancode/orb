@@ -340,12 +340,17 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
         case APP_WM_START_MOVE:
             ReleaseCapture();
             win->state.captured = 0;
+            /* Synthesize a button-up before entering the DefWindowProc modal drag loop.
+               That loop consumes the real WM_LBUTTONUP without delivering it to our proc,
+               leaving imgui with stale mouse-held state that silently drops the next click. */
+            SendMessageW( hwnd, WM_LBUTTONUP, 0, 0 );
             SendMessageW( hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0 );
             return 0;
 
         case APP_WM_START_RESIZE:
             ReleaseCapture();
             win->state.captured = 0;
+            SendMessageW( hwnd, WM_LBUTTONUP, 0, 0 );  /* same reason as APP_WM_START_MOVE */
             SendMessageW( hwnd, WM_NCLBUTTONDOWN, wp /* HT* code */, 0 );
             return 0;
 
