@@ -5,12 +5,10 @@
 ==============================================================================================*/
 // clang-format off
 
-// Handle encoding: bits[  7:0 ] = pool index ( 0-255 ), 
-//                  bits[ 23:8 ] = generation ( 1-65535; 0=null ).
-
+// Handle encoding: Lower bits = pool index, Upper bits = generation (0=null).
 #define JOB_HANDLE_INDEX( id )       ( (u32)(id) & JOB_POOL_MASK )
-#define JOB_HANDLE_GEN( id )         ( (u32)(id) >> 8 & 0xFFFFu )
-#define JOB_HANDLE_MAKE( idx, gen )  ( (u32)(idx) | ( (u32)(gen) << 8 ) )
+#define JOB_HANDLE_GEN( id )         ( (u32)(id) >> JOB_POOL_INDEX_BITS & 0xFFFFu )
+#define JOB_HANDLE_MAKE( idx, gen )  ( (u32)(idx) | ( (u32)(gen) << JOB_POOL_INDEX_BITS ) )
 
 // Pool-slot packing: generation in the high dword, live value in the low dword. 
 // Composed via shifts (not memory aliasing) so the encoding is endianness-independent.

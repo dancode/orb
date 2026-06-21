@@ -32,9 +32,11 @@
 #define MAX_JOB_QUEUE 4096
 #define MAX_JOB_QUEUE_MASK  ( MAX_JOB_QUEUE - 1 )
 
-// The maximum number of concurrent job batches that can be tracked. 
-#define JOB_POOL_SIZE  256
-#define JOB_POOL_MASK  ( JOB_POOL_SIZE - 1 )
+// The number of bits dedicated to the pool index. 
+// Defines the maximum number of concurrent batches.
+#define JOB_POOL_INDEX_BITS 8
+#define JOB_POOL_SIZE       ( 1 << JOB_POOL_INDEX_BITS )
+#define JOB_POOL_MASK       ( JOB_POOL_SIZE - 1 )
 
 /*==============================================================================================
     Internal Types and State
