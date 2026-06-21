@@ -73,7 +73,7 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
             return &s_windows[ i ];
 
     /* First time seen: seed from the caller's initial geometry, place on top. */
-    imgui_window_t* win = ( s_window_count < IMGUI_MAX_WINDOWS )
+    imgui_window_t* win = ( s_window_count < g_ctx->max_windows )
                         ? &s_windows[ s_window_count++ ]
                         : &s_window_scratch;   /* table full: transient, not persisted */
     win->id        = id;

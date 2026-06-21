@@ -35,6 +35,35 @@ typedef i32  imgui_vp_t;
 typedef u32  imgui_dock_id_t;
 #define IMGUI_DOCK_NONE  0u
 
+/* Context configuration -- sizes the per-context resource pools at creation time.
+   Pass to ctx_create(); NULL or zero fields default to the EDITOR preset (32 windows,
+   512 state slots, 8 popup depth, 4 viewports, 48 dock nodes).
+   max_dock_nodes == 0 is valid and disables docking for that context. */
+
+typedef struct
+{
+    u32  max_windows;    /* persisted window pool (default 32) */
+    u32  state_slots;    /* keyed state pool, must be power of two (default 512) */
+    u32  popup_depth;    /* max popup nesting (default 8) */
+    u32  max_viewports;  /* render surfaces (default 4) */
+    u32  max_dock_nodes; /* dock-tree node pool; 0 = no docking (default 48) */
+
+} imgui_ctx_config_t;
+
+/* Pre-built configs. */
+#define IMGUI_CTX_CONFIG_EDITOR  \
+    ( ( imgui_ctx_config_t ){ 32, 512, 8, 4, 48 } )
+#define IMGUI_CTX_CONFIG_GAME_UI \
+    ( ( imgui_ctx_config_t ){ 8, 64, 4, 1, 0 } )
+
+/* Opaque context handle -- integer index into the internal context pool.
+   IMGUI_CTX_DEFAULT (0) is always valid after init().
+   IMGUI_CTX_INVALID (-1) signals a failed ctx_create or an unset handle. */
+
+typedef i32 imgui_ctx_t;
+#define IMGUI_CTX_DEFAULT  0
+#define IMGUI_CTX_INVALID  (-1)
+
 /*==============================================================================================
     IMGUI: Geometry
 ==============================================================================================*/

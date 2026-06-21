@@ -101,13 +101,13 @@ imgui_state_get( imgui_id_t id, u32 size )
     if ( id == IMGUI_ID_NONE ) id = 1u;             /* never key on the empty sentinel */
     (void)size;
 
-    u32                 bucket = id & IMGUI_STATE_MASK;
+    u32                 bucket = id & s_retained.state_mask;
     imgui_state_slot_t* reuse  = NULL;               /* first tombstone (cold slot) seen on the chain */
     imgui_state_slot_t* dst    = NULL;               /* where a fresh entry lands when id is absent */
 
-    for ( u32 i = 0; i < IMGUI_STATE_SLOTS; ++i )
+    for ( u32 i = 0; i < s_retained.state_count; ++i )
     {
-        imgui_state_slot_t* s = &s_retained.state[ ( bucket + i ) & IMGUI_STATE_MASK ];
+        imgui_state_slot_t* s = &s_retained.state[ ( bucket + i ) & s_retained.state_mask ];
 
         if ( s->id == id )                           /* live hit: restamp and hand back the storage */
         {
@@ -144,10 +144,10 @@ static const void*
 imgui_state_peek( imgui_id_t id )
 {
     if ( id == IMGUI_ID_NONE ) id = 1u;
-    u32 bucket = id & IMGUI_STATE_MASK;
-    for ( u32 i = 0; i < IMGUI_STATE_SLOTS; ++i )
+    u32 bucket = id & s_retained.state_mask;
+    for ( u32 i = 0; i < s_retained.state_count; ++i )
     {
-        const imgui_state_slot_t* s = &s_retained.state[ ( bucket + i ) & IMGUI_STATE_MASK ];
+        const imgui_state_slot_t* s = &s_retained.state[ ( bucket + i ) & s_retained.state_mask ];
         if ( s->id == id          ) return s->data;
         if ( s->id == IMGUI_ID_NONE ) return NULL;   /* empty slot ends the chain */
     }

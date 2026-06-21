@@ -36,7 +36,15 @@ bool imgui_load_font( const char* path );
 
 /* frame */
 void imgui_new_frame( f32 dt );
+void imgui_frame_begin( f32 dt );
+void imgui_ctx_begin( imgui_ctx_t ctx );
 void imgui_render( imgui_vp_t vp, rhi_cmd_t cmd );
+
+/* multi-context */
+imgui_ctx_t imgui_ctx_create       ( const imgui_ctx_config_t* cfg );
+void        imgui_ctx_destroy      ( imgui_ctx_t ctx );
+void        imgui_ctx_bind         ( imgui_ctx_t ctx );
+void        imgui_ctx_set_listening( imgui_ctx_t ctx, bool listen );
 
 /* viewport management */
 imgui_vp_t imgui_viewport_open  ( i32 win_id, i32 w, i32 h );

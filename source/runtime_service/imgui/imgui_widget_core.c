@@ -378,6 +378,14 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
         return st;
     }
 
+    /* Deaf context: not listening this frame -- render but return inert state.
+       last_item_id/rect are latched above so item-query calls still work. */
+    if ( !g_ctx->listening )
+    {
+        s_build.last_item_status = st;
+        return st;
+    }
+
     /* Hot only when this widget belongs to the window the cursor is over (hover_win,
        resolved last frame).  Widgets in any other window short-circuit before rect_hit,
        so occluded windows do no hit-testing at all -- occlusion is decided once, at the

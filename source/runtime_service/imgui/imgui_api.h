@@ -92,6 +92,38 @@ typedef struct imgui_api_s
     void       ( *update_platform_windows )( void );
     void       ( *render_floaters         )( void );
 
+    /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
+       id namespace).  The primary context (IMGUI_CTX_DEFAULT / 0) is always live after init().
+
+       ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL = editor defaults).
+                             Each gets a unique id_salt so same-named widgets in different contexts
+                             never alias.  Returns IMGUI_CTX_INVALID on pool exhaustion.  Between frames.
+       ctx_destroy()      -- free a secondary context; rebinds the default if it was current.  Never
+                             destroys IMGUI_CTX_DEFAULT.  Call between frames.
+       ctx_bind()         -- make ctx the current context; mid-frame "switch retained state" call.
+                             IMGUI_CTX_DEFAULT (0) or any invalid handle rebinds the default.
+       ctx_set_listening() -- set whether a context receives hover/click/nav input.  The default context
+                             starts listening; secondary contexts start deaf.  Multiple contexts may
+                             listen simultaneously; a deaf context renders but returns inert widget state.
+                             Call between frames.
+
+       FRAME CONTRACT (multi-context):
+         frame_begin(dt)          -- once: input poll + draw-list reset.
+         ctx_begin(DEFAULT)       -- full frame init for the default context; emit its windows next.
+         ctx_begin(ctx2)          -- full frame init for ctx2; emit its windows next.
+         new_frame(dt)            -- compat wrapper for single-context hosts: frame_begin + ctx_begin(DEFAULT).
+
+       ctx_begin always runs the full frame init (hover promotion, nav, popup stale-close) for the
+       bound context, regardless of its listening flag.  Emit that context's windows IMMEDIATELY after
+       its ctx_begin -- ctx_begin leaves g_ctx pointing at the just-begun context. */
+
+    imgui_ctx_t ( *ctx_create        )( const imgui_ctx_config_t* cfg );
+    void        ( *ctx_destroy       )( imgui_ctx_t ctx );
+    void        ( *ctx_bind          )( imgui_ctx_t ctx );
+    void        ( *ctx_set_listening )( imgui_ctx_t ctx, bool listen );
+    void        ( *ctx_begin         )( imgui_ctx_t ctx );
+    void        ( *frame_begin       )( f32 dt );
+
     /* Host input -- the host owns the app event ring drain and forwards each
        event here before new_frame() for the same frame.
        event() -- forward one drained app_event_t; imgui unpacks the input events

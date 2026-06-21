@@ -51,12 +51,13 @@
 static imgui_dock_node_t*
 dock_node_alloc( u32 viewport )
 {
+    if ( !s_dock_nodes ) return NULL;   /* docking disabled for this context */
     imgui_dock_node_t* n = NULL;
     for ( u32 i = 0; i < s_dock_node_count; ++i )      /* reuse a freed hole first */
         if ( s_dock_nodes[ i ].id == 0 ) { n = &s_dock_nodes[ i ]; break; }
     if ( !n )
     {
-        if ( s_dock_node_count >= IMGUI_DOCK_MAX_NODES )
+        if ( s_dock_node_count >= g_ctx->max_dock_nodes )
             return NULL;
         n = &s_dock_nodes[ s_dock_node_count++ ];
     }
@@ -390,7 +391,7 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
     s_dock_drag.zone   = DOCK_ZONE_NONE;
 
     u32 vp = win->viewport;
-    if ( vp != s_io.mouse_viewport || vp >= IMGUI_MAX_VIEWPORTS )
+    if ( vp != s_io.mouse_viewport || vp >= g_ctx->max_viewports )
         return;
     imgui_dock_node_t* root = g_ctx->viewports[ vp ].dock_root;
     if ( !root )
@@ -611,7 +612,8 @@ imgui_dock_id_t
 imgui_dockspace_over_viewport( imgui_vp_t vp, imgui_dockspace_flags_t flags )
 {
     UNUSED( flags );
-    if ( vp < 0 || vp >= (imgui_vp_t)IMGUI_MAX_VIEWPORTS )
+    if ( !s_dock_nodes ) return IMGUI_DOCK_NONE;   /* docking disabled */
+    if ( vp < 0 || vp >= (imgui_vp_t)g_ctx->max_viewports )
         return IMGUI_DOCK_NONE;
 
     imgui_viewport_t* v = &g_ctx->viewports[ vp ];
@@ -829,7 +831,7 @@ u32
 imgui_dock_save( imgui_vp_t vp, char* buf, u32 bufsz )
 {
     dock_writer_t w = { buf, bufsz, 0u };
-    if ( vp < 0 || vp >= (imgui_vp_t)IMGUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= (imgui_vp_t)g_ctx->max_viewports )
     {
         if ( bufsz ) buf[ 0 ] = '\0';
         return 0u;
@@ -937,7 +939,7 @@ dock_parse_node( dock_reader_t* r, u32 vp )
 bool
 imgui_dock_load( imgui_vp_t vp, const char* text )
 {
-    if ( vp < 0 || vp >= (imgui_vp_t)IMGUI_MAX_VIEWPORTS || !text )
+    if ( vp < 0 || vp >= (imgui_vp_t)g_ctx->max_viewports || !text )
         return false;
 
     dock_reader_t r = { text };

@@ -137,6 +137,9 @@ main( int argc, char** argv )
     i32 win_w = 1280;
     i32 win_h = 720;
 
+    /* ------------------------------------------------------------------------------ */
+    /* Setup IMGUI */
+
     /* Initialize imgui GPU resources and load TrueType font atlas. */
     if ( !imgui()->init() )
     {
@@ -171,6 +174,19 @@ main( int argc, char** argv )
     /* Single window at startup -- everything is built into the main viewport (0).  The detach
        gesture (title-bar button, or dragging a panel past the window edge) spawns owned floaters
        on demand, each a native-borderless OS window. */
+
+    /* Multi-context demo: create a secondary context with game-UI sizing (small pools).
+       Default context starts listening; ctx2 starts deaf.  A/S keys toggle which listens.
+       Toggle b_multi_ctx to exercise the API.  Teardown is handled by imgui()->shutdown(). */
+    const bool      b_multi_ctx = true;
+    imgui_ctx_t     ctx2        = IMGUI_CTX_INVALID;
+    if ( b_multi_ctx )
+    {
+        imgui_ctx_config_t game_cfg = IMGUI_CTX_CONFIG_GAME_UI;
+        ctx2 = imgui()->ctx_create( &game_cfg );
+        /* ctx2 starts deaf; default ctx already listens.  A/S keys switch them below. */
+    }
+    (void)ctx2;
 
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
@@ -264,45 +280,104 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
-        /* Build the UI ONCE: one imgui context emits every window for every surface into a single
-           draw list.  The flush passes below dispatch each window to the surface it was assigned
-           (set_next_window_viewport, or inherited from whichever viewport was emitted into last). */
+        /* Build the UI.  The frame contract for multiple contexts:
+             frame_begin(dt)         -- global: input poll + draw reset (primary ctx drives dims)
+             ctx_set_listening(...)  -- switch which context receives input (reads s_io, after frame_begin)
+             ctx_begin(ctx)          -- full frame init for ctx; leaves g_ctx bound to it.
+           Emit windows IMMEDIATELY after each ctx_begin -- ctx_begin leaves g_ctx bound to that
+           context, so windows emitted after it land in the correct pool. */
 
-        imgui()->new_frame( dt );
-
-        /* Borderless main window: this full-surface native shell IS the OS window's frame.  Emitted
-           first so it sits behind the demo windows; IMGUI_WIN_NATIVE makes it a frame-only shell --
-           it pins to the whole surface and publishes the caption band + button holes (titlebar moves
-           the window, borders resize it, caption buttons minimize / maximize / close it, all
-           OS-driven), but its body stays empty and click-through so the demo windows inside it remain
-           visible and selectable above it.  Skipped in default-chrome mode: the OS draws the frame. */
-        if ( b_borderless )
+        if ( b_multi_ctx && ctx2 != IMGUI_CTX_INVALID )
         {
-            imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+            imgui()->frame_begin( dt );
+
+            /* 'A'/'S' switch which context receives input (mutual exclusion: only one listens). */
+            if ( imgui()->is_key_pressed( APP_KEY_A ) )
+            {
+                imgui()->ctx_set_listening( IMGUI_CTX_DEFAULT, true  );
+                imgui()->ctx_set_listening( ctx2,              false );
+            }
+            if ( imgui()->is_key_pressed( APP_KEY_S ) )
+            {
+                imgui()->ctx_set_listening( IMGUI_CTX_DEFAULT, false );
+                imgui()->ctx_set_listening( ctx2,              true  );
+            }
+
+            /* --- ctx1 (default): begin, then emit all its windows immediately. --- */
+            imgui()->ctx_begin( IMGUI_CTX_DEFAULT );
+
+            if ( b_borderless )
+            {
+                imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+                imgui()->end_window();
+            }
+            sb_imgui_demos[ active_demo ].fn();
+            active_demo = sb_imgui_demo_picker( active_demo );
+            imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+            imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
+            if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
+            {
+                imgui()->stack();
+                imgui()->text( "Detach me: click the title-bar button" );
+                imgui()->text( "or drag my title past the window edge." );
+                imgui()->separator();
+                imgui()->text( "Once detached I am a native borderless" );
+                imgui()->text( "window -- drag my title bar to move the" );
+                imgui()->text( "OS window, drag my borders to resize." );
+            }
+            imgui()->end_window();
+
+            /* --- ctx2: full frame init, then emit its windows immediately. --- */
+            imgui()->ctx_begin( ctx2 );
+
+            {
+                static int ctx2_click_count = 0;
+                imgui()->set_next_window_pos ( 700, 60, IMGUI_COND_ONCE );
+                imgui()->set_next_window_size( 280, 200, IMGUI_COND_ONCE );
+                if ( imgui()->begin_window( "Context 2 Window", IMGUI_WIN_NONE ) )
+                {
+                    imgui()->stack();
+                    imgui()->text( "Secondary context (ctx2)." );
+                    imgui()->text( "Press A: ctx1 listens (default)." );
+                    imgui()->text( "Press S: ctx2 listens." );
+                    imgui()->separator();
+                    if ( imgui()->button( "Click me (ctx2)" ) ) ++ctx2_click_count;
+                    imgui()->textf( "Clicks: %d", ctx2_click_count );
+                }
+                imgui()->end_window();
+            }
+
+            /* Restore default context before render/update so those ops use the primary viewport pool. */
+            imgui()->ctx_bind( IMGUI_CTX_DEFAULT );
+        }
+        else
+        {
+            imgui()->new_frame( dt );
+
+            /* Borderless main window: this full-surface native shell IS the OS window's frame. */
+            if ( b_borderless )
+            {
+                imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+                imgui()->end_window();
+            }
+
+            sb_imgui_demos[ active_demo ].fn();
+            active_demo = sb_imgui_demo_picker( active_demo );
+
+            imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+            imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
+            if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
+            {
+                imgui()->stack();
+                imgui()->text( "Detach me: click the title-bar button" );
+                imgui()->text( "or drag my title past the window edge." );
+                imgui()->separator();
+                imgui()->text( "Once detached I am a native borderless" );
+                imgui()->text( "window -- drag my title bar to move the" );
+                imgui()->text( "OS window, drag my borders to resize." );
+            }
             imgui()->end_window();
         }
-
-        sb_imgui_demos[ active_demo ].fn();                // selected feature demo (viewport 0)
-        active_demo = sb_imgui_demo_picker( active_demo );  // demo list + key hints (clickable)
-
-        /* A detachable panel that starts inside the main window (viewport 0).  Its title-bar detach
-           button -- or dragging the title past the window edge -- pops it out into its OWN OS window.
-           That floater is native-borderless: the panel then acts as the window's frame, so its title
-           bar moves the OS window, its borders resize it, double-click maximizes, and right-click
-           shows the system menu -- all driven natively (WM_NCHITTEST), no second startup viewport. */
-        imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-        imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
-        if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
-        {
-            imgui()->stack();
-            imgui()->text( "Detach me: click the title-bar button" );
-            imgui()->text( "or drag my title past the window edge." );
-            imgui()->separator();
-            imgui()->text( "Once detached I am a native borderless" );
-            imgui()->text( "window -- drag my title bar to move the" );
-            imgui()->text( "OS window, drag my borders to resize." );
-        }
-        imgui()->end_window();
 
         /* ------------------------------------------------------------------------------ */
         /* Reconcile imgui-owned floaters with their OS windows (destroys any the user closed).

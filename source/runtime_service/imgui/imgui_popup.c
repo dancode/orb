@@ -164,7 +164,7 @@ static void
 popup_open_id( imgui_id_t id, f32 ax, f32 ay )
 {
     u32 depth = s_popup_begin_count;
-    if ( depth >= IMGUI_POPUP_DEPTH ) return;
+    if ( depth >= g_ctx->popup_depth ) return;
 
     imgui_popup_t* p = &s_popups_open[ depth ];
     p->id          = id;
@@ -232,7 +232,7 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
     u32 depth = s_popup_begin_count;
 
     /* Open at this depth?  The early-out that makes a closed popup free. */
-    if ( depth >= IMGUI_POPUP_DEPTH || s_popup_open_count <= depth
+    if ( depth >= g_ctx->popup_depth || s_popup_open_count <= depth
          || s_popups_open[ depth ].id != id )
         return false;
 
@@ -396,7 +396,7 @@ imgui_begin_tooltip( void )
 {
     imgui_window_t* win = window_get( IMGUI_TOOLTIP_ID, s_io.mouse_x, s_io.mouse_y,
                                       IMGUI_POPUP_SEED_W, IMGUI_POPUP_SEED_H );
-    win->z = IMGUI_POPUP_Z_BASE + IMGUI_POPUP_DEPTH;   /* above every popup */
+    win->z = IMGUI_POPUP_Z_BASE + g_ctx->popup_depth;   /* above every popup */
 
     bool premeasure = win->content_h <= 0.0f;
     f32  px, py;

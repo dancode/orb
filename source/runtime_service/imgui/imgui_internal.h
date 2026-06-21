@@ -37,19 +37,27 @@
     the item-flag stack -- stay private to their owning .c file.)
 ==============================================================================================*/
 
-#define IMGUI_MAX_WINDOWS   32      // persisted window records per context (imgui_context_t.windows)
-#define IMGUI_MAX_VIEWPORTS 4       // render surfaces per context; must match APP_WIN_MAX / RHI_CTX_MAX
-#define IMGUI_POPUP_DEPTH   8       // max nested popups (menus + submenus)
+/* Per-context default pool sizes -- used to wire the static default context (slot 0).
+   Secondary contexts may use different sizes passed via imgui_ctx_config_t. */
+#define IMGUI_DEFAULT_MAX_WINDOWS    32   /* default persisted window pool */
+#define IMGUI_DEFAULT_POPUP_DEPTH     8   /* default max nested popups */
+#define IMGUI_DEFAULT_STATE_SLOTS   512   /* default keyed state pool capacity (power of two) */
+#define IMGUI_DEFAULT_MAX_VIEWPORTS   4   /* default render surfaces */
+#define IMGUI_DEFAULT_DOCK_NODES     48   /* default dock-tree nodes */
+
+/* Non-per-context capacities -- these size non-context structs and stay as fixed constants. */
 #define IMGUI_LAYOUT_DEPTH  8       // max nested scroll regions (windows or children)
 #define IMGUI_KEY_COUNT     128     // imgui_io_t key arrays; must cover the full app_key_t range
 
-#define IMGUI_DOCK_MAX_NODES 48     // dock-tree nodes per context (imgui_context_t.dock_nodes pool)
 #define IMGUI_DOCK_TABS_MAX  8      // windows co-docked (tabbed) in one leaf node
 #define IMGUI_DOCK_NAME_CAP  28     // bytes of a tab's display name, copied at dock time
 
-#define IMGUI_STATE_SLOTS 512       // keyed state pool capacity (power of two)
-#define IMGUI_STATE_MASK  512 - 1   // bucket = id & mask
 #define IMGUI_STATE_CAP   20        // payload bytes per slot (max state struct: imgui_region_t)
+
+/* GPU buffer region sizing uses a fixed viewport count (allocated once at init before any config).
+   This is NOT the per-context runtime limit -- that is g_ctx->max_viewports.
+   Must match APP_WIN_MAX / RHI_CTX_MAX. */
+#define IMGUI_MAX_VIEWPORTS 4       // GPU buffer region count; matches APP_WIN_MAX / RHI_CTX_MAX
 
 /*==============================================================================================
     Input snapshot (imgui_input.c)
@@ -419,11 +427,12 @@ typedef struct
        context's namespace and leaves id_hash byte-identical to the unsalted hash. */
     u32 id_salt;
 
-    u32  frame;                                      // monotonic frame index, bumped each new_frame this
-                                                     //   context is built; stamps + ages the pool below
-    bool wants_redraw;                               // set by imgui_anim_f32 while any value is mid-transition;
-                                                     //   cleared at new_frame; host skips editor sleep when true
-    imgui_state_slot_t state[ IMGUI_STATE_SLOTS ];   // open-addressed keyed per-widget state
+    u32  frame;           /* monotonic frame index, bumped each new_frame this context is built */
+    bool wants_redraw;    /* set by imgui_anim_f32 while mid-transition; cleared at new_frame */
+
+    imgui_state_slot_t* state;       /* open-addressed keyed per-widget state; points into context alloc */
+    u32                 state_count; /* capacity, power of two */
+    u32                 state_mask;  /* state_count - 1, for bucket masking */
 
 } imgui_retained_t;
 
@@ -542,28 +551,37 @@ typedef struct imgui_dock_node_t
     g_ctx via the aliases in imgui_ctx.c -- s_retained, s_nav, the popup open-set -- so switching
     contexts is a single pointer assignment (ctx_bind): no copy, no backup/restore.
 
-    Ambient state (one user: s_interaction, s_io) and frame scratch (s_build, the stacks, s_draw)
-    are NOT per context -- they stay global and target whichever context is bound.
+    Ambient state (s_interaction) and frame scratch (s_build, the stacks, s_draw) stay global for now;
+    s_io (hardware input snapshot) is always shared.  The `listening` flag gates whether a bound context
+    receives hover / click / nav updates -- a deaf context renders but returns inert widget state.
 ==============================================================================================*/
 
 typedef struct imgui_context_t
 {
-    imgui_retained_t    retained;                           // id salt, frame clock, keyed state pool
-    nav_state_t         nav;                                // nav cursor location + menu-bar mode
-    imgui_popup_t       popups_open[ IMGUI_POPUP_DEPTH ];   // open popup set, ordered parent -> child
-    u32                 popup_open_count;                   // live open count
+    imgui_retained_t    retained;          /* id salt, frame clock, keyed state pool (ptr into alloc) */
+    nav_state_t         nav;               /* nav cursor location + menu-bar mode */
 
-    imgui_window_t      windows[ IMGUI_MAX_WINDOWS ];       // persisted window records (imgui_window.c behavior)
-    u32                 window_count;                       // live records in the pool
-    imgui_window_t      window_scratch;                     // transient fallback when the pool is full
-    u32                 z_counter;                          // monotonic paint-order dispenser
+    imgui_popup_t*      popups_open;       /* open popup set, ordered parent -> child; ptr into alloc */
+    u32                 popup_open_count;  /* live open count */
+    u32                 popup_depth;       /* capacity (max nesting depth) */
 
-    imgui_viewport_t    viewports[ IMGUI_MAX_VIEWPORTS ];   // render surfaces: [0]=main swapchain, rest floaters
-    u32                 viewport_count;                     // live viewports (imgui_render.c behavior)
+    imgui_window_t*     windows;           /* persisted window records; ptr into alloc */
+    u32                 window_count;      /* live records in the pool */
+    u32                 max_windows;       /* capacity */
+    imgui_window_t      window_scratch;    /* transient fallback when the pool is full; stays embedded */
+    u32                 z_counter;         /* monotonic paint-order dispenser */
 
-    imgui_dock_node_t   dock_nodes[ IMGUI_DOCK_MAX_NODES ]; // dock-tree node pool (imgui_dock.c behavior)
-    u32                 dock_node_count;                    // high-water slot count in the pool
-    u32                 dock_id_seq;                        // monotonic node-id dispenser (0 = none)
+    imgui_viewport_t*   viewports;         /* render surfaces: [0]=main swapchain; ptr into alloc */
+    u32                 viewport_count;    /* live viewports */
+    u32                 max_viewports;     /* capacity */
+
+    imgui_dock_node_t*  dock_nodes;        /* dock-tree node pool; NULL when max_dock_nodes == 0 */
+    u32                 dock_node_count;   /* high-water slot count in the pool */
+    u32                 dock_id_seq;       /* monotonic node-id dispenser (0 = none) */
+    u32                 max_dock_nodes;    /* capacity; 0 = docking disabled */
+
+    bool                listening;         /* true: context receives hover/click/nav input this frame */
+    void*               _alloc;            /* heap block; NULL for the static default context (slot 0) */
 
 } imgui_context_t;
 

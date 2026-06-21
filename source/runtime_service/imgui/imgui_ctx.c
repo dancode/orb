@@ -371,10 +371,20 @@ static u32           s_popup_begin_count;                 // current nesting dep
 
 /* imgui_context_t (the bound per-context retained state) is defined in imgui_internal.h. */
 
-/* The default context, bound at startup.  g_ctx is the one indirection every retained access goes
-   through; the host points it at another context before emitting that context's windows. */
-static imgui_context_t  s_default_context;
-static imgui_context_t* g_ctx = &s_default_context;
+/* Context pool.  Slot 0 is always the default context (bound at init, never freed).  Slots 1..N are
+   secondary contexts allocated by imgui_ctx_create.  g_ctx is the one indirection every retained
+   access goes through; switching contexts is a single pointer assignment (ctx_bind).
+   Each context carries a `listening` flag; only listening contexts receive hover/click/nav input. */
+
+#define IMGUI_CTX_POOL_MAX  8       /* slot 0 = default + up to 7 secondary contexts */
+
+/* Pool of context pointers.  Slot 0 = default context (heap-allocated at init, freed at shutdown).
+   Slots 1..N are secondary contexts returned by ctx_create.  All slots use the same block layout. */
+static imgui_context_t* s_ctx_pool      [ IMGUI_CTX_POOL_MAX ];
+static u32              s_ctx_pool_count;   /* live slot count; always >= 1 after init */
+
+static imgui_context_t* g_ctx = NULL;   /* bound context */
+
 
 #define s_retained         ( g_ctx->retained )
 #define s_nav              ( g_ctx->nav )
@@ -388,21 +398,80 @@ static imgui_context_t* g_ctx = &s_default_context;
 #define s_dock_node_count  ( g_ctx->dock_node_count )
 #define s_dock_id_seq      ( g_ctx->dock_id_seq )
 
+/* Single-malloc layout for one context block.  The header (imgui_context_t) sits at offset 0;
+   all pool arrays follow at ALIGN8 boundaries.  Caller sets `listening` and wires s_ctx_pool. */
+static imgui_context_t*
+ctx_alloc_slot( const imgui_ctx_config_t* c, u32 slots, i32 slot )
+{
+    #define ALIGN8( x ) ( ( ( x ) + 7u ) & ~7u )
+    u32 sz_state = slots            * (u32)sizeof( imgui_state_slot_t );
+    u32 sz_pop   = c->popup_depth   * (u32)sizeof( imgui_popup_t      );
+    u32 sz_win   = c->max_windows   * (u32)sizeof( imgui_window_t     );
+    u32 sz_vp    = c->max_viewports * (u32)sizeof( imgui_viewport_t   );
+    u32 sz_dock  = c->max_dock_nodes* (u32)sizeof( imgui_dock_node_t  );
+
+    u32 off_state = ALIGN8( (u32)sizeof( imgui_context_t ) );
+    u32 off_pop   = ALIGN8( off_state + sz_state );
+    u32 off_win   = ALIGN8( off_pop   + sz_pop   );
+    u32 off_vp    = ALIGN8( off_win   + sz_win   );
+    u32 off_dock  = ALIGN8( off_vp    + sz_vp    );
+    u32 total     = ALIGN8( off_dock  + sz_dock  );
+    #undef ALIGN8
+
+    char* blk = (char*)malloc( total );
+    if ( !blk ) return NULL;
+    memset( blk, 0, total );
+
+    imgui_context_t* ctx      = (imgui_context_t*)blk;
+    ctx->retained.state       = (imgui_state_slot_t*)( blk + off_state );
+    ctx->retained.state_count = slots;
+    ctx->retained.state_mask  = slots - 1;
+    ctx->retained.id_salt     = (u32)slot * 0x9e3779b9u;
+    ctx->popups_open          = (imgui_popup_t*)   ( blk + off_pop  );
+    ctx->popup_depth          = c->popup_depth;
+    ctx->windows              = (imgui_window_t*)  ( blk + off_win  );
+    ctx->max_windows          = c->max_windows;
+    ctx->viewports            = (imgui_viewport_t*)( blk + off_vp   );
+    ctx->max_viewports        = c->max_viewports;
+    ctx->dock_nodes           = c->max_dock_nodes
+                                ? (imgui_dock_node_t*)( blk + off_dock ) : NULL;
+    ctx->max_dock_nodes       = c->max_dock_nodes;
+    ctx->_alloc               = blk;
+    return ctx;
+}
+
+/* Allocate the default context (slot 0) with editor-profile defaults; called from imgui_init. */
+static void
+ctx_pool_init( void )
+{
+    imgui_ctx_config_t c = IMGUI_CTX_CONFIG_EDITOR;
+    u32 slots = c.state_slots;
+    u32 p = 1; while ( p < slots ) p <<= 1; slots = p;
+
+    imgui_context_t* ctx = ctx_alloc_slot( &c, slots, 0 );
+    ORB_ASSERT( ctx != NULL );   /* no imgui without a default context */
+    ctx->listening = true;       /* default context listens to input */
+
+    s_ctx_pool[ 0 ]  = ctx;
+    s_ctx_pool_count = 1;
+    g_ctx            = ctx;
+}
+
 /* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
-   default.  This is the whole multi-context seam -- no state is copied.  One context today. */
+   default.  This is the whole multi-context seam -- no state is copied. */
 static void
 ctx_bind( imgui_context_t* ctx )
 {
-    g_ctx = ctx ? ctx : &s_default_context;
+    g_ctx = ctx ? ctx : s_ctx_pool[ 0 ];
 }
 
 /* Resolve an app win_id to the viewport index.  Slot index == win_id by construction;
    out-of-range ids fall back to the main surface (0).
-   Forward-declared in imgui.c; called by the mouse-input path in imgui_input.c. */
+   Forward-declared in imgui_internal.h; called by the mouse-input path in imgui_input.c. */
 static u32
 viewport_index_for_window( i32 win_id )
 {
-    if ( win_id >= 0 && win_id < (i32)IMGUI_MAX_VIEWPORTS )
+    if ( win_id >= 0 && win_id < (i32)g_ctx->max_viewports )
         return (u32)win_id;
     return 0;   /* invalid -> main swapchain surface */
 }
@@ -488,6 +557,10 @@ nav_score_dir( imgui_rect_t cur, imgui_rect_t cand, imgui_dir_t dir )
 static void
 window_nominate_hover( imgui_id_t id, imgui_rect_t r, u32 z, u32 viewport )
 {
+    /* Deaf context: not listening for input this frame, skip hover nomination. */
+    if ( !g_ctx->listening )
+        return;
+
     /* Surface gate first: the cursor must be in the OS window hosting this window's viewport. */
     if ( viewport != s_io.mouse_viewport )
         return;
@@ -504,25 +577,56 @@ window_nominate_hover( imgui_id_t id, imgui_rect_t r, u32 z, u32 viewport )
     ctx_new_frame -- reset per-frame hover state; call at the start of each frame
 ----------------------------------------------------------------------------------------------*/
 
+/* Reset the per-frame GLOBAL interaction snapshot.  Called ONCE per application frame from
+   imgui_frame_begin before any ctx_begin -- shared across all contexts (there is one mouse,
+   one keyboard, one hover window).  Must NOT be called from ctx_new_frame (which runs per
+   context) or the second ctx_begin would clobber hover_win/active_id set by the first. */
 static void
-ctx_new_frame( void )
+interaction_frame_reset( void )
 {
     /* Snapshot the active item before this frame mutates it -- the previous-frame baseline the
        is_item_activated / is_item_deactivated edge readers compare against (imgui_ctx_io.c). */
     s_interaction.active_id_prev = s_interaction.active_id;
 
-    /* Widget hover is rebuilt every frame by the hover window's widget calls; clear it now. */
+    /* Widget hover is rebuilt from hit tests during emission; clear it now. */
     s_interaction.hover_id = IMGUI_ID_NONE;
 
-    /* Last-item introspection resets to "no item": a query made before any widget this frame (or in
+    /* Promote the window the cursor was over last frame, then start a fresh nomination.
+       hover_win lags the cursor by one frame -- all contexts contribute nominations during
+       emission; the front-most (highest z) winner is promoted at the NEXT frame_begin. */
+    s_interaction.hover_win        = s_interaction.next_hover_win;
+    s_interaction.next_hover_win   = IMGUI_ID_NONE;
+    s_interaction.next_hover_win_z = 0;
+
+    /* Release active_id once its initiating button is up.  Keep it alive on the release-edge
+       frame (mouse_released) so widgets can still see the press+release pair this frame. */
+    u8 ab = s_interaction.active_button;
+    if ( !s_io.mouse_down[ ab ] && !s_io.mouse_released[ ab ] )
+    {
+        s_interaction.active_id     = IMGUI_ID_NONE;
+        s_interaction.active_button = 0;
+    }
+
+    /* Drop keyboard focus on any press; the widget under the cursor re-claims it immediately
+       (input_text sets focused_id from hover_id + press this same frame). */
+    if ( s_io.mouse_pressed[ 0 ] )
+        s_interaction.focused_id = IMGUI_ID_NONE;
+}
+
+/* Per-context frame reset: rebuilds the frame-scratch and per-context retained state.
+   Called by ctx_begin for every context -- does NOT touch the global s_interaction fields
+   (those are reset once per app frame by interaction_frame_reset in frame_begin). */
+static void
+ctx_new_frame( void )
+{
+    /* Last-item introspection resets to "no item": a query before any widget this frame (or in
        a frame that emits none) reports false rather than reading a stale rect / status. */
     s_build.last_item_id     = IMGUI_ID_NONE;
     s_build.last_item_rect   = ( imgui_rect_t ){ 0 };
     s_build.last_item_status = ( widget_state_t ){ 0 };
 
     /* Fresh layout stack each frame; no region is open until a begin_window/begin_child.
-       The interaction clip starts at the full display, and the wheel is unclaimed -- the
-       innermost scrollable region the cursor sits in consumes it (claimed at region pop). */
+       The interaction clip starts at the full display, and the wheel is unclaimed. */
     s_layout_sp           = 0;
     s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_build.wheel_used    = false;
@@ -536,7 +640,7 @@ ctx_new_frame( void )
     s_build.combo_item_clicked = false;
 
     /* Fresh item-flag state each frame: empty stack, no next-item override, nothing disabled. */
-    s_item_flag_sp       = 0;
+    s_item_flag_sp         = 0;
     s_build.item_flags     = IMGUI_ITEM_NONE;
     s_build.next_set       = IMGUI_ITEM_NONE;
     s_build.next_val       = IMGUI_ITEM_NONE;
@@ -544,34 +648,8 @@ ctx_new_frame( void )
 
     /* Fresh style stacks each frame: working set re-seeded from the theme, stacks + next cleared. */
     style_new_frame();
-    s_build.clip_rect   = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
+    s_build.clip_rect = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++s_retained.frame;
-
-    /* Promote the window the cursor was over last frame, then start a fresh nomination.
-       hover_win lags the cursor by one frame -- the only deferral, and it is what lets the
-       front-most window be known before any widget hit-tests this frame. */
-    s_interaction.hover_win        = s_interaction.next_hover_win;
-    s_interaction.next_hover_win   = IMGUI_ID_NONE;
-    s_interaction.next_hover_win_z = 0;
-
-    /* Release active_id once its initiating button is up.  Most grabs use the left button
-       (active_button 0); a middle-button window move sets active_button 2 so it releases on
-       the middle button instead.  Keep it alive on the release-edge frame (mouse_released)
-       so widgets can still observe the press+release pair this frame; it clears on the
-       following frame.  Resetting active_button to 0 on release means every left-button grab
-       site needs no bookkeeping -- only the middle grab raises it. */
-    u8 ab = s_interaction.active_button;
-    if ( !s_io.mouse_down[ ab ] && !s_io.mouse_released[ ab ] )
-    {
-         s_interaction.active_id     = IMGUI_ID_NONE;
-         s_interaction.active_button = 0;
-    }
-
-    /* Drop keyboard focus on any press; the widget under the cursor re-claims
-       it the same frame (input_text sets focused_id from hover_id + press).
-       A press on a button or empty space thus leaves focus cleared. */
-    if ( s_io.mouse_pressed[ 0 ] )
-         s_interaction.focused_id = IMGUI_ID_NONE;
 }
 
 /* Public IO accessors (imgui_want_capture_*, imgui_is_key_*, imgui_is_mouse_*, imgui_get_*)

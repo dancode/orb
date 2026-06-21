@@ -16,7 +16,7 @@
 bool
 imgui_init( void )
 {
-    ctx_bind( &s_default_context );   /* bind the default context; the host may rebind before emitting */
+    ctx_pool_init();   /* wire default context's static backing arrays; sets g_ctx + g_active_ctx */
 
     if ( !imgui_render_init() )       /* shared pipeline / sampler / atlas */
         return false;
@@ -39,10 +39,24 @@ imgui_shutdown( void )
     imgui_debug_shutdown();
 #endif
 
-    /* Release every live surface's geometry (main + any floaters the host left open). */
-    for ( u32 i = 0; i < IMGUI_MAX_VIEWPORTS; ++i )
-        viewport_destroy( &g_ctx->viewports[ i ] );
-    imgui_render_shutdown();                       /* shared pipeline / sampler / atlas */
+    /* Destroy the default context's render surfaces before releasing any blocks. */
+    imgui_context_t* def = s_ctx_pool[ 0 ];
+    if ( def )
+    {
+        g_ctx = def;
+        for ( u32 i = 0; i < def->max_viewports; ++i )
+            viewport_destroy( &def->viewports[ i ] );
+    }
+    imgui_render_shutdown();    /* shared pipeline / sampler / atlas */
+
+    /* Free all context blocks; slot 0 is heap-allocated like the rest. */
+    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
+    {
+        if ( !s_ctx_pool[ i ] ) continue;
+        free( s_ctx_pool[ i ]->_alloc );
+        s_ctx_pool[ i ] = NULL;
+    }
+    g_ctx = NULL;
 }
 
 /*==============================================================================================
@@ -65,13 +79,16 @@ imgui_print_mem_stats( void )
     Frame API
 ==============================================================================================*/
 
+/* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
+   PRIMARY context (slot 0): the OS window and its viewports belong to the default context
+   regardless of which context is active for input this frame.  Called by imgui_new_frame (the
+   compat wrapper) and directly by hosts using the multi-context frame contract. */
 void
-imgui_new_frame( f32 dt )
+imgui_frame_begin( f32 dt )
 {
-    /* Primary viewport's stored dimensions drive the display clip and input snapshot.
-       Both are 0 before the first viewport_open() -- safe: no windows are emitted yet. */
-    i32 disp_w = g_ctx->viewport_count > 0 ? g_ctx->viewports[ 0 ].disp_w : 0;
-    i32 disp_h = g_ctx->viewport_count > 0 ? g_ctx->viewports[ 0 ].disp_h : 0;
+    imgui_context_t* primary = s_ctx_pool[ 0 ];   /* default ctx always owns the OS window */
+    i32 disp_w = primary->viewport_count > 0 ? primary->viewports[ 0 ].disp_w : 0;
+    i32 disp_h = primary->viewport_count > 0 ? primary->viewports[ 0 ].disp_h : 0;
 
     /* caption_inset is NOT cleared here.  Native shell windows republish it during the build, so
        the field always reflects the last frame the shell was active.  Leaving it sticky means
@@ -80,17 +97,45 @@ imgui_new_frame( f32 dt )
        native shell permanently disappears the stale inset is conservative -- windows stay clamped
        below where the caption used to be -- and the viewport is destroyed shortly after anyway. */
 
-    s_retained.wants_redraw = false;   /* cleared before the build; widgets set it if animating */
     input_update( disp_w, disp_h, dt );
     draw_reset( disp_w, disp_h );
+
+    /* Reset global interaction state exactly once per app frame.  hover_win promotion and
+       active_id release happen here -- NOT in ctx_new_frame -- so subsequent ctx_begin calls
+       for additional contexts do not clobber hover nominations from earlier contexts. */
+    interaction_frame_reset();
+
 #ifdef IMGUI_DEBUG_OVERLAY
     imgui_debug_reset();         /* clear the overlay's per-frame geometry */
 #endif
-    ctx_new_frame();             /* promotes last frame's hover_win */
+}
+
+/* Per-context frame phase: bind `ctx_handle` and run a full frame init for it.  Every context
+   gets the full init (nav, popup check, per-frame scratch reset) regardless of its `listening`
+   flag; the flag only gates widget interaction (hover nomination and widget hit-tests). */
+void
+imgui_ctx_begin( imgui_ctx_t ctx_handle )
+{
+    if ( ctx_handle < 0 || ctx_handle >= (i32)s_ctx_pool_count || !s_ctx_pool[ ctx_handle ] )
+        ctx_handle = IMGUI_CTX_DEFAULT;
+
+    imgui_context_t* c = s_ctx_pool[ ctx_handle ];
+    ctx_bind( c );
+
+    s_retained.wants_redraw = false;   /* cleared before the build; set again by any animating widget */
+    ctx_new_frame();             /* per-context scratch reset + frame clock bump (no global interaction touch) */
     popup_close_check();         /* stale-close + click-outside, BEFORE any user open_popup */
     popup_apply_modal();         /* fence interaction behind an open modal (steals hover_win) */
     window_raise_on_press();     /* a press raises the hover window (takes effect this frame) */
     nav_new_frame();             /* commit last frame's nav move + read this frame's nav keys */
+}
+
+/* Single-context backwards-compat wrapper: frame_begin + ctx_begin(DEFAULT). */
+void
+imgui_new_frame( f32 dt )
+{
+    imgui_frame_begin( dt );
+    imgui_ctx_begin( IMGUI_CTX_DEFAULT );
 }
 
 /* Flush one viewport's geometry partition to GPU.  The host opens a frame on that viewport's rhi
@@ -100,7 +145,7 @@ imgui_new_frame( f32 dt )
 void
 imgui_render( imgui_vp_t vp, rhi_cmd_t cmd )
 {
-    if ( vp < 0 || vp >= IMGUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= (i32)g_ctx->max_viewports )
         return;
     imgui_viewport_t* v = &g_ctx->viewports[ vp ];
     imgui_render_flush( v, (u32)vp, cmd, v->disp_w, v->disp_h );
@@ -129,7 +174,7 @@ imgui_vp_t
 imgui_viewport_open( i32 win_id, i32 w, i32 h )
 {
     /* Slot index == win_id; an open window guarantees the slot is free. */
-    if ( win_id < 0 || win_id >= (i32)IMGUI_MAX_VIEWPORTS )
+    if ( win_id < 0 || win_id >= (i32)g_ctx->max_viewports )
         return IMGUI_VP_INVALID;
 
     imgui_viewport_t* vp = &g_ctx->viewports[ win_id ];
@@ -151,7 +196,7 @@ imgui_viewport_open( i32 win_id, i32 w, i32 h )
 void
 imgui_viewport_resize( imgui_vp_t vp, i32 w, i32 h )
 {
-    if ( vp < 0 || vp >= IMGUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= (i32)g_ctx->max_viewports )
         return;
     g_ctx->viewports[ vp ].disp_w = w;
     g_ctx->viewports[ vp ].disp_h = h;
@@ -163,7 +208,7 @@ imgui_viewport_resize( imgui_vp_t vp, i32 w, i32 h )
 void
 imgui_viewport_close( imgui_vp_t vp )
 {
-    if ( vp <= 0 || vp >= IMGUI_MAX_VIEWPORTS )
+    if ( vp <= 0 || vp >= (i32)g_ctx->max_viewports )
         return;
     viewport_destroy( &g_ctx->viewports[ vp ] );
     /* Migrate any windows on this surface back to the primary. */
@@ -205,7 +250,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
     i32 win_id = app()->window_open( title, x, y, w, h, open_flags );
     if ( win_id == APP_WIN_INVALID )
         return IMGUI_VP_INVALID;
-    if ( win_id < 0 || win_id >= (i32)IMGUI_MAX_VIEWPORTS )
+    if ( win_id < 0 || win_id >= (i32)g_ctx->max_viewports )
     {
         app()->window_close( win_id );    /* no viewport slot for this id */
         return IMGUI_VP_INVALID;
@@ -369,7 +414,7 @@ imgui_update_platform_windows( void )
             else
             {
                 i32 fx = 0, fy = 0, mx = 0, my = 0;
-                if ( fvp < IMGUI_MAX_VIEWPORTS )
+                if ( fvp < g_ctx->max_viewports )
                     app()->window_get_pos( g_ctx->viewports[ fvp ].win_id, &fx, &fy );
                 app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
                 win->x = (f32)( fx - mx );
@@ -395,7 +440,7 @@ imgui_update_platform_windows( void )
             bool empty = true;
             for ( u32 w = 0; w < s_window_count; ++w )
                 if ( s_windows[ w ].viewport == fvp ) { empty = false; break; }
-            if ( empty && fvp > 0 && fvp < IMGUI_MAX_VIEWPORTS && g_ctx->viewports[ fvp ].owned )
+            if ( empty && fvp > 0 && fvp < g_ctx->max_viewports && g_ctx->viewports[ fvp ].owned )
                 viewport_destroy( &g_ctx->viewports[ fvp ] );
         }
     }
@@ -548,6 +593,76 @@ bool
 imgui_wants_redraw( void )
 {
     return s_retained.wants_redraw;
+}
+
+/*==============================================================================================
+    Multi-context API
+==============================================================================================*/
+
+/* Set whether a context listens for hover/click/nav input.  Call between frames.
+   Multiple contexts may listen simultaneously; a deaf context renders but returns inert
+   widget state.  The default context starts listening; secondary contexts start deaf. */
+void
+imgui_ctx_set_listening( imgui_ctx_t ctx, bool listen )
+{
+    if ( ctx >= 0 && ctx < IMGUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
+        s_ctx_pool[ ctx ]->listening = listen;
+}
+
+/* Allocate a fresh secondary context sized to `cfg` (NULL = editor defaults).
+   Each gets a unique id_salt so same-named widgets do not alias across contexts.
+   Returns IMGUI_CTX_INVALID when the pool is full.  Call between frames. */
+imgui_ctx_t
+imgui_ctx_create( const imgui_ctx_config_t* cfg )
+{
+    /* Resolve config: NULL or zero fields fall back to editor defaults.
+       max_dock_nodes == 0 is valid (disables docking); do not default it. */
+    imgui_ctx_config_t c = cfg ? *cfg : IMGUI_CTX_CONFIG_EDITOR;
+    if ( !c.max_windows   ) c.max_windows   = IMGUI_DEFAULT_MAX_WINDOWS;
+    if ( !c.state_slots   ) c.state_slots   = IMGUI_DEFAULT_STATE_SLOTS;
+    if ( !c.popup_depth   ) c.popup_depth   = IMGUI_DEFAULT_POPUP_DEPTH;
+    if ( !c.max_viewports ) c.max_viewports = IMGUI_DEFAULT_MAX_VIEWPORTS;
+
+    /* state_slots must be a power of two for the hash mask to work. */
+    u32 slots = c.state_slots;
+    if ( slots < 16 ) slots = 16;
+    u32 p = 1; while ( p < slots ) p <<= 1; slots = p;
+
+    /* Find a free pool slot (1..IMGUI_CTX_POOL_MAX-1). */
+    i32 slot = -1;
+    for ( i32 i = 1; i < IMGUI_CTX_POOL_MAX; ++i )
+        if ( !s_ctx_pool[ i ] ) { slot = i; break; }
+    if ( slot < 0 ) return IMGUI_CTX_INVALID;
+
+    imgui_context_t* ctx = ctx_alloc_slot( &c, slots, slot );
+    if ( !ctx ) return IMGUI_CTX_INVALID;
+    ctx->listening = false;   /* secondary contexts start deaf; caller opts in */
+
+    s_ctx_pool[ slot ] = ctx;
+    if ( (u32)slot >= s_ctx_pool_count ) s_ctx_pool_count = (u32)slot + 1u;
+    return (imgui_ctx_t)slot;
+}
+
+/* Free a secondary context; rebinds the default if this was current.  Never destroys slot 0. */
+void
+imgui_ctx_destroy( imgui_ctx_t ctx )
+{
+    if ( ctx <= 0 || ctx >= IMGUI_CTX_POOL_MAX || !s_ctx_pool[ ctx ] )
+        return;
+    imgui_context_t* c = s_ctx_pool[ ctx ];
+    if ( g_ctx == c ) ctx_bind( NULL );
+    if ( c->_alloc ) free( c->_alloc );   /* secondary contexts own their block */
+    s_ctx_pool[ ctx ] = NULL;
+}
+
+/* Make ctx the current context.  IMGUI_CTX_DEFAULT (0) or an invalid handle rebinds the default. */
+void
+imgui_ctx_bind( imgui_ctx_t ctx )
+{
+    if ( ctx >= 0 && ctx < IMGUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
+        ctx_bind( s_ctx_pool[ ctx ] );
+    else
+        ctx_bind( NULL );
 }
 
 // clang-format on
