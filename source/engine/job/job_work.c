@@ -52,11 +52,11 @@ job_complete_one( job_counter_t counter )
 static void
 job_worker_main( void* arg )
 {
-    worker_thread_t* self = ( worker_thread_t* )arg;
-    self->id              = thread_current_id();    // Cache the thread's OS ID.
+    worker_thread_t* self = ( worker_thread_t* )arg;    // Self bookkeeping struct.
+    self->id              = thread_current_id();        // Cache the thread's OS ID.
 
-    // Keep running as long as the system is active.
-    while ( sys_atomic_read( &g_job_state.is_running ) )
+    // Keep running as long as the system is active (set to zero on job_exit())
+    while ( sys_atomic_read( &g_job_state.is_running ))
     {
         // Block-sleep until the semaphore count is greater than 0.
         // When jobs are dispatched, sema_post raises this count, waking up workers.
@@ -68,8 +68,8 @@ job_worker_main( void* arg )
             break;
         }
 
-        job_item_t job     = { 0 };
-        bool       has_job = false;
+        job_item_t job = { 0 };
+        bool has_job = false;
 
         // Pop an item from the queue ring buffer. Must lock to avoid race conditions
         // with other worker threads popping, or external threads pushing.
@@ -88,6 +88,7 @@ job_worker_main( void* arg )
         mutex_unlock( &g_job_state.queue_lock );
 
         // If we successfully popped a job, execute it.
+        // Otherwise, another worker thread likely beat us to it after we woke up (loop again)
         if ( has_job )
         {
             if ( job.function )
@@ -112,11 +113,15 @@ job_worker_main( void* arg )
 static job_counter_t
 job_allocate_counter( i32 initial_value )
 {
+    // Loop over the pool a bounded number of times (pool size) to find a free slot.
+    // This should almost always succeed on the first iteration since jobs complete and free
+    // slots quickly, we still loop to guarantee forward progress if the pool is saturated.
+
     for ( uint32_t i = 0; i < JOB_POOL_SIZE; ++i )
     {
         // Get the next index in the pool atomically.
-        u32              index = (u32)sys_atomic_increment( &g_job_state.counter_pool_index ) & JOB_POOL_MASK;
-        job_pool_slot_t* slot  = &g_job_state.counter_pool[ index ];
+        u32 index = (u32)sys_atomic_increment( &g_job_state.counter_pool_index ) & JOB_POOL_MASK;
+        job_pool_slot_t* slot = &g_job_state.counter_pool[ index ];
 
         // Snapshot the slot. A free slot has value (low dword) == 0.
         i64 current = sys_atomic_read_64( &slot->packed );
@@ -331,7 +336,6 @@ job_init( void )
             return false;    // Thread creation failed, fail module load.
         }
     }
-
     return true;
 }
 

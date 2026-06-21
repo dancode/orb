@@ -50,7 +50,7 @@ typedef struct worker_thread_s
 {
     thread_t        handle;                     // OS handle to the thread.
     thread_id_t     id;                         // OS Thread ID.
-    uint32_t        index;                      // Worker index (e.g. 0 to NumWorkers-1).
+    uint32_t        index;                      // Worker thread index (e.g. 0 to NumWorkers-1).
 
 } worker_thread_t;
 
@@ -99,7 +99,7 @@ typedef struct job_state_s
     worker_thread_t workers[ 32 ];              // Bookkeeping array for worker threads.
 
     // Central Queue Ring Buffer
-    job_item_t      queue[ MAX_JOB_QUEUE ];    // Ring buffer storage array.
+    job_item_t      queue[ MAX_JOB_QUEUE ];     // Ring buffer storage array.
     u32             queue_head;                 // Monotonic index of the next item to pop.
     u32             queue_tail;                 // Monotonic index of the next slot to push.
     i32             queue_count;                // Current number of items pending in the queue.
