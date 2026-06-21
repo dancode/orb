@@ -318,13 +318,13 @@ job_init( void )
         worker_thread->index           = i;
 
         // Spawn the thread. 0 stack size specifies default stack.
-        worker_thread->handle = thread_create( job_worker_main, worker_thread, 0 );
+        worker_thread->id = 0;
+        worker_thread->handle = thread_create( job_worker_main, worker_thread, 0 );         
         if ( thread_valid( worker_thread->handle ) )
         {
             char name_buf[ 32 ];
             sprintf( name_buf, "ORB_Worker_%02u", i );
             thread_set_name( worker_thread->handle, name_buf );    // Helpful for debugging/profilers.
-            worker_thread->id = 0;
         }
         else
         {
