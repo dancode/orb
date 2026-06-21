@@ -32,12 +32,14 @@ imgui_init( void )
     return true;
 }
 
+/*============================================================================================*/
+
 void
 imgui_shutdown( void )
 {
-#ifdef IMGUI_DEBUG_OVERLAY
+    #ifdef IMGUI_DEBUG_OVERLAY
     imgui_debug_shutdown();
-#endif
+    #endif
 
     /* Destroy the default context's render surfaces before releasing any blocks. */
     imgui_context_t* def = s_ctx_pool[ 0 ];
