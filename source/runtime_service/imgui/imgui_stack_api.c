@@ -51,6 +51,28 @@ void imgui_pop_item_flag ( void )                                 { item_flag_po
 void imgui_next_item_flag( imgui_item_flags_t flag, bool enable ) { item_flag_next( flag, enable ); }
 
 /*----------------------------------------------------------------------------------------------
+    begin_disabled / end_disabled -- the named-scope shorthand for IMGUI_ITEM_DISABLED (the ImGui
+    BeginDisabled / EndDisabled).  begin_disabled( true ) brackets a run of widgets so they all draw
+    dimmed and reject input; begin_disabled( false ) pushes a no-op scope (so a conditional disable
+    still balances with one end_disabled).  Nests cleanly via the item-flag stack.
+
+        imgui()->begin_disabled( !has_selection );
+        imgui()->button( "Delete" );          // inert + dimmed while nothing is selected
+        imgui()->end_disabled();
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_begin_disabled( bool disabled )
+{
+    /* OR the bit in -- never clear it -- so begin_disabled( false ) nested inside an outer
+       begin_disabled( true ) keeps the widgets disabled (the ImGui nesting rule). */
+    bool now = ( ( s_build.item_flags & IMGUI_ITEM_DISABLED ) != 0 ) || disabled;
+    item_flag_push( IMGUI_ITEM_DISABLED, now );
+}
+
+void imgui_end_disabled( void ) { item_flag_pop(); }
+
+/*----------------------------------------------------------------------------------------------
     push_style_color / push_style_var (+ pop / next) -- the push-model theme override.
 
     push overrides a slot for every widget until the matching pop; pop takes a count, so two pushes

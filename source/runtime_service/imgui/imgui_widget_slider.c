@@ -200,5 +200,101 @@ imgui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, co
     return changed;
 }
 
+/*----------------------------------------------------------------------------------------------
+    drag_float -- the floating-point sibling of drag_int: a framed value field changed by a
+    left / right drag, v_speed units of value per pixel, with no track and so no travel cap.  The
+    Dear ImGui DragFloat analogue.  v_min < v_max bounds the value; both equal leaves it unbounded.
+    fmt is the printf form of the displayed value ("%.3f" when NULL).  drag_float2/3/4 lay N equal
+    sub-boxes across the control track (a vector edit), each an independent drag.
+----------------------------------------------------------------------------------------------*/
+
+/* Float anchor captured at the press that started the active drag -- the float counterpart of
+   s_drag_anchor_v, a lone static since only one widget owns active_id at a time. */
+static f32 s_drag_anchor_f;
+
+/* One drag-float box in box_r (no label split): the shared interaction + frame draw for a single
+   component, so drag_float and the drag_floatN row both reduce to placing boxes and calling this. */
+static bool
+drag_float_box( imgui_id_t id, imgui_rect_t box_r, f32* v,
+                f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
+{
+    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
+
+    /* Capture the value at the grab, then re-derive from the anchor each frame (drift-free). */
+    if ( st.pressed )
+        s_drag_anchor_f = *v;
+
+    bool changed = false;
+    if ( st.active )
+    {
+        f32 nv = s_drag_anchor_f + ( s_io.mouse_x - s_click_x[ 0 ] ) * v_speed;
+        if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
+        if ( nv != *v )
+        {
+            *v      = nv;
+            changed = true;
+        }
+    }
+
+    u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
+    draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0, COL_BORDER );
+
+    char buf[ 64 ];
+    snprintf( buf, sizeof( buf ), fmt, *v );
+    f32 inner = box_r.w - 2.0f * WIDGET_PAD;
+    f32 tw    = font_text_w_n( buf, 0xFFFFFFFFu );
+    f32 tx    = box_r.x + ( box_r.w - tw ) * 0.5f;
+    if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
+    draw_text_fit_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu, inner );
+
+    return changed;
+}
+
+bool
+imgui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
+{
+    if ( v_speed <= 0.0f ) v_speed = 1.0f;
+    if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
+
+    imgui_id_t   id    = widget_id( label );
+    imgui_rect_t r     = widget_next_rect( WIDGET_H );
+    imgui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
+
+    return drag_float_box( id, box_r, v, v_speed, v_min, v_max, fmt );
+}
+
+/* N-component drag row: N equal drag-float sub-boxes across the control track. */
+static bool
+drag_float_n( const char* label, f32* v, u32 n, f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
+{
+    if ( v_speed <= 0.0f ) v_speed = 1.0f;
+    if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
+
+    imgui_id_t   id   = widget_id( label );
+    imgui_rect_t r    = widget_next_rect( WIDGET_H );
+    imgui_rect_t ctrl = widget_split_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT );
+
+    bool changed = false;
+    for ( u32 i = 0; i < n; ++i )
+    {
+        f32 x0 = ctrl.x + (f32)i        * ctrl.w / (f32)n;
+        f32 x1 = ctrl.x + (f32)(i + 1u) * ctrl.w / (f32)n;
+        imgui_rect_t sub = { floorf( x0 ), ctrl.y, floorf( x1 ) - floorf( x0 ), ctrl.h };
+        if ( drag_float_box( id_combine( id, i + 1u ), sub, &v[ i ], v_speed, v_min, v_max, fmt ) )
+            changed = true;
+    }
+    return changed;
+}
+
+bool imgui_drag_float2( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
+{ return drag_float_n( label, v, 2u, v_speed, v_min, v_max, fmt ); }
+
+bool imgui_drag_float3( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
+{ return drag_float_n( label, v, 3u, v_speed, v_min, v_max, fmt ); }
+
+bool imgui_drag_float4( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
+{ return drag_float_n( label, v, 4u, v_speed, v_min, v_max, fmt ); }
+
 // clang-format on
 /*============================================================================================*/

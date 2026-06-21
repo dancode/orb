@@ -47,6 +47,55 @@ imgui_is_mouse_hovering_rect( imgui_rect_t r )
     return can_hover && win_hover && rect_hit( s_build.clip_rect ) && rect_hit( r );
 }
 
+/*----------------------------------------------------------------------------------------------
+    Last-item introspection (the Dear ImGui IsItem* family).
+
+    Every reader reports on "the widget just emitted" -- the item whose rect and interaction state
+    widget_behavior latched into s_build.last_item_* (imgui_widget_core.c).  Call immediately after a
+    widget, the way set_item_tooltip / begin_popup_context_item already bind to the previous item:
+
+        imgui()->button( "Save" );
+        if ( imgui()->is_item_hovered() ) imgui()->set_item_tooltip( "Write to disk" );
+        if ( imgui()->is_item_clicked() ) save();
+
+    The activated / deactivated edges compare this frame's active id against the previous-frame
+    baseline (active_id_prev, snapshot at new_frame): activated fires the frame an item first grabs
+    active, deactivated the frame it lets go -- the natural seam for "commit on release" handling.
+----------------------------------------------------------------------------------------------*/
+
+bool imgui_is_item_hovered ( void ) { return s_build.last_item_status.hover;   }
+bool imgui_is_item_active  ( void ) { return s_build.last_item_status.active;  }
+bool imgui_is_item_clicked ( void ) { return s_build.last_item_status.clicked; }
+bool imgui_is_item_focused ( void ) { return s_build.last_item_status.focused; }
+
+/* True the frame the last item first became active (press / nav-activate), false while it stays held. */
+bool
+imgui_is_item_activated( void )
+{
+    imgui_id_t id = s_build.last_item_id;
+    return id != IMGUI_ID_NONE && s_interaction.active_id == id && s_interaction.active_id_prev != id;
+}
+
+/* True the frame the last item stops being active (release / focus loss) -- the commit edge. */
+bool
+imgui_is_item_deactivated( void )
+{
+    imgui_id_t id = s_build.last_item_id;
+    return id != IMGUI_ID_NONE && s_interaction.active_id != id && s_interaction.active_id_prev == id;
+}
+
+/* True when the last item's rect has any visible (unclipped) area in the active region clip. */
+bool
+imgui_is_item_visible( void )
+{
+    imgui_rect_t v = rect_intersect( s_build.last_item_rect, s_build.clip_rect );
+    return v.w > 0.0f && v.h > 0.0f;
+}
+
+/* The last item's screen rect (the GetItemRectMin/Max/Size trio in one rect-centric accessor):
+   anchor custom draw to a widget just emitted, or measure it. */
+imgui_rect_t imgui_get_item_rect( void ) { return s_build.last_item_rect; }
+
 /* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t
    range is bounded by APP_KEY_COUNT <= IMGUI_KEY_COUNT (asserted in imgui_input.c).  is_key_pressed
    is the initial press this frame; is_key_pressed_repeat also fires on each OS auto-repeat tick (the

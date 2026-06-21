@@ -35,6 +35,7 @@ static struct
 {
     imgui_id_t  hover_id;       // widget under the cursor this frame (rebuilt each frame)
     imgui_id_t  active_id;      // widget with the mouse button held (drag / hold)
+    imgui_id_t  active_id_prev; // active_id as of the end of the previous frame (snapshot at new_frame)
     u8          active_button;  // which button holds active_id (0=left); reset to 0 on release
     imgui_id_t  focused_id;     // widget that owns keyboard input
 
@@ -68,6 +69,13 @@ static struct
 static struct
 {
     imgui_id_t  last_item_id;   // id of the most recent widget emitted -- context-menu / tooltip anchor
+
+    /* Last-item introspection (the Dear ImGui IsItem* model).  widget_behavior latches the rect and
+       the resolved interaction state of each emitted item here, so the item-query readers
+       (imgui_ctx_io.c) report on "the widget just emitted" with no per-widget bookkeeping -- the same
+       anchor last_item_id already provides for context menus / tooltips, widened to the full result. */
+    imgui_rect_t   last_item_rect;     // screen rect of the most recent widget
+    widget_state_t last_item_status;   // its resolved hover / active / clicked / focused / nav flags
 
     u32         cur_viewport;       // ambient viewport for new-window inheritance (updated per window emitted)
 
@@ -491,8 +499,18 @@ window_nominate_hover( imgui_id_t id, imgui_rect_t r, u32 z, u32 viewport )
 static void
 ctx_new_frame( void )
 {
+    /* Snapshot the active item before this frame mutates it -- the previous-frame baseline the
+       is_item_activated / is_item_deactivated edge readers compare against (imgui_ctx_io.c). */
+    s_interaction.active_id_prev = s_interaction.active_id;
+
     /* Widget hover is rebuilt every frame by the hover window's widget calls; clear it now. */
     s_interaction.hover_id = IMGUI_ID_NONE;
+
+    /* Last-item introspection resets to "no item": a query made before any widget this frame (or in
+       a frame that emits none) reports false rather than reading a stale rect / status. */
+    s_build.last_item_id     = IMGUI_ID_NONE;
+    s_build.last_item_rect   = ( imgui_rect_t ){ 0 };
+    s_build.last_item_status = ( widget_state_t ){ 0 };
 
     /* Fresh layout stack each frame; no region is open until a begin_window/begin_child.
        The interaction clip starts at the full display, and the wheel is unclaimed -- the

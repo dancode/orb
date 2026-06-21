@@ -173,6 +173,8 @@ void imgui_pop_id( void );
 void imgui_push_item_flag( imgui_item_flags_t flag, bool enable );
 void imgui_pop_item_flag( void );
 void imgui_next_item_flag( imgui_item_flags_t flag, bool enable );
+void imgui_begin_disabled( bool disabled );
+void imgui_end_disabled( void );
 
 /* style modifiers */
 void imgui_push_style_color( imgui_col_t slot, u32 abgr );
@@ -186,8 +188,15 @@ void imgui_next_style_var( imgui_style_var_t var, f32 value );
 void imgui_text( const char* str );
 void imgui_textf( const char* fmt, ... );
 void imgui_bullet_text( const char* str );
+void imgui_text_colored( u32 abgr, const char* str );
+void imgui_text_disabled( const char* str );
+void imgui_text_wrapped( const char* str );
+void imgui_bullet( void );
+void imgui_new_line( void );
 void imgui_label_text( const char* label, const char* value );
 bool imgui_button( const char* label );
+bool imgui_small_button( const char* label );
+void imgui_progress_bar( f32 fraction, const char* overlay );
 bool imgui_arrow_button( const char* id_str, imgui_dir_t dir );
 bool imgui_checkbox( const char* label, bool* v );
 bool imgui_radio_button( const char* label, i32* v, i32 value );
@@ -197,6 +206,10 @@ bool imgui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
 bool imgui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step );
 bool imgui_slider_int( const char* label, i32* v, i32 lo, i32 hi );
 bool imgui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
+bool imgui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
+bool imgui_drag_float2( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
+bool imgui_drag_float3( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
+bool imgui_drag_float4( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
 
 /* widget - input boxes */
 bool imgui_input_text( const char* label, char* buf, u32 bufsz );
@@ -258,6 +271,17 @@ u32  imgui_debug_get_layers( void );
 /* input */
 bool imgui_want_capture_mouse( void );
 bool imgui_want_capture_keyboard( void );
+
+/* last-item introspection */
+bool         imgui_is_item_hovered( void );
+bool         imgui_is_item_active( void );
+bool         imgui_is_item_clicked( void );
+bool         imgui_is_item_focused( void );
+bool         imgui_is_item_activated( void );
+bool         imgui_is_item_deactivated( void );
+bool         imgui_is_item_visible( void );
+imgui_rect_t imgui_get_item_rect( void );
+
 bool imgui_is_key_down( app_key_t key );
 bool imgui_is_key_pressed( app_key_t key );
 bool imgui_is_key_pressed_repeat( app_key_t key );

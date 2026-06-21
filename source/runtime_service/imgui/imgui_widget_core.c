@@ -340,14 +340,18 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     /* Latch the most recent item id for context menus / tooltips (begin_popup_context_item,
        set_item_tooltip).  Done before the disabled early-out so a disabled widget still counts
        as the last item -- the anchor is "what was just emitted", regardless of its state. */
-    s_build.last_item_id = id;
+    s_build.last_item_id   = id;
+    s_build.last_item_rect = r;   /* item-query getters read this for "the widget just emitted" */
 
     /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
        state here is the one place that suppresses interaction for every widget, the behavioral half
        of IMGUI_ITEM_DISABLED (the visual dim is the draw list's global alpha, set at resolve).  The
        flags were latched by widget_next_rect_w just before this call. */
     if ( s_build.cur_item_flags & IMGUI_ITEM_DISABLED )
+    {
+        s_build.last_item_status = st;   /* a disabled item is still the last item, reported inert */
         return st;
+    }
 
     /* Hot only when this widget belongs to the window the cursor is over (hover_win,
        resolved last frame).  Widgets in any other window short-circuit before rect_hit,
@@ -416,6 +420,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
     }
 #endif
 
+    s_build.last_item_status = st;   /* publish the resolved state for the item-query readers */
     return st;
 }
 

@@ -28,8 +28,10 @@
     text
 ----------------------------------------------------------------------------------------------*/
 
-void
-imgui_text( const char* str )
+/* Shared text-run emit: reserve a natural-width cell, place the run by the region's content
+   alignment, and draw it in `col`.  text / text_colored / text_disabled differ only by colour. */
+static void
+text_emit( u32 col, const char* str )
 {
     f32          tw = font_text_w( str );
     imgui_rect_t r  = widget_next_rect_w( tw, font_char_h() );   /* natural width feeds same_line */
@@ -37,8 +39,75 @@ imgui_text( const char* str )
     /* Place the run inside its cell per the region's content alignment (default LEFT | TOP, the
        original top-left).  A row tall enough for the glyph centers vertically when asked. */
     imgui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->lay_align );
-    draw_push_text( tr.x, tr.y, COL_TEXT, str );
+    draw_push_text( tr.x, tr.y, col, str );
     widget_track_width( tr.x + tw );   /* natural width may exceed the row */
+}
+
+void imgui_text( const char* str ) { text_emit( COL_TEXT, str ); }
+
+/* text_colored -- a text run in an explicit colour (IMGUI_COLOR abgr), the ImGui TextColored
+   analogue.  text_disabled is the dim-text shorthand (COL_TEXT_DIM) for secondary / inert labels. */
+void imgui_text_colored ( u32 abgr, const char* str ) { text_emit( abgr,         str ); }
+void imgui_text_disabled( const char* str )           { text_emit( COL_TEXT_DIM, str ); }
+
+/*----------------------------------------------------------------------------------------------
+    text_wrapped -- a text run word-wrapped to the region's content width (the ImGui TextWrapped
+    analogue), for paragraphs / help blurbs that should reflow instead of clipping or overflowing.
+    Breaks on spaces (a word longer than the line hard-breaks before it) and honours explicit '\n'.
+----------------------------------------------------------------------------------------------*/
+
+/* Walk s word-wrapped to max_w.  When draw, render each line left-anchored at (x, y0 + i*line_h);
+   either way return the line count, so a measure pass can size the cell before the draw pass. */
+static u32
+text_wrap_walk( const char* s, f32 max_w, bool draw, f32 x, f32 y0, u32 col )
+{
+    f32         lh    = font_line_h();
+    u32         lines = 0;
+    const char* p     = s;
+
+    while ( *p )
+    {
+        const char* line_beg = p;
+        const char* brk      = NULL;   /* last space seen on this line -- the break candidate */
+        f32         w        = 0.0f;
+
+        while ( *p && *p != '\n' )
+        {
+            f32 adv = font_char_advance( (u8)*p );
+            if ( *p == ' ' ) brk = p;                         /* a space is where we may wrap */
+            if ( w + adv > max_w && p != line_beg )
+            {
+                if ( brk ) p = brk;                           /* break at the last space */
+                break;                                        /* (long word: hard break here) */
+            }
+            w += adv;
+            ++p;
+        }
+
+        if ( draw )
+            draw_push_text_n( x, y0 + (f32)lines * lh, col, line_beg, (u32)( p - line_beg ) );
+        ++lines;
+
+        if      ( *p == '\n' )               ++p;   /* consume the explicit break  */
+        else if ( *p == ' ' && brk == p )    ++p;   /* consume the wrap-point space */
+    }
+
+    return lines ? lines : 1u;                       /* empty string still owns one line */
+}
+
+void
+imgui_text_wrapped( const char* str )
+{
+    if ( !str ) return;
+
+    f32 avail = imgui_content_avail().x;             /* width a full cell would fill */
+    if ( avail < 1.0f ) avail = 1.0f;
+
+    u32          lines = text_wrap_walk( str, avail, false, 0.0f, 0.0f, 0 );
+    f32          h     = font_char_h() + (f32)( lines - 1u ) * font_line_h();
+    imgui_rect_t r     = widget_next_rect( h );
+
+    text_wrap_walk( str, avail, true, r.x, r.y, COL_TEXT );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -83,6 +152,25 @@ imgui_bullet_text( const char* str )
 }
 
 /*----------------------------------------------------------------------------------------------
+    bullet -- a standalone bullet glyph (the ImGui Bullet analogue): the bullet of bullet_text with
+    no trailing text, so a caller can follow it on the same line with any widget(s).
+
+        imgui()->bullet();  imgui()->same_line( 0.0f );  imgui()->button( "Action" );
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_bullet( void )
+{
+    f32 ch  = font_char_h();
+    f32 bsz = floorf( ch * 0.35f );  if ( bsz < 2.0f ) bsz = 2.0f;   /* bullet side */
+
+    imgui_rect_t r  = widget_next_rect_w( bsz, ch );
+    imgui_rect_t br = rect_align( r, bsz, bsz, IMGUI_ALIGN_VCENTER );   /* centered in the row */
+    draw_push_rect_filled( br.x, br.y, bsz, bsz, 0,0,1,1, 0, COL_TEXT );
+    widget_track_width( r.x + bsz );
+}
+
+/*----------------------------------------------------------------------------------------------
     button -- returns true on the frame the button is released while hovered
 ----------------------------------------------------------------------------------------------*/
 
@@ -115,6 +203,77 @@ imgui_button( const char* label )
     }
 
     return st.clicked;
+}
+
+/*----------------------------------------------------------------------------------------------
+    small_button -- a compact button with no vertical frame padding (the ImGui SmallButton): a
+    text-height row instead of the full WIDGET_H, for inline controls packed onto a text line.
+----------------------------------------------------------------------------------------------*/
+
+bool
+imgui_small_button( const char* label )
+{
+    imgui_id_t   id = widget_id( label );
+
+    /* Height hugs the glyph (plus 2px so the frame does not touch the text); width is label + pad. */
+    f32          h  = font_char_h() + 2.0f;
+    imgui_rect_t r  = widget_next_rect_w( label_width( label ) + 2.0f * WIDGET_PAD, h );
+
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
+
+    f32 lw = label_width( label );
+    f32 avail = r.w - 2.0f * WIDGET_PAD;
+    if ( lw <= avail )
+    {
+        imgui_rect_t lr = rect_align( r, lw, font_char_h(), IMGUI_ALIGN_CENTER );
+        draw_label( lr.x, lr.y, COL_TEXT, label );
+    }
+    else
+    {
+        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label, avail );
+    }
+
+    return st.clicked;
+}
+
+/*----------------------------------------------------------------------------------------------
+    progress_bar -- a filled track showing `fraction` (0..1) of completion with a centered caption
+    (the ImGui ProgressBar analogue).  overlay is the text drawn over the bar; NULL shows a "NN%"
+    percentage, an empty string shows nothing.  Consumes one standard-height full-width cell.
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_progress_bar( f32 fraction, const char* overlay )
+{
+    fraction = saturate( fraction );
+
+    imgui_rect_t r = widget_next_rect( WIDGET_H );
+
+    /* Track, then the fill bar up to the fraction, then the border on top so the fill stays inside. */
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, COL_SLIDER_TRACK );
+    f32 fw = fraction * r.w;
+    if ( fw > 0.0f )
+        draw_push_rect_filled( r.x, r.y, fw, r.h, 0,0,1,1, 0, COL_WIDGET_FG );
+    draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER );
+
+    /* Caption: caller text, or a default percentage; centered and fitted to the inner width. */
+    char        buf[ 32 ];
+    const char* txt = overlay;
+    if ( !txt )
+    {
+        snprintf( buf, sizeof( buf ), "%d%%", (int)( fraction * 100.0f + 0.5f ) );
+        txt = buf;
+    }
+    if ( txt[ 0 ] )
+    {
+        f32 tw = font_text_w( txt );
+        f32 tx = r.x + ( r.w - tw ) * 0.5f;
+        if ( tx < r.x + WIDGET_PAD ) tx = r.x + WIDGET_PAD;
+        draw_text_fit_n( tx, text_center_y( r.y, r.h ), COL_TEXT, txt, 0xFFFFFFFFu,
+                         r.w - 2.0f * WIDGET_PAD );
+    }
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -508,6 +667,14 @@ void
 imgui_spacing( f32 h )
 {
     widget_next_rect( h > 0.0f ? h : WIDGET_GAP );
+}
+
+/* Break to a fresh line of one text-height (the ImGui NewLine): undoes a same_line and inserts a
+   blank line between runs.  A spacing() sized to the glyph height, named for its intent. */
+void
+imgui_new_line( void )
+{
+    widget_next_rect( font_char_h() );
 }
 
 /* Reserve a rectangular drawing area in the layout and hand back its screen rect, for custom

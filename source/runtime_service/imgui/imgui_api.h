@@ -474,6 +474,13 @@ typedef struct imgui_api_s
     void ( *pop_item_flag  )( void );
     void ( *next_item_flag )( imgui_item_flags_t flag, bool enable );
 
+    /* begin_disabled / end_disabled -- named-scope shorthand for IMGUI_ITEM_DISABLED (BeginDisabled
+       / EndDisabled).  begin_disabled( true ) dims + inerts the bracketed widgets; ( false ) pushes
+       a no-op scope so a conditional disable still balances.  Nests: an inner ( false ) never
+       re-enables widgets an outer ( true ) disabled. */
+    void ( *begin_disabled )( bool disabled );
+    void ( *end_disabled   )( void );
+
     /* Style stacks -- the push-model theme override (imgui_col_t colors, imgui_style_var_t metrics).
        push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
        overrides for just the next widget, no pop.  Colors are abgr (IMGUI_COLOR); vars are f32 px.
@@ -512,11 +519,26 @@ typedef struct imgui_api_s
     void ( *textf       )( const char* fmt, ... );
     void ( *bullet_text )( const char* str );
 
+    /* text_colored / text_disabled -- a text run in an explicit colour / the dim secondary colour.
+       text_wrapped -- a run word-wrapped to the region content width (paragraphs, help blurbs).
+       bullet -- a standalone bullet glyph; new_line -- break + one blank text line (undo same_line). */
+    void ( *text_colored  )( u32 abgr, const char* str );
+    void ( *text_disabled )( const char* str );
+    void ( *text_wrapped  )( const char* str );
+    void ( *bullet        )( void );
+    void ( *new_line      )( void );
+
     /* label_text -- a read-only "value + label" row that lays out like the labeled value widgets
        (label track / control track under a form or field_split, trailing label otherwise) but is
        pure display.  For information rows that align with the editable widgets around them. */
     void ( *label_text  )( const char* label, const char* value );
     bool ( *button      )( const char* label );
+
+    /* small_button -- a compact button with no vertical frame padding (a text-height row), for
+       inline controls packed onto a text line.  progress_bar -- a filled completion track showing
+       `fraction` (0..1) with a centered caption (NULL = "NN%" percentage, "" = no text). */
+    bool ( *small_button )( const char* label );
+    void ( *progress_bar )( f32 fraction, const char* overlay );
 
     /* arrow_button -- a square, framed, non-text button drawing a triangle pointing `dir`.  The id
        comes from the label (use a "##id" string, nothing is displayed).  Combine with
@@ -553,6 +575,14 @@ typedef struct imgui_api_s
        equal leaves it unbounded.  format is the printf form of the shown value ("%d" when NULL,
        e.g. "HP: %d").  Returns true only on frames the drag changes the value. */
     bool ( *drag_int    )( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
+
+    /* drag_float -- the floating-point DragFloat: a framed value changed by a left/right drag,
+       v_speed units per pixel, no track travel.  v_min < v_max bounds it; both equal is unbounded.
+       fmt is the printf form ("%.3f" when NULL).  drag_float2/3/4 lay N equal sub-boxes (vector edit). */
+    bool ( *drag_float  )( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
+    bool ( *drag_float2 )( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
+    bool ( *drag_float3 )( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
+    bool ( *drag_float4 )( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
 
     bool ( *input_text    )( const char* label, char* buf, u32 bufsz );
 
@@ -734,6 +764,21 @@ typedef struct imgui_api_s
     /* is_mouse_hovering_rect -- cursor is over r and r is interactable (front-most window, inside the
        region clip, no drag in flight): the IsMouseHoveringRect analogue for custom-drawn hit tests. */
     bool ( *is_mouse_hovering_rect   )( imgui_rect_t r );
+
+    /* Last-item introspection (the ImGui IsItem* family) -- each reports on the widget just emitted,
+       so call immediately after it.  hovered / active / clicked / focused mirror the widget's own
+       interaction; activated / deactivated are the press / release edges (deactivated is the natural
+       "commit on release" seam); visible is true when any of the item's rect survives the region
+       clip; get_item_rect returns its screen rect (GetItemRectMin/Max/Size in one). */
+    bool         ( *is_item_hovered     )( void );
+    bool         ( *is_item_active      )( void );
+    bool         ( *is_item_clicked     )( void );
+    bool         ( *is_item_focused     )( void );
+    bool         ( *is_item_activated   )( void );
+    bool         ( *is_item_deactivated )( void );
+    bool         ( *is_item_visible     )( void );
+    imgui_rect_t ( *get_item_rect       )( void );
+
     bool ( *is_key_down              )( app_key_t key );
     bool ( *is_key_pressed           )( app_key_t key );
     bool ( *is_key_pressed_repeat    )( app_key_t key );
