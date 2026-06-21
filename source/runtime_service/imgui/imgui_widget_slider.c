@@ -43,12 +43,16 @@ slider_render( imgui_rect_t track_r, widget_state_t st, f32 t, const char* value
                                0,0,1,1, 0, COL_WIDGET_FG );
 
     /* Knob (grab): the brighter hover/active element, outlined so its edge stays crisp against the
-       track and the fill bar regardless of how close their colours get. */
+       track and the fill bar regardless of how close their colours get.  Uses the grab radius
+       (raise IMGUI_VAR_GRAB_ROUNDING for a pill knob); the track above keeps the widget radius. */
     f32 knob_x = track_r.x + t * ( track_r.w - SLIDER_KNOB_W );
+    f32 save_round = draw_rounding();
+    draw_set_rounding( ROUND_GRAB );
     draw_push_rect_filled ( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
                             0,0,1,1, 0, widget_bg_color( st ) );
     draw_push_rect_outline( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
                             WIN_BORDER, 0, COL_BORDER );
+    draw_set_rounding( save_round );
 
     if ( value_text && !( s_build.cur_item_flags & IMGUI_ITEM_NO_VALUE_TEXT ) )
     {

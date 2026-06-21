@@ -49,6 +49,60 @@ static struct
 } s_tess;
 
 /*----------------------------------------------------------------------------------------------
+    Cached corner geometry -- the rounded-rect optimization.
+
+    A rounded rectangle's four corners are the same quarter circle, only mirrored and translated.
+    So we sample the unit quarter arc (cos / sin at IMGUI_ROUND_SEGS+1 angles across 0..90 deg)
+    exactly once, then every corner of every rounded rect this run is that one table scaled by the
+    radius and offset to the corner centre with per-corner axis signs -- the cached unit arc is the
+    basis of the emit transform.  No sin / cos runs per rect; only once, on first use.
+
+    Quality is fixed at IMGUI_ROUND_SEGS segments per corner (32 per full turn) -- smooth for the
+    small radii a UI uses, and the fixed count is precisely what lets the table be reused.
+----------------------------------------------------------------------------------------------*/
+
+#define IMGUI_ROUND_SEGS 8
+#define IMGUI_ROUND_PTS  ( 4 * ( IMGUI_ROUND_SEGS + 1 ) )   /* perimeter point count */
+
+static f32  s_arc_cos[ IMGUI_ROUND_SEGS + 1 ];
+static f32  s_arc_sin[ IMGUI_ROUND_SEGS + 1 ];
+static bool s_arc_ready;
+
+static void
+round_arc_init( void )
+{
+    if ( s_arc_ready ) return;
+    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )
+    {
+        f32 a = 1.5707963f * (f32)k / (f32)IMGUI_ROUND_SEGS;   /* 0 .. pi/2 */
+        s_arc_cos[ k ] = cosf( a );
+        s_arc_sin[ k ] = sinf( a );
+    }
+    s_arc_ready = true;
+}
+
+/* Build the rounded-rect perimeter, clockwise, into out[] (capacity IMGUI_ROUND_PTS).  Each corner
+   reuses the cached unit arc scaled by r and translated to its centre; the straight edges fall out
+   between adjacent corners' shared endpoints.  Returns the point count (always IMGUI_ROUND_PTS). */
+static u32
+round_rect_perimeter( f32 x, f32 y, f32 w, f32 h, f32 r, imgui_vec2_t* out )
+{
+    round_arc_init();
+    f32 xl = x + r,       yt = y + r;          /* near-corner arc centres */
+    f32 xr = x + w - r,   yb = y + h - r;      /* far-corner arc centres  */
+    u32 n = 0;
+    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )   /* top-right: up   -> right */
+        out[ n++ ] = v2( xr + r * s_arc_sin[ k ], yt - r * s_arc_cos[ k ] );
+    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )   /* bottom-right: right -> down */
+        out[ n++ ] = v2( xr + r * s_arc_cos[ k ], yb + r * s_arc_sin[ k ] );
+    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )   /* bottom-left: down  -> left */
+        out[ n++ ] = v2( xl - r * s_arc_sin[ k ], yb + r * s_arc_cos[ k ] );
+    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )   /* top-left: left   -> up   */
+        out[ n++ ] = v2( xl - r * s_arc_cos[ k ], yt - r * s_arc_sin[ k ] );
+    return n;
+}
+
+/*----------------------------------------------------------------------------------------------
     Tessellation helpers -- mirrors of the draw_push_* functions in imgui_draw.c, but writing
     into s_tess instead of s_draw.  These are the backend half of the command-list split.
     Called from tess_dispatch; not called from anywhere else.
@@ -168,6 +222,55 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     tess_rect_filled( x,         y + h - t, w, t,     0,0,1,1, 0, abgr );
     tess_rect_filled( x,         y + t,     t, h-2*t, 0,0,1,1, 0, abgr );
     tess_rect_filled( x + w - t, y + t,     t, h-2*t, 0,0,1,1, 0, abgr );
+}
+
+/* Tessellate a rounded filled rect as a triangle fan from the centre over the cached perimeter.
+   abgr has alpha pre-baked.  The origin is grid-snapped like tess_rect_filled so frames stay crisp. */
+static void
+tess_round_rect_filled( f32 x, f32 y, f32 w, f32 h, f32 r, u32 abgr )
+{
+    x = floorf( x + 0.5f );
+    y = floorf( y + 0.5f );
+
+    static imgui_vec2_t per[ IMGUI_ROUND_PTS ];   /* single-threaded backend; avoids a stack frame */
+    u32 m = round_rect_perimeter( x, y, w, h, r, per );
+
+    u32 nv = m + 1, ni = m * 3;                   /* centre vertex + one fan triangle per edge */
+    f32 wu, wv;
+    imgui_draw_vert_t* v;
+    u16* idx;
+    u16  base;
+    if ( !tess_prim_begin( nv, ni, &wu, &wv, &v, &idx, &base ) )
+        return;
+
+    v[ 0 ] = ( imgui_draw_vert_t ){ x + w * 0.5f, y + h * 0.5f, wu, wv, abgr };   /* fan centre */
+    for ( u32 i = 0; i < m; ++i )
+        v[ 1 + i ] = ( imgui_draw_vert_t ){ per[ i ].x, per[ i ].y, wu, wv, abgr };
+
+    u32 k = 0;
+    for ( u32 i = 0; i < m; ++i )
+    {
+        idx[ k++ ] = base;
+        idx[ k++ ] = (u16)( base + 1 + i );
+        idx[ k++ ] = (u16)( base + 1 + ( i + 1 ) % m );
+    }
+    tess_prim_commit( nv, ni );
+}
+
+/* Forward decl: the AA polyline stroker is defined further down but the rounded outline below
+   reuses it to stroke the perimeter loop. */
+static void tess_stroke_poly_aa( const imgui_vec2_t* pts, u32 n, f32 thickness, f32 center_off,
+                                 bool closed, u32 abgr );
+
+/* Tessellate a rounded hollow rect by stroking the cached perimeter as a closed antialiased loop.
+   INSIDE alignment keeps the band within the rect, matching the square tess_rect_outline. */
+static void
+tess_round_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 r, f32 t, u32 abgr )
+{
+    static imgui_vec2_t per[ IMGUI_ROUND_PTS ];
+    u32 m          = round_rect_perimeter( x, y, w, h, r, per );
+    f32 center_off = stroke_center_offset( IMGUI_STROKE_INSIDE, t * 0.5f );
+    tess_stroke_poly_aa( per, m, t, center_off, true, abgr );
 }
 
 /* Tessellate a solid triangle into s_tess. */
@@ -349,15 +452,25 @@ tess_dispatch( const imgui_cmd_t* cmds, u32 count )
         switch ( c->type )
         {
             case IMGUI_CMD_RECT_FILLED:
-                tess_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
-                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
-                                  c->rect.tex_idx, c->rect.abgr );
+                if ( c->rect.rounding > 0.0f )
+                    tess_round_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
+                                            c->rect.rounding, c->rect.abgr );
+                else
+                    tess_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
+                                      c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
+                                      c->rect.tex_idx, c->rect.abgr );
                 break;
 
             case IMGUI_CMD_RECT_OUTLINE:
-                tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
-                                   c->rect_outline.w, c->rect_outline.h,
-                                   c->rect_outline.t, c->rect_outline.abgr );
+                if ( c->rect_outline.rounding > 0.0f )
+                    tess_round_rect_outline( c->rect_outline.x, c->rect_outline.y,
+                                             c->rect_outline.w, c->rect_outline.h,
+                                             c->rect_outline.rounding, c->rect_outline.t,
+                                             c->rect_outline.abgr );
+                else
+                    tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
+                                       c->rect_outline.w, c->rect_outline.h,
+                                       c->rect_outline.t, c->rect_outline.abgr );
                 break;
 
             case IMGUI_CMD_TRIANGLE:

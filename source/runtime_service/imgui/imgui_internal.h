@@ -99,6 +99,9 @@ typedef struct
     u32 checkmark_pad;  /* inset of filled square inside the checkbox        */
     u32 cursor_w;       /* input text cursor width                           */
     u32 cursor_inset;   /* input text cursor top/bottom inset                */
+    u32 win_rounding;   /* corner radius: windows / children / popups        */
+    u32 widget_rounding;/* corner radius: control frames                     */
+    u32 grab_rounding;  /* corner radius: slider knobs / scrollbar grabs     */
 
 } imgui_metrics_t;
 
@@ -185,6 +188,7 @@ typedef struct
        right now -> the nav item also takes the fill (like a hovered button), mouse hover is
        suppressed (so the two never double-fill), and the keyboard is captured.  A nav key sets both;
        a mouse move or click drops highlight (back to ring-only), leaving active. */
+
     bool         active;        // a nav cursor exists -> draw the ring (cleared rarely)
     bool         highlight;     // keyboard is the active instrument -> fill + hover-suppress
 
@@ -368,6 +372,7 @@ typedef struct
     imgui_rect_t           clip_rect;     // s_build.clip_rect (interaction clip)
 
     /* Draw cursor + the parent's top layout frame. */
+
     u32                    sort_key;      // s_draw.cur_z
     u32                    viewport;      // s_draw.cur_vp (target surface routing)
     bool                   had_parent;    // a layout region was open (parent frame valid)
@@ -377,14 +382,14 @@ typedef struct
 
 typedef struct
 {
-    imgui_id_t   id;            // popup window id (salted; matches s_build.win_id / hover_win)
-    bool         modal;         // blocks input behind it + dims the background
-    f32          anchor_x;      // open point -- where a non-modal popup is placed
+    imgui_id_t   id;                // popup window id (salted; matches s_build.win_id / hover_win)
+    bool         modal;             // blocks input behind it + dims the background
+    f32          anchor_x;          // open point -- where a non-modal popup is placed
     f32          anchor_y;
-    u32          open_frame;    // frame open_popup ran -- "appearing" detection
-    u32          begun_frame;   // last frame begin_popup ran -- drives stale-close
-    imgui_rect_t rect;          // on-screen rect last frame -- drives click-outside
-    imgui_overlay_save_t saved; // parent context to restore at end_popup
+    u32          open_frame;        // frame open_popup ran -- "appearing" detection
+    u32          begun_frame;       // last frame begin_popup ran -- drives stale-close
+    imgui_rect_t rect;              // on-screen rect last frame -- drives click-outside
+    imgui_overlay_save_t saved;     // parent context to restore at end_popup
 
 } imgui_popup_t;
 
@@ -521,6 +526,7 @@ typedef struct imgui_dock_node_t
 
     /* Leaf payload: the windows tabbed into this node.  Names are copied at dock time so the tab
        bar is self-sufficient (no dependence on a window emitting this frame or its title lifetime). */
+
     imgui_id_t tabs [ IMGUI_DOCK_TABS_MAX ];
     char       names[ IMGUI_DOCK_TABS_MAX ][ IMGUI_DOCK_NAME_CAP ];
     u32        tab_count;
@@ -545,22 +551,22 @@ typedef struct imgui_dock_node_t
 
 typedef struct imgui_context_t
 {
-    imgui_retained_t retained;                          // id salt, frame clock, keyed state pool
-    nav_state_t      nav;                               // nav cursor location + menu-bar mode
-    imgui_popup_t    popups_open[ IMGUI_POPUP_DEPTH ];  // open popup set, ordered parent -> child
-    u32              popup_open_count;                  // live open count
+    imgui_retained_t    retained;                           // id salt, frame clock, keyed state pool
+    nav_state_t         nav;                                // nav cursor location + menu-bar mode
+    imgui_popup_t       popups_open[ IMGUI_POPUP_DEPTH ];   // open popup set, ordered parent -> child
+    u32                 popup_open_count;                   // live open count
 
-    imgui_window_t   windows[ IMGUI_MAX_WINDOWS ];      // persisted window records (imgui_window.c behavior)
-    u32              window_count;                      // live records in the pool
-    imgui_window_t   window_scratch;                    // transient fallback when the pool is full
-    u32              z_counter;                         // monotonic paint-order dispenser
+    imgui_window_t      windows[ IMGUI_MAX_WINDOWS ];       // persisted window records (imgui_window.c behavior)
+    u32                 window_count;                       // live records in the pool
+    imgui_window_t      window_scratch;                     // transient fallback when the pool is full
+    u32                 z_counter;                          // monotonic paint-order dispenser
 
-    imgui_viewport_t viewports[ IMGUI_MAX_VIEWPORTS ];  // render surfaces: [0]=main swapchain, rest floaters
-    u32              viewport_count;                     // live viewports (imgui_render.c behavior)
+    imgui_viewport_t    viewports[ IMGUI_MAX_VIEWPORTS ];   // render surfaces: [0]=main swapchain, rest floaters
+    u32                 viewport_count;                     // live viewports (imgui_render.c behavior)
 
-    imgui_dock_node_t dock_nodes[ IMGUI_DOCK_MAX_NODES ]; // dock-tree node pool (imgui_dock.c behavior)
-    u32               dock_node_count;                    // high-water slot count in the pool
-    u32               dock_id_seq;                         // monotonic node-id dispenser (0 = none)
+    imgui_dock_node_t   dock_nodes[ IMGUI_DOCK_MAX_NODES ]; // dock-tree node pool (imgui_dock.c behavior)
+    u32                 dock_node_count;                    // high-water slot count in the pool
+    u32                 dock_id_seq;                        // monotonic node-id dispenser (0 = none)
 
 } imgui_context_t;
 

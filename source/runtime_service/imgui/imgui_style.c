@@ -68,6 +68,9 @@ style_var_base( imgui_style_var_t v )
         case IMGUI_VAR_CHECKBOX_SZ:   return (f32)s_layout.checkbox_sz;
         case IMGUI_VAR_SLIDER_KNOB_W: return (f32)s_layout.slider_knob_w;
         case IMGUI_VAR_MIN_CELL_W:    return (f32)s_layout.min_cell_w;
+        case IMGUI_VAR_WIN_ROUNDING:    return (f32)s_layout.win_rounding;
+        case IMGUI_VAR_WIDGET_ROUNDING: return (f32)s_layout.widget_rounding;
+        case IMGUI_VAR_GRAB_ROUNDING:   return (f32)s_layout.grab_rounding;
         default:                      return 0.0f;
     }
 }

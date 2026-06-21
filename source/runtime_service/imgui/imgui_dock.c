@@ -258,6 +258,7 @@ dock_tree_placeholders( imgui_dock_node_t* n )
     {
         if ( n->tab_count == 0 )
         {
+            draw_set_rounding( ROUND_WIN );   /* empty node reads as a child surface */
             draw_push_rect_filled ( n->rect.x, n->rect.y, n->rect.w, n->rect.h, 0, 0, 1, 1, 0, COL_CHILD_BG );
             draw_push_rect_outline( n->rect.x, n->rect.y, n->rect.w, n->rect.h, WIN_BORDER, 0, COL_BORDER );
         }
@@ -417,6 +418,8 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
     draw_set_sort_key ( DOCK_OVERLAY_Z );
     draw_set_root_clip( vp_w( v ), vp_h( v ) );
 
+    draw_set_rounding( ROUND_WIDGET );   /* drop preview + chips read as control surfaces */
+
     if ( zone != DOCK_ZONE_NONE )
     {
         imgui_rect_t hr = dock_zone_region( leaf->rect, zone );
@@ -433,8 +436,10 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
         if ( z == DOCK_ZONE_CENTER )
         {
             f32 ins = cr.w * 0.28f;   /* inner square = the "tab here" glyph */
+            draw_set_rounding( 0.0f );   /* small glyph box stays square */
             draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
                                     WIN_BORDER, 0, COL_TEXT );
+            draw_set_rounding( ROUND_WIDGET );   /* restore for the remaining chips */
         }
         else
         {
@@ -510,6 +515,7 @@ dock_window_chrome( imgui_dock_node_t* node )
     f32 w  = s_build.win_w;
     f32 th = s_build.win_title_h;   /* tab-strip height (= WIN_TITLE_H, clamped for a tiny node) */
 
+    draw_set_rounding( 0.0f );   /* the strip is a flat band behind the tabs */
     draw_push_rect_filled( x, y, w, th, 0, 0, 1, 1, 0, COL_TITLE_BG );
 
     f32 tx = x;
@@ -527,6 +533,7 @@ dock_window_chrome( imgui_dock_node_t* node )
            on the title band, lifting to the hover colour under the cursor. */
         u32 bg   = is_active ? COL_WIN_BG : ( st.hover ? COL_WIDGET_HOT : COL_TITLE_BG );
         u32 tcol = ( is_active || st.hover ) ? COL_TEXT : COL_TEXT_DIM;
+        draw_set_rounding( ROUND_WIDGET );   /* tabs read as control frames */
         draw_push_rect_filled( tr.x, tr.y, tr.w, tr.h, 0, 0, 1, 1, 0, bg );
         draw_text_fit_n( tr.x + WIDGET_PAD, text_center_y( y, th ), tcol, nm, (u32)strlen( nm ),
                          tw - 2.0f * WIDGET_PAD );
@@ -548,6 +555,7 @@ dock_window_chrome( imgui_dock_node_t* node )
 
     /* Border frames the whole node (strip + body).  Drawn before the undock handler so it never reads
        `node` after a drag-out collapses an emptied node. */
+    draw_set_rounding( ROUND_WIN );
     draw_push_rect_outline( x, y, w, s_build.win_h, WIN_BORDER, 0, COL_BORDER );
 
     /* Undock-by-tab-drag: an armed tab press dragged past the threshold pops its window out of the

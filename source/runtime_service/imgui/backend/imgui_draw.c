@@ -54,6 +54,11 @@ static struct
        span of a disabled item so it dims with no per-widget code; reset by item / chrome seams. */
     f32 alpha;
 
+    /* Ambient corner radius folded into every filled / outlined rect.  Set from the resolved
+       rounding category (window / widget / grab) at the item / chrome seams and at the few sites
+       that draw a different category; 0 emits square shapes (the fast path). */
+    f32 rounding;
+
 } s_draw;
 
 /*----------------------------------------------------------------------------------------------
@@ -70,6 +75,7 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.cur_vp          = 0;   /* main viewport; windows route via draw_set_viewport */
     s_draw.clip_depth      = 1;
     s_draw.alpha           = 1.0f;
+    s_draw.rounding        = 0.0f;   /* square until a seam sets the resolved radius */
 
     /* first is a default "no clip" rect covering the whole display; never popped off the stack. */
     s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
@@ -197,6 +203,41 @@ draw_apply_alpha( u32 abgr )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Corner rounding -- the ambient radius folded into filled / outlined rects.
+
+    draw_set_rounding installs the radius (clamped non-negative); draw_clamp_rounding fits it to a
+    given rect so a corner arc never exceeds half a side, and treats a sub-pixel result as 0 so thin
+    bars (separators, 1px frames) stay crisply square.  The item / chrome seams drive the radius from
+    the resolved rounding category, exactly as draw_set_alpha is driven; grabs and squared marks set
+    it locally for one sub-element via draw_set_rounding / draw_rounding (save + restore).
+----------------------------------------------------------------------------------------------*/
+
+void
+draw_set_rounding( f32 r )
+{
+    s_draw.rounding = r < 0.0f ? 0.0f : r;
+}
+
+/* Current ambient radius -- so a site can save it, draw a sub-element with a different radius (a
+   squared-off mark, a grab), and restore, without re-deriving the category. */
+f32
+draw_rounding( void )
+{
+    return s_draw.rounding;
+}
+
+static f32
+draw_clamp_rounding( f32 w, f32 h )
+{
+    f32 r  = s_draw.rounding;
+    f32 hw = ( w < 0.0f ? -w : w ) * 0.5f;
+    f32 hh = ( h < 0.0f ? -h : h ) * 0.5f;
+    if ( r > hw ) r = hw;
+    if ( r > hh ) r = hh;
+    return r < 0.5f ? 0.0f : r;   /* sub-pixel radius -> square fast path */
+}
+
+/*----------------------------------------------------------------------------------------------
     draw_push_rect_filled -- emit a filled / textured quad semantic command.
 
     tex_idx == 0 is the solid-color convention (resolved to the atlas white texel at tessellation
@@ -225,6 +266,8 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     c->rect.v1      = v1;
     c->rect.tex_idx = tex_idx;
     c->rect.abgr    = draw_apply_alpha( abgr );
+    /* Round solid-color fills only; a textured quad (glyph / image) keeps square UVs. */
+    c->rect.rounding = ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -248,6 +291,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     c->rect_outline.h    = h;
     c->rect_outline.t    = t;
     c->rect_outline.abgr = draw_apply_alpha( abgr );
+    c->rect_outline.rounding = draw_clamp_rounding( w, h );
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -527,6 +527,9 @@ typedef enum
     IMGUI_VAR_CHECKBOX_SZ,    /* checkbox / radio indicator side             */
     IMGUI_VAR_SLIDER_KNOB_W,  /* slider knob + scrollbar thickness           */
     IMGUI_VAR_MIN_CELL_W,     /* min width a flex cell shrinks to            */
+    IMGUI_VAR_WIN_ROUNDING,   /* corner radius for windows / children / popups; 0 = square */
+    IMGUI_VAR_WIDGET_ROUNDING,/* corner radius for control frames (button/checkbox/input/...) */
+    IMGUI_VAR_GRAB_ROUNDING,  /* corner radius for slider knobs + scrollbar grabs */
 
     IMGUI_VAR_COUNT,          /* var count -- not a metric                   */
 
@@ -637,6 +640,8 @@ typedef enum
 
 /* One semantic draw command.  clip, z, and vp are baked from the draw state at emit time.
    The union carries the shape parameters; tex_idx == 0 in rect means solid color (white texel).
+   rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
+   time, already clamped to the rect; 0 tessellates as a plain square shape.
    text.str must remain valid until imgui_render_flush is called (same-frame lifetime). */
 typedef struct
 {
@@ -646,8 +651,8 @@ typedef struct
     u32              vp;        /* target viewport index, baked at emit */
     union
     {
-        struct { f32 x, y, w, h, u0, v0, u1, v1; u32 tex_idx; u32 abgr; } rect;
-        struct { f32 x, y, w, h, t;                              u32 abgr; } rect_outline;
+        struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding; u32 tex_idx; u32 abgr; } rect;
+        struct { f32 x, y, w, h, t;              f32 rounding;             u32 abgr; } rect_outline;
         struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
         struct { f32 x, y;  const char* str; u32 len;            u32 abgr; } text;
         struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;

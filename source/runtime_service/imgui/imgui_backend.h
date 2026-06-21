@@ -63,6 +63,8 @@ void font_glyph         ( u8 ch,
 void draw_reset( i32 display_w, i32 display_h );   // clear the list at the top of new_frame
 
 void draw_set_alpha     ( f32 a );    // global opacity multiplier folded into every pushed shape
+void draw_set_rounding  ( f32 r );    // corner radius folded into every pushed filled/outline rect
+f32  draw_rounding      ( void );     // current ambient radius (save/restore around a sub-element)
 void draw_set_sort_key  ( u32 z );    // paint order stamped on new commands (window z)
 u32  draw_sort_key      ( void );     // current sort key (saved/restored by the popup layer)
 void draw_set_viewport  ( u32 vp );   // viewport index stamped on new commands (surface routing)

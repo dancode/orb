@@ -144,9 +144,13 @@ imgui_bullet_text( const char* str )
     /* Natural width = bullet + gap + text, so a same_line bullet item shrinks to its content. */
     imgui_rect_t r = widget_next_rect_w( bsz + gap + tw, ch );
 
-    /* Bullet square, vertically centered in the row; then the run just past it. */
+    /* Bullet square, vertically centered in the row; then the run just past it.  A bullet is a tiny
+       solid mark -- draw it square so the frame radius does not round it into a dot. */
     imgui_rect_t br = rect_align( r, bsz, bsz, IMGUI_ALIGN_VCENTER );
+    f32 save_round = draw_rounding();
+    draw_set_rounding( 0.0f );
     draw_push_rect_filled( br.x, br.y, bsz, bsz, 0,0,1,1, 0, COL_TEXT );
+    draw_set_rounding( save_round );
     draw_push_text( r.x + bsz + gap, r.y, COL_TEXT, str );
     widget_track_width( r.x + bsz + gap + tw );   /* natural width may exceed the row */
 }
@@ -166,7 +170,10 @@ imgui_bullet( void )
 
     imgui_rect_t r  = widget_next_rect_w( bsz, ch );
     imgui_rect_t br = rect_align( r, bsz, bsz, IMGUI_ALIGN_VCENTER );   /* centered in the row */
+    f32 save_round = draw_rounding();
+    draw_set_rounding( 0.0f );                                          /* tiny mark stays square */
     draw_push_rect_filled( br.x, br.y, bsz, bsz, 0,0,1,1, 0, COL_TEXT );
+    draw_set_rounding( save_round );
     widget_track_width( r.x + bsz );
 }
 
@@ -344,11 +351,15 @@ imgui_checkbox( const char* label, bool* v )
 
     if ( *v )
     {
-        /* Check mark: simple smaller filled square. */
+        /* Check mark: a small filled square, drawn square (the frame radius would round this tiny
+           inner mark into a dot). */
         f32 pad = (f32)s_layout.checkmark_pad;
+        f32 save_round = draw_rounding();
+        draw_set_rounding( 0.0f );
         draw_push_rect_filled( bx + pad, by + pad,
                                CHECKBOX_SZ - 2.0f * pad, CHECKBOX_SZ - 2.0f * pad,
                                0,0,1,1, 0, COL_CHECK_MARK );
+        draw_set_rounding( save_round );
     }
 
     draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, label_w );

@@ -89,8 +89,11 @@ static imgui_metrics_t s_layout =
     .slider_knob_w = 12,   /* = em                       */
     .min_cell_w    = 40,   /* 20 * 2                     */
     .checkmark_pad = 4,    /* 16 / 4                     */
-    .cursor_w      = 1,    /* 12 / 10                    */
-    .cursor_inset  = 3,    /* 12 / 4                     */
+    .cursor_w        = 1,  /* 12 / 10                    */
+    .cursor_inset    = 3,  /* 12 / 4                     */
+    .win_rounding    = 6,  /* 12 / 2 -- windows a touch rounder than controls */
+    .widget_rounding = 4,  /* 12 / 3 -- gentle control frame radius          */
+    .grab_rounding   = 4,  /* 12 / 3 -- knobs / grabs (raise for pill grabs)  */
 };
 
 /* Recompute the layout metrics from a font's type size (em), glyph-box height (char_h), and
@@ -111,7 +114,8 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     /* Row height = em + symmetric vertical padding, then floored to the font's glyph box and
        line advance so a tall-boxed font (e.g. one with deep descenders) never clips and a
        single line of text always fits.  This is THE knob the other heights cascade from. */
-    u32 row = em + 2u * pad_y;
+
+    u32  row = em + 2u * pad_y;
     if ( row < char_h ) row = char_h;
     if ( row < line_h ) row = line_h;
 
@@ -132,6 +136,9 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     s_layout.checkmark_pad = csz / 4u;
     s_layout.cursor_w      = em / 10u < 1u ? 1u : em / 10u; /* thin caret (~0.1 em) */
     s_layout.cursor_inset  = em / 4u  < 1u ? 1u : em / 4u;  /* caret top/bottom inset */
+    s_layout.win_rounding    = em / 2u;                     /* windows (~0.5 em)   */
+    s_layout.widget_rounding = em / 3u;                     /* control frames (~0.33 em) */
+    s_layout.grab_rounding   = em / 3u;                     /* knobs / grabs (~0.33 em) */
 }
 
 /* The shared stateless helpers (saturate, clampf, rect_intersect) live in imgui_internal.h as

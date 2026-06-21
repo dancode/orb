@@ -37,6 +37,13 @@
 #define SLIDER_KNOB_W style_var( IMGUI_VAR_SLIDER_KNOB_W )
 #define WIDGET_MIN_W  style_var( IMGUI_VAR_MIN_CELL_W    )
 
+/* Corner-radius categories, fed to draw_set_rounding (imgui_draw.c) so a draw site can pick the
+   right rounding before emitting.  The item seam defaults to ROUND_WIDGET and the chrome seam to
+   ROUND_WIN; grabs and squared-off marks override locally.  See imgui_style_var_t. */
+#define ROUND_WIN     style_var( IMGUI_VAR_WIN_ROUNDING    )
+#define ROUND_WIDGET  style_var( IMGUI_VAR_WIDGET_ROUNDING )
+#define ROUND_GRAB    style_var( IMGUI_VAR_GRAB_ROUNDING   )
+
 /* Default region padding (the inset every window body / child opens with): pad columns by
    WIDGET_PAD left and right, offset the first row by WIDGET_GAP, no bottom reserve. */
 #define REGION_PAD_DEFAULT ( ( imgui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, 0.0f } )

@@ -198,6 +198,11 @@ native_btn_draw_glyph( native_btn_kind_t kind, imgui_rect_t r, bool maximized, u
     f32 s  = floorf( r.h * 0.18f );   /* glyph half-extent */
     f32 t  = WIN_BORDER;
 
+    /* The glyph boxes are small line art -- draw them square so the frame radius cannot bend a
+       maximize/restore box into a circle. */
+    f32 save_round = draw_rounding();
+    draw_set_rounding( 0.0f );
+
     switch ( kind )
     {
         case NATIVE_BTN_MINIMIZE:
@@ -229,6 +234,8 @@ native_btn_draw_glyph( native_btn_kind_t kind, imgui_rect_t r, bool maximized, u
             draw_push_rect_filled( cx - s, cy - s, 2.0f * s, 2.0f * s, 0, 0, 1, 1, 0, col );
             break;
     }
+
+    draw_set_rounding( save_round );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -830,10 +837,13 @@ imgui_end_window( void )
             f32  isz      = title_h * 0.42f;
             f32  ix       = det_r.x + ( det_r.w - isz ) * 0.5f;
             f32  iy       = det_r.y + ( det_r.h - isz ) * 0.5f;
+            f32 det_save = draw_rounding();
+            draw_set_rounding( 0.0f );   /* small box glyph stays square */
             if ( attached )
                 draw_push_rect_outline( ix, iy, isz, isz, 1.0f, 0, icol );
             else
                 draw_push_rect_filled( ix, iy, isz, isz, 0.0f, 0.0f, 1.0f, 1.0f, 0, icol );
+            draw_set_rounding( det_save );
 
             right_limit = det_r.x - WIDGET_PAD;   /* keep the title text clear of the button */
         }
@@ -858,9 +868,13 @@ imgui_end_window( void )
                                                  IMGUI_NATIVE_BTN_SALT + ( u32 )btns[ i ].kind );
                 widget_state_t bs  = widget_behavior( bid, br, WIDGET_KIND_BUTTON );
 
-                /* Hover/press background so the control reads as clickable. */
+                /* Hover/press background so the control reads as clickable -- a control frame, so it
+                   takes the widget radius (the glyph itself squares off in native_btn_draw_glyph). */
                 if ( bs.hover || bs.active )
+                {
+                    draw_set_rounding( ROUND_WIDGET );
                     draw_push_rect_filled( br.x, br.y, br.w, br.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+                }
 
                 native_btn_draw_glyph( btns[ i ].kind, br, zoom, bs.hover ? COL_TEXT : COL_TEXT_DIM );
 
@@ -887,8 +901,10 @@ imgui_end_window( void )
                          0xFFFFFFFFu, right_limit - text_x );
     }
 
-    /* Border frames the whole window, with or without a title bar. */
+    /* Border frames the whole window, with or without a title bar.  Reassert the window radius: a
+       caption button above may have left the ambient at the widget radius. */
     imgui_rect_t win_r = { s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_h };
+    draw_set_rounding( ROUND_WIN );
     draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
 
     /* Debug overlay: trace the window frame; the front-most (hover) window stands out. */

@@ -293,6 +293,7 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
     if ( modal && !premeasure )
     {
         draw_set_sort_key( win->z - 1u );
+        draw_set_rounding( 0.0f );   /* full-display dim: no rounded screen corners */
         draw_push_rect_filled( 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h,
                                0.0f, 0.0f, 1.0f, 1.0f, 0, IMGUI_POPUP_MODAL_DIM );
     }

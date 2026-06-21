@@ -123,11 +123,17 @@ region_scrollbar( imgui_id_t id, imgui_rect_t track, bool vertical,
         knob_off = track_org + t_cur * travel;
     }
 
+    /* Track keeps the control-frame radius; the grab uses the grab radius (so a pill grab is one
+       style var away).  Saved/restored because the scrollbar draws in the chrome context. */
+    f32 save_round = draw_rounding();
+    draw_set_rounding( ROUND_WIDGET );
     draw_push_rect_filled( track.x, track.y, track.w, track.h, 0,0,1,1, 0, COL_SLIDER_TRACK );
+    draw_set_rounding( ROUND_GRAB );
     if ( vertical )
         draw_push_rect_filled( track.x, knob_off, track.w, knob_len, 0,0,1,1, 0, widget_bg_color( st ) );
     else
         draw_push_rect_filled( knob_off, track.y, knob_len, track.h, 0,0,1,1, 0, widget_bg_color( st ) );
+    draw_set_rounding( save_round );
 }
 
 /*----------------------------------------------------------------------------------------------
