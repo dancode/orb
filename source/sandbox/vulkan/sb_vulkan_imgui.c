@@ -1033,6 +1033,26 @@ demo_lines( void )
 static void
 demo_docking( void )
 {
+    /* Layout persistence (Phase 3): the Viewport panel's buttons only set these flags; the actual
+       save/restore runs HERE, at the top of the build before the dockspace and any docked window --
+       a safe point to free + rebuild the tree (dock_load) without touching a node mid-render.  A real
+       app would write s_layout to a file on save and load it at startup; here it round-trips in RAM. */
+    static char s_layout[ 2048 ];
+    static bool s_have_layout    = false;
+    static bool s_save_layout    = false;
+    static bool s_restore_layout = false;
+    if ( s_save_layout )
+    {
+        imgui()->dock_save( 0, s_layout, sizeof( s_layout ) );
+        s_have_layout = true;
+        s_save_layout = false;
+    }
+    if ( s_restore_layout )
+    {
+        if ( s_have_layout ) imgui()->dock_load( 0, s_layout );
+        s_restore_layout = false;
+    }
+
     /* Lay out + interact the dockspace every frame (must precede the docked windows' begin_window). */
     imgui_dock_id_t root = imgui()->dockspace_over_viewport( 0, IMGUI_DOCKSPACE_NONE );
 
@@ -1109,6 +1129,11 @@ demo_docking( void )
         imgui()->text( "Click the Console / Assets tabs to switch." );
         imgui()->text( "Drag a tab OUT to pop it into a floater." );
         imgui()->text( "Drag the Palette window onto a pane to dock." );
+        imgui()->separator();
+        imgui()->text( "Rearrange, Save, rearrange more, then Restore:" );
+        if ( imgui()->button( "Save Layout" ) )    s_save_layout    = true;
+        imgui()->same_line( 0.0f );
+        if ( imgui()->button( "Restore Layout" ) ) s_restore_layout = true;
     }
     imgui()->end_window();
 

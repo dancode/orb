@@ -65,6 +65,8 @@ imgui_dock_id_t imgui_dock_split( imgui_dock_id_t node, imgui_dir_t dir, f32 rat
 void imgui_dock_window( const char* title, imgui_dock_id_t node );
 void imgui_dock_undock( const char* title );
 bool imgui_is_window_docked( const char* title );
+u32  imgui_dock_save( imgui_vp_t vp, char* buf, u32 bufsz );
+bool imgui_dock_load( imgui_vp_t vp, const char* text );
 
 /* popup */
 void imgui_open_popup( const char* id );

@@ -171,6 +171,15 @@ typedef struct imgui_api_s
     void ( *dock_undock )( const char* title );
     bool ( *is_window_docked )( const char* title );
 
+    /* Layout persistence.  dock_save() serializes viewport vp's dock tree into buf as a small ASCII
+       blob and returns the byte count a full write needs (like snprintf -- pass a 0 bufsz to size
+       first).  dock_load() rebuilds the tree from such a blob; returns false on a bad header.  The
+       host owns the file: write the blob on change, read + load it at startup.  CALL dock_load at a
+       safe point -- between frames or at the top of the build before any docked window's begin_window
+       -- never from inside a docked window (it frees + rebuilds the tree). */
+    u32  ( *dock_save )( imgui_vp_t vp, char* buf, u32 bufsz );
+    bool ( *dock_load )( imgui_vp_t vp, const char* text );
+
     /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when
        the user clicks outside it; a modal blocks input behind it and dims the background, closing
        only via close_current_popup.  The string id namespaces both the open request and the body,
