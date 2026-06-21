@@ -47,9 +47,9 @@
 #define IMGUI_DOCK_TABS_MAX  8      // windows co-docked (tabbed) in one leaf node
 #define IMGUI_DOCK_NAME_CAP  28     // bytes of a tab's display name, copied at dock time
 
-#define IMGUI_STATE_SLOTS 512                       // keyed state pool capacity (power of two)
-#define IMGUI_STATE_MASK  ( IMGUI_STATE_SLOTS - 1 ) // bucket = id & mask
-#define IMGUI_STATE_CAP   20                        // payload bytes per slot (max state struct: imgui_region_t)
+#define IMGUI_STATE_SLOTS 512       // keyed state pool capacity (power of two)
+#define IMGUI_STATE_MASK  512 - 1   // bucket = id & mask
+#define IMGUI_STATE_CAP   20        // payload bytes per slot (max state struct: imgui_region_t)
 
 /*==============================================================================================
     Input snapshot (imgui_input.c)
@@ -404,9 +404,9 @@ typedef struct
 
 typedef struct
 {
-    imgui_id_t id;          // 0 = empty slot
-    u32        seen_frame;  // frame last touched -- drives stale reclamation
-    ORB_ALIGNAS( 4 ) u8 data[ IMGUI_STATE_CAP ];  // payload; 4-byte aligned for f32 fields
+    imgui_id_t  id;                         // 0 = empty slot
+    u32         seen_frame;                 // frame last touched -- drives stale reclamation
+    u8          data[ IMGUI_STATE_CAP ];    // payload; naturally 4-byte aligned (follows two u32 fields)
 
 } imgui_state_slot_t;
 
