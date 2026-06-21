@@ -49,7 +49,7 @@
 
 #define IMGUI_STATE_SLOTS 512                       // keyed state pool capacity (power of two)
 #define IMGUI_STATE_MASK  ( IMGUI_STATE_SLOTS - 1 ) // bucket = id & mask
-#define IMGUI_STATE_CAP   32                        // payload bytes per slot (max state struct)
+#define IMGUI_STATE_CAP   20                        // payload bytes per slot (max state struct: imgui_region_t)
 
 /*==============================================================================================
     Input snapshot (imgui_input.c)
@@ -342,9 +342,9 @@ typedef struct
 
 typedef struct
 {
-    f32 scroll_x, scroll_y;     /* persisted scroll offset            */
-    f32 content_w, content_h;   /* content extent measured last frame */
-    f32 user_w, user_h;         /* user-resized size (CHILD_RESIZE_*); 0 = none, use the passed w/h */
+    f32 scroll_x, scroll_y;   /* persisted scroll offset (fractional: scrollbar drag is t * max_scroll) */
+    f32 content_w, content_h; /* content extent measured last frame (f32* passed to layout_push_region)  */
+    i16 user_w, user_h;       /* user-resized size in pixels; 0 = none, use the passed w/h              */
 
 } imgui_region_t;
 
@@ -406,12 +406,7 @@ typedef struct
 {
     imgui_id_t id;          // 0 = empty slot
     u32        seen_frame;  // frame last touched -- drives stale reclamation
-    union                   // force max alignment so any payload struct is correctly aligned
-    {
-        void* _p;
-        f64   _d;
-        u8    bytes[ IMGUI_STATE_CAP ];
-    } data;
+    ORB_ALIGNAS( 4 ) u8 data[ IMGUI_STATE_CAP ];  // payload; 4-byte aligned for f32 fields
 
 } imgui_state_slot_t;
 

@@ -109,13 +109,13 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
            incoming w/h (a sensible 8-row default when h <= 0 -- RESIZE_Y supersedes auto-size). */
         if ( resize_x )
         {
-            if ( rg->user_w <= 0.0f ) rg->user_w = w;
-            w = rg->user_w;
+            if ( rg->user_w <= 0 ) rg->user_w = (i16)w;
+            w = (f32)rg->user_w;
         }
         if ( resize_y )
         {
-            if ( rg->user_h <= 0.0f ) rg->user_h = ( h > 0.0f ) ? h : WIDGET_H * 8.0f;
-            h = rg->user_h;
+            if ( rg->user_h <= 0 ) rg->user_h = (i16)( ( h > 0.0f ) ? h : WIDGET_H * 8.0f );
+            h = (f32)rg->user_h;
         }
         /* h <= 0 (and not RESIZE_Y) auto-sizes the height to the content measured last frame (the
            AutoResizeY case): the box hugs its widgets, like an ALWAYS_AUTOSIZE window on the
@@ -151,15 +151,15 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 
             if ( s_resize_edges & IMGUI_RESIZE_R )
             {
-                rg->user_w = child_con_clamp( rr.w, con_min_w, con_max_w );
-                if ( rg->user_w < CHILD_MIN_W ) rg->user_w = CHILD_MIN_W;
-                box.w = rg->user_w;
+                rg->user_w = (i16)child_con_clamp( rr.w, con_min_w, con_max_w );
+                if ( rg->user_w < CHILD_MIN_W ) rg->user_w = (i16)CHILD_MIN_W;
+                box.w = (f32)rg->user_w;
             }
             if ( s_resize_edges & IMGUI_RESIZE_B )
             {
-                rg->user_h = child_con_clamp( rr.h, con_min_h, con_max_h );
-                if ( rg->user_h < CHILD_MIN_H ) rg->user_h = CHILD_MIN_H;
-                box.h = rg->user_h;
+                rg->user_h = (i16)child_con_clamp( rr.h, con_min_h, con_max_h );
+                if ( rg->user_h < CHILD_MIN_H ) rg->user_h = (i16)CHILD_MIN_H;
+                box.h = (f32)rg->user_h;
             }
         }
 

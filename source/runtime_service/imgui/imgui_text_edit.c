@@ -49,16 +49,17 @@
 
 typedef struct
 {
-    u32  cursor;    /* byte offset of the caret (insertion / deletion point) */
-    u32  anchor;    /* passive end of the selection; cursor == anchor -> none */
-    f32  scroll_x;  /* horizontal scroll offset in pixels                     */
-    f32  blink_t;   /* seconds since last caret-visibility reset              */
-    u32  dbl_lo;    /* word start of the double-clicked word (word-drag mode) */
-    u32  dbl_hi;    /* word end of the double-clicked word  (word-drag mode)  */
-    u32  word_sel;  /* nonzero while in word-select drag (set by double-click) */
+    f32  blink_t;   /* seconds since last caret-visibility reset (fractional dt accumulator) */
+    u16  cursor;    /* byte offset of the caret (insertion / deletion point) */
+    u16  anchor;    /* passive end of the selection; cursor == anchor -> none */
+    u16  dbl_lo;    /* word start of the double-clicked word (word-drag mode) */
+    u16  dbl_hi;    /* word end of the double-clicked word  (word-drag mode)  */
+    u16  scroll_x;  /* horizontal scroll offset in pixels (integer: sum of integer glyph advances) */
+    u8   word_sel;  /* nonzero while in word-select drag (set by double-click) */
+    u8   _pad;
 
 } imgui_edit_state_t;
-/* 28 bytes -- fits within IMGUI_STATE_CAP (32). */
+/* 16 bytes -- fits within IMGUI_STATE_CAP. */
 
 /* Both return flags from input_field_edit.  changed fires on any buffer modification;
    enter fires when the user submits the field with Enter (and focus is dropped).  They
@@ -146,19 +147,20 @@ word_bounds( const char* buf, u32 len, u32 off, u32* lo, u32* hi )
 typedef struct
 {
     char text[ UNDO_TEXT_MAX ];
-    u32  cursor;
-    u32  anchor;
+    u16  cursor;
+    u16  anchor;
 } imgui_undo_snap_t;
 
 typedef struct
 {
-    imgui_id_t        for_id;                   /* which widget owns this history */
-    char              revert[ UNDO_TEXT_MAX ];  /* buffer content at focus-gain   */
-    imgui_undo_snap_t ring[ UNDO_SLOTS ];       /* circular snapshot ring         */
-    i32               base;   /* ring index of logical slot 0                      */
-    i32               cur;    /* logical index of the current (live) snapshot       */
-    i32               top;    /* one past the highest committed logical index       */
-    bool              last_was_char; /* true when the last push was a char insert   */
+    imgui_id_t        for_id;                   // which widget owns this history
+    char              revert[ UNDO_TEXT_MAX ];  // buffer content at focus-gain
+    imgui_undo_snap_t ring[ UNDO_SLOTS ];       // circular snapshot ring
+    i32               base;                     // ring index of logical slot 0
+    i32               cur;                      // logical index of the current (live) snapshot
+    i32               top;                      // one past the highest committed logical index
+    bool              last_was_char;            // true when the last push was a char insert
+
 } imgui_undo_buf_t;
 
 static imgui_undo_buf_t s_undo;
@@ -176,7 +178,7 @@ undo_text_copy( char* dst, const char* src )
 /* Advance the ring head and write a new snapshot.  Drops the oldest entry when the ring is
    full.  Clears redo history (top = cur + 1).  Resets last_was_char. */
 static void
-undo_push( imgui_undo_buf_t* u, const char* text, u32 cursor, u32 anchor )
+undo_push( imgui_undo_buf_t* u, const char* text, u16 cursor, u16 anchor )
 {
     u->cur++;
     if ( u->cur == UNDO_SLOTS )
@@ -195,7 +197,7 @@ undo_push( imgui_undo_buf_t* u, const char* text, u32 cursor, u32 anchor )
 /* Overwrite the current snapshot in place (char-insert grouping: extend the current word
    without creating a new undo step). */
 static void
-undo_update( imgui_undo_buf_t* u, const char* text, u32 cursor, u32 anchor )
+undo_update( imgui_undo_buf_t* u, const char* text, u16 cursor, u16 anchor )
 {
     imgui_undo_snap_t* s = &u->ring[ ( u->base + u->cur ) % UNDO_SLOTS ];
     undo_text_copy( s->text, text );
@@ -206,7 +208,7 @@ undo_update( imgui_undo_buf_t* u, const char* text, u32 cursor, u32 anchor )
 /* Initialize the undo ring for a newly focused widget.  Saves the revert copy and pushes
    the initial state as the floor of the undo stack. */
 static void
-undo_init( imgui_undo_buf_t* u, imgui_id_t id, const char* buf, u32 cursor, u32 anchor )
+undo_init( imgui_undo_buf_t* u, imgui_id_t id, const char* buf, u16 cursor, u16 anchor )
 {
     u->for_id        = id;
     u->base          = 0;
@@ -231,8 +233,8 @@ undo_apply( imgui_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
     while ( n < bufsz - 1u && s->text[ n ] ) ++n;
     memcpy( buf, s->text, n );
     buf[ n ]   = '\0';
-    es->cursor = ( s->cursor <= n ) ? s->cursor : n;
-    es->anchor = ( s->anchor <= n ) ? s->anchor : n;
+    es->cursor = ( s->cursor <= n ) ? s->cursor : (u16)n;
+    es->anchor = ( s->anchor <= n ) ? s->anchor : (u16)n;
     return true;
 }
 
@@ -288,8 +290,8 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
 
     /* Clamp cursor and anchor to the current length -- a programmatic buffer change between
        frames may have shortened the string under the old positions. */
-    if ( es->cursor > len ) es->cursor = len;
-    if ( es->anchor > len ) es->anchor = len;
+    if ( es->cursor > len ) es->cursor = (u16)len;
+    if ( es->anchor > len ) es->anchor = (u16)len;
 
     u32  sel_lo  = es->cursor < es->anchor ? es->cursor : es->anchor;
     u32  sel_hi  = es->cursor > es->anchor ? es->cursor : es->anchor;
@@ -322,7 +324,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
             imgui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
             memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
             len -= ( sel_hi - sel_lo );
-            es->cursor = es->anchor = sel_lo;
+            es->cursor = es->anchor = (u16)sel_lo;
             has_sel = false; sel_lo = sel_hi = es->cursor;
             undo_push( &s_undo, buf, es->cursor, es->anchor );
             res.changed = true;
@@ -336,7 +338,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
             {
                 memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
                 len -= ( sel_hi - sel_lo );
-                es->cursor = es->anchor = sel_lo;
+                es->cursor = es->anchor = (u16)sel_lo;
                 has_sel = false; sel_lo = sel_hi = es->cursor;
             }
             /* Insert each pasted byte at the advancing caret, skipping control characters
@@ -400,12 +402,12 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                     int cls = char_class( (u8)buf[ pos - 1u ] );
                     while ( pos > 0 && char_class( (u8)buf[ pos - 1u ] ) == cls ) --pos;
                 }
-                es->cursor = pos;
-                if ( !shift ) es->anchor = pos;
+                es->cursor = (u16)pos;
+                if ( !shift ) es->anchor = (u16)pos;
             }
             else
             {
-                if ( !shift && has_sel ) { es->cursor = es->anchor = sel_lo; }
+                if ( !shift && has_sel ) { es->cursor = es->anchor = (u16)sel_lo; }
                 else if ( es->cursor > 0 ) { --es->cursor; if ( !shift ) es->anchor = es->cursor; }
             }
             blink_reset = true;
@@ -423,12 +425,12 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                     while ( pos < len && char_class( (u8)buf[ pos ] ) == cls ) ++pos;
                 }
                 while ( pos < len && char_class( (u8)buf[ pos ] ) == 0 ) ++pos;
-                es->cursor = pos;
-                if ( !shift ) es->anchor = pos;
+                es->cursor = (u16)pos;
+                if ( !shift ) es->anchor = (u16)pos;
             }
             else
             {
-                if ( !shift && has_sel ) { es->cursor = es->anchor = sel_hi; }
+                if ( !shift && has_sel ) { es->cursor = es->anchor = (u16)sel_hi; }
                 else if ( es->cursor < len ) { ++es->cursor; if ( !shift ) es->anchor = es->cursor; }
             }
             blink_reset = true;
@@ -442,14 +444,14 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
 
         if ( s_io.keys_pressed[ APP_KEY_END ] )
         {
-            es->cursor = len; if ( !shift ) es->anchor = len;
+            es->cursor = (u16)len; if ( !shift ) es->anchor = (u16)len;
             blink_reset = true;
         }
 
         /* Ctrl+A: select the entire buffer. */
         if ( ctrl && s_io.keys_pressed[ APP_KEY_A ] )
         {
-            es->anchor = 0; es->cursor = len;
+            es->anchor = 0; es->cursor = (u16)len;
             blink_reset = true;
         }
 
@@ -460,7 +462,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
             {
                 memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
                 len -= ( sel_hi - sel_lo );
-                es->cursor = es->anchor = sel_lo;
+                es->cursor = es->anchor = (u16)sel_lo;
                 undo_push( &s_undo, buf, es->cursor, es->anchor );
                 res.changed = true;
             }
@@ -484,7 +486,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
             {
                 memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
                 len -= ( sel_hi - sel_lo );
-                es->cursor = es->anchor = sel_lo;
+                es->cursor = es->anchor = (u16)sel_lo;
                 undo_push( &s_undo, buf, es->cursor, es->anchor );
                 res.changed = true;
             }
@@ -514,7 +516,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                 memmove( buf + sel_lo + 1u, buf + sel_hi, len - sel_hi + 1u );
                 buf[ sel_lo ] = *ch;
                 len          -= ( sel_hi - sel_lo ) - 1u;
-                es->cursor    = es->anchor = sel_lo + 1u;
+                es->cursor    = es->anchor = (u16)( sel_lo + 1u );
                 has_sel       = false; sel_lo = sel_hi = es->cursor;
             }
             else if ( len + 1u < bufsz )
@@ -588,19 +590,19 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                     wb_off--;
                 u32 wlo, whi;
                 word_bounds( buf, len, wb_off, &wlo, &whi );
-                es->anchor   = wlo;
-                es->cursor   = whi;
-                es->dbl_lo   = wlo;
-                es->dbl_hi   = whi;
+                es->anchor   = (u16)wlo;
+                es->cursor   = (u16)whi;
+                es->dbl_lo   = (u16)wlo;
+                es->dbl_hi   = (u16)whi;
                 es->word_sel = 1;
                 blink_reset  = true;
             }
             else if ( st.pressed )
             {
                 /* Single press: caret to the click; Shift keeps the anchor to extend. */
-                es->cursor   = off;
+                es->cursor   = (u16)off;
                 es->word_sel = 0;
-                if ( !shift ) es->anchor = off;
+                if ( !shift ) es->anchor = (u16)off;
                 blink_reset = true;
             }
             else if ( st.active )
@@ -621,7 +623,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                         u32 wlo, whi;
                         word_bounds( buf, len, drag_off, &wlo, &whi );
                         es->anchor = es->dbl_hi;
-                        es->cursor = wlo;
+                        es->cursor = (u16)wlo;
                     }
                     else if ( drag_off >= es->dbl_hi )
                     {
@@ -629,7 +631,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                         u32 wlo, whi;
                         word_bounds( buf, len, drag_off, &wlo, &whi );
                         es->anchor = es->dbl_lo;
-                        es->cursor = whi;
+                        es->cursor = (u16)whi;
                     }
                     else
                     {
@@ -641,7 +643,7 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                 else
                 {
                     /* Normal drag: move the caret, leaving the anchor put. */
-                    es->cursor = off;
+                    es->cursor = (u16)off;
                 }
                 blink_reset = true;
             }
@@ -662,9 +664,8 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
         f32 cx    = text_x_at( buf, es->cursor );
         f32 vis_w = box.w - 2.0f * WIDGET_PAD;
         if ( vis_w < 0.0f ) vis_w = 0.0f;
-        if ( cx - es->scroll_x < 0.0f )  es->scroll_x = cx;
-        if ( cx - es->scroll_x > vis_w ) es->scroll_x = cx - vis_w;
-        if ( es->scroll_x < 0.0f )       es->scroll_x = 0.0f;
+        if ( cx - (f32)es->scroll_x < 0.0f )  es->scroll_x = (u16)cx;
+        if ( cx - (f32)es->scroll_x > vis_w ) es->scroll_x = (u16)( cx - vis_w );
     }
 
     /* Clip text, selection, and caret to the box interior so scrolled content does not

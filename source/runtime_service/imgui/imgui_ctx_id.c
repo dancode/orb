@@ -112,7 +112,7 @@ imgui_state_get( imgui_id_t id, u32 size )
         if ( s->id == id )                           /* live hit: restamp and hand back the storage */
         {
             s->seen_frame = s_retained.frame;
-            return s->data.bytes;
+            return s->data;
         }
         if ( s->id == IMGUI_ID_NONE )                /* empty ends the probe: id is absent */
         {
@@ -130,8 +130,8 @@ imgui_state_get( imgui_id_t id, u32 size )
 
     dst->id         = id;
     dst->seen_frame = s_retained.frame;
-    memset( dst->data.bytes, 0, sizeof dst->data.bytes );
-    return dst->data.bytes;
+    memset( dst->data, 0, sizeof dst->data );
+    return dst->data;
 }
 
 /* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= IMGUI_STATE_CAP. */
@@ -148,7 +148,7 @@ imgui_state_peek( imgui_id_t id )
     for ( u32 i = 0; i < IMGUI_STATE_SLOTS; ++i )
     {
         const imgui_state_slot_t* s = &s_retained.state[ ( bucket + i ) & IMGUI_STATE_MASK ];
-        if ( s->id == id          ) return s->data.bytes;
+        if ( s->id == id          ) return s->data;
         if ( s->id == IMGUI_ID_NONE ) return NULL;   /* empty slot ends the chain */
     }
     return NULL;
