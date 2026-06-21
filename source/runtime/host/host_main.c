@@ -531,9 +531,21 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            so hot-reload checks and other periodic work still run. */
         if ( editor_sleep )
         {
-            if ( g_sleep_debug ) printf( "[host] editor sleep  (timeout %d ms)\n", editor_timeout_ms );
-            sys()->wait_for_os_events_ms( editor_timeout_ms );
-            if ( g_sleep_debug ) printf( "[host] editor wakeup (frame %llu)\n", (unsigned long long)run()->clock()->frame_number );
+            /* While any animated widget is mid-transition, skip the blocking wait and run at
+               frame_ms cadence instead so the animation plays out smoothly.  Once all transitions
+               settle, wants_redraw drops false and the normal editor sleep resumes. */
+            bool animating = s_imgui_inited && imgui() && imgui()->wants_redraw();
+            if ( animating )
+            {
+                if ( g_sleep_debug ) printf( "[host] anim frame    (no sleep)\n" );
+                sys()->sleep_milliseconds( frame_ms );
+            }
+            else
+            {
+                if ( g_sleep_debug ) printf( "[host] editor sleep  (timeout %d ms)\n", editor_timeout_ms );
+                sys()->wait_for_os_events_ms( editor_timeout_ms );
+                if ( g_sleep_debug ) printf( "[host] editor wakeup (frame %llu)\n", (unsigned long long)run()->clock()->frame_number );
+            }
         }
         else
             sys()->sleep_milliseconds( frame_ms );

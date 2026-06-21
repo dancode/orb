@@ -424,8 +424,10 @@ typedef struct
        context's namespace and leaves id_hash byte-identical to the unsalted hash. */
     u32 id_salt;
 
-    u32 frame;                                       // monotonic frame index, bumped each new_frame this
+    u32  frame;                                      // monotonic frame index, bumped each new_frame this
                                                      //   context is built; stamps + ages the pool below
+    bool wants_redraw;                               // set by imgui_anim_f32 while any value is mid-transition;
+                                                     //   cleared at new_frame; host skips editor sleep when true
     imgui_state_slot_t state[ IMGUI_STATE_SLOTS ];   // open-addressed keyed per-widget state
 
 } imgui_retained_t;

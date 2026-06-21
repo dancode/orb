@@ -792,6 +792,11 @@ typedef struct imgui_api_s
     f32  ( *get_delta_time           )( void );
     f64  ( *get_time                 )( void );
 
+    /* wants_redraw -- true when at least one animated widget has not yet reached its target this frame.
+       The host checks this after the UI build to decide whether to skip the editor sleep: while any
+       transition is in flight, the loop must keep pumping frames to advance the animation. */
+    bool ( *wants_redraw )( void );
+
 } imgui_api_t;
 
 /*============================================================================================*/

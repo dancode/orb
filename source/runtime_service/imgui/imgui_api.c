@@ -206,6 +206,7 @@ const imgui_api_t g_imgui_api_struct =
     .get_mouse_wheel                    = imgui_get_mouse_wheel,
     .get_delta_time                     = imgui_get_delta_time,
     .get_time                           = imgui_get_time,
+    .wants_redraw                       = imgui_wants_redraw,
 };
 
 /*==============================================================================================

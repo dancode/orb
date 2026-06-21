@@ -80,6 +80,7 @@ imgui_new_frame( f32 dt )
        native shell permanently disappears the stale inset is conservative -- windows stay clamped
        below where the caption used to be -- and the viewport is destroyed shortly after anyway. */
 
+    s_retained.wants_redraw = false;   /* cleared before the build; widgets set it if animating */
     input_update( disp_w, disp_h, dt );
     draw_reset( disp_w, disp_h );
 #ifdef IMGUI_DEBUG_OVERLAY
@@ -534,6 +535,19 @@ void
 imgui_pop_clip( void )
 {
     draw_pop_clip_rect();
+}
+
+/*==============================================================================================
+    Animation state query
+==============================================================================================*/
+
+/* True when at least one imgui_anim_f32 channel is still transitioning this frame.  The host
+   loop checks this after the build to decide whether to skip the editor-sleep wait: as long as
+   any value is mid-animation the host must keep pumping frames, otherwise the transition freezes. */
+bool
+imgui_wants_redraw( void )
+{
+    return s_retained.wants_redraw;
 }
 
 // clang-format on

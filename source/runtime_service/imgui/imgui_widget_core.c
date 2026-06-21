@@ -80,6 +80,24 @@
    convenience because most labeled widgets only need the y and already own their x.) */
 static f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
 
+/* Linear blend between two ABGR colors at t in [0,1] (0 = ca, 1 = cb).  Used by animated
+   widgets that blend between palette entries rather than switching them discretely. */
+static u32
+col_lerp( u32 ca, u32 cb, f32 t )
+{
+    if ( t <= 0.0f ) return ca;
+    if ( t >= 1.0f ) return cb;
+    f32 r0 = (f32)( ( ca       ) & 0xFF );  f32 r1 = (f32)( ( cb       ) & 0xFF );
+    f32 g0 = (f32)( ( ca >>  8 ) & 0xFF );  f32 g1 = (f32)( ( cb >>  8 ) & 0xFF );
+    f32 b0 = (f32)( ( ca >> 16 ) & 0xFF );  f32 b1 = (f32)( ( cb >> 16 ) & 0xFF );
+    f32 a0 = (f32)( ( ca >> 24 ) & 0xFF );  f32 a1 = (f32)( ( cb >> 24 ) & 0xFF );
+    u32 r  = (u32)( r0 + ( r1 - r0 ) * t );
+    u32 g  = (u32)( g0 + ( g1 - g0 ) * t );
+    u32 b  = (u32)( b0 + ( b1 - b0 ) * t );
+    u32 a  = (u32)( a0 + ( a1 - a0 ) * t );
+    return r | ( g << 8 ) | ( b << 16 ) | ( a << 24 );
+}
+
 /* Place an extent `len` within the span [org, org+avail) along one axis: centered, against the far
    edge, or (default) the near edge.  The one axis primitive every aligned placement resolves
    through -- rect_align below for a box, and draw_text_in (imgui_widget.c) per line of a text

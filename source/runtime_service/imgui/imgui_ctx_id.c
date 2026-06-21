@@ -137,5 +137,41 @@ imgui_state_get( imgui_id_t id, u32 size )
 /* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= IMGUI_STATE_CAP. */
 #define IMGUI_STATE( T, id ) ( (T*)imgui_state_get( ( id ), (u32)sizeof( T ) ) )
 
+/*----------------------------------------------------------------------------------------------
+    Animation helper
+
+    imgui_anim_f32 steps a persistent f32 toward `target` each frame using exponential decay.
+    `speed` is in Hz-like units: higher is faster (10 ~ 250 ms to 95%; 20 ~ 150 ms).
+
+    The value is stored in a 4-byte keyed state slot under `anim_id`.  While the value is still
+    moving, wants_redraw is set so the host loop does not sleep between frames.  When it settles
+    (delta < epsilon), wants_redraw is NOT set and the slot evicts naturally via seen_frame.
+
+    Call site pattern: compose anim_id from the widget id + a per-channel tag via id_combine so
+    each animated property gets its own slot without colliding with each other or other state:
+
+        f32 t = imgui_anim_f32( id_combine( id, 1u ), hovered ? 1.0f : 0.0f, 10.0f );
+----------------------------------------------------------------------------------------------*/
+
+typedef struct { f32 current; } imgui_anim_f32_t;   /* 4 bytes; fits IMGUI_STATE_CAP (32) */
+
+static f32
+imgui_anim_f32( imgui_id_t anim_id, f32 target, f32 speed )
+{
+    imgui_anim_f32_t* s  = IMGUI_STATE( imgui_anim_f32_t, anim_id );
+    f32               dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
+    f32               diff = target - s->current;
+
+    if ( fabsf( diff ) < 0.001f )
+    {
+        s->current = target;   /* snap at epsilon; slot evicts via seen_frame when widget is gone */
+        return target;
+    }
+
+    s->current              += diff * ( 1.0f - expf( -speed * dt ) );
+    s_retained.wants_redraw  = true;   /* keep the host loop running until settled */
+    return s->current;
+}
+
 // clang-format on
 /*============================================================================================*/
