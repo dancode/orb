@@ -191,14 +191,7 @@ imgui_button( const char* label )
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
-    /* Animated background: hover and active each get an independent [0,1] channel stored in the
-       keyed state pool under id_combine(id, channel_tag).  The final color blends BG -> HOT ->
-       ACT so direction reversals (hover then immediate un-hover) are always smooth. */
-
-    f32 t_hot    = imgui_anim_f32( id_combine( id, 1u ), ( st.hover || st.nav ) ? 1.0f : 0.0f, 10.0f );
-    f32 t_active = imgui_anim_f32( id_combine( id, 2u ), st.active ? 1.0f : 0.0f, 20.0f );
-    u32 col_bg   = col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, t_hot ), COL_WIDGET_ACT, t_active );
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_bg );
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, imgui_anim_bg( id, st ) );
 
     /* Centered label -- a button always centers, independent of the region's content align.  When
        the label outgrows the button (a squeezed cell), fall back to a left-anchored ellipsized fit

@@ -23,6 +23,7 @@
     imgui_layout_child.c      -- child box + sub-layout lifecycle: begin/end_child, push/pop_layout
     imgui_layout.c            -- public layout API verbs: imgui_layout, imgui_stack, imgui_columns, imgui_grid
     imgui_text_edit.c         -- single-line text editing engine: input_field_edit (behind input_text)
+    imgui_anim.c              -- widget animation utilities: imgui_anim_f32, imgui_anim_bg
     imgui_widget.c            -- core leaf widgets: text, button, checkbox, input_text, selectable
     imgui_widget_slider.c     -- slider + drag widgets: slider_float/int, drag_int, slider_render
     imgui_widget_numeric.c    -- numeric text inputs: input_int/float/double, input_float2/3/4
@@ -175,6 +176,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 #include "runtime_service/imgui/imgui_layout_child.c"
 #include "runtime_service/imgui/imgui_layout.c"
 #include "runtime_service/imgui/imgui_text_edit.c"
+#include "runtime_service/imgui/imgui_anim.c"
 #include "runtime_service/imgui/imgui_widget.c"
 #include "runtime_service/imgui/imgui_widget_slider.c"
 #include "runtime_service/imgui/imgui_widget_numeric.c"
