@@ -40,7 +40,7 @@ main( int argc, char** argv )
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
-    mod_static( draw ); 
+    mod_static( draw );
     mod_static( imgui );
 
     if ( !mod_init_all() )

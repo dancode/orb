@@ -17,7 +17,7 @@
            imgui->init() + viewport_open()            -- when imgui is loaded, after draw init
         8. desc->on_ready()                           -- host post-init hook
         9. enter loop per desc->loop_mode
-       10. imgui->shutdown(), draw->shutdown(), rhi shutdown, window_close(), mod_system_exit()
+       10. host_shutdown()                            -- single teardown path, order reversed
 
     Load is passive on purpose. mod_static_load / mod_dynamic_load only register the
     descriptor -- they fire no callbacks and run no module code. All lifecycle execution
@@ -54,6 +54,13 @@
     imgui() always:   imgui->render_floaters() after the main surface (presents tear-off
                       floater windows; no-op when none are alive).
 
+    Shutdown
+    --------
+    host_shutdown() is the single teardown path for both normal exit and every startup
+    failure. It checks each piece of state and tears down only what was initialized,
+    in reverse order: imgui -> draw -> rhi context -> rhi -> window -> console -> mod.
+    Every error path is a one-liner: log, host_shutdown(), return 1.
+
     Frame timing
     ------------
     sys()->tick_seconds() returns a stable monotonic clock from engine init.
@@ -74,8 +81,8 @@
     Quit flag (headless path)
 ==============================================================================================*/
 
-static bool g_quit_requested  = false;
-static bool g_sleep_debug     = false;
+static bool g_quit_requested = false;
+static bool g_sleep_debug    = false;
 
 void
 run_host_quit( void )
@@ -114,11 +121,41 @@ MOD_USE_RENDER;
 MOD_USE_DRAW;
 MOD_USE_IMGUI;
 
-static win_id_t   s_win_id = APP_WIN_INVALID;
-static i32        s_ctx_id = RHI_CTX_INVALID;
-static i32        s_win_w  = 0;
-static i32        s_win_h  = 0;
-static imgui_vp_t s_vp0    = IMGUI_VP_INVALID;
+/*==============================================================================================
+    Host state -- tracks what has been initialized so host_shutdown() tears down exactly
+    what is live, in reverse order, whether called from a startup failure or normal exit.
+==============================================================================================*/
+
+static win_id_t   s_win_id       = APP_WIN_INVALID;
+static i32        s_ctx_id       = RHI_CTX_INVALID;
+static i32        s_win_w        = 0;
+static i32        s_win_h        = 0;
+static imgui_vp_t s_vp0          = IMGUI_VP_INVALID;
+static bool       s_rhi_inited   = false;
+static bool       s_draw_inited  = false;
+static bool       s_imgui_inited = false;
+static bool       s_console      = false;
+
+/*==============================================================================================
+    Shutdown -- single teardown path for both startup failures and normal exit.
+    Reads host state; only tears down what is live; resets each flag after use.
+==============================================================================================*/
+
+static void
+host_shutdown( void )
+{
+    /* Reverse of startup: imgui (floater contexts) -> draw (GPU buffers) ->
+       rhi context -> rhi device -> window -> console -> mod system. */
+
+    if ( s_imgui_inited )              { imgui()->shutdown();                   s_imgui_inited = false; }
+    if ( s_draw_inited )               { draw()->shutdown();                    s_draw_inited  = false; }
+    if ( s_ctx_id != RHI_CTX_INVALID ) { rhi()->context_destroy( s_ctx_id );    s_ctx_id = RHI_CTX_INVALID; }
+    if ( s_rhi_inited )                { rhi()->shutdown();                     s_rhi_inited   = false; }
+    if ( s_win_id != APP_WIN_INVALID ) { app()->window_close( s_win_id );       s_win_id = APP_WIN_INVALID; }
+    if ( s_console )                   { sys_console_input_shutdown();          s_console = false; }
+
+    mod_system_exit();
+}
 
 /*==============================================================================================
     Module loading
@@ -163,12 +200,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         return 1;
     }
 
+    /* Reset all state so host_shutdown() starts from a clean baseline. */
     g_quit_requested = false;
     s_win_id         = APP_WIN_INVALID;
     s_ctx_id         = RHI_CTX_INVALID;
     s_win_w          = 0;
     s_win_h          = 0;
     s_vp0            = IMGUI_VP_INVALID;
+    s_rhi_inited     = false;
+    s_draw_inited    = false;
+    s_imgui_inited   = false;
+    s_console        = false;
 
     /* ---- boot --------------------------------------------------------- */
 
@@ -192,7 +234,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         return 1;
     }
 
-    if ( !load_all( desc->modules ) )
+    /* Engine extented -- Load all the modules dynamically passed in to the host from the .exe */
+    if ( !load_all( desc->modules )) 
     {
         mod_system_exit();
         return 1;
@@ -202,7 +245,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        its own types via ref() -- the load callback pushed each frame on its way in. */
     if ( !mod_init_all() )
     {
-        fprintf( stderr, "[host] init failed: %s\n", mod_last_error() );
+        fprintf( stderr, "[host] mod_init_all failed: %s\n", mod_last_error() );
         mod_system_exit();
         return 1;
     }
@@ -213,14 +256,12 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
-       MOD_HOST_FETCH_API in static builds:  no-op -- the gateway returns the
-                                         linked struct directly.
+       MOD_HOST_FETCH_API in static builds:  no-op -- the gateway returns the linked struct directly.
        MOD_HOST_FETCH_API in dynamic builds: populates g_*_api_ptr from the module registry.
                                          Returns NULL when the module is absent -- headless
                                          hosts that don't load draw or imgui get NULL here,
                                          which is fine; the guarded paths below check it.
     */
-
     MOD_HOST_FETCH_API( render );
     MOD_HOST_FETCH_API( draw   );
     MOD_HOST_FETCH_API( imgui  );
@@ -243,45 +284,44 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( s_win_id == APP_WIN_INVALID )
         {
             fprintf( stderr, "[host] window creation failed\n" );
-            mod_system_exit();
+            host_shutdown();
             return 1;
         }
 
         if ( rhi() )
         {
-            void* hwnd = app()->window_handle( s_win_id );
-
             if ( !rhi()->init() )
             {
-                fprintf( stderr, "[host] rhi global init failed\n" );
-                app()->window_close( s_win_id );
-                mod_system_exit();
+                fprintf( stderr, "[host] rhi init failed\n" );
+                host_shutdown();
                 return 1;
             }
+            s_rhi_inited = true;
 
-            s_ctx_id = rhi()->context_create( s_win_id, hwnd, w, h );
+            void* hwnd = app()->window_handle( s_win_id );
+            s_ctx_id   = rhi()->context_create( s_win_id, hwnd, w, h );
             if ( s_ctx_id == RHI_CTX_INVALID )
             {
                 fprintf( stderr, "[host] rhi context_create failed\n" );
-                rhi()->shutdown();
-                app()->window_close( s_win_id );
-                mod_system_exit();
+                host_shutdown();
                 return 1;
             }
 
+            /* bind rhi() to render() so render can drive the rhi() */
             if ( render() )
-                render()->context_register( s_ctx_id );
+                 render()->context_register( s_ctx_id );
 
             /* GPU resource init -- draw and imgui after the device is live. */
 
-            if ( draw() && !draw()->init() )
+            if ( draw() )
             {
-                fprintf( stderr, "[host] draw init failed\n" );
-                rhi()->context_destroy( s_ctx_id );
-                rhi()->shutdown();
-                app()->window_close( s_win_id );
-                mod_system_exit();
-                return 1;
+                if ( !draw()->init() )
+                {
+                    fprintf( stderr, "[host] draw init failed\n" );
+                    host_shutdown();
+                    return 1;
+                }
+                s_draw_inited = true;
             }
 
             if ( imgui() )
@@ -289,24 +329,16 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( !imgui()->init() )
                 {
                     fprintf( stderr, "[host] imgui init failed\n" );
-                    if ( draw() ) draw()->shutdown();
-                    rhi()->context_destroy( s_ctx_id );
-                    rhi()->shutdown();
-                    app()->window_close( s_win_id );
-                    mod_system_exit();
+                    host_shutdown();
                     return 1;
                 }
+                s_imgui_inited = true;
 
                 s_vp0 = imgui()->viewport_open( s_win_id, w, h );
                 if ( s_vp0 == IMGUI_VP_INVALID )
                 {
                     fprintf( stderr, "[host] imgui viewport_open failed\n" );
-                    imgui()->shutdown();
-                    if ( draw() ) draw()->shutdown();
-                    rhi()->context_destroy( s_ctx_id );
-                    rhi()->shutdown();
-                    app()->window_close( s_win_id );
-                    mod_system_exit();
+                    host_shutdown();
                     return 1;
                 }
             }
@@ -317,17 +349,21 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- optional console input -------------------------------------- */
 
-    const bool console      = ( desc->flags & RUN_HOST_CONSOLE      ) != 0;
     const bool hot_reload   = ( desc->flags & RUN_HOST_HOT_RELOAD   ) != 0;
     const bool editor_sleep = ( desc->flags & RUN_HOST_EDITOR_SLEEP ) != 0;
     const i32  frame_ms     = desc->frame_target_ms > 0 ? desc->frame_target_ms : 16;
 
+    if ( desc->flags & RUN_HOST_CONSOLE )
+    {
+        if ( !sys_console_input_init() )
+            fprintf( stderr, "[host] WARNING: console input init failed\n" );
+        else
+            s_console = true;
+    }
+
     /* In editor_sleep mode, bounds hot-reload check latency when the UI is idle.
        200 ms keeps reloads responsive; 500 ms for hosts with no hot-reload. */
-    const i32  editor_timeout_ms = hot_reload ? 200 : 500;
-
-    if ( console && !sys_console_input_init() )
-        fprintf( stderr, "[host] WARNING: console input init failed\n" );
+    const i32 editor_timeout_ms = hot_reload ? 200 : 500;
 
     /* ---- post-init host hook ----------------------------------------- */
 
@@ -372,9 +408,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                         {
                             s_win_w = ev.data.win_resize.w;
                             s_win_h = ev.data.win_resize.h;
-                            if ( rhi() && s_ctx_id != RHI_CTX_INVALID )
+                            if ( s_ctx_id != RHI_CTX_INVALID )
                                 rhi()->context_resize( s_ctx_id, s_win_w, s_win_h );
-                            if ( imgui() && s_vp0 != IMGUI_VP_INVALID )
+                            if ( s_vp0 != IMGUI_VP_INVALID )
                                 imgui()->viewport_resize( s_vp0, s_win_w, s_win_h );
                         }
                         break;
@@ -390,16 +426,16 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- frame clock ------------------------------------------------ */
 
-        f64 now      = sys()->tick_seconds();
-        f32 dt_real  = ( f32 )( now - last_tick );
-        last_tick    = now;
+        f64 now     = sys()->tick_seconds();
+        f32 dt_real = ( f32 )( now - last_tick );
+        last_tick   = now;
 
         run_clock_update( now, dt_real );           /* caps, scales, stamps frame_number */
         f32 dt = run()->clock()->dt;            /* capped + scaled -- pass to callbacks */
 
         /* -- console key state ------------------------------------------ */
 
-        if ( console )
+        if ( s_console )
             sys_console_input_poll();
 
         /* -- job dispatcher tick --------------------------------------- */
@@ -412,7 +448,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         /* new_frame snaps the IO state (mouse/keyboard) from the events drained above;
            call before any widget code, including on_update below. */
 
-        if ( imgui() )
+        if ( s_imgui_inited )
             imgui()->new_frame( dt );
 
         /* -- host update ------------------------------------------------- */
@@ -429,7 +465,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            UI build and before rendering -- the safe point to tear surfaces down.
            Destroys any floater the user has closed. */
 
-        if ( imgui() )
+        if ( s_imgui_inited )
             imgui()->update_platform_windows();
 
         /* -- render ------------------------------------------------------ */
@@ -449,7 +485,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                     render()->end_frame( s_ctx_id );
                 }
             }
-            else if ( rhi() && imgui() && s_vp0 != IMGUI_VP_INVALID )
+            else if ( s_imgui_inited && s_vp0 != IMGUI_VP_INVALID )
             {
                 rhi_cmd_t cmd = rhi()->frame_begin( s_ctx_id );
                 if ( rhi_cmd_valid( cmd ) )
@@ -472,7 +508,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         /* Present imgui-owned floater windows (tear-off panels, tool popouts).
            Each floater drives its own rhi context frame internally. No-op when
            no floaters are alive; safe to call unconditionally. */
-        if ( imgui() )
+        if ( s_imgui_inited )
             imgui()->render_floaters();
 
         /* -- hot-reload -------------------------------------------------- */
@@ -507,31 +543,7 @@ loop_exit:
 
     /* ---- shutdown ---------------------------------------------------- */
 
-    /* GPU teardown order: imgui (owns floater contexts) -> draw (GPU buffers) ->
-       rhi context -> rhi device. All before the window (HWND) is destroyed. */
-    if ( rhi() )
-    {
-        if ( imgui() )
-            imgui()->shutdown();
-
-        if ( draw() )
-            draw()->shutdown();
-
-        if ( s_ctx_id != RHI_CTX_INVALID )
-        {
-            rhi()->context_destroy( s_ctx_id );
-            s_ctx_id = RHI_CTX_INVALID;
-        }
-        rhi()->shutdown();
-    }
-
-    if ( windowed && app() && s_win_id != APP_WIN_INVALID )
-        app()->window_close( s_win_id );
-
-    if ( console )
-        sys_console_input_shutdown();
-
-    mod_system_exit();
+    host_shutdown();
     return 0;
 }
 

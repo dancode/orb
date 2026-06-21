@@ -73,7 +73,7 @@ editor_update( f32 dt )
     // }
 
     if ( sys_key_pressed( APP_KEY_D ) )
-        run_host_sleep_debug_toggle();
+         run_host_sleep_debug_toggle();
 
     // example()->update( dt );
 }

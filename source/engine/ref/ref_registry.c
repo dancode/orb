@@ -782,7 +782,7 @@ ref_register_module( const char* name, const mod_desc_t* desc )
     ref_ensure_init();
 
     typedef void ( *ref_register_fn )( const ref_reg_api_t* api );
-    ref_register_fn ref_reg = ( ref_register_fn )desc->ref_register;
+    ref_register_fn ref_register = ( ref_register_fn )desc->ref_register;
 
     uint16_t frame = ref_push_frame( name );
     if ( frame == REF_FRAME_INVALID ) return REF_FRAME_INVALID;
@@ -800,7 +800,7 @@ ref_register_module( const char* name, const mod_desc_t* desc )
         .ref_get_type            = ref_get_type,
     };
 
-    ref_reg( &api );
+    ref_register( &api );
     ref_finalize_frame( frame );
     return frame;
 }
