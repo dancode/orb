@@ -29,14 +29,14 @@
 ==============================================================================================*/
 
 // The maximum number of jobs that can be buffered in the queue at any given time. 
-#define MAX_JOB_QUEUE 4096
-#define MAX_JOB_QUEUE_MASK  ( MAX_JOB_QUEUE - 1 )
+#define MAX_JOB_QUEUE           4096
+#define MAX_JOB_QUEUE_MASK      ( MAX_JOB_QUEUE - 1 )
 
 // The number of bits dedicated to the pool index. 
 // Defines the maximum number of concurrent batches.
-#define JOB_POOL_INDEX_BITS 8
-#define JOB_POOL_SIZE       ( 1 << JOB_POOL_INDEX_BITS )
-#define JOB_POOL_MASK       ( JOB_POOL_SIZE - 1 )
+#define JOB_POOL_INDEX_BITS     8
+#define JOB_POOL_SIZE           ( 1 << JOB_POOL_INDEX_BITS ) /* 256 */
+#define JOB_POOL_MASK           ( JOB_POOL_SIZE - 1 )
 
 /*==============================================================================================
     Internal Types and State

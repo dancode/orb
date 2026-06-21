@@ -6,7 +6,7 @@
 // clang-format off
 
 // Handle encoding: Lower bits = pool index, Upper bits = generation (0=null).
-#define JOB_HANDLE_INDEX( id )       ( (u32)(id) & JOB_POOL_MASK )
+#define JOB_HANDLE_INDEX( id )       ( (u32)(id)  & JOB_POOL_MASK )
 #define JOB_HANDLE_GEN( id )         ( (u32)(id) >> JOB_POOL_INDEX_BITS & 0xFFFFu )
 #define JOB_HANDLE_MAKE( idx, gen )  ( (u32)(idx) | ( (u32)(gen) << JOB_POOL_INDEX_BITS ) )
 
@@ -14,8 +14,8 @@
 // Composed via shifts (not memory aliasing) so the encoding is endianness-independent.
 
 #define JOB_SLOT_PACK( gen, val )    ( ((i64)(u32)(gen) << 32 ) | (u32)(i32)(val) )
-#define JOB_SLOT_VALUE( packed )     ( (i32)(u32)( (u64)(packed) & 0xFFFFFFFFu ) )
-#define JOB_SLOT_GEN( packed )       ( (u32)( (u64)(packed) >> 32 ) )
+#define JOB_SLOT_VALUE( packed )     ( (i32)(u32)((u64)(packed) & 0xFFFFFFFFu ) )
+#define JOB_SLOT_GEN( packed )       (      (u32)((u64)(packed) >> 32 ) )
 
 /*==============================================================================================
    job_complete_one — Signals one job's completion against its batch counter.
