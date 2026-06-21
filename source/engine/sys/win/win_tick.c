@@ -157,4 +157,33 @@ sys_sleep_milliseconds( i32 milliseconds )
 }
 
 /*============================================================================================*/
+
+void
+sys_wait_for_os_events_ms( i32 timeout_ms )
+{
+    /* Block until a keyboard/mouse event, posted message, or paint request arrives, or until
+       timeout_ms elapses.  MWMO_INPUTAVAILABLE makes it return immediately when input is already
+       queued but not yet removed.  QS_TIMER is intentionally excluded so the 1 ms fiber timer
+       does not defeat the sleep while the editor UI is idle. */
+    MsgWaitForMultipleObjectsEx( 0, NULL, (DWORD)timeout_ms,
+                                 QS_INPUT | QS_POSTMESSAGE | QS_PAINT | QS_SENDMESSAGE,
+                                 MWMO_INPUTAVAILABLE );
+
+    /* The fiber issue... */
+    /* The fiber timer (SetTimer(..., 1ms, ...)) fires a WM_TIMER message into the thread's
+       message queue every millisecond. Its only job is to keep the game loop ticking during
+       OS modal loops (resize drag, etc.).
+
+       MsgWaitForMultipleObjectsEx wakes up whenever a message arrives in the queue. If we
+       included QS_TIMER in the mask, the 1ms timer would wake it up every millisecond —
+       which completely defeats the sleep. We'd just be spinning at 1000 fps instead of
+       sleeping.
+
+       The timer still does its job when it matters. During a resize drag, the OS is running
+       its own blocking modal loop internally, and the fiber timer fires into that loop to 
+       keep the game loop ticking. */
+
+}
+
+/*============================================================================================*/
 // clang-format on

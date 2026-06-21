@@ -214,7 +214,7 @@ target sample_game
 
     type        static
     root        source/project/sample_game
-    folder      06_Project
+    folder      06_PROJECT
     unit        sample_game.c
 
 # ==============================================================================
@@ -225,7 +225,7 @@ target dev_build
 
     type        static
     root        source/developer/dev_build
-    folder      07_Developer
+    folder      07_DEVELOPER
     unit        dev_build.c
     dep         sys
 
@@ -233,7 +233,7 @@ target dev_hot
 
     type        static
     root        source/developer/dev_hot
-    folder      07_Developer
+    folder      07_DEVELOPER
     unit        dev_hot.c
     dep         sys
     dep         dev_build
@@ -246,14 +246,14 @@ target host_common
 
     type        static
     root        source/host/common
-    folder      08_Host
+    folder      08_HOST
     unit        host_common.c
 
 target host_game
 
     type        static
     root        source/host/game
-    folder      08_Host
+    folder      08_HOST
     unit        host_game_main.c
 	dep         mod sys ref core job app
 	
@@ -261,7 +261,7 @@ target host_editor
 
     type        static
     root        source/host/editor
-    folder      08_Host
+    folder      08_HOST
     unit        host_editor_main.c
 	dep         mod sys ref core job app
 	
@@ -269,7 +269,7 @@ target host_tool
 
     type        static
     root        source/host/tool
-    folder      08_Host
+    folder      08_HOST
     unit        host_tool_main.c
 	dep         mod sys ref core job app
 	mono_dep	render
@@ -278,7 +278,7 @@ target host_sandbox
 
     type        static
     root        source/host/sandbox
-    folder      08_Host
+    folder      08_HOST
     unit        host_sandbox_main.c
     dep         mod sys ref core job app
 
@@ -426,10 +426,10 @@ target sb_example_runtime
     root        source/sandbox/example/example_runtime
     folder      09_SANDBOX/EXAMPLE
     unit        example_runtime.c
-	dep 		mod ref sys core job app		# static engine
-    dep         run rhi						# static runtime + services
-	mono_dep	render example_reflect
-		
+	dep 		mod ref sys core job app net 	# static engine
+    dep         run rhi imgui   				# static runtime + services
+	mono_dep	render
+
 target sb_example_tool
 
     type        exe
@@ -489,10 +489,11 @@ target font_tool
 # DEV : Development Solution Wihout Any Sandbox or Test Code
 # ==============================================================================
 
-solution orb_dev
+solution orb_runtime
 
     out         build/proj
 # 	nav 		source
+	startup 	sb_example_runtime
 
 	# 			--- STANDARD LIBRARY --- 
 	add 		base
@@ -505,14 +506,11 @@ solution orb_dev
 
 	# 			--- RUNTIME SERVICES --- 
     add         rhi
-
+	add         imgui
 	
 	# 			--- RUNTIME MODULES --- 
     add         render audio physics
 
-	# 			--- RUNTIME MODULES -- examples --- 
-    add         example example_reflect example_gen
-	
 	# 			--- GAME SERVICES --- 
     add         game 
 	add 		nav 
@@ -529,6 +527,13 @@ solution orb_dev
 	# 			--- HOSTS -- 
     add         host_common
 
+	#			--- EXECUTABLE ---
+	add 		sb_example_runtime
+	add 		sb_example_editor
+	add 		sb_example_server
+	add 		sb_example_tool
+	add 		sb_example_game
+	
 # ==============================================================================
 # EDITOR : Editor development
 # ==============================================================================

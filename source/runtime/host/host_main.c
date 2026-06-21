@@ -50,7 +50,8 @@
     Quit flag (headless path)
 ==============================================================================================*/
 
-static bool g_quit_requested = false;
+static bool g_quit_requested  = false;
+static bool g_sleep_debug     = false;
 
 void
 run_host_quit( void )
@@ -62,6 +63,19 @@ bool
 run_host_should_quit( void )
 {
     return g_quit_requested;
+}
+
+void
+run_host_sleep_debug_set( bool enabled )
+{
+    g_sleep_debug = enabled;
+}
+
+void
+run_host_sleep_debug_toggle( void )
+{
+    g_sleep_debug = !g_sleep_debug;
+    printf( "[host] editor sleep debug %s\n", g_sleep_debug ? "ON" : "OFF" );
 }
 
 /*==============================================================================================
@@ -226,7 +240,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             }
 
             if ( render() )
-                render()->context_register( s_ctx_id );
+                 render()->context_register( s_ctx_id );
         }
     }
 
@@ -234,9 +248,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- optional console input -------------------------------------- */
 
-    const bool console    = ( desc->flags & RUN_HOST_CONSOLE    ) != 0;
-    const bool hot_reload = ( desc->flags & RUN_HOST_HOT_RELOAD ) != 0;
-    const i32  frame_ms   = desc->frame_target_ms > 0 ? desc->frame_target_ms : 16;
+    const bool console      = ( desc->flags & RUN_HOST_CONSOLE      ) != 0;
+    const bool hot_reload   = ( desc->flags & RUN_HOST_HOT_RELOAD   ) != 0;
+    const bool editor_sleep = ( desc->flags & RUN_HOST_EDITOR_SLEEP ) != 0;
+    const i32  frame_ms     = desc->frame_target_ms > 0 ? desc->frame_target_ms : 16;
+
+    /* In editor_sleep mode, bounds hot-reload check latency when the UI is idle.
+       200 ms keeps reloads responsive; 500 ms for hosts with no hot-reload. */
+    const i32  editor_timeout_ms = hot_reload ? 200 : 500;
 
     if ( console && !sys_console_input_init() )
         fprintf( stderr, "[host] WARNING: console input init failed\n" );
@@ -244,7 +263,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     /* ---- post-init host hook ----------------------------------------- */
 
     if ( desc->on_ready )
-        desc->on_ready();
+         desc->on_ready();
 
     /* ---- caller-driven path ------------------------------------------ */
 
@@ -279,8 +298,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         /* -- job dispatcher tick --------------------------------------- */
 
         if ( job() )
-            job()->tick();
-
+             job()->tick();
 
         /* -- host update ------------------------------------------------- */
 
@@ -289,7 +307,6 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( desc->on_update )
              desc->on_update( dt );
-
 
         /* -- render ------------------------------------------------------ */
 
@@ -317,7 +334,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- frame pacing ------------------------------------------------ */
 
-        sys()->sleep_milliseconds( frame_ms );
+        /* Game mode: spin at the target frame rate.
+           Editor mode: block until OS input arrives, capped by editor_timeout_ms
+           so hot-reload checks and other periodic work still run. */
+        if ( editor_sleep )
+        {
+            if ( g_sleep_debug ) printf( "[host] editor sleep  (timeout %d ms)\n", editor_timeout_ms );
+            sys()->wait_for_os_events_ms( editor_timeout_ms );
+            if ( g_sleep_debug ) printf( "[host] editor wakeup (frame %llu)\n", (unsigned long long)run()->clock()->frame_number );
+        }
+        else
+            sys()->sleep_milliseconds( frame_ms );
     }
 
     /* ---- shutdown ---------------------------------------------------- */

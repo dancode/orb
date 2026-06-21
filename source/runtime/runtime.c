@@ -26,7 +26,6 @@
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_modules/render/render_api.h"
 
-
 /*==============================================================================================
     Our API
 ==============================================================================================*/
@@ -47,6 +46,7 @@
 #ifndef HOST_API_C_PRELUDE
 #include "runtime/host/host_api.c"    // Host API definition (exported to modules).
 #endif
+
 #include "runtime/host/host_main.c"    // The main() entry point and boot sequence.
 
 /*==============================================================================================

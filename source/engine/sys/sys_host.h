@@ -44,6 +44,7 @@ i64  sys_tick_milliseconds( void );
 i64  sys_tick_microseconds( void );
 i64  sys_tick_nanoseconds( void );
 void sys_sleep_milliseconds( i32 milliseconds );
+void sys_wait_for_os_events_ms( i32 timeout_ms );   /* block until input or timeout; editor idle sleep */
 
 /*==============================================================================================
 

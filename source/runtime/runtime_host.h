@@ -51,8 +51,11 @@
 
 enum    // RUN_HOST_FLAGS
 {
-    RUN_HOST_HOT_RELOAD = 1 << 0, /* poll DLL changes + flush each frame        */
-    RUN_HOST_CONSOLE    = 1 << 1, /* sys_console_input_init / poll / shutdown    */
+    RUN_HOST_HOT_RELOAD   = 1 << 0, /* poll DLL changes + flush each frame        */
+    RUN_HOST_CONSOLE      = 1 << 1, /* sys_console_input_init / poll / shutdown    */
+    RUN_HOST_EDITOR_SLEEP = 1 << 2, /* block on OS input when idle instead of
+                                       spinning at frame_target_ms; use for tools
+                                       and editors, not game loops               */
 };
 
 /*============================================================================================*/
@@ -112,9 +115,12 @@ typedef struct run_host_desc_s
 int run_host_main( const run_host_desc_t* desc, int argc, char** argv );
 
 /* headless quit — sets flag, checked each frame top */
-void run_host_quit( void ); 
-
+void run_host_quit( void );
 bool run_host_should_quit( void );
+
+/* editor sleep diagnostics — toggle or set from on_update / on_ready */
+void run_host_sleep_debug_set( bool enabled );
+void run_host_sleep_debug_toggle( void );
 
 /* called once per frame by the host before on_update. Modules must not call. */
 void run_clock_update( f64 app_time, f32 dt_real );

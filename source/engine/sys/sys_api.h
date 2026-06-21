@@ -24,6 +24,13 @@ typedef struct sys_api_s
     i64  ( *tick_nanoseconds )( void );
     void ( *sleep_milliseconds )( i32 milliseconds );
 
+    /* Block until OS input arrives or timeout_ms elapses.
+       Use in editor mode to avoid spinning when the UI is idle.
+       Wakes on keyboard/mouse input, posted messages, and paint requests.
+       Does NOT wake on periodic timer messages, so the fiber 1 ms timer
+       does not defeat the sleep while the message fiber is idle. */
+    void ( *wait_for_os_events_ms )( i32 timeout_ms );
+
 } sys_api_t;
 
 /*============================================================================================*/

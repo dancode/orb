@@ -26,11 +26,12 @@ sys_exit( void )
 ==============================================================================================*/
 
 const sys_api_t g_sys_api_struct = {
-    .tick_seconds       = sys_tick_seconds,
-    .tick_microseconds  = sys_tick_microseconds,
-    .tick_milliseconds  = sys_tick_milliseconds,
-    .tick_nanoseconds   = sys_tick_nanoseconds,
-    .sleep_milliseconds = sys_sleep_milliseconds,
+    .tick_seconds          = sys_tick_seconds,
+    .tick_microseconds     = sys_tick_microseconds,
+    .tick_milliseconds     = sys_tick_milliseconds,
+    .tick_nanoseconds      = sys_tick_nanoseconds,
+    .sleep_milliseconds    = sys_sleep_milliseconds,
+    .wait_for_os_events_ms = sys_wait_for_os_events_ms,
 };
 
 /*==============================================================================================

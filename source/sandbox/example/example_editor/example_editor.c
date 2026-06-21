@@ -45,7 +45,7 @@ editor_ready( void )
 {
     MOD_HOST_FETCH_API( example );
 
-    printf( "Keys: Q=quit  R=reload all  F=arm failure  V=verify\n" );
+    printf( "Keys: Q=quit  R=reload all  F=arm failure  V=verify  D=toggle sleep debug\n" );
 }
 
 static void
@@ -74,6 +74,9 @@ editor_update( f32 dt )
         example()->example_function_1();
     }
 
+    if ( sys_key_pressed( PLATFORM_KEY_D ) )
+        run_host_sleep_debug_toggle();
+
     example()->update( dt );
 }
 
@@ -91,7 +94,7 @@ static const run_module_entry_t k_modules[] = {
 
 static const run_host_desc_t    k_desc      = {
             .name      = "sandbox_editor",
-            .flags     = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD,
+            .flags     = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_EDITOR_SLEEP,
             .loop_mode = RUN_LOOP_RUN,
             .modules   = k_modules,
             .on_ready  = editor_ready,

@@ -116,6 +116,9 @@ runtime_update( f32 dt )
         mod_reload_all();
     }
 
+    if ( app()->key_pressed ( APP_KEY_D ) )
+        run_host_sleep_debug_toggle();
+
     /* Future per-frame work belongs here, between clock update and render:
        - input sampling -> input_api()->snapshot()
        - simulation tick -> world_api()->tick( dt )
@@ -155,7 +158,7 @@ static const run_module_entry_t k_modules[] = {
 
 static const run_host_desc_t k_desc = {
     .name      = "example_runtime",
-    .flags     = RUN_HOST_HOT_RELOAD | RUN_HOST_CONSOLE,
+    .flags     = RUN_HOST_HOT_RELOAD | RUN_HOST_CONSOLE | RUN_HOST_EDITOR_SLEEP,
     .loop_mode = RUN_LOOP_RUN,
     .modules   = k_modules,
     .on_ready  = runtime_ready,
