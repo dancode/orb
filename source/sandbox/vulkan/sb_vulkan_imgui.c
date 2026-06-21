@@ -1131,8 +1131,9 @@ demo_docking( void )
         imgui()->text( "Drag the Palette window onto a pane to dock." );
         imgui()->separator();
         imgui()->text( "Rearrange, Save, rearrange more, then Restore:" );
+        /* Two full-width stacked rows: a stack() button fills its column, so same_line would push the
+           second button off the pane's right edge. */
         if ( imgui()->button( "Save Layout" ) )    s_save_layout    = true;
-        imgui()->same_line( 0.0f );
         if ( imgui()->button( "Restore Layout" ) ) s_restore_layout = true;
     }
     imgui()->end_window();
