@@ -314,17 +314,17 @@ job_init( void )
     // Spawn the worker threads.
     for ( uint32_t i = 0; i < worker_count; ++i )
     {
-        worker_thread_t* w = &g_job_state.workers[ i ];
-        w->index           = i;
+        worker_thread_t* worker_thread = &g_job_state.workers[ i ];
+        worker_thread->index           = i;
 
         // Spawn the thread. 0 stack size specifies default stack.
-        w->handle = thread_create( job_worker_main, w, 0 );
-        if ( thread_valid( w->handle ) )
+        worker_thread->handle = thread_create( job_worker_main, worker_thread, 0 );
+        if ( thread_valid( worker_thread->handle ) )
         {
             char name_buf[ 32 ];
             sprintf( name_buf, "ORB_Worker_%02u", i );
-            thread_set_name( w->handle, name_buf );    // Helpful for debugging/profilers.
-            w->id = 0;
+            thread_set_name( worker_thread->handle, name_buf );    // Helpful for debugging/profilers.
+            worker_thread->id = 0;
         }
         else
         {
