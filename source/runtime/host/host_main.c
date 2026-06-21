@@ -1,34 +1,58 @@
 /*==============================================================================================
 
-    host_main.c — runtime host implementation.
+    host_main.c -- runtime host implementation.
 
     Boot sequence:
-        1. mod_system_init()                    — registry online
-        2. ref_wire_mod_callbacks()              — install hooks; no code fires yet
-        3. mod_static_load( sys, rs, run )      — PASSIVE: engine baseline registered
-        4. load_all( desc->modules )            — PASSIVE: every entry registered
-        5. mod_init_all()                       — pass 1: load callbacks fire in dep order
-                                                          (rs frames pushed, reflection live)
-                                                  pass 2: init() runs in same order
-        6. MOD_HOST_FETCH_API( run, app, rhi, render ) — cache host-owned API ptrs
-        7. window_open()                        — when app is loaded (inferred from k_modules)
-        8. desc->on_ready()                     — host post-init hook
+        1. mod_system_init()                          -- registry online
+        2. ref_wire_mod_callbacks()                   -- install hooks; no code fires yet
+        3. mod_static_load( sys, ref, job, run )      -- PASSIVE: engine baseline registered
+        4. load_all( desc->modules )                  -- PASSIVE: every entry registered
+        5. mod_init_all()                             -- pass 1: load callbacks fire in dep order
+                                                                 (ref frames pushed, reflection live)
+                                                         pass 2: init() runs in same order
+        6. MOD_HOST_FETCH_API( render, draw, imgui )  -- cache host-owned API ptrs
+        7. window_open()                              -- when app is loaded (inferred from k_modules)
+           rhi->init() + context_create()             -- when rhi is loaded
+           draw->init()                               -- when draw is loaded, after rhi context
+           imgui->init() + viewport_open()            -- when imgui is loaded, after draw init
+        8. desc->on_ready()                           -- host post-init hook
         9. enter loop per desc->loop_mode
-       10. window_close() + mod_system_exit()  — exit in reverse dep order
+       10. imgui->shutdown(), draw->shutdown(), rhi shutdown, window_close(), mod_system_exit()
 
     Load is passive on purpose. mod_static_load / mod_dynamic_load only register the
-    descriptor — they fire no callbacks and run no module code. All lifecycle execution
+    descriptor -- they fire no callbacks and run no module code. All lifecycle execution
     is deferred to mod_init_all, which knows the dep order and fans out subscribers
-    (reflection, profilers) in that order. The rs frame stack therefore matches the
-    dep graph — dependencies below, dependents above.
+    (reflection, profilers) in that order. The ref frame stack therefore matches the
+    dep graph -- dependencies below, dependents above.
 
-    The engine baseline ( sys + rs + run ) is loaded by the host and is always present
-    regardless of what k_modules[] declares. Higher layers (core, app, rhi, render, and
-    eventually game / editor services) are declared by the host descriptor.
+    The engine baseline ( sys + ref + job + run ) is loaded by the host and is always
+    present regardless of what k_modules[] declares. Higher layers (core, app, rhi,
+    draw, imgui, render, and eventually game / editor services) are declared by the host
+    descriptor.
 
-    The loop is intentionally explicit. host.c knows the engine-level modules
-    it manages (app, render) and calls them by name. It does not iterate the dep
-    graph generically.
+    Frame order
+    -----------
+    [pump OS events]          app()->pump_events()
+    [event drain]             app()->next_event() per frame: routes to imgui()->event(),
+                              handles resize (context_resize + viewport_resize) and close.
+    [frame clock]             run_clock_update()
+    [console poll]            sys, if RUN_HOST_CONSOLE
+    [job tick]                job()->tick()
+    [imgui new_frame]         imgui()->new_frame( dt )          -- when imgui loaded
+    [host update]             desc->on_update( dt )             -- builds UI and game logic
+    [imgui platform sync]     imgui()->update_platform_windows() -- when imgui loaded
+    [render]                  see Render paths below
+    [hot-reload]              mod_check_reloads + flush, if RUN_HOST_HOT_RELOAD
+    [frame pacing]            sleep or editor wait
+
+    Render paths
+    ------------
+    render() present: render->begin_frame / draw_scene / end_frame.
+                      render owns imgui composition (calls imgui()->render inside its frame).
+    render() absent, imgui() present: host drives the explicit frame --
+                      frame_begin / clear / imgui->render / frame_end.
+    imgui() always:   imgui->render_floaters() after the main surface (presents tear-off
+                      floater windows; no-op when none are alive).
 
     Frame timing
     ------------
@@ -40,10 +64,10 @@
 
     API slot stability
     ------------------
-    mod_get_api() returns a pointer to the module's stable api_slot — a block the
-    system owns and updates in-place on every hot-reload. g_app_api_ptr and
-    g_render_api_ptr cached here never need refreshing; the function pointers
-    they point to are live after every reload flush.
+    mod_get_api() returns a pointer to the module's stable api_slot -- a block the
+    system owns and updates in-place on every hot-reload. g_*_api_ptr cached here
+    never need refreshing; the function pointers they point to are live after every
+    reload flush.
 
 ==============================================================================================*/
 /*==============================================================================================
@@ -87,9 +111,14 @@ MOD_USE_RUN;
 
 MOD_USE_RHI;
 MOD_USE_RENDER;
+MOD_USE_DRAW;
+MOD_USE_IMGUI;
 
-static win_id_t     s_win_id = APP_WIN_INVALID;
-static i32          s_ctx_id = RHI_CTX_INVALID;
+static win_id_t   s_win_id = APP_WIN_INVALID;
+static i32        s_ctx_id = RHI_CTX_INVALID;
+static i32        s_win_w  = 0;
+static i32        s_win_h  = 0;
+static imgui_vp_t s_vp0    = IMGUI_VP_INVALID;
 
 /*==============================================================================================
     Module loading
@@ -137,27 +166,26 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     g_quit_requested = false;
     s_win_id         = APP_WIN_INVALID;
     s_ctx_id         = RHI_CTX_INVALID;
+    s_win_w          = 0;
+    s_win_h          = 0;
+    s_vp0            = IMGUI_VP_INVALID;
 
     /* ---- boot --------------------------------------------------------- */
 
     mod_system_init();
 
-    /* Wire rs into the module lifecycle BEFORE any module loads. The rs registry
-       self-bootstraps on first touch, so this is safe — there's no ordering dependency
-       on rs.mod_init. Every subsequent load (static, dynamic, or hot-reload swap)
+    /* Wire ref into the module lifecycle BEFORE any module loads. The ref registry
+       self-bootstraps on first touch, so this is safe -- there's no ordering dependency
+       on ref.mod_init. Every subsequent load (static, dynamic, or hot-reload swap)
        auto-registers reflection through the generic callback. */
 
     ref_wire_mod_callbacks();
-    
-    // if ( !mod_static( sys ) ) { }
 
-    /* Engine baseline — sys (clock + sleep), rs (reflection), job (scheduling), run (frame clock). */
+    /* Engine baseline -- sys (clock + sleep), ref (reflection), job (scheduling), run (frame clock). */
     if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
          !mod_static_load( "ref", ref_get_mod_desc() ) ||
          !mod_static_load( "job", job_get_mod_desc() ) ||
          !mod_static_load( "run", run_get_mod_desc() ) )
-
-
     {
         fprintf( stderr, "[host] baseline load failed: %s\n", mod_last_error() );
         mod_system_exit();
@@ -171,7 +199,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     }
 
     /* Single dep-ordered init pass. Every reflected module's init() can already query
-       its own types via rs() — the load callback pushed each frame on its way in. */
+       its own types via ref() -- the load callback pushed each frame on its way in. */
     if ( !mod_init_all() )
     {
         fprintf( stderr, "[host] init failed: %s\n", mod_last_error() );
@@ -185,22 +213,22 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
-       MOD_HOST_FETCH_API in static builds:  no-op — app() / render() return the
+       MOD_HOST_FETCH_API in static builds:  no-op -- the gateway returns the
                                          linked struct directly.
        MOD_HOST_FETCH_API in dynamic builds: populates g_*_api_ptr from the module registry.
-                                         Returns NULL when the module is absent — headless
-                                         hosts that don't load app or render get NULL here,
-                                         which is fine; the windowed path guards against it.
+                                         Returns NULL when the module is absent -- headless
+                                         hosts that don't load draw or imgui get NULL here,
+                                         which is fine; the guarded paths below check it.
     */
 
     MOD_HOST_FETCH_API( render );
-
-
+    MOD_HOST_FETCH_API( draw   );
+    MOD_HOST_FETCH_API( imgui  );
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*
        If app was declared in k_modules, app() is non-NULL here and we
-       create a window. No separate flag — the module list is the declaration.
+       create a window. No separate flag -- the module list is the declaration.
     */
     const bool windowed = ( app() != NULL );
 
@@ -208,6 +236,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     {
         const i32 w = desc->window_width  > 0 ? desc->window_width  : 1280;
         const i32 h = desc->window_height > 0 ? desc->window_height : 720;
+        s_win_w = w;
+        s_win_h = h;
 
         s_win_id = app()->window_open( desc->name ? desc->name : "orb", 0, 0, w, h, APP_WIN_DEFAULT );
         if ( s_win_id == APP_WIN_INVALID )
@@ -240,7 +270,46 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             }
 
             if ( render() )
-                 render()->context_register( s_ctx_id );
+                render()->context_register( s_ctx_id );
+
+            /* GPU resource init -- draw and imgui after the device is live. */
+
+            if ( draw() && !draw()->init() )
+            {
+                fprintf( stderr, "[host] draw init failed\n" );
+                rhi()->context_destroy( s_ctx_id );
+                rhi()->shutdown();
+                app()->window_close( s_win_id );
+                mod_system_exit();
+                return 1;
+            }
+
+            if ( imgui() )
+            {
+                if ( !imgui()->init() )
+                {
+                    fprintf( stderr, "[host] imgui init failed\n" );
+                    if ( draw() ) draw()->shutdown();
+                    rhi()->context_destroy( s_ctx_id );
+                    rhi()->shutdown();
+                    app()->window_close( s_win_id );
+                    mod_system_exit();
+                    return 1;
+                }
+
+                s_vp0 = imgui()->viewport_open( s_win_id, w, h );
+                if ( s_vp0 == IMGUI_VP_INVALID )
+                {
+                    fprintf( stderr, "[host] imgui viewport_open failed\n" );
+                    imgui()->shutdown();
+                    if ( draw() ) draw()->shutdown();
+                    rhi()->context_destroy( s_ctx_id );
+                    rhi()->shutdown();
+                    app()->window_close( s_win_id );
+                    mod_system_exit();
+                    return 1;
+                }
+            }
         }
     }
 
@@ -281,6 +350,44 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( windowed && !app()->pump_events() )
             break;
 
+        /* -- drain event ring ------------------------------------------ */
+
+        /* Forward each event to imgui first; imgui consumes the input events it
+           recognizes (text, scroll, mouse/keyboard state). The host handles the
+           structural ones that imgui passes through: resize routes the rhi context
+           and imgui viewport to the new dimensions; close exits the main loop. */
+
+        if ( windowed )
+        {
+            app_event_t ev;
+            while ( app()->next_event( &ev ) )
+            {
+                if ( imgui() && imgui()->event( &ev ) )
+                    continue;
+
+                switch ( ev.type )
+                {
+                    case APP_EV_WIN_RESIZE:
+                        if ( ev.win_id == s_win_id )
+                        {
+                            s_win_w = ev.data.win_resize.w;
+                            s_win_h = ev.data.win_resize.h;
+                            if ( rhi() && s_ctx_id != RHI_CTX_INVALID )
+                                rhi()->context_resize( s_ctx_id, s_win_w, s_win_h );
+                            if ( imgui() && s_vp0 != IMGUI_VP_INVALID )
+                                imgui()->viewport_resize( s_vp0, s_win_w, s_win_h );
+                        }
+                        break;
+
+                    case APP_EV_WIN_CLOSE:
+                        goto loop_exit;
+
+                    default:
+                        break;
+                }
+            }
+        }
+
         /* -- frame clock ------------------------------------------------ */
 
         f64 now      = sys()->tick_seconds();
@@ -288,7 +395,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         last_tick    = now;
 
         run_clock_update( now, dt_real );           /* caps, scales, stamps frame_number */
-        f32 dt = run()->clock()->dt;            /* capped + scaled — pass to callbacks */
+        f32 dt = run()->clock()->dt;            /* capped + scaled -- pass to callbacks */
 
         /* -- console key state ------------------------------------------ */
 
@@ -300,24 +407,73 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( job() )
              job()->tick();
 
+        /* -- imgui frame begin ------------------------------------------ */
+
+        /* new_frame snaps the IO state (mouse/keyboard) from the events drained above;
+           call before any widget code, including on_update below. */
+
+        if ( imgui() )
+            imgui()->new_frame( dt );
+
         /* -- host update ------------------------------------------------- */
 
         /* Sandbox logic, game bootstrap, tool work. Lives at the top of the
-           stack — can call any loaded module API or run_host_quit(). */
+           stack -- can call any loaded module API or run_host_quit(). */
 
         if ( desc->on_update )
              desc->on_update( dt );
 
+        /* -- imgui platform sync ---------------------------------------- */
+
+        /* Reconcile imgui-owned floater windows with their OS windows after the
+           UI build and before rendering -- the safe point to tear surfaces down.
+           Destroys any floater the user has closed. */
+
+        if ( imgui() )
+            imgui()->update_platform_windows();
+
         /* -- render ------------------------------------------------------ */
 
-        if ( windowed && render() )
+        /* Render path A (render module present): render owns its frame and is
+           responsible for compositing imgui()->render() inside draw_scene or end_frame.
+           Render path B (imgui only, no render): host drives the frame explicitly --
+           clear the surface, flush the imgui draw list, then present. */
+
+        if ( windowed && !app()->window_is_minimized( s_win_id ) )
         {
-            if ( render()->begin_frame( s_ctx_id ) )
+            if ( render() )
             {
-                render()->draw_scene( s_ctx_id, dt );
-                render()->end_frame( s_ctx_id );
+                if ( render()->begin_frame( s_ctx_id ) )
+                {
+                    render()->draw_scene( s_ctx_id, dt );
+                    render()->end_frame( s_ctx_id );
+                }
+            }
+            else if ( rhi() && imgui() && s_vp0 != IMGUI_VP_INVALID )
+            {
+                rhi_cmd_t cmd = rhi()->frame_begin( s_ctx_id );
+                if ( rhi_cmd_valid( cmd ) )
+                {
+                    /* Clear so imgui composites over a fresh background (not last frame). */
+                    rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
+                        .texture  = { .id = RHI_SWAPCHAIN_COLOR },
+                        .load_op  = RHI_LOAD_OP_CLEAR,
+                        .store_op = RHI_STORE_OP_STORE,
+                        .clear    = { 0.05f, 0.05f, 0.08f, 1.0f },
+                    }, 1, NULL );
+                    rhi()->cmd_end_rendering( cmd );
+
+                    imgui()->render( s_vp0, cmd );
+                    rhi()->frame_end( s_ctx_id );
+                }
             }
         }
+
+        /* Present imgui-owned floater windows (tear-off panels, tool popouts).
+           Each floater drives its own rhi context frame internally. No-op when
+           no floaters are alive; safe to call unconditionally. */
+        if ( imgui() )
+            imgui()->render_floaters();
 
         /* -- hot-reload -------------------------------------------------- */
 
@@ -347,11 +503,20 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             sys()->sleep_milliseconds( frame_ms );
     }
 
+loop_exit:
+
     /* ---- shutdown ---------------------------------------------------- */
 
-    /* RHI surface teardown must happen before the window (HWND) is destroyed. */
+    /* GPU teardown order: imgui (owns floater contexts) -> draw (GPU buffers) ->
+       rhi context -> rhi device. All before the window (HWND) is destroyed. */
     if ( rhi() )
     {
+        if ( imgui() )
+            imgui()->shutdown();
+
+        if ( draw() )
+            draw()->shutdown();
+
         if ( s_ctx_id != RHI_CTX_INVALID )
         {
             rhi()->context_destroy( s_ctx_id );

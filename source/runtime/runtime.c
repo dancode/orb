@@ -24,6 +24,8 @@
 #include "engine/job/job_host.h"
 
 #include "runtime_service/rhi/rhi_api.h"
+#include "runtime_service/draw/draw_api.h"
+#include "runtime_service/imgui/imgui_api.h"
 #include "runtime_modules/render/render_api.h"
 
 /*==============================================================================================

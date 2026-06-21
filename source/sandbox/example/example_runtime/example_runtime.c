@@ -18,7 +18,7 @@
     Engine baseline (auto-loaded by run_host_main)
     ----------------------------------------------
         sys   — OS abstractions (clock, files, threads, DLL loader)
-        rs    — type reflection registry; auto-wires DLL load/unload events
+        ref   — type reflection registry; auto-wires DLL load/unload events
         run   — authoritative frame clock (app_time, dt, frame_number)
 
     These are always-on. k_modules[] only needs to declare modules ABOVE this baseline.
@@ -39,7 +39,6 @@
         on_update    -> this file's per-frame hook
         render       -> begin_frame / draw_frame / end_frame, if render is loaded
         hot_reload   -> mod_check_reloads + flush at the single safe point per frame
-
 
     Where higher engine layers will plug in
     ---------------------------------------
@@ -73,8 +72,9 @@
 #include "engine/app/app_api.h"
 
 #include "runtime_service/rhi/rhi_api.h"
+
 #include "runtime_modules/render/render_api.h"
-#include "sandbox/reflect/example_reflect/example_reflect_api.h"
+
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
 
@@ -139,7 +139,6 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( app    ),   /* windowing + input — static; presence enables windowed mode    */
     RUN_SERVICE( rhi    ),   /* Vulkan RHI — static; inits after window_open                  */
     RUN_MODULE ( render ),   /* renderer front-end — DLL in dynamic builds, static otherwise  */
-    RUN_MODULE( example_reflect ),   /* example  module to test reflection */
 
     /* Future entries (commented out until those layers exist):
         RUN_SERVICE( input      ),
@@ -152,10 +151,10 @@ static const run_module_entry_t k_modules[] = {
         RUN_MODULE ( gameplay   ),    // game_modules / project hot-reload DLLs
     */
 
-
     { 0 },
 };
 
+/* runtime is just to test runtime without added layers on top */
 static const run_host_desc_t k_desc = {
     .name      = "example_runtime",
     .flags     = RUN_HOST_HOT_RELOAD | RUN_HOST_CONSOLE | RUN_HOST_EDITOR_SLEEP,

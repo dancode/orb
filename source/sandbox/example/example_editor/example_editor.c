@@ -18,23 +18,21 @@
 
 #include "engine/sys/sys_host.h"
 #include "engine/mod/mod_host.h"
-
-
+#include "engine/core/core_host.h"
 #include "engine/app/app_api.h"
 
 #include "runtime_service/rhi/rhi_api.h"
+#include "runtime_service/imgui/imgui_api.h"
+
 #include "runtime_modules/render/render_api.h"
 #include "runtime_modules/example/example_api.h"
 
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
 
-
 MOD_USE_APP;
 MOD_USE_RUN;
 // MOD_USE_RENDER;
-MOD_USE_EXAMPLE;
-
 
 /*==============================================================================================
     Host callbacks
@@ -43,7 +41,7 @@ MOD_USE_EXAMPLE;
 static void
 editor_ready( void )
 {
-    MOD_HOST_FETCH_API( example );
+    // MOD_HOST_FETCH_API( example );
 
     printf( "Keys: Q=quit  R=reload all  F=arm failure  V=verify  D=toggle sleep debug\n" );
 }
@@ -52,32 +50,32 @@ static void
 editor_update( f32 dt )
 {
     /* keyboard quit — redundant with window-close but useful in a headless run */
-    if ( sys_key_pressed( PLATFORM_KEY_Q ) )
+    if ( sys_key_pressed( APP_KEY_Q ) )
     {
         printf( "[editor] Q — quit\n" );
         run_host_quit();
         return;
     }
 
-    if ( sys_key_pressed( PLATFORM_KEY_R ) )
+    if ( sys_key_pressed( APP_KEY_R ) )
     {
         printf( "[editor] R — reload all\n" );
         mod_reload_all();
     }
 
-    if ( sys_key_pressed( PLATFORM_KEY_F ) )
-        example()->fail_next_reload();
+    // if ( sys_key_pressed( PLATFORM_KEY_F ) )
+    //     example()->fail_next_reload();
 
-    if ( sys_key_pressed( PLATFORM_KEY_V ) )
-    {
-        printf( "[editor] V — verify\n" );
-        example()->example_function_1();
-    }
+    // if ( sys_key_pressed( PLATFORM_KEY_V ) )
+    // {
+    //     printf( "[editor] V — verify\n" );
+    //     example()->example_function_1();
+    // }
 
-    if ( sys_key_pressed( PLATFORM_KEY_D ) )
+    if ( sys_key_pressed( APP_KEY_D ) )
         run_host_sleep_debug_toggle();
 
-    example()->update( dt );
+    // example()->update( dt );
 }
 
 /*==============================================================================================
@@ -85,10 +83,11 @@ editor_update( f32 dt )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
+    RUN_SERVICE( core     ),  /* cvars, logging, memory arenas — static                       */
     RUN_SERVICE( app     ),   /* window, OS pump */
     RUN_SERVICE( rhi     ),   /* GPU backend — static service */
-    RUN_MODULE ( render  ),   /* renderer — hot-reloadable DLL */
-    RUN_MODULE ( example ),
+    RUN_SERVICE( imgui   ),   /* immediate mode GUI — static service */
+    RUN_MODULE ( render  ),   /* renderer — hot-reloadable DLL */    
     { 0 }
 };
 

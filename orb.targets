@@ -415,7 +415,6 @@ target sb_vulkan_stress					# multi-context rhi sync stress test
     dep         sys ref mod core job app
 	dep 		rhi
 
-
 # ==============================================================================
 # 09_SANDBOX -- EXAMPLE EXECUTABLE PROJECT TYPES
 # ==============================================================================
@@ -427,7 +426,7 @@ target sb_example_runtime
     folder      09_SANDBOX/EXAMPLE
     unit        example_runtime.c
 	dep 		mod ref sys core job app net 	# static engine
-    dep         run rhi imgui   				# static runtime + services
+    dep         run rhi          				# static runtime + services
 	mono_dep	render
 
 target sb_example_tool
@@ -457,8 +456,8 @@ target sb_example_editor
     folder      09_SANDBOX/EXAMPLE
     unit        example_editor.c
 	dep 		mod ref sys core job app
-    dep         run rhi
-	mono_dep	render example
+    dep         run rhi imgui
+	mono_dep	render
 
 target sb_example_game
 
