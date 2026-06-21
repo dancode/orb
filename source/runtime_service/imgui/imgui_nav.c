@@ -348,9 +348,9 @@ nav_new_frame( void )
         return;
     }
 
-    bool ctrl  = s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ];
-    bool shift = s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ];
-    bool alt   = s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_down[ APP_KEY_RALT   ];
+    bool ctrl  = io_ctrl();
+    bool shift = io_shift();
+    bool alt   = io_alt();
 
     /* Ctrl+Tab cycles the nav window by z-order (Shift reverses). */
     if ( ctrl && s_io.keys_pressed[ APP_KEY_TAB ] )

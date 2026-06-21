@@ -273,5 +273,10 @@ input_update( i32 win_w, i32 win_h, f32 dt )
     s_io.time     += (f64)dt;   /* monotonic frame clock for get_time() */
 }
 
+/* Modifier key helpers: poll both L and R variants so callers need not repeat the pair. */
+static bool io_ctrl ( void ) { return s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ]; }
+static bool io_shift( void ) { return s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ]; }
+static bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_down[ APP_KEY_RALT   ]; }
+
 // clang-format on
 /*============================================================================================*/

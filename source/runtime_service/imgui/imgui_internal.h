@@ -123,12 +123,12 @@ typedef enum
    visuals and value changes from these flags instead of touching s_interaction directly. */
 typedef struct
 {
-    bool hover;       /* cursor is over the widget this frame                  */
-    bool active;    /* primary button held with this widget as the target    */
-    bool pressed;   /* primary button went down on the widget this frame     */
-    bool clicked;   /* press + release completed with the cursor still over  */
-    bool focused;   /* widget owns keyboard input (focusable widgets)        */
-    bool nav;       /* widget is the keyboard-nav cursor, highlighted        */
+    bool hover;    /* cursor is over the widget this frame                 */
+    bool active;   /* primary button held with this widget as the target   */
+    bool pressed;  /* primary button went down on the widget this frame    */
+    bool clicked;  /* press + release completed with the cursor still over */
+    bool focused;  /* widget owns keyboard input (focusable widgets)       */
+    bool nav;      /* widget is the keyboard-nav cursor, highlighted       */
 
 } widget_state_t;
 

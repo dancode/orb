@@ -318,7 +318,7 @@ layout_pop_region( void )
          && rect_hit( f->outer ) )
     {
         const f32 step  = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
-        bool      shift = s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ];
+        bool      shift = io_shift();
         if ( shift ) *f->scroll_x -= s_io.mouse_wheel * step;
         else         *f->scroll_y -= s_io.mouse_wheel * step;
 

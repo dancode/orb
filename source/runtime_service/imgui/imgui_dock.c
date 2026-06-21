@@ -413,11 +413,9 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
 
     /* Overlay on the reserved high z-band, clipped to the surface. */
     const imgui_viewport_t* v = &g_ctx->viewports[ vp ];
-    f32 dw = v->disp_w > 0 ? (f32)v->disp_w : (f32)s_io.display_w;
-    f32 dh = v->disp_h > 0 ? (f32)v->disp_h : (f32)s_io.display_h;
     draw_set_viewport ( vp );
     draw_set_sort_key ( DOCK_OVERLAY_Z );
-    draw_set_root_clip( dw, dh );
+    draw_set_root_clip( vp_w( v ), vp_h( v ) );
 
     if ( zone != DOCK_ZONE_NONE )
     {
@@ -615,8 +613,8 @@ imgui_dockspace_over_viewport( imgui_vp_t vp, imgui_dockspace_flags_t flags )
         v->dock_root = root;
     }
 
-    f32 dw  = v->disp_w > 0 ? (f32)v->disp_w : (f32)s_io.display_w;
-    f32 dh  = v->disp_h > 0 ? (f32)v->disp_h : (f32)s_io.display_h;
+    f32 dw  = vp_w( v );
+    f32 dh  = vp_h( v );
     f32 top = v->caption_inset;
     imgui_rect_t area = { 0.0f, top, dw, dh - top };
     if ( area.h < 0.0f ) area.h = 0.0f;

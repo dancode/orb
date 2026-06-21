@@ -280,91 +280,58 @@ imgui_radio_button( const char* label, i32* v, i32 value )
     responsible only for the label split, the box background / border, and the focus claim.
 ----------------------------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------------------------
+    input_text / input_text_ex / input_text_with_hint -- single-line text field variants.
+
+    All three share the same layout (label split, one WIDGET_H row) and the same frame draw
+    (focused-tinted fill + hot-tinted border).  input_text_begin factors out those shared steps
+    so each variant reduces to its one point of difference.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct { imgui_id_t id; imgui_rect_t box; widget_state_t st; } input_text_frame_t;
+
+static input_text_frame_t
+input_text_begin( const char* label )
+{
+    imgui_id_t     id    = widget_id( label );
+    imgui_rect_t   box_r = widget_split_label( widget_next_rect( WIDGET_H ), label,
+                                               font_char_h() * 3.0f, COL_TEXT_DIM );
+    widget_state_t st    = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
+    draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h, 0, 0, 1, 1, 0,
+                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
+                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    return ( input_text_frame_t ){ id, box_r, st };
+}
+
 bool
 imgui_input_text( const char* label, char* buf, u32 bufsz )
 {
-    imgui_id_t   id    = widget_id( label );
-    imgui_rect_t r     = widget_next_rect( WIDGET_H );
-    imgui_rect_t box_r = widget_split_label( r, label, font_char_h() * 3.0f, COL_TEXT_DIM );
-
-    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
-
-    draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
-                           0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
-                            WIN_BORDER, 0,
-                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
-
-    input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz, NULL, NULL );
-    return res.enter;
+    input_text_frame_t f = input_text_begin( label );
+    return input_field_edit( f.id, f.box, f.st, buf, bufsz, NULL, NULL ).enter;
 }
-
-/*----------------------------------------------------------------------------------------------
-    input_text_ex -- single-line text field with an on_change callback.
-
-    Identical to input_text in layout and interaction; fires on_change( buf, len, bufsz, cb_user )
-    after any frame that modifies the buffer (insertions, deletions, paste, undo, revert, etc).
-    Returns true when Enter is pressed, same as input_text.
-----------------------------------------------------------------------------------------------*/
 
 bool
 imgui_input_text_ex( const char* label, char* buf, u32 bufsz,
                      imgui_text_cb_fn on_change, void* cb_user )
 {
-    imgui_id_t   id    = widget_id( label );
-    imgui_rect_t r     = widget_next_rect( WIDGET_H );
-    imgui_rect_t box_r = widget_split_label( r, label, font_char_h() * 3.0f, COL_TEXT_DIM );
-
-    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
-
-    draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
-                           0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
-                            WIN_BORDER, 0,
-                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
-
-    input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz, on_change, cb_user );
-    return res.enter;
+    input_text_frame_t f = input_text_begin( label );
+    return input_field_edit( f.id, f.box, f.st, buf, bufsz, on_change, cb_user ).enter;
 }
-
-/*----------------------------------------------------------------------------------------------
-    input_text_with_hint -- single-line text field with placeholder hint text.
-
-    Identical to input_text in layout and interaction.  When the buffer is empty and the field
-    is not focused, draws `hint` in the dim text color in place of normal content.  The hint
-    is purely cosmetic: it is never written to buf.  Returns true when Enter is pressed.
-----------------------------------------------------------------------------------------------*/
 
 bool
 imgui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 bufsz )
 {
-    imgui_id_t   id    = widget_id( label );
-    imgui_rect_t r     = widget_next_rect( WIDGET_H );
-    imgui_rect_t box_r = widget_split_label( r, label, font_char_h() * 3.0f, COL_TEXT_DIM );
-
-    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
-
-    draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
-                           0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
-                            WIN_BORDER, 0,
-                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
-
-    /* Draw hint when the buffer is empty and the field is not focused. */
-    if ( !st.focused && buf[ 0 ] == '\0' && hint && hint[ 0 ] )
+    input_text_frame_t f = input_text_begin( label );
+    if ( !f.st.focused && buf[ 0 ] == '\0' && hint && hint[ 0 ] )
     {
-        draw_push_clip_rect( box_r.x + WIN_BORDER, box_r.y + WIN_BORDER,
-                             box_r.w - 2.0f * WIN_BORDER, box_r.h - 2.0f * WIN_BORDER );
-        draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ),
+        draw_push_clip_rect( f.box.x + WIN_BORDER, f.box.y + WIN_BORDER,
+                             f.box.w - 2.0f * WIN_BORDER, f.box.h - 2.0f * WIN_BORDER );
+        draw_push_text( f.box.x + WIDGET_PAD, text_center_y( f.box.y, f.box.h ),
                         COL_TEXT_DIM, hint );
         draw_pop_clip_rect();
     }
-
-    input_field_result_t res = input_field_edit( id, box_r, st, buf, bufsz, NULL, NULL );
-    return res.enter;
+    return input_field_edit( f.id, f.box, f.st, buf, bufsz, NULL, NULL ).enter;
 }
 
 /* (Numeric text inputs -- input_int, _float, _double, _float2/3/4 -- live in

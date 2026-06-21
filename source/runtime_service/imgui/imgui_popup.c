@@ -83,15 +83,6 @@ popup_clamp( f32 pos, f32 size, f32 extent )
     return pos;
 }
 
-/* Cursor-in-rect test against the input snapshot (rect_hit takes the live cursor; this is the
-   same predicate, named for the click-outside scan). */
-static bool
-popup_pt_in( imgui_rect_t r )
-{
-    return s_io.mouse_x >= r.x && s_io.mouse_x < r.x + r.w
-        && s_io.mouse_y >= r.y && s_io.mouse_y < r.y + r.h;
-}
-
 /*----------------------------------------------------------------------------------------------
     Overlay detach / reattach
 
@@ -513,7 +504,7 @@ popup_close_check( void )
 
     u32 keep = floor;
     for ( u32 i = s_popup_open_count; i-- > floor; )
-        if ( popup_pt_in( s_popups_open[ i ].rect ) ) { keep = i + 1u; break; }
+        if ( rect_hit( s_popups_open[ i ].rect ) ) { keep = i + 1u; break; }
 
     s_popup_open_count = keep;
 }

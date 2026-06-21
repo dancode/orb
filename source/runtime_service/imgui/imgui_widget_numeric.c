@@ -134,20 +134,20 @@ input_scalar( const char* label, double cur, double* out,
 
     if ( has_steps )
     {
-        bool ctrl_held = s_io.keys_down[ APP_KEY_LCTRL ] || s_io.keys_down[ APP_KEY_RCTRL ];
+        bool ctrl_held = io_ctrl();
         double inc = ( ctrl_held && step_fast > 0.0 ) ? step_fast : step;
 
         f32 bx = ctrl.x + ctrl.w - btn_w;
         imgui_rect_t minus_r = { bx,            ctrl.y, WIDGET_H, ctrl.h };
         imgui_rect_t plus_r  = { bx + WIDGET_H, ctrl.y, WIDGET_H, ctrl.h };
 
+        /* Step buttons call widget_behavior directly (no cell emit), bypassing item_flags_resolve.
+           Set BUTTON_REPEAT on cur_item_flags for the pair, then restore so callers are unaffected. */
         imgui_item_flags_t saved = s_build.cur_item_flags;
-        s_build.cur_item_flags = saved | IMGUI_ITEM_BUTTON_REPEAT;
-
+        s_build.cur_item_flags   = saved | IMGUI_ITEM_BUTTON_REPEAT;
         if ( num_step_button( id_combine( id, 1u ), minus_r, true  ) ) { *out = base - inc; changed = true; }
         if ( num_step_button( id_combine( id, 2u ), plus_r,  false ) ) { *out = base + inc; changed = true; }
-
-        s_build.cur_item_flags = saved;
+        s_build.cur_item_flags   = saved;
     }
 
     return changed;

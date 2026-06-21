@@ -301,8 +301,8 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
         if ( s_undo.for_id != id )
             undo_init( &s_undo, id, buf, es->cursor, es->anchor );
 
-        bool shift = s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ];
-        bool ctrl  = s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ];
+        bool shift = io_shift();
+        bool ctrl  = io_ctrl();
         bool blink_reset = false;
 
         /* Clipboard.  Copy / cut are key-driven (only this field knows the selection) and push

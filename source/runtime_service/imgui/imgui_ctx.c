@@ -553,5 +553,18 @@ ctx_new_frame( void )
    They read s_interaction, s_nav, s_popup_open_count, s_build, s_io, and rect_hit --
    all visible in the unity build at that point. */
 
+/*----------------------------------------------------------------------------------------------
+    Viewport display-size accessors.
+
+    A viewport's stored disp_w / disp_h is the authoritative drawable size once a surface has
+    been opened.  Before the first open (or after a close), it is 0 and the per-frame s_io
+    snapshot -- populated from the primary OS window -- is the best available fallback.  Every
+    window-placement and clip-rect computation uses one of these two helpers rather than spelling
+    the ternary out inline.
+----------------------------------------------------------------------------------------------*/
+
+static f32 vp_w( const imgui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w; }
+static f32 vp_h( const imgui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }
+
 // clang-format on
 /*============================================================================================*/

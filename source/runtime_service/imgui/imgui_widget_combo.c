@@ -56,9 +56,10 @@ static i32
 combo_cap_items( imgui_combo_flags_t flags )
 {
     if ( flags & IMGUI_COMBO_HEIGHT_SMALL   ) return 4;
+    if ( flags & IMGUI_COMBO_HEIGHT_REGULAR ) return 8;
     if ( flags & IMGUI_COMBO_HEIGHT_LARGE   ) return 20;
     if ( flags & IMGUI_COMBO_HEIGHT_LARGEST ) return 0;   /* no cap: as many as fit */
-    return 8;                                             /* REGULAR / unset default */
+    return 8;                                             /* COMBO_NONE / unset: same as REGULAR */
 }
 
 bool

@@ -352,8 +352,8 @@ imgui_update_platform_windows( void )
             if ( !( win->flags & IMGUI_WIN_NO_BOUNDARY_CLAMP ) )
             {
                 const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
-                f32 dw    = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
-                f32 dh    = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
+                f32 dw    = vp_w( hv );
+                f32 dh    = vp_h( hv );
                 f32 top   = hv->caption_inset;
                 f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
                 if ( win->w > dw )    win->w = dw;
@@ -381,8 +381,8 @@ imgui_update_platform_windows( void )
                 if ( !( win->flags & IMGUI_WIN_NO_BOUNDARY_CLAMP ) )
                 {
                     const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
-                    f32 dw  = hv->disp_w > 0 ? (f32)hv->disp_w : (f32)s_io.display_w;
-                    f32 dh  = hv->disp_h > 0 ? (f32)hv->disp_h : (f32)s_io.display_h;
+                    f32 dw  = vp_w( hv );
+                    f32 dh  = vp_h( hv );
                     f32 top = hv->caption_inset;
                     f32 max_x = dw - win->w;
                     f32 max_y = dh - win->h; if ( max_y < top ) max_y = top;

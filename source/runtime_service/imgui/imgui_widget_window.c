@@ -62,8 +62,8 @@ window_clamp( imgui_window_t* win )
         return;
 
     const imgui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
-    f32 dw = vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w;
-    f32 dh = vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h;
+    f32 dw = vp_w( vp );
+    f32 dh = vp_h( vp );
     const f32 margin = WIN_TITLE_H;
     const f32 top    = vp->caption_inset;
     const f32 max_x  = dw - margin;
@@ -357,9 +357,7 @@ window_begin_docked( imgui_window_t* win, imgui_id_t id, const char* title,
     /* Clip against the node's surface, then the node rect; the body region reuses this clip. */
     {
         const imgui_viewport_t* vp = &g_ctx->viewports[ node->viewport ];
-        f32 rw = vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w;
-        f32 rh = vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h;
-        draw_set_root_clip( rw, rh );
+        draw_set_root_clip( vp_w( vp ), vp_h( vp ) );
     }
     item_flags_chrome_reset();
 
@@ -506,11 +504,9 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
         bool crossed = false;
         if ( win->viewport == 0 )
         {
-            f32 dw = s_io.display_w > 0 ? (f32)s_io.display_w : 1.0f;
-            f32 dh = s_io.display_h > 0 ? (f32)s_io.display_h : 1.0f;
             const imgui_viewport_t* hv = &g_ctx->viewports[ 0 ];
-            if ( hv->disp_w > 0 ) dw = (f32)hv->disp_w;
-            if ( hv->disp_h > 0 ) dh = (f32)hv->disp_h;
+            f32 dw = vp_w( hv ); if ( dw < 1.0f ) dw = 1.0f;
+            f32 dh = vp_h( hv ); if ( dh < 1.0f ) dh = 1.0f;
             crossed = s_io.mouse_x < 0.0f || s_io.mouse_y < 0.0f
                    || s_io.mouse_x >= dw || s_io.mouse_y >= dh;
         }
@@ -524,8 +520,8 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
             app()->mouse_position_screen( &cx, &cy );
             app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
             const imgui_viewport_t* mv = &g_ctx->viewports[ 0 ];
-            i32 mw = mv->disp_w > 0 ? (i32)mv->disp_w : (i32)s_io.display_w;
-            i32 mh = mv->disp_h > 0 ? (i32)mv->disp_h : (i32)s_io.display_h;
+            i32 mw = (i32)vp_w( mv );
+            i32 mh = (i32)vp_h( mv );
             i32 inset = (i32)WIN_TITLE_H;
             crossed = cx >= mx + inset && cy >= my + inset
                    && cx < mx + mw - inset && cy < my + mh - inset;
@@ -635,9 +631,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        end_window restores the main display for subsequent background / low-level draws. */
     {
         const imgui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
-        f32 rw = vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w;
-        f32 rh = vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h;
-        draw_set_root_clip( rw, rh );
+        draw_set_root_clip( vp_w( vp ), vp_h( vp ) );
     }
 
     /* Window chrome (background, titlebar, border) is not an item: clear any disabled latch a prior
@@ -716,6 +710,19 @@ bool
 imgui_begin_window( const char* title, imgui_win_flags_t flags )
 {
     return window_begin_ex( id_hash( title ), title, 60.0f, 60.0f, 240.0f, 320.0f, flags );
+}
+
+/* Enqueue a button-triggered tear-off or merge-back into the one-shot s_vp_request slot.
+   Idempotent: a single slot covers the one dragged window at a time, so the first caller wins. */
+static void
+vp_request_button( imgui_window_t* win )
+{
+    if ( s_vp_request.active ) return;
+    s_vp_request.active  = true;
+    s_vp_request.by_drag = false;
+    s_vp_request.win_id  = s_build.win_id;
+    s_vp_request.from_vp = win ? win->viewport : 0u;
+    s_vp_request.title   = s_build.win_title;
 }
 
 void
@@ -813,16 +820,8 @@ imgui_end_window( void )
             imgui_rect_t   det_r  = { s_build.win_x + s_build.win_w - title_h, s_build.win_y, title_h, title_h };
             imgui_id_t     det_id = id_combine( s_build.win_id, IMGUI_DETACH_SALT );
             widget_state_t det_st = widget_behavior( det_id, det_r, WIDGET_KIND_BUTTON );
-            if ( det_st.clicked && !s_vp_request.active )
-            {
-                /* Same channel the drag gesture uses: 0 = on the main surface -> tear off,
-                   else on a floater -> merge back.  Serviced by update_platform_windows. */
-                s_vp_request.active  = true;
-                s_vp_request.by_drag = false;   /* button click: keep the panel at its exact screen spot */
-                s_vp_request.win_id  = s_build.win_id;
-                s_vp_request.from_vp = win ? win->viewport : 0u;
-                s_vp_request.title   = s_build.win_title;
-            }
+            if ( det_st.clicked )
+                vp_request_button( win );   /* 0 = main surface -> tear off; else floater -> merge back */
 
             /* Icon: an outlined box when docked (click to pop out), a filled box when floating
                (click to dock back in). */
@@ -872,18 +871,7 @@ imgui_end_window( void )
                         case NATIVE_BTN_MINIMIZE: app()->window_minimize( os );        break;
                         case NATIVE_BTN_MAXIMIZE: app()->window_toggle_maximize( os );  break;
                         case NATIVE_BTN_CLOSE:    app()->window_request_close( os );    break;
-                        case NATIVE_BTN_POPIN:
-                            /* Same merge-back channel the drag / old detach button use; serviced by
-                               update_platform_windows.  by_drag false -> dock in place, no jump. */
-                            if ( !s_vp_request.active )
-                            {
-                                s_vp_request.active  = true;
-                                s_vp_request.by_drag = false;
-                                s_vp_request.win_id  = s_build.win_id;
-                                s_vp_request.from_vp = win ? win->viewport : 0u;
-                                s_vp_request.title   = s_build.win_title;
-                            }
-                            break;
+                        case NATIVE_BTN_POPIN: vp_request_button( win ); break;
                     }
                 }
             }
