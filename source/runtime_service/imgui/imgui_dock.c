@@ -258,7 +258,7 @@ dock_tree_placeholders( imgui_dock_node_t* n )
     {
         if ( n->tab_count == 0 )
         {
-            draw_set_rounding( ROUND_WIN );   /* empty node reads as a child surface */
+            draw_set_rounding( 0.0f );   /* empty node tiles flush in the dock grid -- keep it square */
             draw_push_rect_filled ( n->rect.x, n->rect.y, n->rect.w, n->rect.h, 0, 0, 1, 1, 0, COL_CHILD_BG );
             draw_push_rect_outline( n->rect.x, n->rect.y, n->rect.w, n->rect.h, WIN_BORDER, 0, COL_BORDER );
         }
@@ -533,7 +533,8 @@ dock_window_chrome( imgui_dock_node_t* node )
            on the title band, lifting to the hover colour under the cursor. */
         u32 bg   = is_active ? COL_WIN_BG : ( st.hover ? COL_WIDGET_HOT : COL_TITLE_BG );
         u32 tcol = ( is_active || st.hover ) ? COL_TEXT : COL_TEXT_DIM;
-        draw_set_rounding( ROUND_WIDGET );   /* tabs read as control frames */
+        /* Tabs in a docked node stay square: the active tab takes the body colour to read as joined
+           to the content below, and a rounded corner would break that seam. */
         draw_push_rect_filled( tr.x, tr.y, tr.w, tr.h, 0, 0, 1, 1, 0, bg );
         draw_text_fit_n( tr.x + WIDGET_PAD, text_center_y( y, th ), tcol, nm, (u32)strlen( nm ),
                          tw - 2.0f * WIDGET_PAD );
@@ -553,9 +554,10 @@ dock_window_chrome( imgui_dock_node_t* node )
         tx += tw;
     }
 
-    /* Border frames the whole node (strip + body).  Drawn before the undock handler so it never reads
-       `node` after a drag-out collapses an emptied node. */
-    draw_set_rounding( ROUND_WIN );
+    /* Border frames the whole node (strip + body), square so adjacent nodes tile flush at right
+       angles.  Drawn before the undock handler so it never reads `node` after a drag-out collapses
+       an emptied node. */
+    draw_set_rounding( 0.0f );
     draw_push_rect_outline( x, y, w, s_build.win_h, WIN_BORDER, 0, COL_BORDER );
 
     /* Undock-by-tab-drag: an armed tab press dragged past the threshold pops its window out of the

@@ -371,7 +371,10 @@ window_begin_docked( imgui_window_t* win, imgui_id_t id, const char* title,
     draw_push_clip_rect( win->x, win->y, win->w, win->h );
     s_build.clip_rect = ( imgui_rect_t ){ win->x, win->y, win->w, win->h };
 
-    /* Body background fills the whole node; the tab strip is overpainted by dock_window_chrome last. */
+    /* Body background fills the whole node; the tab strip is overpainted by dock_window_chrome last.
+       Docked nodes tile against each other at right angles, so the node draws square -- a rounded
+       corner here would cut a gap into the seam between neighbours. */
+    draw_set_rounding( 0.0f );
     draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
     /* Phase 1: docked windows reserve no menu bar. */
