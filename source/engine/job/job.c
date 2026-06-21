@@ -28,8 +28,13 @@
     Internal Constants
 ==============================================================================================*/
 
-// The maximum number of jobs that can be buffered in the queue at any given time.
-#define MAX_JOBS_LIMIT 4096
+// The maximum number of jobs that can be buffered in the queue at any given time. 
+#define MAX_JOB_QUEUE 4096
+#define MAX_JOB_QUEUE_MASK  ( MAX_JOB_QUEUE - 1 )
+
+// The maximum number of concurrent job batches that can be tracked. 
+#define JOB_POOL_SIZE  256
+#define JOB_POOL_MASK  ( JOB_POOL_SIZE - 1 )
 
 /*==============================================================================================
     Internal Types and State
@@ -92,9 +97,9 @@ typedef struct job_state_s
     worker_thread_t workers[ 32 ];              // Bookkeeping array for worker threads.
 
     // Central Queue Ring Buffer
-    job_item_t      queue[ MAX_JOBS_LIMIT ];    // Ring buffer storage array.
-    i32             queue_head;                 // Monotonic index of the next item to pop.
-    i32             queue_tail;                 // Monotonic index of the next slot to push.
+    job_item_t      queue[ MAX_JOB_QUEUE ];    // Ring buffer storage array.
+    u32             queue_head;                 // Monotonic index of the next item to pop.
+    u32             queue_tail;                 // Monotonic index of the next slot to push.
     i32             queue_count;                // Current number of items pending in the queue.
 
     // OS Threading Primitives
@@ -102,10 +107,12 @@ typedef struct job_state_s
     sema_t          queue_semaphore;            // Counting semaphore representing available jobs.
 
     // Sync Counter Pool
-    // 256 slots; each slot tracks one active batch. slot->value==0 means free.
-    // Handles returned to callers encode (index, generation) so stale handles are detectable.
-    job_pool_slot_t counter_pool[ 256 ];
-    volatile i32    counter_pool_index;         // Circular allocator index incremented atomically.
+    // JOB_POOL_SIZE slots; each slot tracks one active batch. slot->value==0 means free.
+    // counter_pool: Handles returned to callers encode (index, generation) so stale handles are detectable.
+    // counter_pool_index: Circular allocator index incremented atomically.
+
+    job_pool_slot_t counter_pool[ JOB_POOL_SIZE ];  
+    volatile i32    counter_pool_index;             
 
     volatile i32    is_running;                 // Set to 1 when active; set to 0 to trigger worker shutdown.
 

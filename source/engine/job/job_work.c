@@ -5,14 +5,17 @@
 ==============================================================================================*/
 // clang-format off
 
-// Handle encoding: bits[7:0] = pool index (0-255), bits[23:8] = generation (1-65535; 0=null).
-#define JOB_HANDLE_INDEX( id )       ( (u32)(id) & 0xFFu )
+// Handle encoding: bits[  7:0 ] = pool index ( 0-255 ), 
+//                  bits[ 23:8 ] = generation ( 1-65535; 0=null ).
+
+#define JOB_HANDLE_INDEX( id )       ( (u32)(id) & JOB_POOL_MASK )
 #define JOB_HANDLE_GEN( id )         ( (u32)(id) >> 8 & 0xFFFFu )
 #define JOB_HANDLE_MAKE( idx, gen )  ( (u32)(idx) | ( (u32)(gen) << 8 ) )
 
-// Pool-slot packing: generation in the high dword, live value in the low dword. Composed via
-// shifts (not memory aliasing) so the encoding is endianness-independent.
-#define JOB_SLOT_PACK( gen, val )    ( ( (i64)(u32)(gen) << 32 ) | (u32)(i32)(val) )
+// Pool-slot packing: generation in the high dword, live value in the low dword. 
+// Composed via shifts (not memory aliasing) so the encoding is endianness-independent.
+
+#define JOB_SLOT_PACK( gen, val )    ( ((i64)(u32)(gen) << 32 ) | (u32)(i32)(val) )
 #define JOB_SLOT_VALUE( packed )     ( (i32)(u32)( (u64)(packed) & 0xFFFFFFFFu ) )
 #define JOB_SLOT_GEN( packed )       ( (u32)( (u64)(packed) >> 32 ) )
 
@@ -75,8 +78,8 @@ job_worker_main( void* arg )
         mutex_lock( &g_job_state.queue_lock );
         if ( g_job_state.queue_count > 0 )
         {
-            // Calculate the ring buffer index using modulo.
-            i32 index = g_job_state.queue_head % MAX_JOBS_LIMIT;
+            // Calculate the ring buffer index using bitwise AND (power of two).
+            u32 index = g_job_state.queue_head & MAX_JOB_QUEUE_MASK;
             job       = g_job_state.queue[ index ];
 
             // Advance the monotonic head index.
@@ -111,10 +114,10 @@ job_worker_main( void* arg )
 static job_counter_t
 job_allocate_counter( i32 initial_value )
 {
-    for ( uint32_t i = 0; i < 256; ++i )
+    for ( uint32_t i = 0; i < JOB_POOL_SIZE; ++i )
     {
         // Get the next index in the pool atomically.
-        i32              index = sys_atomic_increment( &g_job_state.counter_pool_index ) % 256;
+        u32              index = (u32)sys_atomic_increment( &g_job_state.counter_pool_index ) & JOB_POOL_MASK;
         job_pool_slot_t* slot  = &g_job_state.counter_pool[ index ];
 
         // Snapshot the slot. A free slot has value (low dword) == 0.
@@ -139,7 +142,7 @@ job_allocate_counter( i32 initial_value )
             return (job_counter_t){ .id = JOB_HANDLE_MAKE( index, gen ) };
         }
     }
-    // Panic if all 256 slots are currently in use (pool exhausted).
+    // Panic if all slots are currently in use (pool exhausted).
     ORB_PANIC();
     return JOB_COUNTER_NULL;
 }
@@ -164,7 +167,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
 
     mutex_lock( &g_job_state.queue_lock );
     // Ensure the queue does not overflow.
-    if ( g_job_state.queue_count + ( i32 )count > MAX_JOBS_LIMIT )
+    if ( ( u32 )g_job_state.queue_count + count > MAX_JOB_QUEUE )
     {
         mutex_unlock( &g_job_state.queue_lock );
         ORB_PANIC();
@@ -174,7 +177,7 @@ job_dispatch( const job_decl_t* decls, uint32_t count )
     // Push the jobs into the ring buffer.
     for ( uint32_t i = 0; i < count; ++i )
     {
-        i32 index                           = g_job_state.queue_tail % MAX_JOBS_LIMIT;
+        u32 index                           = g_job_state.queue_tail & MAX_JOB_QUEUE_MASK;
         g_job_state.queue[ index ].function = decls[ i ].function;
         g_job_state.queue[ index ].data     = decls[ i ].data;
         g_job_state.queue[ index ].counter  = handle;
@@ -237,7 +240,7 @@ job_wait( job_counter_t counter )
         mutex_lock( &g_job_state.queue_lock );
         if ( g_job_state.queue_count > 0 )
         {
-            i32 idx = g_job_state.queue_head % MAX_JOBS_LIMIT;
+            u32 idx = g_job_state.queue_head & MAX_JOB_QUEUE_MASK;
             job     = g_job_state.queue[ idx ];
             g_job_state.queue_head++;
             g_job_state.queue_count--;
@@ -353,9 +356,8 @@ job_exit( void )
     for ( uint32_t i = 0; i < g_job_state.worker_count; ++i )
     {
         worker_thread_t* w = &g_job_state.workers[ i ];
-        if ( thread_valid( w->handle ) )
-        {
-            thread_join( w->handle );    // Join blocking call.
+        if ( thread_valid( w->handle )) {
+             thread_join( w->handle );      // Join blocking call.
         }
     }
 
