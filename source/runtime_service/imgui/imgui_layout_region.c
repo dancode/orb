@@ -247,7 +247,12 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, i
     else
     {
         f->pushed_clip  = false;
-        /* s_build.clip_rect stays the enclosing clip -- the window body inherits it. */
+        /* No draw clip pushed; the window's single outer clip stays live so the chrome drawn last
+           in end_window can overpaint content that scrolled under the title bar.  But for hit-
+           testing, narrow clip_rect to this region's outer rect so a widget scrolled under the
+           title bar cannot be clicked through it.  layout_pop_region restores parent_clip so the
+           scrollbars (drawn after the restore) hit-test against the full window rect. */
+        s_build.clip_rect = rect_intersect( f->parent_clip, outer );
     }
 }
 
