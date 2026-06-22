@@ -21,6 +21,14 @@
 typedef u32 imgui_id_t;
 #define IMGUI_ID_NONE 0u
 
+/* Icon handle -- identifies one symbol packed into the runtime icon atlas (register_icon).
+   The atlas is a second R8 coverage texture that lives beside the font atlas and batches in
+   the same flush; icons draw as tinted quads via image / draw_icon_in.  0 means "no icon"
+   (an unregistered name or a full atlas), and draw helpers no-op on it. */
+
+typedef u32 imgui_icon_id_t;
+#define IMGUI_ICON_NONE 0u
+
 /* Opaque viewport handle -- a render surface backed by an OS window.  Returned by
    viewport_open; passed to render, viewport_resize, viewport_close, and
    set_next_window_viewport.  IMGUI_VP_INVALID (-1) signals failure or no assignment. */

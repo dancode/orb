@@ -109,6 +109,9 @@ imgui_frame_begin( f32 dt )
     input_update( disp_w, disp_h, dt );
     draw_reset( disp_w, disp_h );
 
+    /* Push any icons registered since last frame to the GPU once, before the build emits draws. */
+    icon_atlas_flush_upload();
+
     /* Reset global interaction state exactly once per app frame.  hover_win promotion and
        active_id release happen here -- NOT in ctx_new_frame -- so subsequent ctx_begin calls
        for additional contexts do not clobber hover nominations from earlier contexts. */

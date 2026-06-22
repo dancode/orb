@@ -261,6 +261,13 @@ imgui_vec2_t imgui_text_size( const char* s );
 void imgui_draw_text_in( imgui_rect_t r, imgui_align_t align, u32 col, const char* s );
 void imgui_draw_text_clipped( imgui_rect_t r, imgui_align_t align, u32 col, const char* s );
 
+/* icons -- runtime icon atlas */
+imgui_icon_id_t imgui_register_icon( const char* name, u32 w, u32 h, const u8* coverage );
+imgui_icon_id_t imgui_find_icon( const char* name );
+imgui_vec2_t imgui_icon_size( imgui_icon_id_t id );
+void imgui_image( imgui_icon_id_t id, f32 w, f32 h, u32 col );
+void imgui_draw_icon_in( imgui_rect_t r, imgui_icon_id_t id, u32 col );
+
 /* draw -- paths */
 void imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
 void imgui_draw_polyline( const imgui_vec2_t* pts, u32 count, f32 thickness, imgui_stroke_align_t align, bool closed, u32 abgr );

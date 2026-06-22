@@ -57,6 +57,27 @@ void font_glyph         ( u8 ch,
                           f32* advance );
 
 /*==============================================================================================
+    Runtime icon atlas (imgui_icon.c)
+
+    A second R8 coverage texture, built at runtime: callers register raw monochrome bitmaps and
+    the atlas packs them with stb_rect_pack, handing back an imgui_icon_id_t.  Icons draw through
+    the existing textured-quad path (own bindless tex_idx), so they batch in the same flush as
+    text and tint by vertex color.  GPU re-upload is deferred to frame_begin (icon_atlas_flush_upload).
+==============================================================================================*/
+
+bool            icon_atlas_init        ( void );   // create the R8 atlas texture + bindless index
+void            icon_atlas_shutdown    ( void );   // destroy the atlas, free CPU staging
+void            icon_atlas_flush_upload ( void );  // re-upload the CPU atlas to the GPU if dirty
+
+imgui_icon_id_t icon_register          ( const char* name, u32 w, u32 h, const u8* coverage );
+imgui_icon_id_t icon_find              ( const char* name );
+bool            icon_get               ( imgui_icon_id_t id,
+                                         f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
+
+/* Push one icon quad (atlas tex_idx + cached UVs) into the draw list; no-op for an invalid id. */
+void            draw_push_icon         ( f32 x, f32 y, f32 w, f32 h, imgui_icon_id_t id, u32 abgr );
+
+/*==============================================================================================
     CPU draw list (imgui_draw.c)
 ==============================================================================================*/
 

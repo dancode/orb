@@ -42,6 +42,7 @@
 #include "runtime_service/imgui/backend/imgui_shader.h"
 #include "runtime_service/imgui/backend/imgui_font_builtin.c"
 #include "runtime_service/imgui/backend/imgui_font.c"
+#include "runtime_service/imgui/backend/imgui_icon.c"
 #include "runtime_service/imgui/backend/imgui_draw.c"
 #include "runtime_service/imgui/backend/imgui_draw_path.c"
 #include "runtime_service/imgui/backend/imgui_render_tess.c"

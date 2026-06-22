@@ -833,5 +833,60 @@ imgui_draw_text_clipped( imgui_rect_t r, imgui_align_t align, u32 col, const cha
         draw_text_fit_n( r.x, y, col, s, 0xFFFFFFFFu, r.w );
 }
 
+/*----------------------------------------------------------------------------------------------
+    Icons -- thin public surface over the runtime icon atlas (imgui_icon.c, backend unit).
+
+    register_icon / find_icon / icon_size pass straight through; image is a layout widget that
+    reserves a box and fills it; draw_icon_in is the custom-draw placement primitive (the icon
+    analogue of draw_text_in) for a rect the caller already holds -- a table cell, a button label,
+    a canvas cut.  Both draw helpers aspect-fit the icon centered in the rect so a non-square box
+    never stretches the art, and default a 0 color to opaque white (icons are usually drawn plain).
+----------------------------------------------------------------------------------------------*/
+
+imgui_icon_id_t
+imgui_register_icon( const char* name, u32 w, u32 h, const u8* coverage )
+{
+    return icon_register( name, w, h, coverage );
+}
+
+imgui_icon_id_t
+imgui_find_icon( const char* name )
+{
+    return icon_find( name );
+}
+
+imgui_vec2_t
+imgui_icon_size( imgui_icon_id_t id )
+{
+    u32 w = 0, h = 0;
+    icon_get( id, NULL, NULL, NULL, NULL, &w, &h );
+    return ( imgui_vec2_t ){ (f32)w, (f32)h };
+}
+
+void
+imgui_draw_icon_in( imgui_rect_t r, imgui_icon_id_t id, u32 col )
+{
+    u32 iw = 0, ih = 0;
+    if ( !icon_get( id, NULL, NULL, NULL, NULL, &iw, &ih ) || iw == 0 || ih == 0 )
+        return;
+
+    /* Aspect-fit: scale to the tighter of the two axes, then center the fitted box in r. */
+    f32 sx  = r.w / (f32)iw;
+    f32 sy  = r.h / (f32)ih;
+    f32 s   = sx < sy ? sx : sy;
+    f32 w   = (f32)iw * s;
+    f32 h   = (f32)ih * s;
+    imgui_rect_t box = rect_align( r, w, h, IMGUI_ALIGN_HCENTER | IMGUI_ALIGN_VCENTER );
+
+    draw_push_icon( box.x, box.y, box.w, box.h, id, col ? col : 0xFFFFFFFFu );
+}
+
+void
+imgui_image( imgui_icon_id_t id, f32 w, f32 h, u32 col )
+{
+    imgui_rect_t r = widget_next_rect_w( w, h );   /* reserve a w x h layout slot (like dummy) */
+    imgui_draw_icon_in( r, id, col );
+}
+
 // clang-format on
 /*============================================================================================*/

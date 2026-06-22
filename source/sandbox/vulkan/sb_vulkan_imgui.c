@@ -17,7 +17,89 @@
 #include "sb_vulkan_imgui.h"
 #include "runtime_service/imgui/imgui_host.h"
 
-// clang-format off 
+// clang-format off
+
+/*==============================================================================================
+    Procedural icon rasterizers -- exercise the runtime icon atlas.
+
+    The icon atlas takes raw R8 coverage (row-major, w*h bytes, 0..255); pixel sourcing is the
+    caller's.  The engine's image/asset pipeline is not online yet, so these draw three simple
+    icons (folder / check / gear) straight into a buffer for registration.  Crude on purpose --
+    the point is to feed the atlas real bytes, not to be pretty.
+==============================================================================================*/
+
+/* Distance from point (px,py) to segment a-b -- used to stroke the checkmark with soft edges. */
+static f32
+sb_seg_dist( f32 px, f32 py, f32 ax, f32 ay, f32 bx, f32 by )
+{
+    f32 dx = bx - ax, dy = by - ay;
+    f32 len2 = dx * dx + dy * dy;
+    f32 t = len2 > 0.0f ? ( ( px - ax ) * dx + ( py - ay ) * dy ) / len2 : 0.0f;
+    t = t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t );
+    f32 ex = px - ( ax + t * dx );
+    f32 ey = py - ( ay + t * dy );
+    return sqrtf( ex * ex + ey * ey );
+}
+
+/* Coverage for "inside by margin m", with a ~1px soft edge. */
+static u8
+sb_cov( f32 m )
+{
+    f32 a = m + 0.5f;
+    if ( a <= 0.0f ) return 0;
+    if ( a >= 1.0f ) return 255;
+    return (u8)( a * 255.0f );
+}
+
+static void
+sb_make_folder( u8* p, int n )
+{
+    for ( int y = 0; y < n; ++y )
+        for ( int x = 0; x < n; ++x )
+        {
+            bool body = ( x >= 3 && x <= 28 && y >= 11 && y <= 26 );   /* folder body */
+            bool tab  = ( x >= 3 && x <= 14 && y >=  7 && y <= 11 );   /* raised tab  */
+            p[ y * n + x ] = ( body || tab ) ? 255 : 0;
+        }
+}
+
+static void
+sb_make_check( u8* p, int n )
+{
+    for ( int y = 0; y < n; ++y )
+        for ( int x = 0; x < n; ++x )
+        {
+            f32 px = (f32)x + 0.5f, py = (f32)y + 0.5f;
+            f32 d1 = sb_seg_dist( px, py,  7.0f, 17.0f, 13.0f, 23.0f );  /* short down-stroke */
+            f32 d2 = sb_seg_dist( px, py, 13.0f, 23.0f, 26.0f,  8.0f );  /* long up-stroke    */
+            f32 d  = d1 < d2 ? d1 : d2;
+            p[ y * n + x ] = sb_cov( 2.5f - d );                        /* ~2.5px half-width */
+        }
+}
+
+static void
+sb_make_gear( u8* p, int n )
+{
+    f32 cx = (f32)n * 0.5f, cy = (f32)n * 0.5f;
+    for ( int y = 0; y < n; ++y )
+        for ( int x = 0; x < n; ++x )
+        {
+            f32 dx = (f32)x + 0.5f - cx, dy = (f32)y + 0.5f - cy;
+            f32 rad = sqrtf( dx * dx + dy * dy );
+            f32 ang = atan2f( dy, dx );
+
+            bool body = rad <= 11.0f;                                   /* hub disc */
+            bool tooth = false;
+            if ( rad <= 15.0f )                                         /* 8 teeth along spokes */
+            {
+                f32 sect = ang / ( 3.14159265f / 4.0f );
+                f32 frac = sect - floorf( sect + 0.5f );
+                tooth = fabsf( frac ) < 0.30f;
+            }
+            bool hole = rad <= 5.0f;                                    /* center bore */
+            p[ y * n + x ] = ( ( body || tooth ) && !hole ) ? 255 : 0;
+        }
+}
 
 /*==============================================================================================
     1. Widgets -- the basic interactive controls.
@@ -1302,6 +1384,66 @@ demo_docking( void )
 }
 
 /*==============================================================================================
+    17. Icons -- the runtime icon atlas.
+
+    Three icons are rasterized once into a buffer and registered (register_icon -> handle); after
+    that they draw as tinted quads in the same flush as text.  image() reserves a layout slot and
+    fits the icon into it; draw_icon_in places an icon into a rect the caller already holds, here
+    a dummy() slot paired with a text label -- the "icon + caption" row an editor list uses.
+==============================================================================================*/
+
+static void
+demo_icons( void )
+{
+    static imgui_icon_id_t ic_folder = IMGUI_ICON_NONE;
+    static imgui_icon_id_t ic_check  = IMGUI_ICON_NONE;
+    static imgui_icon_id_t ic_gear   = IMGUI_ICON_NONE;
+
+    /* Register once.  Safe to call any frame -- the GPU upload is deferred to the next frame_begin. */
+    if ( ic_folder == IMGUI_ICON_NONE )
+    {
+        static u8 buf[ 32 * 32 ];
+        sb_make_folder( buf, 32 ); ic_folder = imgui()->register_icon( "folder", 32, 32, buf );
+        sb_make_check ( buf, 32 ); ic_check  = imgui()->register_icon( "check",  32, 32, buf );
+        sb_make_gear  ( buf, 32 ); ic_gear   = imgui()->register_icon( "gear",   32, 32, buf );
+    }
+
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 380, 360, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Icons", IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        imgui()->text( "Runtime icon atlas: register_icon ->" );
+        imgui()->text( "tinted quads, same flush as text." );
+        imgui()->separator();
+
+        /* A row of the three icons, each tinted differently (colors are ABGR: 0xAABBGGRR). */
+        imgui()->row_cols( 0, 3 );
+        imgui()->image( ic_folder, 48, 48, 0xFF66CCFFu );   /* amber  */
+        imgui()->image( ic_check,  48, 48, 0xFF66DD66u );   /* green  */
+        imgui()->image( ic_gear,   48, 48, 0xFFDDDDDDu );   /* grey   */
+        imgui()->row( 0 );                                  /* back to a single column */
+
+        imgui()->separator();
+
+        /* icon + caption rows -- draw_icon_in into a manual slot beside an aligned label. */
+        static const struct { imgui_icon_id_t* id; const char* label; } rows[] = {
+            { &ic_folder, "Open Folder" },
+            { &ic_gear,   "Settings"    },
+            { &ic_check,  "Apply"       },
+        };
+        for ( int i = 0; i < 3; ++i )
+        {
+            imgui_rect_t slot = imgui()->dummy( 240, 28 );
+            imgui()->draw_icon_in( ( imgui_rect_t ){ slot.x + 2, slot.y + 2, 24, 24 }, *rows[ i ].id, 0xFFFFFFFFu );
+            imgui()->draw_text_in( ( imgui_rect_t ){ slot.x + 34, slot.y, slot.w - 34, slot.h },
+                                   IMGUI_ALIGN_VCENTER, 0xFFFFFFFFu, rows[ i ].label );
+        }
+    }
+    imgui()->end_window();
+}
+
+/*==============================================================================================
     Demo table -- the menu the host steps through.
 ==============================================================================================*/
 
@@ -1323,6 +1465,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Lines / Paths","draw_line / draw_polyline / path_stroke",        demo_lines       },
     { "Tables",       "table_begin / setup_column / next_row / next_column", demo_table   },
     { "Docking",      "dockspace_over_viewport / dock_split / tabs",     demo_docking     },
+    { "Icons",        "register_icon / image / draw_icon_in",            demo_icons       },
     { NULL,           NULL,                                             NULL             },
 };
 

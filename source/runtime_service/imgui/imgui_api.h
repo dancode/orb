@@ -739,6 +739,20 @@ typedef struct imgui_api_s
     void ( *draw_text_in      )( imgui_rect_t r, imgui_align_t align, u32 col, const char* s );
     void ( *draw_text_clipped )( imgui_rect_t r, imgui_align_t align, u32 col, const char* s );
 
+    /* Icons -- a runtime-built R8 atlas of arbitrary symbols (folder, gear, check, editor glyphs).
+       register_icon packs a raw monochrome bitmap (row-major coverage, w*h bytes) and returns a
+       handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.  Pixel
+       sourcing is the caller's (procedural now, the asset pipeline later).  find_icon looks one up
+       by the name it was registered with; icon_size is its native pixel size (for layout).
+       image is a layout widget (reserve w x h, draw centered/fit); draw_icon_in places an icon in
+       a rect the caller already holds (cell / button label / canvas cut).  col 0 means white. */
+
+    imgui_icon_id_t ( *register_icon )( const char* name, u32 w, u32 h, const u8* coverage );
+    imgui_icon_id_t ( *find_icon     )( const char* name );
+    imgui_vec2_t    ( *icon_size     )( imgui_icon_id_t id );
+    void            ( *image         )( imgui_icon_id_t id, f32 w, f32 h, u32 col );
+    void            ( *draw_icon_in  )( imgui_rect_t r, imgui_icon_id_t id, u32 col );
+
     /* Line / path stroking (imgui_stroke_align_t; see imgui.h for the pixel model).
        draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
        draw_polyline -- a connected point array with miter-limited corners (always antialiased);

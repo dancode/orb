@@ -189,6 +189,7 @@ tt_font_load( const char* path )
 static void
 font_shutdown( void )
 {
+    icon_atlas_shutdown();
     tt_font_unload();
     for ( u32 i = 0; i < IMGUI_FONT_BITMAP_MAX; ++i )
         bitmap_atlas_shutdown( &s_bitmaps[ i ] );
@@ -209,6 +210,9 @@ font_init( void )
         ok = ok && bitmap_atlas_init( &s_bitmaps[ i ] );
     if ( !ok ) { font_shutdown(); return false; }
     bitmap_font_select( IMGUI_FONT_BITMAP_12 );
+
+    /* Runtime icon atlas shares the font lifecycle: created after rhi is up, torn down with fonts. */
+    if ( !icon_atlas_init() ) { font_shutdown(); return false; }
 
     return true; /* built in fonts initialized successfully */
 }
