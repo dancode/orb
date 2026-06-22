@@ -59,6 +59,13 @@ static struct
     imgui_id_t  next_hover_win; // front-most window nominee gathered this frame
     u32         next_hover_win_z;
 
+    /* Hardware-cursor request.  Widgets nominate a shape during the build (set_mouse_cursor); the
+       last writer wins -- safe because exactly one widget hovers per frame, and the resize bands
+       suppress widget hover so a window edge and a widget never both request.  cursor_flush pushes
+       it to the OS window under the pointer at the next frame_begin (deferred one frame, like
+       hover_win).  Reset to APP_CURSOR_ARROW each frame by interaction_frame_reset. */
+    app_cursor_t mouse_cursor;
+
 } s_interaction;
 
 /* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
@@ -582,6 +589,59 @@ window_nominate_hover( imgui_id_t id, imgui_rect_t r, u32 z, u32 viewport )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Hardware cursor
+
+    imgui owns the OS cursor shape only while it owns the mouse (hover_win set, or a widget drag in
+    flight) -- the same want_capture_mouse fence non-UI code gates on.  A widget requests a shape for
+    the frame with set_mouse_cursor; cursor_flush (called at frame_begin) pushes the PREVIOUS frame's
+    request to the OS window the cursor was over, deferred one frame exactly like hover_win.
+
+    app()->window_set_cursor is sticky (it latches win->cursor), so the request is flushed only on a
+    change, and on the frame imgui releases the mouse it pushes ARROW once so a stale I-beam / resize
+    shape does not linger on that window -- after which the cursor is left to the host (game scene).
+----------------------------------------------------------------------------------------------*/
+
+/* Request a hardware cursor shape for this frame.  Last writer wins (one hover per frame). */
+static void set_mouse_cursor( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
+
+/* Flush the requested cursor to the OS window under the pointer.  Reads last frame's request +
+   hover state (called before interaction_frame_reset promotes the new frame's hover).  Dedupes on
+   (window, shape) so an unchanged cursor is not re-posted every frame. */
+static void
+cursor_flush( void )
+{
+    static i32          s_flushed_win   = -1;                 /* last window we pushed a shape to    */
+    static app_cursor_t s_flushed_cur   = APP_CURSOR_ARROW;   /* last shape pushed there             */
+
+    bool want = ( s_interaction.hover_win != IMGUI_ID_NONE )   /* imgui owns the mouse: same fence  */
+             || ( s_interaction.active_id != IMGUI_ID_NONE );  /* as want_capture_mouse             */
+
+    if ( want )
+    {
+        /* The OS window the cursor is in: viewport slot index -> its app win_id. */
+        i32 win = 0;
+        if ( s_io.mouse_viewport < g_ctx->viewport_count )
+            win = g_ctx->viewports[ s_io.mouse_viewport ].win_id;
+
+        if ( win != s_flushed_win || s_interaction.mouse_cursor != s_flushed_cur )
+        {
+            app()->window_set_cursor( win, s_interaction.mouse_cursor );
+            s_flushed_win = win;
+            s_flushed_cur = s_interaction.mouse_cursor;
+        }
+    }
+    else if ( s_flushed_win >= 0 )
+    {
+        /* Release edge: imgui no longer owns the mouse -- clear our shape once, then leave the
+           cursor to the host so game / scene code can set its own. */
+        if ( s_flushed_cur != APP_CURSOR_ARROW )
+            app()->window_set_cursor( s_flushed_win, APP_CURSOR_ARROW );
+        s_flushed_win = -1;
+        s_flushed_cur = APP_CURSOR_ARROW;
+    }
+}
+
+/*----------------------------------------------------------------------------------------------
     ctx_new_frame -- reset per-frame hover state; call at the start of each frame
 ----------------------------------------------------------------------------------------------*/
 
@@ -619,6 +679,9 @@ interaction_frame_reset( void )
        (input_text sets focused_id from hover_id + press this same frame). */
     if ( s_io.mouse_pressed[ 0 ] )
         s_interaction.focused_id = IMGUI_ID_NONE;
+
+    /* Fresh cursor request for the new frame -- defaults to the arrow until a widget asks otherwise. */
+    s_interaction.mouse_cursor = APP_CURSOR_ARROW;
 }
 
 /* Per-context frame reset: rebuilds the frame-scratch and per-context retained state.

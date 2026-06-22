@@ -588,6 +588,15 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     }
     s_build.win_resize_hot = resize_hot;   /* read by widget_behavior + end_window's highlight */
 
+    /* Hardware cursor: show the directional resize shape while an edge is hot, or while a resize
+       drag of this window is in flight (read from s_resize_edges so the shape holds even if the
+       cursor drifts off the grab band mid-drag). */
+    {
+        u8 ce = ( s_interaction.active_id == resize_id ) ? s_resize_edges : resize_hot;
+        if ( ce )
+            set_mouse_cursor( resize_cursor_for_edges( ce ) );
+    }
+
     /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
        same way the edge band reserves the borders.  The grip square overlaps the scroll gutter,
        but the scrollbar runs first (in layout_pop_region), so without this it would claim the

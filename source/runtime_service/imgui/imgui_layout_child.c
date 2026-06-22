@@ -173,6 +173,12 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
            at grab time).  resize_hot is only ever R / B here, so its far-edge pins go unused. */
         if ( resize_hot && s_interaction.active_id == IMGUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
             resize_grab( id, box, resize_hot );
+
+        /* Directional hardware cursor over a hot grip / during the drag (R/B only for a child). */
+        u8 ce = ( s_interaction.active_id == resize_id )
+              ? (u8)( s_resize_edges & ( IMGUI_RESIZE_R | IMGUI_RESIZE_B ) ) : resize_hot;
+        if ( ce )
+            set_mouse_cursor( resize_cursor_for_edges( ce ) );
     }
 
     /* The child box is chrome, not an item: paint its frame opaque even if a disabled widget

@@ -301,6 +301,10 @@ bool imgui_is_mouse_double_clicked( app_mouse_button_t b );
 void imgui_get_mouse_pos( f32* x, f32* y );
 f32  imgui_get_mouse_wheel( void );
 
+/* cursor */
+void         imgui_set_mouse_cursor( app_cursor_t c );
+app_cursor_t imgui_get_mouse_cursor( void );
+
 /* time */
 f32  imgui_get_delta_time( void );
 f64  imgui_get_time( void );

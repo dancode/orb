@@ -116,6 +116,13 @@ bool imgui_is_mouse_clicked       ( app_mouse_button_t b ) { return mb_in_range(
 bool imgui_is_mouse_released      ( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_released[ b ]; }
 bool imgui_is_mouse_double_clicked( app_mouse_button_t b ) { return mb_in_range( b ) && s_io.mouse_double  [ b ]; }
 
+/* Request a hardware cursor shape for this frame.  The widgets already set the resize / text shapes
+   from their own hover; call this from UI code for a shape imgui cannot infer -- e.g. a HAND over a
+   custom clickable.  The last request of the frame wins and is flushed to the OS window the cursor
+   is over (only while imgui owns the mouse).  Reset to APP_CURSOR_ARROW at the top of every frame. */
+void         imgui_set_mouse_cursor( app_cursor_t c ) { set_mouse_cursor( c ); }
+app_cursor_t imgui_get_mouse_cursor( void )           { return s_interaction.mouse_cursor; }
+
 /* Pointer position, wheel delta, and timing straight from the snapshot. */
 void imgui_get_mouse_pos  ( f32* x, f32* y ) { if ( x ) *x = s_io.mouse_x; if ( y ) *y = s_io.mouse_y; }
 f32  imgui_get_mouse_wheel( void )           { return s_io.mouse_wheel; }

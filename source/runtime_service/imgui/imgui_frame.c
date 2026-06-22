@@ -101,6 +101,11 @@ imgui_frame_begin( f32 dt )
        native shell permanently disappears the stale inset is conservative -- windows stay clamped
        below where the caption used to be -- and the viewport is destroyed shortly after anyway. */
 
+    /* Push last frame's cursor request to the OS BEFORE interaction_frame_reset promotes the new
+       hover_win and input_update overwrites mouse_viewport -- cursor_flush reads both as the
+       previous frame left them, keeping the requested shape and its target window coherent. */
+    cursor_flush();
+
     input_update( disp_w, disp_h, dt );
     draw_reset( disp_w, disp_h );
 

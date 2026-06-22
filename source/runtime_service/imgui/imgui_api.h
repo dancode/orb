@@ -824,6 +824,14 @@ typedef struct imgui_api_s
     f32  ( *get_delta_time           )( void );
     f64  ( *get_time                 )( void );
 
+    /* Hardware cursor.  The widgets already drive the shape from their own hover (resize edges show
+       the directional sizers, a text field shows the I-beam).  set_mouse_cursor lets UI code request
+       a shape imgui cannot infer -- e.g. APP_CURSOR_HAND over a custom clickable -- for this frame;
+       the last request wins and is flushed to the OS window under the pointer while imgui owns the
+       mouse, then reset to APP_CURSOR_ARROW next frame.  get_mouse_cursor reads the current request. */
+    void         ( *set_mouse_cursor )( app_cursor_t c );
+    app_cursor_t ( *get_mouse_cursor )( void );
+
     /* wants_redraw -- true when at least one animated widget has not yet reached its target this frame.
        The host checks this after the UI build to decide whether to skip the editor sleep: while any
        transition is in flight, the loop must keep pumping frames to advance the animation. */

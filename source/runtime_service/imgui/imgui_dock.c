@@ -232,6 +232,11 @@ dock_splitter( imgui_dock_node_t* n, u32 vp )
         n->ratio = clampf( rel, minr, 1.0f - minr );
     }
 
+    /* Directional hardware cursor while the gutter is hot or being dragged: an X split divides
+       horizontally (a left/right drag -> EW), a Y split vertically (up/down -> NS). */
+    if ( hot || active )
+        set_mouse_cursor( ( n->split == DOCK_SPLIT_X ) ? APP_CURSOR_RESIZE_EW : APP_CURSOR_RESIZE_NS );
+
     draw_push_rect_filled( sr.x, sr.y, sr.w, sr.h, 0, 0, 1, 1, 0, ( hot || active ) ? COL_RESIZE_HOT : COL_BORDER );
 }
 

@@ -285,6 +285,11 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
     input_field_result_t res     = { false, false };
     bool                 focused = st.focused;
 
+    /* I-beam over a text field -- and held through a selection drag (st.active), so it does not flip
+       back to the arrow while the cursor sweeps outside the box mid-drag. */
+    if ( st.hover || st.active )
+        set_mouse_cursor( APP_CURSOR_TEXT );
+
     u32 len = 0;
     while ( len < bufsz - 1u && buf[ len ] ) ++len;
 

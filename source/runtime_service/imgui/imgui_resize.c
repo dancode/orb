@@ -78,6 +78,21 @@ window_resize_hit( imgui_rect_t r, bool pin_v )
     return e;
 }
 
+/* Map a set of grabbed edges to the directional hardware cursor that signals which way the border
+   moves: a corner is a diagonal (NWSE for TL/BR, NESW for TR/BL), a single L/R edge is horizontal,
+   a single T/B edge is vertical.  Shared by every edge-resize consumer (window, child, splitter). */
+static app_cursor_t
+resize_cursor_for_edges( u8 e )
+{
+    bool l = ( e & IMGUI_RESIZE_L ) != 0, r = ( e & IMGUI_RESIZE_R ) != 0;
+    bool t = ( e & IMGUI_RESIZE_T ) != 0, b = ( e & IMGUI_RESIZE_B ) != 0;
+
+    if ( ( t && l ) || ( b && r ) ) return APP_CURSOR_RESIZE_NWSE;
+    if ( ( t && r ) || ( b && l ) ) return APP_CURSOR_RESIZE_NESW;
+    if ( l || r )                   return APP_CURSOR_RESIZE_EW;
+    return APP_CURSOR_RESIZE_NS;
+}
+
 /* Paint a bold line over each hot edge of an outline so it is obvious that the border is
    grabbable and which side will move.  Drawn just inside the rect, over the thin border. */
 static void
