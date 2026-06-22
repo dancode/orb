@@ -150,6 +150,13 @@ typedef struct
     holds these lives in the bound context (imgui_context_t).  Behavior is in imgui_window.c.
 ==============================================================================================*/
 
+/* Reserved high z-band for popup / tooltip overlays: they paint above every normal window (whose z
+   comes from z_counter and never climbs this high), and a deeper popup above a shallower one.  A
+   window stamped into this band is an overlay, never the OS-window frame -- window_is_native keys
+   off it so a popup opened from an owned floater stays an anchored overlay, not a surface-filling
+   native window.  imgui_popup.c stamps it (IMGUI_POPUP_Z_BASE + depth) before window_begin_ex. */
+#define IMGUI_POPUP_Z_BASE   0x80000000u
+
 typedef struct imgui_window_t
 {
     imgui_id_t id;              /* id_hash(title); 0 = free slot                  */

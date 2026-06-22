@@ -34,10 +34,9 @@
     Constants
 ----------------------------------------------------------------------------------------------*/
 
-/* Reserved high z-band: a popup paints above every normal window (whose z comes from the shared
-   counter and never reaches this), and a deeper popup above a shallower one.  Rewritten every
-   frame in begin_popup so a stray window_raise_on_press can never sink a popup. */
-#define IMGUI_POPUP_Z_BASE   0x80000000u
+/* IMGUI_POPUP_Z_BASE (the reserved high z-band) lives in imgui_internal.h so window_is_native can
+   read it too; begin_popup rewrites win->z every frame so a stray window_raise_on_press can never
+   sink a popup. */
 
 /* Popup window ids are salted off the caller's string so a popup never shares a record with a
    normal window of the same title. */
@@ -245,6 +244,14 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
                                       IMGUI_POPUP_SEED_W, IMGUI_POPUP_SEED_H );
     win->z = IMGUI_POPUP_Z_BASE + depth;
 
+    /* Pin the popup to the parent's CURRENT surface every frame, not just the one it was first
+       seen on.  window_get seeds viewport only at creation, so a popup first opened while its
+       parent sat on the main viewport would keep rendering there after the parent detached into
+       its own floater surface.  cur_viewport is the surface of the window (or parent popup) that
+       opened this one, so re-stamping it here makes the menu follow its parent across detach /
+       reattach. */
+    win->viewport = s_build.cur_viewport;
+
     /* Capped popup (combo dropdown): a fixed width with a height that hugs the measured content up
        to cap_h, then scrolls -- the same hug-then-scroll behavior begin_child gets from a max-height
        constraint, expressed for the window path.  Size is known up front (no off-screen premeasure):
@@ -397,6 +404,7 @@ imgui_begin_tooltip( void )
     imgui_window_t* win = window_get( IMGUI_TOOLTIP_ID, s_io.mouse_x, s_io.mouse_y,
                                       IMGUI_POPUP_SEED_W, IMGUI_POPUP_SEED_H );
     win->z = IMGUI_POPUP_Z_BASE + g_ctx->popup_depth;   /* above every popup */
+    win->viewport = s_build.cur_viewport;               /* track the parent's current surface (see begin_popup) */
 
     bool premeasure = win->content_h <= 0.0f;
     f32  px, py;

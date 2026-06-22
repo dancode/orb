@@ -119,6 +119,14 @@ static win_id_t window_native_id( const imgui_window_t* win )
    end_window both gate on this, so it must be derived the same way in both. */
 static bool window_is_native( const imgui_window_t* win, imgui_win_flags_t flags )
 {
+    /* A popup / tooltip overlay is never the OS frame, even when it inherits an owned floater's
+       viewport: it is an anchored, auto-sized overlay on that surface, not the surface itself.
+       Stamped into the reserved z-band before window_begin_ex runs, so the test is live here --
+       without it a menu opened from a detached floater would be pinned to (0,0) at full surface
+       size by the native branch below instead of dropping under its button. */
+    if ( win && win->z >= IMGUI_POPUP_Z_BASE )
+        return false;
+
     return ( flags & IMGUI_WIN_NATIVE ) != 0
         || ( win && win->viewport != 0 && g_ctx->viewports[ win->viewport ].owned );
 }
