@@ -301,6 +301,7 @@ void imgui_set_arrow_style( u32 style );
 
 /* draw -- paths */
 void imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+void imgui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 abgr );
 void imgui_draw_polyline( const imgui_vec2_t* pts, u32 count, f32 thickness, imgui_stroke_align_t align, bool closed, u32 abgr );
 void imgui_path_clear( void );
 void imgui_path_line_to( f32 x, f32 y );

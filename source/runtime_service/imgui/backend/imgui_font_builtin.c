@@ -19,6 +19,22 @@
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
+    Dash patterns
+
+    A small fixed set of full-width 1-row stipple patterns appended to every atlas after the
+    white texel row.  Each row encodes ONE dash period: the leftmost `duty * atlas_w` texels are
+    opaque (the "on" run), the rest zero (the "gap").  Tessellated dashed lines sample these as a
+    single oriented quad whose U spans 0..len/period; with the atlas sampler set to REPEAT on U
+    (imgui_render.c), the row tiles along the line -- O(1) geometry instead of one quad per dash.
+    Glyph U coords never leave [0,1], so the REPEAT mode does not affect text sampling.
+----------------------------------------------------------------------------------------------*/
+
+#define IMGUI_DASH_PATTERN_COUNT 4
+
+/* On-fraction (dash / period) of each baked row; a dashed line picks the nearest at tess time. */
+static const f32 s_dash_duty[ IMGUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
+
+/*----------------------------------------------------------------------------------------------
     Types
 ----------------------------------------------------------------------------------------------*/
 
@@ -35,7 +51,34 @@ typedef struct
     f32  white_u;       // UV of a guaranteed-opaque texel in this atlas (solid-fill draws)
     f32  white_v;       // sampling it gives r=1.0 so the vertex color drives the draw
 
+    f32  dash_v[ IMGUI_DASH_PATTERN_COUNT ]; // center V of each appended dash pattern row
+
 } font_metrics_t;
+
+/* Paint the dash pattern rows into `pixels` (R8, width `w`) starting at pixel row `row0`.  Shared
+   by the TrueType and bitmap atlas builders; each row's center V is resolved at metrics time via
+   font_dash_row_v below. */
+static void
+font_paint_dash_rows( u8* pixels, u32 w, u32 row0 )
+{
+    for ( u32 p = 0; p < IMGUI_DASH_PATTERN_COUNT; ++p )
+    {
+        u8* row = &pixels[ ( row0 + p ) * w ];
+        u32 on  = (u32)( s_dash_duty[ p ] * (f32)w + 0.5f );
+        if ( on < 1 ) on = 1;
+        if ( on > w ) on = w;
+        memset( row, 0x00, w  );   /* gap    */
+        memset( row, 0xFF, on );   /* on-run */
+    }
+}
+
+/* Fill metrics.dash_v[]: pattern row p sits at pixel row row0 + p in a `tex_h`-tall upload. */
+static void
+font_dash_row_v( f32* dash_v, u32 row0, u32 tex_h )
+{
+    for ( u32 p = 0; p < IMGUI_DASH_PATTERN_COUNT; ++p )
+        dash_v[ p ] = ( (f32)( row0 + p ) + 0.5f ) / (f32)tex_h;
+}
 
 static font_metrics_t* s_font = NULL;  // points to the active font's metrics
 
@@ -178,10 +221,12 @@ bitmap_font_select( imgui_font_t font )
         .size         = (f32)( def->glyph_h * s ),   // bitmap em ~= the glyph cell height
         .atlas_idx    = s_bitmap_active->atlas_idx,
         .proportional = false,
-        /* White texel: center of the appended bottom row (pixel row atlas_h). */
+        /* White texel: center of the first appended row (pixel row atlas_h). */
         .white_u      = 0.5f / (f32)def->atlas_w,
         .white_v      = ( (f32)def->atlas_h + 0.5f ) / (f32)s_bitmap_active->tex_h,
     };
+    /* Dash pattern rows follow the white row at pixel row atlas_h + 1. */
+    font_dash_row_v( s_bitmap_active->metrics.dash_v, def->atlas_h + 1u, s_bitmap_active->tex_h );
     s_font = &s_bitmap_active->metrics;
 }
 
@@ -217,11 +262,12 @@ bitmap_atlas_init( bitmap_font_t* bf )
 {
     const bitmap_font_def_t* def = bf->def;
 
-    /* Atlas is uploaded one row taller than the glyph grid: the extra bottom row is
-       filled opaque (0xFF) and serves as the white texel for solid-color draws, so
-       solid fills sample the same atlas as text and merge into one draw command.
-       Glyph V coords divide by tex_h (below), so this row never bleeds into glyphs. */
-    u32 tex_h = def->atlas_h + 1u;
+    /* Atlas is uploaded taller than the glyph grid: one appended row is filled opaque (0xFF)
+       as the white texel for solid-color draws, followed by IMGUI_DASH_PATTERN_COUNT stipple
+       rows for dashed lines.  Solid fills and dashes sample the same atlas as text and merge
+       into one draw command.  Glyph V coords divide by tex_h (below), so the appended rows
+       never bleed into glyphs. */
+    u32 tex_h = def->atlas_h + 1u + IMGUI_DASH_PATTERN_COUNT;
 
     /* Fixed-size pixel staging buffer; font_tool enforces the same limit at generation time.
        Sized to the largest built-in atlas (16x16 font: 256x128 atlas) plus the white row. */
@@ -253,8 +299,9 @@ bitmap_atlas_init( bitmap_font_t* bf )
         }
     }
 
-    /* White texel strip: fill the appended bottom row opaque. */
+    /* White texel strip: fill the first appended row opaque, then the dash pattern rows. */
     memset( &pixels[ def->atlas_h * def->atlas_w ], 0xFF, def->atlas_w );
+    font_paint_dash_rows( pixels, def->atlas_w, def->atlas_h + 1u );
     bf->tex_h = tex_h;
 
     bf->atlas = rhi()->texture_create( &( rhi_texture_desc_t ){

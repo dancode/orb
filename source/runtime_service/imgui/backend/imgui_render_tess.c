@@ -332,6 +332,51 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
     }
 }
 
+/* Tessellate a dashed / dotted line as one oriented textured quad sampling the atlas dash row.
+   U spans 0..len/period so the row tiles along the line under REPEAT-U addressing; V selects the
+   baked row whose on-fraction is closest to `duty`.  O(1) geometry regardless of line length --
+   the per-dash quad explosion (which used to exhaust the command list) is gone. */
+static void
+tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32 duty, u32 abgr )
+{
+    if ( thickness <= 0.0f || period <= 0.0f )
+        return;
+    f32 dx = x1 - x0, dy = y1 - y0;
+    f32 len = sqrtf( dx * dx + dy * dy );
+    if ( len < 1e-4f )
+        return;
+    if ( s_tess.vert_count + 4 > IMGUI_MAX_VERTS || s_tess.idx_count + 6 > IMGUI_MAX_IDX )
+    {
+        s_tess.overflow = true;
+        return;
+    }
+
+    f32 inv  = 1.0f / len;
+    f32 ux   = dx * inv, uy = dy * inv;          /* unit vector along the line  */
+    f32 nx   = -uy,      ny = ux;                /* unit normal across the line */
+    f32 half = thickness * 0.5f;
+    f32 umax = len / period;                     /* number of tiled periods -> U span */
+    f32 vv   = font_dash_v( duty );
+
+    tess_ensure_gpu_cmd( font_atlas_idx() );
+    if ( s_tess.cmd_count == 0 )
+        return;
+
+    u16 base = (u16)s_tess.vert_count;
+    imgui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
+    v[ 0 ] = ( imgui_draw_vert_t ){ x0 + nx * half, y0 + ny * half, 0.0f, vv, abgr };
+    v[ 1 ] = ( imgui_draw_vert_t ){ x1 + nx * half, y1 + ny * half, umax, vv, abgr };
+    v[ 2 ] = ( imgui_draw_vert_t ){ x1 - nx * half, y1 - ny * half, umax, vv, abgr };
+    v[ 3 ] = ( imgui_draw_vert_t ){ x0 - nx * half, y0 - ny * half, 0.0f, vv, abgr };
+    s_tess.vert_count += 4;
+
+    u16* idx = &s_tess.indices[ s_tess.idx_count ];
+    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
+    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
+    s_tess.idx_count += 6;
+    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 6;
+}
+
 /*----------------------------------------------------------------------------------------------
     tess_stroke_poly_aa -- antialiased polyline tessellation for the render backend.
 
@@ -502,6 +547,11 @@ tess_dispatch( const imgui_cmd_t* cmds, u32 count )
                                      center_off, c->polyline.closed, c->polyline.abgr );
                 break;
             }
+
+            case IMGUI_CMD_DASHED_LINE:
+                tess_dashed_line( c->dash.x0, c->dash.y0, c->dash.x1, c->dash.y1,
+                                  c->dash.thickness, c->dash.period, c->dash.duty, c->dash.abgr );
+                break;
         }
     }
 }

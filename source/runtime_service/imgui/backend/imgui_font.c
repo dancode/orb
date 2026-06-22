@@ -101,12 +101,12 @@ tt_font_load( const char* path )
             s_tt_font.lookup[ g.codepoint - 32 ] = g;
     }
 
-    /* Read pixel data and upload to GPU.  The atlas is staged one row taller than the
-       file: the appended bottom row is filled opaque (0xFF) as the white texel for
-       solid-color draws, so solid fills sample this atlas and merge with text.
-       Glyph V coords divide by the padded height (atlas_h below), so the white row
-       never bleeds into the bottom glyph row. */
-    u32 tex_h       = hdr.atlas_h + 1u;
+    /* Read pixel data and upload to GPU.  The atlas is staged taller than the file: one
+       appended row is filled opaque (0xFF) as the white texel for solid-color draws, then
+       IMGUI_DASH_PATTERN_COUNT stipple rows for dashed lines.  Solid fills and dashes sample
+       this atlas and merge with text.  Glyph V coords divide by the padded height (atlas_h
+       below), so the appended rows never bleed into the bottom glyph row. */
+    u32 tex_h       = hdr.atlas_h + 1u + IMGUI_DASH_PATTERN_COUNT;
     u32 glyph_bytes = hdr.atlas_w * hdr.atlas_h;
     u32 pixel_count = hdr.atlas_w * tex_h;
     u8* pixels      = (u8*)malloc( pixel_count );
@@ -120,8 +120,9 @@ tt_font_load( const char* path )
     }
     fclose( f );
 
-    /* White texel strip: fill the appended bottom row opaque. */
+    /* White texel strip: fill the first appended row opaque, then the dash pattern rows. */
     memset( &pixels[ glyph_bytes ], 0xFF, hdr.atlas_w );
+    font_paint_dash_rows( pixels, hdr.atlas_w, hdr.atlas_h + 1u );
 
     /* create the render texture and upload the atlas pixels */
 
@@ -170,10 +171,12 @@ tt_font_load( const char* path )
         .size         = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
         .atlas_idx    = s_tt_font.atlas_idx,
         .proportional = true,
-        /* White texel: center of the appended bottom row (pixel row hdr.atlas_h). */
+        /* White texel: center of the first appended row (pixel row hdr.atlas_h). */
         .white_u      = 0.5f / (f32)hdr.atlas_w,
         .white_v      = ( (f32)hdr.atlas_h + 0.5f ) / (f32)tex_h,
     };
+    /* Dash pattern rows follow the white row at pixel row hdr.atlas_h + 1. */
+    font_dash_row_v( s_tt_font.metrics.dash_v, hdr.atlas_h + 1u, tex_h );
     s_font = &s_tt_font.metrics;
 
     printf( "[imgui] loaded font '%s' (char_h=%.1f line_h=%.1f)\n",
@@ -259,6 +262,22 @@ font_char_advance( u8 ch )
 
 /* UV of the active atlas's white texel (appended bottom row) for solid-color draws. */
 static void font_white_uv( f32* u, f32* v ) { *u = s_font->white_u; *v = s_font->white_v; }
+
+/* Center V of the dash pattern row whose baked on-fraction is closest to `duty`.  Tessellated
+   dashed lines sample this row, tiling it along the line via REPEAT addressing on U. */
+static f32
+font_dash_v( f32 duty )
+{
+    u32 best  = 0;
+    f32 bestd = 1e30f;
+    for ( u32 p = 0; p < IMGUI_DASH_PATTERN_COUNT; ++p )
+    {
+        f32 d = s_dash_duty[ p ] - duty;
+        if ( d < 0.0f ) d = -d;
+        if ( d < bestd ) { bestd = d; best = p; }
+    }
+    return s_font->dash_v[ best ];
+}
 
 /* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel):
    every initialized bitmap atlas, plus the TrueType atlas when one is loaded. */

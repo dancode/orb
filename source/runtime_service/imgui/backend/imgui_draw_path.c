@@ -201,6 +201,31 @@ imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     c->line.abgr      = draw_apply_alpha( abgr );
 }
 
+/* Dashed / dotted line: one CMD_DASHED_LINE, tessellated at flush into a single textured quad
+   that tiles an atlas stipple row along the line.  `dash` / `gap` set the on-run / gap lengths in
+   pixels; period = dash + gap drives the tile count and duty = dash/period picks the nearest baked
+   pattern.  This is the efficient replacement for emitting one stroke per dash. */
+void
+imgui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 abgr )
+{
+    if ( thickness <= 0.0f || dash <= 0.0f )
+        return;
+    f32 period = dash + ( gap > 0.0f ? gap : dash );
+    if ( period <= 0.0f || s_draw.cmd_count >= IMGUI_MAX_CMDS )
+        return;
+    imgui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type           = IMGUI_CMD_DASHED_LINE;
+    c->clip           = draw_current_clip();
+    c->z              = s_draw.cur_z;
+    c->vp             = s_draw.cur_vp;
+    c->dash.x0        = x0; c->dash.y0 = y0;
+    c->dash.x1        = x1; c->dash.y1 = y1;
+    c->dash.thickness = thickness;
+    c->dash.period    = period;
+    c->dash.duty      = dash / period;
+    c->dash.abgr      = draw_apply_alpha( abgr );
+}
+
 /* Retained path: clear, append points, then stroke (which consumes the buffer). */
 void
 imgui_path_clear( void )

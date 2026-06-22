@@ -412,20 +412,12 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
 ----------------------------------------------------------------------------------------------*/
 
 /* Dashed / dotted line from (x0,y0) to (x1,y1): on-segments of length `dash` separated by `gap`
-   (guides, selection marquees).  A small dash with gap == dash reads as dotted. */
+   (guides, selection marquees).  A small dash with gap == dash reads as dotted.  Backed by a single
+   tiled textured quad (imgui_draw_dashed_line) -- not one stroke per dash -- so length is free. */
 static void
 draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col )
 {
-    f32 dx = x1 - x0, dy = y1 - y0;
-    f32 len = sqrtf( dx * dx + dy * dy );
-    if ( len < 1e-4f || dash <= 0.0f )
-        return;
-    f32 ux = dx / len, uy = dy / len, step = dash + ( gap > 0.0f ? gap : dash );
-    for ( f32 p = 0.0f; p < len; p += step )
-    {
-        f32 e = p + dash;  if ( e > len ) e = len;
-        imgui_draw_line( x0 + ux * p, y0 + uy * p, x0 + ux * e, y0 + uy * e, thickness, col );
-    }
+    imgui_draw_dashed_line( x0, y0, x1, y1, dash, gap, thickness, col );
 }
 
 /* Checkerboard fill of `box` with `cell`-sized squares alternating col_a / col_b -- the classic

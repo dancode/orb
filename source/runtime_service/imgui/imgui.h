@@ -751,6 +751,7 @@ typedef enum
     IMGUI_CMD_CIRCLE_FILLED,   /* filled disc (triangle fan)                 */
     IMGUI_CMD_LINE,            /* single stroke segment                      */
     IMGUI_CMD_POLYLINE,        /* multi-segment antialiased polyline         */
+    IMGUI_CMD_DASHED_LINE,     /* patterned line: one textured quad, atlas dash row, tiled by U */
 
 } imgui_cmd_type_t;
 
@@ -775,6 +776,9 @@ typedef struct
         struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;
                  imgui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
+        /* Dashed line tessellates to one oriented textured quad: U spans 0..len/period so the
+           atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
+        struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
     };
 } imgui_cmd_t;
 

@@ -243,12 +243,14 @@ imgui_render_init( void )
     if ( !rhi_handle_valid( s_render.pipeline ) )
         return false;
 
-    /* Font sampler: nearest filter, clamp-to-edge (no bleeding between atlas glyphs). */
+    /* Font sampler: nearest filter.  V/W clamp-to-edge (no bleeding between atlas glyph rows);
+       U repeats so a dashed line's single quad can tile an atlas stipple row along its length.
+       Glyph and white-texel U coords stay within [0,1], so wrapping never affects text or fills. */
     s_render.font_sampler = rhi()->sampler_create( &( rhi_sampler_desc_t ){
         .min_filter = RHI_FILTER_NEAREST,
         .mag_filter = RHI_FILTER_NEAREST,
         .mip_filter = RHI_FILTER_NEAREST,
-        .address_u  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .address_u  = RHI_ADDRESS_MODE_REPEAT,
         .address_v  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
         .address_w  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
     } );
