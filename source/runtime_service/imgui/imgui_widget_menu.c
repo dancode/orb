@@ -243,7 +243,13 @@ imgui_begin_main_menu_bar( void )
 {
     f32 h = WIDGET_H + WIDGET_GAP;
 
-    imgui_set_next_window_pos ( 0.0f, 0.0f, IMGUI_COND_ALWAYS );
+    /* Sit just below the host's native caption band (caption_inset), not at the very top: a
+       borderless shell owns the caption strip for the OS move/resize gesture, and a bar painted
+       over it would swallow the clicks that drag the window.  Inset is 0 with no native shell, so
+       the bar stays pinned to the top edge as before. */
+    f32 top = g_ctx->viewports[ 0 ].caption_inset;
+
+    imgui_set_next_window_pos ( 0.0f, top, IMGUI_COND_ALWAYS );
     imgui_set_next_window_size( (f32)s_io.display_w, h, IMGUI_COND_ALWAYS );
 
     bool vis = imgui_begin_window( "##MainMenuBar",
@@ -269,8 +275,9 @@ imgui_end_main_menu_bar( void )
     regardless of the strip region's parent-pen advance.
 ----------------------------------------------------------------------------------------------*/
 
-static f32 s_menubar_sink[ 4 ];     /* scroll / content-measure sink: the strip never scrolls */
-static f32 s_menubar_saved_cursor;  /* body pen to restore after the strip region pops         */
+static f32          s_menubar_sink[ 4 ];     /* scroll / content-measure sink: the strip never scrolls */
+static f32          s_menubar_saved_cursor;  /* body pen to restore after the strip region pops        */
+static imgui_rect_t s_menubar_saved_clip;    /* body hit-test clip to restore after the strip region pops */
 
 bool
 imgui_begin_menu_bar( void )
@@ -285,6 +292,16 @@ imgui_begin_menu_bar( void )
 
     /* Save the body pen: the strip is drawn outside the body flow, so the body resumes from here. */
     s_menubar_saved_cursor = lf()->cursor_y;
+
+    /* The strip sits ABOVE the body region that is currently on the stack, so the live clip_rect
+       (the body's, which starts below the strip) excludes it entirely.  layout_push_region with
+       own_clip false narrows the new region's hit-test clip to parent_clip & outer; left as-is the
+       intersection with the body clip would be empty and every entry would fail rect_hit -- the
+       mouse could never hover the bar (only keyboard nav, which skips the clip test, reached it).
+       Point the parent clip at the whole window rect for the push so the strip's hit-test clip
+       resolves to the strip itself, then restore the body clip in end_menu_bar. */
+    s_menubar_saved_clip = s_build.clip_rect;
+    s_build.clip_rect = ( imgui_rect_t ){ s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_h };
 
     s_menubar_sink[ 0 ] = s_menubar_sink[ 1 ] = s_menubar_sink[ 2 ] = s_menubar_sink[ 3 ] = 0.0f;
     layout_push_region( id_combine( s_build.win_id, IMGUI_MENUBAR_SALT ), bar,
@@ -304,7 +321,8 @@ imgui_end_menu_bar( void )
         return;
 
     layout_pop_region();
-    lf()->cursor_y = s_menubar_saved_cursor;   /* undo the strip pop's body-pen advance */
+    s_build.clip_rect = s_menubar_saved_clip;   /* restore the body hit-test clip (pop left it at the window rect) */
+    lf()->cursor_y = s_menubar_saved_cursor;     /* undo the strip pop's body-pen advance */
 }
 
 // clang-format on
