@@ -33,6 +33,15 @@
 static imgui_win_drag_t     s_win_drag_mode = IMGUI_WIN_DRAG_TITLEBAR;
 static f32                  s_drag_off_x, s_drag_off_y;
 
+/* Merge-back edge latch.  A floater merges back into the main surface only on a genuine ENTER --
+   the cursor crossing from outside the main window into it.  Without this, a floater spawned over
+   its parent (cursor already inside the main rect) would merge back the instant it is grabbed,
+   making it impossible to drag away.  s_vp_drag_id marks which window the latch belongs to so a
+   fresh drag re-arms it; s_vp_merge_armed turns true once the cursor has been clear of the main
+   window during this drag, gating the merge until then. */
+static imgui_id_t           s_vp_drag_id = IMGUI_ID_NONE;
+static bool                 s_vp_merge_armed;
+
 /* Native title-bar drag-threshold state: records a pending title-bar press until the cursor
    moves far enough to commit it as a drag (vs. a click or a double-click).  Prevents the OS
    modal move loop (frame_only) or active_id set (floater) from triggering on click-1 of a

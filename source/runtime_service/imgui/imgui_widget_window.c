@@ -516,9 +516,24 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        Floating: the floater follows the cursor, so the cursor never leaves IT; instead test the
        SCREEN cursor against the main window's client rect and merge back when it re-enters.  Capture
        remains on the main window throughout, so the screen-cursor read is valid here too. */
+
+    /* Drop the merge-back latch once this window's drag ends, so the next grab re-arms from scratch
+       (a floater grabbed again while over its parent must not inherit an armed latch). */
+    if ( s_vp_drag_id == id && s_interaction.active_id != id )
+        s_vp_drag_id = IMGUI_ID_NONE;
+
     if ( s_interaction.active_id == id && s_io.mouse_down[ 0 ]
          && !( flags & IMGUI_WIN_NOMOVE ) && !( flags & IMGUI_WIN_NO_DETACH ) && !s_vp_request.active )
     {
+        /* Re-arm the merge-back latch on a fresh drag of this window (the previous gesture targeted
+           a different window or none).  Until the cursor leaves the main surface, merge-back stays
+           disarmed, so a floater grabbed while sitting over its parent is not yanked straight back. */
+        if ( s_vp_drag_id != id )
+        {
+            s_vp_drag_id     = id;
+            s_vp_merge_armed = false;
+        }
+
         bool crossed = false;
         if ( win->viewport == 0 )
         {
@@ -541,8 +556,15 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
             i32 mw = (i32)vp_w( mv );
             i32 mh = (i32)vp_h( mv );
             i32 inset = (i32)WIN_TITLE_H;
-            crossed = cx >= mx + inset && cy >= my + inset
-                   && cx < mx + mw - inset && cy < my + mh - inset;
+            bool inside = cx >= mx + inset && cy >= my + inset
+                       && cx < mx + mw - inset && cy < my + mh - inset;
+
+            /* Edge-trigger: arm once the cursor is clear of the main window, then merge only on the
+               re-entry.  This distinguishes a real leave->enter crossing from a floater that simply
+               started inside (overlapping its parent), which must first be dragged out. */
+            if ( !inside )
+                s_vp_merge_armed = true;
+            crossed = inside && s_vp_merge_armed;
         }
 
         if ( crossed )
