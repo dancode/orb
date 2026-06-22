@@ -1086,10 +1086,9 @@ demo_table( void )
         /* stretch Name, fixed Type (64 px), fixed Value (128 px); sortable + striped + framed,
            vertical scroll inside a fixed 160px body (header stays pinned). */
         if ( imgui()->table_begin( "props", 3,
-                                         IMGUI_TABLE_SORTABLE | IMGUI_TABLE_ROW_STRIPES
-                                       | IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER
-                                       | IMGUI_TABLE_SCROLL_Y,
-                                   160.0f ) )
+                                   IMGUI_TABLE_SORTABLE | IMGUI_TABLE_ROW_STRIPES |
+                                   IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER | IMGUI_TABLE_SCROLL_Y,                                   
+                                   160.0f ))
         {
             imgui()->table_setup_column( "Name",  IMGUI_TABLE_COL_STRETCH,   0     );
             imgui()->table_setup_column( "Type",  IMGUI_TABLE_COL_FIXED,     64.0f );
@@ -1099,8 +1098,7 @@ demo_table( void )
             /* Built-in sort: hand the table a per-cell key accessor and it reorders s_order on a
                header click -- columns 0/1 sort alphabetically (str), column 2 numerically (num).
                No hand-written comparison loop or direction handling needed. */
-            imgui()->table_sort_order( s_order, k_item_count, demo_item_sort_value, NULL,
-                                       (void*)k_items );
+            imgui()->table_sort_order( s_order, k_item_count, demo_item_sort_value, NULL, (void*)k_items );
 
             for ( int r = 0; r < k_item_count; ++r )
             {

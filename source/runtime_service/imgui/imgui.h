@@ -767,8 +767,7 @@ typedef enum
     IMGUI_TABLE_BORDERS_H       = 1 << 0,   /* horizontal row dividers (between rows)          */
     IMGUI_TABLE_BORDERS_V       = 1 << 1,   /* vertical column dividers (between columns)      */
     IMGUI_TABLE_BORDERS_OUTER   = 1 << 2,   /* outer frame border around the whole table       */
-    IMGUI_TABLE_BORDERS         = IMGUI_TABLE_BORDERS_H | IMGUI_TABLE_BORDERS_V
-                                | IMGUI_TABLE_BORDERS_OUTER,
+    IMGUI_TABLE_BORDERS         = IMGUI_TABLE_BORDERS_H | IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER,
     IMGUI_TABLE_SCROLL_Y        = 1 << 3,   /* table body scrolls vertically                  */
     IMGUI_TABLE_SCROLL_X        = 1 << 4,   /* table body scrolls horizontally                */
     IMGUI_TABLE_SORTABLE        = 1 << 5,   /* clicking a header column header sorts          */
