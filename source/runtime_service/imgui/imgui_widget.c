@@ -443,19 +443,14 @@ imgui_radio_button( const char* label, i32* v, i32 value )
    imgui_widget_numeric.c (both included after this file in imgui.c). */
 
 /*----------------------------------------------------------------------------------------------
-    input_text -- single-line text field; returns true when Enter is pressed.
-
-    Delegates all editing logic to input_field_edit (imgui_widget_core.c): cursor movement,
-    selection, insertion, deletion, horizontal scroll, and rendering.  This wrapper is
-    responsible only for the label split, the box background / border, and the focus claim.
-----------------------------------------------------------------------------------------------*/
-
-/*----------------------------------------------------------------------------------------------
     input_text / input_text_ex / input_text_with_hint -- single-line text field variants.
 
     All three share the same layout (label split, one WIDGET_H row) and the same frame draw
     (focused-tinted fill + hot-tinted border).  input_text_begin factors out those shared steps
-    so each variant reduces to its one point of difference.
+    so each variant reduces to its one point of difference.  All editing logic (cursor movement,
+    selection, insertion, deletion, horizontal scroll, rendering) delegates to input_field_edit
+    (imgui_text_edit.c); the wrapper handles only the label split, box background, border, and
+    focus claim.
 ----------------------------------------------------------------------------------------------*/
 
 typedef struct { imgui_id_t id; imgui_rect_t box; widget_state_t st; } input_text_frame_t;

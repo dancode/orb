@@ -307,8 +307,6 @@ lf( void )
     restore the parent verbatim.  The stack *counters* (layout / id / clip depth) are left intact
     and balance naturally through the normal push/pop, so no slot is ever reused or lost. */
 
-/* IMGUI_POPUP_DEPTH is defined in imgui_internal.h. */
-
 /* imgui_overlay_save_t (parent context a popup saves/restores) is defined in imgui_internal.h. */
 
 /* imgui_popup_t (one open popup record) is defined in imgui_internal.h. */
@@ -446,7 +444,9 @@ ctx_pool_init( void )
 {
     imgui_ctx_config_t c = IMGUI_CTX_CONFIG_EDITOR;
     u32 slots = c.state_slots;
-    u32 p = 1; while ( p < slots ) p <<= 1; slots = p;
+    u32 p = 1;
+    while ( p < slots ) p <<= 1;
+    slots = p;
 
     imgui_context_t* ctx = ctx_alloc_slot( &c, slots, 0 );
     ORB_ASSERT( ctx != NULL );   /* no imgui without a default context */

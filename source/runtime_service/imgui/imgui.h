@@ -196,7 +196,7 @@ imgui_rect_cut_bottom( imgui_rect_t* r, f32 a )
 ==============================================================================================*/
 
 #define IMGUI_LAYOUT_COLS 8                     // max tracks on one axis (columns or rows)
-#define IMGUI_END (-1.0f)                       // track-list terminator (any negative value)s
+#define IMGUI_END (-1.0f)                       // track-list terminator (any negative value)
 
 /*----------------------------------------------------------------------------------------------
     Content alignment -- where a widget's natural-sized content sits inside the cell it is handed.
@@ -336,7 +336,7 @@ typedef enum
 
     IMGUI_WIN_NOSCROLL          = 1 << 4,    /* disable all scroll bars (keep mouse input) */
     IMGUI_WIN_HSCROLL           = 1 << 5,    /* enable dynamic horizontal scroll bar (off by default) */
-    IMGUI_WIN_NOMOUSESCROLL     = 1 << 6,    /* disable mouse wheel scolling */
+    IMGUI_WIN_NOMOUSESCROLL     = 1 << 6,    /* disable mouse wheel scrolling */
     
     /* scrollbars - static: override dynamic bar flags */
 

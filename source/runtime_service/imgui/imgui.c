@@ -39,7 +39,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h> 
+#include <string.h>
 #include <stdarg.h>    /* va_list / va_start -- printf-style textf() widget       */
 #include <math.h>      /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 

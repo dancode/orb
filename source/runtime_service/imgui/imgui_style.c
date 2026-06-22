@@ -60,18 +60,18 @@ style_var_base( imgui_style_var_t v )
 {
     switch ( v )
     {
-        case IMGUI_VAR_LINE_SIZE:     return (f32)s_layout.line_size;
-        case IMGUI_VAR_WIDGET_GAP:    return (f32)s_layout.widget_gap;
-        case IMGUI_VAR_WIDGET_PAD:    return (f32)s_layout.widget_pad;
-        case IMGUI_VAR_WIN_TITLE_H:   return (f32)s_layout.win_title_h;
-        case IMGUI_VAR_WIN_BORDER:    return (f32)s_layout.win_border;
-        case IMGUI_VAR_CHECKBOX_SZ:   return (f32)s_layout.checkbox_sz;
-        case IMGUI_VAR_SLIDER_KNOB_W: return (f32)s_layout.slider_knob_w;
-        case IMGUI_VAR_MIN_CELL_W:    return (f32)s_layout.min_cell_w;
+        case IMGUI_VAR_LINE_SIZE:       return (f32)s_layout.line_size;
+        case IMGUI_VAR_WIDGET_GAP:      return (f32)s_layout.widget_gap;
+        case IMGUI_VAR_WIDGET_PAD:      return (f32)s_layout.widget_pad;
+        case IMGUI_VAR_WIN_TITLE_H:     return (f32)s_layout.win_title_h;
+        case IMGUI_VAR_WIN_BORDER:      return (f32)s_layout.win_border;
+        case IMGUI_VAR_CHECKBOX_SZ:     return (f32)s_layout.checkbox_sz;
+        case IMGUI_VAR_SLIDER_KNOB_W:   return (f32)s_layout.slider_knob_w;
+        case IMGUI_VAR_MIN_CELL_W:      return (f32)s_layout.min_cell_w;
         case IMGUI_VAR_WIN_ROUNDING:    return (f32)s_layout.win_rounding;
         case IMGUI_VAR_WIDGET_ROUNDING: return (f32)s_layout.widget_rounding;
         case IMGUI_VAR_GRAB_ROUNDING:   return (f32)s_layout.grab_rounding;
-        default:                      return 0.0f;
+        default:                        return 0.0f;
     }
 }
 

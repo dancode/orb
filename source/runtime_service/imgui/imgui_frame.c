@@ -639,7 +639,9 @@ imgui_ctx_create( const imgui_ctx_config_t* cfg )
     /* state_slots must be a power of two for the hash mask to work. */
     u32 slots = c.state_slots;
     if ( slots < 16 ) slots = 16;
-    u32 p = 1; while ( p < slots ) p <<= 1; slots = p;
+    u32 p = 1;
+    while ( p < slots ) p <<= 1;
+    slots = p;
 
     /* Find a free pool slot (1..IMGUI_CTX_POOL_MAX-1). */
     i32 slot = -1;
