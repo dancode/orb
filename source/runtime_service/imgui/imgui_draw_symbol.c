@@ -33,6 +33,9 @@
     Shared geometry helpers
 ----------------------------------------------------------------------------------------------*/
 
+/* Forward decl: draw_rule (shapes section) strokes through draw_dashed_line, defined further down. */
+static void draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
+
 /* Make a vec2 (the backend file owns its own v2; this is the UI unit's local one). */
 static imgui_vec2_t sv2( f32 x, f32 y ) { return ( imgui_vec2_t ){ x, y }; }
 
@@ -211,6 +214,35 @@ draw_plus_minus( imgui_rect_t box, bool plus, f32 thickness, u32 color )
     imgui_draw_line( cx - s, cy, cx + s, cy, thickness, color );
     if ( plus )
         imgui_draw_line( cx, cy - s, cx, cy + s, thickness, color );
+}
+
+/* Checkbox / menu indicator: the mark drawn inside the `box` when checked, switched on
+   IMGUI_VAR_CHECK_STYLE -- a 'v' tick (default), a filled disc, or an 'X' cross.  The one place the
+   three-way style resolves, so checkbox and menu_item stay identical and a future style lands once. */
+static void
+draw_check_indicator( imgui_rect_t box, u32 col )
+{
+    u32 style = (u32)( style_var( IMGUI_VAR_CHECK_STYLE ) + 0.5f );
+    if ( style == IMGUI_CHECK_DISC )
+        draw_push_circle_filled( box.x + box.w * 0.5f, box.y + box.h * 0.5f,
+                                 box.w * 0.5f - (f32)s_layout.checkmark_pad, 16, col );
+    else if ( style == IMGUI_CHECK_CROSS )
+        draw_close_x( box, col );
+    else
+        draw_check_mark( box, col );
+}
+
+/* Horizontal rule centered on yc, honoring IMGUI_VAR_SEPARATOR_STYLE (solid fill or dashed line).
+   The shared draw seam for separator() and the two rules of separator_text(). */
+static void
+draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
+{
+    if ( w <= 0.0f )
+        return;
+    if ( style_var( IMGUI_VAR_SEPARATOR_STYLE ) >= 0.5f )
+        draw_dashed_line( x, yc, x + w, yc, 6.0f, 4.0f, thickness, col );
+    else
+        draw_push_rect_filled( x, yc - thickness * 0.5f, w, thickness, 0, 0, 1, 1, 0, col );
 }
 
 /*----------------------------------------------------------------------------------------------

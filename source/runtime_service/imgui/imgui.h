@@ -567,9 +567,12 @@ typedef enum
     IMGUI_VAR_WIN_ROUNDING,   /* corner radius for windows / children / popups; 0 = square */
     IMGUI_VAR_WIDGET_ROUNDING,/* corner radius for control frames (button/checkbox/input/...) */
     IMGUI_VAR_GRAB_ROUNDING,  /* corner radius for slider knobs + scrollbar grabs */
-    IMGUI_VAR_CHECK_STYLE,    /* checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc (imgui_check_style_t) */
+    IMGUI_VAR_CHECK_STYLE,    /* checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc, 2 = 'X' cross (imgui_check_style_t) */
     IMGUI_VAR_BULLET_STYLE,   /* bullet glyph: 0 = filled disc, 1 = square (imgui_bullet_style_t) */
     IMGUI_VAR_ARROW_STYLE,    /* directional arrow: 0 = filled triangle, 1 = stroked chevron (imgui_arrow_style_t) */
+    IMGUI_VAR_SEPARATOR_STYLE,/* separator rule: 0 = solid, 1 = dashed (imgui_separator_style_t) */
+    IMGUI_VAR_PROGRESS_STYLE, /* progress_bar fill: 0 = solid, 1 = vertical gradient (imgui_progress_style_t) */
+    IMGUI_VAR_SLIDER_KNOB,    /* slider knob shape: 0 = bar, 1 = circle (imgui_slider_knob_t) */
 
     IMGUI_VAR_COUNT,          /* var count -- not a metric                   */
 
@@ -578,8 +581,9 @@ typedef enum
 /* Checkbox / menu-item indicator shape (IMGUI_VAR_CHECK_STYLE).  Default is the tick. */
 typedef enum
 {
-    IMGUI_CHECK_TICK = 0,   /* a two-stroke 'v' check mark */
-    IMGUI_CHECK_DISC = 1,   /* a filled disc inside the box */
+    IMGUI_CHECK_TICK  = 0,   /* a two-stroke 'v' check mark    */
+    IMGUI_CHECK_DISC  = 1,   /* a filled disc inside the box   */
+    IMGUI_CHECK_CROSS = 2,   /* a two-diagonal 'X' cross       */
 
 } imgui_check_style_t;
 
@@ -600,6 +604,33 @@ typedef enum
     IMGUI_ARROW_CHEVRON = 1,   /* a stroked '>' chevron (two strokes to an apex) */
 
 } imgui_arrow_style_t;
+
+/* Separator rule shape (IMGUI_VAR_SEPARATOR_STYLE).  Default is the solid rule.  Honored by
+   separator() and the leading / trailing rules of separator_text(). */
+typedef enum
+{
+    IMGUI_SEPARATOR_SOLID  = 0,   /* a continuous filled rule */
+    IMGUI_SEPARATOR_DASHED = 1,   /* a dashed rule            */
+
+} imgui_separator_style_t;
+
+/* progress_bar fill style (IMGUI_VAR_PROGRESS_STYLE).  Default is the solid fill; the gradient
+   variant glosses the fill from the foreground accent to a brighter tint (top to bottom). */
+typedef enum
+{
+    IMGUI_PROGRESS_SOLID    = 0,   /* a flat foreground-accent fill */
+    IMGUI_PROGRESS_GRADIENT = 1,   /* a top-to-bottom gradient gloss */
+
+} imgui_progress_style_t;
+
+/* Slider / drag knob shape (IMGUI_VAR_SLIDER_KNOB).  Default is the bar grab; the circle variant
+   draws a round handle (raise IMGUI_VAR_GRAB_ROUNDING instead for a pill bar). */
+typedef enum
+{
+    IMGUI_SLIDER_KNOB_BAR    = 0,   /* a rectangular grab (grab-rounded) */
+    IMGUI_SLIDER_KNOB_CIRCLE = 1,   /* a circular handle                 */
+
+} imgui_slider_knob_t;
 
 /*==============================================================================================
     Debug overlay layers

@@ -281,11 +281,18 @@ imgui_progress_bar( f32 fraction, const char* overlay )
 
     imgui_rect_t r = widget_next_rect( WIDGET_H );
 
-    /* Track, then the fill bar up to the fraction, then the border on top so the fill stays inside. */
+    /* Track, then the fill bar up to the fraction, then the border on top so the fill stays inside.
+       Solid fill by default; a top-to-bottom gradient gloss when IMGUI_VAR_PROGRESS_STYLE selects it. */
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, COL_SLIDER_TRACK );
     f32 fw = fraction * r.w;
     if ( fw > 0.0f )
-        draw_push_rect_filled( r.x, r.y, fw, r.h, 0,0,1,1, 0, COL_WIDGET_FG );
+    {
+        if ( style_var( IMGUI_VAR_PROGRESS_STYLE ) >= 0.5f )
+            draw_gradient( ( imgui_rect_t ){ r.x, r.y, fw, r.h },
+                           COL_WIDGET_FG, col_lerp( COL_WIDGET_FG, 0xFFFFFFFFu, 0.45f ), false );
+        else
+            draw_push_rect_filled( r.x, r.y, fw, r.h, 0,0,1,1, 0, COL_WIDGET_FG );
+    }
     draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER );
 
     /* Caption: caller text, or a default percentage; centered and fitted to the inner width. */
@@ -374,12 +381,8 @@ imgui_checkbox( const char* label, bool* v )
 
     if ( *v )
     {
-        /* Indicator: a 'v' tick by default, or a filled disc when IMGUI_VAR_CHECK_STYLE selects it. */
-        if ( style_var( IMGUI_VAR_CHECK_STYLE ) >= 0.5f )
-            draw_push_circle_filled( bx + CHECKBOX_SZ * 0.5f, by + CHECKBOX_SZ * 0.5f,
-                                     CHECKBOX_SZ * 0.5f - (f32)s_layout.checkmark_pad, 16, COL_CHECK_MARK );
-        else
-            draw_check_mark( ( imgui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
+        /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per IMGUI_VAR_CHECK_STYLE. */
+        draw_check_indicator( ( imgui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
     }
 
     draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, label_w );
@@ -716,13 +719,14 @@ imgui_canvas( f32 height )
     return widget_next_rect( height );
 }
 
-/* A horizontal rule: a thin line spanning the cell width, centered in a standard-height cell. */
+/* A horizontal rule: a thin line spanning the cell width, centered in a standard-height cell.
+   Solid by default; a dashed rule when IMGUI_VAR_SEPARATOR_STYLE selects it (draw_rule). */
 void
 imgui_separator( void )
 {
     imgui_rect_t r  = widget_next_rect( WIDGET_H );
     imgui_rect_t ln = rect_align( r, r.w, WIN_BORDER, IMGUI_ALIGN_VCENTER );
-    draw_push_rect_filled( ln.x, ln.y, ln.w, ln.h, 0,0,1,1, 0, COL_BORDER );
+    draw_rule( ln.x, ln.y + ln.h * 0.5f, ln.w, WIN_BORDER, COL_BORDER );
 }
 
 /* A labeled rule: a short leading rule, the text, then a rule filling the rest -- "-- Text ----".
@@ -735,15 +739,14 @@ imgui_separator_text( const char* label )
     f32          tw  = label_width( label );
     f32          pre = 2.0f * WIDGET_PAD;                /* short leading rule before the text */
 
-    draw_push_rect_filled( r.x, ly, pre, WIN_BORDER, 0,0,1,1, 0, COL_BORDER );
+    draw_rule( r.x, ly, pre, WIN_BORDER, COL_BORDER );
 
     f32 tx = r.x + pre + WIDGET_PAD;
     draw_label( tx, text_center_y( r.y, r.h ), COL_TEXT, label );
 
     f32 rx = tx + tw + WIDGET_PAD;                       /* trailing rule to the right edge */
     f32 rw = ( r.x + r.w ) - rx;
-    if ( rw > 0.0f )
-        draw_push_rect_filled( rx, ly, rw, WIN_BORDER, 0,0,1,1, 0, COL_BORDER );
+    draw_rule( rx, ly, rw, WIN_BORDER, COL_BORDER );     /* draw_rule no-ops on rw <= 0 */
 }
 
 /*----------------------------------------------------------------------------------------------

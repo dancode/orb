@@ -91,11 +91,7 @@ imgui_menu_item( const char* label, const char* shortcut, bool* selected )
     {
         f32 bx = r.x + WIDGET_PAD;
         f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, IMGUI_ALIGN_VCENTER ).y;
-        if ( style_var( IMGUI_VAR_CHECK_STYLE ) >= 0.5f )
-            draw_push_circle_filled( bx + CHECKBOX_SZ * 0.5f, by + CHECKBOX_SZ * 0.5f,
-                                     CHECKBOX_SZ * 0.5f - (f32)s_layout.checkmark_pad, 16, COL_CHECK_MARK );
-        else
-            draw_check_mark( ( imgui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
+        draw_check_indicator( ( imgui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
     }
 
     f32 lx = r.x + WIDGET_PAD + check_w;

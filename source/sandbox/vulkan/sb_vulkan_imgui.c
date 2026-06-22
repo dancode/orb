@@ -1446,60 +1446,118 @@ demo_icons( void )
 /*==============================================================================================
     18. Symbols -- the Render* primitive family (normal pipeline, not the icon atlas).
 
-    The checkbox tick and bullet shapes are style-driven: IMGUI_VAR_CHECK_STYLE / _BULLET_STYLE,
-    set globally (set_check_style / set_bullet_style) or locally (push_style_var, shown here so the
-    change scopes to just the sample widgets).  Below that, each raw render_* primitive is drawn
-    into a dummy() slot to show the pieces editor / custom widgets can reuse.
+    Two halves.  Top: the widget *style tags* -- per-emit enum switches pushed via push_style_var
+    (IMGUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE / _SEPARATOR_STYLE / _PROGRESS_STYLE /
+    _SLIDER_KNOB), so the same call (checkbox, arrow_button, separator, progress_bar, slider) re-shapes
+    to the selected style; pushing scopes it to just the sample block, set_*_style would set it
+    globally.  Bottom: each raw render_* primitive drawn into a dummy() slot, the pieces editor /
+    custom widgets reuse.
 ==============================================================================================*/
 
 static void
 demo_symbols( void )
 {
     imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 400, 470, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 430, 620, IMGUI_COND_ONCE );
     if ( imgui()->begin_window( "Symbols", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
-        imgui()->text( "Render primitives drawn through the normal" );
-        imgui()->text( "vertex pipeline (lines / tris / circles)." );
+        imgui()->text( "Style tags force a shape on the widget emitting." );
 
-        imgui()->separator_text( "Indicator styles (scoped locally)" );
+        imgui()->separator_text( "Style tags (scoped locally)" );
 
-        static bool disc_check  = false;
+        static i32  check_idx  = 0;     /* 0 tick / 1 disc / 2 cross */
         static bool square_bull = false;
-        imgui()->checkbox( "Disc check style", &disc_check );
-        imgui()->checkbox( "Square bullets",   &square_bull );
+        static bool chevron     = false;
+        static bool dashed      = false;
+        static bool gradient    = false;
+        static bool circle_knob = false;
 
-        /* push/pop scopes the change to the sample widgets below; set_check_style /
-           set_bullet_style would set the same knob globally instead. */
-        imgui()->push_style_var( IMGUI_VAR_CHECK_STYLE,  disc_check  ? 1.0f : 0.0f );
-        imgui()->push_style_var( IMGUI_VAR_BULLET_STYLE, square_bull ? 1.0f : 0.0f );
+        imgui()->radio_button( "Tick",  &check_idx, 0 ); imgui()->same_line( -1.0f );
+        imgui()->radio_button( "Disc",  &check_idx, 1 ); imgui()->same_line( -1.0f );
+        imgui()->radio_button( "Cross", &check_idx, 2 );
+        imgui()->checkbox( "Square bullets",    &square_bull );
+        imgui()->checkbox( "Chevron arrows",    &chevron );
+        imgui()->checkbox( "Dashed separators", &dashed );
+        imgui()->checkbox( "Gradient progress", &gradient );
+        imgui()->checkbox( "Circle slider knob", &circle_knob );
+
+        /* push/pop scopes the tags to the sample widgets below; the set_*_style setters (check /
+           bullet / arrow) or push of the same var elsewhere would apply them more broadly. */
+        imgui()->push_style_var( IMGUI_VAR_CHECK_STYLE,     (f32)check_idx );
+        imgui()->push_style_var( IMGUI_VAR_BULLET_STYLE,    square_bull ? 1.0f : 0.0f );
+        imgui()->push_style_var( IMGUI_VAR_ARROW_STYLE,     chevron     ? 1.0f : 0.0f );
+        imgui()->push_style_var( IMGUI_VAR_SEPARATOR_STYLE, dashed      ? 1.0f : 0.0f );
+        imgui()->push_style_var( IMGUI_VAR_PROGRESS_STYLE,  gradient    ? 1.0f : 0.0f );
+        imgui()->push_style_var( IMGUI_VAR_SLIDER_KNOB,     circle_knob ? 1.0f : 0.0f );
+
+        imgui()->text( "Sample widgets honoring the tags:" );
 
         static bool a = true, b = false, c = true;
-        imgui()->checkbox( "Enabled", &a );
-        imgui()->checkbox( "Visible", &b );
+        imgui()->checkbox( "Enabled", &a ); imgui()->same_line( 12.0f );
+        imgui()->checkbox( "Visible", &b ); imgui()->same_line( 12.0f );
         imgui()->checkbox( "Locked",  &c );
+
+        imgui()->push_item_flag( IMGUI_ITEM_BUTTON_REPEAT, true );
+        imgui()->arrow_button( "##l", IMGUI_DIR_LEFT  ); imgui()->same_line( -1.0f );
+        imgui()->arrow_button( "##r", IMGUI_DIR_RIGHT ); imgui()->same_line( 12.0f );
+        imgui()->arrow_button( "##u", IMGUI_DIR_UP    ); imgui()->same_line( -1.0f );
+        imgui()->arrow_button( "##d", IMGUI_DIR_DOWN  );
+        imgui()->pop_item_flag();
+
+        imgui()->separator();                                  /* solid or dashed per the tag */
+
+        static f32 sval = 0.5f;
+        imgui()->slider_float( "Level", &sval, 0.0f, 1.0f );   /* bar or circle knob per the tag */
+        imgui()->progress_bar( 0.66f, NULL );                  /* solid or gradient fill per the tag */
         imgui()->bullet_text( "first bullet item" );
-        imgui()->bullet_text( "second bullet item" );
 
-        imgui()->pop_style_var( 2 );
+        imgui()->pop_style_var( 6 );
 
-        imgui()->separator_text( "Raw render_* primitives" );
+        imgui()->separator_text( "Glyph + shape primitives" );
 
-        /* A strip of dummy slots, each filled with one primitive via the rect it returns. */
-        f32       sz  = 28.0f;
+        /* A strip of dummy slots, each filled with one render_* primitive via its returned rect. */
+        f32       sz  = 30.0f;
         const u32 col = 0xFFE0E0E0u;
+        const u32 acc = 0xFF60C0F0u;
+        f32       t   = (f32)imgui()->get_time();
+
         imgui()->row_cols( 0, 6 );
         {
             imgui_rect_t r;
             r = imgui()->dummy( sz, sz ); imgui()->render_check_mark( r, 0xFF60D060u );
-            r = imgui()->dummy( sz, sz ); imgui()->render_arrow( r, IMGUI_DIR_RIGHT, col );
-            r = imgui()->dummy( sz, sz ); imgui()->render_arrow( r, IMGUI_DIR_DOWN, col );
-            r = imgui()->dummy( sz, sz ); imgui()->render_bullet( r.x + sz * 0.5f, r.y + sz * 0.5f, 5.0f, col );
             r = imgui()->dummy( sz, sz ); imgui()->render_close( r, 0xFF6060E0u );
+            r = imgui()->dummy( sz, sz ); imgui()->render_chevron( r, IMGUI_DIR_RIGHT, 2.0f, col );
+            r = imgui()->dummy( sz, sz ); imgui()->render_plus_minus( r, true,  2.0f, col );
+            r = imgui()->dummy( sz, sz ); imgui()->render_plus_minus( r, false, 2.0f, col );
             r = imgui()->dummy( sz, sz ); imgui()->render_arrow_pointing_at( r.x + sz * 0.5f, r.y + sz * 0.25f, 7.0f, IMGUI_DIR_UP, col );
+
+            r = imgui()->dummy( sz, sz ); imgui()->render_frame( r, 0xFF404858u, 0xFF8090A0u, 1.0f );
+            r = imgui()->dummy( sz, sz ); imgui()->render_round_rect( r, 7.0f, 7.0f, 0.0f, 0.0f, true, 0.0f, 0xFF4A90D0u ); /* tab */
+            r = imgui()->dummy( sz, sz ); imgui()->render_ngon( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, 6, 0.0f, true, 0.0f, acc );
+            r = imgui()->dummy( sz, sz ); imgui()->render_circle( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, false, 2.0f, acc );
+            r = imgui()->dummy( sz, sz ); imgui()->render_arc( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, 0.0f, 4.2f, 3.0f, acc );
+            r = imgui()->dummy( sz, sz ); imgui()->render_pie( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, -1.2f, 1.6f, acc );
+
+            r = imgui()->dummy( sz, sz ); imgui()->render_bezier_cubic( r.x+3, r.y+sz-3, r.x+3, r.y+3, r.x+sz-3, r.y+sz-3, r.x+sz-3, r.y+3, 2.0f, acc );
+            r = imgui()->dummy( sz, sz ); imgui()->render_dashed_line( r.x+2, r.y+sz*0.5f, r.x+sz-2, r.y+sz*0.5f, 4.0f, 3.0f, 2.0f, col );
+            r = imgui()->dummy( sz, sz ); imgui()->render_checker( r, 6.0f, 0xFF808080u, 0xFF404040u );
+            r = imgui()->dummy( sz, sz ); imgui()->render_hatch( r, 5.0f, 1.0f, 0xFF909090u );
+            r = imgui()->dummy( sz, sz ); imgui()->render_gradient( r, 0xFF2060A0u, 0xFF60D0F0u, false );
+            r = imgui()->dummy( sz, sz ); imgui()->render_grip( r, col );
+
+            r = imgui()->dummy( sz, sz ); imgui()->render_shadow( r, 4.0f, 0xC0000000u ); imgui()->render_frame( r, 0xFF505868u, 0xFF8090A0u, 1.0f );
+            r = imgui()->dummy( sz, sz ); imgui()->render_spinner( r, t, 3.0f, acc );
+            r = imgui()->dummy( sz, sz ); imgui()->render_progress_arc( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, 0.66f, 3.0f, acc );
+            r = imgui()->dummy( sz, sz ); imgui()->render_bullet( r.x + sz*0.5f, r.y + sz*0.5f, 5.0f, col );
+            r = imgui()->dummy( sz, sz ); imgui()->render_arrow( r, IMGUI_DIR_DOWN, col );
+            r = imgui()->dummy( sz, sz ); imgui()->render_ngon( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, 3, t, false, 2.0f, acc );
         }
         imgui()->row( 0 );
+
+        imgui()->separator_text( "Text effects" );
+        imgui_rect_t tr = imgui()->dummy( 0.0f, 20.0f );
+        imgui()->render_text_outline( tr.x + 4.0f, tr.y + 4.0f, "Outlined text", 0xFFFFFFFFu, 0xFF000000u );
     }
     imgui()->end_window();
 }
@@ -1527,7 +1585,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Tables",       "table_begin / setup_column / next_row / next_column", demo_table   },
     { "Docking",      "dockspace_over_viewport / dock_split / tabs",     demo_docking     },
     { "Icons",        "register_icon / image / draw_icon_in",            demo_icons       },
-    { "Symbols",      "render_check_mark / arrow / bullet / close",      demo_symbols     },
+    { "Symbols",      "style tags + render_* shape/curve/fill palette",  demo_symbols     },
     { NULL,           NULL,                                             NULL             },
 };
 

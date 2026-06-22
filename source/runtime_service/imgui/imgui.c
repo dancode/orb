@@ -100,6 +100,9 @@ static imgui_metrics_t s_layout =
     .check_style     = IMGUI_CHECK_TICK,    /* 'v' tick by default (set_check_style to change)  */
     .bullet_style    = IMGUI_BULLET_DISC,   /* filled disc by default (set_bullet_style to change) */
     .arrow_style     = IMGUI_ARROW_FILLED,  /* solid triangle by default (set_arrow_style to change) */
+    .separator_style = IMGUI_SEPARATOR_SOLID,  /* solid rule by default (push IMGUI_VAR_SEPARATOR_STYLE) */
+    .progress_style  = IMGUI_PROGRESS_SOLID,   /* flat fill by default (push IMGUI_VAR_PROGRESS_STYLE)   */
+    .slider_knob     = IMGUI_SLIDER_KNOB_BAR,  /* bar grab by default (push IMGUI_VAR_SLIDER_KNOB)       */
 };
 
 /* Recompute the layout metrics from a font's type size (em), glyph-box height (char_h), and

@@ -71,9 +71,12 @@ style_var_base( imgui_style_var_t v )
         case IMGUI_VAR_WIN_ROUNDING:    return (f32)s_layout.win_rounding;
         case IMGUI_VAR_WIDGET_ROUNDING: return (f32)s_layout.widget_rounding;
         case IMGUI_VAR_GRAB_ROUNDING:   return (f32)s_layout.grab_rounding;
-        case IMGUI_VAR_CHECK_STYLE:     return (f32)s_layout.check_style;   /* enum-as-var: 0 tick / 1 disc */
-        case IMGUI_VAR_BULLET_STYLE:    return (f32)s_layout.bullet_style;  /* enum-as-var: 0 disc / 1 square */
-        case IMGUI_VAR_ARROW_STYLE:     return (f32)s_layout.arrow_style;   /* enum-as-var: 0 triangle / 1 chevron */
+        case IMGUI_VAR_CHECK_STYLE:     return (f32)s_layout.check_style;     /* enum-as-var: 0 tick / 1 disc / 2 cross */
+        case IMGUI_VAR_BULLET_STYLE:    return (f32)s_layout.bullet_style;    /* enum-as-var: 0 disc / 1 square */
+        case IMGUI_VAR_ARROW_STYLE:     return (f32)s_layout.arrow_style;     /* enum-as-var: 0 triangle / 1 chevron */
+        case IMGUI_VAR_SEPARATOR_STYLE: return (f32)s_layout.separator_style; /* enum-as-var: 0 solid / 1 dashed */
+        case IMGUI_VAR_PROGRESS_STYLE:  return (f32)s_layout.progress_style;  /* enum-as-var: 0 solid / 1 gradient */
+        case IMGUI_VAR_SLIDER_KNOB:     return (f32)s_layout.slider_knob;     /* enum-as-var: 0 bar / 1 circle */
         default:                        return 0.0f;
     }
 }
