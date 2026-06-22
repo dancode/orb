@@ -213,6 +213,18 @@ const imgui_api_t g_imgui_api_struct =
     .get_delta_time                     = imgui_get_delta_time,
     .get_time                           = imgui_get_time,
     .wants_redraw                       = imgui_wants_redraw,
+    .table_begin                        = imgui_table_begin,
+    .table_end                          = imgui_table_end,
+    .table_setup_column                 = imgui_table_setup_column,
+    .table_headers_row                  = imgui_table_headers_row,
+    .table_next_row                     = imgui_table_next_row,
+    .table_next_column                  = imgui_table_next_column,
+    .table_set_column_index             = imgui_table_set_column_index,
+    .table_get_column_count             = imgui_table_get_column_count,
+    .table_get_column_index             = imgui_table_get_column_index,
+    .table_get_row_index                = imgui_table_get_row_index,
+    .table_get_sort_specs               = imgui_table_get_sort_specs,
+    .table_set_bg_color                 = imgui_table_set_bg_color,
 };
 
 /*==============================================================================================

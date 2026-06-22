@@ -829,6 +829,68 @@ typedef struct imgui_api_s
        transition is in flight, the loop must keep pumping frames to advance the animation. */
     bool ( *wants_redraw )( void );
 
+    /* Tables -- a multi-column layout with independent cell clipping and optional scrolling,
+       sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll
+       (like flow) with column tracks resolved once per table (like grid), plus frozen header support.
+
+       USAGE CONTRACT:
+         1. table_begin()            -- open the table; returns true (always, like begin_child).
+                                        Consume it paired with table_end() regardless.
+         2. table_setup_column()     -- call ncols times between table_begin and the first row.
+                                        The calls may be omitted; all columns default to stretch.
+         3. table_headers_row()      -- optional; draws and clips a non-scrolling header strip.
+                                        Call after all table_setup_column, before the first data row.
+                                        [Phase 1 stub -- no-op until Phase 2 lands.]
+         4. for each row:
+              table_next_row()       -- begin a new data row.  First call sets row 0.
+              for each column:
+                table_next_column()  -- advance to the next column and return true; clips draw + hit-
+                                        test to the cell.  Returns false past the last column.
+                <emit widgets>       -- normal widget calls; they land inside the cell.
+         5. table_end()              -- close the table; restores the parent layout.
+
+       Column widths use the overloaded-unit rule (same as columns / grid):
+           > 1.0  fixed pixels   1.0  fill / stretch   (0,1)  fraction   0.0  natural (= stretch)
+       Height: 0 = auto (8 rows tall), > 0 = fixed pixels.
+
+           if ( imgui()->table_begin( "my_table", 3, IMGUI_TABLE_NONE, 0 ) )
+           {
+               imgui()->table_setup_column( "Name",  IMGUI_TABLE_COL_STRETCH,  0     );
+               imgui()->table_setup_column( "Value", IMGUI_TABLE_COL_FIXED,    80.0f );
+               imgui()->table_setup_column( "Unit",  IMGUI_TABLE_COL_FIXED,    40.0f );
+               for ( i32 i = 0; i < count; ++i )
+               {
+                   imgui()->table_next_row( 0 );
+                   if ( imgui()->table_next_column() ) imgui()->text( name[i]  );
+                   if ( imgui()->table_next_column() ) imgui()->text( value[i] );
+                   if ( imgui()->table_next_column() ) imgui()->text( unit[i]  );
+               }
+               imgui()->table_end();
+           }
+
+       table_set_column_index( col ) -- jump to a specific column (0-based) rather than advancing.
+       table_get_column_count()      -- number of columns the table was opened with.
+       table_get_column_index()      -- current column index (-1 before the first next_column).
+       table_get_row_index()         -- current row index (-1 before the first next_row).
+       table_get_sort_specs( out )   -- read sort state; returns true when a header was clicked
+                                        this frame and the caller should re-sort their data.
+                                        [Phase 1 stub -- always returns false.]
+       table_set_bg_color( target, abgr ) -- override the current row's or cell's background.
+                                        [Phase 1 stub -- no-op until Phase 5 lands.] */
+
+    bool ( *table_begin            )( const char* id, i32 ncols, imgui_table_flags_t flags, f32 height );
+    void ( *table_end              )( void );
+    void ( *table_setup_column     )( const char* label, imgui_table_col_flags_t flags, f32 width );
+    void ( *table_headers_row      )( void );
+    void ( *table_next_row         )( f32 min_h );
+    bool ( *table_next_column      )( void );
+    bool ( *table_set_column_index )( i32 col );
+    i32  ( *table_get_column_count )( void );
+    i32  ( *table_get_column_index )( void );
+    i32  ( *table_get_row_index    )( void );
+    bool ( *table_get_sort_specs   )( imgui_table_sort_specs_t* out );
+    void ( *table_set_bg_color     )( imgui_table_bg_target_t target, u32 abgr );
+
 } imgui_api_t;
 
 /*============================================================================================*/

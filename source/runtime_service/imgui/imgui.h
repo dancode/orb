@@ -747,6 +747,67 @@ typedef enum
 
 } imgui_font_t;
 
+/*==============================================================================================
+    Table support
+
+    begin_table / end_table open a multi-column layout with independent cell clipping.
+    Use table_setup_column before any row to name and size columns, then iterate with
+    table_next_row + table_next_column.  See imgui_api.h for the full ergonomic contract.
+
+    Column count limit is IMGUI_TABLE_COLS_MAX.  Column sizes use the same overloaded f32 as
+    the layout engine: >1 = fixed pixels, 1 = stretch / fill, (0,1) = fraction.
+==============================================================================================*/
+
+#define IMGUI_TABLE_COLS_MAX 16
+
+typedef u32 imgui_table_flags_t;
+typedef enum
+{
+    IMGUI_TABLE_NONE            = 0,
+    IMGUI_TABLE_BORDERS_H       = 1 << 0,   /* horizontal row dividers (between rows)          */
+    IMGUI_TABLE_BORDERS_V       = 1 << 1,   /* vertical column dividers (between columns)      */
+    IMGUI_TABLE_BORDERS_OUTER   = 1 << 2,   /* outer frame border around the whole table       */
+    IMGUI_TABLE_BORDERS         = IMGUI_TABLE_BORDERS_H | IMGUI_TABLE_BORDERS_V
+                                | IMGUI_TABLE_BORDERS_OUTER,
+    IMGUI_TABLE_SCROLL_Y        = 1 << 3,   /* table body scrolls vertically                  */
+    IMGUI_TABLE_SCROLL_X        = 1 << 4,   /* table body scrolls horizontally                */
+    IMGUI_TABLE_SORTABLE        = 1 << 5,   /* clicking a header column header sorts          */
+    IMGUI_TABLE_ROW_STRIPES     = 1 << 6,   /* alternating even/odd row background tint       */
+    IMGUI_TABLE_RESIZABLE       = 1 << 7,   /* drag column borders to resize                  */
+    IMGUI_TABLE_NO_HEADER       = 1 << 8,   /* skip table_headers_row entirely                */
+
+} imgui_table_flags_e;
+
+typedef u32 imgui_table_col_flags_t;
+typedef enum
+{
+    IMGUI_TABLE_COL_NONE         = 0,
+    IMGUI_TABLE_COL_FIXED        = 1 << 0,  /* fixed pixel width -- does not stretch          */
+    IMGUI_TABLE_COL_STRETCH      = 1 << 1,  /* fill remaining space (default when width==0)   */
+    IMGUI_TABLE_COL_NO_RESIZE    = 1 << 2,  /* not user-resizable (future phase)              */
+    IMGUI_TABLE_COL_NO_SORT      = 1 << 3,  /* not clickable for sort (future phase)          */
+    IMGUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  /* right-align cell content (future phase)        */
+    IMGUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  /* center cell content (future phase)             */
+
+} imgui_table_col_flags_e;
+
+/* Background color override target for table_set_bg_color (future phase). */
+typedef enum
+{
+    IMGUI_TABLE_BG_NONE = 0,
+    IMGUI_TABLE_BG_ROW,     /* tint the current entire row    */
+    IMGUI_TABLE_BG_CELL,    /* tint the current cell only     */
+
+} imgui_table_bg_target_t;
+
+/* Sort specification returned by table_get_sort_specs (future phase). */
+typedef struct
+{
+    i32  col;          /* sorted column index; -1 = unsorted */
+    bool descending;   /* false = ascending                  */
+
+} imgui_table_sort_specs_t;
+
 // clang-format on
 /*============================================================================================*/
 #endif    // IMGUI_H

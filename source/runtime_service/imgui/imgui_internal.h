@@ -586,6 +586,67 @@ typedef struct imgui_context_t
 } imgui_context_t;
 
 /*==============================================================================================
+    Table state types (imgui_table.c)
+
+    Phase 1 only: per-frame context + a small persistent pool for column widths / sort state.
+    The pool is module-static (not per-context) and LRU-reclaimed by seen_frame, the same
+    contract as the keyed widget state pool.  The table context is a single active slot for now;
+    nested tables are a future addition.
+==============================================================================================*/
+
+/* Per-column setup data filled by table_setup_column before the first row. */
+typedef struct
+{
+    char                    label[ 32 ];   /* display name for headers_row (future)       */
+    imgui_table_col_flags_t flags;         /* FIXED / STRETCH / NO_RESIZE / etc.          */
+    f32                     init_w;        /* 0 = stretch (==1 fill); >1 = fixed pixels   */
+
+} imgui_table_col_t;
+
+#define IMGUI_TABLE_POOL_CAP 32   /* max concurrent distinct tables tracked across frames */
+
+/* Per-table persistent state: column widths and sort choice survive frames. */
+typedef struct
+{
+    imgui_id_t id;
+    u32        seen_frame;
+    f32        col_w[ IMGUI_TABLE_COLS_MAX ];   /* 0 = use column's init_w / default */
+    i8         sort_col;                        /* -1 = unsorted                     */
+    i8         sort_dir;                        /* 0 = ascending, 1 = descending     */
+
+} imgui_table_persist_t;
+
+/* Per-frame active table context.  One table open at a time (no nesting yet). */
+typedef struct
+{
+    imgui_id_t              id;
+    imgui_table_flags_t     flags;
+    i32                     ncols;
+    imgui_table_col_t       cols[ IMGUI_TABLE_COLS_MAX ];
+    i32                     col_setup_n;   /* number of table_setup_column calls so far */
+
+    /* Resolved column geometry (screen space), set once in table_begin. */
+    f32                     col_x[ IMGUI_TABLE_COLS_MAX ];
+    f32                     col_w[ IMGUI_TABLE_COLS_MAX ];
+
+    /* Iteration state. */
+    i32                     cur_col;       /* -1 before first table_next_column this row */
+    i32                     cur_row;       /* -1 before first table_next_row             */
+    f32                     row_top;       /* screen-space top of the current row        */
+    f32                     row_h;         /* current row height in pixels               */
+
+    imgui_rect_t            outer_rect;    /* full table box in screen space             */
+    imgui_rect_t            body_rect;     /* content area inside the opened region      */
+
+    /* Cell clip bookkeeping: one draw clip is pushed per column and popped on transition. */
+    bool                    in_cell;       /* a clip rect is currently pushed            */
+    imgui_rect_t            saved_clip;    /* s_build.clip_rect saved before the push    */
+
+    imgui_table_persist_t*  persist;
+
+} imgui_table_t;
+
+/*==============================================================================================
     Cross-file forward declarations
 
     A handful of helpers are called from a file included BEFORE the file that defines them (the

@@ -178,7 +178,7 @@ main( int argc, char** argv )
     /* Multi-context demo: create a secondary context with game-UI sizing (small pools).
        Default context starts listening; ctx2 starts deaf.  A/S keys toggle which listens.
        Toggle b_multi_ctx to exercise the API.  Teardown is handled by imgui()->shutdown(). */
-    const bool      b_multi_ctx = true;
+    const bool      b_multi_ctx = false;
     imgui_ctx_t     ctx2        = IMGUI_CTX_INVALID;
     if ( b_multi_ctx )
     {
