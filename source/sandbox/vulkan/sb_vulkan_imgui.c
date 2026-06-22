@@ -1084,10 +1084,11 @@ demo_table( void )
         }
 
         /* stretch Name, fixed Type (64 px), fixed Value (128 px); sortable + striped + framed,
-           vertical scroll inside a fixed 160px body (header stays pinned). */
+           vertical scroll inside a fixed 160px body (header stays pinned).  RESIZABLE: drag the
+           column boundaries (the highlight line appears under the cursor). */
         if ( imgui()->table_begin( "props", 3,
-                                   IMGUI_TABLE_SORTABLE | IMGUI_TABLE_ROW_STRIPES |
-                                   IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER | IMGUI_TABLE_SCROLL_Y,                                   
+                                   IMGUI_TABLE_SORTABLE | IMGUI_TABLE_ROW_STRIPES | IMGUI_TABLE_RESIZABLE |
+                                   IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER | IMGUI_TABLE_SCROLL_Y,
                                    160.0f ))
         {
             imgui()->table_setup_column( "Name",  IMGUI_TABLE_COL_STRETCH,   0     );

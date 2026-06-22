@@ -783,8 +783,8 @@ typedef enum
     IMGUI_TABLE_COL_NONE         = 0,
     IMGUI_TABLE_COL_FIXED        = 1 << 0,  /* fixed pixel width -- does not stretch          */
     IMGUI_TABLE_COL_STRETCH      = 1 << 1,  /* fill remaining space (default when width==0)   */
-    IMGUI_TABLE_COL_NO_RESIZE    = 1 << 2,  /* not user-resizable (future phase)              */
-    IMGUI_TABLE_COL_NO_SORT      = 1 << 3,  /* not clickable for sort (future phase)          */
+    IMGUI_TABLE_COL_NO_RESIZE    = 1 << 2,  /* pins this column's right boundary (no drag)    */
+    IMGUI_TABLE_COL_NO_SORT      = 1 << 3,  /* not clickable for sort                         */
     IMGUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  /* right-align cell content (future phase)        */
     IMGUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  /* center cell content (future phase)             */
 

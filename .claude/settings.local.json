@@ -145,7 +145,10 @@
       "PowerShell($bat = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; \\(Get-Item F:\\\\orb\\\\source\\\\runtime_service\\\\imgui\\\\imgui_table.c\\).LastWriteTime; cmd /c \"`\"$bat`\" x64 >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -clean >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_vulkan >nul 2>&1 && echo DEBUG_OK && F:\\\\orb\\\\bin\\\\build_tool.exe -config Release -target sb_vulkan >nul 2>&1 && echo RELEASE_OK && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -monolithic -target sb_vulkan >nul 2>&1 && echo MONO_OK\"; \"EXIT=$LASTEXITCODE\")",
       "Bash(bin/build_tool.exe -config Debug)",
       "Bash(bin/build_tool.exe -config Debug -target sb_vulkan_imgui)",
-      "Bash(echo \"rc=$?\")"
+      "Bash(echo \"rc=$?\")",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target imgui'; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_vulkan_imgui'; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_vulkan'; \"EXIT=$LASTEXITCODE\")"
     ]
   }
 }

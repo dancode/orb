@@ -123,6 +123,74 @@ table_resolve_columns( imgui_table_t* t, f32 x, f32 w )
     layout_resolve_tracks( tracks, (u32)t->ncols, x, w, 0.0f, t->col_x, t->col_w );
 }
 
+/* Drag an interior column boundary to resize (IMGUI_TABLE_RESIZABLE).  Run from table_open_body
+   right after columns resolve, so a live drag updates the persist widths and we re-resolve for
+   same-frame feedback.  The grab bands span the FULL table height (header included), so widen the
+   hit clip to the whole table box for the queries -- the same trick table_header_interact uses --
+   then restore it for the body rows.  Gated on this table's window being front-most with a free or
+   self-owned active id, mirroring the child edge-resize.
+
+   Pair-resize: the dragged boundary grows the column on its left and gives the difference back to
+   its right neighbor, so the pair's combined width -- and therefore every other column -- stays put
+   and the grabbed edge tracks the cursor exactly.  Both sides are written as fixed-px tracks
+   (values > 1), which table_resolve_columns then honors over init_w / stretch. */
+static void
+table_resize_interact( imgui_table_t* t )
+{
+    if ( !( t->flags & IMGUI_TABLE_RESIZABLE ) || !t->persist ) return;
+
+    imgui_rect_t body_hit = s_build.clip_rect;
+    s_build.clip_rect = rect_intersect( t->saved_clip, t->outer_rect );
+
+    const f32 thick = 6.0f;          /* grab band width, centered on the boundary */
+    const f32 min_w = WIDGET_MIN_W;  /* floor for each side of the resized pair    */
+    bool      front = ( s_build.win_id == s_interaction.hover_win );
+
+    for ( i32 i = 0; i < t->ncols - 1; ++i )
+    {
+        /* A column flagged NO_RESIZE pins the boundary on its right edge. */
+        imgui_table_col_t* col = ( i < t->col_setup_n ) ? &t->cols[ i ] : NULL;
+        if ( col && ( col->flags & IMGUI_TABLE_COL_NO_RESIZE ) ) continue;
+
+        f32          bx  = t->col_x[ i + 1 ];   /* boundary between col i and col i+1 */
+        imgui_rect_t hr  = { bx - thick * 0.5f, t->outer_rect.y, thick, t->outer_rect.h };
+        imgui_id_t   rid = id_combine( t->id, (imgui_id_t)( 0x5200u + i ) );
+
+        bool active = ( s_interaction.active_id == rid );
+
+        /* Hot when free + front-most and the cursor is over the band; grab claims the active id and
+           the left button (released globally when it lifts, like the dock splitter). */
+        if ( front && s_interaction.active_id == IMGUI_ID_NONE && rect_hit( hr ) )
+        {
+            t->resize_hot = (i8)i;
+            if ( s_io.mouse_pressed[ 0 ] )
+            {
+                s_interaction.active_id     = rid;
+                s_interaction.active_button = 0;
+                active                      = true;
+            }
+        }
+
+        if ( active )
+        {
+            t->resize_hot = (i8)i;
+
+            f32 pair_w = t->col_w[ i ] + t->col_w[ i + 1 ];
+            if ( pair_w >= 2.0f * min_w )   /* enough room to keep both sides above the floor */
+            {
+                f32 new_left = clampf( s_io.mouse_x - t->col_x[ i ], min_w, pair_w - min_w );
+                t->persist->col_w[ i ]     = new_left;
+                t->persist->col_w[ i + 1 ] = pair_w - new_left;
+
+                /* Re-resolve so the columns laid out this frame reflect the drag with no lag. */
+                table_resolve_columns( t, lf()->content_x, lf()->content_w );
+            }
+        }
+    }
+
+    s_build.clip_rect = body_hit;
+}
+
 /* Advance the layout cursor past the current row. */
 static void
 table_end_row( imgui_table_t* t )
@@ -180,6 +248,10 @@ table_open_body( imgui_table_t* t )
     t->body_rect.x = lf()->content_x;
     t->body_rect.w = lf()->content_w;
 
+    /* Resolve column-boundary drags now (after geometry, before any cell content) so a live drag
+       re-resolves the columns this frame and a grab pre-empts the header sort under the same pixel. */
+    table_resize_interact( t );
+
     t->header_done = true;
 }
 
@@ -210,6 +282,13 @@ table_draw_borders( imgui_table_t* t, f32 content_bottom )
     /* Outer frame around the used table box. */
     if ( t->flags & IMGUI_TABLE_BORDERS_OUTER )
         draw_push_rect_outline( x0, y0, w, h, 1.0f, 0, COL_BORDER );
+
+    /* Column-resize feedback: recolor the hot / dragged boundary in COL_RESIZE_HOT, drawn LAST so
+       it wins over the BORDERS_V divider that sits at the same x (and over the outer frame).  Drawn
+       here -- in the parent clip after the one table clip is popped -- for the same reason the
+       dividers are: so it is not half-clipped by the table box edge.  Square like all table chrome. */
+    if ( t->resize_hot >= 0 && t->resize_hot < t->ncols - 1 )
+        draw_push_rect_filled( t->col_x[ t->resize_hot + 1 ], y0, 1.0f, h, 0, 0, 0, 0, 0, COL_RESIZE_HOT );
 
     draw_set_rounding( save_round );
 }
@@ -244,6 +323,7 @@ imgui_table_begin( const char* id_str, i32 ncols, imgui_table_flags_t flags, f32
     t->ncols      = ncols;
     t->cur_col    = -1;
     t->cur_row    = -1;
+    t->resize_hot = -1;
     t->outer_rect = ( imgui_rect_t ){ parent->content_x, parent->cursor_y, w, h };
     t->persist    = table_persist_get( id );
 

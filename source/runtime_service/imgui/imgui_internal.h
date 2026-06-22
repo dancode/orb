@@ -656,6 +656,10 @@ typedef struct
     i8                      hdr_hot;       /* column under the cursor (-1 none)            */
     i8                      hdr_act;       /* column being pressed     (-1 none)           */
 
+    /* Column-resize feedback: index of the interior boundary (between col i and i+1) that is hot
+       or being dragged, drawn as a highlight line in table_end.  -1 = none.  See IMGUI_TABLE_RESIZABLE. */
+    i8                      resize_hot;
+
     /* Set true in table_headers_row when the user clicks a sort-active column header.
        Cleared by table_get_sort_specs.  Automatically false each new frame (s_tab memset). */
     bool                    sort_dirty;
