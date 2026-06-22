@@ -902,23 +902,9 @@ imgui_image( imgui_icon_id_t id, f32 w, f32 h, u32 col )
     imgui_draw_icon_in( r, id, col );
 }
 
-/*----------------------------------------------------------------------------------------------
-    Symbol render primitives -- public surface over the internal draw_* helpers (imgui_widget_core.c),
-    the Dear ImGui Render* family.  These draw through the normal vertex pipeline (lines / triangles /
-    circles), NOT the icon atlas, so editor / custom widgets can paint the same checkmarks, arrows,
-    bullets and crosses the built-in widgets use.  set_check_style / set_bullet_style set the global
-    default indicator shape; a scoped change is push_style_var( IMGUI_VAR_CHECK_STYLE/.., v ).
-----------------------------------------------------------------------------------------------*/
-
-void imgui_render_check_mark( imgui_rect_t box, u32 col )                       { draw_check_mark( box, col ); }
-void imgui_render_arrow     ( imgui_rect_t box, imgui_dir_t dir, u32 col )      { draw_arrow( box, dir, col ); }
-void imgui_render_bullet    ( f32 cx, f32 cy, f32 r, u32 col )                  { draw_bullet( cx, cy, r, col ); }
-void imgui_render_close     ( imgui_rect_t box, u32 col )                       { draw_close_x( box, col ); }
-void imgui_render_arrow_pointing_at( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 col )
-                                                                               { draw_arrow_pointing_at( tx, ty, half, dir, col ); }
-
-void imgui_set_check_style ( u32 style ) { s_layout.check_style  = style; }   /* imgui_check_style_t  (global) */
-void imgui_set_bullet_style( u32 style ) { s_layout.bullet_style = style; }   /* imgui_bullet_style_t (global) */
+/* The public imgui_render_* symbol surface (render_check_mark / render_arrow / render_frame /
+   render_round_rect / ... and the set_*_style setters) lives in imgui_draw_symbol.c, beside the
+   draw_* helpers it wraps. */
 
 // clang-format on
 /*============================================================================================*/

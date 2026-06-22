@@ -569,6 +569,7 @@ typedef enum
     IMGUI_VAR_GRAB_ROUNDING,  /* corner radius for slider knobs + scrollbar grabs */
     IMGUI_VAR_CHECK_STYLE,    /* checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc (imgui_check_style_t) */
     IMGUI_VAR_BULLET_STYLE,   /* bullet glyph: 0 = filled disc, 1 = square (imgui_bullet_style_t) */
+    IMGUI_VAR_ARROW_STYLE,    /* directional arrow: 0 = filled triangle, 1 = stroked chevron (imgui_arrow_style_t) */
 
     IMGUI_VAR_COUNT,          /* var count -- not a metric                   */
 
@@ -589,6 +590,16 @@ typedef enum
     IMGUI_BULLET_SQUARE = 1,   /* a small filled square */
 
 } imgui_bullet_style_t;
+
+/* Directional arrow shape (IMGUI_VAR_ARROW_STYLE).  Default is the solid triangle.  Threads through
+   every arrow the chrome draws -- arrow_button, the collapse fold, the combo / submenu arrow, the
+   dock overlay -- since they all route through draw_arrow, exactly as check / bullet do. */
+typedef enum
+{
+    IMGUI_ARROW_FILLED  = 0,   /* a filled triangle pointing the direction */
+    IMGUI_ARROW_CHEVRON = 1,   /* a stroked '>' chevron (two strokes to an apex) */
+
+} imgui_arrow_style_t;
 
 /*==============================================================================================
     Debug overlay layers
