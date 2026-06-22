@@ -195,6 +195,11 @@ table_draw_borders( imgui_table_t* t, f32 content_bottom )
     const f32 h  = content_bottom - y0;   /* used height: header strip + drawn rows */
     if ( h <= 0.0f ) return;
 
+    /* Tables are square: force a zero radius so the outer frame's corners meet flush with the
+       rectangular table scissor instead of leaving a rounded-corner gap (see table_next_row). */
+    f32 save_round = draw_rounding();
+    draw_set_rounding( 0.0f );
+
     /* Vertical dividers between columns, full used height (run through the header strip too). */
     if ( t->flags & IMGUI_TABLE_BORDERS_V )
     {
@@ -205,6 +210,8 @@ table_draw_borders( imgui_table_t* t, f32 content_bottom )
     /* Outer frame around the used table box. */
     if ( t->flags & IMGUI_TABLE_BORDERS_OUTER )
         draw_push_rect_outline( x0, y0, w, h, 1.0f, 0, COL_BORDER );
+
+    draw_set_rounding( save_round );
 }
 
 /* Defined below; table_end draws the header (as chrome) before its definition appears. */
@@ -376,6 +383,11 @@ table_draw_header( imgui_table_t* t )
     const f32 hy = t->outer_rect.y;
     const f32 hh = t->header_h;
 
+    /* Square header fills -- tables never round (see table_next_row).  Text and the sort triangle
+       below are unaffected by the ambient radius, so holding it at zero for the whole strip is safe. */
+    f32 save_round = draw_rounding();
+    draw_set_rounding( 0.0f );
+
     /* Full-width opaque header background (also the cover for rows scrolled under the header). */
     draw_push_rect_filled( t->outer_rect.x, hy, t->outer_rect.w, hh, 0, 0, 0, 0, 0, COL_TITLE_BG );
 
@@ -417,6 +429,8 @@ table_draw_header( imgui_table_t* t )
                                     0, COL_TEXT );
         }
     }
+
+    draw_set_rounding( save_round );
 }
 
 /* Reserve the header strip and run its sort interaction up front; the strip itself is drawn last
@@ -452,6 +466,12 @@ imgui_table_next_row( f32 min_h )
     t->row_h    = h;
     t->row_top  = lf()->cursor_y;
 
+    /* Table fills are always square -- a rounded fill under the rectangular table scissor would
+       leave a gap at each rounded corner that content behind shows through.  Save the ambient
+       radius, force square for the chrome below, and restore so cell widgets keep their rounding. */
+    f32 save_round = draw_rounding();
+    draw_set_rounding( 0.0f );
+
     /* Alternating row tint, drawn first so cell content (emitted after next_column) sits on top.
        Auto-clipped to the body region by the active draw clip. */
     if ( ( t->flags & IMGUI_TABLE_ROW_STRIPES ) && ( t->cur_row & 1 ) )
@@ -462,6 +482,8 @@ imgui_table_next_row( f32 min_h )
     if ( ( t->flags & IMGUI_TABLE_BORDERS_H ) && t->cur_row > 0 )
         draw_push_rect_filled( t->body_rect.x, t->row_top, t->body_rect.w, 1.0f,
                                0, 0, 0, 0, 0, COL_BORDER );
+
+    draw_set_rounding( save_round );
 }
 
 bool
@@ -557,6 +579,10 @@ imgui_table_set_bg_color( imgui_table_bg_target_t target, u32 abgr )
     imgui_table_t* t = &s_tab;
     if ( t->cur_row < 0 ) return;
 
+    /* Square fills only -- tables never round (see table_next_row). */
+    f32 save_round = draw_rounding();
+    draw_set_rounding( 0.0f );
+
     if ( target == IMGUI_TABLE_BG_ROW )
     {
         /* Full-row fill across all columns; auto-clipped to the body region. */
@@ -569,6 +595,8 @@ imgui_table_set_bg_color( imgui_table_bg_target_t target, u32 abgr )
         draw_push_rect_filled( t->col_x[ t->cur_col ], t->row_top, t->col_w[ t->cur_col ],
                                t->row_h, 0, 0, 0, 0, 0, abgr );
     }
+
+    draw_set_rounding( save_round );
 }
 
 // clang-format on
