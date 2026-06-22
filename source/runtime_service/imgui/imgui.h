@@ -752,6 +752,7 @@ typedef enum
     IMGUI_CMD_LINE,            /* single stroke segment                      */
     IMGUI_CMD_POLYLINE,        /* multi-segment antialiased polyline         */
     IMGUI_CMD_DASHED_LINE,     /* patterned line: one textured quad, atlas dash row, tiled by U */
+    IMGUI_CMD_RECT_GRADIENT,   /* filled rect, col_a->col_b blended by per-vertex color (one quad) */
 
 } imgui_cmd_type_t;
 
@@ -779,6 +780,9 @@ typedef struct
         /* Dashed line tessellates to one oriented textured quad: U spans 0..len/period so the
            atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
         struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
+        /* Gradient rect: one quad with col_a/col_b on opposite edges; the GPU interpolates the
+           per-vertex color across it.  horizontal = left->right, else top->bottom.  Always square. */
+        struct { f32 x, y, w, h; u32 col_a, col_b; bool horizontal; } gradient;
     };
 } imgui_cmd_t;
 

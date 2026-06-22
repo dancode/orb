@@ -764,9 +764,10 @@ typedef struct imgui_api_s
        (imgui_check_style_t / imgui_bullet_style_t / imgui_arrow_style_t); scope a change locally with
        push_style_var on IMGUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE.
 
-       Pipeline caveat: an imgui_cmd_t carries one color, so render_gradient (banded) and render_shadow
-       (layered) are approximations -- a future backend multicolor-quad command would make them exact
-       without changing this surface.  Angles for arc / pie / progress are radians, screen-space (y
+       Pipeline note: render_gradient is an exact one-quad blend via per-vertex color
+       (IMGUI_CMD_RECT_GRADIENT); render_shadow (layered rings) is still an approximation that a
+       future multi-corner-color command would make exact, without changing this surface.  Angles
+       for arc / pie / progress are radians, screen-space (y
        down).  `thickness` is the stroke width for the stroked forms. */
 
     void ( *render_check_mark        )( imgui_rect_t box, u32 col );

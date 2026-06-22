@@ -96,8 +96,10 @@ void draw_pop_clip_rect  ( void );                       // pop the top clip
 void draw_push_clip_root ( void );                       // push the full-display clip (popup escape)
 void draw_set_root_clip  ( f32 w, f32 h );               // set clip_stack[0] to a surface size
 
-void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h, 
+void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h,
                                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
+
+void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal );
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr );

@@ -214,6 +214,47 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
     s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 6;
 }
 
+/* Tessellate a two-color gradient quad: col_a / col_b on opposite edges, sampled at the white
+   texel so the GPU's per-vertex color interpolation IS the gradient (one quad, exact blend --
+   replaces the old 32-band approximation).  Origin grid-snapped like tess_rect_filled. */
+static void
+tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal )
+{
+    if ( s_tess.vert_count + 4 > IMGUI_MAX_VERTS || s_tess.idx_count + 6 > IMGUI_MAX_IDX )
+    {
+        s_tess.overflow = true;
+        return;
+    }
+    f32 wu, wv;
+    font_white_uv( &wu, &wv );
+
+    x = floorf( x + 0.5f );
+    y = floorf( y + 0.5f );
+    tess_ensure_gpu_cmd( font_atlas_idx() );
+    if ( s_tess.cmd_count == 0 )
+        return;
+
+    /* Corner colors walk col_a -> col_b along the chosen axis (TL, TR, BR, BL winding). */
+    u32 c0 = col_a;                          /* top-left  */
+    u32 c1 = horizontal ? col_b : col_a;     /* top-right */
+    u32 c2 = col_b;                          /* bottom-right */
+    u32 c3 = horizontal ? col_a : col_b;     /* bottom-left  */
+
+    u16 base = (u16)s_tess.vert_count;
+    imgui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
+    v[ 0 ] = ( imgui_draw_vert_t ){ x,     y,     wu, wv, c0 };
+    v[ 1 ] = ( imgui_draw_vert_t ){ x + w, y,     wu, wv, c1 };
+    v[ 2 ] = ( imgui_draw_vert_t ){ x + w, y + h, wu, wv, c2 };
+    v[ 3 ] = ( imgui_draw_vert_t ){ x,     y + h, wu, wv, c3 };
+    s_tess.vert_count += 4;
+
+    u16* idx = &s_tess.indices[ s_tess.idx_count ];
+    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
+    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
+    s_tess.idx_count += 6;
+    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 6;
+}
+
 /* Tessellate a hollow rectangle as four edge quads. */
 static void
 tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
@@ -551,6 +592,11 @@ tess_dispatch( const imgui_cmd_t* cmds, u32 count )
             case IMGUI_CMD_DASHED_LINE:
                 tess_dashed_line( c->dash.x0, c->dash.y0, c->dash.x1, c->dash.y1,
                                   c->dash.thickness, c->dash.period, c->dash.duty, c->dash.abgr );
+                break;
+
+            case IMGUI_CMD_RECT_GRADIENT:
+                tess_rect_gradient( c->gradient.x, c->gradient.y, c->gradient.w, c->gradient.h,
+                                    c->gradient.col_a, c->gradient.col_b, c->gradient.horizontal );
                 break;
         }
     }

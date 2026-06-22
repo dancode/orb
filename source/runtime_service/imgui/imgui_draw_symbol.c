@@ -14,10 +14,11 @@
     the heavy lifting: a triangle fan (fill_convex) fills any convex outline, and a closed / open
     polyline strokes it; arcs are sampled from cos / sin once per call.
 
-    Single-color-per-command is the pipeline's one constraint (an imgui_cmd_t carries one abgr), so
-    true per-vertex blends -- a smooth gradient, a gaussian glow -- are approximated here with solid
-    bands / layered rings.  A future backend multicolor-quad command would let those go exact; the
-    public surface would not change.  Everything else is pixel-exact.
+    Most commands carry one abgr, but IMGUI_CMD_RECT_GRADIENT carries two and lets the GPU's
+    per-vertex color interpolation blend them, so render_gradient is an exact one-quad blend (not
+    banded).  render_shadow's gaussian glow is still approximated with layered rings -- a future
+    multi-corner-color command (or routing the rings through gradient quads) would make it exact;
+    the public surface would not change.  Everything else is pixel-exact.
 
     Included by imgui.c immediately after imgui_widget_core.c, so it sees the COL_* / ROUND_* /
     WIN_BORDER macros, col_lerp, and rect_align defined there, and every widget file below resolves
@@ -459,37 +460,14 @@ draw_hatch( imgui_rect_t box, f32 spacing, f32 thickness, u32 col )
     draw_pop_clip_rect();
 }
 
-/* Gradient fill of `box`, col_a -> col_b, vertical (default) or horizontal.  Approximated with
-   solid bands lerped through col_lerp (imgui_widget_core.c) -- the pipeline is one color per
-   command, so a true per-vertex gradient awaits a backend multicolor-quad command.  Bands overlap
-   1px to hide seams; rounding is forced off so a band cannot bend. */
+/* Gradient fill of `box`, col_a -> col_b, vertical (default) or horizontal.  One quad whose
+   opposite edges carry the two colors; the GPU's per-vertex color interpolation produces the
+   smooth blend (draw_push_rect_gradient).  Square by nature -- the per-vertex blend has no
+   rounded variant, matching the always-square fill this replaced. */
 static void
 draw_gradient( imgui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
 {
-    enum { BANDS = 32 };
-    f32 save = draw_rounding();
-    draw_set_rounding( 0.0f );
-    if ( horizontal )
-    {
-        f32 bw = box.w / (f32)BANDS;
-        for ( u32 i = 0; i < BANDS; ++i )
-        {
-            f32 t = ( (f32)i + 0.5f ) / (f32)BANDS;
-            draw_push_rect_filled( box.x + bw * i, box.y, bw + 1.0f, box.h,
-                                   0, 0, 1, 1, 0, col_lerp( col_a, col_b, t ) );
-        }
-    }
-    else
-    {
-        f32 bh = box.h / (f32)BANDS;
-        for ( u32 i = 0; i < BANDS; ++i )
-        {
-            f32 t = ( (f32)i + 0.5f ) / (f32)BANDS;
-            draw_push_rect_filled( box.x, box.y + bh * i, box.w, bh + 1.0f,
-                                   0, 0, 1, 1, 0, col_lerp( col_a, col_b, t ) );
-        }
-    }
-    draw_set_rounding( save );
+    draw_push_rect_gradient( box.x, box.y, box.w, box.h, col_a, col_b, horizontal );
 }
 
 /* Soft drop shadow / glow behind `box`: concentric expanded rects, alpha falling outward by

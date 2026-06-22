@@ -271,6 +271,33 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
 }
 
 /*----------------------------------------------------------------------------------------------
+    draw_push_rect_gradient -- emit a two-color gradient rectangle as one semantic command.
+
+    col_a / col_b sit on opposite edges (horizontal = left->right, else top->bottom); the GPU
+    interpolates the per-vertex color between them, so one quad replaces the old banded fill.
+    Always square (no rounding) -- the per-vertex blend has no rounded-fan variant.
+----------------------------------------------------------------------------------------------*/
+
+void
+draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal )
+{
+    if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
+        return;
+    imgui_cmd_t* c          = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type                 = IMGUI_CMD_RECT_GRADIENT;
+    c->clip                 = draw_current_clip();
+    c->z                    = s_draw.cur_z;
+    c->vp                   = s_draw.cur_vp;
+    c->gradient.x           = x;
+    c->gradient.y           = y;
+    c->gradient.w           = w;
+    c->gradient.h           = h;
+    c->gradient.col_a       = draw_apply_alpha( col_a );
+    c->gradient.col_b       = draw_apply_alpha( col_b );
+    c->gradient.horizontal  = horizontal;
+}
+
+/*----------------------------------------------------------------------------------------------
     draw_push_rect_outline -- emit a hollow rectangle semantic command.
 ----------------------------------------------------------------------------------------------*/
 
