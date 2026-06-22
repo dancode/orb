@@ -232,8 +232,7 @@ native_btn_draw_glyph( native_btn_kind_t kind, imgui_rect_t r, bool maximized, u
             break;
 
         case NATIVE_BTN_CLOSE:
-            imgui_draw_line( cx - s, cy - s, cx + s, cy + s, t, col );
-            imgui_draw_line( cx - s, cy + s, cx + s, cy - s, t, col );
+            draw_close_x( r, col );
             break;
 
         case NATIVE_BTN_POPIN:

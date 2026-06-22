@@ -135,8 +135,31 @@ imgui_textf( const char* fmt, ... )
 }
 
 /*----------------------------------------------------------------------------------------------
+    bullet_glyph -- the shared mark for bullet / bullet_text: a filled disc (RenderBullet) by
+    default, or a square when IMGUI_VAR_BULLET_STYLE is set.  `br` is the bsz x bsz cell already
+    placed in the row; the square draws with rounding forced off so the frame radius cannot bend a
+    tiny mark into a dot.
+----------------------------------------------------------------------------------------------*/
+
+static void
+bullet_glyph( imgui_rect_t br, f32 bsz, u32 col )
+{
+    if ( style_var( IMGUI_VAR_BULLET_STYLE ) >= 0.5f )
+    {
+        f32 save_round = draw_rounding();
+        draw_set_rounding( 0.0f );
+        draw_push_rect_filled( br.x, br.y, bsz, bsz, 0,0,1,1, 0, col );
+        draw_set_rounding( save_round );
+    }
+    else
+    {
+        draw_bullet( br.x + bsz * 0.5f, br.y + bsz * 0.5f, bsz * 0.5f, col );
+    }
+}
+
+/*----------------------------------------------------------------------------------------------
     bullet_text -- a bullet glyph followed by a text run, the building block of a bulleted list.
-    The bullet is a small filled square vertically centered against the glyph line.
+    The bullet is a small mark (disc / square) vertically centered against the glyph line.
 ----------------------------------------------------------------------------------------------*/
 
 void
@@ -150,13 +173,10 @@ imgui_bullet_text( const char* str )
     /* Natural width = bullet + gap + text, so a same_line bullet item shrinks to its content. */
     imgui_rect_t r = widget_next_rect_w( bsz + gap + tw, ch );
 
-    /* Bullet square, vertically centered in the row; then the run just past it.  A bullet is a tiny
-       solid mark -- draw it square so the frame radius does not round it into a dot. */
+    /* Bullet mark, vertically centered in the row; then the run just past it.  A disc by default
+       (RenderBullet), or a square when IMGUI_VAR_BULLET_STYLE selects it. */
     imgui_rect_t br = rect_align( r, bsz, bsz, IMGUI_ALIGN_VCENTER );
-    f32 save_round = draw_rounding();
-    draw_set_rounding( 0.0f );
-    draw_push_rect_filled( br.x, br.y, bsz, bsz, 0,0,1,1, 0, COL_TEXT );
-    draw_set_rounding( save_round );
+    bullet_glyph( br, bsz, COL_TEXT );
     draw_push_text( r.x + bsz + gap, r.y, COL_TEXT, str );
     widget_track_width( r.x + bsz + gap + tw );   /* natural width may exceed the row */
 }
@@ -176,10 +196,7 @@ imgui_bullet( void )
 
     imgui_rect_t r  = widget_next_rect_w( bsz, ch );
     imgui_rect_t br = rect_align( r, bsz, bsz, IMGUI_ALIGN_VCENTER );   /* centered in the row */
-    f32 save_round = draw_rounding();
-    draw_set_rounding( 0.0f );                                          /* tiny mark stays square */
-    draw_push_rect_filled( br.x, br.y, bsz, bsz, 0,0,1,1, 0, COL_TEXT );
-    draw_set_rounding( save_round );
+    bullet_glyph( br, bsz, COL_TEXT );
     widget_track_width( r.x + bsz );
 }
 
@@ -357,15 +374,12 @@ imgui_checkbox( const char* label, bool* v )
 
     if ( *v )
     {
-        /* Check mark: a small filled square, drawn square (the frame radius would round this tiny
-           inner mark into a dot). */
-        f32 pad = (f32)s_layout.checkmark_pad;
-        f32 save_round = draw_rounding();
-        draw_set_rounding( 0.0f );
-        draw_push_rect_filled( bx + pad, by + pad,
-                               CHECKBOX_SZ - 2.0f * pad, CHECKBOX_SZ - 2.0f * pad,
-                               0,0,1,1, 0, COL_CHECK_MARK );
-        draw_set_rounding( save_round );
+        /* Indicator: a 'v' tick by default, or a filled disc when IMGUI_VAR_CHECK_STYLE selects it. */
+        if ( style_var( IMGUI_VAR_CHECK_STYLE ) >= 0.5f )
+            draw_push_circle_filled( bx + CHECKBOX_SZ * 0.5f, by + CHECKBOX_SZ * 0.5f,
+                                     CHECKBOX_SZ * 0.5f - (f32)s_layout.checkmark_pad, 16, COL_CHECK_MARK );
+        else
+            draw_check_mark( ( imgui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
     }
 
     draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, label_w );
@@ -887,6 +901,24 @@ imgui_image( imgui_icon_id_t id, f32 w, f32 h, u32 col )
     imgui_rect_t r = widget_next_rect_w( w, h );   /* reserve a w x h layout slot (like dummy) */
     imgui_draw_icon_in( r, id, col );
 }
+
+/*----------------------------------------------------------------------------------------------
+    Symbol render primitives -- public surface over the internal draw_* helpers (imgui_widget_core.c),
+    the Dear ImGui Render* family.  These draw through the normal vertex pipeline (lines / triangles /
+    circles), NOT the icon atlas, so editor / custom widgets can paint the same checkmarks, arrows,
+    bullets and crosses the built-in widgets use.  set_check_style / set_bullet_style set the global
+    default indicator shape; a scoped change is push_style_var( IMGUI_VAR_CHECK_STYLE/.., v ).
+----------------------------------------------------------------------------------------------*/
+
+void imgui_render_check_mark( imgui_rect_t box, u32 col )                       { draw_check_mark( box, col ); }
+void imgui_render_arrow     ( imgui_rect_t box, imgui_dir_t dir, u32 col )      { draw_arrow( box, dir, col ); }
+void imgui_render_bullet    ( f32 cx, f32 cy, f32 r, u32 col )                  { draw_bullet( cx, cy, r, col ); }
+void imgui_render_close     ( imgui_rect_t box, u32 col )                       { draw_close_x( box, col ); }
+void imgui_render_arrow_pointing_at( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 col )
+                                                                               { draw_arrow_pointing_at( tx, ty, half, dir, col ); }
+
+void imgui_set_check_style ( u32 style ) { s_layout.check_style  = style; }   /* imgui_check_style_t  (global) */
+void imgui_set_bullet_style( u32 style ) { s_layout.bullet_style = style; }   /* imgui_bullet_style_t (global) */
 
 // clang-format on
 /*============================================================================================*/

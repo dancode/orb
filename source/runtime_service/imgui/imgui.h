@@ -567,10 +567,28 @@ typedef enum
     IMGUI_VAR_WIN_ROUNDING,   /* corner radius for windows / children / popups; 0 = square */
     IMGUI_VAR_WIDGET_ROUNDING,/* corner radius for control frames (button/checkbox/input/...) */
     IMGUI_VAR_GRAB_ROUNDING,  /* corner radius for slider knobs + scrollbar grabs */
+    IMGUI_VAR_CHECK_STYLE,    /* checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc (imgui_check_style_t) */
+    IMGUI_VAR_BULLET_STYLE,   /* bullet glyph: 0 = filled disc, 1 = square (imgui_bullet_style_t) */
 
     IMGUI_VAR_COUNT,          /* var count -- not a metric                   */
 
 } imgui_style_var_t;
+
+/* Checkbox / menu-item indicator shape (IMGUI_VAR_CHECK_STYLE).  Default is the tick. */
+typedef enum
+{
+    IMGUI_CHECK_TICK = 0,   /* a two-stroke 'v' check mark */
+    IMGUI_CHECK_DISC = 1,   /* a filled disc inside the box */
+
+} imgui_check_style_t;
+
+/* Bullet glyph shape (IMGUI_VAR_BULLET_STYLE).  Default is the disc (Dear ImGui's RenderBullet). */
+typedef enum
+{
+    IMGUI_BULLET_DISC   = 0,   /* a small filled circle */
+    IMGUI_BULLET_SQUARE = 1,   /* a small filled square */
+
+} imgui_bullet_style_t;
 
 /*==============================================================================================
     Debug overlay layers

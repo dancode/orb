@@ -154,6 +154,66 @@ draw_collapse_arrow( imgui_rect_t box, bool collapsed, u32 color )
     draw_arrow( box, collapsed ? IMGUI_DIR_RIGHT : IMGUI_DIR_DOWN, color );
 }
 
+/* Check-mark glyph: a two-stroke 'v' fitted and centered in `box` (Dear ImGui RenderCheckMark).
+   Two antialiased line segments -- a short down-stroke into the valley, then a long up-stroke --
+   the same line primitive the close 'X' uses, so ticks and crosses stroke identically.  The
+   geometry is expressed as fractions of the fitted square so it scales crisply at any box size. */
+static void
+draw_check_mark( imgui_rect_t box, u32 color )
+{
+    f32 sz = box.w < box.h ? box.w : box.h;
+    f32 ox = box.x + ( box.w - sz ) * 0.5f;     /* center the glyph square in the box */
+    f32 oy = box.y + ( box.h - sz ) * 0.5f;
+    f32 t  = floorf( sz * 0.15f );  if ( t < 1.5f ) t = 1.5f;   /* stroke thickness */
+
+    /* Three points: start (upper-left), valley (lower-middle), end (upper-right). */
+    f32 ax = ox + sz * 0.18f, ay = oy + sz * 0.52f;
+    f32 bx = ox + sz * 0.42f, by = oy + sz * 0.74f;
+    f32 cx = ox + sz * 0.82f, cy = oy + sz * 0.26f;
+
+    imgui_draw_line( ax, ay, bx, by, t, color );
+    imgui_draw_line( bx, by, cx, cy, t, color );
+}
+
+/* Bullet glyph: a small filled disc centered at (cx,cy) (Dear ImGui RenderBullet).  The round
+   sibling of the square bullet -- the bullet widget picks between them on IMGUI_VAR_BULLET_STYLE. */
+static void
+draw_bullet( f32 cx, f32 cy, f32 r, u32 color )
+{
+    draw_push_circle_filled( cx, cy, r, 12, color );
+}
+
+/* Close glyph: the two-diagonal 'X' centered in `box` (Dear ImGui's CloseButton cross).  Extracted
+   so the native caption close button and any other caller stroke the identical mark. */
+static void
+draw_close_x( imgui_rect_t box, u32 color )
+{
+    f32 cx = box.x + box.w * 0.5f;
+    f32 cy = box.y + box.h * 0.5f;
+    f32 m  = box.w < box.h ? box.w : box.h;
+    f32 s  = floorf( m * 0.18f );   /* glyph half-extent -- matches the caption min/max glyphs */
+    f32 t  = WIN_BORDER;
+
+    imgui_draw_line( cx - s, cy - s, cx + s, cy + s, t, color );
+    imgui_draw_line( cx - s, cy + s, cx + s, cy - s, t, color );
+}
+
+/* Arrow whose apex points AT a specific coordinate (Dear ImGui RenderArrowPointingAt): a filled
+   triangle of half-extent `half` with its tip exactly on (tx,ty), opening away in `dir`.  Used for
+   pointer chrome -- a tooltip / popup beak, a "jump to" marker -- where the tip must land on a point
+   rather than be centered in a box (the box-centered case is draw_arrow). */
+static void
+draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 color )
+{
+    switch ( dir )
+    {
+        case IMGUI_DIR_LEFT:  draw_push_triangle( tx, ty, tx + half, ty - half, tx + half, ty + half, 0, color ); break;
+        case IMGUI_DIR_RIGHT: draw_push_triangle( tx, ty, tx - half, ty - half, tx - half, ty + half, 0, color ); break;
+        case IMGUI_DIR_UP:    draw_push_triangle( tx, ty, tx - half, ty + half, tx + half, ty + half, 0, color ); break;
+        case IMGUI_DIR_DOWN:  draw_push_triangle( tx, ty, tx - half, ty - half, tx + half, ty - half, 0, color ); break;
+    }
+}
+
 /*----------------------------------------------------------------------------------------------
     Widget label grammar  (Dear ImGui style)
 

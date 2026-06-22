@@ -110,6 +110,8 @@ typedef struct
     u32 win_rounding;   /* corner radius: windows / children / popups        */
     u32 widget_rounding;/* corner radius: control frames                     */
     u32 grab_rounding;  /* corner radius: slider knobs / scrollbar grabs     */
+    u32 check_style;    /* checkbox/menu indicator: 0='v' tick, 1=disc (imgui_check_style_t)  */
+    u32 bullet_style;   /* bullet glyph: 0=disc, 1=square (imgui_bullet_style_t)              */
 
 } imgui_metrics_t;
 

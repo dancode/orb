@@ -753,6 +753,21 @@ typedef struct imgui_api_s
     void            ( *image         )( imgui_icon_id_t id, f32 w, f32 h, u32 col );
     void            ( *draw_icon_in  )( imgui_rect_t r, imgui_icon_id_t id, u32 col );
 
+    /* Symbol render primitives -- the Dear ImGui Render* family, drawn through the normal vertex
+       pipeline (lines / triangles / circles), NOT the icon atlas.  The built-in widgets draw their
+       check marks, arrows, bullets and close crosses through these, and they are exposed so editor /
+       custom widgets can match.  set_check_style / set_bullet_style choose the global indicator shape
+       (imgui_check_style_t / imgui_bullet_style_t); scope it locally with push_style_var on
+       IMGUI_VAR_CHECK_STYLE / IMGUI_VAR_BULLET_STYLE. */
+
+    void ( *render_check_mark        )( imgui_rect_t box, u32 col );
+    void ( *render_arrow             )( imgui_rect_t box, imgui_dir_t dir, u32 col );
+    void ( *render_bullet            )( f32 cx, f32 cy, f32 r, u32 col );
+    void ( *render_close             )( imgui_rect_t box, u32 col );
+    void ( *render_arrow_pointing_at )( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 col );
+    void ( *set_check_style          )( u32 style );
+    void ( *set_bullet_style         )( u32 style );
+
     /* Line / path stroking (imgui_stroke_align_t; see imgui.h for the pixel model).
        draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
        draw_polyline -- a connected point array with miter-limited corners (always antialiased);

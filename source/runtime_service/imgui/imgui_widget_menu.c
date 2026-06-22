@@ -83,16 +83,19 @@ imgui_menu_item( const char* label, const char* shortcut, bool* selected )
     if ( st.hover || st.nav )
         draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
 
-    /* A fixed check-mark gutter on the left so checkable and plain items align; the tick (a filled
-       inner square, matching the checkbox) is drawn only when *selected. */
+    /* A fixed check-mark gutter on the left so checkable and plain items align; the indicator
+       (a 'v' tick, or a disc per IMGUI_VAR_CHECK_STYLE -- matching the checkbox) is drawn only
+       when *selected. */
     f32 check_w = CHECKBOX_SZ + WIDGET_PAD;
     if ( selected && *selected )
     {
-        f32 pad = (f32)s_layout.checkmark_pad;
-        f32 by  = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, IMGUI_ALIGN_VCENTER ).y;
-        draw_push_rect_filled( r.x + WIDGET_PAD + pad, by + pad,
-                               CHECKBOX_SZ - 2.0f * pad, CHECKBOX_SZ - 2.0f * pad,
-                               0,0,1,1, 0, COL_CHECK_MARK );
+        f32 bx = r.x + WIDGET_PAD;
+        f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, IMGUI_ALIGN_VCENTER ).y;
+        if ( style_var( IMGUI_VAR_CHECK_STYLE ) >= 0.5f )
+            draw_push_circle_filled( bx + CHECKBOX_SZ * 0.5f, by + CHECKBOX_SZ * 0.5f,
+                                     CHECKBOX_SZ * 0.5f - (f32)s_layout.checkmark_pad, 16, COL_CHECK_MARK );
+        else
+            draw_check_mark( ( imgui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
     }
 
     f32 lx = r.x + WIDGET_PAD + check_w;

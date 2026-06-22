@@ -268,6 +268,15 @@ imgui_vec2_t imgui_icon_size( imgui_icon_id_t id );
 void imgui_image( imgui_icon_id_t id, f32 w, f32 h, u32 col );
 void imgui_draw_icon_in( imgui_rect_t r, imgui_icon_id_t id, u32 col );
 
+/* symbol render primitives -- Dear ImGui Render* family (normal pipeline, not the icon atlas) */
+void imgui_render_check_mark( imgui_rect_t box, u32 col );
+void imgui_render_arrow( imgui_rect_t box, imgui_dir_t dir, u32 col );
+void imgui_render_bullet( f32 cx, f32 cy, f32 r, u32 col );
+void imgui_render_close( imgui_rect_t box, u32 col );
+void imgui_render_arrow_pointing_at( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 col );
+void imgui_set_check_style( u32 style );
+void imgui_set_bullet_style( u32 style );
+
 /* draw -- paths */
 void imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
 void imgui_draw_polyline( const imgui_vec2_t* pts, u32 count, f32 thickness, imgui_stroke_align_t align, bool closed, u32 abgr );

@@ -96,6 +96,8 @@ static imgui_metrics_t s_layout =
     .win_rounding    = 6,  /* 12 / 2 -- windows a touch rounder than controls */
     .widget_rounding = 4,  /* 12 / 3 -- gentle control frame radius          */
     .grab_rounding   = 4,  /* 12 / 3 -- knobs / grabs (raise for pill grabs)  */
+    .check_style     = IMGUI_CHECK_TICK,    /* 'v' tick by default (set_check_style to change)  */
+    .bullet_style    = IMGUI_BULLET_DISC,   /* filled disc by default (set_bullet_style to change) */
 };
 
 /* Recompute the layout metrics from a font's type size (em), glyph-box height (char_h), and

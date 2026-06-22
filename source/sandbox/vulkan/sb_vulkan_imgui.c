@@ -1444,6 +1444,67 @@ demo_icons( void )
 }
 
 /*==============================================================================================
+    18. Symbols -- the Render* primitive family (normal pipeline, not the icon atlas).
+
+    The checkbox tick and bullet shapes are style-driven: IMGUI_VAR_CHECK_STYLE / _BULLET_STYLE,
+    set globally (set_check_style / set_bullet_style) or locally (push_style_var, shown here so the
+    change scopes to just the sample widgets).  Below that, each raw render_* primitive is drawn
+    into a dummy() slot to show the pieces editor / custom widgets can reuse.
+==============================================================================================*/
+
+static void
+demo_symbols( void )
+{
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 400, 470, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Symbols", IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+        imgui()->text( "Render primitives drawn through the normal" );
+        imgui()->text( "vertex pipeline (lines / tris / circles)." );
+
+        imgui()->separator_text( "Indicator styles (scoped locally)" );
+
+        static bool disc_check  = false;
+        static bool square_bull = false;
+        imgui()->checkbox( "Disc check style", &disc_check );
+        imgui()->checkbox( "Square bullets",   &square_bull );
+
+        /* push/pop scopes the change to the sample widgets below; set_check_style /
+           set_bullet_style would set the same knob globally instead. */
+        imgui()->push_style_var( IMGUI_VAR_CHECK_STYLE,  disc_check  ? 1.0f : 0.0f );
+        imgui()->push_style_var( IMGUI_VAR_BULLET_STYLE, square_bull ? 1.0f : 0.0f );
+
+        static bool a = true, b = false, c = true;
+        imgui()->checkbox( "Enabled", &a );
+        imgui()->checkbox( "Visible", &b );
+        imgui()->checkbox( "Locked",  &c );
+        imgui()->bullet_text( "first bullet item" );
+        imgui()->bullet_text( "second bullet item" );
+
+        imgui()->pop_style_var( 2 );
+
+        imgui()->separator_text( "Raw render_* primitives" );
+
+        /* A strip of dummy slots, each filled with one primitive via the rect it returns. */
+        f32       sz  = 28.0f;
+        const u32 col = 0xFFE0E0E0u;
+        imgui()->row_cols( 0, 6 );
+        {
+            imgui_rect_t r;
+            r = imgui()->dummy( sz, sz ); imgui()->render_check_mark( r, 0xFF60D060u );
+            r = imgui()->dummy( sz, sz ); imgui()->render_arrow( r, IMGUI_DIR_RIGHT, col );
+            r = imgui()->dummy( sz, sz ); imgui()->render_arrow( r, IMGUI_DIR_DOWN, col );
+            r = imgui()->dummy( sz, sz ); imgui()->render_bullet( r.x + sz * 0.5f, r.y + sz * 0.5f, 5.0f, col );
+            r = imgui()->dummy( sz, sz ); imgui()->render_close( r, 0xFF6060E0u );
+            r = imgui()->dummy( sz, sz ); imgui()->render_arrow_pointing_at( r.x + sz * 0.5f, r.y + sz * 0.25f, 7.0f, IMGUI_DIR_UP, col );
+        }
+        imgui()->row( 0 );
+    }
+    imgui()->end_window();
+}
+
+/*==============================================================================================
     Demo table -- the menu the host steps through.
 ==============================================================================================*/
 
@@ -1466,6 +1527,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Tables",       "table_begin / setup_column / next_row / next_column", demo_table   },
     { "Docking",      "dockspace_over_viewport / dock_split / tabs",     demo_docking     },
     { "Icons",        "register_icon / image / draw_icon_in",            demo_icons       },
+    { "Symbols",      "render_check_mark / arrow / bullet / close",      demo_symbols     },
     { NULL,           NULL,                                             NULL             },
 };
 
