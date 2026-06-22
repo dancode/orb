@@ -224,6 +224,7 @@ const imgui_api_t g_imgui_api_struct =
     .table_get_column_index             = imgui_table_get_column_index,
     .table_get_row_index                = imgui_table_get_row_index,
     .table_get_sort_specs               = imgui_table_get_sort_specs,
+    .table_sort_order                   = imgui_table_sort_order,
     .table_set_bg_color                 = imgui_table_set_bg_color,
 };
 

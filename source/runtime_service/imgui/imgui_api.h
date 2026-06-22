@@ -872,11 +872,15 @@ typedef struct imgui_api_s
        table_get_column_count()      -- number of columns the table was opened with.
        table_get_column_index()      -- current column index (-1 before the first next_column).
        table_get_row_index()         -- current row index (-1 before the first next_row).
-       table_get_sort_specs( out )   -- read sort state; returns true when a header was clicked
-                                        this frame and the caller should re-sort their data.
-                                        [Phase 1 stub -- always returns false.]
-       table_set_bg_color( target, abgr ) -- override the current row's or cell's background.
-                                        [Phase 1 stub -- no-op until Phase 5 lands.] */
+       table_get_sort_specs( out )   -- read raw sort state (column + direction); returns true on
+                                        the frame a header was clicked.  Use when you want to sort
+                                        your own data structure by hand.
+       table_sort_order( order, n, val_fn, cmp_fn, user )
+                                     -- built-in sort: reorder a display-order index array to match
+                                        the active sort.  Pass val_fn for automatic alphabetical /
+                                        numeric ordering, or cmp_fn for a custom comparator.  Cheap
+                                        to call every frame (only reorders on a header click).
+       table_set_bg_color( target, abgr ) -- override the current row's or cell's background. */
 
     bool ( *table_begin            )( const char* id, i32 ncols, imgui_table_flags_t flags, f32 height );
     void ( *table_end              )( void );
@@ -889,6 +893,8 @@ typedef struct imgui_api_s
     i32  ( *table_get_column_index )( void );
     i32  ( *table_get_row_index    )( void );
     bool ( *table_get_sort_specs   )( imgui_table_sort_specs_t* out );
+    bool ( *table_sort_order       )( i32* order, i32 count, imgui_table_sort_value_fn val_fn,
+                                      imgui_table_sort_cmp_fn cmp_fn, void* user );
     void ( *table_set_bg_color     )( imgui_table_bg_target_t target, u32 abgr );
 
 } imgui_api_t;

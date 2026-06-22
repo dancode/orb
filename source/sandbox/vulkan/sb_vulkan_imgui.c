@@ -12,7 +12,6 @@
 ==============================================================================================*/
 
 #include <stdio.h>
-#include <string.h>    /* strcmp -- column sort comparison in demo_table */
 #include <math.h>      /* cosf / sinf -- the diagonal fan + polygon in demo_lines */
 
 #include "sb_vulkan_imgui.h"
@@ -1030,6 +1029,21 @@ demo_lines( void )
     table_next_column clips the draw list and hit-test rect to the current cell.
 ==============================================================================================*/
 
+/* Row record for the sortable demo table.  File scope so demo_item_sort_value (the table's per-cell
+   key accessor) can name the type when the table calls it back with the array as its user pointer. */
+typedef struct { const char* name; const char* kind; float value; } demo_item_t;
+
+/* table_sort_order value callback: hand the table the sort key for one cell.  Name and Type sort
+   alphabetically (str); Value sorts numerically (num).  The table applies the direction itself. */
+static void
+demo_item_sort_value( i32 row, i32 col, imgui_table_sort_value_t* out, void* user )
+{
+    const demo_item_t* items = (const demo_item_t*)user;
+    if ( col == 0 )      out->str = items[ row ].name;
+    else if ( col == 1 ) out->str = items[ row ].kind;
+    else               { out->num = items[ row ].value; out->is_num = true; }
+}
+
 static void
 demo_table( void )
 {
@@ -1042,8 +1056,7 @@ demo_table( void )
         /* --- sortable three-column table -------------------------------------------------- */
         imgui()->separator_text( "table_headers_row / IMGUI_TABLE_SORTABLE" );
 
-        static const struct { const char* name; const char* kind; float value; }
-        k_items[] = {
+        static const demo_item_t k_items[] = {
             { "pos_x",   "float",  1.234f   },
             { "pos_y",   "float",  -5.678f  },
             { "pos_z",   "float",  0.0f     },
@@ -1073,7 +1086,7 @@ demo_table( void )
         /* stretch Name, fixed Type (64 px), fixed Value (128 px); sortable + striped + framed,
            vertical scroll inside a fixed 160px body (header stays pinned). */
         if ( imgui()->table_begin( "props", 3,
-                                   IMGUI_TABLE_SORTABLE | IMGUI_TABLE_ROW_STRIPES
+                                         IMGUI_TABLE_SORTABLE | IMGUI_TABLE_ROW_STRIPES
                                        | IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER
                                        | IMGUI_TABLE_SCROLL_Y,
                                    160.0f ) )
@@ -1083,26 +1096,11 @@ demo_table( void )
             imgui()->table_setup_column( "Value", IMGUI_TABLE_COL_FIXED,    128.0f );
             imgui()->table_headers_row();
 
-            /* On a header click, re-sort the index array by the chosen column/direction. */
-            imgui_table_sort_specs_t specs;
-            if ( imgui()->table_get_sort_specs( &specs ) )
-            {
-                for ( int a = 0; a < k_item_count - 1; ++a )      /* simple insertion sort */
-                    for ( int b = a + 1; b < k_item_count; ++b )
-                    {
-                        const int ia = s_order[ a ], ib = s_order[ b ];
-                        int cmp = 0;
-                        if ( specs.col == 0 )
-                            cmp = strcmp( k_items[ ia ].name, k_items[ ib ].name );
-                        else if ( specs.col == 1 )
-                            cmp = strcmp( k_items[ ia ].kind, k_items[ ib ].kind );
-                        else
-                            cmp = ( k_items[ ia ].value > k_items[ ib ].value ) -
-                                  ( k_items[ ia ].value < k_items[ ib ].value );
-                        if ( specs.descending ) cmp = -cmp;
-                        if ( cmp > 0 ) { s_order[ a ] = ib; s_order[ b ] = ia; }
-                    }
-            }
+            /* Built-in sort: hand the table a per-cell key accessor and it reorders s_order on a
+               header click -- columns 0/1 sort alphabetically (str), column 2 numerically (num).
+               No hand-written comparison loop or direction handling needed. */
+            imgui()->table_sort_order( s_order, k_item_count, demo_item_sort_value, NULL,
+                                       (void*)k_items );
 
             for ( int r = 0; r < k_item_count; ++r )
             {

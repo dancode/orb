@@ -808,6 +808,27 @@ typedef struct
 
 } imgui_table_sort_specs_t;
 
+/* Sort key for one cell, filled by the value callback below.  Set num + is_num for a numeric
+   compare; otherwise set str for an alphabetical (strcmp) compare.  A row that leaves both unset
+   sorts as an empty string / zero. */
+typedef struct
+{
+    const char* str;      /* alphabetical key (used when is_num is false) */
+    f64         num;      /* numeric key (used when is_num is true)       */
+    bool        is_num;   /* true = compare num; false = compare str      */
+
+} imgui_table_sort_value_t;
+
+/* Built-in sort: supply the sort key for one cell.  row is the user data index, col the column
+   being sorted.  Let the table handle alphabetical / numeric ordering and the sort direction. */
+typedef void ( *imgui_table_sort_value_fn )( i32 row, i32 col, imgui_table_sort_value_t* out,
+                                             void* user );
+
+/* Custom sort: full-control comparator -- return <0 / 0 / >0 like strcmp.  a and b are user data
+   indices, col the sorted column, descending the requested direction (apply or ignore it as you
+   wish; the table does NOT negate the result for you). */
+typedef i32 ( *imgui_table_sort_cmp_fn )( i32 a, i32 b, i32 col, bool descending, void* user );
+
 // clang-format on
 /*============================================================================================*/
 #endif    // IMGUI_H

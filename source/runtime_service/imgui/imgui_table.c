@@ -418,8 +418,8 @@ table_draw_header( imgui_table_t* t )
         if ( t->persist && sort_col == (i8)i )
         {
             const f32 aw = 6.0f, ah = 4.0f;
-            f32 tx = cx + cw - 4.0f;           /* x anchor at right edge minus 4px pad */
-            f32 ty = hy + ( hh - ah ) * 0.5f;  /* vertically centered */
+            f32 tx = cx + cw - (f32)WIDGET_PAD - aw * 0.5f;  /* right edge inset by WIDGET_PAD */
+            f32 ty = hy + ( hh - ah ) * 0.5f;                /* vertically centered */
 
             if ( t->persist->sort_dir == 0 )    /* ascending: tip at top */
                 draw_push_triangle( tx - aw * 0.5f, ty + ah, tx, ty, tx + aw * 0.5f, ty + ah,
@@ -567,6 +567,79 @@ imgui_table_get_sort_specs( imgui_table_sort_specs_t* out )
         out->descending = ( t->persist->sort_dir != 0 );
     }
     t->sort_dirty = false;
+    return true;
+}
+
+/* Compare two user rows by the active sort column via the value callback.  Returns the ascending
+   ordering (<0 / 0 / >0); the caller applies the sort direction.  A numeric key on either side
+   forces a numeric compare (a missing key counts as zero); otherwise both sides compare as text. */
+static i32
+table_sort_value_cmp( i32 a, i32 b, i32 col, imgui_table_sort_value_fn fn, void* user )
+{
+    imgui_table_sort_value_t va = { 0 }, vb = { 0 };
+    fn( a, col, &va, user );
+    fn( b, col, &vb, user );
+
+    if ( va.is_num || vb.is_num )
+    {
+        f64 da = va.is_num ? va.num : 0.0;
+        f64 db = vb.is_num ? vb.num : 0.0;
+        return (i32)( da > db ) - (i32)( da < db );
+    }
+
+    const char* sa = va.str ? va.str : "";
+    const char* sb = vb.str ? vb.str : "";
+    return strcmp( sa, sb );
+}
+
+/* Reorder a user-owned display-order index array to match the table's active sort.  order holds
+   the user data indices in display order; count is its length.  Sorts ONLY on the frame a header
+   click changed the sort (consuming the same dirty flag table_get_sort_specs reads), so it is cheap
+   to call unconditionally every frame and the order is preserved across frames.  Pass val_fn for the
+   built-in alphabetical / numeric sort (direction handled here), or cmp_fn for a full-control
+   comparator (cmp_fn wins if both are given).  Returns true when it reordered the array. */
+bool
+imgui_table_sort_order( i32* order, i32 count, imgui_table_sort_value_fn val_fn,
+                        imgui_table_sort_cmp_fn cmp_fn, void* user )
+{
+    if ( !s_tab_active || !order || count < 2 ) return false;
+    imgui_table_t* t = &s_tab;
+    if ( !t->sort_dirty || !t->persist || t->persist->sort_col < 0 ) return false;
+
+    /* Consume the dirty flag regardless: with no comparator there is nothing to do, but we should
+       not keep re-reporting the same click on later frames. */
+    t->sort_dirty = false;
+    if ( !val_fn && !cmp_fn ) return false;
+
+    i32  col  = (i32)t->persist->sort_col;
+    bool desc = ( t->persist->sort_dir != 0 );
+
+    /* Stable insertion sort -- keeps the input order among equal keys and needs no scratch buffer.
+       It runs only on the click frame, so the O(n^2) worst case is paid once per sort, not per
+       frame; swap in a faster stable sort here if very large tables ever need it. */
+    for ( i32 i = 1; i < count; ++i )
+    {
+        i32 key = order[ i ];
+        i32 j   = i - 1;
+        while ( j >= 0 )
+        {
+            i32 c;
+            if ( cmp_fn )
+            {
+                c = cmp_fn( order[ j ], key, col, desc, user );
+            }
+            else
+            {
+                c = table_sort_value_cmp( order[ j ], key, col, val_fn, user );
+                if ( desc ) c = -c;
+            }
+            if ( c <= 0 ) break;   /* <= keeps equal keys stable (no swap on tie) */
+            order[ j + 1 ] = order[ j ];
+            --j;
+        }
+        order[ j + 1 ] = key;
+    }
+
     return true;
 }
 
