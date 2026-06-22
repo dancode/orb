@@ -481,12 +481,23 @@ imgui_table_next_column( void )
     f32 cx = t->col_x[ t->cur_col ];
     f32 cw = t->col_w[ t->cur_col ];
 
+    /* Inset cell content by WIDGET_PAD on each side (the Dear ImGui CellPadding analogue).  This
+       keeps content off the column edge so it lines up under the header labels (which inset by the
+       same pad) and, at the table corners, stays clear of the rounding arc of the containing window
+       / child -- flush content would otherwise bleed past the rounded corner under the rect scissor.
+       Only the content pen is inset; col_x / col_w stay full width for borders, stripes, and the
+       header strip. */
+    f32 pad = (f32)WIDGET_PAD;
+    f32 ix  = cx + pad;
+    f32 iw  = cw - 2.0f * pad;
+    if ( iw < 0.0f ) iw = 0.0f;
+
     f->cursor_y   = t->row_top;   /* reset to the row's top for each column */
     f->col        = 0;            /* ensure row_y is latched by the first widget in the cell */
-    f->content_x  = cx;
-    f->content_w  = cw;
-    f->cellx[ 0 ] = cx;
-    f->cellw[ 0 ] = cw;
+    f->content_x  = ix;
+    f->content_w  = iw;
+    f->cellx[ 0 ] = ix;
+    f->cellw[ 0 ] = iw;
 
     return true;
 }

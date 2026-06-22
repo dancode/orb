@@ -59,7 +59,9 @@
 #define DBG_COL_WIN_HOVER   IMGUI_COLOR( 0xF0, 0x80, 0xF0, 0xFF )
 #define DBG_COL_RESIZE      IMGUI_COLOR( 0x20, 0xC0, 0xF0, 0xA0 )
 #define DBG_COL_RESIZE_HOT  IMGUI_COLOR( 0x40, 0xF0, 0xFF, 0xFF )
-#define DBG_CLIP_FILL_A     0x18u
+#define DBG_CLIP_FILL_A     0x24u   /* base tint alpha for the outermost clip rect */
+#define DBG_CLIP_FILL_STEP  0x1Cu   /* added per nesting level so a child clip reads bolder */
+#define DBG_CLIP_FILL_MAX   0xA0u   /* cap so deep nesting stays translucent, not opaque */
 
 /*==============================================================================================
     Debug Rect Command -- one entry per captured rect, tagged with its target viewport.
@@ -141,10 +143,20 @@ dbg_capture_clip( imgui_rect_t r, u32 depth )
         IMGUI_COLOR( 0xC0, 0x60, 0xF0, 0xFF ),
         IMGUI_COLOR( 0x60, 0xF0, 0x90, 0xFF ),
     };
-    u32 vp = imgui_dbg_build_viewport();
-    u32 c  = depth_rgb[ ( depth ? depth - 1u : 0u ) & 3u ];
-    dbg_push_fill   ( vp, r, ( c & 0x00FFFFFFu ) | ( DBG_CLIP_FILL_A << 24 ) );
-    dbg_push_outline( vp, r, 1.0f, c );
+    u32 vp   = imgui_dbg_build_viewport();
+    u32 lvl  = depth ? depth - 1u : 0u;       /* 0 = outermost (root/window) clip */
+    u32 c    = depth_rgb[ lvl & 3u ];
+
+    /* Nested clips read as progressively bolder: each level deeper adds tint alpha and an extra
+       pixel of outline, so a child's scissor stands out clearly on top of its parent's instead of
+       washing out into the faint base tint. */
+    u32 fill_a = DBG_CLIP_FILL_A + DBG_CLIP_FILL_STEP * lvl;
+    if ( fill_a > DBG_CLIP_FILL_MAX ) fill_a = DBG_CLIP_FILL_MAX;
+    f32 t = 1.0f + (f32)lvl;
+    if ( t > 4.0f ) t = 4.0f;
+
+    dbg_push_fill   ( vp, r, ( c & 0x00FFFFFFu ) | ( fill_a << 24 ) );
+    dbg_push_outline( vp, r, t, c );
 }
 
 void
