@@ -16,7 +16,7 @@
 bool
 imgui_init( void )
 {
-    ctx_pool_init();   /* wire default context's static backing arrays; sets g_ctx + g_active_ctx */
+    ctx_pool_init();   /* wire default context's static backing arrays; sets g_ctx */
 
     if ( !imgui_render_init() )       /* shared pipeline / sampler / atlas */
         return false;
@@ -41,17 +41,19 @@ imgui_shutdown( void )
     imgui_debug_shutdown();
     #endif
 
-    /* Destroy the default context's render surfaces before releasing any blocks. */
-    imgui_context_t* def = s_ctx_pool[ 0 ];
-    if ( def )
+    /* Destroy GPU surfaces for every context before releasing memory blocks.
+       viewport_destroy is g_ctx-agnostic (takes a pointer), so no rebind is needed.
+       Primary context viewports (including any imgui-owned floaters) are destroyed first. */
+    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
     {
-        g_ctx = def;
-        for ( u32 i = 0; i < def->max_viewports; ++i )
-            viewport_destroy( &def->viewports[ i ] );
+        imgui_context_t* ctx = s_ctx_pool[ i ];
+        if ( !ctx ) continue;
+        for ( u32 v = 0; v < ctx->max_viewports; ++v )
+            viewport_destroy( &ctx->viewports[ v ] );
     }
     imgui_render_shutdown();    /* shared pipeline / sampler / atlas */
 
-    /* Free all context blocks; slot 0 is heap-allocated like the rest. */
+    /* Free all context blocks. */
     for ( u32 i = 0; i < s_ctx_pool_count; ++i )
     {
         if ( !s_ctx_pool[ i ] ) continue;
@@ -217,6 +219,10 @@ imgui_viewport_close( imgui_vp_t vp )
     for ( u32 i = 0; i < s_window_count; ++i )
         if ( s_windows[ i ].viewport == (u32)vp )
             s_windows[ i ].viewport = 0;
+    /* Trim the high-water viewport count when the closed slot was at the top. */
+    while ( g_ctx->viewport_count > 0
+            && !rhi_handle_valid( g_ctx->viewports[ g_ctx->viewport_count - 1 ].vb ) )
+        --g_ctx->viewport_count;
 }
 
 /*==============================================================================================
@@ -494,6 +500,11 @@ imgui_update_platform_windows( void )
                 s_windows[ w ].viewport = 0;
         viewport_destroy( vp );
     }
+
+    /* Compact the high-water viewport count after any teardowns. */
+    while ( g_ctx->viewport_count > 0
+            && !rhi_handle_valid( g_ctx->viewports[ g_ctx->viewport_count - 1 ].vb ) )
+        --g_ctx->viewport_count;
 }
 
 /* Present every imgui-owned floater surface from the shared draw list: open a frame on the
@@ -653,7 +664,10 @@ imgui_ctx_destroy( imgui_ctx_t ctx )
         return;
     imgui_context_t* c = s_ctx_pool[ ctx ];
     if ( g_ctx == c ) ctx_bind( NULL );
-    if ( c->_alloc ) free( c->_alloc );   /* secondary contexts own their block */
+    /* Destroy any GPU surfaces the context opened before releasing its memory block. */
+    for ( u32 i = 0; i < c->max_viewports; ++i )
+        viewport_destroy( &c->viewports[ i ] );
+    if ( c->_alloc ) free( c->_alloc );
     s_ctx_pool[ ctx ] = NULL;
 }
 

@@ -572,7 +572,7 @@ typedef struct imgui_context_t
     u32                 z_counter;         /* monotonic paint-order dispenser */
 
     imgui_viewport_t*   viewports;         /* render surfaces: [0]=main swapchain; ptr into alloc */
-    u32                 viewport_count;    /* live viewports */
+    u32                 viewport_count;    /* high-water slot count (compacted on close; iterate [0, count)) */
     u32                 max_viewports;     /* capacity */
 
     imgui_dock_node_t*  dock_nodes;        /* dock-tree node pool; NULL when max_dock_nodes == 0 */

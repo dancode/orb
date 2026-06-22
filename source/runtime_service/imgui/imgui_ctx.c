@@ -361,12 +361,11 @@ static u32           s_popup_begin_count;                 // current nesting dep
     s_nav (the nav cursor location + menu mode), and the popup open-set -- so switching contexts is a
     single pointer assignment (ctx_bind): no copy, no backup/restore.
 
-    The window pool (imgui_window.c) and the per-viewport surfaces (imgui_render.c) join here once
-    their record types -- defined in later-included files -- can be folded in; until then they remain
-    separate retained globals.
-
     Ambient state (one user: s_interaction, s_io) and frame scratch (s_build, the stacks, s_draw) are
-    NOT per context -- they stay global and target whichever context is bound.
+    NOT per context -- they stay global and target whichever context is bound.  The window pool,
+    viewports, popup set, and dock nodes ARE per context: members of imgui_context_t reached through
+    the aliases below.  The primary context (slot 0) owns the OS windows; secondary contexts share
+    the same OS windows and render surfaces rather than owning separate ones.
 ----------------------------------------------------------------------------------------------*/
 
 /* imgui_context_t (the bound per-context retained state) is defined in imgui_internal.h. */
@@ -465,15 +464,23 @@ ctx_bind( imgui_context_t* ctx )
     g_ctx = ctx ? ctx : s_ctx_pool[ 0 ];
 }
 
-/* Resolve an app win_id to the viewport index.  Slot index == win_id by construction;
-   out-of-range ids fall back to the main surface (0).
+/* Resolve an app win_id to the primary context's viewport index.  OS windows and their viewport
+   slots are owned by the primary context (slot 0) regardless of which context is currently bound;
+   secondary contexts share the same OS windows and render surfaces rather than owning separate ones.
+   Searches the primary context's viewport array for a live slot (one with GPU buffers) whose
+   recorded win_id matches; falls back to 0 (main swapchain) if none found.
    Forward-declared in imgui_internal.h; called by the mouse-input path in imgui_input.c. */
 static u32
 viewport_index_for_window( i32 win_id )
 {
-    if ( win_id >= 0 && win_id < (i32)g_ctx->max_viewports )
-        return (u32)win_id;
-    return 0;   /* invalid -> main swapchain surface */
+    const imgui_context_t* primary = s_ctx_pool[ 0 ];
+    for ( u32 i = 0; i < primary->max_viewports; ++i )
+    {
+        const imgui_viewport_t* vp = &primary->viewports[ i ];
+        if ( rhi_handle_valid( vp->vb ) && vp->win_id == win_id )
+            return i;
+    }
+    return 0;   /* no live slot matches -> main swapchain surface */
 }
 
 /*----------------------------------------------------------------------------------------------

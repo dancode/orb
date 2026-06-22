@@ -133,10 +133,6 @@ main( int argc, char** argv )
         }
     }
 
-    /* Initial drawable sizes (updated by resize events in the loop below). */
-    i32 win_w = 1280;
-    i32 win_h = 720;
-
     /* ------------------------------------------------------------------------------ */
     /* Setup IMGUI */
 
@@ -157,6 +153,10 @@ main( int argc, char** argv )
  // imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
     imgui()->print_mem_stats();
     
+    /* Initial drawable sizes (updated by resize events in the loop below). */
+    i32 win_w = 1280;
+    i32 win_h = 720;
+
     /* Open the primary viewport for the main window.  This creates its GPU geometry buffers and
        associates win so mouse events from it route to surface 0. */
     imgui_vp_t vp0 = imgui()->viewport_open( win, win_w, win_h );
