@@ -289,7 +289,7 @@ imgui_progress_bar( f32 fraction, const char* overlay )
     {
         if ( style_var( IMGUI_VAR_PROGRESS_STYLE ) >= 0.5f )
             draw_gradient( ( imgui_rect_t ){ r.x, r.y, fw, r.h },
-                           COL_WIDGET_FG, col_lerp( COL_WIDGET_FG, 0xFFFFFFFFu, 0.45f ), false );
+                           COL_WIDGET_FG, col_lerp( COL_WIDGET_FG, 0xFFFFFFFFu, 0.45f ), true );
         else
             draw_push_rect_filled( r.x, r.y, fw, r.h, 0,0,1,1, 0, COL_WIDGET_FG );
     }

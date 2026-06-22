@@ -1454,6 +1454,16 @@ demo_icons( void )
     custom widgets reuse.
 ==============================================================================================*/
 
+/* Center a sz x sz preview box inside the cell `c` (clamped to the cell) -- the placement for each
+   parametric symbol preview in demo_symbols. */
+static imgui_rect_t
+sym_box( imgui_rect_t c, f32 sz )
+{
+    if ( sz > c.h ) sz = c.h;
+    if ( sz > c.w ) sz = c.w;
+    return ( imgui_rect_t ){ c.x + ( c.w - sz ) * 0.5f, c.y + ( c.h - sz ) * 0.5f, sz, sz };
+}
+
 static void
 demo_symbols( void )
 {
@@ -1514,44 +1524,84 @@ demo_symbols( void )
 
         imgui()->pop_style_var( 6 );
 
-        imgui()->separator_text( "Glyph + shape primitives" );
+        imgui()->separator_text( "Parametric primitives (slider drives each)" );
 
-        /* A strip of dummy slots, each filled with one render_* primitive via its returned rect. */
-        f32       sz  = 30.0f;
+        /* A stacked 50/50 list: each row previews one render_* primitive on the left (canvas cell)
+           and a slider on the right driving one facet of it.  The preview reads last frame's slider
+           value (immediate mode) -- a 1-frame latency that is imperceptible while dragging. */
         const u32 col = 0xFFE0E0E0u;
         const u32 acc = 0xFF60C0F0u;
+        const u32 grn = 0xFF48E618u;             /* the strengthened check-mark green */
+        const f32 H   = 26.0f;
         f32       t   = (f32)imgui()->get_time();
 
-        imgui()->row_cols( 0, 6 );
+        imgui()->row2( 1.0f, 1.0f );
         {
             imgui_rect_t r;
-            r = imgui()->dummy( sz, sz ); imgui()->render_check_mark( r, 0xFF60D060u );
-            r = imgui()->dummy( sz, sz ); imgui()->render_close( r, 0xFF6060E0u );
-            r = imgui()->dummy( sz, sz ); imgui()->render_chevron( r, IMGUI_DIR_RIGHT, 2.0f, col );
-            r = imgui()->dummy( sz, sz ); imgui()->render_plus_minus( r, true,  2.0f, col );
-            r = imgui()->dummy( sz, sz ); imgui()->render_plus_minus( r, false, 2.0f, col );
-            r = imgui()->dummy( sz, sz ); imgui()->render_arrow_pointing_at( r.x + sz * 0.5f, r.y + sz * 0.25f, 7.0f, IMGUI_DIR_UP, col );
 
-            r = imgui()->dummy( sz, sz ); imgui()->render_frame( r, 0xFF404858u, 0xFF8090A0u, 1.0f );
-            r = imgui()->dummy( sz, sz ); imgui()->render_round_rect( r, 7.0f, 7.0f, 0.0f, 0.0f, true, 0.0f, 0xFF4A90D0u ); /* tab */
-            r = imgui()->dummy( sz, sz ); imgui()->render_ngon( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, 6, 0.0f, true, 0.0f, acc );
-            r = imgui()->dummy( sz, sz ); imgui()->render_circle( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, false, 2.0f, acc );
-            r = imgui()->dummy( sz, sz ); imgui()->render_arc( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, 0.0f, 4.2f, 3.0f, acc );
-            r = imgui()->dummy( sz, sz ); imgui()->render_pie( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, -1.2f, 1.6f, acc );
+            /* Most facets are pixel sizes, stroke weights, counts, or whole-degree sweeps -- integer
+               sliders, since fractional values only stair-step (the prims floor/snap anyway).  The two
+               genuinely continuous facets (sub-1 curve bow, 0..1 progress fraction) stay float. */
 
-            r = imgui()->dummy( sz, sz ); imgui()->render_bezier_cubic( r.x+3, r.y+sz-3, r.x+3, r.y+3, r.x+sz-3, r.y+sz-3, r.x+sz-3, r.y+3, 2.0f, acc );
-            r = imgui()->dummy( sz, sz ); imgui()->render_dashed_line( r.x+2, r.y+sz*0.5f, r.x+sz-2, r.y+sz*0.5f, 4.0f, 3.0f, 2.0f, col );
-            r = imgui()->dummy( sz, sz ); imgui()->render_checker( r, 6.0f, 0xFF808080u, 0xFF404040u );
-            r = imgui()->dummy( sz, sz ); imgui()->render_hatch( r, 5.0f, 1.0f, 0xFF909090u );
-            r = imgui()->dummy( sz, sz ); imgui()->render_gradient( r, 0xFF2060A0u, 0xFF60D0F0u, false );
-            r = imgui()->dummy( sz, sz ); imgui()->render_grip( r, col );
+            static i32 p_arrow = 18;     /* px */
+            r = imgui()->canvas( H ); imgui()->render_arrow( sym_box( r, (f32)p_arrow ), IMGUI_DIR_RIGHT, col );
+            imgui()->slider_int( "Arrow size (px)", &p_arrow, 8, 26 );
 
-            r = imgui()->dummy( sz, sz ); imgui()->render_shadow( r, 4.0f, 0xC0000000u ); imgui()->render_frame( r, 0xFF505868u, 0xFF8090A0u, 1.0f );
-            r = imgui()->dummy( sz, sz ); imgui()->render_spinner( r, t, 3.0f, acc );
-            r = imgui()->dummy( sz, sz ); imgui()->render_progress_arc( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, 0.66f, 3.0f, acc );
-            r = imgui()->dummy( sz, sz ); imgui()->render_bullet( r.x + sz*0.5f, r.y + sz*0.5f, 5.0f, col );
-            r = imgui()->dummy( sz, sz ); imgui()->render_arrow( r, IMGUI_DIR_DOWN, col );
-            r = imgui()->dummy( sz, sz ); imgui()->render_ngon( r.x + sz*0.5f, r.y + sz*0.5f, sz*0.4f, 3, t, false, 2.0f, acc );
+            static i32 p_check = 22;     /* px */
+            r = imgui()->canvas( H ); imgui()->render_check_mark( sym_box( r, (f32)p_check ), grn );
+            imgui()->slider_int( "Check size (px)", &p_check, 8, 26 );
+
+            static i32 p_chev = 2;       /* stroke weight, px */
+            r = imgui()->canvas( H ); imgui()->render_chevron( sym_box( r, H ), IMGUI_DIR_RIGHT, (f32)p_chev, col );
+            imgui()->slider_int( "Chevron weight", &p_chev, 1, 5 );
+
+            static i32 p_pm = 2;         /* stroke weight, px */
+            r = imgui()->canvas( H ); imgui()->render_plus_minus( sym_box( r, H ), true, (f32)p_pm, col );
+            imgui()->slider_int( "Plus weight", &p_pm, 1, 5 );
+
+            static i32 p_sides = 6;
+            r = imgui()->canvas( H ); imgui()->render_ngon( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, (u32)p_sides, t*0.3f, true, 0.0f, acc );
+            imgui()->slider_int( "Polygon sides", &p_sides, 3, 12 );
+
+            static i32 p_ring = 2;       /* stroke weight, px */
+            r = imgui()->canvas( H ); imgui()->render_circle( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, false, (f32)p_ring, acc );
+            imgui()->slider_int( "Ring weight", &p_ring, 1, 6 );
+
+            static i32 p_arc = 240;      /* whole degrees -> imgui_radians at the call */
+            r = imgui()->canvas( H ); imgui()->render_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, 0.0f, imgui_radians( (f32)p_arc ), 3.0f, acc );
+            imgui()->slider_int( "Arc sweep (deg)", &p_arc, 20, 360 );
+
+            static i32 p_pie = 150;      /* whole degrees, swept from -90 (12 o'clock) */
+            r = imgui()->canvas( H ); imgui()->render_pie( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, imgui_radians( -90.0f ), imgui_radians( -90.0f + (f32)p_pie ), acc );
+            imgui()->slider_int( "Pie sweep (deg)", &p_pie, 20, 360 );
+
+            static i32 p_round = 8;      /* corner radius, px */
+            r = imgui()->canvas( H ); imgui()->render_round_rect( sym_box( r, H ), (f32)p_round, (f32)p_round, 0.0f, 0.0f, true, 0.0f, 0xFF4A90D0u );
+            imgui()->slider_int( "Tab corner (px)", &p_round, 0, 13 );
+
+            static f32 p_bow = 0.4f;     /* continuous curve shape -- stays float */
+            r = imgui()->canvas( H ); imgui()->render_bezier_quad( r.x+4, r.y+H*0.5f, r.x+r.w*0.5f, r.y+H*0.5f - H*p_bow, r.x+r.w-4, r.y+H*0.5f, 2.0f, acc );
+            imgui()->slider_float( "Curve bow", &p_bow, -0.45f, 0.45f );
+
+            static i32 p_dash = 5;       /* dash length, px */
+            r = imgui()->canvas( H ); imgui()->render_dashed_line( r.x+4, r.y+H*0.5f, r.x+r.w-4, r.y+H*0.5f, (f32)p_dash, 3.0f, 2.0f, col );
+            imgui()->slider_int( "Dash length (px)", &p_dash, 2, 12 );
+
+            static i32 p_cell = 6;       /* cell size, px */
+            r = imgui()->canvas( H ); imgui()->render_checker( sym_box( r, H ), (f32)p_cell, 0xFF808080u, 0xFF404040u );
+            imgui()->slider_int( "Checker cell (px)", &p_cell, 3, 14 );
+
+            static i32 p_hatch = 5;      /* line spacing, px */
+            r = imgui()->canvas( H ); imgui()->render_hatch( sym_box( r, H ), (f32)p_hatch, 1.0f, 0xFF909090u );
+            imgui()->slider_int( "Hatch spacing (px)", &p_hatch, 3, 14 );
+
+            static i32 p_spin = 3;       /* stroke weight, px */
+            r = imgui()->canvas( H ); imgui()->render_spinner( sym_box( r, H ), t, (f32)p_spin, acc );
+            imgui()->slider_int( "Spinner weight", &p_spin, 1, 6 );
+
+            static f32 p_prog = 0.66f;   /* continuous 0..1 fraction -- stays float */
+            r = imgui()->canvas( H ); imgui()->render_progress_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, p_prog, 3.0f, acc );
+            imgui()->slider_float( "Progress frac", &p_prog, 0.0f, 1.0f );
         }
         imgui()->row( 0 );
 

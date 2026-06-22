@@ -37,10 +37,13 @@ slider_render( imgui_rect_t track_r, widget_state_t st, f32 t, const char* value
     draw_push_rect_outline( track_r.x, track_r.y, track_r.w, track_r.h,
                             WIN_BORDER, 0, COL_BORDER );
 
+    /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
+       leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
+       between the fill and the handle.  Per-corner via draw_round_rect_ex (imgui_draw_symbol.c). */
     f32 fill_w = t * ( track_r.w - SLIDER_KNOB_W );
     if ( fill_w > 0.0f )
-        draw_push_rect_filled( track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f,
-                               0,0,1,1, 0, COL_WIDGET_FG );
+        draw_round_rect_ex( ( imgui_rect_t ){ track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f },
+                            ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, true, 0.0f, COL_WIDGET_FG );
 
     /* Knob (grab): the brighter hover/active element, outlined so its edge stays crisp against the
        track and the fill bar regardless of how close their colours get.  A bar grab by default
