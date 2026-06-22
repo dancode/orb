@@ -637,6 +637,15 @@ typedef struct
 
     imgui_rect_t            outer_rect;    /* full table box in screen space             */
     imgui_rect_t            body_rect;     /* content area inside the opened region      */
+    f32                     header_h;      /* header strip height; 0 if no header        */
+
+    /* Set true once the body region has been pushed (either by table_headers_row or
+       the first table_next_row).  Guards layout_pop_region in table_end. */
+    bool                    header_done;
+
+    /* Set true in table_headers_row when the user clicks a sort-active column header.
+       Cleared by table_get_sort_specs.  Automatically false each new frame (s_tab memset). */
+    bool                    sort_dirty;
 
     /* Cell clip bookkeeping: one draw clip is pushed per column and popped on transition. */
     bool                    in_cell;       /* a clip rect is currently pushed            */

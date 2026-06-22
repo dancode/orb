@@ -12,6 +12,7 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <string.h>    /* strcmp -- column sort comparison in demo_table */
 #include <math.h>      /* cosf / sinf -- the diagonal fan + polygon in demo_lines */
 
 #include "sb_vulkan_imgui.h"
@@ -1020,47 +1021,83 @@ demo_lines( void )
 }
 
 /*==============================================================================================
-    15. Tables -- multi-column layout with per-cell clipping.
+    15. Tables -- multi-column layout with per-cell clipping and a clickable header row.
 
     table_begin opens a table of ncols columns.  table_setup_column names and sizes each column
     before the first row: STRETCH columns fill the remaining space equally, FIXED columns take
-    an explicit pixel width.  Each data row starts with table_next_row; table_next_column clips
-    the draw list and hit-test rect to the current cell before the caller emits its widgets.
+    an explicit pixel width.  table_headers_row draws the non-scrolling header strip and, when
+    IMGUI_TABLE_SORTABLE is set, registers sort clicks.  Each data row starts with table_next_row;
+    table_next_column clips the draw list and hit-test rect to the current cell.
 ==============================================================================================*/
 
 static void
 demo_table( void )
 {
     imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 480, 420, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 480, 480, IMGUI_COND_ONCE );
     if ( imgui()->begin_window( "Tables", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
 
-        /* --- simple three-column table ---------------------------------------------------- */
-        imgui()->separator_text( "table_begin / table_next_row / table_next_column" );
+        /* --- sortable three-column table -------------------------------------------------- */
+        imgui()->separator_text( "table_headers_row / IMGUI_TABLE_SORTABLE" );
 
         static const struct { const char* name; const char* kind; float value; }
         k_items[] = {
-            { "pos_x",       "float",  1.234f  },
-            { "pos_y",       "float",  -5.678f },
-            { "health",      "int",    100.0f  },
-            { "shield",      "int",    42.0f   },
-            { "speed",       "float",  9.81f   },
-            { "alive",       "bool",   1.0f    },
-            { "score",       "int",    31337.0f},
+            { "pos_x",   "float",  1.234f   },
+            { "pos_y",   "float",  -5.678f  },
+            { "health",  "int",    100.0f   },
+            { "shield",  "int",    42.0f    },
+            { "speed",   "float",  9.81f    },
+            { "alive",   "bool",   1.0f     },
+            { "score",   "int",    31337.0f },
         };
         const int k_item_count = (int)( sizeof( k_items ) / sizeof( k_items[ 0 ] ) );
 
-        /* stretch Name, fixed Type (55 px), fixed Value (75 px) */
-        if ( imgui()->table_begin( "props", 3, IMGUI_TABLE_NONE, 0.0f ) )
+        /* Display order, re-sorted in place whenever a header is clicked. */
+        static int s_order[ 7 ];
+        static bool s_order_init = false;
+        if ( !s_order_init )
         {
-            imgui()->table_setup_column( "Name",  IMGUI_TABLE_COL_STRETCH, 0     );
-            imgui()->table_setup_column( "Type",  IMGUI_TABLE_COL_FIXED,   64.0f );
-            imgui()->table_setup_column( "Value", IMGUI_TABLE_COL_FIXED,   128.0f );
+            for ( int i = 0; i < k_item_count; ++i ) s_order[ i ] = i;
+            s_order_init = true;
+        }
 
-            for ( int i = 0; i < k_item_count; ++i )
+        /* stretch Name, fixed Type (64 px), fixed Value (128 px); sortable + striped + framed */
+        if ( imgui()->table_begin( "props", 3,
+                                   IMGUI_TABLE_SORTABLE | IMGUI_TABLE_ROW_STRIPES
+                                       | IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER,
+                                   0.0f ) )
+        {
+            imgui()->table_setup_column( "Name",  IMGUI_TABLE_COL_STRETCH,   0     );
+            imgui()->table_setup_column( "Type",  IMGUI_TABLE_COL_FIXED,     64.0f );
+            imgui()->table_setup_column( "Value", IMGUI_TABLE_COL_FIXED,    128.0f );
+            imgui()->table_headers_row();
+
+            /* On a header click, re-sort the index array by the chosen column/direction. */
+            imgui_table_sort_specs_t specs;
+            if ( imgui()->table_get_sort_specs( &specs ) )
             {
+                for ( int a = 0; a < k_item_count - 1; ++a )      /* simple insertion sort */
+                    for ( int b = a + 1; b < k_item_count; ++b )
+                    {
+                        const int ia = s_order[ a ], ib = s_order[ b ];
+                        int cmp = 0;
+                        if ( specs.col == 0 )
+                            cmp = strcmp( k_items[ ia ].name, k_items[ ib ].name );
+                        else if ( specs.col == 1 )
+                            cmp = strcmp( k_items[ ia ].kind, k_items[ ib ].kind );
+                        else
+                            cmp = ( k_items[ ia ].value > k_items[ ib ].value ) -
+                                  ( k_items[ ia ].value < k_items[ ib ].value );
+                        if ( specs.descending ) cmp = -cmp;
+                        if ( cmp > 0 ) { s_order[ a ] = ib; s_order[ b ] = ia; }
+                    }
+            }
+
+            for ( int r = 0; r < k_item_count; ++r )
+            {
+                const int i = s_order[ r ];
                 imgui()->table_next_row( 0 );
                 if ( imgui()->table_next_column() )
                 {
@@ -1075,6 +1112,10 @@ demo_table( void )
                 if ( imgui()->table_next_column() )
                 {
                     imgui()->stack();
+                    /* Tint the cell red when the value is negative (CELL bg override). */
+                    if ( k_items[ i ].value < 0.0f )
+                        imgui()->table_set_bg_color( IMGUI_TABLE_BG_CELL,
+                                                     IMGUI_COLOR( 0xC0, 0x30, 0x30, 0x60 ) );
                     char buf[ 24 ];
                     snprintf( buf, sizeof( buf ), "%.3g", k_items[ i ].value );
                     imgui()->text( buf );
@@ -1085,15 +1126,17 @@ demo_table( void )
 
         /* --- table containing interactive widgets ----------------------------------------- */
         imgui()->spacing( 0 );
-        imgui()->separator_text( "interactive cells" );
+        imgui()->separator_text( "interactive cells (no header)" );
 
         static float s_vals[ 4 ] = { 0.25f, 0.5f, 0.75f, 1.0f };
         static const char* k_labels[] = { "Alpha", "Beta", "Gamma", "Delta" };
 
-        if ( imgui()->table_begin( "sliders", 2, IMGUI_TABLE_NONE, 0.0f ) )
+        if ( imgui()->table_begin( "sliders", 2, IMGUI_TABLE_BORDERS_H, 0.0f ) )
         {
             imgui()->table_setup_column( "Label",  IMGUI_TABLE_COL_FIXED,  60.0f );
             imgui()->table_setup_column( "Slider", IMGUI_TABLE_COL_STRETCH, 0    );
+            /* No table_headers_row -- body opens automatically on the first table_next_row.
+               IMGUI_TABLE_BORDERS_H draws a divider between each data row. */
 
             for ( int i = 0; i < 4; ++i )
             {

@@ -125,7 +125,14 @@
       "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 20)",
       "PowerShell(cmd.exe /c \"call \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"\" x64 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target imgui\" 2>&1 | Select-Object -Last 10)",
       "Bash(bin/build_tool.exe -config Debug -target sb_engine_job)",
-      "Bash(bin/sb_engine_job.exe)"
+      "Bash(bin/sb_engine_job.exe)",
+      "PowerShell($bat = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$bat`\" x64 >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target imgui 2>&1\" | Select-Object -Last 40)",
+      "PowerShell($bat = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$bat`\" x64 >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_vulkan_imgui 2>&1\" | Select-Object -Last 30)",
+      "PowerShell($bat = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$bat`\" x64 >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_vulkan 2>&1\" | Select-Object -Last 30)",
+      "PowerShell($bat = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$bat`\" x64 >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_vulkan 2>&1\" | Select-Object -Last 8; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell($bat = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$bat`\" x64 >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_vulkan 2>&1\" | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell($bat = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$bat`\" x64 >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_vulkan 2>&1\" | Select-Object -Last 15; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell($bat = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$bat`\" x64 >nul 2>&1 && F:\\\\orb\\\\bin\\\\build_tool.exe -config Release -target sb_vulkan >nul 2>&1 && echo RELEASE_OK && F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -monolithic -target sb_vulkan >nul 2>&1 && echo MONO_OK\"; \"EXIT=$LASTEXITCODE\")"
     ]
   }
 }
