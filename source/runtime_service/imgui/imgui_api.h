@@ -373,7 +373,7 @@ typedef struct imgui_api_s
        nothing scrolls.  For titlebars, split panes (cell -> begin_child), dashboards, image grids.
        grid() takes the full descriptor (cols + rows); grid_cells() is the uniform nc x nr case.
 
-           imgui()->grid_cells( 3, 2 );  for (i<6) imgui()->button(name[i]);  // 3x2 of buttons
+       imgui()->grid_cells( 3, 2 );  for (i<6) imgui()->button(name[i]);  // 3x2 of buttons
        grid()       -- cols x rows from the descriptor (row_h ignored; grid uses rows).
 
        Pack mode -- the print run: place items one after another along an axis at natural size, the
@@ -381,7 +381,7 @@ typedef struct imgui_api_s
        the next item's main-axis measure (resolved against the space left on the line); pack_nextline()
        breaks to a fresh line.  The toolbar / tag-row / inline-controls case.
 
-           imgui()->bar();  imgui()->button("Save");  imgui()->button("Open");   // a toolbar
+       imgui()->bar();  imgui()->button("Save");  imgui()->button("Open");   // a toolbar
        pack()       -- open a run along dir (HORIZONTAL / VERTICAL).
        bar() / strip() -- pack sugar: horizontal (toolbar) / vertical run.
        pack_size()  -- next packed item's main-axis size (0 natural, 1 fill, (0,1) frac, >1 px).

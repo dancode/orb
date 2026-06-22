@@ -1020,7 +1020,105 @@ demo_lines( void )
 }
 
 /*==============================================================================================
-    15. Docking -- tile + tab windows into a dockspace that fills the main viewport.
+    15. Tables -- multi-column layout with per-cell clipping.
+
+    table_begin opens a table of ncols columns.  table_setup_column names and sizes each column
+    before the first row: STRETCH columns fill the remaining space equally, FIXED columns take
+    an explicit pixel width.  Each data row starts with table_next_row; table_next_column clips
+    the draw list and hit-test rect to the current cell before the caller emits its widgets.
+==============================================================================================*/
+
+static void
+demo_table( void )
+{
+    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 480, 420, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Tables", IMGUI_WIN_NONE ) )
+    {
+        imgui()->stack();
+
+        /* --- simple three-column table ---------------------------------------------------- */
+        imgui()->separator_text( "table_begin / table_next_row / table_next_column" );
+
+        static const struct { const char* name; const char* kind; float value; }
+        k_items[] = {
+            { "pos_x",       "float",  1.234f  },
+            { "pos_y",       "float",  -5.678f },
+            { "health",      "int",    100.0f  },
+            { "shield",      "int",    42.0f   },
+            { "speed",       "float",  9.81f   },
+            { "alive",       "bool",   1.0f    },
+            { "score",       "int",    31337.0f},
+        };
+        const int k_item_count = (int)( sizeof( k_items ) / sizeof( k_items[ 0 ] ) );
+
+        /* stretch Name, fixed Type (55 px), fixed Value (75 px) */
+        if ( imgui()->table_begin( "props", 3, IMGUI_TABLE_NONE, 0.0f ) )
+        {
+            imgui()->table_setup_column( "Name",  IMGUI_TABLE_COL_STRETCH, 0     );
+            imgui()->table_setup_column( "Type",  IMGUI_TABLE_COL_FIXED,   64.0f );
+            imgui()->table_setup_column( "Value", IMGUI_TABLE_COL_FIXED,   128.0f );
+
+            for ( int i = 0; i < k_item_count; ++i )
+            {
+                imgui()->table_next_row( 0 );
+                if ( imgui()->table_next_column() )
+                {
+                    imgui()->stack();
+                    imgui()->text( k_items[ i ].name );
+                }
+                if ( imgui()->table_next_column() )
+                {
+                    imgui()->stack();
+                    imgui()->text_disabled( k_items[ i ].kind );
+                }
+                if ( imgui()->table_next_column() )
+                {
+                    imgui()->stack();
+                    char buf[ 24 ];
+                    snprintf( buf, sizeof( buf ), "%.3g", k_items[ i ].value );
+                    imgui()->text( buf );
+                }
+            }
+            imgui()->table_end();
+        }
+
+        /* --- table containing interactive widgets ----------------------------------------- */
+        imgui()->spacing( 0 );
+        imgui()->separator_text( "interactive cells" );
+
+        static float s_vals[ 4 ] = { 0.25f, 0.5f, 0.75f, 1.0f };
+        static const char* k_labels[] = { "Alpha", "Beta", "Gamma", "Delta" };
+
+        if ( imgui()->table_begin( "sliders", 2, IMGUI_TABLE_NONE, 0.0f ) )
+        {
+            imgui()->table_setup_column( "Label",  IMGUI_TABLE_COL_FIXED,  60.0f );
+            imgui()->table_setup_column( "Slider", IMGUI_TABLE_COL_STRETCH, 0    );
+
+            for ( int i = 0; i < 4; ++i )
+            {
+                imgui()->table_next_row( 0 );
+                if ( imgui()->table_next_column() )
+                {
+                    imgui()->stack();
+                    imgui()->text( k_labels[ i ] );
+                }
+                if ( imgui()->table_next_column() )
+                {
+                    imgui()->stack();
+                    imgui()->push_id_int( i );
+                    imgui()->slider_float( "##v", &s_vals[ i ], 0.0f, 1.0f );
+                    imgui()->pop_id();
+                }
+            }
+            imgui()->table_end();
+        }
+    }
+    imgui()->end_window();
+}
+
+/*==============================================================================================
+    16. Docking -- tile + tab windows into a dockspace that fills the main viewport.
 
     dockspace_over_viewport( 0, ... ) is called at the TOP of the build every frame: it lays the dock
     tree out over the surface and draws + interacts its splitters.  The layout itself is built once
@@ -1174,6 +1272,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Auto-size",    "ALWAYS_AUTOSIZE / CAN_AUTOSIZE / auto child",    demo_autosize    },
     { "Menus",        "menu bar / begin_menu / menu_item / context",    demo_menus       },
     { "Lines / Paths","draw_line / draw_polyline / path_stroke",        demo_lines       },
+    { "Tables",       "table_begin / setup_column / next_row / next_column", demo_table   },
     { "Docking",      "dockspace_over_viewport / dock_split / tabs",     demo_docking     },
     { NULL,           NULL,                                             NULL             },
 };
