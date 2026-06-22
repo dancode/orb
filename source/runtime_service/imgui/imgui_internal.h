@@ -558,30 +558,30 @@ typedef struct imgui_dock_node_t
 
 typedef struct imgui_context_t
 {
-    imgui_retained_t    retained;          /* id salt, frame clock, keyed state pool (ptr into alloc) */
-    nav_state_t         nav;               /* nav cursor location + menu-bar mode */
-
-    imgui_popup_t*      popups_open;       /* open popup set, ordered parent -> child; ptr into alloc */
-    u32                 popup_open_count;  /* live open count */
-    u32                 popup_depth;       /* capacity (max nesting depth) */
-
-    imgui_window_t*     windows;           /* persisted window records; ptr into alloc */
-    u32                 window_count;      /* live records in the pool */
-    u32                 max_windows;       /* capacity */
-    imgui_window_t      window_scratch;    /* transient fallback when the pool is full; stays embedded */
-    u32                 z_counter;         /* monotonic paint-order dispenser */
-
-    imgui_viewport_t*   viewports;         /* render surfaces: [0]=main swapchain; ptr into alloc */
-    u32                 viewport_count;    /* high-water slot count (compacted on close; iterate [0, count)) */
-    u32                 max_viewports;     /* capacity */
-
-    imgui_dock_node_t*  dock_nodes;        /* dock-tree node pool; NULL when max_dock_nodes == 0 */
-    u32                 dock_node_count;   /* high-water slot count in the pool */
-    u32                 dock_id_seq;       /* monotonic node-id dispenser (0 = none) */
-    u32                 max_dock_nodes;    /* capacity; 0 = docking disabled */
-
-    bool                listening;         /* true: context receives hover/click/nav input this frame */
-    void*               _alloc;            /* heap block; NULL for the static default context (slot 0) */
+    imgui_retained_t    retained;          // id salt, frame clock, keyed state pool (ptr into alloc)
+    nav_state_t         nav;               // nav cursor location + menu-bar mode
+                                           
+    imgui_popup_t*      popups_open;       // open popup set, ordered parent -> child; ptr into alloc
+    u32                 popup_open_count;  // live open count
+    u32                 popup_depth;       // capacity (max nesting depth) 
+                                            
+    imgui_window_t*     windows;           // persisted window records; ptr into alloc
+    u32                 window_count;      // live records in the pool
+    u32                 max_windows;       // capacity
+    imgui_window_t      window_scratch;    // transient fallback when the pool is full; stays embedded
+    u32                 z_counter;         // monotonic paint-order dispenser
+                                           
+    imgui_viewport_t*   viewports;         // render surfaces: [0]=main swapchain; ptr into alloc
+    u32                 viewport_count;    // high-water slot count (compacted on close; iterate [0, count))
+    u32                 max_viewports;     // capacity
+                                            
+    imgui_dock_node_t*  dock_nodes;        // dock-tree node pool; NULL when max_dock_nodes == 0
+    u32                 dock_node_count;   // high-water slot count in the pool
+    u32                 dock_id_seq;       // monotonic node-id dispenser (0 = none)
+    u32                 max_dock_nodes;    // capacity; 0 = docking disabled
+                                            
+    bool                listening;         // true: context receives hover/click/nav input this frame
+    void*               _alloc;            // heap block; NULL for the static default context (slot 0)
 
 } imgui_context_t;
 
