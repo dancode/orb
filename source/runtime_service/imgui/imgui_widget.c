@@ -39,8 +39,14 @@ text_emit( u32 col, const char* str )
     /* Place the run inside its cell per the region's content alignment (default LEFT | TOP, the
        original top-left).  A row tall enough for the glyph centers vertically when asked. */
     imgui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->lay_align );
-    draw_push_text( tr.x, tr.y, col, str );
-    widget_track_width( tr.x + tw );   /* natural width may exceed the row */
+
+    /* Self-fit to the cell: when the run fits this is a plain draw; when the cell squeezes it (a
+       narrow table column / split region) the run is left-anchored and ellipsized -- the same fit
+       every labeled widget does.  Text therefore never bleeds into a neighbouring cell, so a column
+       layout needs no per-cell clip. */
+    f32 x = ( tw <= r.w ) ? tr.x : r.x;
+    draw_text_fit_n( x, tr.y, col, str, 0xFFFFFFFFu, ( r.x + r.w ) - x );
+    widget_track_width( x + ( ( tw <= r.w ) ? tw : r.w ) );
 }
 
 void imgui_text( const char* str ) { text_emit( COL_TEXT, str ); }

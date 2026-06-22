@@ -1,21 +1,32 @@
 /*==============================================================================================
 
-    runtime_service/imgui/imgui_table.c -- Table layout: multi-column rows with cell clipping.
+    runtime_service/imgui/imgui_table.c -- Table layout: multi-column rows over the columns engine.
 
     A table is a region whose content is laid out in a column grid -- columns resolved once per
-    table_begin, rows accumulated per table_next_row.  Each table_next_column narrows both the
-    GPU scissor and the interaction hit-test clip to the cell rect, then restores them on the
-    next transition, so widgets inside a cell render and interact only within that cell.
+    table_begin, rows accumulated per table_next_row.  table_next_column just points the layout pen
+    at the column's cell (cellx / cellw); content stays inside the column because widgets self-fit
+    to that width (text ellipsizes, labeled widgets shrink), exactly like the layout engine's
+    columns mode.  There is therefore NO per-cell clip.
 
-    Phase 1 -- column layout, cell clipping, next_row / next_column, auto-height rows.
-    Phase 2 -- headers_row: non-scrolling header strip with sort click and sort indicator.
+    ONE clip, like a window: the table pushes a single clip around the whole table box (header
+    included) and runs the body scroll region inside it with own_clip=false -- the same pattern a
+    window body uses.  The header is then drawn LAST (as chrome, like a title bar) so it overpaints
+    any rows that scrolled up under it.  So the entire table -- header, rows, scrollbar -- lives in
+    that one clip, and the body needs no clip of its own.
+
+    Phase 1 -- column layout, next_row / next_column, auto-height rows.
+    Phase 2 -- headers_row: header strip with sort click and sort indicator (drawn as chrome).
     Phase 3 -- decoration: row stripes, H/V dividers + outer frame, row/cell background overrides.
+    Phase 4 -- scrolling body (IMGUI_TABLE_SCROLL_Y / _X): rows scroll under the one table clip and
+               the chrome header covers the top, so the header stays frozen with no extra clip.
+               Columns resolve inside the region (after the scrollbar gutter is reserved) so header
+               and body cells stay aligned.
 
     Deferred open model:
-      table_begin records outer_rect and exits.  The body region (layout_push_region) is opened
-      lazily by table_open_body(), called from table_headers_row or the first table_next_row.
-      This lets table_headers_row draw the header strip in the PARENT layout frame (correct clip,
-      correct win_id for hover) before the body region narrows things.
+      table_begin records outer_rect and exits.  table_open_body() (called lazily from
+      table_headers_row or the first table_next_row) pushes the one table clip, opens the body
+      region (own_clip=false), and resolves columns.  table_headers_row runs the header sort
+      interaction up front but defers the header DRAW to table_end so it lands on top as chrome.
 
     State model:
       - s_tab (imgui_table_t)             : per-frame active table; one open at a time.
@@ -112,16 +123,6 @@ table_resolve_columns( imgui_table_t* t, f32 x, f32 w )
     layout_resolve_tracks( tracks, (u32)t->ncols, x, w, 0.0f, t->col_x, t->col_w );
 }
 
-/* Close the active cell clip and restore the saved interaction clip. */
-static void
-table_close_cell( imgui_table_t* t )
-{
-    if ( !t->in_cell ) return;
-    draw_pop_clip_rect();
-    s_build.clip_rect = t->saved_clip;
-    t->in_cell        = false;
-}
-
 /* Advance the layout cursor past the current row. */
 static void
 table_end_row( imgui_table_t* t )
@@ -131,28 +132,50 @@ table_end_row( imgui_table_t* t )
 }
 
 /* Open the body region below the (optional) header strip and resolve columns inside it.
-   Called from table_headers_row (after drawing the header) and from table_next_row
-   (as an auto-open when the caller skips table_headers_row). */
+   Called from table_headers_row and from table_next_row (as an auto-open when the caller skips
+   the header). */
 static void
 table_open_body( imgui_table_t* t )
 {
+    /* The ONE clip: the whole table box, header included.  Like a window body, the scroll region
+       below runs own_clip=false inside this single clip, and the header is drawn last (as chrome)
+       to overpaint rows that scroll up under it -- so the entire table needs just this one clip. */
+    t->saved_clip = s_build.clip_rect;
+    draw_push_clip_rect( t->outer_rect.x, t->outer_rect.y, t->outer_rect.w, t->outer_rect.h );
+    s_build.clip_rect = rect_intersect( t->saved_clip, t->outer_rect );
+
     imgui_rect_t body = { t->outer_rect.x,
                           t->outer_rect.y + t->header_h,
                           t->outer_rect.w,
                           t->outer_rect.h - t->header_h };
     t->body_rect = body;
 
-    /* NOSCROLL gives a layout frame, a clip to the body box, and automatic
-       parent-pen advancement on pop.  The scroll dummies stay zero every frame. */
-    layout_push_region( t->id, body, ( imgui_pad_t ){ 0, 0, 0, 0 }, IMGUI_WIN_NOSCROLL,
-                        &s_tab_scroll_x, &s_tab_scroll_y,
-                        &s_tab_content_w, &s_tab_content_h,
-                        /* own_clip */ true );
+    /* Scrolling body needs persistent scroll + content storage (the region biases the pen by
+       *scroll and writes *content back at pop).  Without a persist slot we cannot scroll, so fall
+       back to the zeroed dummies + NOSCROLL.  SCROLL_Y leaves the vertical bar dynamic (shown only
+       when content overflows); SCROLL_X adds the horizontal bar. */
+    bool scroll = ( t->flags & ( IMGUI_TABLE_SCROLL_Y | IMGUI_TABLE_SCROLL_X ) ) && t->persist;
+
+    imgui_win_flags_t rflags = IMGUI_WIN_NOSCROLL;
+    f32 *sx = &s_tab_scroll_x, *sy = &s_tab_scroll_y, *cw = &s_tab_content_w, *ch = &s_tab_content_h;
+    if ( scroll )
+    {
+        rflags = ( t->flags & IMGUI_TABLE_SCROLL_X ) ? IMGUI_WIN_HSCROLL : IMGUI_WIN_NONE;
+        sx = &t->persist->scroll_x;  sy = &t->persist->scroll_y;
+        cw = &t->persist->content_w; ch = &t->persist->content_h;
+    }
+
+    /* own_clip=false: the region does NOT push its own clip -- it reuses the table clip for drawing
+       (so rows scroll under where the header will be) and only narrows the hit-test clip to the body
+       box.  Exactly the window-body-with-chrome pattern. */
+    layout_push_region( t->id, body, ( imgui_pad_t ){ 0, 0, 0, 0 }, rflags,
+                        sx, sy, cw, ch, /* own_clip */ false );
 
     /* STACK mode so widget_next_rect_w uses cellx[0] / cellw[0], overridden per column. */
     layout_set_default( lf() );
 
-    /* Resolve from the newly-opened region's content geometry. */
+    /* Resolve from the newly-opened region's content geometry -- content_w already excludes the
+       vertical scrollbar gutter, so header and body columns share one authoritative width. */
     table_resolve_columns( t, lf()->content_x, lf()->content_w );
     t->body_rect.x = lf()->content_x;
     t->body_rect.w = lf()->content_w;
@@ -183,6 +206,9 @@ table_draw_borders( imgui_table_t* t, f32 content_bottom )
     if ( t->flags & IMGUI_TABLE_BORDERS_OUTER )
         draw_push_rect_outline( x0, y0, w, h, 1.0f, 0, COL_BORDER );
 }
+
+/* Defined below; table_end draws the header (as chrome) before its definition appears. */
+static void table_draw_header( imgui_table_t* t );
 
 /*==============================================================================================
     Public API
@@ -232,12 +258,16 @@ imgui_table_end( void )
     if ( !t->header_done )
         table_open_body( t );
 
-    table_close_cell( t );
     table_end_row( t );
 
-    /* Bottom of the used area: last row's bottom edge, or the body top when no rows were emitted.
-       Captured before pop so borders (drawn after pop) frame exactly the content that was laid out. */
-    f32 content_bottom = ( t->cur_row >= 0 ) ? ( t->row_top + t->row_h ) : t->body_rect.y;
+    /* Bottom edge the borders frame to.  A scrolling table frames its fixed viewport box (rows
+       scroll inside it); a non-scrolling table frames exactly the content it laid out -- the last
+       row's bottom edge, or the body top when no rows were emitted.  Captured before pop. */
+    f32 content_bottom;
+    if ( t->flags & ( IMGUI_TABLE_SCROLL_Y | IMGUI_TABLE_SCROLL_X ) )
+        content_bottom = t->outer_rect.y + t->outer_rect.h;
+    else
+        content_bottom = ( t->cur_row >= 0 ) ? ( t->row_top + t->row_h ) : t->body_rect.y;
 
     /* Restore the full-width content column before pop so layout_pop_region measures the correct
        horizontal extent (content_max_x tracks the rightmost draw edge for hscroll decisions). */
@@ -247,9 +277,19 @@ imgui_table_end( void )
     f->cellx[ 0 ] = t->body_rect.x;
     f->cellw[ 0 ] = t->body_rect.w;
 
+    /* own_clip=false: layout_pop_region pops no draw clip; it restores the hit clip to the table
+       box, measures content, and draws the scrollbar.  The one table clip is still on the draw
+       stack, so the header (chrome) drawn next is bounded by it and lands on top of the rows. */
     layout_pop_region();
 
-    /* Dividers + outer frame render last, in the parent clip, on top of cell content. */
+    if ( t->want_header )
+        table_draw_header( t );
+
+    /* Done with the one table clip: pop it and restore the caller's clip.  Borders render after, in
+       the parent clip, so the outer frame outline is not half-clipped by the table box edge. */
+    draw_pop_clip_rect();
+    s_build.clip_rect = t->saved_clip;
+
     table_draw_borders( t, content_bottom );
 
     s_tab_active = false;
@@ -277,49 +317,35 @@ imgui_table_setup_column( const char* label, imgui_table_col_flags_t flags, f32 
     /* Column geometry is resolved lazily in table_open_body. */
 }
 
-/* Draw the non-scrolling header strip, detect sort clicks, then open the body region.
-   Must be called after all table_setup_column calls and before the first table_next_row. */
-void
-imgui_table_headers_row( void )
+/* Header sort interaction, run up front in table_headers_row.  The header strip sits above the body
+   box, so the body hit clip set by table_open_body would reject clicks on it -- widen the hit clip to
+   the whole table box for the queries, then restore it for the rows.  Records which column is hot /
+   active so the deferred draw (table_draw_header, called as chrome in table_end) can tint it. */
+static void
+table_header_interact( imgui_table_t* t )
 {
-    if ( !s_tab_active ) return;
-    imgui_table_t* t = &s_tab;
-
-    /* Resolve column geometry in the parent frame (header lives in the parent clip). */
-    table_resolve_columns( t, t->outer_rect.x, t->outer_rect.w );
+    imgui_rect_t body_hit = s_build.clip_rect;
+    s_build.clip_rect = rect_intersect( t->saved_clip, t->outer_rect );
 
     const f32 hy = t->outer_rect.y;
-    const f32 hh = (f32)WIDGET_H;
-    t->header_h  = hh;
+    const f32 hh = t->header_h;
 
-    /* --- clip the entire header strip ---------------------------------------- */
-    imgui_rect_t hdr     = { t->outer_rect.x, hy, t->outer_rect.w, hh };
-    imgui_rect_t old_clip = s_build.clip_rect;
-    draw_push_clip_rect( hdr.x, hdr.y, hdr.w, hdr.h );
-    s_build.clip_rect = rect_intersect( old_clip, hdr );
-
-    /* Full-width header background. */
-    draw_push_rect_filled( t->outer_rect.x, hy, t->outer_rect.w, hh, 0, 0, 0, 0, 0, COL_TITLE_BG );
-
-    /* --- per-column cells ---------------------------------------------------- */
     bool sortable = ( t->flags & IMGUI_TABLE_SORTABLE ) != 0;
     i8   sort_col = t->persist ? t->persist->sort_col : -1;
+    t->hdr_hot = -1;
+    t->hdr_act = -1;
 
     for ( i32 i = 0; i < t->ncols; ++i )
     {
-        f32 cx = t->col_x[ i ];
-        f32 cw = t->col_w[ i ];
-
-        imgui_table_col_t* col  = ( i < t->col_setup_n ) ? &t->cols[ i ] : NULL;
+        imgui_table_col_t* col = ( i < t->col_setup_n ) ? &t->cols[ i ] : NULL;
         bool no_sort = !sortable || ( col && ( col->flags & IMGUI_TABLE_COL_NO_SORT ) );
 
-        /* Per-column clip so a long label does not bleed into the next cell. */
-        draw_push_clip_rect( cx, hy, cw, hh );
-
-        /* Interaction -- runs in the parent win context so hover detection is correct. */
         imgui_id_t     hid = id_combine( t->id, (imgui_id_t)( i + 1 ) );
-        imgui_rect_t   cr  = { cx, hy, cw, hh };
+        imgui_rect_t   cr  = { t->col_x[ i ], hy, t->col_w[ i ], hh };
         widget_state_t st  = widget_behavior( hid, cr, WIDGET_KIND_BUTTON );
+
+        if ( !no_sort && st.hover )  t->hdr_hot = (i8)i;
+        if ( !no_sort && st.active ) t->hdr_act = (i8)i;
 
         /* Sort click: cycle sort column / direction. */
         if ( !no_sort && st.clicked )
@@ -336,17 +362,45 @@ imgui_table_headers_row( void )
             }
             t->sort_dirty = true;
         }
+    }
 
-        /* Hover / active tint drawn on top of the header bg. */
-        if ( !no_sort && ( st.hover || st.active ) )
+    s_build.clip_rect = body_hit;
+}
+
+/* Draw the header strip.  Called LAST (from table_end) within the one table clip so it overpaints
+   any rows that scrolled up under it -- the same "chrome drawn last" trick a window uses for its
+   title bar.  Visual only: the sort interaction already ran in table_header_interact. */
+static void
+table_draw_header( imgui_table_t* t )
+{
+    const f32 hy = t->outer_rect.y;
+    const f32 hh = t->header_h;
+
+    /* Full-width opaque header background (also the cover for rows scrolled under the header). */
+    draw_push_rect_filled( t->outer_rect.x, hy, t->outer_rect.w, hh, 0, 0, 0, 0, 0, COL_TITLE_BG );
+
+    i8 sort_col = t->persist ? t->persist->sort_col : -1;
+
+    for ( i32 i = 0; i < t->ncols; ++i )
+    {
+        f32 cx = t->col_x[ i ];
+        f32 cw = t->col_w[ i ];
+
+        imgui_table_col_t* col = ( i < t->col_setup_n ) ? &t->cols[ i ] : NULL;
+
+        /* Hover / active tint (state captured in table_header_interact). */
+        if ( i == (i32)t->hdr_act || i == (i32)t->hdr_hot )
         {
-            u32 tint = st.active ? COL_WIDGET_ACT : COL_WIDGET_HOT;
+            u32 tint = ( i == (i32)t->hdr_act ) ? COL_WIDGET_ACT : COL_WIDGET_HOT;
             draw_push_rect_filled( cx, hy, cw, hh, 0, 0, 0, 0, 0, tint );
         }
 
-        /* Column label text. */
-        const char* lbl = ( col && col->label[ 0 ] ) ? col->label : "";
-        draw_push_text( cx + (f32)WIDGET_PAD, hy + (f32)WIDGET_GAP, COL_TEXT, lbl );
+        /* Column label, self-fitted to the column (reserving the right pad for the sort triangle)
+           so a long label ellipsizes instead of bleeding into the next column -- no per-column clip. */
+        const char* lbl  = ( col && col->label[ 0 ] ) ? col->label : "";
+        f32         lblx = cx + (f32)WIDGET_PAD;
+        f32         lblw = ( cx + cw - (f32)WIDGET_PAD ) - lblx;
+        draw_text_fit_n( lblx, hy + (f32)WIDGET_GAP, COL_TEXT, lbl, 0xFFFFFFFFu, lblw );
 
         /* Sort indicator triangle on the active sort column. */
         if ( t->persist && sort_col == (i8)i )
@@ -362,15 +416,22 @@ imgui_table_headers_row( void )
                 draw_push_triangle( tx - aw * 0.5f, ty, tx, ty + ah, tx + aw * 0.5f, ty,
                                     0, COL_TEXT );
         }
-
-        draw_pop_clip_rect();   /* per-column clip */
     }
+}
 
-    draw_pop_clip_rect();       /* header strip clip */
-    s_build.clip_rect = old_clip;
+/* Reserve the header strip and run its sort interaction up front; the strip itself is drawn last
+   (as chrome) in table_end.  Must be called after all table_setup_column calls, before the first
+   table_next_row. */
+void
+imgui_table_headers_row( void )
+{
+    if ( !s_tab_active ) return;
+    imgui_table_t* t = &s_tab;
 
-    /* Open the body region immediately below the drawn header strip. */
-    table_open_body( t );
+    t->header_h    = (f32)WIDGET_H;
+    t->want_header = true;
+    table_open_body( t );        /* opens body below the header, resolves columns */
+    table_header_interact( t );  /* sort clicks now; the draw is deferred to table_end */
 }
 
 void
@@ -383,7 +444,6 @@ imgui_table_next_row( f32 min_h )
     if ( !t->header_done )
         table_open_body( t );
 
-    table_close_cell( t );
     table_end_row( t );   /* advance past the previous row if any */
 
     f32 h    = ( min_h > 0.0f ) ? min_h : (f32)WIDGET_H;
@@ -410,12 +470,13 @@ imgui_table_next_column( void )
     if ( !s_tab_active ) return false;
     imgui_table_t* t = &s_tab;
 
-    table_close_cell( t );   /* pop previous cell clip if any */
-
     t->cur_col++;
     if ( t->cur_col >= t->ncols ) return false;
 
-    /* Set the layout pen and column geometry so widget_next_rect_w returns the correct cell. */
+    /* Set the layout pen and column geometry so widget_next_rect_w returns the correct cell.
+       Content stays inside the column because widgets self-fit to cellw (text ellipsizes, labeled
+       widgets shrink) -- the same contract as the layout engine's columns mode, so no per-cell clip
+       is pushed.  The one exterior clip (the body region) bounds the table as a whole. */
     layout_frame_t* f = lf();
     f32 cx = t->col_x[ t->cur_col ];
     f32 cw = t->col_w[ t->cur_col ];
@@ -427,15 +488,6 @@ imgui_table_next_column( void )
     f->cellx[ 0 ] = cx;
     f->cellw[ 0 ] = cw;
 
-    /* Push cell clip.  draw_push_clip_rect intersects with its parent automatically (the body
-       clip from layout_push_region).  Mirror the intersection into s_build.clip_rect so
-       hit-testing is consistent with what the GPU scissors. */
-    imgui_rect_t cell = { cx, t->row_top, cw, t->row_h };
-    t->saved_clip = s_build.clip_rect;
-    draw_push_clip_rect( cell.x, cell.y, cell.w, cell.h );
-    s_build.clip_rect = rect_intersect( t->saved_clip, cell );
-    t->in_cell = true;
-
     return true;
 }
 
@@ -444,8 +496,6 @@ imgui_table_set_column_index( i32 col )
 {
     if ( !s_tab_active ) return false;
     imgui_table_t* t = &s_tab;
-
-    table_close_cell( t );
 
     if ( col < 0 || col >= t->ncols ) return false;
     t->cur_col = col - 1;    /* table_next_column will increment to col */

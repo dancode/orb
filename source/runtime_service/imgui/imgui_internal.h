@@ -605,7 +605,7 @@ typedef struct
 
 #define IMGUI_TABLE_POOL_CAP 32   /* max concurrent distinct tables tracked across frames */
 
-/* Per-table persistent state: column widths and sort choice survive frames. */
+/* Per-table persistent state: column widths, sort choice, and scroll position survive frames. */
 typedef struct
 {
     imgui_id_t id;
@@ -613,6 +613,12 @@ typedef struct
     f32        col_w[ IMGUI_TABLE_COLS_MAX ];   /* 0 = use column's init_w / default */
     i8         sort_col;                        /* -1 = unsorted                     */
     i8         sort_dir;                        /* 0 = ascending, 1 = descending     */
+
+    /* Scroll state + measured content extent for a scrolling body (IMGUI_TABLE_SCROLL_*).
+       The layout region reads scroll_* as the pen bias and writes content_* back at pop; both
+       must persist across frames for the two-pass gutter / clamp logic to settle. */
+    f32        scroll_x, scroll_y;
+    f32        content_w, content_h;
 
 } imgui_table_persist_t;
 
@@ -643,13 +649,19 @@ typedef struct
        the first table_next_row).  Guards layout_pop_region in table_end. */
     bool                    header_done;
 
+    /* The header is drawn last (as chrome, like a window title bar) so it overpaints rows that
+       scrolled under it.  table_headers_row only does the sort interaction up front and records
+       what the deferred draw needs: whether a header exists and which column is hot / active. */
+    bool                    want_header;   /* table_headers_row was called this frame      */
+    i8                      hdr_hot;       /* column under the cursor (-1 none)            */
+    i8                      hdr_act;       /* column being pressed     (-1 none)           */
+
     /* Set true in table_headers_row when the user clicks a sort-active column header.
        Cleared by table_get_sort_specs.  Automatically false each new frame (s_tab memset). */
     bool                    sort_dirty;
 
-    /* Cell clip bookkeeping: one draw clip is pushed per column and popped on transition. */
-    bool                    in_cell;       /* a clip rect is currently pushed            */
-    imgui_rect_t            saved_clip;    /* s_build.clip_rect saved before the push    */
+    /* s_build.clip_rect on entry, restored when the one table clip is popped in table_end. */
+    imgui_rect_t            saved_clip;
 
     imgui_table_persist_t*  persist;
 

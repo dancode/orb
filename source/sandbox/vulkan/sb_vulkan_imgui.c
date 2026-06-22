@@ -1046,16 +1046,23 @@ demo_table( void )
         k_items[] = {
             { "pos_x",   "float",  1.234f   },
             { "pos_y",   "float",  -5.678f  },
+            { "pos_z",   "float",  0.0f     },
+            { "vel_x",   "float",  -0.5f    },
+            { "vel_y",   "float",  2.0f     },
             { "health",  "int",    100.0f   },
             { "shield",  "int",    42.0f    },
+            { "armor",   "int",    7.0f     },
             { "speed",   "float",  9.81f    },
+            { "stamina", "float",  -3.5f    },
             { "alive",   "bool",   1.0f     },
+            { "frozen",  "bool",   0.0f     },
+            { "level",   "int",    12.0f    },
             { "score",   "int",    31337.0f },
         };
         const int k_item_count = (int)( sizeof( k_items ) / sizeof( k_items[ 0 ] ) );
 
         /* Display order, re-sorted in place whenever a header is clicked. */
-        static int s_order[ 7 ];
+        static int s_order[ 32 ];
         static bool s_order_init = false;
         if ( !s_order_init )
         {
@@ -1063,11 +1070,13 @@ demo_table( void )
             s_order_init = true;
         }
 
-        /* stretch Name, fixed Type (64 px), fixed Value (128 px); sortable + striped + framed */
+        /* stretch Name, fixed Type (64 px), fixed Value (128 px); sortable + striped + framed,
+           vertical scroll inside a fixed 160px body (header stays pinned). */
         if ( imgui()->table_begin( "props", 3,
                                    IMGUI_TABLE_SORTABLE | IMGUI_TABLE_ROW_STRIPES
-                                       | IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER,
-                                   0.0f ) )
+                                       | IMGUI_TABLE_BORDERS_V | IMGUI_TABLE_BORDERS_OUTER
+                                       | IMGUI_TABLE_SCROLL_Y,
+                                   160.0f ) )
         {
             imgui()->table_setup_column( "Name",  IMGUI_TABLE_COL_STRETCH,   0     );
             imgui()->table_setup_column( "Type",  IMGUI_TABLE_COL_FIXED,     64.0f );
