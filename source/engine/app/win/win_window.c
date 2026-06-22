@@ -298,6 +298,26 @@ app_window_is_valid( win_id_t id )
     return win_get( id ) != NULL;
 }
 
+
+static void
+app_window_set_cursor( win_id_t id, app_cursor_t cursor )
+{
+    app_window_t* win = win_get( id );
+    if ( !win )
+        return;
+    
+    win->cursor = cursor;
+    
+    /* If the cursor is inside the client area, force an immediate update */
+    if ( win->state.hovered )
+    {
+        POINT pt;
+        GetCursorPos( &pt );
+        if ( WindowFromPoint( pt ) == win->hwnd )
+            PostMessageW( win->hwnd, WM_SETCURSOR, ( WPARAM )win->hwnd, MAKELPARAM( HTCLIENT, WM_MOUSEMOVE ) );
+    }
+}
+
 static void*
 app_window_handle( win_id_t id )
 {

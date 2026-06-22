@@ -36,6 +36,7 @@ const app_api_t g_app_api_struct = {
     .window_maximize          = app_window_maximize,
     .window_toggle_maximize   = app_window_toggle_maximize,
     .window_set_native_frame  = app_window_set_native_frame,
+    .window_set_cursor        = app_window_set_cursor,
 
     /* Event loop */
     .pump_events = app_pump_events,

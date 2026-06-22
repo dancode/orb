@@ -122,6 +122,8 @@ typedef struct app_window_s
     app_win_state_t     state;
     app_win_state_t     prev;
 
+    app_cursor_t        cursor;
+
     i32                 w, h;           /* cached client dimensions — valid even when minimized */
     bool                hover_tracking; /* TrackMouseEvent is armed                              */
     bool                resize_modal;   /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */

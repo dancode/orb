@@ -183,6 +183,31 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             }
             return 0;
 
+        case WM_SETCURSOR:
+        {
+            if ( LOWORD( lp ) == HTCLIENT )
+            {
+                HCURSOR hcur = NULL;
+                switch ( win->cursor )
+                {
+                    case APP_CURSOR_ARROW:        hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_ARROW ); break;
+                    case APP_CURSOR_TEXT:         hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_IBEAM ); break;
+                    case APP_CURSOR_RESIZE_ALL:   hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_SIZEALL ); break;
+                    case APP_CURSOR_RESIZE_NS:    hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_SIZENS ); break;
+                    case APP_CURSOR_RESIZE_EW:    hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_SIZEWE ); break;
+                    case APP_CURSOR_RESIZE_NESW:  hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_SIZENESW ); break;
+                    case APP_CURSOR_RESIZE_NWSE:  hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_SIZENWSE ); break;
+                    case APP_CURSOR_HAND:         hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_HAND ); break;
+                    case APP_CURSOR_NOT_ALLOWED:  hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_NO ); break;
+                    case APP_CURSOR_NONE:         hcur = NULL; break;
+                    default:                      hcur = LoadCursorW( NULL, ( LPCWSTR )IDC_ARROW ); break;
+                }
+                SetCursor( hcur );
+                return 1;
+            }
+            return DefWindowProcW( hwnd, msg, wp, lp );
+        }
+
         case WM_KILLFOCUS:
             win->state.focused = 0;
             input_clear_all_state();

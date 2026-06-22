@@ -43,6 +43,27 @@ typedef i32 win_id_t;
 #define APP_EVENT_MASK  ( APP_EVENT_MAX - 1 )
 
 /*==============================================================================================
+    Cursors
+==============================================================================================*/
+
+typedef enum app_cursor_e
+{
+    APP_CURSOR_ARROW = 0,
+    APP_CURSOR_TEXT,
+    APP_CURSOR_RESIZE_ALL,
+    APP_CURSOR_RESIZE_NS,
+    APP_CURSOR_RESIZE_EW,
+    APP_CURSOR_RESIZE_NESW,
+    APP_CURSOR_RESIZE_NWSE,
+    APP_CURSOR_HAND,
+    APP_CURSOR_NOT_ALLOWED,
+    APP_CURSOR_NONE,
+
+    APP_CURSOR_COUNT
+
+} app_cursor_t;
+
+/*==============================================================================================
     Window creation flags
 ==============================================================================================*/
 

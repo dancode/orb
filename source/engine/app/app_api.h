@@ -89,6 +89,9 @@ typedef struct app_api_s
     /* Add / remove the native sizing frame (controls whether border resize works). */
     void ( *window_enable_resize )( win_id_t id, bool enabled );
 
+    /* Set the OS mouse cursor for this window. */
+    void ( *window_set_cursor )( win_id_t id, app_cursor_t cursor );
+
     /* Maximize / toggle.  Mirror the existing window_minimize / window_restore;
        the min / max state is observable through window_state(). */
     void ( *window_maximize        )( win_id_t id );
