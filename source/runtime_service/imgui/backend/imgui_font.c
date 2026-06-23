@@ -20,10 +20,10 @@
 ==============================================================================================*/
 // clang-format off
 
-static font_slot_t  s_fonts[ IMGUI_FONT_REGISTRY_MAX ]; // font registry; slot 0 is the default
-static font_slot_t* s_active     = NULL;                // active slot (s_font == &s_active->metrics)
-static u32          s_active_id  = 0;                    // id of the active slot
-static font_metrics_t* s_font    = NULL;                // active font's metrics (read by every accessor)
+static font_slot_t      s_fonts     [ IMGUI_FONT_REGISTRY_MAX ];    // font registry; slot 0 is the default
+static font_slot_t*     s_active    = NULL;                         // active slot (s_font == &s_active->metrics)
+static u32              s_active_id = 0;                            // id of the active slot
+static font_metrics_t*  s_font      = NULL;                         // active font's metrics (read by every accessor)
 
 /* On-fraction (dash / period) of each baked dash row; a dashed line picks the nearest at tess time. */
 static const f32 s_dash_duty[ IMGUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
@@ -69,6 +69,7 @@ font_atlas_tex_h( u32 glyph_h )
 
    Every font builder (bmp and ttf) routes through here, so every atlas -- whatever its source --
    is a self-sufficient backing texture for solid fills, dashed strokes, and text. */
+
 void
 font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m )
 {
@@ -95,6 +96,7 @@ font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metri
 
 /* Release a slot's GPU atlas, but only when the slot owns it.  bmp slots reference an atlas owned
    by imgui_font_bmp.c and must not destroy it. */
+
 void
 font_slot_free_gpu( font_slot_t* slot )
 {
@@ -135,20 +137,24 @@ font_alloc_slot( void )
 
 /* Load a font into a new id and activate it.  Returns the id, or 0 on failure (registry full, or
    the file failed to load). */
+
 u32
 font_load( const char* path )
 {
-    u32 id = font_alloc_slot();
+    u32  id = font_alloc_slot();
     if ( id == 0 )
-        return 0;
+         return 0;
+
     if ( !ttf_load_file( &s_fonts[ id ], path ) )
         return 0;
+
     font_activate( id );
     return id;
 }
 
 /* Load a font into an existing id (id 0 swaps the default).  Returns false on bad id or load
    failure -- on failure the slot keeps whatever font it had. */
+
 bool
 font_load_into( u32 id, const char* path )
 {
@@ -171,10 +177,16 @@ font_use( u32 id )
 }
 
 /* Id of the active font slot -- callers save/restore this to push and pop fonts. */
-u32 font_active_id( void ) { return s_active_id; }
+
+u32 
+font_active_id( void ) 
+{ 
+    return s_active_id; 
+}
 
 /* Set the default (slot 0) to a built-in bmp font and activate it. */
-void
+
+void 
 font_set_bitmap( imgui_font_t font )
 {
     bmp_select( font );                 // resolve metrics into the resident bmp
@@ -183,6 +195,7 @@ font_set_bitmap( imgui_font_t font )
 }
 
 /* Integer upscale for the built-in bmps.  Refreshes the default slot if it is still bmp-backed. */
+
 void
 font_set_bmp_scale( u32 scale )
 {
@@ -223,7 +236,7 @@ font_init( void )
     if ( !bmp_init() ) { font_shutdown(); return false; }
 
     /* Seed slot 0 (the default / fallback) with the starting built-in bmp and activate it. */
-    font_set_bitmap( IMGUI_FONT_BITMAP_12 );
+    font_set_bitmap( IMGUI_FONT_BITMAP_16_JETBOLD );
 
     /* Runtime icon atlas shares the font lifecycle: created after rhi is up, torn down with fonts. */
     if ( !icon_atlas_init() ) { font_shutdown(); return false; }
