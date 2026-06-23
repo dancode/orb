@@ -1,73 +1,101 @@
 /*==============================================================================================
 
-    runtime_service/imgui/imgui_font.c -- Font registry and per-glyph dispatch.
+    runtime_service/imgui/backend/imgui_font.c -- Neutral font registry and glyph dispatch.
 
-    A registry of font slots (s_fonts[]) lets several fonts be loaded at once, each addressed by
-    an integer id.  One slot is the active font at any time; s_active points at it and s_font at
-    its metrics.  All dispatch helpers read from s_font / s_active, so callers never inspect which
-    slot or source is active.
+    Source-agnostic core of the font unit.  It owns the id-addressed registry (s_fonts[]), the
+    active-font pointers (s_active / s_font), and the shared atlas finalize.  Per-source detail
+    lives in imgui_font_bmp.c (bmp grid atlases) and imgui_font_ttf.c (proportional .orb_font);
+    this unit only dispatches to them by the slot's src tag.
 
-    Slot 0 is the default / fallback.  It starts as a built-in bitmap font and is rebuilt by
-    font_set_bitmap() / font_set_bmp_scale().  It can also be swapped to a loaded TrueType font
-    via font_load_into( 0, path ).
+    Slot 0 is the default / fallback.  It starts as a built-in bmp font and is rebuilt by
+    font_set_bitmap() / font_set_bmp_scale().  It can also be swapped to a loaded ttf font via
+    font_load_into( 0, path ).
 
-        font_load()      -- load a .orb_font into a fresh id, activate it, return the id (0 = fail).
-        font_load_into() -- load a .orb_font into an existing id (e.g. swap the default, id 0).
+        font_load()      -- load a font into a fresh id, activate it, return the id (0 = fail).
+        font_load_into() -- load a font into an existing id (e.g. swap the default, id 0).
         font_use()       -- make an already-loaded id the active font.
 
-    A slot is one of two sources, distinguished by metrics.proportional:
-        Bitmap    -- references a built-in atlas (bitmap_font_t) owned by imgui_font_builtin.c;
-                     the slot does not own its GPU atlas (owns_atlas == false).
-        TrueType  -- a .orb_font loaded at runtime; the slot owns its GPU atlas.
-                     lookup[] is indexed by (codepoint - 32); entries with advance == 0 are missing.
-
-    Included by imgui_backend.c after imgui_font_builtin.c.
+    Included by imgui_backend.c after imgui_font_bmp.c and imgui_font_ttf.c.
 
 ==============================================================================================*/
 // clang-format off
 
-#include "tools/font_tool/orb_font.h" /* font file formats and on-disk structure */
-
-/*----------------------------------------------------------------------------------------------
-    font_slot_t -- one entry in the font registry; bitmap-backed or a loaded TrueType font.
-----------------------------------------------------------------------------------------------*/
-
-typedef struct
-{
-    font_metrics_t    metrics;          // first: resolved metrics; s_font points here when active
-
-    bool              used;             // slot occupied
-    bool              owns_atlas;       // true for loaded TrueType atlases (destroyed on free/reload)
-
-    rhi_texture_t     atlas;            // GPU atlas (TrueType slots; bitmap slots leave this zero)
-    u32               atlas_idx;        // bindless index for the atlas texture (mirrors metrics.atlas_idx)
-    u32               atlas_w;          // atlas width in pixels  (memory accounting)
-    u32               atlas_h;          // uploaded atlas height  (memory accounting)
-
-    /* TrueType source (metrics.proportional == true). */
-
-    i32               ascent;           // pixels above baseline (positive)
-    i32               descent;          // pixels below baseline (negative)
-    orb_font_glyph_t  lookup[ 95 ];     // codepoints 32..126
-
-    /* Bitmap source (metrics.proportional == false). */
-
-    const bitmap_font_def_t* def;       // non-NULL when this slot is bitmap-backed
-
-} font_slot_t;
-
 static font_slot_t  s_fonts[ IMGUI_FONT_REGISTRY_MAX ]; // font registry; slot 0 is the default
 static font_slot_t* s_active     = NULL;                // active slot (s_font == &s_active->metrics)
 static u32          s_active_id  = 0;                    // id of the active slot
+static font_metrics_t* s_font    = NULL;                // active font's metrics (read by every accessor)
+
+/* On-fraction (dash / period) of each baked dash row; a dashed line picks the nearest at tess time. */
+static const f32 s_dash_duty[ IMGUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
 
 /*==============================================================================================
-    Font : Slot Helpers
+    Shared atlas finalize -- the white texel + dash rows every font carries.
 ==============================================================================================*/
 
-/* Release a slot's GPU atlas, but only when the slot owns it.  Bitmap-backed slots reference an
-   atlas owned by imgui_font_builtin.c and must not destroy it. */
-
+/* Paint the dash pattern rows into `pixels` (R8, width `w`) starting at pixel row `row0`. */
 static void
+font_paint_dash_rows( u8* pixels, u32 w, u32 row0 )
+{
+    for ( u32 p = 0; p < IMGUI_DASH_PATTERN_COUNT; ++p )
+    {
+        u8* row = &pixels[ ( row0 + p ) * w ];
+        u32 on  = (u32)( s_dash_duty[ p ] * (f32)w + 0.5f );
+        if ( on < 1 ) on = 1;
+        if ( on > w ) on = w;
+        memset( row, 0x00, w  );   /* gap    */
+        memset( row, 0xFF, on );   /* on-run */
+    }
+}
+
+/* Fill dash_v[]: pattern row p sits at pixel row row0 + p in a `tex_h`-tall upload. */
+static void
+font_dash_row_v( f32* dash_v, u32 row0, u32 tex_h )
+{
+    for ( u32 p = 0; p < IMGUI_DASH_PATTERN_COUNT; ++p )
+        dash_v[ p ] = ( (f32)( row0 + p ) + 0.5f ) / (f32)tex_h;
+}
+
+/* Uploaded atlas height for a glyph region of `glyph_h` rows: one white texel row plus the dash
+   pattern rows are appended on top.  Builders size their staging buffer to this. */
+u32
+font_atlas_tex_h( u32 glyph_h )
+{
+    return glyph_h + 1u + IMGUI_DASH_PATTERN_COUNT;
+}
+
+/* Finalize a staged R8 atlas: append the white texel row and the dash pattern rows on top of the
+   `glyph_h`-row glyph region, then resolve the metrics fields that describe them (white UV,
+   per-glyph UV scale, dash row V coords).  `tex_h` must equal font_atlas_tex_h( glyph_h ).
+
+   Every font builder (bmp and ttf) routes through here, so every atlas -- whatever its source --
+   is a self-sufficient backing texture for solid fills, dashed strokes, and text. */
+void
+font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m )
+{
+    /* White texel strip: fill the first appended row opaque, then the dash pattern rows. */
+    memset( &pixels[ glyph_h * atlas_w ], 0xFF, atlas_w );
+    font_paint_dash_rows( pixels, atlas_w, glyph_h + 1u );
+
+    /* White texel: center of the first appended row (pixel row glyph_h). */
+    m->white_u     = 0.5f / (f32)atlas_w;
+    m->white_v     = ( (f32)glyph_h + 0.5f ) / (f32)tex_h;
+
+    /* Per-glyph UV scale, constant per font -- folds the divide out of the glyph path.  V divides
+       by tex_h (the padded height), so the appended rows stay outside every glyph's UV range. */
+    m->inv_atlas_w = 1.0f / (f32)atlas_w;
+    m->inv_atlas_h = 1.0f / (f32)tex_h;
+
+    /* Dash pattern rows follow the white row at pixel row glyph_h + 1. */
+    font_dash_row_v( m->dash_v, glyph_h + 1u, tex_h );
+}
+
+/*==============================================================================================
+    Slot lifecycle
+==============================================================================================*/
+
+/* Release a slot's GPU atlas, but only when the slot owns it.  bmp slots reference an atlas owned
+   by imgui_font_bmp.c and must not destroy it. */
+void
 font_slot_free_gpu( font_slot_t* slot )
 {
     if ( slot->owns_atlas )
@@ -91,158 +119,6 @@ font_activate( u32 id )
     s_font      = &s_active->metrics;
 }
 
-/* Resolve the currently selected built-in bitmap into a slot (used for the default, slot 0). */
-static void
-font_slot_set_bitmap( font_slot_t* slot )
-{
-    font_slot_free_gpu( slot );             // drop any owned TrueType atlas previously here
-
-    slot->metrics    = s_bitmap_active->metrics;       // metrics carry the bitmap's atlas_idx
-    slot->def        = s_bitmap_active->def;
-    slot->atlas      = ( rhi_texture_t ){ 0 };          // atlas owned by imgui_font_builtin.c
-    slot->atlas_idx  = s_bitmap_active->atlas_idx;
-    slot->atlas_w    = s_bitmap_active->def->atlas_w;
-    slot->atlas_h    = s_bitmap_active->tex_h;
-    slot->owns_atlas = false;
-    slot->used       = true;
-}
-
-/*----------------------------------------------------------------------------------------------
-    tt_load_file -- load a .orb_font from disk into `slot`.  Does not activate the slot.
-
-    On success the slot owns a freshly created GPU atlas and metrics describe a proportional font;
-    any previously owned atlas in the slot is released first.  On failure the slot is left in a
-    valid (freed) state and false is returned.
-----------------------------------------------------------------------------------------------*/
-
-static bool
-tt_load_file( font_slot_t* slot, const char* path )
-{
-    FILE* f = fopen( path, "rb" );
-    if ( !f )
-        return false;
-
-    /* Validate orb font format header */
-
-    orb_font_header_t hdr;
-    if ( fread( &hdr, sizeof( hdr ), 1, f ) != 1
-         || hdr.magic   != ORB_FONT_MAGIC
-         || hdr.version != ORB_FONT_VERSION
-         || hdr.glyph_count == 0 || hdr.glyph_count > 256
-         || hdr.atlas_w == 0     || hdr.atlas_h == 0 )
-    {
-        fclose( f );
-        return false;
-    }
-
-    /* Build lookup table from glyph records. */
-
-    orb_font_glyph_t lookup[ 95 ];
-    memset( lookup, 0, sizeof( lookup ) );
-    for ( u32 i = 0; i < hdr.glyph_count; ++i )
-    {
-        orb_font_glyph_t g;
-        if ( fread( &g, sizeof( g ), 1, f ) != 1 ) { fclose( f ); return false; }
-        if ( g.codepoint >= 32 && g.codepoint <= 126 )
-            lookup[ g.codepoint - 32 ] = g;
-    }
-
-    /* Read pixel data and upload to GPU.  The atlas is staged taller than the file: one
-       appended row is filled opaque (0xFF) as the white texel for solid-color draws, then
-       IMGUI_DASH_PATTERN_COUNT stipple rows for dashed lines.  Solid fills and dashes sample
-       this atlas and merge with text.  Glyph V coords divide by the padded height (atlas_h
-       below), so the appended rows never bleed into the bottom glyph row. */
-    u32 tex_h       = hdr.atlas_h + 1u + IMGUI_DASH_PATTERN_COUNT;
-    u32 glyph_bytes = hdr.atlas_w * hdr.atlas_h;
-    u32 pixel_count = hdr.atlas_w * tex_h;
-    u8* pixels      = (u8*)malloc( pixel_count );
-    if ( !pixels ) { fclose( f ); return false; }
-
-    if ( fread( pixels, 1, glyph_bytes, f ) != glyph_bytes )
-    {
-        free( pixels );
-        fclose( f );
-        return false;
-    }
-    fclose( f );
-
-    /* White texel strip: fill the first appended row opaque, then the dash pattern rows. */
-    memset( &pixels[ glyph_bytes ], 0xFF, hdr.atlas_w );
-    font_paint_dash_rows( pixels, hdr.atlas_w, hdr.atlas_h + 1u );
-
-    /* create the render texture and upload the atlas pixels */
-
-    rhi_texture_t atlas = rhi()->texture_create( &( rhi_texture_desc_t ){
-        .width        = hdr.atlas_w,
-        .height       = tex_h,
-        .depth        = 1,
-        .mip_levels   = 1,
-        .array_layers = 1,
-        .format       = RHI_FORMAT_R8_UNORM,
-        .usage        = RHI_TEXTURE_USAGE_SAMPLED | RHI_TEXTURE_USAGE_TRANSFER_DST,
-        .memory       = RHI_MEMORY_GPU_ONLY,
-        .debug_name   = "imgui_tt_font",
-    } );
-    if ( !rhi_handle_valid( atlas ) ) { free( pixels ); return false; }
-
-    if ( !rhi()->upload_texture( atlas, pixels, pixel_count, 0, 0 ) )
-    {
-        free( pixels );
-        rhi()->texture_destroy( atlas );
-        return false;
-    }
-    free( pixels );
-
-    u32 atlas_idx = rhi()->register_texture( atlas );
-    if ( atlas_idx == 0 )
-    {
-        rhi()->texture_destroy( atlas );
-        return false;
-    }
-
-    /* All GPU work succeeded -- commit into the slot.  Release any atlas it held first; doing
-       this only now means a failed reload leaves the previous font intact above. */
-
-    font_slot_free_gpu( slot );
-
-    memcpy( slot->lookup, lookup, sizeof( lookup ) );
-    slot->def        = NULL;            // TrueType source: no bitmap def
-    slot->ascent     = hdr.ascent;
-    slot->descent    = hdr.descent;
-    slot->atlas      = atlas;
-    slot->atlas_idx  = atlas_idx;
-    slot->atlas_w    = hdr.atlas_w;
-    slot->atlas_h    = tex_h;           /* padded: glyph UV math divides by the uploaded height */
-    slot->owns_atlas = true;
-    slot->used       = true;
-
-    slot->metrics = ( font_metrics_t ){
-        .char_h       = (f32)( hdr.ascent - hdr.descent ),
-        .line_h       = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
-        .char_w       = 0.0f,
-        .size         = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
-        .atlas_idx    = atlas_idx,
-        .proportional = true,
-        /* White texel: center of the first appended row (pixel row hdr.atlas_h). */
-        .white_u      = 0.5f / (f32)hdr.atlas_w,
-        .white_v      = ( (f32)hdr.atlas_h + 0.5f ) / (f32)tex_h,
-        /* Per-glyph UV scale, constant per font -- folds the divide out of font_glyph. */
-        .inv_atlas_w  = 1.0f / (f32)hdr.atlas_w,
-        .inv_atlas_h  = 1.0f / (f32)tex_h,
-    };
-    /* Dash pattern rows follow the white row at pixel row hdr.atlas_h + 1. */
-    font_dash_row_v( slot->metrics.dash_v, hdr.atlas_h + 1u, tex_h );
-
-    printf( "[imgui] loaded font '%s' (char_h=%.1f line_h=%.1f)\n",
-            path, slot->metrics.char_h, slot->metrics.line_h );
-
-    return true;
-}
-
-/*----------------------------------------------------------------------------------------------
-    Registry API -- load / select fonts by id.
-----------------------------------------------------------------------------------------------*/
-
 /* First free slot id in 1..MAX-1, or 0 when the registry is full (0 is reserved for the default). */
 static u32
 font_alloc_slot( void )
@@ -253,28 +129,32 @@ font_alloc_slot( void )
     return 0;
 }
 
-/* Load a TrueType font into a new id and activate it.  Returns the id, or 0 on failure
-   (registry full, or the file failed to load). */
+/*==============================================================================================
+    Registry API -- load / select fonts by id.
+==============================================================================================*/
+
+/* Load a font into a new id and activate it.  Returns the id, or 0 on failure (registry full, or
+   the file failed to load). */
 u32
 font_load( const char* path )
 {
     u32 id = font_alloc_slot();
     if ( id == 0 )
         return 0;
-    if ( !tt_load_file( &s_fonts[ id ], path ) )
+    if ( !ttf_load_file( &s_fonts[ id ], path ) )
         return 0;
     font_activate( id );
     return id;
 }
 
-/* Load a TrueType font into an existing id (id 0 swaps the default).  Returns false on bad id or
-   load failure -- on failure the slot keeps whatever font it had. */
+/* Load a font into an existing id (id 0 swaps the default).  Returns false on bad id or load
+   failure -- on failure the slot keeps whatever font it had. */
 bool
 font_load_into( u32 id, const char* path )
 {
     if ( id >= IMGUI_FONT_REGISTRY_MAX )
         return false;
-    if ( !tt_load_file( &s_fonts[ id ], path ) )
+    if ( !ttf_load_file( &s_fonts[ id ], path ) )
         return false;
     if ( s_active_id == id )
         font_activate( id );            // metrics rebuilt in place; refresh active pointers
@@ -293,80 +173,67 @@ font_use( u32 id )
 /* Id of the active font slot -- callers save/restore this to push and pop fonts. */
 u32 font_active_id( void ) { return s_active_id; }
 
-/* Set the default (slot 0) to a built-in bitmap font and activate it. */
+/* Set the default (slot 0) to a built-in bmp font and activate it. */
 void
 font_set_bitmap( imgui_font_t font )
 {
-    bitmap_font_select( font );             // resolve metrics into s_bitmap_active
-    font_slot_set_bitmap( &s_fonts[ 0 ] );
+    bmp_select( font );                 // resolve metrics into the resident bmp
+    bmp_fill_slot( &s_fonts[ 0 ] );     // copy it into the default slot (referencing, not owning)
     font_activate( 0 );
 }
 
-/* Integer upscale for the built-in bitmaps.  Refreshes the default slot if it is bitmap-backed. */
+/* Integer upscale for the built-in bmps.  Refreshes the default slot if it is still bmp-backed. */
 void
 font_set_bmp_scale( u32 scale )
 {
-    bitmap_scale_set( scale );              // recompute s_bitmap_active->metrics at the new scale
-    if ( s_fonts[ 0 ].def )                 // default still bitmap-backed -> re-resolve it
+    bmp_scale_set( scale );             // recompute the resident bmp metrics at the new scale
+    if ( s_fonts[ 0 ].src == FONT_SRC_BMP )
     {
-        font_slot_set_bitmap( &s_fonts[ 0 ] );
+        bmp_fill_slot( &s_fonts[ 0 ] );
         if ( s_active_id == 0 )
             font_activate( 0 );
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     font_init / font_shutdown
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 font_shutdown( void )
 {
     icon_atlas_shutdown();
 
-    /* Release every slot's owned TrueType atlas, then the built-in bitmap atlases. */
+    /* Release every slot's owned atlas, then the resident built-in bmp atlases. */
     for ( u32 i = 0; i < IMGUI_FONT_REGISTRY_MAX; ++i )
         font_slot_free_gpu( &s_fonts[ i ] );
     memset( s_fonts, 0, sizeof( s_fonts ) );
     s_active    = NULL;
     s_active_id = 0;
 
-    for ( u32 i = 0; i < IMGUI_FONT_BITMAP_MAX; ++i )
-        bitmap_atlas_shutdown( &s_bitmaps[ i ] );
-    s_bitmap_active = NULL;
-    s_font          = NULL;
+    bmp_shutdown();
+    s_font = NULL;
 }
 
 static bool
 font_init( void )
 {
-    bitmap_show_sizes();
+    /* bmp_shutdown is safe on uninitialized fonts, so any failure here can delegate to
+       font_shutdown for a single cleanup path. */
+    if ( !bmp_init() ) { font_shutdown(); return false; }
 
-    /* bitmap_atlas_shutdown is safe on uninitialized fonts, so any failure here
-       can just delegate to font_shutdown for a single cleanup path. */
-
-    bool ok = true;
-    for ( u32 i = 0; i < IMGUI_FONT_BITMAP_MAX; ++i )
-        ok = ok && bitmap_atlas_init( &s_bitmaps[ i ] );
-
-    if ( !ok ) { font_shutdown(); return false; }
-
-    /* Seed slot 0 (the default / fallback) with the starting built-in bitmap and activate it. */
+    /* Seed slot 0 (the default / fallback) with the starting built-in bmp and activate it. */
     font_set_bitmap( IMGUI_FONT_BITMAP_12 );
 
     /* Runtime icon atlas shares the font lifecycle: created after rhi is up, torn down with fonts. */
-    if ( icon_atlas_init() == false ) { 
-         font_shutdown(); return false; 
-    }
+    if ( !icon_atlas_init() ) { font_shutdown(); return false; }
 
-    return true; /* built in fonts initialized successfully */
+    return true;
 }
 
-/*----------------------------------------------------------------------------------------------
-    font_char_w / font_char_h / font_line_h / font_em / font_atlas_idx
-
-    Dispatch helpers -- all read from s_font, set by font_activate().
-----------------------------------------------------------------------------------------------*/
+/*==============================================================================================
+    Dispatch helpers -- all read from s_font / s_active, set by font_activate().
+==============================================================================================*/
 
 static f32  font_char_w      ( void ) { return s_font->char_w;    }
 f32         font_char_h      ( void ) { return s_font->char_h;    }
@@ -374,19 +241,18 @@ f32         font_line_h      ( void ) { return s_font->line_h;    }
 f32         font_em          ( void ) { return s_font->size;      }   // nominal type size (em) -- layout base
 static u32  font_atlas_idx   ( void ) { return s_font->atlas_idx; }
 
-/* Whether the active font is a TrueType font (vs. a built-in bitmap).  The UI unit's font API
+/* Whether the active font is a ttf font (vs. a built-in bmp).  The UI unit's font API
    (imgui_set_bmp_scale) keys off this -- a bmp-scale change only re-derives layout when the active
-   font is bitmap-backed. */
-bool font_is_tt( void ) { return s_font->proportional; }
+   font is bmp-backed. */
+bool font_is_tt( void ) { return s_active->src == FONT_SRC_TTF; }
 
-/* Log the active font (type, name, metrics).  Bitmap slots carry their def; TrueType slots do not,
-   so they report by source only. */
+/* Log the active font (id, type, name, metrics). */
 void
 font_print_active( void )
 {
-    const char* name = s_active->def ? s_active->def->debug_name : "<loaded>";
+    const char* name = ( s_active->src == FONT_SRC_BMP ) ? s_active->bmp.def->debug_name : "<loaded>";
     printf( "[imgui] set font [%u] '%s : %s' (char_h=%.1f line_h=%.1f)\n",
-            s_active_id, s_font->proportional ? "TrueType" : "Bitmap",
+            s_active_id, ( s_active->src == FONT_SRC_TTF ) ? "TrueType" : "Bitmap",
             name, s_font->char_h, s_font->line_h );
 }
 
@@ -395,11 +261,8 @@ font_print_active( void )
 f32
 font_char_advance( u8 ch )
 {
-    if ( s_font->proportional )
-    {
-        if ( ch < 32 || ch > 126 ) ch = (u8)'?';
-        return (f32)s_active->lookup[ ch - 32 ].advance;
-    }
+    if ( s_active->src == FONT_SRC_TTF )
+        return ttf_char_advance( s_active, ch );
     return s_font->char_w;
 }
 
@@ -422,18 +285,12 @@ font_dash_v( f32 duty )
     return s_font->dash_v[ best ];
 }
 
-/* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel):
-   every initialized bitmap atlas, plus each loaded TrueType atlas in the registry. */
+/* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel): the resident
+   built-in bmp atlases plus each loaded font's owned atlas in the registry. */
 static u32
 font_atlas_bytes( void )
 {
-    u32 bytes = 0;
-    for ( u32 i = 0; i < IMGUI_FONT_BITMAP_MAX; ++i )
-    {
-        const bitmap_font_t* bf = &s_bitmaps[ i ];
-        if ( rhi_handle_valid( bf->atlas ) )
-            bytes += bf->def->atlas_w * bf->tex_h;   /* tex_h includes the white row */
-    }
+    u32 bytes = bmp_atlas_bytes();
     for ( u32 i = 0; i < IMGUI_FONT_REGISTRY_MAX; ++i )
         if ( s_fonts[ i ].owns_atlas )
             bytes += s_fonts[ i ].atlas_w * s_fonts[ i ].atlas_h;
@@ -441,18 +298,19 @@ font_atlas_bytes( void )
 }
 
 /* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
-   span this way -- the bytes before a "##" marker -- so reserved label space matches what draws. */
+   span this way -- the bytes before a "##" marker -- so reserved label space matches what draws.
+   Non-printable bytes contribute nothing (they are never emitted as glyphs). */
 f32
 font_text_w_n( const char* str, u32 n )
 {
     f32 w = 0.0f;
-    if ( s_font->proportional )
+    if ( s_active->src == FONT_SRC_TTF )
     {
         for ( u32 i = 0; i < n && str[ i ]; ++i )
         {
             u8 ch = (u8)str[ i ];
             if ( ch >= 32 && ch <= 126 )
-                w += (f32)s_active->lookup[ ch - 32 ].advance;
+                w += (f32)s_active->ttf.lookup[ ch - 32 ].advance;
         }
     }
     else
@@ -470,7 +328,7 @@ font_text_w( const char* str )
 }
 
 /*----------------------------------------------------------------------------------------------
-    font_glyph -- per-character draw parameters; dispatches between TrueType and bitmap paths.
+    font_glyph -- per-character draw parameters; dispatches to the active slot's source.
 
     Outputs:
         u0..v1   atlas UV rect for the glyph bitmap
@@ -485,50 +343,10 @@ font_glyph( u8 ch,
             f32* ox, f32* oy, f32* gw, f32* gh,
             f32* advance )
 {
-    if ( s_font->proportional )
-    {
-        if ( ch < 32 || ch > 126 ) ch = (u8)'?';
-        const orb_font_glyph_t* g = &s_active->lookup[ ch - 32 ];
-
-        f32 iw = s_font->inv_atlas_w;   /* precomputed at load -- no per-glyph divide */
-        f32 ih = s_font->inv_atlas_h;
-        *u0 = (f32)g->atlas_x * iw;
-        *v0 = (f32)g->atlas_y * ih;
-        *u1 = *u0 + (f32)g->w * iw;
-        *v1 = *v0 + (f32)g->h * ih;
-
-        *ox      = (f32)g->bearing_x;
-        *oy      = (f32)( s_active->ascent - (i32)g->bearing_y );
-        *gw      = (f32)g->w;
-        *gh      = (f32)g->h;
-        *advance = (f32)g->advance;
-    }
+    if ( s_active->src == FONT_SRC_TTF )
+        ttf_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
     else
-    {
-        /* Bitmap path: fixed-grid UV, full-cell draw, monospace advance. */
-        if ( ch < 32 || ch > 127 ) ch = (u8)'?';
-        const bitmap_font_def_t* def = s_active->def;
-
-        u32 idx = (u32)( ch - 32 );
-        u32 col = idx % def->glyphs_row;
-        u32 row = idx / def->glyphs_row;
-
-        /* V scales by 1/tex_h (the padded upload height), not the glyph-grid height, so the
-           appended white row stays outside every glyph's UV range.  Both scales are precomputed
-           per font (inv_atlas_w / inv_atlas_h), so this is multiplies, not per-glyph divides. */
-        f32 iw = s_font->inv_atlas_w;
-        f32 ih = s_font->inv_atlas_h;
-        *u0 = (f32)( col * def->glyph_w ) * iw;
-        *v0 = (f32)( row * def->glyph_h ) * ih;
-        *u1 = *u0 + (f32)def->glyph_w     * iw;
-        *v1 = *v0 + (f32)def->glyph_h     * ih;
-
-        *ox      = 0.0f;
-        *oy      = 0.0f;
-        *gw      = s_font->char_w;
-        *gh      = s_font->char_h;
-        *advance = s_font->char_w;
-    }
+        bmp_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
 }
 
 // clang-format on

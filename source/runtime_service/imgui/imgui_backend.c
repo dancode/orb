@@ -15,8 +15,10 @@
     Include order matters: each file can reference statics from files included above it.
 
     imgui_shader.h            -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
-    imgui_font_builtin.c      -- hardcoded bitmap fonts: bitmap_font_def_t/t, bitmap_atlas_*, s_bitmap_*
-    imgui_font.c              -- font registry + dispatch: font_slot_t, font_load/use, font_glyph, font_*
+    imgui_font.h              -- shared font types: font_metrics_t, bit_font_def_t, font_slot_t
+    imgui_font_bmp.c          -- bmp fonts: bit-font -> R8 grid atlas (bmp_font_t, bmp_select, bmp_glyph)
+    imgui_font_ttf.c          -- ttf fonts: proportional .orb_font loader (ttf_load_file, ttf_glyph)
+    imgui_font.c              -- neutral registry + dispatch: font_slot_t, font_load/use, font_glyph
     imgui_draw.c              -- CPU draw list: draw_reset, draw_push_*, s_draw
     imgui_draw_path.c         -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
     imgui_render_tess.c       -- CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
@@ -40,7 +42,9 @@
 ==============================================================================================*/
 
 #include "runtime_service/imgui/backend/imgui_shader.h"
-#include "runtime_service/imgui/backend/imgui_font_builtin.c"
+#include "runtime_service/imgui/backend/imgui_font.h"
+#include "runtime_service/imgui/backend/imgui_font_bmp.c"
+#include "runtime_service/imgui/backend/imgui_font_ttf.c"
 #include "runtime_service/imgui/backend/imgui_font.c"
 #include "runtime_service/imgui/backend/imgui_icon.c"
 #include "runtime_service/imgui/backend/imgui_draw.c"

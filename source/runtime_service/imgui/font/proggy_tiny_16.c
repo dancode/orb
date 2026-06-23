@@ -104,7 +104,7 @@ static const u16 s_font_proggy_tiny_16_data[ 96 ][ 16 ] =
     /* 0x7F 'DEL' */ {0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF,0x1FF },
 };
 
-static const bitmap_font_def_t s_def_proggy_tiny_16 = {
+static const bit_font_def_t s_def_proggy_tiny_16 = {
     .atlas_w     = 144,
     .atlas_h     = 96,
     .glyph_w     = 9,
