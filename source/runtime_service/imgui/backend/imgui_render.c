@@ -88,6 +88,24 @@ static struct
 
 } s_render;
 
+/*----------------------------------------------------------------------------------------------
+    Once-per-frame tessellation cache.
+
+    The semantic command list (s_draw) is shared by every surface, so the geometry it tessellates
+    into -- and the z-ordered run table replayed from it -- is byte-identical on every surface's
+    flush.  render_build_frame does that work lazily on the first flush of a frame and stamps
+    s_frame_built; subsequent surfaces that frame reuse s_tess + s_runs and only re-do the cheap
+    per-surface part (upload, scissor, draw partition).  imgui_render_frame_reset clears the guard
+    at frame_begin.  Building lazily (rather than at frame_begin) means a frame that flushes no
+    surface does no tessellation at all.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct { u32 start, count, first_index, z; } draw_run_t;
+
+static draw_run_t s_runs[ IMGUI_MAX_CMDS ];   /* z-grouped command runs, sorted back-to-front */
+static u32        s_run_count;                /* runs valid this frame                         */
+static bool       s_frame_built;              /* tessellation + runs computed this frame        */
+
 /* Manual debug toggle: flip to true (debugger, or at startup) to print the per-frame
    draw-call count every flush.  The high-water mark is always tracked and reported at
    shutdown regardless of this flag. */
@@ -450,11 +468,30 @@ batch_debug_color( u32 i )
     Sets full-window viewport; each draw command applies its own scissor rectangle.
 ----------------------------------------------------------------------------------------------*/
 
+/* imgui_render_frame_reset -- clear the once-per-frame tessellation guard (see s_frame_built).
+   Called by imgui_frame_begin right after draw_reset, before the build emits any commands. */
 void
-imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+imgui_render_frame_reset( void )
 {
-    if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
+    s_frame_built = false;
+}
+
+/*----------------------------------------------------------------------------------------------
+    render_build_frame -- tessellate the shared command list and build the sorted run table.
+
+    Runs once per frame (guarded by s_frame_built): the first surface flush triggers it, every
+    other surface that frame reuses s_tess + s_runs.  Produces the geometry (s_tess.verts/indices),
+    the per-run absolute first_index, and the back-to-front z order -- all surface-independent.
+    Geometry stats and the peak/overflow bookkeeping live here so they are counted once, not once
+    per surface.
+----------------------------------------------------------------------------------------------*/
+
+static void
+render_build_frame( void )
+{
+    if ( s_frame_built )
         return;
+    s_frame_built = true;
 
     /* Tessellate semantic commands into vertex/index geometry (s_tess). */
     tess_reset();
@@ -472,6 +509,69 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     }
     if ( s_tess.overflow )
         s_tess.overflow_ever = true;
+
+    /* Group commands into runs of one sort key, then order runs back-to-front by z.
+
+       Commands sharing a sort key are contiguous in the list (immediate mode emits one window
+       completely before the next), so a single forward pass collects the runs and the absolute
+       first_index at each run's start.  The runs are then stable-sorted by z -- vertices and
+       indices never move, only the order in which command ranges are replayed -- so a higher-z
+       (raised) window paints last and therefore on top, with equal-z runs keeping their order.
+       Surface-independent, so it is built once and replayed by every surface's flush. */
+    s_run_count = 0;
+    for ( u32 i = 0, first_index = 0; i < s_tess.cmd_count; )
+    {
+        u32 z      = s_tess.cmd_z[ i ];
+        u32 start  = i;
+        u32 run_fi = first_index;
+        while ( i < s_tess.cmd_count && s_tess.cmd_z[ i ] == z )
+            first_index += s_tess.cmds[ i++ ].elem_count;
+
+        s_runs[ s_run_count++ ] = ( draw_run_t ){ start, i - start, run_fi, z };
+    }
+
+    /* Stable insertion sort by z (ascending = back-to-front; run_count is small). */
+    for ( u32 a = 1; a < s_run_count; ++a )
+    {
+        draw_run_t key = s_runs[ a ];
+        u32        b   = a;
+        while ( b > 0 && s_runs[ b - 1 ].z > key.z )
+        {
+            s_runs[ b ] = s_runs[ b - 1 ];
+            --b;
+        }
+        s_runs[ b ] = key;
+    }
+
+    /* Per-frame emitted geometry stats -- the tessellated list is the whole shared list, so these
+       are the same for every surface; record them once here.  draw_calls are this surface's own
+       partition and are summed across surfaces in the flush below. */
+    s_render.accum.cmd_count  = s_draw.cmd_count;
+    s_render.accum.vert_count = s_tess.vert_count;
+    s_render.accum.tri_count  = s_tess.idx_count / 3u;
+
+    /* Per-frame emitted geometry -- the verts/indices this frame actually pushed into the draw
+       list (peaks vs. the caps shown for context).  Watch these move as UI state changes; printed
+       only when the counts differ from last frame to filter the spam.  Once per frame now. */
+    static u32 prev_verts = ~0u, prev_idx = ~0u;   /* sentinel: forces a print on the first frame */
+    if ( s_render_debug_geometry && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
+    {
+        printf( "[imgui] geometry this frame: verts %u/%u (peak %u), idx %u/%u (peak %u)\n",
+                s_tess.vert_count, IMGUI_MAX_VERTS, s_tess.vert_hwm,
+                s_tess.idx_count,  IMGUI_MAX_IDX,   s_tess.idx_hwm );
+        prev_verts = s_tess.vert_count;
+        prev_idx   = s_tess.idx_count;
+    }
+}
+
+void
+imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+{
+    if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
+        return;
+
+    /* Tessellate + sort the shared list once per frame; this surface reuses the cached result. */
+    render_build_frame();
 
     /* Select this frame's geometry region so the upload cannot clobber data the GPU
        is still reading for another in-flight frame. */
@@ -523,43 +623,8 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     imgui_push_t push;
     render_ortho( push.mvp, (f32)win_w, (f32)win_h );
 
-    /* Group commands into runs of one sort key, then paint runs back-to-front by z.
-
-       Commands sharing a sort key are contiguous in the list (immediate mode emits
-       one window completely before the next), so a single forward pass collects the
-       runs and the absolute first_index at each run's start.  The runs are then
-       stable-sorted by z -- vertices and indices never move, only the order in which
-       command ranges are replayed -- so a higher-z (raised) window paints last and
-       therefore on top, with equal-z runs keeping their original order. */
-
-    typedef struct { u32 start, count, first_index, z; } draw_run_t;
-    static draw_run_t runs[ IMGUI_MAX_CMDS ];   /* single-threaded; avoids a large stack frame */
-    u32 run_count = 0;
-
-    for ( u32 i = 0, first_index = 0; i < s_tess.cmd_count; )
-    {
-        u32 z      = s_tess.cmd_z[ i ];
-        u32 start  = i;
-        u32 run_fi = first_index;
-        while ( i < s_tess.cmd_count && s_tess.cmd_z[ i ] == z )
-            first_index += s_tess.cmds[ i++ ].elem_count;
-
-        runs[ run_count++ ] = ( draw_run_t ){ start, i - start, run_fi, z };
-    }
-
-    /* Stable insertion sort by z (ascending = back-to-front; run_count is small). */
-    for ( u32 a = 1; a < run_count; ++a )
-    {
-        draw_run_t key = runs[ a ];
-        u32        b   = a;
-        while ( b > 0 && runs[ b - 1 ].z > key.z )
-        {
-            runs[ b ] = runs[ b - 1 ];
-            --b;
-        }
-        runs[ b ] = key;
-    }
-
+    /* The z-grouped, back-to-front run table (s_runs) was built once this frame by
+       render_build_frame; this surface just replays it, drawing only its own partition. */
     push.samp_idx = s_render.font_sampler_idx;
 
     /* Debug render mode push state.  dbg_flat makes the fragment bypass the atlas and emit a flat
@@ -571,19 +636,19 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
 
     u32 draw_calls = 0;   /* indexed draws actually emitted this frame (one per non-empty command) */
 
-    for ( u32 r = 0; r < run_count; ++r )
+    for ( u32 r = 0; r < s_run_count; ++r )
     {
-        u32 first_index = runs[ r ].first_index;
-        for ( u32 k = 0; k < runs[ r ].count; ++k )
+        u32 first_index = s_runs[ r ].first_index;
+        for ( u32 k = 0; k < s_runs[ r ].count; ++k )
         {
-            const imgui_gpu_cmd_t* dc = &s_tess.cmds[ runs[ r ].start + k ];
+            const imgui_gpu_cmd_t* dc = &s_tess.cmds[ s_runs[ r ].start + k ];
             if ( dc->elem_count == 0 )
                 continue;
 
             /* Partition: a command bound for another surface is not drawn here, but its index
                range is still stepped over so the commands kept on this surface address the right
                slice of the (shared, absolute) index buffer. */
-            if ( s_tess.cmd_vp[ runs[ r ].start + k ] != vp_index )
+            if ( s_tess.cmd_vp[ s_runs[ r ].start + k ] != vp_index )
             {
                 first_index += dc->elem_count;
                 continue;
@@ -643,31 +708,14 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     if ( draw_calls > s_render.draw_call_hwm )
         s_render.draw_call_hwm = draw_calls;
 
-    /* Accumulate this frame's render stats for render_stats().  The tessellated geometry is the
-       whole shared list -- identical on every surface's flush -- so geometry is overwritten, while
-       draw calls are this surface's own partition and sum across surfaces into the batch total. */
-    s_render.accum.cmd_count  = s_draw.cmd_count;
-    s_render.accum.vert_count = s_tess.vert_count;
-    s_render.accum.tri_count  = s_tess.idx_count / 3u;
+    /* Draw calls are this surface's own partition; sum them across surfaces into the batch total.
+       (Geometry stats are recorded once in render_build_frame -- the list is shared.) */
     s_render.accum.draw_calls += draw_calls;
     static u32 prev_draw_calls = ~0u;   /* sentinel: forces a print on the first frame */
     if ( s_render_debug_draw_calls && draw_calls != prev_draw_calls )
     {
         printf( "[imgui] draw calls this frame: %u (peak %u)\n", draw_calls, s_render.draw_call_hwm );
         prev_draw_calls = draw_calls;
-    }
-
-    /* Per-frame emitted geometry -- the verts/indices this frame actually pushed into the
-       draw list (peaks vs. the caps shown for context).  Watch these move as UI state
-       changes; printed only when the counts differ from last frame to filter the spam. */
-    static u32 prev_verts = ~0u, prev_idx = ~0u;   /* sentinel: forces a print on the first frame */
-    if ( s_render_debug_geometry && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
-    {
-        printf( "[imgui] geometry this frame: verts %u/%u (peak %u), idx %u/%u (peak %u)\n",
-                s_tess.vert_count, IMGUI_MAX_VERTS, s_tess.vert_hwm,
-                s_tess.idx_count,  IMGUI_MAX_IDX,   s_tess.idx_hwm );
-        prev_verts = s_tess.vert_count;
-        prev_idx   = s_tess.idx_count;
     }
 }
 

@@ -112,6 +112,7 @@ imgui_frame_begin( f32 dt )
 
     input_update( disp_w, disp_h, dt );
     draw_reset( disp_w, disp_h );
+    imgui_render_frame_reset();   /* drop last frame's tessellation cache; rebuilt on first flush */
 
     /* Push any icons registered since last frame to the GPU once, before the build emits draws. */
     icon_atlas_flush_upload();

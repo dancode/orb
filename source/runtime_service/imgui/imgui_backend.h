@@ -115,6 +115,12 @@ bool imgui_render_init    ( void );
 void imgui_render_shutdown( void );
 void imgui_render_flush   ( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
+/* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
+   The frame's semantic list is tessellated + run-sorted exactly once (lazily, on the first
+   surface flush); every other live surface that frame reuses the result.  Called by
+   imgui_frame_begin right after draw_reset, before the build emits any new commands. */
+void imgui_render_frame_reset( void );
+
 imgui_mem_stats_t imgui_render_memory      ( void );
 void              imgui_render_print_memory( void );
 
