@@ -474,7 +474,7 @@ tess_stroke_poly_aa( const imgui_vec2_t* pts, u32 n, f32 thickness, f32 center_o
     if ( n < 2 )
         return;
     if ( n > IMGUI_MAX_PATH_PTS )
-        n = IMGUI_MAX_PATH_PTS;
+         n = IMGUI_MAX_PATH_PTS;
 
     /* Sub-pixel coverage: hold a 1px footprint, fade peak alpha by the requested thickness. */
     f32 a_scale = 1.0f;
@@ -564,6 +564,46 @@ tess_stroke_poly_aa( const imgui_vec2_t* pts, u32 n, f32 thickness, f32 center_o
     tess_prim_commit( nv, ni );
 }
 
+/* Fast path for an axis-aligned line: a horizontal (y0==y1) or vertical (x0==x1) line has no
+   diagonal edge to feather, so a crisp grid-snapped quad is indistinguishable from the AA stroke
+   while costing a fraction of the geometry -- 4 verts / 6 idx vs. 8 verts / 18 idx, and none of the
+   per-point miter-normal solve.  This is the common case (separators, frame borders, table grid
+   lines, underlines).  Sub-pixel thickness fades the alpha exactly as tess_stroke_poly_aa does so a
+   hairline keeps its weight.  Returns false for a diagonal line, which falls back to the stroker. */
+static bool
+tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
+{
+    bool horizontal = ( y0 == y1 );
+    bool vertical   = ( x0 == x1 );
+    if ( !horizontal && !vertical )
+        return false;            /* diagonal -- needs the AA stroker */
+    if ( thickness <= 0.0f )
+        return true;             /* axis-aligned but nothing to draw -- consumed */
+
+    /* Sub-pixel coverage: hold a 1px footprint and fade peak alpha (mirrors the AA stroker). */
+    f32 a_scale = 1.0f;
+    if ( thickness < 1.0f ) { a_scale = thickness; thickness = 1.0f; }
+    u32 a_in = (u32)( ( ( abgr >> 24 ) & 0xFFu ) * a_scale + 0.5f );
+    u32 col  = ( abgr & 0x00FFFFFFu ) | ( a_in << 24 );
+
+    /* Centre the band on the line, exactly as the stroker does (CMD_LINE passes center_off 0).
+       tess_rect_filled grid-snaps the origin, so the quad lands crisp on the pixel grid. */
+    f32 half = thickness * 0.5f;
+    if ( horizontal )
+    {
+        f32 xa = x0 < x1 ? x0 : x1;
+        f32 xb = x0 < x1 ? x1 : x0;
+        tess_rect_filled( xa, y0 - half, xb - xa, thickness, 0, 0, 1, 1, 0, col );
+    }
+    else /* vertical */
+    {
+        f32 ya = y0 < y1 ? y0 : y1;
+        f32 yb = y0 < y1 ? y1 : y0;
+        tess_rect_filled( x0 - half, ya, thickness, yb - ya, 0, 0, 1, 1, 0, col );
+    }
+    return true;
+}
+
 /* Tessellate one frame's semantic command list into s_tess geometry. */
 static void
 tess_dispatch( const imgui_cmd_t* cmds, u32 count )
@@ -615,6 +655,11 @@ tess_dispatch( const imgui_cmd_t* cmds, u32 count )
 
             case IMGUI_CMD_LINE:
             {
+                /* Axis-aligned lines take the crisp-quad fast path; only diagonals reach the
+                   AA stroker (tess_axis_line returns false for those). */
+                if ( tess_axis_line( c->line.x0, c->line.y0, c->line.x1, c->line.y1,
+                                     c->line.thickness, c->line.abgr ) )
+                    break;
                 imgui_vec2_t pts[ 2 ] = { { c->line.x0, c->line.y0 }, { c->line.x1, c->line.y1 } };
                 tess_stroke_poly_aa( pts, 2, c->line.thickness, 0.0f, false, c->line.abgr );
                 break;
