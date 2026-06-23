@@ -226,11 +226,11 @@ font_init( void )
     Dispatch helpers -- all read from s_font, set by bitmap_font_select() or tt_font_load().
 ----------------------------------------------------------------------------------------------*/
 
-static f32 font_char_w      ( void ) { return s_font->char_w;    }
-f32 font_char_h      ( void ) { return s_font->char_h;    }
-f32 font_line_h      ( void ) { return s_font->line_h;    }
-f32 font_em          ( void ) { return s_font->size;      }   // nominal type size (em) -- layout base
-static u32 font_atlas_idx   ( void ) { return s_font->atlas_idx; }
+static f32  font_char_w      ( void ) { return s_font->char_w;    }
+f32         font_char_h      ( void ) { return s_font->char_h;    }
+f32         font_line_h      ( void ) { return s_font->line_h;    }
+f32         font_em          ( void ) { return s_font->size;      }   // nominal type size (em) -- layout base
+static u32  font_atlas_idx   ( void ) { return s_font->atlas_idx; }
 
 /* Whether a TrueType font is currently active (vs. a built-in bitmap).  The UI unit's font API
    (imgui_set_bmp_scale) keys off this -- a bmp-scale change only re-derives layout when no TT

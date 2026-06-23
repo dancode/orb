@@ -344,21 +344,40 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 3;
 }
 
-/* Tessellate a filled disc as a triangle fan. */
+/* Tessellate a filled disc as a single triangle fan: one centre vertex plus a ring of `segs`
+   perimeter vertices, with each fan triangle sharing the ring.  One batch open + one white-uv
+   lookup for the whole disc (vs. the old per-triangle path that re-ran tess_ensure_gpu_cmd /
+   font_white_uv / font_atlas_idx and emitted 3 unshared vertices for every segment), so a disc
+   costs segs+1 vertices instead of 3*segs.  Same index count and winding. */
 static void
 tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 segs, u32 abgr )
 {
     if ( segs < 3 ) segs = 3;
+
+    u32 nv = segs + 1, ni = segs * 3;             /* centre vertex + one fan triangle per segment */
+    f32 wu, wv;
+    imgui_draw_vert_t* v;
+    u16* idx;
+    u16  base;
+    if ( !tess_prim_begin( nv, ni, &wu, &wv, &v, &idx, &base ) )
+        return;
+
     f32 step = 6.2831853f / (f32)segs;
-    f32 px = pcx + r, py = pcy;
-    for ( u32 i = 1; i <= segs; ++i )
+    v[ 0 ] = ( imgui_draw_vert_t ){ pcx, pcy, wu, wv, abgr };   /* fan centre */
+    for ( u32 i = 0; i < segs; ++i )
     {
-        f32 a  = step * (f32)i;
-        f32 nx = pcx + cosf( a ) * r;
-        f32 ny = pcy + sinf( a ) * r;
-        tess_triangle( pcx, pcy, px, py, nx, ny, abgr );
-        px = nx; py = ny;
+        f32 a = step * (f32)i;
+        v[ 1 + i ] = ( imgui_draw_vert_t ){ pcx + cosf( a ) * r, pcy + sinf( a ) * r, wu, wv, abgr };
     }
+
+    u32 k = 0;
+    for ( u32 i = 0; i < segs; ++i )
+    {
+        idx[ k++ ] = base;
+        idx[ k++ ] = (u16)( base + 1 + i );
+        idx[ k++ ] = (u16)( base + 1 + ( i + 1 ) % segs );
+    }
+    tess_prim_commit( nv, ni );
 }
 
 /* Tessellate a glyph run from the font atlas into s_tess. */
