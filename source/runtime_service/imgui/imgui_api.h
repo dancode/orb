@@ -41,6 +41,11 @@ typedef struct imgui_api_s
     imgui_mem_stats_t ( *mem_stats       )( void );
     void              ( *print_mem_stats )( void );
 
+    /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
+       Published at frame_begin, so a read during the build reflects the previous frame -- the
+       standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
+    imgui_render_stats_t ( *render_stats )( void );
+
     /* Frame lifecycle.
        new_frame() -- reset draw list and translate app input into the IO snapshot.
                       Call once at the top of the frame, before any widget calls.

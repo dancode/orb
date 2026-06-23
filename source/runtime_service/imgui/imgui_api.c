@@ -19,6 +19,7 @@ const imgui_api_t g_imgui_api_struct =
     .shutdown                           = imgui_shutdown,
     .mem_stats                          = imgui_mem_stats,
     .print_mem_stats                    = imgui_print_mem_stats,
+    .render_stats                       = imgui_render_stats,
     .load_font                          = imgui_load_font,
     .new_frame                          = imgui_new_frame,
     .render                             = imgui_render,

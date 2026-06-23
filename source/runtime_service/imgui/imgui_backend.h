@@ -118,6 +118,12 @@ void imgui_render_flush   ( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i
 imgui_mem_stats_t imgui_render_memory      ( void );
 void              imgui_render_print_memory( void );
 
+/* Per-frame render stats: imgui_render_stats returns the last published frame's totals;
+   imgui_render_stats_publish promotes the in-progress accumulator to the published value and
+   resets it -- called once per frame by imgui_frame_begin (the UI unit), before draw_reset. */
+imgui_render_stats_t imgui_render_stats        ( void );
+void                 imgui_render_stats_publish( void );
+
 bool viewport_create ( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
 void viewport_destroy( imgui_viewport_t* vp );                                   // free its vb/ib
 

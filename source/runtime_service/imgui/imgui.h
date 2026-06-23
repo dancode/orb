@@ -818,6 +818,24 @@ typedef struct
 } imgui_mem_stats_t;
 
 /*==============================================================================================
+    Per-frame render statistics, reported by imgui()->render_stats().
+
+    A direct read on render density: the geometry the last completed frame tessellated and how
+    many GPU indexed draw calls (batches) it cost to paint it across every surface.  Published at
+    frame_begin, so a read during the build returns the PREVIOUS frame's totals -- the standard
+    one-frame-lag metric (the build that reads it is also the one being measured).
+==============================================================================================*/
+
+typedef struct
+{
+    u32 cmd_count;    /* semantic draw commands the UI emitted               */
+    u32 vert_count;   /* tessellated vertices                                */
+    u32 tri_count;    /* tessellated triangles (indices / 3)                 */
+    u32 draw_calls;   /* GPU indexed draw calls (batches), summed over surfaces */
+
+} imgui_render_stats_t;
+
+/*==============================================================================================
     Font selection
 
     imgui_font_t selects which built-in bitmap atlas to use.

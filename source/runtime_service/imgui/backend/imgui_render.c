@@ -75,6 +75,12 @@ static struct
 
     u32             draw_call_hwm;      // peak indexed draw calls in a single frame (global stat)
 
+    /* Per-frame render stats.  accum builds across this frame's flush(es) -- one per surface;
+       stats_pub is the last frame's completed totals, promoted from accum at frame_begin.  The
+       overlay reads stats_pub during the build, one frame behind the geometry it describes. */
+    imgui_render_stats_t accum;
+    imgui_render_stats_t stats_pub;
+
 } s_render;
 
 /* Manual debug toggle: flip to true (debugger, or at startup) to print the per-frame
@@ -296,6 +302,26 @@ imgui_render_memory( void )
 /*----------------------------------------------------------------------------------------------
     imgui_render_print_memory -- dump the memory breakdown to stdout (one line per bucket).
 ----------------------------------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------------------------------
+    imgui_render_stats / imgui_render_stats_publish -- per-frame geometry + batch counts.
+
+    The flush accumulates into s_render.accum; publish promotes it to s_render.stats_pub and clears
+    the accumulator, so the value read during a build is the previous frame's completed totals.
+----------------------------------------------------------------------------------------------*/
+
+imgui_render_stats_t
+imgui_render_stats( void )
+{
+    return s_render.stats_pub;
+}
+
+void
+imgui_render_stats_publish( void )
+{
+    s_render.stats_pub = s_render.accum;
+    s_render.accum     = ( imgui_render_stats_t ){ 0 };
+}
 
 void
 imgui_render_print_memory( void )
@@ -535,6 +561,14 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
        Only print when the count changes from last frame, so a steady UI does not spam. */
     if ( draw_calls > s_render.draw_call_hwm )
         s_render.draw_call_hwm = draw_calls;
+
+    /* Accumulate this frame's render stats for render_stats().  The tessellated geometry is the
+       whole shared list -- identical on every surface's flush -- so geometry is overwritten, while
+       draw calls are this surface's own partition and sum across surfaces into the batch total. */
+    s_render.accum.cmd_count  = s_draw.cmd_count;
+    s_render.accum.vert_count = s_tess.vert_count;
+    s_render.accum.tri_count  = s_tess.idx_count / 3u;
+    s_render.accum.draw_calls += draw_calls;
     static u32 prev_draw_calls = ~0u;   /* sentinel: forces a print on the first frame */
     if ( s_render_debug_draw_calls && draw_calls != prev_draw_calls )
     {

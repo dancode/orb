@@ -106,6 +106,10 @@ imgui_frame_begin( f32 dt )
        previous frame left them, keeping the requested shape and its target window coherent. */
     cursor_flush();
 
+    /* Promote last frame's render-stat accumulator to the published value BEFORE draw_reset, so a
+       build that reads render_stats() this frame sees the previous frame's completed totals. */
+    imgui_render_stats_publish();
+
     input_update( disp_w, disp_h, dt );
     draw_reset( disp_w, disp_h );
 

@@ -23,6 +23,71 @@
 #include "sb_vulkan_imgui.h"
 
 // clang-format off
+
+/*==============================================================================================
+    sb_perf_overlay -- a hidden-chrome, non-interactive FPS / performance overlay.
+
+    The "widget" is just laid-out text in a window whose background and border are pushed fully
+    transparent and whose chrome is switched off (no title bar, no resize, no move, auto-sized):
+    the window is invisible, only its text shows, and it batches into the same draw list as the
+    rest of the UI.  P cycles the detail level, each tier a superset of the one below:
+
+        mode 1 : FPS (color-graded green/amber/red by health)
+        mode 2 : + imgui emit + render CPU time (ms, host-measured, smoothed)
+        mode 3 : + render counts from imgui()->render_stats() -- verts / tris / batches / cmds
+
+    fps / emit_ms / rend_ms are the host's smoothed measurements from the previous iteration; the
+    render counts are last frame's (published at frame_begin), so the whole panel is one frame
+    behind the work it describes -- the standard self-measurement lag for an in-frame overlay.
+==============================================================================================*/
+
+static void
+sb_perf_overlay( int mode, f32 fps, f32 emit_ms, f32 rend_ms )
+{
+    if ( mode <= 0 )
+        return;
+
+    /* Hide the window: transparent body + outline, fixed top-left, hugging its content. */
+    imgui()->push_style_color( IMGUI_COL_WINDOW_BG, IMGUI_COLOR( 0, 0, 0, 0 ) );
+    imgui()->push_style_color( IMGUI_COL_BORDER,    IMGUI_COLOR( 0, 0, 0, 0 ) );
+
+    imgui()->set_next_window_pos( 8.0f, 8.0f, IMGUI_COND_ALWAYS );
+    imgui()->begin_window( "perf_overlay",
+        IMGUI_WIN_NOTITLEBAR | IMGUI_WIN_NORESIZE | IMGUI_WIN_NOMOVE |
+        IMGUI_WIN_NOSCROLL   | IMGUI_WIN_ALWAYS_AUTOSIZE | IMGUI_WIN_NO_DETACH );
+    {
+        imgui()->stack();
+        // imgui()->new_line();
+        /* FPS, graded by health: >=60 green, >=30 amber, else red. */
+        u32 fps_col = fps >= 60.0f ? IMGUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
+                    : fps >= 30.0f ? IMGUI_COLOR( 0xE0, 0xC0, 0x40, 0xFF )
+                    :                IMGUI_COLOR( 0xEE, 0x55, 0x44, 0xFF );
+        char line[ 64 ];
+        snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
+        imgui()->text_colored( fps_col, line );
+
+        if ( mode >= 2 )
+        {
+            imgui()->spacing( 2.0f );
+            imgui()->textf( "emit   %5.2f ms", emit_ms );
+            imgui()->textf( "render %5.2f ms", rend_ms );
+        }
+
+        if ( mode >= 3 )
+        {
+            imgui_render_stats_t rs = imgui()->render_stats();
+            imgui()->spacing( 2.0f );
+            imgui()->textf( "verts   %6u", rs.vert_count );
+            imgui()->textf( "tris    %6u", rs.tri_count  );
+            imgui()->textf( "batches %6u", rs.draw_calls );
+            imgui()->textf( "cmds    %6u", rs.cmd_count  );
+        }
+    }
+    imgui()->end_window();
+
+    imgui()->pop_style_color( 2 );
+}
+
 /*==============================================================================================
     main
 ==============================================================================================*/
@@ -83,10 +148,10 @@ main( int argc, char** argv )
 
          false -- default OS window: Win32 draws the title bar, caption buttons, and borders.  The
                   native frame-shell is NOT emitted; the demos draw straight over the cleared surface. */
-    const bool b_borderless = true;
 
-    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720,
-                                       b_borderless ? APP_WIN_BORDERLESS : APP_WIN_DEFAULT );
+    const bool b_borderless = false;
+
+    win_id_t win = app()->window_open( "sb_vulkan", 0, 0, 1280, 720, b_borderless ? APP_WIN_BORDERLESS : APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID ) {
          rhi()->shutdown();
          mod_system_exit();
@@ -193,9 +258,17 @@ main( int argc, char** argv )
 
     printf( "[sb_vulkan] running -- ESC to quit\n" );
     printf( "[sb_vulkan] imgui demos: 1-9 select, +/- step, F1-F4 debug overlay, NP. font scale\n" );
+    printf( "[sb_vulkan] P cycles the perf overlay: off -> FPS -> +timings -> +render counts\n" );
 
     /* Active imgui demo index (see sb_vulkan_imgui.c); switched live with the keys below. */
     int active_demo = 0;
+
+    /* Perf overlay state.  perf_mode is the P-cycled detail tier (0 off .. 3 counts); the metrics
+       are exponential moving averages so the readout stays legible instead of flickering. */
+    int perf_mode    = 0;
+    f32 perf_fps     = 0.0f;
+    f32 perf_emit_ms = 0.0f;
+    f32 perf_rend_ms = 0.0f;
 
     /* Main loop. */
     f64 last_time = sys_tick_seconds();
@@ -246,18 +319,23 @@ main( int argc, char** argv )
            Number keys 1-9 jump straight to a demo; +/- step back and forth through the
            table (with wrap).  The active demo is drawn below, inside the imgui frame. */
 
-        const int demo_count = sb_imgui_demo_count();
+        bool b_demo_window = false;
+        if ( b_demo_window )
+        {
+            const int demo_count = sb_imgui_demo_count();
+            for ( int i = 0; i < demo_count && i < 9; ++i )
+                if ( app()->key_pressed( (app_key_t)( APP_KEY_1 + i ) ) )
+                    active_demo = i;
 
-        for ( int i = 0; i < demo_count && i < 9; ++i )
-            if ( app()->key_pressed( (app_key_t)( APP_KEY_1 + i ) ) )
-                active_demo = i;
+            if ( app()->key_pressed( APP_KEY_NP_ADD ) )
+                active_demo = ( active_demo + 1 ) % demo_count;
+            if ( app()->key_pressed( APP_KEY_NP_SUB ) )
+                active_demo = ( active_demo + demo_count - 1 ) % demo_count;
+        }
 
-        if ( app()->key_pressed( APP_KEY_NP_ADD ) )
-            active_demo = ( active_demo + 1 ) % demo_count;
-        if ( app()->key_pressed( APP_KEY_NP_SUB ) )
-            active_demo = ( active_demo + demo_count - 1 ) % demo_count;
-
+        /* ------------------------------------------------------------------------------ */
         /* Bitmap font scale cycle (1x/2x/3x) stays handy on the numpad dot. */
+
         if ( app()->key_pressed( APP_KEY_NP_DOT ) )
         {
             static int bmp_scale = 1;
@@ -265,8 +343,12 @@ main( int argc, char** argv )
             imgui()->set_bmp_scale( bmp_scale );
         }
 
+        /* ------------------------------------------------------------------------------ */
         /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
            F1 window frames   F2 widget interaction rects   F3 resize bands   F4 clip rects. */
+
+        bool b_dbg_overlay = true;
+        if ( b_dbg_overlay )
         {
             const struct { app_key_t key; u32 bit; } dbg_keys[] = {
                 { APP_KEY_F1, IMGUI_DBG_WINDOW   },
@@ -280,12 +362,29 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
+        /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4).  Smooth the
+           instantaneous frame rate into perf_fps so the readout does not strobe every frame. */
+
+        if ( app()->key_pressed( APP_KEY_P ) )
+            perf_mode = ( perf_mode + 1 ) % 4;
+
+        if ( dt > 0.0f )
+        {
+            f32 inst_fps = 1.0f / dt;
+            perf_fps = perf_fps <= 0.0f ? inst_fps : perf_fps * 0.92f + inst_fps * 0.08f;
+        }
+
+        /* ------------------------------------------------------------------------------ */
         /* Build the UI.  The frame contract for multiple contexts:
-             frame_begin(dt)         -- global: input poll + draw reset (primary ctx drives dims)
-             ctx_set_listening(...)  -- switch which context receives input (reads s_io, after frame_begin)
-             ctx_begin(ctx)          -- full frame init for ctx; leaves g_ctx bound to it.
+        
+            frame_begin(dt)         -- global: input poll + draw reset (primary ctx drives dims)
+            ctx_set_listening(...)  -- switch which context receives input (reads s_io, after frame_begin)
+            ctx_begin(ctx)          -- full frame init for ctx; leaves g_ctx bound to it.
            Emit windows IMMEDIATELY after each ctx_begin -- ctx_begin leaves g_ctx bound to that
            context, so windows emitted after it land in the correct pool. */
+
+        /* Time the UI build (emit) -- everything from frame_begin through the last widget. */
+        f64 t_emit_start = sys_tick_seconds();
 
         if ( b_multi_ctx && ctx2 != IMGUI_CTX_INVALID )
         {
@@ -311,25 +410,9 @@ main( int argc, char** argv )
                 imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
                 imgui()->end_window();
             }
-            sb_imgui_demos[ active_demo ].fn();
-            active_demo = sb_imgui_demo_picker( active_demo );
-            imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-            imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
-            if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
-            {
-                imgui()->stack();
-                imgui()->text( "Detach me: click the title-bar button" );
-                imgui()->text( "or drag my title past the window edge." );
-                imgui()->separator();
-                imgui()->text( "Once detached I am a native borderless" );
-                imgui()->text( "window -- drag my title bar to move the" );
-                imgui()->text( "OS window, drag my borders to resize." );
-            }
-            imgui()->end_window();
 
             /* --- ctx2: full frame init, then emit its windows immediately. --- */
             imgui()->ctx_begin( ctx2 );
-
             {
                 static int ctx2_click_count = 0;
                 imgui()->set_next_window_pos ( 700, 60, IMGUI_COND_ONCE );
@@ -346,9 +429,9 @@ main( int argc, char** argv )
                 }
                 imgui()->end_window();
             }
-
+            
             /* Restore default context before render/update so those ops use the primary viewport pool. */
-            imgui()->ctx_bind( IMGUI_CTX_DEFAULT );
+            imgui()->ctx_bind( IMGUI_CTX_DEFAULT );            
         }
         else
         {
@@ -361,23 +444,37 @@ main( int argc, char** argv )
                 imgui()->end_window();
             }
 
-            sb_imgui_demos[ active_demo ].fn();
-            active_demo = sb_imgui_demo_picker( active_demo );
-
-            imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-            imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
-            if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
+            if ( b_demo_window )
             {
-                imgui()->stack();
-                imgui()->text( "Detach me: click the title-bar button" );
-                imgui()->text( "or drag my title past the window edge." );
-                imgui()->separator();
-                imgui()->text( "Once detached I am a native borderless" );
-                imgui()->text( "window -- drag my title bar to move the" );
-                imgui()->text( "OS window, drag my borders to resize." );
+                sb_imgui_demos[ active_demo ].fn();
+                active_demo = sb_imgui_demo_picker( active_demo );
             }
-            imgui()->end_window();
+
+            bool second_surface = false;
+            if ( second_surface )
+            {
+                imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+                imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
+                if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
+                {
+                    imgui()->stack();
+                    imgui()->text( "Detach me: click the title-bar button" );
+                    imgui()->text( "or drag my title past the window edge." );
+                    imgui()->separator();
+                    imgui()->text( "Once detached I am a native borderless" );
+                    imgui()->text( "window -- drag my title bar to move the" );
+                    imgui()->text( "OS window, drag my borders to resize." );
+                }
+                imgui()->end_window();
+            }
         }
+
+        /* Perf overlay -- emitted last so it draws on top, and inside the build so its own text is
+           counted in the emit time + render stats it reports.  Lands in the default context (the
+           multi-ctx path rebinds it above; the single path never left it). */
+        sb_perf_overlay( perf_mode, perf_fps, perf_emit_ms, perf_rend_ms );
+
+        f64 t_emit_end = sys_tick_seconds();
 
         /* ------------------------------------------------------------------------------ */
         /* Reconcile imgui-owned floaters with their OS windows (destroys any the user closed).
@@ -388,6 +485,9 @@ main( int argc, char** argv )
         /* ------------------------------------------------------------------------------ */
         /* Flush the main surface.  Skip while minimized to avoid 0x0 swapchain churn; frame_begin
            returns an invalid handle then and we must not frame_end it. */
+
+        /* Time the render (tessellation + GPU command recording for the main surface + floaters). */
+        f64 t_rend_start = sys_tick_seconds();
 
         if ( !app()->window_is_minimized( win ) )
         {
@@ -422,6 +522,17 @@ main( int argc, char** argv )
            no longer hand-drives the secondary surface. */
 
         imgui()->render_floaters();
+
+        f64 t_rend_end = sys_tick_seconds();
+
+        /* Fold this frame's emit + render CPU times into their moving averages.  Read next frame by
+           the perf overlay, so its readout trails the work by one frame (it measures its own host). */
+        {
+            f32 emit_ms = (f32)( ( t_emit_end - t_emit_start ) * 1000.0 );
+            f32 rend_ms = (f32)( ( t_rend_end - t_rend_start ) * 1000.0 );
+            perf_emit_ms = perf_emit_ms <= 0.0f ? emit_ms : perf_emit_ms * 0.9f + emit_ms * 0.1f;
+            perf_rend_ms = perf_rend_ms <= 0.0f ? rend_ms : perf_rend_ms * 0.9f + rend_ms * 0.1f;
+        }
 
         /* ------------------------------------------------------------------------------ */
 
