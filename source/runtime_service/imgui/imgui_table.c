@@ -364,20 +364,31 @@ imgui_table_end( void )
     f->cellx[ 0 ] = t->body_rect.x;
     f->cellw[ 0 ] = t->body_rect.w;
 
-    /* own_clip=false: layout_pop_region pops no draw clip; it restores the hit clip to the table
-       box, measures content, and draws the scrollbar.  The one table clip is still on the draw
-       stack, so the header (chrome) drawn next is bounded by it and lands on top of the rows. */
-    layout_pop_region();
-
+    /* Chrome is painted bottom-to-top while the one table clip is still on the draw stack, so every
+       layer is bounded by the table box:
+         1. header   -- covers rows that scrolled up under the top strip;
+         2. borders  -- column dividers run through the header strip, so they must sit ON TOP of the
+                        header background (hence after it); the outer frame is inside-aligned
+                        (tess_rect_outline draws within the rect) so the table scissor does not
+                        half-clip it -- no need to defer past the clip pop;
+         3. scrollbar (drawn by layout_pop_region) -- the right / bottom gutter bars draw LAST so
+                        they sit over the divider + outer-frame lines instead of being overpainted by
+                        them when the window shrinks and a divider lands in the scrollbar gutter. */
     if ( t->want_header )
         table_draw_header( t );
 
-    /* Done with the one table clip: pop it and restore the caller's clip.  Borders render after, in
-       the parent clip, so the outer frame outline is not half-clipped by the table box edge. */
-    draw_pop_clip_rect();
-    s_build.clip_rect = t->saved_clip;
+    /* Header labels done -- drop the per-cell / per-header glyph-clip window before the bars. */
+    draw_clear_text_clip();
 
     table_draw_borders( t, content_bottom );
+
+    /* own_clip=false: layout_pop_region pops no draw clip; it restores the hit clip to the table
+       box, measures content, and draws the scrollbar -- on top of the borders just laid down. */
+    layout_pop_region();
+
+    /* Done with the one table clip: pop it and restore the caller's clip. */
+    draw_pop_clip_rect();
+    s_build.clip_rect = t->saved_clip;
 
     s_tab_active = false;
 }
@@ -492,6 +503,13 @@ table_draw_header( imgui_table_t* t )
         const char* lbl  = ( col && col->label[ 0 ] ) ? col->label : "";
         f32         lblx = cx + (f32)WIDGET_PAD;
         f32         lblw = ( cx + cw - (f32)WIDGET_PAD ) - lblx;
+
+        /* Same glyph-clip window as the body cells: clamp the label to its column, intersected with
+           the table viewport, so a header at the scroll edge cuts cleanly at the border too. */
+        f32 hvx0 = t->outer_rect.x;
+        f32 hvx1 = t->outer_rect.x + t->outer_rect.w;
+        draw_set_text_clip_x( lblx > hvx0 ? lblx : hvx0,
+                              lblx + lblw < hvx1 ? lblx + lblw : hvx1 );
         draw_text_fit_n( lblx, hy + (f32)WIDGET_GAP, COL_TEXT, lbl, 0xFFFFFFFFu, lblw );
 
         /* Sort indicator triangle on the active sort column. */
@@ -600,6 +618,16 @@ imgui_table_next_column( void )
     f->content_w  = iw;
     f->cellx[ 0 ] = ix;
     f->cellw[ 0 ] = iw;
+
+    /* Bound text drawn into this cell to its visible window: the cell's inset rect, clamped to the
+       table viewport box.  A column scrolled partway off the edge then cuts its glyphs cleanly at
+       the border instead of bleeding under the row-selection highlight (which stops at the
+       viewport) -- the worst-case overlap that reads as unpolished.  draw_push_text picks this up
+       ambiently, so selectable labels and plain cell text self-terminate at the cell / viewport
+       edge with no per-cell scissor.  Cleared in table_end. */
+    f32 vx0 = t->outer_rect.x;
+    f32 vx1 = t->outer_rect.x + t->outer_rect.w;
+    draw_set_text_clip_x( ix > vx0 ? ix : vx0, ix + iw < vx1 ? ix + iw : vx1 );
 
     return true;
 }

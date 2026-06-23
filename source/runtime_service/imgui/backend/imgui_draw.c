@@ -59,6 +59,14 @@ static struct
        that draw a different category; 0 emits square shapes (the fast path). */
     f32 rounding;
 
+    /* Ambient horizontal text-clip window: glyph-level [x0, x1] hard-clip folded into every pushed
+       text run that does not carry its own explicit window.  The sentinel (-/+ IMGUI_TEXT_NO_CLIP)
+       means unclipped (the common path).  A seam that draws text into a bounded slot -- a table cell
+       at the scroll/viewport edge -- sets it for the span so glyphs terminate cleanly at the slot
+       edge instead of bleeding to the enclosing scissor (the self-fit rule at the glyph boundary). */
+    f32 text_clip_x0;
+    f32 text_clip_x1;
+
 } s_draw;
 
 /*----------------------------------------------------------------------------------------------
@@ -76,6 +84,8 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.clip_depth      = 1;
     s_draw.alpha           = 1.0f;
     s_draw.rounding        = 0.0f;   /* square until a seam sets the resolved radius */
+    s_draw.text_clip_x0    = -IMGUI_TEXT_NO_CLIP;   /* unclipped until a seam sets a window */
+    s_draw.text_clip_x1    = IMGUI_TEXT_NO_CLIP;
 
     /* first is a default "no clip" rect covering the whole display; never popped off the stack. */
     s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
@@ -224,6 +234,29 @@ f32
 draw_rounding( void )
 {
     return s_draw.rounding;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Ambient text-clip window: a horizontal [x0, x1] pixel window that every subsequent
+    draw_push_text / draw_push_text_n hard-clips to at the glyph level (straddling glyphs sliced
+    with remapped U, interior glyphs whole, no scissor / no batch split).  A seam that draws text
+    into a bounded slot -- a table cell at the scroll viewport edge -- sets the window for the
+    span and clears it after, exactly as draw_set_alpha / draw_set_rounding bracket their spans.
+    Explicit draw_push_text_clip_n callers (the scrolled text input) bypass this and pass their own.
+----------------------------------------------------------------------------------------------*/
+
+void
+draw_set_text_clip_x( f32 x0, f32 x1 )
+{
+    s_draw.text_clip_x0 = x0;
+    s_draw.text_clip_x1 = x1;
+}
+
+void
+draw_clear_text_clip( void )
+{
+    s_draw.text_clip_x0 = -IMGUI_TEXT_NO_CLIP;
+    s_draw.text_clip_x1 = IMGUI_TEXT_NO_CLIP;
 }
 
 static f32
@@ -404,12 +437,14 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     c->text.abgr    = draw_apply_alpha( abgr );
 }
 
-/* Unclipped text: the common path.  Forwards to the clipped emitter with the no-clip sentinel so
-   the tessellator skips the per-glyph clip test entirely. */
+/* Text that inherits the ambient text-clip window: the common path for widget content.  Normally
+   the window is the no-clip sentinel and the tessellator skips the per-glyph clip test entirely; a
+   seam (table cell at the viewport edge) can set a real window so this run hard-clips at the slot
+   edge without any call-site change. */
 void
 draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
 {
-    draw_push_text_clip_n( x, y, abgr, str, n, -IMGUI_TEXT_NO_CLIP, IMGUI_TEXT_NO_CLIP );
+    draw_push_text_clip_n( x, y, abgr, str, n, s_draw.text_clip_x0, s_draw.text_clip_x1 );
 }
 
 void
