@@ -15,9 +15,13 @@
 ==============================================================================================*/
 
 #include "runtime_service/imgui/imgui.h"
-#include "runtime_service/rhi/rhi.h"    /* rhi_cmd_t for render()    */
+
 #include "engine/app/app.h"             /* app_event_t for event()   */
 #include "engine/mod/mod_import.h"
+
+/* forward declare so the API can take a cmd argument without including rhi_api.h */
+struct rhi_cmd_s; typedef struct rhi_cmd_s* rhi_cmd_t;
+
 
 // clang-format off
 /*==============================================================================================
