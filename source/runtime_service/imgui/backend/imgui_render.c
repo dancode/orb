@@ -106,6 +106,16 @@ static draw_run_t s_runs[ IMGUI_MAX_CMDS ];   /* z-grouped command runs, sorted 
 static u32        s_run_count;                /* runs valid this frame                         */
 static bool       s_frame_built;              /* tessellation + runs computed this frame        */
 
+/* Per-surface geometry span within the shared vertex/index lists -- the half-open [lo,hi) range of
+   vertex slots and index slots touched by the commands tagged for each viewport.  Computed once in
+   render_build_frame; each surface's flush uploads only its own span (written at its real offset, so
+   the absolute indices still resolve) instead of the whole shared buffer.  For a single surface the
+   span is the entire buffer, so the common case is unchanged. */
+static u32 s_vp_vtx_lo[ IMGUI_MAX_VIEWPORTS ];
+static u32 s_vp_vtx_hi[ IMGUI_MAX_VIEWPORTS ];
+static u32 s_vp_idx_lo[ IMGUI_MAX_VIEWPORTS ];
+static u32 s_vp_idx_hi[ IMGUI_MAX_VIEWPORTS ];
+
 /* Manual debug toggle: flip to true (debugger, or at startup) to print the per-frame
    draw-call count every flush.  The high-water mark is always tracked and reported at
    shutdown regardless of this flag. */
@@ -543,6 +553,33 @@ render_build_frame( void )
         s_runs[ b ] = key;
     }
 
+    /* Per-surface geometry span: the [lo,hi) vertex + index range each viewport's commands touch,
+       so its flush uploads only that slice rather than the whole shared buffer.  Walk the command
+       list in emit order (where the index buffer is laid out and cmd_vbase is monotonic) and widen
+       each command's viewport range; a command's vertex span is [cmd_vbase[i], cmd_vbase[i+1]) and
+       its index span is [ibase, ibase+elem_count).  A viewport with no commands keeps lo>hi (empty,
+       so its flush uploads nothing). */
+    for ( u32 v = 0; v < IMGUI_MAX_VIEWPORTS; ++v )
+    {
+        s_vp_vtx_lo[ v ] = s_tess.vert_count;  s_vp_vtx_hi[ v ] = 0;
+        s_vp_idx_lo[ v ] = s_tess.idx_count;   s_vp_idx_hi[ v ] = 0;
+    }
+    for ( u32 i = 0, ibase = 0; i < s_tess.cmd_count; ++i )
+    {
+        u32 vp_i = s_tess.cmd_vp[ i ];
+        u32 vlo  = s_tess.cmd_vbase[ i ];
+        u32 vhi  = ( i + 1 < s_tess.cmd_count ) ? s_tess.cmd_vbase[ i + 1 ] : s_tess.vert_count;
+        u32 ic   = s_tess.cmds[ i ].elem_count;
+        if ( vp_i < IMGUI_MAX_VIEWPORTS )
+        {
+            if ( vlo         < s_vp_vtx_lo[ vp_i ] ) s_vp_vtx_lo[ vp_i ] = vlo;
+            if ( vhi         > s_vp_vtx_hi[ vp_i ] ) s_vp_vtx_hi[ vp_i ] = vhi;
+            if ( ibase       < s_vp_idx_lo[ vp_i ] ) s_vp_idx_lo[ vp_i ] = ibase;
+            if ( ibase + ic  > s_vp_idx_hi[ vp_i ] ) s_vp_idx_hi[ vp_i ] = ibase + ic;
+        }
+        ibase += ic;
+    }
+
     /* Per-frame emitted geometry stats -- the tessellated list is the whole shared list, so these
        are the same for every surface; record them once here.  draw_calls are this surface's own
        partition and are summed across surfaces in the flush below. */
@@ -579,16 +616,23 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     u32 vb_off = frame * (u32)IMGUI_VB_REGION_BYTES;
     u32 ib_off = frame * (u32)IMGUI_IB_REGION_BYTES;
 
-    u32 vert_count = s_tess.vert_count < IMGUI_MAX_VERTS ? s_tess.vert_count : IMGUI_MAX_VERTS;
-    u32 idx_count  = s_tess.idx_count  < IMGUI_MAX_IDX   ? s_tess.idx_count  : IMGUI_MAX_IDX;
+    /* Upload only the slice of the shared geometry this surface draws (its [lo,hi) span from
+       render_build_frame), written at its real offset so the absolute indices still resolve.  The
+       untouched parts of the region keep stale data the surface never indexes.  For a single surface
+       the span covers the whole buffer, so this is identical to a full upload in the common case. */
+    u32 vtx_lo = s_vp_vtx_lo[ vp_index ], vtx_hi = s_vp_vtx_hi[ vp_index ];
+    u32 idx_lo = s_vp_idx_lo[ vp_index ], idx_hi = s_vp_idx_hi[ vp_index ];
 
-    /* Upload tessellated vertex + index data into this viewport's frame region. */
-    rhi()->buffer_write( vp->vb,
-                         s_tess.verts,
-                         vert_count * sizeof( imgui_draw_vert_t ), vb_off );
-    rhi()->buffer_write( vp->ib,
-                         s_tess.indices,
-                         idx_count * sizeof( u16 ), ib_off );
+    if ( vtx_hi > vtx_lo )
+        rhi()->buffer_write( vp->vb,
+                             &s_tess.verts[ vtx_lo ],
+                             ( vtx_hi - vtx_lo ) * sizeof( imgui_draw_vert_t ),
+                             vb_off + vtx_lo * (u32)sizeof( imgui_draw_vert_t ) );
+    if ( idx_hi > idx_lo )
+        rhi()->buffer_write( vp->ib,
+                             &s_tess.indices[ idx_lo ],
+                             ( idx_hi - idx_lo ) * sizeof( u16 ),
+                             ib_off + idx_lo * (u32)sizeof( u16 ) );
 
     /* Open a LOAD pass on the swapchain color target (no depth needed).
        LOAD preserves the scene content rendered before this call; CLEAR would wipe it. */

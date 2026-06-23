@@ -36,6 +36,7 @@ static struct
     imgui_gpu_cmd_t    cmds     [ IMGUI_MAX_CMDS  ];
     u32                cmd_z    [ IMGUI_MAX_CMDS  ];
     u32                cmd_vp   [ IMGUI_MAX_CMDS  ];
+    u32                cmd_vbase[ IMGUI_MAX_CMDS  ];  /* vertex-buffer slot where this cmd's geometry starts */
 
     u32 vert_count, idx_count, cmd_count;
 
@@ -136,9 +137,12 @@ tess_ensure_gpu_cmd( u32 tex_idx )
     }
     if ( s_tess.cmd_count >= IMGUI_MAX_CMDS )
         return;
-    s_tess.cmd_z [ s_tess.cmd_count ] = s_tess.cur_z;
-    s_tess.cmd_vp[ s_tess.cmd_count ] = s_tess.cur_vp;
-    s_tess.cmds  [ s_tess.cmd_count++ ] = ( imgui_gpu_cmd_t ){
+    s_tess.cmd_z    [ s_tess.cmd_count ] = s_tess.cur_z;
+    s_tess.cmd_vp   [ s_tess.cmd_count ] = s_tess.cur_vp;
+    /* Vertex span of this command starts at the current vert_count; the next command's vbase (or
+       the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices. */
+    s_tess.cmd_vbase[ s_tess.cmd_count ] = s_tess.vert_count;
+    s_tess.cmds     [ s_tess.cmd_count++ ] = ( imgui_gpu_cmd_t ){
         .elem_count = 0,
         .tex_idx    = tex_idx,
         .clip_rect  = s_tess.cur_clip,
