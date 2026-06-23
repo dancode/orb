@@ -259,6 +259,7 @@ main( int argc, char** argv )
     printf( "[sb_vulkan] running -- ESC to quit\n" );
     printf( "[sb_vulkan] imgui demos: 1-9 select, +/- step, F1-F4 debug overlay, NP. font scale\n" );
     printf( "[sb_vulkan] P cycles the perf overlay: off -> FPS -> +timings -> +render counts\n" );
+    printf( "[sb_vulkan] F6 cycles the render view: normal -> wireframe -> batch colors\n" );
 
     /* Active imgui demo index (see sb_vulkan_imgui.c); switched live with the keys below. */
     int active_demo = 0;
@@ -319,7 +320,7 @@ main( int argc, char** argv )
            Number keys 1-9 jump straight to a demo; +/- step back and forth through the
            table (with wrap).  The active demo is drawn below, inside the imgui frame. */
 
-        bool b_demo_window = false;
+        bool b_demo_window = true;
         if ( b_demo_window )
         {
             const int demo_count = sb_imgui_demo_count();
@@ -372,6 +373,16 @@ main( int argc, char** argv )
         {
             f32 inst_fps = 1.0f / dt;
             perf_fps = perf_fps <= 0.0f ? inst_fps : perf_fps * 0.92f + inst_fps * 0.08f;
+        }
+
+        /* F6 cycles the debug render view: normal -> wireframe (triangle edges) -> batch (per-draw
+           color tint, so you can count batches and see where they split) -> normal. */
+        if ( app()->key_pressed( APP_KEY_F6 ) )
+        {
+            imgui_render_mode_t m = ( imgui()->debug_get_render_mode() + 1 ) % IMGUI_RENDER_MODE_COUNT;
+            imgui()->debug_set_render_mode( m );
+            static const char* names[] = { "normal", "wireframe", "batch" };
+            printf( "[sb_vulkan] render mode: %s\n", names[ m ] );
         }
 
         /* ------------------------------------------------------------------------------ */

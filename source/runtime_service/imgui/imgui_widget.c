@@ -40,12 +40,12 @@ text_emit( u32 col, const char* str )
        original top-left).  A row tall enough for the glyph centers vertically when asked. */
     imgui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->lay_align );
 
-    /* Self-fit to the cell: when the run fits this is a plain draw; when the cell squeezes it (a
-       narrow table column / split region) the run is left-anchored and ellipsized -- the same fit
-       every labeled widget does.  Text therefore never bleeds into a neighbouring cell, so a column
-       layout needs no per-cell clip. */
+    /* Draw the run plainly -- no ellipsis.  When it fits the cell (the common case, e.g. a stack's
+       full-width row) this is an exact draw; when a narrow cell squeezes it the run overflows and is
+       bounded by the window's clip rect rather than ellipsized -- matching the input / display
+       widgets, which rely on the window border instead of a per-widget fit. */
     f32 x = ( tw <= r.w ) ? tr.x : r.x;
-    draw_text_fit_n( x, tr.y, col, str, 0xFFFFFFFFu, ( r.x + r.w ) - x );
+    draw_push_text( x, tr.y, col, str );
     widget_track_width( x + ( ( tw <= r.w ) ? tw : r.w ) );
 }
 
@@ -385,7 +385,10 @@ imgui_checkbox( const char* label, bool* v )
         draw_check_indicator( ( imgui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
     }
 
-    draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, label_w );
+    /* Draw the label plainly -- no ellipsis (markers still stripped); a label too wide for its
+       track overflows and is bounded by the window clip, matching text() and the input widgets. */
+    (void)label_w;
+    draw_label( label_x, text_center_y( r.y, r.h ), COL_TEXT, label );
 
     bool changed = false;
     if ( st.clicked )
@@ -513,11 +516,10 @@ imgui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 
     input_text_frame_t f = input_text_begin( label );
     if ( !f.st.focused && buf[ 0 ] == '\0' && hint && hint[ 0 ] )
     {
-        draw_push_clip_rect( f.box.x + WIN_BORDER, f.box.y + WIN_BORDER,
-                             f.box.w - 2.0f * WIN_BORDER, f.box.h - 2.0f * WIN_BORDER );
+        /* No per-widget clip: the hint fits the box in the common case, and the window's clip rect
+           already bounds any overflow -- so no scissor (no batch split) and no ellipsis. */
         draw_push_text( f.box.x + WIDGET_PAD, text_center_y( f.box.y, f.box.h ),
                         COL_TEXT_DIM, hint );
-        draw_pop_clip_rect();
     }
     return input_field_edit( f.id, f.box, f.st, buf, bufsz, NULL, NULL ).enter;
 }

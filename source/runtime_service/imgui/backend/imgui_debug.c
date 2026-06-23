@@ -329,6 +329,8 @@ imgui_debug_flush( imgui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     render_ortho( push.mvp, (f32)win_w, (f32)win_h );
     push.samp_idx = s_render.font_sampler_idx;
     push.tex_idx  = font_atlas_idx();
+    push.dbg_flat = 0u;   /* the overlay always renders normally, never flat/batch-tinted */
+    push.dbg_tint = 0u;
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
     rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){

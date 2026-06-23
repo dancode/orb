@@ -835,6 +835,12 @@ typedef struct imgui_api_s
     void ( *debug_set_layers )( u32 layers );
     u32  ( *debug_get_layers )( void );
 
+    /* Debug render mode -- how the main UI draw list is rasterized (imgui_render_mode_t): NORMAL,
+       WIREFRAME (triangle edges), or BATCH (per-draw-call color tint).  A pipeline + push-constant
+       switch, so it is live in every build (not gated to Debug like the overlay layers above). */
+    void                ( *debug_set_render_mode )( imgui_render_mode_t mode );
+    imgui_render_mode_t ( *debug_get_render_mode )( void );
+
     /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that
        would otherwise re-query app() and so bypass imgui's frame timing and its input capture.
 

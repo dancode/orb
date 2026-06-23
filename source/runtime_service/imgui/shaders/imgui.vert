@@ -4,6 +4,8 @@ layout(push_constant) uniform PC {
     mat4 mvp;
     uint tex_idx;
     uint samp_idx;
+    uint dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color (wireframe / batch view)
+    uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
 } pc;
 
 layout(location = 0) in vec2 in_pos;

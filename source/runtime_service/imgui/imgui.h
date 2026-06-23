@@ -674,6 +674,31 @@ typedef enum
 } imgui_dbg_layer_t;
 
 /*==============================================================================================
+    Debug render mode
+
+    How the main UI draw list is rasterized, selected via imgui()->debug_set_render_mode().  Unlike
+    the debug overlay layers (a separate draw list painted on top), this changes the rasterization
+    of the UI itself, so the two are independent and compose.  Available in every build (it is just
+    a pipeline + push-constant switch, cheap enough to leave in Release).
+
+      NORMAL    -- textured, blended UI (the default).
+      WIREFRAME -- the geometry's triangle edges (VK_POLYGON_MODE_LINE), each window keeping its own
+                   color: a direct read on how many triangles a shape costs.
+      BATCH     -- every GPU draw call (one indexed draw == one batch) is tinted a distinct color, so
+                   a color change marks a batch split -- count the colors to count the batches.
+==============================================================================================*/
+
+typedef enum
+{
+    IMGUI_RENDER_NORMAL    = 0,   /* normal textured / blended UI                       */
+    IMGUI_RENDER_WIREFRAME = 1,   /* triangle edges only (wireframe)                    */
+    IMGUI_RENDER_BATCH     = 2,   /* per-draw-call color tint (batch boundary view)     */
+
+    IMGUI_RENDER_MODE_COUNT,      /* mode count -- not a mode                           */
+
+} imgui_render_mode_t;
+
+/*==============================================================================================
     Color packing
 
     IMGUI_COLOR(r,g,b,a) packs 0-255 byte values into a u32 such that memory byte order

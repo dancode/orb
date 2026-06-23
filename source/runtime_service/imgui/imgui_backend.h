@@ -124,6 +124,11 @@ void              imgui_render_print_memory( void );
 imgui_render_stats_t imgui_render_stats        ( void );
 void                 imgui_render_stats_publish( void );
 
+/* Debug render mode (normal / wireframe / batch-tint) -- backs imgui()->debug_set/get_render_mode.
+   The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */
+void                imgui_render_set_mode( imgui_render_mode_t mode );
+imgui_render_mode_t imgui_render_get_mode( void );
+
 bool viewport_create ( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
 void viewport_destroy( imgui_viewport_t* vp );                                   // free its vb/ib
 

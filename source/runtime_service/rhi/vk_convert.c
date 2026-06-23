@@ -132,6 +132,12 @@ rhi_cull_to_vk( rhi_cull_mode_t cull )
     }
 }
 
+static VkPolygonMode
+rhi_polygon_to_vk( rhi_polygon_mode_t mode )
+{
+    return mode == RHI_POLYGON_LINE ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+}
+
 static VkCompareOp
 rhi_compare_to_vk( rhi_compare_op_t op )
 {

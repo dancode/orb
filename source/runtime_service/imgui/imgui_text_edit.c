@@ -673,10 +673,16 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
         if ( cx - (f32)es->scroll_x > vis_w ) es->scroll_x = (u16)( cx - vis_w );
     }
 
-    /* Clip text, selection, and caret to the box interior so scrolled content does not
-       bleed past the border.  Balanced with draw_pop_clip_rect below. */
-    draw_push_clip_rect( box.x + WIN_BORDER, box.y + WIN_BORDER,
-                         box.w - 2.0f * WIN_BORDER, box.h - 2.0f * WIN_BORDER );
+    /* Clip text, selection, and caret to the box interior so scrolled content does not bleed past
+       the border -- but ONLY when it actually would: the field is scrolled, or the text is wider
+       than the visible interior.  A short, unscrolled value fits inside the box on its own, so it
+       needs no scissor and stays merged into the surrounding window batch instead of forcing a
+       draw-call split (the self-fit-over-clips rule -- clip only on real overflow). */
+    f32  edit_vis_w  = box.w - 2.0f * WIDGET_PAD;
+    bool need_clip   = es->scroll_x != 0 || text_x_at( buf, len ) > edit_vis_w;
+    if ( need_clip )
+        draw_push_clip_rect( box.x + WIN_BORDER, box.y + WIN_BORDER,
+                             box.w - 2.0f * WIN_BORDER, box.h - 2.0f * WIN_BORDER );
 
     f32 text_x = box.x + WIDGET_PAD - es->scroll_x;
     f32 text_y = text_center_y( box.y, box.h );
@@ -706,7 +712,8 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
         }
     }
 
-    draw_pop_clip_rect();
+    if ( need_clip )
+        draw_pop_clip_rect();
 
     /* Fire the change callback after all rendering so the caller sees the final state. */
     if ( res.changed && on_change )

@@ -135,7 +135,7 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
 
     VkPipelineRasterizationStateCreateInfo rast_ci = { 0 };
     rast_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rast_ci.polygonMode = VK_POLYGON_MODE_FILL;
+    rast_ci.polygonMode = rhi_polygon_to_vk( desc->polygon_mode );
     rast_ci.cullMode = rhi_cull_to_vk( desc->cull );
     rast_ci.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rast_ci.lineWidth = 1.0f;

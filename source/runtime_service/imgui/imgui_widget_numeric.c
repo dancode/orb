@@ -86,14 +86,14 @@ input_num_field( imgui_id_t id, imgui_rect_t box_r, widget_state_t st,
             if ( parsed != cur ) { *out = parsed; committed = true; }
             s_num_scratch.id = IMGUI_ID_NONE;
         }
-        /* Display the current (or freshly committed) value, clipped to the box. */
+        /* Display the current (or freshly committed) value.  No per-widget clip: a static value
+           never scrolls and fits the box in the common case, and the window's clip rect already
+           bounds any overflow -- so the field never forces a batch split, and a rare over-long
+           value is clipped by the window edge rather than ellipsized. */
         char disp[ NUM_BUF_CAP ];
         num_format( disp, NUM_BUF_CAP, fmt, committed ? *out : cur, is_int );
-        draw_push_clip_rect( box_r.x + WIN_BORDER, box_r.y + WIN_BORDER,
-                             box_r.w - 2.0f * WIN_BORDER, box_r.h - 2.0f * WIN_BORDER );
         draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ),
                         COL_TEXT, disp );
-        draw_pop_clip_rect();
     }
 
     return committed;

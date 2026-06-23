@@ -237,6 +237,15 @@ typedef enum rhi_cull_mode_e
 
 } rhi_cull_mode_t;
 
+/* Polygon rasterization mode.  LINE (wireframe) needs the fillModeNonSolid device feature,
+   which the device enables; it draws only triangle edges -- a debug view of the geometry. */
+typedef enum rhi_polygon_mode_e
+{
+    RHI_POLYGON_FILL = 0,   /* solid triangles (default)        */
+    RHI_POLYGON_LINE = 1,   /* wireframe: triangle edges only   */
+
+} rhi_polygon_mode_t;
+
 typedef enum rhi_blend_factor_e
 {
     RHI_BLEND_ZERO             = 0,
@@ -339,6 +348,7 @@ typedef struct rhi_pipeline_desc_s
     /* Rasterizer */
 
     rhi_cull_mode_t     cull;
+    rhi_polygon_mode_t  polygon_mode;           // RHI_POLYGON_FILL (default) or _LINE (wireframe)
     bool                depth_test;
     bool                depth_write;
     rhi_compare_op_t    depth_compare;          // default: RHI_COMPARE_LESS

@@ -27,8 +27,10 @@ typedef struct
     f32 mvp[ 16 ];      /* column-major ortho matrix    64 bytes */
     u32 tex_idx;        /* bindless texture slot         4 bytes */
     u32 samp_idx;       /* bindless sampler slot         4 bytes */
+    u32 dbg_flat;       /* debug: 1 = flat color (no atlas) 4 bytes */
+    u32 dbg_tint;       /* debug: packed RGBA8 batch tint   4 bytes */
 
-} imgui_push_t;         /* total 72 bytes -- well within RHI_MAX_PUSH_CONST_SIZE */
+} imgui_push_t;         /* total 80 bytes -- well within RHI_MAX_PUSH_CONST_SIZE */
 
 /*----------------------------------------------------------------------------------------------
     Per-frame geometry regions
@@ -70,8 +72,11 @@ typedef struct
 static struct
 {
     rhi_pipeline_t  pipeline;           // compiled pipeline with imgui shaders + vertex layout + alpha blend
+    rhi_pipeline_t  pipeline_wire;      // identical pipeline rasterized in VK_POLYGON_MODE_LINE (wireframe view)
     rhi_sampler_t   font_sampler;       // sampler for font textures (point clamp)
     u32             font_sampler_idx;   // bindless slot for font_sampler
+
+    imgui_render_mode_t debug_mode;     // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
     u32             draw_call_hwm;      // peak indexed draw calls in a single frame (global stat)
 
@@ -227,13 +232,17 @@ imgui_render_init( void )
         .alpha_op     = RHI_BLEND_OP_ADD,
     };
 
-    s_render.pipeline = rhi()->pipeline_create( &( rhi_pipeline_desc_t ){
+    /* One descriptor shared by both pipelines; only polygon_mode differs.  The wireframe variant
+       (VK_POLYGON_MODE_LINE) lets the debug render mode draw triangle edges through the same
+       shaders, vertex layout, and push range -- the flush just binds whichever the mode selects. */
+    rhi_pipeline_desc_t pdesc = {
         .vert               = vert,
         .frag               = frag,
         .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ] },
         .attrib_count       = 3,
         .vertex_stride      = sizeof( imgui_draw_vert_t ),
         .cull               = RHI_CULL_NONE,
+        .polygon_mode       = RHI_POLYGON_FILL,
         .depth_test         = false,
         .depth_write        = false,
         .color_targets      = { color_target },
@@ -241,11 +250,18 @@ imgui_render_init( void )
         .depth_format       = RHI_FORMAT_UNKNOWN,
         .push_const_size    = sizeof( imgui_push_t ),
         .debug_name         = "imgui",
-    } );
+    };
+    s_render.pipeline = rhi()->pipeline_create( &pdesc );
+
+    pdesc.polygon_mode = RHI_POLYGON_LINE;
+    pdesc.debug_name   = "imgui_wire";
+    s_render.pipeline_wire = rhi()->pipeline_create( &pdesc );
 
     rhi()->shader_destroy( frag );
     rhi()->shader_destroy( vert );
 
+    /* The wireframe pipeline is a debug convenience -- a failure there is non-fatal (the mode just
+       falls back to the fill pipeline at flush time); only the fill pipeline is required. */
     if ( !rhi_handle_valid( s_render.pipeline ) )
         return false;
 
@@ -359,12 +375,61 @@ imgui_render_shutdown( void )
     if ( rhi_handle_valid( s_render.font_sampler ) )
         rhi()->sampler_destroy( s_render.font_sampler );
 
+    if ( rhi_handle_valid( s_render.pipeline_wire ) )
+        rhi()->pipeline_destroy( s_render.pipeline_wire );
     if ( rhi_handle_valid( s_render.pipeline ) )
         rhi()->pipeline_destroy( s_render.pipeline );
 
     /* Per-viewport geometry buffers are released by viewport_destroy (driven from imgui_shutdown). */
 
     memset( &s_render, 0, sizeof( s_render ) );
+}
+
+/*----------------------------------------------------------------------------------------------
+    imgui_render_set_mode / imgui_render_get_mode -- the debug render view (normal / wireframe /
+    batch-tint).  Cheap to flip every frame; read by imgui_render_flush below.
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_render_set_mode( imgui_render_mode_t mode )
+{
+    if ( mode < 0 || mode >= IMGUI_RENDER_MODE_COUNT )
+        mode = IMGUI_RENDER_NORMAL;
+    s_render.debug_mode = mode;
+}
+
+imgui_render_mode_t
+imgui_render_get_mode( void )
+{
+    return s_render.debug_mode;
+}
+
+/*----------------------------------------------------------------------------------------------
+    batch_debug_color -- a distinct, saturated, fully-opaque color per draw-call index for the
+    BATCH view.  Packed RGBA8 (R low byte), matching the shader's dbg_tint decode and IMGUI_COLOR
+    byte order.  A 12-entry table cycles; consecutive entries are spread around the hue wheel so
+    neighbouring batches stay easy to tell apart, and the count wrapping is harmless (it only has
+    to make boundaries visible, not encode an exact id).
+----------------------------------------------------------------------------------------------*/
+
+static u32
+batch_debug_color( u32 i )
+{
+    static const u32 palette[ 12 ] = {
+        IMGUI_COLOR( 0xE6, 0x39, 0x46, 0xFF ),   /* red      */
+        IMGUI_COLOR( 0x2A, 0x9D, 0x8F, 0xFF ),   /* teal     */
+        IMGUI_COLOR( 0xE9, 0xC4, 0x6A, 0xFF ),   /* yellow   */
+        IMGUI_COLOR( 0x45, 0x7B, 0x9D, 0xFF ),   /* blue     */
+        IMGUI_COLOR( 0xF4, 0x7A, 0x20, 0xFF ),   /* orange   */
+        IMGUI_COLOR( 0x8E, 0x44, 0xAD, 0xFF ),   /* purple   */
+        IMGUI_COLOR( 0x6A, 0xBE, 0x30, 0xFF ),   /* green    */
+        IMGUI_COLOR( 0xD6, 0x4B, 0x9C, 0xFF ),   /* pink     */
+        IMGUI_COLOR( 0x34, 0x98, 0xDB, 0xFF ),   /* sky      */
+        IMGUI_COLOR( 0xC0, 0x8A, 0x3E, 0xFF ),   /* brown    */
+        IMGUI_COLOR( 0x1A, 0xBC, 0x9C, 0xFF ),   /* mint     */
+        IMGUI_COLOR( 0xBD, 0xC3, 0xC7, 0xFF ),   /* silver   */
+    };
+    return palette[ i % 12u ];
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -443,7 +508,12 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
         .max_depth = 1.0f,
     } );
 
-    rhi()->cmd_bind_pipeline( cmd, s_render.pipeline );
+    /* Wireframe mode binds the LINE pipeline (falling back to fill if it failed to compile);
+       normal + batch modes both rasterize filled triangles. */
+    rhi_pipeline_t pipe = ( s_render.debug_mode == IMGUI_RENDER_WIREFRAME
+                            && rhi_handle_valid( s_render.pipeline_wire ) )
+                        ? s_render.pipeline_wire : s_render.pipeline;
+    rhi()->cmd_bind_pipeline( cmd, pipe );
     rhi()->cmd_bind_bindless( cmd );
     /* Bind this frame's region; index values and first_index stay region-relative. */
     rhi()->cmd_bind_vertex_buffer( cmd, vp->vb, vb_off );
@@ -491,6 +561,13 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     }
 
     push.samp_idx = s_render.font_sampler_idx;
+
+    /* Debug render mode push state.  dbg_flat makes the fragment bypass the atlas and emit a flat
+       color: WIREFRAME keeps each window's vertex color (tint 0), BATCH overrides it per draw call
+       with a distinct palette color below.  NORMAL leaves both 0 for the textured/blended path. */
+    bool batch_view = ( s_render.debug_mode == IMGUI_RENDER_BATCH );
+    push.dbg_flat   = ( s_render.debug_mode == IMGUI_RENDER_NORMAL ) ? 0u : 1u;
+    push.dbg_tint   = 0u;
 
     u32 draw_calls = 0;   /* indexed draws actually emitted this frame (one per non-empty command) */
 
@@ -540,6 +617,10 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
 
             /* tex_idx is resolved at push time (solids already point at the atlas white texel). */
             push.tex_idx = dc->tex_idx;
+            /* Batch view: tint this draw call by its running index, so each batch reads as a
+               distinct solid color and a color change in the image marks a batch boundary. */
+            if ( batch_view )
+                push.dbg_tint = batch_debug_color( draw_calls );
             rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
             rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){
