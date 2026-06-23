@@ -373,7 +373,7 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
 ----------------------------------------------------------------------------------------------*/
 
 void
-draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
+draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 clip_x1 )
 {
     if ( !str || s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
@@ -390,16 +390,26 @@ draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
     dst[ len ]            = '\0';
     s_draw.text_pool_used += len + 1;
 
-    imgui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type        = IMGUI_CMD_TEXT;
-    c->clip        = draw_current_clip();
-    c->z           = s_draw.cur_z;
-    c->vp          = s_draw.cur_vp;
-    c->text.x      = x;
-    c->text.y      = y;
-    c->text.str    = dst;
-    c->text.len    = len;   /* always an explicit byte count; never 0xFFFFFFFF after this point */
-    c->text.abgr   = draw_apply_alpha( abgr );
+    imgui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type         = IMGUI_CMD_TEXT;
+    c->clip         = draw_current_clip();
+    c->z            = s_draw.cur_z;
+    c->vp           = s_draw.cur_vp;
+    c->text.x       = x;
+    c->text.y       = y;
+    c->text.str     = dst;
+    c->text.len     = len;   /* always an explicit byte count; never 0xFFFFFFFF after this point */
+    c->text.clip_x0 = clip_x0;
+    c->text.clip_x1 = clip_x1;
+    c->text.abgr    = draw_apply_alpha( abgr );
+}
+
+/* Unclipped text: the common path.  Forwards to the clipped emitter with the no-clip sentinel so
+   the tessellator skips the per-glyph clip test entirely. */
+void
+draw_push_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
+{
+    draw_push_text_clip_n( x, y, abgr, str, n, -IMGUI_TEXT_NO_CLIP, IMGUI_TEXT_NO_CLIP );
 }
 
 void

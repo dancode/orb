@@ -397,19 +397,57 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 segs, u32 abgr )
     tess_prim_commit( nv, ni );
 }
 
-/* Tessellate a glyph run from the font atlas into s_tess. */
+/* Tessellate a glyph run from the font atlas into s_tess, hard-clipped to the horizontal pixel
+   window [clip_x0, clip_x1].  Glyphs fully outside the window are skipped; glyphs fully inside emit
+   whole; the (at most two) straddling glyphs are cut on a pixel boundary with their U remapped by
+   the same fraction -- exact, since the glyph quad is an axis-aligned 1:1 atlas sample.  The window
+   is monotonic with the left-to-right cursor, so interior glyphs pay only one compare: no clip math.
+   The unclipped sentinel (clip_x1 >= IMGUI_TEXT_NO_CLIP) takes the original whole-run fast path. */
 static void
-tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n )
+tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 clip_x1 )
 {
-    f32 cx = x;
+    bool clipped = ( clip_x1 < IMGUI_TEXT_NO_CLIP );
+    f32  cx      = x;
     for ( u32 i = 0; i < n && str[ i ]; ++i )
     {
         u8  ch = (u8)str[ i ];
         f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
         font_glyph( ch, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
+
         if ( gw > 0.0f && gh > 0.0f )
-            tess_rect_filled( cx + ox, y + oy, gw, gh, u0, v0, u1, v1, font_atlas_idx(), abgr );
+        {
+            f32 gx0 = cx + ox;          /* glyph bitmap left/right in screen px */
+            f32 gx1 = gx0 + gw;
+
+            if ( !clipped || ( gx0 >= clip_x0 && gx1 <= clip_x1 ) )
+            {
+                /* Whole glyph (or no clipping): emit as-is -- the hot interior path. */
+                tess_rect_filled( gx0, y + oy, gw, gh, u0, v0, u1, v1, font_atlas_idx(), abgr );
+            }
+            else if ( gx1 > clip_x0 && gx0 < clip_x1 )
+            {
+                /* Straddler: cut to the window and walk U by the same fraction on each cut edge. */
+                f32 du   = u1 - u0;
+                f32 nx0  = gx0, nx1 = gx1, nu0 = u0, nu1 = u1;
+                if ( nx0 < clip_x0 )    /* left edge cut  */
+                {
+                    nu0 = u0 + du * ( ( clip_x0 - gx0 ) / gw );
+                    nx0 = clip_x0;
+                }
+                if ( nx1 > clip_x1 )    /* right edge cut */
+                {
+                    nu1 = u0 + du * ( ( clip_x1 - gx0 ) / gw );
+                    nx1 = clip_x1;
+                }
+                tess_rect_filled( nx0, y + oy, nx1 - nx0, gh, nu0, v0, nu1, v1,
+                                  font_atlas_idx(), abgr );
+            }
+            /* else: glyph wholly outside the window -- drop it. */
+        }
+
         cx += advance;
+        if ( clipped && cx >= clip_x1 )   /* cursor past the window: nothing further is visible */
+            break;
     }
 }
 
@@ -645,7 +683,8 @@ tess_dispatch( const imgui_cmd_t* cmds, u32 count )
                 break;
 
             case IMGUI_CMD_TEXT:
-                tess_text_n( c->text.x, c->text.y, c->text.abgr, c->text.str, c->text.len );
+                tess_text_n( c->text.x, c->text.y, c->text.abgr, c->text.str, c->text.len,
+                             c->text.clip_x0, c->text.clip_x1 );
                 break;
 
             case IMGUI_CMD_CIRCLE_FILLED:

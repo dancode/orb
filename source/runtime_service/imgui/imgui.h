@@ -781,6 +781,10 @@ typedef enum
 
 } imgui_cmd_type_t;
 
+/* Sentinel half-extent for an unclipped text command: any real glyph sits well inside this, so
+   the tessellator's clip test never triggers and the whole-run fast path is taken. */
+#define IMGUI_TEXT_NO_CLIP 1e30f
+
 /* One semantic draw command.  clip, z, and vp are baked from the draw state at emit time.
    The union carries the shape parameters; tex_idx == 0 in rect means solid color (white texel).
    rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
@@ -797,7 +801,11 @@ typedef struct
         struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding; u32 tex_idx; u32 abgr; } rect;
         struct { f32 x, y, w, h, t;              f32 rounding;             u32 abgr; } rect_outline;
         struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
-        struct { f32 x, y;  const char* str; u32 len;            u32 abgr; } text;
+        /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
+           last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
+           sentinel (clip_x0 = -IMGUI_TEXT_NO_CLIP, clip_x1 = +IMGUI_TEXT_NO_CLIP) means unclipped
+           and takes the original whole-run fast path. */
+        struct { f32 x, y;  const char* str; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; } text;
         struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
         struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;

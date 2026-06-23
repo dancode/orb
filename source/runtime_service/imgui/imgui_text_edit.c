@@ -674,29 +674,30 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
     }
 
     /* Clip text, selection, and caret to the box interior so scrolled content does not bleed past
-       the border -- but ONLY when it actually would: the field is scrolled, or the text is wider
-       than the visible interior.  A short, unscrolled value fits inside the box on its own, so it
-       needs no scissor and stays merged into the surrounding window batch instead of forcing a
-       draw-call split (the self-fit-over-clips rule -- clip only on real overflow). */
-    f32  edit_vis_w  = box.w - 2.0f * WIDGET_PAD;
-    bool need_clip   = es->scroll_x != 0 || text_x_at( buf, len ) > edit_vis_w;
-    if ( need_clip )
-        draw_push_clip_rect( box.x + WIN_BORDER, box.y + WIN_BORDER,
-                             box.w - 2.0f * WIN_BORDER, box.h - 2.0f * WIN_BORDER );
-
+       the border.  Glyph-level horizontal clip: the scrolled text is hard-cut to the [clip_x0,
+       clip_x1] window at emit time (straddling glyphs sliced with remapped U), so no scissor / no
+       draw-call split -- the field stays merged into the surrounding window batch even when scrolled
+       (the self-fit-over-clips rule, now self-fitting at the glyph rather than the label boundary).
+       The selection rect is clamped to the same window by hand; the caret is kept inside the window
+       by the scroll math above so it never needs clipping. */
     f32 text_x = box.x + WIDGET_PAD - es->scroll_x;
     f32 text_y = text_center_y( box.y, box.h );
+    f32 clip_x0 = box.x + WIDGET_PAD;
+    f32 clip_x1 = box.x + box.w - WIDGET_PAD;
 
-    /* Selection highlight behind the text. */
+    /* Selection highlight behind the text, clamped to the visible window. */
     if ( focused && has_sel )
     {
         f32 sx0 = text_x + text_x_at( buf, sel_lo );
         f32 sx1 = text_x + text_x_at( buf, sel_hi );
-        draw_push_rect_filled( sx0, box.y + 1.0f, sx1 - sx0, box.h - 2.0f,
-                               0, 0, 1, 1, 0, COL_WIDGET_ACT );
+        if ( sx0 < clip_x0 ) sx0 = clip_x0;
+        if ( sx1 > clip_x1 ) sx1 = clip_x1;
+        if ( sx1 > sx0 )
+            draw_push_rect_filled( sx0, box.y + 1.0f, sx1 - sx0, box.h - 2.0f,
+                                   0, 0, 1, 1, 0, COL_WIDGET_ACT );
     }
 
-    draw_push_text( text_x, text_y, COL_TEXT, buf );
+    draw_push_text_clip_n( text_x, text_y, COL_TEXT, buf, 0xFFFFFFFFu, clip_x0, clip_x1 );
 
     /* Blinking caret: visible for the first 0.5 s of each 1 s cycle. */
     if ( focused )
@@ -711,9 +712,6 @@ input_field_edit( imgui_id_t id, imgui_rect_t box, widget_state_t st, char* buf,
                                    0, 0, 1, 1, 0, COL_CURSOR );
         }
     }
-
-    if ( need_clip )
-        draw_pop_clip_rect();
 
     /* Fire the change callback after all rendering so the caller sees the final state. */
     if ( res.changed && on_change )

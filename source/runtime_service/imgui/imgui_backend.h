@@ -106,6 +106,8 @@ void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy
 void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr );
 void draw_push_text             ( f32 x, f32 y, u32 abgr, const char* str );
 void draw_push_text_n           ( f32 x, f32 y, u32 abgr, const char* str, u32 n );
+void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n,
+                                  f32 clip_x0, f32 clip_x1 );
 
 /*==============================================================================================
     GPU resources + flush (imgui_render.c)
