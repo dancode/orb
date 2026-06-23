@@ -35,11 +35,13 @@
     Fonts (imgui_font.c / imgui_font_builtin.c)
 ==============================================================================================*/
 
-bool tt_font_load       ( const char* path );       // load a TrueType font as the active font
-void tt_font_unload     ( void );                   // drop the loaded TrueType font, revert to bitmap
+u32  font_load          ( const char* path );       // load a .orb_font into a new id, activate it (0=fail)
+bool font_load_into     ( u32 id, const char* path );// load a .orb_font into an existing id (id 0 = default)
+void font_use           ( u32 id );                 // make an already-loaded id the active font
+u32  font_active_id     ( void );                   // id of the active font slot (save/restore for push/pop)
 
-void bitmap_font_select ( imgui_font_t font );      // select a built-in bitmap font as active
-void bitmap_scale_set   ( u32 scale );              // integer upscale for the active bitmap font
+void font_set_bitmap    ( imgui_font_t font );      // set the default slot to a built-in bitmap, use it
+void font_set_bmp_scale ( u32 scale );              // integer upscale for the built-in bitmaps
 
 f32  font_char_h        ( void );                   // glyph-box height of the active font (ascent+descent)
 f32  font_line_h        ( void );                   // line advance of the active font

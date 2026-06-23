@@ -559,37 +559,80 @@ imgui_render_floaters( void )
     Font API
 ==============================================================================================*/
 
-/* The font metrics live in the render backend unit; this UI-unit API reads them through the
-   font_em / font_char_h / font_line_h accessors (imgui_backend.h) and feeds layout_compute
-   (this unit) -- the font -> layout bridge.  font_is_tt / font_print_active keep the remaining
-   font internals (s_tt_font, s_bitmap_active) on the backend side. */
+/* The font registry lives in the render backend unit; this UI-unit API drives it through the
+   font_load / font_use accessors (imgui_backend.h) and rebuilds layout from the active font's
+   metrics (font_em / font_char_h / font_line_h) -- the font -> layout bridge. */
 
-bool
+/* Saved active-font ids for push_font / pop_font; small fixed depth -- font pushes are coarse
+   (a section or one widget), not deeply nested. */
+#define IMGUI_FONT_STACK_MAX 8
+static u32 s_font_stack[ IMGUI_FONT_STACK_MAX ];
+static u32 s_font_stack_depth = 0;
+
+/* Rebuild layout metrics from whatever font is now active. */
+static void
+font_relayout( void )
+{
+    layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
+}
+
+u32
 imgui_load_font( const char* path )
 {
-    if ( !tt_font_load( path ) )
-        return false;
+    u32 id = font_load( path );     // loads into a new id and activates it
+    if ( id == 0 )
+        return 0;
+    font_relayout();
+    return id;
+}
 
-    /* Recompute layout metrics from the font's type size, glyph box, and line advance. */
-    layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
+bool
+imgui_set_font_file( u32 id, const char* path )
+{
+    if ( !font_load_into( id, path ) )
+        return false;
+    if ( font_active_id() == id )   // swapping the active font -> layout follows
+        font_relayout();
     return true;
+}
+
+void
+imgui_use_font( u32 id )
+{
+    font_use( id );
+    font_relayout();
+}
+
+void
+imgui_push_font( u32 id )
+{
+    if ( s_font_stack_depth < IMGUI_FONT_STACK_MAX )
+        s_font_stack[ s_font_stack_depth++ ] = font_active_id();
+    imgui_use_font( id );
+}
+
+void
+imgui_pop_font( void )
+{
+    if ( s_font_stack_depth == 0 )
+        return;
+    imgui_use_font( s_font_stack[ --s_font_stack_depth ] );
 }
 
 void
 imgui_set_font( imgui_font_t font )
 {
-    tt_font_unload();
-    bitmap_font_select( font );
-    layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
+    font_set_bitmap( font );
+    font_relayout();
     font_print_active();
 }
 
 void
 imgui_set_bmp_scale( u32 scale )
 {
-    bitmap_scale_set( scale );
+    font_set_bmp_scale( scale );
     if ( !font_is_tt() )
-        layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
+        font_relayout();
 }
 
 /*==============================================================================================

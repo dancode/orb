@@ -31,6 +31,10 @@
 
 #define IMGUI_DASH_PATTERN_COUNT 4
 
+/* Capacity of the loaded-font registry (imgui_font.c).  Slot 0 is the default/fallback; loaded
+   TrueType fonts occupy ids 1..IMGUI_FONT_REGISTRY_MAX-1. */
+#define IMGUI_FONT_REGISTRY_MAX 16
+
 /* On-fraction (dash / period) of each baked row; a dashed line picks the nearest at tess time. */
 static const f32 s_dash_duty[ IMGUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
 
@@ -41,8 +45,8 @@ static const f32 s_dash_duty[ IMGUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f,
 /* Pre-resolved metrics shared by both font sources; callers read from s_font. */
 typedef struct
 {
-    f32  char_h;        // pixel height of the glyph box (ascent + descent)
     f32  line_h;        // total line advance
+    f32  char_h;        // pixel height of the glyph box (ascent + descent)
     f32  char_w;        // monospace advance (0 for proportional fonts)
     f32  size;          // nominal type size (em) in pixels -- the base for layout proportions
     u32  atlas_idx;     // bindless texture index
@@ -61,6 +65,7 @@ typedef struct
 /* Paint the dash pattern rows into `pixels` (R8, width `w`) starting at pixel row `row0`.  Shared
    by the TrueType and bitmap atlas builders; each row's center V is resolved at metrics time via
    font_dash_row_v below. */
+
 static void
 font_paint_dash_rows( u8* pixels, u32 w, u32 row0 )
 {
@@ -76,6 +81,7 @@ font_paint_dash_rows( u8* pixels, u32 w, u32 row0 )
 }
 
 /* Fill metrics.dash_v[]: pattern row p sits at pixel row row0 + p in a `tex_h`-tall upload. */
+
 static void
 font_dash_row_v( f32* dash_v, u32 row0, u32 tex_h )
 {
@@ -197,16 +203,24 @@ static void bitmap_show_sizes()
 
 }
 
+/*==============================================================================================
+    Font Globals
+==============================================================================================*/
+
 static bitmap_font_t*   s_bitmap_active     = NULL;
 static imgui_font_t     s_bmp_font          = IMGUI_FONT_BITMAP_16;
 static u32              s_bmp_scale         = 1;
+
+/*==============================================================================================
+    Font Globals
+==============================================================================================*/
 
 void
 bitmap_font_select( imgui_font_t font )
 {
     /* Out-of-range requests fall back to the default 8x12 atlas. */
-    if ( (u32)font >= IMGUI_FONT_BITMAP_MAX )
-        font = IMGUI_FONT_BITMAP_12;
+    if ( font >= IMGUI_FONT_BITMAP_MAX )
+         font  = IMGUI_FONT_BITMAP_12;
 
     s_bmp_font      = font;
     s_bitmap_active = &s_bitmaps[ font ];
@@ -233,7 +247,8 @@ bitmap_font_select( imgui_font_t font )
     };
     /* Dash pattern rows follow the white row at pixel row atlas_h + 1. */
     font_dash_row_v( s_bitmap_active->metrics.dash_v, def->atlas_h + 1u, s_bitmap_active->tex_h );
-    s_font = &s_bitmap_active->metrics;
+    /* The active-font pointer (s_font) is owned by the registry in imgui_font.c; this routine
+       only resolves the selected bitmap's metrics into s_bitmap_active->metrics. */
 }
 
 void

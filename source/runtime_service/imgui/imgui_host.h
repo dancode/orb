@@ -32,7 +32,7 @@ imgui_mem_stats_t imgui_mem_stats( void );
 void imgui_print_mem_stats( void );
 
 /* font */
-bool imgui_load_font( const char* path );
+u32  imgui_load_font( const char* path );
 
 /* frame */
 void imgui_new_frame( f32 dt );
@@ -253,6 +253,10 @@ void imgui_help_marker( const char* text );
 /* font */
 void imgui_set_font      ( imgui_font_t font );
 void imgui_set_bmp_scale ( u32 scale );
+bool imgui_set_font_file ( u32 id, const char* path );
+void imgui_use_font      ( u32 id );
+void imgui_push_font     ( u32 id );
+void imgui_pop_font      ( void );
 
 /* drawing */
 void imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );

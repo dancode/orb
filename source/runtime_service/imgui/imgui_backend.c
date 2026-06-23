@@ -16,7 +16,7 @@
 
     imgui_shader.h            -- embedded SPIR-V arrays (s_imgui_vert_spirv, s_imgui_frag_spirv)
     imgui_font_builtin.c      -- hardcoded bitmap fonts: bitmap_font_def_t/t, bitmap_atlas_*, s_bitmap_*
-    imgui_font.c              -- font management + dispatch: tt_font_t, tt_font_load, font_glyph, font_*
+    imgui_font.c              -- font registry + dispatch: font_slot_t, font_load/use, font_glyph, font_*
     imgui_draw.c              -- CPU draw list: draw_reset, draw_push_*, s_draw
     imgui_draw_path.c         -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
     imgui_render_tess.c       -- CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers

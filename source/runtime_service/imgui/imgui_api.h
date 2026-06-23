@@ -33,12 +33,12 @@ typedef struct imgui_api_s
     /* GPU resource lifecycle.
        init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
        shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
-       load_font() -- load a pre-baked .orb_font atlas; call after init().
-                      Returns true on success; falls back to bitmap font on failure. */
+       load_font() -- load a pre-baked .orb_font atlas into a new font id and make it active;
+                      call after init().  Returns the new id (>= 1), or 0 on failure. */
 
     bool ( *init      )( void );
     void ( *shutdown  )( void );
-    bool ( *load_font )( const char* path );
+    u32  ( *load_font )( const char* path );
 
     /* GPU resource memory currently held by imgui, in bytes (buffers + atlases).
        print_mem_stats() dumps the same breakdown to stdout. */
@@ -723,14 +723,25 @@ typedef struct imgui_api_s
     void ( *indent    )( f32 w );
     void ( *unindent  )( f32 w );
 
-    /* Font -- select the active font; call between frames (outside new_frame / render).
-       set_font()      -- select a built-in bitmap font; also unloads any active TrueType font.
-                         Widget layout dimensions are recomputed from the new font's char_h.
-       set_bmp_scale() -- integer pixel-scale multiplier for bitmap fonts (1 = native, 2 = 2x, ...).
-                         Has no effect on TrueType fonts.  Recomputes layout immediately. */
+    /* Font -- select / load fonts; call between frames (outside new_frame / render), except
+       push_font / pop_font which may bracket a section or widget mid-frame.
+
+       Fonts live in an id-addressed registry.  Slot 0 is the default / fallback (a built-in
+       bitmap to start).  load_font() loads a .orb_font into a fresh id; set_font_file() loads one
+       into an existing id (id 0 swaps the default).  use_font() makes a loaded id active; another
+       context can select its own font this way.  push_font() / pop_font() bracket a temporary
+       font and restore the previous one.  Each load_font/set_font_file uses its own bindless
+       texture.  Widget layout dimensions follow the active font's metrics.
+
+       set_font()      -- set the default (id 0) to a built-in bitmap font and use it.
+       set_bmp_scale() -- integer pixel-scale multiplier for built-in bitmaps (1 = native, 2 = 2x). */
 
     void ( *set_font      )( imgui_font_t font );
     void ( *set_bmp_scale )( u32 scale );
+    bool ( *set_font_file )( u32 id, const char* path );
+    void ( *use_font      )( u32 id );
+    void ( *push_font     )( u32 id );
+    void ( *pop_font      )( void );
 
     /* Low-level draw list access -- may be called anywhere between new_frame and render.
        draw_rect and draw_text push geometry directly into the draw list.
