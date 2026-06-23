@@ -58,12 +58,15 @@ static struct
     radius and offset to the corner centre with per-corner axis signs -- the cached unit arc is the
     basis of the emit transform.  No sin / cos runs per rect; only once, on first use.
 
-    Quality is fixed at IMGUI_ROUND_SEGS segments per corner (32 per full turn) -- smooth for the
-    small radii a UI uses, and the fixed count is precisely what lets the table be reused.
+    Segment count adapts to the radius (round_rect_segs): a small widget corner is visually
+    indistinguishable at 2 segments, so it needs far fewer triangles than a large window corner.
+    The count is kept to a divisor of IMGUI_ROUND_SEGS so a coarser arc is just the full table
+    STRIDED (k * IMGUI_ROUND_SEGS/segs) -- a full quarter at lower resolution with no extra trig,
+    so the single cached table still serves every tier.
 ----------------------------------------------------------------------------------------------*/
 
-#define IMGUI_ROUND_SEGS 8
-#define IMGUI_ROUND_PTS  ( 4 * ( IMGUI_ROUND_SEGS + 1 ) )   /* perimeter point count */
+#define IMGUI_ROUND_SEGS 8                                  /* max segments per corner (finest tier) */
+#define IMGUI_ROUND_PTS  ( 4 * ( IMGUI_ROUND_SEGS + 1 ) )   /* perimeter point count at the finest tier */
 
 static f32  s_arc_cos[ IMGUI_ROUND_SEGS + 1 ];
 static f32  s_arc_sin[ IMGUI_ROUND_SEGS + 1 ];
@@ -82,24 +85,38 @@ round_arc_init( void )
     s_arc_ready = true;
 }
 
-/* Build the rounded-rect perimeter, clockwise, into out[] (capacity IMGUI_ROUND_PTS).  Each corner
-   reuses the cached unit arc scaled by r and translated to its centre; the straight edges fall out
-   between adjacent corners' shared endpoints.  Returns the point count (always IMGUI_ROUND_PTS). */
+/* Segments per corner for a given radius -- restricted to divisors of IMGUI_ROUND_SEGS so the
+   cached unit arc can be strided (see the note above).  Small corners drop to 2 segments (a
+   visually clean bevel at a few pixels), mid radii to 4, large to the full 8. */
 static u32
-round_rect_perimeter( f32 x, f32 y, f32 w, f32 h, f32 r, imgui_vec2_t* out )
+round_rect_segs( f32 r )
+{
+    if ( r <= 3.0f ) return 2;
+    if ( r <= 6.0f ) return 4;
+    return IMGUI_ROUND_SEGS;   /* 8 -- large (window) corners */
+}
+
+/* Build the rounded-rect perimeter, clockwise, into out[] (capacity IMGUI_ROUND_PTS).  Each corner
+   reuses the cached unit arc -- strided by IMGUI_ROUND_SEGS/segs so `segs` (a divisor of
+   IMGUI_ROUND_SEGS) gives a full quarter at that resolution -- scaled by r and translated to its
+   centre; the straight edges fall out between adjacent corners' shared endpoints.  Returns the
+   point count, 4 * (segs + 1). */
+static u32
+round_rect_perimeter( f32 x, f32 y, f32 w, f32 h, f32 r, u32 segs, imgui_vec2_t* out )
 {
     round_arc_init();
+    u32 st = IMGUI_ROUND_SEGS / segs;          /* table stride; segs divides IMGUI_ROUND_SEGS */
     f32 xl = x + r,       yt = y + r;          /* near-corner arc centres */
     f32 xr = x + w - r,   yb = y + h - r;      /* far-corner arc centres  */
     u32 n = 0;
-    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )   /* top-right: up   -> right */
-        out[ n++ ] = v2( xr + r * s_arc_sin[ k ], yt - r * s_arc_cos[ k ] );
-    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )   /* bottom-right: right -> down */
-        out[ n++ ] = v2( xr + r * s_arc_cos[ k ], yb + r * s_arc_sin[ k ] );
-    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )   /* bottom-left: down  -> left */
-        out[ n++ ] = v2( xl - r * s_arc_sin[ k ], yb + r * s_arc_cos[ k ] );
-    for ( u32 k = 0; k <= IMGUI_ROUND_SEGS; ++k )   /* top-left: left   -> up   */
-        out[ n++ ] = v2( xl - r * s_arc_cos[ k ], yt - r * s_arc_sin[ k ] );
+    for ( u32 k = 0; k <= segs; ++k )   /* top-right: up   -> right */
+        out[ n++ ] = v2( xr + r * s_arc_sin[ k * st ], yt - r * s_arc_cos[ k * st ] );
+    for ( u32 k = 0; k <= segs; ++k )   /* bottom-right: right -> down */
+        out[ n++ ] = v2( xr + r * s_arc_cos[ k * st ], yb + r * s_arc_sin[ k * st ] );
+    for ( u32 k = 0; k <= segs; ++k )   /* bottom-left: down  -> left */
+        out[ n++ ] = v2( xl - r * s_arc_sin[ k * st ], yb + r * s_arc_cos[ k * st ] );
+    for ( u32 k = 0; k <= segs; ++k )   /* top-left: left   -> up   */
+        out[ n++ ] = v2( xl - r * s_arc_cos[ k * st ], yt - r * s_arc_sin[ k * st ] );
     return n;
 }
 
@@ -278,7 +295,7 @@ tess_round_rect_filled( f32 x, f32 y, f32 w, f32 h, f32 r, u32 abgr )
     y = floorf( y + 0.5f );
 
     static imgui_vec2_t per[ IMGUI_ROUND_PTS ];   /* single-threaded backend; avoids a stack frame */
-    u32 m = round_rect_perimeter( x, y, w, h, r, per );
+    u32 m = round_rect_perimeter( x, y, w, h, r, round_rect_segs( r ), per );
 
     u32 nv = m + 1, ni = m * 3;                   /* centre vertex + one fan triangle per edge */
     f32 wu, wv;
@@ -313,7 +330,7 @@ static void
 tess_round_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 r, f32 t, u32 abgr )
 {
     static imgui_vec2_t per[ IMGUI_ROUND_PTS ];
-    u32 m          = round_rect_perimeter( x, y, w, h, r, per );
+    u32 m          = round_rect_perimeter( x, y, w, h, r, round_rect_segs( r ), per );
     f32 center_off = stroke_center_offset( IMGUI_STROKE_INSIDE, t * 0.5f );
     tess_stroke_poly_aa( per, m, t, center_off, true, abgr );
 }
