@@ -665,6 +665,38 @@ demo_windows( void )
         imgui()->text( "cannot be moved or resized." );
     }
     imgui()->end_window();
+
+    /* A closeable window: the X at the title bar's right edge hides it.  Re-opening is the host's
+       job -- the control window below offers a button that calls set_window_open. */
+    imgui()->set_next_window_pos ( 500, 120, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 260, 150, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Closeable", IMGUI_WIN_CLOSEABLE ) )
+    {
+        imgui()->stack();
+        imgui()->text( "IMGUI_WIN_CLOSEABLE" );
+        imgui()->text( "Click the X to close me," );
+        imgui()->text( "then re-open from the control" );
+        imgui()->text( "window below." );
+    }
+    imgui()->end_window();
+
+    /* Control window: shows the closeable window's state and re-opens it on demand.  The button is
+       disabled while the window is already open, so the only way to open it is after the X closed it. */
+    imgui()->set_next_window_pos ( 500, 290, IMGUI_COND_ONCE );
+    imgui()->set_next_window_size( 260, 110, IMGUI_COND_ONCE );
+    if ( imgui()->begin_window( "Window Control", IMGUI_WIN_NONE ) )
+    {
+        bool open = imgui()->is_window_open( "Closeable" );
+
+        imgui()->stack();
+        imgui()->textf( "Closeable window is %s.", open ? "open" : "closed" );
+
+        imgui()->begin_disabled( open );
+        if ( imgui()->button( "Open Closeable window" ) )
+            imgui()->set_window_open( "Closeable", true );
+        imgui()->end_disabled();
+    }
+    imgui()->end_window();
 }
 
 /*==============================================================================================

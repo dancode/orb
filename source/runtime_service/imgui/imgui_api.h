@@ -182,6 +182,13 @@ typedef struct imgui_api_s
     bool ( *begin_window )( const char* title, imgui_win_flags_t flags );
     void ( *end_window   )( void );
 
+    /* set_window_open / is_window_open -- drive a CLOSEABLE window's visibility by title (the same
+       key begin_window hashes).  The window's close (X) button hides it; the host re-opens it by
+       calling set_window_open( title, true ) from a button.  is_window_open reports the current
+       state (a window with no record yet -- never begun -- reads as open). */
+    void ( *set_window_open )( const char* title, bool open );
+    bool ( *is_window_open  )( const char* title );
+
     /* Docking -- tile + tab windows into a dock tree that fills a viewport (the DockSpaceOverViewport
        analogue).  Phase 1 is programmatic: build a layout in code, then windows whose titles were
        dock_window'd render into their node (no per-window title bar -- the node draws a shared tab

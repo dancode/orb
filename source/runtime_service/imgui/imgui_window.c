@@ -93,6 +93,7 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->z         = ++s_z_counter;
     win->viewport  = s_build.cur_viewport;   /* inherit ambient; set_next_window_viewport overrides */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
+    win->closed    = false;   /* a freshly seen window starts open                */
 
     /* Next-window state for a fresh window: never begun (so the first begin is "appearing"), and
        ONCE / ALWAYS permitted but APPEARING withheld -- begin_window grants APPEARING only on the
@@ -286,6 +287,31 @@ void
 imgui_set_window_drag( imgui_win_drag_t mode )
 {
     s_win_drag_mode = mode;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Closeable windows -- open / query a window's hidden state by title.
+
+    A CLOSEABLE window's close (X) button sets win->closed, hiding the window until the host
+    re-opens it.  These reach the record by id_hash(title) -- the same key begin_window uses --
+    so the host can drive the open state from a button without holding its own flag.  A window
+    that has never been begun has no record yet; set_window_open then no-ops (it already opens
+    by default on first begin) and is_window_open reports it open.
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_set_window_open( const char* title, bool open )
+{
+    imgui_window_t* win = window_find( id_hash( title ) );
+    if ( win )
+        win->closed = !open;
+}
+
+bool
+imgui_is_window_open( const char* title )
+{
+    imgui_window_t* win = window_find( id_hash( title ) );
+    return !win || !win->closed;
 }
 
 // clang-format on

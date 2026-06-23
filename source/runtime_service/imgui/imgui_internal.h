@@ -177,6 +177,7 @@ typedef struct imgui_window_t
     f32        content_w;       /* total content width measured last frame        */
 
     bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
+    bool       closed;          /* CLOSEABLE: hidden by the X until re-opened      */
 
     imgui_win_flags_t flags;    /* behavior flags supplied to begin_window        */
 

@@ -31,6 +31,9 @@
 /* Detach / reattach button (title-bar right edge): a distinct stable per-window widget id. */
 #define IMGUI_DETACH_SALT     0xDE7AC405u
 
+/* Close button (title-bar right edge, outermost): a distinct stable per-window widget id. */
+#define IMGUI_CLOSE_SALT      0xC105E00Du
+
 /* Native caption buttons (min / max / close / pop-in): one base salt offset by the button kind so
    each gets a distinct, stable per-window widget id (see native_caption_buttons below). */
 #define IMGUI_NATIVE_BTN_SALT 0xCA9710B0u
@@ -406,6 +409,19 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     /* x/y/w/h are the initial geometry; the registry owns position after that. */
     imgui_window_t* win = window_get( id, x, y, w, h );
     win->flags          = flags;
+    s_build.win_hidden  = false;   /* default; the CLOSEABLE branch below flips it */
+
+    /* Closeable + closed: the window is fully hidden this frame -- no chrome, no body, no hover.
+       begin returns false (the caller skips its widgets) and end_window early-outs on win_hidden.
+       The record persists with its geometry intact, so set_window_open revives it where it was.
+       Tested before the dock lookup so a closed window leaves any node it was tabbed into, too. */
+    if ( ( flags & IMGUI_WIN_CLOSEABLE ) && win->closed )
+    {
+        win->last_frame      = s_retained.frame;   /* keep the appearing test honest on re-open */
+        s_build.win_hidden   = true;
+        s_build.cur_dock_node = NULL;
+        return false;
+    }
 
     /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
     if ( win->viewport > 0 && !rhi_handle_valid( g_ctx->viewports[ win->viewport ].vb ) )
@@ -776,6 +792,14 @@ vp_request_button( imgui_window_t* win )
 void
 imgui_end_window( void )
 {
+    /* Closed CLOSEABLE window: begin_window emitted nothing (no region, no clip, no chrome), so
+       there is nothing to balance here -- just consume the latch and return. */
+    if ( s_build.win_hidden )
+    {
+        s_build.win_hidden = false;
+        return;
+    }
+
     imgui_window_t* win = s_build.cur_win;
 
     /* Docked window: the node owns chrome, not the free-float path below.  An inactive tab opened
@@ -856,16 +880,48 @@ imgui_end_window( void )
                 win->collapsed = !win->collapsed;
         }
 
+        /* Right-edge title-bar buttons march leftward from the bar's right edge: the close (X)
+           first (outermost) when CLOSEABLE, then the detach / reattach box.  btn_x tracks the next
+           free slot; right_limit follows it so the title text always stops clear of the buttons.
+           Native windows use their OS caption buttons instead (drawn below), so both are skipped. */
+        f32 right_limit = s_build.win_x + s_build.win_w - WIDGET_PAD;
+        f32 btn_x       = s_build.win_x + s_build.win_w;
+
+        /* Close button: an X that hides the window.  A click sets win->closed, taking effect next
+           frame like the collapse toggle; from then on begin_window returns false and the window
+           draws nothing until the host re-opens it (set_window_open).  Suppressed for native
+           windows, which get the OS close caption button. */
+        if ( ( s_build.win_flags & IMGUI_WIN_CLOSEABLE ) && !native )
+        {
+            btn_x -= title_h;
+            imgui_rect_t   cl_r  = { btn_x, s_build.win_y, title_h, title_h };
+            imgui_id_t     cl_id = id_combine( s_build.win_id, IMGUI_CLOSE_SALT );
+            widget_state_t cl_st = widget_behavior( cl_id, cl_r, WIDGET_KIND_BUTTON );
+
+            /* Hover/press background so the control reads as clickable (the glyph stays square). */
+            if ( cl_st.hover || cl_st.active )
+            {
+                draw_set_rounding( ROUND_WIDGET );
+                draw_push_rect_filled( cl_r.x, cl_r.y, cl_r.w, cl_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+            }
+            draw_close_x( cl_r, cl_st.hover ? COL_TEXT : COL_TEXT_DIM );
+
+            if ( cl_st.clicked && win )
+                win->closed = true;
+
+            right_limit = cl_r.x - WIDGET_PAD;
+        }
+
         /* Detach / reattach button: a square at the title bar's right edge that pops the window out
            into its own OS window (when it sits on the main surface) or back into the main surface
            (when it is floating).  Movable windows only -- NOMOVE (popups, modals, fixed panels)
            never show it.  Mirrors the collapse arrow on the left: claiming hover/active here keeps
            the title-bar drag and double-click-collapse from also firing on the same press. */
-        f32 right_limit = s_build.win_x + s_build.win_w - WIDGET_PAD;
         if ( !( s_build.win_flags & IMGUI_WIN_NOMOVE ) && !( s_build.win_flags & IMGUI_WIN_NO_DETACH )
              && !native )
         {
-            imgui_rect_t   det_r  = { s_build.win_x + s_build.win_w - title_h, s_build.win_y, title_h, title_h };
+            btn_x -= title_h;
+            imgui_rect_t   det_r  = { btn_x, s_build.win_y, title_h, title_h };
             imgui_id_t     det_id = id_combine( s_build.win_id, IMGUI_DETACH_SALT );
             widget_state_t det_st = widget_behavior( det_id, det_r, WIDGET_KIND_BUTTON );
             if ( det_st.clicked )

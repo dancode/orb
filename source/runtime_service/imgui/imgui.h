@@ -416,6 +416,14 @@ typedef enum
     IMGUI_WIN_NO_MAXIMIZE       = 1 << 16,   /* native: no maximize / restore caption button */
     IMGUI_WIN_NO_DETACH         = 1 << 17,   /* no pop-out: hide detach button, block tear-off drag */
 
+    /* Closeable -- add a close (X) button at the title bar's right edge.  Clicking it hides the
+       window: begin_window returns false and emits nothing from then on, and the record persists
+       so the window keeps its position / size while closed.  Re-opening is the caller's job --
+       offer a button that calls set_window_open( title, true ).  A native window uses its OS close
+       caption button instead, so this flag only adds the X to a regular (non-native) panel. */
+
+    IMGUI_WIN_CLOSEABLE         = 1 << 19,   /* show a close (X) button; hidden until re-opened */
+
     /* Placement is managed externally (docking layout, animation, scripted snap).  Bypasses both
        the per-drag margin clamp (window_clamp) and the merge-back fit-inside clamp so the system
        can position and size the window freely without imgui fighting the placement.  Without this

@@ -66,6 +66,8 @@ void imgui_set_next_window_viewport( imgui_vp_t vp );
 void imgui_set_next_window_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
 bool imgui_begin_window( const char* title, imgui_win_flags_t flags );
 void imgui_end_window( void );
+void imgui_set_window_open( const char* title, bool open );
+bool imgui_is_window_open( const char* title );
 
 /* docking */
 imgui_dock_id_t imgui_dockspace_over_viewport( imgui_vp_t vp, imgui_dockspace_flags_t flags );

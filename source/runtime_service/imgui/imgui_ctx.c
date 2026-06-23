@@ -90,6 +90,7 @@ static struct
     imgui_id_t  win_id;             // id of the window currently between begin/end_window
     const char* win_title;          // title string, cached for end_window's deferred chrome
     bool        win_collapsed;      // current window is collapsed (title bar only this frame)
+    bool        win_hidden;         // current window is CLOSEABLE + closed: begin emitted nothing, end early-outs
     imgui_win_flags_t win_flags;    // current window's behavior flags (begin_window arg)
     f32         win_title_h;        // current window's title bar height (0 if NOTITLEBAR)
     u8          win_resize_hot;     // resize edges hot this frame -- suppresses widget hover
