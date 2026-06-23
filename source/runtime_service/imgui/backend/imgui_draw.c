@@ -284,6 +284,13 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
 {
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
+    /* Fully transparent fills contribute nothing under alpha blending (src*0 + dst = dst).
+       Drop them before they cost a command + triangles -- e.g. a hidden window body whose
+       COL_WINDOW_BG was pushed to alpha 0, as the perf overlay does. Also covers a textured
+       quad tinted to zero alpha, which is likewise invisible. */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
     imgui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type         = IMGUI_CMD_RECT_FILLED;
     c->clip         = draw_current_clip();
@@ -298,7 +305,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     c->rect.u1      = u1;
     c->rect.v1      = v1;
     c->rect.tex_idx = tex_idx;
-    c->rect.abgr    = draw_apply_alpha( abgr );
+    c->rect.abgr    = col;
     /* Round solid-color fills only; a textured quad (glyph / image) keeps square UVs. */
     c->rect.rounding = ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f;
 }
@@ -340,6 +347,10 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     (void)tex_idx;   /* outlines are always solid-color; tessellation uses the white texel */
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
+    /* Skip a fully transparent border (e.g. the perf overlay pushes COL_BORDER to alpha 0). */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
     imgui_cmd_t* c       = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type              = IMGUI_CMD_RECT_OUTLINE;
     c->clip              = draw_current_clip();
@@ -350,7 +361,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     c->rect_outline.w    = w;
     c->rect_outline.h    = h;
     c->rect_outline.t    = t;
-    c->rect_outline.abgr = draw_apply_alpha( abgr );
+    c->rect_outline.abgr = col;
     c->rect_outline.rounding = draw_clamp_rounding( w, h );
 }
 
