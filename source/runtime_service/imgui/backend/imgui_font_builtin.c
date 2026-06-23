@@ -51,6 +51,9 @@ typedef struct
     f32  white_u;       // UV of a guaranteed-opaque texel in this atlas (solid-fill draws)
     f32  white_v;       // sampling it gives r=1.0 so the vertex color drives the draw
 
+    f32  inv_atlas_w;   // 1 / atlas pixel width        -- precomputed so font_glyph avoids a divide
+    f32  inv_atlas_h;   // 1 / uploaded atlas height (tex_h) -- per-glyph UV scale, constant per font
+
     f32  dash_v[ IMGUI_DASH_PATTERN_COUNT ]; // center V of each appended dash pattern row
 
 } font_metrics_t;
@@ -224,6 +227,9 @@ bitmap_font_select( imgui_font_t font )
         /* White texel: center of the first appended row (pixel row atlas_h). */
         .white_u      = 0.5f / (f32)def->atlas_w,
         .white_v      = ( (f32)def->atlas_h + 0.5f ) / (f32)s_bitmap_active->tex_h,
+        /* Per-glyph UV scale, constant per font -- folds the divide out of font_glyph. */
+        .inv_atlas_w  = 1.0f / (f32)def->atlas_w,
+        .inv_atlas_h  = 1.0f / (f32)s_bitmap_active->tex_h,
     };
     /* Dash pattern rows follow the white row at pixel row atlas_h + 1. */
     font_dash_row_v( s_bitmap_active->metrics.dash_v, def->atlas_h + 1u, s_bitmap_active->tex_h );

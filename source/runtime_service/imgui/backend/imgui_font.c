@@ -174,6 +174,9 @@ tt_font_load( const char* path )
         /* White texel: center of the first appended row (pixel row hdr.atlas_h). */
         .white_u      = 0.5f / (f32)hdr.atlas_w,
         .white_v      = ( (f32)hdr.atlas_h + 0.5f ) / (f32)tex_h,
+        /* Per-glyph UV scale, constant per font -- folds the divide out of font_glyph. */
+        .inv_atlas_w  = 1.0f / (f32)hdr.atlas_w,
+        .inv_atlas_h  = 1.0f / (f32)tex_h,
     };
     /* Dash pattern rows follow the white row at pixel row hdr.atlas_h + 1. */
     font_dash_row_v( s_tt_font.metrics.dash_v, hdr.atlas_h + 1u, tex_h );
@@ -346,8 +349,8 @@ font_glyph( u8 ch,
         if ( ch < 32 || ch > 126 ) ch = (u8)'?';
         const orb_font_glyph_t* g = &s_tt_font.lookup[ ch - 32 ];
 
-        f32 iw = 1.0f / (f32)s_tt_font.atlas_w;
-        f32 ih = 1.0f / (f32)s_tt_font.atlas_h;
+        f32 iw = s_font->inv_atlas_w;   /* precomputed at load -- no per-glyph divide */
+        f32 ih = s_font->inv_atlas_h;
         *u0 = (f32)g->atlas_x * iw;
         *v0 = (f32)g->atlas_y * ih;
         *u1 = *u0 + (f32)g->w * iw;
@@ -369,13 +372,15 @@ font_glyph( u8 ch,
         u32 col = idx % def->glyphs_row;
         u32 row = idx / def->glyphs_row;
 
-        /* V divides by the padded upload height (tex_h), not the glyph-grid height,
-           so the appended white row stays outside every glyph's UV range. */
-        f32 tex_h = (f32)s_bitmap_active->tex_h;
-        *u0 = (f32)( col * def->glyph_w ) / (f32)def->atlas_w;
-        *v0 = (f32)( row * def->glyph_h ) / tex_h;
-        *u1 = *u0 + (f32)def->glyph_w     / (f32)def->atlas_w;
-        *v1 = *v0 + (f32)def->glyph_h     / tex_h;
+        /* V scales by 1/tex_h (the padded upload height), not the glyph-grid height, so the
+           appended white row stays outside every glyph's UV range.  Both scales are precomputed
+           per font (inv_atlas_w / inv_atlas_h), so this is multiplies, not per-glyph divides. */
+        f32 iw = s_font->inv_atlas_w;
+        f32 ih = s_font->inv_atlas_h;
+        *u0 = (f32)( col * def->glyph_w ) * iw;
+        *v0 = (f32)( row * def->glyph_h ) * ih;
+        *u1 = *u0 + (f32)def->glyph_w     * iw;
+        *v1 = *v0 + (f32)def->glyph_h     * ih;
 
         *ox      = 0.0f;
         *oy      = 0.0f;
