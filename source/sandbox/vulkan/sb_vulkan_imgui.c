@@ -676,7 +676,9 @@ demo_windows( void )
         imgui()->text( "IMGUI_WIN_CLOSEABLE" );
         imgui()->text( "Click the X to close me," );
         imgui()->text( "then re-open from the control" );
-        imgui()->text( "window below." );
+        imgui()->text( "window below.  Detach me first" );
+        imgui()->text( "and close: I re-open as a" );
+        imgui()->text( "floater in the same spot." );
     }
     imgui()->end_window();
 

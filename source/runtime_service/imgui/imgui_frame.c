@@ -357,6 +357,8 @@ imgui_update_platform_windows( void )
     {
         s_vp_request.active     = false;
         imgui_window_t* win     = window_find( s_vp_request.win_id );
+        bool            has_home = s_vp_request.has_home;
+        s_vp_request.has_home   = false;   /* one-shot: never leak into a later drag tear-off */
         if ( win && s_vp_request.from_vp == 0 )
         {
             /* Tear the window off the main surface into its own floater.  Placement depends on how
@@ -379,6 +381,12 @@ imgui_update_platform_windows( void )
                 sx = cx - (i32)s_drag_off_x;
                 sy = cy - (i32)s_drag_off_y;
             }
+            else if ( has_home )
+            {
+                /* Re-opening a closed floater: land at the saved RESTORE (normal) position. */
+                sx = win->home_x;
+                sy = win->home_y;
+            }
             else
             {
                 i32 mx = 0, my = 0;
@@ -387,8 +395,13 @@ imgui_update_platform_windows( void )
                 sy = my + (i32)win->y;
             }
 
+            /* Re-open spawns at the saved restore size so the OS restore rect is the previous normal
+               size; a plain tear-off spawns at the window's current size. */
+            i32 sw = has_home ? (i32)win->restore_w : (i32)win->w;
+            i32 sh = has_home ? (i32)win->restore_h : (i32)win->h;
+
             imgui_vp_t vp = viewport_spawn( s_vp_request.title ? s_vp_request.title : "panel",
-                                            sx, sy, (i32)win->w, (i32)win->h, s_vp_request.by_drag );
+                                            sx, sy, sw, sh, s_vp_request.by_drag );
             if ( vp != IMGUI_VP_INVALID )
             {
                 /* window_open positions the FRAME; set_pos lands the CLIENT corner on (sx,sy). */
@@ -396,6 +409,11 @@ imgui_update_platform_windows( void )
                 win->viewport = (u32)vp;
                 win->x        = 0.0f;
                 win->y        = 0.0f;
+
+                /* Re-maximize a floater that was closed maximized: spawned at the restore rect first
+                   (above), so the OS restore target becomes the previous normal size. */
+                if ( has_home && win->reopen_maximized )
+                    app()->window_maximize( g_ctx->viewports[ vp ].win_id );
             }
         }
         else if ( win )

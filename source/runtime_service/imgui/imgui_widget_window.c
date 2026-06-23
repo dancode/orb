@@ -159,7 +159,7 @@ typedef enum
 
 } native_btn_kind_t;
 
-#define NATIVE_BTN_MAX 3
+#define NATIVE_BTN_MAX 4
 
 typedef struct
 {
@@ -187,6 +187,16 @@ native_caption_buttons( const imgui_window_t* win, imgui_win_flags_t flags,
 
     f32 x = win_x + win_w;   /* march leftward from the right edge */
     i32 n = 0;
+
+    /* A CLOSEABLE floater gets a close (X) as the outermost button, in addition to its pop-in
+       primary -- closing hides the window (and frees its OS surface) while pop-in merges it back
+       into the main surface.  The main window's primary is already close, so the flag adds nothing
+       there. */
+    if ( floater && ( flags & IMGUI_WIN_CLOSEABLE ) )
+    {
+        x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_CLOSE };
+    }
+
     x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, primary };
     if ( !( flags & IMGUI_WIN_NO_MAXIMIZE ) )
     {
@@ -414,14 +424,44 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     /* Closeable + closed: the window is fully hidden this frame -- no chrome, no body, no hover.
        begin returns false (the caller skips its widgets) and end_window early-outs on win_hidden.
        The record persists with its geometry intact, so set_window_open revives it where it was.
-       Tested before the dock lookup so a closed window leaves any node it was tabbed into, too. */
+       Tested before the dock lookup so a closed window leaves any node it was tabbed into, too.
+
+       last_frame is deliberately NOT refreshed here: a closed floater must read as "abandoned" so
+       update_platform_windows tears down its OS window (reverting the record to viewport 0).  A
+       closed panel lives on viewport 0, which the teardown loop never touches, so freezing its
+       last_frame is harmless -- the appearing test simply re-fires once on re-open. */
     if ( ( flags & IMGUI_WIN_CLOSEABLE ) && win->closed )
     {
-        win->last_frame      = s_retained.frame;   /* keep the appearing test honest on re-open */
         s_build.win_hidden   = true;
         s_build.cur_dock_node = NULL;
         return false;
     }
+
+    /* Re-open of a CLOSEABLE floater: closing one let the abandoned-teardown free its OS window and
+       revert this record to viewport 0.  Re-spawn it as a floater at its saved screen position via
+       the tear-off request -- the title is in hand here, which update_platform_windows needs to label
+       the OS window.  Stay hidden this one frame until the surface exists so it never flashes on the
+       main surface at (0,0); last_frame IS stamped so the fresh floater is not read as abandoned. */
+    if ( win->reopen_floater && win->viewport == 0 && !s_vp_request.active )
+    {
+        win->reopen_floater   = false;
+        s_vp_request.active   = true;
+        s_vp_request.by_drag  = false;
+        s_vp_request.win_id   = id;
+        s_vp_request.from_vp  = 0;
+        s_vp_request.title    = title;
+        s_vp_request.has_home = true;   /* spawn reads restore geometry + maximized from the record */
+
+        win->last_frame      = s_retained.frame;
+        s_build.win_hidden   = true;
+        s_build.cur_dock_node = NULL;
+        return false;
+    }
+
+    /* Already restored on a surface of its own: clear any stale re-open flag (e.g. the floater was
+       re-opened within the teardown grace window, before its viewport reverted). */
+    if ( win->viewport != 0 )
+        win->reopen_floater = false;
 
     /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
     if ( win->viewport > 0 && !rhi_handle_valid( g_ctx->viewports[ win->viewport ].vb ) )
@@ -479,6 +519,22 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
            live by the time begin_window runs for each panel this frame. */
         i32 caption = ( flags & IMGUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
         g_ctx->viewports[ win->viewport ].caption_inset = ( f32 )caption;
+
+        /* Track RESTORE geometry for a CLOSEABLE floater so closing it captures the right state.
+           win->w/h above are the maximized size while maximized, so sample the home position and
+           restore size only on restored frames; record the maximized state either way so re-open
+           can re-maximize while still holding the previous normal size to restore back to. */
+        if ( win->viewport != 0 && ( flags & IMGUI_WIN_CLOSEABLE ) )
+        {
+            win_id_t os = window_native_id( win );
+            win->reopen_maximized = app()->window_state( os ).maximized != 0;
+            if ( !win->reopen_maximized )
+            {
+                app()->window_get_pos( os, &win->home_x, &win->home_y );
+                win->restore_w = win->w;
+                win->restore_h = win->h;
+            }
+        }
     }
 
     bool can_collapse = has_titlebar && !( flags & IMGUI_WIN_NOCOLLAPSE ) && !native;
@@ -981,7 +1037,20 @@ imgui_end_window( void )
                     {
                         case NATIVE_BTN_MINIMIZE: app()->window_minimize( os );        break;
                         case NATIVE_BTN_MAXIMIZE: app()->window_toggle_maximize( os );  break;
-                        case NATIVE_BTN_CLOSE:    app()->window_request_close( os );    break;
+                        case NATIVE_BTN_CLOSE:
+                            /* A floater's close hides the CLOSEABLE window and sets reopen_floater;
+                               the abandoned-teardown frees this OS surface next frame, and the next
+                               begin re-spawns it from the restore geometry tracked in begin_window
+                               (so a maximized floater re-opens maximized).  The main window's close
+                               is the graceful application quit. */
+                            if ( win && win->viewport != 0 )
+                            {
+                                win->reopen_floater = true;
+                                win->closed         = true;
+                            }
+                            else
+                                app()->window_request_close( os );
+                            break;
                         case NATIVE_BTN_POPIN: vp_request_button( win ); break;
                     }
                 }

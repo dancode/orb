@@ -94,6 +94,8 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->viewport  = s_build.cur_viewport;   /* inherit ambient; set_next_window_viewport overrides */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
     win->closed    = false;   /* a freshly seen window starts open                */
+    win->reopen_floater   = false;   /* not a re-opening floater until one is closed */
+    win->reopen_maximized = false;
 
     /* Next-window state for a fresh window: never begun (so the first begin is "appearing"), and
        ONCE / ALWAYS permitted but APPEARING withheld -- begin_window grants APPEARING only on the
@@ -164,6 +166,9 @@ static struct
     u32         from_vp;    /* surface it was on (0 = main -> tear off; else floater -> merge)   */
     const char* title;      /* window title, to label the spawned floater's OS window           */
 
+    bool        has_home;   /* re-open of a closed floater: the spawn reads RESTORE geometry +    */
+                            /* maximized state from the window record (home_*, restore_*,         */
+                            /* reopen_maximized) instead of the cursor / main-relative default.   */
 } s_vp_request;
 
 void

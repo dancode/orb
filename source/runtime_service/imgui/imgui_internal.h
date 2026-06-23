@@ -179,6 +179,17 @@ typedef struct imgui_window_t
     bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
     bool       closed;          /* CLOSEABLE: hidden by the X until re-opened      */
 
+    /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
+       reverting this record to viewport 0.  reopen_floater remembers it was a floater so the next
+       begin re-spawns it.  The geometry is the floater's RESTORE (normal) state, sampled every
+       frame it is not maximized -- so a floater closed while maximized re-opens maximized yet still
+       restores to its previous normal size.  home_x/home_y are the restore client-corner screen
+       position; restore_w/restore_h the restore size; reopen_maximized re-maximizes on re-spawn. */
+    bool       reopen_floater;     /* re-spawn as a floater on the next begin             */
+    bool       reopen_maximized;   /* floater was maximized -- re-maximize after re-spawn */
+    i32        home_x, home_y;     /* saved restore (normal) client-corner screen pos     */
+    f32        restore_w, restore_h; /* saved restore (normal) size                       */
+
     imgui_win_flags_t flags;    /* behavior flags supplied to begin_window        */
 
     /* Next-window channel bookkeeping (see set_next_window_pos / _size).  last_frame drives the
