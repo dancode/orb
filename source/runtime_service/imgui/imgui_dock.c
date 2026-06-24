@@ -7,18 +7,18 @@
     their rect between two children at a draggable ratio.  This file owns the node pool, the per-frame
     layout (rect assignment from the surface extent down), the splitter interaction, the tab-strip
     chrome a docked window draws in place of a title bar, and the programmatic build API
-    (dockspace_over_viewport / dock_split / dock_window / dock_undock / is_window_docked).
+    (dockspace_over_viewport / dock_split / dock_window / dock_undock / window_is_docked).
 
     Phase 1 is programmatic only: a host builds a layout in code and the windows tile + tab into it.
     Mouse drag-to-dock (the 5-way preview overlay) and layout persistence are later phases.
 
     How a docked window renders: window_begin_ex (imgui_widget_window.c) detects a docked window via
     dock_find_window_node and routes it through window_begin_docked -- the window's geometry is pinned
-    to its node, its title bar suppressed, and only the node's ACTIVE tab opens a body.  end_window
+    to its node, its title bar suppressed, and only the node's ACTIVE tab opens a body.  window_end
     then calls dock_window_chrome here to draw the shared tab strip + node border.  So this file owns
     dock placement + chrome while the window body machinery (regions, scroll, widgets) is reused whole.
 
-    Included by imgui.c AFTER imgui_widget_window.c (so window_begin_docked / end_window can forward to
+    Included by imgui.c AFTER imgui_widget_window.c (so window_begin_docked / window_end can forward to
     dock_find_window_node + dock_window_chrome, declared in imgui_internal.h) and before imgui_popup.c.
     Reaches the node pool through the g_ctx aliases (s_dock_nodes / s_dock_node_count / s_dock_id_seq).
 
@@ -85,7 +85,7 @@ dock_node_find( imgui_dock_id_t id )
     return NULL;
 }
 
-/* The lookup begin_window routes through: which LEAF tabs this window, or NULL.  Forward-declared in
+/* The lookup window_begin routes through: which LEAF tabs this window, or NULL.  Forward-declared in
    imgui_internal.h so imgui_widget_window.c (included earlier) can call it. */
 static imgui_dock_node_t*
 dock_find_window_node( imgui_id_t win )
@@ -280,7 +280,7 @@ dock_tree_placeholders( imgui_dock_node_t* n )
     Drag-to-dock: while a FREE window is title-dragged over a dockspace on the same surface,
     dock_drag_detect (called from window_begin_ex) finds the leaf under the cursor, draws a per-node
     5-way chip overlay + a translucent preview of the region the window would take, and records the
-    chip the cursor is over.  On the release edge, dock_drag_commit (from end_window) tabs the window
+    chip the cursor is over.  On the release edge, dock_drag_commit (from window_end) tabs the window
     into the leaf (center) or splits the leaf and docks it on a side -- reusing the Phase-1 tree edits.
     The overlay paints on a reserved z-band above everything (popups sit at 0x80000000).
 
@@ -509,7 +509,7 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
 }
 
 /* Execute the drop computed by dock_drag_detect: tab into the target leaf (center) or split it and
-   dock on a side.  Called unconditionally from end_window for every free window; no-ops unless this
+   dock on a side.  Called unconditionally from window_end for every free window; no-ops unless this
    is the dragged window on its release edge (the gate is here because s_dock_drag is unit-private).
    Forward-declared in imgui_internal.h. */
 static void
@@ -566,13 +566,13 @@ dock_undock_by_id( imgui_id_t win )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Tab-strip chrome -- drawn by the active window's end_window in place of a title bar.
+    Tab-strip chrome -- drawn by the active window's window_end in place of a title bar.
 
     Runs while s_build holds the active docked window (its id is hover_win when the cursor is over the
     node, and its clip is the node rect), so widget_behavior hit-tests the tabs correctly.  Tabs march
     left-to-right at natural width; clicking one selects it (takes effect next frame, when that window
     becomes the active tab).  A press dragged past the threshold pops the window out (see below).
-    Forward-declared in imgui_internal.h for end_window to call.
+    Forward-declared in imgui_internal.h for window_end to call.
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -674,7 +674,7 @@ dock_window_chrome( imgui_dock_node_t* node )
 /* Ensure viewport vp hosts a dock tree, lay it out over the surface (below any native caption band),
    draw + interact the splitters and empty-leaf placeholders, and return the tree root's id.  Call
    once per frame at the TOP of the build for each dockspace viewport, before the docked windows'
-   begin_window run (they read their node's resolved content rect). */
+   window_begin run (they read their node's resolved content rect). */
 imgui_dock_id_t
 imgui_dockspace_over_viewport( imgui_vp_t vp, imgui_dockspace_flags_t flags )
 {
@@ -820,7 +820,7 @@ imgui_dock_split_root( imgui_vp_t vp, imgui_dir_t dir, f32 ratio )
     return leaf->id;
 }
 
-/* Add a window (matched to begin_window by id_hash(title)) as a tab in a LEAF node, removing it from
+/* Add a window (matched to window_begin by id_hash(title)) as a tab in a LEAF node, removing it from
    any node it was previously docked in.  The display name is the title's visible span (any "##" id
    suffix stripped), copied so the tab bar is self-sufficient.  The newly docked window becomes the
    active tab.  No-op if node is not a leaf or its tab list is full. */
@@ -873,7 +873,7 @@ imgui_dock_undock( const char* title )
 }
 
 bool
-imgui_is_window_docked( const char* title )
+imgui_window_is_docked( const char* title )
 {
     return title != NULL && dock_find_window_node( id_hash( title ) ) != NULL;
 }
@@ -891,7 +891,7 @@ imgui_is_window_docked( const char* title )
         T <id_hex> <name>          (one tab: the window id and its display name)
 
     The window id is stored explicitly (not re-hashed from the name) so a "Title##key" window -- whose
-    stored name is the stripped visible span -- restores to the exact id begin_window produces.  Node
+    stored name is the stripped visible span -- restores to the exact id window_begin produces.  Node
     ids are NOT stored: they are runtime handles, freshly assigned on load.  imgui owns only the blob;
     the host owns the file I/O (read at startup, write on change).
 ----------------------------------------------------------------------------------------------*/

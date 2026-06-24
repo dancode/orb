@@ -21,14 +21,14 @@
     imgui_resize.c            -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
     imgui_layout_core.c       -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
     imgui_layout_region.c     -- scrollable region engine: imgui_region_t, region_scrollbar, push/pop_region
-    imgui_layout_child.c      -- child box + sub-layout lifecycle: begin/end_child, push/pop_layout
+    imgui_layout_child.c      -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
     imgui_layout.c            -- public layout API verbs: imgui_layout, imgui_stack, imgui_columns, imgui_grid
     imgui_text_edit.c         -- single-line text editing engine: input_field_edit (behind input_text)
     imgui_anim.c              -- widget animation utilities: imgui_anim_f32, imgui_anim_bg
     imgui_widget.c            -- core leaf widgets: text, button, checkbox, input_text, selectable
     imgui_widget_slider.c     -- slider + drag widgets: slider_float/int, drag_int, slider_render
     imgui_widget_numeric.c    -- numeric text inputs: input_int/float/double, input_float2/3/4
-    imgui_widget_window.c     -- the window as a widget: begin/end_window + chrome (resize); body is a region
+    imgui_widget_window.c     -- the window as a widget: begin/window_end + chrome (resize); body is a region
     imgui_dock.c              -- docking: dock-node tree, splitters, tab strips, dockspace + build API
     imgui_popup.c             -- popups / context menus / tooltips: overlay windows on a reserved z-band
     imgui_widget_combo.c      -- combo box + list box: a popup dropdown / a scrolling child of selectables

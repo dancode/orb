@@ -9,7 +9,7 @@
                       A click toggles its optional *selected and dismisses the whole menu chain
                       (every open popup down to the topmost modal), the way picking a command should.
 
-      begin_menu   -- a submenu entry.  It renders horizontally when emitted into a bar (pack mode:
+      menu_begin   -- a submenu entry.  It renders horizontally when emitted into a bar (pack mode:
                       a label that drops its popup *below*) and as a full-width row with a right
                       arrow inside a menu (stack mode: a popup opening to the *side*).  Each opens a
                       popup keyed off its widget id, so submenus nest directly on the popup stack.
@@ -20,8 +20,8 @@
                       plus the same was-open guard the combo uses to stop a toggle click from
                       closing-then-reopening on the same frame.
 
-      begin_main_menu_bar -- a helper window pinned across the top of the display, then a bar().
-      begin_menu_bar      -- the strip a WIN_MENUBAR window reserved below its title bar (a region
+      main_menu_bar_begin -- a helper window pinned across the top of the display, then a bar().
+      menu_bar_begin      -- the strip a WIN_MENUBAR window reserved below its title bar (a region
                              over s_build.menubar_rect, drawn outside the body's scrolling flow).
 
     Included by imgui.c after imgui_widget_combo.c, so the popup internals (popup_open_id,
@@ -38,7 +38,7 @@
 
 /* Persistent per-entry state: the last frame this menu's popup body emitted.  Distinguishes a
    click that should close an open bar menu from one that should open a closed one -- popup_close_check
-   has already dropped the popup by the time begin_menu runs, so without it the same click would
+   has already dropped the popup by the time menu_begin runs, so without it the same click would
    close then immediately reopen (the exact problem combo solves the same way). */
 typedef struct { u32 open_frame; } imgui_menu_state_t;
 
@@ -47,7 +47,7 @@ typedef struct { u32 open_frame; } imgui_menu_state_t;
 
     Selecting a command closes every menu and submenu at once.  The popups above a modal are the
     menu chain (a context menu or a bar's menus + their submenus); truncating to just past the
-    topmost modal closes them all while leaving a modal that hosts the menu open.  begin_popup
+    topmost modal closes them all while leaving a modal that hosts the menu open.  popup_begin
     for those popups already ran this frame and returned true, so the bodies still finish rendering;
     they are simply gone next frame.
 ----------------------------------------------------------------------------------------------*/
@@ -74,7 +74,7 @@ imgui_menu_item( const char* label, const char* shortcut, bool* selected )
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
     /* Pointing at a leaf row -- by mouse or by the nav cursor -- collapses any submenu open at this
-       depth, so moving off a sibling begin_menu onto a plain item closes that submenu: the menu
+       depth, so moving off a sibling menu_begin onto a plain item closes that submenu: the menu
        reads as one active path under either input. */
     if ( ( st.hover || st.nav ) && s_popup_open_count > s_popup_begin_count )
         s_popup_open_count = s_popup_begin_count;
@@ -118,11 +118,11 @@ imgui_menu_item( const char* label, const char* shortcut, bool* selected )
 }
 
 /*----------------------------------------------------------------------------------------------
-    begin_menu / end_menu -- a submenu entry that drives a nested popup.
+    menu_begin / menu_end -- a submenu entry that drives a nested popup.
 ----------------------------------------------------------------------------------------------*/
 
 bool
-imgui_begin_menu( const char* label )
+imgui_menu_begin( const char* label )
 {
     imgui_id_t id  = widget_id( label );
     imgui_id_t pid = id_combine( id, IMGUI_POPUP_SALT );
@@ -228,17 +228,17 @@ imgui_begin_menu( const char* label )
 }
 
 void
-imgui_end_menu( void )
+imgui_menu_end( void )
 {
-    imgui_end_popup();
+    imgui_popup_end();
 }
 
 /*----------------------------------------------------------------------------------------------
-    begin_main_menu_bar / end_main_menu_bar -- a helper window pinned across the top of the display.
+    main_menu_bar_begin / main_menu_bar_end -- a helper window pinned across the top of the display.
 ----------------------------------------------------------------------------------------------*/
 
 bool
-imgui_begin_main_menu_bar( void )
+imgui_main_menu_bar_begin( void )
 {
     f32 h = WIDGET_H + WIDGET_GAP;
 
@@ -248,10 +248,10 @@ imgui_begin_main_menu_bar( void )
        the bar stays pinned to the top edge as before. */
     f32 top = g_ctx->viewports[ 0 ].caption_inset;
 
-    imgui_set_next_window_pos ( 0.0f, top, IMGUI_COND_ALWAYS );
-    imgui_set_next_window_size( (f32)s_io.display_w, h, IMGUI_COND_ALWAYS );
+    imgui_window_set_next_pos ( 0.0f, top, IMGUI_COND_ALWAYS );
+    imgui_window_set_next_size( (f32)s_io.display_w, h, IMGUI_COND_ALWAYS );
 
-    bool vis = imgui_begin_window( "##MainMenuBar",
+    bool vis = imgui_window_begin( "##MainMenuBar",
                                    IMGUI_WIN_NOTITLEBAR | IMGUI_WIN_NOMOVE | IMGUI_WIN_NORESIZE
                                    | IMGUI_WIN_NOCOLLAPSE | IMGUI_WIN_NOSCROLL );
     if ( vis )
@@ -260,13 +260,13 @@ imgui_begin_main_menu_bar( void )
 }
 
 void
-imgui_end_main_menu_bar( void )
+imgui_main_menu_bar_end( void )
 {
-    imgui_end_window();
+    imgui_window_end();
 }
 
 /*----------------------------------------------------------------------------------------------
-    begin_menu_bar / end_menu_bar -- the strip a WIN_MENUBAR window reserved below its title bar.
+    menu_bar_begin / menu_bar_end -- the strip a WIN_MENUBAR window reserved below its title bar.
 
     The strip rect was carved off the top of the body in window_begin_ex and stashed in
     s_build.menubar_rect.  We open a transient pack region over it (outside the body's scrolling
@@ -279,7 +279,7 @@ static f32          s_menubar_saved_cursor;  /* body pen to restore after the st
 static imgui_rect_t s_menubar_saved_clip;    /* body hit-test clip to restore after the strip region pops */
 
 bool
-imgui_begin_menu_bar( void )
+imgui_menu_bar_begin( void )
 {
     if ( !( s_build.win_flags & IMGUI_WIN_MENUBAR ) )
         return false;
@@ -298,7 +298,7 @@ imgui_begin_menu_bar( void )
        intersection with the body clip would be empty and every entry would fail rect_hit -- the
        mouse could never hover the bar (only keyboard nav, which skips the clip test, reached it).
        Point the parent clip at the whole window rect for the push so the strip's hit-test clip
-       resolves to the strip itself, then restore the body clip in end_menu_bar. */
+       resolves to the strip itself, then restore the body clip in menu_bar_end. */
     s_menubar_saved_clip = s_build.clip_rect;
     s_build.clip_rect = ( imgui_rect_t ){ s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_h };
 
@@ -314,7 +314,7 @@ imgui_begin_menu_bar( void )
 }
 
 void
-imgui_end_menu_bar( void )
+imgui_menu_bar_end( void )
 {
     if ( !( s_build.win_flags & IMGUI_WIN_MENUBAR ) )
         return;

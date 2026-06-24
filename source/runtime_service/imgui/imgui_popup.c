@@ -5,14 +5,14 @@
     A popup is a transient window rendered on top of everything that auto-closes on an outside
     click (regular) or blocks input + dims the background (modal).  The popup layer is thin: the
     open set is a stack (s_popups_open in imgui_ctx.c), and rendering is delegated wholesale to the
-    window path (window_begin_ex / end_window).  Occlusion, z-sort, clipping, scroll, and chrome
+    window path (window_begin_ex / window_end).  Occlusion, z-sort, clipping, scroll, and chrome
     all come from the window machinery unchanged.
 
     Lifecycle (mirrors Dear ImGui's OpenPopupStack / BeginPopupStack split):
-        open_popup(id)         -- record id into the open stack at the current nesting depth
-        begin_popup(id)        -- if id is the open popup at this depth, render it; return true
-        end_popup()            -- close the window, pop the begin stack
-        close_current_popup()  -- truncate the open stack to this popup's depth
+        popup_open(id)         -- record id into the open stack at the current nesting depth
+        popup_begin(id)        -- if id is the open popup at this depth, render it; return true
+        popup_end()            -- close the window, pop the begin stack
+        popup_close_current()  -- truncate the open stack to this popup's depth
 
     The one invariant that prevents most popup bugs: popup_close_check() runs at the very top of
     the frame (in imgui_ctx_begin), BEFORE any user code -- so the click that opens a popup (in
@@ -21,7 +21,7 @@
 
     A popup is begun while a parent window is still open, but it is a *top-level overlay*: it must
     lay out, clip, and paint independent of the parent.  overlay_detach / overlay_reattach snapshot
-    and restore the cross-cutting state begin/end_window touch (see imgui_overlay_save_t), and a
+    and restore the cross-cutting state begin/window_end touch (see imgui_overlay_save_t), and a
     root draw-clip is pushed so the popup escapes the parent window's bounds.
 
     Included by imgui.c after imgui_widget_window.c (so window_begin_ex is in scope) and before
@@ -35,7 +35,7 @@
 ----------------------------------------------------------------------------------------------*/
 
 /* IMGUI_POPUP_Z_BASE (the reserved high z-band) lives in imgui_internal.h so window_is_native can
-   read it too; begin_popup rewrites win->z every frame so a stray window_raise_on_press can never
+   read it too; popup_begin rewrites win->z every frame so a stray window_raise_on_press can never
    sink a popup. */
 
 /* Popup window ids are salted off the caller's string so a popup never shares a record with a
@@ -86,7 +86,7 @@ popup_clamp( f32 pos, f32 size, f32 extent )
     Overlay detach / reattach
 
     A popup window is begun inside another window's open layout / clip / paint state.  detach
-    snapshots exactly what begin/end_window will clobber and saves the parent's top layout frame;
+    snapshots exactly what begin/window_end will clobber and saves the parent's top layout frame;
     reattach restores it verbatim after the popup closes.  The stack counters are NOT rewound --
     the popup pushes its frame above the parent's and the normal pop balances it, so no slot is
     reused.  The single thing pop would corrupt is the parent's pen advance (layout_pop_region
@@ -128,7 +128,7 @@ static void
 overlay_reattach( imgui_overlay_save_t s )
 {
     /* Balance the root clip pushed in detach (the popup's own clip was already popped by
-       end_window).  Restore the parent's pen, then its window context + paint cursor. */
+       window_end).  Restore the parent's pen, then its window context + paint cursor. */
     draw_pop_clip_rect();
 
     if ( s.had_parent )
@@ -150,7 +150,7 @@ overlay_reattach( imgui_overlay_save_t s )
 }
 
 /*----------------------------------------------------------------------------------------------
-    open_popup -- request the popup `str` open at the current nesting depth.
+    popup_open -- request the popup `str` open at the current nesting depth.
 
     Opening truncates any sibling/deeper popups (writing at this depth replaces what was there).
     The anchor is the cursor: a regular popup opens where the click landed.
@@ -178,13 +178,13 @@ popup_open_id( imgui_id_t id, f32 ax, f32 ay )
 }
 
 void
-imgui_open_popup( const char* str )
+imgui_popup_open( const char* str )
 {
     popup_open_id( popup_id( str ), s_io.mouse_x, s_io.mouse_y );
 }
 
 /*----------------------------------------------------------------------------------------------
-    is_popup_open -- whether `str` (or an explicit id) is anywhere in the open stack.
+    popup_is_open -- whether `str` (or an explicit id) is anywhere in the open stack.
 ----------------------------------------------------------------------------------------------*/
 
 static bool
@@ -196,7 +196,7 @@ popup_is_open_id( imgui_id_t id )
 }
 
 bool
-imgui_is_popup_open( const char* str )
+imgui_popup_is_open( const char* str )
 {
     return popup_is_open_id( popup_id( str ) );
 }
@@ -216,7 +216,7 @@ popup_set_anchor( imgui_id_t id, f32 ax, f32 ay )
 }
 
 /*----------------------------------------------------------------------------------------------
-    popup_begin_common -- shared body of begin_popup / begin_popup_modal.
+    popup_begin_common -- shared body of popup_begin / popup_modal_begin.
 
     Returns false (cheaply) when this popup is not open at the current depth, so a closed popup
     costs almost nothing.  When open, detaches the parent context, places + opens the window on
@@ -253,7 +253,7 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
     win->viewport = s_build.cur_viewport;
 
     /* Capped popup (combo dropdown): a fixed width with a height that hugs the measured content up
-       to cap_h, then scrolls -- the same hug-then-scroll behavior begin_child gets from a max-height
+       to cap_h, then scrolls -- the same hug-then-scroll behavior child_begin gets from a max-height
        constraint, expressed for the window path.  Size is known up front (no off-screen premeasure):
        seed from cap_h before any content, then track min(content + chrome, cap_h) each frame.  This
        takes over the autosize path; the caller passes scroll-capable (non-autosize) flags. */
@@ -263,7 +263,7 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
         f32 chrome = WIDGET_GAP + WIN_BORDER;   /* body top gap + bottom border (no title bar) */
         f32 want_h = ( win->content_h > 0.0f ) ? win->content_h + chrome : cap_h;
         if ( want_h > cap_h ) want_h = cap_h;
-        imgui_set_next_window_size( fixed_w, want_h, IMGUI_COND_ALWAYS );
+        imgui_window_set_next_size( fixed_w, want_h, IMGUI_COND_ALWAYS );
         win->w = fixed_w;       /* placement clamp below reads win->w/h; reflect the queued size */
         win->h = want_h;
     }
@@ -289,7 +289,7 @@ popup_begin_common_id( imgui_id_t id, const char* title, imgui_win_flags_t flags
         px = popup_clamp( p->anchor_x, win->w, (f32)s_io.display_w );
         py = popup_clamp( p->anchor_y, win->h, (f32)s_io.display_h );
     }
-    imgui_set_next_window_pos( px, py, IMGUI_COND_ALWAYS );
+    imgui_window_set_next_pos( px, py, IMGUI_COND_ALWAYS );
 
     /* Detach from the parent window: from here the popup lays out + clips as a top-level overlay. */
     p->saved = overlay_detach();
@@ -324,14 +324,14 @@ popup_begin_common( const char* str, const char* title, imgui_win_flags_t flags,
 }
 
 bool
-imgui_begin_popup( const char* str, imgui_win_flags_t flags )
+imgui_popup_begin( const char* str, imgui_win_flags_t flags )
 {
     return popup_begin_common( str, NULL,
                                flags | IMGUI_WIN_NOTITLEBAR | IMGUI_POPUP_BASE_FLAGS, false );
 }
 
 bool
-imgui_begin_popup_modal( const char* str, const char* title, imgui_win_flags_t flags )
+imgui_popup_modal_begin( const char* str, const char* title, imgui_win_flags_t flags )
 {
     /* Modal keeps a title bar (no NOTITLEBAR) so its heading shows; falls back to the id string. */
     return popup_begin_common( str, title ? title : str,
@@ -339,25 +339,25 @@ imgui_begin_popup_modal( const char* str, const char* title, imgui_win_flags_t f
 }
 
 void
-imgui_end_popup( void )
+imgui_popup_end( void )
 {
-    if ( !s_popup_begin_count ) return;     /* unbalanced end_popup -- ignore */
+    if ( !s_popup_begin_count ) return;     /* unbalanced popup_end -- ignore */
 
     u32 depth = s_popup_begin_count - 1u;
-    imgui_end_window();                     /* finalize the popup window (pops its own clip) */
+    imgui_window_end();                     /* finalize the popup window (pops its own clip) */
     overlay_reattach( s_popups_open[ depth ].saved );
     --s_popup_begin_count;
 }
 
 /*----------------------------------------------------------------------------------------------
-    close_current_popup -- close this popup (and any deeper) from inside its body.
+    popup_close_current -- close this popup (and any deeper) from inside its body.
 
-    Inside begin/end_popup, begin_count is this popup's depth + 1, so truncating the open stack
+    Inside begin/popup_end, begin_count is this popup's depth + 1, so truncating the open stack
     to begin_count - 1 drops this popup and its children.
 ----------------------------------------------------------------------------------------------*/
 
 void
-imgui_close_current_popup( void )
+imgui_popup_close_current( void )
 {
     if ( s_popup_begin_count && s_popup_open_count >= s_popup_begin_count )
         s_popup_open_count = s_popup_begin_count - 1u;
@@ -367,25 +367,25 @@ imgui_close_current_popup( void )
     Context menus -- open a popup on a right-click.
 
     _item binds to the previous widget (its id is latched in s_build.last_item_id by widget_behavior);
-    _window binds to empty space in the current window.  Both then render through begin_popup.
+    _window binds to empty space in the current window.  Both then render through popup_begin.
 ----------------------------------------------------------------------------------------------*/
 
 bool
-imgui_begin_popup_context_item( const char* str )
+imgui_popup_context_item_begin( const char* str )
 {
     imgui_id_t want = s_build.last_item_id;
     if ( want != IMGUI_ID_NONE && s_interaction.hover_id == want && s_io.mouse_pressed[ 1 ] )
-        imgui_open_popup( str );
-    return imgui_begin_popup( str, IMGUI_WIN_NONE );
+        imgui_popup_open( str );
+    return imgui_popup_begin( str, IMGUI_WIN_NONE );
 }
 
 bool
-imgui_begin_popup_context_window( const char* str )
+imgui_popup_context_window_begin( const char* str )
 {
     if ( s_build.win_id == s_interaction.hover_win && s_interaction.hover_id == IMGUI_ID_NONE
          && s_io.mouse_pressed[ 1 ] )
-        imgui_open_popup( str );
-    return imgui_begin_popup( str, IMGUI_WIN_NONE );
+        imgui_popup_open( str );
+    return imgui_popup_begin( str, IMGUI_WIN_NONE );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -399,12 +399,12 @@ imgui_begin_popup_context_window( const char* str )
 static imgui_overlay_save_t s_tooltip_save;   /* tooltips do not nest, so one save slot suffices */
 
 bool
-imgui_begin_tooltip( void )
+imgui_tooltip_begin( void )
 {
     imgui_window_t* win = window_get( IMGUI_TOOLTIP_ID, s_io.mouse_x, s_io.mouse_y,
                                       IMGUI_POPUP_SEED_W, IMGUI_POPUP_SEED_H );
     win->z = IMGUI_POPUP_Z_BASE + g_ctx->popup_depth;   /* above every popup */
-    win->viewport = s_build.cur_viewport;               /* track the parent's current surface (see begin_popup) */
+    win->viewport = s_build.cur_viewport;               /* track the parent's current surface (see popup_begin) */
 
     bool premeasure = win->content_h <= 0.0f;
     f32  px, py;
@@ -417,7 +417,7 @@ imgui_begin_tooltip( void )
         px = popup_clamp( s_io.mouse_x + IMGUI_TOOLTIP_OFFSET, win->w, (f32)s_io.display_w );
         py = popup_clamp( s_io.mouse_y + IMGUI_TOOLTIP_OFFSET, win->h, (f32)s_io.display_h );
     }
-    imgui_set_next_window_pos( px, py, IMGUI_COND_ALWAYS );
+    imgui_window_set_next_pos( px, py, IMGUI_COND_ALWAYS );
 
     s_tooltip_save = overlay_detach();
     return window_begin_ex( IMGUI_TOOLTIP_ID, NULL, s_io.mouse_x, s_io.mouse_y,
@@ -426,9 +426,9 @@ imgui_begin_tooltip( void )
 }
 
 void
-imgui_end_tooltip( void )
+imgui_tooltip_end( void )
 {
-    imgui_end_window();
+    imgui_window_end();
     overlay_reattach( s_tooltip_save );
 }
 
@@ -438,12 +438,12 @@ imgui_set_item_tooltip( const char* text )
     if ( s_build.last_item_id == IMGUI_ID_NONE || s_interaction.hover_id != s_build.last_item_id )
         return;
 
-    if ( imgui_begin_tooltip() )
+    if ( imgui_tooltip_begin() )
     {
         imgui_stack();          /* tooltip body lays out like any region: declare a stack first */
         imgui_text( text );
     }
-    imgui_end_tooltip();
+    imgui_tooltip_end();
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -484,7 +484,7 @@ imgui_help_marker( const char* text )
 /*----------------------------------------------------------------------------------------------
     popup_close_check -- stale-close + click-outside, run at frame top before any user code.
 
-    Stale: an open popup whose begin_popup was not called last frame (the caller stopped emitting
+    Stale: an open popup whose popup_begin was not called last frame (the caller stopped emitting
     it) is dropped from the top down, so a removed parent takes its children with it.
 
     Click-outside: on a press, keep the deepest popup whose rect holds the cursor and close

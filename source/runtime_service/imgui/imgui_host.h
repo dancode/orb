@@ -64,14 +64,14 @@ void       imgui_render_floaters        ( void );
 bool imgui_event( const app_event_t* ev );
 
 /* window */
-void imgui_set_next_window_pos ( f32 x, f32 y, imgui_cond_t cond );
-void imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond );
-void imgui_set_next_window_viewport( imgui_vp_t vp );
-void imgui_set_next_window_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
-bool imgui_begin_window( const char* title, imgui_win_flags_t flags );
-void imgui_end_window( void );
-void imgui_set_window_open( const char* title, bool open );
-bool imgui_is_window_open( const char* title );
+void imgui_window_set_next_pos ( f32 x, f32 y, imgui_cond_t cond );
+void imgui_window_set_next_size( f32 w, f32 h, imgui_cond_t cond );
+void imgui_window_set_next_viewport( imgui_vp_t vp );
+void imgui_window_set_next_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
+bool imgui_window_begin( const char* title, imgui_win_flags_t flags );
+void imgui_window_end( void );
+void imgui_window_set_open( const char* title, bool open );
+bool imgui_window_is_open( const char* title );
 
 /* docking */
 imgui_dock_id_t imgui_dockspace_over_viewport( imgui_vp_t vp, imgui_dockspace_flags_t flags );
@@ -79,35 +79,35 @@ imgui_dock_id_t imgui_dock_split( imgui_dock_id_t node, imgui_dir_t dir, f32 rat
 imgui_dock_id_t imgui_dock_split_root( imgui_vp_t vp, imgui_dir_t dir, f32 ratio );
 void imgui_dock_window( const char* title, imgui_dock_id_t node );
 void imgui_dock_undock( const char* title );
-bool imgui_is_window_docked( const char* title );
+bool imgui_window_is_docked( const char* title );
 u32  imgui_dock_save( imgui_vp_t vp, char* buf, u32 bufsz );
 bool imgui_dock_load( imgui_vp_t vp, const char* text );
 
 /* popup */
-void imgui_open_popup( const char* id );
-bool imgui_begin_popup( const char* id, imgui_win_flags_t flags );
-bool imgui_begin_popup_modal( const char* id, const char* title, imgui_win_flags_t flags );
-void imgui_end_popup( void );
-void imgui_close_current_popup( void );
-bool imgui_is_popup_open( const char* id );
-bool imgui_begin_popup_context_item( const char* id );
-bool imgui_begin_popup_context_window( const char* id );
+void imgui_popup_open( const char* id );
+bool imgui_popup_begin( const char* id, imgui_win_flags_t flags );
+bool imgui_popup_modal_begin( const char* id, const char* title, imgui_win_flags_t flags );
+void imgui_popup_end( void );
+void imgui_popup_close_current( void );
+bool imgui_popup_is_open( const char* id );
+bool imgui_popup_context_item_begin( const char* id );
+bool imgui_popup_context_window_begin( const char* id );
 void imgui_set_item_tooltip( const char* text );
-bool imgui_begin_tooltip( void );
-void imgui_end_tooltip( void );
+bool imgui_tooltip_begin( void );
+void imgui_tooltip_end( void );
 
 /* menu */
-bool imgui_begin_main_menu_bar( void );
-void imgui_end_main_menu_bar( void );
-bool imgui_begin_menu_bar( void );
-void imgui_end_menu_bar( void );
-bool imgui_begin_menu( const char* label );
-void imgui_end_menu( void );
+bool imgui_main_menu_bar_begin( void );
+void imgui_main_menu_bar_end( void );
+bool imgui_menu_bar_begin( void );
+void imgui_menu_bar_end( void );
+bool imgui_menu_begin( const char* label );
+void imgui_menu_end( void );
 bool imgui_menu_item( const char* label, const char* shortcut, bool* selected );
 
 /* child layout */
-bool imgui_begin_child( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
-void imgui_end_child( void );
+bool imgui_child_begin( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
+void imgui_child_end( void );
 void imgui_push_layout( void );
 void imgui_pop_layout( void );
 
@@ -176,8 +176,8 @@ imgui_rect_t imgui_dummy( f32 w, f32 h );
 /* layout - interactive helpers */
 bool imgui_invisible_button( const char* id_str, imgui_rect_t r );
 bool imgui_is_mouse_hovering_rect( imgui_rect_t r );
-void imgui_set_window_drag( imgui_win_drag_t mode );
-void imgui_set_nav_window( const char* title );
+void imgui_window_set_drag( imgui_win_drag_t mode );
+void imgui_window_set_nav( const char* title );
 
 /* id stack and item flags */
 void imgui_push_id( const char* str );
@@ -188,8 +188,8 @@ void imgui_pop_id( void );
 void imgui_push_item_flag( imgui_item_flags_t flag, bool enable );
 void imgui_pop_item_flag( void );
 void imgui_next_item_flag( imgui_item_flags_t flag, bool enable );
-void imgui_begin_disabled( bool disabled );
-void imgui_end_disabled( void );
+void imgui_disabled_begin( bool disabled );
+void imgui_disabled_end( void );
 
 /* style modifiers */
 void imgui_push_style_color( imgui_col_t slot, u32 abgr );
@@ -239,11 +239,11 @@ bool imgui_input_float4( const char* label, f32* v, const char* fmt );
 
 /* widget - combo and list box */
 bool imgui_selectable( const char* label, bool* selected );
-bool imgui_begin_combo( const char* label, const char* preview_value, imgui_combo_flags_t flags );
-void imgui_end_combo( void );
+bool imgui_combo_begin( const char* label, const char* preview_value, imgui_combo_flags_t flags );
+void imgui_combo_end( void );
 bool imgui_combo( const char* label, i32* current_item, const char* const items[], i32 count );
-bool imgui_begin_listbox( const char* label, f32 w, f32 h );
-void imgui_end_listbox( void );
+bool imgui_listbox_begin( const char* label, f32 w, f32 h );
+void imgui_listbox_end( void );
 bool imgui_listbox( const char* label, i32* current_item, const char* const items[], i32 count, i32 height_in_items );
 
 /* widget - collapsing items */

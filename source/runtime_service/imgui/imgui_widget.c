@@ -2,7 +2,7 @@
 
     runtime_service/imgui/imgui_widget.c -- Core leaf widgets.
 
-    The everyday controls a caller emits between begin_window / end_window: text, button,
+    The everyday controls a caller emits between window_begin / window_end: text, button,
     checkbox, radio_button, input_text, label_text, selectable, collapsing_header, tree_node,
     spacers, draw_rect / draw_text escape hatches, and invisible_button.
     Each takes its rect from widget_next_rect, which carves the next cell out of the active
@@ -555,7 +555,7 @@ imgui_label_text( const char* label, const char* value )
 /*----------------------------------------------------------------------------------------------
     selectable -- a full-width row that highlights on hover and fills when selected.
 
-    The building block for list boxes: emit one per item (typically inside a begin_child
+    The building block for list boxes: emit one per item (typically inside a child_begin
     region so they scroll and clip independently).  When `selected` is non-NULL a click
     toggles it; pass NULL for a click-only row.  Returns true on the frame it is clicked, so
     a caller managing single-selection can set its own index from the return without relying
@@ -584,7 +584,7 @@ imgui_selectable( const char* label, bool* selected )
     if ( st.clicked && selected )
         *selected = !( *selected );
 
-    /* Inside a combo dropdown a clicked row dismisses the combo: flag it for end_combo to close
+    /* Inside a combo dropdown a clicked row dismisses the combo: flag it for combo_end to close
        (the popup machinery is not in scope here).  Inert for an ordinary list selectable. */
     if ( st.clicked && s_build.combo_open )
         s_build.combo_item_clicked = true;
@@ -595,7 +595,7 @@ imgui_selectable( const char* label, bool* selected )
 /*----------------------------------------------------------------------------------------------
     collapsing_header -- a full-width clickable bar with a fold arrow that toggles a section open
     or closed, returning the open state.  There is no end call: the caller guards its body with the
-    return ( if ( header(...) ) { widgets } ), exactly like begin_window's collapse, so a closed
+    return ( if ( header(...) ) { widgets } ), exactly like window_begin's collapse, so a closed
     header simply skips emitting its contents.  The open flag persists across frames in the keyed
     state pool, keyed by the header id -- the same store windows, tree nodes, and combos use; this
     is the smallest example of it.  Closed by default (zeroed on first sight). */

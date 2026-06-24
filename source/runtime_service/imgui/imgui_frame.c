@@ -180,8 +180,8 @@ imgui_perf_overlay( imgui_clock_fn clock, int mode )
     imgui_push_style_color( IMGUI_COL_WINDOW_BG, IMGUI_COLOR( 0, 0, 0, 0 ) );
     imgui_push_style_color( IMGUI_COL_BORDER,    IMGUI_COLOR( 0, 0, 0, 0 ) );
 
-    imgui_set_next_window_pos( 8.0f, 8.0f, IMGUI_COND_ALWAYS );
-    imgui_begin_window( "perf_overlay", IMGUI_WIN_OVERLAY );
+    imgui_window_set_next_pos( 8.0f, 8.0f, IMGUI_COND_ALWAYS );
+    imgui_window_begin( "perf_overlay", IMGUI_WIN_OVERLAY );
     {
         imgui_stack();
         /* FPS, graded by health: >=60 green, >=30 amber, else red. */
@@ -209,7 +209,7 @@ imgui_perf_overlay( imgui_clock_fn clock, int mode )
             imgui_textf( "cmds    %6u", rs.cmd_count  );
         }
     }
-    imgui_end_window();
+    imgui_window_end();
 
     imgui_pop_style_color( 2 );
 }
@@ -219,7 +219,7 @@ imgui_perf_overlay( imgui_clock_fn clock, int mode )
 ==============================================================================================*/
 
 /* Context save stack -- ctx_begin pushes the context bound on entry, ctx_end pops and rebinds it,
-   so begin/end nests as a balanced scope exactly like begin_window/end_window.  Reset to empty each
+   so begin/end nests as a balanced scope exactly like window_begin/window_end.  Reset to empty each
    frame in frame_begin, so an unbalanced previous frame cannot leak a binding into this one. */
 #define IMGUI_CTX_STACK_DEPTH 8
 static imgui_context_t* s_ctx_save_stack[ IMGUI_CTX_STACK_DEPTH ];
@@ -301,7 +301,7 @@ imgui_ctx_begin( imgui_ctx_t ctx_handle )
 
     s_retained.wants_redraw = false;    /* cleared before the build; set again by any animating widget */
     ctx_new_frame();                    /* per-context scratch reset + frame clock bump (no global interaction touch) */
-    popup_close_check();                /* stale-close + click-outside, BEFORE any user open_popup */
+    popup_close_check();                /* stale-close + click-outside, BEFORE any user popup_open */
     popup_apply_modal();                /* fence interaction behind an open modal (steals hover_win) */
     window_raise_on_press();            /* a press raises the hover window (takes effect this frame) */
     nav_new_frame();                    /* commit last frame's nav move + read this frame's nav keys */
@@ -367,7 +367,7 @@ imgui_render( imgui_vp_t vp, rhi_cmd_t cmd )
     viewport requires a live OS window, the window pool guarantees the matching slot is free.
     RHI_SWAPCHAIN_COLOR resolves per-context at flush time -- which cmd you pass render() selects
     the swapchain.
-    Returns the handle to pass to render / viewport_resize / viewport_close / set_next_window_viewport,
+    Returns the handle to pass to render / viewport_resize / viewport_close / window_set_next_viewport,
     or IMGUI_VP_INVALID on bad win_id or GPU buffer failure.
     Must be called after init() and before frame_begin().
 
@@ -450,7 +450,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
        origin window -- on Windows, activating another top-level window releases that window's
        mouse capture, which would sever the in-flight drag the moment the floater appeared. */
     /* Owned floaters are native-borderless: a detached panel owns its OS window and acts as that
-       window's frame (begin_window treats any window on an owned viewport as IMGUI_WIN_NATIVE), so
+       window's frame (window_begin treats any window on an owned viewport as IMGUI_WIN_NATIVE), so
        the OS drives its move / resize / snap.  no_activate (mid-drag tear-off) adds APP_WIN_NOFOCUS
        so spawning does not steal foreground and sever the origin window's mouse capture. */
     u32 open_flags = APP_WIN_BORDERLESS | ( no_activate ? APP_WIN_NOFOCUS : 0u );
@@ -493,7 +493,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
 }
 
 /* Public spawn: open an imgui-owned floater hosting its own OS window at (x,y) sized w x h.
-   Returns the viewport handle to assign windows to (set_next_window_viewport), or
+   Returns the viewport handle to assign windows to (window_set_next_viewport), or
    IMGUI_VP_INVALID.  Must be called between frames (it creates an OS window + rhi context). */
 imgui_vp_t
 imgui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
@@ -554,7 +554,7 @@ imgui_update_platform_windows( void )
                point stays exactly beneath the cursor: client origin = screen cursor - the grab offset
                recorded when the drag began.  Spawned no-activate so the origin window keeps its OS
                mouse capture (activating would release it and sever the drag); the per-frame
-               floater-follow in begin_window then keeps the panel tracking the cursor.
+               floater-follow in window_begin then keeps the panel tracking the cursor.
 
                else -- a detach-button click, no drag in flight.  Keep the panel at its EXACT screen
                position (main client origin + the panel's position within it), so it pops out in place
@@ -608,7 +608,7 @@ imgui_update_platform_windows( void )
 
                by_drag -- capture is held by the main window for the whole drag, so s_io.mouse_x/y are
                already main-client coords; the panel lands at cursor - grab offset, continuous with the
-               in-flight drag, which the attached drag-apply in begin_window then carries on.
+               in-flight drag, which the attached drag-apply in window_begin then carries on.
 
                else -- a button click; keep the panel at the screen location the floater occupied (its
                client origin minus the main client origin), so it docks in place rather than jumping. */
@@ -676,7 +676,7 @@ imgui_update_platform_windows( void )
 
          abandoned     -- the window(s) the floater hosts stopped being emitted.  A floater is just a
                           surface for the panel that was torn into it; if the caller hides that panel
-                          or quits drawing it, its begin_window stops running and last_frame freezes,
+                          or quits drawing it, its window_begin stops running and last_frame freezes,
                           leaving a hovering OS window with no UI and no controls.  Detect it by the
                           same staleness rule popups use (popup_close_check): the freshest assigned
                           window has missed a full frame (max last_frame + 1 < frame), or no window is

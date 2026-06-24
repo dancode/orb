@@ -3,7 +3,7 @@
     runtime_service/imgui/imgui_widget_window.c -- The window as a widget (chrome + interaction).
 
     Everything that presents a window this frame: the title bar, collapse arrow, border,
-    edge-resize affordance, the scrollbars, and begin_window / end_window themselves.  The
+    edge-resize affordance, the scrollbars, and window_begin / window_end themselves.  The
     persistent window record and the registry live in imgui_window.c; this file only reads
     and mutates that state through window_get and the shared drag/resize state vars -- it
     declares no long-lived state of its own.
@@ -41,12 +41,12 @@
 /* IMGUI_RESIZE_SALT, the IMGUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
    record-agnostic resize helpers (window_resize_hit, window_draw_resize_highlight, resize_grab,
    resize_apply_edges) live in imgui_widget_core.c -- alongside the style macros they need and ahead
-   of imgui_layout.c -- so begin_child and a future dock splitter reuse the same mechanism.  Only the
+   of imgui_layout.c -- so child_begin and a future dock splitter reuse the same mechanism.  Only the
    window's size policy stays below: the min clamp with far-edge pinning (window_apply_resize) and
    the content auto-fit (window_fit_size). */
 
 /*----------------------------------------------------------------------------------------------
-    begin_window / end_window
+    window_begin / window_end
 ----------------------------------------------------------------------------------------------*/
 
 /* Keep a dragged window reachable: clamp so its top edge stays on-screen and at
@@ -83,9 +83,9 @@ window_clamp( imgui_window_t* win )
 
     A window may be resized by grabbing a band that straddles any edge or corner -- reaching a
     little inside the border and a little outside it, OS-style, so the grip is easy to land on.
-    The hover/grab is resolved up front in begin_window (using last frame's hover_win) so it
+    The hover/grab is resolved up front in window_begin (using last frame's hover_win) so it
     takes priority over the scrollbar and collapse arrow underneath; the resize itself is
-    applied at the top of the next begin_window, one frame later, mirroring the title-bar drag.
+    applied at the top of the next window_begin, one frame later, mirroring the title-bar drag.
 
     Reaching outside the border needs an exception to the normal hover rule: a resizeable
     window nominates an outer-expanded rect for hover_win so the cursor still counts as "over"
@@ -118,8 +118,8 @@ static win_id_t window_native_id( const imgui_window_t* win )
 
 /* A window is native when it solely occupies an imgui-owned OS window: flagged explicitly (a
    borderless main window) or living on an owned floater (a detached panel -- "detach = native").
-   A panel on the main viewport (0, never owned) is not native unless flagged.  begin_window and
-   end_window both gate on this, so it must be derived the same way in both. */
+   A panel on the main viewport (0, never owned) is not native unless flagged.  window_begin and
+   window_end both gate on this, so it must be derived the same way in both. */
 static bool window_is_native( const imgui_window_t* win, imgui_win_flags_t flags )
 {
     /* A popup / tooltip overlay is never the OS frame, even when it inherits an owned floater's
@@ -139,8 +139,8 @@ static bool window_is_native( const imgui_window_t* win, imgui_win_flags_t flags
 
     The OS owns a native window's caption band (HTCAPTION), so its titlebar buttons cannot be
     ordinary imgui widgets unless their rects are punched out as HTCLIENT "holes".  This one
-    layout function feeds both halves of that: begin_window publishes the rects as holes (via
-    window_set_native_frame) so the OS lets clicks through, and end_window draws the glyphs and
+    layout function feeds both halves of that: window_begin publishes the rects as holes (via
+    window_set_native_frame) so the OS lets clicks through, and window_end draws the glyphs and
     runs widget_behavior on the same rects.  Computing the layout in one place keeps the holes
     exactly aligned with the drawn buttons.
 
@@ -171,7 +171,7 @@ typedef struct
 /* Fill `out` with this native window's caption buttons; returns the count (0 when no title bar).
    The primary (rightmost) button is pop-in for a floater (owned viewport) or close for the main
    window, and is always present.  Minimize / maximize are each suppressed by the matching NO_* flag,
-   so the set the OS hit-tests against (the holes begin_window publishes) and the set end_window draws
+   so the set the OS hit-tests against (the holes window_begin publishes) and the set window_end draws
    stay identical -- both call here with the same flags.  out[count-1] is the leftmost button -- its x
    bounds the title text. */
 static i32
@@ -330,11 +330,11 @@ window_apply_resize( imgui_window_t* win, f32 title_h )
 }
 
 /* resize_grab (the press-time anchor record) and draw_collapse_arrow live in imgui_widget_core.c,
-   shared with begin_child and collapsing_header respectively. */
+   shared with child_begin and collapsing_header respectively. */
 
-/* window_begin_docked -- the docked branch of begin_window.  A window whose id is in a dock leaf is
+/* window_begin_docked -- the docked branch of window_begin.  A window whose id is in a dock leaf is
    placed and chromed by its node, not free-floated: geometry is pinned to the node, the title bar is
-   replaced by the node's tab strip (drawn in end_window via dock_window_chrome), and only the node's
+   replaced by the node's tab strip (drawn in window_end via dock_window_chrome), and only the node's
    active tab opens a body.  Drag, edge-resize, tear-off, collapse and boundary-clamp are all skipped
    -- the node and its splitters own placement.  Returns true only for the active tab (its body is
    emitted); an inactive tab returns false and draws nothing, exactly like a collapsed window. */
@@ -360,7 +360,7 @@ window_begin_docked( imgui_window_t* win, imgui_id_t id, const char* title,
     draw_set_viewport( node->viewport );
     s_build.cur_viewport = node->viewport;
 
-    /* Commit the docked window context end_window reads. */
+    /* Commit the docked window context window_end reads. */
     s_build.win_id          = id;
     s_build.win_title       = title;
     s_build.win_collapsed   = false;
@@ -375,7 +375,7 @@ window_begin_docked( imgui_window_t* win, imgui_id_t id, const char* title,
     s_build.win_w = win->w;  s_build.win_h = win->h;
 
     if ( !active )
-        return false;   /* behind another tab -- no body, no clip; end_window early-outs */
+        return false;   /* behind another tab -- no body, no clip; window_end early-outs */
 
     /* The active tab nominates hover over the whole node (strip + body) so its tab-strip widgets and
        body widgets all resolve under one hover_win. */
@@ -407,8 +407,8 @@ window_begin_docked( imgui_window_t* win, imgui_id_t id, const char* title,
     return true;
 }
 
-/* window_begin_ex -- the shared body of begin_window, with the window id supplied explicitly and
-   the title used only for display + chrome (NULL = no title text).  imgui_begin_window hashes the
+/* window_begin_ex -- the shared body of window_begin, with the window id supplied explicitly and
+   the title used only for display + chrome (NULL = no title text).  imgui_window_begin hashes the
    title for its id; the popup layer (imgui_popup.c) passes a salted popup id and its own title (or
    NULL), so a popup reuses the entire window path -- record, geometry, region, clip, scroll,
    auto-resize, chrome -- with nothing duplicated.  The caller is responsible for any overlay
@@ -422,8 +422,8 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     s_build.win_hidden  = false;   /* default; the CLOSEABLE branch below flips it */
 
     /* Closeable + closed: the window is fully hidden this frame -- no chrome, no body, no hover.
-       begin returns false (the caller skips its widgets) and end_window early-outs on win_hidden.
-       The record persists with its geometry intact, so set_window_open revives it where it was.
+       begin returns false (the caller skips its widgets) and window_end early-outs on win_hidden.
+       The record persists with its geometry intact, so window_set_open revives it where it was.
        Tested before the dock lookup so a closed window leaves any node it was tabbed into, too.
 
        last_frame is deliberately NOT refreshed here: a closed floater must read as "abandoned" so
@@ -473,7 +473,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     if ( dock )
         return window_begin_docked( win, id, title, flags, dock );
 
-    /* Next-window channel: apply any queued set_next_window_pos / _size before this frame's drag,
+    /* Next-window channel: apply any queued window_set_next_pos / _size before this frame's drag,
        resize, and autosize act on the geometry, so a ONCE / APPEARING seed becomes the incoming
        state the user then interacts with.  `appearing` is the first begin (last_frame 0) or the
        first begin after a frame of absence -- it renews the one-shot APPEARING permission. */
@@ -516,7 +516,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
 
         /* Publish the caption-inset so panels on this surface clamp their title bars below the
            drawn chrome band.  frame_only shells emit before the panels they frame, so the inset is
-           live by the time begin_window runs for each panel this frame. */
+           live by the time window_begin runs for each panel this frame. */
         i32 caption = ( flags & IMGUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
         g_ctx->viewports[ win->viewport ].caption_inset = ( f32 )caption;
 
@@ -673,7 +673,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     f32 disp_h = collapsed ? title_h : win->h;
 
     /* Edge resize, resolved here so it pre-empts the scrollbar and collapse arrow (resolved in
-       end_window) underneath: while the cursor sits on a hot edge, win_resize_hot suppresses
+       window_end) underneath: while the cursor sits on a hot edge, win_resize_hot suppresses
        every widget hover in this window, and a press grabs the resize before any widget can.
        Gated on hover_win (last frame's front-most), so only the top window's edges go hot. */
     imgui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
@@ -687,7 +687,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
         if ( resize_hot && s_interaction.active_id == IMGUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
             resize_grab( id, ( imgui_rect_t ){ win->x, win->y, win->w, win->h }, resize_hot );
     }
-    s_build.win_resize_hot = resize_hot;   /* read by widget_behavior + end_window's highlight */
+    s_build.win_resize_hot = resize_hot;   /* read by widget_behavior + window_end's highlight */
 
     /* Hardware cursor: show the directional resize shape while an edge is hot, or while a resize
        drag of this window is in flight (read from s_resize_edges so the shape holds even if the
@@ -701,14 +701,14 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
        same way the edge band reserves the borders.  The grip square overlaps the scroll gutter,
        but the scrollbar runs first (in layout_pop_region), so without this it would claim the
-       press and the grip -- drawn and grabbed later in end_window -- would sit dead behind it.
-       Suppressing widget hover over the grip rect leaves active_id free for end_window to grab.
+       press and the grip -- drawn and grabbed later in window_end -- would sit dead behind it.
+       Suppressing widget hover over the grip rect leaves active_id free for window_end to grab.
        Gated on hover_win and a free/own active_id, mirroring the edge resize above. */
     bool grip_hot = false;
     if ( ( flags & IMGUI_WIN_CAN_AUTOSIZE ) && !collapsed && s_interaction.hover_win == id
          && ( s_interaction.active_id == IMGUI_ID_NONE || s_interaction.active_id == resize_id ) )
     {
-        f32          g  = WIDGET_H;   /* grip leg length -- matches end_window's grip rect */
+        f32          g  = WIDGET_H;   /* grip leg length -- matches window_end's grip rect */
         imgui_rect_t gr = { win->x + win->w - g, win->y + disp_h - g, g, g };
         grip_hot = rect_hit( gr );
     }
@@ -732,7 +732,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
                                win->viewport );
 
     /* All of this window's geometry is stamped with its z so flush can paint
-       windows back-to-front regardless of begin_window call order, and with its
+       windows back-to-front regardless of window_begin call order, and with its
        viewport so flush dispatches it to the surface hosting this window.
        cur_viewport is updated first so DBG_RESIZE below captures to the correct per-viewport list. */
     draw_set_sort_key( win->z );
@@ -748,7 +748,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     /* Clip this window against ITS surface's extent, not the main window's: the window clip pushed
        below intersects the base clip (clip_stack[0]), so seed that base with this viewport's drawable
        size.  Falls back to the main display when the surface size is unset (single-window default).
-       end_window restores the main display for subsequent background / low-level draws. */
+       window_end restores the main display for subsequent background / low-level draws. */
     {
         const imgui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
         draw_set_root_clip( vp_w( vp ), vp_h( vp ) );
@@ -758,34 +758,34 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        window's trailing widget left, so this window paints opaque and its chrome interacts. */
     item_flags_chrome_reset();
 
-    /* Commit window chrome state for the widgets and end_window.  The layout pen, content
+    /* Commit window chrome state for the widgets and window_end.  The layout pen, content
        column, scroll, and scrollbars are all owned by the body region opened below -- the
        window no longer resolves any of that itself; it is just the root region plus chrome. */
     s_build.win_id        = id;
-    s_build.win_title     = title;   /* cached for end_window's deferred chrome */
+    s_build.win_title     = title;   /* cached for window_end's deferred chrome */
     s_build.win_collapsed = collapsed;
-    s_build.win_flags     = flags;   /* end_window reads these for chrome + resize grab */
+    s_build.win_flags     = flags;   /* window_end reads these for chrome + resize grab */
     s_build.win_title_h   = title_h; /* 0 when NOTITLEBAR */
-    s_build.cur_win       = win;     /* collapse write-back target for end_window */
-    s_build.cur_dock_node = NULL;    /* free-floating: end_window takes the normal chrome path */
+    s_build.cur_win       = win;     /* collapse write-back target for window_end */
+    s_build.cur_dock_node = NULL;    /* free-floating: window_end takes the normal chrome path */
     s_build.win_x         = win->x;
     s_build.win_y         = win->y;
     s_build.win_w         = win->w;
     s_build.win_h         = disp_h;  /* displayed height (title bar only when collapsed) */
 
     /* A collapsed window emits no body: the caller skips its widgets on the false return, so
-       no body region is opened and no clip is pushed (end_window mirrors this on win_collapsed).
-       The fixed-size chrome end_window draws is wholly inside the app bounds.  A caller that
+       no body region is opened and no clip is pushed (window_end mirrors this on win_collapsed).
+       The fixed-size chrome window_end draws is wholly inside the app bounds.  A caller that
        ignores the return and emits widgets anyway draws into the empty root layout frame --
        harmless zero-size rects -- rather than into the window. */
     if ( !collapsed )
     {
         /* One clip rect for the whole window: the background, the scrolled content, and the
-           titlebar/border chrome (deferred to end_window) all share it, so the window flushes
+           titlebar/border chrome (deferred to window_end) all share it, so the window flushes
            as a single draw command.  Content scrolled under the title bar or border is
-           overpainted by the chrome end_window draws last; anything past the outer edge is
+           overpainted by the chrome window_end draws last; anything past the outer edge is
            clipped here.  The body region reuses this clip (own_clip false) -- it does not push
-           a second one; only a begin_child inside the window adds another. */
+           a second one; only a child_begin inside the window adds another. */
         draw_push_clip_rect( win->x, win->y, win->w, disp_h );
         s_build.clip_rect = ( imgui_rect_t ){ win->x, win->y, win->w, disp_h };
 
@@ -795,15 +795,15 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
             draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
         /* Menu-bar strip: when WIN_MENUBAR is set, reserve one row below the title bar for
-           begin_menu_bar to fill.  Carved off the top of the body here -- before the scroll
+           menu_bar_begin to fill.  Carved off the top of the body here -- before the scroll
            region opens -- so it sits above the scrolling content and never moves.  The rect is
-           stashed in s_build for begin_menu_bar; mb_h is 0 (no reservation) otherwise. */
+           stashed in s_build for menu_bar_begin; mb_h is 0 (no reservation) otherwise. */
         f32 mb_h = ( flags & IMGUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
         s_build.menubar_rect = ( imgui_rect_t ){ win->x, win->y + title_h, win->w, mb_h };
 
         /* Open the body as a scroll region.  Its region id is the window id, so the body
            scrollbar ids stay exactly what the window used before unification.  The region owns
-           the pen, content column, wheel, and bars until layout_pop_region in end_window, but
+           the pen, content column, wheel, and bars until layout_pop_region in window_end, but
            reuses the window's single clip.  Bias-from-scroll, gutter reservation, and clamping
            all live there now. */
         imgui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
@@ -813,12 +813,12 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     }
     else
     {
-        /* Collapsed: no body region opens and no draw clip is pushed, but end_window still
+        /* Collapsed: no body region opens and no draw clip is pushed, but window_end still
            hit-tests the collapse arrow through s_build.clip_rect.  Left unset it would inherit
            whatever clip the previously drawn window left behind -- which need not cover this
            title bar, so the arrow goes intermittently dead (it only "works" when the stale clip
            happens to contain it).  Point it at the shown title-bar rect so the arrow is always
-           hittable; the deferred chrome in end_window draws within these bounds without a clip. */
+           hittable; the deferred chrome in window_end draws within these bounds without a clip. */
         s_build.clip_rect = ( imgui_rect_t ){ win->x, win->y, win->w, disp_h };
     }
 
@@ -827,7 +827,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
 }
 
 bool
-imgui_begin_window( const char* title, imgui_win_flags_t flags )
+imgui_window_begin( const char* title, imgui_win_flags_t flags )
 {
     return window_begin_ex( id_hash( title ), title, 60.0f, 60.0f, 240.0f, 320.0f, flags );
 }
@@ -846,9 +846,9 @@ vp_request_button( imgui_window_t* win )
 }
 
 void
-imgui_end_window( void )
+imgui_window_end( void )
 {
-    /* Closed CLOSEABLE window: begin_window emitted nothing (no region, no clip, no chrome), so
+    /* Closed CLOSEABLE window: window_begin emitted nothing (no region, no clip, no chrome), so
        there is nothing to balance here -- just consume the latch and return. */
     if ( s_build.win_hidden )
     {
@@ -881,7 +881,7 @@ imgui_end_window( void )
         return;
     }
 
-    /* Same native test begin_window used (flag or owned floater): a native window's titlebar/border
+    /* Same native test window_begin used (flag or owned floater): a native window's titlebar/border
        is the OS frame, so its collapse arrow, detach button and imgui drag-grab are all suppressed. */
     bool native     = window_is_native( win, s_build.win_flags );
     bool frame_only = ( s_build.win_flags & IMGUI_WIN_NATIVE ) != 0;
@@ -944,8 +944,8 @@ imgui_end_window( void )
         f32 btn_x       = s_build.win_x + s_build.win_w;
 
         /* Close button: an X that hides the window.  A click sets win->closed, taking effect next
-           frame like the collapse toggle; from then on begin_window returns false and the window
-           draws nothing until the host re-opens it (set_window_open).  Suppressed for native
+           frame like the collapse toggle; from then on window_begin returns false and the window
+           draws nothing until the host re-opens it (window_set_open).  Suppressed for native
            windows, which get the OS close caption button. */
         if ( ( s_build.win_flags & IMGUI_WIN_CLOSEABLE ) && !native )
         {
@@ -1003,7 +1003,7 @@ imgui_end_window( void )
 
         /* Native caption buttons (min / max / close / pop-in): a native window's titlebar IS the OS
            caption, so its collapse arrow, detach button and imgui drag-grab are all suppressed above
-           -- instead it gets OS-window controls.  begin_window published these exact rects as
+           -- instead it gets OS-window controls.  window_begin published these exact rects as
            HTCLIENT holes, so a click here reaches imgui rather than starting an OS move.  The buttons
            run right-to-left from the bar's right edge; the title text stops at the leftmost one. */
         if ( native )
@@ -1040,7 +1040,7 @@ imgui_end_window( void )
                         case NATIVE_BTN_CLOSE:
                             /* A floater's close hides the CLOSEABLE window and sets reopen_floater;
                                the abandoned-teardown frees this OS surface next frame, and the next
-                               begin re-spawns it from the restore geometry tracked in begin_window
+                               begin re-spawns it from the restore geometry tracked in window_begin
                                (so a maximized floater re-opens maximized).  The main window's close
                                is the graceful application quit. */
                             if ( win && win->viewport != 0 )
@@ -1078,7 +1078,7 @@ imgui_end_window( void )
 
     /* Resize affordance: bold the outline on any hot edge.  While a resize is in flight, the
        grabbed edges stay lit even if the cursor drifts off them; otherwise use win_resize_hot,
-       the hover set computed in begin_window (already NORESIZE- and hover_win-gated). */
+       the hover set computed in window_begin (already NORESIZE- and hover_win-gated). */
     {
         u8 hot_edges = ( s_interaction.active_id == id_combine( s_build.win_id, IMGUI_RESIZE_SALT ) )
                      ? s_resize_edges
@@ -1089,7 +1089,7 @@ imgui_end_window( void )
 
     /* CAN_AUTOSIZE: a size-grip triangle hugging the bottom-right corner -- both a resize handle
        and an auto-fit button.  Drag it to resize the window (it grabs the same right+bottom edge
-       resize the border band uses, so begin_window applies it next frame); double-click it to snap
+       resize the border band uses, so window_begin applies it next frame); double-click it to snap
        the window to this frame's measured content (win->content_* was just written back by
        layout_pop_region).  Only one of the two fires per press, and the double-click never starts a
        drag.  The grip resizes regardless of NORESIZE -- it is the window's own explicit handle. */
@@ -1122,12 +1122,12 @@ imgui_end_window( void )
                             0, ( hot || resizing ) ? COL_RESIZE_HOT : COL_TEXT_DIM );
     }
 
-    /* Balance the clip push, which begin_window only made for an expanded window. */
+    /* Balance the clip push, which window_begin only made for an expanded window. */
     if ( !s_build.win_collapsed )
         draw_pop_clip_rect();
 
     /* Subsequent draws (low-level API, the next window) revert to the background key and the
-       main surface; the next begin_window re-routes them to its own viewport.  Restore the base
+       main surface; the next window_begin re-routes them to its own viewport.  Restore the base
        clip to the main display so background / low-level draws are not bounded by this window's
        (possibly larger or smaller) surface. */
     draw_set_sort_key( 0 );
@@ -1137,7 +1137,7 @@ imgui_end_window( void )
     /* Window move grab.  Decided here, after this window's widgets have run, and pinned off
        entirely by NOMOVE (fixed-position widgets).  This window must be the one under the
        cursor (hover_win) and nothing must already own active_id -- an edge press never reaches
-       here, since begin_window grabbed the resize before the widgets ran.
+       here, since window_begin grabbed the resize before the widgets ran.
 
        frame_only (IMGUI_WIN_NATIVE shell): imgui owns the full client surface via HTCLIENT, so
        title-bar clicks land here instead of going to the OS.  Dispatch them: single press starts
@@ -1147,7 +1147,7 @@ imgui_end_window( void )
        All other windows (panels on main surface, floaters on owned viewports): imgui drag grab.
        Left button obeys the global drag mode and only fires on empty space (hover_id == NONE, so a
        widget press drives the widget).  Middle button grabs from anywhere -- no widget consumes it.
-       Floaters on owned viewports move their whole OS window each frame (see begin_window drag apply). */
+       Floaters on owned viewports move their whole OS window each frame (see window_begin drag apply). */
     if ( s_build.win_id == s_interaction.hover_win && s_interaction.active_id == IMGUI_ID_NONE
          && !( s_build.win_flags & IMGUI_WIN_NOMOVE ) )
     {
@@ -1230,7 +1230,7 @@ imgui_end_window( void )
                 }
                 else
                 {
-                    /* Floater: commit to imgui drag; begin_window applies via window_set_pos.
+                    /* Floater: commit to imgui drag; window_begin applies via window_set_pos.
                        If the floater is maximized, restore it first -- dragging a maximized OS
                        window while calling window_set_pos leaves it in a bad state and produces
                        a stale-chrome white bar across the titlebar.  Re-anchor the grab offset
@@ -1255,7 +1255,7 @@ imgui_end_window( void )
     }
 
     /* Drag-to-dock release: dock this window if it was released over a valid target (computed by
-       dock_drag_detect in begin_window).  Gating lives inside -- s_dock_drag is private to the dock
+       dock_drag_detect in window_begin).  Gating lives inside -- s_dock_drag is private to the dock
        unit, included after this one -- so call it unconditionally; it no-ops unless this is the
        dragged window on its release edge.  It renders docked from next frame. */
     dock_drag_commit( s_build.win_id, s_build.win_title );

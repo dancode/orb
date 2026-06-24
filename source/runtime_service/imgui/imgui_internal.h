@@ -169,7 +169,7 @@ typedef struct imgui_window_t
     f32        x, y;            /* persisted top-left (updated by dragging)       */
     f32        w, h;            /* persisted dimensions                           */
     u32        z;               /* paint order: higher = more recently raised = in front */
-    u32        viewport;        /* target surface index (0 = main swapchain); set via set_next_window_viewport */
+    u32        viewport;        /* target surface index (0 = main swapchain); set via window_set_next_viewport */
 
     f32        scroll_y;        /* vertical scroll offset; 0 = top                */
     f32        scroll_x;        /* horizontal scroll offset; 0 = left             */
@@ -190,9 +190,9 @@ typedef struct imgui_window_t
     i32        home_x, home_y;     /* saved restore (normal) client-corner screen pos     */
     f32        restore_w, restore_h; /* saved restore (normal) size                       */
 
-    imgui_win_flags_t flags;    /* behavior flags supplied to begin_window        */
+    imgui_win_flags_t flags;    /* behavior flags supplied to window_begin        */
 
-    /* Next-window channel bookkeeping (see set_next_window_pos / _size).  last_frame drives the
+    /* Next-window channel bookkeeping (see window_set_next_pos / _size).  last_frame drives the
        "appearing" test; the allow masks track which conditions a queued value may still fire. */
 
     u32        last_frame;      /* frame index last begun; 0 = never begun        */
@@ -244,7 +244,7 @@ typedef struct
        (in_menus false: win is the bar window, a highlighted entry drops its menu) or inside the open
        menu popups (in_menus true: win is the top popup).  Down/Enter descend, Up at a top item and
        Left/Esc ascend -- always landing back on menu_owner so closing a menu returns to the bar
-       entry that opened it (not the first entry).  See imgui_nav.c + begin_menu. */
+       entry that opened it (not the first entry).  See imgui_nav.c + menu_begin. */
 
     imgui_id_t   bar_win;       // menu-bar window nav is driving; 0 = not in menu-bar mode
     bool         in_menus;      // menu mode: false = on the bar entries, true = inside the popups
@@ -258,7 +258,7 @@ typedef struct
 /*==============================================================================================
     Layout-frame (stack in imgui_ctx.c)
 
-    Every scrollable region (a window body or a begin_child box) pushes one frame.  The top frame
+    Every scrollable region (a window body or a child_begin box) pushes one frame.  The top frame
     owns the layout pen and the content column the leaf widgets emit into; the rest is the resolve
     context layout_pop_region needs to measure content and draw the region's scrollbars.
 ==============================================================================================*/
@@ -356,20 +356,20 @@ typedef struct
     imgui_rect_t        parent_clip;        // s_build.clip_rect to restore at pop
     u32                 id_restore;         // id-scope depth to restore at pop (see id stack below)
 
-    /* Child edge-resize (begin_child CHILD_RESIZE_*): the armed/hot edges of this child's border
-       and the s_build.win_resize_hot to restore at end_child.  begin_child sets both (0 for a
-       non-resizeable child); end_child bolds child_resize_edge and restores the saved hot, so a
+    /* Child edge-resize (child_begin CHILD_RESIZE_*): the armed/hot edges of this child's border
+       and the s_build.win_resize_hot to restore at child_end.  child_begin sets both (0 for a
+       non-resizeable child); child_end bolds child_resize_edge and restores the saved hot, so a
        hot edge suppresses body widgets only while inside this child, never its siblings. */
 
     u8                  child_resize_edge;       // hot/armed resize edges for this child (0 = none)
-    u8                  child_resize_saved_hot;  // s_build.win_resize_hot to restore at end_child
+    u8                  child_resize_saved_hot;  // s_build.win_resize_hot to restore at child_end
 
 } layout_frame_t;
 
 /*==============================================================================================
     Persistent region state (imgui_layout_region.c)
 
-    A begin_child region's scroll offset and last-measured content size, kept across frames in the
+    A child_begin region's scroll offset and last-measured content size, kept across frames in the
     keyed state pool (imgui_ctx.c), keyed by region id.  Windows keep these inline in imgui_window_t.
 ==============================================================================================*/
 
@@ -386,13 +386,13 @@ typedef struct
 
     A popup is a top-level overlay begun while a parent window is still open but laid out, clipped,
     and painted independent of it.  imgui_overlay_save_t snapshots exactly the cross-cutting state
-    begin/end_window mutate so end_popup can restore the parent verbatim.  The open set is a stack
+    begin/window_end mutate so popup_end can restore the parent verbatim.  The open set is a stack
     ordered parent -> child, held in imgui_context_t.
 ==============================================================================================*/
 
 typedef struct
 {
-    /* Flat window context (s_build) the popup's begin_window clobbers. */
+    /* Flat window context (s_build) the popup's window_begin clobbers. */
     imgui_id_t             win_id;
     const char*            win_title;
     bool                   win_collapsed;
@@ -419,10 +419,10 @@ typedef struct
     bool         modal;             // blocks input behind it + dims the background
     f32          anchor_x;          // open point -- where a non-modal popup is placed
     f32          anchor_y;
-    u32          open_frame;        // frame open_popup ran -- "appearing" detection
-    u32          begun_frame;       // last frame begin_popup ran -- drives stale-close
+    u32          open_frame;        // frame popup_open ran -- "appearing" detection
+    u32          begun_frame;       // last frame popup_begin ran -- drives stale-close
     imgui_rect_t rect;              // on-screen rect last frame -- drives click-outside
-    imgui_overlay_save_t saved;     // parent context to restore at end_popup
+    imgui_overlay_save_t saved;     // parent context to restore at popup_end
 
 } imgui_popup_t;
 
@@ -503,8 +503,8 @@ typedef struct
     bool pending_close;
 
     /* Drawable size of this surface in pixels.  Set by the host (viewport 0 from frame_begin, floaters
-       via viewport_resize) BEFORE the build so begin_window clips its windows against THIS surface's
-       extent, not the main window's.  0 = unset -> begin_window falls back to the main display size
+       via viewport_resize) BEFORE the build so window_begin clips its windows against THIS surface's
+       extent, not the main window's.  0 = unset -> window_begin falls back to the main display size
        (single-window behavior).  Distinct from the win_w/win_h passed to flush, which only sets the
        GPU viewport/scissor clamp at submit time; the clip baked into each draw command is built here. */
     i32 disp_w, disp_h;
@@ -714,7 +714,7 @@ static u32 viewport_index_for_window( i32 win_id );
 static bool imgui_owned_window_event( const app_event_t* ev );
 
 /* The window chrome (imgui_widget_window.c) is included BEFORE the dock machinery (imgui_dock.c),
-   but begin_window / end_window must route a docked window into its node.  These two are defined in
+   but window_begin / window_end must route a docked window into its node.  These two are defined in
    imgui_dock.c and forward-declared here so the earlier file can call them: the lookup that decides
    whether a window is docked, and the tab-strip + border chrome a docked window draws in place of a
    title bar.  dock_window_chrome reads the current window rect from s_build. */

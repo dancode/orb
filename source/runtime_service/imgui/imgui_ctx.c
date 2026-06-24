@@ -23,7 +23,7 @@
 ----------------------------------------------------------------------------------------------*/
 
 /* imgui_window_t is defined early in imgui.c (it is embedded by value in the context below);
-   s_build.cur_win points at a pool record so end_window can write scroll_y / content_h back. */
+   s_build.cur_win points at a pool record so window_end can write scroll_y / content_h back. */
 
 /* Ambient interaction state -- the one user's live hover / active / focus, persisting across
    frames.  There is one pointer, one keyboard, one mouse, so none of this is ever duplicated per
@@ -49,7 +49,7 @@ static struct
 
     /* Window occlusion is resolved one frame deferred: the single window the cursor is
        over (front-most by z) is only known after every window has been submitted.
-       Each begin_window nominates itself into next_hover_win; ctx_new_frame promotes it to
+       Each window_begin nominates itself into next_hover_win; ctx_new_frame promotes it to
        hover_win.  Next frame a window compares its id against hover_win at entry -- if it
        isn't the hover window it cannot be hit, so it (and all its widgets) skip hit-testing
        entirely.  Only the hover window does widget hit-testing, and within one window
@@ -70,7 +70,7 @@ static struct
 
 /* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
    widget tree is walked.  Nothing here survives begin_frame: it is set and repopulated by the
-   begin_window / begin_child / widget calls, never read across a frame boundary.  Because contexts
+   window_begin / child_begin / widget calls, never read across a frame boundary.  Because contexts
    build sequentially on one thread, this stays a single global builder reused by each context in
    turn rather than per-context state.  Tier: frame scratch. */
 
@@ -87,11 +87,11 @@ static struct
 
     u32         cur_viewport;       // ambient viewport for new-window inheritance (updated per window emitted)
 
-    imgui_id_t  win_id;             // id of the window currently between begin/end_window
-    const char* win_title;          // title string, cached for end_window's deferred chrome
+    imgui_id_t  win_id;             // id of the window currently between begin/window_end
+    const char* win_title;          // title string, cached for window_end's deferred chrome
     bool        win_collapsed;      // current window is collapsed (title bar only this frame)
     bool        win_hidden;         // current window is CLOSEABLE + closed: begin emitted nothing, end early-outs
-    imgui_win_flags_t win_flags;    // current window's behavior flags (begin_window arg)
+    imgui_win_flags_t win_flags;    // current window's behavior flags (window_begin arg)
     f32         win_title_h;        // current window's title bar height (0 if NOTITLEBAR)
     u8          win_resize_hot;     // resize edges hot this frame -- suppresses widget hover
     bool        win_grip_hot;       // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
@@ -100,14 +100,14 @@ static struct
     /* Docking (imgui_dock.c): the node hosting the current window, or NULL when it is free-floating.
        When set, the window's geometry is owned by the node and its title bar is replaced by the
        node's tab strip; win_dock_active distinguishes the visible tab (draws a body) from a window
-       that is docked but behind another tab (begin_window returns false, draws nothing). */
+       that is docked but behind another tab (window_begin returns false, draws nothing). */
     struct imgui_dock_node_t* cur_dock_node;
     bool        win_dock_active;    // current docked window is its node's active (visible) tab
 
     f32  win_x, win_y;        // current window top-left (outer frame)
     f32  win_w, win_h;        // current window dimensions
 
-    imgui_rect_t menubar_rect; // reserved menu-bar strip for the current window (WIN_MENUBAR); begin_menu_bar fills it
+    imgui_rect_t menubar_rect; // reserved menu-bar strip for the current window (WIN_MENUBAR); menu_bar_begin fills it
 
     /* Layout pen + scroll region state now live on the layout-frame stack below; the
        window is just the root frame.  s_build keeps only the cross-cutting per-frame
@@ -127,9 +127,9 @@ static struct
     imgui_item_flags_t next_val;         // their values
     imgui_item_flags_t cur_item_flags;   // flags resolved for the item being emitted
 
-    /* Combo dropdown coordination (imgui_widget_combo.c).  begin_combo sets combo_open true while
+    /* Combo dropdown coordination (imgui_widget_combo.c).  combo_begin sets combo_open true while
        emitting its popup body; a selectable clicked in that body sets combo_item_clicked, and
-       end_combo closes the dropdown when it sees it -- so picking an item dismisses the combo with
+       combo_end closes the dropdown when it sees it -- so picking an item dismisses the combo with
        no caller code, exactly as a selection should.  Both are scoped to the combo body and reset
        each frame as a safety net. */
 
@@ -246,7 +246,7 @@ item_flags_resolve( void )
 /* Clear the per-item state before chrome runs.  Window/child borders, scrollbars, titlebars, and
    the collapse arrow are not items -- they never go through widget_next_rect_w, so without this they
    would inherit whatever the last body widget latched (a disabled trailing widget would dim the
-   border and deaden the scrollbar).  Called at the chrome seams (begin/end_window, begin_child,
+   border and deaden the scrollbar).  Called at the chrome seams (begin/window_end, child_begin,
    layout_pop_region) so chrome always interacts undisabled and paints opaque. */
 static void
 item_flags_chrome_reset( void )
@@ -262,7 +262,7 @@ item_flags_chrome_reset( void )
 /*----------------------------------------------------------------------------------------------
     Layout-frame stack
 
-    - Every scrollable region (a window body or a begin_child box) pushes one frame.  
+    - Every scrollable region (a window body or a child_begin box) pushes one frame.  
     - The top frame owns the layout pen and the content column the leaf widgets emit into.
     - The rest of the struct is the resolve context layout_pop_region needs to measure 
       content and draw the region's scrollbars.
@@ -279,7 +279,7 @@ item_flags_chrome_reset( void )
 static layout_frame_t s_layout_stack[ IMGUI_LAYOUT_DEPTH ];
 static u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
 
-/* Top layout frame.  Valid between a begin_window/begin_child and its matching end.  When the
+/* Top layout frame.  Valid between a window_begin/child_begin and its matching end.  When the
    stack is empty (a caller emitted a widget into a collapsed window despite the false return)
    slot 0 is returned instead of indexing out of bounds -- the stray widget draws into whatever
    the last frame's root region left there rather than crashing.  The read index is also clamped
@@ -304,14 +304,14 @@ lf( void )
 
       s_popup_open_count  -- persists across frames; the live open set is [0, count).
       s_popup_begin_count -- rebuilt each frame; the current popup nesting depth while emitting
-                             (0 at top level, 1 inside one begin_popup, ...).  open_popup writes
-                             a request at this depth; begin_popup matches its id against it.
+                             (0 at top level, 1 inside one popup_begin, ...).  popup_open writes
+                             a request at this depth; popup_begin matches its id against it.
 
     A popup is a *top-level overlay*: it is begun while a parent window is still open, but it must
     lay out, clip, and paint independent of that parent (a context menu escapes the window's
     bounds, paints above it, and must not disturb its layout pen).  imgui_overlay_save_t snapshots
-    exactly the cross-cutting state begin/end_window mutate -- the flat window context, the
-    interaction clip, the draw sort key, and the parent's top layout frame -- so end_popup can
+    exactly the cross-cutting state begin/window_end mutate -- the flat window context, the
+    interaction clip, the draw sort key, and the parent's top layout frame -- so popup_end can
     restore the parent verbatim.  The stack *counters* (layout / id / clip depth) are left intact
     and balance naturally through the normal push/pop, so no slot is ever reused or lost. */
 
@@ -321,7 +321,7 @@ lf( void )
 
 /* The open set (s_popups_open) and its live count (s_popup_open_count) are members of the bound
    context (imgui_context_t, below), reached through the g_ctx alias -- popups persist per context.
-   s_popup_begin_count is per-frame scratch (rebuilt as begin/end_popup run) and stays a plain global. */
+   s_popup_begin_count is per-frame scratch (rebuilt as begin/popup_end run) and stays a plain global. */
 static u32           s_popup_begin_count;                 // current nesting depth (per frame)
 
 /*----------------------------------------------------------------------------------------------
@@ -559,7 +559,7 @@ nav_score_dir( imgui_rect_t cur, imgui_rect_t cand, imgui_dir_t dir )
 }
 
 /*----------------------------------------------------------------------------------------------
-    window_nominate_hover -- begin_window calls this with its rect + z + host viewport.  Keeps the
+    window_nominate_hover -- window_begin calls this with its rect + z + host viewport.  Keeps the
     front-most (highest z) window the cursor is over; promoted to hover_win next frame.
 
     The cursor lives in exactly one OS window/surface at a time (s_io.mouse_viewport, resolved from
@@ -697,17 +697,17 @@ ctx_new_frame( void )
     s_build.last_item_rect   = ( imgui_rect_t ){ 0 };
     s_build.last_item_status = ( widget_state_t ){ 0 };
 
-    /* Fresh layout stack each frame; no region is open until a begin_window/begin_child.
+    /* Fresh layout stack each frame; no region is open until a window_begin/child_begin.
        The interaction clip starts at the full display, and the wheel is unclaimed. */
     s_layout_sp           = 0;
     s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_build.wheel_used    = false;
     s_build.cur_viewport  = 0;       /* ambient viewport resets to primary each frame */
 
-    /* Popup nesting depth is rebuilt as begin_popup / end_popup run; the open set persists. */
+    /* Popup nesting depth is rebuilt as popup_begin / popup_end run; the open set persists. */
     s_popup_begin_count = 0;
 
-    /* Combo body coordination is per-frame and re-set by begin/end_combo; clear as a safety net. */
+    /* Combo body coordination is per-frame and re-set by begin/combo_end; clear as a safety net. */
     s_build.combo_open         = false;
     s_build.combo_item_clicked = false;
 

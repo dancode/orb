@@ -2,13 +2,13 @@
 
     runtime_service/imgui/imgui_layout_child.c -- Child box and sub-layout lifecycle.
 
-    begin_child / end_child open a nested scrollable region inside the current layout: they
+    child_begin / child_end open a nested scrollable region inside the current layout: they
     carve a box from the parent pen, draw its frame, and hand off to layout_push/pop_region.
     CHILD_RESIZE_X / _Y add a draggable grip on the right / bottom edge so the box is
     user-resizable; the size is persisted in the region pool across frames.
 
-    set_next_window_size_constraints latches a one-shot [min,max] box consumed by the next
-    begin_child: an auto-sized box grows with its content only up to max_h, and a resize drag
+    window_set_next_size_constraints latches a one-shot [min,max] box consumed by the next
+    child_begin: an auto-sized box grows with its content only up to max_h, and a resize drag
     cannot leave the range.
 
     push_layout / pop_layout open a transient sub-layout inside one cell of the parent template:
@@ -23,7 +23,7 @@
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
-    begin_child / end_child -- a nested scrollable region inside the current layout.
+    child_begin / child_end -- a nested scrollable region inside the current layout.
 ----------------------------------------------------------------------------------------------*/
 
 /* Smallest a resizeable child may be dragged to: a couple of rows wide, one row plus border tall. */
@@ -31,7 +31,7 @@
 #define CHILD_MIN_H ( WIDGET_H + WIN_BORDER )
 
 /* Next-child size constraints (the Dear ImGui SetNextWindowSizeConstraints analogue): a one-shot
-   [min,max] box consumed by the next begin_child.  Set by imgui_set_next_window_size_constraints,
+   [min,max] box consumed by the next child_begin.  Set by imgui_window_set_next_size_constraints,
    cleared on consume so it targets exactly one child.  A bound <= 0 means unconstrained on that
    side; the absolute CHILD_MIN floors still apply to a resize drag. */
 static struct
@@ -42,7 +42,7 @@ static struct
 } s_next_child_con;
 
 void
-imgui_set_next_window_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h )
+imgui_window_set_next_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h )
 {
     s_next_child_con.has   = true;
     s_next_child_con.min_w = min_w;
@@ -61,7 +61,7 @@ child_con_clamp( f32 v, f32 mn, f32 mx )
 }
 
 bool
-imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
+imgui_child_begin( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 {
     layout_frame_t* parent = lf();
 
@@ -133,7 +133,7 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
     }
 
     /* Edge-resize interaction, resolved here -- before the body widgets -- so a press on the grip
-       band pre-empts a body widget under it, mirroring how begin_window resolves the window edge
+       band pre-empts a body widget under it, mirroring how window_begin resolves the window edge
        first.  Gated on the owning window being front-most and a free or self-owned active_id.
        Apply an in-flight drag to the persisted size, then re-derive the box so the frame painted
        below tracks the cursor this frame (the right/bottom edges only -- the origin stays put). */
@@ -182,12 +182,12 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
     }
 
     /* The child box is chrome, not an item: paint its frame opaque even if a disabled widget
-       precedes the begin_child call. */
+       precedes the child_begin call. */
     item_flags_chrome_reset();
 
     /* Child body fill, drawn under the parent clip before the region clips in.  The border is
-       deferred to end_child (after the scrollbars) so the bar tracks cannot overdraw it -- the
-       same deferral end_window uses for the window frame. */
+       deferred to child_end (after the scrollbars) so the bar tracks cannot overdraw it -- the
+       same deferral window_end uses for the window frame. */
     draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, COL_CHILD_BG );
 
     layout_push_region( id, box, REGION_PAD_DEFAULT, flags,
@@ -196,18 +196,18 @@ imgui_begin_child( const char* id_str, f32 w, f32 h, imgui_win_flags_t flags )
 
     /* Stamp the child's resize bookkeeping on its just-pushed frame, and suppress body-widget hover
        under a hot/armed edge for the child's duration (the edges stay armed mid-drag even if the
-       cursor drifts off).  end_child restores the saved hot, so siblings below are unaffected. */
+       cursor drifts off).  child_end restores the saved hot, so siblings below are unaffected. */
     layout_frame_t* f         = lf();
     f->child_resize_edge      = ( s_interaction.active_id == resize_id ) ? s_resize_edges : resize_hot;
     f->child_resize_saved_hot = s_build.win_resize_hot;
     if ( f->child_resize_edge ) s_build.win_resize_hot = f->child_resize_edge;
 
-    /* No collapse concept for a child: always returns true, always pair with end_child. */
+    /* No collapse concept for a child: always returns true, always pair with child_end. */
     return true;
 }
 
 void
-imgui_end_child( void )
+imgui_child_end( void )
 {
     /* Capture the box + resize state before layout_pop_region unwinds the frame, then draw the
        border after it has painted the scrollbars.  The bar tracks are inset by WIN_BORDER and butt

@@ -9,8 +9,8 @@
     The scrollable region engine (layout_push/pop_region, region_scrollbar, imgui_region_t,
     scroll_clamp) is in imgui_layout_region.c, included just before this file.
 
-    Child box and sub-layout lifecycle (imgui_begin/end_child, imgui_push/pop_layout,
-    imgui_set_next_window_size_constraints) is in imgui_layout_child.c, also included before
+    Child box and sub-layout lifecycle (imgui_begin/child_end, imgui_push/pop_layout,
+    imgui_window_set_next_size_constraints) is in imgui_layout_child.c, also included before
     this file.
 
     Included by imgui.c after imgui_layout_child.c.
@@ -347,7 +347,7 @@ f32 imgui_calc_col( f32 content_w ) { return content_w + imgui_w_min(); }
 /* Remaining free space in the current region from the layout pen -- the GetContentRegionAvail
    analogue.  Width is what a flex widget would fill (the content column from the pen to its right
    edge); height is the room left before the region bottom (the grid band end / view bottom).  Use
-   it to size a begin_child to the leftover space, or to lay widgets out by hand.  Measured from the
+   it to size a child_begin to the leftover space, or to lay widgets out by hand.  Measured from the
    pen, so call it where the next widget would land; the height is most meaningful before scrolling. */
 imgui_vec2_t
 imgui_content_avail( void )

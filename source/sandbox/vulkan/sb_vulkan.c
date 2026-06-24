@@ -347,8 +347,8 @@ main( int argc, char** argv )
         /* Borderless main window: this full-surface native shell IS the OS window's frame. */
         if ( b_borderless )
         {
-            imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
-            imgui()->end_window();
+            imgui()->window_begin( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+            imgui()->window_end();
         }
 
         /* The active demo runs in the single-context path; the multi-ctx demo shows ctx2 instead. */
@@ -361,9 +361,9 @@ main( int argc, char** argv )
         bool second_surface = false;
         if ( second_surface )
         {
-            imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-            imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
-            if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
+            imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+            imgui()->window_set_next_size( 360, 240, IMGUI_COND_ONCE );
+            if ( imgui()->window_begin( "Second Surface", IMGUI_WIN_NONE ) )
             {
                 imgui()->stack();
                 imgui()->text( "Detach me: click the title-bar button" );
@@ -373,7 +373,7 @@ main( int argc, char** argv )
                 imgui()->text( "window -- drag my title bar to move the" );
                 imgui()->text( "OS window, drag my borders to resize." );
             }
-            imgui()->end_window();
+            imgui()->window_end();
         }
 
         /* Perf overlay -- last so it draws on top, inside the default context's scope and the build
@@ -389,9 +389,9 @@ main( int argc, char** argv )
             imgui()->ctx_begin( ctx2 );
             {
                 static int ctx2_click_count = 0;
-                imgui()->set_next_window_pos ( 700, 60, IMGUI_COND_ONCE );
-                imgui()->set_next_window_size( 280, 200, IMGUI_COND_ONCE );
-                if ( imgui()->begin_window( "Context 2 Window", IMGUI_WIN_NONE ) )
+                imgui()->window_set_next_pos ( 700, 60, IMGUI_COND_ONCE );
+                imgui()->window_set_next_size( 280, 200, IMGUI_COND_ONCE );
+                if ( imgui()->window_begin( "Context 2 Window", IMGUI_WIN_NONE ) )
                 {
                     imgui()->stack();
                     imgui()->text( "Secondary context (ctx2)." );
@@ -401,7 +401,7 @@ main( int argc, char** argv )
                     if ( imgui()->button( "Click me (ctx2)" ) ) ++ctx2_click_count;
                     imgui()->textf( "Clicks: %d", ctx2_click_count );
                 }
-                imgui()->end_window();
+                imgui()->window_end();
             }
             imgui()->ctx_end();
         }

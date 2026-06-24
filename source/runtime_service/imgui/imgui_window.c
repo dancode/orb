@@ -3,13 +3,13 @@
     runtime_service/imgui/imgui_window.c -- Persistent per-window state.
 
     Windows are keyed by id_hash(title).  On first appearance the registry seeds the record
-    from any queued set_next_window_pos / _size (ONCE condition), falling back to a default
+    from any queued window_set_next_pos / _size (ONCE condition), falling back to a default
     60x60 origin and 240x320 size.  From then on this registry owns the window's position so
     it survives across frames -- the foundation for dragging (now) and for collapse / scroll /
     saved-layout state (later).
 
     Drag / resize / scrollbar interaction lives in imgui_widget_window.c alongside
-    begin_window / end_window, where the layout dimensions (title-bar height, padding) are in
+    window_begin / window_end, where the layout dimensions (title-bar height, padding) are in
     scope.  This file owns the table, the active drag mode, the in-flight drag and resize
     offsets, and raise-to-front -- the state those interactions read and write.
 
@@ -65,7 +65,7 @@ static f32                  s_resize_fix_x, s_resize_fix_y;
 
 /* The salt, edge bits, grab-band constants, and the record-agnostic hit-test / highlight helpers
    live in imgui_widget_core.c -- they need the style macros (WIN_BORDER, COL_RESIZE_HOT) defined
-   there, and that file is still ahead of imgui_layout.c, so begin_child can reuse them.  The
+   there, and that file is still ahead of imgui_layout.c, so child_begin can reuse them.  The
    s_resize_* state above stays here; the window-record apply / grab / fit stay in
    imgui_widget_window.c. */
 
@@ -91,14 +91,14 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->w         = w;
     win->h         = h;
     win->z         = ++s_z_counter;
-    win->viewport  = s_build.cur_viewport;   /* inherit ambient; set_next_window_viewport overrides */
+    win->viewport  = s_build.cur_viewport;   /* inherit ambient; window_set_next_viewport overrides */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
     win->closed    = false;   /* a freshly seen window starts open                */
     win->reopen_floater   = false;   /* not a re-opening floater until one is closed */
     win->reopen_maximized = false;
 
     /* Next-window state for a fresh window: never begun (so the first begin is "appearing"), and
-       ONCE / ALWAYS permitted but APPEARING withheld -- begin_window grants APPEARING only on the
+       ONCE / ALWAYS permitted but APPEARING withheld -- window_begin grants APPEARING only on the
        frames the window actually (re)appears.  Reset here so a reused scratch slot starts clean. */
     win->last_frame     = 0u;
     win->set_pos_allow  = (u8)( IMGUI_COND_ONCE | IMGUI_COND_ALWAYS );
@@ -122,13 +122,13 @@ window_find( imgui_id_t id )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Next-window channel -- queued geometry for the next begin_window, consumed and cleared by it.
+    Next-window channel -- queued geometry for the next window_begin, consumed and cleared by it.
 
-    set_next_window_pos / set_next_window_size write here; the following begin_window applies each
+    window_set_next_pos / window_set_next_size write here; the following window_begin applies each
     field to its target window per the field's condition (imgui_cond_t), then clears the channel.
     This decouples the value from when it is applied -- the reason the geometry is a side channel
-    rather than fixed begin_window parameters.  Only the next window is affected; an unconsumed
-    queue (no begin_window follows) simply carries to whichever window is begun next.
+    rather than fixed window_begin parameters.  Only the next window is affected; an unconsumed
+    queue (no window_begin follows) simply carries to whichever window is begun next.
 ----------------------------------------------------------------------------------------------*/
 
 static struct
@@ -172,7 +172,7 @@ static struct
 } s_vp_request;
 
 void
-imgui_set_next_window_pos( f32 x, f32 y, imgui_cond_t cond )
+imgui_window_set_next_pos( f32 x, f32 y, imgui_cond_t cond )
 {
     s_next_win.has_pos  = true;
     s_next_win.pos_cond = cond ? cond : IMGUI_COND_ALWAYS;   /* unset cond -> force */
@@ -181,7 +181,7 @@ imgui_set_next_window_pos( f32 x, f32 y, imgui_cond_t cond )
 }
 
 void
-imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond )
+imgui_window_set_next_size( f32 w, f32 h, imgui_cond_t cond )
 {
     s_next_win.has_size  = true;
     s_next_win.size_cond = cond ? cond : IMGUI_COND_ALWAYS;
@@ -189,11 +189,11 @@ imgui_set_next_window_size( f32 w, f32 h, imgui_cond_t cond )
     s_next_win.size_h    = h;
 }
 
-/* Queue the surface the NEXT begin_window paints into.  Sticky: it lands on the window record and
+/* Queue the surface the NEXT window_begin paints into.  Sticky: it lands on the window record and
    persists across frames until reassigned.  Omit to use the ambient viewport (most recently emitted).
    Invalid or negative vp is treated as the primary (0). */
 void
-imgui_set_next_window_viewport( imgui_vp_t vp )
+imgui_window_set_next_viewport( imgui_vp_t vp )
 {
     s_next_win.has_viewport = true;
     s_next_win.viewport     = ( vp >= 0 ) ? (u32)vp : 0u;
@@ -239,7 +239,7 @@ window_apply_next( imgui_window_t* win, bool appearing )
     }
 
     /* Viewport reassignment is unconditional (no ONCE/ALWAYS/APPEARING) -- it simply lands and
-       sticks until the next set_next_window_viewport on this window. */
+       sticks until the next window_set_next_viewport on this window. */
     if ( s_next_win.has_viewport )
         win->viewport = s_next_win.viewport;
 
@@ -250,7 +250,7 @@ window_apply_next( imgui_window_t* win, bool appearing )
     window_raise_on_press -- a press brings the window under the cursor to the front.
 
     hover_win (the window the cursor is over) was resolved last frame, so this runs at the
-    top of the frame -- before any begin_window stamps its z -- and the raise therefore
+    top of the frame -- before any window_begin stamps its z -- and the raise therefore
     takes effect this same frame: clicking a window's exposed area brings it up at once.
     Called from imgui_ctx_begin() right after ctx_new_frame() promotes hover_win.
 ----------------------------------------------------------------------------------------------*/
@@ -259,7 +259,7 @@ static void
 window_raise_on_press( void )
 {
     /* Either button raises: left for the normal click/drag, middle for the convenience move
-       grab (imgui_widget.c end_window), so a middle-grabbed window also comes to the front. */
+       grab (imgui_widget.c window_end), so a middle-grabbed window also comes to the front. */
     if ( ( !s_io.mouse_pressed[ 0 ] && !s_io.mouse_pressed[ 2 ] )
          || s_interaction.hover_win == IMGUI_ID_NONE )
         return;
@@ -285,11 +285,11 @@ window_raise_on_press( void )
 }
 
 /*----------------------------------------------------------------------------------------------
-    set_window_drag -- select the global drag mode; call between frames.
+    window_set_drag -- select the global drag mode; call between frames.
 ----------------------------------------------------------------------------------------------*/
 
 void
-imgui_set_window_drag( imgui_win_drag_t mode )
+imgui_window_set_drag( imgui_win_drag_t mode )
 {
     s_win_drag_mode = mode;
 }
@@ -298,14 +298,14 @@ imgui_set_window_drag( imgui_win_drag_t mode )
     Closeable windows -- open / query a window's hidden state by title.
 
     A CLOSEABLE window's close (X) button sets win->closed, hiding the window until the host
-    re-opens it.  These reach the record by id_hash(title) -- the same key begin_window uses --
+    re-opens it.  These reach the record by id_hash(title) -- the same key window_begin uses --
     so the host can drive the open state from a button without holding its own flag.  A window
-    that has never been begun has no record yet; set_window_open then no-ops (it already opens
-    by default on first begin) and is_window_open reports it open.
+    that has never been begun has no record yet; window_set_open then no-ops (it already opens
+    by default on first begin) and window_is_open reports it open.
 ----------------------------------------------------------------------------------------------*/
 
 void
-imgui_set_window_open( const char* title, bool open )
+imgui_window_set_open( const char* title, bool open )
 {
     imgui_window_t* win = window_find( id_hash( title ) );
     if ( win )
@@ -313,7 +313,7 @@ imgui_set_window_open( const char* title, bool open )
 }
 
 bool
-imgui_is_window_open( const char* title )
+imgui_window_is_open( const char* title )
 {
     imgui_window_t* win = window_find( id_hash( title ) );
     return !win || !win->closed;

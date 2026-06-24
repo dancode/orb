@@ -31,7 +31,7 @@ typedef u32 imgui_icon_id_t;
 
 /* Opaque viewport handle -- a render surface backed by an OS window.  Returned by
    viewport_open; passed to render, viewport_resize, viewport_close, and
-   set_next_window_viewport.  IMGUI_VP_INVALID (-1) signals failure or no assignment. */
+   window_set_next_viewport.  IMGUI_VP_INVALID (-1) signals failure or no assignment. */
 
 typedef i32  imgui_vp_t;
 #define IMGUI_VP_INVALID  (-1)
@@ -198,7 +198,7 @@ static inline f32 imgui_degrees( f32 radians ) { return radians * ( 180.0f / IMG
 /*==============================================================================================
     Layout template
 
-    A region (a window body or a begin_child box) lays widgets out by carving its content area
+    A region (a window body or a child_begin box) lays widgets out by carving its content area
     into cells.  imgui_layout() installs a template that *persists and repeats*: every widget
     fills the next cell.  A region opens UNDECLARED (no template): the first layout header in its
     body names the mode -- stack() for the single flex column of auto height (the classic vertical
@@ -315,7 +315,7 @@ typedef enum
 
 /*==============================================================================================
     Window drag mode -- how a window may be repositioned by the mouse.
-    Selected globally via imgui()->set_window_drag(); default is TITLEBAR.
+    Selected globally via imgui()->window_set_drag(); default is TITLEBAR.
 ==============================================================================================*/
 
 typedef enum
@@ -327,12 +327,12 @@ typedef enum
 } imgui_win_drag_t;
 
 /*==============================================================================================
-    Apply condition -- when a queued set_next_window_* value takes effect on its target window.
+    Apply condition -- when a queued window_set_next_* value takes effect on its target window.
 
-    Passed to set_next_window_pos / set_next_window_size.  The value and the condition are two
+    Passed to window_set_next_pos / window_set_next_size.  The value and the condition are two
     separate axes: the same window can be seeded once, forced every frame, or re-applied whenever
     it re-appears, by changing only the condition -- the reason geometry is a side channel rather
-    than fixed begin_window parameters.  Bit values so a window can mask the conditions it still
+    than fixed window_begin parameters.  Bit values so a window can mask the conditions it still
     permits.  A 0 (unset) condition is treated as ALWAYS.
 ==============================================================================================*/
 
@@ -353,7 +353,7 @@ typedef enum
 /*==============================================================================================
     Window flags
 
-    Passed as the final argument to begin_window to customize a single window's behavior.
+    Passed as the final argument to window_begin to customize a single window's behavior.
     They mostly switch off default behavior; pass 0 (IMGUI_WIN_NONE) for the defaults.
 ==============================================================================================*/
 
@@ -381,9 +381,9 @@ typedef enum
     IMGUI_WIN_ALWAYS_AUTOSIZE   = 1 << 9,    /* hug content every frame: no user resize, no scrollbars */
     IMGUI_WIN_CAN_AUTOSIZE      = 1 << 10,   /* show a corner size-grip; double-click it to fit content */
 
-    /* child resize -- begin_child only (the ImGuiChildFlags_ResizeX / _ResizeY analogue).  A
+    /* child resize -- child_begin only (the ImGuiChildFlags_ResizeX / _ResizeY analogue).  A
        draggable grip on the child's right / bottom border; the size on that axis then becomes
-       user-owned and persisted -- seeded once from the begin_child w/h, thereafter set by the
+       user-owned and persisted -- seeded once from the child_begin w/h, thereafter set by the
        drag -- overriding the passed value.  RESIZE_Y supersedes the h<=0 auto-size on that axis.
        A real window ignores these (it owns its geometry already), as does a grid-cell child
        (the cell sizes it).  Vertical is the common case; both axes may be combined. */
@@ -391,11 +391,11 @@ typedef enum
     IMGUI_WIN_CHILD_RESIZE_X    = 1 << 11,   /* child: drag the right border to resize width   */
     IMGUI_WIN_CHILD_RESIZE_Y    = 1 << 12,   /* child: drag the bottom border to resize height  */
 
-    /* Menu bar -- reserve a one-row strip below the title bar that begin_menu_bar fills (the
+    /* Menu bar -- reserve a one-row strip below the title bar that menu_bar_begin fills (the
        ImGuiWindowFlags_MenuBar analogue).  The strip is carved from the top of the body before the
-       body scroll region opens, so it never scrolls; begin_menu_bar returns false unless set. */
+       body scroll region opens, so it never scrolls; menu_bar_begin returns false unless set. */
 
-    IMGUI_WIN_MENUBAR           = 1 << 13,   /* reserve a non-scrolling menu-bar strip (begin_menu_bar) */
+    IMGUI_WIN_MENUBAR           = 1 << 13,   /* reserve a non-scrolling menu-bar strip (menu_bar_begin) */
 
     /* Native-borderless: this window IS its host OS window (window kind 3).  Its titlebar stands in
        for the Win32 caption and its border for the sizing frame, so titlebar drag / double-click /
@@ -423,9 +423,9 @@ typedef enum
     IMGUI_WIN_NO_DETACH         = 1 << 17,   /* no pop-out: hide detach button, block tear-off drag */
 
     /* Closeable -- add a close (X) button at the title bar's right edge.  Clicking it hides the
-       window: begin_window returns false and emits nothing from then on, and the record persists
+       window: window_begin returns false and emits nothing from then on, and the record persists
        so the window keeps its position / size while closed.  Re-opening is the caller's job --
-       offer a button that calls set_window_open( title, true ).  A native window uses its OS close
+       offer a button that calls window_set_open( title, true ).  A native window uses its OS close
        caption button instead, so this flag only adds the X to a regular (non-native) panel. */
 
     IMGUI_WIN_CLOSEABLE         = 1 << 19,   /* show a close (X) button; hidden until re-opened */
@@ -446,7 +446,7 @@ typedef enum
                        A bare content panel you still position / move yourself.
        OVERLAY      -- a passive, non-interactive HUD: undecorated, fixed in place, hugging its
                        content every frame, and non-detachable.  The "accepts no action" window --
-                       what the built-in perf overlay uses.  Pin it with set_next_window_pos. */
+                       what the built-in perf overlay uses.  Pin it with window_set_next_pos. */
 
     IMGUI_WIN_NODECORATION = IMGUI_WIN_NOTITLEBAR | IMGUI_WIN_NORESIZE |
                              IMGUI_WIN_NOSCROLL   | IMGUI_WIN_NOCOLLAPSE,
@@ -533,7 +533,7 @@ typedef enum
 /*==============================================================================================
     Combo flags
 
-    Passed to begin_combo to tune the dropdown.  The HEIGHT_* group caps the dropdown to a fixed
+    Passed to combo_begin to tune the dropdown.  The HEIGHT_* group caps the dropdown to a fixed
     number of visible rows (then it scrolls) -- the ImGuiComboFlags_Height* analogue; they are
     mutually exclusive, so set exactly one (an unset height defaults to REGULAR / 8 rows).  0
     (IMGUI_COMBO_NONE) is the default no-tweak set.

@@ -381,7 +381,7 @@ widget_behavior( imgui_id_t id, imgui_rect_t r, widget_kind_t kind )
 {
     widget_state_t st = { 0 };
 
-    /* Latch the most recent item id for context menus / tooltips (begin_popup_context_item,
+    /* Latch the most recent item id for context menus / tooltips (popup_context_item_begin,
        set_item_tooltip).  Done before the disabled early-out so a disabled widget still counts
        as the last item -- the anchor is "what was just emitted", regardless of its state. */
     s_build.last_item_id   = id;

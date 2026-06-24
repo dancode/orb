@@ -9,8 +9,8 @@
     demo to draw with a key switch -- number keys 1..9 jump to a demo, +/- step through the table.
 
     A demo function takes no arguments and assumes it runs inside an open context (between
-    imgui()->ctx_begin() and ctx_end()); it must balance its own begin_window/end_window (and
-    begin_child, push_id, push_layout) calls.
+    imgui()->ctx_begin() and ctx_end()); it must balance its own window_begin/window_end (and
+    child_begin, push_id, push_layout) calls.
 
     Usage (host):
         imgui()->frame_begin( dt );

@@ -44,8 +44,8 @@ static struct
     u32 cmd_count;   /* commands in the list this frame  */
     u32 pt_count;    /* points in the pool this frame    */
 
-    u32 cur_z;       /* sort key stamped onto new commands (set by begin/end_window)        */
-    u32 cur_vp;      /* viewport index stamped onto new commands (set by begin/end_window)  */
+    u32 cur_z;       /* sort key stamped onto new commands (set by begin/window_end)        */
+    u32 cur_vp;      /* viewport index stamped onto new commands (set by begin/window_end)  */
 
     imgui_rect_t clip_stack[ IMGUI_CLIP_DEPTH ];
     u32          clip_depth;
@@ -125,9 +125,9 @@ draw_pop_clip_rect( void )
 }
 
 /* Set the base clip (clip_stack[0]) -- the rect every window clip intersects against -- to a given
-   surface size.  draw_reset seeds it to the main display; begin_window overwrites it with its own
+   surface size.  draw_reset seeds it to the main display; window_begin overwrites it with its own
    viewport's drawable size so a window on a second surface is bounded by that surface, not the main
-   window (end_window restores the main display).  Only touches slot 0, so it is safe whenever the
+   window (window_end restores the main display).  Only touches slot 0, so it is safe whenever the
    stack is at base depth (between windows); a window's own clip pushes on top of it. */
 void
 draw_set_root_clip( f32 w, f32 h )
@@ -137,7 +137,7 @@ draw_set_root_clip( f32 w, f32 h )
 
 /*----------------------------------------------------------------------------------------------
     draw_set_sort_key -- stamp subsequent commands with this z (window paint order).
-    Set to the window's z in begin_window and back to 0 (background) in end_window.
+    Set to the window's z in window_begin and back to 0 (background) in window_end.
 ----------------------------------------------------------------------------------------------*/
 
 void
@@ -147,7 +147,7 @@ draw_set_sort_key( u32 z )
 }
 
 /* Current sort key -- saved by the popup layer so an overlay window can restore the parent's
-   paint order on close (begin/end_window drive cur_z, which is a single global). */
+   paint order on close (begin/window_end drive cur_z, which is a single global). */
 u32
 draw_sort_key( void )
 {
@@ -157,8 +157,8 @@ draw_sort_key( void )
 /*----------------------------------------------------------------------------------------------
     draw_set_viewport -- route subsequent commands to viewport `vp` (the surface a window paints).
 
-    Set to the window's assigned viewport in begin_window and back to 0 (the main swapchain) in
-    end_window, exactly as draw_set_sort_key drives the paint order.  flush replays only the
+    Set to the window's assigned viewport in window_begin and back to 0 (the main swapchain) in
+    window_end, exactly as draw_set_sort_key drives the paint order.  flush replays only the
     commands tagged with its own viewport index, so one context can build every window's geometry
     and dispatch each window to the surface hosting it.
 ----------------------------------------------------------------------------------------------*/
@@ -170,7 +170,7 @@ draw_set_viewport( u32 vp )
 }
 
 /* Current viewport -- saved/restored by the popup layer alongside the sort key, so an overlay
-   begun mid-window leaves the parent's routing intact (begin/end_window drive cur_vp globally). */
+   begun mid-window leaves the parent's routing intact (begin/window_end drive cur_vp globally). */
 u32
 draw_viewport( void )
 {

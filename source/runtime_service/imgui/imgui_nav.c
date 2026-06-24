@@ -30,7 +30,7 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* The explicit nav target window (set_nav_window / Ctrl+Tab / Alt).  0 means "follow the
+/* The explicit nav target window (window_set_nav / Ctrl+Tab / Alt).  0 means "follow the
    front-most normal window", so nav has a sensible default with no caller setup. */
 static imgui_id_t s_nav_window;
 
@@ -233,13 +233,13 @@ nav_menu_ascend_to_bar( void )
 
 /* Bar/menu key handling while in menu-bar mode.  `first_prev` is last frame's first emitted item,
    used to detect "Up at the top of a dropdown".  Left/Right at the bar fall through to the scorer
-   (the bar is horizontal), and Right inside a menu is handled by begin_menu (open submenu). */
+   (the bar is horizontal), and Right inside a menu is handled by menu_begin (open submenu). */
 static void
 nav_menu_keys( bool down, bool up, bool left, bool esc, imgui_id_t first_prev )
 {
     if ( !s_nav.in_menus )
     {
-        /* On the bar: the highlighted entry drops its menu (begin_menu).  Down / Enter descend into
+        /* On the bar: the highlighted entry drops its menu (menu_begin).  Down / Enter descend into
            it; Esc leaves menu mode.  Left/Right stay as a directional move for the scorer. */
         if ( down || s_nav.activate )
         {
@@ -280,7 +280,7 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, imgui_id_t first_prev )
             }
             s_nav.move_dir = -1;
         }
-        /* Down / Up (mid-list) move via the scorer; Right opens a submenu in begin_menu; Enter
+        /* Down / Up (mid-list) move via the scorer; Right opens a submenu in menu_begin; Enter
            activates through the synthesized click. */
     }
 }
@@ -370,7 +370,7 @@ nav_new_frame( void )
         for ( u32 c = 0; c < 26u; ++c )
             if ( s_io.keys_pressed[ APP_KEY_A + c ] )
             {
-                s_nav.mnemonic  = (u8)( 'A' + c );  /* begin_menu matches + opens the entry */
+                s_nav.mnemonic  = (u8)( 'A' + c );  /* menu_begin matches + opens the entry */
                 s_nav_alt_used      = true;
                 s_nav.active    = true;
                 s_nav.highlight = true;
@@ -446,11 +446,11 @@ nav_new_frame( void )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Public: set_nav_window -- aim keyboard nav at a window by title (the explicit-focus entry).
+    Public: window_set_nav -- aim keyboard nav at a window by title (the explicit-focus entry).
 ----------------------------------------------------------------------------------------------*/
 
 void
-imgui_set_nav_window( const char* title )
+imgui_window_set_nav( const char* title )
 {
     s_nav_window        = title ? id_hash( title ) : IMGUI_ID_NONE;
     s_nav.id        = IMGUI_ID_NONE;   /* first item of the new window takes focus */

@@ -10,10 +10,10 @@
                  anchored at the box, so occlusion, click-outside close, overlay detach, and z-band
                  all come from there unchanged; only the box-anchored placement + a min width that
                  matches the box are combo-specific.  A row clicked in the body dismisses the combo
-                 (selectable flags s_build.combo_item_clicked; end_combo closes on it).
+                 (selectable flags s_build.combo_item_clicked; combo_end closes on it).
 
       List box -- a framed, independently scrolling box of selectable rows with a trailing label.
-                 It is a begin_child (which already frames, clips, and scrolls) plus the label drawn
+                 It is a child_begin (which already frames, clips, and scrolls) plus the label drawn
                  to its right -- no new region type.
 
     Each comes in a generic Begin/End form (full control over the rows) and a one-liner over an
@@ -32,7 +32,7 @@
 
 /* Persistent per-combo state: the last frame the dropdown body emitted.  Used to tell an "open"
    click (toggle closed) from a "closed" click (open), since popup_close_check has already dropped
-   the popup by the time begin_combo runs -- without it the same click would close then reopen. */
+   the popup by the time combo_begin runs -- without it the same click would close then reopen. */
 typedef struct { u32 open_frame; } imgui_combo_state_t;
 
 /* The height a list of `n` selectable rows occupies in a stack body: each row is WIDGET_H with a
@@ -63,7 +63,7 @@ combo_cap_items( imgui_combo_flags_t flags )
 }
 
 bool
-imgui_begin_combo( const char* label, const char* preview_value, imgui_combo_flags_t flags )
+imgui_combo_begin( const char* label, const char* preview_value, imgui_combo_flags_t flags )
 {
     imgui_id_t   id  = widget_id( label );
     imgui_rect_t row = widget_next_rect( WIDGET_H );
@@ -141,16 +141,16 @@ imgui_begin_combo( const char* label, const char* preview_value, imgui_combo_fla
 }
 
 void
-imgui_end_combo( void )
+imgui_combo_end( void )
 {
     /* A row clicked in the body dismisses the combo (selectable set the flag while combo_open). */
     if ( s_build.combo_item_clicked )
-        imgui_close_current_popup();
+        imgui_popup_close_current();
 
     s_build.combo_open         = false;
     s_build.combo_item_clicked = false;
 
-    imgui_end_popup();
+    imgui_popup_end();
 }
 
 /* One-liner over an array of strings: the common "pick one of N" case.  *current_item is the
@@ -162,7 +162,7 @@ imgui_combo( const char* label, i32* current_item, const char* const items[], i3
     const char* preview = ( *current_item >= 0 && *current_item < count ) ? items[ *current_item ] : "";
     bool        changed = false;
 
-    if ( imgui_begin_combo( label, preview, IMGUI_COMBO_NONE ) )
+    if ( imgui_combo_begin( label, preview, IMGUI_COMBO_NONE ) )
     {
         for ( i32 i = 0; i < count; ++i )
         {
@@ -175,7 +175,7 @@ imgui_combo( const char* label, i32* current_item, const char* const items[], i3
             }
             imgui_pop_id();
         }
-        imgui_end_combo();
+        imgui_combo_end();
     }
     return changed;
 }
@@ -183,20 +183,20 @@ imgui_combo( const char* label, i32* current_item, const char* const items[], i3
 /*----------------------------------------------------------------------------------------------
     List box
 
-    A framed, independently scrolling box of selectable rows with a trailing label.  begin_listbox
-    is a begin_child sized to the box (defaulting to ~7 rows tall and filling the line minus the
-    label); the label is captured and drawn to the box's right at end_listbox.  A small stack
+    A framed, independently scrolling box of selectable rows with a trailing label.  listbox_begin
+    is a child_begin sized to the box (defaulting to ~7 rows tall and filling the line minus the
+    label); the label is captured and drawn to the box's right at listbox_end.  A small stack
     carries the label + box rect across the pair, the same way the tooltip save slot does, so the
     boxes may nest.
 ----------------------------------------------------------------------------------------------*/
 
-#define LISTBOX_DEPTH 4   /* nested list boxes (rare, but begin_child nests, so allow a few) */
+#define LISTBOX_DEPTH 4   /* nested list boxes (rare, but child_begin nests, so allow a few) */
 
 static struct { const char* label; imgui_rect_t box; } s_listbox_stack[ LISTBOX_DEPTH ];
 static u32 s_listbox_sp;
 
 bool
-imgui_begin_listbox( const char* label, f32 w, f32 h )
+imgui_listbox_begin( const char* label, f32 w, f32 h )
 {
     /* Defaults: ~7 rows tall, and wide enough to fill the line after reserving the trailing label. */
     if ( h <= 0.0f )
@@ -210,7 +210,7 @@ imgui_begin_listbox( const char* label, f32 w, f32 h )
     }
 
     /* The framed scrolling box is a plain child; the label is the only thing layered on top. */
-    imgui_begin_child( label, w, h, IMGUI_WIN_NONE );
+    imgui_child_begin( label, w, h, IMGUI_WIN_NONE );
 
     u32 slot = s_listbox_sp < LISTBOX_DEPTH ? s_listbox_sp : LISTBOX_DEPTH - 1;
     ++s_listbox_sp;
@@ -222,18 +222,18 @@ imgui_begin_listbox( const char* label, f32 w, f32 h )
 }
 
 void
-imgui_end_listbox( void )
+imgui_listbox_end( void )
 {
-    imgui_end_child();
+    imgui_child_end();
 
-    if ( s_listbox_sp == 0 ) return;   /* unbalanced end_listbox -- ignore */
+    if ( s_listbox_sp == 0 ) return;   /* unbalanced listbox_end -- ignore */
     --s_listbox_sp;
     u32          slot  = s_listbox_sp < LISTBOX_DEPTH ? s_listbox_sp : LISTBOX_DEPTH - 1;
     const char*  label = s_listbox_stack[ slot ].label;
     imgui_rect_t box   = s_listbox_stack[ slot ].box;
 
     /* Trailing label, drawn past the box's right edge and aligned to its first row (markers
-       stripped by draw_label, like every label).  Drawn under the parent clip after end_child. */
+       stripped by draw_label, like every label).  Drawn under the parent clip after child_end. */
     if ( label_vis_len( label ) > 0 )
         draw_label( box.x + box.w + WIDGET_PAD, text_center_y( box.y, WIDGET_H ), COL_TEXT, label );
 }
@@ -248,7 +248,7 @@ imgui_listbox( const char* label, i32* current_item, const char* const items[], 
         height_in_items = ( count < 7 ) ? count : 7;
 
     bool changed = false;
-    if ( imgui_begin_listbox( label, 0.0f, combo_rows_h( height_in_items ) ) )
+    if ( imgui_listbox_begin( label, 0.0f, combo_rows_h( height_in_items ) ) )
     {
         for ( i32 i = 0; i < count; ++i )
         {
@@ -261,7 +261,7 @@ imgui_listbox( const char* label, i32* current_item, const char* const items[], 
             }
             imgui_pop_id();
         }
-        imgui_end_listbox();
+        imgui_listbox_end();
     }
     return changed;
 }

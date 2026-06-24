@@ -232,7 +232,7 @@ style_item_commit( void )
 /* Drop the active per-item overrides before chrome draws.  Chrome (borders, scrollbars, titlebars)
    does not pass through the item seam, so without this it would inherit a lingering next-* override
    from the last body widget.  The push/pop stack is intentionally left intact -- a push that
-   brackets a begin_window / begin_child still applies to the chrome inside it, like ImGui. */
+   brackets a window_begin / child_begin still applies to the chrome inside it, like ImGui. */
 static void
 style_chrome_reset( void )
 {

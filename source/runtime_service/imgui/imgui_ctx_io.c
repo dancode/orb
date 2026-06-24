@@ -52,7 +52,7 @@ imgui_is_mouse_hovering_rect( imgui_rect_t r )
 
     Every reader reports on "the widget just emitted" -- the item whose rect and interaction state
     widget_behavior latched into s_build.last_item_* (imgui_widget_core.c).  Call immediately after a
-    widget, the way set_item_tooltip / begin_popup_context_item already bind to the previous item:
+    widget, the way set_item_tooltip / popup_context_item_begin already bind to the previous item:
 
         imgui()->button( "Save" );
         if ( imgui()->is_item_hovered() ) imgui()->set_item_tooltip( "Write to disk" );

@@ -112,9 +112,9 @@ sb_make_gear( u8* p, int n )
 static void
 demo_widgets( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 360, 420, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Widgets", IMGUI_WIN_NONE ))
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 360, 420, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Widgets", IMGUI_WIN_NONE ))
     {
         imgui()->stack();                                   /* declare the mode: a vertical list */
         imgui()->text( "Basic interactive widgets:" );
@@ -143,7 +143,7 @@ demo_widgets( void )
         imgui()->input_text( "Name", name, sizeof( name ) );
         imgui()->textf( "hello, %s", name );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -157,9 +157,9 @@ demo_widgets( void )
 static void
 demo_text( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 380, 460, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Text & Sections", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 380, 460, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Text & Sections", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "Plain text line." );
@@ -186,7 +186,7 @@ demo_text( void )
             imgui()->bullet_text( "independent open state" );
         }
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -201,9 +201,9 @@ demo_text( void )
 static void
 demo_layout_rows( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 440, 420, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Layout Rows", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 440, 420, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Layout Rows", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();                         /* heading lines sit in a plain stack */
         imgui()->text( "row_cols( 0, 3 ) -- three equal columns:" );
@@ -231,7 +231,7 @@ demo_layout_rows( void )
         imgui()->button( "tall button" );
         imgui()->row( 0 );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -251,9 +251,9 @@ demo_fields( void )
     static f32  f_volume     = 7.0f;
     static bool f_enabled    = true;
 
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 400, 420, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Field Forms", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 400, 420, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Field Forms", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         /* Each section reuses the "Name"/"Enabled" labels, so scope them with push_id to keep
@@ -282,7 +282,7 @@ demo_fields( void )
         imgui()->slider_float( "Volume", &f_volume, 0.0f, 10.0f );
         imgui()->field_label_left( 0.0f );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -296,16 +296,16 @@ demo_fields( void )
 static void
 demo_grid( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 420, 440, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Grid", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 420, 440, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Grid", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "grid_cells( 3, 3 ) -- 3x3, row-major:" );
 
         /* The grid fills the remaining content box, so put it in a fixed-height child
            and leave a note below it. */
-        if ( imgui()->begin_child( "grid_box", 0, 300, IMGUI_WIN_NOSCROLL ) )
+        if ( imgui()->child_begin( "grid_box", 0, 300, IMGUI_WIN_NOSCROLL ) )
         {
             imgui()->grid_cells( 3, 3 );
             for ( int i = 0; i < 9; i++ )
@@ -320,17 +320,17 @@ demo_grid( void )
                 imgui()->button( label );
             }
         }
-        imgui()->end_child();
+        imgui()->child_end();
 
         imgui()->text( "center cell skipped with skip()" );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
     6. Child region / list box -- an independently scrolled, clipped sub-box.
 
-    begin_child carves a box of height h that scrolls and clips on its own; fill it with
+    child_begin carves a box of height h that scrolls and clips on its own; fill it with
     selectable rows to make a list box.  selectable toggles *on and returns true on the clicked
     frame, so the caller can manage single-selection by index.  push_id_int keeps row ids distinct.
 ==============================================================================================*/
@@ -338,15 +338,15 @@ demo_grid( void )
 static void
 demo_child_list( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 360, 440, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Child / List Box", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 360, 440, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Child / List Box", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "List box (scrolls independently):" );
 
         static int sel = -1;
-        if ( imgui()->begin_child( "rows", 0, 240, IMGUI_WIN_NONE ) )
+        if ( imgui()->child_begin( "rows", 0, 240, IMGUI_WIN_NONE ) )
         {
             imgui()->stack();                     /* the child is its own region -- declare its mode */
             for ( int i = 0; i < 40; i++ )
@@ -360,25 +360,25 @@ demo_child_list( void )
                 imgui()->pop_id();
             }
         }
-        imgui()->end_child();
+        imgui()->child_end();
 
         imgui()->textf( "selected: %d (this line is below the box)", sel );
 
         /* Vertically resizeable child: drag the bottom border to change its height.  The size is
            user-owned and persisted, so the rows below it move as the box grows / shrinks. */
         imgui()->help_marker( "Drag the bottom border to resize this box vertically." );
-        if ( imgui()->begin_child( "resizeable", 0, 120, IMGUI_WIN_CHILD_RESIZE_Y ) )
+        if ( imgui()->child_begin( "resizeable", 0, 120, IMGUI_WIN_CHILD_RESIZE_Y ) )
         {
             imgui()->stack();
             for ( int i = 0; i < 12; i++ )
                 imgui()->textf( "resizeable line %02d", i );
         }
-        imgui()->end_child();
+        imgui()->child_end();
 
         imgui()->text( "this line sits below the resizeable box" );
 
         /* Auto-resize with a height cap: the box hugs its content (AutoResizeY, h <= 0) but
-           set_next_window_size_constraints caps it at max_lines rows -- beyond that it stops
+           window_set_next_size_constraints caps it at max_lines rows -- beyond that it stops
            growing and scrolls.  The two sliders drive the emitted line count and the cap so the
            transition from hugging to scrolling is visible. */
         imgui()->separator_text( "Auto-resize with constraints" );
@@ -389,16 +389,16 @@ demo_child_list( void )
         imgui()->drag_int( "Max (in lines)",  &max_lines,  0.2f, 1,  20, "%d" );
 
         f32 line = imgui()->line_h() + imgui()->h_min();   /* one row plus its standard margin */
-        imgui()->set_next_window_size_constraints( 0.0f, line, 0.0f, line * (f32)max_lines );
-        if ( imgui()->begin_child( "constrained", 0, 0, IMGUI_WIN_NONE ) )
+        imgui()->window_set_next_size_constraints( 0.0f, line, 0.0f, line * (f32)max_lines );
+        if ( imgui()->child_begin( "constrained", 0, 0, IMGUI_WIN_NONE ) )
         {
             imgui()->stack();
             for ( i32 n = 0; n < draw_lines; n++ )
                 imgui()->textf( "Line %04d", n );
         }
-        imgui()->end_child();
+        imgui()->child_end();
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -412,9 +412,9 @@ demo_child_list( void )
 static void
 demo_combo_list( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 380, 460, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Combo / List Box", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 380, 460, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Combo / List Box", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
 
@@ -454,7 +454,7 @@ demo_combo_list( void )
         const i32 n_many = (i32)( sizeof( many ) / sizeof( many[ 0 ] ) );
         static i32  sel_idx = 0;
         const char* preview = many[ sel_idx ];
-        if ( imgui()->begin_combo( "combo 2", preview, height_flags[ height_sel ] ) )
+        if ( imgui()->combo_begin( "combo 2", preview, height_flags[ height_sel ] ) )
         {
             for ( i32 i = 0; i < n_many; i++ )
             {
@@ -464,7 +464,7 @@ demo_combo_list( void )
                     sel_idx = i;
                 imgui()->pop_id();
             }
-            imgui()->end_combo();
+            imgui()->combo_end();
         }
 
         /* One-liner list box, height in items. */
@@ -478,7 +478,7 @@ demo_combo_list( void )
         /* Generic begin/end list box -- emit the rows yourself (default size). */
         imgui()->separator_text( "BeginListBox (full control)" );
         static i32 row_idx = -1;
-        if ( imgui()->begin_listbox( "rows", 0.0f, 0.0f ) )
+        if ( imgui()->listbox_begin( "rows", 0.0f, 0.0f ) )
         {
             for ( i32 i = 0; i < 24; i++ )
             {
@@ -490,13 +490,13 @@ demo_combo_list( void )
                     row_idx = on ? i : -1;
                 imgui()->pop_id();
             }
-            imgui()->end_listbox();
+            imgui()->listbox_end();
         }
 
         imgui()->textf( "combo=%s  combo2=%s  fruit=%s  row=%d",
                         items[ combo_idx ], many[ sel_idx ], fruit[ fruit_idx ], row_idx );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -510,9 +510,9 @@ demo_combo_list( void )
 static void
 demo_align( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 380, 400, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Align & Spacing", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 380, 400, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Align & Spacing", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "align() across two columns:" );
@@ -539,7 +539,7 @@ demo_align( void )
         imgui()->spacing( 32.0f );
         imgui()->text( "below the gap" );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -553,9 +553,9 @@ demo_align( void )
 static void
 demo_sublayout( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 400, 360, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Sub-layout", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 400, 360, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Sub-layout", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "row_cols( 0, 2 ): col 0 is a sub-layout" );
@@ -577,7 +577,7 @@ demo_sublayout( void )
 
         imgui()->row( 0 );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -591,9 +591,9 @@ demo_sublayout( void )
 static void
 demo_pack( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 440, 320, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Pack / Bar", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 440, 320, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Pack / Bar", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "bar() -- buttons at natural width, then a fill search box:" );
@@ -621,7 +621,7 @@ demo_pack( void )
             imgui()->pop_id();
         }
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -634,43 +634,43 @@ demo_pack( void )
 static void
 demo_windows( void )
 {
-    imgui()->set_next_window_pos ( 80, 80, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 280, 200, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Default Window", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 80, 80, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 280, 200, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Default Window", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "Default flags." );
         imgui()->text( "Title bar, collapse, resize." );
         imgui()->text( "Click another window to raise it." );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
-    imgui()->set_next_window_pos ( 220, 180, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 280, 180, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "No Title Bar", IMGUI_WIN_NOTITLEBAR ) )
+    imgui()->window_set_next_pos ( 220, 180, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 280, 180, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "No Title Bar", IMGUI_WIN_NOTITLEBAR ) )
     {
         imgui()->stack();
         imgui()->text( "IMGUI_WIN_NOTITLEBAR" );
         static bool t = false;
         imgui()->checkbox( "a toggle", &t );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
-    imgui()->set_next_window_pos ( 360, 280, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 260, 160, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Fixed", IMGUI_WIN_NORESIZE | IMGUI_WIN_NOMOVE ) )
+    imgui()->window_set_next_pos ( 360, 280, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 260, 160, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Fixed", IMGUI_WIN_NORESIZE | IMGUI_WIN_NOMOVE ) )
     {
         imgui()->stack();
         imgui()->text( "IMGUI_WIN_NORESIZE | NOMOVE" );
         imgui()->text( "cannot be moved or resized." );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
     /* A closeable window: the X at the title bar's right edge hides it.  Re-opening is the host's
-       job -- the control window below offers a button that calls set_window_open. */
-    imgui()->set_next_window_pos ( 500, 120, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 260, 150, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Closeable", IMGUI_WIN_CLOSEABLE ) )
+       job -- the control window below offers a button that calls window_set_open. */
+    imgui()->window_set_next_pos ( 500, 120, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 260, 150, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Closeable", IMGUI_WIN_CLOSEABLE ) )
     {
         imgui()->stack();
         imgui()->text( "IMGUI_WIN_CLOSEABLE" );
@@ -680,25 +680,25 @@ demo_windows( void )
         imgui()->text( "and close: I re-open as a" );
         imgui()->text( "floater in the same spot." );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
     /* Control window: shows the closeable window's state and re-opens it on demand.  The button is
        disabled while the window is already open, so the only way to open it is after the X closed it. */
-    imgui()->set_next_window_pos ( 500, 290, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 260, 110, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Window Control", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 500, 290, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 260, 110, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Window Control", IMGUI_WIN_NONE ) )
     {
-        bool open = imgui()->is_window_open( "Closeable" );
+        bool open = imgui()->window_is_open( "Closeable" );
 
         imgui()->stack();
         imgui()->textf( "Closeable window is %s.", open ? "open" : "closed" );
 
-        imgui()->begin_disabled( open );
+        imgui()->disabled_begin( open );
         if ( imgui()->button( "Open Closeable window" ) )
-            imgui()->set_window_open( "Closeable", true );
-        imgui()->end_disabled();
+            imgui()->window_set_open( "Closeable", true );
+        imgui()->disabled_end();
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -707,7 +707,7 @@ demo_windows( void )
     IMGUI_WIN_ALWAYS_AUTOSIZE makes a window recompute its size from its content every frame (no
     user resize, no scrollbars); add/remove rows and the window grows and shrinks to fit.
     IMGUI_WIN_CAN_AUTOSIZE keeps a normal resizeable window but adds a corner size-grip you
-    double-click to snap it to its content.  A begin_child with h <= 0 auto-sizes its height the
+    double-click to snap it to its content.  A child_begin with h <= 0 auto-sizes its height the
     same way, and content_avail() reports the space left in the current region.
 ==============================================================================================*/
 
@@ -715,8 +715,8 @@ static void
 demo_autosize( void )
 {
     /* (a) A window that always hugs its content -- the row count drives its height. */
-    imgui()->set_next_window_pos( 60, 60, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Always Auto-size", IMGUI_WIN_ALWAYS_AUTOSIZE ) )
+    imgui()->window_set_next_pos( 60, 60, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Always Auto-size", IMGUI_WIN_ALWAYS_AUTOSIZE ) )
     {
         static int rows = 3;
 
@@ -730,12 +730,12 @@ demo_autosize( void )
         for ( int i = 0; i < rows; i++ )
             imgui()->textf( "content row %d", i );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
     /* (b) A normal window with a corner grip; double-click it to fit. */
-    imgui()->set_next_window_pos ( 360, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 300, 320, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Double-click grip", IMGUI_WIN_CAN_AUTOSIZE ) )
+    imgui()->window_set_next_pos ( 360, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 300, 320, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Double-click grip", IMGUI_WIN_CAN_AUTOSIZE ) )
     {
         imgui()->stack();
         imgui()->text( "CAN_AUTOSIZE: drag the triangle" );
@@ -743,39 +743,39 @@ demo_autosize( void )
         imgui()->text( "or double-click it to snap back" );
         imgui()->text( "to fit this content." );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
     /* (c) Auto-height child (h <= 0) + content_avail(). */
-    imgui()->set_next_window_pos ( 360, 420, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 320, 260, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Auto child", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 360, 420, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 320, 260, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Auto child", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
-        imgui()->text( "begin_child with h <= 0 hugs content:" );
-        if ( imgui()->begin_child( "auto", 0, 0, IMGUI_WIN_NOSCROLL ) )
+        imgui()->text( "child_begin with h <= 0 hugs content:" );
+        if ( imgui()->child_begin( "auto", 0, 0, IMGUI_WIN_NOSCROLL ) )
         {
             imgui()->stack();                     /* the child region declares its own mode */
             imgui()->text( "I am exactly as tall" );
             imgui()->text( "as my three lines." );
             imgui()->bullet_text( "no fixed height" );
         }
-        imgui()->end_child();
+        imgui()->child_end();
 
         imgui_vec2_t avail = imgui()->content_avail();
         imgui()->textf( "content_avail below: %.0f x %.0f", avail.x, avail.y );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
     11. Menus -- menu bars, menu entries, menu items, submenus, and context menus.
 
-    begin_menu_bar fills the strip a window reserves with IMGUI_WIN_MENUBAR; begin_menu opens a
+    menu_bar_begin fills the strip a window reserves with IMGUI_WIN_MENUBAR; menu_begin opens a
     submenu popup (horizontal in the bar, a row with an arrow inside a menu -- it nests); menu_item
     is a leaf command (optional "shortcut" text on the right, optional bool* for a checkable item).
     A menu_item click dismisses the whole menu chain.  Disabled items reuse the item-flag stack.
-    The same menu_item / begin_menu work inside any popup, so a right-click context menu is built
-    the same way, and begin_main_menu_bar pins a bar across the top of the display.
+    The same menu_item / menu_begin work inside any popup, so a right-click context menu is built
+    the same way, and main_menu_bar_begin pins a bar across the top of the display.
 ==============================================================================================*/
 
 /* Shared across the bars + context menu so a chosen command is visible below. */
@@ -792,18 +792,18 @@ demo_menu_file( void )
     if ( imgui()->menu_item( "New",  NULL,     NULL ) ) s_menu_last = "File / New";
     if ( imgui()->menu_item( "Open", "Ctrl+O", NULL ) ) s_menu_last = "File / Open";
 
-    /* A submenu: begin_menu inside a menu renders a row with a right arrow and opens to the side. */
-    if ( imgui()->begin_menu( "Open Recent" ) )
+    /* A submenu: menu_begin inside a menu renders a row with a right arrow and opens to the side. */
+    if ( imgui()->menu_begin( "Open Recent" ) )
     {
         if ( imgui()->menu_item( "scene.orb",  NULL, NULL ) ) s_menu_last = "Recent / scene.orb";
         if ( imgui()->menu_item( "level_1.orb", NULL, NULL ) ) s_menu_last = "Recent / level_1.orb";
-        if ( imgui()->begin_menu( "More.." ) )            /* nested submenu */
+        if ( imgui()->menu_begin( "More.." ) )            /* nested submenu */
         {
             if ( imgui()->menu_item( "old.orb",   NULL, NULL ) ) s_menu_last = "Recent / old.orb";
             if ( imgui()->menu_item( "older.orb", NULL, NULL ) ) s_menu_last = "Recent / older.orb";
-            imgui()->end_menu();
+            imgui()->menu_end();
         }
-        imgui()->end_menu();
+        imgui()->menu_end();
     }
 
     if ( imgui()->menu_item( "Save",    "Ctrl+S", NULL ) ) s_menu_last = "File / Save";
@@ -817,35 +817,35 @@ demo_menus( void )
 {
     /* (a) Optional full-width bar pinned to the top of the display.  Toggled from the body below;
        drawn first (immediate mode), so the toggle takes effect the next frame. */
-    if ( s_menu_mainbar && imgui()->begin_main_menu_bar() )
+    if ( s_menu_mainbar && imgui()->main_menu_bar_begin() )
     {
-        if ( imgui()->begin_menu( "App" ) )
+        if ( imgui()->menu_begin( "App" ) )
         {
             if ( imgui()->menu_item( "About", NULL,     NULL ) ) s_menu_last = "App / About";
             if ( imgui()->menu_item( "Quit",  "Alt+F4", NULL ) ) s_menu_last = "App / Quit";
-            imgui()->end_menu();
+            imgui()->menu_end();
         }
-        if ( imgui()->begin_menu( "Help" ) )
+        if ( imgui()->menu_begin( "Help" ) )
         {
             if ( imgui()->menu_item( "Documentation", "F1", NULL ) ) s_menu_last = "Help / Docs";
-            imgui()->end_menu();
+            imgui()->menu_end();
         }
-        imgui()->end_main_menu_bar();
+        imgui()->main_menu_bar_end();
     }
 
     /* (b) A window with its own menu bar (IMGUI_WIN_MENUBAR reserves the strip). */
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 420, 320, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Menus", IMGUI_WIN_MENUBAR ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 420, 320, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Menus", IMGUI_WIN_MENUBAR ) )
     {
-        if ( imgui()->begin_menu_bar() )
+        if ( imgui()->menu_bar_begin() )
         {
-            if ( imgui()->begin_menu( "File" ) )
+            if ( imgui()->menu_begin( "File" ) )
             {
                 demo_menu_file();
-                imgui()->end_menu();
+                imgui()->menu_end();
             }
-            if ( imgui()->begin_menu( "Edit" ) )
+            if ( imgui()->menu_begin( "Edit" ) )
             {
                 if ( imgui()->menu_item( "Undo", "Ctrl+Z", NULL ) ) s_menu_last = "Edit / Undo";
 
@@ -858,16 +858,16 @@ demo_menus( void )
                 if ( imgui()->menu_item( "Cut",   "Ctrl+X", NULL ) ) s_menu_last = "Edit / Cut";
                 if ( imgui()->menu_item( "Copy",  "Ctrl+C", NULL ) ) s_menu_last = "Edit / Copy";
                 if ( imgui()->menu_item( "Paste", "Ctrl+V", NULL ) ) s_menu_last = "Edit / Paste";
-                imgui()->end_menu();
+                imgui()->menu_end();
             }
-            if ( imgui()->begin_menu( "View" ) )
+            if ( imgui()->menu_begin( "View" ) )
             {
                 /* Checkable items: pass a bool* -- the tick reflects + toggles the flag. */
                 imgui()->menu_item( "Show grid",  NULL, &s_menu_grid );
                 imgui()->menu_item( "Show stats", NULL, &s_menu_stats );
-                imgui()->end_menu();
+                imgui()->menu_end();
             }
-            imgui()->end_menu_bar();
+            imgui()->menu_bar_end();
         }
 
         imgui()->stack();
@@ -880,23 +880,23 @@ demo_menus( void )
         imgui()->spacing( 0 );
         imgui()->text( "Right-click empty space for a context menu." );
 
-        /* (c) A context menu: begin_popup_context_window opens on a right-click in empty window
-           space, and is filled with the same menu_item / begin_menu calls. */
-        if ( imgui()->begin_popup_context_window( "ctx" ) )
+        /* (c) A context menu: popup_context_window_begin opens on a right-click in empty window
+           space, and is filled with the same menu_item / menu_begin calls. */
+        if ( imgui()->popup_context_window_begin( "ctx" ) )
         {
             imgui()->stack();                 /* a popup body declares its layout mode */
-            if ( imgui()->begin_menu( "File" ) )
+            if ( imgui()->menu_begin( "File" ) )
             {
                 demo_menu_file();
-                imgui()->end_menu();
+                imgui()->menu_end();
             }
             imgui()->separator();
             if ( imgui()->menu_item( "Reset grid", NULL, NULL ) ) { s_menu_grid = true;  s_menu_last = "ctx / Reset grid"; }
             imgui()->menu_item( "Show stats", NULL, &s_menu_stats );
-            imgui()->end_popup();
+            imgui()->popup_end();
         }
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -944,9 +944,9 @@ demo_lines( void )
     static const imgui_stroke_align_t align_mode[ 4 ] = {
         IMGUI_STROKE_CENTER_BIASED, IMGUI_STROKE_CENTER, IMGUI_STROKE_INSIDE, IMGUI_STROKE_OUTSIDE };
 
-    imgui()->set_next_window_pos ( 80, 40, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 480, 660, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Lines & Paths", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 80, 40, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 480, 660, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Lines & Paths", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "draw_line / draw_polyline / path_stroke into a canvas()." );
@@ -1132,7 +1132,7 @@ demo_lines( void )
             imgui()->path_stroke( thickness, IMGUI_STROKE_CENTER, true, LINE_AMBR );
         }
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -1163,9 +1163,9 @@ demo_item_sort_value( i32 row, i32 col, imgui_table_sort_value_t* out, void* use
 static void
 demo_table( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 480, 480, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Tables", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 480, 480, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Tables", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
 
@@ -1279,7 +1279,7 @@ demo_table( void )
             imgui()->table_end();
         }
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -1316,7 +1316,7 @@ demo_docking( void )
         s_restore_layout = false;
     }
 
-    /* Lay out + interact the dockspace every frame (must precede the docked windows' begin_window). */
+    /* Lay out + interact the dockspace every frame (must precede the docked windows' window_begin). */
     imgui_dock_id_t root = imgui()->dockspace_over_viewport( 0, IMGUI_DOCKSPACE_NONE );
 
     /* Build the tree once: left rail, right inspector, a bottom strip, central viewport. */
@@ -1334,7 +1334,7 @@ demo_docking( void )
         built = true;
     }
 
-    if ( imgui()->begin_window( "Scene Tree", IMGUI_WIN_NONE ) )
+    if ( imgui()->window_begin( "Scene Tree", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         if ( imgui()->tree_node( "World" ) )
@@ -1350,9 +1350,9 @@ demo_docking( void )
             imgui()->tree_pop();
         }
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
-    if ( imgui()->begin_window( "Inspector", IMGUI_WIN_NONE ) )
+    if ( imgui()->window_begin( "Inspector", IMGUI_WIN_NONE ) )
     {
         static char name[ 32 ] = "Crate";
         static f32  pos[ 3 ]   = { 0.0f, 1.0f, 0.0f };
@@ -1363,27 +1363,27 @@ demo_docking( void )
         imgui()->input_float3( "Position", pos, NULL );
         imgui()->checkbox    ( "Visible",  &visible );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
-    if ( imgui()->begin_window( "Console", IMGUI_WIN_NONE ) )
+    if ( imgui()->window_begin( "Console", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "[info] engine started" );
         imgui()->text( "[info] dock layout built" );
         imgui()->text( "> _" );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
-    if ( imgui()->begin_window( "Assets", IMGUI_WIN_NONE ) )
+    if ( imgui()->window_begin( "Assets", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->bullet_text( "models/crate.obj" );
         imgui()->bullet_text( "textures/wood.png" );
         imgui()->bullet_text( "shaders/lit.glsl" );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
-    if ( imgui()->begin_window( "Viewport", IMGUI_WIN_NONE ) )
+    if ( imgui()->window_begin( "Viewport", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "Central viewport panel." );
@@ -1399,13 +1399,13 @@ demo_docking( void )
         if ( imgui()->button( "Save Layout" ) )    s_save_layout    = true;
         if ( imgui()->button( "Restore Layout" ) ) s_restore_layout = true;
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
     /* A FREE (undocked) window to exercise the Phase-2 drag-to-dock gesture: drag its title bar over
        any pane to see the 5-way overlay, then drop on center (tab in) or a side (split). */
-    imgui()->set_next_window_pos ( 980, 120, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 220, 150, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Palette", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 980, 120, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 220, 150, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Palette", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "I'm a floating window." );
@@ -1414,7 +1414,7 @@ demo_docking( void )
         imgui()->text( "pane to dock me (center =" );
         imgui()->text( "tab, sides = split)." );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -1442,9 +1442,9 @@ demo_icons( void )
         sb_make_gear  ( buf, 32 ); ic_gear   = imgui()->register_icon( "gear",   32, 32, buf );
     }
 
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 380, 360, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Icons", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 380, 360, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Icons", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "Runtime icon atlas: register_icon ->" );
@@ -1474,7 +1474,7 @@ demo_icons( void )
                                    IMGUI_ALIGN_VCENTER, 0xFFFFFFFFu, rows[ i ].label );
         }
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -1501,9 +1501,9 @@ sym_box( imgui_rect_t c, f32 sz )
 static void
 demo_symbols( void )
 {
-    imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 430, 620, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Symbols", IMGUI_WIN_NONE ) )
+    imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 430, 620, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Symbols", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
         imgui()->text( "Style tags force a shape on the widget emitting." );
@@ -1643,7 +1643,7 @@ demo_symbols( void )
         imgui_rect_t tr = imgui()->dummy( 0.0f, 20.0f );
         imgui()->render_text_outline( tr.x + 4.0f, tr.y + 4.0f, "Outlined text", 0xFFFFFFFFu, 0xFF000000u );
     }
-    imgui()->end_window();
+    imgui()->window_end();
 }
 
 /*==============================================================================================
@@ -1657,14 +1657,14 @@ const sb_imgui_demo_t sb_imgui_demos[] =
     { "Layout Rows",  "row / row_cols / row2..4 / row_track",           demo_layout_rows },
     { "Field Forms",  "field_label_left/right / field_split",           demo_fields      },
     { "Grid",         "grid_cells / skip",                              demo_grid        },
-    { "Child / List", "begin_child / selectable / push_id",             demo_child_list  },
-    { "Combo / List", "combo / listbox / begin_combo / begin_listbox",  demo_combo_list  },
+    { "Child / List", "child_begin / selectable / push_id",             demo_child_list  },
+    { "Combo / List", "combo / listbox / combo_begin / listbox_begin",  demo_combo_list  },
     { "Align",        "align / same_line / spacing / separator",        demo_align       },
     { "Sub-layout",   "push_layout / pop_layout",                       demo_sublayout   },
     { "Pack / Bar",   "bar / pack_size / pack_nextline",                demo_pack        },
     { "Windows",      "multiple windows / flags / z-order",             demo_windows     },
     { "Auto-size",    "ALWAYS_AUTOSIZE / CAN_AUTOSIZE / auto child",    demo_autosize    },
-    { "Menus",        "menu bar / begin_menu / menu_item / context",    demo_menus       },
+    { "Menus",        "menu bar / menu_begin / menu_item / context",    demo_menus       },
     { "Lines / Paths","draw_line / draw_polyline / path_stroke",        demo_lines       },
     { "Tables",       "table_begin / setup_column / next_row / next_column", demo_table   },
     { "Docking",      "dockspace_over_viewport / dock_split / tabs",     demo_docking     },
@@ -1692,9 +1692,9 @@ sb_imgui_demo_picker( int active )
     const int count    = sb_imgui_demo_count();
     int       selected = active;                  /* unchanged unless a row is clicked */
 
-    imgui()->set_next_window_pos ( 940, 20, IMGUI_COND_ONCE );
-    imgui()->set_next_window_size( 320, 360, IMGUI_COND_ONCE );
-    if ( imgui()->begin_window( "Demos", IMGUI_WIN_NOCOLLAPSE ) )
+    imgui()->window_set_next_pos ( 940, 20, IMGUI_COND_ONCE );
+    imgui()->window_set_next_size( 320, 360, IMGUI_COND_ONCE );
+    if ( imgui()->window_begin( "Demos", IMGUI_WIN_NOCOLLAPSE ) )
     {
         imgui()->stack();
         imgui()->text( "Keys: 1-9 select  +/- step  ESC quit" );
@@ -1720,7 +1720,7 @@ sb_imgui_demo_picker( int active )
             imgui()->text( sb_imgui_demos[ active ].desc );
         }
     }
-    imgui()->end_window();
+    imgui()->window_end();
 
     return selected;
 }

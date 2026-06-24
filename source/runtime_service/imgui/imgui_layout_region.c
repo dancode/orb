@@ -3,7 +3,7 @@
     runtime_service/imgui/imgui_layout_region.c -- Scroll region engine.
 
     Implements the shared scrollable-region mechanism used by both window bodies and
-    begin_child boxes:
+    child_begin boxes:
 
         imgui_region_t      persistent scroll + content-size state, keyed by id
         scroll_clamp        pin a scroll offset into [0, content - view]
@@ -11,7 +11,7 @@
         layout_push_region  open a region: reserve gutters, clamp scroll, seed a layout frame
         layout_pop_region   close a region: measure content, draw bars, claim the wheel
 
-    The persistent state for begin_child boxes is kept in the shared keyed pool
+    The persistent state for child_begin boxes is kept in the shared keyed pool
     (imgui_state_get); window bodies pass pointers to their own imgui_window_t fields.
 
     Included by imgui.c after imgui_layout_core.c (provides widget_next_rect, widget_behavior,
@@ -39,14 +39,14 @@ static f32 s_sb_grab_off = 0.0f;
 
     Child regions need their scroll offset and last-measured content size to survive across
     frames, keyed by id, exactly the way windows keep those fields inline in imgui_window_t.
-    Windows do not use this pool -- they pass pointers to their own record -- so only begin_child
+    Windows do not use this pool -- they pass pointers to their own record -- so only child_begin
     fetches a record, from the shared keyed state pool (imgui_ctx.c) by region id.  No dedicated
     table or recycling logic lives here: the pool stamps the slot each frame and reclaims it once
     the id goes cold, and hands back zeroed storage on first sight so a new child opens at the top
     with no measured size.
 ----------------------------------------------------------------------------------------------*/
 
-/* imgui_region_t (persistent begin_child scroll + content-size state) is defined in imgui_internal.h. */
+/* imgui_region_t (persistent child_begin scroll + content-size state) is defined in imgui_internal.h. */
 
 static imgui_region_t*
 region_get( imgui_id_t id )
@@ -254,7 +254,7 @@ layout_push_region( imgui_id_t id, imgui_rect_t outer, imgui_pad_t region_pad, i
     {
         f->pushed_clip  = false;
         /* No draw clip pushed; the window's single outer clip stays live so the chrome drawn last
-           in end_window can overpaint content that scrolled under the title bar.  But for hit-
+           in window_end can overpaint content that scrolled under the title bar.  But for hit-
            testing, narrow clip_rect to this region's outer rect so a widget scrolled under the
            title bar cannot be clicked through it.  layout_pop_region restores parent_clip so the
            scrollbars (drawn after the restore) hit-test against the full window rect. */

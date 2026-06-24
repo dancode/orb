@@ -8,7 +8,7 @@
     Function groups (all called through imgui() vtable or as imgui_* direct calls):
         Lifecycle : init / shutdown
         Frame     : frame_begin / ctx_begin / ctx_end / frame_end / render
-        Panels    : begin_window / end_window
+        Panels    : window_begin / window_end
         Widgets   : text / button / checkbox / slider_float / input_text
         Draw      : draw_rect / draw_text / push_clip / pop_clip
 
@@ -77,7 +77,7 @@ typedef struct imgui_api_s
          frame_end()                   -- seal the build (latches emit cost; asserts ctx balance).
 
        frame_begin/frame_end and ctx_begin/ctx_end are balanced scopes, exactly like
-       begin_window/end_window: every begin has an end, and each end restores the scope its begin
+       window_begin/window_end: every begin has an end, and each end restores the scope its begin
        opened.  render() runs AFTER frame_end and consumes the sealed draw list.
 
        render()    -- flush one viewport's geometry partition to GPU; opens a LOAD render pass on
@@ -91,7 +91,7 @@ typedef struct imgui_api_s
 
     /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
        gathers every window's geometry into a single draw list; render() dispatches each window's
-       partition to the viewport it is assigned to (set_next_window_viewport, or inherited from
+       partition to the viewport it is assigned to (window_set_next_viewport, or inherited from
        whichever viewport was most recently emitted into this frame).
 
        viewport_open()   -- open a surface for OS window win_id with initial drawable size w x h.
@@ -115,7 +115,7 @@ typedef struct imgui_api_s
 
        viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
                                     returns its viewport handle (assign windows via
-                                    set_next_window_viewport) or IMGUI_VP_INVALID.  Between frames.
+                                    window_set_next_viewport) or IMGUI_VP_INVALID.  Between frames.
        update_platform_windows() -- reconcile owned floaters with their OS windows; call once per
                                     frame AFTER the UI build and BEFORE rendering (the safe point to
                                     tear a surface down -- destroys those the user closed).
@@ -173,53 +173,53 @@ typedef struct imgui_api_s
 
     bool ( *event )( const app_event_t* ev );
 
-    /* Panels -- open a window panel; must be matched with end_window().
+    /* Panels -- open a window panel; must be matched with window_end().
        flags is a bitmask of imgui_win_flags_t (0 / IMGUI_WIN_NONE for the defaults) that
        switches off built-in behavior per window -- title bar, collapse, or edge resize.
 
-       begin_window() returns false when the window is collapsed (title bar only).  Guard
+       window_begin() returns false when the window is collapsed (title bar only).  Guard
        the body widgets with it -- skipped widgets cost nothing -- but always call
-       end_window() regardless of the return value:
+       window_end() regardless of the return value:
 
-           if ( imgui()->begin_window( "Tools", IMGUI_WIN_NONE ) )
+           if ( imgui()->window_begin( "Tools", IMGUI_WIN_NONE ) )
            {
                imgui()->text( "..." );          // skipped while collapsed
            }
-           imgui()->end_window();               // always called */
+           imgui()->window_end();               // always called */
 
-    /* set_next_window_pos / _size -- queue geometry for the NEXT begin_window, applied per the
+    /* window_set_next_pos / _size -- queue geometry for the NEXT window_begin, applied per the
        condition (imgui_cond_t) and then cleared.  Decouples the value from when it is applied:
        ONCE seeds an initial position/size (apply once on first appearance, then user-owned),
        ALWAYS forces it every frame (layout managers, snapping, animation -- pair with NOMOVE /
        NORESIZE), APPEARING re-applies it each time the window is shown after being absent.
-       Call immediately before begin_window. */
-    void ( *set_next_window_pos  )( f32 x, f32 y, imgui_cond_t cond );
-    void ( *set_next_window_size )( f32 w, f32 h, imgui_cond_t cond );
+       Call immediately before window_begin. */
+    void ( *window_set_next_pos  )( f32 x, f32 y, imgui_cond_t cond );
+    void ( *window_set_next_size )( f32 w, f32 h, imgui_cond_t cond );
 
-    /* set_next_window_viewport -- assign the NEXT begin_window to a specific viewport.  Sticky: it
+    /* window_set_next_viewport -- assign the NEXT window_begin to a specific viewport.  Sticky: it
        lands on the window record and persists across frames until reassigned.  Omit to inherit the
        ambient viewport -- the one most recently emitted into this frame -- so windows created from
        within a viewport's panels naturally land on the same surface without explicit assignment.
        If the assigned viewport is later closed, the window automatically reverts to the primary. */
-    void ( *set_next_window_viewport )( imgui_vp_t vp );
+    void ( *window_set_next_viewport )( imgui_vp_t vp );
 
-    /* set_next_window_size_constraints -- queue a one-shot [min,max] size box for the NEXT
-       begin_child, then cleared.  The Dear ImGui SetNextWindowSizeConstraints analogue, in its
+    /* window_set_next_size_constraints -- queue a one-shot [min,max] size box for the NEXT
+       child_begin, then cleared.  The Dear ImGui SetNextWindowSizeConstraints analogue, in its
        most useful form: it bounds the child's resolved width / height, so an auto-sized (h <= 0)
        box grows with its content up to max_h and then scrolls, never collapses below min_h, and a
        CHILD_RESIZE_* drag cannot leave the range.  A bound <= 0 is "unconstrained" on that side
-       (e.g. 0, 0, 0, max_h to cap height only).  Call immediately before begin_child. */
-    void ( *set_next_window_size_constraints )( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
+       (e.g. 0, 0, 0, max_h to cap height only).  Call immediately before child_begin. */
+    void ( *window_set_next_size_constraints )( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
 
-    bool ( *begin_window )( const char* title, imgui_win_flags_t flags );
-    void ( *end_window   )( void );
+    bool ( *window_begin )( const char* title, imgui_win_flags_t flags );
+    void ( *window_end   )( void );
 
-    /* set_window_open / is_window_open -- drive a CLOSEABLE window's visibility by title (the same
-       key begin_window hashes).  The window's close (X) button hides it; the host re-opens it by
-       calling set_window_open( title, true ) from a button.  is_window_open reports the current
+    /* window_set_open / window_is_open -- drive a CLOSEABLE window's visibility by title (the same
+       key window_begin hashes).  The window's close (X) button hides it; the host re-opens it by
+       calling window_set_open( title, true ) from a button.  window_is_open reports the current
        state (a window with no record yet -- never begun -- reads as open). */
-    void ( *set_window_open )( const char* title, bool open );
-    bool ( *is_window_open  )( const char* title );
+    void ( *window_set_open )( const char* title, bool open );
+    bool ( *window_is_open  )( const char* title );
 
     /* Docking -- tile + tab windows into a dock tree that fills a viewport (the DockSpaceOverViewport
        analogue).  Phase 1 is programmatic: build a layout in code, then windows whose titles were
@@ -229,15 +229,15 @@ typedef struct imgui_api_s
        dockspace_over_viewport() -- ensure viewport vp hosts a dock tree, lay it out over the surface,
                                     draw + interact its splitters, and return the tree ROOT node id.
                                     Call once per frame at the TOP of the build, before the docked
-                                    windows' begin_window (which read their resolved node rects).
+                                    windows' window_begin (which read their resolved node rects).
        dock_split()              -- split a LEAF node in two; returns the NEW empty leaf on the `dir`
                                     side and writes the REMAINING node id to *out_remain (may be NULL).
                                     `ratio` is the new side's fraction of the axis.  The DockBuilder
                                     idiom -- keep splitting the returned remainder to carve a layout.
-       dock_window()             -- add a window (matched to begin_window by title) as a tab in a leaf,
+       dock_window()             -- add a window (matched to window_begin by title) as a tab in a leaf,
                                     moving it out of any node it was already in; it becomes active.
        dock_undock()             -- remove a window from its node, returning it to free-floating.
-       is_window_docked()        -- true while the window is tabbed into some node.
+       window_is_docked()        -- true while the window is tabbed into some node.
 
            imgui_dock_id_t root  = imgui()->dockspace_over_viewport( 0, IMGUI_DOCKSPACE_NONE );
            imgui_dock_id_t left  = imgui()->dock_split( root, IMGUI_DIR_LEFT, 0.25f, &root );
@@ -254,58 +254,58 @@ typedef struct imgui_api_s
     imgui_dock_id_t ( *dock_split_root )( imgui_vp_t vp, imgui_dir_t dir, f32 ratio );
     void ( *dock_window )( const char* title, imgui_dock_id_t node );
     void ( *dock_undock )( const char* title );
-    bool ( *is_window_docked )( const char* title );
+    bool ( *window_is_docked )( const char* title );
 
     /* Layout persistence.  dock_save() serializes viewport vp's dock tree into buf as a small ASCII
        blob and returns the byte count a full write needs (like snprintf -- pass a 0 bufsz to size
        first).  dock_load() rebuilds the tree from such a blob; returns false on a bad header.  The
        host owns the file: write the blob on change, read + load it at startup.  CALL dock_load at a
-       safe point -- between frames or at the top of the build before any docked window's begin_window
+       safe point -- between frames or at the top of the build before any docked window's window_begin
        -- never from inside a docked window (it frees + rebuilds the tree). */
     u32  ( *dock_save )( imgui_vp_t vp, char* buf, u32 bufsz );
     bool ( *dock_load )( imgui_vp_t vp, const char* text );
 
     /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when
        the user clicks outside it; a modal blocks input behind it and dims the background, closing
-       only via close_current_popup.  The string id namespaces both the open request and the body,
-       so open_popup("x") and begin_popup("x") must use the same id.  Popups stack (a popup opened
+       only via popup_close_current.  The string id namespaces both the open request and the body,
+       so popup_open("x") and popup_begin("x") must use the same id.  Popups stack (a popup opened
        while inside another nests under it); a click keeps the deepest popup under the cursor and
        closes the rest.  Popup / tooltip bodies lay out like a window body: declare a layout header
        (stack / columns / ...) before emitting widgets.
 
-           if ( imgui()->button( "Open" ) )    imgui()->open_popup( "menu" );
-           if ( imgui()->begin_popup( "menu", IMGUI_WIN_NONE ) ) {
+           if ( imgui()->button( "Open" ) )    imgui()->popup_open( "menu" );
+           if ( imgui()->popup_begin( "menu", IMGUI_WIN_NONE ) ) {
                imgui()->stack();
                if ( imgui()->selectable( "Cut",  NULL ) ) { ... }
                if ( imgui()->selectable( "Copy", NULL ) ) { ... }
-               imgui()->end_popup();
+               imgui()->popup_end();
            }
 
-       begin_popup / begin_popup_modal return true only when the popup is open AND visible -- guard
-       the body and call end_popup only on a true return (like begin_window's collapsed contract).
+       popup_begin / popup_modal_begin return true only when the popup is open AND visible -- guard
+       the body and call popup_end only on a true return (like window_begin's collapsed contract).
        Auto-sized popups (the default) measure their content on the appearing frame off-screen and
        snap into place the next frame, so there is no first-frame size pop. */
 
-    void ( *open_popup          )( const char* id );
-    bool ( *begin_popup         )( const char* id, imgui_win_flags_t flags );
-    bool ( *begin_popup_modal   )( const char* id, const char* title, imgui_win_flags_t flags );
-    void ( *end_popup           )( void );
-    void ( *close_current_popup )( void );
-    bool ( *is_popup_open        )( const char* id );
+    void ( *popup_open          )( const char* id );
+    bool ( *popup_begin         )( const char* id, imgui_win_flags_t flags );
+    bool ( *popup_modal_begin   )( const char* id, const char* title, imgui_win_flags_t flags );
+    void ( *popup_end           )( void );
+    void ( *popup_close_current )( void );
+    bool ( *popup_is_open        )( const char* id );
 
     /* Context menus -- open a popup on a right-click.  _item binds to the previous widget (the one
        emitted just before the call); _window binds to empty space in the current window.  Use them
-       in place of the open_popup + begin_popup pair:
+       in place of the popup_open + popup_begin pair:
 
            imgui()->selectable( "Row", NULL );
-           if ( imgui()->begin_popup_context_item( "row_ctx" ) ) { ...; imgui()->end_popup(); } */
+           if ( imgui()->popup_context_item_begin( "row_ctx" ) ) { ...; imgui()->popup_end(); } */
 
-    bool ( *begin_popup_context_item   )( const char* id );
-    bool ( *begin_popup_context_window )( const char* id );
+    bool ( *popup_context_item_begin   )( const char* id );
+    bool ( *popup_context_window_begin )( const char* id );
 
     /* Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
-       hovered.  set_item_tooltip is the one-liner; begin_tooltip / end_tooltip wrap a multi-widget
-       body (guard the body on the true return, always call end_tooltip).
+       hovered.  set_item_tooltip is the one-liner; tooltip_begin / tooltip_end wrap a multi-widget
+       body (guard the body on the true return, always call tooltip_end).
 
            imgui()->button( "Hover me" );
            imgui()->set_item_tooltip( "Does the thing" );
@@ -318,59 +318,59 @@ typedef struct imgui_api_s
            imgui()->help_marker( "Disable mouse inputs and interactions." ); */
 
     void ( *set_item_tooltip )( const char* text );
-    bool ( *begin_tooltip    )( void );
-    void ( *end_tooltip      )( void );
+    bool ( *tooltip_begin    )( void );
+    void ( *tooltip_end      )( void );
     void ( *help_marker      )( const char* text );
 
-    /* Menus -- a coordination layer over the popup stack.  A menu bar holds begin_menu entries;
-       each opens a submenu popup that holds menu_items and further begin_menu entries (nesting on
+    /* Menus -- a coordination layer over the popup stack.  A menu bar holds menu_begin entries;
+       each opens a submenu popup that holds menu_items and further menu_begin entries (nesting on
        the popup stack).  Disabled state reuses the item-flag stack: push_item_flag(IMGUI_ITEM_DISABLED).
 
-       begin_main_menu_bar pins a bar across the top of the display; begin_menu_bar fills the strip a
+       main_menu_bar_begin pins a bar across the top of the display; menu_bar_begin fills the strip a
        window reserved with IMGUI_WIN_MENUBAR (and returns false on a window without the flag).  Both
        return true only when visible -- guard the entries on the return and call the matching end only
-       then, exactly like begin_window / begin_popup.
+       then, exactly like window_begin / popup_begin.
 
-           if ( imgui()->begin_main_menu_bar() ) {
-               if ( imgui()->begin_menu( "File" ) ) {
+           if ( imgui()->main_menu_bar_begin() ) {
+               if ( imgui()->menu_begin( "File" ) ) {
                    if ( imgui()->menu_item( "Open", "Ctrl+O", NULL ) ) { ... }
                    imgui()->menu_item( "Show grid", NULL, &show_grid );   // checkable
-                   if ( imgui()->begin_menu( "Recent" ) ) {              // submenu
+                   if ( imgui()->menu_begin( "Recent" ) ) {              // submenu
                        imgui()->menu_item( "a.txt", NULL, NULL );
-                       imgui()->end_menu();
+                       imgui()->menu_end();
                    }
-                   imgui()->end_menu();
+                   imgui()->menu_end();
                }
-               imgui()->end_main_menu_bar();
+               imgui()->main_menu_bar_end();
            }
 
-       begin_menu renders horizontally in a bar (its popup drops below) and as a full-width row with
+       menu_begin renders horizontally in a bar (its popup drops below) and as a full-width row with
        a submenu arrow inside a menu (its popup opens to the side); the orientation follows the active
        layout mode, so no flag is needed.  menu_item returns true on the clicked frame and dismisses
        the whole menu chain; shortcut is display-only (may be NULL); selected may be NULL (a plain
        command) or a bool* (a checkable item, toggled on click). */
 
-    bool ( *begin_main_menu_bar )( void );
-    void ( *end_main_menu_bar   )( void );
-    bool ( *begin_menu_bar      )( void );
-    void ( *end_menu_bar        )( void );
-    bool ( *begin_menu )( const char* label );
-    void ( *end_menu   )( void );
+    bool ( *main_menu_bar_begin )( void );
+    void ( *main_menu_bar_end   )( void );
+    bool ( *menu_bar_begin      )( void );
+    void ( *menu_bar_end        )( void );
+    bool ( *menu_begin )( const char* label );
+    void ( *menu_end   )( void );
     bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
 
     /* Child regions -- a nested scrollable layout box inside the current window (or another
-       child).  begin_child carves a box of height h (width w, or the remaining content width
+       child).  child_begin carves a box of height h (width w, or the remaining content width
        when w <= 0) from the layout pen, clips and scrolls its contents independently, and
        gives it its own scrollbar; flags take the IMGUI_WIN_*SCROLL policy bits.  h <= 0
        auto-sizes the height to the content (AutoResizeY).  IMGUI_WIN_CHILD_RESIZE_X / _Y add a
        draggable grip on the right / bottom border (flow children only): that axis becomes
        user-owned and persisted, seeded from w/h then driven by the drag, the way a window owns
-       its size.  set_next_window_size_constraints (above) bounds the resolved size, so an
+       its size.  window_set_next_size_constraints (above) bounds the resolved size, so an
        auto-sized box can grow with its content up to a max height and then scroll.  Always pair
-       with end_child -- the parent layout resumes directly below the box.  Fill it with any
+       with child_end -- the parent layout resumes directly below the box.  Fill it with any
        widgets (e.g. selectable rows for a list box).  Always returns true. */
 
-    bool ( *begin_child )( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
+    bool ( *child_begin )( const char* id, f32 w, f32 h, imgui_win_flags_t flags );
 
     /* Sub-layout -- carve the next cell into its own little layout, the way a window or child hosts
        one, but transient: no scroll, no clip, no persistent state, no frame.  push_layout consumes
@@ -388,7 +388,7 @@ typedef struct imgui_api_s
 
     void ( *push_layout )( void );
     void ( *pop_layout  )( void );
-    void ( *end_child   )( void );
+    void ( *child_end   )( void );
 
     /* Layout -- declare the active region's next-item methodology (its "mode"), then shape it.
        A region opens UNDECLARED: the first header below names the mode (stack / columns / grid /
@@ -423,7 +423,7 @@ typedef struct imgui_api_s
 
        Grid mode -- cols x rows partition a bounded box (the region content from the pen to its
        bottom) into a fixed matrix, both axes resolved up front; widgets fill cells row-major and
-       nothing scrolls.  For titlebars, split panes (cell -> begin_child), dashboards, image grids.
+       nothing scrolls.  For titlebars, split panes (cell -> child_begin), dashboards, image grids.
        grid() takes the full descriptor (cols + rows); grid_cells() is the uniform nc x nr case.
 
        imgui()->grid_cells( 3, 2 );  for (i<6) imgui()->button(name[i]);  // 3x2 of buttons
@@ -513,7 +513,7 @@ typedef struct imgui_api_s
 
     /* content_avail() -- remaining free space in the current region from the layout pen: the width
        a flex widget would fill and the height left before the region bottom.  The ImGui
-       GetContentRegionAvail analogue -- size a begin_child to the leftover, or lay out by hand. */
+       GetContentRegionAvail analogue -- size a child_begin to the leftover, or lay out by hand. */
     imgui_vec2_t ( *content_avail )( void );
 
     /* cursor_screen_pos -- screen position where the next item would land (GetCursorScreenPos): anchor
@@ -559,12 +559,12 @@ typedef struct imgui_api_s
     void ( *pop_item_flag  )( void );
     void ( *next_item_flag )( imgui_item_flags_t flag, bool enable );
 
-    /* begin_disabled / end_disabled -- named-scope shorthand for IMGUI_ITEM_DISABLED (BeginDisabled
-       / EndDisabled).  begin_disabled( true ) dims + inerts the bracketed widgets; ( false ) pushes
+    /* disabled_begin / disabled_end -- named-scope shorthand for IMGUI_ITEM_DISABLED (BeginDisabled
+       / EndDisabled).  disabled_begin( true ) dims + inerts the bracketed widgets; ( false ) pushes
        a no-op scope so a conditional disable still balances.  Nests: an inner ( false ) never
        re-enables widgets an outer ( true ) disabled. */
-    void ( *begin_disabled )( bool disabled );
-    void ( *end_disabled   )( void );
+    void ( *disabled_begin )( bool disabled );
+    void ( *disabled_end   )( void );
 
     /* Style stacks -- the push-model theme override (imgui_col_t colors, imgui_style_var_t metrics).
        push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
@@ -585,19 +585,19 @@ typedef struct imgui_api_s
     void ( *pop_style_var    )( u32 count );
     void ( *next_style_var   )( imgui_style_var_t var, f32 value );
 
-    /* set_window_drag() -- select how windows may be dragged (global default TITLEBAR).
+    /* window_set_drag() -- select how windows may be dragged (global default TITLEBAR).
        Call between frames; affects every window. */
-    void ( *set_window_drag )( imgui_win_drag_t mode );
+    void ( *window_set_drag )( imgui_win_drag_t mode );
 
-    /* set_nav_window() -- aim keyboard navigation at a window by title (the explicit-focus entry).
+    /* window_set_nav() -- aim keyboard navigation at a window by title (the explicit-focus entry).
        Clears the nav cursor so the window's first item takes focus and engages the nav highlight.
        Nav otherwise follows the front-most window automatically; Ctrl+Tab cycles among windows and
        Alt enters the main menu bar.  An open popup / menu always captures nav while it is open. */
-    void ( *set_nav_window )( const char* title );
+    void ( *window_set_nav )( const char* title );
 
     /* Widgets -- return true on the frame they are activated or changed.
-       All widgets must be called between a matched begin_window / end_window pair, and only
-       when begin_window returned true -- a collapsed window draws no clip, so widgets emitted
+       All widgets must be called between a matched window_begin / window_end pair, and only
+       when window_begin returned true -- a collapsed window draws no clip, so widgets emitted
        into it render straight onto the screen.  The bool guard is the caller's job. */
 
     void ( *text        )( const char* str );
@@ -701,43 +701,43 @@ typedef struct imgui_api_s
     bool ( *selectable  )( const char* label, bool* selected );
 
     /* Combo box -- a framed preview box (selected text + a down arrow) with a trailing label that
-       drops a popup of rows below it on click.  begin_combo opens the dropdown: it returns true
-       only while the dropdown is open, so -- like begin_window's collapse -- guard the rows on the
-       return and call end_combo only then.  preview_value is the text shown in the closed box (the
+       drops a popup of rows below it on click.  combo_begin opens the dropdown: it returns true
+       only while the dropdown is open, so -- like window_begin's collapse -- guard the rows on the
+       return and call combo_end only then.  preview_value is the text shown in the closed box (the
        caller's current selection, usually items[current]).  A row clicked in the body dismisses the
        combo automatically, so emit selectables and set your selection from their return:
 
-           if ( imgui()->begin_combo( "mode", items[cur], IMGUI_COMBO_NONE ) ) {
+           if ( imgui()->combo_begin( "mode", items[cur], IMGUI_COMBO_NONE ) ) {
                for ( i32 i = 0; i < n; ++i )
                    if ( imgui()->selectable( items[i], NULL ) ) cur = i;
-               imgui()->end_combo();
+               imgui()->combo_end();
            }
 
        flags is imgui_combo_flags_t: the HEIGHT_* group caps the dropdown to a fixed row count
        (then it scrolls), 0 (IMGUI_COMBO_NONE) is the ~8-row default.  combo() is the one-liner over
        an array of strings (*current_item is the selected index; out of range shows an empty
        preview).  Both return true on the frame the selection changes. */
-    bool ( *begin_combo )( const char* label, const char* preview_value, imgui_combo_flags_t flags );
-    void ( *end_combo   )( void );
+    bool ( *combo_begin )( const char* label, const char* preview_value, imgui_combo_flags_t flags );
+    void ( *combo_end   )( void );
     bool ( *combo       )( const char* label, i32* current_item, const char* const items[], i32 count );
 
     /* List box -- a framed, independently scrolling box of selectable rows with a trailing label.
-       begin_listbox opens the box (w / h in pixels; w <= 0 fills the line after the label, h <= 0
-       is ~7 rows tall) and always returns true -- always pair with end_listbox, and fill it with
-       selectables exactly like a begin_child:
+       listbox_begin opens the box (w / h in pixels; w <= 0 fills the line after the label, h <= 0
+       is ~7 rows tall) and always returns true -- always pair with listbox_end, and fill it with
+       selectables exactly like a child_begin:
 
-           if ( imgui()->begin_listbox( "items", 0, 0 ) ) {
+           if ( imgui()->listbox_begin( "items", 0, 0 ) ) {
                for ( i32 i = 0; i < n; ++i ) {
                    bool sel = ( cur == i );
                    if ( imgui()->selectable( names[i], &sel ) ) cur = i;
                }
-               imgui()->end_listbox();
+               imgui()->listbox_end();
            }
 
        listbox() is the one-liner over an array of strings; height_in_items <= 0 picks
        min(count, 7).  Returns true on the frame the selection changes. */
-    bool ( *begin_listbox )( const char* label, f32 w, f32 h );
-    void ( *end_listbox   )( void );
+    bool ( *listbox_begin )( const char* label, f32 w, f32 h );
+    void ( *listbox_end   )( void );
     bool ( *listbox       )( const char* label, i32* current_item, const char* const items[],
                              i32 count, i32 height_in_items );
 
@@ -973,7 +973,7 @@ typedef struct imgui_api_s
        (like flow) with column tracks resolved once per table (like grid), plus frozen header support.
 
        USAGE CONTRACT:
-         1. table_begin()            -- open the table; returns true (always, like begin_child).
+         1. table_begin()            -- open the table; returns true (always, like child_begin).
                                         Consume it paired with table_end() regardless.
          2. table_setup_column()     -- call ncols times between table_begin and the first row.
                                         The calls may be omitted; all columns default to stretch.
