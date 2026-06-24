@@ -34,7 +34,7 @@
     imgui_widget_combo.c      -- combo box + list box: a popup dropdown / a scrolling child of selectables
     imgui_stack_api.c         -- push-model public API: push/pop id, item flags, style color / var
     imgui_table.c             -- table layout: multi-column rows with cell clipping
-    imgui_frame.c             -- frame lifecycle: init/shutdown, new_frame, render, viewport, font, clip
+    imgui_frame.c             -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, viewport, font, clip
     imgui_api.c               -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/

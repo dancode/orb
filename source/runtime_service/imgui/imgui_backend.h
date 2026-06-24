@@ -83,7 +83,7 @@ void            draw_push_icon         ( f32 x, f32 y, f32 w, f32 h, imgui_icon_
     CPU draw list (imgui_draw.c)
 ==============================================================================================*/
 
-void draw_reset( i32 display_w, i32 display_h );   // clear the list at the top of new_frame
+void draw_reset( i32 display_w, i32 display_h );   // clear the list at the top of frame_begin
 
 void draw_set_alpha     ( f32 a );    // global opacity multiplier folded into every pushed shape
 void draw_set_rounding  ( f32 r );    // corner radius folded into every pushed filled/outline rect

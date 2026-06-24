@@ -7,7 +7,7 @@
 
     Function groups (all called through imgui() vtable or as imgui_* direct calls):
         Lifecycle : init / shutdown
-        Frame     : new_frame / render
+        Frame     : frame_begin / ctx_begin / ctx_end / frame_end / render
         Panels    : begin_window / end_window
         Widgets   : text / button / checkbox / slider_float / input_text
         Draw      : draw_rect / draw_text / push_clip / pop_clip
@@ -61,26 +61,36 @@ typedef struct imgui_api_s
 
        imgui owns no clock of its own, so the host passes one: `clock` is a monotonic seconds source
        (e.g. sys()->tick_seconds).  imgui adopts it here and uses it to bracket the frame -- the emit
-       clock opens at new_frame()/frame_begin() and closes at the first render(); the render clock sums
-       the render() flush calls -- so the readout trails the work it describes by one frame.  Pass the
+       clock opens at frame_begin() and closes at frame_end() (build cost); the render clock sums the
+       render() flush calls -- so the readout trails the work it describes by one frame.  Pass the
        same callback every frame; NULL leaves timing off (mode 2 then reads zero). */
     void ( *perf_overlay )( imgui_clock_fn clock, int mode );
 
-    /* Frame lifecycle.
-       new_frame() -- reset draw list and translate app input into the IO snapshot.
-                      Call once at the top of the frame, before any widget calls.
-                      Surface dimensions are owned by each viewport (set at open and on resize);
-                      no size argument is needed here.
+    /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
+       API does not hide it; even a single-context host names its one context:
+
+         frame_begin(dt)               -- global: reset draw list + snapshot app input.  Binds NO
+                                          context; call once at the top of the frame.
+           ctx_begin(IMGUI_CTX_DEFAULT) -- bind a context and run its per-frame init; emit its
+              ... emit windows ...        windows immediately after.
+           ctx_end()                    -- close it, rebinding the previously-bound context.
+         frame_end()                   -- seal the build (latches emit cost; asserts ctx balance).
+
+       frame_begin/frame_end and ctx_begin/ctx_end are balanced scopes, exactly like
+       begin_window/end_window: every begin has an end, and each end restores the scope its begin
+       opened.  render() runs AFTER frame_end and consumes the sealed draw list.
+
        render()    -- flush one viewport's geometry partition to GPU; opens a LOAD render pass on
                       that viewport's swapchain, emits all draw calls, and closes the pass.  Also
                       paints the debug overlay when vp is the primary (index 0).
                       Call once per live viewport, each with the matching context cmd. */
 
-    void ( *new_frame )( f32 dt );
-    void ( *render    )( imgui_vp_t vp, rhi_cmd_t cmd );
+    void ( *frame_begin )( f32 dt );
+    void ( *frame_end   )( void );
+    void ( *render      )( imgui_vp_t vp, rhi_cmd_t cmd );
 
-    /* Viewport management.  A viewport is a render surface backed by an OS window.  One new_frame()
-       builds every window's geometry into a single draw list; render() dispatches each window's
+    /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
+       gathers every window's geometry into a single draw list; render() dispatches each window's
        partition to the viewport it is assigned to (set_next_window_viewport, or inherited from
        whichever viewport was most recently emitted into this frame).
 
@@ -91,7 +101,7 @@ typedef struct imgui_api_s
        viewport_close()  -- close a non-primary viewport and release its GPU geometry buffers.
                             Windows on the closed viewport automatically fall back to the primary.
                             The host owns the OS window and rhi context; imgui owns only the geometry.
-       viewport_resize() -- update a viewport's drawable size.  Call on OS resize BEFORE new_frame.
+       viewport_resize() -- update a viewport's drawable size.  Call on OS resize BEFORE frame_begin.
                             Works identically for primary and secondary viewports. */
 
     imgui_vp_t ( *viewport_open   )( i32 win_id, i32 w, i32 h );
@@ -125,32 +135,38 @@ typedef struct imgui_api_s
                              never alias.  Returns IMGUI_CTX_INVALID on pool exhaustion.  Between frames.
        ctx_destroy()      -- free a secondary context; rebinds the default if it was current.  Never
                              destroys IMGUI_CTX_DEFAULT.  Call between frames.
-       ctx_bind()         -- make ctx the current context; mid-frame "switch retained state" call.
+       ctx_bind()         -- make ctx the current context with no per-frame init: a mid-build "switch
+                             retained state" escape hatch.  ctx_begin/ctx_end are the normal scope;
+                             reach for ctx_bind only to peek at another context's state mid-frame.
                              IMGUI_CTX_DEFAULT (0) or any invalid handle rebinds the default.
        ctx_set_listening() -- set whether a context receives hover/click/nav input.  The default context
                              starts listening; secondary contexts start deaf.  Multiple contexts may
                              listen simultaneously; a deaf context renders but returns inert widget state.
                              Call between frames.
+       ctx_begin()/ctx_end() -- bind a context for the frame and run its per-frame init, then close it.
+                             A balanced scope: ctx_end rebinds whatever ctx_begin found bound.  ctx_begin
+                             always runs the full frame init (hover promotion, nav, popup stale-close)
+                             regardless of the listening flag, and leaves g_ctx pointing at the context,
+                             so emit its windows IMMEDIATELY after the call.
 
-       FRAME CONTRACT (multi-context):
-         frame_begin(dt)          -- once: input poll + draw-list reset.
-         ctx_begin(DEFAULT)       -- full frame init for the default context; emit its windows next.
-         ctx_begin(ctx2)          -- full frame init for ctx2; emit its windows next.
-         new_frame(dt)            -- compat wrapper for single-context hosts: frame_begin + ctx_begin(DEFAULT).
-
-       ctx_begin always runs the full frame init (hover promotion, nav, popup stale-close) for the
-       bound context, regardless of its listening flag.  Emit that context's windows IMMEDIATELY after
-       its ctx_begin -- ctx_begin leaves g_ctx pointing at the just-begun context. */
+       FRAME CONTRACT:
+         frame_begin(dt)                -- once: input poll + draw-list reset; binds no context.
+           ctx_begin(IMGUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
+           ctx_end()                    -- close it.
+           ctx_begin(ctx2)              -- a second context, if any; emit its windows.
+           ctx_end()
+         frame_end()                    -- seal the build.
+       A single-context host runs exactly one ctx_begin(IMGUI_CTX_DEFAULT)/ctx_end pair. */
 
     imgui_ctx_t ( *ctx_create        )( const imgui_ctx_config_t* cfg );
     void        ( *ctx_destroy       )( imgui_ctx_t ctx );
     void        ( *ctx_bind          )( imgui_ctx_t ctx );
     void        ( *ctx_set_listening )( imgui_ctx_t ctx, bool listen );
     void        ( *ctx_begin         )( imgui_ctx_t ctx );
-    void        ( *frame_begin       )( f32 dt );
+    void        ( *ctx_end           )( void );
 
     /* Host input -- the host owns the app event ring drain and forwards each
-       event here before new_frame() for the same frame.
+       event here before frame_begin() for the same frame.
        event() -- forward one drained app_event_t; imgui unpacks the input events
                   it cares about (text + scroll) and returns true if it consumed
                   the event, letting the host skip its own handling for it. */
@@ -751,7 +767,7 @@ typedef struct imgui_api_s
     void ( *indent    )( f32 w );
     void ( *unindent  )( f32 w );
 
-    /* Font -- select / load fonts; call between frames (outside new_frame / render), except
+    /* Font -- select / load fonts; call between frames (outside frame_begin / render), except
        push_font / pop_font which may bracket a section or widget mid-frame.
 
        Fonts live in an id-addressed registry.  Slot 0 is the default / fallback (a built-in
@@ -771,7 +787,7 @@ typedef struct imgui_api_s
     void ( *push_font     )( u32 id );
     void ( *pop_font      )( void );
 
-    /* Low-level draw list access -- may be called anywhere between new_frame and render.
+    /* Low-level draw list access -- may be called anywhere between frame_begin and render.
        draw_rect and draw_text push geometry directly into the draw list.
        push_clip / pop_clip set the current scissor rectangle. */
 

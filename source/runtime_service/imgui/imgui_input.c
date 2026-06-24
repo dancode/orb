@@ -49,7 +49,7 @@ static i32  s_pending_mouse_win;       /* win_id of the most recent mouse event 
 static bool s_pending_mouse_win_set;   /* a mouse event arrived this frame -> resolve the viewport */
 
 /* Double-click detection.  imgui has no clock of its own, so the second press of a pair is
-   recognised from the dt fed to new_frame: a press counts as a double-click when it lands
+   recognised from the dt fed to frame_begin: a press counts as a double-click when it lands
    within DOUBLE_CLICK_TIME seconds of the previous press and within DOUBLE_CLICK_DIST pixels.
    s_click_elapsed grows by dt each frame and resets on every fresh press. */
 #define DOUBLE_CLICK_TIME  0.30f    /* seconds between the two presses */
@@ -98,7 +98,7 @@ add_paste_text( const char* text )
 
 /*----------------------------------------------------------------------------------------------
     Internal input feeders -- fed by imgui_event() as it unpacks the app event ring,
-    before imgui_new_frame() for the same frame.  Not part of the public API.
+    before imgui_frame_begin() for the same frame.  Not part of the public API.
 ----------------------------------------------------------------------------------------------*/
 
 static void

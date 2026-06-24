@@ -2,8 +2,9 @@
 
     runtime_service/imgui/imgui_frame.c -- Frame lifecycle, viewport, font, and clip helpers.
 
-    Implements the public functions that bracket a frame: init/shutdown, new_frame, render,
-    viewport open/resize/close, font loading/selection, bitmap scale, and clip rect push/pop.
+    Implements the public functions that bracket a frame: init/shutdown, frame_begin/frame_end,
+    ctx_begin/ctx_end, render, viewport open/resize/close, font loading/selection, bitmap scale,
+    and clip rect push/pop.
     Included by imgui.c before imgui_api.c so the vtable can reference these by name.
 
 ==============================================================================================*/
@@ -124,8 +125,24 @@ perf_frame_begin( f32 dt )
     s_perf.t_emit_start  = s_perf.clock ? s_perf.clock() : 0.0;
 }
 
-/* Close the emit phase (first render of the frame) and return the clock reading to bracket the
-   render flush.  Returns 0 when timing is off (clock not yet supplied or t_emit_start unarmed). */
+/* Close the emit phase at frame_end -- "build cost = frame_begin -> frame_end".  Latches emit_ms
+   from the clock armed in perf_frame_begin; idempotent (the first capture this frame wins, so the
+   render fallback below is a no-op once this has run). */
+static void
+perf_frame_end( void )
+{
+    if ( !s_perf.clock )
+        return;
+    if ( !s_perf.emit_captured && s_perf.t_emit_start > 0.0 )
+    {
+        s_perf.emit_ms       = ( s_perf.clock() - s_perf.t_emit_start ) * 1000.0;
+        s_perf.emit_captured = true;
+    }
+}
+
+/* Close the emit phase and return the clock reading to bracket the render flush.  frame_end normally
+   latches emit_ms first; this remains as a fallback so timing still reads if frame_end was skipped.
+   Returns 0 when timing is off (clock not yet supplied or t_emit_start unarmed). */
 static f64
 perf_render_begin( void )
 {
@@ -201,13 +218,26 @@ imgui_perf_overlay( imgui_clock_fn clock, int mode )
     Frame API
 ==============================================================================================*/
 
+/* Context save stack -- ctx_begin pushes the context bound on entry, ctx_end pops and rebinds it,
+   so begin/end nests as a balanced scope exactly like begin_window/end_window.  Reset to empty each
+   frame in frame_begin, so an unbalanced previous frame cannot leak a binding into this one. */
+#define IMGUI_CTX_STACK_DEPTH 8
+static imgui_context_t* s_ctx_save_stack[ IMGUI_CTX_STACK_DEPTH ];
+static u32              s_ctx_save_sp;
+
 /* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
    PRIMARY context (slot 0): the OS window and its viewports belong to the default context
-   regardless of which context is active for input this frame.  Called by imgui_new_frame (the
-   compat wrapper) and directly by hosts using the multi-context frame contract. */
+   regardless of which context is active for input this frame.
+
+   This is the global half of the frame; it binds NO context.  Open at least one context with
+   ctx_begin(IMGUI_CTX_DEFAULT) before emitting any window, close it with ctx_end, and seal the
+   build with frame_end.  See the FRAME CONTRACT note in imgui_api.h. */
+
 void
 imgui_frame_begin( f32 dt )
 {
+    s_ctx_save_sp = 0;   /* fresh context scope stack; a leaked binding cannot survive a frame */
+
     imgui_context_t* primary = s_ctx_pool[ 0 ];   /* default ctx always owns the OS window */
     i32 disp_w = primary->viewport_count > 0 ? primary->viewports[ 0 ].disp_w : 0;
     i32 disp_h = primary->viewport_count > 0 ? primary->viewports[ 0 ].disp_h : 0;
@@ -249,32 +279,61 @@ imgui_frame_begin( f32 dt )
 #endif
 }
 
-/* Per-context frame phase: bind `ctx_handle` and run a full frame init for it.  Every context
-   gets the full init (nav, popup check, per-frame scratch reset) regardless of its `listening`
-   flag; the flag only gates widget interaction (hover nomination and widget hit-tests). */
+/* Per-context frame phase: bind `ctx_handle` and run a full frame init for it.  Pushes the context
+   bound on entry so the matching ctx_end restores it.  Every context gets the full init (nav, popup
+   check, per-frame scratch reset) regardless of its `listening` flag; the flag only gates widget
+   interaction (hover nomination and widget hit-tests).  Emit this context's windows immediately
+   after the call -- it leaves g_ctx bound to ctx_handle -- and close with ctx_end. */
 void
 imgui_ctx_begin( imgui_ctx_t ctx_handle )
 {
     if ( ctx_handle < 0 || ctx_handle >= (i32)s_ctx_pool_count || !s_ctx_pool[ ctx_handle ] )
         ctx_handle = IMGUI_CTX_DEFAULT;
 
+    /* Push the context bound on entry; ctx_end restores it.  Count truthfully past the cap so a
+       too-deep nesting still balances against ctx_end (the saved slot just aliases the top). */
+    if ( s_ctx_save_sp < IMGUI_CTX_STACK_DEPTH )
+        s_ctx_save_stack[ s_ctx_save_sp ] = g_ctx;
+    ++s_ctx_save_sp;
+
     imgui_context_t* c = s_ctx_pool[ ctx_handle ];
     ctx_bind( c );
 
-    s_retained.wants_redraw = false;   /* cleared before the build; set again by any animating widget */
-    ctx_new_frame();             /* per-context scratch reset + frame clock bump (no global interaction touch) */
-    popup_close_check();         /* stale-close + click-outside, BEFORE any user open_popup */
-    popup_apply_modal();         /* fence interaction behind an open modal (steals hover_win) */
-    window_raise_on_press();     /* a press raises the hover window (takes effect this frame) */
-    nav_new_frame();             /* commit last frame's nav move + read this frame's nav keys */
+    s_retained.wants_redraw = false;    /* cleared before the build; set again by any animating widget */
+    ctx_new_frame();                    /* per-context scratch reset + frame clock bump (no global interaction touch) */
+    popup_close_check();                /* stale-close + click-outside, BEFORE any user open_popup */
+    popup_apply_modal();                /* fence interaction behind an open modal (steals hover_win) */
+    window_raise_on_press();            /* a press raises the hover window (takes effect this frame) */
+    nav_new_frame();                    /* commit last frame's nav move + read this frame's nav keys */
 }
 
-/* Single-context backwards-compat wrapper: frame_begin + ctx_begin(DEFAULT). */
+/* Close the context opened by the matching ctx_begin, rebinding the context that was current before
+   it.  The symmetric partner to ctx_begin -- it removes the need to hand-restore the default with
+   ctx_bind after emitting a secondary context's windows. */
 void
-imgui_new_frame( f32 dt )
+imgui_ctx_end( void )
 {
-    imgui_frame_begin( dt );
-    imgui_ctx_begin( IMGUI_CTX_DEFAULT );
+    if ( s_ctx_save_sp == 0 )
+        return;   /* unbalanced ctx_end -- ignore rather than underflow */
+
+    --s_ctx_save_sp;
+    u32 i = s_ctx_save_sp < IMGUI_CTX_STACK_DEPTH ? s_ctx_save_sp : IMGUI_CTX_STACK_DEPTH - 1;
+    ctx_bind( s_ctx_save_stack[ i ] );   /* NULL (no prior context) rebinds the default */
+}
+
+/* Seal the build: every window/context emitted this frame is now final.  The symmetric partner to
+   frame_begin -- it latches the emit cost (frame_begin -> frame_end) for the perf overlay and, in
+   Debug builds, asserts every ctx_begin was matched by a ctx_end.  Call once after the UI build and
+   before any render(); render consumes the sealed draw list. */
+void
+imgui_frame_end( void )
+{
+    /* Build cost concludes here: latch emit_ms for the perf overlay (render is timed separately). */
+    perf_frame_end();
+
+    /* A leftover context scope means a ctx_begin without its ctx_end -- catch it at the seam rather
+       than letting the stale binding bleed into render or the next frame. */
+    ORB_ASSERT( s_ctx_save_sp == 0 );
 }
 
 /* Flush one viewport's geometry partition to GPU.  The host opens a frame on that viewport's rhi
@@ -310,7 +369,7 @@ imgui_render( imgui_vp_t vp, rhi_cmd_t cmd )
     the swapchain.
     Returns the handle to pass to render / viewport_resize / viewport_close / set_next_window_viewport,
     or IMGUI_VP_INVALID on bad win_id or GPU buffer failure.
-    Must be called after init() and before new_frame().
+    Must be called after init() and before frame_begin().
 
 ==============================================================================================*/
 
@@ -335,7 +394,7 @@ imgui_viewport_open( i32 win_id, i32 w, i32 h )
     return (imgui_vp_t)win_id;
 }
 
-/* Update a viewport's drawable size.  Call on OS resize BEFORE new_frame.
+/* Update a viewport's drawable size.  Call on OS resize BEFORE frame_begin.
    Works identically for the primary (0) and secondary viewports.  IMGUI_VP_INVALID is a no-op. */
 void
 imgui_viewport_resize( imgui_vp_t vp, i32 w, i32 h )

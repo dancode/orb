@@ -311,19 +311,24 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
-        /* Build the UI.  The frame contract for multiple contexts:
-        
-            frame_begin(dt)         -- global: input poll + draw reset (primary ctx drives dims)
-            ctx_set_listening(...)  -- switch which context receives input (reads s_io, after frame_begin)
-            ctx_begin(ctx)          -- full frame init for ctx; leaves g_ctx bound to it.
-           Emit windows IMMEDIATELY after each ctx_begin -- ctx_begin leaves g_ctx bound to that
-           context, so windows emitted after it land in the correct pool. */
+        /* Build the UI.  Every begin has a matching end -- the frame is a balanced scope:
 
-        if ( b_multi_ctx && ctx2 != IMGUI_CTX_INVALID )
+            frame_begin(dt)              -- global once-per-frame; binds no context.
+              ctx_begin(IMGUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
+              ctx_end()                    -- close it.
+              ctx_begin(ctx2)              -- the secondary context (multi-ctx demo); emit its windows.
+              ctx_end()
+            frame_end()                  -- seal the build.
+           Emit windows IMMEDIATELY after each ctx_begin -- it leaves that context bound, so windows
+           land in the correct pool. */
+
+        const bool b_multi = ( b_multi_ctx && ctx2 != IMGUI_CTX_INVALID );
+
+        imgui()->frame_begin( dt );
+
+        /* 'A'/'S' switch which context receives input (multi-ctx demo; reads s_io after frame_begin). */
+        if ( b_multi )
         {
-            imgui()->frame_begin( dt );
-
-            /* 'A'/'S' switch which context receives input (mutual exclusion: only one listens). */
             if ( imgui()->is_key_pressed( APP_KEY_A ) )
             {
                 imgui()->ctx_set_listening( IMGUI_CTX_DEFAULT, true  );
@@ -334,17 +339,53 @@ main( int argc, char** argv )
                 imgui()->ctx_set_listening( IMGUI_CTX_DEFAULT, false );
                 imgui()->ctx_set_listening( ctx2,              true  );
             }
+        }
 
-            /* --- ctx1 (default): begin, then emit all its windows immediately. --- */
-            imgui()->ctx_begin( IMGUI_CTX_DEFAULT );
+        /* --- Default context: the main build + perf overlay live in one ctx scope. --- */
+        imgui()->ctx_begin( IMGUI_CTX_DEFAULT );
 
-            if ( b_borderless )
+        /* Borderless main window: this full-surface native shell IS the OS window's frame. */
+        if ( b_borderless )
+        {
+            imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+            imgui()->end_window();
+        }
+
+        /* The active demo runs in the single-context path; the multi-ctx demo shows ctx2 instead. */
+        if ( b_demo_window && !b_multi )
+        {
+            sb_imgui_demos[ active_demo ].fn();
+            active_demo = sb_imgui_demo_picker( active_demo );
+        }
+
+        bool second_surface = false;
+        if ( second_surface )
+        {
+            imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
+            imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
+            if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
             {
-                imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
-                imgui()->end_window();
+                imgui()->stack();
+                imgui()->text( "Detach me: click the title-bar button" );
+                imgui()->text( "or drag my title past the window edge." );
+                imgui()->separator();
+                imgui()->text( "Once detached I am a native borderless" );
+                imgui()->text( "window -- drag my title bar to move the" );
+                imgui()->text( "OS window, drag my borders to resize." );
             }
+            imgui()->end_window();
+        }
 
-            /* --- ctx2: full frame init, then emit its windows immediately. --- */
+        /* Perf overlay -- last so it draws on top, inside the default context's scope and the build
+           so its own text is counted in the emit + render cost it reports.  Emit opens at frame_begin
+           and closes at frame_end; render is summed across render() below. */
+        imgui()->perf_overlay( sys_tick_seconds, perf_mode );
+
+        imgui()->ctx_end();
+
+        /* --- Secondary context (multi-ctx demo): its own scope. --- */
+        if ( b_multi )
+        {
             imgui()->ctx_begin( ctx2 );
             {
                 static int ctx2_click_count = 0;
@@ -362,51 +403,10 @@ main( int argc, char** argv )
                 }
                 imgui()->end_window();
             }
-            
-            /* Restore default context before render/update so those ops use the primary viewport pool. */
-            imgui()->ctx_bind( IMGUI_CTX_DEFAULT );            
-        }
-        else
-        {
-            imgui()->new_frame( dt );
-
-            /* Borderless main window: this full-surface native shell IS the OS window's frame. */
-            if ( b_borderless )
-            {
-                imgui()->begin_window( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
-                imgui()->end_window();
-            }
-
-            if ( b_demo_window )
-            {
-                sb_imgui_demos[ active_demo ].fn();
-                active_demo = sb_imgui_demo_picker( active_demo );
-            }
-
-            bool second_surface = false;
-            if ( second_surface )
-            {
-                imgui()->set_next_window_pos ( 60, 60, IMGUI_COND_ONCE );
-                imgui()->set_next_window_size( 360, 240, IMGUI_COND_ONCE );
-                if ( imgui()->begin_window( "Second Surface", IMGUI_WIN_NONE ) )
-                {
-                    imgui()->stack();
-                    imgui()->text( "Detach me: click the title-bar button" );
-                    imgui()->text( "or drag my title past the window edge." );
-                    imgui()->separator();
-                    imgui()->text( "Once detached I am a native borderless" );
-                    imgui()->text( "window -- drag my title bar to move the" );
-                    imgui()->text( "OS window, drag my borders to resize." );
-                }
-                imgui()->end_window();
-            }
+            imgui()->ctx_end();
         }
 
-        /* Perf overlay -- emitted last so it draws on top, and inside the build so its own text is
-           counted in the emit + render cost it reports.  The library measures with the clock we hand
-           it (sys_tick_seconds): emit opens at frame_begin, render is summed across render() below.
-           Lands in the default context (multi-ctx rebinds above; the single path never left it). */
-        imgui()->perf_overlay( sys_tick_seconds, perf_mode );
+        imgui()->frame_end();
 
         /* ------------------------------------------------------------------------------ */
         /* Reconcile imgui-owned floaters with their OS windows (destroys any the user closed).

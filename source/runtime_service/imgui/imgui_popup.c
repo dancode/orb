@@ -15,7 +15,7 @@
         close_current_popup()  -- truncate the open stack to this popup's depth
 
     The one invariant that prevents most popup bugs: popup_close_check() runs at the very top of
-    the frame (in imgui_new_frame), BEFORE any user code -- so the click that opens a popup (in
+    the frame (in imgui_ctx_begin), BEFORE any user code -- so the click that opens a popup (in
     this frame's user code) can never be the click that closes it (checked next frame, by which
     time the button is released).  No "just opened" grace flags are needed; it falls out of order.
 
@@ -25,7 +25,7 @@
     root draw-clip is pushed so the popup escapes the parent window's bounds.
 
     Included by imgui.c after imgui_widget_window.c (so window_begin_ex is in scope) and before
-    imgui_api.c (so imgui_new_frame can call popup_close_check / popup_apply_modal).
+    imgui_api.c (so imgui_ctx_begin can call popup_close_check / popup_apply_modal).
 
 ==============================================================================================*/
 // clang-format off

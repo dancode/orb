@@ -252,7 +252,7 @@ window_apply_next( imgui_window_t* win, bool appearing )
     hover_win (the window the cursor is over) was resolved last frame, so this runs at the
     top of the frame -- before any begin_window stamps its z -- and the raise therefore
     takes effect this same frame: clicking a window's exposed area brings it up at once.
-    Called from imgui_new_frame() right after ctx_new_frame() promotes hover_win.
+    Called from imgui_ctx_begin() right after ctx_new_frame() promotes hover_win.
 ----------------------------------------------------------------------------------------------*/
 
 static void

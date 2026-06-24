@@ -3,7 +3,7 @@
     runtime_service/imgui/imgui_nav.c -- Keyboard navigation driver.
 
     The per-frame brain behind the nav cursor (s_nav.id, the persistent keyboard analogue of
-    hover_id).  Three jobs, run once per frame from imgui_new_frame after the popup state settles:
+    hover_id).  Three jobs, run once per frame from imgui_ctx_begin after the popup state settles:
 
       1. Commit the move resolved during the previous frame's emission (nav_commit_prev).  The
          directional / Tab winner the items scored into the accumulator becomes the new nav_id --
@@ -21,7 +21,7 @@
     nav cursor -- lights the focus ring and takes a synthesized click from an activation.
 
     Included by imgui.c after imgui_popup.c (so the popup stack + IMGUI_POPUP_Z_BASE are in scope)
-    and before imgui_api.c (so imgui_new_frame can call nav_new_frame).
+    and before imgui_api.c (so imgui_ctx_begin can call nav_new_frame).
 
 ==============================================================================================*/
 // clang-format off
@@ -287,7 +287,7 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, imgui_id_t first_prev )
 
 /*----------------------------------------------------------------------------------------------
     nav_new_frame -- the driver: commit, read keys into a fresh request, choose nav_win.
-    Called from imgui_new_frame after popup_close_check / popup_apply_modal / window_raise_on_press.
+    Called from imgui_ctx_begin after popup_close_check / popup_apply_modal / window_raise_on_press.
 ----------------------------------------------------------------------------------------------*/
 
 static void

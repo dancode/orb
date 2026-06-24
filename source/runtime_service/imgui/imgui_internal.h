@@ -452,8 +452,8 @@ typedef struct
        context's namespace and leaves id_hash byte-identical to the unsalted hash. */
     u32 id_salt;
 
-    u32  frame;           /* monotonic frame index, bumped each new_frame this context is built */
-    bool wants_redraw;    /* set by imgui_anim_f32 while mid-transition; cleared at new_frame */
+    u32  frame;           /* monotonic frame index, bumped each ctx_begin this context is built */
+    bool wants_redraw;    /* set by imgui_anim_f32 while mid-transition; cleared at ctx_begin */
 
     imgui_state_slot_t* state;       /* open-addressed keyed per-widget state; points into context alloc */
     u32                 state_count; /* capacity, power of two */
@@ -502,7 +502,7 @@ typedef struct
        no in-flight draw list references a surface being freed.  Ignored for non-owned surfaces. */
     bool pending_close;
 
-    /* Drawable size of this surface in pixels.  Set by the host (viewport 0 from new_frame, floaters
+    /* Drawable size of this surface in pixels.  Set by the host (viewport 0 from frame_begin, floaters
        via viewport_resize) BEFORE the build so begin_window clips its windows against THIS surface's
        extent, not the main window's.  0 = unset -> begin_window falls back to the main display size
        (single-window behavior).  Distinct from the win_w/win_h passed to flush, which only sets the

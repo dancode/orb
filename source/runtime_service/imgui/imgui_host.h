@@ -38,9 +38,10 @@ void imgui_perf_overlay( imgui_clock_fn clock, int mode );
 u32  imgui_load_font( const char* path );
 
 /* frame */
-void imgui_new_frame( f32 dt );
 void imgui_frame_begin( f32 dt );
+void imgui_frame_end( void );
 void imgui_ctx_begin( imgui_ctx_t ctx );
+void imgui_ctx_end( void );
 void imgui_render( imgui_vp_t vp, rhi_cmd_t cmd );
 
 /* multi-context */

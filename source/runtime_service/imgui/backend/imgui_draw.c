@@ -70,7 +70,7 @@ static struct
 } s_draw;
 
 /*----------------------------------------------------------------------------------------------
-    draw_reset -- call at the top of new_frame
+    draw_reset -- call at the top of the frame (frame_begin)
 ----------------------------------------------------------------------------------------------*/
 
 void
@@ -426,7 +426,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     u32 len = ( n == 0xFFFFFFFFu ) ? (u32)strlen( str ) : n;
 
     /* Copy into the text pool so callers can use stack-local buffers (textf, snprintf labels).
-       The pool pointer is valid until draw_reset clears it at the top of the next new_frame. */
+       The pool pointer is valid until draw_reset clears it at the top of the next frame_begin. */
     if ( s_draw.text_pool_used + len + 1 > IMGUI_MAX_TEXT_POOL )
         return;   /* pool exhausted: drop the label rather than store a dangling pointer */
     char* dst = s_draw.text_pool + s_draw.text_pool_used;

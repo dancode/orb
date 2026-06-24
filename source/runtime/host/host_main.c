@@ -38,8 +38,9 @@
     [frame clock]             run_clock_update()
     [console poll]            sys, if RUN_HOST_CONSOLE
     [job tick]                job()->tick()
-    [imgui new_frame]         imgui()->new_frame( dt )          -- when imgui loaded
+    [imgui frame begin]       imgui()->frame_begin + ctx_begin( DEFAULT ) -- when imgui loaded
     [host update]             desc->on_update( dt )             -- builds UI and game logic
+    [imgui frame end]         imgui()->ctx_end + frame_end      -- seals the build, when imgui loaded
     [imgui platform sync]     imgui()->update_platform_windows() -- when imgui loaded
     [render]                  see Render paths below
     [hot-reload]              mod_check_reloads + flush, if RUN_HOST_HOT_RELOAD
@@ -445,11 +446,15 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- imgui frame begin ------------------------------------------ */
 
-        /* new_frame snaps the IO state (mouse/keyboard) from the events drained above;
-           call before any widget code, including on_update below. */
+        /* frame_begin snaps the IO state (mouse/keyboard) from the events drained above and binds
+           the default context; call before any widget code, including on_update below.  The build
+           is a balanced scope -- ctx_end + frame_end seal it after on_update emits its windows. */
 
         if ( s_imgui_inited )
-            imgui()->new_frame( dt );
+        {
+            imgui()->frame_begin( dt );
+            imgui()->ctx_begin( IMGUI_CTX_DEFAULT );
+        }
 
         /* -- host update ------------------------------------------------- */
 
@@ -458,6 +463,13 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( desc->on_update )
              desc->on_update( dt );
+
+        /* Seal the imgui build: close the default context, then the frame. */
+        if ( s_imgui_inited )
+        {
+            imgui()->ctx_end();
+            imgui()->frame_end();
+        }
 
         /* -- imgui platform sync ---------------------------------------- */
 
