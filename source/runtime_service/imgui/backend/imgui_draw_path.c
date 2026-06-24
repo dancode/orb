@@ -149,6 +149,20 @@ draw_push_polyline_cmd( const imgui_vec2_t* pts, u32 count, f32 thickness,
     if ( s_draw.pt_count + count > IMGUI_MAX_PATH_PTS )
         return;   /* point pool exhausted this frame */
 
+    /* Cull against the bounding box of the points, padded by half the stroke width so a thick line
+       grazing the clip edge is never wrongly dropped. */
+    f32 minx = pts[ 0 ].x, maxx = pts[ 0 ].x, miny = pts[ 0 ].y, maxy = pts[ 0 ].y;
+    for ( u32 i = 1; i < count; ++i )
+    {
+        if ( pts[ i ].x < minx ) minx = pts[ i ].x;
+        if ( pts[ i ].x > maxx ) maxx = pts[ i ].x;
+        if ( pts[ i ].y < miny ) miny = pts[ i ].y;
+        if ( pts[ i ].y > maxy ) maxy = pts[ i ].y;
+    }
+    f32 pad = thickness * 0.5f + 1.0f;
+    if ( draw_cull_box( minx - pad, miny - pad, ( maxx - minx ) + 2.0f * pad, ( maxy - miny ) + 2.0f * pad ) )
+        return;
+
     u32 pt_offset = s_draw.pt_count;
     for ( u32 i = 0; i < count; ++i )
         s_draw.points[ s_draw.pt_count++ ] = pts[ i ];
@@ -190,6 +204,13 @@ imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     /* Diagonal: push a CMD_LINE; tessellated at flush as a 2-point antialiased stroke. */
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
+    {
+        f32 lx = x0 < x1 ? x0 : x1, ly = y0 < y1 ? y0 : y1;
+        f32 hx = x0 > x1 ? x0 : x1, hy = y0 > y1 ? y0 : y1;
+        f32 pad = thickness * 0.5f + 1.0f;
+        if ( draw_cull_box( lx - pad, ly - pad, ( hx - lx ) + 2.0f * pad, ( hy - ly ) + 2.0f * pad ) )
+            return;
+    }
     imgui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type           = IMGUI_CMD_LINE;
     c->clip           = draw_current_clip();
@@ -213,6 +234,13 @@ imgui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 t
     f32 period = dash + ( gap > 0.0f ? gap : dash );
     if ( period <= 0.0f || s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
+    {
+        f32 lx = x0 < x1 ? x0 : x1, ly = y0 < y1 ? y0 : y1;
+        f32 hx = x0 > x1 ? x0 : x1, hy = y0 > y1 ? y0 : y1;
+        f32 pad = thickness * 0.5f + 1.0f;
+        if ( draw_cull_box( lx - pad, ly - pad, ( hx - lx ) + 2.0f * pad, ( hy - ly ) + 2.0f * pad ) )
+            return;
+    }
     imgui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type           = IMGUI_CMD_DASHED_LINE;
     c->clip           = draw_current_clip();

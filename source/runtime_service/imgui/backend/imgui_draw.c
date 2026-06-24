@@ -101,6 +101,30 @@ draw_current_clip( void )
     return s_draw.clip_stack[ s_draw.clip_depth - 1 ];
 }
 
+/* A rect that bounds no pixels (rect_intersect clamps a missed overlap to zero w/h). */
+static bool
+rect_empty( imgui_rect_t r )
+{
+    return r.w <= 0.0f || r.h <= 0.0f;
+}
+
+/* Reject a shape whose axis-aligned bounds cannot touch the current clip -- it would emit a command
+   + geometry the GPU then scissors to nothing.  The cull is exact, not heuristic: c->clip is set to
+   draw_current_clip() on every push, so that clip IS the scissor the shape renders under; a box
+   fully outside it lights no pixel.  This rejects at the source -- a scrolled-out widget (or a whole
+   region clipped to zero) costs no command slot, no string-pool / point-pool space, and no
+   tessellation, not merely no draw call.  Conservative: only a box fully past an edge is dropped
+   (touching counts as visible), and an empty clip rejects everything in it. */
+static bool
+draw_cull_box( f32 x, f32 y, f32 w, f32 h )
+{
+    imgui_rect_t c = draw_current_clip();
+    if ( rect_empty( c ) )                  return true;   /* nothing in an empty clip is visible */
+    if ( x + w <= c.x || x >= c.x + c.w )   return true;   /* fully left / right of the clip      */
+    if ( y + h <= c.y || y >= c.y + c.h )   return true;   /* fully above / below the clip        */
+    return false;
+}
+
 void
 draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
 {
@@ -291,6 +315,8 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     u32 col = draw_apply_alpha( abgr );
     if ( ( col >> 24 ) == 0u )
         return;
+    if ( draw_cull_box( x, y, w, h ) )      /* scissored to nothing -- drop before it costs a slot */
+        return;
     imgui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type         = IMGUI_CMD_RECT_FILLED;
     c->clip         = draw_current_clip();
@@ -323,6 +349,8 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
 {
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
+    if ( draw_cull_box( x, y, w, h ) )
+        return;
     imgui_cmd_t* c          = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type                 = IMGUI_CMD_RECT_GRADIENT;
     c->clip                 = draw_current_clip();
@@ -351,6 +379,8 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     u32 col = draw_apply_alpha( abgr );
     if ( ( col >> 24 ) == 0u )
         return;
+    if ( draw_cull_box( x, y, w, h ) )
+        return;
     imgui_cmd_t* c       = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type              = IMGUI_CMD_RECT_OUTLINE;
     c->clip              = draw_current_clip();
@@ -375,6 +405,13 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
     (void)tex_idx;   /* triangles are always solid-color */
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
+    /* Cull against the bounding box of the three vertices. */
+    f32 minx = ax < bx ? ( ax < cx ? ax : cx ) : ( bx < cx ? bx : cx );
+    f32 maxx = ax > bx ? ( ax > cx ? ax : cx ) : ( bx > cx ? bx : cx );
+    f32 miny = ay < by ? ( ay < cy ? ay : cy ) : ( by < cy ? by : cy );
+    f32 maxy = ay > by ? ( ay > cy ? ay : cy ) : ( by > cy ? by : cy );
+    if ( draw_cull_box( minx, miny, maxx - minx, maxy - miny ) )
+        return;
     imgui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type        = IMGUI_CMD_TRIANGLE;
     c->clip        = draw_current_clip();
@@ -395,6 +432,8 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
 {
     if ( segments < 3 ) segments = 3;
     if ( s_draw.cmd_count >= IMGUI_MAX_CMDS )
+        return;
+    if ( draw_cull_box( cx - r, cy - r, 2.0f * r, 2.0f * r ) )
         return;
     imgui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type        = IMGUI_CMD_CIRCLE_FILLED;
@@ -421,6 +460,18 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
 {
     if ( !str || s_draw.cmd_count >= IMGUI_MAX_CMDS )
         return;
+
+    /* Vertical cull: a glyph run lights pixels within roughly one line height of y, so if that band
+       sits fully above or below the current clip the run is invisible -- a list row scrolled out of
+       its box.  Padded a full line each way so ascenders / descenders are never wrongly dropped;
+       horizontal overflow is left to the GPU scissor and the per-glyph clip in tess_text_n.  Done
+       before the pool copy so a culled run costs no string-pool space either. */
+    {
+        imgui_rect_t cc = draw_current_clip();
+        f32          lh = font_line_h();
+        if ( rect_empty( cc ) || y + 2.0f * lh <= cc.y || y - lh >= cc.y + cc.h )
+            return;
+    }
 
     /* Resolve length at push time (sentinel means NUL-terminated). */
     u32 len = ( n == 0xFFFFFFFFu ) ? (u32)strlen( str ) : n;

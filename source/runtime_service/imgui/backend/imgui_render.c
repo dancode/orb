@@ -107,9 +107,9 @@ static u32        s_run_count;                /* runs valid this frame          
 static bool       s_frame_built;              /* tessellation + runs computed this frame        */
 
 /* Dispatch order fed to tess_dispatch: a permutation of the semantic command list that groups
-   commands by clip rect within each z-run, so equal-clip shapes tessellate contiguously and merge
-   into one GPU batch (the scissor change is what opens a batch).  Built fresh each frame by
-   render_build_order; see the note there for the ordering-safety argument. */
+   commands by z then clip rect, so equal-clip shapes tessellate contiguously and merge into one GPU
+   batch (the scissor change is what opens a batch).  Built fresh each frame by render_build_order;
+   see the note there for the global-z rationale and the ordering-safety argument. */
 static u32 s_order[ IMGUI_MAX_CMDS ];
 
 /* Per-surface geometry span within the shared vertex/index lists -- the half-open [lo,hi) range of
@@ -500,14 +500,9 @@ clip_eq( imgui_rect_t a, imgui_rect_t b )
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
-/* A clip that intersected to zero area (rect_intersect clamps w/h to 0 when regions miss) -- the
-   command can light no pixel, so render_build_order drops it: a scrolled-out child or an off-screen
-   window costs no geometry and, crucially, no zero-scissor batch. */
-static bool
-clip_empty( imgui_rect_t c )
-{
-    return c.w <= 0.0f || c.h <= 0.0f;
-}
+/* rect_empty (a zero-area clip) is defined in imgui_draw.c, included above this unit; render_build_order
+   uses it as a final guard so a zero-scissor batch can never form even if some push path skips the
+   emit-time draw_cull_box (the primary cull -- see imgui_draw.c). */
 
 /*----------------------------------------------------------------------------------------------
     render_build_order -- compute the clip-grouped dispatch order written to s_order.
@@ -552,7 +547,7 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
     bool z_overflow = false;
     for ( u32 i = 0; i < count && !z_overflow; ++i )
     {
-        if ( clip_empty( cmds[ i ].clip ) ) continue;
+        if ( rect_empty( cmds[ i ].clip ) ) continue;
         bool seen = false;
         for ( u32 j = 0; j < nz; ++j )
             if ( zs[ j ] == cmds[ i ].z ) { seen = true; break; }
@@ -569,7 +564,7 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
     if ( z_overflow )
     {
         for ( u32 i = 0; i < count; ++i )
-            if ( !clip_empty( cmds[ i ].clip ) )
+            if ( !rect_empty( cmds[ i ].clip ) )
                 s_order[ n++ ] = i;
         return n;
     }
@@ -584,7 +579,7 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
         bool         overflow = false;
         for ( u32 i = 0; i < count && !overflow; ++i )
         {
-            if ( cmds[ i ].z != z || clip_empty( cmds[ i ].clip ) ) continue;
+            if ( cmds[ i ].z != z || rect_empty( cmds[ i ].clip ) ) continue;
             bool seen = false;
             for ( u32 g = 0; g < ng; ++g )
                 if ( clip_eq( groups[ g ], cmds[ i ].clip ) ) { seen = true; break; }
@@ -599,7 +594,7 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
         {
             /* Too many distinct clips to group: keep this z's natural emit order. */
             for ( u32 i = 0; i < count; ++i )
-                if ( cmds[ i ].z == z && !clip_empty( cmds[ i ].clip ) )
+                if ( cmds[ i ].z == z && !rect_empty( cmds[ i ].clip ) )
                     s_order[ n++ ] = i;
         }
         else
