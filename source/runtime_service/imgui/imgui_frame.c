@@ -781,7 +781,7 @@ font_relayout( void )
 }
 
 u32
-imgui_load_font( const char* path )
+imgui_font_load( const char* path )
 {
     u32 id = font_load( path );     // loads into a new id and activates it
     if ( id == 0 )
@@ -791,7 +791,7 @@ imgui_load_font( const char* path )
 }
 
 bool
-imgui_set_font_file( u32 id, const char* path )
+imgui_font_load_into( u32 id, const char* path )
 {
     if ( !font_load_into( id, path ) )
         return false;
@@ -801,7 +801,7 @@ imgui_set_font_file( u32 id, const char* path )
 }
 
 void
-imgui_use_font( u32 id )
+imgui_font_use( u32 id )
 {
     font_use( id );
     font_relayout();
@@ -812,7 +812,7 @@ imgui_push_font( u32 id )
 {
     if ( s_font_stack_depth < IMGUI_FONT_STACK_MAX )
         s_font_stack[ s_font_stack_depth++ ] = font_active_id();
-    imgui_use_font( id );
+    imgui_font_use( id );
 }
 
 void
@@ -820,11 +820,11 @@ imgui_pop_font( void )
 {
     if ( s_font_stack_depth == 0 )
         return;
-    imgui_use_font( s_font_stack[ --s_font_stack_depth ] );
+    imgui_font_use( s_font_stack[ --s_font_stack_depth ] );
 }
 
 void
-imgui_set_font( imgui_font_t font )
+imgui_font_set_builtin( imgui_font_t font )
 {
     font_set_bitmap( font );
     font_relayout();
@@ -832,7 +832,7 @@ imgui_set_font( imgui_font_t font )
 }
 
 void
-imgui_set_bmp_scale( u32 scale )
+imgui_font_set_bmp_scale( u32 scale )
 {
     font_set_bmp_scale( scale );
     if ( !font_is_tt() )

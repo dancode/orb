@@ -255,7 +255,7 @@ f32         font_em          ( void ) { return s_font->size;      }   // nominal
 static u32  font_atlas_idx   ( void ) { return s_font->atlas_idx; }
 
 /* Whether the active font is a ttf font (vs. a built-in bmp).  The UI unit's font API
-   (imgui_set_bmp_scale) keys off this -- a bmp-scale change only re-derives layout when the active
+   (imgui_font_set_bmp_scale) keys off this -- a bmp-scale change only re-derives layout when the active
    font is bmp-backed. */
 bool font_is_tt( void ) { return s_active->src == FONT_SRC_TTF; }
 

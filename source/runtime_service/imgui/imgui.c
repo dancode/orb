@@ -77,7 +77,7 @@ MOD_USE_APP;
 
 /* imgui_metrics_t (the layout metric record) is defined in imgui_internal.h. */
 
-/* Font type size (em) used by layout_compute; updated by set_font() / load_font(). */
+/* Font type size (em) used by layout_compute; updated by font_set_builtin() / font_load(). */
 static u32 s_font_size = 0;
 
 /* Default values -- the em=12 bitmap result of layout_compute, for the pre-font-load state. */
@@ -106,7 +106,7 @@ static imgui_metrics_t s_layout =
 };
 
 /* Recompute the layout metrics from a font's type size (em), glyph-box height (char_h), and
-   line advance (line_h).  Called by set_font() / load_font() / set_bmp_scale().  All paddings
+   line advance (line_h).  Called by font_set_builtin() / font_load() / font_set_bmp_scale().  All paddings
    scale off the em; the row height is floored to char_h and line_h so glyphs never clip. */
 
 static void

@@ -33,12 +33,12 @@ typedef struct imgui_api_s
     /* GPU resource lifecycle.
        init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
        shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
-       load_font() -- load a pre-baked .orb_font atlas into a new font id and make it active;
+       font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
                       call after init().  Returns the new id (>= 1), or 0 on failure. */
 
     bool ( *init      )( void );
     void ( *shutdown  )( void );
-    u32  ( *load_font )( const char* path );
+    u32  ( *font_load )( const char* path );
 
     /* GPU resource memory currently held by imgui, in bytes (buffers + atlases).
        print_mem_stats() dumps the same breakdown to stdout. */
@@ -406,7 +406,7 @@ typedef struct imgui_api_s
        columns()    -- N explicit column tracks (IMGUI_END-terminated), auto height, scrolling.
        cols_n()     -- n equal flex columns, auto height.
        form()       -- a stack with a fixed-width label track on `side`: the "Label  [control]"
-                         form header (label_w <= 0 = plain stack).  form_split() = field_split.
+                         form header (label_w <= 0 = plain stack).
        layout()     -- full flow template (columns, row height, item padding, gaps) in one struct.
        layout_default() -- clear back to a plain stack (one flex column, no field split); the
                          single "reset everything" verb.  Padding is untouched (use pad()).
@@ -452,7 +452,6 @@ typedef struct imgui_api_s
     void ( *row4         )( f32 a, f32 b, f32 c, f32 d );
     void ( *row_track    )( f32 row_h, const f32* cols );
     void ( *form         )( imgui_label_side_t side, f32 label_w );
-    void ( *form_split   )( imgui_label_side_t side, f32 label, f32 control );
     void ( *field_split  )( imgui_label_side_t side, f32 label, f32 control );
     void ( *field_label_left  )( f32 width );
     void ( *field_label_right )( f32 width );
@@ -771,21 +770,21 @@ typedef struct imgui_api_s
        push_font / pop_font which may bracket a section or widget mid-frame.
 
        Fonts live in an id-addressed registry.  Slot 0 is the default / fallback (a built-in
-       bitmap to start).  load_font() loads a .orb_font into a fresh id; set_font_file() loads one
-       into an existing id (id 0 swaps the default).  use_font() makes a loaded id active; another
+       bitmap to start).  font_load() loads a .orb_font into a fresh id; font_load_into() loads one
+       into an existing id (id 0 swaps the default).  font_use() makes a loaded id active; another
        context can select its own font this way.  push_font() / pop_font() bracket a temporary
-       font and restore the previous one.  Each load_font/set_font_file uses its own bindless
+       font and restore the previous one.  Each font_load/font_load_into uses its own bindless
        texture.  Widget layout dimensions follow the active font's metrics.
 
-       set_font()      -- set the default (id 0) to a built-in bitmap font and use it.
-       set_bmp_scale() -- integer pixel-scale multiplier for built-in bitmaps (1 = native, 2 = 2x). */
+       font_set_builtin()   -- set the default (id 0) to a built-in bitmap font and use it.
+       font_set_bmp_scale() -- integer pixel-scale multiplier for built-in bitmaps (1 = native, 2 = 2x). */
 
-    void ( *set_font      )( imgui_font_t font );
-    void ( *set_bmp_scale )( u32 scale );
-    bool ( *set_font_file )( u32 id, const char* path );
-    void ( *use_font      )( u32 id );
-    void ( *push_font     )( u32 id );
-    void ( *pop_font      )( void );
+    void ( *font_set_builtin   )( imgui_font_t font );
+    void ( *font_set_bmp_scale )( u32 scale );
+    bool ( *font_load_into     )( u32 id, const char* path );
+    void ( *font_use           )( u32 id );
+    void ( *push_font          )( u32 id );
+    void ( *pop_font           )( void );
 
     /* Low-level draw list access -- may be called anywhere between frame_begin and render.
        draw_rect and draw_text push geometry directly into the draw list.

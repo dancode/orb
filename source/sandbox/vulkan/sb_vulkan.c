@@ -149,9 +149,9 @@ main( int argc, char** argv )
         return 1;
     }
     
-    imgui()->load_font( "fonts/jetbrains_regular_16.orb_font" );
- // imgui()->load_font( "fonts/jetbrains_regular_24.orb_font" );
- // imgui()->load_font( "fonts/jetbrains_bold_24.orb_font" );
+    imgui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
+ // imgui()->font_load( "fonts/jetbrains_regular_24.orb_font" );
+ // imgui()->font_load( "fonts/jetbrains_bold_24.orb_font" );
     imgui()->print_mem_stats();
     
     /* Initial drawable sizes (updated by resize events in the loop below). */
@@ -272,7 +272,7 @@ main( int argc, char** argv )
         {
             static int bmp_scale = 1;
             bmp_scale = bmp_scale == 1 ? 2 : ( bmp_scale == 2 ? 3 : 1 );
-            imgui()->set_bmp_scale( bmp_scale );
+            imgui()->font_set_bmp_scale( bmp_scale );
         }
 
         /* ------------------------------------------------------------------------------ */

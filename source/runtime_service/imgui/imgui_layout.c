@@ -162,14 +162,6 @@ imgui_field_split( imgui_label_side_t side, f32 label, f32 control )
 void imgui_field_label_left ( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_LEFT  : IMGUI_LABEL_NONE, width, 1.0f ); }
 void imgui_field_label_right( f32 width ) { imgui_field_split( width > 0.0f ? IMGUI_LABEL_RIGHT : IMGUI_LABEL_NONE, width, 1.0f ); }
 
-/* form_split -- the mode-prefixed name for field_split; identical behavior.  The form_* spelling
-   groups the label/control split with the form() header. */
-void
-imgui_form_split( imgui_label_side_t side, f32 label, f32 control )
-{
-    imgui_field_split( side, label, control );
-}
-
 /* form -- a stack of aligned "Label  [control]" rows: a single flex column (stack) with a field
    split installed in one call.  label_w is the fixed label-track width on `side`, the control
    flex-fills the rest; label_w <= 0 turns the split off (a plain stack).  The reflection-tweaker /

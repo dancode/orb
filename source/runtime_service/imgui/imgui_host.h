@@ -35,7 +35,7 @@ void imgui_print_mem_stats( void );
 void imgui_perf_overlay( imgui_clock_fn clock, int mode );
 
 /* font */
-u32  imgui_load_font( const char* path );
+u32  imgui_font_load( const char* path );
 
 /* frame */
 void imgui_frame_begin( f32 dt );
@@ -130,7 +130,6 @@ void imgui_row_track( f32 row_h, const f32* cols );
 
 /* layout - split forms */
 void imgui_form( imgui_label_side_t side, f32 label_w );
-void imgui_form_split( imgui_label_side_t side, f32 label, f32 control );
 void imgui_field_split( imgui_label_side_t side, f32 label, f32 control );
 void imgui_field_label_left( f32 width );
 void imgui_field_label_right( f32 width );
@@ -258,12 +257,12 @@ void imgui_separator_text( const char* label );
 void imgui_help_marker( const char* text );
 
 /* font */
-void imgui_set_font      ( imgui_font_t font );
-void imgui_set_bmp_scale ( u32 scale );
-bool imgui_set_font_file ( u32 id, const char* path );
-void imgui_use_font      ( u32 id );
-void imgui_push_font     ( u32 id );
-void imgui_pop_font      ( void );
+void imgui_font_set_builtin   ( imgui_font_t font );
+void imgui_font_set_bmp_scale ( u32 scale );
+bool imgui_font_load_into     ( u32 id, const char* path );
+void imgui_font_use           ( u32 id );
+void imgui_push_font          ( u32 id );
+void imgui_pop_font           ( void );
 
 /* drawing */
 void imgui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );

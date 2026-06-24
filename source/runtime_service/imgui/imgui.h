@@ -903,7 +903,7 @@ typedef struct
     Font selection
 
     imgui_font_t selects which built-in bitmap atlas to use.
-    The TrueType path is activated separately via imgui()->load_font(path).
+    The TrueType path is activated separately via imgui()->font_load(path).
 
     The number of the pixel height (not font size in .ttf)
 ==============================================================================================*/

@@ -53,7 +53,7 @@ static const u32 k_col_default[ IMGUI_COL_COUNT ] = {
     [ IMGUI_COL_NAV_HIGHLIGHT] = IMGUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
 };
 
-/* Base value of a style var -- read live from the font-derived metrics so a set_font / load_font
+/* Base value of a style var -- read live from the font-derived metrics so a font_set_builtin / font_load
    update flows through without re-seeding anything.  The single map from slot to s_layout field. */
 static f32
 style_var_base( imgui_style_var_t v )
