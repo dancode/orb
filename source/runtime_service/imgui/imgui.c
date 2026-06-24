@@ -17,7 +17,7 @@
     imgui_ctx_io.c            -- public IO accessors: want_capture_*, is_key_*, is_mouse_*, get_mouse_pos
     imgui_window.c            -- persistent per-window state: imgui_window_t, window_get, drag mode
     imgui_widget_core.c       -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
-    imgui_draw_symbol.c       -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
+    imgui_symbol.c            -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
     imgui_resize.c            -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
     imgui_layout_core.c       -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
     imgui_layout_region.c     -- scrollable region engine: imgui_region_t, region_scrollbar, push/pop_region
@@ -178,7 +178,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 #include "runtime_service/imgui/imgui_ctx_io.c"
 #include "runtime_service/imgui/imgui_window.c"
 #include "runtime_service/imgui/imgui_widget_core.c"
-#include "runtime_service/imgui/imgui_draw_symbol.c"
+#include "runtime_service/imgui/imgui_symbol.c"
 #include "runtime_service/imgui/imgui_resize.c"
 #include "runtime_service/imgui/imgui_layout_core.c"
 #include "runtime_service/imgui/imgui_layout_region.c"

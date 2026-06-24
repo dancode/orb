@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/imgui/imgui_draw_symbol.c -- Symbol + shape render primitives.
+    runtime_service/imgui/imgui_symbol.c -- Symbol + shape render primitives.
 
     The frontend "render route" palette: the small glyph marks the chrome draws (arrows, check,
     bullet, close, pointer beak) plus the broader shape family editor / custom widgets reach for

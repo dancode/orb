@@ -912,7 +912,7 @@ imgui_image( imgui_icon_id_t id, f32 w, f32 h, u32 col )
 }
 
 /* The public imgui_render_* symbol surface (draw_check_mark / draw_arrow / draw_frame /
-   draw_round_rect / ... and the set_*_style setters) lives in imgui_draw_symbol.c, beside the
+   draw_round_rect / ... and the set_*_style setters) lives in imgui_symbol.c, beside the
    draw_* helpers it wraps. */
 
 // clang-format on

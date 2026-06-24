@@ -127,7 +127,7 @@ rect_align( imgui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
 
 /* The symbol render primitives -- the glyph marks (arrow / collapse arrow / check / bullet / close /
    pointing arrow) and the broader shape palette (frames, rounded rects, polygons, arcs, curves,
-   dashes, gradients, shadows, text effects, grips, spinners) -- live in imgui_draw_symbol.c,
+   dashes, gradients, shadows, text effects, grips, spinners) -- live in imgui_symbol.c,
    included immediately after this file so they may use the COL_* / ROUND_* / WIN_BORDER macros and
    col_lerp defined here, and so every widget file below resolves them by name.  The public
    imgui_render_* surface over them is centralized there too. */

@@ -39,7 +39,7 @@ slider_render( imgui_rect_t track_r, widget_state_t st, f32 t, const char* value
 
     /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
        leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
-       between the fill and the handle.  Per-corner via draw_round_rect_ex (imgui_draw_symbol.c). */
+       between the fill and the handle.  Per-corner via draw_round_rect_ex (imgui_symbol.c). */
     f32 fill_w = t * ( track_r.w - SLIDER_KNOB_W );
     if ( fill_w > 0.0f )
         draw_round_rect_ex( ( imgui_rect_t ){ track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f },

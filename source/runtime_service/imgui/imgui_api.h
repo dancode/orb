@@ -834,7 +834,7 @@ typedef struct imgui_api_s
        the broader shape
        palette (frames, per-corner rounded rects, polygons, arcs / pie, beziers, dashes, checker /
        hatch / gradient fills, soft shadows, outlined / shadowed text, grips, spinners) is exposed so
-       editor / custom widgets can paint them.  Implemented in imgui_draw_symbol.c.  (The global
+       editor / custom widgets can paint them.  Implemented in imgui_symbol.c.  (The global
        indicator-shape selectors set_check_style / _bullet_style / _arrow_style live with the style
        API above, since they are style state rather than draw calls.)
 

@@ -283,7 +283,7 @@ void imgui_image( imgui_icon_id_t id, f32 w, f32 h, u32 col );
 void imgui_draw_icon_in( imgui_rect_t r, imgui_icon_id_t id, u32 col );
 
 /* symbol + shape render primitives -- Dear ImGui Render* / AddXxx family (normal pipeline, not the
-   icon atlas).  Implemented in imgui_draw_symbol.c. */
+   icon atlas).  Implemented in imgui_symbol.c. */
 void imgui_draw_check_mark( imgui_rect_t box, u32 col );
 void imgui_draw_arrow( imgui_rect_t box, imgui_dir_t dir, u32 col );
 void imgui_draw_bullet( f32 cx, f32 cy, f32 r, u32 col );
