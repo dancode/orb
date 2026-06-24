@@ -205,6 +205,10 @@ main( int argc, char** argv )
        the mode (see imgui()->perf_overlay below). */
     int perf_mode = 0;
 
+    /* Level 1 idle skip (toggle: I).  When on, the loop blocks on OS input instead of spinning, so a
+       static UI burns no frames; wants_redraw() keeps frames flowing while a widget animation plays. */
+    bool idle_skip = false;
+
     /* Main loop. */
     f64 last_time = sys_tick_seconds();
     while ( app()->pump_events() )
@@ -310,6 +314,13 @@ main( int argc, char** argv )
             printf( "[sb_vulkan] render mode: %s\n", names[ m ] );
         }
 
+        /* I toggles Level 1 idle skip (block-on-input vs spin); see the frame-pacing section below. */
+        if ( app()->key_pressed( APP_KEY_I ) )
+        {
+            idle_skip = !idle_skip;
+            printf( "[sb_vulkan] idle skip: %s\n", idle_skip ? "on (block on input)" : "off (spin)" );
+        }
+
         /* ------------------------------------------------------------------------------ */
         /* Build the UI.  Every begin has a matching end -- the frame is a balanced scope:
 
@@ -324,6 +335,11 @@ main( int argc, char** argv )
 
         const bool b_multi = ( b_multi_ctx && ctx2 != IMGUI_CTX_INVALID );
 
+        /* OR'd across both contexts: does any widget still need another frame (mid-animation)?  Each
+           context clears its own flag at ctx_begin and sets it during emit, so it is captured below
+           while that context is still bound, before ctx_end rebinds away. */
+
+        bool any_redraw = false;
         imgui()->frame_begin( dt );
 
         /* 'A'/'S' switch which context receives input (multi-ctx demo; reads s_io after frame_begin). */
@@ -381,6 +397,7 @@ main( int argc, char** argv )
            and closes at frame_end; render is summed across render() below. */
         imgui()->perf_overlay( sys_tick_seconds, perf_mode );
 
+        any_redraw |= imgui()->wants_redraw();   /* default context's animation state, still bound */
         imgui()->ctx_end();
 
         /* --- Secondary context (multi-ctx demo): its own scope. --- */
@@ -403,6 +420,7 @@ main( int argc, char** argv )
                 }
                 imgui()->window_end();
             }
+            any_redraw |= imgui()->wants_redraw();   /* ctx2 animation state, still bound */
             imgui()->ctx_end();
         }
 
@@ -454,8 +472,18 @@ main( int argc, char** argv )
         imgui()->viewport_render_floaters();
 
         /* ------------------------------------------------------------------------------ */
-
-        sys_sleep_milliseconds( 4 );
+        /* Frame pacing.  Default: spin at ~250 Hz (game cadence).  Idle-skip on: mirror the editor
+           host -- block on OS input so a static UI costs no frames, but while any widget animates
+           (any_redraw) keep running at ~60 Hz so the transition finishes before sleeping on input. */
+        if ( idle_skip )
+        {
+            if ( any_redraw )
+                sys_sleep_milliseconds( 16 );        /* animating: ~60fps until it settles */
+            else
+                sys_wait_for_os_events_ms( 500 );    /* idle: wake on input (500 ms safety cap) */
+        }
+        else
+            sys_sleep_milliseconds( 4 );
     }
 
 shutdown:
