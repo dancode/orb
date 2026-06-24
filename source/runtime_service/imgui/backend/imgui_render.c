@@ -106,6 +106,12 @@ static draw_run_t s_runs[ IMGUI_MAX_CMDS ];   /* z-grouped command runs, sorted 
 static u32        s_run_count;                /* runs valid this frame                         */
 static bool       s_frame_built;              /* tessellation + runs computed this frame        */
 
+/* Dispatch order fed to tess_dispatch: a permutation of the semantic command list that groups
+   commands by clip rect within each z-run, so equal-clip shapes tessellate contiguously and merge
+   into one GPU batch (the scissor change is what opens a batch).  Built fresh each frame by
+   render_build_order; see the note there for the ordering-safety argument. */
+static u32 s_order[ IMGUI_MAX_CMDS ];
+
 /* Per-surface geometry span within the shared vertex/index lists -- the half-open [lo,hi) range of
    vertex slots and index slots touched by the commands tagged for each viewport.  Computed once in
    render_build_frame; each surface's flush uploads only its own span (written at its real offset, so
@@ -486,6 +492,89 @@ imgui_render_frame_reset( void )
     s_frame_built = false;
 }
 
+/* Exact clip equality -- the same field-by-field compare tess_ensure_gpu_cmd uses to decide a
+   batch boundary, so grouping here lines up exactly with how batches are opened at tessellation. */
+static bool
+clip_eq( imgui_rect_t a, imgui_rect_t b )
+{
+    return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
+}
+
+/*----------------------------------------------------------------------------------------------
+    render_build_order -- compute the clip-grouped dispatch order written to s_order.
+
+    Walks the semantic command list and, within each contiguous z-run (immediate mode emits one
+    window completely before the next, so a run is a maximal same-z span), emits indices grouped by
+    first-seen clip rect.  Equal-clip shapes thus tessellate back-to-back and collapse into a single
+    GPU batch instead of re-splitting every time a child's scissor pushes and pops -- the window
+    chrome, body, and scrollbars reunify into one batch and each child becomes one more.
+
+    Ordering safety: this only reorders commands that share a z (one window) but differ in clip.
+    Within a clip group the original emit order is preserved (the inner loop is stable), so
+    overlapping shapes under one scissor still paint in declaration order.  Across clips inside a
+    window the regions nest -- the window clip strictly contains each child clip, sibling children
+    are disjoint -- so two shapes in different groups only share pixels in a nested overlap, where
+    the parent must paint under the child; first-seen order keeps the enclosing window's commands
+    (emitted first) in the earlier group, so they still draw under the child.  Window chrome that
+    must overpaint scrolled body content shares the window clip with that content (own_clip false),
+    so it stays in the same group and keeps its emit order after it.
+
+    Cost: an index permutation only -- no geometry or struct is copied; tess_dispatch builds the
+    vertices once, in this order.  O(run_len * distinct_clips); distinct_clips per window is a
+    handful.  A run with more distinct clips than groups[] holds is left in natural emit order
+    (still correct, just unmerged) rather than capping the UI.
+----------------------------------------------------------------------------------------------*/
+
+#define RENDER_MAX_CLIP_GROUPS 64
+
+static u32
+render_build_order( const imgui_cmd_t* cmds, u32 count )
+{
+    u32 n = 0;
+    for ( u32 rs = 0; rs < count; )
+    {
+        /* Maximal same-z span [rs, re) -- one window's commands. */
+        u32 z  = cmds[ rs ].z;
+        u32 re = rs;
+        while ( re < count && cmds[ re ].z == z )
+            ++re;
+
+        /* Distinct clips in first-seen order. */
+        imgui_rect_t groups[ RENDER_MAX_CLIP_GROUPS ];
+        u32          ng       = 0;
+        bool         overflow = false;
+        for ( u32 i = rs; i < re && !overflow; ++i )
+        {
+            bool seen = false;
+            for ( u32 g = 0; g < ng; ++g )
+                if ( clip_eq( groups[ g ], cmds[ i ].clip ) ) { seen = true; break; }
+            if ( !seen )
+            {
+                if ( ng >= RENDER_MAX_CLIP_GROUPS ) { overflow = true; break; }
+                groups[ ng++ ] = cmds[ i ].clip;
+            }
+        }
+
+        if ( overflow )
+        {
+            /* Too many distinct clips to group: keep this run's natural emit order. */
+            for ( u32 i = rs; i < re; ++i )
+                s_order[ n++ ] = i;
+        }
+        else
+        {
+            /* Emit each clip group in first-seen order; stable within a group. */
+            for ( u32 g = 0; g < ng; ++g )
+                for ( u32 i = rs; i < re; ++i )
+                    if ( clip_eq( groups[ g ], cmds[ i ].clip ) )
+                        s_order[ n++ ] = i;
+        }
+
+        rs = re;
+    }
+    return n;   /* == count */
+}
+
 /*----------------------------------------------------------------------------------------------
     render_build_frame -- tessellate the shared command list and build the sorted run table.
 
@@ -503,9 +592,12 @@ render_build_frame( void )
         return;
     s_frame_built = true;
 
-    /* Tessellate semantic commands into vertex/index geometry (s_tess). */
+    /* Tessellate semantic commands into vertex/index geometry (s_tess).  Dispatch in clip-grouped
+       order (within each z-run) so equal-clip shapes batch together instead of re-splitting on every
+       child scissor; render_build_order returns a permutation, not a copy of the geometry. */
     tess_reset();
-    tess_dispatch( s_draw.cmds, s_draw.cmd_count );
+    u32 order_count = render_build_order( s_draw.cmds, s_draw.cmd_count );
+    tess_dispatch( s_draw.cmds, s_order, order_count );
 
     /* Track peak tessellated geometry.  Warn once on the first overflow. */
     if ( s_tess.vert_count > s_tess.vert_hwm ) s_tess.vert_hwm = s_tess.vert_count;

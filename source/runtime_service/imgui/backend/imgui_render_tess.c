@@ -644,11 +644,15 @@ tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
 
 /* Tessellate one frame's semantic command list into s_tess geometry. */
 static void
-tess_dispatch( const imgui_cmd_t* cmds, u32 count )
+tess_dispatch( const imgui_cmd_t* cmds, const u32* order, u32 count )
 {
-    for ( u32 i = 0; i < count; ++i )
+    /* `order` is a permutation of [0,count): the indices grouped by clip within each z-run
+       (built by render_build_order) so equal-clip commands tessellate contiguously and collapse
+       into one GPU batch.  Walking it instead of [0,count) is the whole cost of the merge -- the
+       geometry is built exactly once, just in this order; nothing is copied or re-tessellated. */
+    for ( u32 oi = 0; oi < count; ++oi )
     {
-        const imgui_cmd_t* c = &cmds[ i ];
+        const imgui_cmd_t* c = &cmds[ order[ oi ] ];
         s_tess.cur_clip = c->clip;
         s_tess.cur_z    = c->z;
         s_tess.cur_vp   = c->vp;
