@@ -31,10 +31,20 @@ typedef struct
     State
 ----------------------------------------------------------------------------------------------*/
 
+/* One contiguous span of the command list sharing a single (z, vp) tag.  The emit path appends
+   commands into cmds[]; whenever draw_set_sort_key / draw_set_viewport change the tag, the open
+   span is closed at the current cmd_count and a fresh one is opened.  render_build_order then orders
+   these spans (tens of them) instead of re-scanning the 1024-entry command buffer per z and clip.
+   [lo, hi) is the half-open command range; the final open span's hi is closed at build time. */
+typedef struct { u32 z, vp, lo, hi; } imgui_cmd_seg_t;
+
 static struct
 {
     imgui_cmd_t  cmds  [ IMGUI_MAX_CMDS   ];   /* semantic command list; one entry per shape      */
     imgui_vec2_t points[ IMGUI_MAX_PATH_PTS ];  /* point pool for CMD_POLYLINE data; indexed by pt_offset */
+
+    imgui_cmd_seg_t segs[ IMGUI_MAX_SEGS ];   /* per-(z,vp) command spans, in emit order */
+    u32             seg_count;                /* spans open this frame (>= 1; segs[0] is z=0,vp=0) */
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
        (textf, snprintf labels) remain valid until imgui_render_flush consumes them. */
@@ -81,6 +91,11 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.text_pool_used  = 0;
     s_draw.cur_z           = 0;   /* background; windows raise it via draw_set_sort_key */
     s_draw.cur_vp          = 0;   /* main viewport; windows route via draw_set_viewport */
+
+    /* Open the first command segment: background z, main viewport, starting at command 0. */
+    s_draw.seg_count       = 1;
+    s_draw.segs[ 0 ]       = ( imgui_cmd_seg_t ){ 0, 0, 0, 0 };
+
     s_draw.clip_depth      = 1;
     s_draw.alpha           = 1.0f;
     s_draw.rounding        = 0.0f;   /* square until a seam sets the resolved radius */
@@ -159,6 +174,33 @@ draw_set_root_clip( f32 w, f32 h )
     s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, w, h };
 }
 
+/* Re-tag subsequent commands with (z, vp), cutting a new command segment at the boundary.  If the
+   current segment is still empty (no command emitted since it opened) its tag is simply rewritten in
+   place, so back-to-back set_sort_key / set_viewport calls before any draw never spawn empty spans.
+   On overflow the open segment is just extended (its tag may then be stale, but only in the
+   pathological >1024-segment case, which render_build_order already falls back to natural order for). */
+static void
+draw_seg_retag( u32 z, u32 vp )
+{
+    if ( z == s_draw.cur_z && vp == s_draw.cur_vp )
+        return;   /* no real change -- keep the open segment as is */
+
+    imgui_cmd_seg_t* cur = &s_draw.segs[ s_draw.seg_count - 1 ];
+    if ( cur->lo == s_draw.cmd_count )
+    {
+        cur->z = z;   /* segment empty so far: retag in place rather than splitting */
+        cur->vp = vp;
+    }
+    else if ( s_draw.seg_count < IMGUI_MAX_SEGS )
+    {
+        cur->hi                          = s_draw.cmd_count;   /* close the span here */
+        s_draw.segs[ s_draw.seg_count++ ] = ( imgui_cmd_seg_t ){ z, vp, s_draw.cmd_count, s_draw.cmd_count };
+    }
+
+    s_draw.cur_z  = z;
+    s_draw.cur_vp = vp;
+}
+
 /*----------------------------------------------------------------------------------------------
     draw_set_sort_key -- stamp subsequent commands with this z (window paint order).
     Set to the window's z in window_begin and back to 0 (background) in window_end.
@@ -167,7 +209,7 @@ draw_set_root_clip( f32 w, f32 h )
 void
 draw_set_sort_key( u32 z )
 {
-    s_draw.cur_z = z;
+    draw_seg_retag( z, s_draw.cur_vp );
 }
 
 /* Current sort key -- saved by the popup layer so an overlay window can restore the parent's
@@ -190,7 +232,7 @@ draw_sort_key( void )
 void
 draw_set_viewport( u32 vp )
 {
-    s_draw.cur_vp = vp;
+    draw_seg_retag( s_draw.cur_z, vp );
 }
 
 /* Current viewport -- saved/restored by the popup layer alongside the sort key, so an overlay

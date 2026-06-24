@@ -530,9 +530,14 @@ clip_eq( imgui_rect_t a, imgui_rect_t b )
     window clip with that content (own_clip false), so it stays in the same group, after it.
 
     Cost: an index permutation only -- no geometry or struct is copied; tess_dispatch builds the
-    vertices once, in this order.  O(distinct_z * count * distinct_clips); both distinct counts are
-    small (windows on screen, clips per window).  Either count exceeding its groups[] cap falls back
-    to natural emit order for the affected z (still correct, just unmerged) rather than capping UI.
+    vertices once, in this order.  The emit path already cut the command list into segments at every
+    z / viewport change (imgui_draw.c, s_draw.segs), so the work here runs over those spans -- tens of
+    them -- not the 1024-entry command buffer: distinct z is collected by scanning the segment table,
+    and a z's clip grouping visits only the commands of that z's segments.  A window split by a popup
+    is just two segments carrying the same z, rejoined by the per-z gather exactly as a global scan
+    would.  Output is the identical permutation a brute-force first-seen z / first-seen clip grouping
+    over the whole buffer would produce; either group count exceeding its cap falls back to natural
+    order (correct, just unmerged) rather than capping the UI.
 ----------------------------------------------------------------------------------------------*/
 
 #define RENDER_MAX_Z           128   /* distinct z bands (windows + popups) groupable per frame */
@@ -541,20 +546,28 @@ clip_eq( imgui_rect_t a, imgui_rect_t b )
 static u32
 render_build_order( const imgui_cmd_t* cmds, u32 count )
 {
-    /* Distinct z values in first-seen order (skipping fully-clipped commands, which are dropped). */
+    const imgui_cmd_seg_t* segs = s_draw.segs;
+    u32                    nseg = s_draw.seg_count;
+    if ( nseg )
+        s_draw.segs[ nseg - 1 ].hi = count;   /* close the still-open final segment at the list end */
+
+    /* Distinct z in first-seen order, scanned over the segment table (tens) rather than per command.
+       A segment carries one z, so a single empty-span skip is all the per-segment filtering needed; a
+       z whose commands are all fully clipped simply yields an empty clip pass below (no indices). */
     u32  zs[ RENDER_MAX_Z ];
     u32  nz         = 0;
     bool z_overflow = false;
-    for ( u32 i = 0; i < count && !z_overflow; ++i )
+    for ( u32 si = 0; si < nseg; ++si )
     {
-        if ( rect_empty( cmds[ i ].clip ) ) continue;
+        if ( segs[ si ].lo == segs[ si ].hi ) continue;   /* empty span */
+        u32  z    = segs[ si ].z;
         bool seen = false;
         for ( u32 j = 0; j < nz; ++j )
-            if ( zs[ j ] == cmds[ i ].z ) { seen = true; break; }
+            if ( zs[ j ] == z ) { seen = true; break; }
         if ( !seen )
         {
             if ( nz >= RENDER_MAX_Z ) { z_overflow = true; break; }
-            zs[ nz++ ] = cmds[ i ].z;
+            zs[ nz++ ] = z;
         }
     }
 
@@ -573,37 +586,51 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
     {
         u32 z = zs[ zi ];
 
-        /* Distinct clips within this z, first-seen order. */
+        /* Distinct clips within this z, first-seen order -- gathered across this z's segments only.
+           Segments are append-ordered, so visiting matching ones in si order then their [lo,hi) range
+           walks the commands in strictly increasing emit index, identical to the old global scan. */
         imgui_rect_t groups[ RENDER_MAX_CLIP_GROUPS ];
         u32          ng       = 0;
         bool         overflow = false;
-        for ( u32 i = 0; i < count && !overflow; ++i )
+        for ( u32 si = 0; si < nseg && !overflow; ++si )
         {
-            if ( cmds[ i ].z != z || rect_empty( cmds[ i ].clip ) ) continue;
-            bool seen = false;
-            for ( u32 g = 0; g < ng; ++g )
-                if ( clip_eq( groups[ g ], cmds[ i ].clip ) ) { seen = true; break; }
-            if ( !seen )
+            if ( segs[ si ].z != z ) continue;
+            for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
             {
-                if ( ng >= RENDER_MAX_CLIP_GROUPS ) { overflow = true; break; }
-                groups[ ng++ ] = cmds[ i ].clip;
+                if ( rect_empty( cmds[ i ].clip ) ) continue;
+                bool seen = false;
+                for ( u32 g = 0; g < ng; ++g )
+                    if ( clip_eq( groups[ g ], cmds[ i ].clip ) ) { seen = true; break; }
+                if ( !seen )
+                {
+                    if ( ng >= RENDER_MAX_CLIP_GROUPS ) { overflow = true; break; }
+                    groups[ ng++ ] = cmds[ i ].clip;
+                }
             }
         }
 
         if ( overflow )
         {
             /* Too many distinct clips to group: keep this z's natural emit order. */
-            for ( u32 i = 0; i < count; ++i )
-                if ( cmds[ i ].z == z && !rect_empty( cmds[ i ].clip ) )
-                    s_order[ n++ ] = i;
+            for ( u32 si = 0; si < nseg; ++si )
+            {
+                if ( segs[ si ].z != z ) continue;
+                for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
+                    if ( !rect_empty( cmds[ i ].clip ) )
+                        s_order[ n++ ] = i;
+            }
         }
         else
         {
             /* Emit each clip group in first-seen order; stable within a group. */
             for ( u32 g = 0; g < ng; ++g )
-                for ( u32 i = 0; i < count; ++i )
-                    if ( cmds[ i ].z == z && clip_eq( groups[ g ], cmds[ i ].clip ) )
-                        s_order[ n++ ] = i;
+                for ( u32 si = 0; si < nseg; ++si )
+                {
+                    if ( segs[ si ].z != z ) continue;
+                    for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
+                        if ( clip_eq( groups[ g ], cmds[ i ].clip ) )
+                            s_order[ n++ ] = i;
+                }
         }
     }
     return n;   /* <= count (fully-clipped commands dropped) */
