@@ -480,7 +480,8 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
        The pool pointer is valid until draw_reset clears it at the top of the next frame_begin. */
     if ( s_draw.text_pool_used + len + 1 > IMGUI_MAX_TEXT_POOL )
         return;   /* pool exhausted: drop the label rather than store a dangling pointer */
-    char* dst = s_draw.text_pool + s_draw.text_pool_used;
+    u32   off = s_draw.text_pool_used;   /* offset stored in the cmd; pointer stays local */
+    char* dst = s_draw.text_pool + off;
     memcpy( dst, str, len );
     dst[ len ]            = '\0';
     s_draw.text_pool_used += len + 1;
@@ -492,7 +493,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     c->vp           = s_draw.cur_vp;
     c->text.x       = x;
     c->text.y       = y;
-    c->text.str     = dst;
+    c->text.off     = off;
     c->text.len     = len;   /* always an explicit byte count; never 0xFFFFFFFF after this point */
     c->text.clip_x0 = clip_x0;
     c->text.clip_x1 = clip_x1;

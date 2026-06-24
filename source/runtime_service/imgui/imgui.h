@@ -820,7 +820,9 @@ typedef enum
    The union carries the shape parameters; tex_idx == 0 in rect means solid color (white texel).
    rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
    time, already clamped to the rect; 0 tessellates as a plain square shape.
-   text.str must remain valid until imgui_render_flush is called (same-frame lifetime). */
+   text.off is a byte offset into the frame's text pool (s_draw.text_pool), not a pointer: the
+   string lives in the pool until the next frame_begin, so the command is valid through flush.
+   Storing an offset instead of a const char* drops the union's 8-byte alignment (80 -> 72 bytes). */
 typedef struct
 {
     imgui_cmd_type_t type;      /* which shape to tessellate            */
@@ -836,7 +838,7 @@ typedef struct
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
            sentinel (clip_x0 = -IMGUI_TEXT_NO_CLIP, clip_x1 = +IMGUI_TEXT_NO_CLIP) means unclipped
            and takes the original whole-run fast path. */
-        struct { f32 x, y;  const char* str; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; } text;
+        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; } text;
         struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
         struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;

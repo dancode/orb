@@ -687,8 +687,8 @@ tess_dispatch( const imgui_cmd_t* cmds, const u32* order, u32 count )
                 break;
 
             case IMGUI_CMD_TEXT:
-                tess_text_n( c->text.x, c->text.y, c->text.abgr, c->text.str, c->text.len,
-                             c->text.clip_x0, c->text.clip_x1 );
+                tess_text_n( c->text.x, c->text.y, c->text.abgr, s_draw.text_pool + c->text.off,
+                             c->text.len, c->text.clip_x0, c->text.clip_x1 );
                 break;
 
             case IMGUI_CMD_CIRCLE_FILLED:
