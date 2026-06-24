@@ -158,7 +158,7 @@ viewport_create( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id )
     vp->win_id    = win_id;     /* OS window hosting this surface; -1 = unassociated */
     vp->rhi_ctx   = RHI_CTX_INVALID;  /* set only by viewport_spawn for an imgui-owned floater */
     vp->owned     = false;      /* host-provided unless viewport_spawn flips it */
-    vp->pending_close = false;  /* owned floater close request; serviced by update_platform_windows */
+    vp->pending_close = false;  /* owned floater close request; serviced by viewport_update */
     vp->disp_w    = 0;          /* drawable size set by the host before build; 0 = fall back to main */
     vp->disp_h    = 0;
     vp->caption_inset = 0.0f;   /* no native shell band until one publishes it during the build */

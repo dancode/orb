@@ -192,8 +192,8 @@ demo_text( void )
 /*==============================================================================================
     3. Layout rows -- shaping the repeating row template.
 
-    A region declares its mode with a header: stack() is the single flex column, while row_cols /
-    row2..4 / row_track install a multi-column flow template.  The template persists and repeats
+    A region declares its mode with a header: stack() is the single flex column, while row_cols / row_cols_n /
+    row2..4 install a multi-column flow template.  The template persists and repeats
     for every following widget until set again.  Sizes use one overloaded f32: > 1 pixels, 1.0
     fill (equal share of the leftover), (0,1) a fraction, 0 natural.
 ==============================================================================================*/
@@ -206,8 +206,8 @@ demo_layout_rows( void )
     if ( imgui()->window_begin( "Layout Rows", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();                         /* heading lines sit in a plain stack */
-        imgui()->text( "row_cols( 0, 3 ) -- three equal columns:" );
-        imgui()->row_cols( 0, 3 );
+        imgui()->text( "row_cols_n( 0, 3 ) -- three equal columns:" );
+        imgui()->row_cols_n( 0, 3 );
         imgui()->button( "A" );
         imgui()->button( "B" );
         imgui()->button( "C" );
@@ -219,8 +219,8 @@ demo_layout_rows( void )
         imgui()->button( "70%" );
         imgui()->row( 0 );
 
-        imgui()->text( "row_track -- 120px + fill + 80px:" );
-        imgui()->row_track( 0, ( f32[] ){ 120, 1, 80, IMGUI_END } );
+        imgui()->text( "row_cols -- 120px + fill + 80px:" );
+        imgui()->row_cols( 0, ( f32[] ){ 120, 1, 80, IMGUI_END } );
         imgui()->button( "fixed 120" );
         imgui()->button( "fill" );
         imgui()->button( "80" );
@@ -558,10 +558,10 @@ demo_sublayout( void )
     if ( imgui()->window_begin( "Sub-layout", IMGUI_WIN_NONE ) )
     {
         imgui()->stack();
-        imgui()->text( "row_cols( 0, 2 ): col 0 is a sub-layout" );
+        imgui()->text( "row_cols_n( 0, 2 ): col 0 is a sub-layout" );
         imgui()->separator();
 
-        imgui()->row_cols( 0, 2 );
+        imgui()->row_cols_n( 0, 2 );
 
         /* Column 0: open a sub-layout and stack three buttons inside the single cell. */
         imgui()->push_layout();
@@ -1452,7 +1452,7 @@ demo_icons( void )
         imgui()->separator();
 
         /* A row of the three icons, each tinted differently (colors are ABGR: 0xAABBGGRR). */
-        imgui()->row_cols( 0, 3 );
+        imgui()->row_cols_n( 0, 3 );
         imgui()->image( ic_folder, 48, 48, 0xFF66CCFFu );   /* amber  */
         imgui()->image( ic_check,  48, 48, 0xFF66DD66u );   /* green  */
         imgui()->image( ic_gear,   48, 48, 0xFFDDDDDDu );   /* grey   */
@@ -1654,7 +1654,7 @@ const sb_imgui_demo_t sb_imgui_demos[] =
 {
     { "Widgets",      "text / button / checkbox / slider / input_text", demo_widgets     },
     { "Text",         "textf / bullet / separator / collapsing_header", demo_text        },
-    { "Layout Rows",  "row / row_cols / row2..4 / row_track",           demo_layout_rows },
+    { "Layout Rows",  "row / row_cols / row_cols_n / row2..4",           demo_layout_rows },
     { "Field Forms",  "field_label_left/right / field_split",           demo_fields      },
     { "Grid",         "grid_cells / skip",                              demo_grid        },
     { "Child / List", "child_begin / selectable / push_id",             demo_child_list  },

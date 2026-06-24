@@ -248,7 +248,7 @@ imgui_frame_begin( f32 dt )
 
     /* caption_inset is NOT cleared here.  Native shell windows republish it during the build, so
        the field always reflects the last frame the shell was active.  Leaving it sticky means
-       update_platform_windows gets the correct top bound regardless of whether it is called before
+       viewport_update gets the correct top bound regardless of whether it is called before
        or after the build this frame (both are valid host patterns for tear-off handling).  If the
        native shell permanently disappears the stale inset is conservative -- windows stay clamped
        below where the caption used to be -- and the viewport is destroyed shortly after anyway. */
@@ -503,7 +503,7 @@ imgui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
 
 /* Service an OS resize/close event for an imgui-owned floater (delegated from imgui_event, which
    cannot see the viewport pool from input.c).  Resize updates the context + drawable size now;
-   close defers teardown to update_platform_windows (a safe point).  Returns true -- consuming the
+   close defers teardown to viewport_update (a safe point).  Returns true -- consuming the
    event -- only when win_id matches an owned surface, so a host window's events fall through. */
 static bool
 imgui_owned_window_event( const app_event_t* ev )
@@ -523,7 +523,7 @@ imgui_owned_window_event( const app_event_t* ev )
         }
         else /* APP_EV_WIN_CLOSE */
         {
-            vp->pending_close = true;   /* torn down at the next update_platform_windows */
+            vp->pending_close = true;   /* torn down at the next viewport_update */
         }
         return true;   /* imgui owns this window -> event consumed */
     }
@@ -535,7 +535,7 @@ imgui_owned_window_event( const app_event_t* ev )
    list references one being freed.  Today it destroys surfaces the user closed (pending_close);
    Phase 3 will also service tear-off / merge-back requests enqueued during the build. */
 void
-imgui_update_platform_windows( void )
+imgui_viewport_update( void )
 {
     /* (1) Tear-off / merge-back: a window whose title was dragged off its host surface (enqueued by
        window_begin_ex) changes which surface hosts it. */
@@ -730,7 +730,7 @@ imgui_update_platform_windows( void )
    imgui spawned, so a single-window host stays a single-window present loop and tear-off "just
    works".  A minimized floater is skipped (its frame_begin would hand back an invalid cmd). */
 void
-imgui_render_floaters( void )
+imgui_viewport_render_floaters( void )
 {
     for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
     {

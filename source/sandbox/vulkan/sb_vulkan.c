@@ -412,12 +412,12 @@ main( int argc, char** argv )
         /* Reconcile imgui-owned floaters with their OS windows (destroys any the user closed).
            Runs after the build and before any present -- the safe point to tear a surface down. */
 
-        imgui()->update_platform_windows();
+        imgui()->viewport_update();
 
         /* ------------------------------------------------------------------------------ */
         /* Flush the main surface.  Skip while minimized to avoid 0x0 swapchain churn; frame_begin
            returns an invalid handle then and we must not frame_end it.  imgui brackets its own
-           render cost inside render() / render_floaters() for the perf overlay. */
+           render cost inside render() / viewport_render_floaters() for the perf overlay. */
 
         if ( !app()->window_is_minimized( win ) )
         {
@@ -451,7 +451,7 @@ main( int argc, char** argv )
            own rhi context frame, clears, replays that viewport's partition, and ends -- the host
            no longer hand-drives the secondary surface. */
 
-        imgui()->render_floaters();
+        imgui()->viewport_render_floaters();
 
         /* ------------------------------------------------------------------------------ */
 

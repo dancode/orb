@@ -41,7 +41,7 @@
     [imgui frame begin]       imgui()->frame_begin + ctx_begin( DEFAULT ) -- when imgui loaded
     [host update]             desc->on_update( dt )             -- builds UI and game logic
     [imgui frame end]         imgui()->ctx_end + frame_end      -- seals the build, when imgui loaded
-    [imgui platform sync]     imgui()->update_platform_windows() -- when imgui loaded
+    [imgui platform sync]     imgui()->viewport_update() -- when imgui loaded
     [render]                  see Render paths below
     [hot-reload]              mod_check_reloads + flush, if RUN_HOST_HOT_RELOAD
     [frame pacing]            sleep or editor wait
@@ -52,7 +52,7 @@
                       render owns imgui composition (calls imgui()->render inside its frame).
     render() absent, imgui() present: host drives the explicit frame --
                       frame_begin / clear / imgui->render / frame_end.
-    imgui() always:   imgui->render_floaters() after the main surface (presents tear-off
+    imgui() always:   imgui->viewport_render_floaters() after the main surface (presents tear-off
                       floater windows; no-op when none are alive).
 
     Shutdown
@@ -478,7 +478,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            Destroys any floater the user has closed. */
 
         if ( s_imgui_inited )
-            imgui()->update_platform_windows();
+            imgui()->viewport_update();
 
         /* -- render ------------------------------------------------------ */
 
@@ -521,7 +521,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            Each floater drives its own rhi context frame internally. No-op when
            no floaters are alive; safe to call unconditionally. */
         if ( s_imgui_inited )
-            imgui()->render_floaters();
+            imgui()->viewport_render_floaters();
 
         /* -- hot-reload -------------------------------------------------- */
 

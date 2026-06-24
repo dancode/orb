@@ -815,6 +815,10 @@ imgui_text_size( const char* s )
     return ( imgui_vec2_t ){ max_w, font_char_h() + (f32)( lines - 1 ) * font_line_h() };
 }
 
+/* text_h -- the laid-out pixel height of s (text_size( s ).y); the height twin of text_w, for sizing
+   a row to a (possibly multi-line) caption without taking the whole vec2. */
+f32 imgui_text_h( const char* s ) { return imgui_text_size( s ).y; }
+
 /* draw_text_in -- draw s aligned within rect r (imgui_align_t).  Multi-line: the block is placed by
    the vertical flag, each line by the horizontal flag, so RIGHT flushes every line to r's right edge. */
 void

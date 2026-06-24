@@ -108,7 +108,7 @@ window_get( imgui_id_t id, f32 x, f32 y, f32 w, f32 h )
 
 /*----------------------------------------------------------------------------------------------
     window_find -- locate an existing window record by id, or NULL.  Unlike window_get this never
-    creates one; used by the post-build reconcile (update_platform_windows) to reach the window a
+    creates one; used by the post-build reconcile (viewport_update) to reach the window a
     tear-off / merge-back gesture named, where creating a phantom record would be wrong.
 ----------------------------------------------------------------------------------------------*/
 
@@ -150,7 +150,7 @@ static struct
     client bounds changes which surface hosts it: from the main surface (viewport 0) it tears off
     into a fresh floater; from a floater it merges back to the main surface.  window_begin_ex (in
     imgui_widget_window.c) detects the released-outside gesture and fills this slot; the post-build
-    reconcile imgui_update_platform_windows (imgui_frame.c) services it -- the safe point to create
+    reconcile imgui_viewport_update (imgui_frame.c) services it -- the safe point to create
     or destroy a surface, since the build is complete and no draw list is mid-flight.
 
     A single slot suffices: only one window can own the drag (active_id) at a time.  `title` is the

@@ -427,7 +427,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        Tested before the dock lookup so a closed window leaves any node it was tabbed into, too.
 
        last_frame is deliberately NOT refreshed here: a closed floater must read as "abandoned" so
-       update_platform_windows tears down its OS window (reverting the record to viewport 0).  A
+       viewport_update tears down its OS window (reverting the record to viewport 0).  A
        closed panel lives on viewport 0, which the teardown loop never touches, so freezing its
        last_frame is harmless -- the appearing test simply re-fires once on re-open. */
     if ( ( flags & IMGUI_WIN_CLOSEABLE ) && win->closed )
@@ -439,7 +439,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
 
     /* Re-open of a CLOSEABLE floater: closing one let the abandoned-teardown free its OS window and
        revert this record to viewport 0.  Re-spawn it as a floater at its saved screen position via
-       the tear-off request -- the title is in hand here, which update_platform_windows needs to label
+       the tear-off request -- the title is in hand here, which viewport_update needs to label
        the OS window.  Stay hidden this one frame until the surface exists so it never flashes on the
        main surface at (0,0); last_frame IS stamped so the fresh floater is not read as abandoned. */
     if ( win->reopen_floater && win->viewport == 0 && !s_vp_request.active )
@@ -554,7 +554,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        the floater client origin tracks (screen cursor - grab offset), so the grabbed title point
        stays pinned under the cursor as it crosses the desktop.  Screen cursor reads stay valid
        because the origin window keeps OS mouse capture for the whole gesture (see the tear-off in
-       imgui_update_platform_windows). */
+       imgui_viewport_update). */
     if ( s_interaction.active_id == id )
     {
         if ( win->viewport == 0 )
@@ -577,7 +577,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
     /* Seamless tear-off / merge-back gesture (Dear-ImGui style: no release required).  While a
        title-bar drag is live (button still down, this window owns active_id), crossing a surface
        boundary reassigns which surface hosts the window -- and the drag continues uninterrupted in
-       the new home.  The request is enqueued for imgui_update_platform_windows, the safe point to
+       the new home.  The request is enqueued for imgui_viewport_update, the safe point to
        create/destroy a surface; one request at a time, and NOMOVE windows never tear off.
 
        Attached (viewport 0): the OS mouse is captured by the main window, so s_io.mouse_x/y stay in

@@ -116,16 +116,16 @@ typedef struct imgui_api_s
        viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
                                     returns its viewport handle (assign windows via
                                     window_set_next_viewport) or IMGUI_VP_INVALID.  Between frames.
-       update_platform_windows() -- reconcile owned floaters with their OS windows; call once per
+       viewport_update()         -- reconcile owned floaters with their OS windows; call once per
                                     frame AFTER the UI build and BEFORE rendering (the safe point to
                                     tear a surface down -- destroys those the user closed).
-       render_floaters()         -- present every owned floater from the shared draw list, each on
+       viewport_render_floaters() -- present every owned floater from the shared draw list, each on
                                     its own rhi context (frame_begin/clear/flush/frame_end).  The
                                     host still presents the main surface (index 0) via render(). */
 
-    imgui_vp_t ( *viewport_spawn          )( const char* title, i32 x, i32 y, i32 w, i32 h );
-    void       ( *update_platform_windows )( void );
-    void       ( *render_floaters         )( void );
+    imgui_vp_t ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
+    void       ( *viewport_update          )( void );
+    void       ( *viewport_render_floaters )( void );
 
     /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
        id namespace).  The primary context (IMGUI_CTX_DEFAULT / 0) is always live after init().
@@ -380,7 +380,7 @@ typedef struct imgui_api_s
        declared larger first; the sub-layout does not grow the parent to fit, and does not clip.
        Always pair, like push_id / pop_id.
 
-           imgui()->row_cols( 0, 3 );                       // 3 columns
+           imgui()->row_cols_n( 0, 3 );                     // 3 columns
            imgui()->push_layout();                          // column 0 becomes a sub-layout...
                imgui()->button("A"); imgui()->button("B");  // ...stacked inside that one cell
            imgui()->pop_layout();
@@ -398,12 +398,12 @@ typedef struct imgui_api_s
        (equal share of the rest), <0 ends the list (IMGUI_END).  Widgets fill whatever cell they
        are handed, agnostic to the shape.
 
-           imgui()->row_cols( 0, 2 );  imgui()->button("A");  imgui()->button("B");  // two columns
-           imgui()->row_track( 24, (f32[]){ 200, 0, IMGUI_END } );                    // 200px + fill
+           imgui()->row_cols_n( 0, 2 );  imgui()->button("A");  imgui()->button("B");  // two columns
+           imgui()->row_cols( 24, (f32[]){ 200, 0, IMGUI_END } );                     // 200px + fill
 
        stack()      -- single full-width flex column, scrolling: the canonical vertical-list header
                          (what a region used to be by default; now declared explicitly).
-       columns()    -- N explicit column tracks (IMGUI_END-terminated), auto height, scrolling.
+       cols()       -- N explicit column tracks (IMGUI_END-terminated), auto height, scrolling.
        cols_n()     -- n equal flex columns, auto height.
        form()       -- a stack with a fixed-width label track on `side`: the "Label  [control]"
                          form header (label_w <= 0 = plain stack).
@@ -411,9 +411,9 @@ typedef struct imgui_api_s
        layout_default() -- clear back to a plain stack (one flex column, no field split); the
                          single "reset everything" verb.  Padding is untouched (use pad()).
        row()        -- a stack with an explicit row height (0 = auto).
-       row_cols()   -- n equal columns of height row_h.
+       row_cols()   -- explicit per-column tracks (IMGUI_END-terminated) of height row_h: cols + height.
+       row_cols_n() -- n equal columns of height row_h: cols_n + height.
        row2/3/4()   -- fixed-arity weighted columns (auto height): row2( 0.3f, 0.7f ).
-       row_track()  -- explicit per-column widths (IMGUI_END-terminated).
        field_split()  -- labeled widgets split their cell into a label + control track (overloaded
                          units, label left or right); input_text / slider_float / checkbox then lay
                          out as an aligned "Label  [control]" form from a single call.
@@ -444,13 +444,13 @@ typedef struct imgui_api_s
     void ( *layout_default )( void );
     void ( *stack          )( void );
     void ( *row            )( f32 row_h );
-    void ( *columns      )( const f32* tracks );
+    void ( *cols         )( const f32* tracks );
     void ( *cols_n       )( u32 n );
-    void ( *row_cols     )( f32 row_h, u32 n );
+    void ( *row_cols     )( f32 row_h, const f32* tracks );
+    void ( *row_cols_n   )( f32 row_h, u32 n );
     void ( *row2         )( f32 a, f32 b );
     void ( *row3         )( f32 a, f32 b, f32 c );
     void ( *row4         )( f32 a, f32 b, f32 c, f32 d );
-    void ( *row_track    )( f32 row_h, const f32* cols );
     void ( *form         )( imgui_label_side_t side, f32 label_w );
     void ( *field_split  )( imgui_label_side_t side, f32 label, f32 control );
     void ( *field_label_left  )( f32 width );
@@ -485,7 +485,7 @@ typedef struct imgui_api_s
 
     void ( *align      )( imgui_align_t a );
     void ( *same_line  )( f32 spacing );
-    void ( *stack_sameline )( f32 spacing );
+    void ( *stack_same_line )( f32 spacing );
     void ( *skip       )( void );
     void ( *spacing    )( f32 h );
     void ( *separator  )( void );
@@ -496,7 +496,8 @@ typedef struct imgui_api_s
     imgui_rect_t ( *canvas )( f32 height );
 
     /* Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
-       line_h / text_w are the raw font metrics; h_min / w_min are the standard margin a row /
+       line_h / text_w / text_h are the raw font metrics (text_h is the laid-out, '\n'-aware height,
+       the scalar of text_size().y); h_min / w_min are the standard margin a row /
        cell adds around its content (the "size without content"); calc_row / calc_col add that
        margin to a content pixel size, giving a fixed dimension that fits content plus margin:
 
@@ -505,6 +506,7 @@ typedef struct imgui_api_s
 
     f32 ( *line_h   )( void );
     f32 ( *text_w   )( const char* s );
+    f32 ( *text_h   )( const char* s );
     f32 ( *h_min    )( void );
     f32 ( *w_min    )( void );
     f32 ( *calc_row )( f32 content_h );
@@ -583,6 +585,14 @@ typedef struct imgui_api_s
     void ( *push_style_var   )( imgui_style_var_t var, f32 value );
     void ( *pop_style_var    )( u32 count );
     void ( *next_style_var   )( imgui_style_var_t var, f32 value );
+
+    /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
+       draws (imgui_check_style_t / imgui_bullet_style_t / imgui_arrow_style_t).  These are style
+       state, not draw calls: scope a change locally instead with push_style_var on
+       IMGUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE. */
+    void ( *set_check_style  )( u32 style );
+    void ( *set_bullet_style )( u32 style );
+    void ( *set_arrow_style  )( u32 style );
 
     /* window_set_drag() -- select how windows may be dragged (global default TITLEBAR).
        Call between frames; affects every window. */
@@ -824,11 +834,9 @@ typedef struct imgui_api_s
        the broader shape
        palette (frames, per-corner rounded rects, polygons, arcs / pie, beziers, dashes, checker /
        hatch / gradient fills, soft shadows, outlined / shadowed text, grips, spinners) is exposed so
-       editor / custom widgets can paint them.  Implemented in imgui_draw_symbol.c.
-
-       set_check_style / set_bullet_style / set_arrow_style choose the global indicator shape
-       (imgui_check_style_t / imgui_bullet_style_t / imgui_arrow_style_t); scope a change locally with
-       push_style_var on IMGUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE.
+       editor / custom widgets can paint them.  Implemented in imgui_draw_symbol.c.  (The global
+       indicator-shape selectors set_check_style / _bullet_style / _arrow_style live with the style
+       API above, since they are style state rather than draw calls.)
 
        Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
        (IMGUI_CMD_RECT_GRADIENT); draw_shadow (layered rings) is still an approximation that a
@@ -862,9 +870,6 @@ typedef struct imgui_api_s
     void ( *draw_grip              )( imgui_rect_t box, u32 col );
     void ( *draw_spinner           )( imgui_rect_t box, f32 t, f32 thickness, u32 col );
     void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
-    void ( *set_check_style          )( u32 style );
-    void ( *set_bullet_style         )( u32 style );
-    void ( *set_arrow_style          )( u32 style );
 
     /* Line / path stroking (imgui_stroke_align_t; see imgui.h for the pixel model).
        draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.

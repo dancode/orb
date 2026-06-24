@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/imgui/imgui_stack_api.c -- Push-model public API: id scope, item flags, style.
+    runtime_service/imgui/imgui_stacks.c -- Push-model public API: id scope, item flags, style.
 
     The thin public wrappers for the three push / pop / next stacks a caller brackets widgets with:
         push_id / pop_id           -- id-scope levels for repeated widgets (id stack, imgui_ctx.c)

@@ -498,7 +498,7 @@ typedef struct
     bool owned;
 
     /* Set when the user closes an owned floater's OS window (APP_EV_WIN_CLOSE): the surface is torn
-       down at the next update_platform_windows, a safe point between the build and the present, so
+       down at the next viewport_update, a safe point between the build and the present, so
        no in-flight draw list references a surface being freed.  Ignored for non-owned surfaces. */
     bool pending_close;
 
@@ -514,7 +514,7 @@ typedef struct
        windows' top edge at or below this inset so their title bars stay grabbable above the drawn
        chrome band.  0 until first published (no native shell or default OS-chrome main window).
        Sticky: NOT cleared each frame -- persists from the last frame the native shell was active so
-       update_platform_windows always has a valid top bound regardless of build ordering. */
+       viewport_update always has a valid top bound regardless of build ordering. */
     f32 caption_inset;
 
     /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's

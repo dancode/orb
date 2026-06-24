@@ -422,6 +422,13 @@ typedef enum
     IMGUI_WIN_NO_MAXIMIZE       = 1 << 16,   /* native: no maximize / restore caption button */
     IMGUI_WIN_NO_DETACH         = 1 << 17,   /* no pop-out: hide detach button, block tear-off drag */
 
+    /* Placement is managed externally (docking layout, animation, scripted snap).  Bypasses both
+       the per-drag margin clamp (window_clamp) and the merge-back fit-inside clamp so the system
+       can position and size the window freely without imgui fighting the placement.  Without this
+       flag both clamps apply unconditionally; with it neither does. */
+
+    IMGUI_WIN_NO_BOUNDARY_CLAMP = 1 << 18,
+
     /* Closeable -- add a close (X) button at the title bar's right edge.  Clicking it hides the
        window: window_begin returns false and emits nothing from then on, and the record persists
        so the window keeps its position / size while closed.  Re-opening is the caller's job --
@@ -429,13 +436,6 @@ typedef enum
        caption button instead, so this flag only adds the X to a regular (non-native) panel. */
 
     IMGUI_WIN_CLOSEABLE         = 1 << 19,   /* show a close (X) button; hidden until re-opened */
-
-    /* Placement is managed externally (docking layout, animation, scripted snap).  Bypasses both
-       the per-drag margin clamp (window_clamp) and the merge-back fit-inside clamp so the system
-       can position and size the window freely without imgui fighting the placement.  Without this
-       flag both clamps apply unconditionally; with it neither does. */
-
-    IMGUI_WIN_NO_BOUNDARY_CLAMP = 1 << 18,
 
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
@@ -933,7 +933,6 @@ typedef enum
 
 #define IMGUI_TABLE_COLS_MAX 16
 
-typedef u32 imgui_table_flags_t;
 typedef enum
 {
     IMGUI_TABLE_NONE            = 0,
@@ -948,9 +947,8 @@ typedef enum
     IMGUI_TABLE_RESIZABLE       = 1 << 7,   /* drag column borders to resize                  */
     IMGUI_TABLE_NO_HEADER       = 1 << 8,   /* skip table_headers_row entirely                */
 
-} imgui_table_flags_e;
+} imgui_table_flags_t;
 
-typedef u32 imgui_table_col_flags_t;
 typedef enum
 {
     IMGUI_TABLE_COL_NONE         = 0,
@@ -961,7 +959,7 @@ typedef enum
     IMGUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  /* right-align cell content (future phase)        */
     IMGUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  /* center cell content (future phase)             */
 
-} imgui_table_col_flags_e;
+} imgui_table_col_flags_t;
 
 /* Background color override target for table_set_bg_color (future phase). */
 typedef enum

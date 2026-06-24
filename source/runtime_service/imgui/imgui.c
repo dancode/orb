@@ -22,7 +22,7 @@
     imgui_layout_core.c       -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
     imgui_layout_region.c     -- scrollable region engine: imgui_region_t, region_scrollbar, push/pop_region
     imgui_layout_child.c      -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
-    imgui_layout.c            -- public layout API verbs: imgui_layout, imgui_stack, imgui_columns, imgui_grid
+    imgui_layout.c            -- public layout API verbs: imgui_layout, imgui_stack, imgui_cols, imgui_grid
     imgui_text_edit.c         -- single-line text editing engine: input_field_edit (behind input_text)
     imgui_anim.c              -- widget animation utilities: imgui_anim_f32, imgui_anim_bg
     imgui_widget.c            -- core leaf widgets: text, button, checkbox, input_text, selectable
@@ -32,7 +32,7 @@
     imgui_dock.c              -- docking: dock-node tree, splitters, tab strips, dockspace + build API
     imgui_popup.c             -- popups / context menus / tooltips: overlay windows on a reserved z-band
     imgui_widget_combo.c      -- combo box + list box: a popup dropdown / a scrolling child of selectables
-    imgui_stack_api.c         -- push-model public API: push/pop id, item flags, style color / var
+    imgui_stacks.c            -- push-model public API: push/pop id, item flags, style color / var
     imgui_table.c             -- table layout: multi-column rows with cell clipping
     imgui_frame.c             -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, viewport, font, clip
     imgui_api.c               -- vtable, mod_desc, MOD_DEFINE_EXPORTS
@@ -195,7 +195,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 #include "runtime_service/imgui/imgui_nav.c"
 #include "runtime_service/imgui/imgui_widget_combo.c"
 #include "runtime_service/imgui/imgui_widget_menu.c"
-#include "runtime_service/imgui/imgui_stack_api.c"
+#include "runtime_service/imgui/imgui_stacks.c"
 #include "runtime_service/imgui/imgui_table.c"
 #include "runtime_service/imgui/imgui_frame.c"
 

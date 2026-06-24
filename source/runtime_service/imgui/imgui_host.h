@@ -56,9 +56,9 @@ void       imgui_viewport_close ( imgui_vp_t vp );
 void       imgui_viewport_resize( imgui_vp_t vp, i32 w, i32 h );
 
 /* imgui-owned floater surfaces (window + context owned by imgui) */
-imgui_vp_t imgui_viewport_spawn         ( const char* title, i32 x, i32 y, i32 w, i32 h );
-void       imgui_update_platform_windows( void );
-void       imgui_render_floaters        ( void );
+imgui_vp_t imgui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w, i32 h );
+void       imgui_viewport_update         ( void );
+void       imgui_viewport_render_floaters( void );
 
 /* io */
 bool imgui_event( const app_event_t* ev );
@@ -120,13 +120,13 @@ void imgui_stack( void );
 
 /* layout - rows and columns */
 void imgui_row( f32 row_h );
-void imgui_columns( const f32* tracks );
+void imgui_cols( const f32* tracks );
 void imgui_cols_n( u32 n );
-void imgui_row_cols( f32 row_h, u32 n );
+void imgui_row_cols( f32 row_h, const f32* tracks );
+void imgui_row_cols_n( f32 row_h, u32 n );
 void imgui_row2( f32 a, f32 b );
 void imgui_row3( f32 a, f32 b, f32 c );
 void imgui_row4( f32 a, f32 b, f32 c, f32 d );
-void imgui_row_track( f32 row_h, const f32* cols );
 
 /* layout - split forms */
 void imgui_form( imgui_label_side_t side, f32 label_w );
@@ -153,7 +153,7 @@ void imgui_pack_nextline( void );
 
 void imgui_align( imgui_align_t a );
 void imgui_same_line( f32 spacing );
-void imgui_stack_sameline( f32 spacing );
+void imgui_stack_same_line( f32 spacing );
 void imgui_skip( void );
 void imgui_spacing( f32 h );
 void imgui_separator( void );
@@ -164,6 +164,7 @@ imgui_rect_t imgui_canvas( f32 height );
 /* layout - formatting helpers */
 f32 imgui_line_h( void );
 f32 imgui_text_w( const char* s );
+f32 imgui_text_h( const char* s );
 f32 imgui_h_min( void );
 f32 imgui_w_min( void );
 f32 imgui_calc_row( f32 content_h );
@@ -197,6 +198,9 @@ void imgui_next_style_color( imgui_col_t slot, u32 abgr );
 void imgui_push_style_var( imgui_style_var_t var, f32 value );
 void imgui_pop_style_var( u32 count );
 void imgui_next_style_var( imgui_style_var_t var, f32 value );
+void imgui_set_check_style( u32 style );
+void imgui_set_bullet_style( u32 style );
+void imgui_set_arrow_style( u32 style );
 
 /* widgets */
 void imgui_text( const char* str );
@@ -304,9 +308,6 @@ void imgui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 co
 void imgui_draw_grip( imgui_rect_t box, u32 col );
 void imgui_draw_spinner( imgui_rect_t box, f32 t, f32 thickness, u32 col );
 void imgui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
-void imgui_set_check_style( u32 style );
-void imgui_set_bullet_style( u32 style );
-void imgui_set_arrow_style( u32 style );
 
 /* draw -- paths */
 void imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );

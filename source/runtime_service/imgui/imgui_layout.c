@@ -3,7 +3,7 @@
     runtime_service/imgui/imgui_layout.c -- Public layout API verbs.
 
     Defines the per-region template-shaping calls (imgui_layout, imgui_stack, imgui_row,
-    imgui_columns, imgui_grid, imgui_pack, imgui_bar, imgui_strip, imgui_field_split,
+    imgui_cols, imgui_grid, imgui_pack, imgui_bar, imgui_strip, imgui_field_split,
     imgui_form, imgui_indent/unindent, imgui_content_avail, etc.).
 
     The scrollable region engine (layout_push/pop_region, region_scrollbar, imgui_region_t,
@@ -69,9 +69,10 @@ imgui_layout_default( void )
     layout_set_default( f );    /* single flex column, no field split, default gaps */
 }
 
-/* n equal flex columns of height row_h (0 = auto, one standard line). */
+/* row_cols_n -- n equal flex columns of height row_h (0 = auto, one standard line).  The fixed-height
+   twin of cols_n; row_cols (below) is the explicit-tracks twin. */
 void
-imgui_row_cols( f32 row_h, u32 n )
+imgui_row_cols_n( f32 row_h, u32 n )
 {
     if ( n == 0 )                 n = 1;
     if ( n > IMGUI_LAYOUT_COLS )  n = IMGUI_LAYOUT_COLS;
@@ -82,33 +83,34 @@ imgui_row_cols( f32 row_h, u32 n )
     layout_set( cols, row_h, 0.0f, 0.0f );
 }
 
-/* Explicit per-column widths (IMGUI_END-terminated, overloaded units) of height row_h. */
+/* row_cols -- explicit per-column tracks (IMGUI_END-terminated, overloaded units) of height row_h.
+   The fixed-height twin of cols. */
 void
-imgui_row_track( f32 row_h, const f32* cols )
+imgui_row_cols( f32 row_h, const f32* tracks )
 {
-    layout_set( cols, row_h, 0.0f, 0.0f );
+    layout_set( tracks, row_h, 0.0f, 0.0f );
 }
 
-/* columns -- the explicit header for N pre-divided column tracks (IMGUI_END-terminated, overloaded
+/* cols -- the explicit header for N pre-divided column tracks (IMGUI_END-terminated, overloaded
    units), auto height, rows accumulating + scrolling.  The canonical name for the multi-column flow
-   template; row_track is the same with an explicit row height. */
+   template; row_cols is the same with an explicit row height. */
 void
-imgui_columns( const f32* tracks )
+imgui_cols( const f32* tracks )
 {
     layout_set( tracks, 0.0f, 0.0f, 0.0f );
 }
 
-/* cols_n -- N equal flex columns, auto height: the everyday uniform split (a wrapper over row_cols). */
+/* cols_n -- N equal flex columns, auto height: the everyday uniform split (a wrapper over row_cols_n). */
 void
 imgui_cols_n( u32 n )
 {
-    imgui_row_cols( 0.0f, n );
+    imgui_row_cols_n( 0.0f, n );
 }
 
 /* Fixed-arity weighted rows -- the everyday 2/3/4-column split without a track array or its
    IMGUI_END terminator.  Each width takes the overloaded unit (>1 px, 1 fill, (0,1) fraction, 0
    natural), so row2( 0.3f, 0.7f ) is a 30/70 split and row2( 120, 1 ) is a 120px column plus a fill.
-   Auto height (the common case); reach for row_track / layout when a fixed height or >4 columns
+   Auto height (the common case); reach for row_cols / layout when a fixed height or >4 columns
    is needed. */
 
 void imgui_row2( f32 a, f32 b )                { f32 c[ 3 ] = { a, b, IMGUI_END };       layout_set( c, 0.0f, 0.0f, 0.0f ); }
@@ -132,10 +134,10 @@ imgui_same_line( f32 spacing )
     f->cont_line = true;
 }
 
-/* stack_sameline -- the mode-prefixed name for same_line; identical behavior.  The stack_ spelling
+/* stack_same_line -- the mode-prefixed name for same_line; identical behavior.  The stack_ spelling
    groups the "keep the next widget on this line" verb with the stack() header. */
 void
-imgui_stack_sameline( f32 spacing )
+imgui_stack_same_line( f32 spacing )
 {
     imgui_same_line( spacing );
 }
