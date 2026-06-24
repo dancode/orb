@@ -25,70 +25,6 @@
 // clang-format off
 
 /*==============================================================================================
-    sb_perf_overlay -- a hidden-chrome, non-interactive FPS / performance overlay.
-
-    The "widget" is just laid-out text in a window whose background and border are pushed fully
-    transparent and whose chrome is switched off (no title bar, no resize, no move, auto-sized):
-    the window is invisible, only its text shows, and it batches into the same draw list as the
-    rest of the UI.  P cycles the detail level, each tier a superset of the one below:
-
-        mode 1 : FPS (color-graded green/amber/red by health)
-        mode 2 : + imgui emit + render CPU time (ms, host-measured, smoothed)
-        mode 3 : + render counts from imgui()->render_stats() -- verts / tris / batches / cmds
-
-    fps / emit_ms / rend_ms are the host's smoothed measurements from the previous iteration; the
-    render counts are last frame's (published at frame_begin), so the whole panel is one frame
-    behind the work it describes -- the standard self-measurement lag for an in-frame overlay.
-==============================================================================================*/
-
-static void
-sb_perf_overlay( int mode, f32 fps, f32 emit_ms, f32 rend_ms )
-{
-    if ( mode <= 0 )
-        return;
-
-    /* Hide the window: transparent body + outline, fixed top-left, hugging its content. */
-    imgui()->push_style_color( IMGUI_COL_WINDOW_BG, IMGUI_COLOR( 0, 0, 0, 0 ) );
-    imgui()->push_style_color( IMGUI_COL_BORDER,    IMGUI_COLOR( 0, 0, 0, 0 ) );
-
-    imgui()->set_next_window_pos( 8.0f, 8.0f, IMGUI_COND_ALWAYS );
-    imgui()->begin_window( "perf_overlay",
-        IMGUI_WIN_NOTITLEBAR | IMGUI_WIN_NORESIZE | IMGUI_WIN_NOMOVE |
-        IMGUI_WIN_NOSCROLL   | IMGUI_WIN_ALWAYS_AUTOSIZE | IMGUI_WIN_NO_DETACH );
-    {
-        imgui()->stack();
-        // imgui()->new_line();
-        /* FPS, graded by health: >=60 green, >=30 amber, else red. */
-        u32 fps_col = fps >= 60.0f ? IMGUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
-                    : fps >= 30.0f ? IMGUI_COLOR( 0xE0, 0xC0, 0x40, 0xFF )
-                    :                IMGUI_COLOR( 0xEE, 0x55, 0x44, 0xFF );
-        char line[ 64 ];
-        snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
-        imgui()->text_colored( fps_col, line );
-
-        if ( mode >= 2 )
-        {
-            imgui()->spacing( 2.0f );
-            imgui()->textf( "emit   %5.2f ms", emit_ms );
-            imgui()->textf( "render %5.2f ms", rend_ms );
-        }
-
-        if ( mode >= 3 )
-        {
-            imgui_render_stats_t rs = imgui()->render_stats();
-            imgui()->spacing( 2.0f );
-            imgui()->textf( "verts   %6u", rs.vert_count );
-            imgui()->textf( "tris    %6u", rs.tri_count  );
-            imgui()->textf( "batches %6u", rs.draw_calls );
-            imgui()->textf( "cmds    %6u", rs.cmd_count  );
-        }
-    }
-    imgui()->end_window();
-
-    imgui()->pop_style_color( 2 );
-}
-
-/*==============================================================================================
     main
 ==============================================================================================*/
 
@@ -264,12 +200,10 @@ main( int argc, char** argv )
     /* Active imgui demo index (see sb_vulkan_imgui.c); switched live with the keys below. */
     int active_demo = 0;
 
-    /* Perf overlay state.  perf_mode is the P-cycled detail tier (0 off .. 3 counts); the metrics
-       are exponential moving averages so the readout stays legible instead of flickering. */
-    int perf_mode    = 0;
-    f32 perf_fps     = 0.0f;
-    f32 perf_emit_ms = 0.0f;
-    f32 perf_rend_ms = 0.0f;
+    /* Perf overlay detail tier, cycled by P (0 off .. 3 counts).  The overlay itself -- timing,
+       smoothing, and draw -- is a built-in imgui utility now; the host only supplies a clock and
+       the mode (see imgui()->perf_overlay below). */
+    int perf_mode = 0;
 
     /* Main loop. */
     f64 last_time = sys_tick_seconds();
@@ -311,9 +245,6 @@ main( int argc, char** argv )
                     break;
             }
         }
-
-        // if ( app()->key_pressed( APP_KEY_F12 ) )
-        //     break;
 
         /* ------------------------------------------------------------------------------ */
         /* imgui demo selection.
@@ -363,17 +294,11 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
-        /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4).  Smooth the
-           instantaneous frame rate into perf_fps so the readout does not strobe every frame. */
+        /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4).  The library
+           measures and smooths; the host only carries the tier. */
 
         if ( app()->key_pressed( APP_KEY_P ) )
             perf_mode = ( perf_mode + 1 ) % 4;
-
-        if ( dt > 0.0f )
-        {
-            f32 inst_fps = 1.0f / dt;
-            perf_fps = perf_fps <= 0.0f ? inst_fps : perf_fps * 0.92f + inst_fps * 0.08f;
-        }
 
         /* F6 cycles the debug render view: normal -> wireframe (triangle edges) -> batch (per-draw
            color tint, so you can count batches and see where they split) -> normal. */
@@ -393,9 +318,6 @@ main( int argc, char** argv )
             ctx_begin(ctx)          -- full frame init for ctx; leaves g_ctx bound to it.
            Emit windows IMMEDIATELY after each ctx_begin -- ctx_begin leaves g_ctx bound to that
            context, so windows emitted after it land in the correct pool. */
-
-        /* Time the UI build (emit) -- everything from frame_begin through the last widget. */
-        f64 t_emit_start = sys_tick_seconds();
 
         if ( b_multi_ctx && ctx2 != IMGUI_CTX_INVALID )
         {
@@ -481,11 +403,10 @@ main( int argc, char** argv )
         }
 
         /* Perf overlay -- emitted last so it draws on top, and inside the build so its own text is
-           counted in the emit time + render stats it reports.  Lands in the default context (the
-           multi-ctx path rebinds it above; the single path never left it). */
-        sb_perf_overlay( perf_mode, perf_fps, perf_emit_ms, perf_rend_ms );
-
-        f64 t_emit_end = sys_tick_seconds();
+           counted in the emit + render cost it reports.  The library measures with the clock we hand
+           it (sys_tick_seconds): emit opens at frame_begin, render is summed across render() below.
+           Lands in the default context (multi-ctx rebinds above; the single path never left it). */
+        imgui()->perf_overlay( sys_tick_seconds, perf_mode );
 
         /* ------------------------------------------------------------------------------ */
         /* Reconcile imgui-owned floaters with their OS windows (destroys any the user closed).
@@ -495,10 +416,8 @@ main( int argc, char** argv )
 
         /* ------------------------------------------------------------------------------ */
         /* Flush the main surface.  Skip while minimized to avoid 0x0 swapchain churn; frame_begin
-           returns an invalid handle then and we must not frame_end it. */
-
-        /* Time the render (tessellation + GPU command recording for the main surface + floaters). */
-        f64 t_rend_start = sys_tick_seconds();
+           returns an invalid handle then and we must not frame_end it.  imgui brackets its own
+           render cost inside render() / render_floaters() for the perf overlay. */
 
         if ( !app()->window_is_minimized( win ) )
         {
@@ -533,17 +452,6 @@ main( int argc, char** argv )
            no longer hand-drives the secondary surface. */
 
         imgui()->render_floaters();
-
-        f64 t_rend_end = sys_tick_seconds();
-
-        /* Fold this frame's emit + render CPU times into their moving averages.  Read next frame by
-           the perf overlay, so its readout trails the work by one frame (it measures its own host). */
-        {
-            f32 emit_ms = (f32)( ( t_emit_end - t_emit_start ) * 1000.0 );
-            f32 rend_ms = (f32)( ( t_rend_end - t_rend_start ) * 1000.0 );
-            perf_emit_ms = perf_emit_ms <= 0.0f ? emit_ms : perf_emit_ms * 0.9f + emit_ms * 0.1f;
-            perf_rend_ms = perf_rend_ms <= 0.0f ? rend_ms : perf_rend_ms * 0.9f + rend_ms * 0.1f;
-        }
 
         /* ------------------------------------------------------------------------------ */
 

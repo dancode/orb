@@ -84,6 +84,12 @@ typedef struct { f32 x, y, w, h; }  imgui_rect_t;
    length (excluding NUL); bufsz is the total buffer capacity. */
 typedef void ( *imgui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
 
+/* Monotonic wall-clock source (seconds), supplied by the host to the built-in perf overlay.
+   imgui has no timing service of its own (it is a leaf of rhi + app), so the host hands it a
+   tick-seconds callback -- typically sys()->tick_seconds -- and imgui uses it to measure the
+   per-frame emit (build) and render (flush) cost the overlay reports.  See perf_overlay(). */
+typedef f64 ( *imgui_clock_fn )( void );
+
 /* Edge insets, in pixels.  Region padding -- the gap between a region's box and where its layout
    starts (see imgui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
    (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */
@@ -430,6 +436,23 @@ typedef enum
        flag both clamps apply unconditionally; with it neither does. */
 
     IMGUI_WIN_NO_BOUNDARY_CLAMP = 1 << 18,
+
+    /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
+       shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
+       ( IMGUI_WIN_OVERLAY | IMGUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical
+       to spelling the members out.
+
+       NODECORATION -- strip all chrome: no title bar, no border resize, no scrollbars, no collapse.
+                       A bare content panel you still position / move yourself.
+       OVERLAY      -- a passive, non-interactive HUD: undecorated, fixed in place, hugging its
+                       content every frame, and non-detachable.  The "accepts no action" window --
+                       what the built-in perf overlay uses.  Pin it with set_next_window_pos. */
+
+    IMGUI_WIN_NODECORATION = IMGUI_WIN_NOTITLEBAR | IMGUI_WIN_NORESIZE |
+                             IMGUI_WIN_NOSCROLL   | IMGUI_WIN_NOCOLLAPSE,
+
+    IMGUI_WIN_OVERLAY      = IMGUI_WIN_NODECORATION    | IMGUI_WIN_NOMOVE |
+                             IMGUI_WIN_ALWAYS_AUTOSIZE | IMGUI_WIN_NO_DETACH,
 
 } imgui_win_flags_t;
 

@@ -80,6 +80,124 @@ imgui_print_mem_stats( void )
 }
 
 /*==============================================================================================
+    Performance overlay
+
+    A built-in, hidden-chrome FPS / cost readout (the host used to hand-roll this).  imgui owns no
+    clock -- it is a leaf of rhi + app -- so the host hands it a monotonic seconds callback through
+    perf_overlay(); imgui brackets the frame with it.  The emit clock opens at frame_begin and is
+    latched on the first render() of the frame; the render clock sums the render() flush calls.  Both
+    raw measurements are folded into smoothed (EMA) readouts at the next frame_begin, so the panel
+    trails the work it describes by one frame -- the standard self-measurement lag for an in-frame
+    overlay (the build that reads the numbers is also the one being measured).
+==============================================================================================*/
+
+static struct
+{
+    imgui_clock_fn clock;          /* host monotonic seconds source (NULL = timing off) */
+    f64  t_emit_start;             /* clock() captured at frame_begin (0 = not armed)    */
+    f64  emit_ms;                  /* this frame: frame_begin -> first render() (ms)     */
+    f64  rend_ms;                  /* this frame: accumulated render() wall time (ms)    */
+    bool emit_captured;            /* emit_ms latched on the first render() this frame   */
+    f32  fps;                      /* smoothed readouts shown by the overlay             */
+    f32  s_emit_ms;
+    f32  s_rend_ms;
+} s_perf;
+
+/* Publish last frame's raw emit/render times into the smoothed readouts and open a fresh emit clock.
+   Called from frame_begin (which owns dt -> fps). */
+static void
+perf_frame_begin( f32 dt )
+{
+    if ( dt > 0.0f )
+    {
+        f32 inst = 1.0f / dt;
+        s_perf.fps = s_perf.fps <= 0.0f ? inst : s_perf.fps * 0.92f + inst * 0.08f;
+    }
+    f32 em = (f32)s_perf.emit_ms;
+    f32 rm = (f32)s_perf.rend_ms;
+    s_perf.s_emit_ms = s_perf.s_emit_ms <= 0.0f ? em : s_perf.s_emit_ms * 0.9f + em * 0.1f;
+    s_perf.s_rend_ms = s_perf.s_rend_ms <= 0.0f ? rm : s_perf.s_rend_ms * 0.9f + rm * 0.1f;
+
+    s_perf.emit_ms       = 0.0;
+    s_perf.rend_ms       = 0.0;
+    s_perf.emit_captured = false;
+    s_perf.t_emit_start  = s_perf.clock ? s_perf.clock() : 0.0;
+}
+
+/* Close the emit phase (first render of the frame) and return the clock reading to bracket the
+   render flush.  Returns 0 when timing is off (clock not yet supplied or t_emit_start unarmed). */
+static f64
+perf_render_begin( void )
+{
+    if ( !s_perf.clock )
+        return 0.0;
+    f64 now = s_perf.clock();
+    if ( !s_perf.emit_captured && s_perf.t_emit_start > 0.0 )
+    {
+        s_perf.emit_ms       = ( now - s_perf.t_emit_start ) * 1000.0;
+        s_perf.emit_captured = true;
+    }
+    return now;
+}
+
+/* Fold one render() flush span into this frame's render accumulator (t0 from perf_render_begin). */
+static void
+perf_render_end( f64 t0 )
+{
+    if ( s_perf.clock && t0 > 0.0 )
+        s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
+}
+
+void
+imgui_perf_overlay( imgui_clock_fn clock, int mode )
+{
+    /* Adopt the host clock so frame_begin / render can time emit + render (effective next frame). */
+    s_perf.clock = clock;
+
+    if ( mode <= 0 )
+        return;
+
+    f32 fps = s_perf.fps;
+
+    /* Hide the window: transparent body + outline, fixed top-left, hugging its content. */
+    imgui_push_style_color( IMGUI_COL_WINDOW_BG, IMGUI_COLOR( 0, 0, 0, 0 ) );
+    imgui_push_style_color( IMGUI_COL_BORDER,    IMGUI_COLOR( 0, 0, 0, 0 ) );
+
+    imgui_set_next_window_pos( 8.0f, 8.0f, IMGUI_COND_ALWAYS );
+    imgui_begin_window( "perf_overlay", IMGUI_WIN_OVERLAY );
+    {
+        imgui_stack();
+        /* FPS, graded by health: >=60 green, >=30 amber, else red. */
+        u32 fps_col = fps >= 60.0f ? IMGUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
+                    : fps >= 30.0f ? IMGUI_COLOR( 0xE0, 0xC0, 0x40, 0xFF )
+                    :                IMGUI_COLOR( 0xEE, 0x55, 0x44, 0xFF );
+        char line[ 64 ];
+        snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
+        imgui_text_colored( fps_col, line );
+
+        if ( mode >= 2 )
+        {
+            imgui_spacing( 2.0f );
+            imgui_textf( "emit   %5.2f ms", s_perf.s_emit_ms );
+            imgui_textf( "render %5.2f ms", s_perf.s_rend_ms );
+        }
+
+        if ( mode >= 3 )
+        {
+            imgui_render_stats_t rs = imgui_render_stats();
+            imgui_spacing( 2.0f );
+            imgui_textf( "verts   %6u", rs.vert_count );
+            imgui_textf( "tris    %6u", rs.tri_count  );
+            imgui_textf( "batches %6u", rs.draw_calls );
+            imgui_textf( "cmds    %6u", rs.cmd_count  );
+        }
+    }
+    imgui_end_window();
+
+    imgui_pop_style_color( 2 );
+}
+
+/*==============================================================================================
     Frame API
 ==============================================================================================*/
 
@@ -93,6 +211,10 @@ imgui_frame_begin( f32 dt )
     imgui_context_t* primary = s_ctx_pool[ 0 ];   /* default ctx always owns the OS window */
     i32 disp_w = primary->viewport_count > 0 ? primary->viewports[ 0 ].disp_w : 0;
     i32 disp_h = primary->viewport_count > 0 ? primary->viewports[ 0 ].disp_h : 0;
+
+    /* Open the perf overlay's emit clock here -- "start at frame_begin" -- and publish last frame's
+       measured cost into the smoothed readouts the overlay shows. */
+    perf_frame_begin( dt );
 
     /* caption_inset is NOT cleared here.  Native shell windows republish it during the build, so
        the field always reflects the last frame the shell was active.  Leaving it sticky means
@@ -165,10 +287,15 @@ imgui_render( imgui_vp_t vp, rhi_cmd_t cmd )
     if ( vp < 0 || vp >= (i32)g_ctx->max_viewports )
         return;
     imgui_viewport_t* v = &g_ctx->viewports[ vp ];
+
+    /* Latch the emit time (first render of the frame) and bracket the flush -- "conclude cost at
+       render": emit ends here, render time accumulates across every render() call this frame. */
+    f64 t0 = perf_render_begin();
     imgui_render_flush( v, (u32)vp, cmd, v->disp_w, v->disp_h );
 #ifdef IMGUI_DEBUG_OVERLAY
     imgui_debug_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
 #endif
+    perf_render_end( t0 );
 }
 
 /*==============================================================================================

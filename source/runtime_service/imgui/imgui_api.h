@@ -50,6 +50,22 @@ typedef struct imgui_api_s
        standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
     imgui_render_stats_t ( *render_stats )( void );
 
+    /* Built-in performance overlay -- a hidden-chrome, non-interactive FPS / cost readout pinned to
+       the top-left of the primary viewport.  Emit it once per frame inside the UI build (last, so it
+       draws on top); it lands in the currently bound context.  `mode` cycles the detail tier, each a
+       superset of the one below ( <= 0 draws nothing ):
+
+           1 : FPS (color-graded green/amber/red by health)
+           2 : + imgui emit + render CPU time (ms, smoothed)
+           3 : + render counts from render_stats() -- verts / tris / batches / cmds
+
+       imgui owns no clock of its own, so the host passes one: `clock` is a monotonic seconds source
+       (e.g. sys()->tick_seconds).  imgui adopts it here and uses it to bracket the frame -- the emit
+       clock opens at new_frame()/frame_begin() and closes at the first render(); the render clock sums
+       the render() flush calls -- so the readout trails the work it describes by one frame.  Pass the
+       same callback every frame; NULL leaves timing off (mode 2 then reads zero). */
+    void ( *perf_overlay )( imgui_clock_fn clock, int mode );
+
     /* Frame lifecycle.
        new_frame() -- reset draw list and translate app input into the IO snapshot.
                       Call once at the top of the frame, before any widget calls.

@@ -31,6 +31,9 @@ void imgui_shutdown( void );
 imgui_mem_stats_t imgui_mem_stats( void );
 void imgui_print_mem_stats( void );
 
+/* built-in perf overlay (FPS / emit + render cost / render counts); host supplies the clock */
+void imgui_perf_overlay( imgui_clock_fn clock, int mode );
+
 /* font */
 u32  imgui_load_font( const char* path );
 
