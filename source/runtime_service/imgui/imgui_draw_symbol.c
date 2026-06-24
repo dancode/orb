@@ -15,14 +15,14 @@
     polyline strokes it; arcs are sampled from cos / sin once per call.
 
     Most commands carry one abgr, but IMGUI_CMD_RECT_GRADIENT carries two and lets the GPU's
-    per-vertex color interpolation blend them, so render_gradient is an exact one-quad blend (not
-    banded).  render_shadow's gaussian glow is still approximated with layered rings -- a future
+    per-vertex color interpolation blend them, so draw_gradient is an exact one-quad blend (not
+    banded).  draw_shadow's gaussian glow is still approximated with layered rings -- a future
     multi-corner-color command (or routing the rings through gradient quads) would make it exact;
     the public surface would not change.  Everything else is pixel-exact.
 
     Included by imgui.c immediately after imgui_widget_core.c, so it sees the COL_* / ROUND_* /
     WIN_BORDER macros, col_lerp, and rect_align defined there, and every widget file below resolves
-    these draw_* helpers by name.  The public imgui_render_* surface over them is at the foot.
+    these draw_* helpers by name.  The public imgui_draw_* surface over them is at the foot.
 
 ==============================================================================================*/
 // clang-format off
@@ -295,7 +295,7 @@ round_rect_perimeter_ex( imgui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, img
 }
 
 /* Per-corner rounded rect, filled (triangle fan) or stroked (closed polyline).  The general path
-   for tab / notch / asymmetric shapes; for a uniform radius prefer the public render_round_rect,
+   for tab / notch / asymmetric shapes; for a uniform radius prefer the public draw_round_rect,
    which delegates to the backend's single-command rounded rect. */
 static void
 draw_round_rect_ex( imgui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
@@ -554,27 +554,27 @@ draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col )
 }
 
 /*==============================================================================================
-    Public surface -- the imgui_render_* family (Dear ImGui Render* / AddXxx), drawn through the
+    Public surface -- the imgui_draw_* family (Dear ImGui AddXxx / Render* analogue), drawn through the
     normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.  Editor / custom
     widgets paint the same marks the built-in widgets use.  The set_*_style setters choose the
     global indicator shape; scope a change with push_style_var on the matching IMGUI_VAR_*_STYLE.
 ==============================================================================================*/
 
 /* glyph marks */
-void imgui_render_check_mark( imgui_rect_t box, u32 col )                       { draw_check_mark( box, col ); }
-void imgui_render_arrow     ( imgui_rect_t box, imgui_dir_t dir, u32 col )      { draw_arrow( box, dir, col ); }
-void imgui_render_bullet    ( f32 cx, f32 cy, f32 r, u32 col )                  { draw_bullet( cx, cy, r, col ); }
-void imgui_render_close     ( imgui_rect_t box, u32 col )                       { draw_close_x( box, col ); }
-void imgui_render_arrow_pointing_at( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 col )
+void imgui_draw_check_mark( imgui_rect_t box, u32 col )                       { draw_check_mark( box, col ); }
+void imgui_draw_arrow     ( imgui_rect_t box, imgui_dir_t dir, u32 col )      { draw_arrow( box, dir, col ); }
+void imgui_draw_bullet    ( f32 cx, f32 cy, f32 r, u32 col )                  { draw_bullet( cx, cy, r, col ); }
+void imgui_draw_close     ( imgui_rect_t box, u32 col )                       { draw_close_x( box, col ); }
+void imgui_draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 col )
                                                                                { draw_arrow_pointing_at( tx, ty, half, dir, col ); }
-void imgui_render_chevron   ( imgui_rect_t box, imgui_dir_t dir, f32 thickness, u32 col ) { draw_chevron( box, dir, thickness, col ); }
-void imgui_render_plus_minus( imgui_rect_t box, bool plus, f32 thickness, u32 col )       { draw_plus_minus( box, plus, thickness, col ); }
+void imgui_draw_chevron   ( imgui_rect_t box, imgui_dir_t dir, f32 thickness, u32 col ) { draw_chevron( box, dir, thickness, col ); }
+void imgui_draw_plus_minus( imgui_rect_t box, bool plus, f32 thickness, u32 col )       { draw_plus_minus( box, plus, thickness, col ); }
 
 /* shapes */
-void imgui_render_frame( imgui_rect_t box, u32 col_bg, u32 col_border, f32 border ) { draw_frame( box, col_bg, col_border, border ); }
+void imgui_draw_frame( imgui_rect_t box, u32 col_bg, u32 col_border, f32 border ) { draw_frame( box, col_bg, col_border, border ); }
 
 void
-imgui_render_round_rect( imgui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+imgui_draw_round_rect( imgui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                          bool filled, f32 thickness, u32 col )
 {
     /* Uniform-radius fast path: route a filled, equal-cornered rect through the backend's single
@@ -590,34 +590,34 @@ imgui_render_round_rect( imgui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_b
     draw_round_rect_ex( box, r_tl, r_tr, r_br, r_bl, filled, thickness, col );
 }
 
-void imgui_render_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col )
+void imgui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col )
                                                                                { draw_ngon( cx, cy, r, sides, rot, filled, thickness, col ); }
-void imgui_render_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col ) { draw_circle( cx, cy, r, filled, thickness, col ); }
-void imgui_render_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )  { draw_arc( cx, cy, r, a0, a1, thickness, col ); }
-void imgui_render_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )                 { draw_pie( cx, cy, r, a0, a1, col ); }
+void imgui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col ) { draw_circle( cx, cy, r, filled, thickness, col ); }
+void imgui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )  { draw_arc( cx, cy, r, a0, a1, thickness, col ); }
+void imgui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )                 { draw_pie( cx, cy, r, a0, a1, col ); }
 
 /* curves */
-void imgui_render_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col )
+void imgui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col )
                                                                                { draw_bezier_quad( x0, y0, cx, cy, x1, y1, thickness, col ); }
-void imgui_render_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col )
+void imgui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col )
                                                                                { draw_bezier_cubic( x0, y0, c0x, c0y, c1x, c1y, x1, y1, thickness, col ); }
 
-/* patterned lines + fills */
-void imgui_render_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col )
-                                                                               { draw_dashed_line( x0, y0, x1, y1, dash, gap, thickness, col ); }
-void imgui_render_checker ( imgui_rect_t box, f32 cell, u32 col_a, u32 col_b )  { draw_checker( box, cell, col_a, col_b ); }
-void imgui_render_hatch   ( imgui_rect_t box, f32 spacing, f32 thickness, u32 col ) { draw_hatch( box, spacing, thickness, col ); }
-void imgui_render_gradient( imgui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) { draw_gradient( box, col_a, col_b, horizontal ); }
-void imgui_render_shadow  ( imgui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }
+/* patterned lines + fills.  (draw_dashed_line has no wrapper here -- the public draw_dashed_line is
+   the backend primitive in imgui_draw_path.c; the vtable binds straight to it.  The file-local
+   draw_dashed_line static below forwards to that same primitive for the separator rule.) */
+void imgui_draw_checker ( imgui_rect_t box, f32 cell, u32 col_a, u32 col_b )  { draw_checker( box, cell, col_a, col_b ); }
+void imgui_draw_hatch   ( imgui_rect_t box, f32 spacing, f32 thickness, u32 col ) { draw_hatch( box, spacing, thickness, col ); }
+void imgui_draw_gradient( imgui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) { draw_gradient( box, col_a, col_b, horizontal ); }
+void imgui_draw_shadow  ( imgui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }
 
 /* text effects + decorations */
-void imgui_render_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline )
+void imgui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline )
                                                                                { draw_text_outline( x, y, str, col_text, col_outline ); }
-void imgui_render_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy )
+void imgui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy )
                                                                                { draw_text_shadow( x, y, str, col_text, col_shadow, dx, dy ); }
-void imgui_render_grip( imgui_rect_t box, u32 col )                            { draw_grip_dots( box, col ); }
-void imgui_render_spinner( imgui_rect_t box, f32 t, f32 thickness, u32 col )    { draw_spinner( box, t, thickness, col ); }
-void imgui_render_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
+void imgui_draw_grip( imgui_rect_t box, u32 col )                            { draw_grip_dots( box, col ); }
+void imgui_draw_spinner( imgui_rect_t box, f32 t, f32 thickness, u32 col )    { draw_spinner( box, t, thickness, col ); }
+void imgui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
 
 /* global indicator-shape setters (imgui_check_style_t / imgui_bullet_style_t / imgui_arrow_style_t) */
 void imgui_set_check_style ( u32 style ) { s_layout.check_style  = style; }

@@ -817,9 +817,12 @@ typedef struct imgui_api_s
     void            ( *image         )( imgui_icon_id_t id, f32 w, f32 h, u32 col );
     void            ( *draw_icon_in  )( imgui_rect_t r, imgui_icon_id_t id, u32 col );
 
-    /* Symbol + shape render primitives -- the Dear ImGui Render* / AddXxx family, drawn through the
-       normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.  The built-in widgets
-       draw their check marks, arrows, bullets and close crosses through these, and the broader shape
+    /* Symbol + shape draw primitives (the draw_* family, Dear ImGui's AddXxx / Render* analogue),
+       drawn through the normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.
+       They share the draw_* verb with draw_rect / draw_text / draw_line above -- everything that
+       pushes geometry into the draw list is draw_*; render() is reserved for the frame flush.  The
+       built-in widgets draw their check marks, arrows, bullets and close crosses through these, and
+       the broader shape
        palette (frames, per-corner rounded rects, polygons, arcs / pie, beziers, dashes, checker /
        hatch / gradient fills, soft shadows, outlined / shadowed text, grips, spinners) is exposed so
        editor / custom widgets can paint them.  Implemented in imgui_draw_symbol.c.
@@ -828,38 +831,38 @@ typedef struct imgui_api_s
        (imgui_check_style_t / imgui_bullet_style_t / imgui_arrow_style_t); scope a change locally with
        push_style_var on IMGUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE.
 
-       Pipeline note: render_gradient is an exact one-quad blend via per-vertex color
-       (IMGUI_CMD_RECT_GRADIENT); render_shadow (layered rings) is still an approximation that a
+       Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
+       (IMGUI_CMD_RECT_GRADIENT); draw_shadow (layered rings) is still an approximation that a
        future multi-corner-color command would make exact, without changing this surface.  Angles
        for arc / pie / progress are radians, screen-space (y
        down).  `thickness` is the stroke width for the stroked forms. */
 
-    void ( *render_check_mark        )( imgui_rect_t box, u32 col );
-    void ( *render_arrow             )( imgui_rect_t box, imgui_dir_t dir, u32 col );
-    void ( *render_bullet            )( f32 cx, f32 cy, f32 r, u32 col );
-    void ( *render_close             )( imgui_rect_t box, u32 col );
-    void ( *render_arrow_pointing_at )( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 col );
-    void ( *render_chevron           )( imgui_rect_t box, imgui_dir_t dir, f32 thickness, u32 col );
-    void ( *render_plus_minus        )( imgui_rect_t box, bool plus, f32 thickness, u32 col );
-    void ( *render_frame             )( imgui_rect_t box, u32 col_bg, u32 col_border, f32 border );
-    void ( *render_round_rect        )( imgui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+    void ( *draw_check_mark        )( imgui_rect_t box, u32 col );
+    void ( *draw_arrow             )( imgui_rect_t box, imgui_dir_t dir, u32 col );
+    void ( *draw_bullet            )( f32 cx, f32 cy, f32 r, u32 col );
+    void ( *draw_close             )( imgui_rect_t box, u32 col );
+    void ( *draw_arrow_pointing_at )( f32 tx, f32 ty, f32 half, imgui_dir_t dir, u32 col );
+    void ( *draw_chevron           )( imgui_rect_t box, imgui_dir_t dir, f32 thickness, u32 col );
+    void ( *draw_plus_minus        )( imgui_rect_t box, bool plus, f32 thickness, u32 col );
+    void ( *draw_frame             )( imgui_rect_t box, u32 col_bg, u32 col_border, f32 border );
+    void ( *draw_round_rect        )( imgui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                                         bool filled, f32 thickness, u32 col );
-    void ( *render_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
-    void ( *render_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
-    void ( *render_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
-    void ( *render_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
-    void ( *render_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
-    void ( *render_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
-    void ( *render_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
-    void ( *render_checker           )( imgui_rect_t box, f32 cell, u32 col_a, u32 col_b );
-    void ( *render_hatch             )( imgui_rect_t box, f32 spacing, f32 thickness, u32 col );
-    void ( *render_gradient          )( imgui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
-    void ( *render_shadow            )( imgui_rect_t box, f32 spread, u32 col );
-    void ( *render_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
-    void ( *render_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
-    void ( *render_grip              )( imgui_rect_t box, u32 col );
-    void ( *render_spinner           )( imgui_rect_t box, f32 t, f32 thickness, u32 col );
-    void ( *render_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
+    void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
+    void ( *draw_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
+    void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
+    void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
+    void ( *draw_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
+    void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
+    void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
+    void ( *draw_checker           )( imgui_rect_t box, f32 cell, u32 col_a, u32 col_b );
+    void ( *draw_hatch             )( imgui_rect_t box, f32 spacing, f32 thickness, u32 col );
+    void ( *draw_gradient          )( imgui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
+    void ( *draw_shadow            )( imgui_rect_t box, f32 spread, u32 col );
+    void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
+    void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
+    void ( *draw_grip              )( imgui_rect_t box, u32 col );
+    void ( *draw_spinner           )( imgui_rect_t box, f32 t, f32 thickness, u32 col );
+    void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
     void ( *set_check_style          )( u32 style );
     void ( *set_bullet_style         )( u32 style );
     void ( *set_arrow_style          )( u32 style );

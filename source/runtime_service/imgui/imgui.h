@@ -177,12 +177,12 @@ imgui_rect_cut_bottom( imgui_rect_t* r, f32 a )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Angles -- the arc / pie / spinner / progress sweep parameters (render_arc, render_pie, ...) are
+    Angles -- the arc / pie / spinner / progress sweep parameters (draw_arc, draw_pie, ...) are
     radians in screen space (y down, so a positive angle turns clockwise; 0 points right / +x).
     Author in friendly degrees and convert at the call site:
 
-        imgui()->render_arc( cx, cy, r, imgui_radians( 0 ), imgui_radians( 270 ), 3.0f, col );
-        imgui()->render_pie( cx, cy, r, imgui_radians( -90 ), imgui_radians( 90 ), col );
+        imgui()->draw_arc( cx, cy, r, imgui_radians( 0 ), imgui_radians( 270 ), 3.0f, col );
+        imgui()->draw_pie( cx, cy, r, imgui_radians( -90 ), imgui_radians( 90 ), col );
 
     Stateless pure math, so these are inline here (no vtable entry) like the rect helpers above.
 ----------------------------------------------------------------------------------------------*/

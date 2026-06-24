@@ -1578,70 +1578,70 @@ demo_symbols( void )
                genuinely continuous facets (sub-1 curve bow, 0..1 progress fraction) stay float. */
 
             static i32 p_arrow = 18;     /* px */
-            r = imgui()->canvas( H ); imgui()->render_arrow( sym_box( r, (f32)p_arrow ), IMGUI_DIR_RIGHT, col );
+            r = imgui()->canvas( H ); imgui()->draw_arrow( sym_box( r, (f32)p_arrow ), IMGUI_DIR_RIGHT, col );
             imgui()->slider_int( "Arrow size (px)", &p_arrow, 8, 26 );
 
             static i32 p_check = 22;     /* px */
-            r = imgui()->canvas( H ); imgui()->render_check_mark( sym_box( r, (f32)p_check ), grn );
+            r = imgui()->canvas( H ); imgui()->draw_check_mark( sym_box( r, (f32)p_check ), grn );
             imgui()->slider_int( "Check size (px)", &p_check, 8, 26 );
 
             static i32 p_chev = 2;       /* stroke weight, px */
-            r = imgui()->canvas( H ); imgui()->render_chevron( sym_box( r, H ), IMGUI_DIR_RIGHT, (f32)p_chev, col );
+            r = imgui()->canvas( H ); imgui()->draw_chevron( sym_box( r, H ), IMGUI_DIR_RIGHT, (f32)p_chev, col );
             imgui()->slider_int( "Chevron weight", &p_chev, 1, 5 );
 
             static i32 p_pm = 2;         /* stroke weight, px */
-            r = imgui()->canvas( H ); imgui()->render_plus_minus( sym_box( r, H ), true, (f32)p_pm, col );
+            r = imgui()->canvas( H ); imgui()->draw_plus_minus( sym_box( r, H ), true, (f32)p_pm, col );
             imgui()->slider_int( "Plus weight", &p_pm, 1, 5 );
 
             static i32 p_sides = 6;
-            r = imgui()->canvas( H ); imgui()->render_ngon( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, (u32)p_sides, t*0.3f, true, 0.0f, acc );
+            r = imgui()->canvas( H ); imgui()->draw_ngon( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, (u32)p_sides, t*0.3f, true, 0.0f, acc );
             imgui()->slider_int( "Polygon sides", &p_sides, 3, 12 );
 
             static i32 p_ring = 2;       /* stroke weight, px */
-            r = imgui()->canvas( H ); imgui()->render_circle( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, false, (f32)p_ring, acc );
+            r = imgui()->canvas( H ); imgui()->draw_circle( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, false, (f32)p_ring, acc );
             imgui()->slider_int( "Ring weight", &p_ring, 1, 6 );
 
             static i32 p_arc = 240;      /* whole degrees -> imgui_radians at the call */
-            r = imgui()->canvas( H ); imgui()->render_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, 0.0f, imgui_radians( (f32)p_arc ), 3.0f, acc );
+            r = imgui()->canvas( H ); imgui()->draw_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, 0.0f, imgui_radians( (f32)p_arc ), 3.0f, acc );
             imgui()->slider_int( "Arc sweep (deg)", &p_arc, 20, 360 );
 
             static i32 p_pie = 150;      /* whole degrees, swept from -90 (12 o'clock) */
-            r = imgui()->canvas( H ); imgui()->render_pie( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, imgui_radians( -90.0f ), imgui_radians( -90.0f + (f32)p_pie ), acc );
+            r = imgui()->canvas( H ); imgui()->draw_pie( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, imgui_radians( -90.0f ), imgui_radians( -90.0f + (f32)p_pie ), acc );
             imgui()->slider_int( "Pie sweep (deg)", &p_pie, 20, 360 );
 
             static i32 p_round = 8;      /* corner radius, px */
-            r = imgui()->canvas( H ); imgui()->render_round_rect( sym_box( r, H ), (f32)p_round, (f32)p_round, 0.0f, 0.0f, true, 0.0f, 0xFF4A90D0u );
+            r = imgui()->canvas( H ); imgui()->draw_round_rect( sym_box( r, H ), (f32)p_round, (f32)p_round, 0.0f, 0.0f, true, 0.0f, 0xFF4A90D0u );
             imgui()->slider_int( "Tab corner (px)", &p_round, 0, 13 );
 
             static f32 p_bow = 0.4f;     /* continuous curve shape -- stays float */
-            r = imgui()->canvas( H ); imgui()->render_bezier_quad( r.x+4, r.y+H*0.5f, r.x+r.w*0.5f, r.y+H*0.5f - H*p_bow, r.x+r.w-4, r.y+H*0.5f, 2.0f, acc );
+            r = imgui()->canvas( H ); imgui()->draw_bezier_quad( r.x+4, r.y+H*0.5f, r.x+r.w*0.5f, r.y+H*0.5f - H*p_bow, r.x+r.w-4, r.y+H*0.5f, 2.0f, acc );
             imgui()->slider_float( "Curve bow", &p_bow, -0.45f, 0.45f );
 
             static i32 p_dash = 5;       /* dash length, px */
-            r = imgui()->canvas( H ); imgui()->render_dashed_line( r.x+4, r.y+H*0.5f, r.x+r.w-4, r.y+H*0.5f, (f32)p_dash, 3.0f, 2.0f, col );
+            r = imgui()->canvas( H ); imgui()->draw_dashed_line( r.x+4, r.y+H*0.5f, r.x+r.w-4, r.y+H*0.5f, (f32)p_dash, 3.0f, 2.0f, col );
             imgui()->slider_int( "Dash length (px)", &p_dash, 2, 12 );
 
             static i32 p_cell = 6;       /* cell size, px */
-            r = imgui()->canvas( H ); imgui()->render_checker( sym_box( r, H ), (f32)p_cell, 0xFF808080u, 0xFF404040u );
+            r = imgui()->canvas( H ); imgui()->draw_checker( sym_box( r, H ), (f32)p_cell, 0xFF808080u, 0xFF404040u );
             imgui()->slider_int( "Checker cell (px)", &p_cell, 3, 14 );
 
             static i32 p_hatch = 5;      /* line spacing, px */
-            r = imgui()->canvas( H ); imgui()->render_hatch( sym_box( r, H ), (f32)p_hatch, 1.0f, 0xFF909090u );
+            r = imgui()->canvas( H ); imgui()->draw_hatch( sym_box( r, H ), (f32)p_hatch, 1.0f, 0xFF909090u );
             imgui()->slider_int( "Hatch spacing (px)", &p_hatch, 3, 14 );
 
             static i32 p_spin = 3;       /* stroke weight, px */
-            r = imgui()->canvas( H ); imgui()->render_spinner( sym_box( r, H ), t, (f32)p_spin, acc );
+            r = imgui()->canvas( H ); imgui()->draw_spinner( sym_box( r, H ), t, (f32)p_spin, acc );
             imgui()->slider_int( "Spinner weight", &p_spin, 1, 6 );
 
             static f32 p_prog = 0.66f;   /* continuous 0..1 fraction -- stays float */
-            r = imgui()->canvas( H ); imgui()->render_progress_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, p_prog, 3.0f, acc );
+            r = imgui()->canvas( H ); imgui()->draw_progress_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, p_prog, 3.0f, acc );
             imgui()->slider_float( "Progress frac", &p_prog, 0.0f, 1.0f );
         }
         imgui()->row( 0 );
 
         imgui()->separator_text( "Text effects" );
         imgui_rect_t tr = imgui()->dummy( 0.0f, 20.0f );
-        imgui()->render_text_outline( tr.x + 4.0f, tr.y + 4.0f, "Outlined text", 0xFFFFFFFFu, 0xFF000000u );
+        imgui()->draw_text_outline( tr.x + 4.0f, tr.y + 4.0f, "Outlined text", 0xFFFFFFFFu, 0xFF000000u );
     }
     imgui()->window_end();
 }
