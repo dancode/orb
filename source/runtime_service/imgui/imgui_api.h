@@ -231,6 +231,11 @@ typedef struct imgui_api_s
     imgui_dock_id_t ( *dockspace_over_viewport )( imgui_vp_t vp, imgui_dockspace_flags_t flags );
     imgui_dock_id_t ( *dock_split )( imgui_dock_id_t node, imgui_dir_t dir, f32 ratio,
                                      imgui_dock_id_t* out_remain );
+    /* dock_split_root() -- split the WHOLE viewport tree, carving a new leaf along a full edge (`dir`).
+       Unlike dock_split (a single leaf), this wraps the root in a new split so the pane spans the entire
+       side -- the way to place a full-height column beside an existing top/bottom stack.  Returns the
+       new leaf id (dock windows into it), or IMGUI_DOCK_NONE.  Also the commit path of an edge drop. */
+    imgui_dock_id_t ( *dock_split_root )( imgui_vp_t vp, imgui_dir_t dir, f32 ratio );
     void ( *dock_window )( const char* title, imgui_dock_id_t node );
     void ( *dock_undock )( const char* title );
     bool ( *is_window_docked )( const char* title );

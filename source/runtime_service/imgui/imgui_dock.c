@@ -311,6 +311,7 @@ typedef enum
 static struct
 {
     bool            active;     /* a chip is hovered this frame (a valid drop)  */
+    bool            outer;      /* the chip is an edge chip -> split the ROOT   */
     imgui_id_t      win_id;     /* the dragged window                          */
     u32             viewport;   /* dockspace surface under the cursor          */
     imgui_dock_id_t target;     /* leaf node the cursor is over                */
@@ -370,6 +371,24 @@ dock_chip_rect( imgui_rect_t leaf, dock_zone_t z, f32 s, f32 g )
     }
 }
 
+/* An outer (edge) chip for one side, hugging the dockspace edge centered along it.  Distinct from the
+   per-leaf 5-way: an outer drop splits the whole tree so the new pane spans a FULL viewport edge --
+   the only way to carve a pane across an existing split (e.g. a left column beside a top/bottom stack).
+   No CENTER outer chip: tabbing into "the whole dockspace" has no single target leaf. */
+static imgui_rect_t
+dock_outer_chip_rect( imgui_rect_t area, dock_zone_t z, f32 s, f32 margin )
+{
+    imgui_vec2_t c = imgui_rect_center( area );
+    switch ( z )
+    {
+        case DOCK_ZONE_LEFT:   return ( imgui_rect_t ){ area.x + margin,                  c.y - s * 0.5f, s, s };
+        case DOCK_ZONE_RIGHT:  return ( imgui_rect_t ){ area.x + area.w - margin - s,     c.y - s * 0.5f, s, s };
+        case DOCK_ZONE_TOP:    return ( imgui_rect_t ){ c.x - s * 0.5f, area.y + margin,                  s, s };
+        case DOCK_ZONE_BOTTOM: return ( imgui_rect_t ){ c.x - s * 0.5f, area.y + area.h - margin - s,     s, s };
+        default:               return ( imgui_rect_t ){ 0, 0, 0, 0 };
+    }
+}
+
 /* The half (or whole) of a node rect the window would occupy if dropped on zone -- the preview fill. */
 static imgui_rect_t
 dock_zone_region( imgui_rect_t r, dock_zone_t z )
@@ -392,6 +411,7 @@ static void
 dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
 {
     s_dock_drag.active = false;
+    s_dock_drag.outer  = false;
     s_dock_drag.win_id = win_id;
     s_dock_drag.zone   = DOCK_ZONE_NONE;
 
@@ -409,14 +429,30 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
     f32 s = WIN_TITLE_H * 1.4f;
     f32 g = 6.0f;
 
-    dock_zone_t zone = DOCK_ZONE_NONE;
-    for ( i32 z = DOCK_ZONE_CENTER; z <= DOCK_ZONE_BOTTOM; ++z )
-        if ( rect_hit( dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g ) ) ) { zone = (dock_zone_t)z; break; }
+    /* Outer (edge) chips appear only once the root is split: when the tree is a single leaf the inner
+       5-way already spans the whole surface, so an edge chip would be a redundant duplicate.  Once
+       there's a split, edge chips are the ONLY way to carve a pane across it (a full-height left column
+       beside a top/bottom stack, etc.) -- they target the root, not the leaf under the cursor. */
+    bool        has_outer  = ( root->split != DOCK_SPLIT_NONE );
+    f32         margin     = s * 0.5f + 10.0f;
+    dock_zone_t outer_zone = DOCK_ZONE_NONE;
+    if ( has_outer )
+        for ( i32 z = DOCK_ZONE_LEFT; z <= DOCK_ZONE_BOTTOM; ++z )
+            if ( rect_hit( dock_outer_chip_rect( root->rect, (dock_zone_t)z, s, margin ) ) )
+                { outer_zone = (dock_zone_t)z; break; }
 
+    /* Edge chips win over the inner 5-way: when the cursor is on an edge chip, that is the intent. */
+    dock_zone_t zone = DOCK_ZONE_NONE;
+    if ( outer_zone == DOCK_ZONE_NONE )
+        for ( i32 z = DOCK_ZONE_CENTER; z <= DOCK_ZONE_BOTTOM; ++z )
+            if ( rect_hit( dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g ) ) ) { zone = (dock_zone_t)z; break; }
+
+    bool outer = ( outer_zone != DOCK_ZONE_NONE );
     s_dock_drag.viewport = vp;
-    s_dock_drag.target   = leaf->id;
-    s_dock_drag.zone     = zone;
-    s_dock_drag.active   = ( zone != DOCK_ZONE_NONE );
+    s_dock_drag.outer    = outer;
+    s_dock_drag.target   = outer ? root->id : leaf->id;
+    s_dock_drag.zone     = outer ? outer_zone : zone;
+    s_dock_drag.active   = ( s_dock_drag.zone != DOCK_ZONE_NONE );
 
     /* Overlay on the reserved high z-band, clipped to the surface. */
     const imgui_viewport_t* v = &g_ctx->viewports[ vp ];
@@ -426,9 +462,12 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
 
     draw_set_rounding( ROUND_WIDGET );   /* drop preview + chips read as control surfaces */
 
-    if ( zone != DOCK_ZONE_NONE )
+    /* Preview the band the window would take: a full viewport edge for an outer drop, else the half
+       (or whole, for center) of the leaf under the cursor. */
+    if ( s_dock_drag.zone != DOCK_ZONE_NONE )
     {
-        imgui_rect_t hr = dock_zone_region( leaf->rect, zone );
+        imgui_rect_t base = outer ? root->rect : leaf->rect;
+        imgui_rect_t hr   = dock_zone_region( base, (dock_zone_t)s_dock_drag.zone );
         draw_push_rect_filled ( hr.x, hr.y, hr.w, hr.h, 0, 0, 1, 1, 0, DOCK_OVERLAY_FILL );
         draw_push_rect_outline( hr.x, hr.y, hr.w, hr.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
     }
@@ -436,7 +475,7 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
     for ( i32 z = DOCK_ZONE_CENTER; z <= DOCK_ZONE_BOTTOM; ++z )
     {
         imgui_rect_t cr = dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g );
-        bool         on = ( (dock_zone_t)z == zone );
+        bool         on = ( !outer && (dock_zone_t)z == zone );
         draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_WIDGET_HOT : COL_WIDGET_BG );
         draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
         if ( z == DOCK_ZONE_CENTER )
@@ -452,6 +491,17 @@ dock_drag_detect( imgui_id_t win_id, imgui_window_t* win )
             draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
         }
     }
+
+    /* Edge chips: drawn against the dockspace edges, each pointing outward to read as "full side". */
+    if ( has_outer )
+        for ( i32 z = DOCK_ZONE_LEFT; z <= DOCK_ZONE_BOTTOM; ++z )
+        {
+            imgui_rect_t cr = dock_outer_chip_rect( root->rect, (dock_zone_t)z, s, margin );
+            bool         on = ( outer && (dock_zone_t)z == outer_zone );
+            draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_WIDGET_HOT : COL_WIDGET_BG );
+            draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+            draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
+        }
 
     draw_set_sort_key ( 0 );
     draw_set_viewport ( 0 );
@@ -470,20 +520,32 @@ dock_drag_commit( imgui_id_t win_id, const char* title )
 
     if ( s_dock_drag.zone != DOCK_ZONE_NONE && title )
     {
-        imgui_dock_node_t* leaf = dock_node_find( s_dock_drag.target );
-        if ( leaf && leaf->split == DOCK_SPLIT_NONE )
+        if ( s_dock_drag.outer )
         {
-            if ( s_dock_drag.zone == DOCK_ZONE_CENTER )
+            /* Edge drop: split the whole tree so the new pane spans a full viewport edge. */
+            imgui_dock_id_t side = imgui_dock_split_root( (imgui_vp_t)s_dock_drag.viewport,
+                                                          dock_zone_dir( (dock_zone_t)s_dock_drag.zone ),
+                                                          0.5f );
+            if ( side != IMGUI_DOCK_NONE )
+                imgui_dock_window( title, side );
+        }
+        else
+        {
+            imgui_dock_node_t* leaf = dock_node_find( s_dock_drag.target );
+            if ( leaf && leaf->split == DOCK_SPLIT_NONE )
             {
-                imgui_dock_window( title, leaf->id );
-            }
-            else
-            {
-                imgui_dock_id_t side = imgui_dock_split( leaf->id,
-                                                         dock_zone_dir( (dock_zone_t)s_dock_drag.zone ),
-                                                         0.5f, NULL );
-                if ( side != IMGUI_DOCK_NONE )
-                    imgui_dock_window( title, side );
+                if ( s_dock_drag.zone == DOCK_ZONE_CENTER )
+                {
+                    imgui_dock_window( title, leaf->id );
+                }
+                else
+                {
+                    imgui_dock_id_t side = imgui_dock_split( leaf->id,
+                                                             dock_zone_dir( (dock_zone_t)s_dock_drag.zone ),
+                                                             0.5f, NULL );
+                    if ( side != IMGUI_DOCK_NONE )
+                        imgui_dock_window( title, side );
+                }
             }
         }
     }
@@ -709,6 +771,53 @@ imgui_dock_split( imgui_dock_id_t node_id, imgui_dir_t dir, f32 ratio, imgui_doc
 
     if ( out_remain ) *out_remain = remain->id;
     return new_node->id;
+}
+
+/* Split the whole viewport tree, carving a new empty leaf along a FULL edge (`dir`) of the dockspace.
+   Unlike dock_split (which only divides a single leaf), this wraps the current root in a fresh internal
+   node so the new pane spans the entire side -- the way to put, say, a full-height left column beside an
+   existing top/bottom stack.  `ratio` is the new edge pane's fraction of the axis.  Returns the new
+   leaf's id, or IMGUI_DOCK_NONE if the viewport has no tree or the pool is full.  A bare empty root leaf
+   is just split in place (no wrapper needed). */
+imgui_dock_id_t
+imgui_dock_split_root( imgui_vp_t vp, imgui_dir_t dir, f32 ratio )
+{
+    if ( !s_dock_nodes ) return IMGUI_DOCK_NONE;
+    if ( vp < 0 || vp >= (imgui_vp_t)g_ctx->max_viewports )
+        return IMGUI_DOCK_NONE;
+
+    imgui_viewport_t*  v    = &g_ctx->viewports[ (u32)vp ];
+    imgui_dock_node_t* root = v->dock_root;
+    if ( !root )
+        return IMGUI_DOCK_NONE;
+
+    /* An empty single-leaf root: nothing to wrap, divide it directly. */
+    if ( root->split == DOCK_SPLIT_NONE && root->tab_count == 0 )
+        return imgui_dock_split( root->id, dir, ratio, NULL );
+
+    imgui_dock_node_t* leaf  = dock_node_alloc( (u32)vp );   /* the new edge pane          */
+    imgui_dock_node_t* inner = dock_node_alloc( (u32)vp );   /* the wrapper split          */
+    if ( !leaf || !inner )
+    {
+        if ( leaf )  dock_node_free( leaf );
+        if ( inner ) dock_node_free( inner );
+        return IMGUI_DOCK_NONE;
+    }
+
+    bool horizontal = ( dir == IMGUI_DIR_LEFT || dir == IMGUI_DIR_RIGHT );
+    bool new_first  = ( dir == IMGUI_DIR_LEFT || dir == IMGUI_DIR_UP );   /* new on child[0] side */
+    f32  r          = clampf( ratio, 0.05f, 0.95f );
+
+    inner->split    = horizontal ? DOCK_SPLIT_X : DOCK_SPLIT_Y;
+    inner->child[ 0 ] = new_first ? leaf : root;
+    inner->child[ 1 ] = new_first ? root : leaf;
+    inner->ratio      = new_first ? r : ( 1.0f - r );
+    inner->parent     = NULL;
+    leaf->parent      = inner;
+    root->parent      = inner;
+
+    v->dock_root = inner;   /* the wrapper is the new tree root */
+    return leaf->id;
 }
 
 /* Add a window (matched to begin_window by id_hash(title)) as a tab in a LEAF node, removing it from

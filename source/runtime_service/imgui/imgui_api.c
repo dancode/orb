@@ -47,6 +47,7 @@ const imgui_api_t g_imgui_api_struct =
     .is_window_open                     = imgui_is_window_open,
     .dockspace_over_viewport            = imgui_dockspace_over_viewport,
     .dock_split                         = imgui_dock_split,
+    .dock_split_root                    = imgui_dock_split_root,
     .dock_window                        = imgui_dock_window,
     .dock_undock                        = imgui_dock_undock,
     .is_window_docked                   = imgui_is_window_docked,

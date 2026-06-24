@@ -75,6 +75,7 @@ bool imgui_is_window_open( const char* title );
 /* docking */
 imgui_dock_id_t imgui_dockspace_over_viewport( imgui_vp_t vp, imgui_dockspace_flags_t flags );
 imgui_dock_id_t imgui_dock_split( imgui_dock_id_t node, imgui_dir_t dir, f32 ratio, imgui_dock_id_t* out_remain );
+imgui_dock_id_t imgui_dock_split_root( imgui_vp_t vp, imgui_dir_t dir, f32 ratio );
 void imgui_dock_window( const char* title, imgui_dock_id_t node );
 void imgui_dock_undock( const char* title );
 bool imgui_is_window_docked( const char* title );
