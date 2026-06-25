@@ -178,6 +178,7 @@ draw_push_polyline_cmd( const imgui_vec2_t* pts, u32 count, f32 thickness,
     c->polyline.align     = align;
     c->polyline.closed    = closed;
     c->polyline.abgr      = draw_apply_alpha( abgr );
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* points are L1-hot here */
 }
 
 /* Stroke an array of points as one connected polyline (closed joins the last point back to the
@@ -220,6 +221,7 @@ imgui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     c->line.x1        = x1; c->line.y1 = y1;
     c->line.thickness = thickness;
     c->line.abgr      = draw_apply_alpha( abgr );
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /* Dashed / dotted line: one CMD_DASHED_LINE, tessellated at flush into a single textured quad
@@ -252,6 +254,7 @@ imgui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 t
     c->dash.period    = period;
     c->dash.duty      = dash / period;
     c->dash.abgr      = draw_apply_alpha( abgr );
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /* Retained path: clear, append points, then stroke (which consumes the buffer). */

@@ -321,6 +321,14 @@ main( int argc, char** argv )
             printf( "[sb_vulkan] idle skip: %s\n", idle_skip ? "on (block on input)" : "off (spin)" );
         }
 
+        /* C toggles Level 2 retained skip: skips tessellation on unchanged frames (hash upfront). */
+        if ( app()->key_pressed( APP_KEY_C ) )
+        {
+            bool on = !imgui()->retained_skip();
+            imgui()->set_retained_skip( on );
+            printf( "[sb_vulkan] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
+        }
+
         /* ------------------------------------------------------------------------------ */
         /* Build the UI.  Every begin has a matching end -- the frame is a balanced scope:
 

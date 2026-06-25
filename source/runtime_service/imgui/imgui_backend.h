@@ -143,6 +143,11 @@ void                 imgui_render_stats_publish( void );
 void                imgui_render_set_mode( imgui_render_mode_t mode );
 imgui_render_mode_t imgui_render_get_mode( void );
 
+/* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match
+   the previous frame) skips tessellation and reuses s_tess.  Toggle for benchmarking or debugging. */
+void imgui_render_set_retained_skip( bool on );
+bool imgui_render_retained_skip( void );
+
 bool viewport_create ( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
 void viewport_destroy( imgui_viewport_t* vp );                                   // free its vb/ib
 

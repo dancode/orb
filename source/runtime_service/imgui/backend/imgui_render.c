@@ -134,9 +134,14 @@ static bool s_render_debug_draw_calls = false;
 static bool s_render_debug_geometry = false;
 
 /* Manual debug toggle: flip to true to print the per-frame retained-cache diff -- how many windows
-   were unchanged since last frame (their command bytes hashed identical) vs the total.  This is the
-   detection half of the per-window tessellation cache (Level 2); geometry reuse is not wired yet. */
+   were unchanged since last frame (their command bytes hashed identical) vs the total. */
 static bool s_render_debug_cache = true;
+
+/* Retained-skip optimization: when true and the diff says nothing changed, tessellation is skipped
+   and s_tess retains the previous frame's geometry for the flush.  Toggled via
+   imgui_render_set_retained_skip / imgui()->set_retained_skip (key C in sb_vulkan).
+   Default on; disable to benchmark or confirm correctness of the hash-upfront path. */
+static bool s_retained_skip = true;
 
 /*----------------------------------------------------------------------------------------------
     render_ortho -- column-major pixel-space orthographic matrix.
@@ -444,6 +449,24 @@ imgui_render_get_mode( void )
 }
 
 /*----------------------------------------------------------------------------------------------
+    imgui_render_set_retained_skip / imgui_render_retained_skip -- toggle the tess-skip
+    optimization.  When on (default) and the per-window hash diff reports no change, the
+    tessellation pass is skipped and the previous frame's geometry is reused.
+----------------------------------------------------------------------------------------------*/
+
+void
+imgui_render_set_retained_skip( bool on )
+{
+    s_retained_skip = on;
+}
+
+bool
+imgui_render_retained_skip( void )
+{
+    return s_retained_skip;
+}
+
+/*----------------------------------------------------------------------------------------------
     batch_debug_color -- a distinct, saturated, fully-opaque color per draw-call index for the
     BATCH view.  Packed RGBA8 (R low byte), matching the shader's dbg_tint decode and IMGUI_COLOR
     byte order.  A 12-entry table cycles; consecutive entries are spread around the hue wheel so
@@ -669,67 +692,24 @@ static struct
     bool any_changed;   /* a window appeared / vanished / changed -> rebuild needed     */
 } s_cache;
 
-static inline u32
-fnv1a( u32 h, const void* p, u32 n )
-{
-    const u8* b = (const u8*)p;
-    for ( u32 i = 0; i < n; ++i ) h = ( h ^ b[ i ] ) * 16777619u;
-    return h;
-}
+/*----------------------------------------------------------------------------------------------
+    render_build_cache_diff -- fold pre-baked per-command hashes into per-window hashes and
+    diff against the previous frame.
 
-/* Hash one command: the header (type, clip, z, vp) plus exactly the active union member, plus the
-   pooled bytes any offset-carrying member references.  See the section note for why both rules. */
-static u32
-render_cmd_hash( const imgui_cmd_t* c )
-{
-    u32 h = fnv1a( 2166136261u, c, (u32)offsetof( imgui_cmd_t, rect ) );   /* header up to the union */
-    switch ( c->type )
-    {
-        case IMGUI_CMD_RECT_FILLED:   h = fnv1a( h, &c->rect,         sizeof c->rect );         break;
-        case IMGUI_CMD_RECT_OUTLINE:  h = fnv1a( h, &c->rect_outline, sizeof c->rect_outline ); break;
-        case IMGUI_CMD_TRIANGLE:      h = fnv1a( h, &c->tri,          sizeof c->tri );          break;
-        case IMGUI_CMD_TEXT:
-            /* Hash the glyph CONTENT + screen position/style, but NOT text.off: the offset is just
-               where this run happens to land in the shared text pool, and it shifts whenever an
-               earlier-emitted window adds or removes text.  Hashing it would falsely dirty an
-               untouched window every time another window's text volume changes (the bug where typing
-               in one input field re-flags a second, unrelated window). */
-            h = fnv1a( h, &c->text.x,       sizeof c->text.x );
-            h = fnv1a( h, &c->text.y,       sizeof c->text.y );
-            h = fnv1a( h, &c->text.len,     sizeof c->text.len );
-            h = fnv1a( h, &c->text.clip_x0, sizeof c->text.clip_x0 );
-            h = fnv1a( h, &c->text.clip_x1, sizeof c->text.clip_x1 );
-            h = fnv1a( h, &c->text.abgr,    sizeof c->text.abgr );
-            h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* fold the pooled glyphs */
-            break;
-        case IMGUI_CMD_CIRCLE_FILLED: h = fnv1a( h, &c->circle, sizeof c->circle ); break;
-        case IMGUI_CMD_LINE:          h = fnv1a( h, &c->line,   sizeof c->line );   break;
-        case IMGUI_CMD_POLYLINE:
-            /* Same rule: skip pt_offset (a pool position that shifts with other windows' point
-               volume); fold the point CONTENT instead.  Hashing fields individually also avoids the
-               struct's trailing padding (after `closed`), which the field writes never initialize. */
-            h = fnv1a( h, &c->polyline.pt_count,  sizeof c->polyline.pt_count );
-            h = fnv1a( h, &c->polyline.thickness, sizeof c->polyline.thickness );
-            h = fnv1a( h, &c->polyline.align,     sizeof c->polyline.align );
-            h = fnv1a( h, &c->polyline.closed,    sizeof c->polyline.closed );
-            h = fnv1a( h, &c->polyline.abgr,      sizeof c->polyline.abgr );
-            h = fnv1a( h, &s_draw.points[ c->polyline.pt_offset ],
-                       c->polyline.pt_count * (u32)sizeof( imgui_vec2_t ) );   /* fold the path points */
-            break;
-        case IMGUI_CMD_DASHED_LINE:   h = fnv1a( h, &c->dash,     sizeof c->dash );     break;
-        case IMGUI_CMD_RECT_GRADIENT: h = fnv1a( h, &c->gradient, sizeof c->gradient ); break;
-    }
-    return h;
-}
+    Per-command hashes are computed at emit time (draw_hash_cmd in imgui_draw.c) while the
+    command data is still L1-hot.  This function just folds s_draw.cmd_hashes[lo..hi] per
+    segment -- no switch, no pool pointer chasing.  It runs BEFORE tessellation so a fully
+    unchanged frame can skip tess entirely (the s_retained_skip path).
+----------------------------------------------------------------------------------------------*/
 
 static void
-render_build_cache_diff( const imgui_cmd_t* cmds )
+render_build_cache_diff( void )
 {
     const imgui_cmd_seg_t* segs = s_draw.segs;
     u32                    nseg = s_draw.seg_count;
 
-    /* Roll each segment's commands up into its window's hash (segments of one window are visited in
-       increasing lo, i.e. emit order, so the fold is order-sensitive and stable). */
+    /* Roll each segment's pre-baked command hashes into its window's accumulated hash.
+       Segments of one window are visited in increasing lo (emit order) so the fold is stable. */
     s_cache.cur_n = 0;
     for ( u32 si = 0; si < nseg; ++si )
     {
@@ -751,10 +731,7 @@ render_build_cache_diff( const imgui_cmd_t* cmds )
         h = fnv1a( h, &segs[ si ].z,  sizeof segs[ si ].z );    /* a raise (z change) invalidates  */
         h = fnv1a( h, &segs[ si ].vp, sizeof segs[ si ].vp );   /* a surface move invalidates too  */
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-        {
-            u32 ch = render_cmd_hash( &cmds[ i ] );
-            h = fnv1a( h, &ch, sizeof ch );
-        }
+            h = fnv1a( h, &s_draw.cmd_hashes[ i ], sizeof s_draw.cmd_hashes[ i ] );   /* pre-baked */
         s_cache.cur[ bi ].hash = h;
     }
 
@@ -800,16 +777,20 @@ render_build_frame( void )
         return;
     s_frame_built = true;
 
-    /* Tessellate semantic commands into vertex/index geometry (s_tess).  Dispatch grouped by z then
-       clip so equal-clip shapes batch together instead of re-splitting on every child scissor (and a
-       mid-window popup no longer fragments its parent); fully-clipped commands are dropped.
-       render_build_order returns a permutation + cull count, not a copy of the geometry. */
-    tess_reset();
-    u32 order_count = render_build_order( s_draw.cmds, s_draw.cmd_count );
-    tess_dispatch( s_draw.cmds, s_order, order_count );
+    /* Diff runs first: hashes were pre-baked at emit (draw_hash_cmd), so this is a cheap fold
+       over s_draw.cmd_hashes with no pool pointer chasing.  Running before tess lets us gate
+       tessellation on any_changed. */
+    render_build_cache_diff();
 
-    /* Per-window change detection for the retained cache (detection only; reuse not wired yet). */
-    render_build_cache_diff( s_draw.cmds );
+    /* Retained skip: if the optimization is on and no window changed, skip tessellation and reuse
+       s_tess from the previous frame.  The flush re-uploads that geometry unchanged, so the visual
+       result is identical.  Geometry reuse (skipping the upload too) is a future step. */
+    if ( !( s_retained_skip && !s_cache.any_changed ) )
+    {
+        tess_reset();
+        u32 order_count = render_build_order( s_draw.cmds, s_draw.cmd_count );
+        tess_dispatch( s_draw.cmds, s_order, order_count );
+    }
 
     /* Track peak tessellated geometry.  Warn once on the first overflow. */
     if ( s_tess.vert_count > s_tess.vert_hwm ) s_tess.vert_hwm = s_tess.vert_count;

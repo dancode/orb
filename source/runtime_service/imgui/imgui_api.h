@@ -907,6 +907,11 @@ typedef struct imgui_api_s
     void                ( *debug_set_render_mode )( imgui_render_mode_t mode );
     imgui_render_mode_t ( *debug_get_render_mode )( void );
 
+    /* Retained-skip: when on (default), an unchanged frame skips tessellation.  Toggle to benchmark
+       or confirm that the hash-upfront path produces identical output to the reference. */
+    void ( *set_retained_skip )( bool on );
+    bool ( *retained_skip     )( void );
+
     /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that
        would otherwise re-query app() and so bypass imgui's frame timing and its input capture.
 

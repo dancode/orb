@@ -42,8 +42,9 @@ typedef struct { imgui_id_t win; u32 z, vp, lo, hi; } imgui_cmd_seg_t;
 
 static struct
 {
-    imgui_cmd_t  cmds  [ IMGUI_MAX_CMDS   ];   /* semantic command list; one entry per shape      */
-    imgui_vec2_t points[ IMGUI_MAX_PATH_PTS ];  /* point pool for CMD_POLYLINE data; indexed by pt_offset */
+    imgui_cmd_t  cmds      [ IMGUI_MAX_CMDS   ];   /* semantic command list; one entry per shape      */
+    u32          cmd_hashes[ IMGUI_MAX_CMDS   ];   /* per-command hash baked at emit (for cache diff) */
+    imgui_vec2_t points    [ IMGUI_MAX_PATH_PTS ];  /* point pool for CMD_POLYLINE data; indexed by pt_offset */
 
     imgui_cmd_seg_t segs[ IMGUI_MAX_SEGS ];   /* per-(z,vp) command spans, in emit order */
     u32             seg_count;                /* spans open this frame (>= 1; segs[0] is z=0,vp=0) */
@@ -367,6 +368,62 @@ draw_clamp_rounding( f32 w, f32 h )
     time).  Pixel-grid snapping and GPU batching happen at flush time in the tessellation pass.
 ----------------------------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------------------------
+    FNV-1a hash helper and per-command hash used by the retained cache.
+
+    draw_hash_cmd hashes a fully-filled imgui_cmd_t at emit time while the data is still
+    L1-hot.  The hash is stored in s_draw.cmd_hashes and folded per window by
+    render_build_cache_diff (imgui_render.c) to detect frame-to-frame changes without
+    re-scanning the command buffer after tessellation.
+
+    TEXT and POLYLINE skip the pool-offset fields (text.off / polyline.pt_offset) because
+    those values shift whenever an earlier-emitted window changes its pool volume, which would
+    falsely dirty an unrelated window.  Their content bytes are folded directly instead.
+----------------------------------------------------------------------------------------------*/
+
+static inline u32
+fnv1a( u32 h, const void* p, u32 n )
+{
+    const u8* b = (const u8*)p;
+    for ( u32 i = 0; i < n; ++i ) h = ( h ^ b[ i ] ) * 16777619u;
+    return h;
+}
+
+static u32
+draw_hash_cmd( const imgui_cmd_t* c )
+{
+    u32 h = fnv1a( 2166136261u, c, (u32)offsetof( imgui_cmd_t, rect ) );   /* header: type,clip,z,vp */
+    switch ( c->type )
+    {
+        case IMGUI_CMD_RECT_FILLED:   h = fnv1a( h, &c->rect,         sizeof c->rect );         break;
+        case IMGUI_CMD_RECT_OUTLINE:  h = fnv1a( h, &c->rect_outline, sizeof c->rect_outline ); break;
+        case IMGUI_CMD_TRIANGLE:      h = fnv1a( h, &c->tri,          sizeof c->tri );          break;
+        case IMGUI_CMD_TEXT:
+            h = fnv1a( h, &c->text.x,       sizeof c->text.x );
+            h = fnv1a( h, &c->text.y,       sizeof c->text.y );
+            h = fnv1a( h, &c->text.len,     sizeof c->text.len );
+            h = fnv1a( h, &c->text.clip_x0, sizeof c->text.clip_x0 );
+            h = fnv1a( h, &c->text.clip_x1, sizeof c->text.clip_x1 );
+            h = fnv1a( h, &c->text.abgr,    sizeof c->text.abgr );
+            h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* content while L1-hot */
+            break;
+        case IMGUI_CMD_CIRCLE_FILLED: h = fnv1a( h, &c->circle, sizeof c->circle ); break;
+        case IMGUI_CMD_LINE:          h = fnv1a( h, &c->line,   sizeof c->line );   break;
+        case IMGUI_CMD_POLYLINE:
+            h = fnv1a( h, &c->polyline.pt_count,  sizeof c->polyline.pt_count );
+            h = fnv1a( h, &c->polyline.thickness, sizeof c->polyline.thickness );
+            h = fnv1a( h, &c->polyline.align,     sizeof c->polyline.align );
+            h = fnv1a( h, &c->polyline.closed,    sizeof c->polyline.closed );
+            h = fnv1a( h, &c->polyline.abgr,      sizeof c->polyline.abgr );
+            h = fnv1a( h, &s_draw.points[ c->polyline.pt_offset ],
+                       c->polyline.pt_count * (u32)sizeof( imgui_vec2_t ) );   /* content while L1-hot */
+            break;
+        case IMGUI_CMD_DASHED_LINE:   h = fnv1a( h, &c->dash,     sizeof c->dash );     break;
+        case IMGUI_CMD_RECT_GRADIENT: h = fnv1a( h, &c->gradient, sizeof c->gradient ); break;
+    }
+    return h;
+}
+
 void
 draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
                        f32 u0, f32 v0, f32 u1, f32 v1,
@@ -400,6 +457,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     c->rect.abgr    = col;
     /* Round solid-color fills only; a textured quad (glyph / image) keeps square UVs. */
     c->rect.rounding = ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -429,6 +487,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     c->gradient.col_a       = draw_apply_alpha( col_a );
     c->gradient.col_b       = draw_apply_alpha( col_b );
     c->gradient.horizontal  = horizontal;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -459,6 +518,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     c->rect_outline.t    = t;
     c->rect_outline.abgr = col;
     c->rect_outline.rounding = draw_clamp_rounding( w, h );
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -487,6 +547,7 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
     c->tri.bx      = bx; c->tri.by = by;
     c->tri.cx      = cx; c->tri.cy = cy;
     c->tri.abgr    = draw_apply_alpha( abgr );
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -511,6 +572,7 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
     c->circle.r    = r;
     c->circle.segs = segments;
     c->circle.abgr = draw_apply_alpha( abgr );
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -564,6 +626,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     c->text.clip_x0 = clip_x0;
     c->text.clip_x1 = clip_x1;
     c->text.abgr    = draw_apply_alpha( abgr );
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* text bytes are L1-hot here */
 }
 
 /* Text that inherits the ambient text-clip window: the common path for widget content.  Normally
