@@ -138,13 +138,13 @@ typedef struct
     bool            valid;                              // geometry tessellated at least once
 } win_geo_slot_t;
 
-static u32             s_slot_count, s_slot_prev_count; // 
-static win_geo_slot_t  s_slots      [ RENDER_MAX_WIN ]; // current frame's per-window slots 
-static win_geo_slot_t  s_slots_prev [ RENDER_MAX_WIN ]; // previous frame's slots (for reuse) 
-static win_geo_slot_t* s_dispatch   [ RENDER_MAX_WIN ]; // z-sorted pointers into s_slots    
+static u32             s_slot_count, s_slot_prev_count;
+static win_geo_slot_t  s_slots_a  [ RENDER_MAX_WIN ];          /* ping-pong backing store A    */
+static win_geo_slot_t  s_slots_b  [ RENDER_MAX_WIN ];          /* ping-pong backing store B    */
+static win_geo_slot_t* s_slots      = s_slots_a;               /* current frame's slots        */
+static win_geo_slot_t* s_slots_prev = s_slots_b;               /* previous frame's slots       */
+static win_geo_slot_t* s_dispatch [ RENDER_MAX_WIN ];          /* z-sorted pointers into s_slots */
 static u32             s_dispatch_count;
-
-// TODO: make s_dispatch indexes rather than pointers?
 
 /* Previous-frame geometry buffers.  Copied from s_tess at end of render_build_frame and used by
    the reuse path to memcpy unchanged window geometry into the current frame's s_tess without
@@ -798,8 +798,10 @@ render_build_frame( void )
        tess so per-window z/vp/changed are ready for the slot loop without a second segment scan. */
     render_build_cache_diff();
 
-    /* Swap slot tables: prev <- cur, then reset current for this frame's build. */
-    memcpy( s_slots_prev, s_slots, s_slot_count * sizeof( win_geo_slot_t ) );
+    /* Swap slot tables: rotate pointers, reset current for this frame's build. */
+    win_geo_slot_t* tmp = s_slots_prev;
+    s_slots_prev      = s_slots;
+    s_slots           = tmp;
     s_slot_prev_count = s_slot_count;
     s_slot_count      = 0;
     s_dispatch_count  = 0;
@@ -811,9 +813,10 @@ render_build_frame( void )
 
     /* Per-window loop: build one geometry slot per unique window in s_cache.cur order.
        z and vp were pre-computed by render_build_cache_diff, so no second segment scan is needed.
-       Unchanged windows (s_retained_skip on + hash matched + prev slot valid) copy geometry from
-       s_geo_prev_{verts,indices} and replay their cached GPU draw commands.  Everything else runs
-       render_tess_window.  The slot table ends up in emit order; a z-sort on s_dispatch[] puts
+       Unchanged windows (s_retained_skip on + hash matched + prev slot valid) memmove geometry
+       within s_tess from prev->vert_base to the current vert_count and replay cached GPU draw
+       commands.  Everything else runs render_tess_window.  The slot table ends up in emit order;
+       a z-sort on s_dispatch[] puts
        them back-to-front for the flush. */
     u32 vert_retained = 0, tri_retained = 0, win_retained = 0;
 
