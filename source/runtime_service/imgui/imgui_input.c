@@ -255,7 +255,7 @@ input_update( i32 win_w, i32 win_h, f32 dt )
 
     /* Key state snapshot.  keys_pressed is the initial press; keys_pressed_repeat also catches OS
        auto-repeat ticks (held backspace / arrows in a text field), the caller picking which it reads.
-       Fold any press or release edge into the key_edge flag while we scan -- free since we scan anyway. */
+       Fold any press, release, or repeat tick into key_edge while we scan -- free since we scan anyway. */
     bool key_edge = false;
     for ( i32 k = 0; k < APP_KEY_COUNT; ++k )
     {
@@ -263,7 +263,7 @@ input_update( i32 win_w, i32 win_h, f32 dt )
         s_io.keys_pressed        [ k ] = app()->key_pressed        ( (app_key_t)k );
         s_io.keys_pressed_repeat [ k ] = app()->key_pressed_repeat ( (app_key_t)k );
         s_io.keys_released       [ k ] = app()->key_released       ( (app_key_t)k );
-        if ( s_io.keys_pressed[ k ] || s_io.keys_released[ k ] ) key_edge = true;
+        if ( s_io.keys_pressed[ k ] || s_io.keys_released[ k ] || s_io.keys_pressed_repeat[ k ] ) key_edge = true;
     }
 
     /* Text + scroll + paste arrive via the host-fed pending state (the host owns the event
@@ -278,8 +278,8 @@ input_update( i32 win_w, i32 win_h, f32 dt )
     else
         s_io.paste[ 0 ] = '\0';
 
-    /* Frame is dirty when anything changed vs last frame: position, button/key edges,
-       wheel, typed text, or clipboard paste.  Used by frame_begin to gate widget emit. */
+    /* Frame is dirty when anything changed vs last frame: position, button/key edges (including
+       repeat ticks), wheel, typed text, or clipboard paste.  Used by frame_begin to gate emit. */
     s_io_dirty = mouse_moved || mouse_edge || key_edge
               || ( s_pending_wheel    != 0.0f )
               || ( s_pending_text_len >  0    )

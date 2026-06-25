@@ -259,9 +259,9 @@ main( int argc, char** argv )
         if ( b_demo_window )
         {
             const int demo_count = sb_imgui_demo_count();
-            for ( int i = 0; i < demo_count && i < 9; ++i )
-                if ( app()->key_pressed( (app_key_t)( APP_KEY_1 + i ) ) )
-                    active_demo = i;
+            // for ( int i = 0; i < demo_count && i < 9; ++i )
+            //     if ( app()->key_pressed( (app_key_t)( APP_KEY_1 + i ) ) )
+            //         active_demo = i;
 
             if ( app()->key_pressed( APP_KEY_NP_ADD ) )
                 active_demo = ( active_demo + 1 ) % demo_count;
@@ -332,12 +332,13 @@ main( int argc, char** argv )
         /* ------------------------------------------------------------------------------ */
         /* Build the UI.  Every begin has a matching end -- the frame is a balanced scope:
 
-            frame_begin(dt)              -- global once-per-frame; binds no context.
+            frame_begin(dt)              -- global once-per-frame; poll input, compute dirty.
+            if ( frame_dirty() )         -- skip emit entirely on provably clean frames.
               ctx_begin(IMGUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
               ctx_end()                    -- close it.
               ctx_begin(ctx2)              -- the secondary context (multi-ctx demo); emit its windows.
               ctx_end()
-            frame_end()                  -- seal the build.
+            frame_end()                  -- seal the build (no-op on clean frames).
            Emit windows IMMEDIATELY after each ctx_begin -- it leaves that context bound, so windows
            land in the correct pool. */
 
@@ -350,7 +351,8 @@ main( int argc, char** argv )
         bool any_redraw = false;
         imgui()->frame_begin( dt );
 
-        /* 'A'/'S' switch which context receives input (multi-ctx demo; reads s_io after frame_begin). */
+        /* 'A'/'S' switch which context receives input (multi-ctx demo; reads s_io after frame_begin).
+           Runs unconditionally -- key-press events are consumed regardless of dirty state. */
         if ( b_multi )
         {
             if ( imgui()->is_key_pressed( APP_KEY_A ) )
@@ -365,72 +367,80 @@ main( int argc, char** argv )
             }
         }
 
-        /* --- Default context: the main build + perf overlay live in one ctx scope. --- */
-        imgui()->ctx_begin( IMGUI_CTX_DEFAULT );
-
-        /* Borderless main window: this full-surface native shell IS the OS window's frame. */
-        if ( b_borderless )
+        /* Skip widget emit entirely when input, animation, and render state are all unchanged.
+           render() below will reuse the preserved tessellation from the previous clean frame. */
+        if ( imgui()->frame_dirty() )
         {
-            imgui()->window_begin( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
-            imgui()->window_end();
-        }
+            printf( "frame dirty: dt %.3f, wants_redraw %d \n", dt, imgui()->wants_redraw() );
 
-        /* The active demo runs in the single-context path; the multi-ctx demo shows ctx2 instead. */
-        if ( b_demo_window && !b_multi )
-        {
-            sb_imgui_demos[ active_demo ].fn();
-            active_demo = sb_imgui_demo_picker( active_demo );
-        }
+            /* --- Default context: the main build + perf overlay live in one ctx scope. --- */
+            imgui()->ctx_begin( IMGUI_CTX_DEFAULT );
 
-        bool second_surface = false;
-        if ( second_surface )
-        {
-            imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
-            imgui()->window_set_next_size( 360, 240, IMGUI_COND_ONCE );
-            if ( imgui()->window_begin( "Second Surface", IMGUI_WIN_NONE ) )
+            /* Borderless main window: this full-surface native shell IS the OS window's frame. */
+            if ( b_borderless )
             {
-                imgui()->stack();
-                imgui()->text( "Detach me: click the title-bar button" );
-                imgui()->text( "or drag my title past the window edge." );
-                imgui()->separator();
-                imgui()->text( "Once detached I am a native borderless" );
-                imgui()->text( "window -- drag my title bar to move the" );
-                imgui()->text( "OS window, drag my borders to resize." );
+                imgui()->window_begin( "ORB -- sb_vulkan", IMGUI_WIN_NATIVE | IMGUI_WIN_NOSCROLL );
+                imgui()->window_end();
             }
-            imgui()->window_end();
-        }
 
-        /* Perf overlay -- last so it draws on top, inside the default context's scope and the build
-           so its own text is counted in the emit + render cost it reports.  Emit opens at frame_begin
-           and closes at frame_end; render is summed across render() below. */
-        imgui()->perf_overlay( sys_tick_seconds, perf_mode );
-
-        any_redraw |= imgui()->wants_redraw();   /* default context's animation state, still bound */
-        imgui()->ctx_end();
-
-        /* --- Secondary context (multi-ctx demo): its own scope. --- */
-        if ( b_multi )
-        {
-            imgui()->ctx_begin( ctx2 );
+            /* The active demo runs in the single-context path; the multi-ctx demo shows ctx2 instead. */
+            if ( b_demo_window && !b_multi )
             {
-                static int ctx2_click_count = 0;
-                imgui()->window_set_next_pos ( 700, 60, IMGUI_COND_ONCE );
-                imgui()->window_set_next_size( 280, 200, IMGUI_COND_ONCE );
-                if ( imgui()->window_begin( "Context 2 Window", IMGUI_WIN_NONE ) )
+                sb_imgui_demos[ active_demo ].fn();
+                active_demo = sb_imgui_demo_picker( active_demo );
+            }
+
+            bool second_surface = false;
+            if ( second_surface )
+            {
+                imgui()->window_set_next_pos ( 60, 60, IMGUI_COND_ONCE );
+                imgui()->window_set_next_size( 360, 240, IMGUI_COND_ONCE );
+                if ( imgui()->window_begin( "Second Surface", IMGUI_WIN_NONE ) )
                 {
                     imgui()->stack();
-                    imgui()->text( "Secondary context (ctx2)." );
-                    imgui()->text( "Press A: ctx1 listens (default)." );
-                    imgui()->text( "Press S: ctx2 listens." );
+                    imgui()->text( "Detach me: click the title-bar button" );
+                    imgui()->text( "or drag my title past the window edge." );
                     imgui()->separator();
-                    if ( imgui()->button( "Click me (ctx2)" ) ) ++ctx2_click_count;
-                    imgui()->textf( "Clicks: %d", ctx2_click_count );
+                    imgui()->text( "Once detached I am a native borderless" );
+                    imgui()->text( "window -- drag my title bar to move the" );
+                    imgui()->text( "OS window, drag my borders to resize." );
                 }
                 imgui()->window_end();
             }
-            any_redraw |= imgui()->wants_redraw();   /* ctx2 animation state, still bound */
+
+            /* Perf overlay -- last so it draws on top, inside the default context's scope and the build
+               so its own text is counted in the emit + render cost it reports.  Emit opens at frame_begin
+               and closes at frame_end; render is summed across render() below. */
+            imgui()->perf_overlay( sys_tick_seconds, perf_mode );
+
+            any_redraw |= imgui()->wants_redraw();   /* default context's animation state, still bound */
             imgui()->ctx_end();
-        }
+
+            /* --- Secondary context (multi-ctx demo): its own scope. --- */
+            if ( b_multi )
+            {
+                imgui()->ctx_begin( ctx2 );
+                {
+                    static int ctx2_click_count = 0;
+                    imgui()->window_set_next_pos ( 700, 60, IMGUI_COND_ONCE );
+                    imgui()->window_set_next_size( 280, 200, IMGUI_COND_ONCE );
+                    if ( imgui()->window_begin( "Context 2 Window", IMGUI_WIN_NONE ) )
+                    {
+                        imgui()->stack();
+                        imgui()->text( "Secondary context (ctx2)." );
+                        imgui()->text( "Press A: ctx1 listens (default)." );
+                        imgui()->text( "Press S: ctx2 listens." );
+                        imgui()->separator();
+                        if ( imgui()->button( "Click me (ctx2)" ) ) ++ctx2_click_count;
+                        imgui()->textf( "Clicks: %d", ctx2_click_count );
+                    }
+                    imgui()->window_end();
+                }
+                any_redraw |= imgui()->wants_redraw();   /* ctx2 animation state, still bound */
+                imgui()->ctx_end();
+            }
+
+        } /* if ( frame_dirty() ) */
 
         imgui()->frame_end();
 

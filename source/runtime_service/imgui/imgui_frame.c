@@ -94,14 +94,14 @@ imgui_print_mem_stats( void )
 
 static struct
 {
-    imgui_clock_fn clock;          /* host monotonic seconds source (NULL = timing off) */
-    f64  t_emit_start;             /* clock() captured at frame_begin (0 = not armed)    */
-    f64  emit_ms;                  /* this frame: frame_begin -> first render() (ms)     */
-    f64  rend_ms;                  /* this frame: accumulated render() wall time (ms)    */
-    bool emit_captured;            /* emit_ms latched on the first render() this frame   */
-    f32  fps;                      /* smoothed readouts shown by the overlay             */
-    f32  s_emit_ms;
-    f32  s_rend_ms;
+    imgui_clock_fn  clock;              /* host monotonic seconds source (NULL = timing off) */
+    f64             t_emit_start;       /* clock() captured at frame_begin (0 = not armed)    */
+    f64             emit_ms;            /* this frame: frame_begin -> first render() (ms)     */
+    f64             rend_ms;            /* this frame: accumulated render() wall time (ms)    */
+    bool            emit_captured;      /* emit_ms latched on the first render() this frame   */
+    f32             fps;                /* smoothed readouts shown by the overlay             */
+    f32             s_emit_ms;
+    f32             s_rend_ms;
 } s_perf;
 
 /* Publish last frame's raw emit/render times into the smoothed readouts and open a fresh emit clock.
