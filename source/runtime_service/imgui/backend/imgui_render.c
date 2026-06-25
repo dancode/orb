@@ -133,6 +133,11 @@ static bool s_render_debug_draw_calls = false;
    s_draw regardless of this flag and reported at shutdown. */
 static bool s_render_debug_geometry = false;
 
+/* Manual debug toggle: flip to true to print the per-frame retained-cache diff -- how many windows
+   were unchanged since last frame (their command bytes hashed identical) vs the total.  This is the
+   detection half of the per-window tessellation cache (Level 2); geometry reuse is not wired yet. */
+static bool s_render_debug_cache = true;
+
 /*----------------------------------------------------------------------------------------------
     render_ortho -- column-major pixel-space orthographic matrix.
 
@@ -637,6 +642,148 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Retained-cache change detection (Level 2, detection half).
+
+    Each frame we hash every window's emitted commands -- keyed by the stable window id the emit path
+    stamps onto its segments -- and compare against last frame's hashes (double-buffered).  A window
+    whose hash matches is unchanged: next, its tessellated geometry can be reused instead of rebuilt
+    (not wired yet).  any_changed is the coarse signal (a window appeared, vanished, or changed).
+
+    The command hash is deliberately DEEP for the two command types that point into side pools: TEXT
+    (text_pool by offset) and POLYLINE (points by offset).  A same-length, same-offset label edit
+    ("3" -> "4") leaves the 72-byte command struct byte-identical, so without folding the pooled bytes
+    the change would be missed.  Conversely only the ACTIVE union member is hashed: cmds[] is reused
+    across frames, so the stale tail of a slot's previous (larger) command must not perturb the hash.
+----------------------------------------------------------------------------------------------*/
+
+#define RENDER_MAX_WIN 256   /* distinct windows tracked by the cache diff per frame */
+
+typedef struct { imgui_id_t win; u32 hash; } render_win_hash_t;
+
+static struct
+{
+    render_win_hash_t cur [ RENDER_MAX_WIN ];   /* this frame's per-window hashes      */
+    render_win_hash_t prev[ RENDER_MAX_WIN ];   /* last frame's, for the diff          */
+    u32  cur_n, prev_n;
+    u32  unchanged;     /* windows whose hash matched last frame (reusable)            */
+    bool any_changed;   /* a window appeared / vanished / changed -> rebuild needed     */
+} s_cache;
+
+static inline u32
+fnv1a( u32 h, const void* p, u32 n )
+{
+    const u8* b = (const u8*)p;
+    for ( u32 i = 0; i < n; ++i ) h = ( h ^ b[ i ] ) * 16777619u;
+    return h;
+}
+
+/* Hash one command: the header (type, clip, z, vp) plus exactly the active union member, plus the
+   pooled bytes any offset-carrying member references.  See the section note for why both rules. */
+static u32
+render_cmd_hash( const imgui_cmd_t* c )
+{
+    u32 h = fnv1a( 2166136261u, c, (u32)offsetof( imgui_cmd_t, rect ) );   /* header up to the union */
+    switch ( c->type )
+    {
+        case IMGUI_CMD_RECT_FILLED:   h = fnv1a( h, &c->rect,         sizeof c->rect );         break;
+        case IMGUI_CMD_RECT_OUTLINE:  h = fnv1a( h, &c->rect_outline, sizeof c->rect_outline ); break;
+        case IMGUI_CMD_TRIANGLE:      h = fnv1a( h, &c->tri,          sizeof c->tri );          break;
+        case IMGUI_CMD_TEXT:
+            /* Hash the glyph CONTENT + screen position/style, but NOT text.off: the offset is just
+               where this run happens to land in the shared text pool, and it shifts whenever an
+               earlier-emitted window adds or removes text.  Hashing it would falsely dirty an
+               untouched window every time another window's text volume changes (the bug where typing
+               in one input field re-flags a second, unrelated window). */
+            h = fnv1a( h, &c->text.x,       sizeof c->text.x );
+            h = fnv1a( h, &c->text.y,       sizeof c->text.y );
+            h = fnv1a( h, &c->text.len,     sizeof c->text.len );
+            h = fnv1a( h, &c->text.clip_x0, sizeof c->text.clip_x0 );
+            h = fnv1a( h, &c->text.clip_x1, sizeof c->text.clip_x1 );
+            h = fnv1a( h, &c->text.abgr,    sizeof c->text.abgr );
+            h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* fold the pooled glyphs */
+            break;
+        case IMGUI_CMD_CIRCLE_FILLED: h = fnv1a( h, &c->circle, sizeof c->circle ); break;
+        case IMGUI_CMD_LINE:          h = fnv1a( h, &c->line,   sizeof c->line );   break;
+        case IMGUI_CMD_POLYLINE:
+            /* Same rule: skip pt_offset (a pool position that shifts with other windows' point
+               volume); fold the point CONTENT instead.  Hashing fields individually also avoids the
+               struct's trailing padding (after `closed`), which the field writes never initialize. */
+            h = fnv1a( h, &c->polyline.pt_count,  sizeof c->polyline.pt_count );
+            h = fnv1a( h, &c->polyline.thickness, sizeof c->polyline.thickness );
+            h = fnv1a( h, &c->polyline.align,     sizeof c->polyline.align );
+            h = fnv1a( h, &c->polyline.closed,    sizeof c->polyline.closed );
+            h = fnv1a( h, &c->polyline.abgr,      sizeof c->polyline.abgr );
+            h = fnv1a( h, &s_draw.points[ c->polyline.pt_offset ],
+                       c->polyline.pt_count * (u32)sizeof( imgui_vec2_t ) );   /* fold the path points */
+            break;
+        case IMGUI_CMD_DASHED_LINE:   h = fnv1a( h, &c->dash,     sizeof c->dash );     break;
+        case IMGUI_CMD_RECT_GRADIENT: h = fnv1a( h, &c->gradient, sizeof c->gradient ); break;
+    }
+    return h;
+}
+
+static void
+render_build_cache_diff( const imgui_cmd_t* cmds )
+{
+    const imgui_cmd_seg_t* segs = s_draw.segs;
+    u32                    nseg = s_draw.seg_count;
+
+    /* Roll each segment's commands up into its window's hash (segments of one window are visited in
+       increasing lo, i.e. emit order, so the fold is order-sensitive and stable). */
+    s_cache.cur_n = 0;
+    for ( u32 si = 0; si < nseg; ++si )
+    {
+        if ( segs[ si ].lo == segs[ si ].hi ) continue;   /* empty span */
+
+        imgui_id_t win = segs[ si ].win;
+        u32        bi  = 0;
+        for ( ; bi < s_cache.cur_n; ++bi )
+            if ( s_cache.cur[ bi ].win == win ) break;
+        if ( bi == s_cache.cur_n )
+        {
+            if ( s_cache.cur_n >= RENDER_MAX_WIN ) continue;   /* overflow: extra windows read as changed */
+            s_cache.cur[ bi ].win  = win;
+            s_cache.cur[ bi ].hash = 2166136261u;
+            ++s_cache.cur_n;
+        }
+
+        u32 h = s_cache.cur[ bi ].hash;
+        h = fnv1a( h, &segs[ si ].z,  sizeof segs[ si ].z );    /* a raise (z change) invalidates  */
+        h = fnv1a( h, &segs[ si ].vp, sizeof segs[ si ].vp );   /* a surface move invalidates too  */
+        for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
+        {
+            u32 ch = render_cmd_hash( &cmds[ i ] );
+            h = fnv1a( h, &ch, sizeof ch );
+        }
+        s_cache.cur[ bi ].hash = h;
+    }
+
+    /* Diff against last frame: a window is unchanged iff it existed then with the same hash. */
+    s_cache.unchanged   = 0;
+    s_cache.any_changed = ( s_cache.cur_n != s_cache.prev_n );
+    for ( u32 i = 0; i < s_cache.cur_n; ++i )
+    {
+        bool match = false;
+        for ( u32 j = 0; j < s_cache.prev_n; ++j )
+            if ( s_cache.prev[ j ].win == s_cache.cur[ i ].win )
+            {
+                match = ( s_cache.prev[ j ].hash == s_cache.cur[ i ].hash );
+                break;
+            }
+        if ( match ) ++s_cache.unchanged;
+        else         s_cache.any_changed = true;
+    }
+
+    /* Promote this frame's table to prev for next frame's diff. */
+    memcpy( s_cache.prev, s_cache.cur, s_cache.cur_n * sizeof( render_win_hash_t ) );
+    s_cache.prev_n = s_cache.cur_n;
+
+    if ( s_render_debug_cache && s_cache.any_changed )
+        printf( "[imgui] cache: frame changed -- %u/%u windows unchanged\n",
+                s_cache.unchanged, s_cache.cur_n );
+}
+
+/*----------------------------------------------------------------------------------------------
     render_build_frame -- tessellate the shared command list and build the sorted run table.
 
     Runs once per frame (guarded by s_frame_built): the first surface flush triggers it, every
@@ -660,6 +807,9 @@ render_build_frame( void )
     tess_reset();
     u32 order_count = render_build_order( s_draw.cmds, s_draw.cmd_count );
     tess_dispatch( s_draw.cmds, s_order, order_count );
+
+    /* Per-window change detection for the retained cache (detection only; reuse not wired yet). */
+    render_build_cache_diff( s_draw.cmds );
 
     /* Track peak tessellated geometry.  Warn once on the first overflow. */
     if ( s_tess.vert_count > s_tess.vert_hwm ) s_tess.vert_hwm = s_tess.vert_count;

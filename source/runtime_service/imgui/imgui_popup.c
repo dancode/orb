@@ -110,6 +110,7 @@ overlay_detach( void )
     s.win_x = s_build.win_x; s.win_y = s_build.win_y;
     s.win_w = s_build.win_w; s.win_h = s_build.win_h;
     s.clip_rect      = s_build.clip_rect;
+    s.window         = draw_window();
     s.sort_key       = draw_sort_key();
     s.viewport       = draw_viewport();
 
@@ -145,6 +146,7 @@ overlay_reattach( imgui_overlay_save_t s )
     s_build.win_x = s.win_x; s_build.win_y = s.win_y;
     s_build.win_w = s.win_w; s_build.win_h = s.win_h;
     s_build.clip_rect      = s.clip_rect;
+    draw_set_window( s.window );
     draw_set_sort_key( s.sort_key );
     draw_set_viewport( s.viewport );
 }

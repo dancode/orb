@@ -31,12 +31,14 @@ typedef struct
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* One contiguous span of the command list sharing a single (z, vp) tag.  The emit path appends
-   commands into cmds[]; whenever draw_set_sort_key / draw_set_viewport change the tag, the open
-   span is closed at the current cmd_count and a fresh one is opened.  render_build_order then orders
-   these spans (tens of them) instead of re-scanning the 1024-entry command buffer per z and clip.
-   [lo, hi) is the half-open command range; the final open span's hi is closed at build time. */
-typedef struct { u32 z, vp, lo, hi; } imgui_cmd_seg_t;
+/* One contiguous span of the command list sharing a single (win, z, vp) tag.  The emit path appends
+   commands into cmds[]; whenever draw_set_window / draw_set_sort_key / draw_set_viewport change the
+   tag, the open span is closed at the current cmd_count and a fresh one is opened.  render_build_order
+   orders these spans (tens of them) instead of re-scanning the 1024-entry command buffer per z and
+   clip, and the retained-cache diff hashes each window's spans by the stable win id.  [lo, hi) is the
+   half-open command range; the final open span's hi is closed at build time.  win is the owning
+   window's stable id (id_hash(title)), 0 for background / non-window draws. */
+typedef struct { imgui_id_t win; u32 z, vp, lo, hi; } imgui_cmd_seg_t;
 
 static struct
 {
@@ -54,6 +56,7 @@ static struct
     u32 cmd_count;   /* commands in the list this frame  */
     u32 pt_count;    /* points in the pool this frame    */
 
+    imgui_id_t cur_win;  /* owning window id stamped onto new commands (set by begin/window_end) */
     u32 cur_z;       /* sort key stamped onto new commands (set by begin/window_end)        */
     u32 cur_vp;      /* viewport index stamped onto new commands (set by begin/window_end)  */
 
@@ -89,12 +92,13 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.cmd_count       = 0;
     s_draw.pt_count        = 0;
     s_draw.text_pool_used  = 0;
+    s_draw.cur_win         = 0;   /* background; windows tag it via draw_set_window */
     s_draw.cur_z           = 0;   /* background; windows raise it via draw_set_sort_key */
     s_draw.cur_vp          = 0;   /* main viewport; windows route via draw_set_viewport */
 
-    /* Open the first command segment: background z, main viewport, starting at command 0. */
+    /* Open the first command segment: background (win 0, z 0, main viewport), starting at command 0. */
     s_draw.seg_count       = 1;
-    s_draw.segs[ 0 ]       = ( imgui_cmd_seg_t ){ 0, 0, 0, 0 };
+    s_draw.segs[ 0 ]       = ( imgui_cmd_seg_t ){ 0, 0, 0, 0, 0 };
 
     s_draw.clip_depth      = 1;
     s_draw.alpha           = 1.0f;
@@ -174,31 +178,51 @@ draw_set_root_clip( f32 w, f32 h )
     s_draw.clip_stack[ 0 ] = ( imgui_rect_t ){ 0.0f, 0.0f, w, h };
 }
 
-/* Re-tag subsequent commands with (z, vp), cutting a new command segment at the boundary.  If the
-   current segment is still empty (no command emitted since it opened) its tag is simply rewritten in
-   place, so back-to-back set_sort_key / set_viewport calls before any draw never spawn empty spans.
-   On overflow the open segment is just extended (its tag may then be stale, but only in the
-   pathological >1024-segment case, which render_build_order already falls back to natural order for). */
+/* Re-tag subsequent commands with (win, z, vp), cutting a new command segment at the boundary.  If
+   the current segment is still empty (no command emitted since it opened) its tag is simply rewritten
+   in place, so back-to-back set_window / set_sort_key / set_viewport calls before any draw never spawn
+   empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
+   the pathological >1024-segment case, which render_build_order already falls back to natural order). */
 static void
-draw_seg_retag( u32 z, u32 vp )
+draw_seg_retag( imgui_id_t win, u32 z, u32 vp )
 {
-    if ( z == s_draw.cur_z && vp == s_draw.cur_vp )
+    if ( win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp )
         return;   /* no real change -- keep the open segment as is */
 
     imgui_cmd_seg_t* cur = &s_draw.segs[ s_draw.seg_count - 1 ];
     if ( cur->lo == s_draw.cmd_count )
     {
-        cur->z = z;   /* segment empty so far: retag in place rather than splitting */
-        cur->vp = vp;
+        cur->win = win;   /* segment empty so far: retag in place rather than splitting */
+        cur->z   = z;
+        cur->vp  = vp;
     }
     else if ( s_draw.seg_count < IMGUI_MAX_SEGS )
     {
-        cur->hi                          = s_draw.cmd_count;   /* close the span here */
-        s_draw.segs[ s_draw.seg_count++ ] = ( imgui_cmd_seg_t ){ z, vp, s_draw.cmd_count, s_draw.cmd_count };
+        cur->hi                           = s_draw.cmd_count;   /* close the span here */
+        s_draw.segs[ s_draw.seg_count++ ] = ( imgui_cmd_seg_t ){ win, z, vp, s_draw.cmd_count, s_draw.cmd_count };
     }
 
-    s_draw.cur_z  = z;
-    s_draw.cur_vp = vp;
+    s_draw.cur_win = win;
+    s_draw.cur_z   = z;
+    s_draw.cur_vp  = vp;
+}
+
+/*----------------------------------------------------------------------------------------------
+    draw_set_window -- stamp subsequent commands with the owning window's stable id (the retained-
+    cache key).  Set to win->id in window_begin and back to 0 (background) in window_end; the popup
+    layer saves/restores it around an overlay just like the sort key.
+----------------------------------------------------------------------------------------------*/
+
+void
+draw_set_window( imgui_id_t win )
+{
+    draw_seg_retag( win, s_draw.cur_z, s_draw.cur_vp );
+}
+
+imgui_id_t
+draw_window( void )
+{
+    return s_draw.cur_win;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -209,7 +233,7 @@ draw_seg_retag( u32 z, u32 vp )
 void
 draw_set_sort_key( u32 z )
 {
-    draw_seg_retag( z, s_draw.cur_vp );
+    draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp );
 }
 
 /* Current sort key -- saved by the popup layer so an overlay window can restore the parent's
@@ -232,7 +256,7 @@ draw_sort_key( void )
 void
 draw_set_viewport( u32 vp )
 {
-    draw_seg_retag( s_draw.cur_z, vp );
+    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp );
 }
 
 /* Current viewport -- saved/restored by the popup layer alongside the sort key, so an overlay

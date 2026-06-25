@@ -406,6 +406,7 @@ typedef struct
 
     /* Draw cursor + the parent's top layout frame. */
 
+    imgui_id_t             window;        // s_draw.cur_win (retained-cache key)
     u32                    sort_key;      // s_draw.cur_z
     u32                    viewport;      // s_draw.cur_vp (target surface routing)
     bool                   had_parent;    // a layout region was open (parent frame valid)

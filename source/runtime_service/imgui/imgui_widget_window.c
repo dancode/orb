@@ -356,6 +356,7 @@ window_begin_docked( imgui_window_t* win, imgui_id_t id, const char* title,
     f32 title_h = node->rect.h - node->content.h;   /* tab strip height (= WIN_TITLE_H, node-clamped) */
 
     /* Route to the node's surface at a low z so docked content sits behind the free-floating windows. */
+    draw_set_window( id );                  /* cache key: docked windows share z=0 but not their id */
     draw_set_sort_key( 0 );
     draw_set_viewport( node->viewport );
     s_build.cur_viewport = node->viewport;
@@ -735,6 +736,7 @@ window_begin_ex( imgui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, i
        windows back-to-front regardless of window_begin call order, and with its
        viewport so flush dispatches it to the surface hosting this window.
        cur_viewport is updated first so DBG_RESIZE below captures to the correct per-viewport list. */
+    draw_set_window( id );                  /* stable cache key: all this window's spans share it */
     draw_set_sort_key( win->z );
     draw_set_viewport( win->viewport );
     s_build.cur_viewport = win->viewport;   /* update ambient so new windows created after this inherit it */
@@ -875,6 +877,7 @@ imgui_window_end( void )
             draw_pop_clip_rect();       /* balance the clip pushed in window_begin_docked */
         }
 
+        draw_set_window( 0 );
         draw_set_sort_key( 0 );
         draw_set_viewport( 0 );
         draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
@@ -1130,6 +1133,7 @@ imgui_window_end( void )
        main surface; the next window_begin re-routes them to its own viewport.  Restore the base
        clip to the main display so background / low-level draws are not bounded by this window's
        (possibly larger or smaller) surface. */
+    draw_set_window( 0 );
     draw_set_sort_key( 0 );
     draw_set_viewport( 0 );
     draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
