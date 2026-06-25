@@ -207,6 +207,15 @@ imgui_perf_overlay( imgui_clock_fn clock, int mode )
             imgui_textf( "tris    %6u", rs.tri_count  );
             imgui_textf( "batches %6u", rs.draw_calls );
             imgui_textf( "cmds    %6u", rs.cmd_count  );
+
+            if ( mode >= 4 )
+            {
+                /* Retained-mode stats: how much geometry was reused vs re-tessellated. */
+                imgui_spacing( 2.0f );
+                imgui_textf( "wins ret  %u/%u", rs.win_retained,  rs.win_total   );
+                imgui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
+                imgui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
+            }
         }
     }
     imgui_window_end();

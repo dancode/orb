@@ -899,10 +899,15 @@ typedef struct
 
 typedef struct
 {
-    u32 cmd_count;    /* semantic draw commands the UI emitted               */
-    u32 vert_count;   /* tessellated vertices                                */
-    u32 tri_count;    /* tessellated triangles (indices / 3)                 */
-    u32 draw_calls;   /* GPU indexed draw calls (batches), summed over surfaces */
+    u32 cmd_count;      /* semantic draw commands the UI emitted                        */
+    u32 vert_count;     /* tessellated vertices (total, including retained)             */
+    u32 tri_count;      /* tessellated triangles (total, including retained)            */
+    u32 draw_calls;     /* GPU indexed draw calls (batches), summed over surfaces       */
+
+    u32 win_total;      /* windows tracked this frame                                  */
+    u32 win_retained;   /* windows whose geometry was reused (no re-tessellation)      */
+    u32 vert_retained;  /* vertices that came from prev-frame copy, not re-tessellated */
+    u32 tri_retained;   /* triangles retained from prev-frame copy                     */
 
 } imgui_render_stats_t;
 

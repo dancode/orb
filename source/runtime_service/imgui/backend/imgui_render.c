@@ -114,8 +114,18 @@ static bool s_frame_built;   /* slot table + tessellation computed this frame */
     (correct, just less merged) -- same as render_tess_window's clip overflow path.
 ----------------------------------------------------------------------------------------------*/
 
-#define RENDER_MAX_WIN   256   /* distinct windows tracked per frame (slots + cache diff)    */
-#define WIN_SLOT_CMD_MAX  32   /* max GPU draw cmds cached per slot (one per clip+tex change) */
+#define RENDER_MAX_WIN   256   /* distinct windows tracked per frame (slots + cache diff) */
+#define WIN_SLOT_CMD_MAX  16   /* max GPU draw cmds cached per slot; most windows have 2-4 */
+
+/* AOS record for one cached GPU draw command.  Packed together so replaying a slot's cached
+   commands touches one contiguous region instead of four parallel arrays. */
+typedef struct
+{
+    imgui_gpu_cmd_t cmd;     /* clip rect, texture slot, element count     */
+    u32             z;       /* sort key this command was emitted under     */
+    u32             vp;      /* viewport this command targets               */
+    u32             lvbase;  /* slot-local (0-relative) vertex base         */
+} win_slot_cmd_t;
 
 typedef struct
 {
@@ -123,13 +133,9 @@ typedef struct
     u32             z, vp;
     u32             vert_base,  vert_count;
     u32             idx_base,   idx_count;
-    u32             cmd_base,   cmd_count;         /* range into s_tess.cmds[] */
-    /* Cached GPU draw command data -- filled at tess time, replayed on geometry reuse. */
-    imgui_gpu_cmd_t cached_cmds    [ WIN_SLOT_CMD_MAX ];
-    u32             cached_cmd_z   [ WIN_SLOT_CMD_MAX ];
-    u32             cached_cmd_vp  [ WIN_SLOT_CMD_MAX ];
-    u32             cached_cmd_lvbase[ WIN_SLOT_CMD_MAX ];  /* slot-local (0-relative) vert base */
-    bool            valid;                         /* geometry has been tessellated at least once */
+    u32             cmd_base,   cmd_count;    /* range into s_tess.cmds[] */
+    win_slot_cmd_t  cached[ WIN_SLOT_CMD_MAX ];  /* GPU cmds; filled at tess, replayed on reuse */
+    bool            valid;                    /* geometry tessellated at least once */
 } win_geo_slot_t;
 
 static win_geo_slot_t  s_slots     [ RENDER_MAX_WIN ];    /* current frame's per-window slots  */
@@ -158,7 +164,12 @@ static bool s_render_debug_geometry = false;
 
 /* Manual debug toggle: flip to true to print the per-frame retained-cache diff -- how many windows
    were unchanged since last frame (their command bytes hashed identical) vs the total. */
-static bool s_render_debug_cache = true;
+static bool s_render_debug_cache = false;
+
+/* Manual debug toggle: flip to true to print per-frame retained-geometry stats -- how many windows
+   and how many vertices/triangles were reused from the previous frame vs total.  The same numbers
+   are available live through imgui()->render_stats() at mode >= 4 in the perf overlay. */
+static bool s_render_debug_retained = true;
 
 /* Retained-skip optimization: when true and the diff says nothing changed, tessellation is skipped
    and s_tess retains the previous frame's geometry for the flush.  Toggled via
@@ -642,16 +653,26 @@ render_tess_window( imgui_id_t win )
     across frames, so the stale tail of a slot's previous (larger) command must not perturb the hash.
 ----------------------------------------------------------------------------------------------*/
 
-typedef struct { imgui_id_t win; u32 hash; } render_win_hash_t;
+/* Per-window record for the cache diff.  cur[] is rebuilt every frame; prev[] is the snapshot
+   from the previous frame.  z/vp are the max-z and last-vp across the window's segments, computed
+   during the diff pass so the per-window slot build needs no second segment scan.  changed is the
+   result of the hash comparison, stored inline so no separate parallel array is needed. */
+typedef struct
+{
+    imgui_id_t win;
+    u32        hash;
+    u32        z;        /* max segment z this frame (used for slot dispatch order) */
+    u32        vp;       /* viewport of the last segment this frame                */
+    bool       changed;  /* hash mismatched or window is new                       */
+} render_win_hash_t;
 
 static struct
 {
-    render_win_hash_t cur [ RENDER_MAX_WIN ];   /* this frame's per-window hashes      */
-    render_win_hash_t prev[ RENDER_MAX_WIN ];   /* last frame's, for the diff          */
+    render_win_hash_t cur [ RENDER_MAX_WIN ];   /* this frame's per-window records     */
+    render_win_hash_t prev[ RENDER_MAX_WIN ];   /* last frame's hashes, for the diff   */
     u32  cur_n, prev_n;
     u32  unchanged;                     /* windows whose hash matched last frame        */
     bool any_changed;                   /* a window appeared / vanished / changed       */
-    bool changed[ RENDER_MAX_WIN ];     /* per-window changed flag, parallel to cur[]   */
 } s_cache;
 
 /*----------------------------------------------------------------------------------------------
@@ -671,7 +692,9 @@ render_build_cache_diff( void )
     u32                    nseg = s_draw.seg_count;
 
     /* Roll each segment's pre-baked command hashes into its window's accumulated hash.
-       Segments of one window are visited in increasing lo (emit order) so the fold is stable. */
+       Also accumulate max-z and last-vp per window here, so the slot build loop needs no
+       second pass over segments.  Segments of one window arrive in increasing lo (emit order)
+       so the hash fold and z/vp accumulation are both stable. */
     s_cache.cur_n = 0;
     for ( u32 si = 0; si < nseg; ++si )
     {
@@ -683,21 +706,29 @@ render_build_cache_diff( void )
             if ( s_cache.cur[ bi ].win == win ) break;
         if ( bi == s_cache.cur_n )
         {
-            if ( s_cache.cur_n >= RENDER_MAX_WIN ) continue;   /* overflow: extra windows read as changed */
+            if ( s_cache.cur_n >= RENDER_MAX_WIN ) continue;   /* overflow: treated as changed */
             s_cache.cur[ bi ].win  = win;
             s_cache.cur[ bi ].hash = 2166136261u;
+            s_cache.cur[ bi ].z    = 0;
+            s_cache.cur[ bi ].vp   = 0;
             ++s_cache.cur_n;
         }
 
+        /* Fold sort key and viewport into hash so a raise or surface move invalidates the window. */
         u32 h = s_cache.cur[ bi ].hash;
-        h = fnv1a( h, &segs[ si ].z,  sizeof segs[ si ].z );    /* a raise (z change) invalidates  */
-        h = fnv1a( h, &segs[ si ].vp, sizeof segs[ si ].vp );   /* a surface move invalidates too  */
+        h = fnv1a( h, &segs[ si ].z,  sizeof segs[ si ].z );
+        h = fnv1a( h, &segs[ si ].vp, sizeof segs[ si ].vp );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-            h = fnv1a( h, &s_draw.cmd_hashes[ i ], sizeof s_draw.cmd_hashes[ i ] );   /* pre-baked */
+            h = fnv1a( h, &s_draw.cmd_hashes[ i ], sizeof s_draw.cmd_hashes[ i ] );
         s_cache.cur[ bi ].hash = h;
+
+        /* Track max-z (dispatch order) and last vp (surface routing) for this window. */
+        if ( segs[ si ].z > s_cache.cur[ bi ].z )
+            s_cache.cur[ bi ].z  = segs[ si ].z;
+        s_cache.cur[ bi ].vp = segs[ si ].vp;
     }
 
-    /* Diff against last frame: a window is unchanged iff it existed then with the same hash. */
+    /* Diff against last frame: unchanged iff the window existed with the same hash. */
     s_cache.unchanged   = 0;
     s_cache.any_changed = ( s_cache.cur_n != s_cache.prev_n );
     for ( u32 i = 0; i < s_cache.cur_n; ++i )
@@ -709,12 +740,12 @@ render_build_cache_diff( void )
                 match = ( s_cache.prev[ j ].hash == s_cache.cur[ i ].hash );
                 break;
             }
-        s_cache.changed[ i ] = !match;
+        s_cache.cur[ i ].changed = !match;
         if ( match ) ++s_cache.unchanged;
         else         s_cache.any_changed = true;
     }
 
-    /* Promote this frame's table to prev for next frame's diff. */
+    /* Promote this frame's table to prev for next frame's diff (only win+hash needed in prev). */
     memcpy( s_cache.prev, s_cache.cur, s_cache.cur_n * sizeof( render_win_hash_t ) );
     s_cache.prev_n = s_cache.cur_n;
 
@@ -744,9 +775,9 @@ render_build_frame( void )
     if ( s_draw.seg_count > 0 )
         s_draw.segs[ s_draw.seg_count - 1 ].hi = s_draw.cmd_count;
 
-    /* Diff: fold pre-baked per-command hashes into per-window hashes and compare against last frame.
-       Populates s_cache.cur[], s_cache.changed[], s_cache.any_changed.  Runs before tess so the
-       per-window changed flags are ready for the slot loop below. */
+    /* Diff: fold pre-baked per-command hashes into per-window records and compare against last frame.
+       Populates s_cache.cur[] (with hash, z, vp, changed) and s_cache.any_changed.  Runs before
+       tess so per-window z/vp/changed are ready for the slot loop without a second segment scan. */
     render_build_cache_diff();
 
     /* Swap slot tables: prev <- cur, then reset current for this frame's build. */
@@ -761,37 +792,29 @@ render_build_frame( void )
     tess_reset();
 
     /* Per-window loop: build one geometry slot per unique window in s_cache.cur order.
+       z and vp were pre-computed by render_build_cache_diff, so no second segment scan is needed.
        Unchanged windows (s_retained_skip on + hash matched + prev slot valid) copy geometry from
-       s_geo_prev_{verts,indices} and replay their cached GPU draw commands.  Everything else
-       runs render_tess_window.  The slot table ends up in emit order; a z-sort on s_dispatch[]
-       then puts them back-to-front for the flush. */
+       s_geo_prev_{verts,indices} and replay their cached GPU draw commands.  Everything else runs
+       render_tess_window.  The slot table ends up in emit order; a z-sort on s_dispatch[] puts
+       them back-to-front for the flush. */
+    u32 vert_retained = 0, tri_retained = 0, win_retained = 0;
+
     for ( u32 wi = 0; wi < s_cache.cur_n; ++wi )
     {
-        imgui_id_t     win      = s_cache.cur[ wi ].win;
-        bool           changed  = s_cache.changed[ wi ];
-        win_geo_slot_t* slot    = &s_slots[ s_slot_count++ ];
+        const render_win_hash_t* wh   = &s_cache.cur[ wi ];
+        win_geo_slot_t*          slot = &s_slots[ s_slot_count++ ];
 
-        slot->win   = win;
+        slot->win   = wh->win;
+        slot->z     = wh->z;    /* pre-computed during diff: max segment z */
+        slot->vp    = wh->vp;   /* pre-computed during diff: last segment vp */
         slot->valid = false;
-
-        /* Determine slot z (max z across this window's segments) and vp. */
-        u32 slot_z = 0, slot_vp = 0;
-        for ( u32 si = 0; si < s_draw.seg_count; ++si )
-        {
-            const imgui_cmd_seg_t* sg = &s_draw.segs[ si ];
-            if ( sg->win != win || sg->lo == sg->hi ) continue;
-            if ( sg->z > slot_z ) slot_z = sg->z;
-            slot_vp = sg->vp;
-        }
-        slot->z  = slot_z;
-        slot->vp = slot_vp;
 
         /* Try to find a valid previous-frame slot for geometry reuse. */
         win_geo_slot_t* prev = NULL;
-        if ( s_retained_skip && !changed )
+        if ( s_retained_skip && !wh->changed )
         {
             for ( u32 pi = 0; pi < s_slot_prev_count; ++pi )
-                if ( s_slots_prev[ pi ].win == win && s_slots_prev[ pi ].valid )
+                if ( s_slots_prev[ pi ].win == wh->win && s_slots_prev[ pi ].valid )
                 {
                     prev = &s_slots_prev[ pi ];
                     break;
@@ -803,7 +826,7 @@ render_build_frame( void )
             /* Unchanged window: copy geometry from the previous frame's buffers directly.
                Indices are 0-relative within each slot so the copy is correct regardless of
                the slot's new absolute position in the shared VB.  vertex_offset in the draw
-               call will shift them to slot->vert_base at submit time. */
+               call shifts them to slot->vert_base at submit time. */
             slot->vert_base  = s_tess.vert_count;
             slot->vert_count = prev->vert_count;
             slot->idx_base   = s_tess.idx_count;
@@ -823,23 +846,23 @@ render_build_frame( void )
                         slot->idx_count * sizeof( u16 ) );
             s_tess.idx_count += slot->idx_count;
 
-            /* Replay cached GPU draw commands with updated absolute vert bases. */
-            u32 nc = ( prev->cmd_count < WIN_SLOT_CMD_MAX ) ? prev->cmd_count : WIN_SLOT_CMD_MAX;
+            /* Replay cached GPU draw commands; carry them forward for future reuse. */
+            u32 nc = prev->cmd_count;   /* already capped at WIN_SLOT_CMD_MAX when stored */
             for ( u32 k = 0; k < nc; ++k )
             {
-                u32 ci              = slot->cmd_base + k;
-                s_tess.cmds    [ ci ] = prev->cached_cmds    [ k ];
-                s_tess.cmd_z   [ ci ] = prev->cached_cmd_z   [ k ];
-                s_tess.cmd_vp  [ ci ] = prev->cached_cmd_vp  [ k ];
-                s_tess.cmd_vbase[ ci ] = slot->vert_base + prev->cached_cmd_lvbase[ k ];
+                u32 ci = slot->cmd_base + k;
+                s_tess.cmds    [ ci ] = prev->cached[ k ].cmd;
+                s_tess.cmd_z   [ ci ] = prev->cached[ k ].z;
+                s_tess.cmd_vp  [ ci ] = prev->cached[ k ].vp;
+                s_tess.cmd_vbase[ ci ] = slot->vert_base + prev->cached[ k ].lvbase;
             }
             s_tess.cmd_count += nc;
 
-            /* Carry cached cmd data forward (needed if this slot is reused again next frame). */
-            memcpy( slot->cached_cmds,     prev->cached_cmds,     nc * sizeof( imgui_gpu_cmd_t ) );
-            memcpy( slot->cached_cmd_z,    prev->cached_cmd_z,    nc * sizeof( u32 ) );
-            memcpy( slot->cached_cmd_vp,   prev->cached_cmd_vp,   nc * sizeof( u32 ) );
-            memcpy( slot->cached_cmd_lvbase, prev->cached_cmd_lvbase, nc * sizeof( u32 ) );
+            memcpy( slot->cached, prev->cached, nc * sizeof( win_slot_cmd_t ) );
+
+            vert_retained += slot->vert_count;
+            tri_retained  += slot->idx_count / 3u;
+            ++win_retained;
 
             slot->valid = true;
         }
@@ -851,7 +874,7 @@ render_build_frame( void )
             slot->cmd_base         = s_tess.cmd_count;
             s_tess.slot_vert_base  = s_tess.vert_count;   /* indices emitted as slot-local offsets */
 
-            render_tess_window( win );
+            render_tess_window( wh->win );
 
             slot->vert_count = s_tess.vert_count - slot->vert_base;
             slot->idx_count  = s_tess.idx_count  - slot->idx_base;
@@ -863,12 +886,12 @@ render_build_frame( void )
             for ( u32 k = 0; k < nc; ++k )
             {
                 u32 ci = slot->cmd_base + k;
-                slot->cached_cmds    [ k ] = s_tess.cmds    [ ci ];
-                slot->cached_cmd_z   [ k ] = s_tess.cmd_z   [ ci ];
-                slot->cached_cmd_vp  [ k ] = s_tess.cmd_vp  [ ci ];
-                slot->cached_cmd_lvbase[ k ] = s_tess.cmd_vbase[ ci ] - slot->vert_base;
+                slot->cached[ k ].cmd    = s_tess.cmds    [ ci ];
+                slot->cached[ k ].z      = s_tess.cmd_z   [ ci ];
+                slot->cached[ k ].vp     = s_tess.cmd_vp  [ ci ];
+                slot->cached[ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
             }
-            slot->cmd_count = nc;   /* cap at WIN_SLOT_CMD_MAX; extra GPU cmds not cached */
+            slot->cmd_count = nc;   /* capped; extra GPU cmds beyond WIN_SLOT_CMD_MAX are not cached */
             slot->valid     = true;
         }
 
@@ -888,11 +911,23 @@ render_build_frame( void )
         s_dispatch[ b ] = key;
     }
 
-    /* Save this frame's geometry into the prev buffers so the next frame can memcpy from them. */
-    if ( s_tess.vert_count > 0 )
-        memcpy( s_geo_prev_verts, s_tess.verts, s_tess.vert_count * sizeof( imgui_draw_vert_t ) );
-    if ( s_tess.idx_count > 0 )
-        memcpy( s_geo_prev_indices, s_tess.indices, s_tess.idx_count * sizeof( u16 ) );
+    /* Save this frame's geometry into the prev buffers so unchanged windows next frame can
+       memcpy from them.  Skip when nothing changed: in that case s_tess is byte-for-byte
+       identical to the prev buffers (all geometry was copied from them), so copying back
+       would be wasted work -- a win on fully idle frames (320 KB + 96 KB skipped). */
+    if ( s_cache.any_changed )
+    {
+        if ( s_tess.vert_count > 0 )
+            memcpy( s_geo_prev_verts, s_tess.verts, s_tess.vert_count * sizeof( imgui_draw_vert_t ) );
+        if ( s_tess.idx_count > 0 )
+            memcpy( s_geo_prev_indices, s_tess.indices, s_tess.idx_count * sizeof( u16 ) );
+    }
+
+    /* Retained stats -- tracked per frame, published via imgui_render_stats(). */
+    s_render.accum.win_total    = s_cache.cur_n;
+    s_render.accum.win_retained = win_retained;
+    s_render.accum.vert_retained = vert_retained;
+    s_render.accum.tri_retained  = tri_retained;
 
     /* Track peak tessellated geometry.  Warn once on the first overflow. */
     if ( s_tess.vert_count > s_tess.vert_hwm ) s_tess.vert_hwm = s_tess.vert_count;
@@ -918,6 +953,19 @@ render_build_frame( void )
                 s_tess.idx_count,  IMGUI_MAX_IDX,   s_tess.idx_hwm );
         prev_verts = s_tess.vert_count;
         prev_idx   = s_tess.idx_count;
+    }
+
+    static u32 prev_win_ret = ~0u, prev_vert_ret = ~0u;
+    if ( s_render_debug_retained &&
+         ( s_render.accum.win_retained  != prev_win_ret ||
+           s_render.accum.vert_retained != prev_vert_ret ) )
+    {
+        printf( "[imgui] retained: wins %u/%u  verts %u/%u  tris %u/%u\n",
+                s_render.accum.win_retained, s_render.accum.win_total,
+                s_render.accum.vert_retained, s_render.accum.vert_count,
+                s_render.accum.tri_retained,  s_render.accum.tri_count );
+        prev_win_ret  = s_render.accum.win_retained;
+        prev_vert_ret = s_render.accum.vert_retained;
     }
 }
 

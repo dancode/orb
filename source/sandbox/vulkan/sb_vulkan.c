@@ -302,7 +302,7 @@ main( int argc, char** argv )
            measures and smooths; the host only carries the tier. */
 
         if ( app()->key_pressed( APP_KEY_P ) )
-            perf_mode = ( perf_mode + 1 ) % 4;
+            perf_mode = ( perf_mode + 1 ) % 5;
 
         /* F6 cycles the debug render view: normal -> wireframe (triangle edges) -> batch (per-draw
            color tint, so you can count batches and see where they split) -> normal. */
