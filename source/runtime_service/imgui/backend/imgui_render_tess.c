@@ -40,9 +40,14 @@ static struct
 
     u32 vert_count, idx_count, cmd_count;
 
-    imgui_rect_t cur_clip;   /* clip baked from the current semantic command being tessellated */
-    u32          cur_z;      /* sort key baked from the current semantic command              */
-    u32          cur_vp;     /* viewport baked from the current semantic command              */
+    imgui_rect_t cur_clip;      /* clip baked from the current semantic command being tessellated */
+    u32          cur_z;         /* sort key baked from the current semantic command              */
+    u32          cur_vp;        /* viewport baked from the current semantic command              */
+
+    /* Vertex base of the window slot currently being tessellated.  Index values emitted during
+       tess are (local_vert - slot_vert_base), making them 0-relative within the slot.  At draw
+       time vertex_offset = slot.vert_base shifts them to the correct absolute VB position. */
+    u32 slot_vert_base;
 
     u32  vert_hwm, idx_hwm;
     bool overflow, overflow_ever;
@@ -129,10 +134,11 @@ round_rect_perimeter( f32 x, f32 y, f32 w, f32 h, f32 r, u32 segs, imgui_vec2_t*
 static void
 tess_reset( void )
 {
-    s_tess.vert_count = 0;
-    s_tess.idx_count  = 0;
-    s_tess.cmd_count  = 0;
-    s_tess.overflow   = false;
+    s_tess.vert_count      = 0;
+    s_tess.idx_count       = 0;
+    s_tess.cmd_count       = 0;
+    s_tess.slot_vert_base  = 0;
+    s_tess.overflow        = false;
 }
 
 /* Open a new GPU command when texture, clip, sort key, or viewport changes -- same batching
@@ -181,7 +187,7 @@ tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
     if ( s_tess.cmd_count == 0 )
         return false;
     font_white_uv( wu, wv );
-    *out_base = (u16)s_tess.vert_count;
+    *out_base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     *out_v    = &s_tess.verts  [ s_tess.vert_count ];
     *out_i    = &s_tess.indices[ s_tess.idx_count  ];
     return true;
@@ -219,7 +225,7 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
     if ( s_tess.cmd_count == 0 )
         return;
 
-    u16 base = (u16)s_tess.vert_count;
+    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     imgui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     v[ 0 ] = ( imgui_draw_vert_t ){ x,     y,     u0, v0, abgr };
     v[ 1 ] = ( imgui_draw_vert_t ){ x + w, y,     u1, v0, abgr };
@@ -261,7 +267,7 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
     u32 c2 = col_b;                          /* bottom-right */
     u32 c3 = horizontal ? col_a : col_b;     /* bottom-left  */
 
-    u16 base = (u16)s_tess.vert_count;
+    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     imgui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     v[ 0 ] = ( imgui_draw_vert_t ){ x,     y,     wu, wv, c0 };
     v[ 1 ] = ( imgui_draw_vert_t ){ x + w, y,     wu, wv, c1 };
@@ -351,7 +357,7 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     if ( s_tess.cmd_count == 0 )
         return;
 
-    u16 base = (u16)s_tess.vert_count;
+    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     s_tess.verts[ s_tess.vert_count++ ] = ( imgui_draw_vert_t ){ ax, ay, wu, wv, abgr };
     s_tess.verts[ s_tess.vert_count++ ] = ( imgui_draw_vert_t ){ bx, by, wu, wv, abgr };
     s_tess.verts[ s_tess.vert_count++ ] = ( imgui_draw_vert_t ){ cx, cy, wu, wv, abgr };
@@ -481,7 +487,7 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     if ( s_tess.cmd_count == 0 )
         return;
 
-    u16 base = (u16)s_tess.vert_count;
+    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     imgui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     v[ 0 ] = ( imgui_draw_vert_t ){ x0 + nx * half, y0 + ny * half, 0.0f, vv, abgr };
     v[ 1 ] = ( imgui_draw_vert_t ){ x1 + nx * half, y1 + ny * half, umax, vv, abgr };

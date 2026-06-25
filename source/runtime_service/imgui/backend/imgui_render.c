@@ -94,33 +94,56 @@ static struct
     The semantic command list (s_draw) is shared by every surface, so the geometry it tessellates
     into -- and the z-ordered run table replayed from it -- is byte-identical on every surface's
     flush.  render_build_frame does that work lazily on the first flush of a frame and stamps
-    s_frame_built; subsequent surfaces that frame reuse s_tess + s_runs and only re-do the cheap
-    per-surface part (upload, scissor, draw partition).  imgui_render_frame_reset clears the guard
-    at frame_begin.  Building lazily (rather than at frame_begin) means a frame that flushes no
-    surface does no tessellation at all.
+    s_frame_built; subsequent surfaces that frame reuse the slot table and only re-do the cheap
+    per-surface part (upload and draw).  imgui_render_frame_reset clears the guard at frame_begin.
 ----------------------------------------------------------------------------------------------*/
 
-typedef struct { u32 start, count, first_index, z; } draw_run_t;
+static bool s_frame_built;   /* slot table + tessellation computed this frame */
 
-static draw_run_t s_runs[ IMGUI_MAX_CMDS ];   /* z-grouped command runs, sorted back-to-front */
-static u32        s_run_count;                /* runs valid this frame                         */
-static bool       s_frame_built;              /* tessellation + runs computed this frame        */
+/*----------------------------------------------------------------------------------------------
+    Per-window geometry slot system (Level 2c -- retained geometry).
 
-/* Dispatch order fed to tess_dispatch: a permutation of the semantic command list that groups
-   commands by z then clip rect, so equal-clip shapes tessellate contiguously and merge into one GPU
-   batch (the scissor change is what opens a batch).  Built fresh each frame by render_build_order;
-   see the note there for the global-z rationale and the ordering-safety argument. */
-static u32 s_order[ IMGUI_MAX_CMDS ];
+    Each window gets one slot that caches its tessellated geometry (vertices, indices, GPU draw
+    commands).  Unchanged windows copy their geometry from the previous frame's buffer instead of
+    re-tessellating.  Slots are sorted by win->z for dispatch; the flush issues one group of draw
+    calls per slot, using vertex_offset = slot.vert_base so indices stay 0-relative within the
+    slot and remain valid regardless of where the slot lands in the shared VB this frame.
 
-/* Per-surface geometry span within the shared vertex/index lists -- the half-open [lo,hi) range of
-   vertex slots and index slots touched by the commands tagged for each viewport.  Computed once in
-   render_build_frame; each surface's flush uploads only its own span (written at its real offset, so
-   the absolute indices still resolve) instead of the whole shared buffer.  For a single surface the
-   span is the entire buffer, so the common case is unchanged. */
-static u32 s_vp_vtx_lo[ IMGUI_MAX_VIEWPORTS ];
-static u32 s_vp_vtx_hi[ IMGUI_MAX_VIEWPORTS ];
-static u32 s_vp_idx_lo[ IMGUI_MAX_VIEWPORTS ];
-static u32 s_vp_idx_hi[ IMGUI_MAX_VIEWPORTS ];
+    WIN_SLOT_CMD_MAX caps the GPU draw commands per window (one per clip+texture change within the
+    window).  32 is generous; most windows have 2-4.  Overflow falls back to natural emit order
+    (correct, just less merged) -- same as render_tess_window's clip overflow path.
+----------------------------------------------------------------------------------------------*/
+
+#define RENDER_MAX_WIN   256   /* distinct windows tracked per frame (slots + cache diff)    */
+#define WIN_SLOT_CMD_MAX  32   /* max GPU draw cmds cached per slot (one per clip+tex change) */
+
+typedef struct
+{
+    imgui_id_t      win;
+    u32             z, vp;
+    u32             vert_base,  vert_count;
+    u32             idx_base,   idx_count;
+    u32             cmd_base,   cmd_count;         /* range into s_tess.cmds[] */
+    /* Cached GPU draw command data -- filled at tess time, replayed on geometry reuse. */
+    imgui_gpu_cmd_t cached_cmds    [ WIN_SLOT_CMD_MAX ];
+    u32             cached_cmd_z   [ WIN_SLOT_CMD_MAX ];
+    u32             cached_cmd_vp  [ WIN_SLOT_CMD_MAX ];
+    u32             cached_cmd_lvbase[ WIN_SLOT_CMD_MAX ];  /* slot-local (0-relative) vert base */
+    bool            valid;                         /* geometry has been tessellated at least once */
+} win_geo_slot_t;
+
+static win_geo_slot_t  s_slots     [ RENDER_MAX_WIN ];    /* current frame's per-window slots  */
+static win_geo_slot_t  s_slots_prev[ RENDER_MAX_WIN ];    /* previous frame's slots (for reuse) */
+static u32             s_slot_count, s_slot_prev_count;
+static win_geo_slot_t* s_dispatch  [ RENDER_MAX_WIN ];    /* z-sorted pointers into s_slots    */
+static u32             s_dispatch_count;
+
+/* Previous-frame geometry buffers.  Copied from s_tess at end of render_build_frame and used by
+   the reuse path to memcpy unchanged window geometry into the current frame's s_tess without
+   re-running any tessellation math.  Indices are 0-relative within each slot so the copy is
+   direct -- no fixup needed when the slot lands at a different absolute position. */
+static imgui_draw_vert_t s_geo_prev_verts  [ IMGUI_MAX_VERTS ];
+static u16               s_geo_prev_indices[ IMGUI_MAX_IDX   ];
 
 /* Manual debug toggle: flip to true (debugger, or at startup) to print the per-frame
    draw-call count every flush.  The high-water mark is always tracked and reported at
@@ -528,148 +551,80 @@ clip_eq( imgui_rect_t a, imgui_rect_t b )
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
-/* rect_empty (a zero-area clip) is defined in imgui_draw.c, included above this unit; render_build_order
-   uses it as a final guard so a zero-scissor batch can never form even if some push path skips the
-   emit-time draw_cull_box (the primary cull -- see imgui_draw.c). */
+/* rect_empty (a zero-area clip) is defined in imgui_draw.c, included above this unit. */
+
+#define RENDER_MAX_CLIP_GROUPS  64   /* distinct clip rects groupable within one window */
 
 /*----------------------------------------------------------------------------------------------
-    render_build_order -- compute the clip-grouped dispatch order written to s_order.
+    render_tess_window -- tessellate all semantic commands belonging to one window.
 
-    Walks the semantic command list and emits its indices grouped first by z (window paint order),
-    then by clip rect within each z.  Equal-clip shapes thus tessellate back-to-back and collapse
-    into a single GPU batch instead of re-splitting every time a child's scissor pushes and pops --
-    the window chrome, body, and scrollbars reunify into one batch and each child becomes one more.
-    Commands whose clip is empty (fully scrolled / clipped out) are dropped entirely.
-
-    Why group z GLOBALLY, not just over contiguous spans: a popup begun mid-window (a combo
-    dropdown) carries a higher z but is emitted BETWEEN the parent window's commands, splitting the
-    parent's span in two.  Both halves carry the window's z, so gathering by z across the whole list
-    rejoins them into one batch -- otherwise the overlay opens a second window-clip batch on its far
-    side.  Distinct z values are collected then sorted ascending so geometry is tessellated in
-    draw order (back-to-front) from the start; the post-tess run-sort is eliminated.
-
-    Ordering safety: this only reorders commands that differ in z or clip.  Within a clip group the
-    original emit order is preserved (the inner loop is stable), so overlapping shapes under one
-    scissor still paint in declaration order.  Across clips the regions nest -- a window clip
-    strictly contains its child clips, sibling children and sibling windows are disjoint -- so two
-    shapes in different groups share pixels only in a nested overlap, where the parent must paint
-    under the child; first-seen order keeps the enclosing commands (emitted first) in the earlier
-    group, so they still draw under.  Window chrome that overpaints scrolled body content shares the
-    window clip with that content (own_clip false), so it stays in the same group, after it.
-
-    Cost: an index permutation only -- no geometry or struct is copied; tess_dispatch builds the
-    vertices once, in this order.  The emit path already cut the command list into segments at every
-    z / viewport change (imgui_draw.c, s_draw.segs), so the work here runs over those spans -- tens of
-    them -- not the 1024-entry command buffer: distinct z is collected by scanning the segment table,
-    and a z's clip grouping visits only the commands of that z's segments.  A window split by a popup
-    is just two segments carrying the same z, rejoined by the per-z gather exactly as a global scan
-    would.  Output is the identical permutation a brute-force first-seen z / first-seen clip grouping
-    over the whole buffer would produce; either group count exceeding its cap falls back to natural
-    order (correct, just unmerged) rather than capping the UI.
+    Gathers this window's segments from s_draw.segs, builds a clip-sorted permutation into a
+    local stack array (no global order buffer needed), then calls tess_dispatch.  Grouping by
+    clip within the window follows the same first-seen strategy as the old global ordering:
+    distinct clips are collected in emit order and replayed group by group so equal-clip shapes
+    tessellate back-to-back and merge into one GPU batch.  z sorting no longer happens here:
+    each window occupies a slot whose dispatch z is the window's raise z; the caller z-sorts the
+    slot table before issuing draw calls, keeping all of a window's geometry (chrome + body)
+    together in one contiguous slot regardless of their internal z values.
 ----------------------------------------------------------------------------------------------*/
 
-#define RENDER_MAX_Z           128   /* distinct z bands (windows + popups) groupable per frame */
-#define RENDER_MAX_CLIP_GROUPS  64   /* distinct clip rects groupable within one z              */
-
-static u32
-render_build_order( const imgui_cmd_t* cmds, u32 count )
+static void
+render_tess_window( imgui_id_t win )
 {
     const imgui_cmd_seg_t* segs = s_draw.segs;
     u32                    nseg = s_draw.seg_count;
-    if ( nseg )
-        s_draw.segs[ nseg - 1 ].hi = count;   /* close the still-open final segment at the list end */
 
-    /* Distinct z values, collected then sorted ascending so geometry is tessellated back-to-front.
-       This means s_tess already carries runs in draw order -- the post-tess run-sort is not needed.
-       A segment carries one z, so a single empty-span skip is all the per-segment filtering needed. */
-    u32  zs[ RENDER_MAX_Z ];
-    u32  nz         = 0;
-    bool z_overflow = false;
-    for ( u32 si = 0; si < nseg; ++si )
+    /* Distinct clips for this window's commands, first-seen order. */
+    imgui_rect_t clips[ RENDER_MAX_CLIP_GROUPS ];
+    u32          nc       = 0;
+    bool         overflow = false;
+
+    for ( u32 si = 0; si < nseg && !overflow; ++si )
     {
-        if ( segs[ si ].lo == segs[ si ].hi ) continue;   /* empty span */
-        u32  z    = segs[ si ].z;
-        bool seen = false;
-        for ( u32 j = 0; j < nz; ++j )
-            if ( zs[ j ] == z ) { seen = true; break; }
-        if ( !seen )
+        if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
+        for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
-            if ( nz >= RENDER_MAX_Z ) { z_overflow = true; break; }
-            zs[ nz++ ] = z;
+            const imgui_cmd_t* c = &s_draw.cmds[ i ];
+            if ( rect_empty( c->clip ) ) continue;
+            bool seen = false;
+            for ( u32 g = 0; g < nc; ++g )
+                if ( clip_eq( clips[ g ], c->clip ) ) { seen = true; break; }
+            if ( !seen )
+            {
+                if ( nc >= RENDER_MAX_CLIP_GROUPS ) { overflow = true; break; }
+                clips[ nc++ ] = c->clip;
+            }
         }
     }
 
-    /* Insertion sort zs[] ascending: nz <= RENDER_MAX_Z but typically << 20 in real frames. */
-    for ( u32 a = 1; a < nz; ++a )
-    {
-        u32 key = zs[ a ], b = a;
-        while ( b > 0 && zs[ b - 1 ] > key ) { zs[ b ] = zs[ b - 1 ]; --b; }
-        zs[ b ] = key;
-    }
-
+    /* Clip-sorted permutation into a local buffer (upper bound is the whole command list). */
+    u32 win_order[ IMGUI_MAX_CMDS ];
     u32 n = 0;
 
-    /* Pathological z count: keep emit order (still correct), only dropping fully-clipped commands. */
-    if ( z_overflow )
+    if ( overflow )
     {
-        for ( u32 i = 0; i < count; ++i )
-            if ( !rect_empty( cmds[ i ].clip ) )
-                s_order[ n++ ] = i;
-        return n;
-    }
-
-    for ( u32 zi = 0; zi < nz; ++zi )
-    {
-        u32 z = zs[ zi ];
-
-        /* Distinct clips within this z, first-seen order -- gathered across this z's segments only.
-           Segments are append-ordered, so visiting matching ones in si order then their [lo,hi) range
-           walks the commands in strictly increasing emit index, identical to the old global scan. */
-        imgui_rect_t groups[ RENDER_MAX_CLIP_GROUPS ];
-        u32          ng       = 0;
-        bool         overflow = false;
-        for ( u32 si = 0; si < nseg && !overflow; ++si )
+        /* Too many distinct clips: natural emit order (correct, just less merged). */
+        for ( u32 si = 0; si < nseg; ++si )
         {
-            if ( segs[ si ].z != z ) continue;
+            if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
             for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-            {
-                if ( rect_empty( cmds[ i ].clip ) ) continue;
-                bool seen = false;
-                for ( u32 g = 0; g < ng; ++g )
-                    if ( clip_eq( groups[ g ], cmds[ i ].clip ) ) { seen = true; break; }
-                if ( !seen )
-                {
-                    if ( ng >= RENDER_MAX_CLIP_GROUPS ) { overflow = true; break; }
-                    groups[ ng++ ] = cmds[ i ].clip;
-                }
-            }
+                if ( !rect_empty( s_draw.cmds[ i ].clip ) )
+                    win_order[ n++ ] = i;
         }
-
-        if ( overflow )
-        {
-            /* Too many distinct clips to group: keep this z's natural emit order. */
+    }
+    else
+    {
+        for ( u32 g = 0; g < nc; ++g )
             for ( u32 si = 0; si < nseg; ++si )
             {
-                if ( segs[ si ].z != z ) continue;
+                if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
                 for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-                    if ( !rect_empty( cmds[ i ].clip ) )
-                        s_order[ n++ ] = i;
+                    if ( clip_eq( clips[ g ], s_draw.cmds[ i ].clip ) )
+                        win_order[ n++ ] = i;
             }
-        }
-        else
-        {
-            /* Emit each clip group in first-seen order; stable within a group. */
-            for ( u32 g = 0; g < ng; ++g )
-                for ( u32 si = 0; si < nseg; ++si )
-                {
-                    if ( segs[ si ].z != z ) continue;
-                    for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-                        if ( clip_eq( groups[ g ], cmds[ i ].clip ) )
-                            s_order[ n++ ] = i;
-                }
-        }
     }
-    return n;   /* <= count (fully-clipped commands dropped) */
+
+    tess_dispatch( s_draw.cmds, win_order, n );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -687,8 +642,6 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
     across frames, so the stale tail of a slot's previous (larger) command must not perturb the hash.
 ----------------------------------------------------------------------------------------------*/
 
-#define RENDER_MAX_WIN 256   /* distinct windows tracked by the cache diff per frame */
-
 typedef struct { imgui_id_t win; u32 hash; } render_win_hash_t;
 
 static struct
@@ -696,8 +649,9 @@ static struct
     render_win_hash_t cur [ RENDER_MAX_WIN ];   /* this frame's per-window hashes      */
     render_win_hash_t prev[ RENDER_MAX_WIN ];   /* last frame's, for the diff          */
     u32  cur_n, prev_n;
-    u32  unchanged;     /* windows whose hash matched last frame (reusable)            */
-    bool any_changed;   /* a window appeared / vanished / changed -> rebuild needed     */
+    u32  unchanged;                     /* windows whose hash matched last frame        */
+    bool any_changed;                   /* a window appeared / vanished / changed       */
+    bool changed[ RENDER_MAX_WIN ];     /* per-window changed flag, parallel to cur[]   */
 } s_cache;
 
 /*----------------------------------------------------------------------------------------------
@@ -755,6 +709,7 @@ render_build_cache_diff( void )
                 match = ( s_cache.prev[ j ].hash == s_cache.cur[ i ].hash );
                 break;
             }
+        s_cache.changed[ i ] = !match;
         if ( match ) ++s_cache.unchanged;
         else         s_cache.any_changed = true;
     }
@@ -772,7 +727,7 @@ render_build_cache_diff( void )
     render_build_frame -- tessellate the shared command list and build the sorted run table.
 
     Runs once per frame (guarded by s_frame_built): the first surface flush triggers it, every
-    other surface that frame reuses s_tess + s_runs.  Produces the geometry (s_tess.verts/indices),
+    other surface that frame reuses s_tess + s_dispatch.  Produces the geometry (s_tess.verts/indices),
     the per-run absolute first_index, and the back-to-front z order -- all surface-independent.
     Geometry stats and the peak/overflow bookkeeping live here so they are counted once, not once
     per surface.
@@ -785,94 +740,177 @@ render_build_frame( void )
         return;
     s_frame_built = true;
 
-    /* Diff runs first: hashes were pre-baked at emit (draw_hash_cmd), so this is a cheap fold
-       over s_draw.cmd_hashes with no pool pointer chasing.  Running before tess lets us gate
-       tessellation on any_changed. */
+    /* Close the still-open final segment so the diff and per-window tess both see its full [lo,hi). */
+    if ( s_draw.seg_count > 0 )
+        s_draw.segs[ s_draw.seg_count - 1 ].hi = s_draw.cmd_count;
+
+    /* Diff: fold pre-baked per-command hashes into per-window hashes and compare against last frame.
+       Populates s_cache.cur[], s_cache.changed[], s_cache.any_changed.  Runs before tess so the
+       per-window changed flags are ready for the slot loop below. */
     render_build_cache_diff();
 
-    /* Retained skip: if the optimization is on and no window changed, skip tessellation and reuse
-       s_tess from the previous frame.  The flush re-uploads that geometry unchanged, so the visual
-       result is identical.  Geometry reuse (skipping the upload too) is a future step. */
-    if ( !( s_retained_skip && !s_cache.any_changed ) )
+    /* Swap slot tables: prev <- cur, then reset current for this frame's build. */
+    memcpy( s_slots_prev, s_slots, s_slot_count * sizeof( win_geo_slot_t ) );
+    s_slot_prev_count = s_slot_count;
+    s_slot_count      = 0;
+    s_dispatch_count  = 0;
+
+    /* Always reset tess: even a fully-unchanged frame rebuilds s_tess from the per-window loop
+       (unchanged windows contribute memcpy'd geometry, changed ones run tess).  slot_vert_base is
+       reset per-slot inside the loop. */
+    tess_reset();
+
+    /* Per-window loop: build one geometry slot per unique window in s_cache.cur order.
+       Unchanged windows (s_retained_skip on + hash matched + prev slot valid) copy geometry from
+       s_geo_prev_{verts,indices} and replay their cached GPU draw commands.  Everything else
+       runs render_tess_window.  The slot table ends up in emit order; a z-sort on s_dispatch[]
+       then puts them back-to-front for the flush. */
+    for ( u32 wi = 0; wi < s_cache.cur_n; ++wi )
     {
-        tess_reset();
-        u32 order_count = render_build_order( s_draw.cmds, s_draw.cmd_count );
-        tess_dispatch( s_draw.cmds, s_order, order_count );
+        imgui_id_t     win      = s_cache.cur[ wi ].win;
+        bool           changed  = s_cache.changed[ wi ];
+        win_geo_slot_t* slot    = &s_slots[ s_slot_count++ ];
+
+        slot->win   = win;
+        slot->valid = false;
+
+        /* Determine slot z (max z across this window's segments) and vp. */
+        u32 slot_z = 0, slot_vp = 0;
+        for ( u32 si = 0; si < s_draw.seg_count; ++si )
+        {
+            const imgui_cmd_seg_t* sg = &s_draw.segs[ si ];
+            if ( sg->win != win || sg->lo == sg->hi ) continue;
+            if ( sg->z > slot_z ) slot_z = sg->z;
+            slot_vp = sg->vp;
+        }
+        slot->z  = slot_z;
+        slot->vp = slot_vp;
+
+        /* Try to find a valid previous-frame slot for geometry reuse. */
+        win_geo_slot_t* prev = NULL;
+        if ( s_retained_skip && !changed )
+        {
+            for ( u32 pi = 0; pi < s_slot_prev_count; ++pi )
+                if ( s_slots_prev[ pi ].win == win && s_slots_prev[ pi ].valid )
+                {
+                    prev = &s_slots_prev[ pi ];
+                    break;
+                }
+        }
+
+        if ( prev )
+        {
+            /* Unchanged window: copy geometry from the previous frame's buffers directly.
+               Indices are 0-relative within each slot so the copy is correct regardless of
+               the slot's new absolute position in the shared VB.  vertex_offset in the draw
+               call will shift them to slot->vert_base at submit time. */
+            slot->vert_base  = s_tess.vert_count;
+            slot->vert_count = prev->vert_count;
+            slot->idx_base   = s_tess.idx_count;
+            slot->idx_count  = prev->idx_count;
+            slot->cmd_base   = s_tess.cmd_count;
+            slot->cmd_count  = prev->cmd_count;
+
+            if ( slot->vert_count > 0 )
+                memcpy( &s_tess.verts[ s_tess.vert_count ],
+                        &s_geo_prev_verts[ prev->vert_base ],
+                        slot->vert_count * sizeof( imgui_draw_vert_t ) );
+            s_tess.vert_count += slot->vert_count;
+
+            if ( slot->idx_count > 0 )
+                memcpy( &s_tess.indices[ s_tess.idx_count ],
+                        &s_geo_prev_indices[ prev->idx_base ],
+                        slot->idx_count * sizeof( u16 ) );
+            s_tess.idx_count += slot->idx_count;
+
+            /* Replay cached GPU draw commands with updated absolute vert bases. */
+            u32 nc = ( prev->cmd_count < WIN_SLOT_CMD_MAX ) ? prev->cmd_count : WIN_SLOT_CMD_MAX;
+            for ( u32 k = 0; k < nc; ++k )
+            {
+                u32 ci              = slot->cmd_base + k;
+                s_tess.cmds    [ ci ] = prev->cached_cmds    [ k ];
+                s_tess.cmd_z   [ ci ] = prev->cached_cmd_z   [ k ];
+                s_tess.cmd_vp  [ ci ] = prev->cached_cmd_vp  [ k ];
+                s_tess.cmd_vbase[ ci ] = slot->vert_base + prev->cached_cmd_lvbase[ k ];
+            }
+            s_tess.cmd_count += nc;
+
+            /* Carry cached cmd data forward (needed if this slot is reused again next frame). */
+            memcpy( slot->cached_cmds,     prev->cached_cmds,     nc * sizeof( imgui_gpu_cmd_t ) );
+            memcpy( slot->cached_cmd_z,    prev->cached_cmd_z,    nc * sizeof( u32 ) );
+            memcpy( slot->cached_cmd_vp,   prev->cached_cmd_vp,   nc * sizeof( u32 ) );
+            memcpy( slot->cached_cmd_lvbase, prev->cached_cmd_lvbase, nc * sizeof( u32 ) );
+
+            slot->valid = true;
+        }
+        else
+        {
+            /* Changed or new window: tessellate fresh. */
+            slot->vert_base        = s_tess.vert_count;
+            slot->idx_base         = s_tess.idx_count;
+            slot->cmd_base         = s_tess.cmd_count;
+            s_tess.slot_vert_base  = s_tess.vert_count;   /* indices emitted as slot-local offsets */
+
+            render_tess_window( win );
+
+            slot->vert_count = s_tess.vert_count - slot->vert_base;
+            slot->idx_count  = s_tess.idx_count  - slot->idx_base;
+            slot->cmd_count  = s_tess.cmd_count  - slot->cmd_base;
+
+            /* Cache GPU draw commands for potential reuse next frame. */
+            u32 nc = slot->cmd_count;
+            if ( nc > WIN_SLOT_CMD_MAX ) nc = WIN_SLOT_CMD_MAX;
+            for ( u32 k = 0; k < nc; ++k )
+            {
+                u32 ci = slot->cmd_base + k;
+                slot->cached_cmds    [ k ] = s_tess.cmds    [ ci ];
+                slot->cached_cmd_z   [ k ] = s_tess.cmd_z   [ ci ];
+                slot->cached_cmd_vp  [ k ] = s_tess.cmd_vp  [ ci ];
+                slot->cached_cmd_lvbase[ k ] = s_tess.cmd_vbase[ ci ] - slot->vert_base;
+            }
+            slot->cmd_count = nc;   /* cap at WIN_SLOT_CMD_MAX; extra GPU cmds not cached */
+            slot->valid     = true;
+        }
+
+        s_dispatch[ s_dispatch_count++ ] = slot;
     }
+
+    /* Insertion sort dispatch pointers by slot->z ascending so slots draw back-to-front. */
+    for ( u32 a = 1; a < s_dispatch_count; ++a )
+    {
+        win_geo_slot_t* key = s_dispatch[ a ];
+        u32 b = a;
+        while ( b > 0 && s_dispatch[ b - 1 ]->z > key->z )
+        {
+            s_dispatch[ b ] = s_dispatch[ b - 1 ];
+            --b;
+        }
+        s_dispatch[ b ] = key;
+    }
+
+    /* Save this frame's geometry into the prev buffers so the next frame can memcpy from them. */
+    if ( s_tess.vert_count > 0 )
+        memcpy( s_geo_prev_verts, s_tess.verts, s_tess.vert_count * sizeof( imgui_draw_vert_t ) );
+    if ( s_tess.idx_count > 0 )
+        memcpy( s_geo_prev_indices, s_tess.indices, s_tess.idx_count * sizeof( u16 ) );
 
     /* Track peak tessellated geometry.  Warn once on the first overflow. */
     if ( s_tess.vert_count > s_tess.vert_hwm ) s_tess.vert_hwm = s_tess.vert_count;
     if ( s_tess.idx_count  > s_tess.idx_hwm  ) s_tess.idx_hwm  = s_tess.idx_count;
 
     if ( s_tess.overflow && !s_tess.overflow_ever )
-    {
         printf( "[imgui] WARNING: draw list overflow -- geometry dropped this frame "
                 "(verts capped at %u, idx capped at %u). Raise IMGUI_MAX_VERTS / IMGUI_MAX_IDX.\n",
                 IMGUI_MAX_VERTS, IMGUI_MAX_IDX );
-    }
     if ( s_tess.overflow )
         s_tess.overflow_ever = true;
 
-    /* Group commands into runs of one sort key, then order runs back-to-front by z.
-
-       Commands sharing a sort key are contiguous in the list (immediate mode emits one window
-       completely before the next), so a single forward pass collects the runs and the absolute
-       first_index at each run's start.  The runs are then stable-sorted by z -- vertices and
-       indices never move, only the order in which command ranges are replayed -- so a higher-z
-       (raised) window paints last and therefore on top, with equal-z runs keeping their order.
-       Surface-independent, so it is built once and replayed by every surface's flush. */
-    /* Forward scan only: zs[] was sorted ascending in render_build_order, so s_tess.cmds[] is
-       already in back-to-front z order.  No sort needed -- just group consecutive equal-z cmds. */
-    s_run_count = 0;
-    for ( u32 i = 0, first_index = 0; i < s_tess.cmd_count; )
-    {
-        u32 z      = s_tess.cmd_z[ i ];
-        u32 start  = i;
-        u32 run_fi = first_index;
-        while ( i < s_tess.cmd_count && s_tess.cmd_z[ i ] == z )
-            first_index += s_tess.cmds[ i++ ].elem_count;
-
-        s_runs[ s_run_count++ ] = ( draw_run_t ){ start, i - start, run_fi, z };
-    }
-
-    /* Per-surface geometry span: the [lo,hi) vertex + index range each viewport's commands touch,
-       so its flush uploads only that slice rather than the whole shared buffer.  Walk the command
-       list in emit order (where the index buffer is laid out and cmd_vbase is monotonic) and widen
-       each command's viewport range; a command's vertex span is [cmd_vbase[i], cmd_vbase[i+1]) and
-       its index span is [ibase, ibase+elem_count).  A viewport with no commands keeps lo>hi (empty,
-       so its flush uploads nothing). */
-    for ( u32 v = 0; v < IMGUI_MAX_VIEWPORTS; ++v )
-    {
-        s_vp_vtx_lo[ v ] = s_tess.vert_count;  s_vp_vtx_hi[ v ] = 0;
-        s_vp_idx_lo[ v ] = s_tess.idx_count;   s_vp_idx_hi[ v ] = 0;
-    }
-    for ( u32 i = 0, ibase = 0; i < s_tess.cmd_count; ++i )
-    {
-        u32 vp_i = s_tess.cmd_vp[ i ];
-        u32 vlo  = s_tess.cmd_vbase[ i ];
-        u32 vhi  = ( i + 1 < s_tess.cmd_count ) ? s_tess.cmd_vbase[ i + 1 ] : s_tess.vert_count;
-        u32 ic   = s_tess.cmds[ i ].elem_count;
-        if ( vp_i < IMGUI_MAX_VIEWPORTS )
-        {
-            if ( vlo         < s_vp_vtx_lo[ vp_i ] ) s_vp_vtx_lo[ vp_i ] = vlo;
-            if ( vhi         > s_vp_vtx_hi[ vp_i ] ) s_vp_vtx_hi[ vp_i ] = vhi;
-            if ( ibase       < s_vp_idx_lo[ vp_i ] ) s_vp_idx_lo[ vp_i ] = ibase;
-            if ( ibase + ic  > s_vp_idx_hi[ vp_i ] ) s_vp_idx_hi[ vp_i ] = ibase + ic;
-        }
-        ibase += ic;
-    }
-
-    /* Per-frame emitted geometry stats -- the tessellated list is the whole shared list, so these
-       are the same for every surface; record them once here.  draw_calls are this surface's own
-       partition and are summed across surfaces in the flush below. */
+    /* Stats. */
     s_render.accum.cmd_count  = s_draw.cmd_count;
     s_render.accum.vert_count = s_tess.vert_count;
     s_render.accum.tri_count  = s_tess.idx_count / 3u;
 
-    /* Per-frame emitted geometry -- the verts/indices this frame actually pushed into the draw
-       list (peaks vs. the caps shown for context).  Watch these move as UI state changes; printed
-       only when the counts differ from last frame to filter the spam.  Once per frame now. */
-    static u32 prev_verts = ~0u, prev_idx = ~0u;   /* sentinel: forces a print on the first frame */
+    static u32 prev_verts = ~0u, prev_idx = ~0u;
     if ( s_render_debug_geometry && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
     {
         printf( "[imgui] geometry this frame: verts %u/%u (peak %u), idx %u/%u (peak %u)\n",
@@ -898,12 +936,20 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     u32 vb_off = frame * (u32)IMGUI_VB_REGION_BYTES;
     u32 ib_off = frame * (u32)IMGUI_IB_REGION_BYTES;
 
-    /* Upload only the slice of the shared geometry this surface draws (its [lo,hi) span from
-       render_build_frame), written at its real offset so the absolute indices still resolve.  The
-       untouched parts of the region keep stale data the surface never indexes.  For a single surface
-       the span covers the whole buffer, so this is identical to a full upload in the common case. */
-    u32 vtx_lo = s_vp_vtx_lo[ vp_index ], vtx_hi = s_vp_vtx_hi[ vp_index ];
-    u32 idx_lo = s_vp_idx_lo[ vp_index ], idx_hi = s_vp_idx_hi[ vp_index ];
+    /* Compute this surface's vertex + index upload span from the slot table.  Slots tagged for this
+       viewport contribute their [vert_base, vert_base+vert_count) and [idx_base, idx_base+idx_count)
+       ranges; the union is what we upload.  For a single surface this covers the entire buffer. */
+    u32 vtx_lo = s_tess.vert_count, vtx_hi = 0;
+    u32 idx_lo = s_tess.idx_count,  idx_hi = 0;
+    for ( u32 d = 0; d < s_dispatch_count; ++d )
+    {
+        const win_geo_slot_t* sl = s_dispatch[ d ];
+        if ( sl->vp != vp_index || sl->vert_count == 0 ) continue;
+        if ( sl->vert_base                     < vtx_lo ) vtx_lo = sl->vert_base;
+        if ( sl->vert_base + sl->vert_count    > vtx_hi ) vtx_hi = sl->vert_base + sl->vert_count;
+        if ( sl->idx_base                      < idx_lo ) idx_lo = sl->idx_base;
+        if ( sl->idx_base  + sl->idx_count     > idx_hi ) idx_hi = sl->idx_base  + sl->idx_count;
+    }
 
     if ( vtx_hi > vtx_lo )
         rhi()->buffer_write( vp->vb,
@@ -949,8 +995,6 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
     imgui_push_t push;
     render_ortho( push.mvp, (f32)win_w, (f32)win_h );
 
-    /* The z-grouped, back-to-front run table (s_runs) was built once this frame by
-       render_build_frame; this surface just replays it, drawing only its own partition. */
     push.samp_idx = s_render.font_sampler_idx;
 
     /* Debug render mode push state.  dbg_flat makes the fragment bypass the atlas and emit a flat
@@ -962,36 +1006,39 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
 
     u32 draw_calls = 0;   /* indexed draws actually emitted this frame (one per non-empty command) */
 
-    for ( u32 r = 0; r < s_run_count; ++r )
+    /* Iterate s_dispatch[] (z-sorted slot pointers) back-to-front.  Each slot owns a contiguous
+       region of s_tess.verts[] and s_tess.indices[]; its GPU draw commands reference those regions
+       via 0-relative indices + vertex_offset = slot->vert_base.  Slots for other viewports are
+       skipped entirely; within a slot, individual commands with a mismatched vp are stepped over
+       (their index range must still be consumed to keep first_index aligned). */
+    for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
-        u32 first_index = s_runs[ r ].first_index;
-        for ( u32 k = 0; k < s_runs[ r ].count; ++k )
-        {
-            const imgui_gpu_cmd_t* dc = &s_tess.cmds[ s_runs[ r ].start + k ];
-            if ( dc->elem_count == 0 )
-                continue;
+        const win_geo_slot_t* slot = s_dispatch[ d ];
+        if ( slot->vp != vp_index )
+            continue;
 
-            /* Partition: a command bound for another surface is not drawn here, but its index
-               range is still stepped over so the commands kept on this surface address the right
-               slice of the (shared, absolute) index buffer. */
-            if ( s_tess.cmd_vp[ s_runs[ r ].start + k ] != vp_index )
+        u32 first_index = slot->idx_base;   /* absolute start of this slot's indices in the IB */
+        for ( u32 k = 0; k < slot->cmd_count; ++k )
+        {
+            u32                    ci = slot->cmd_base + k;
+            const imgui_gpu_cmd_t* dc = &s_tess.cmds[ ci ];
+
+            if ( s_tess.cmd_vp[ ci ] != vp_index )
             {
                 first_index += dc->elem_count;
                 continue;
             }
+            if ( dc->elem_count == 0 )
+                continue;
 
-            /* Scissor to the draw command's clip rect.  Floor the origin and ceil the
-               far edge (rather than truncating both) so a fractional clip rect never
-               rounds inward and shaves a pixel off the visible content at a border. */
+            /* Scissor to the draw command's clip rect.  Floor the origin and ceil the far edge so a
+               fractional clip rect never rounds inward and shaves a pixel off visible content. */
             i32 sx0 = (i32)floorf( dc->clip_rect.x );
             i32 sy0 = (i32)floorf( dc->clip_rect.y );
             i32 sx1 = (i32)ceilf ( dc->clip_rect.x + dc->clip_rect.w );
             i32 sy1 = (i32)ceilf ( dc->clip_rect.y + dc->clip_rect.h );
 
-            /* Clamp to the framebuffer: a window dragged past the left/top edge yields a
-               negative origin, which Vulkan rejects (offset must be >= 0).  Clamp the near
-               edge up to 0 and the far edge down to the window extent, then guard against an
-               inverted rect (fully off-screen) producing a negative width/height. */
+            /* Clamp to framebuffer bounds (Vulkan requires offset >= 0 and extent within the surface). */
             if ( sx0 < 0 ) sx0 = 0;
             if ( sy0 < 0 ) sy0 = 0;
             if ( sx1 > win_w ) sx1 = win_w;
@@ -1006,10 +1053,7 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
                 .height = sy1 - sy0,
             } );
 
-            /* tex_idx is resolved at push time (solids already point at the atlas white texel). */
             push.tex_idx = dc->tex_idx;
-            /* Batch view: tint this draw call by its running index, so each batch reads as a
-               distinct solid color and a color change in the image marks a batch boundary. */
             if ( batch_view )
                 push.dbg_tint = batch_debug_color( draw_calls );
             rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
@@ -1018,7 +1062,7 @@ imgui_render_flush( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w
                 .index_count    = dc->elem_count,
                 .instance_count = 1,
                 .first_index    = first_index,
-                .vertex_offset  = 0,
+                .vertex_offset  = (i32)slot->vert_base,   /* slot-local indices + vert_base = absolute */
                 .first_instance = 0,
             } );
             ++draw_calls;
