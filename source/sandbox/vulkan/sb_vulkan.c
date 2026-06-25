@@ -371,7 +371,10 @@ main( int argc, char** argv )
            render() below will reuse the preserved tessellation from the previous clean frame. */
         if ( imgui()->frame_dirty() )
         {
-            printf( "frame dirty: dt %.3f, wants_redraw %d \n", dt, imgui()->wants_redraw() );
+            bool b_dbg_dirty = false;
+            if ( b_dbg_dirty ) {
+                printf( "frame dirty: dt %.3f, wants_redraw %d \n", dt, imgui()->wants_redraw() );
+            }
 
             /* --- Default context: the main build + perf overlay live in one ctx scope. --- */
             imgui()->ctx_begin( IMGUI_CTX_DEFAULT );
