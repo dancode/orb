@@ -30,11 +30,19 @@ ORB_STATIC_ASSERT( APP_KEY_COUNT <= IMGUI_KEY_COUNT,
 static imgui_io_t s_io;
 
 /* True when any input-state change was detected this frame: mouse moved, button edge,
-   key press/release, wheel, text, or paste.  Computed in input_update and cleared at the
-   next call.  Read by frame_begin to gate the frontend-dirty check. */
+   key press/release, wheel, text, paste, or display-size change.  Computed in input_update
+   and cleared at the next call.  Read by frame_begin to gate the frontend-dirty check. */
 static bool s_io_dirty;
 
-/* Internal accessor used by imgui_frame.c (same unity TU). */
+/* Set by imgui_owned_window_event (imgui_frame.c, same unity TU) when a floater OS window
+   is resized.  Consumed and cleared by input_update so the resize marks one frame dirty. */
+static bool s_viewport_dirty;
+
+/* Previous primary display size -- compared each frame to detect host-side viewport_resize
+   calls on the main surface (which also change win_w/win_h passed into input_update). */
+static i32 s_prev_disp_w, s_prev_disp_h;
+
+/* Internal accessors used by imgui_frame.c (same unity TU). */
 static bool io_dirty( void ) { return s_io_dirty; }
 
 /* Pending text + scroll accumulated between frames by imgui_event().  The app event
@@ -278,9 +286,17 @@ input_update( i32 win_w, i32 win_h, f32 dt )
     else
         s_io.paste[ 0 ] = '\0';
 
+    /* Display size change: primary window resized (win_w/win_h changed) or a floater viewport
+       was resized (s_viewport_dirty set by imgui_owned_window_event).  Either invalidates the
+       cached layout -- window clip rects and draw_reset dimensions must be recomputed. */
+    bool disp_changed = ( win_w != s_prev_disp_w || win_h != s_prev_disp_h ) || s_viewport_dirty;
+    s_prev_disp_w   = win_w;
+    s_prev_disp_h   = win_h;
+    s_viewport_dirty = false;
+
     /* Frame is dirty when anything changed vs last frame: position, button/key edges (including
-       repeat ticks), wheel, typed text, or clipboard paste.  Used by frame_begin to gate emit. */
-    s_io_dirty = mouse_moved || mouse_edge || key_edge
+       repeat ticks), wheel, typed text, clipboard paste, or display-size change. */
+    s_io_dirty = mouse_moved || mouse_edge || key_edge || disp_changed
               || ( s_pending_wheel    != 0.0f )
               || ( s_pending_text_len >  0    )
               || s_pending_paste_set;

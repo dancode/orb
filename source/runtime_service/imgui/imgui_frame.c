@@ -555,8 +555,9 @@ imgui_owned_window_event( const app_event_t* ev )
         {
             i32 w = ev->data.win_resize.w, h = ev->data.win_resize.h;
             rhi()->context_resize( vp->rhi_ctx, w, h );
-            vp->disp_w = w;
-            vp->disp_h = h;
+            vp->disp_w       = w;
+            vp->disp_h       = h;
+            s_viewport_dirty = true;   /* mark frame dirty so layout recomputes for the new size */
         }
         else /* APP_EV_WIN_CLOSE */
         {
