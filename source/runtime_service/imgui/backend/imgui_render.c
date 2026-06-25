@@ -19,14 +19,14 @@
 // clang-format off
 
 /*==============================================================================================
-    Push constant layout (72 bytes; must match imgui_shader.h GLSL source)
+    Push constant layout (80 bytes; must match imgui_shader.h GLSL source)
 ==============================================================================================*/
 
 typedef struct
 {
-    f32 mvp[ 16 ];      /* column-major ortho matrix    64 bytes */
-    u32 tex_idx;        /* bindless texture slot         4 bytes */
-    u32 samp_idx;       /* bindless sampler slot         4 bytes */
+    f32 mvp[ 16 ];      /* column-major ortho matrix       64 bytes */
+    u32 tex_idx;        /* bindless texture slot            4 bytes */
+    u32 samp_idx;       /* bindless sampler slot            4 bytes */
     u32 dbg_flat;       /* debug: 1 = flat color (no atlas) 4 bytes */
     u32 dbg_tint;       /* debug: packed RGBA8 batch tint   4 bytes */
 
@@ -114,7 +114,7 @@ static bool s_frame_built;   /* slot table + tessellation computed this frame */
     (correct, just less merged) -- same as render_tess_window's clip overflow path.
 ----------------------------------------------------------------------------------------------*/
 
-#define RENDER_MAX_WIN   256   /* distinct windows tracked per frame (slots + cache diff) */
+#define RENDER_MAX_WIN    64   /* distinct windows tracked per frame (slots + cache diff) */
 #define WIN_SLOT_CMD_MAX  16   /* max GPU draw cmds cached per slot; most windows have 2-4 */
 
 /* AOS record for one cached GPU draw command.  Packed together so replaying a slot's cached
@@ -131,25 +131,25 @@ typedef struct
 {
     imgui_id_t      win;
     u32             z, vp;
-    u32             vert_base,  vert_count;
-    u32             idx_base,   idx_count;
-    u32             cmd_base,   cmd_count;    /* range into s_tess.cmds[] */
-    win_slot_cmd_t  cached[ WIN_SLOT_CMD_MAX ];  /* GPU cmds; filled at tess, replayed on reuse */
-    bool            valid;                    /* geometry tessellated at least once */
+    u32             vert_base,  vert_count;             // where window vertices live in shared VB
+    u32             idx_base,   idx_count;              // where window indeices live in shared IB
+    u32             cmd_base,   cmd_count;              // range into s_tess.cmds[] that belong in window.
+    win_slot_cmd_t  cached[ WIN_SLOT_CMD_MAX ];         // GPU cmds; filled at tess, replayed on reuse
+    bool            valid;                              // geometry tessellated at least once
 } win_geo_slot_t;
 
-static win_geo_slot_t  s_slots     [ RENDER_MAX_WIN ];    /* current frame's per-window slots  */
-static win_geo_slot_t  s_slots_prev[ RENDER_MAX_WIN ];    /* previous frame's slots (for reuse) */
-static u32             s_slot_count, s_slot_prev_count;
-static win_geo_slot_t* s_dispatch  [ RENDER_MAX_WIN ];    /* z-sorted pointers into s_slots    */
+static u32             s_slot_count, s_slot_prev_count; // 
+static win_geo_slot_t  s_slots      [ RENDER_MAX_WIN ]; // current frame's per-window slots 
+static win_geo_slot_t  s_slots_prev [ RENDER_MAX_WIN ]; // previous frame's slots (for reuse) 
+static win_geo_slot_t* s_dispatch   [ RENDER_MAX_WIN ]; // z-sorted pointers into s_slots    
 static u32             s_dispatch_count;
 
-/* Previous-frame geometry buffers.  Copied from s_tess at end of render_build_frame and used by
-   the reuse path to memcpy unchanged window geometry into the current frame's s_tess without
-   re-running any tessellation math.  Indices are 0-relative within each slot so the copy is
-   direct -- no fixup needed when the slot lands at a different absolute position. */
-static imgui_draw_vert_t s_geo_prev_verts  [ IMGUI_MAX_VERTS ];
-static u16               s_geo_prev_indices[ IMGUI_MAX_IDX   ];
+// TODO: make s_dispatch indexes rather than pointers?
+
+/* No separate prev-geometry buffers: s_tess.verts/indices are static and never cleared between
+   frames, so previous-frame data sits in-place at its old slot positions.  The reuse path
+   memmoves within s_tess from prev->vert_base to the new vert_count destination; memmove
+   handles the overlap case (earlier windows grew, shifting dest past src) correctly. */
 
 /* Manual debug toggle: flip to true (debugger, or at startup) to print the per-frame
    draw-call count every flush.  The high-water mark is always tracked and reported at
@@ -674,6 +674,7 @@ static struct
     u32  cur_n, prev_n;
     u32  unchanged;                     /* windows whose hash matched last frame        */
     bool any_changed;                   /* a window appeared / vanished / changed       */
+
 } s_cache = { .any_changed = true };    /* start true: guarantees first frame always builds */
 
 /* True when the PREVIOUS frame produced any render change.  Read by frame_begin before this
@@ -856,16 +857,16 @@ render_build_frame( void )
             slot->cmd_base   = s_tess.cmd_count;
             slot->cmd_count  = prev->cmd_count;
 
-            if ( slot->vert_count > 0 )
-                memcpy( &s_tess.verts[ s_tess.vert_count ],
-                        &s_geo_prev_verts[ prev->vert_base ],
-                        slot->vert_count * sizeof( imgui_draw_vert_t ) );
+            if ( slot->vert_count > 0 && s_tess.vert_count != prev->vert_base )
+                memmove( &s_tess.verts[ s_tess.vert_count ],
+                         &s_tess.verts[ prev->vert_base ],
+                         slot->vert_count * sizeof( imgui_draw_vert_t ) );
             s_tess.vert_count += slot->vert_count;
 
-            if ( slot->idx_count > 0 )
-                memcpy( &s_tess.indices[ s_tess.idx_count ],
-                        &s_geo_prev_indices[ prev->idx_base ],
-                        slot->idx_count * sizeof( u16 ) );
+            if ( slot->idx_count > 0 && s_tess.idx_count != prev->idx_base )
+                memmove( &s_tess.indices[ s_tess.idx_count ],
+                         &s_tess.indices[ prev->idx_base ],
+                         slot->idx_count * sizeof( u16 ) );
             s_tess.idx_count += slot->idx_count;
 
             /* Replay cached GPU draw commands; carry them forward for future reuse. */
@@ -931,18 +932,6 @@ render_build_frame( void )
             --b;
         }
         s_dispatch[ b ] = key;
-    }
-
-    /* Save this frame's geometry into the prev buffers so unchanged windows next frame can
-       memcpy from them.  Skip when nothing changed: in that case s_tess is byte-for-byte
-       identical to the prev buffers (all geometry was copied from them), so copying back
-       would be wasted work -- a win on fully idle frames (320 KB + 96 KB skipped). */
-    if ( s_cache.any_changed )
-    {
-        if ( s_tess.vert_count > 0 )
-            memcpy( s_geo_prev_verts, s_tess.verts, s_tess.vert_count * sizeof( imgui_draw_vert_t ) );
-        if ( s_tess.idx_count > 0 )
-            memcpy( s_geo_prev_indices, s_tess.indices, s_tess.idx_count * sizeof( u16 ) );
     }
 
     /* Retained stats -- tracked per frame, published via imgui_render_stats(). */
