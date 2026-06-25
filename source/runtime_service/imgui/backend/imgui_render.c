@@ -545,8 +545,8 @@ clip_eq( imgui_rect_t a, imgui_rect_t b )
     dropdown) carries a higher z but is emitted BETWEEN the parent window's commands, splitting the
     parent's span in two.  Both halves carry the window's z, so gathering by z across the whole list
     rejoins them into one batch -- otherwise the overlay opens a second window-clip batch on its far
-    side.  Distinct z values are collected in first-seen order, which matches the existing run-sort's
-    treatment of equal z (a higher-z overlay still draws last) so paint order is unchanged.
+    side.  Distinct z values are collected then sorted ascending so geometry is tessellated in
+    draw order (back-to-front) from the start; the post-tess run-sort is eliminated.
 
     Ordering safety: this only reorders commands that differ in z or clip.  Within a clip group the
     original emit order is preserved (the inner loop is stable), so overlapping shapes under one
@@ -579,9 +579,9 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
     if ( nseg )
         s_draw.segs[ nseg - 1 ].hi = count;   /* close the still-open final segment at the list end */
 
-    /* Distinct z in first-seen order, scanned over the segment table (tens) rather than per command.
-       A segment carries one z, so a single empty-span skip is all the per-segment filtering needed; a
-       z whose commands are all fully clipped simply yields an empty clip pass below (no indices). */
+    /* Distinct z values, collected then sorted ascending so geometry is tessellated back-to-front.
+       This means s_tess already carries runs in draw order -- the post-tess run-sort is not needed.
+       A segment carries one z, so a single empty-span skip is all the per-segment filtering needed. */
     u32  zs[ RENDER_MAX_Z ];
     u32  nz         = 0;
     bool z_overflow = false;
@@ -597,6 +597,14 @@ render_build_order( const imgui_cmd_t* cmds, u32 count )
             if ( nz >= RENDER_MAX_Z ) { z_overflow = true; break; }
             zs[ nz++ ] = z;
         }
+    }
+
+    /* Insertion sort zs[] ascending: nz <= RENDER_MAX_Z but typically << 20 in real frames. */
+    for ( u32 a = 1; a < nz; ++a )
+    {
+        u32 key = zs[ a ], b = a;
+        while ( b > 0 && zs[ b - 1 ] > key ) { zs[ b ] = zs[ b - 1 ]; --b; }
+        zs[ b ] = key;
     }
 
     u32 n = 0;
@@ -813,6 +821,8 @@ render_build_frame( void )
        indices never move, only the order in which command ranges are replayed -- so a higher-z
        (raised) window paints last and therefore on top, with equal-z runs keeping their order.
        Surface-independent, so it is built once and replayed by every surface's flush. */
+    /* Forward scan only: zs[] was sorted ascending in render_build_order, so s_tess.cmds[] is
+       already in back-to-front z order.  No sort needed -- just group consecutive equal-z cmds. */
     s_run_count = 0;
     for ( u32 i = 0, first_index = 0; i < s_tess.cmd_count; )
     {
@@ -823,19 +833,6 @@ render_build_frame( void )
             first_index += s_tess.cmds[ i++ ].elem_count;
 
         s_runs[ s_run_count++ ] = ( draw_run_t ){ start, i - start, run_fi, z };
-    }
-
-    /* Stable insertion sort by z (ascending = back-to-front; run_count is small). */
-    for ( u32 a = 1; a < s_run_count; ++a )
-    {
-        draw_run_t key = s_runs[ a ];
-        u32        b   = a;
-        while ( b > 0 && s_runs[ b - 1 ].z > key.z )
-        {
-            s_runs[ b ] = s_runs[ b - 1 ];
-            --b;
-        }
-        s_runs[ b ] = key;
     }
 
     /* Per-surface geometry span: the [lo,hi) vertex + index range each viewport's commands touch,
