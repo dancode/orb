@@ -33,9 +33,9 @@ typedef struct
 
 /* One contiguous span of the command list sharing a single (win, z, vp) tag.  The emit path appends
    commands into cmds[]; whenever draw_set_window / draw_set_sort_key / draw_set_viewport change the
-   tag, the open span is closed at the current cmd_count and a fresh one is opened.  render_build_order
-   orders these spans (tens of them) instead of re-scanning the 1024-entry command buffer per z and
-   clip, and the retained-cache diff hashes each window's spans by the stable win id.  [lo, hi) is the
+   tag, the open span is closed at the current cmd_count and a fresh one is opened.  cache_tess_window
+   walks these spans per window (tens of them) instead of re-scanning the 1024-entry command buffer per
+   z and clip, and the retained-cache diff hashes each window's spans by the stable win id.  [lo, hi) is the
    half-open command range; the final open span's hi is closed at build time.  win is the owning
    window's stable id (id_hash(title)), 0 for background / non-window draws. */
 typedef struct { imgui_id_t win; u32 z, vp, lo, hi; } imgui_cmd_seg_t;
@@ -183,7 +183,7 @@ draw_set_root_clip( f32 w, f32 h )
    the current segment is still empty (no command emitted since it opened) its tag is simply rewritten
    in place, so back-to-back set_window / set_sort_key / set_viewport calls before any draw never spawn
    empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
-   the pathological >1024-segment case, which render_build_order already falls back to natural order). */
+   the pathological >1024-segment case, which cache_tess_window already falls back to natural order). */
 static void
 draw_seg_retag( imgui_id_t win, u32 z, u32 vp )
 {
@@ -373,7 +373,7 @@ draw_clamp_rounding( f32 w, f32 h )
 
     draw_hash_cmd hashes a fully-filled imgui_cmd_t at emit time while the data is still
     L1-hot.  The hash is stored in s_draw.cmd_hashes and folded per window by
-    render_build_cache_diff (imgui_render.c) to detect frame-to-frame changes without
+    cache_diff_windows (imgui_render_cache.c) to detect frame-to-frame changes without
     re-scanning the command buffer after tessellation.
 
     TEXT and POLYLINE skip the pool-offset fields (text.off / polyline.pt_offset) because

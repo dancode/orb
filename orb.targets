@@ -89,7 +89,6 @@ target run
     unit        runtime.c
     dep         mod sys ref core app job
 
-
 # ==============================================================================
 # 03_RUNTIME_SERVICE
 # ==============================================================================
@@ -264,6 +263,7 @@ target host_editor
     folder      08_HOST
     unit        host_editor_main.c
 	dep         mod sys ref core job app
+	dep 		draw imgui 
 	
 target host_tool
 

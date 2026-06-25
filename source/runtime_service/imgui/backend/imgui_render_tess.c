@@ -7,13 +7,13 @@
     reads semantic commands and writes imgui_draw_vert_t / u16 index data; nothing here
     touches the GPU API.
 
-    s_tess is private to this file and imgui_render.c (included immediately after): the
-    geometry it holds is the input to imgui_render_flush, which uploads it and emits draw
-    calls.  No other file reads or writes s_tess.
+    s_tess is read only by the two files included immediately after: imgui_render_cache.c (the
+    BUILD phase fills it via tess_dispatch) and imgui_render.c (imgui_render_flush uploads it and
+    emits draw calls).  No file above the backend unit touches it.
 
     Included by imgui_backend.c after imgui_draw_path.c (provides v2, seg_normal,
-    stroke_center_offset, STROKE_* constants) and before imgui_render.c (which drives
-    tess_reset / tess_dispatch from imgui_render_flush).
+    stroke_center_offset, STROKE_* constants) and before imgui_render_cache.c (which drives
+    tess_reset / tess_dispatch from cache_build_frame / cache_tess_window).
 
 ==============================================================================================*/
 // clang-format off
@@ -21,9 +21,10 @@
 /*----------------------------------------------------------------------------------------------
     Tessellation state -- private vertex/index buffers populated from the semantic command list.
 
-    imgui_render_flush tessellates the frame's imgui_cmd_t list into s_tess, then uploads
-    s_tess.verts/indices to the GPU.  s_tess is backend-private; nothing above imgui_render.c
-    touches it.  s_draw holds only semantic commands (imgui_cmd_t) -- no vtx/idx buffers.
+    cache_build_frame tessellates the frame's imgui_cmd_t list into s_tess (per window, via
+    tess_dispatch), then imgui_render_flush uploads s_tess.verts/indices to the GPU.  s_tess is
+    backend-private; nothing above the backend unit touches it.  s_draw holds only semantic
+    commands (imgui_cmd_t) -- no vtx/idx buffers.
 
     cur_clip/cur_z/cur_vp are written by tess_dispatch before each primitive so tess_ensure_gpu_cmd
     can stamp the correct context onto new GPU commands without extra parameters.
@@ -653,7 +654,7 @@ static void
 tess_dispatch( const imgui_cmd_t* cmds, const u32* order, u32 count )
 {
     /* `order` is a permutation of [0,count): the indices grouped by clip within each z-run
-       (built by render_build_order) so equal-clip commands tessellate contiguously and collapse
+       (built by cache_tess_window) so equal-clip commands tessellate contiguously and collapse
        into one GPU batch.  Walking it instead of [0,count) is the whole cost of the merge -- the
        geometry is built exactly once, just in this order; nothing is copied or re-tessellated. */
     for ( u32 oi = 0; oi < count; ++oi )

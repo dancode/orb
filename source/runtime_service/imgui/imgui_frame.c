@@ -307,7 +307,7 @@ imgui_frame_begin( f32 dt )
     }
     /* Clean frame: draw_reset / imgui_render_frame_reset / interaction_frame_reset are all
        skipped.  s_draw.cmds is preserved from the previous frame; s_frame_built remains true
-       so render_build_frame returns immediately and reuses the existing s_tess + s_dispatch.
+       so cache_build_frame returns immediately and reuses the existing s_tess + s_dispatch.
        Interaction state (hover_win, active_id, focused_id) persists unchanged -- the cursor
        has not moved, so last frame's hover is still valid. */
 

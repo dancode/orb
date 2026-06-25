@@ -116,21 +116,33 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
                                   f32 clip_x0, f32 clip_x1 );
 
 /*==============================================================================================
-    GPU resources + flush (imgui_render.c)
+    GPU resources + flush -- the SUBMIT phase (imgui_render.c)
 ==============================================================================================*/
 
 bool imgui_render_init    ( void );
 void imgui_render_shutdown( void );
 void imgui_render_flush   ( imgui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
+imgui_mem_stats_t imgui_render_memory      ( void );
+void              imgui_render_print_memory( void );
+
+/* Debug render mode (normal / wireframe / batch-tint) -- backs imgui()->debug_set/get_render_mode.
+   The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */
+void                imgui_render_set_mode( imgui_render_mode_t mode );
+imgui_render_mode_t imgui_render_get_mode( void );
+
+bool viewport_create ( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
+void viewport_destroy( imgui_viewport_t* vp );                                   // free its vb/ib
+
+/*==============================================================================================
+    Retained frame-geometry cache -- the BUILD phase (imgui_render_cache.c)
+==============================================================================================*/
+
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
-   The frame's semantic list is tessellated + run-sorted exactly once (lazily, on the first
+   The frame's semantic list is tessellated + z-sorted exactly once (lazily, on the first
    surface flush); every other live surface that frame reuses the result.  Called by
    imgui_frame_begin right after draw_reset, before the build emits any new commands. */
 void imgui_render_frame_reset( void );
-
-imgui_mem_stats_t imgui_render_memory      ( void );
-void              imgui_render_print_memory( void );
 
 /* Per-frame render stats: imgui_render_stats returns the last published frame's totals;
    imgui_render_stats_publish promotes the in-progress accumulator to the published value and
@@ -138,24 +150,16 @@ void              imgui_render_print_memory( void );
 imgui_render_stats_t imgui_render_stats        ( void );
 void                 imgui_render_stats_publish( void );
 
-/* Debug render mode (normal / wireframe / batch-tint) -- backs imgui()->debug_set/get_render_mode.
-   The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */
-void                imgui_render_set_mode( imgui_render_mode_t mode );
-imgui_render_mode_t imgui_render_get_mode( void );
-
 /* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match
    the previous frame) skips tessellation and reuses s_tess.  Toggle for benchmarking or debugging. */
 void imgui_render_set_retained_skip( bool on );
 bool imgui_render_retained_skip( void );
 
 /* True when the PREVIOUS frame's render produced any change (a window appeared, vanished, or
-   changed content).  Read from the UI unit during frame_begin (before this frame's render_build_frame
+   changed content).  Read from the UI unit during frame_begin (before this frame's cache_build_frame
    runs) so s_cache.any_changed still holds last frame's result.  Used with io_dirty and wants_redraw
    to decide whether to skip the widget emit phase entirely (Level 3 retained skip). */
 bool imgui_render_any_changed( void );
-
-bool viewport_create ( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
-void viewport_destroy( imgui_viewport_t* vp );                                   // free its vb/ib
 
 /*==============================================================================================
     Debug overlay (imgui_debug.c) -- Debug builds only.

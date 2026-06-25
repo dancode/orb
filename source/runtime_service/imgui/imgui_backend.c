@@ -22,7 +22,8 @@
     imgui_draw.c              -- CPU draw list: draw_reset, draw_push_*, s_draw
     imgui_draw_path.c         -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
     imgui_render_tess.c       -- CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
-    imgui_render.c            -- GPU flush: viewport_create/destroy, imgui_render_init/shutdown/flush
+    imgui_render_cache.c      -- retained frame-geometry cache (BUILD): cache_build_frame, s_cache, s_dispatch
+    imgui_render.c            -- GPU resources + flush (SUBMIT): viewport_create/destroy, init/shutdown/flush
     imgui_debug.c             -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
 
 ==============================================================================================*/
@@ -50,6 +51,7 @@
 #include "runtime_service/imgui/backend/imgui_draw.c"
 #include "runtime_service/imgui/backend/imgui_draw_path.c"
 #include "runtime_service/imgui/backend/imgui_render_tess.c"
+#include "runtime_service/imgui/backend/imgui_render_cache.c"
 #include "runtime_service/imgui/backend/imgui_render.c"
 #include "runtime_service/imgui/backend/imgui_debug.c"
 
