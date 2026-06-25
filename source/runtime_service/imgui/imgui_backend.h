@@ -148,6 +148,12 @@ imgui_render_mode_t imgui_render_get_mode( void );
 void imgui_render_set_retained_skip( bool on );
 bool imgui_render_retained_skip( void );
 
+/* True when the PREVIOUS frame's render produced any change (a window appeared, vanished, or
+   changed content).  Read from the UI unit during frame_begin (before this frame's render_build_frame
+   runs) so s_cache.any_changed still holds last frame's result.  Used with io_dirty and wants_redraw
+   to decide whether to skip the widget emit phase entirely (Level 3 retained skip). */
+bool imgui_render_any_changed( void );
+
 bool viewport_create ( imgui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
 void viewport_destroy( imgui_viewport_t* vp );                                   // free its vb/ib
 

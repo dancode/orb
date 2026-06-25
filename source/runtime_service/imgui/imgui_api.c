@@ -262,6 +262,7 @@ const imgui_api_t g_imgui_api_struct =
     .set_mouse_cursor                   = imgui_set_mouse_cursor,
     .get_mouse_cursor                   = imgui_get_mouse_cursor,
     .wants_redraw                       = imgui_wants_redraw,
+    .frame_dirty                        = imgui_frame_dirty,
     .table_begin                        = imgui_table_begin,
     .table_end                          = imgui_table_end,
     .table_setup_column                 = imgui_table_setup_column,

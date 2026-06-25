@@ -234,6 +234,12 @@ imgui_perf_overlay( imgui_clock_fn clock, int mode )
 static imgui_context_t* s_ctx_save_stack[ IMGUI_CTX_STACK_DEPTH ];
 static u32              s_ctx_save_sp;
 
+/* True when the current frame has any input change, in-flight animation, or render delta from last
+   frame.  Computed in frame_begin after input_update; exposed via imgui_frame_dirty().  When false
+   the host may skip ctx_begin / widget emit / ctx_end entirely and call render() directly -- the
+   previous frame's draw list and tessellation are preserved and reused unchanged. */
+static bool s_frame_dirty = true;   /* start true: forces a full first-frame build */
+
 /* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
    PRIMARY context (slot 0): the OS window and its viewports belong to the default context
    regardless of which context is active for input this frame.
@@ -256,11 +262,7 @@ imgui_frame_begin( f32 dt )
     perf_frame_begin( dt );
 
     /* caption_inset is NOT cleared here.  Native shell windows republish it during the build, so
-       the field always reflects the last frame the shell was active.  Leaving it sticky means
-       viewport_update gets the correct top bound regardless of whether it is called before
-       or after the build this frame (both are valid host patterns for tear-off handling).  If the
-       native shell permanently disappears the stale inset is conservative -- windows stay clamped
-       below where the caption used to be -- and the viewport is destroyed shortly after anyway. */
+       the field always reflects the last frame the shell was active. */
 
     /* Push last frame's cursor request to the OS BEFORE interaction_frame_reset promotes the new
        hover_win and input_update overwrites mouse_viewport -- cursor_flush reads both as the
@@ -271,20 +273,46 @@ imgui_frame_begin( f32 dt )
        build that reads render_stats() this frame sees the previous frame's completed totals. */
     imgui_render_stats_publish();
 
+    /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
     input_update( disp_w, disp_h, dt );
-    draw_reset( disp_w, disp_h );
-    imgui_render_frame_reset();   /* drop last frame's tessellation cache; rebuilt on first flush */
 
-    /* Push any icons registered since last frame to the GPU once, before the build emits draws. */
+    /* Frontend dirty: true when the frame must emit widgets.
+         - io_dirty          : any input change this frame (mouse move/button/key/wheel/text)
+         - wants_redraw      : an animation was in flight last frame and must advance this frame
+                               (wants_redraw is cleared at ctx_begin, so at frame_begin it still
+                               holds the value set during last frame's emit -- "was mid-animation")
+         - render_any_changed: last frame's diff found a change (new/removed/moved window), so
+                               the frame has not yet reached a stable cached state
+       When false: the host may skip ctx_begin / widget emit / ctx_end.  The draw list and
+       tessellation from the previous frame are preserved and replayed verbatim. */
+    s_frame_dirty = io_dirty()
+                 || s_retained.wants_redraw
+                 || imgui_render_any_changed();
+
+    /* Push any icons registered since last frame to the GPU -- always, since host code can
+       register icons between frames independent of the widget emit. */
     icon_atlas_flush_upload();
 
-    /* Reset global interaction state exactly once per app frame.  hover_win promotion and
-       active_id release happen here -- NOT in ctx_new_frame -- so subsequent ctx_begin calls
-       for additional contexts do not clobber hover nominations from earlier contexts. */
-    interaction_frame_reset();
+    if ( s_frame_dirty )
+    {
+        /* Full rebuild: clear the draw list and tessellation so the emit phase writes fresh
+           commands, and reset global interaction state for this frame's hit tests. */
+        draw_reset( disp_w, disp_h );
+        imgui_render_frame_reset();   /* s_frame_built = false; rebuilt on first render() */
+
+        /* Reset global interaction state exactly once per app frame.  hover_win promotion and
+           active_id release happen here -- NOT in ctx_new_frame -- so subsequent ctx_begin
+           calls for additional contexts do not clobber hover nominations from earlier ones. */
+        interaction_frame_reset();
+    }
+    /* Clean frame: draw_reset / imgui_render_frame_reset / interaction_frame_reset are all
+       skipped.  s_draw.cmds is preserved from the previous frame; s_frame_built remains true
+       so render_build_frame returns immediately and reuses the existing s_tess + s_dispatch.
+       Interaction state (hover_win, active_id, focused_id) persists unchanged -- the cursor
+       has not moved, so last frame's hover is still valid. */
 
 #ifdef IMGUI_DEBUG_OVERLAY
-    imgui_debug_reset();         /* clear the overlay's per-frame geometry */
+    imgui_debug_reset();         /* clear the overlay's per-frame geometry (always) */
 #endif
 }
 
@@ -875,6 +903,17 @@ bool
 imgui_wants_redraw( void )
 {
     return s_retained.wants_redraw;
+}
+
+/* True when the current frame must perform a full widget emit.  Computed in frame_begin as the OR
+   of three signals: io_dirty (any input change), wants_redraw (in-flight animation from last frame),
+   and render_any_changed (last frame's diff found a structural change).  When false the host may
+   skip ctx_begin / widget emit / ctx_end entirely -- the previous frame's draw list, tessellated
+   geometry, and GPU draw commands are preserved and replayed verbatim by render(). */
+bool
+imgui_frame_dirty( void )
+{
+    return s_frame_dirty;
 }
 
 /*==============================================================================================

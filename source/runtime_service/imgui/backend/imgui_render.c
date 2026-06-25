@@ -169,7 +169,7 @@ static bool s_render_debug_cache = false;
 /* Manual debug toggle: flip to true to print per-frame retained-geometry stats -- how many windows
    and how many vertices/triangles were reused from the previous frame vs total.  The same numbers
    are available live through imgui()->render_stats() at mode >= 4 in the perf overlay. */
-static bool s_render_debug_retained = true;
+static bool s_render_debug_retained = false;
 
 /* Retained-skip optimization: when true and the diff says nothing changed, tessellation is skipped
    and s_tess retains the previous frame's geometry for the flush.  Toggled via
@@ -608,8 +608,9 @@ render_tess_window( imgui_id_t win )
         }
     }
 
-    /* Clip-sorted permutation into a local buffer (upper bound is the whole command list). */
-    u32 win_order[ IMGUI_MAX_CMDS ];
+    /* Clip-sorted permutation: static since render_build_frame is guarded by s_frame_built
+       (single call per frame, single-threaded) -- avoids a 4 KB stack frame on every window. */
+    static u32 win_order[ IMGUI_MAX_CMDS ];
     u32 n = 0;
 
     if ( overflow )
@@ -673,7 +674,16 @@ static struct
     u32  cur_n, prev_n;
     u32  unchanged;                     /* windows whose hash matched last frame        */
     bool any_changed;                   /* a window appeared / vanished / changed       */
-} s_cache;
+} s_cache = { .any_changed = true };    /* start true: guarantees first frame always builds */
+
+/* True when the PREVIOUS frame produced any render change.  Read by frame_begin before this
+   frame's render_build_frame runs; s_cache.any_changed still holds last frame's result then.
+   When false for a frame with no input and no animation, the host may skip widget emit. */
+bool
+imgui_render_any_changed( void )
+{
+    return s_cache.any_changed;
+}
 
 /*----------------------------------------------------------------------------------------------
     render_build_cache_diff -- fold pre-baked per-command hashes into per-window hashes and
@@ -809,16 +819,28 @@ render_build_frame( void )
         slot->vp    = wh->vp;   /* pre-computed during diff: last segment vp */
         slot->valid = false;
 
-        /* Try to find a valid previous-frame slot for geometry reuse. */
+        /* Try to find a valid previous-frame slot for geometry reuse.
+           Fast path: the slot arrays follow emit order, so s_slots_prev[wi] usually matches
+           when the window set is stable (the common case).  Fall back to a linear scan only
+           when a window was added/removed earlier in the list this frame. */
         win_geo_slot_t* prev = NULL;
         if ( s_retained_skip && !wh->changed )
         {
-            for ( u32 pi = 0; pi < s_slot_prev_count; ++pi )
-                if ( s_slots_prev[ pi ].win == wh->win && s_slots_prev[ pi ].valid )
-                {
-                    prev = &s_slots_prev[ pi ];
-                    break;
-                }
+            if ( wi < s_slot_prev_count
+                 && s_slots_prev[ wi ].win   == wh->win
+                 && s_slots_prev[ wi ].valid )
+            {
+                prev = &s_slots_prev[ wi ];
+            }
+            else
+            {
+                for ( u32 pi = 0; pi < s_slot_prev_count; ++pi )
+                    if ( s_slots_prev[ pi ].win == wh->win && s_slots_prev[ pi ].valid )
+                    {
+                        prev = &s_slots_prev[ pi ];
+                        break;
+                    }
+            }
         }
 
         if ( prev )

@@ -980,6 +980,13 @@ typedef struct imgui_api_s
        transition is in flight, the loop must keep pumping frames to advance the animation. */
     bool ( *wants_redraw )( void );
 
+    /* frame_dirty -- true when the current frame must perform a full widget emit.  Call after
+       frame_begin, before any ctx_begin.  When false: input is unchanged, no animation is in flight,
+       and last frame's render was fully retained -- the host may skip ctx_begin/emit/ctx_end and
+       call render() directly.  imgui preserves the previous frame's draw list, tessellated geometry,
+       and GPU draw commands for verbatim replay. */
+    bool ( *frame_dirty )( void );
+
     /* Tables -- a multi-column layout with independent cell clipping and optional scrolling,
        sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll
        (like flow) with column tracks resolved once per table (like grid), plus frozen header support.

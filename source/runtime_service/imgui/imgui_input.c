@@ -29,6 +29,14 @@ ORB_STATIC_ASSERT( APP_KEY_COUNT <= IMGUI_KEY_COUNT,
 
 static imgui_io_t s_io;
 
+/* True when any input-state change was detected this frame: mouse moved, button edge,
+   key press/release, wheel, text, or paste.  Computed in input_update and cleared at the
+   next call.  Read by frame_begin to gate the frontend-dirty check. */
+static bool s_io_dirty;
+
+/* Internal accessor used by imgui_frame.c (same unity TU). */
+static bool io_dirty( void ) { return s_io_dirty; }
+
 /* Pending text + scroll accumulated between frames by imgui_event().  The app event
    ring is single-consumer, and the host must drain it itself (for resize etc.), so
    imgui can no longer drain it here -- the host forwards each event to imgui_event().
@@ -181,12 +189,15 @@ imgui_event( const app_event_t* ev )
 static void
 input_update( i32 win_w, i32 win_h, f32 dt )
 {
-    /* Mouse position (polled): client coords of the window the cursor is in. */
+    /* Mouse position (polled): client coords of the window the cursor is in.
+       Compare against the previous frame before overwriting to detect movement. */
+    bool mouse_moved;
     {
         i32 mx = 0, my = 0;
         app()->mouse_position( &mx, &my );
-        s_io.mouse_x = (f32)mx;
-        s_io.mouse_y = (f32)my;
+        mouse_moved   = ( mx != (i32)s_io.mouse_x || my != (i32)s_io.mouse_y );
+        s_io.mouse_x  = (f32)mx;
+        s_io.mouse_y  = (f32)my;
     }
 
     /* Resolve the surface the cursor is in from the most recent mouse event's win_id.  Only when a
@@ -198,7 +209,9 @@ input_update( i32 win_w, i32 win_h, f32 dt )
         s_pending_mouse_win_set = false;
     }
 
-    /* Mouse button snapshot (left=0, right=1, middle=2). */
+    /* Mouse button snapshot (left=0, right=1, middle=2).
+       Any pressed or released edge makes the frame dirty. */
+    bool mouse_edge = false;
     {
         const app_mouse_button_t map[ 3 ] = {
             APP_MOUSE_LEFT, APP_MOUSE_RIGHT, APP_MOUSE_MIDDLE
@@ -208,6 +221,7 @@ input_update( i32 win_w, i32 win_h, f32 dt )
             s_io.mouse_down     [ i ] = app()->mouse_button_down     ( map[ i ] );
             s_io.mouse_pressed  [ i ] = app()->mouse_button_pressed  ( map[ i ] );
             s_io.mouse_released [ i ] = app()->mouse_button_released ( map[ i ] );
+            if ( s_io.mouse_pressed[ i ] || s_io.mouse_released[ i ] ) mouse_edge = true;
         }
     }
 
@@ -240,13 +254,16 @@ input_update( i32 win_w, i32 win_h, f32 dt )
     }
 
     /* Key state snapshot.  keys_pressed is the initial press; keys_pressed_repeat also catches OS
-       auto-repeat ticks (held backspace / arrows in a text field), the caller picking which it reads. */
+       auto-repeat ticks (held backspace / arrows in a text field), the caller picking which it reads.
+       Fold any press or release edge into the key_edge flag while we scan -- free since we scan anyway. */
+    bool key_edge = false;
     for ( i32 k = 0; k < APP_KEY_COUNT; ++k )
     {
         s_io.keys_down           [ k ] = app()->key_down           ( (app_key_t)k );
         s_io.keys_pressed        [ k ] = app()->key_pressed        ( (app_key_t)k );
         s_io.keys_pressed_repeat [ k ] = app()->key_pressed_repeat ( (app_key_t)k );
         s_io.keys_released       [ k ] = app()->key_released       ( (app_key_t)k );
+        if ( s_io.keys_pressed[ k ] || s_io.keys_released[ k ] ) key_edge = true;
     }
 
     /* Text + scroll + paste arrive via the host-fed pending state (the host owns the event
@@ -260,6 +277,13 @@ input_update( i32 win_w, i32 win_h, f32 dt )
         memcpy( s_io.paste, s_pending_paste, sizeof( s_io.paste ) );
     else
         s_io.paste[ 0 ] = '\0';
+
+    /* Frame is dirty when anything changed vs last frame: position, button/key edges,
+       wheel, typed text, or clipboard paste.  Used by frame_begin to gate widget emit. */
+    s_io_dirty = mouse_moved || mouse_edge || key_edge
+              || ( s_pending_wheel    != 0.0f )
+              || ( s_pending_text_len >  0    )
+              || s_pending_paste_set;
 
     s_pending_text[ 0 ]  = '\0';
     s_pending_text_len   = 0;
