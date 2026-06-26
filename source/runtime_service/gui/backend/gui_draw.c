@@ -23,7 +23,7 @@ typedef struct
 {
     u32          elem_count; /* number of indices to emit */
     u32          tex_idx;    /* bindless texture slot     */
-    gui_rect_t clip_rect;  /* scissor rect (pixels)     */
+    gui_rect_t   clip_rect;  /* scissor rect (pixels)     */
 
 } gui_gpu_cmd_t;
 

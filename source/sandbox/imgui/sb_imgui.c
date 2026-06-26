@@ -1,0 +1,261 @@
+/*==============================================================================================
+
+    sandbox/imgui/sb_imgui.c -- ImGui Demo Replication
+
+    Loads sys + app + rhi + draw (static), opens a window, then exercises the pipeline.
+
+==============================================================================================*/
+
+#include <stdio.h>
+
+#include "orb.h"
+#include "engine/mod/mod_host.h"
+#include "engine/ref/ref_host.h"
+#include "engine/sys/sys_host.h"
+#include "engine/app/app_host.h"
+#include "engine/core/core_host.h"
+#include "runtime_service/rhi/rhi_host.h"
+#include "runtime_service/draw/draw_host.h"
+#include "runtime_service/gui/gui_host.h"
+
+// clang-format off
+
+static void
+show_demo_window(bool* p_open)
+{
+    // Exceptionally add an extra assert here for people confused about initial Dear ImGui setup
+    // Most functions would return false if the window is collapsed or entirely clipped.
+    gui_win_flags_t window_flags = 0;
+    
+    // We demonstrate using the full window_begin() API
+    if (!gui()->window_begin("Dear ImGui Demo", window_flags))
+    {
+        // Early out if the window is collapsed, as a optimization.
+        gui()->window_end();
+        return;
+    }
+    gui()->stack();
+    gui()->text("This is some useful text.");
+    
+    static bool show_another_window = false;
+    gui()->checkbox("Demo Window", p_open);
+    gui()->checkbox("Another Window", &show_another_window);
+
+    static f32 f = 0.0f;
+    gui()->slider_float("float", &f, 0.0f, 1.0f);
+    // gui_api doesn't have ColorEdit3 in the same way, we can skip or use drag_float3 for color
+    static f32 color[3] = { 0.4f, 0.7f, 0.0f };
+    gui()->drag_float3("color", color, 0.01f, 0.0f, 1.0f, NULL);
+
+    static int counter = 0;
+    if (gui()->button("Button"))
+        counter++;
+    gui()->same_line(0);
+    gui()->textf("counter = %d", counter);
+
+    gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 
+        1000.0f / sys_tick_seconds() /* placeholder for framerate */, 
+        60.0f /* placeholder for fps */);
+
+    gui()->window_end();
+
+    if (show_another_window)
+    {
+        if (gui()->window_begin("Another Window", 0))
+        {
+            gui()->stack();
+            gui()->text("Hello from another window!");
+            if (gui()->button("Close Me"))
+                show_another_window = false;
+        }
+        gui()->window_end();
+    }
+}
+
+/*==============================================================================================
+    main
+==============================================================================================*/
+
+int
+main( int argc, char** argv )
+{
+    UNUSED( argc );
+    UNUSED( argv );
+
+    /* Load modules. */
+    mod_system_init();
+    mod_static( sys );
+    mod_static( ref );
+    mod_static( app );
+    mod_static( core );
+    mod_static( rhi );
+    mod_static( draw );
+    mod_static( gui );
+
+    if ( !mod_init_all() )
+    {
+        fprintf( stderr, "[sb_imgui] mod_init_all failed: %s\n", mod_last_error() );
+        mod_system_exit();
+        return 1;
+    }
+
+    mod_set_log_fn( core_log_fn );
+    app_set_log_fn( core_log_fn );
+
+    core()->log_set_min_level( LOG_LEVEL_INFO );
+    core_log_fn( LOG_LEVEL_DEBUG, "sb_imgui", "debug log: modules loaded successfully" );
+
+    /* ------------------------------------------------------------------------------ */
+    /* Setup RHI + Window */
+
+    if ( !rhi()->init() ) {
+         mod_system_exit();
+         return 1;
+    }
+
+    win_id_t win = app()->window_open( "sb_imgui", 0, 0, 1280, 720, APP_WIN_DEFAULT );
+    if ( win == APP_WIN_INVALID ) {
+         rhi()->shutdown();
+         mod_system_exit();
+         return 1;
+    }
+
+    void* hwnd = app()->window_handle( win );
+    i32  ctx   = rhi()->context_create( win, hwnd, 1280, 720 );
+    if ( ctx == RHI_CTX_INVALID ) {
+         rhi()->shutdown();
+         app()->window_close( win );
+         mod_system_exit();
+         return 1;
+    }
+
+    /* ------------------------------------------------------------------------------ */
+    /* Setup Resources */
+
+    if ( !draw()->init() )
+    {
+        fprintf( stderr, "[sb_imgui] draw->init failed\n" );
+        rhi()->context_destroy( ctx );
+        rhi()->shutdown();
+        app()->window_close( win );
+        mod_system_exit();
+        return 1;
+    }
+
+    /* ------------------------------------------------------------------------------ */
+    /* Setup GUI */
+
+    if ( !gui()->init() )
+    {
+        fprintf( stderr, "[sb_imgui] gui->init failed\n" );
+        draw()->shutdown();
+        rhi()->context_destroy( ctx );
+        rhi()->shutdown();
+        app()->window_close( win );
+        mod_system_exit();
+        return 1;
+    }
+    
+    gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
+    
+    i32 win_w = 1280;
+    i32 win_h = 720;
+
+    gui_vp_t vp0 = gui()->viewport_open( win, win_w, win_h );
+    if ( vp0 == GUI_VP_INVALID ) {
+        fprintf( stderr, "[sb_imgui] gui viewport_open (primary) failed\n" );
+        gui()->shutdown();
+        draw()->shutdown();
+        rhi()->context_destroy( ctx );
+        rhi()->shutdown();
+        app()->window_close( win );
+        mod_system_exit();
+        return 1;
+    }
+
+    /* ------------------------------------------------------------------------------ */
+    /* Start render loop. */
+
+    printf( "[sb_imgui] running -- ESC to quit\n" );
+
+    f64 last_time = sys_tick_seconds();
+    bool show_demo = true;
+
+    while ( app()->pump_events() )
+    {
+        f64 now_time = sys_tick_seconds();
+        f32 dt       = (f32)( now_time - last_time );
+        last_time    = now_time;
+
+        app_event_t ev;
+        while ( app()->next_event( &ev ) )
+        {
+            if ( gui()->event( &ev ) )
+                continue;
+
+            switch ( ev.type )
+            {
+                case APP_EV_WIN_RESIZE:
+                    if ( ev.win_id == win )
+                    {
+                        win_w = ev.data.win_resize.w;
+                        win_h = ev.data.win_resize.h;
+                        rhi()->context_resize( ctx, win_w, win_h );
+                        gui()->viewport_resize( vp0, win_w, win_h );
+                    }
+                    break;
+                case APP_EV_WIN_CLOSE:
+                    goto shutdown;
+                default:
+                    break;
+            }
+        }
+
+        gui()->frame_begin( dt );
+
+        if ( gui()->frame_dirty() )
+        {
+            gui()->ctx_begin( GUI_CTX_DEFAULT );
+
+            if (show_demo)
+                show_demo_window(&show_demo);
+
+            gui()->ctx_end();
+        }
+
+        gui()->frame_end();
+        gui()->viewport_update();
+
+        if ( !app()->window_is_minimized( win ) )
+        {
+            rhi_cmd_t cmd = rhi()->frame_begin( ctx );
+            if ( rhi_cmd_valid( cmd ) )
+            {
+                // Clear the swapchain color attachment to a solid color (e.g., light blue)
+                rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
+                    .texture  = { .id = RHI_SWAPCHAIN_COLOR },
+                    .load_op  = RHI_LOAD_OP_CLEAR,
+                    .store_op = RHI_STORE_OP_STORE,
+                    .clear    = { 0.15f, 0.15f, 0.20f, 1.00f },
+                }, 1, NULL );
+                rhi()->cmd_end_rendering( cmd );
+
+                gui()->render( vp0, cmd );
+                rhi()->frame_end( ctx );
+            }
+        }
+
+        sys_sleep_milliseconds( 4 );
+    }
+
+shutdown:
+    rhi()->context_destroy( ctx );
+    gui()->shutdown();
+    draw()->shutdown();
+    rhi()->shutdown();
+    app()->window_close( win );
+    mod_system_exit();
+    return 0;
+}
+
+// clang-format on

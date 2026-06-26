@@ -444,29 +444,29 @@ typedef struct gui_api_s
        pack_size()  -- next packed item's main-axis size (0 natural, 1 fill, (0,1) frac, >1 px).
        pack_nextline() -- break the run to a new line. */
 
-    void ( *layout         )( gui_layout_t desc );
-    void ( *layout_default )( void );
-    void ( *stack          )( void );
-    void ( *row            )( f32 row_h );
-    void ( *cols         )( const f32* tracks );
-    void ( *cols_n       )( u32 n );
-    void ( *row_cols     )( f32 row_h, const f32* tracks );
-    void ( *row_cols_n   )( f32 row_h, u32 n );
-    void ( *row2         )( f32 a, f32 b );
-    void ( *row3         )( f32 a, f32 b, f32 c );
-    void ( *row4         )( f32 a, f32 b, f32 c, f32 d );
-    void ( *form         )( gui_label_side_t side, f32 label_w );
-    void ( *field_split  )( gui_label_side_t side, f32 label, f32 control );
+    void ( *layout            )( gui_layout_t desc );
+    void ( *layout_default    )( void );
+    void ( *stack             )( void );
+    void ( *row               )( f32 row_h );
+    void ( *cols              )( const f32* tracks );
+    void ( *cols_n            )( u32 n );
+    void ( *row_cols          )( f32 row_h, const f32* tracks );
+    void ( *row_cols_n        )( f32 row_h, u32 n );
+    void ( *row2              )( f32 a, f32 b );
+    void ( *row3              )( f32 a, f32 b, f32 c );
+    void ( *row4              )( f32 a, f32 b, f32 c, f32 d );
+    void ( *form              )( gui_label_side_t side, f32 label_w );
+    void ( *field_split       )( gui_label_side_t side, f32 label, f32 control );
     void ( *field_label_left  )( f32 width );
     void ( *field_label_right )( f32 width );
-    void ( *pad          )( gui_pad_t region_pad );
-    void ( *grid       )( gui_layout_t desc );
-    void ( *grid_cells )( u32 ncols, u32 nrows );
-    void ( *pack          )( gui_pack_dir_t dir );
-    void ( *bar           )( void );
-    void ( *strip         )( void );
-    void ( *pack_size     )( f32 unit );
-    void ( *pack_nextline )( void );
+    void ( *pad               )( gui_pad_t region_pad );
+    void ( *grid              )( gui_layout_t desc );
+    void ( *grid_cells        )( u32 ncols, u32 nrows );
+    void ( *pack              )( gui_pack_dir_t dir );
+    void ( *bar               )( void );
+    void ( *strip             )( void );
+    void ( *pack_size         )( f32 unit );
+    void ( *pack_nextline     )( void );
 
     /* align() -- set the content alignment within each cell (gui_align_t, LEFT | TOP by default).
        Persists like the row template and is independent of the columns: row() / row_cols() leave it

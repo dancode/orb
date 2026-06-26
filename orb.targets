@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 #
 # orb.targets -- project target and solution registry.
 # Format reference: source/tools/build_tool/build_tool_03_registry.c
@@ -415,6 +415,16 @@ target sb_vulkan_stress					# multi-context rhi sync stress test
     dep         sys ref mod core job app
 	dep 		rhi
 
+target sb_imgui
+
+    type        exe
+    root        source/sandbox/imgui
+    folder      09_SANDBOX/IMGUI
+    unit        sb_imgui.c
+    dep         sys ref mod core job app
+	dep 		run rhi draw gui
+	mono_dep 	render
+
 # ==============================================================================
 # 09_SANDBOX -- EXAMPLE EXECUTABLE PROJECT TYPES
 # ==============================================================================
@@ -613,6 +623,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		render 					# render dll
 
 	add 		sb_vulkan				# exe
+	add 		sb_imgui				# imgui demo
 	add 		sb_vulkan_stress		# multi-context sync stress exe
 
 
