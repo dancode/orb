@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     build_tool_13_create.c -- -create command: scaffold a new engine module.
 
@@ -17,7 +17,7 @@
     --------------------------------------
     
     Ex: build_tool.exe -create net -dir source/engine/net -type static
-    Ex: build_tool.exe -create imgui -dir source/runtime_modules/imgui -type dynamic
+    Ex: build_tool.exe -create gui -dir source/runtime_modules/gui -type dynamic
 
 ==============================================================================================*/
 // clang-format off

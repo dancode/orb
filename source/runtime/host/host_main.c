@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     host_main.c -- runtime host implementation.
 
@@ -10,11 +10,11 @@
         5. mod_init_all()                             -- pass 1: load callbacks fire in dep order
                                                                  (ref frames pushed, reflection live)
                                                          pass 2: init() runs in same order
-        6. MOD_HOST_FETCH_API( render, draw, imgui )  -- cache host-owned API ptrs
+        6. MOD_HOST_FETCH_API( render, draw, gui )  -- cache host-owned API ptrs
         7. window_open()                              -- when app is loaded (inferred from k_modules)
            rhi->init() + context_create()             -- when rhi is loaded
            draw->init()                               -- when draw is loaded, after rhi context
-           imgui->init() + viewport_open()            -- when imgui is loaded, after draw init
+           gui->init() + viewport_open()            -- when gui is loaded, after draw init
         8. desc->on_ready()                           -- host post-init hook
         9. enter loop per desc->loop_mode
        10. host_shutdown()                            -- single teardown path, order reversed
@@ -27,21 +27,21 @@
 
     The engine baseline ( sys + ref + job + run ) is loaded by the host and is always
     present regardless of what k_modules[] declares. Higher layers (core, app, rhi,
-    draw, imgui, render, and eventually game / editor services) are declared by the host
+    draw, gui, render, and eventually game / editor services) are declared by the host
     descriptor.
 
     Frame order
     -----------
     [pump OS events]          app()->pump_events()
-    [event drain]             app()->next_event() per frame: routes to imgui()->event(),
+    [event drain]             app()->next_event() per frame: routes to gui()->event(),
                               handles resize (context_resize + viewport_resize) and close.
     [frame clock]             run_clock_update()
     [console poll]            sys, if RUN_HOST_CONSOLE
     [job tick]                job()->tick()
-    [imgui frame begin]       imgui()->frame_begin + ctx_begin( DEFAULT ) -- when imgui loaded
+    [gui frame begin]       gui()->frame_begin + ctx_begin( DEFAULT ) -- when gui loaded
     [host update]             desc->on_update( dt )             -- builds UI and game logic
-    [imgui frame end]         imgui()->ctx_end + frame_end      -- seals the build, when imgui loaded
-    [imgui platform sync]     imgui()->viewport_update() -- when imgui loaded
+    [gui frame end]         gui()->ctx_end + frame_end      -- seals the build, when gui loaded
+    [gui platform sync]     gui()->viewport_update() -- when gui loaded
     [render]                  see Render paths below
     [hot-reload]              mod_check_reloads + flush, if RUN_HOST_HOT_RELOAD
     [frame pacing]            sleep or editor wait
@@ -49,17 +49,17 @@
     Render paths
     ------------
     render() present: render->begin_frame / draw_scene / end_frame.
-                      render owns imgui composition (calls imgui()->render inside its frame).
-    render() absent, imgui() present: host drives the explicit frame --
-                      frame_begin / clear / imgui->render / frame_end.
-    imgui() always:   imgui->viewport_render_floaters() after the main surface (presents tear-off
+                      render owns gui composition (calls gui()->render inside its frame).
+    render() absent, gui() present: host drives the explicit frame --
+                      frame_begin / clear / gui->render / frame_end.
+    gui() always:   gui->viewport_render_floaters() after the main surface (presents tear-off
                       floater windows; no-op when none are alive).
 
     Shutdown
     --------
     host_shutdown() is the single teardown path for both normal exit and every startup
     failure. It checks each piece of state and tears down only what was initialized,
-    in reverse order: imgui -> draw -> rhi context -> rhi -> window -> console -> mod.
+    in reverse order: gui -> draw -> rhi context -> rhi -> window -> console -> mod.
     Every error path is a one-liner: log, host_shutdown(), return 1.
 
     Frame timing
@@ -120,7 +120,7 @@ MOD_USE_RUN;
 MOD_USE_RHI;
 MOD_USE_RENDER;
 MOD_USE_DRAW;
-MOD_USE_IMGUI;
+MOD_USE_GUI;
 
 /*==============================================================================================
     Host state -- tracks what has been initialized so host_shutdown() tears down exactly
@@ -131,10 +131,10 @@ static win_id_t   s_win_id       = APP_WIN_INVALID;
 static i32        s_ctx_id       = RHI_CTX_INVALID;
 static i32        s_win_w        = 0;
 static i32        s_win_h        = 0;
-static imgui_vp_t s_vp0          = IMGUI_VP_INVALID;
+static gui_vp_t s_vp0          = GUI_VP_INVALID;
 static bool       s_rhi_inited   = false;
 static bool       s_draw_inited  = false;
-static bool       s_imgui_inited = false;
+static bool       s_gui_inited = false;
 static bool       s_console      = false;
 
 /*==============================================================================================
@@ -145,10 +145,10 @@ static bool       s_console      = false;
 static void
 host_shutdown( void )
 {
-    /* Reverse of startup: imgui (floater contexts) -> draw (GPU buffers) ->
+    /* Reverse of startup: gui (floater contexts) -> draw (GPU buffers) ->
        rhi context -> rhi device -> window -> console -> mod system. */
 
-    if ( s_imgui_inited )              { imgui()->shutdown();                   s_imgui_inited = false; }
+    if ( s_gui_inited )              { gui()->shutdown();                   s_gui_inited = false; }
     if ( s_draw_inited )               { draw()->shutdown();                    s_draw_inited  = false; }
     if ( s_ctx_id != RHI_CTX_INVALID ) { rhi()->context_destroy( s_ctx_id );    s_ctx_id = RHI_CTX_INVALID; }
     if ( s_rhi_inited )                { rhi()->shutdown();                     s_rhi_inited   = false; }
@@ -207,10 +207,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     s_ctx_id         = RHI_CTX_INVALID;
     s_win_w          = 0;
     s_win_h          = 0;
-    s_vp0            = IMGUI_VP_INVALID;
+    s_vp0            = GUI_VP_INVALID;
     s_rhi_inited     = false;
     s_draw_inited    = false;
-    s_imgui_inited   = false;
+    s_gui_inited   = false;
     s_console        = false;
 
     /* ---- boot --------------------------------------------------------- */
@@ -260,13 +260,13 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        MOD_HOST_FETCH_API in static builds:  no-op -- the gateway returns the linked struct directly.
        MOD_HOST_FETCH_API in dynamic builds: populates g_*_api_ptr from the module registry.
                                          Returns NULL when the module is absent -- headless
-                                         hosts that don't load draw or imgui get NULL here,
+                                         hosts that don't load draw or gui get NULL here,
                                          which is fine; the guarded paths below check it.
     */
     MOD_HOST_FETCH_API( rhi    );
     MOD_HOST_FETCH_API( render );
     MOD_HOST_FETCH_API( draw   );
-    MOD_HOST_FETCH_API( imgui  );
+    MOD_HOST_FETCH_API( gui  );
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*
@@ -313,7 +313,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             if ( render() )
                  render()->context_register( s_ctx_id );
 
-            /* GPU resource init -- draw and imgui after the device is live. */
+            /* GPU resource init -- draw and gui after the device is live. */
 
             if ( draw() )
             {
@@ -326,20 +326,20 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 s_draw_inited = true;
             }
 
-            if ( imgui() )
+            if ( gui() )
             {
-                if ( !imgui()->init() )
+                if ( !gui()->init() )
                 {
-                    fprintf( stderr, "[host] imgui init failed\n" );
+                    fprintf( stderr, "[host] gui init failed\n" );
                     host_shutdown();
                     return 1;
                 }
-                s_imgui_inited = true;
+                s_gui_inited = true;
 
-                s_vp0 = imgui()->viewport_open( s_win_id, w, h );
-                if ( s_vp0 == IMGUI_VP_INVALID )
+                s_vp0 = gui()->viewport_open( s_win_id, w, h );
+                if ( s_vp0 == GUI_VP_INVALID )
                 {
-                    fprintf( stderr, "[host] imgui viewport_open failed\n" );
+                    fprintf( stderr, "[host] gui viewport_open failed\n" );
                     host_shutdown();
                     return 1;
                 }
@@ -390,17 +390,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- drain event ring ------------------------------------------ */
 
-        /* Forward each event to imgui first; imgui consumes the input events it
+        /* Forward each event to gui first; gui consumes the input events it
            recognizes (text, scroll, mouse/keyboard state). The host handles the
-           structural ones that imgui passes through: resize routes the rhi context
-           and imgui viewport to the new dimensions; close exits the main loop. */
+           structural ones that gui passes through: resize routes the rhi context
+           and gui viewport to the new dimensions; close exits the main loop. */
 
         if ( windowed )
         {
             app_event_t ev;
             while ( app()->next_event( &ev ) )
             {
-                if ( imgui() && imgui()->event( &ev ) )
+                if ( gui() && gui()->event( &ev ) )
                     continue;
 
                 switch ( ev.type )
@@ -412,8 +412,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                             s_win_h = ev.data.win_resize.h;
                             if ( s_ctx_id != RHI_CTX_INVALID )
                                 rhi()->context_resize( s_ctx_id, s_win_w, s_win_h );
-                            if ( s_vp0 != IMGUI_VP_INVALID )
-                                imgui()->viewport_resize( s_vp0, s_win_w, s_win_h );
+                            if ( s_vp0 != GUI_VP_INVALID )
+                                gui()->viewport_resize( s_vp0, s_win_w, s_win_h );
                         }
                         break;
 
@@ -445,16 +445,16 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( job() )
              job()->tick();
 
-        /* -- imgui frame begin ------------------------------------------ */
+        /* -- gui frame begin ------------------------------------------ */
 
         /* frame_begin snaps the IO state (mouse/keyboard) from the events drained above and binds
            the default context; call before any widget code, including on_update below.  The build
            is a balanced scope -- ctx_end + frame_end seal it after on_update emits its windows. */
 
-        if ( s_imgui_inited )
+        if ( s_gui_inited )
         {
-            imgui()->frame_begin( dt );
-            imgui()->ctx_begin( IMGUI_CTX_DEFAULT );
+            gui()->frame_begin( dt );
+            gui()->ctx_begin( GUI_CTX_DEFAULT );
         }
 
         /* -- host update ------------------------------------------------- */
@@ -465,28 +465,28 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( desc->on_update )
              desc->on_update( dt );
 
-        /* Seal the imgui build: close the default context, then the frame. */
-        if ( s_imgui_inited )
+        /* Seal the gui build: close the default context, then the frame. */
+        if ( s_gui_inited )
         {
-            imgui()->ctx_end();
-            imgui()->frame_end();
+            gui()->ctx_end();
+            gui()->frame_end();
         }
 
-        /* -- imgui platform sync ---------------------------------------- */
+        /* -- gui platform sync ---------------------------------------- */
 
-        /* Reconcile imgui-owned floater windows with their OS windows after the
+        /* Reconcile gui-owned floater windows with their OS windows after the
            UI build and before rendering -- the safe point to tear surfaces down.
            Destroys any floater the user has closed. */
 
-        if ( s_imgui_inited )
-            imgui()->viewport_update();
+        if ( s_gui_inited )
+            gui()->viewport_update();
 
         /* -- render ------------------------------------------------------ */
 
         /* Render path A (render module present): render owns its frame and is
-           responsible for compositing imgui()->render() inside draw_scene or end_frame.
-           Render path B (imgui only, no render): host drives the frame explicitly --
-           clear the surface, flush the imgui draw list, then present. */
+           responsible for compositing gui()->render() inside draw_scene or end_frame.
+           Render path B (gui only, no render): host drives the frame explicitly --
+           clear the surface, flush the gui draw list, then present. */
 
         if ( windowed && !app()->window_is_minimized( s_win_id ) )
         {
@@ -498,12 +498,12 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                     render()->end_frame( s_ctx_id );
                 }
             }
-            else if ( s_imgui_inited && s_vp0 != IMGUI_VP_INVALID )
+            else if ( s_gui_inited && s_vp0 != GUI_VP_INVALID )
             {
                 rhi_cmd_t cmd = rhi()->frame_begin( s_ctx_id );
                 if ( rhi_cmd_valid( cmd ) )
                 {
-                    /* Clear so imgui composites over a fresh background (not last frame). */
+                    /* Clear so gui composites over a fresh background (not last frame). */
                     rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
                         .texture  = { .id = RHI_SWAPCHAIN_COLOR },
                         .load_op  = RHI_LOAD_OP_CLEAR,
@@ -512,17 +512,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                     }, 1, NULL );
                     rhi()->cmd_end_rendering( cmd );
 
-                    imgui()->render( s_vp0, cmd );
+                    gui()->render( s_vp0, cmd );
                     rhi()->frame_end( s_ctx_id );
                 }
             }
         }
 
-        /* Present imgui-owned floater windows (tear-off panels, tool popouts).
+        /* Present gui-owned floater windows (tear-off panels, tool popouts).
            Each floater drives its own rhi context frame internally. No-op when
            no floaters are alive; safe to call unconditionally. */
-        if ( s_imgui_inited )
-            imgui()->viewport_render_floaters();
+        if ( s_gui_inited )
+            gui()->viewport_render_floaters();
 
         /* -- hot-reload -------------------------------------------------- */
 
@@ -547,7 +547,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             /* While any animated widget is mid-transition, skip the blocking wait and run at
                frame_ms cadence instead so the animation plays out smoothly.  Once all transitions
                settle, wants_redraw drops false and the normal editor sleep resumes. */
-            bool animating = s_imgui_inited && imgui() && imgui()->wants_redraw();
+            bool animating = s_gui_inited && gui() && gui()->wants_redraw();
             if ( animating )
             {
                 if ( g_sleep_debug ) printf( "[host] anim frame    (no sleep)\n" );

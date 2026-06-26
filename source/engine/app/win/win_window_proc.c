@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
     Window procedure
 ==============================================================================================*/
 
@@ -322,9 +322,9 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
         case WM_NCHITTEST:
         {
             /* Report edge / corner resize zones so the OS runs the matching native loop; return
-               HTCLIENT everywhere else.  imgui owns the entire caption band -- when the user grabs
-               the title bar imgui dispatches window_start_move (which posts APP_WM_START_MOVE below),
-               so OS move / Aero Snap / double-click-maximize / system-menu still work, but imgui
+               HTCLIENT everywhere else.  gui owns the entire caption band -- when the user grabs
+               the title bar gui dispatches window_start_move (which posts APP_WM_START_MOVE below),
+               so OS move / Aero Snap / double-click-maximize / system-menu still work, but gui
                sees all clicks first and can run its own caption widgets without holes.
                Non-custom windows keep default behavior. */
             if ( !win->native.enabled )
@@ -367,7 +367,7 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             win->state.captured = 0;
             /* Synthesize a button-up before entering the DefWindowProc modal drag loop.
                That loop consumes the real WM_LBUTTONUP without delivering it to our proc,
-               leaving imgui with stale mouse-held state that silently drops the next click. */
+               leaving gui with stale mouse-held state that silently drops the next click. */
             SendMessageW( hwnd, WM_LBUTTONUP, 0, 0 );
             SendMessageW( hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0 );
             return 0;

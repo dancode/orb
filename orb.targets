@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 #
 # orb.targets -- project target and solution registry.
 # Format reference: source/tools/build_tool/build_tool_03_registry.c
@@ -110,13 +110,13 @@ target draw
     unit        draw.c
 	dep 		rhi
 	
-target imgui
+target gui
 
 	type        static
-    root        source/runtime_service/imgui
+    root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
-    unit        imgui.c             # UI / core unit
-    unit        imgui_backend.c     # render backend unit
+    unit        gui.c             # UI / core unit
+    unit        gui_backend.c     # render backend unit
 	dep 		rhi app
 	
 # ==============================================================================
@@ -263,7 +263,7 @@ target host_editor
     folder      08_HOST
     unit        host_editor_main.c
 	dep         mod sys ref core job app
-	dep 		draw imgui 
+	dep 		draw gui 
 	
 target host_tool
 
@@ -400,9 +400,9 @@ target sb_vulkan						# vulkan development and testing
     folder      09_SANDBOX/VULKAN
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
-    unit        sb_vulkan_imgui.c
+    unit        sb_vulkan_gui.c
     dep         sys ref mod core job app
-	dep 		run rhi draw imgui
+	dep 		run rhi draw gui
 	mono_dep 	render
   # flag        reflect
 
@@ -456,7 +456,7 @@ target sb_example_editor
     folder      09_SANDBOX/EXAMPLE
     unit        example_editor.c
 	dep 		mod ref sys core job app
-    dep         run rhi imgui
+    dep         run rhi gui
 	mono_dep	render
 
 target sb_example_game
@@ -505,7 +505,7 @@ solution orb_runtime
 
 	# 			--- RUNTIME SERVICES --- 
     add         rhi
-	add         imgui
+	add         gui
 	
 	# 			--- RUNTIME MODULES --- 
     add         render audio physics
@@ -608,7 +608,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		run
 	add 		rhi						# vulkan render library
 	add 		draw 					# drawing using the rhi
-	add 		imgui 					# imgui lbrary
+	add 		gui 					# gui lbrary
 	
 	add 		render 					# render dll
 

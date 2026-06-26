@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     engine/app/win/win_lifecycle.c — Win32 window lifecycle operations.
 
@@ -171,14 +171,14 @@ app_window_toggle_maximize( win_id_t id )
 /*----------------------------------------------------------------------------------------------
     Native-borderless window actions.
 
-    A borderless window has no Win32 non-client area, so the imgui titlebar / borders stand in
+    A borderless window has no Win32 non-client area, so the gui titlebar / borders stand in
     for it.  Each grab is handed back to the OS via WM_NCLBUTTONDOWN (move / resize), which runs
     its own blocking modal loop inside DefWindowProc.  That loop must execute on the MESSAGE fiber
-    so the timer can keep yielding to the game loop; the game-loop fiber (where imgui calls these)
+    so the timer can keep yielding to the game loop; the game-loop fiber (where gui calls these)
     cannot run it.  So the primitives only POST a private message -- non-blocking and fiber-safe --
     and the WndProc (win_window_proc.c, on the message fiber) performs the actual modal call.
 
-    win_zone_to_win32 lives here because translating the imgui zone to a Win32 hit-test code is the
+    win_zone_to_win32 lives here because translating the gui zone to a Win32 hit-test code is the
     one piece that belongs to the caller side; the resulting code rides in the posted wParam.
 ----------------------------------------------------------------------------------------------*/
 
@@ -255,10 +255,10 @@ app_window_enable_resize( win_id_t id, bool enabled )
                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED );
 }
 
-/* Publish the border-resize grab thickness imgui measures each frame for a native-borderless window.
+/* Publish the border-resize grab thickness gui measures each frame for a native-borderless window.
    border is the edge-grab thickness in client px (<= 0 disables resize).  Toggling enabled changes
    the non-client layout, so that case forces a WM_NCCALCSIZE recompute; metric-only updates do not.
-   imgui dispatches move / title / system-menu gestures itself via window_start_move etc., so no
+   gui dispatches move / title / system-menu gestures itself via window_start_move etc., so no
    caption_h or holes are needed here. */
 static void
 app_window_set_native_frame( win_id_t id, bool enabled, i32 border )
@@ -277,7 +277,7 @@ app_window_set_native_frame( win_id_t id, bool enabled, i32 border )
 }
 
 /* Request a graceful close (as if the user clicked the OS close button): post WM_CLOSE so the
-   normal close path runs -- main window sets the quit flag, an imgui-owned floater is torn down
+   normal close path runs -- main window sets the quit flag, an gui-owned floater is torn down
    through its APP_EV_WIN_CLOSE handler.  Distinct from window_close, which destroys immediately. */
 static void
 app_window_request_close( win_id_t id )

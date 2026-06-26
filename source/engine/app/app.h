@@ -1,4 +1,4 @@
-#ifndef APP_H
+﻿#ifndef APP_H
 #define APP_H
 /*==============================================================================================
 
@@ -82,9 +82,9 @@ typedef enum app_win_flags_e
     APP_WIN_NOFOCUS    = 1 << 9, /* do not steal focus on creation             */
 
     /* Borderless but native-capable: no Win32 caption/border, yet retains a
-       sizing frame, min/max box and system menu so the imgui titlebar can drive
+       sizing frame, min/max box and system menu so the gui titlebar can drive
        native move / resize / maximize / system-menu via the window_* primitives
-       below.  This is window "kind 3" -- the imgui window acts as the OS window. */
+       below.  This is window "kind 3" -- the gui window acts as the OS window. */
     APP_WIN_BORDERLESS = 1 << 10,
 
     /* Tool window: exclude from the OS task switcher (alt-tab) and taskbar.
@@ -99,7 +99,7 @@ typedef enum app_win_flags_e
 /*==============================================================================================
     Window action zones
 
-    A native-borderless window has no Win32 non-client area, so the imgui layer
+    A native-borderless window has no Win32 non-client area, so the gui layer
     hit-tests its own titlebar / border and reports which zone the cursor grabbed.
     window_start_resize maps the zone to the matching native resize action.  Order
     is fixed -- the Win32 backend indexes a translation table directly by zone.
@@ -242,7 +242,7 @@ typedef struct app_mouse_wheel_event_s /* 8 bytes */
 
 /* Clipboard paste. `text` points at a NUL-terminated buffer owned by the platform backend,
    valid only until the next pump_events; consumers must copy it out while draining the ring
-   (imgui does this in imgui_event).  Carrying a pointer keeps the payload within 8 bytes. */
+   (gui does this in gui_event).  Carrying a pointer keeps the payload within 8 bytes. */
 typedef struct app_clipboard_event_s /* 8 bytes (x64) */
 {
     const char* text;

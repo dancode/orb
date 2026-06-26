@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     engine/app/win/win_window.c — Win32 window backend.
 
@@ -142,7 +142,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
            so it plays the native minimize / maximize / restore animations, gets a taskbar button,
            and supports Aero Snap.  A pure WS_POPUP gets none of those (it pops in/out instantly and
            minimizes to a legacy title-bar stub).  WS_THICKFRAME keeps the sizing loop live for the
-           border resize; the min/max box + sysmenu keep those native actions reachable.  The imgui
+           border resize; the min/max box + sysmenu keep those native actions reachable.  The gui
            titlebar drives all of it through WM_NCHITTEST. */
         style = WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
     }

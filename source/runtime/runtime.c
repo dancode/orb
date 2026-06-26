@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     runtime/runtime.c — Unity build entry point for the runtime (host) module.
 
@@ -11,7 +11,7 @@
     Optional-service access mode (must precede every engine/service include below)
 
     The runtime host is a shared library linked into many host exes, each of which selects a
-    different subset of the *host-fetched* services (rhi/draw/imgui/render) via its module table.
+    different subset of the *host-fetched* services (rhi/draw/gui/render) via its module table.
     Those four are wired by MOD_HOST_FETCH_API() below and guarded with if ( rhi() ) etc.
     Under a monolithic build the normal static gateway would hard-bind these accessors to
     g_<svc>_api_struct, forcing every host -- even a headless server or a CLI/tool window -- to
@@ -45,7 +45,7 @@
 
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_service/draw/draw_api.h"
-#include "runtime_service/imgui/imgui_api.h"
+#include "runtime_service/gui/gui_api.h"
 #include "runtime_modules/render/render_api.h"
 
 /*==============================================================================================

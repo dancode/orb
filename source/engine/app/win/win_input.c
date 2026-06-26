@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     engine/app/win/win_input.c — Win32 input backend.
 
@@ -335,7 +335,7 @@ input_handle_char( WPARAM wp, win_id_t win_id )
 
 /* Paste gesture: snapshot the OS clipboard into the staging buffer and post an
    APP_EV_CLIPBOARD event pointing at it.  The host drains the ring the same frame and copies
-   the text out (imgui_event), so the staging pointer's short lifetime is sufficient. */
+   the text out (gui_event), so the staging pointer's short lifetime is sufficient. */
 static void
 input_handle_paste( win_id_t win_id )
 {

@@ -1,4 +1,4 @@
-#ifndef APP_API_H
+﻿#ifndef APP_API_H
 #define APP_API_H
 /*==============================================================================================
 
@@ -56,12 +56,12 @@ typedef struct app_api_s
 
     /* ---- Native-borderless window actions (window kind 3) ----
 
-       A borderless window has no Win32 non-client area, so the imgui titlebar /
+       A borderless window has no Win32 non-client area, so the gui titlebar /
        borders stand in for it.  These hand a grab gesture back to the OS, which
        runs its own modal move / resize loop (the fiber message pump keeps the
        game loop rendering throughout).  All are no-ops on an invalid id. */
 
-    /* Begin a native move: imgui calls this when the cursor grabs the titlebar.
+    /* Begin a native move: gui calls this when the cursor grabs the titlebar.
        Drag-to-screen-edge Aero Snap and dragging follow for free. */
     void ( *window_start_move )( win_id_t id );
 
@@ -75,15 +75,15 @@ typedef struct app_api_s
        the titlebar.  Leaves fillscreen first, then dispatches the chosen command. */
     void ( *window_system_menu )( win_id_t id, i32 x, i32 y );
 
-    /* Publish the edge-resize grab thickness for a native-borderless window.  imgui calls this each
-       frame for an IMGUI_WIN_NATIVE window.  border is the edge-grab thickness in client px (<= 0
-       disables resize).  imgui now owns the entire client surface (HTCLIENT everywhere inside the
+    /* Publish the edge-resize grab thickness for a native-borderless window.  gui calls this each
+       frame for an GUI_WIN_NATIVE window.  border is the edge-grab thickness in client px (<= 0
+       disables resize).  gui now owns the entire client surface (HTCLIENT everywhere inside the
        border band) and dispatches move / title / system-menu gestures through window_start_move,
        window_title_event, and window_system_menu rather than routing them through HTCAPTION. */
     void ( *window_set_native_frame )( win_id_t id, bool enabled, i32 border );
 
     /* Request a graceful close: post WM_CLOSE so the normal close path runs (main window quits,
-       an imgui-owned floater is torn down).  Unlike window_close it does not destroy immediately. */
+       an gui-owned floater is torn down).  Unlike window_close it does not destroy immediately. */
     void ( *window_request_close )( win_id_t id );
 
     /* Add / remove the native sizing frame (controls whether border resize works). */

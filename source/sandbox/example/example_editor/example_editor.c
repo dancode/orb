@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     sandbox_editor_main.c — EDITOR / DEV SANDBOX shape.
 
@@ -22,7 +22,7 @@
 #include "engine/app/app_api.h"
 
 #include "runtime_service/rhi/rhi_api.h"
-#include "runtime_service/imgui/imgui_api.h"
+#include "runtime_service/gui/gui_api.h"
 
 #include "runtime_modules/render/render_api.h"
 #include "runtime_modules/example/example_api.h"
@@ -86,7 +86,7 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( core     ),  /* cvars, logging, memory arenas — static                       */
     RUN_SERVICE( app     ),   /* window, OS pump */
     RUN_SERVICE( rhi     ),   /* GPU backend — static service */
-    RUN_SERVICE( imgui   ),   /* immediate mode GUI — static service */
+    RUN_SERVICE( gui   ),   /* immediate mode GUI — static service */
     RUN_MODULE ( render  ),   /* renderer — hot-reloadable DLL */    
     { 0 }
 };

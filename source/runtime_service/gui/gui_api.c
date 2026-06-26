@@ -1,0 +1,338 @@
+﻿/*==============================================================================================
+
+    runtime_service/gui/gui_api.c -- Module vtable and lifecycle descriptor.
+
+    Included last by gui.c so all functions from the other constituent
+    files are visible here.  The vtable (g_gui_api) is the live struct that
+    the module system hands out through the gui() accessor.
+
+==============================================================================================*/
+// clang-format off
+
+/*==============================================================================================
+    Vtable struct  (extern const -- referenced by MOD_GATEWAY_STATIC and func_api pointer)
+==============================================================================================*/
+
+const gui_api_t g_gui_api_struct = 
+{
+    .init                               = gui_init,
+    .shutdown                           = gui_shutdown,
+    .mem_stats                          = gui_mem_stats,
+    .print_mem_stats                    = gui_print_mem_stats,
+    .render_stats                       = gui_render_stats,
+    .perf_overlay                       = gui_perf_overlay,
+    .font_load                          = gui_font_load,
+    .render                             = gui_render,
+    .viewport_open                      = gui_viewport_open,
+    .viewport_close                     = gui_viewport_close,
+    .viewport_resize                    = gui_viewport_resize,
+    .viewport_spawn                     = gui_viewport_spawn,
+    .viewport_update                    = gui_viewport_update,
+    .viewport_render_floaters           = gui_viewport_render_floaters,
+    .ctx_create                         = gui_ctx_create,
+    .ctx_destroy                        = gui_ctx_destroy,
+    .ctx_bind                           = gui_ctx_bind,
+    .ctx_set_listening                  = gui_ctx_set_listening,
+    .ctx_begin                          = gui_ctx_begin,
+    .ctx_end                            = gui_ctx_end,
+    .frame_begin                        = gui_frame_begin,
+    .frame_end                          = gui_frame_end,
+    .event                              = gui_event,
+    .window_set_next_pos                = gui_window_set_next_pos,
+    .window_set_next_viewport           = gui_window_set_next_viewport,
+    .window_set_next_size               = gui_window_set_next_size,
+    .window_set_next_size_constraints   = gui_window_set_next_size_constraints,
+    .window_begin                       = gui_window_begin,
+    .window_end                         = gui_window_end,
+    .window_set_open                    = gui_window_set_open,
+    .window_is_open                     = gui_window_is_open,
+    .dockspace_over_viewport            = gui_dockspace_over_viewport,
+    .dock_split                         = gui_dock_split,
+    .dock_split_root                    = gui_dock_split_root,
+    .dock_window                        = gui_dock_window,
+    .dock_undock                        = gui_dock_undock,
+    .window_is_docked                   = gui_window_is_docked,
+    .dock_save                          = gui_dock_save,
+    .dock_load                          = gui_dock_load,
+    .popup_open                         = gui_popup_open,
+    .popup_begin                        = gui_popup_begin,
+    .popup_modal_begin                  = gui_popup_modal_begin,
+    .popup_end                          = gui_popup_end,
+    .popup_close_current                = gui_popup_close_current,
+    .popup_is_open                      = gui_popup_is_open,
+    .popup_context_item_begin           = gui_popup_context_item_begin,
+    .popup_context_window_begin         = gui_popup_context_window_begin,
+    .set_item_tooltip                   = gui_set_item_tooltip,
+    .tooltip_begin                      = gui_tooltip_begin,
+    .tooltip_end                        = gui_tooltip_end,
+    .help_marker                        = gui_help_marker,
+    .main_menu_bar_begin                = gui_main_menu_bar_begin,
+    .main_menu_bar_end                  = gui_main_menu_bar_end,
+    .menu_bar_begin                     = gui_menu_bar_begin,
+    .menu_bar_end                       = gui_menu_bar_end,
+    .menu_begin                         = gui_menu_begin,
+    .menu_end                           = gui_menu_end,
+    .menu_item                          = gui_menu_item,
+    .child_begin                        = gui_child_begin,
+    .child_end                          = gui_child_end,
+    .push_layout                        = gui_push_layout,
+    .pop_layout                         = gui_pop_layout,
+    .layout                             = gui_layout,
+    .layout_default                     = gui_layout_default,
+    .stack                              = gui_stack,
+    .row                                = gui_row,
+    .cols                               = gui_cols,
+    .cols_n                             = gui_cols_n,
+    .row_cols                           = gui_row_cols,
+    .row_cols_n                         = gui_row_cols_n,
+    .row2                               = gui_row2,
+    .row3                               = gui_row3,
+    .row4                               = gui_row4,
+    .form                               = gui_form,
+    .field_split                        = gui_field_split,
+    .field_label_left                   = gui_field_label_left,
+    .field_label_right                  = gui_field_label_right,
+    .pad                                = gui_pad,
+    .grid                               = gui_grid,
+    .grid_cells                         = gui_grid_cells,
+    .pack                               = gui_pack,
+    .bar                                = gui_bar,
+    .strip                              = gui_strip,
+    .pack_size                          = gui_pack_size,
+    .pack_nextline                      = gui_pack_nextline,
+    .align                              = gui_align,
+    .same_line                          = gui_same_line,
+    .stack_same_line                    = gui_stack_same_line,
+    .skip                               = gui_skip,
+    .spacing                            = gui_spacing,
+    .separator                          = gui_separator,
+    .canvas                             = gui_canvas,
+    .line_h                             = gui_line_h,
+    .text_w                             = gui_text_w,
+    .text_h                             = gui_text_h,
+    .h_min                              = gui_h_min,
+    .w_min                              = gui_w_min,
+    .calc_row                           = gui_calc_row,
+    .calc_col                           = gui_calc_col,
+    .content_avail                      = gui_content_avail,
+    .cursor_screen_pos                  = gui_cursor_screen_pos,
+    .dummy                              = gui_dummy,
+    .push_id                            = gui_push_id,
+    .push_id_int                        = gui_push_id_int,
+    .pop_id                             = gui_pop_id,
+    .push_item_flag                     = gui_push_item_flag,
+    .pop_item_flag                      = gui_pop_item_flag,
+    .next_item_flag                     = gui_next_item_flag,
+    .disabled_begin                     = gui_disabled_begin,
+    .disabled_end                       = gui_disabled_end,
+    .push_style_color                   = gui_push_style_color,
+    .pop_style_color                    = gui_pop_style_color,
+    .next_style_color                   = gui_next_style_color,
+    .push_style_var                     = gui_push_style_var,
+    .pop_style_var                      = gui_pop_style_var,
+    .next_style_var                     = gui_next_style_var,
+    .set_check_style                    = gui_set_check_style,
+    .set_bullet_style                   = gui_set_bullet_style,
+    .set_arrow_style                    = gui_set_arrow_style,
+    .window_set_drag                    = gui_window_set_drag,
+    .window_set_nav                     = gui_window_set_nav,
+    .text                               = gui_text,
+    .textf                              = gui_textf,
+    .bullet_text                        = gui_bullet_text,
+    .text_colored                       = gui_text_colored,
+    .text_disabled                      = gui_text_disabled,
+    .text_wrapped                       = gui_text_wrapped,
+    .bullet                             = gui_bullet,
+    .new_line                           = gui_new_line,
+    .label_text                         = gui_label_text,
+    .button                             = gui_button,
+    .small_button                       = gui_small_button,
+    .progress_bar                       = gui_progress_bar,
+    .arrow_button                       = gui_arrow_button,
+    .invisible_button                   = gui_invisible_button,
+    .checkbox                           = gui_checkbox,
+    .radio_button                       = gui_radio_button,
+    .slider_float                       = gui_slider_float,
+    .slider_float_step                  = gui_slider_float_step,
+    .slider_int                         = gui_slider_int,
+    .drag_int                           = gui_drag_int,
+    .drag_float                         = gui_drag_float,
+    .drag_float2                        = gui_drag_float2,
+    .drag_float3                        = gui_drag_float3,
+    .drag_float4                        = gui_drag_float4,
+    .input_text                         = gui_input_text,
+    .input_text_ex                      = gui_input_text_ex,
+    .input_text_with_hint               = gui_input_text_with_hint,
+    .input_int                          = gui_input_int,
+    .input_float                        = gui_input_float,
+    .input_double                       = gui_input_double,
+    .input_float2                       = gui_input_float2,
+    .input_float3                       = gui_input_float3,
+    .input_float4                       = gui_input_float4,
+    .selectable                         = gui_selectable,
+    .combo_begin                        = gui_combo_begin,
+    .combo_end                          = gui_combo_end,
+    .combo                              = gui_combo,
+    .listbox_begin                      = gui_listbox_begin,
+    .listbox_end                        = gui_listbox_end,
+    .listbox                            = gui_listbox,
+    .collapsing_header                  = gui_collapsing_header,
+    .separator_text                     = gui_separator_text,
+    .tree_node                          = gui_tree_node,
+    .tree_pop                           = gui_tree_pop,
+    .indent                             = gui_indent,
+    .unindent                           = gui_unindent,
+    .font_set_builtin                   = gui_font_set_builtin,
+    .font_set_bmp_scale                 = gui_font_set_bmp_scale,
+    .font_load_into                     = gui_font_load_into,
+    .font_use                           = gui_font_use,
+    .push_font                          = gui_push_font,
+    .pop_font                           = gui_pop_font,
+    .draw_rect                          = gui_draw_rect,
+    .draw_text                          = gui_draw_text,
+    .text_size                          = gui_text_size,
+    .draw_text_in                       = gui_draw_text_in,
+    .draw_text_clipped                  = gui_draw_text_clipped,
+    .register_icon                      = gui_register_icon,
+    .find_icon                          = gui_find_icon,
+    .icon_size                          = gui_icon_size,
+    .image                              = gui_image,
+    .draw_icon_in                       = gui_draw_icon_in,
+    .draw_check_mark                  = gui_draw_check_mark,
+    .draw_arrow                       = gui_draw_arrow,
+    .draw_bullet                      = gui_draw_bullet,
+    .draw_close                       = gui_draw_close,
+    .draw_arrow_pointing_at           = gui_draw_arrow_pointing_at,
+    .draw_chevron                     = gui_draw_chevron,
+    .draw_plus_minus                  = gui_draw_plus_minus,
+    .draw_frame                       = gui_draw_frame,
+    .draw_round_rect                  = gui_draw_round_rect,
+    .draw_ngon                        = gui_draw_ngon,
+    .draw_circle                      = gui_draw_circle,
+    .draw_arc                         = gui_draw_arc,
+    .draw_pie                         = gui_draw_pie,
+    .draw_bezier_quad                 = gui_draw_bezier_quad,
+    .draw_bezier_cubic                = gui_draw_bezier_cubic,
+    .draw_dashed_line                 = gui_draw_dashed_line,
+    .draw_checker                     = gui_draw_checker,
+    .draw_hatch                       = gui_draw_hatch,
+    .draw_gradient                    = gui_draw_gradient,
+    .draw_shadow                      = gui_draw_shadow,
+    .draw_text_outline                = gui_draw_text_outline,
+    .draw_text_shadow                 = gui_draw_text_shadow,
+    .draw_grip                        = gui_draw_grip,
+    .draw_spinner                     = gui_draw_spinner,
+    .draw_progress_arc                = gui_draw_progress_arc,
+    .draw_line                          = gui_draw_line,
+    .draw_polyline                      = gui_draw_polyline,
+    .path_clear                         = gui_path_clear,
+    .path_line_to                       = gui_path_line_to,
+    .path_stroke                        = gui_path_stroke,
+    .push_clip                          = gui_push_clip,
+    .pop_clip                           = gui_pop_clip,
+    .debug_set_layers                   = gui_debug_set_layers,
+    .debug_get_layers                   = gui_debug_get_layers,
+    .debug_set_render_mode              = gui_render_set_mode,
+    .debug_get_render_mode              = gui_render_get_mode,
+    .set_retained_skip                  = gui_render_set_retained_skip,
+    .retained_skip                      = gui_render_retained_skip,
+    .want_capture_mouse                 = gui_want_capture_mouse,
+    .want_capture_keyboard              = gui_want_capture_keyboard,
+    .is_mouse_hovering_rect             = gui_is_mouse_hovering_rect,
+    .is_item_hovered                    = gui_is_item_hovered,
+    .is_item_active                     = gui_is_item_active,
+    .is_item_clicked                    = gui_is_item_clicked,
+    .is_item_focused                    = gui_is_item_focused,
+    .is_item_activated                  = gui_is_item_activated,
+    .is_item_deactivated                = gui_is_item_deactivated,
+    .is_item_visible                    = gui_is_item_visible,
+    .get_item_rect                      = gui_get_item_rect,
+    .is_key_down                        = gui_is_key_down,
+    .is_key_pressed                     = gui_is_key_pressed,
+    .is_key_pressed_repeat              = gui_is_key_pressed_repeat,
+    .is_key_released                    = gui_is_key_released,
+    .is_mouse_down                      = gui_is_mouse_down,
+    .is_mouse_clicked                   = gui_is_mouse_clicked,
+    .is_mouse_released                  = gui_is_mouse_released,
+    .is_mouse_double_clicked            = gui_is_mouse_double_clicked,
+    .get_mouse_pos                      = gui_get_mouse_pos,
+    .get_mouse_wheel                    = gui_get_mouse_wheel,
+    .get_delta_time                     = gui_get_delta_time,
+    .get_time                           = gui_get_time,
+    .set_mouse_cursor                   = gui_set_mouse_cursor,
+    .get_mouse_cursor                   = gui_get_mouse_cursor,
+    .wants_redraw                       = gui_wants_redraw,
+    .frame_dirty                        = gui_frame_dirty,
+    .table_begin                        = gui_table_begin,
+    .table_end                          = gui_table_end,
+    .table_setup_column                 = gui_table_setup_column,
+    .table_headers_row                  = gui_table_headers_row,
+    .table_next_row                     = gui_table_next_row,
+    .table_next_column                  = gui_table_next_column,
+    .table_set_column_index             = gui_table_set_column_index,
+    .table_get_column_count             = gui_table_get_column_count,
+    .table_get_column_index             = gui_table_get_column_index,
+    .table_get_row_index                = gui_table_get_row_index,
+    .table_get_sort_specs               = gui_table_get_sort_specs,
+    .table_sort_order                   = gui_table_sort_order,
+    .table_set_bg_color                 = gui_table_set_bg_color,
+};
+
+/*==============================================================================================
+    Module lifecycle callbacks
+==============================================================================================*/
+
+static bool
+gui_mod_init( void* state, get_api_fn get_api )
+{
+    UNUSED( state );  
+    UNUSED( get_api );
+
+    /* Cache sibling API pointers.  GPU resources are NOT created here; the host
+       must call gui()->init() explicitly after rhi()->init(). */
+
+    if ( !MOD_FETCH_RHI ) return false;
+    if ( !MOD_FETCH_APP ) return false;
+    return true;
+}
+
+static bool
+gui_mod_reload( void* state, get_api_fn get_api )
+{
+    UNUSED( state );
+    if ( !MOD_FETCH_RHI ) return false;
+    if ( !MOD_FETCH_APP ) return false;
+    return true;
+}
+
+static void
+gui_mod_exit( void* state )
+{
+    UNUSED( state );
+    gui_shutdown();
+}
+
+/*==============================================================================================
+    Module descriptor + DLL exports
+==============================================================================================*/
+
+static mod_desc_t s_gui_mod_desc = {
+    .version       = 1,
+    .state_size    = 0,
+    .func_api_size = sizeof( gui_api_t ),
+    .func_api      = &g_gui_api_struct,
+    .dep_count     = 2,
+    .deps          = { "rhi", "app" },
+    .init          = gui_mod_init,
+    .reload        = gui_mod_reload,
+    .exit          = gui_mod_exit,
+};
+
+mod_desc_t*
+gui_get_mod_desc( void )
+{
+    return &s_gui_mod_desc;
+}
+
+// clang-format on
+/*============================================================================================*/

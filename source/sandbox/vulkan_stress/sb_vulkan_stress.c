@@ -1,9 +1,9 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     sandbox/vulkan_stress/sb_vulkan_stress.c -- Multi-context RHI synchronization stress test.
 
     Separate testbed from sb_vulkan.  Where sb_vulkan brings up a single window to develop the
-    Vulkan pipeline (and imgui on top of it), this sandbox deliberately hammers the parts of the
+    Vulkan pipeline (and gui on top of it), this sandbox deliberately hammers the parts of the
     RHI that are easy to get subtly wrong:
 
         1. Multiple windows, each with its own rhi context (its own swapchain, per-frame command
@@ -17,7 +17,7 @@
            wait for any in-flight frame (or pending staging copy) that still references the
            resource before actually releasing it.
 
-    There is no imgui, no draw service, and no hot-reload here -- this is purely about proving the
+    There is no gui, no draw service, and no hot-reload here -- this is purely about proving the
     RHI context + resource lifetime + synchronization machinery holds up under load.
 
     ------------------------------------------------------------------------------------------------
@@ -61,10 +61,10 @@
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 
-/* F4 sampled mode reuses imgui's pre-compiled bindless SPIR-V (self-contained u32 arrays:
-   s_imgui_vert_spirv / s_imgui_frag_spirv).  This is bytecode only -- no imgui library linkage --
-   so the stress test stays independent of imgui while still driving a real textured draw. */
-#include "runtime_service/imgui/backend/imgui_shader.h"
+/* F4 sampled mode reuses gui's pre-compiled bindless SPIR-V (self-contained u32 arrays:
+   s_gui_vert_spirv / s_gui_frag_spirv).  This is bytecode only -- no gui library linkage --
+   so the stress test stays independent of gui while still driving a real textured draw. */
+#include "runtime_service/gui/backend/gui_shader.h"
 
 // clang-format off
 
@@ -521,7 +521,7 @@ ring_pressure_tick( u64 frame )
     that in-flight frames are still sampling defers correctly.
 ==============================================================================================*/
 
-/* Vertex + push layouts must match imgui's shaders (stride 20; push 72 bytes). */
+/* Vertex + push layouts must match gui's shaders (stride 20; push 72 bytes). */
 typedef struct { f32 x, y, u, v; u32 abgr; } f4_vert_t;
 typedef struct { f32 mvp[ 16 ]; u32 tex_idx; u32 samp_idx; } f4_push_t;
 
@@ -544,12 +544,12 @@ static f4_sampled_t   s_f4_sampled[ STRESS_SAMPLED_MAX ];
 static bool
 f4_init( void )
 {
-    rhi_shader_t vert = rhi()->shader_load_memory( s_imgui_vert_spirv, sizeof( s_imgui_vert_spirv ),
+    rhi_shader_t vert = rhi()->shader_load_memory( s_gui_vert_spirv, sizeof( s_gui_vert_spirv ),
                                                    RHI_SHADER_STAGE_VERTEX, "main", "f4_vert" );
     if ( !rhi_handle_valid( vert ) )
         return false;
 
-    rhi_shader_t frag = rhi()->shader_load_memory( s_imgui_frag_spirv, sizeof( s_imgui_frag_spirv ),
+    rhi_shader_t frag = rhi()->shader_load_memory( s_gui_frag_spirv, sizeof( s_gui_frag_spirv ),
                                                    RHI_SHADER_STAGE_FRAGMENT, "main", "f4_frag" );
     if ( !rhi_handle_valid( frag ) )
     {
@@ -1144,7 +1144,7 @@ main( int argc, char** argv )
     UNUSED( argv );
 
     /* ------------------------------------------------------------------------------ */
-    /* Load modules (no draw, no imgui -- this is a bare RHI stress harness). */
+    /* Load modules (no draw, no gui -- this is a bare RHI stress harness). */
 
     mod_system_init();
     mod_static( sys );

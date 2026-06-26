@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     render_api.c -- render module wiring.
     Implements the render_api_t vtable struct and the mod_desc_t lifecycle descriptor.
@@ -131,7 +131,7 @@ render_draw_editor_impl( i32 ctx_id, f32 dt )
         return;
 
     /* TODO: ImGui render pass for editor contexts.
-       imgui_api()->render( s->cmd )
+       gui_api()->render( s->cmd )
     */
 }
 

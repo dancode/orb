@@ -1,4 +1,4 @@
-/*==============================================================================================
+﻿/*==============================================================================================
 
     engine/app/app.c — Unity build entry point for the app module.
 
@@ -134,10 +134,10 @@ typedef struct app_window_s
 
     /* Native-borderless custom frame (window kind 3).  When enabled, WM_NCCALCSIZE removes the
        visual non-client frame (client fills the whole window) and WM_NCHITTEST returns HTCLIENT
-       everywhere except the edge-resize band, so imgui owns the entire caption area.  Move /
+       everywhere except the edge-resize band, so gui owns the entire caption area.  Move /
        resize / Aero Snap / system-menu route through the window_start_move / window_start_resize /
        window_title_event / window_system_menu dispatch primitives.  WS_THICKFRAME keeps the
-       sizing loop live; border is republished each frame by imgui via window_set_native_frame. */
+       sizing loop live; border is republished each frame by gui via window_set_native_frame. */
     struct
     {
         bool enabled;
