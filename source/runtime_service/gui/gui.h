@@ -878,6 +878,7 @@ typedef struct
 #define GUI_MAX_PATH_PTS   8192        /* per-frame total polyline/path point pool */
 #define GUI_MAX_TEXT_POOL  ( 16 * 1024 ) /* per-frame flat string copy pool for text cmds */
 #define GUI_CLIP_DEPTH     32
+#define GUI_MAX_CLIP_RECTS 256   /* per-frame clip table entries; u8 index so max is 256 */
 
 /*==============================================================================================
     GPU resource memory usage (bytes), reported by gui()->mem_stats().

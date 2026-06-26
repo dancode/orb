@@ -51,26 +51,28 @@ static struct
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
        (textf, snprintf labels) remain valid until gui_render_flush consumes them. */
-    char text_pool[ GUI_MAX_TEXT_POOL ];
-    u32  text_pool_used;
 
-    u32 cmd_count;   /* commands in the list this frame  */
-    u32 pt_count;    /* points in the pool this frame    */
+    char            text_pool[ GUI_MAX_TEXT_POOL ];
+    u32             text_pool_used;
 
-    gui_id_t cur_win;  /* owning window id stamped onto new commands (set by begin/window_end) */
-    u32 cur_z;       /* sort key tracked per-segment (draw_seg_retag; NOT baked per command)  */
-    u32 cur_vp;      /* viewport index stamped onto new commands (set by begin/window_end)  */
+    u32             cmd_count;      /* commands in the list this frame  */
+    u32             pt_count;       /* points in the pool this frame */
+
+    gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
+    u32             cur_z;          /* sort key tracked per-segment (draw_seg_retag; NOT baked per command) */
+    u32             cur_vp;         /* viewport index stamped onto new commands (set by begin/window_end)  */
 
     /* Clip table: append-only per-frame pool of distinct scissor rects.  clip_push_clip_rect
        appends each intersected rect and records its index in clip_idx_stack so the active
        index (cur_clip_idx) is available O(1) at emit time -- no per-emit search. */
-    gui_rect_t clip_table    [ 256 ];              /* flat pool of all clip rects this frame   */
-    u32          clip_table_n;                       /* entries used this frame                  */
-    u8           clip_idx_stack[ GUI_CLIP_DEPTH ];   /* parallel to clip_stack: index per level  */
-    u8           cur_clip_idx;                       /* top-of-stack index, stamped on each emit */
 
-    gui_rect_t clip_stack[ GUI_CLIP_DEPTH ];
-    u32          clip_depth;
+    gui_rect_t      clip_table      [ GUI_MAX_CLIP_RECTS ];     /* flat pool of all clip rects this frame   */
+    u32             clip_table_n;                               /* entries used this frame                  */
+    u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];         /* parallel to clip_stack: index per level  */
+    u8              cur_clip_idx;                               /* top-of-stack index, stamped on each emit */
+
+    gui_rect_t      clip_stack      [ GUI_CLIP_DEPTH ];         //
+    u32             clip_depth;
 
     /* Global opacity multiplier applied to every pushed shape.  1.0 normally; lowered for the
        span of a disabled item so it dims with no per-widget code; reset by item / chrome seams. */
@@ -173,8 +175,8 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
        stack.  On overflow (> 255 entries) the index saturates to 254 (the last valid slot): affected
        commands share a slightly wrong clip rect in that degenerate case rather than writing out of
        bounds.  255 is reserved as the invalid sentinel; it is never written by a push. */
-    u8 ci = ( s_draw.clip_table_n < 255u ) ? (u8)s_draw.clip_table_n : 254u;
-    if ( s_draw.clip_table_n < 255u )
+    u8 ci = ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u ) ? (u8)s_draw.clip_table_n : (u8)( GUI_MAX_CLIP_RECTS - 2u );
+    if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
         s_draw.clip_table[ s_draw.clip_table_n++ ] = c;
 
     if ( s_draw.clip_depth < GUI_CLIP_DEPTH )
@@ -212,8 +214,8 @@ draw_set_root_clip( f32 w, f32 h )
     /* Append a fresh clip table entry: commands emitted before this call already reference the
        old root index; overwriting that slot would corrupt them.  clip_idx_stack[0] is updated so
        subsequent pushes intersect against (and inherit from) the new root. */
-    u8 ci = ( s_draw.clip_table_n < 255u ) ? (u8)s_draw.clip_table_n : 254u;
-    if ( s_draw.clip_table_n < 255u )
+    u8 ci = ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u ) ? (u8)s_draw.clip_table_n : (u8)( GUI_MAX_CLIP_RECTS - 2u );
+    if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
         s_draw.clip_table[ s_draw.clip_table_n++ ] = r;
     s_draw.clip_idx_stack[ 0 ] = ci;
     s_draw.cur_clip_idx        = ci;
