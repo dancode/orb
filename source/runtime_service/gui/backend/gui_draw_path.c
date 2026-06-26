@@ -169,9 +169,8 @@ draw_push_polyline_cmd( const gui_vec2_t* pts, u32 count, f32 thickness,
 
     gui_cmd_t* c        = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type               = GUI_CMD_POLYLINE;
-    c->clip               = draw_current_clip();
-    c->z                  = s_draw.cur_z;
-    c->vp                 = s_draw.cur_vp;
+    c->clip_idx           = s_draw.cur_clip_idx;
+    c->vp                 = (u8)s_draw.cur_vp;
     c->polyline.pt_offset = pt_offset;
     c->polyline.pt_count  = count;
     c->polyline.thickness = thickness;
@@ -214,9 +213,8 @@ gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     }
     gui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type           = GUI_CMD_LINE;
-    c->clip           = draw_current_clip();
-    c->z              = s_draw.cur_z;
-    c->vp             = s_draw.cur_vp;
+    c->clip_idx       = s_draw.cur_clip_idx;
+    c->vp             = (u8)s_draw.cur_vp;
     c->line.x0        = x0; c->line.y0 = y0;
     c->line.x1        = x1; c->line.y1 = y1;
     c->line.thickness = thickness;
@@ -245,9 +243,8 @@ gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thi
     }
     gui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type           = GUI_CMD_DASHED_LINE;
-    c->clip           = draw_current_clip();
-    c->z              = s_draw.cur_z;
-    c->vp             = s_draw.cur_vp;
+    c->clip_idx       = s_draw.cur_clip_idx;
+    c->vp             = (u8)s_draw.cur_vp;
     c->dash.x0        = x0; c->dash.y0 = y0;
     c->dash.x1        = x1; c->dash.y1 = y1;
     c->dash.thickness = thickness;

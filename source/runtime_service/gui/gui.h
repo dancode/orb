@@ -339,15 +339,16 @@ typedef enum
 typedef enum
 {
     GUI_COND_ONCE      = 1 << 0,   /* apply once for this window, then never again -- seeds the
-                                        initial position/size on first appearance and never again
-                                        (akin to Dear ImGui's FirstUseEver until a saved-layout lands) */
-    GUI_COND_ALWAYS    = 1 << 1,   /* apply every frame the value is queued -- forced geometry for
-                                        layout managers, snapping, animation; pair with NOMOVE /
-                                        NORESIZE so a user drag does not fight it */
-    GUI_COND_APPEARING = 1 << 2,   /* apply each time the window appears -- on creation and again
-                                        whenever it is shown after a frame of absence (e.g. re-center
-                                        a reopened popup / modal) */
+                                      initial position/size on first appearance and never again
+                                      (akin to Dear ImGui's FirstUseEver until a saved-layout lands) */
 
+    GUI_COND_ALWAYS    = 1 << 1,   /* apply every frame the value is queued -- forced geometry for
+                                      layout managers, snapping, animation; pair with NOMOVE /
+                                      NORESIZE so a user drag does not fight it */
+
+    GUI_COND_APPEARING = 1 << 2,   /* apply each time the window appears -- on creation and again
+                                      whenever it is shown after a frame of absence (e.g. re-center
+                                      a reopened popup / modal) */
 } gui_cond_t;
 
 /*==============================================================================================
@@ -816,23 +817,26 @@ typedef enum
    the tessellator's clip test never triggers and the whole-run fast path is taken. */
 #define GUI_TEXT_NO_CLIP 1e30f
 
-/* One semantic draw command.  clip, z, and vp are baked from the draw state at emit time.
-   The union carries the shape parameters; tex_idx == 0 in rect means solid color (white texel).
+/* One semantic draw command.  The 4-byte header carries the command type, the index of the active
+   scissor rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
+   the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
+   repeated here.  Reducing the header from 28 bytes to 4 bytes brings the struct from 72 -> 48 bytes.
+   tex_idx == 0 in rect means solid color (white texel).
    rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
    time, already clamped to the rect; 0 tessellates as a plain square shape.
    text.off is a byte offset into the frame's text pool (s_draw.text_pool), not a pointer: the
    string lives in the pool until the next frame_begin, so the command is valid through flush.
-   Storing an offset instead of a const char* drops the union's 8-byte alignment (80 -> 72 bytes). */
+   Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    gui_cmd_type_t type;      /* which shape to tessellate            */
-    gui_rect_t     clip;      /* scissor rect, baked at emit time     */
-    u32              z;         /* sort key, baked at emit time         */
-    u32              vp;        /* target viewport index, baked at emit */
+    u8 type;       /* gui_cmd_type_t, fits u8 (9 values)                        */
+    u8 clip_idx;   /* index into per-frame s_draw.clip_table (set at push time) */
+    u8 vp;         /* target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)          */
+    u8 _pad;
     union
     {
         struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding; u32 tex_idx; u32 abgr; } rect;
-        struct { f32 x, y, w, h, t;              f32 rounding;             u32 abgr; } rect_outline;
+        struct { f32 x, y, w, h, t;              f32 rounding;              u32 abgr; } rect_outline;
         struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
         /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The

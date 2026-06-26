@@ -129,13 +129,14 @@ static bool s_dbg_retained = false;  // windows + verts/tris reused from last fr
 #define SLOT_VERT_PAD     64u   // per-slot vertex slack: absorbs minor geometry growth in-place
 #define SLOT_IDX_PAD      128u  // per-slot index slack (roughly 2x vertex count for quads)
 
-// One cached GPU draw command, packed AOS so replaying a slot touches one contiguous region.
+/* One cached GPU draw command, packed AOS so replaying a slot touches one contiguous region.
+   z is per-slot (derived from the window's max segment z, stored in win_geo_slot_t), not per
+   GPU command; it was removed from this struct along with cmd_z[] in the s_tess batch header. */
 typedef struct
 {
-    gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count
-    u32             z;       // sort key this command was emitted under
-    u32             vp;      // viewport this command targets
-    u32             lvbase;  // slot-local (0-relative) vertex base
+    gui_gpu_cmd_t cmd;     /* clip rect, texture slot, element count */
+    u32             vp;      /* viewport this command targets          */
+    u32             lvbase;  /* slot-local (0-relative) vertex base    */
 
 } win_slot_cmd_t;
 
@@ -290,17 +291,9 @@ cache_diff_windows( void )
     the slot table afterwards.
 ==============================================================================================*/
 
-// Exact clip equality -- the same field compare tess_ensure_gpu_cmd uses for batch boundaries, so
-// grouping here lines up with how batches are opened at tessellation.
-static bool
-clip_eq( gui_rect_t a, gui_rect_t b )
-{
-    return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
-}
-
 // rect_empty (a zero-area clip) is defined in gui_draw.c, included before this unit.
 
-#define RENDER_MAX_CLIP_GROUPS  64   // distinct clip rects groupable within one window
+#define RENDER_MAX_CLIP_GROUPS  64   // distinct clip indices groupable within one window
 
 static void
 cache_tess_window( gui_id_t win )
@@ -308,42 +301,44 @@ cache_tess_window( gui_id_t win )
     const gui_cmd_seg_t* segs = s_draw.segs;
     u32                    nseg = s_draw.seg_count;
 
-    // Distinct clips for this window's commands, in first-seen order.
-    gui_rect_t clips[ RENDER_MAX_CLIP_GROUPS ];
-    u32          nc       = 0;
-    bool         overflow = false;
+    /* Distinct clip INDICES for this window's commands, in first-seen order.  Comparing u8 indices
+       is a single equality test vs. the old four-float clip_eq; the actual rect lives in
+       s_draw.clip_table and is resolved at tessellation time (tess_dispatch). */
+    u8   clips[ RENDER_MAX_CLIP_GROUPS ];
+    u32  nc       = 0;
+    bool overflow = false;
 
     for ( u32 si = 0; si < nseg && !overflow; ++si )
     {
         if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
-            const gui_cmd_t* c = &s_draw.cmds[ i ];
-            if ( rect_empty( c->clip ) ) continue;
+            u8 ci = s_draw.cmds[ i ].clip_idx;
+            if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
             bool seen = false;
             for ( u32 g = 0; g < nc; ++g )
-                if ( clip_eq( clips[ g ], c->clip ) ) { seen = true; break; }
+                if ( clips[ g ] == ci ) { seen = true; break; }
             if ( !seen )
             {
                 if ( nc >= RENDER_MAX_CLIP_GROUPS ) { overflow = true; break; }
-                clips[ nc++ ] = c->clip;
+                clips[ nc++ ] = ci;
             }
         }
     }
 
-    // Clip-sorted permutation.  Static since cache_build_frame is guarded (single call per frame,
-    // single-threaded) -- avoids a 4 KB stack frame on every window.
+    /* Clip-sorted permutation.  Static since cache_build_frame is guarded (single call per frame,
+       single-threaded) -- avoids a 4 KB stack frame on every window. */
     static u32 win_order[ GUI_MAX_CMDS ];
     u32 n = 0;
 
     if ( overflow )
     {
-        // Too many distinct clips: natural emit order (correct, just less merged).
+        /* Too many distinct clips: fall back to natural emit order (correct, just less merged). */
         for ( u32 si = 0; si < nseg; ++si )
         {
             if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
             for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-                if ( !rect_empty( s_draw.cmds[ i ].clip ) )
+                if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
                     win_order[ n++ ] = i;
         }
     }
@@ -354,7 +349,7 @@ cache_tess_window( gui_id_t win )
             {
                 if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
                 for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-                    if ( clip_eq( clips[ g ], s_draw.cmds[ i ].clip ) )
+                    if ( s_draw.cmds[ i ].clip_idx == clips[ g ] )
                         win_order[ n++ ] = i;
             }
     }
@@ -454,7 +449,6 @@ cache_build_frame( void )
             {
                 u32 ci = slot->cmd_base + k;
                 s_tess.cmds    [ ci ]  = prev->cached[ k ].cmd;
-                s_tess.cmd_z   [ ci ]  = prev->cached[ k ].z;
                 s_tess.cmd_vp  [ ci ]  = prev->cached[ k ].vp;
                 s_tess.cmd_vbase[ ci ] = slot->vert_base + prev->cached[ k ].lvbase;
             }
@@ -518,7 +512,6 @@ cache_build_frame( void )
             {
                 u32 ci = slot->cmd_base + k;
                 slot->cached[ k ].cmd    = s_tess.cmds    [ ci ];
-                slot->cached[ k ].z      = s_tess.cmd_z   [ ci ];
                 slot->cached[ k ].vp     = s_tess.cmd_vp  [ ci ];
                 slot->cached[ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
             }

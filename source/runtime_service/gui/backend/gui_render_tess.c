@@ -26,8 +26,9 @@
     backend-private; nothing above the backend unit touches it.  s_draw holds only semantic
     commands (gui_cmd_t) -- no vtx/idx buffers.
 
-    cur_clip/cur_z/cur_vp are written by tess_dispatch before each primitive so tess_ensure_gpu_cmd
-    can stamp the correct context onto new GPU commands without extra parameters.
+    cur_clip/cur_vp are written by tess_dispatch before each primitive so tess_ensure_gpu_cmd
+    can stamp the correct context onto new GPU commands without extra parameters.  cur_clip is
+    resolved from s_draw.clip_table[c->clip_idx]; z is per-segment and is not tracked here.
 ----------------------------------------------------------------------------------------------*/
 
 static struct
@@ -35,15 +36,13 @@ static struct
     gui_draw_vert_t  verts    [ GUI_MAX_VERTS ];
     u16                indices  [ GUI_MAX_IDX   ];
     gui_gpu_cmd_t    cmds     [ GUI_MAX_CMDS  ];
-    u32                cmd_z    [ GUI_MAX_CMDS  ];
     u32                cmd_vp   [ GUI_MAX_CMDS  ];
     u32                cmd_vbase[ GUI_MAX_CMDS  ];  /* vertex-buffer slot where this cmd's geometry starts */
 
     u32 vert_count, idx_count, cmd_count;
 
-    gui_rect_t cur_clip;      /* clip baked from the current semantic command being tessellated */
-    u32          cur_z;         /* sort key baked from the current semantic command              */
-    u32          cur_vp;        /* viewport baked from the current semantic command              */
+    gui_rect_t cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
+    u32          cur_vp;    /* viewport baked from the current semantic command                    */
 
     /* Vertex base of the window slot currently being tessellated.  Index values emitted during
        tess are (local_vert - slot_vert_base), making them 0-relative within the slot.  At draw
@@ -142,16 +141,17 @@ tess_reset( void )
     s_tess.overflow        = false;
 }
 
-/* Open a new GPU command when texture, clip, sort key, or viewport changes -- same batching
-   logic as draw_ensure_cmd, but operating on s_tess instead of s_draw. */
+/* Open a new GPU command when texture, clip, or viewport changes -- same batching logic as
+   draw_ensure_cmd but writing into s_tess.  z is per-segment (not per-command) so it is not
+   a batch boundary here; the segment system already guarantees all commands in one window's
+   tessellation pass share the same z. */
 static void
 tess_ensure_gpu_cmd( u32 tex_idx )
 {
     if ( s_tess.cmd_count > 0 )
     {
         const gui_gpu_cmd_t* cur = &s_tess.cmds[ s_tess.cmd_count - 1 ];
-        if ( s_tess.cmd_z [ s_tess.cmd_count - 1 ] == s_tess.cur_z
-          && s_tess.cmd_vp[ s_tess.cmd_count - 1 ] == s_tess.cur_vp
+        if ( s_tess.cmd_vp[ s_tess.cmd_count - 1 ] == s_tess.cur_vp
           && cur->tex_idx       == tex_idx
           && cur->clip_rect.x   == s_tess.cur_clip.x
           && cur->clip_rect.y   == s_tess.cur_clip.y
@@ -161,7 +161,6 @@ tess_ensure_gpu_cmd( u32 tex_idx )
     }
     if ( s_tess.cmd_count >= GUI_MAX_CMDS )
         return;
-    s_tess.cmd_z    [ s_tess.cmd_count ] = s_tess.cur_z;
     s_tess.cmd_vp   [ s_tess.cmd_count ] = s_tess.cur_vp;
     /* Vertex span of this command starts at the current vert_count; the next command's vbase (or
        the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices. */
@@ -660,8 +659,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, u32 count )
     for ( u32 oi = 0; oi < count; ++oi )
     {
         const gui_cmd_t* c = &cmds[ order[ oi ] ];
-        s_tess.cur_clip = c->clip;
-        s_tess.cur_z    = c->z;
+        s_tess.cur_clip = s_draw.clip_table[ c->clip_idx ];
         s_tess.cur_vp   = c->vp;
 
         switch ( c->type )

@@ -58,8 +58,16 @@ static struct
     u32 pt_count;    /* points in the pool this frame    */
 
     gui_id_t cur_win;  /* owning window id stamped onto new commands (set by begin/window_end) */
-    u32 cur_z;       /* sort key stamped onto new commands (set by begin/window_end)        */
+    u32 cur_z;       /* sort key tracked per-segment (draw_seg_retag; NOT baked per command)  */
     u32 cur_vp;      /* viewport index stamped onto new commands (set by begin/window_end)  */
+
+    /* Clip table: append-only per-frame pool of distinct scissor rects.  clip_push_clip_rect
+       appends each intersected rect and records its index in clip_idx_stack so the active
+       index (cur_clip_idx) is available O(1) at emit time -- no per-emit search. */
+    gui_rect_t clip_table    [ 256 ];              /* flat pool of all clip rects this frame   */
+    u32          clip_table_n;                       /* entries used this frame                  */
+    u8           clip_idx_stack[ GUI_CLIP_DEPTH ];   /* parallel to clip_stack: index per level  */
+    u8           cur_clip_idx;                       /* top-of-stack index, stamped on each emit */
 
     gui_rect_t clip_stack[ GUI_CLIP_DEPTH ];
     u32          clip_depth;
@@ -101,14 +109,21 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.seg_count       = 1;
     s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0, 0, 0, 0, 0 };
 
+    /* Seed the clip table: slot 0 = full display.  clip_idx_stack[0] and cur_clip_idx both start
+       at 0 so every emitter finds the root clip without any push being required first. */
+    s_draw.clip_table[ 0 ]     = ( gui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
+    s_draw.clip_table_n        = 1;
+    s_draw.clip_idx_stack[ 0 ] = 0;
+    s_draw.cur_clip_idx        = 0;
+
     s_draw.clip_depth      = 1;
     s_draw.alpha           = 1.0f;
     s_draw.rounding        = 0.0f;   /* square until a seam sets the resolved radius */
     s_draw.text_clip_x0    = -GUI_TEXT_NO_CLIP;   /* unclipped until a seam sets a window */
     s_draw.text_clip_x1    = GUI_TEXT_NO_CLIP;
 
-    /* first is a default "no clip" rect covering the whole display; never popped off the stack. */
-    s_draw.clip_stack[ 0 ] = ( gui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
+    /* Slot 0 of clip_stack mirrors clip_table[0]; never popped off the stack. */
+    s_draw.clip_stack[ 0 ] = s_draw.clip_table[ 0 ];
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -129,11 +144,11 @@ rect_empty( gui_rect_t r )
 }
 
 /* Reject a shape whose axis-aligned bounds cannot touch the current clip -- it would emit a command
-   + geometry the GPU then scissors to nothing.  The cull is exact, not heuristic: c->clip is set to
-   draw_current_clip() on every push, so that clip IS the scissor the shape renders under; a box
-   fully outside it lights no pixel.  This rejects at the source -- a scrolled-out widget (or a whole
-   region clipped to zero) costs no command slot, no string-pool / point-pool space, and no
-   tessellation, not merely no draw call.  Conservative: only a box fully past an edge is dropped
+   + geometry the GPU then scissors to nothing.  The cull is exact, not heuristic: cur_clip_idx
+   records the active scissor at every emit, so draw_current_clip() IS the scissor the shape renders
+   under; a box fully outside it lights no pixel.  This rejects at the source -- a scrolled-out widget
+   (or a whole region clipped to zero) costs no command slot, no string-pool / point-pool space, and
+   no tessellation, not merely no draw call.  Conservative: only a box fully past an edge is dropped
    (touching counts as visible), and an empty clip rejects everything in it. */
 static bool
 draw_cull_box( f32 x, f32 y, f32 w, f32 h )
@@ -154,8 +169,21 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
        matching pop and the stack stays balanced. */
     gui_rect_t c = rect_intersect( ( gui_rect_t ){ x, y, w, h }, draw_current_clip() );
 
+    /* Append a new clip table entry for this intersected rect and record its index on the parallel
+       stack.  On overflow (> 255 entries) the index saturates to 254 (the last valid slot): affected
+       commands share a slightly wrong clip rect in that degenerate case rather than writing out of
+       bounds.  255 is reserved as the invalid sentinel; it is never written by a push. */
+    u8 ci = ( s_draw.clip_table_n < 255u ) ? (u8)s_draw.clip_table_n : 254u;
+    if ( s_draw.clip_table_n < 255u )
+        s_draw.clip_table[ s_draw.clip_table_n++ ] = c;
+
     if ( s_draw.clip_depth < GUI_CLIP_DEPTH )
-        s_draw.clip_stack[ s_draw.clip_depth++ ] = c;
+    {
+        s_draw.clip_stack    [ s_draw.clip_depth ] = c;
+        s_draw.clip_idx_stack[ s_draw.clip_depth ] = ci;
+        ++s_draw.clip_depth;
+    }
+    s_draw.cur_clip_idx = ci;
 
     /* Debug overlay: record this clip rect, colored by its new stack depth. */
     DBG_CLIP( c, s_draw.clip_depth );
@@ -165,7 +193,10 @@ void
 draw_pop_clip_rect( void )
 {
     if ( s_draw.clip_depth > 1 )
+    {
         --s_draw.clip_depth;
+        s_draw.cur_clip_idx = s_draw.clip_idx_stack[ s_draw.clip_depth - 1 ];
+    }
 }
 
 /* Set the base clip (clip_stack[0]) -- the rect every window clip intersects against -- to a given
@@ -176,7 +207,16 @@ draw_pop_clip_rect( void )
 void
 draw_set_root_clip( f32 w, f32 h )
 {
-    s_draw.clip_stack[ 0 ] = ( gui_rect_t ){ 0.0f, 0.0f, w, h };
+    gui_rect_t r = ( gui_rect_t ){ 0.0f, 0.0f, w, h };
+    s_draw.clip_stack[ 0 ] = r;
+    /* Append a fresh clip table entry: commands emitted before this call already reference the
+       old root index; overwriting that slot would corrupt them.  clip_idx_stack[0] is updated so
+       subsequent pushes intersect against (and inherit from) the new root. */
+    u8 ci = ( s_draw.clip_table_n < 255u ) ? (u8)s_draw.clip_table_n : 254u;
+    if ( s_draw.clip_table_n < 255u )
+        s_draw.clip_table[ s_draw.clip_table_n++ ] = r;
+    s_draw.clip_idx_stack[ 0 ] = ci;
+    s_draw.cur_clip_idx        = ci;
 }
 
 /* Re-tag subsequent commands with (win, z, vp), cutting a new command segment at the boundary.  If
@@ -276,7 +316,12 @@ void
 draw_push_clip_root( void )
 {
     if ( s_draw.clip_depth < GUI_CLIP_DEPTH )
-        s_draw.clip_stack[ s_draw.clip_depth++ ] = s_draw.clip_stack[ 0 ];
+    {
+        s_draw.clip_stack    [ s_draw.clip_depth ] = s_draw.clip_stack    [ 0 ];
+        s_draw.clip_idx_stack[ s_draw.clip_depth ] = s_draw.clip_idx_stack[ 0 ];
+        ++s_draw.clip_depth;
+        s_draw.cur_clip_idx = s_draw.clip_idx_stack[ 0 ];
+    }
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -392,7 +437,13 @@ fnv1a( u32 h, const void* p, u32 n )
 static u32
 draw_hash_cmd( const gui_cmd_t* c )
 {
-    u32 h = fnv1a( 2166136261u, c, (u32)offsetof( gui_cmd_t, rect ) );   /* header: type,clip,z,vp */
+    /* Hash type and vp directly; fold in the CLIP VALUE (not the index) so that the same clip
+       value produces the same hash regardless of which table slot it lands in this frame.
+       z is per-segment and folded at segment level in cache_diff_windows -- not per-command. */
+    u32 h = 2166136261u;
+    h = fnv1a( h, &c->type, 1 );
+    h = fnv1a( h, &c->vp,   1 );
+    h = fnv1a( h, &s_draw.clip_table[ c->clip_idx ], sizeof( gui_rect_t ) );
     switch ( c->type )
     {
         case GUI_CMD_RECT_FILLED:   h = fnv1a( h, &c->rect,         sizeof c->rect );         break;
@@ -442,9 +493,8 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
         return;
     gui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type         = GUI_CMD_RECT_FILLED;
-    c->clip         = draw_current_clip();
-    c->z            = s_draw.cur_z;
-    c->vp           = s_draw.cur_vp;
+    c->clip_idx     = s_draw.cur_clip_idx;
+    c->vp           = (u8)s_draw.cur_vp;
     c->rect.x       = x;
     c->rect.y       = y;
     c->rect.w       = w;
@@ -477,9 +527,8 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
         return;
     gui_cmd_t* c          = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type                 = GUI_CMD_RECT_GRADIENT;
-    c->clip                 = draw_current_clip();
-    c->z                    = s_draw.cur_z;
-    c->vp                   = s_draw.cur_vp;
+    c->clip_idx             = s_draw.cur_clip_idx;
+    c->vp                   = (u8)s_draw.cur_vp;
     c->gradient.x           = x;
     c->gradient.y           = y;
     c->gradient.w           = w;
@@ -508,9 +557,8 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
         return;
     gui_cmd_t* c       = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type              = GUI_CMD_RECT_OUTLINE;
-    c->clip              = draw_current_clip();
-    c->z                 = s_draw.cur_z;
-    c->vp                = s_draw.cur_vp;
+    c->clip_idx          = s_draw.cur_clip_idx;
+    c->vp                = (u8)s_draw.cur_vp;
     c->rect_outline.x    = x;
     c->rect_outline.y    = y;
     c->rect_outline.w    = w;
@@ -540,9 +588,8 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
         return;
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type        = GUI_CMD_TRIANGLE;
-    c->clip        = draw_current_clip();
-    c->z           = s_draw.cur_z;
-    c->vp          = s_draw.cur_vp;
+    c->clip_idx    = s_draw.cur_clip_idx;
+    c->vp          = (u8)s_draw.cur_vp;
     c->tri.ax      = ax; c->tri.ay = ay;
     c->tri.bx      = bx; c->tri.by = by;
     c->tri.cx      = cx; c->tri.cy = cy;
@@ -564,9 +611,8 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
         return;
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type        = GUI_CMD_CIRCLE_FILLED;
-    c->clip        = draw_current_clip();
-    c->z           = s_draw.cur_z;
-    c->vp          = s_draw.cur_vp;
+    c->clip_idx    = s_draw.cur_clip_idx;
+    c->vp          = (u8)s_draw.cur_vp;
     c->circle.cx   = cx;
     c->circle.cy   = cy;
     c->circle.r    = r;
@@ -616,9 +662,8 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
 
     gui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type         = GUI_CMD_TEXT;
-    c->clip         = draw_current_clip();
-    c->z            = s_draw.cur_z;
-    c->vp           = s_draw.cur_vp;
+    c->clip_idx     = s_draw.cur_clip_idx;
+    c->vp           = (u8)s_draw.cur_vp;
     c->text.x       = x;
     c->text.y       = y;
     c->text.off     = off;
