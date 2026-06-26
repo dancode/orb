@@ -16,12 +16,12 @@
 
 #include "runtime_service/gui/gui.h"
 
-#include "engine/app/app.h"             /* app_event_t for event()   */
+#include "engine/app/app.h" /* app_event_t for event()   */
 #include "engine/mod/mod_import.h"
 
 /* forward declare so the API can take a cmd argument without including rhi_api.h */
-struct rhi_cmd_s; typedef struct rhi_cmd_s* rhi_cmd_t;
-
+struct rhi_cmd_s;
+typedef struct rhi_cmd_s* rhi_cmd_t;
 
 // clang-format off
 /*==============================================================================================
@@ -31,19 +31,20 @@ struct rhi_cmd_s; typedef struct rhi_cmd_s* rhi_cmd_t;
 typedef struct gui_api_s
 {
     /* GPU resource lifecycle.
-       init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
-       shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
-       font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
-                      call after init().  Returns the new id (>= 1), or 0 on failure. */
+        init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
+        shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
+        font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
+                       call after init(). Returns the new id (>= 1), or 0 on failure. */
 
     bool ( *init      )( void );
     void ( *shutdown  )( void );
     u32  ( *font_load )( const char* path );
 
     /* GPU resource memory currently held by gui, in bytes (buffers + atlases).
-       print_mem_stats() dumps the same breakdown to stdout. */
+        print_mem_stats() dumps the same breakdown to stdout. */
+
     gui_mem_stats_t ( *mem_stats       )( void );
-    void              ( *print_mem_stats )( void );
+    void            ( *print_mem_stats )( void );
 
     /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
        Published at frame_begin, so a read during the build reflects the previous frame -- the
@@ -293,30 +294,32 @@ typedef struct gui_api_s
     void ( *popup_close_current )( void );
     bool ( *popup_is_open        )( const char* id );
 
-    /* Context menus -- open a popup on a right-click.  _item binds to the previous widget (the one
-       emitted just before the call); _window binds to empty space in the current window.  Use them
-       in place of the popup_open + popup_begin pair:
+    /* 
+        Context menus -- open a popup on a right-click.  _item binds to the previous widget (the one
+        emitted just before the call); _window binds to empty space in the current window.  Use them
+        in place of the popup_open + popup_begin pair:
 
-           gui()->selectable( "Row", NULL );
-           if ( gui()->popup_context_item_begin( "row_ctx" ) ) { ...; gui()->popup_end(); } */
-
+            gui()->selectable( "Row", NULL );
+            if ( gui()->popup_context_item_begin( "row_ctx" ) ) { ...; gui()->popup_end(); }
+    */
     bool ( *popup_context_item_begin   )( const char* id );
     bool ( *popup_context_window_begin )( const char* id );
 
-    /* Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
-       hovered.  set_item_tooltip is the one-liner; tooltip_begin / tooltip_end wrap a multi-widget
-       body (guard the body on the true return, always call tooltip_end).
+    /* 
+        Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
+        hovered.  set_item_tooltip is the one-liner; tooltip_begin / tooltip_end wrap a multi-widget
+        body (guard the body on the true return, always call tooltip_end).
 
            gui()->button( "Hover me" );
            gui()->set_item_tooltip( "Does the thing" );
 
-       help_marker draws a dim "(?)" hint that pops `text` on hover -- the Dear ImGui footnote,
-       typically emitted on the same line after a control:
+        help_marker draws a dim "(?)" hint that pops `text` on hover -- the Dear ImGui footnote,
+        typically emitted on the same line after a control:
 
            gui()->checkbox( "No mouse", &flag );
            gui()->same_line( 0.0f );
-           gui()->help_marker( "Disable mouse inputs and interactions." ); */
-
+           gui()->help_marker( "Disable mouse inputs and interactions." ); 
+    */
     void ( *set_item_tooltip )( const char* text );
     bool ( *tooltip_begin    )( void );
     void ( *tooltip_end      )( void );

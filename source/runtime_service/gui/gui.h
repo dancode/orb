@@ -870,15 +870,17 @@ typedef struct
 #define GUI_MAX_VERTS      ( 16 * 1024 )
 #define GUI_MAX_IDX        ( GUI_MAX_VERTS * 3 )
 #define GUI_MAX_CMDS       1024
+
 /* Command segments: one contiguous span of the command list per (z, vp) the emit path stamps, cut
    wherever draw_set_sort_key / draw_set_viewport change the tag.  The render backend orders these
    spans instead of re-scanning the whole command buffer.  Worst case each command sits in its own
    segment, plus the open one, so the cap is the command cap + 1. */
+
 #define GUI_MAX_SEGS       ( GUI_MAX_CMDS + 1 )
-#define GUI_MAX_PATH_PTS   8192        /* per-frame total polyline/path point pool */
-#define GUI_MAX_TEXT_POOL  ( 16 * 1024 ) /* per-frame flat string copy pool for text cmds */
+#define GUI_MAX_PATH_PTS   8192                 /* per-frame total polyline/path point pool */
+#define GUI_MAX_TEXT_POOL  ( 16 * 1024 )        /* per-frame flat string copy pool for text cmds */
 #define GUI_CLIP_DEPTH     32
-#define GUI_MAX_CLIP_RECTS 256   /* per-frame clip table entries; u8 index so max is 256 */
+#define GUI_MAX_CLIP_RECTS 64                   /* per-frame clip table entries; u8 index so max is 256 */
 
 /*==============================================================================================
     GPU resource memory usage (bytes), reported by gui()->mem_stats().

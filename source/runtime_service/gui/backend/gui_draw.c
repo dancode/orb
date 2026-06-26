@@ -11,13 +11,13 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     gui_gpu_cmd_t -- backend-private GPU draw command.
 
     One bounded range of indices sharing a texture slot and scissor rect -- the unit the GPU
     sees.  Not exposed in gui.h.  The public gui_cmd_t carries semantic shapes; the render
     backend (gui_render.c) tessellates those into these at flush time.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct
 {
@@ -27,26 +27,32 @@ typedef struct
 
 } gui_gpu_cmd_t;
 
-/*----------------------------------------------------------------------------------------------
-    State
-----------------------------------------------------------------------------------------------*/
+/*==============================================================================================
+    GUI: Drawing State
 
-/* One contiguous span of the command list sharing a single (win, z, vp) tag.  The emit path appends
-   commands into cmds[]; whenever draw_set_window / draw_set_sort_key / draw_set_viewport change the
-   tag, the open span is closed at the current cmd_count and a fresh one is opened.  cache_tess_window
-   walks these spans per window (tens of them) instead of re-scanning the 1024-entry command buffer per
-   z and clip, and the retained-cache diff hashes each window's spans by the stable win id.  [lo, hi) is the
-   half-open command range; the final open span's hi is closed at build time.  win is the owning
-   window's stable id (id_hash(title)), 0 for background / non-window draws. */
+    One contiguous span of the command list sharing a single (win, z, vp) tag.  
+    
+    - The emit path appends commands into cmds[]; 
+    - whenever draw_set_window / draw_set_sort_key / draw_set_viewport change the tag, 
+      the open span is closed at the current cmd_count and a fresh one is opened.        
+    - cache_tess_window walks these spans per window (tens of them) instead of re-scanning 
+      the 1024-entry command buffer per z and clip, and the retained-cache diff hashes each 
+      window's spans by the stable win id.  
+      
+    - [lo, hi) is the half-open command range; the final open span's hi is closed at build time. 
+    - win is the owning window's stable id (id_hash(title)), 0 for background / non-window draws.
+
+==============================================================================================*/
+
 typedef struct { gui_id_t win; u32 z, vp, lo, hi; } gui_cmd_seg_t;
 
 static struct
 {
-    gui_cmd_t  cmds      [ GUI_MAX_CMDS   ];   /* semantic command list; one entry per shape      */
-    u32          cmd_hashes[ GUI_MAX_CMDS   ];   /* per-command hash baked at emit (for cache diff) */
-    gui_vec2_t points    [ GUI_MAX_PATH_PTS ];  /* point pool for CMD_POLYLINE data; indexed by pt_offset */
+    gui_cmd_t       cmds        [ GUI_MAX_CMDS   ];     // semantic command list; one entry per shape
+    u32             cmd_hashes  [ GUI_MAX_CMDS   ];     // per-command hash baked at emit (for cache diff)
+    gui_vec2_t      points      [ GUI_MAX_PATH_PTS ];   // point pool for CMD_POLYLINE data; indexed by pt_offset
 
-    gui_cmd_seg_t segs[ GUI_MAX_SEGS ];   /* per-(z,vp) command spans, in emit order */
+    gui_cmd_seg_t   segs[ GUI_MAX_SEGS ];       /* per-(z,vp) command spans, in emit order */
     u32             seg_count;                /* spans open this frame (>= 1; segs[0] is z=0,vp=0) */
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
