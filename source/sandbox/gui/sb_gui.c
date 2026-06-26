@@ -94,7 +94,7 @@ main( int argc, char** argv )
 
     if ( !mod_init_all() )
     {
-        fprintf( stderr, "[sb_imgui] mod_init_all failed: %s\n", mod_last_error() );
+        fprintf( stderr, "[sb_gui] mod_init_all failed: %s\n", mod_last_error() );
         mod_system_exit();
         return 1;
     }
@@ -103,30 +103,33 @@ main( int argc, char** argv )
     app_set_log_fn( core_log_fn );
 
     core()->log_set_min_level( LOG_LEVEL_INFO );
-    core_log_fn( LOG_LEVEL_DEBUG, "sb_imgui", "debug log: modules loaded successfully" );
+    core_log_fn( LOG_LEVEL_DEBUG, "sb_gui", "debug log: modules loaded successfully" );
 
     /* ------------------------------------------------------------------------------ */
     /* Setup RHI + Window */
 
-    if ( !rhi()->init() ) {
-         mod_system_exit();
-         return 1;
-    }
+    int ret_code = 1;
+    bool rhi_inited = false;
+    bool draw_inited = false;
+    bool gui_inited = false;
+    win_id_t win = APP_WIN_INVALID;
+    i32 ctx = RHI_CTX_INVALID;
+    gui_vp_t vp0 = GUI_VP_INVALID;
 
-    win_id_t win = app()->window_open( "sb_imgui", 0, 0, 1280, 720, APP_WIN_DEFAULT );
+    if ( !rhi()->init() ) {
+        goto shutdown;
+    }
+    rhi_inited = true;
+
+    win = app()->window_open( "sb_gui", 0, 0, 1280, 720, APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID ) {
-         rhi()->shutdown();
-         mod_system_exit();
-         return 1;
+        goto shutdown;
     }
 
     void* hwnd = app()->window_handle( win );
-    i32  ctx   = rhi()->context_create( win, hwnd, 1280, 720 );
+    ctx = rhi()->context_create( win, hwnd, 1280, 720 );
     if ( ctx == RHI_CTX_INVALID ) {
-         rhi()->shutdown();
-         app()->window_close( win );
-         mod_system_exit();
-         return 1;
+        goto shutdown;
     }
 
     /* ------------------------------------------------------------------------------ */
@@ -134,49 +137,36 @@ main( int argc, char** argv )
 
     if ( !draw()->init() )
     {
-        fprintf( stderr, "[sb_imgui] draw->init failed\n" );
-        rhi()->context_destroy( ctx );
-        rhi()->shutdown();
-        app()->window_close( win );
-        mod_system_exit();
-        return 1;
+        fprintf( stderr, "[sb_gui] draw->init failed\n" );
+        goto shutdown;
     }
+    draw_inited = true;
 
     /* ------------------------------------------------------------------------------ */
     /* Setup GUI */
 
     if ( !gui()->init() )
     {
-        fprintf( stderr, "[sb_imgui] gui->init failed\n" );
-        draw()->shutdown();
-        rhi()->context_destroy( ctx );
-        rhi()->shutdown();
-        app()->window_close( win );
-        mod_system_exit();
-        return 1;
+        fprintf( stderr, "[sb_gui] gui->init failed\n" );
+        goto shutdown;
     }
+    gui_inited = true;
     
     gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
     
     i32 win_w = 1280;
     i32 win_h = 720;
 
-    gui_vp_t vp0 = gui()->viewport_open( win, win_w, win_h );
+    vp0 = gui()->viewport_open( win, win_w, win_h );
     if ( vp0 == GUI_VP_INVALID ) {
-        fprintf( stderr, "[sb_imgui] gui viewport_open (primary) failed\n" );
-        gui()->shutdown();
-        draw()->shutdown();
-        rhi()->context_destroy( ctx );
-        rhi()->shutdown();
-        app()->window_close( win );
-        mod_system_exit();
-        return 1;
+        fprintf( stderr, "[sb_gui] gui viewport_open (primary) failed\n" );
+        goto shutdown;
     }
 
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
-    printf( "[sb_imgui] running -- ESC to quit\n" );
+    printf( "[sb_gui] running -- ESC to quit\n" );
 
     f64 last_time = sys_tick_seconds();
     bool show_demo = true;
@@ -247,15 +237,17 @@ main( int argc, char** argv )
 
         sys_sleep_milliseconds( 4 );
     }
+    
+    ret_code = 0;
 
 shutdown:
-    rhi()->context_destroy( ctx );
-    gui()->shutdown();
-    draw()->shutdown();
-    rhi()->shutdown();
-    app()->window_close( win );
+    if ( ctx != RHI_CTX_INVALID ) rhi()->context_destroy( ctx );
+    if ( gui_inited ) gui()->shutdown();
+    if ( draw_inited ) draw()->shutdown();
+    if ( rhi_inited ) rhi()->shutdown();
+    if ( win != APP_WIN_INVALID ) app()->window_close( win );
     mod_system_exit();
-    return 0;
+    return ret_code;
 }
 
 // clang-format on
