@@ -13,7 +13,7 @@
       5. Locked-file management -- rename any in-use .exe aside before relinking.
       6. Reflection codegen     -- invoke reflect_tool if has_reflect is set.
       7. Compile + link         -- call 06_compile and 07_link; restore .exe on failure.
-      8. Config stamp           -- touch _debug.stamp or _release.stamp; delete the other.
+      8. Config+mode stamp      -- touch _<config>_<mode>.stamp; delete the other 3 combos.
 
     Concurrency:
       From step 1 onward a per-target named mutex is held so two build_tool.exe
@@ -163,14 +163,20 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         }
     }
 
-    // C. Config change check. A per-config stamp file (_debug.stamp / _release.stamp)
-    //    is created after every successful compile+link. Presence of the correct one
-    //    is the signal -- no file content to read or compare.
+    // C. Config + mode change check. A per-(config,mode) stamp file
+    //    (_debug_mono.stamp / _debug_modular.stamp / _release_*.stamp) is created after
+    //    every successful compile+link. Presence of the correct one is the signal --
+    //    no file content to read or compare. Mode matters because a dynamic target's
+    //    output collides by name across modes: modular emits bin/<name>.dll plus a small
+    //    import bin/<name>.lib, while monolithic emits a full static bin/<name>.lib. Without
+    //    the mode in the stamp, a modular->monolithic switch would see the stale import lib,
+    //    pass every freshness test, and link a lib that has no real symbol definitions.
     if ( up_to_date )
     {
         char config_stamp[ PATH_MAX ];
-        snprintf( config_stamp, sizeof( config_stamp ), "%s" PATH_SEP "_%s.stamp", obj_dir,
-                  ctx->config == CONFIG_DEBUG ? "debug" : "release" );
+        snprintf( config_stamp, sizeof( config_stamp ), "%s" PATH_SEP "_%s_%s.stamp", obj_dir,
+                  ctx->config == CONFIG_DEBUG ? "debug" : "release",
+                  ctx->is_monolithic ? "mono" : "modular" );
         if ( !platform_file_exists( config_stamp ) )
             up_to_date = false;
     }
@@ -301,18 +307,30 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     if ( out_elapsed_ms )
         *out_elapsed_ms = platform_time_ms() - t_build_start;
 
-    // --- 8. Config Stamp ---
-    // Create the stamp for the config just built; delete the opposite so a
-    // Debug<->Release switch is detected as a miss on the next check.
+    // --- 8. Config + Mode Stamp ---
+    // Create the stamp for the (config,mode) just built; delete the other three combos so
+    // any Debug<->Release or modular<->monolithic switch is detected as a miss on the next
+    // check. The mode axis is what makes a modular->monolithic switch rebuild the dynamic
+    // targets as real static archives instead of reusing the stale DLL import libs.
     {
-        const char* built   = ctx->config == CONFIG_DEBUG ? "debug"   : "release";
-        const char* dropped = ctx->config == CONFIG_DEBUG ? "release" : "debug";
+        const char* cfg  = ctx->config == CONFIG_DEBUG ? "debug" : "release";
+        const char* mode = ctx->is_monolithic ? "mono" : "modular";
         char good_stamp[ PATH_MAX ];
-        char bad_stamp [ PATH_MAX ];
-        snprintf( good_stamp, sizeof( good_stamp ), "%s" PATH_SEP "_%s.stamp", obj_dir, built   );
-        snprintf( bad_stamp,  sizeof( bad_stamp  ), "%s" PATH_SEP "_%s.stamp", obj_dir, dropped );
+        snprintf( good_stamp, sizeof( good_stamp ), "%s" PATH_SEP "_%s_%s.stamp", obj_dir, cfg, mode );
         platform_touch_file( good_stamp );
-        platform_delete_file( bad_stamp );
+
+        static const char* k_cfgs[]  = { "debug", "release" };
+        static const char* k_modes[] = { "mono", "modular" };
+        for ( int ci = 0; ci < 2; ++ci )
+            for ( int mi = 0; mi < 2; ++mi )
+            {
+                if ( strcmp( k_cfgs[ ci ], cfg ) == 0 && strcmp( k_modes[ mi ], mode ) == 0 )
+                    continue; /* keep the one we just built */
+                char bad_stamp[ PATH_MAX ];
+                snprintf( bad_stamp, sizeof( bad_stamp ), "%s" PATH_SEP "_%s_%s.stamp", obj_dir,
+                          k_cfgs[ ci ], k_modes[ mi ] );
+                platform_delete_file( bad_stamp );
+            }
     }
 
 cleanup:
