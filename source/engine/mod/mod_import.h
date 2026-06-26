@@ -68,7 +68,7 @@ typedef struct mod_desc_s mod_desc_t;
     Expands to nothing in static builds (struct linked directly — no pointer needed).
 ==============================================================================================*/
 
-#ifdef BUILD_STATIC
+#if defined( BUILD_STATIC ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_DEFINE_API_PTR( type, name ) /* struct linked directly from header extern */
 #else
     #define MOD_DEFINE_API_PTR( type, name ) const type* g_##name##_api_ptr = NULL
@@ -82,7 +82,7 @@ typedef struct mod_desc_s mod_desc_t;
     Usage: if ( !MOD_FETCH_API( core_api_t, core ) ) return false;
 ==============================================================================================*/
 
-#ifdef BUILD_STATIC
+#if defined( BUILD_STATIC ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_FETCH_API( type, name ) ( 1 ) /* struct linked directly from header extern */
 #else
     #define MOD_FETCH_API( type, name ) ( ( g_##name##_api_ptr = ( const type* )get_api( #name ) ) != NULL )

@@ -72,7 +72,7 @@
         MOD_HOST_FETCH_API( render_api_t, render );
 ==============================================================================================*/
 
-#ifdef BUILD_STATIC
+#if defined( BUILD_STATIC ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_HOST_FETCH_API( name ) ( 1 )
 #else
     #define MOD_HOST_FETCH_API( name ) \

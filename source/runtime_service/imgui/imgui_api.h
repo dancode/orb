@@ -1059,13 +1059,13 @@ typedef struct imgui_api_s
 
 /*============================================================================================*/
 
-#if defined( BUILD_STATIC ) || defined( IMGUI_STATIC )
+#if ( defined( BUILD_STATIC ) || defined( IMGUI_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     MOD_GATEWAY_STATIC( imgui_api_t, imgui )
 #else
     MOD_GATEWAY_DYNAMIC( imgui_api_t, imgui )
 #endif
 
-#if defined( BUILD_STATIC ) || defined( IMGUI_STATIC )
+#if ( defined( BUILD_STATIC ) || defined( IMGUI_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_USE_IMGUI    /* static build */
     #define MOD_FETCH_IMGUI  true
 #else

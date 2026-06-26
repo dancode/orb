@@ -52,13 +52,13 @@ typedef struct render_api_s
 
 /*============================================================================================*/
 
-#if defined( BUILD_STATIC ) || defined( RENDER_STATIC )
+#if ( defined( BUILD_STATIC ) || defined( RENDER_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     MOD_GATEWAY_STATIC( render_api_t, render )
 #else
     MOD_GATEWAY_DYNAMIC( render_api_t, render )
 #endif
 
-#if defined( BUILD_STATIC ) || defined( RENDER_STATIC )
+#if ( defined( BUILD_STATIC ) || defined( RENDER_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_USE_RENDER    /* static build */
     #define MOD_FETCH_RENDER  true
 #else
