@@ -37,7 +37,7 @@ typedef struct
       the open span is closed at the current cmd_count and a fresh one is opened.        
     - cache_tess_window walks these spans per window (tens of them) instead of re-scanning 
       the 1024-entry command buffer per z and clip, and the retained-cache diff hashes each 
-      window's spans by the stable win id.  
+      window's spans by the stable win id. 
       
     - [lo, hi) is the half-open command range; the final open span's hi is closed at build time. 
     - win is the owning window's stable id (id_hash(title)), 0 for background / non-window draws.

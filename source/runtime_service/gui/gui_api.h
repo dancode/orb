@@ -36,20 +36,20 @@ typedef struct gui_api_s
         font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
                        call after init(). Returns the new id (>= 1), or 0 on failure. */
 
-    bool ( *init      )( void );
-    void ( *shutdown  )( void );
-    u32  ( *font_load )( const char* path );
+    bool                ( *init      )( void );
+    void                ( *shutdown  )( void );
+    u32                 ( *font_load )( const char* path );
 
     /* GPU resource memory currently held by gui, in bytes (buffers + atlases).
         print_mem_stats() dumps the same breakdown to stdout. */
 
-    gui_mem_stats_t ( *mem_stats       )( void );
-    void            ( *print_mem_stats )( void );
+    gui_mem_stats_t     ( *mem_stats       )( void );
+    void                ( *print_mem_stats )( void );
 
     /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
        Published at frame_begin, so a read during the build reflects the previous frame -- the
        standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
-    gui_render_stats_t ( *render_stats )( void );
+    gui_render_stats_t  ( *render_stats )( void );
 
     /* Built-in performance overlay -- a hidden-chrome, non-interactive FPS / cost readout pinned to
        the top-left of the primary viewport.  Emit it once per frame inside the UI build (last, so it
@@ -65,7 +65,8 @@ typedef struct gui_api_s
        clock opens at frame_begin() and closes at frame_end() (build cost); the render clock sums the
        render() flush calls -- so the readout trails the work it describes by one frame.  Pass the
        same callback every frame; NULL leaves timing off (mode 2 then reads zero). */
-    void ( *perf_overlay )( gui_clock_fn clock, int mode );
+
+    void                ( *perf_overlay )( gui_clock_fn clock, int mode );
 
     /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
        API does not hide it; even a single-context host names its one context:
@@ -105,9 +106,9 @@ typedef struct gui_api_s
        viewport_resize() -- update a viewport's drawable size.  Call on OS resize BEFORE frame_begin.
                             Works identically for primary and secondary viewports. */
 
-    gui_vp_t ( *viewport_open   )( i32 win_id, i32 w, i32 h );
-    void       ( *viewport_close  )( gui_vp_t vp );
-    void       ( *viewport_resize )( gui_vp_t vp, i32 w, i32 h );
+    gui_vp_t    ( *viewport_open   )( i32 win_id, i32 w, i32 h );
+    void        ( *viewport_close  )( gui_vp_t vp );
+    void        ( *viewport_resize )( gui_vp_t vp, i32 w, i32 h );
 
     /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
        to flush into, these own the OS window + rhi context end to end -- gui creates them on
