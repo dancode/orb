@@ -415,12 +415,12 @@ target sb_vulkan_stress					# multi-context rhi sync stress test
     dep         sys ref mod core job app
 	dep 		rhi
 
-target sb_imgui
+target sb_gui
 
     type        exe
-    root        source/sandbox/imgui
-    folder      09_SANDBOX/IMGUI
-    unit        sb_imgui.c
+    root        source/sandbox/gui
+    folder      09_SANDBOX/GUI
+    unit        sb_gui.c
     dep         sys ref mod core job app
 	dep 		run rhi draw gui
 	mono_dep 	render
@@ -623,7 +623,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		render 					# render dll
 
 	add 		sb_vulkan				# exe
-	add 		sb_imgui				# imgui demo
+	add 		sb_gui					# gui demo
 	add 		sb_vulkan_stress		# multi-context sync stress exe
 
 
