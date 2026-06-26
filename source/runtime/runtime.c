@@ -11,15 +11,15 @@
     Optional-service access mode (must precede every engine/service include below)
 
     The runtime host is a shared library linked into many host exes, each of which selects a
-    different subset of the *host-fetched* services (draw/imgui/render) via its module table.
-    Those three are wired by MOD_HOST_FETCH_API() below and guarded with if ( draw() ) etc.
+    different subset of the *host-fetched* services (rhi/draw/imgui/render) via its module table.
+    Those four are wired by MOD_HOST_FETCH_API() below and guarded with if ( rhi() ) etc.
     Under a monolithic build the normal static gateway would hard-bind these accessors to
-    g_<svc>_api_struct, forcing every host -- even a headless server -- to link services it never
-    drives, and making the presence guards compile to always-true. Defining this here opts THIS
-    translation unit (only) into the pointer gateway even under BUILD_STATIC, so those services
-    stay truly optional: present == non-NULL ptr, absent == NULL, exactly as in the dynamic build.
-    (rhi is deliberately NOT in this set -- the host uses rhi() directly without fetching it, so it
-    keeps the static struct gateway and is a hard link dependency, present in every windowed host.)
+    g_<svc>_api_struct, forcing every host -- even a headless server or a CLI/tool window -- to
+    link services it never drives, and making the presence guards compile to always-true. Defining
+    this here opts THIS translation unit (only) into the pointer gateway even under BUILD_STATIC, so
+    those services stay truly optional: present == non-NULL ptr, absent == NULL, exactly as in the
+    dynamic build. (rhi is in this set too -- a console or tool host may run without a renderer, so
+    the whole GPU bring-up in host_main is gated behind if ( rhi() ).)
     Every other module keeps the direct, devirtualized static gateway. The guard is read when the
     gateway / MOD_USE_* / MOD_FETCH_* / MOD_HOST_FETCH_API macros are defined, so it must be set
     before the first include that pulls mod_import.h / mod_host.h.

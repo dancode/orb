@@ -321,13 +321,13 @@ typedef struct rhi_api_s
 
 /*============================================================================================*/
 
-#if defined( BUILD_STATIC ) || defined( RHI_STATIC )
+#if ( defined( BUILD_STATIC ) || defined( RHI_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
 MOD_GATEWAY_STATIC( rhi_api_t, rhi )
 #else
 MOD_GATEWAY_DYNAMIC( rhi_api_t, rhi )
 #endif
 
-#if defined( BUILD_STATIC ) || defined( RHI_STATIC )
+#if ( defined( BUILD_STATIC ) || defined( RHI_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_USE_RHI    /* static build */
     #define MOD_FETCH_RHI  true
 #else

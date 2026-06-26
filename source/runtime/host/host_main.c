@@ -263,6 +263,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                                          hosts that don't load draw or imgui get NULL here,
                                          which is fine; the guarded paths below check it.
     */
+    MOD_HOST_FETCH_API( rhi    );
     MOD_HOST_FETCH_API( render );
     MOD_HOST_FETCH_API( draw   );
     MOD_HOST_FETCH_API( imgui  );
