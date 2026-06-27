@@ -116,6 +116,7 @@ typedef struct
     u32 separator_style;/* separator rule: 0=solid, 1=dashed (gui_separator_style_t)        */
     u32 progress_style; /* progress fill: 0=solid, 1=gradient (gui_progress_style_t)        */
     u32 slider_knob;    /* slider knob: 0=bar, 1=circle (gui_slider_knob_t)                 */
+    u32 menu_check;     /* menu check gutter: 0=plain, 1=box (gui_menu_check_t)              */
 
 } gui_metrics_t;
 

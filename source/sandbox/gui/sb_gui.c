@@ -48,15 +48,12 @@ show_demo_window(bool* p_open)
     static f32 color[3] = { 0.4f, 0.7f, 0.0f };
     gui()->drag_float3("color", color, 0.01f, 0.0f, 1.0f, NULL);
 
-    // gui()->bar();
     static int counter = 0;
     if (gui()->button("Button"))
         counter++;
     gui()->same_line(0);
     gui()->textf("counter = %d", counter);
 
-    // gui()->stack();
-    // gui()->new_line();
     gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 
         1000.0f / sys_tick_seconds() /* placeholder for framerate */, 
         60.0f /* placeholder for fps */);
@@ -192,6 +189,16 @@ main( int argc, char** argv )
         if ( gui()->frame_dirty() )
         {
             gui()->ctx_begin( GUI_CTX_DEFAULT );
+
+            if ( gui()->main_menu_bar_begin() )
+            {
+                if ( gui()->menu_begin( "Examples" ) )
+                {
+                    gui()->menu_item( "Demo Window", NULL, &show_demo );
+                    gui()->menu_end();
+                }
+                gui()->main_menu_bar_end();
+            }
 
             if (show_demo)
                 show_demo_window(&show_demo);

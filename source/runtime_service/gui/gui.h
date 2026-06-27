@@ -624,6 +624,7 @@ typedef enum
     GUI_VAR_SEPARATOR_STYLE,/* separator rule: 0 = solid, 1 = dashed (gui_separator_style_t) */
     GUI_VAR_PROGRESS_STYLE, /* progress_bar fill: 0 = solid, 1 = vertical gradient (gui_progress_style_t) */
     GUI_VAR_SLIDER_KNOB,    /* slider knob shape: 0 = bar, 1 = circle (gui_slider_knob_t) */
+    GUI_VAR_MENU_CHECK,     /* menu item check gutter: 0 = plain indicator, 1 = bordered box (gui_menu_check_t) */
 
     GUI_VAR_COUNT,          /* var count -- not a metric                   */
 
@@ -682,6 +683,16 @@ typedef enum
     GUI_SLIDER_KNOB_CIRCLE = 1,   /* a circular handle                 */
 
 } gui_slider_knob_t;
+
+/* Menu item check gutter style (GUI_VAR_MENU_CHECK).  Default is the bordered box, which draws
+   an idle checkbox frame in the gutter whether or not the item is selected; the plain variant
+   renders no box and only the indicator symbol when selected. */
+typedef enum
+{
+    GUI_MENU_CHECK_PLAIN = 0,   /* indicator only when selected; no idle box */
+    GUI_MENU_CHECK_BOX   = 1,   /* bordered box always; indicator when selected */
+
+} gui_menu_check_t;
 
 /*==============================================================================================
     Debug overlay layers

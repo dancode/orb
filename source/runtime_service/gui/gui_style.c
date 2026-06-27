@@ -77,6 +77,7 @@ style_var_base( gui_style_var_t v )
         case GUI_VAR_SEPARATOR_STYLE: return (f32)s_layout.separator_style; /* enum-as-var: 0 solid / 1 dashed */
         case GUI_VAR_PROGRESS_STYLE:  return (f32)s_layout.progress_style;  /* enum-as-var: 0 solid / 1 gradient */
         case GUI_VAR_SLIDER_KNOB:     return (f32)s_layout.slider_knob;     /* enum-as-var: 0 bar / 1 circle */
+        case GUI_VAR_MENU_CHECK:      return (f32)s_layout.menu_check;      /* enum-as-var: 0 plain / 1 box */
         default:                        return 0.0f;
     }
 }

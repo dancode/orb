@@ -83,15 +83,24 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     if ( st.hover || st.nav )
         draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
 
-    /* A fixed check-mark gutter on the left so checkable and plain items align; the indicator
-       (a 'v' tick, or a disc per GUI_VAR_CHECK_STYLE -- matching the checkbox) is drawn only
-       when *selected. */
+    /* A fixed check-mark gutter on the left so checkable and plain items align.  With
+       GUI_MENU_CHECK_BOX (default) a bordered idle box is always drawn when the item has a
+       *selected pointer, matching the visual weight of a standalone checkbox; with
+       GUI_MENU_CHECK_PLAIN only the indicator appears when selected and the gutter is empty
+       otherwise. */
     f32 check_w = CHECKBOX_SZ + WIDGET_PAD;
-    if ( selected && *selected )
+    if ( selected )
     {
         f32 bx = r.x + WIDGET_PAD;
         f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
-        draw_check_indicator( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
+        bool draw_box = ( (u32)style_var( GUI_VAR_MENU_CHECK ) == GUI_MENU_CHECK_BOX );
+        if ( draw_box )
+        {
+            draw_push_rect_filled ( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, widget_bg_color( st ) );
+            draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER );
+        }
+        if ( *selected )
+            draw_check_indicator( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
     }
 
     f32 lx = r.x + WIDGET_PAD + check_w;
@@ -104,8 +113,8 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
 
     /* Natural row width (gutter + label + a gap + shortcut) so the menu popup auto-sizes to its
        widest row over two frames, like the combo dropdown. */
-    f32 natural = lx + label_width( label );
-    if ( sw > 0.0f ) natural += WIDGET_PAD * 2.0f + sw;
+    f32 natural = lx + label_width( label ) + WIDGET_PAD;
+    if ( sw > 0.0f ) natural += WIDGET_PAD + sw;
     widget_track_width( natural );
 
     if ( st.clicked )

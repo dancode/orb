@@ -103,6 +103,7 @@ static gui_metrics_t s_layout =
     .separator_style = GUI_SEPARATOR_SOLID,  /* solid rule by default (push GUI_VAR_SEPARATOR_STYLE) */
     .progress_style  = GUI_PROGRESS_SOLID,   /* flat fill by default (push GUI_VAR_PROGRESS_STYLE)   */
     .slider_knob     = GUI_SLIDER_KNOB_BAR,  /* bar grab by default (push GUI_VAR_SLIDER_KNOB)       */
+    .menu_check      = GUI_MENU_CHECK_BOX,   /* bordered box by default (push GUI_VAR_MENU_CHECK)    */
 };
 
 /* Recompute the layout metrics from a font's type size (em), glyph-box height (char_h), and
