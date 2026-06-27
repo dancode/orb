@@ -125,7 +125,7 @@ typedef struct gui_api_s
                                     its own rhi context (frame_begin/clear/flush/frame_end).  The
                                     host still presents the main surface (index 0) via render(). */
 
-    gui_vp_t ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
+    gui_vp_t   ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
     void       ( *viewport_update          )( void );
     void       ( *viewport_render_floaters )( void );
 

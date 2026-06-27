@@ -209,7 +209,7 @@ gui_button( const char* label )
 {
     gui_id_t   id = widget_id( label );
 
-    /* Natural width = label plus breathing room, so a same_line button shrinks to its text. */
+    /* Natural width = label + padding.  Shrinks to this in stack and same_line; fills in columns. */
     gui_rect_t r  = widget_next_rect_w( label_width( label ) + 2.0f * WIDGET_PAD, WIDGET_H );
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );

@@ -109,10 +109,21 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
 
 /* Finish a partially-filled row: advance the pen past it and return to column 0.  No-op at a
    row start.  Called before the template changes or a child region opens, so the next thing
-   lands on a fresh line rather than overlapping the open row. */
+   lands on a fresh line rather than overlapping the open row.  In pack mode, finalizes the
+   open pack line instead (adding a gap), so a bar() -> stack() transition places the next
+   flow item below the bar rather than flush against it. */
 static void
 layout_row_break( layout_frame_t* f )
 {
+    if ( f->mode == GUI_MODE_PACK )
+    {
+        /* Close the horizontal pack line: advance cursor_y past the tallest item + gap so the
+           next flow row starts cleanly below the bar.  Vertical pack already tracks cursor_y
+           at the running pen end; a zero pack_line (nothing emitted) needs no advance. */
+        if ( f->pack_dir == GUI_PACK_HORIZONTAL && f->pack_line > 0.0f )
+            f->cursor_y = f->pack_cross + f->pack_line + f->lay_gap_y;
+        return;
+    }
     if ( f->col == 0 ) return;
     f->cursor_y = f->row_y + f->row_h_cur + f->lay_gap_y;
     f->col      = 0;
@@ -323,9 +334,11 @@ pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
     return r;
 }
 
-/* Width-aware form.  `natural_w` is the widget's preferred width, used only when a same_line is
-   pending (the widget then sits at the running x sized to natural_w, or fills to the content edge
-   when natural_w <= 0); in normal column flow / grid it is ignored and the track cell width wins.
+/* Width-aware form.  `natural_w` is the widget's preferred width.  In stack mode a widget that
+   carries one (natural_w > 0) shrinks to it instead of filling the cell -- matching Dear ImGui's
+   behavior where buttons size to their label while field widgets (slider, input) fill the row.
+   In columns / grid mode the track cell always wins.  On a same_line the widget sits at the
+   running x sized to natural_w (or fills to the content edge when natural_w <= 0).
    Every emit records f->prev_item so same_line() can anchor the next widget to this one's line. */
 static gui_rect_t
 widget_next_rect_w( f32 natural_w, f32 h )
@@ -391,8 +404,12 @@ widget_next_rect_w( f32 natural_w, f32 h )
         }
 
         u32 c = f->col;
-        r = ( gui_rect_t ){ f->cellx[ c ], f->row_y, f->cellw[ c ], f->row_h_cur };
-        widget_track_width( f->cellx[ c ] + f->cellw[ c ] );   /* cell right edge -> hscroll */
+        /* Stack mode: a widget with a natural width preference shrinks to it (button, checkbox,
+           text) rather than filling the full cell.  Columns / grid always fill their track. */
+        f32 w = ( f->mode == GUI_MODE_STACK && natural_w > 0.0f && natural_w < f->cellw[ c ] )
+               ? natural_w : f->cellw[ c ];
+        r = ( gui_rect_t ){ f->cellx[ c ], f->row_y, w, f->row_h_cur };
+        widget_track_width( f->cellx[ c ] + w );
 
         /* Advance; wrap to a fresh row when the template's columns are exhausted. */
         if ( ++f->col >= f->lay_ncols )
