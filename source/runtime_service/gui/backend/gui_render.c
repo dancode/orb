@@ -106,15 +106,15 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
 bool
 viewport_create( gui_viewport_t* vp, rhi_texture_t target, i32 win_id )
 {
-    vp->target    = target;
-    vp->win_id    = win_id;           // OS window hosting this surface; -1 = unassociated
-    vp->rhi_ctx   = RHI_CTX_INVALID;  // set only by viewport_spawn for an gui-owned floater
-    vp->owned     = false;            // host-provided unless viewport_spawn flips it
-    vp->pending_close = false;        // owned floater close request; serviced by viewport_update
-    vp->disp_w    = 0;                // drawable size set by the host before build; 0 = fall back to main
-    vp->disp_h    = 0;
-    vp->caption_inset = 0.0f;         // no native shell band until one publishes it during the build
-    vp->dock_root = NULL;             // free-float until docking assigns a tree
+    vp->target          = target;
+    vp->win_id          = win_id;           // OS window hosting this surface; -1 = unassociated
+    vp->rhi_ctx         = RHI_CTX_INVALID;  // set only by viewport_spawn for an gui-owned floater
+    vp->owned           = false;            // host-provided unless viewport_spawn flips it
+    vp->pending_close   = false;            // owned floater close request; serviced by viewport_update
+    vp->disp_w          = 0;                // drawable size set by the host before build; 0 = fall back to main
+    vp->disp_h          = 0;
+    vp->caption_inset   = 0.0f;             // no native shell band until one publishes it during the build
+    vp->dock_root       = NULL;             // free-float until docking assigns a tree
 
     // Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame.
     vp->vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
@@ -125,7 +125,7 @@ viewport_create( gui_viewport_t* vp, rhi_texture_t target, i32 win_id )
     } );
     if ( !rhi_handle_valid( vp->vb ) )
         return false;
-
+    
     // Index buffer (CPU_TO_GPU, u16 indices): one region per frame-in-flight.
     vp->ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_IB_REGION_BYTES,

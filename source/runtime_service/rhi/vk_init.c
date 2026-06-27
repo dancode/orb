@@ -153,16 +153,21 @@ vk_shutdown( void )
 ==============================================================================================*/
 
 static i32
-vk_context_create( i32 win_id, void* native_window, i32 w, i32 h )
+vk_context_open( i32 win_id )
 {
     if ( !vk.initialized ) {
          LOG_ERROR( "global init not done\n" );
          return RHI_CTX_INVALID;
     }
+
+    void* native_window = app()->window_handle( win_id );
     if ( !native_window ) {
-         LOG_ERROR( "native_window is NULL\n" );
+         LOG_ERROR( "window_handle returned NULL for win_id %d\n", win_id );
          return RHI_CTX_INVALID;
     }
+
+    i32 w = 0, h = 0;
+    app()->window_get_size( win_id, &w, &h );
 
     if ( win_id < 0 || win_id >= RHI_CTX_MAX ) {
         LOG_ERROR( "win_id %d out of range (max %d)\n", win_id, RHI_CTX_MAX );
@@ -287,6 +292,30 @@ vk_context_resize( i32 ctx_id, i32 width, i32 height )
     /* Actual swapchain recreation happens at the top of the next frame_begin,
        between frames, never mid-recording. */
     return true;
+}
+
+/*============================================================================================*/
+
+/* Route a host app_event_t into the rhi context pool.  On APP_EV_WIN_RESIZE, finds the context
+   whose win_id matches and calls vk_context_resize.  Always returns false: resize events are
+   informational and must also reach gui()->event() for viewport size updates. */
+static bool
+vk_event( const app_event_t* ev )
+{
+    if ( ev->type != APP_EV_WIN_RESIZE )
+        return false;
+
+    for ( i32 i = 0; i < RHI_CTX_MAX; ++i )
+    {
+        if ( !( vk.ctx_alloc & ( 1u << i ) ) )
+            continue;
+        if ( vk.contexts[ i ].win_id == ev->win_id )
+        {
+            vk_context_resize( i, ev->data.win_resize.w, ev->data.win_resize.h );
+            return false;   /* not consumed; gui->event() also needs WIN_RESIZE */
+        }
+    }
+    return false;
 }
 
 /*============================================================================================*/

@@ -548,10 +548,10 @@ typedef enum
 
 typedef struct gui_dock_node_t
 {
-    gui_id_t id;                          /* stable node handle; 0 = free pool slot            */
-    u32        viewport;                    /* surface (viewport index) this tree belongs to     */
-    u8         split;                       /* gui_dock_split_t: NONE = leaf, else internal     */
-    f32        ratio;                       /* child[0]'s fraction of the split axis (0.5 default) */
+    gui_id_t    id;                          /* stable node handle; 0 = free pool slot            */
+    u32         viewport;                    /* surface (viewport index) this tree belongs to     */
+    u8          split;                       /* gui_dock_split_t: NONE = leaf, else internal     */
+    f32         ratio;                       /* child[0]'s fraction of the split axis (0.5 default) */
 
     struct gui_dock_node_t* parent;       /* owning split, or NULL for the tree root           */
     struct gui_dock_node_t* child[ 2 ];   /* internal only (NULL on a leaf)                    */
@@ -559,10 +559,10 @@ typedef struct gui_dock_node_t
     /* Leaf payload: the windows tabbed into this node.  Names are copied at dock time so the tab
        bar is self-sufficient (no dependence on a window emitting this frame or its title lifetime). */
 
-    gui_id_t tabs [ GUI_DOCK_TABS_MAX ];
-    char       names[ GUI_DOCK_TABS_MAX ][ GUI_DOCK_NAME_CAP ];
-    u32        tab_count;
-    u32        active_tab;                   /* index of the visible tab                          */
+    gui_id_t    tabs [ GUI_DOCK_TABS_MAX ];
+    char        names[ GUI_DOCK_TABS_MAX ][ GUI_DOCK_NAME_CAP ];
+    u32         tab_count;
+    u32         active_tab;                   /* index of the visible tab                          */
 
     gui_rect_t rect;                       /* whole node box, resolved this frame               */
     gui_rect_t content;                    /* leaf body below the tab strip (active window's rect) */
@@ -584,30 +584,30 @@ typedef struct gui_dock_node_t
 
 typedef struct gui_context_t
 {
-    gui_retained_t    retained;          // id salt, frame clock, keyed state pool (ptr into alloc)
-    nav_state_t         nav;               // nav cursor location + menu-bar mode
-                                           
-    gui_popup_t*      popups_open;       // open popup set, ordered parent -> child; ptr into alloc
-    u32                 popup_open_count;  // live open count
-    u32                 popup_depth;       // capacity (max nesting depth) 
+    gui_retained_t      retained;           // id salt, frame clock, keyed state pool (ptr into alloc)
+    nav_state_t         nav;                // nav cursor location + menu-bar mode
                                             
-    gui_window_t*     windows;           // persisted window records; ptr into alloc
-    u32                 window_count;      // live records in the pool
-    u32                 max_windows;       // capacity
-    gui_window_t      window_scratch;    // transient fallback when the pool is full; stays embedded
-    u32                 z_counter;         // monotonic paint-order dispenser
-                                           
-    gui_viewport_t*   viewports;         // render surfaces: [0]=main swapchain; ptr into alloc
-    u32                 viewport_count;    // high-water slot count (compacted on close; iterate [0, count))
-    u32                 max_viewports;     // capacity
+    gui_popup_t*        popups_open;        // open popup set, ordered parent -> child; ptr into alloc
+    u32                 popup_open_count;   // live open count
+    u32                 popup_depth;        // capacity (max nesting depth) 
+                                             
+    gui_window_t*       windows;            // persisted window records; ptr into alloc
+    u32                 window_count;       // live records in the pool
+    u32                 max_windows;        // capacity
+    gui_window_t        window_scratch;     // transient fallback when the pool is full; stays embedded
+    u32                 z_counter;          // monotonic paint-order dispenser
+    
+    gui_viewport_t*     viewports;          // render surfaces: [0]=main swapchain; ptr into alloc
+    u32                 viewport_count;     // high-water slot count (compacted on close; iterate [0, count))
+    u32                 max_viewports;      // capacity
                                             
-    gui_dock_node_t*  dock_nodes;        // dock-tree node pool; NULL when max_dock_nodes == 0
-    u32                 dock_node_count;   // high-water slot count in the pool
-    u32                 dock_id_seq;       // monotonic node-id dispenser (0 = none)
-    u32                 max_dock_nodes;    // capacity; 0 = docking disabled
+    gui_dock_node_t*    dock_nodes;         // dock-tree node pool; NULL when max_dock_nodes == 0
+    u32                 dock_node_count;    // high-water slot count in the pool
+    u32                 dock_id_seq;        // monotonic node-id dispenser (0 = none)
+    u32                 max_dock_nodes;     // capacity; 0 = docking disabled
                                             
-    bool                listening;         // true: context receives hover/click/nav input this frame
-    void*               _alloc;            // heap block; NULL for the static default context (slot 0)
+    bool                listening;          // true: context receives hover/click/nav input this frame
+    void*               _alloc;             // heap block; NULL for the static default context (slot 0)
 
 } gui_context_t;
 
@@ -624,7 +624,7 @@ typedef struct gui_context_t
 typedef struct
 {
     char                    label[ 32 ];   /* display name for headers_row (future)       */
-    gui_table_col_flags_t flags;         /* FIXED / STRETCH / NO_RESIZE / etc.          */
+    gui_table_col_flags_t   flags;         /* FIXED / STRETCH / NO_RESIZE / etc.          */
     f32                     init_w;        /* 0 = stretch (==1 fill); >1 = fixed pixels   */
 
 } gui_table_col_t;

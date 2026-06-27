@@ -6,7 +6,7 @@
 
     Function groups (all called through the rhi() vtable):
         Lifecycle  : init / shutdown
-        Context    : create / destroy / resize  (one per window)
+        Context    : open / destroy / resize / event  (one per window)
         Frame      : begin / end
         Buffer     : create / destroy / write
         Texture    : create / destroy
@@ -22,6 +22,7 @@
 ==============================================================================================*/
 
 #include "runtime_service/rhi/rhi.h"
+#include "engine/app/app.h"        /* app_event_t for event() */
 #include "engine/mod/mod_import.h"
 
 // clang-format off
@@ -46,12 +47,12 @@ typedef struct rhi_api_s
 
     /* ---- Per-context lifecycle (one per window) ---- */
 
-    /* Creates a render context for a platform window: VkSurfaceKHR, VkSwapchainKHR,
-       per-frame command pools, semaphores, fences, and a shared depth buffer.
-       native_window is a platform handle (HWND on Windows, xcb_window_t on Linux).
-       w and h are the initial drawable size in pixels.
+    /* Opens a render context for a platform window (VkSurfaceKHR, VkSwapchainKHR,
+       per-frame command pools, semaphores, fences, shared depth buffer).  The native
+       window handle and initial drawable size are queried from app() internally using
+       win_id -- no redundant parameters.  Slot index equals win_id.
        Returns a non-negative context ID on success, RHI_CTX_INVALID on failure. */
-    i32 (*context_create)( i32 win_id, void* native_window, i32 w, i32 h );
+    i32 (*context_open)( i32 win_id );
 
     /* Destroys all per-context Vulkan state and returns the slot to the pool.
        Must be called before shutdown().  Any rhi_cmd_t from this context is invalid
@@ -60,8 +61,16 @@ typedef struct rhi_api_s
 
     /* Recreates the swapchain at the new pixel dimensions.  Call when the OS reports a
        window resize; do not call every frame.  In-flight frame commands are flushed before
-       the swapchain is replaced.  Returns false if recreation fails (surface lost, OOM). */
+       the swapchain is replaced.  Returns false if recreation fails (surface lost, OOM).
+       Prefer rhi()->event() for automatic resize routing; use this directly only when
+       explicit control is needed (stress tests, programmatic resize). */
     bool (*context_resize)( i32 ctx_id, i32 w, i32 h );
+
+    /* Forward an app_event_t from the host event ring.  Handles APP_EV_WIN_RESIZE by
+       finding the context whose win_id matches and calling context_resize internally.
+       Always returns false (resize events are not consumed -- gui()->event() must also
+       see them to update its viewport sizes). */
+    bool (*event)( const app_event_t* ev );
 
     /* ---- Frame ---- */
 

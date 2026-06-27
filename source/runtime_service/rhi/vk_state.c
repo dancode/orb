@@ -13,7 +13,7 @@
 
         rhi_mod_init          : load vulkan-1.dll; bootstrap Vulkan function pointers.
         rhi()->init()         : create VkInstance + VkDevice (no window required yet).
-        rhi()->context_create : per-window surface, swapchain, depth buffer, sync objects,
+        rhi()->context_open   : per-window surface, swapchain, depth buffer, sync objects,
                                 and command buffers.
 
 ==============================================================================================*/

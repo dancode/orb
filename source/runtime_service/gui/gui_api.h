@@ -96,17 +96,20 @@ typedef struct gui_api_s
        partition to the viewport it is assigned to (window_set_next_viewport, or inherited from
        whichever viewport was most recently emitted into this frame).
 
-       viewport_open()   -- open a surface for OS window win_id with initial drawable size w x h.
+       viewport_open()   -- open a surface for OS window win_id.  The initial drawable size is
+                            queried from app() internally -- no redundant w/h parameters.
                             Returns a handle (gui_vp_t >= 0) or GUI_VP_INVALID if the pool is full.
                             The first call creates the primary (index 0); call before any frames.
                             win_id routes mouse events from that OS window to this surface.
-       viewport_close()  -- close a non-primary viewport and release its GPU geometry buffers.
-                            Windows on the closed viewport automatically fall back to the primary.
-                            The host owns the OS window and rhi context; gui owns only the geometry.
-       viewport_resize() -- update a viewport's drawable size.  Call on OS resize BEFORE frame_begin.
-                            Works identically for primary and secondary viewports. */
+       viewport_close()  -- close a viewport and release its GPU geometry buffers.  Works for both
+                            the primary and secondary viewports.  Windows on the closed viewport
+                            automatically fall back to the primary.  The host owns the OS window and
+                            rhi context; gui owns only the geometry.
+       viewport_resize() -- update a viewport's drawable size.  Prefer rhi()->event() +
+                            gui()->event() for automatic routing; call this directly only when
+                            explicit control is needed. */
 
-    gui_vp_t    ( *viewport_open   )( i32 win_id, i32 w, i32 h );
+    gui_vp_t    ( *viewport_open   )( i32 win_id );
     void        ( *viewport_close  )( gui_vp_t vp );
     void        ( *viewport_resize )( gui_vp_t vp, i32 w, i32 h );
 
@@ -167,11 +170,16 @@ typedef struct gui_api_s
     void        ( *ctx_begin         )( gui_ctx_t ctx );
     void        ( *ctx_end           )( void );
 
-    /* Host input -- the host owns the app event ring drain and forwards each
-       event here before frame_begin() for the same frame.
-       event() -- forward one drained app_event_t; gui unpacks the input events
-                  it cares about (text + scroll) and returns true if it consumed
-                  the event, letting the host skip its own handling for it. */
+    /* Host input -- the host owns the app event ring drain and forwards each event here.
+       event() handles:
+         - APP_EV_CHAR / MOUSE_WHEEL / CLIPBOARD: input state; returns true (consumed).
+         - APP_EV_MOUSE_MOVE / _DOWN / _UP: routes the cursor to the correct viewport; returns false.
+         - APP_EV_WIN_RESIZE: updates the matching viewport's drawable size (primary or owned
+           floater).  Also drives rhi context resize for owned floaters (gui owns those contexts).
+           Returns true only for owned floater events; primary resize returns false so
+           rhi()->event() can also handle the swapchain rebuild.
+         - APP_EV_WIN_CLOSE: marks an owned floater for teardown (returns true); primary window
+           close returns false so the host can exit. */
 
     bool ( *event )( const app_event_t* ev );
 

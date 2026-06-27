@@ -33,7 +33,7 @@
 typedef struct render_api_s
 {
     /* ---- Context management ---- */
-    /* Binds an RHI context to a render slot; call after rhi()->context_create. */
+    /* Binds an RHI context to a render slot; call after rhi()->context_open. */
     void ( *context_register   )( i32 ctx_id );
     void ( *context_unregister )( i32 ctx_id );
 

@@ -400,10 +400,11 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
     Open a viewport: claim the slot at win_id (slot index == win_id), create its GPU geometry
     buffers, and record the OS window and initial drawable size.
 
-    Slot alignment: win_id 0 = primary swapchain, win_id 1..N = secondary surfaces.  Since each
-    viewport requires a live OS window, the window pool guarantees the matching slot is free.
+    Slot alignment: win_id 0 = primary swapchain, win_id 1..N = secondary surfaces.  
+    Since each viewport requires a live OS window, the window pool guarantees the matching slot is free.
     RHI_SWAPCHAIN_COLOR resolves per-context at flush time -- which cmd you pass render() selects
     the swapchain.
+
     Returns the handle to pass to render / viewport_resize / viewport_close / window_set_next_viewport,
     or GUI_VP_INVALID on bad win_id or GPU buffer failure.
     Must be called after init() and before frame_begin().
@@ -411,7 +412,7 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 ==============================================================================================*/
 
 gui_vp_t
-gui_viewport_open( i32 win_id, i32 w, i32 h )
+gui_viewport_open( i32 win_id )
 {
     /* Slot index == win_id; an open window guarantees the slot is free. */
     if ( win_id < 0 || win_id >= (i32)g_ctx->max_viewports )
@@ -423,11 +424,16 @@ gui_viewport_open( i32 win_id, i32 w, i32 h )
     if ( !viewport_create( vp, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
         return GUI_VP_INVALID;
 
+    /* Query current window size from app() -- avoids the host passing redundant w/h. */
+    i32 w = 0, h = 0;
+    app()->window_get_size( win_id, &w, &h );
     vp->disp_w = w;
     vp->disp_h = h;
 
+    // Update the high-water viewport count so the host can enumerate live viewports.
     if ( (u32)win_id + 1u > g_ctx->viewport_count )
         g_ctx->viewport_count = (u32)win_id + 1u;
+
     return (gui_vp_t)win_id;
 }
 
@@ -438,17 +444,18 @@ gui_viewport_resize( gui_vp_t vp, i32 w, i32 h )
 {
     if ( vp < 0 || vp >= (i32)g_ctx->max_viewports )
         return;
+
     g_ctx->viewports[ vp ].disp_w = w;
     g_ctx->viewports[ vp ].disp_h = h;
 }
 
-/* Close a non-primary viewport and release its GPU geometry buffers.  Windows that were assigned
-   to this surface automatically revert to the primary (index 0).  The primary (index 0) is managed
-   by init/shutdown and may not be closed here.  The host owns the OS window and rhi context. */
+/* Close a viewport and release its GPU geometry buffers.  Works for the primary (0) and secondary
+   viewports alike.  Windows assigned to the closed viewport revert to the primary.  The host owns
+   the OS window and rhi context; gui owns only the geometry buffers. */
 void
 gui_viewport_close( gui_vp_t vp )
 {
-    if ( vp <= 0 || vp >= (i32)g_ctx->max_viewports )
+    if ( vp < 0 || vp >= (i32)g_ctx->max_viewports )
         return;
     viewport_destroy( &g_ctx->viewports[ vp ] );
     /* Migrate any windows on this surface back to the primary. */
@@ -503,8 +510,8 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
     gui_viewport_t* vp = &g_ctx->viewports[ win_id ];
     ORB_ASSERT( !rhi_handle_valid( vp->vb ) );   /* slot must be free (slot == win_id) */
 
-    /* This window's own render context (swapchain). */
-    i32 ctx = rhi()->context_create( win_id, app()->window_handle( win_id ), w, h );
+    /* This window's own render context (swapchain) -- context_open queries handle+size from app(). */
+    i32 ctx = rhi()->context_open( win_id );
     if ( ctx == RHI_CTX_INVALID )
     {
         app()->window_close( win_id );
@@ -539,35 +546,46 @@ gui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
     return viewport_spawn( title, x, y, w, h, false );
 }
 
-/* Service an OS resize/close event for an gui-owned floater (delegated from gui_event, which
-   cannot see the viewport pool from input.c).  Resize updates the context + drawable size now;
-   close defers teardown to viewport_update (a safe point).  Returns true -- consuming the
-   event -- only when win_id matches an owned surface, so a host window's events fall through. */
+/* Service an OS resize/close event for any gui-known viewport (delegated from gui_event, which
+   cannot see the viewport pool from input.c).
+
+   For WIN_RESIZE: updates the matching viewport's drawable size.  rhi()->event() handles the
+   swapchain rebuild -- gui no longer calls rhi()->context_resize() here.
+   For WIN_CLOSE:  marks an owned floater for teardown at the next viewport_update.
+
+   Returns true (consumed) only when win_id is an gui-owned floater, so the host's close-to-quit
+   path and rhi()->event() still fire for the primary (host-owned) window. */
 
 static bool
 gui_owned_window_event( const app_event_t* ev )
 {
-    for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
+    /* Walk all live viewports (index 0 = primary, 1+ = secondary/owned). */
+    for ( u32 i = 0; i < g_ctx->viewport_count; ++i )
     {
         gui_viewport_t* vp = &g_ctx->viewports[ i ];
-        if ( !vp->owned || vp->win_id != ev->win_id )
+        if ( vp->win_id != ev->win_id )
             continue;
+        if ( !rhi_handle_valid( vp->vb ) )
+            continue;   /* slot not live */
 
         if ( ev->type == APP_EV_WIN_RESIZE )
         {
-            i32 w = ev->data.win_resize.w, h = ev->data.win_resize.h;
-            rhi()->context_resize( vp->rhi_ctx, w, h );
-            vp->disp_w       = w;
-            vp->disp_h       = h;
-            s_viewport_dirty = true;   /* mark frame dirty so layout recomputes for the new size */
+            vp->disp_w       = ev->data.win_resize.w;
+            vp->disp_h       = ev->data.win_resize.h;
+            s_viewport_dirty = true;   /* layout must recompute for the new surface size */
+            /* Owned floaters: gui owns the window+context, so consume the event.
+               Primary viewport: return false -- rhi()->event() also needs to rebuild the swapchain
+               and the host may want to track the size for other purposes. */
+            return vp->owned;
         }
-        else /* APP_EV_WIN_CLOSE */
+        else if ( ev->type == APP_EV_WIN_CLOSE && vp->owned )
         {
             vp->pending_close = true;   /* torn down at the next viewport_update */
+            return true;               /* consumed: gui owns this window's close lifecycle */
         }
-        return true;   /* gui owns this window -> event consumed */
+        break;   /* found the viewport; primary close falls through to host */
     }
-    return false;      /* not an gui window -> host handles it */
+    return false;
 }
 
 /* Reconcile gui-owned floater surfaces with their OS windows.  Call once per frame after the UI

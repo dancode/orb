@@ -51,7 +51,7 @@ void        gui_ctx_bind         ( gui_ctx_t ctx );
 void        gui_ctx_set_listening( gui_ctx_t ctx, bool listen );
 
 /* viewport management */
-gui_vp_t gui_viewport_open  ( i32 win_id, i32 w, i32 h );
+gui_vp_t gui_viewport_open  ( i32 win_id );
 void       gui_viewport_close ( gui_vp_t vp );
 void       gui_viewport_resize( gui_vp_t vp, i32 w, i32 h );
 

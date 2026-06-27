@@ -22,9 +22,10 @@ const rhi_api_t g_rhi_api_struct =
     .shutdown                   = vk_shutdown,
 
     /* Per-context lifecycle */
-    .context_create             = vk_context_create,
+    .context_open               = vk_context_open,
     .context_destroy            = vk_context_destroy,
     .context_resize             = vk_context_resize,
+    .event                      = vk_event,
 
     /* Frame */
     .frame_begin                = vk_frame_begin,
@@ -98,10 +99,16 @@ static bool
 rhi_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
-    UNUSED( get_api );
+
+    /* Wire app() pointer so context_open and event() can query window handles and sizes. */
+    if ( !MOD_FETCH_APP )
+    {
+        LOG_ERROR( "rhi: failed to fetch app API\n" );
+        return false;
+    }
 
     /* Load Vulkan DLL only.  Host calls rhi()->init() for the global device, then
-       rhi()->context_create() per window. */
+       rhi()->context_open() per window. */
     return vk_lib_init();
 }
 

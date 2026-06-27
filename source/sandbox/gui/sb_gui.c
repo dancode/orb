@@ -111,31 +111,25 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup RHI + Window */
 
-    int         ret_code       = 1; /* if we return early , it's an error */
-
-    bool        rhi_inited     = false;
-    bool        draw_inited    = false;
-    bool        gui_inited     = false;
-
-    win_id_t    win             = APP_WIN_INVALID;
-    i32         ctx             = RHI_CTX_INVALID;
-    gui_vp_t    vp0             = GUI_VP_INVALID;
+    int         ret_code   = 1;
+    bool        rhi_inited = false;
+    bool        draw_inited = false;
+    bool        gui_inited  = false;
+    win_id_t    win         = APP_WIN_INVALID;
+    i32         ctx         = RHI_CTX_INVALID;
+    gui_vp_t    vp0         = GUI_VP_INVALID;
 
     if ( !rhi()->init() ) {
         goto shutdown;
     }
     rhi_inited = true;
 
-    i32 win_w = 1280;
-    i32 win_h = 720;
-
-    win = app()->window_open( "sb_gui", 0, 0, win_w, win_h, APP_WIN_DEFAULT );
+    win = app()->window_open( "sb_gui", 0, 0, 1280, 720, APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID ) {
         goto shutdown;
     }
 
-    void* hwnd = app()->window_handle( win );
-    ctx = rhi()->context_create( win, hwnd, win_w, win_h );
+    ctx = rhi()->context_open( win );
     if ( ctx == RHI_CTX_INVALID ) {
         goto shutdown;
     }
@@ -160,10 +154,8 @@ main( int argc, char** argv )
     gui_inited = true;
     
     gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
-    
 
-
-    vp0 = gui()->viewport_open( win, win_w, win_h );
+    vp0 = gui()->viewport_open( win );
     if ( vp0 == GUI_VP_INVALID ) {
         fprintf( stderr, "[sb_gui] gui viewport_open (primary) failed\n" );
         goto shutdown;
@@ -184,27 +176,13 @@ main( int argc, char** argv )
         last_time    = now_time;
 
         app_event_t ev;
-        while ( app()->next_event( &ev ))
+        while ( app()->next_event( &ev ) )
         {
-            if ( gui()->event( &ev ))
-                 continue;
-
-            switch ( ev.type )
-            {
-                case APP_EV_WIN_RESIZE:
-                    if ( ev.win_id == win )
-                    {
-                        win_w = ev.data.win_resize.w;
-                        win_h = ev.data.win_resize.h;
-                        rhi()->context_resize( ctx, win_w, win_h );
-                        gui()->viewport_resize( vp0, win_w, win_h );
-                    }
-                    break;
-                case APP_EV_WIN_CLOSE:
-                    goto shutdown;
-                default:
-                    break;
-            }
+            rhi()->event( &ev );
+            if ( gui()->event( &ev ) )
+                continue;
+            if ( ev.type == APP_EV_WIN_CLOSE )
+                goto shutdown;
         }
 
         gui()->frame_begin( dt );

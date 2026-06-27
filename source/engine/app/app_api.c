@@ -17,6 +17,7 @@ const app_api_t g_app_api_struct = {
     .window_is_valid          = app_window_is_valid,
     .window_handle            = app_window_handle,
     .window_is_minimized      = app_window_is_minimized,
+    .window_get_size          = app_window_get_size,
     .window_get_pos           = app_window_get_pos,
     .window_set_pos           = app_window_set_pos,
     .window_state             = app_window_state,

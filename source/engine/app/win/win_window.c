@@ -332,6 +332,14 @@ app_window_is_minimized( win_id_t id )
     return win ? ( bool )win->state.minimized : false;
 }
 
+static void
+app_window_get_size( win_id_t id, i32* out_w, i32* out_h )
+{
+    app_window_t* win = win_get( id );
+    if ( out_w ) *out_w = win ? win->w : 0;
+    if ( out_h ) *out_h = win ? win->h : 0;
+}
+
 /* Window CLIENT-area top-left in virtual-desktop screen coordinates.  Client (not frame) origin so
    it pairs exactly with window_set_pos and with the drawable area a renderer fills -- the screen
    position of the pixel a window draws at (0,0).  (0,0) on an invalid / handle-less window. */

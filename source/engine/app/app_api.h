@@ -31,6 +31,11 @@ typedef struct app_api_s
     void*           ( *window_handle            )( win_id_t id ); /* HWND on Windows */
     bool            ( *window_is_minimized      )( win_id_t id );
 
+    /* Client-area drawable size in pixels.  Always reflects the current size; returns 0,0
+       for an invalid id.  Use this in context_open / viewport_open to avoid passing w/h
+       explicitly when the window already owns those dimensions. */
+    void            ( *window_get_size          )( win_id_t id, i32* out_w, i32* out_h );
+
     /* Screen-space geometry.  window_get_pos returns the window's CLIENT-area top-left in
        virtual-desktop screen coordinates; window_set_pos moves the window so its CLIENT corner
        lands at the given screen point (frame offset handled internally).  Paired with

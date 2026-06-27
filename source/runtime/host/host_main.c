@@ -129,8 +129,6 @@ MOD_USE_GUI;
 
 static win_id_t   s_win_id       = APP_WIN_INVALID;
 static i32        s_ctx_id       = RHI_CTX_INVALID;
-static i32        s_win_w        = 0;
-static i32        s_win_h        = 0;
 static gui_vp_t s_vp0          = GUI_VP_INVALID;
 static bool       s_rhi_inited   = false;
 static bool       s_draw_inited  = false;
@@ -205,8 +203,6 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     g_quit_requested = false;
     s_win_id         = APP_WIN_INVALID;
     s_ctx_id         = RHI_CTX_INVALID;
-    s_win_w          = 0;
-    s_win_h          = 0;
     s_vp0            = GUI_VP_INVALID;
     s_rhi_inited     = false;
     s_draw_inited    = false;
@@ -279,8 +275,6 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     {
         const i32 w = desc->window_width  > 0 ? desc->window_width  : 1280;
         const i32 h = desc->window_height > 0 ? desc->window_height : 720;
-        s_win_w = w;
-        s_win_h = h;
 
         s_win_id = app()->window_open( desc->name ? desc->name : "orb", 0, 0, w, h, APP_WIN_DEFAULT );
         if ( s_win_id == APP_WIN_INVALID )
@@ -300,11 +294,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             }
             s_rhi_inited = true;
 
-            void* hwnd = app()->window_handle( s_win_id );
-            s_ctx_id   = rhi()->context_create( s_win_id, hwnd, w, h );
+            s_ctx_id = rhi()->context_open( s_win_id );
             if ( s_ctx_id == RHI_CTX_INVALID )
             {
-                fprintf( stderr, "[host] rhi context_create failed\n" );
+                fprintf( stderr, "[host] rhi context_open failed\n" );
                 host_shutdown();
                 return 1;
             }
@@ -336,7 +329,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 }
                 s_gui_inited = true;
 
-                s_vp0 = gui()->viewport_open( s_win_id, w, h );
+                s_vp0 = gui()->viewport_open( s_win_id );
                 if ( s_vp0 == GUI_VP_INVALID )
                 {
                     fprintf( stderr, "[host] gui viewport_open failed\n" );
@@ -390,39 +383,21 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- drain event ring ------------------------------------------ */
 
-        /* Forward each event to gui first; gui consumes the input events it
-           recognizes (text, scroll, mouse/keyboard state). The host handles the
-           structural ones that gui passes through: resize routes the rhi context
-           and gui viewport to the new dimensions; close exits the main loop. */
+        /* Drain events.  rhi()->event() routes WIN_RESIZE to the matching swapchain; gui()->event()
+           updates viewport sizes and handles input (text, scroll, mouse state).  The host only
+           needs to act on WIN_CLOSE for the main window -- all floater events are consumed by gui. */
 
         if ( windowed )
         {
             app_event_t ev;
             while ( app()->next_event( &ev ) )
             {
+                if ( rhi() ) rhi()->event( &ev );
                 if ( gui() && gui()->event( &ev ) )
                     continue;
 
-                switch ( ev.type )
-                {
-                    case APP_EV_WIN_RESIZE:
-                        if ( ev.win_id == s_win_id )
-                        {
-                            s_win_w = ev.data.win_resize.w;
-                            s_win_h = ev.data.win_resize.h;
-                            if ( s_ctx_id != RHI_CTX_INVALID )
-                                rhi()->context_resize( s_ctx_id, s_win_w, s_win_h );
-                            if ( s_vp0 != GUI_VP_INVALID )
-                                gui()->viewport_resize( s_vp0, s_win_w, s_win_h );
-                        }
-                        break;
-
-                    case APP_EV_WIN_CLOSE:
-                        goto loop_exit;
-
-                    default:
-                        break;
-                }
+                if ( ev.type == APP_EV_WIN_CLOSE )
+                    goto loop_exit;
             }
         }
 

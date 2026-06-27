@@ -355,13 +355,12 @@ recycle_context( stress_win_t* sw )
     rhi()->context_destroy( sw->ctx );    /* idles this context's GPU work, frees its slot */
     sw->ctx = RHI_CTX_INVALID;
 
-    void* hwnd = app()->window_handle( sw->win );
-    i32   ctx  = rhi()->context_create( sw->win, hwnd, sw->w, sw->h );
+    i32 ctx = rhi()->context_open( sw->win );
     if ( ctx == RHI_CTX_INVALID )
     {
         /* Leave the window open with an invalid ctx; the render loop skips it until a later
            recycle succeeds.  (Should not happen on a valid, non-minimized window.) */
-        fprintf( stderr, "[sb_vulkan_stress] recycle: context_create failed for win %d\n", sw->win );
+        fprintf( stderr, "[sb_vulkan_stress] recycle: context_open failed for win %d\n", sw->win );
         return;
     }
     sw->ctx = ctx;
@@ -1208,11 +1207,10 @@ main( int argc, char** argv )
             continue;
         }
 
-        void* hwnd = app()->window_handle( win );
-        i32   ctx  = rhi()->context_create( win, hwnd, base_w, base_h );
+        i32 ctx = rhi()->context_open( win );
         if ( ctx == RHI_CTX_INVALID )
         {
-            fprintf( stderr, "[sb_vulkan_stress] context_create #%u failed\n", i );
+            fprintf( stderr, "[sb_vulkan_stress] context_open #%u failed\n", i );
             app()->window_close( win );
             continue;
         }

@@ -94,9 +94,8 @@ main( int argc, char** argv )
          return 1;
     }
 
-    /* Per-window render context. */
-    void* hwnd = app()->window_handle( win );
-    i32  ctx   = rhi()->context_create( win, hwnd, 1280, 720 );
+    /* Per-window render context -- context_open queries handle + size from app() internally. */
+    i32  ctx = rhi()->context_open( win );
     if ( ctx == RHI_CTX_INVALID ) {
          rhi()->shutdown();
          app()->window_close( win );
@@ -154,13 +153,9 @@ main( int argc, char** argv )
  // gui()->font_load( "fonts/jetbrains_bold_24.orb_font" );
     gui()->print_mem_stats();
     
-    /* Initial drawable sizes (updated by resize events in the loop below). */
-    i32 win_w = 1280;
-    i32 win_h = 720;
-
     /* Open the primary viewport for the main window.  This creates its GPU geometry buffers and
        associates win so mouse events from it route to surface 0. */
-    gui_vp_t vp0 = gui()->viewport_open( win, win_w, win_h );
+    gui_vp_t vp0 = gui()->viewport_open( win );
     if ( vp0 == GUI_VP_INVALID ) {
         fprintf( stderr, "[sb_vulkan] gui viewport_open (primary) failed\n" );
         gui()->shutdown();
@@ -223,31 +218,15 @@ main( int argc, char** argv )
         app_event_t ev;
         while ( app()->next_event( &ev ) )
         {
+            /* rhi()->event() routes WIN_RESIZE to the matching swapchain (primary or owned floater).
+               gui()->event() updates viewport sizes and handles input; it consumes owned-floater
+               close events so only the main window's close reaches the host. */
+            rhi()->event( &ev );
             if ( gui()->event( &ev ) )
                 continue;
 
-            switch ( ev.type )
-            {
-                case APP_EV_WIN_RESIZE:
-                    /* The main window's resize is the host's to route; the floater's is consumed by
-                       gui()->event() above (gui owns that window + context). */
-                    if ( ev.win_id == win )
-                    {
-                        win_w = ev.data.win_resize.w;
-                        win_h = ev.data.win_resize.h;
-                        rhi()->context_resize( ctx, win_w, win_h );
-                        gui()->viewport_resize( vp0, win_w, win_h );
-                    }
-                    break;
-
-                case APP_EV_WIN_CLOSE:
-                    /* The floater's close is consumed by gui()->event() (it tears down its own
-                       surface); only the main window's close reaches here and ends the test. */
-                    goto shutdown;
-
-                default:
-                    break;
-            }
+            if ( ev.type == APP_EV_WIN_CLOSE )
+                goto shutdown;
         }
 
         /* ------------------------------------------------------------------------------ */
@@ -465,7 +444,9 @@ main( int argc, char** argv )
             {
                 if ( b_use_boot )
                 {
-                    sb_vk_boot_render( &boot, cmd, win_w, win_h );
+                    i32 bw = 0, bh = 0;
+                    app()->window_get_size( win, &bw, &bh );
+                    sb_vk_boot_render( &boot, cmd, bw, bh );
                 }
                 else
                 {

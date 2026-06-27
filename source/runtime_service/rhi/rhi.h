@@ -12,7 +12,7 @@
     Three-stage init (host-driven):
         1. rhi_mod_init              : loads vulkan-1.dll (cheap; no-op if absent)
         2. rhi()->init()             : VkInstance + VkDevice; no window needed
-        3. rhi()->context_create()   : per-window surface + swapchain + sync + commands
+        3. rhi()->context_open()     : per-window surface + swapchain + sync + commands
 
 ==============================================================================================*/
 #ifndef RHI_H

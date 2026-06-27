@@ -55,6 +55,7 @@
 
 #include "engine/sys/sys_host.h"        // load_library, get_proc_address
 #include "engine/core/core_host.h"      // log and assert
+#include "engine/app/app_api.h"         // app()->window_handle / window_get_size in context_open
 
 /*==============================================================================================
     Platform Headers
@@ -123,6 +124,9 @@
 ==============================================================================================*/
 
 #include "runtime_service/rhi/rhi_api.h"
+
+/* API pointer -- wired at module init time (rhi_mod_init in rhi_api.c). */
+MOD_USE_APP;
 
 /*==============================================================================================
     Vulkan backend  (vk_state.c FIRST; every other file depends on it)
