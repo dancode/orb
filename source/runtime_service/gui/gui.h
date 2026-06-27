@@ -1,4 +1,4 @@
-﻿#ifndef GUI_H
+#ifndef GUI_H
 #define GUI_H
 /*==============================================================================================
 
@@ -530,6 +530,19 @@ typedef enum
     GUI_DIR_DOWN,
 
 } gui_dir_t;
+
+/*==============================================================================================
+    Color edit flags
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_COLOR_EDIT_NONE        = 0,
+    GUI_COLOR_EDIT_NO_ALPHA    = 1 << 0,  /* ColorEdit4 with alpha ignored/hidden */
+    GUI_COLOR_EDIT_DISPLAY_HSV = 1 << 1,  /* Display inputs as HSV */
+    GUI_COLOR_EDIT_FLOAT       = 1 << 2,  /* Display inputs as float 0..1 instead of 0..255 */
+
+} gui_color_edit_flags_t;
 
 /*==============================================================================================
     Combo flags

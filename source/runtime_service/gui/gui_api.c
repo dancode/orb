@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_api.c -- Module vtable and lifecycle descriptor.
 
@@ -160,6 +160,8 @@ const gui_api_t g_gui_api_struct =
     .drag_float2                        = gui_drag_float2,
     .drag_float3                        = gui_drag_float3,
     .drag_float4                        = gui_drag_float4,
+    .color_edit3                        = gui_color_edit3,
+    .color_edit4                        = gui_color_edit4,
     .input_text                         = gui_input_text,
     .input_text_ex                      = gui_input_text_ex,
     .input_text_with_hint               = gui_input_text_with_hint,

@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_widget_slider.c -- Slider and drag widgets.
 
@@ -172,6 +172,42 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
    at a time, the same reason the resize / repeat scratch state is a lone static. */
 static i32 s_drag_anchor_v;
 
+static bool
+drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
+{
+    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
+
+    if ( st.pressed )
+        s_drag_anchor_v = *v;
+
+    bool changed = false;
+    if ( st.active )
+    {
+        f32 acc = (f32)s_drag_anchor_v + ( s_io.mouse_x - s_click_x[ 0 ] ) * v_speed;
+        i32 nv  = (i32)floorf( acc + 0.5f );
+        if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
+        if ( nv != *v )
+        {
+            *v      = nv;
+            changed = true;
+        }
+    }
+
+    u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
+    draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0, COL_BORDER );
+
+    char buf[ 64 ];
+    snprintf( buf, sizeof( buf ), format, *v );
+    f32 inner = box_r.w - 2.0f * WIDGET_PAD;
+    f32 tw    = font_text_w_n( buf, 0xFFFFFFFFu );
+    f32 tx    = box_r.x + ( box_r.w - tw ) * 0.5f;
+    if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
+    draw_text_fit_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu, inner );
+
+    return changed;
+}
+
 bool
 gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
 {
@@ -182,41 +218,7 @@ gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, cons
     gui_rect_t r     = widget_next_rect( WIDGET_H );
     gui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
 
-    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
-
-    /* Capture the value at the grab, then map total cursor displacement since the press into a new
-       value each frame (recomputed from the anchor, so rounding never accumulates drift). */
-    if ( st.pressed )
-        s_drag_anchor_v = *v;
-
-    bool changed = false;
-    if ( st.active )
-    {
-        f32 acc = (f32)s_drag_anchor_v + ( s_io.mouse_x - s_click_x[ 0 ] ) * v_speed;
-        i32 nv  = (i32)floorf( acc + 0.5f );                  /* nearest int */
-        if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
-        if ( nv != *v )
-        {
-            *v      = nv;
-            changed = true;
-        }
-    }
-
-    /* Frame: a slider-track box that brightens on hover / nav / active so the drag affordance reads. */
-    u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
-    draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0, COL_BORDER );
-
-    /* Formatted value, centered in the box and fitted (ellipsized) to its inner width. */
-    char buf[ 64 ];
-    snprintf( buf, sizeof( buf ), format, *v );
-    f32 inner = box_r.w - 2.0f * WIDGET_PAD;
-    f32 tw    = font_text_w_n( buf, 0xFFFFFFFFu );
-    f32 tx    = box_r.x + ( box_r.w - tw ) * 0.5f;
-    if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
-    draw_text_fit_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu, inner );
-
-    return changed;
+    return drag_int_box( id, box_r, v, v_speed, v_min, v_max, format );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -316,4 +318,223 @@ bool gui_drag_float4( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_m
 { return drag_float_n( label, v, 4u, v_speed, v_min, v_max, fmt ); }
 
 // clang-format on
+
+static void
+color_hsv_to_rgb(f32 h, f32 s, f32 v, f32* r, f32* g, f32* b)
+{
+    if (s == 0.0f) {
+        *r = *g = *b = v;
+        return;
+    }
+    h = fmodf(h, 1.0f);
+    if (h < 0.0f) h += 1.0f;
+    h *= 6.0f;
+    int i = (int)floorf(h);
+    f32 f = h - (f32)i;
+    f32 p = v * (1.0f - s);
+    f32 q = v * (1.0f - s * f);
+    f32 t = v * (1.0f - s * (1.0f - f));
+    switch (i) {
+        case 0: *r = v; *g = t; *b = p; break;
+        case 1: *r = q; *g = v; *b = p; break;
+        case 2: *r = p; *g = v; *b = t; break;
+        case 3: *r = p; *g = q; *b = v; break;
+        case 4: *r = t; *g = p; *b = v; break;
+        case 5: *r = v; *g = p; *b = q; break;
+        default: *r = v; *g = v; *b = v; break;
+    }
+}
+
+static void
+color_rgb_to_hsv(f32 r, f32 g, f32 b, f32* h, f32* s, f32* v)
+{
+    f32 K = 0.0f;
+    if (g < b) {
+        f32 tmp = g; g = b; b = tmp;
+        K = -1.0f;
+    }
+    if (r < g) {
+        f32 tmp = r; r = g; g = tmp;
+        K = -2.0f / 6.0f - K;
+    }
+    f32 chroma = r - (g < b ? g : b);
+    *h = fabsf(K + (g - b) / (6.0f * chroma + 1e-20f));
+    *s = chroma / (r + 1e-20f);
+    *v = r;
+}
+
+static bool
+color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
+{
+    gui_id_t   id   = widget_id( label );
+    gui_rect_t r    = widget_next_rect( WIDGET_H );
+    gui_rect_t ctrl = widget_split_label( r, label, font_char_h() * 3.0f * (f32)n + WIDGET_H, COL_TEXT );
+
+    f32 preview_w = (f32)WIDGET_H;
+    f32 spacing   = (f32)s_layout.widget_gap;
+    
+    u32 comps = (n == 4 && (flags & GUI_COLOR_EDIT_NO_ALPHA)) ? 3 : n;
+    bool is_hsv = (flags & GUI_COLOR_EDIT_DISPLAY_HSV) != 0;
+    bool is_flt = (flags & GUI_COLOR_EDIT_FLOAT) != 0;
+
+    f32 strip_w   = is_hsv ? 0.0f : 6.0f;
+
+    f32 hsv[4];
+    if (is_hsv) {
+        color_rgb_to_hsv(v[0], v[1], v[2], &hsv[0], &hsv[1], &hsv[2]);
+        if (n == 4) hsv[3] = v[3];
+    }
+
+    f32 total_spacing = (f32)comps * spacing;
+    f32 comp_group_w = (ctrl.w - total_spacing - preview_w) / (f32)comps;
+    if (comp_group_w < strip_w) comp_group_w = strip_w;
+
+    bool changed = false;
+    f32 cursor_x = ctrl.x;
+
+    for ( u32 i = 0; i < comps; ++i )
+    {
+        /* Strip */
+        if ( strip_w > 0.0f )
+        {
+            gui_rect_t strip_r = { floorf(cursor_x), ctrl.y, strip_w, ctrl.h };
+            u32 strip_col;
+            if (is_hsv) {
+                if (i == 0) strip_col = GUI_COLOR(255, 0, 0, 255);
+                else if (i == 1) strip_col = GUI_COLOR(0, 255, 255, 255);
+                else if (i == 2) strip_col = GUI_COLOR(255, 255, 255, 255);
+                else strip_col = GUI_COLOR(255, 255, 255, 128);
+            } else {
+                if (i == 0) strip_col = GUI_COLOR(255, 0, 0, 255);
+                else if (i == 1) strip_col = GUI_COLOR(0, 255, 0, 255);
+                else if (i == 2) strip_col = GUI_COLOR(0, 0, 255, 255);
+                else strip_col = GUI_COLOR(255, 255, 255, 128);
+            }
+            
+            draw_push_rect_filled( strip_r.x, strip_r.y, strip_r.w, strip_r.h, 0, 0, 1.0f, 1.0f, 0, widget_bg_color( (widget_state_t){0} ) );
+            
+            f32 save_round = draw_rounding();
+            draw_set_rounding(0.0f);
+            
+            gui_rect_t inner_s = { strip_r.x + 1.0f, strip_r.y + 1.0f, strip_r.w - 2.0f, strip_r.h - 2.0f };
+            if (i == 3) {
+                draw_checker( inner_s, 2.0f, GUI_COLOR(200,200,200,255), GUI_COLOR(100,100,100,255) );
+            }
+            draw_push_rect_filled( inner_s.x, inner_s.y, inner_s.w, inner_s.h, 0, 0, 1.0f, 1.0f, 0, strip_col );
+            
+            draw_set_rounding(save_round);
+            draw_push_rect_outline( strip_r.x, strip_r.y, strip_r.w, strip_r.h, WIN_BORDER, 0, COL_BORDER );
+
+            cursor_x += strip_w;
+        }
+
+        /* Drag Box */
+        f32 drag_w = comp_group_w - strip_w;
+        gui_rect_t drag_r = { floorf(cursor_x), ctrl.y, floorf(cursor_x + drag_w) - floorf(cursor_x), ctrl.h };
+        cursor_x += drag_w;
+        
+        gui_id_t cid = id_combine( id, 10u + i );
+        f32 val = is_hsv ? hsv[i] : v[i];
+        
+        const char* fmt_int = NULL;
+        const char* fmt_flt = NULL;
+        if (is_hsv) {
+            if (i == 0)      { fmt_int = "H:%d"; fmt_flt = "H:%.3f"; }
+            else if (i == 1) { fmt_int = "S:%d"; fmt_flt = "S:%.3f"; }
+            else if (i == 2) { fmt_int = "V:%d"; fmt_flt = "V:%.3f"; }
+            else             { fmt_int = "A:%d"; fmt_flt = "A:%.3f"; }
+        } else {
+            if (i == 0)      { fmt_int = "R:%d"; fmt_flt = "R:%.3f"; }
+            else if (i == 1) { fmt_int = "G:%d"; fmt_flt = "G:%.3f"; }
+            else if (i == 2) { fmt_int = "B:%d"; fmt_flt = "B:%.3f"; }
+            else             { fmt_int = "A:%d"; fmt_flt = "A:%.3f"; }
+        }
+
+        if (is_flt) {
+            if (drag_float_box( cid, drag_r, &val, 0.01f, 0.0f, 1.0f, fmt_flt )) {
+                if (is_hsv) hsv[i] = val; else v[i] = val;
+                changed = true;
+            }
+        } else {
+            i32 max_val = (is_hsv && i == 0) ? 360 : ((is_hsv && i > 0 && i < 3) ? 100 : 255);
+            i32 ival = (i32)(val * max_val + 0.5f);
+            if (drag_int_box( cid, drag_r, &ival, 1.0f, 0, max_val, fmt_int )) {
+                val = (f32)ival / (f32)max_val;
+                if (is_hsv) hsv[i] = val; else v[i] = val;
+                changed = true;
+            }
+        }
+
+        cursor_x += spacing;
+    }
+
+    if (changed && is_hsv) {
+        color_hsv_to_rgb(hsv[0], hsv[1], hsv[2], &v[0], &v[1], &v[2]);
+        if (n == 4) v[3] = hsv[3];
+    }
+
+    /* Full Preview Square */
+    gui_rect_t preview_r = { floorf(cursor_x), ctrl.y, preview_w, ctrl.h };
+    widget_state_t pst = widget_behavior( id_combine( id, 1u ), preview_r, WIDGET_KIND_BUTTON );
+    
+    draw_push_rect_filled( preview_r.x, preview_r.y, preview_r.w, preview_r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, widget_bg_color( pst ) );
+    draw_push_rect_outline( preview_r.x, preview_r.y, preview_r.w, preview_r.h, WIN_BORDER, 0, COL_BORDER );
+
+    f32 save_round = draw_rounding();
+    draw_set_rounding(0.0f);
+    
+    gui_rect_t inner_p = { preview_r.x + 2.0f, preview_r.y + 2.0f, preview_r.w - 4.0f, preview_r.h - 4.0f };
+    u32 abgr = GUI_COLOR( (u8)(saturate(v[0])*255.0f), (u8)(saturate(v[1])*255.0f), (u8)(saturate(v[2])*255.0f), n == 4 ? (u8)(saturate(v[3])*255.0f) : 255 );
+    
+    if ( comps == 4 && v[3] < 1.0f ) {
+        draw_checker( inner_p, 4.0f, GUI_COLOR(200,200,200,255), GUI_COLOR(100,100,100,255) );
+    }
+    draw_push_rect_filled( inner_p.x, inner_p.y, inner_p.w, inner_p.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, abgr );
+    
+    draw_set_rounding(save_round);
+
+    char popup_id[64];
+    snprintf(popup_id, sizeof(popup_id), "##color_popup_%u", id);
+    if (pst.clicked)
+    {
+        gui_popup_open( popup_id );
+    }
+
+    if ( gui_popup_begin( popup_id, GUI_WIN_NO_BOUNDARY_CLAMP | GUI_WIN_ALWAYS_AUTOSIZE ) )
+    {
+        gui_stack();
+        gui_text("Color Picker");
+        
+        gui_rect_t popup_prev_r = gui_canvas( 64.0f );
+        draw_push_rect_filled( popup_prev_r.x, popup_prev_r.y, popup_prev_r.w, popup_prev_r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, widget_bg_color( (widget_state_t){0} ) );
+        draw_push_rect_outline( popup_prev_r.x, popup_prev_r.y, popup_prev_r.w, popup_prev_r.h, WIN_BORDER, 0, COL_BORDER );
+        
+        draw_set_rounding(0.0f);
+        gui_rect_t inner_pp = { popup_prev_r.x + 2.0f, popup_prev_r.y + 2.0f, popup_prev_r.w - 4.0f, popup_prev_r.h - 4.0f };
+        if ( comps == 4 && v[3] < 1.0f ) {
+            draw_checker( inner_pp, 8.0f, GUI_COLOR(200,200,200,255), GUI_COLOR(100,100,100,255) );
+        }
+        draw_push_rect_filled( inner_pp.x, inner_pp.y, inner_pp.w, inner_pp.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, abgr );
+        draw_set_rounding(save_round);
+        
+        gui_spacing( 8.0f );
+        
+        if (gui_drag_float("R", &v[0], 0.01f, 0.0f, 1.0f, "R: %.3f")) changed = true;
+        if (gui_drag_float("G", &v[1], 0.01f, 0.0f, 1.0f, "G: %.3f")) changed = true;
+        if (gui_drag_float("B", &v[2], 0.01f, 0.0f, 1.0f, "B: %.3f")) changed = true;
+        if (n == 4 && !(flags & GUI_COLOR_EDIT_NO_ALPHA)) {
+            if (gui_drag_float("A", &v[3], 0.01f, 0.0f, 1.0f, "A: %.3f")) changed = true;
+        }
+        gui_popup_end();
+    }
+
+    return changed;
+}
+
+bool gui_color_edit3( const char* label, f32 col[ 3 ], gui_color_edit_flags_t flags )
+{ return color_edit_n( label, col, 3u, flags ); }
+
+bool gui_color_edit4( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags )
+{ return color_edit_n( label, col, 4u, flags ); }
+
 /*============================================================================================*/

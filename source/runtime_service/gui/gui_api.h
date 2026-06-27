@@ -1,4 +1,4 @@
-﻿#ifndef GUI_API_H
+#ifndef GUI_API_H
 #define GUI_API_H
 /*==============================================================================================
 
@@ -689,6 +689,9 @@ typedef struct gui_api_s
     bool ( *drag_float2 )( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
     bool ( *drag_float3 )( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
     bool ( *drag_float4 )( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
+
+    bool ( *color_edit3 )( const char* label, f32 col[ 3 ], gui_color_edit_flags_t flags );
+    bool ( *color_edit4 )( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags );
 
     bool ( *input_text    )( const char* label, char* buf, u32 bufsz );
 

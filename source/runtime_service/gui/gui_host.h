@@ -1,4 +1,4 @@
-﻿#ifndef GUI_HOST_H
+#ifndef GUI_HOST_H
 #define GUI_HOST_H
 /*==============================================================================================
 
@@ -228,6 +228,9 @@ bool gui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_ma
 bool gui_drag_float2( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
 bool gui_drag_float3( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
 bool gui_drag_float4( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
+
+bool gui_color_edit3( const char* label, f32 col[ 3 ], gui_color_edit_flags_t flags );
+bool gui_color_edit4( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags );
 
 /* widget - input boxes */
 bool gui_input_text( const char* label, char* buf, u32 bufsz );

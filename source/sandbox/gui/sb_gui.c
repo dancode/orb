@@ -20,9 +20,64 @@
 
 // clang-format off
 
+/*============================================================================================*/
+
+struct
+{
+    bool show_main_menubar;
+
+} demo_data;
+
+
+// Demonstrate creating a "main" fullscreen menu bar and populating it.
+// Note the difference between BeginMainMenuBar() and BeginMenuBar():
+// - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
+// - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
+
+static bool show_demo = true;
+static void show_example_main_menu_bar()
+{
+    if ( gui()->main_menu_bar_begin() )
+    {
+        if ( gui()->menu_begin( "Examples" ) )
+        {
+            gui()->menu_item( "Demo Window", NULL, &show_demo );
+            gui()->menu_end();
+        }
+        gui()->main_menu_bar_end();
+    }
+
+    // if (ImGui::BeginMainMenuBar())
+    // {
+    //     if (ImGui::BeginMenu("File"))
+    //     {
+    //         ShowExampleMenuFile();
+    //         ImGui::EndMenu();
+    //     }
+    //     if (ImGui::BeginMenu("Edit"))
+    //     {
+    //         if (ImGui::MenuItem("Undo", "Ctrl+Z")) {}
+    //         if (ImGui::MenuItem("Redo", "Ctrl+Y", false, false)) {} // Disabled item
+    //         ImGui::Separator();
+    //         if (ImGui::MenuItem("Cut", "Ctrl+X")) {}
+    //         if (ImGui::MenuItem("Copy", "Ctrl+C")) {}
+    //         if (ImGui::MenuItem("Paste", "Ctrl+V")) {}
+    //         ImGui::EndMenu();
+    //     }
+    //     ImGui::EndMainMenuBar();
+    // }
+}
+
+/*============================================================================================*/
+
 static void
 show_demo_window(bool* p_open)
 {
+    if ( demo_data.show_main_menubar ) 
+    { 
+        show_example_main_menu_bar(); 
+    }
+
     // Exceptionally add an extra assert here for people confused about initial Dear ImGui setup
     // Most functions would return false if the window is collapsed or entirely clipped.
     gui_win_flags_t window_flags = 0;
@@ -44,9 +99,17 @@ show_demo_window(bool* p_open)
 
     static f32 f = 0.0f;
     gui()->slider_float("float", &f, 0.0f, 1.0f);
-    // gui_api doesn't have ColorEdit3 in the same way, we can skip or use drag_float3 for color
-    static f32 color[3] = { 0.4f, 0.7f, 0.0f };
-    gui()->drag_float3("color", color, 0.01f, 0.0f, 1.0f, NULL);
+    gui()->separator_text("Inline color editor");
+    gui()->text("Color widget:");
+    gui()->stack_same_line(0.0f); gui()->help_marker("Click on the color square to open a color picker.\nCtrl+Click on individual component to input value.\n");
+    static f32 color[4] = { 0.4f, 0.7f, 0.0f, 1.0f };
+    gui()->color_edit3("MyColor##1", color, GUI_COLOR_EDIT_NONE);
+    
+    gui()->text("Color widget HSV with Alpha:");
+    gui()->color_edit4("MyColor##2", color, GUI_COLOR_EDIT_DISPLAY_HSV);
+
+    gui()->text("Color widget with Float Display:");
+    gui()->color_edit4("MyColor##2f", color, GUI_COLOR_EDIT_FLOAT);
 
     static int counter = 0;
     if (gui()->button("Button"))
@@ -165,8 +228,7 @@ main( int argc, char** argv )
     printf( "[sb_gui] running -- ESC to quit\n" );
 
     f64 last_time = sys_tick_seconds();
-    bool show_demo = true;
-
+    
     while ( app()->pump_events() )
     {
         f64 now_time = sys_tick_seconds();
@@ -190,17 +252,9 @@ main( int argc, char** argv )
         {
             gui()->ctx_begin( GUI_CTX_DEFAULT );
 
-            if ( gui()->main_menu_bar_begin() )
-            {
-                if ( gui()->menu_begin( "Examples" ) )
-                {
-                    gui()->menu_item( "Demo Window", NULL, &show_demo );
-                    gui()->menu_end();
-                }
-                gui()->main_menu_bar_end();
-            }
+            show_example_main_menu_bar();
 
-            if (show_demo)
+            if ( show_demo)
                 show_demo_window(&show_demo);
 
             gui()->ctx_end();
