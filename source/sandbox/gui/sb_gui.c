@@ -181,10 +181,10 @@ main( int argc, char** argv )
         last_time    = now_time;
 
         app_event_t ev;
-        while ( app()->next_event( &ev ) )
+        while ( app()->next_event( &ev ))
         {
-            if ( gui()->event( &ev ) )
-                continue;
+            if ( gui()->event( &ev ))
+                 continue;
 
             switch ( ev.type )
             {
@@ -232,11 +232,12 @@ main( int argc, char** argv )
                     .clear    = { 0.15f, 0.15f, 0.20f, 1.00f },
                 }, 1, NULL );
                 rhi()->cmd_end_rendering( cmd );
-
                 gui()->render( vp0, cmd );
                 rhi()->frame_end( ctx );
             }
         }
+
+        gui()->viewport_render_floaters();
 
         sys_sleep_milliseconds( 4 );
     }

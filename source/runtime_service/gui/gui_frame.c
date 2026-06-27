@@ -532,6 +532,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
 /* Public spawn: open an gui-owned floater hosting its own OS window at (x,y) sized w x h.
    Returns the viewport handle to assign windows to (window_set_next_viewport), or
    GUI_VP_INVALID.  Must be called between frames (it creates an OS window + rhi context). */
+
 gui_vp_t
 gui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
 {
@@ -542,6 +543,7 @@ gui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
    cannot see the viewport pool from input.c).  Resize updates the context + drawable size now;
    close defers teardown to viewport_update (a safe point).  Returns true -- consuming the
    event -- only when win_id matches an owned surface, so a host window's events fall through. */
+
 static bool
 gui_owned_window_event( const app_event_t* ev )
 {
@@ -572,6 +574,7 @@ gui_owned_window_event( const app_event_t* ev )
    build and BEFORE rendering: it is the safe point to tear surfaces down, since no in-flight draw
    list references one being freed.  Today it destroys surfaces the user closed (pending_close);
    Phase 3 will also service tear-off / merge-back requests enqueued during the build. */
+
 void
 gui_viewport_update( void )
 {
@@ -597,6 +600,7 @@ gui_viewport_update( void )
                else -- a detach-button click, no drag in flight.  Keep the panel at its EXACT screen
                position (main client origin + the panel's position within it), so it pops out in place
                rather than jumping to the cursor.  Activate normally; there is no capture to preserve. */
+
             i32 sx, sy;
             if ( s_vp_request.by_drag )
             {
@@ -770,9 +774,9 @@ gui_viewport_update( void )
 void
 gui_viewport_render_floaters( void )
 {
-    for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
+    for ( u32 viewport_id = 1; viewport_id < g_ctx->viewport_count; ++viewport_id )
     {
-        gui_viewport_t* vp = &g_ctx->viewports[ i ];
+        gui_viewport_t* vp = &g_ctx->viewports[ viewport_id ];
         if ( !vp->owned || vp->rhi_ctx == RHI_CTX_INVALID )
             continue;
         if ( app()->window_is_minimized( vp->win_id ) )
@@ -792,7 +796,7 @@ gui_viewport_render_floaters( void )
         }, 1, NULL );
         rhi()->cmd_end_rendering( cmd );
 
-        gui_render( (gui_vp_t)i, cmd );
+        gui_render( (gui_vp_t)viewport_id, cmd );
         rhi()->frame_end( vp->rhi_ctx );
     }
 }
