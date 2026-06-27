@@ -111,26 +111,31 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup RHI + Window */
 
-    int ret_code = 1;
-    bool rhi_inited = false;
-    bool draw_inited = false;
-    bool gui_inited = false;
-    win_id_t win = APP_WIN_INVALID;
-    i32 ctx = RHI_CTX_INVALID;
-    gui_vp_t vp0 = GUI_VP_INVALID;
+    int         ret_code       = 1; /* if we return early , it's an error */
+
+    bool        rhi_inited     = false;
+    bool        draw_inited    = false;
+    bool        gui_inited     = false;
+
+    win_id_t    win             = APP_WIN_INVALID;
+    i32         ctx             = RHI_CTX_INVALID;
+    gui_vp_t    vp0             = GUI_VP_INVALID;
 
     if ( !rhi()->init() ) {
         goto shutdown;
     }
     rhi_inited = true;
 
-    win = app()->window_open( "sb_gui", 0, 0, 1280, 720, APP_WIN_DEFAULT );
+    i32 win_w = 1280;
+    i32 win_h = 720;
+
+    win = app()->window_open( "sb_gui", 0, 0, win_w, win_h, APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID ) {
         goto shutdown;
     }
 
     void* hwnd = app()->window_handle( win );
-    ctx = rhi()->context_create( win, hwnd, 1280, 720 );
+    ctx = rhi()->context_create( win, hwnd, win_w, win_h );
     if ( ctx == RHI_CTX_INVALID ) {
         goto shutdown;
     }
@@ -148,17 +153,15 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup GUI */
 
-    if ( !gui()->init() )
-    {
-        fprintf( stderr, "[sb_gui] gui->init failed\n" );
-        goto shutdown;
+    if ( !gui()->init() ) {
+         fprintf( stderr, "[sb_gui] gui->init failed\n" );
+         goto shutdown;
     }
     gui_inited = true;
     
     gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
     
-    i32 win_w = 1280;
-    i32 win_h = 720;
+
 
     vp0 = gui()->viewport_open( win, win_w, win_h );
     if ( vp0 == GUI_VP_INVALID ) {
