@@ -199,11 +199,11 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
 
     char buf[ 64 ];
     snprintf( buf, sizeof( buf ), format, *v );
-    f32 inner = box_r.w - 2.0f * WIDGET_PAD;
-    f32 tw    = font_text_w_n( buf, 0xFFFFFFFFu );
-    f32 tx    = box_r.x + ( box_r.w - tw ) * 0.5f;
+    f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
+    f32 tx = box_r.x + ( box_r.w - tw ) * 0.5f;
     if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
-    draw_text_fit_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu, inner );
+    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu,
+                           box_r.x, box_r.x + box_r.w - WIDGET_PAD );
 
     return changed;
 }
@@ -263,11 +263,11 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
 
     char buf[ 64 ];
     snprintf( buf, sizeof( buf ), fmt, *v );
-    f32 inner = box_r.w - 2.0f * WIDGET_PAD;
-    f32 tw    = font_text_w_n( buf, 0xFFFFFFFFu );
-    f32 tx    = box_r.x + ( box_r.w - tw ) * 0.5f;
+    f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
+    f32 tx = box_r.x + ( box_r.w - tw ) * 0.5f;
     if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
-    draw_text_fit_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu, inner );
+    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu,
+                           box_r.x, box_r.x + box_r.w - WIDGET_PAD );
 
     return changed;
 }
@@ -414,33 +414,56 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
         draw_set_rounding( sv );
     }
 
-    /* Hover tooltip: swatch + hex + component values. */
-    if ( gui_tooltip_begin() )
+    /* Hover tooltip: swatch + hex + component values.
+       tooltip_begin does NOT check hover -- it always opens the window; caller must guard.
+       Pre-compute all strings and the required content width before opening the tooltip so
+       that gui_dummy() can force content_w to the correct value on this frame.  Without this,
+       gui_text() inside would call draw_text_fit_n which truncates text at the (still-narrow)
+       window width, preventing content_w from ever growing to fit the actual text. */
+    if ( pst.hover )
     {
-        gui_stack();
-        gui_rect_t tp = gui_canvas( 56.0f );
-        {
-            f32 sv = draw_rounding();
-            draw_set_rounding( 3.0f );
-            if ( pa < 255u )
-                draw_checker( tp, 6.0f, GUI_COLOR( 200, 200, 200, 255 ), GUI_COLOR( 100, 100, 100, 255 ) );
-            draw_push_rect_filled( tp.x, tp.y, tp.w, tp.h,
-                                   0.0f, 0.0f, 1.0f, 1.0f, 0, abgr );
-            draw_push_rect_outline( tp.x, tp.y, tp.w, tp.h, WIN_BORDER, 0, COL_BORDER );
-            draw_set_rounding( sv );
-        }
-        char hex[12];
-        snprintf( hex, sizeof( hex ), "#%02X%02X%02X%02X", pr, pg, pb, pa );
-        gui_text( hex );
+        char tip_hex[ 12 ], tip_vals[ 32 ], tip_alp[ 24 ];
+        tip_alp[ 0 ] = '\0';
+        snprintf( tip_hex, sizeof( tip_hex ), "#%02X%02X%02X%02X", pr, pg, pb, pa );
         if ( is_hsv )
-            gui_textf( "H:%d  S:%d  V:%d",
-                       (i32)( hsv[0] * 360.0f + 0.5f ),
-                       (i32)( hsv[1] * 100.0f + 0.5f ),
-                       (i32)( hsv[2] * 100.0f + 0.5f ) );
+            snprintf( tip_vals, sizeof( tip_vals ), "H:%d  S:%d  V:%d",
+                      (i32)( hsv[0] * 360.0f + 0.5f ),
+                      (i32)( hsv[1] * 100.0f + 0.5f ),
+                      (i32)( hsv[2] * 100.0f + 0.5f ) );
         else
-            gui_textf( "R:%d  G:%d  B:%d", (i32)pr, (i32)pg, (i32)pb );
-        if ( n == 4 && !( flags & GUI_COLOR_EDIT_NO_ALPHA ) )
-            gui_textf( "A:%d  (%.0f%%)", (i32)pa, (f64)v[3] * 100.0 );
+            snprintf( tip_vals, sizeof( tip_vals ), "R:%d  G:%d  B:%d",
+                      (i32)pr, (i32)pg, (i32)pb );
+        bool tip_has_alpha = ( n == 4 && !( flags & GUI_COLOR_EDIT_NO_ALPHA ) );
+        if ( tip_has_alpha )
+            snprintf( tip_alp, sizeof( tip_alp ), "A:%d  (%.0f%%)", (i32)pa, (f64)v[3] * 100.0 );
+
+        f32 tip_w = 72.0f;
+        f32 hw = font_text_w_n( tip_hex,  0xFFFFFFFFu ); if ( hw > tip_w ) tip_w = hw;
+        f32 vw = font_text_w_n( tip_vals, 0xFFFFFFFFu ); if ( vw > tip_w ) tip_w = vw;
+        if ( tip_has_alpha ) {
+            f32 aw = font_text_w_n( tip_alp, 0xFFFFFFFFu ); if ( aw > tip_w ) tip_w = aw;
+        }
+
+        if ( gui_tooltip_begin() )
+        {
+            gui_stack();
+            gui_dummy( tip_w, 0.0f );   /* force content_w immediately so autosize is right */
+            gui_rect_t tp = gui_canvas( 56.0f );
+            {
+                f32 sv = draw_rounding();
+                draw_set_rounding( 3.0f );
+                if ( pa < 255u )
+                    draw_checker( tp, 6.0f, GUI_COLOR( 200, 200, 200, 255 ),
+                                  GUI_COLOR( 100, 100, 100, 255 ) );
+                draw_push_rect_filled( tp.x, tp.y, tp.w, tp.h,
+                                       0.0f, 0.0f, 1.0f, 1.0f, 0, abgr );
+                draw_push_rect_outline( tp.x, tp.y, tp.w, tp.h, WIN_BORDER, 0, COL_BORDER );
+                draw_set_rounding( sv );
+            }
+            gui_text( tip_hex );
+            gui_text( tip_vals );
+            if ( tip_has_alpha ) gui_text( tip_alp );
+        }
         gui_tooltip_end();
     }
 
