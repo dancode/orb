@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_popup.c -- Popups, context menus, and tooltips.
 
@@ -440,10 +440,27 @@ gui_set_item_tooltip( const char* text )
     if ( s_build.last_item_id == GUI_ID_NONE || s_interaction.hover_id != s_build.last_item_id )
         return;
 
+    if ( !text || !text[0] ) return;
+
     if ( gui_tooltip_begin() )
     {
         gui_stack();          /* tooltip body lays out like any region: declare a stack first */
-        gui_text( text );
+        
+        f32  max_w = (f32)s_font_size * 35.0f;
+        if ( max_w < 100.0f ) max_w = 100.0f;
+        
+        f32 avail = (f32)s_io.display_w * 0.9f;
+        if ( max_w > avail && avail > 10.0f ) max_w = avail;
+
+        f32 text_w  = gui_text_size( text ).x;
+        f32 final_w = ( text_w < max_w ) ? text_w : max_w;
+
+        u32 lines = text_wrap_walk( text, final_w, false, 0.0f, 0.0f, 0 );
+        f32 h     = font_char_h() + (f32)( lines - 1u ) * font_line_h();
+
+        gui_rect_t r = widget_next_rect_w( final_w, h );
+        text_wrap_walk( text, final_w, true, r.x, r.y, COL_TEXT );
+        widget_track_width( r.x + final_w );
     }
     gui_tooltip_end();
 }
@@ -471,8 +488,8 @@ gui_help_marker( const char* text )
     /* Carve a natural-width cell for the mark and place it per the region alignment, like text(). */
     f32          mw = font_text_w( mark );
     f32          mh = font_char_h();
-    gui_rect_t r  = widget_next_rect_w( mw, mh );
-    gui_rect_t tr = rect_align( r, mw, mh, lf()->lay_align );
+    gui_rect_t   r  = widget_next_rect_w( mw, mh );
+    gui_rect_t   tr = rect_align( r, mw, mh, lf()->lay_align );
 
     /* Hoverable but inert: the returned click is ignored, only st.hover drives the brighten. */
     widget_state_t st = widget_behavior( id, tr, WIDGET_KIND_BUTTON );

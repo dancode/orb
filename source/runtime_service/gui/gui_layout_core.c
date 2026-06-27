@@ -340,6 +340,7 @@ pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
    In columns / grid mode the track cell always wins.  On a same_line the widget sits at the
    running x sized to natural_w (or fills to the content edge when natural_w <= 0).
    Every emit records f->prev_item so same_line() can anchor the next widget to this one's line. */
+
 static gui_rect_t
 widget_next_rect_w( f32 natural_w, f32 h )
 {

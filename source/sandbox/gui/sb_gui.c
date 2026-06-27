@@ -35,8 +35,9 @@ show_demo_window(bool* p_open)
         return;
     }
     gui()->stack();
-    gui()->text("This is some useful text.");
-    
+    gui()->text("This is some useful text."); gui()->same_line(0);
+    gui()->help_marker("This is a help marker for the text above.\nIt can be very useful to explain things.");
+
     static bool show_another_window = false;
     gui()->checkbox("Demo Window", p_open);
     gui()->checkbox("Another Window", &show_another_window);
@@ -180,7 +181,8 @@ main( int argc, char** argv )
         {
             rhi()->event( &ev );
             if ( gui()->event( &ev ) )
-                continue;
+                continue; /* handled */
+
             if ( ev.type == APP_EV_WIN_CLOSE )
                 goto shutdown;
         }
