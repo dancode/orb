@@ -257,7 +257,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL          ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | \
                                   ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
-#define ORB_OUT_TESTING         ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS )
+#define ORB_OUT_TESTING         ( ORB_OUT_ANY_COMPILE ) // ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
 #define ORB_OUT_VERBOSE         ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT         ( ORB_OUT_TESTING )
