@@ -391,7 +391,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
 
     /* ---- Inline row: [preview_sq] [drag0 .. dragN-1] | label ---- */
     f32 preview_w = (f32)WIDGET_H;
-    f32 gap       = (f32)s_layout.widget_gap;
+    f32 gap       = (f32)s_style.widget_gap;
     f32 ctrl_min  = preview_w + gap + 44.0f * (f32)comps + gap * (f32)( comps - 1u );
     gui_rect_t ctrl = widget_split_label( r, label, ctrl_min, COL_TEXT );
 

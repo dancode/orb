@@ -291,8 +291,8 @@ main( int argc, char** argv )
 
             show_example_main_menu_bar();
 
-            // if ( show_demo)
-            //     show_demo_window(&show_demo);
+            if ( show_demo)
+                 show_demo_window(&show_demo);
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
 

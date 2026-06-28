@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui.c -- Unity build entry for the gui UI / core unit.
 
@@ -80,9 +80,28 @@ MOD_USE_APP;
 /* Font type size (em) used by layout_compute; updated by font_set_builtin() / font_load(). */
 static u32 s_font_size = 0;
 
-/* Default values -- the em=12 bitmap result of layout_compute, for the pre-font-load state. */
-static gui_metrics_t s_layout =
+/* The base style profile authored for em=12. Users edit this via gui_style_get(). */
+static gui_style_t s_style_base =
 {
+    .colors = {
+        [ GUI_COL_TEXT         ] = GUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF ),
+        [ GUI_COL_TEXT_DIM     ] = GUI_COLOR( 0xA0, 0xA0, 0xA0, 0xFF ),
+        [ GUI_COL_WINDOW_BG    ] = GUI_COLOR( 0x24, 0x24, 0x24, 0xE8 ),
+        [ GUI_COL_CHILD_BG     ] = GUI_COLOR( 0x1C, 0x1C, 0x1C, 0xFF ),
+        [ GUI_COL_TITLE_BG     ] = GUI_COLOR( 0x10, 0x60, 0xA0, 0xFF ),
+        [ GUI_COL_BORDER       ] = GUI_COLOR( 0x80, 0x80, 0x80, 0xFF ),
+        [ GUI_COL_WIDGET_BG    ] = GUI_COLOR( 0x40, 0x40, 0x40, 0xFF ),
+        [ GUI_COL_WIDGET_HOT   ] = GUI_COLOR( 0x50, 0x80, 0xB0, 0xFF ),
+        [ GUI_COL_WIDGET_ACT   ] = GUI_COLOR( 0x30, 0x60, 0x90, 0xFF ),
+        [ GUI_COL_WIDGET_FG    ] = GUI_COLOR( 0x20, 0x90, 0xD0, 0xFF ),
+        [ GUI_COL_CHECK_MARK   ] = GUI_COLOR( 0x18, 0xE6, 0x48, 0xFF ),
+        [ GUI_COL_SLIDER_TRACK ] = GUI_COLOR( 0x30, 0x30, 0x30, 0xFF ),
+        [ GUI_COL_RESIZE_HOT   ] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
+        [ GUI_COL_INPUT_BG     ] = GUI_COLOR( 0x38, 0x38, 0x38, 0xFF ),
+        [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0x20, 0x50, 0x70, 0xFF ),
+        [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
+        [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
+    },
     .line_size     = 20,   /* 12 + 2*(12/3)              */
     .widget_gap    = 3,    /* 12 / 4                     */
     .widget_pad    = 6,    /* 12 / 2                     */
@@ -106,49 +125,52 @@ static gui_metrics_t s_layout =
     .menu_check      = GUI_MENU_CHECK_BOX,   /* bordered box by default (push GUI_VAR_MENU_CHECK)    */
 };
 
-/* Recompute the layout metrics from a font's type size (em), glyph-box height (char_h), and
-   line advance (line_h).  Called by font_set_builtin() / font_load() / font_set_bmp_scale().  All paddings
-   scale off the em; the row height is floored to char_h and line_h so glyphs never clip. */
+/* The active style, scaled from s_style_base for the current font size. */
+static gui_style_t s_style;
 
+gui_style_t* gui_style_get( void )
+{
+    return &s_style_base;
+}
+
+/* Recompute the active layout metrics by scaling the user's base style profile to the
+   active font's type size (em).  The base style is authored assuming em=12. */
 static void
 layout_compute( u32 em, u32 char_h, u32 line_h )
 {
     if ( em < 8u ) em = 8u;
     s_font_size = em;
 
-    /* Frame padding around a control's text, scaled off the em.  Vertical padding is the
-       dominant aesthetic lever: a control's row is the em plus this top and bottom, so text
-       sits optically centered with breathing room instead of crowding the frame edge. */
-    u32 pad_y = em / 3u;                       /* ~0.33 em above / below the glyph */
+    f32 scale = (f32)em / 12.0f;
 
-    /* Row height = em + symmetric vertical padding, then floored to the font's glyph box and
-       line advance so a tall-boxed font (e.g. one with deep descenders) never clips and a
-       single line of text always fits.  This is THE knob the other heights cascade from. */
+    /* Copy colors and enums */
+    s_style = s_style_base;
 
-    u32  row = em + 2u * pad_y;
-    if ( row < char_h ) row = char_h;
-    if ( row < line_h ) row = line_h;
+    /* Scale pixel metrics proportionally */
+    s_style.line_size       = (u32)( (f32)s_style_base.line_size       * scale );
+    s_style.widget_gap      = (u32)( (f32)s_style_base.widget_gap      * scale );
+    s_style.widget_pad      = (u32)( (f32)s_style_base.widget_pad      * scale );
+    s_style.win_title_h     = (u32)( (f32)s_style_base.win_title_h     * scale );
+    s_style.win_border      = (u32)( (f32)s_style_base.win_border      * scale );
+    s_style.checkbox_sz     = (u32)( (f32)s_style_base.checkbox_sz     * scale );
+    s_style.slider_knob_w   = (u32)( (f32)s_style_base.slider_knob_w   * scale );
+    s_style.min_cell_w      = (u32)( (f32)s_style_base.min_cell_w      * scale );
+    s_style.checkmark_pad   = (u32)( (f32)s_style_base.checkmark_pad   * scale );
+    s_style.cursor_w        = (u32)( (f32)s_style_base.cursor_w        * scale );
+    s_style.cursor_inset    = (u32)( (f32)s_style_base.cursor_inset    * scale );
+    s_style.win_rounding    = (u32)( (f32)s_style_base.win_rounding    * scale );
+    s_style.widget_rounding = (u32)( (f32)s_style_base.widget_rounding * scale );
+    s_style.grab_rounding   = (u32)( (f32)s_style_base.grab_rounding   * scale );
 
-    /* Checkbox indicator: 4/5 of the row leaves a small margin top and bottom and tracks it. */
-    u32 csz = ( row * 4u ) / 5u;
+    /* Prevent vanishing outlines or cursors when scaling down. */
+    if ( s_style.win_border == 0 && s_style_base.win_border > 0 ) s_style.win_border = 1u;
+    if ( s_style.cursor_w == 0   && s_style_base.cursor_w > 0 )   s_style.cursor_w = 1u;
+    if ( s_style.widget_gap == 0 && s_style_base.widget_gap > 0 ) s_style.widget_gap = 1u;
 
-    s_layout.line_size     = row;
-    s_layout.widget_gap    = em / 4u < 2u ? 2u : em / 4u;   /* ~0.25 em between stacked rows */
-    s_layout.widget_pad    = em / 2u;                       /* horizontal text inset (~0.5 em) */
-    s_layout.win_title_h   = row + em / 4u;                 /* a touch taller than a body row */
-    s_layout.win_border    = 1u;
-    s_layout.checkbox_sz   = csz;
-    s_layout.slider_knob_w = em;
-    /* Smallest width a shrinking flex/fraction track stops at before it overflows the row
-       (clipped at the region edge).  Two row-heights keeps a control just grabbable; fixed-px
-       tracks are never floored -- an explicit pixel size is the author's choice. */
-    s_layout.min_cell_w    = row * 2u;
-    s_layout.checkmark_pad = csz / 4u;
-    s_layout.cursor_w      = em / 10u < 1u ? 1u : em / 10u; /* thin caret (~0.1 em) */
-    s_layout.cursor_inset  = em / 4u  < 1u ? 1u : em / 4u;  /* caret top/bottom inset */
-    s_layout.win_rounding    = em / 2u;                     /* windows (~0.5 em)   */
-    s_layout.widget_rounding = em / 3u;                     /* control frames (~0.33 em) */
-    s_layout.grab_rounding   = em / 3u;                     /* knobs / grabs (~0.33 em) */
+    /* Floor the row height to the font's glyph box and line advance so a tall-boxed font
+       (e.g. one with deep descenders) never clips and a single line of text always fits. */
+    if ( s_style.line_size < char_h ) s_style.line_size = char_h;
+    if ( s_style.line_size < line_h ) s_style.line_size = line_h;
 }
 
 /* The shared stateless helpers (saturate, clampf, rect_intersect) live in gui_internal.h as

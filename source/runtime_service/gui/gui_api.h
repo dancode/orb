@@ -579,6 +579,8 @@ typedef struct gui_api_s
     void ( *disabled_begin )( bool disabled );
     void ( *disabled_end   )( void );
 
+    gui_style_t* (*style_get)( void );
+
     /* Style stacks -- the push-model theme override (gui_col_t colors, gui_style_var_t metrics).
        push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
        overrides for just the next widget, no pop.  Colors are abgr (GUI_COLOR); vars are f32 px.

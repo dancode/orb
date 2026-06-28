@@ -606,6 +606,41 @@ typedef enum
 } gui_col_t;
 
 /*==============================================================================================
+    Global Style Configuration
+==============================================================================================*/
+
+typedef struct gui_style_t
+{
+    u32 colors[ GUI_COL_COUNT ]; /* Theme default palette (GUI_COLOR packs R,G,B,A bytes) */
+
+    /* Layout metrics */
+    u32 line_size;          // widget row height                                 
+    u32 widget_gap;         // vertical gap between consecutive widgets
+    u32 widget_pad;         // horizontal content area padding
+    u32 win_title_h;        // window title bar height
+    u32 win_border;         // window / widget outline thickness
+    u32 checkbox_sz;        // checkbox indicator side
+    u32 slider_knob_w;      // slider draggable knob width
+    u32 min_cell_w;         // floor a flex/fraction track shrinks to before overflow
+    u32 checkmark_pad;      // inset of filled square inside the checkbox
+    u32 cursor_w;           // input text cursor width
+    u32 cursor_inset;       // input text cursor top/bottom inset
+    u32 win_rounding;       // corner radius: windows / children / popups
+    u32 widget_rounding;    // corner radius: control frames
+    u32 grab_rounding;      // corner radius: slider knobs / scrollbar grabs
+    u32 check_style;        // checkbox/menu indicator: 0='v' tick, 1=disc, 2='X' (gui_check_style_t)
+    u32 bullet_style;       // bullet glyph: 0=disc, 1=square (gui_bullet_style_t)
+    u32 arrow_style;        // directional arrow: 0=triangle, 1=chevron (gui_arrow_style_t)
+    u32 separator_style;    // separator rule: 0=solid, 1=dashed (gui_separator_style_t)
+    u32 progress_style;     // progress fill: 0=solid, 1=gradient (gui_progress_style_t)
+    u32 slider_knob;        // slider knob: 0=bar, 1=circle (gui_slider_knob_t)
+    u32 menu_check;         // menu check gutter: 0=plain, 1=box (gui_menu_check_t)
+
+} gui_style_t;
+
+gui_style_t* gui_style_get( void );
+
+/*==============================================================================================
     Style vars
 
     The tunable layout metrics, the ImGuiStyleVar_ analogue.  Each names one scalar pixel metric

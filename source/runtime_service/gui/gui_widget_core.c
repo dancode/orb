@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_widget_core.c -- Shared widget primitives + theme.
 
@@ -14,7 +14,7 @@
         active  : the primary button is held with this widget as the target
         focused : this widget owns keyboard input (input_text)
 
-    Included by gui.c after gui_window.c so s_interaction, s_build, s_io, s_layout, rect_hit,
+    Included by gui.c after gui_window.c so s_interaction, s_build, s_io, s_style, rect_hit,
     and the draw helpers are all in scope.
 
 ==============================================================================================*/
@@ -22,7 +22,7 @@
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
-    Layout accessors  (read from s_layout, computed by layout_compute() in gui.c)
+    Layout accessors  (read from s_style, computed by layout_compute() in gui.c)
 ----------------------------------------------------------------------------------------------*/
 
 /* Each resolves through style_var (gui_style.c): the font-derived base with any push_style_var /

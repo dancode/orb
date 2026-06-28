@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_symbol.c -- Symbol + shape render primitives.
 
@@ -226,7 +226,7 @@ draw_check_indicator( gui_rect_t box, u32 col )
     u32 style = (u32)( style_var( GUI_VAR_CHECK_STYLE ) + 0.5f );
     if ( style == GUI_CHECK_DISC )
         draw_push_circle_filled( box.x + box.w * 0.5f, box.y + box.h * 0.5f,
-                                 box.w * 0.5f - (f32)s_layout.checkmark_pad, 16, col );
+                                 box.w * 0.5f - (f32)s_style.checkmark_pad, 16, col );
     else if ( style == GUI_CHECK_CROSS )
         draw_close_x( box, col );
     else
@@ -620,9 +620,9 @@ void gui_draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col )    { draw
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
 
 /* global indicator-shape setters (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t) */
-void gui_set_check_style ( u32 style ) { s_layout.check_style  = style; }
-void gui_set_bullet_style( u32 style ) { s_layout.bullet_style = style; }
-void gui_set_arrow_style ( u32 style ) { s_layout.arrow_style  = style; }
+void gui_set_check_style ( u32 style ) { s_style.check_style  = style; }
+void gui_set_bullet_style( u32 style ) { s_style.bullet_style = style; }
+void gui_set_arrow_style ( u32 style ) { s_style.arrow_style  = style; }
 
 // clang-format on
 /*============================================================================================*/

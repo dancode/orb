@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_style.c -- Style stacks: colors + layout metrics.
 
@@ -6,7 +6,7 @@
     analogue.  Three layers resolve into the value a widget sees:
 
         Base   -- the theme default.  Colors: a constant palette (k_col_default).  Vars: the
-                  font-derived metrics in s_layout, read live so a font change updates them.
+                  font-derived metrics in s_style, read live so a font change updates them.
         Stack  -- push_style_color / _var override a slot until the matching pop (pop takes a
                   count, like ImGui); nests via a saved-previous stack.  Reset empty each frame.
         Next   -- next_style_color / _var override a slot for just the next item, consumed at the
@@ -21,63 +21,37 @@
     without changing a single widget.
 
     Included by gui.c before gui_ctx.c (ctx_new_frame drives style_new_frame) so the accessors
-    are in scope for the macros and the resolve seam.  s_layout (gui.c) and GUI_COLOR (gui.h)
+    are in scope for the macros and the resolve seam.  s_style (gui.c) and GUI_COLOR (gui.h)
     are already visible.
 
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
-    Theme default palette -- the constant base colors (GUI_COLOR packs R,G,B,A bytes).  Seeded
-    into the working set each frame, so an unbalanced push cannot leak across frames.  Designated
-    by slot so the array order is decoupled from the enum order.
-----------------------------------------------------------------------------------------------*/
-
-static const u32 k_col_default[ GUI_COL_COUNT ] = {
-    [ GUI_COL_TEXT         ] = GUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF ),
-    [ GUI_COL_TEXT_DIM     ] = GUI_COLOR( 0xA0, 0xA0, 0xA0, 0xFF ),
-    [ GUI_COL_WINDOW_BG    ] = GUI_COLOR( 0x24, 0x24, 0x24, 0xE8 ),
-    [ GUI_COL_CHILD_BG     ] = GUI_COLOR( 0x1C, 0x1C, 0x1C, 0xFF ),
-    [ GUI_COL_TITLE_BG     ] = GUI_COLOR( 0x10, 0x60, 0xA0, 0xFF ),
-    [ GUI_COL_BORDER       ] = GUI_COLOR( 0x80, 0x80, 0x80, 0xFF ),
-    [ GUI_COL_WIDGET_BG    ] = GUI_COLOR( 0x40, 0x40, 0x40, 0xFF ),
-    [ GUI_COL_WIDGET_HOT   ] = GUI_COLOR( 0x50, 0x80, 0xB0, 0xFF ),
-    [ GUI_COL_WIDGET_ACT   ] = GUI_COLOR( 0x30, 0x60, 0x90, 0xFF ),
-    [ GUI_COL_WIDGET_FG    ] = GUI_COLOR( 0x20, 0x90, 0xD0, 0xFF ),
-    [ GUI_COL_CHECK_MARK   ] = GUI_COLOR( 0x18, 0xE6, 0x48, 0xFF ),  /* stronger/more-saturated green (~20% up) */
-    [ GUI_COL_SLIDER_TRACK ] = GUI_COLOR( 0x30, 0x30, 0x30, 0xFF ),
-    [ GUI_COL_RESIZE_HOT   ] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
-    [ GUI_COL_INPUT_BG     ] = GUI_COLOR( 0x38, 0x38, 0x38, 0xFF ),
-    [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0x20, 0x50, 0x70, 0xFF ),
-    [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
-    [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
-};
-
 /* Base value of a style var -- read live from the font-derived metrics so a font_set_builtin / font_load
-   update flows through without re-seeding anything.  The single map from slot to s_layout field. */
+   update flows through without re-seeding anything.  The single map from slot to s_style field. */
 static f32
 style_var_base( gui_style_var_t v )
 {
     switch ( v )
     {
-        case GUI_VAR_LINE_SIZE:       return (f32)s_layout.line_size;
-        case GUI_VAR_WIDGET_GAP:      return (f32)s_layout.widget_gap;
-        case GUI_VAR_WIDGET_PAD:      return (f32)s_layout.widget_pad;
-        case GUI_VAR_WIN_TITLE_H:     return (f32)s_layout.win_title_h;
-        case GUI_VAR_WIN_BORDER:      return (f32)s_layout.win_border;
-        case GUI_VAR_CHECKBOX_SZ:     return (f32)s_layout.checkbox_sz;
-        case GUI_VAR_SLIDER_KNOB_W:   return (f32)s_layout.slider_knob_w;
-        case GUI_VAR_MIN_CELL_W:      return (f32)s_layout.min_cell_w;
-        case GUI_VAR_WIN_ROUNDING:    return (f32)s_layout.win_rounding;
-        case GUI_VAR_WIDGET_ROUNDING: return (f32)s_layout.widget_rounding;
-        case GUI_VAR_GRAB_ROUNDING:   return (f32)s_layout.grab_rounding;
-        case GUI_VAR_CHECK_STYLE:     return (f32)s_layout.check_style;     /* enum-as-var: 0 tick / 1 disc / 2 cross */
-        case GUI_VAR_BULLET_STYLE:    return (f32)s_layout.bullet_style;    /* enum-as-var: 0 disc / 1 square */
-        case GUI_VAR_ARROW_STYLE:     return (f32)s_layout.arrow_style;     /* enum-as-var: 0 triangle / 1 chevron */
-        case GUI_VAR_SEPARATOR_STYLE: return (f32)s_layout.separator_style; /* enum-as-var: 0 solid / 1 dashed */
-        case GUI_VAR_PROGRESS_STYLE:  return (f32)s_layout.progress_style;  /* enum-as-var: 0 solid / 1 gradient */
-        case GUI_VAR_SLIDER_KNOB:     return (f32)s_layout.slider_knob;     /* enum-as-var: 0 bar / 1 circle */
-        case GUI_VAR_MENU_CHECK:      return (f32)s_layout.menu_check;      /* enum-as-var: 0 plain / 1 box */
+        case GUI_VAR_LINE_SIZE:       return (f32)s_style.line_size;
+        case GUI_VAR_WIDGET_GAP:      return (f32)s_style.widget_gap;
+        case GUI_VAR_WIDGET_PAD:      return (f32)s_style.widget_pad;
+        case GUI_VAR_WIN_TITLE_H:     return (f32)s_style.win_title_h;
+        case GUI_VAR_WIN_BORDER:      return (f32)s_style.win_border;
+        case GUI_VAR_CHECKBOX_SZ:     return (f32)s_style.checkbox_sz;
+        case GUI_VAR_SLIDER_KNOB_W:   return (f32)s_style.slider_knob_w;
+        case GUI_VAR_MIN_CELL_W:      return (f32)s_style.min_cell_w;
+        case GUI_VAR_WIN_ROUNDING:    return (f32)s_style.win_rounding;
+        case GUI_VAR_WIDGET_ROUNDING: return (f32)s_style.widget_rounding;
+        case GUI_VAR_GRAB_ROUNDING:   return (f32)s_style.grab_rounding;
+        case GUI_VAR_CHECK_STYLE:     return (f32)s_style.check_style;     /* enum-as-var: 0 tick / 1 disc / 2 cross */
+        case GUI_VAR_BULLET_STYLE:    return (f32)s_style.bullet_style;    /* enum-as-var: 0 disc / 1 square */
+        case GUI_VAR_ARROW_STYLE:     return (f32)s_style.arrow_style;     /* enum-as-var: 0 triangle / 1 chevron */
+        case GUI_VAR_SEPARATOR_STYLE: return (f32)s_style.separator_style; /* enum-as-var: 0 solid / 1 dashed */
+        case GUI_VAR_PROGRESS_STYLE:  return (f32)s_style.progress_style;  /* enum-as-var: 0 solid / 1 gradient */
+        case GUI_VAR_SLIDER_KNOB:     return (f32)s_style.slider_knob;     /* enum-as-var: 0 bar / 1 circle */
+        case GUI_VAR_MENU_CHECK:      return (f32)s_style.menu_check;      /* enum-as-var: 0 plain / 1 box */
         default:                        return 0.0f;
     }
 }
@@ -247,7 +221,7 @@ style_chrome_reset( void )
 static void
 style_new_frame( void )
 {
-    for ( u32 i = 0; i < GUI_COL_COUNT; ++i ) s_col[ i ] = k_col_default[ i ];
+    for ( u32 i = 0; i < GUI_COL_COUNT; ++i ) s_col[ i ] = s_style.colors[ i ];
     for ( u32 i = 0; i < GUI_VAR_COUNT; ++i ) s_var[ i ] = style_var_base( (gui_style_var_t)i );
 
     s_col_sp = s_var_sp = 0;

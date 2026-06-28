@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_widget.c -- Core leaf widgets.
 
@@ -457,7 +457,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
     draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER );
     draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, widget_bg_color( st ) );
     if ( on )
-        draw_push_circle_filled( cx, cy, rad - (f32)s_layout.checkmark_pad, segs, COL_CHECK_MARK );
+        draw_push_circle_filled( cx, cy, rad - (f32)s_style.checkmark_pad, segs, COL_CHECK_MARK );
 
     draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, label_w );
 

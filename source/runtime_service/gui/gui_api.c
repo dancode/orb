@@ -125,6 +125,7 @@ const gui_api_t g_gui_api_struct =
     .next_item_flag                     = gui_next_item_flag,
     .disabled_begin                     = gui_disabled_begin,
     .disabled_end                       = gui_disabled_end,
+    .style_get                          = gui_style_get,
     .push_style_color                   = gui_push_style_color,
     .pop_style_color                    = gui_pop_style_color,
     .next_style_color                   = gui_next_style_color,

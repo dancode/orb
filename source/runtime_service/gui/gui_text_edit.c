@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_text_edit.c -- Single-line text editing engine.
 
@@ -706,9 +706,9 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
         if ( caret_vis )
         {
             f32 cx = text_x + text_x_at( buf, es->cursor );
-            draw_push_rect_filled( cx, box.y + (f32)s_layout.cursor_inset,
-                                   (f32)s_layout.cursor_w,
-                                   box.h - 2.0f * (f32)s_layout.cursor_inset,
+            draw_push_rect_filled( cx, box.y + (f32)s_style.cursor_inset,
+                                   (f32)s_style.cursor_w,
+                                   box.h - 2.0f * (f32)s_style.cursor_inset,
                                    0, 0, 1, 1, 0, COL_CURSOR );
         }
     }
