@@ -263,18 +263,17 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
 
     window_fit_size computes the window geometry that hugs a given content extent.
 
-    Two callers, two measurements:
+    Both ALWAYS_AUTOSIZE (every frame) and the CAN_AUTOSIZE grip (double-click) pass
+    win->content_w / content_h -- the *produced* extent, the rightmost pixel reached by rendered
+    widgets plus the scroll bias.  This is stable: a fill widget reports its full cell width so
+    the window tracks its current configuration rather than collapsing to widget label widths.
 
-      ALWAYS_AUTOSIZE (every frame): passes win->content_w / content_h -- the *produced* extent,
-      the rightmost pixel reached by rendered widgets plus the scroll bias.  This is stable: a fill
-      widget reports its full cell width and keeps the window at its current size.
+    win->desired_w / desired_h (the *prescribed* extent -- what widgets intrinsically prefer,
+    fill inflation excluded) is tracked every frame and available for explicit programmatic use,
+    but is not wired to the grip because snapping fill-column windows to label widths is rarely
+    what users intend.
 
-      CAN_AUTOSIZE grip (double-click): passes win->desired_w / desired_h -- the *prescribed*
-      extent, the intrinsic size widgets prefer.  A button in a fill column contributes its natural
-      text width, not the inflated cell.  One-shot: the user chooses when to snap, then owns the
-      size from there.
-
-    Height works the same way for both: pen travel independent of window height, no feedback.
+    Height works the same way: pen travel independent of window height, no feedback.
     Never narrower than the title bar or the resize minimum so the chrome stays legible.
 ----------------------------------------------------------------------------------------------*/
 
@@ -1113,7 +1112,7 @@ gui_window_end( void )
                 bool collapsible = ( s_build.win_title_h > 0.0f ) && !( s_build.win_flags & GUI_WIN_NOCOLLAPSE );
                 f32  grip_mb_h   = ( s_build.win_flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
                 window_fit_size( s_build.win_title, s_build.win_title_h, grip_mb_h, collapsible,
-                                 win->desired_w, win->desired_h, &win->w, &win->h );
+                                 win->content_w, win->content_h, &win->w, &win->h );
             }
             else if ( s_io.mouse_pressed[ 0 ] )
             {
