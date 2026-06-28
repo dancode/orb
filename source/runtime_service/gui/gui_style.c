@@ -29,6 +29,7 @@
 
 /* Base value of a style var -- read live from the font-derived metrics so a font_set_builtin / font_load
    update flows through without re-seeding anything.  The single map from slot to s_style field. */
+
 static f32
 style_var_base( gui_style_var_t v )
 {

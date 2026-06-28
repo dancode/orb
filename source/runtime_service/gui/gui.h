@@ -656,43 +656,43 @@ void         gui_style_apply( void );
 
 typedef enum
 {
-    GUI_VAR_LINE_SIZE,      /* widget row height (the frame height)        */
-    GUI_VAR_WIDGET_GAP,     /* gap between consecutive widgets / cells     */
-    GUI_VAR_WIDGET_PAD,     /* content padding inside a frame (FramePadding)*/
-    GUI_VAR_WIN_TITLE_H,    /* window title bar height                     */
-    GUI_VAR_WIN_BORDER,     /* window / widget outline thickness           */
-    GUI_VAR_CHECKBOX_SZ,    /* checkbox / radio indicator side             */
-    GUI_VAR_SLIDER_KNOB_W,  /* slider knob + scrollbar thickness           */
-    GUI_VAR_MIN_CELL_W,     /* min width a flex cell shrinks to            */
-    GUI_VAR_WIN_ROUNDING,   /* corner radius for windows / children / popups; 0 = square */
-    GUI_VAR_WIDGET_ROUNDING,/* corner radius for control frames (button/checkbox/input/...) */
-    GUI_VAR_GRAB_ROUNDING,  /* corner radius for slider knobs + scrollbar grabs */
-    GUI_VAR_CHECK_STYLE,    /* checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc, 2 = 'X' cross (gui_check_style_t) */
-    GUI_VAR_BULLET_STYLE,   /* bullet glyph: 0 = filled disc, 1 = square (gui_bullet_style_t) */
-    GUI_VAR_ARROW_STYLE,    /* directional arrow: 0 = filled triangle, 1 = stroked chevron (gui_arrow_style_t) */
-    GUI_VAR_SEPARATOR_STYLE,/* separator rule: 0 = solid, 1 = dashed (gui_separator_style_t) */
-    GUI_VAR_PROGRESS_STYLE, /* progress_bar fill: 0 = solid, 1 = vertical gradient (gui_progress_style_t) */
-    GUI_VAR_SLIDER_KNOB,    /* slider knob shape: 0 = bar, 1 = circle (gui_slider_knob_t) */
-    GUI_VAR_MENU_CHECK,     /* menu item check gutter: 0 = plain indicator, 1 = bordered box (gui_menu_check_t) */
+    GUI_VAR_LINE_SIZE,      // widget row height (the frame height)
+    GUI_VAR_WIDGET_GAP,     // gap between consecutive widgets / cells
+    GUI_VAR_WIDGET_PAD,     // content padding inside a frame (FramePadding)
+    GUI_VAR_WIN_TITLE_H,    // window title bar height
+    GUI_VAR_WIN_BORDER,     // window / widget outline thickness
+    GUI_VAR_CHECKBOX_SZ,    // checkbox / radio indicator side
+    GUI_VAR_SLIDER_KNOB_W,  // slider knob + scrollbar thickness
+    GUI_VAR_MIN_CELL_W,     // min width a flex cell shrinks to
+    GUI_VAR_WIN_ROUNDING,   // corner radius for windows / children / popups; 0 = square
+    GUI_VAR_WIDGET_ROUNDING,// corner radius for control frames (button/checkbox/input/...)
+    GUI_VAR_GRAB_ROUNDING,  // corner radius for slider knobs + scrollbar grabs
+    GUI_VAR_CHECK_STYLE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc, 2 = 'X' cross (gui_check_style_t)
+    GUI_VAR_BULLET_STYLE,   // bullet glyph: 0 = filled disc, 1 = square (gui_bullet_style_t)
+    GUI_VAR_ARROW_STYLE,    // directional arrow: 0 = filled triangle, 1 = stroked chevron (gui_arrow_style_t)
+    GUI_VAR_SEPARATOR_STYLE,// separator rule: 0 = solid, 1 = dashed (gui_separator_style_t)
+    GUI_VAR_PROGRESS_STYLE, // progress_bar fill: 0 = solid, 1 = vertical gradient (gui_progress_style_t)
+    GUI_VAR_SLIDER_KNOB,    // slider knob shape: 0 = bar, 1 = circle (gui_slider_knob_t)
+    GUI_VAR_MENU_CHECK,     // menu item check gutter: 0 = plain indicator, 1 = bordered box (gui_menu_check_t)
 
-    GUI_VAR_COUNT,          /* var count -- not a metric                   */
+    GUI_VAR_COUNT,          // var count -- not a metric
 
 } gui_style_var_t;
 
 /* Checkbox / menu-item indicator shape (GUI_VAR_CHECK_STYLE).  Default is the tick. */
 typedef enum
 {
-    GUI_CHECK_TICK  = 0,   /* a two-stroke 'v' check mark    */
-    GUI_CHECK_DISC  = 1,   /* a filled disc inside the box   */
-    GUI_CHECK_CROSS = 2,   /* a two-diagonal 'X' cross       */
+    GUI_CHECK_TICK  = 0,   // a two-stroke 'v' check mark
+    GUI_CHECK_DISC  = 1,   // a filled disc inside the box
+    GUI_CHECK_CROSS = 2,   // a two-diagonal 'X' cross
 
 } gui_check_style_t;
 
 /* Bullet glyph shape (GUI_VAR_BULLET_STYLE).  Default is the disc (Dear ImGui's RenderBullet). */
 typedef enum
 {
-    GUI_BULLET_DISC   = 0,   /* a small filled circle */
-    GUI_BULLET_SQUARE = 1,   /* a small filled square */
+    GUI_BULLET_DISC   = 0,   // a small filled circle
+    GUI_BULLET_SQUARE = 1,   // a small filled square
 
 } gui_bullet_style_t;
 
@@ -701,8 +701,8 @@ typedef enum
    dock overlay -- since they all route through draw_arrow, exactly as check / bullet do. */
 typedef enum
 {
-    GUI_ARROW_FILLED  = 0,   /* a filled triangle pointing the direction */
-    GUI_ARROW_CHEVRON = 1,   /* a stroked '>' chevron (two strokes to an apex) */
+    GUI_ARROW_FILLED  = 0,   // a filled triangle pointing the direction
+    GUI_ARROW_CHEVRON = 1,   // a stroked '>' chevron (two strokes to an apex)
 
 } gui_arrow_style_t;
 
@@ -710,8 +710,8 @@ typedef enum
    separator() and the leading / trailing rules of separator_text(). */
 typedef enum
 {
-    GUI_SEPARATOR_SOLID  = 0,   /* a continuous filled rule */
-    GUI_SEPARATOR_DASHED = 1,   /* a dashed rule            */
+    GUI_SEPARATOR_SOLID  = 0,   // a continuous filled rule
+    GUI_SEPARATOR_DASHED = 1,   // a dashed rule           
 
 } gui_separator_style_t;
 
@@ -719,8 +719,8 @@ typedef enum
    variant glosses the fill from the foreground accent to a brighter tint (top to bottom). */
 typedef enum
 {
-    GUI_PROGRESS_SOLID    = 0,   /* a flat foreground-accent fill */
-    GUI_PROGRESS_GRADIENT = 1,   /* a top-to-bottom gradient gloss */
+    GUI_PROGRESS_SOLID    = 0,   // a flat foreground-accent fill
+    GUI_PROGRESS_GRADIENT = 1,   // a top-to-bottom gradient gloss
 
 } gui_progress_style_t;
 
@@ -728,8 +728,8 @@ typedef enum
    draws a round handle (raise GUI_VAR_GRAB_ROUNDING instead for a pill bar). */
 typedef enum
 {
-    GUI_SLIDER_KNOB_BAR    = 0,   /* a rectangular grab (grab-rounded) */
-    GUI_SLIDER_KNOB_CIRCLE = 1,   /* a circular handle                 */
+    GUI_SLIDER_KNOB_BAR    = 0,   // a rectangular grab (grab-rounded)
+    GUI_SLIDER_KNOB_CIRCLE = 1,   // a circular handle                
 
 } gui_slider_knob_t;
 
@@ -738,8 +738,8 @@ typedef enum
    renders no box and only the indicator symbol when selected. */
 typedef enum
 {
-    GUI_MENU_CHECK_PLAIN = 0,   /* indicator only when selected; no idle box */
-    GUI_MENU_CHECK_BOX   = 1,   /* bordered box always; indicator when selected */
+    GUI_MENU_CHECK_PLAIN = 0,   // indicator only when selected; no idle box
+    GUI_MENU_CHECK_BOX   = 1,   // bordered box always; indicator when selected
 
 } gui_menu_check_t;
 
@@ -755,12 +755,12 @@ typedef enum
 
 typedef enum
 {
-    GUI_DBG_NONE     = 0,         /* overlay off                                          */
-    GUI_DBG_WINDOW   = 1 << 0,    /* window outer frames; the hover window stands out     */
-    GUI_DBG_INTERACT = 1 << 1,    /* per-widget interaction rects (hover/active tinted)   */
-    GUI_DBG_RESIZE   = 1 << 2,    /* window edge-resize grab bands; hot when armed        */
-    GUI_DBG_CLIP     = 1 << 3,    /* clip (scissor) rectangle stack, colored by depth     */
-    GUI_DBG_LAYOUT   = 1 << 4,    /* layout allocated space per widget                    */
+    GUI_DBG_NONE     = 0,         // overlay off                                          }
+    GUI_DBG_WINDOW   = 1 << 0,    // window outer frames; the hover window stands out     }
+    GUI_DBG_INTERACT = 1 << 1,    // per-widget interaction rects (hover/active tinted)   }
+    GUI_DBG_RESIZE   = 1 << 2,    // window edge-resize grab bands; hot when armed        }
+    GUI_DBG_CLIP     = 1 << 3,    // clip (scissor) rectangle stack, colored by depth     }
+    GUI_DBG_LAYOUT   = 1 << 4,    // layout allocated space per widget                    }
 
     GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP | GUI_DBG_LAYOUT,
 
@@ -783,11 +783,11 @@ typedef enum
 
 typedef enum
 {
-    GUI_RENDER_NORMAL    = 0,   /* normal textured / blended UI                       */
-    GUI_RENDER_WIREFRAME = 1,   /* triangle edges only (wireframe)                    */
-    GUI_RENDER_BATCH     = 2,   /* per-draw-call color tint (batch boundary view)     */
+    GUI_RENDER_NORMAL    = 0,   // normal textured / blended UI                       */
+    GUI_RENDER_WIREFRAME = 1,   // triangle edges only (wireframe)                    */
+    GUI_RENDER_BATCH     = 2,   // per-draw-call color tint (batch boundary view)     */
 
-    GUI_RENDER_MODE_COUNT,      /* mode count -- not a mode                           */
+    GUI_RENDER_MODE_COUNT,      // mode count -- not a mode                           */
 
 } gui_render_mode_t;
 
@@ -823,10 +823,10 @@ typedef enum
    diagonal or a multi-segment polyline treats CENTER_BIASED as CENTER and relies on antialiasing.) */
 typedef enum
 {
-    GUI_STROKE_CENTER_BIASED = 0,   /* centered + snapped to the pixel grid (default) */
-    GUI_STROKE_CENTER,              /* centered on the path, no snap                  */
-    GUI_STROKE_INSIDE,              /* whole width on the interior side of a CW-screen ring */
-    GUI_STROKE_OUTSIDE,             /* whole width on the exterior side of a CW-screen ring */
+    GUI_STROKE_CENTER_BIASED = 0,   // centered + snapped to the pixel grid (default) 
+    GUI_STROKE_CENTER,              // centered on the path, no snap                  
+    GUI_STROKE_INSIDE,              // whole width on the interior side of a CW-screen ring 
+    GUI_STROKE_OUTSIDE,             // whole width on the exterior side of a CW-screen ring
 
 } gui_stroke_align_t;
 
@@ -843,9 +843,9 @@ typedef enum
 
 typedef struct
 {
-    f32 x, y; /* pixel position */
-    f32 u, v; /* texture UV     */
-    u32 abgr; /* packed color   */
+    f32 x, y; // pixel position */
+    f32 u, v; // texture UV     */
+    u32 abgr; // packed color   */
 
 } gui_draw_vert_t;
 
@@ -862,15 +862,15 @@ typedef struct
 
 typedef enum
 {
-    GUI_CMD_RECT_FILLED,     /* filled rectangle or textured quad (glyph) */
-    GUI_CMD_RECT_OUTLINE,    /* hollow rectangle: four edge quads          */
-    GUI_CMD_TRIANGLE,        /* solid triangle                             */
-    GUI_CMD_TEXT,            /* glyph run from the font atlas              */
-    GUI_CMD_CIRCLE_FILLED,   /* filled disc (triangle fan)                 */
-    GUI_CMD_LINE,            /* single stroke segment                      */
-    GUI_CMD_POLYLINE,        /* multi-segment antialiased polyline         */
-    GUI_CMD_DASHED_LINE,     /* patterned line: one textured quad, atlas dash row, tiled by U */
-    GUI_CMD_RECT_GRADIENT,   /* filled rect, col_a->col_b blended by per-vertex color (one quad) */
+    GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph)
+    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads          
+    GUI_CMD_TRIANGLE,        // solid triangle                             
+    GUI_CMD_TEXT,            // glyph run from the font atlas              
+    GUI_CMD_CIRCLE_FILLED,   // filled disc (triangle fan)                 
+    GUI_CMD_LINE,            // single stroke segment                      
+    GUI_CMD_POLYLINE,        // multi-segment antialiased polyline         
+    GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U */
+    GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b blended by per-vertex color (one quad) */
 
 } gui_cmd_type_t;
 
@@ -890,9 +890,9 @@ typedef enum
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       /* gui_cmd_type_t, fits u8 (9 values)                        */
-    u8 clip_idx;   /* index into per-frame s_draw.clip_table (set at push time) */
-    u8 vp;         /* target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)          */
+    u8 type;       // gui_cmd_type_t, fits u8 (9 values)
+    u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
+    u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
     union
     {
@@ -949,10 +949,10 @@ typedef struct
 
 typedef struct
 {
-    u32 vertex_bytes;   /* vertex buffer -- all frames-in-flight regions */
-    u32 index_bytes;    /* index buffer  -- all frames-in-flight regions */
-    u32 texture_bytes;  /* font atlases + 1x1 white pixel                */
-    u32 total_bytes;    /* sum of the above                              */
+    u32 vertex_bytes;   // vertex buffer -- all frames-in-flight regions */
+    u32 index_bytes;    // index buffer  -- all frames-in-flight regions */
+    u32 texture_bytes;  // font atlases + 1x1 white pixel                */
+    u32 total_bytes;    // sum of the above                              */
 
 } gui_mem_stats_t;
 
@@ -967,18 +967,18 @@ typedef struct
 
 typedef struct
 {
-    u32 cmd_count;      /* semantic draw commands the UI emitted                        */
-    u32 vert_count;     /* tessellated vertices (total, including retained)             */
-    u32 tri_count;      /* tessellated triangles (total, including retained)            */
-    u32 draw_calls;     /* GPU indexed draw calls (batches), summed over surfaces       */
+    u32 cmd_count;      // semantic draw commands the UI emitted                        
+    u32 vert_count;     // tessellated vertices (total, including retained)             
+    u32 tri_count;      // tessellated triangles (total, including retained)            
+    u32 draw_calls;     // GPU indexed draw calls (batches), summed over surfaces       
 
-    u32 win_total;      /* windows tracked this frame                                  */
-    u32 win_retained;   /* windows whose geometry was reused (no re-tessellation)      */
-    u32 vert_retained;  /* vertices that came from prev-frame copy, not re-tessellated */
-    u32 tri_retained;   /* triangles retained from prev-frame copy                     */
+    u32 win_total;      // windows tracked this frame                                  
+    u32 win_retained;   // windows whose geometry was reused (no re-tessellation)      
+    u32 vert_retained;  // vertices that came from prev-frame copy, not re-tessellated 
+    u32 tri_retained;   // triangles retained from prev-frame copy                     
 
-    u32 upload_batches; /* number of buffer write calls per frame                      */
-    u32 upload_bytes;   /* total bytes uploaded to GPU vertex and index buffers        */
+    u32 upload_batches; // number of buffer write calls per frame                      
+    u32 upload_bytes;   // total bytes uploaded to GPU vertex and index buffers
 
 } gui_render_stats_t;
 
@@ -993,13 +993,13 @@ typedef struct
 
 typedef enum
 {
-    GUI_FONT_BITMAP_8 = 0,        /* 8x8   pixel glyphs -- compact, pixel-perfect at native size */
-    GUI_FONT_BITMAP_16,           /* 16x16 pixel glyphs -- 2x larger version of 8x8 */
-    GUI_FONT_BITMAP_16_JETBOLD,   /* 10x16 pixel glyphs */
-    GUI_FONT_BITMAP_20_JETBOLD,   /* 12x20 pixel glyphs */
-    GUI_FONT_BITMAP_24_JETBOLD,   /* 14x33 pixel glyphs */
-    GUI_FONT_BITMAP_24_CONSOLA,   /* 13x25 pixel glyphs */    
-    GUI_FONT_BITMAP_MAX,          /* number of built-in bitmap fonts; */
+    GUI_FONT_BITMAP_8 = 0,        // 8x8   pixel glyphs -- compact, pixel-perfect at native size
+    GUI_FONT_BITMAP_16,           // 16x16 pixel glyphs -- 2x larger version of 8x8
+    GUI_FONT_BITMAP_16_JETBOLD,   // 10x16 pixel glyphs
+    GUI_FONT_BITMAP_20_JETBOLD,   // 12x20 pixel glyphs
+    GUI_FONT_BITMAP_24_JETBOLD,   // 14x33 pixel glyphs
+    GUI_FONT_BITMAP_24_CONSOLA,   // 13x25 pixel glyphs    
+    GUI_FONT_BITMAP_MAX,          // number of built-in bitmap fonts
 
 } gui_font_t;
 
@@ -1019,28 +1019,28 @@ typedef enum
 typedef enum
 {
     GUI_TABLE_NONE            = 0,
-    GUI_TABLE_BORDERS_H       = 1 << 0,   /* horizontal row dividers (between rows)         */
-    GUI_TABLE_BORDERS_V       = 1 << 1,   /* vertical column dividers (between columns)     */
-    GUI_TABLE_BORDERS_OUTER   = 1 << 2,   /* outer frame border around the whole table      */
+    GUI_TABLE_BORDERS_H       = 1 << 0,   // horizontal row dividers (between rows)         
+    GUI_TABLE_BORDERS_V       = 1 << 1,   // vertical column dividers (between columns)     
+    GUI_TABLE_BORDERS_OUTER   = 1 << 2,   // outer frame border around the whole table      
     GUI_TABLE_BORDERS         = GUI_TABLE_BORDERS_H | GUI_TABLE_BORDERS_V | GUI_TABLE_BORDERS_OUTER,
-    GUI_TABLE_SCROLL_Y        = 1 << 3,   /* table body scrolls vertically                  */
-    GUI_TABLE_SCROLL_X        = 1 << 4,   /* table body scrolls horizontally                */
-    GUI_TABLE_SORTABLE        = 1 << 5,   /* clicking a header column header sorts          */
-    GUI_TABLE_ROW_STRIPES     = 1 << 6,   /* alternating even/odd row background tint       */
-    GUI_TABLE_RESIZABLE       = 1 << 7,   /* drag column borders to resize                  */
-    GUI_TABLE_NO_HEADER       = 1 << 8,   /* skip table_headers_row entirely                */
+    GUI_TABLE_SCROLL_Y        = 1 << 3,   // table body scrolls vertically                  
+    GUI_TABLE_SCROLL_X        = 1 << 4,   // table body scrolls horizontally                
+    GUI_TABLE_SORTABLE        = 1 << 5,   // clicking a header column header sorts          
+    GUI_TABLE_ROW_STRIPES     = 1 << 6,   // alternating even/odd row background tint       
+    GUI_TABLE_RESIZABLE       = 1 << 7,   // drag column borders to resize                  
+    GUI_TABLE_NO_HEADER       = 1 << 8,   // skip table_headers_row entirely                
 
 } gui_table_flags_t;
 
 typedef enum
 {
     GUI_TABLE_COL_NONE         = 0,
-    GUI_TABLE_COL_FIXED        = 1 << 0,  /* fixed pixel width -- does not stretch          */
-    GUI_TABLE_COL_STRETCH      = 1 << 1,  /* fill remaining space (default when width==0)   */
-    GUI_TABLE_COL_NO_RESIZE    = 1 << 2,  /* pins this column's right boundary (no drag)    */
-    GUI_TABLE_COL_NO_SORT      = 1 << 3,  /* not clickable for sort                         */
-    GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  /* right-align cell content (future phase)        */
-    GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  /* center cell content (future phase)             */
+    GUI_TABLE_COL_FIXED        = 1 << 0,  // fixed pixel width -- does not stretch          
+    GUI_TABLE_COL_STRETCH      = 1 << 1,  // fill remaining space (default when width==0)   
+    GUI_TABLE_COL_NO_RESIZE    = 1 << 2,  // pins this column's right boundary (no drag)    
+    GUI_TABLE_COL_NO_SORT      = 1 << 3,  // not clickable for sort                         
+    GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  // right-align cell content (future phase)        
+    GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  // center cell content (future phase)             
 
 } gui_table_col_flags_t;
 
@@ -1048,16 +1048,16 @@ typedef enum
 typedef enum
 {
     GUI_TABLE_BG_NONE = 0,
-    GUI_TABLE_BG_ROW,     /* tint the current entire row    */
-    GUI_TABLE_BG_CELL,    /* tint the current cell only     */
+    GUI_TABLE_BG_ROW,     // tint the current entire row    
+    GUI_TABLE_BG_CELL,    // tint the current cell only     
 
 } gui_table_bg_target_t;
 
 /* Sort specification returned by table_get_sort_specs (future phase). */
 typedef struct
 {
-    i32  col;          /* sorted column index; -1 = unsorted */
-    bool descending;   /* false = ascending                  */
+    i32  col;          // sorted column index; -1 = unsorted
+    bool descending;   // false = ascending                  
 
 } gui_table_sort_specs_t;
 
@@ -1066,9 +1066,9 @@ typedef struct
    sorts as an empty string / zero. */
 typedef struct
 {
-    const char* str;      /* alphabetical key (used when is_num is false) */
-    f64         num;      /* numeric key (used when is_num is true)       */
-    bool        is_num;   /* true = compare num; false = compare str      */
+    const char* str;      // alphabetical key (used when is_num is false)
+    f64         num;      // numeric key (used when is_num is true)       
+    bool        is_num;   // true = compare num; false = compare str      
 
 } gui_table_sort_value_t;
 
