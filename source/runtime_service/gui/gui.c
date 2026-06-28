@@ -84,50 +84,49 @@ static u32 s_font_size = 0;
 static gui_style_t s_style_base =
 {
     .colors = {
-        [ GUI_COL_TEXT         ] = GUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF ),
-        [ GUI_COL_TEXT_DIM     ] = GUI_COLOR( 0xA0, 0xA0, 0xA0, 0xFF ),
-        [ GUI_COL_WINDOW_BG    ] = GUI_COLOR( 0x24, 0x24, 0x24, 0xE8 ),
-        [ GUI_COL_CHILD_BG     ] = GUI_COLOR( 0x1C, 0x1C, 0x1C, 0xFF ),
-        [ GUI_COL_TITLE_BG     ] = GUI_COLOR( 0x10, 0x60, 0xA0, 0xFF ),
-        [ GUI_COL_BORDER       ] = GUI_COLOR( 0x80, 0x80, 0x80, 0xFF ),
-        [ GUI_COL_WIDGET_BG    ] = GUI_COLOR( 0x40, 0x40, 0x40, 0xFF ),
-        [ GUI_COL_WIDGET_HOT   ] = GUI_COLOR( 0x50, 0x80, 0xB0, 0xFF ),
-        [ GUI_COL_WIDGET_ACT   ] = GUI_COLOR( 0x30, 0x60, 0x90, 0xFF ),
-        [ GUI_COL_WIDGET_FG    ] = GUI_COLOR( 0x20, 0x90, 0xD0, 0xFF ),
-        [ GUI_COL_CHECK_MARK   ] = GUI_COLOR( 0x18, 0xE6, 0x48, 0xFF ),
-        [ GUI_COL_SLIDER_TRACK ] = GUI_COLOR( 0x30, 0x30, 0x30, 0xFF ),
-        [ GUI_COL_RESIZE_HOT   ] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
-        [ GUI_COL_INPUT_BG     ] = GUI_COLOR( 0x38, 0x38, 0x38, 0xFF ),
-        [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0x20, 0x50, 0x70, 0xFF ),
-        [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
-        [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
+        [ GUI_COL_TEXT          ] = GUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF ),
+        [ GUI_COL_TEXT_DIM      ] = GUI_COLOR( 0xA0, 0xA0, 0xA0, 0xFF ),
+        [ GUI_COL_WINDOW_BG     ] = GUI_COLOR( 0x24, 0x24, 0x24, 0xE8 ),
+        [ GUI_COL_CHILD_BG      ] = GUI_COLOR( 0x1C, 0x1C, 0x1C, 0xFF ),
+        [ GUI_COL_TITLE_BG      ] = GUI_COLOR( 0x10, 0x60, 0xA0, 0xFF ),
+        [ GUI_COL_BORDER        ] = GUI_COLOR( 0x80, 0x80, 0x80, 0xFF ),
+        [ GUI_COL_WIDGET_BG     ] = GUI_COLOR( 0x40, 0x40, 0x40, 0xFF ),
+        [ GUI_COL_WIDGET_HOT    ] = GUI_COLOR( 0x50, 0x80, 0xB0, 0xFF ),
+        [ GUI_COL_WIDGET_ACT    ] = GUI_COLOR( 0x30, 0x60, 0x90, 0xFF ),
+        [ GUI_COL_WIDGET_FG     ] = GUI_COLOR( 0x20, 0x90, 0xD0, 0xFF ),
+        [ GUI_COL_CHECK_MARK    ] = GUI_COLOR( 0x18, 0xE6, 0x48, 0xFF ),
+        [ GUI_COL_SLIDER_TRACK  ] = GUI_COLOR( 0x30, 0x30, 0x30, 0xFF ),
+        [ GUI_COL_RESIZE_HOT    ] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
+        [ GUI_COL_INPUT_BG      ] = GUI_COLOR( 0x38, 0x38, 0x38, 0xFF ),
+        [ GUI_COL_INPUT_FOCUS   ] = GUI_COLOR( 0x20, 0x50, 0x70, 0xFF ),
+        [ GUI_COL_CURSOR        ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
+        [ GUI_COL_NAV_HIGHLIGHT ] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
     },
-    .line_size     = 20,   /* 12 + 2*(12/3)              */
-    .widget_gap    = 3,    /* 12 / 4                     */
-    .widget_pad    = 6,    /* 12 / 2                     */
-    .win_title_h   = 23,   /* 20 + 12/4                  */
-    .win_border    = 1,
-    .checkbox_sz   = 16,   /* 20 * 4/5                   */
-    .slider_knob_w = 12,   /* = em                       */
-    .min_cell_w    = 40,   /* 20 * 2                     */
-    .checkmark_pad = 4,    /* 16 / 4                     */
-    .cursor_w        = 1,  /* 12 / 10                    */
-    .cursor_inset    = 3,  /* 12 / 4                     */
-    .win_rounding    = 6,  /* 12 / 2 -- windows a touch rounder than controls */
-    .widget_rounding = 4,  /* 12 / 3 -- gentle control frame radius          */
-    .grab_rounding   = 4,  /* 12 / 3 -- knobs / grabs (raise for pill grabs)  */
-    .check_style     = GUI_CHECK_TICK,    /* 'v' tick by default (set_check_style to change)  */
-    .bullet_style    = GUI_BULLET_DISC,   /* filled disc by default (set_bullet_style to change) */
-    .arrow_style     = GUI_ARROW_FILLED,  /* solid triangle by default (set_arrow_style to change) */
-    .separator_style = GUI_SEPARATOR_SOLID,  /* solid rule by default (push GUI_VAR_SEPARATOR_STYLE) */
-    .progress_style  = GUI_PROGRESS_SOLID,   /* flat fill by default (push GUI_VAR_PROGRESS_STYLE)   */
-    .slider_knob     = GUI_SLIDER_KNOB_BAR,  /* bar grab by default (push GUI_VAR_SLIDER_KNOB)       */
-    .menu_check      = GUI_MENU_CHECK_BOX,   /* bordered box by default (push GUI_VAR_MENU_CHECK)    */
+    .line_size       = 20,                      /* 12 + 2*(12/3)              */
+    .widget_gap      = 3,                       /* 12 / 4                     */
+    .widget_pad      = 6,                       /* 12 / 2                     */
+    .win_title_h     = 23,                      /* 20 + 12/4                  */
+    .win_border      = 1,
+    .checkbox_sz     = 16,                      /* 20 * 4/5                   */
+    .slider_knob_w   = 12,                      /* = em                       */
+    .min_cell_w      = 40,                      /* 20 * 2                     */
+    .checkmark_pad   = 4,                       /* 16 / 4                     */
+    .cursor_w        = 1,                       /* 12 / 10                    */
+    .cursor_inset    = 3,                       /* 12 / 4                     */
+    .win_rounding    = 6,                       /* 12 / 2 -- windows a touch rounder than controls */
+    .widget_rounding = 4,                       /* 12 / 3 -- gentle control frame radius          */
+    .grab_rounding   = 4,                       /* 12 / 3 -- knobs / grabs (raise for pill grabs)  */
+    .check_style     = GUI_CHECK_TICK,          /* 'v' tick by default (set_check_style to change)  */
+    .bullet_style    = GUI_BULLET_DISC,         /* filled disc by default (set_bullet_style to change) */
+    .arrow_style     = GUI_ARROW_FILLED,        /* solid triangle by default (set_arrow_style to change) */
+    .separator_style = GUI_SEPARATOR_SOLID,     /* solid rule by default (push GUI_VAR_SEPARATOR_STYLE) */
+    .progress_style  = GUI_PROGRESS_SOLID,      /* flat fill by default (push GUI_VAR_PROGRESS_STYLE)   */
+    .slider_knob     = GUI_SLIDER_KNOB_BAR,     /* bar grab by default (push GUI_VAR_SLIDER_KNOB)       */
+    .menu_check      = GUI_MENU_CHECK_BOX,      /* bordered box by default (push GUI_VAR_MENU_CHECK)    */
 };
 
 /* The active style, scaled from s_style_base for the current font size. */
 static gui_style_t s_style;
-
 gui_style_t* gui_style_get( void )
 {
     return &s_style_base;
