@@ -415,7 +415,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
     u32 vtx_lo = s_tess.vert_count, vtx_hi = 0;
     u32 idx_lo = s_tess.idx_count,  idx_hi = 0;
     
-    gui_id_t overlay_id = 0x80806af9u; // id_hash( "perf_overlay" )
+    gui_id_t overlay_id = g_gui_perf_overlay_id; // id_hash( "perf_overlay" )
     u32 overlay_bytes = 0;
 
     for ( u32 d = 0; d < s_dispatch_count; ++d )
@@ -423,7 +423,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
         const win_geo_slot_t* sl = s_dispatch[ d ];
         if ( sl->vp != vp_index || sl->vert_count == 0 ) continue;
         
-        if ( sl->win == overlay_id )
+        if ( s_exempt_perf_overlay && sl->win == overlay_id )
         {
             overlay_bytes += sl->vert_count * sizeof( gui_draw_vert_t );
             overlay_bytes += sl->idx_count * sizeof( u16 );
@@ -460,7 +460,11 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
     }
 
     if ( up_batches > 0 )
-        cache_count_upload( up_batches, up_bytes > overlay_bytes ? up_bytes - overlay_bytes : 0 );
+    {
+        u32 actual_bytes = up_bytes > overlay_bytes ? up_bytes - overlay_bytes : 0;
+        u32 actual_batches = actual_bytes > 0 ? up_batches : 0;
+        cache_count_upload( actual_batches, actual_bytes );
+    }
 
     /* Open a LOAD pass on the swapchain color target (no depth).  LOAD preserves the scene content
        rendered before this call; CLEAR would wipe it. */
@@ -565,7 +569,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
                 .first_instance = 0,
             } );
             
-            if ( slot->win != overlay_id )
+            if ( !( s_exempt_perf_overlay && slot->win == overlay_id ) )
                 ++draw_calls;
 
             first_index += dc->elem_count;

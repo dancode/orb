@@ -119,6 +119,7 @@ bool gui_render_retained_skip   ( void )     { return s_retained_skip; }
 static bool s_dbg_cache    = false;  // per-window cache diff: how many windows unchanged vs total
 static bool s_dbg_geometry = false;  // emitted vertex / index counts this frame (render density)
 static bool s_dbg_retained = false;  // windows + verts/tris reused from last frame vs total
+static bool s_exempt_perf_overlay = true;  // exclude the perf overlay's metrics from the totals
 
 /*==============================================================================================
     Window geometry slots -- the retained store.
@@ -142,7 +143,7 @@ static bool s_dbg_retained = false;  // windows + verts/tris reused from last fr
    GPU command; it was removed from this struct along with cmd_z[] in the s_tess batch header. */
 typedef struct
 {
-    gui_gpu_cmd_t cmd;     /* clip rect, texture slot, element count */
+    gui_gpu_cmd_t   cmd;     /* clip rect, texture slot, element count */
     u32             vp;      /* viewport this command targets          */
     u32             lvbase;  /* slot-local (0-relative) vertex base    */
 
@@ -151,7 +152,7 @@ typedef struct
 // One window's cached geometry: where it sits in the shared VB/IB and the commands that replay it.
 typedef struct
 {
-    gui_id_t      win;
+    gui_id_t        win;
     u32             z, vp;
     u32             vert_base,  vert_count,  vert_alloc;  // VB position, actual count, padded reservation
     u32             idx_base,   idx_count,   idx_alloc;   // IB position, actual count, padded reservation
@@ -463,9 +464,12 @@ cache_build_frame( void )
             s_tess.cmd_count += nc;
             memcpy( slot->cached, prev->cached, nc * sizeof( win_slot_cmd_t ) );
 
-            vert_retained += slot->vert_count;
-            tri_retained  += slot->idx_count / 3u;
-            ++win_retained;
+            if ( !( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id ) )
+            {
+                vert_retained += slot->vert_count;
+                tri_retained  += slot->idx_count / 3u;
+                ++win_retained;
+            }
             slot->valid = true;
         }
         else
@@ -543,8 +547,34 @@ cache_build_frame( void )
         s_dispatch[ b ] = key;
     }
 
+    // Aggregate exact geometry and frontend commands, skipping the perf_overlay if exempted.
+    u32 total_vert = 0, total_tri = 0, total_cmd = 0, overlay_win = 0;
+    
+    for ( u32 i = 0; i < s_slot_count; ++i )
+    {
+        if ( s_exempt_perf_overlay && s_slots[ i ].win == g_gui_perf_overlay_id )
+        {
+            overlay_win = 1;
+            continue;
+        }
+        total_vert += s_slots[ i ].vert_count;
+        total_tri  += s_slots[ i ].idx_count / 3u;
+    }
+
+    for ( u32 i = 0; i < s_draw.seg_count; ++i )
+    {
+        if ( s_exempt_perf_overlay && s_draw.segs[ i ].win == g_gui_perf_overlay_id )
+            continue;
+        total_cmd += s_draw.segs[ i ].hi - s_draw.segs[ i ].lo;
+    }
+
+    // Geometry stats.
+    s_stats.accum.cmd_count  = total_cmd;
+    s_stats.accum.vert_count = total_vert;
+    s_stats.accum.tri_count  = total_tri;
+    
     // Retained stats -- published via gui_render_stats().
-    s_stats.accum.win_total     = s_cache.cur_n;
+    s_stats.accum.win_total     = s_cache.cur_n - overlay_win;
     s_stats.accum.win_retained  = win_retained;
     s_stats.accum.vert_retained = vert_retained;
     s_stats.accum.tri_retained  = tri_retained;
@@ -559,25 +589,6 @@ cache_build_frame( void )
                 GUI_MAX_VERTS, GUI_MAX_IDX );
     if ( s_tess.overflow )
         s_tess.overflow_ever = true;
-
-    // Exempt the perf_overlay from the reported geometry totals.
-    gui_id_t overlay_id = 0x80806af9u; // id_hash( "perf_overlay" )
-    u32 overlay_cmd = 0, overlay_vert = 0, overlay_tri = 0;
-    for ( u32 i = 0; i < s_slot_count; ++i )
-    {
-        if ( s_slots[ i ].win == overlay_id )
-        {
-            overlay_cmd  = s_slots[ i ].cmd_count;
-            overlay_vert = s_slots[ i ].vert_count;
-            overlay_tri  = s_slots[ i ].idx_count / 3u;
-            break;
-        }
-    }
-
-    // Geometry stats.
-    s_stats.accum.cmd_count  = s_draw.cmd_count - overlay_cmd;
-    s_stats.accum.vert_count = s_tess.vert_count - overlay_vert;
-    s_stats.accum.tri_count  = ( s_tess.idx_count / 3u ) - overlay_tri;
 
     static u32 prev_verts = ~0u, prev_idx = ~0u;
     if ( s_dbg_geometry && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )

@@ -165,6 +165,8 @@ perf_render_end( f64 t0 )
         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
 }
 
+gui_id_t g_gui_perf_overlay_id = 0;
+
 void
 gui_perf_overlay( gui_clock_fn clock, int mode )
 {
@@ -186,6 +188,8 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
         top_y += mb->h;
 
     gui_window_set_next_pos( 8.0f, top_y, GUI_COND_ALWAYS );
+    
+    g_gui_perf_overlay_id = id_hash( "perf_overlay" );
     gui_window_begin( "perf_overlay", GUI_WIN_OVERLAY );
     {
         gui_stack();

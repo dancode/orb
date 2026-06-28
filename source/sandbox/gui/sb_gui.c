@@ -257,7 +257,7 @@ main( int argc, char** argv )
         /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
            F1 window frames   F2 widget interaction rects   F3 resize bands  F4 clip rects. */
 
-        gui()->debug_enable( true );
+        // gui()->debug_enable( true );
 
         /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4). */
         if ( app()->key_pressed( APP_KEY_P ) )
@@ -291,8 +291,8 @@ main( int argc, char** argv )
 
             show_example_main_menu_bar();
 
-            if ( show_demo)
-                show_demo_window(&show_demo);
+            // if ( show_demo)
+            //     show_demo_window(&show_demo);
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
 

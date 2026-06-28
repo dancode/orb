@@ -150,6 +150,8 @@ void gui_render_frame_reset( void );
 gui_render_stats_t gui_render_stats        ( void );
 void                 gui_render_stats_publish( void );
 
+extern gui_id_t g_gui_perf_overlay_id;
+
 /* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match
    the previous frame) skips tessellation and reuses s_tess.  Toggle for benchmarking or debugging. */
 void gui_render_set_retained_skip( bool on );
