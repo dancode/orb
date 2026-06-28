@@ -82,6 +82,7 @@ show_demo_window(bool* p_open)
     // Most functions would return false if the window is collapsed or entirely clipped.
     gui_win_flags_t window_flags = 0;
     
+    window_flags |= GUI_WIN_ALWAYS_AUTOSIZE;  // Add a menu bar to the window
     // We demonstrate using the full window_begin() API
     if (!gui()->window_begin("Dear ImGui Demo", window_flags))
     {

@@ -278,14 +278,14 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
 ----------------------------------------------------------------------------------------------*/
 
 static void
-window_fit_size( const char* title, f32 title_h, bool collapsible,
+window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
                  f32 content_w, f32 content_h, f32* out_w, f32* out_h )
 {
-    /* Width: content + the symmetric left/right region padding.  Height: title bar + the content
-       stack + one gap of bottom breathing + the bottom border (the top pad lives inside the body
-       region, the trailing gap inside content_h). */
+    /* Width: content + the symmetric left/right region padding.  Height: title bar + optional
+       menu-bar strip + the content stack + one gap of bottom breathing + the bottom border
+       (the top pad lives inside the body region, the trailing gap inside content_h). */
     f32 want_w = content_w + 2.0f * WIDGET_PAD;
-    f32 want_h = title_h + content_h + WIDGET_GAP + WIN_BORDER;
+    f32 want_h = title_h + mb_h + content_h + WIDGET_GAP + WIN_BORDER;
 
     /* Stay wide enough for the title bar: the collapse-arrow lead (or the left pad) + the title
        text + a trailing pad.  Keeps the title from being clipped when the body is narrow. */
@@ -419,8 +419,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
 {
     /* x/y/w/h are the initial geometry; the registry owns position after that. */
     gui_window_t* win = window_get( id, x, y, w, h );
-    win->flags          = flags;
-    s_build.win_hidden  = false;   /* default; the CLOSEABLE branch below flips it */
+    win->flags            = flags;
+    s_build.win_hidden    = false;   /* default; the CLOSEABLE branch below flips it */
 
     /* Closeable + closed: the window is fully hidden this frame -- no chrome, no body, no hover.
        begin returns false (the caller skips its widgets) and window_end early-outs on win_hidden.
@@ -664,8 +664,9 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     /* ALWAYS_AUTOSIZE: hug the content measured last frame (held in win->content_*).  Skipped while
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
        any content has been measured -- then the caller's initial w/h stands for one frame. */
+    f32 fit_mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
     if ( autosize && !collapsed && win->content_h > 0.0f )
-        window_fit_size( title, title_h, can_collapse, win->content_w, win->content_h,
+        window_fit_size( title, title_h, fit_mb_h, can_collapse, win->content_w, win->content_h,
                          &win->w, &win->h );
 
     /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
@@ -1109,7 +1110,8 @@ gui_window_end( void )
             if ( s_io.mouse_double[ 0 ] )
             {
                 bool collapsible = ( s_build.win_title_h > 0.0f ) && !( s_build.win_flags & GUI_WIN_NOCOLLAPSE );
-                window_fit_size( s_build.win_title, s_build.win_title_h, collapsible,
+                f32  grip_mb_h   = ( s_build.win_flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
+                window_fit_size( s_build.win_title, s_build.win_title_h, grip_mb_h, collapsible,
                                  win->content_w, win->content_h, &win->w, &win->h );
             }
             else if ( s_io.mouse_pressed[ 0 ] )

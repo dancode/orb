@@ -450,10 +450,10 @@ typedef enum
                        what the built-in perf overlay uses.  Pin it with window_set_next_pos. */
 
     GUI_WIN_NODECORATION = GUI_WIN_NOTITLEBAR | GUI_WIN_NORESIZE |
-                             GUI_WIN_NOSCROLL   | GUI_WIN_NOCOLLAPSE,
+                           GUI_WIN_NOSCROLL   | GUI_WIN_NOCOLLAPSE,
 
     GUI_WIN_OVERLAY      = GUI_WIN_NODECORATION    | GUI_WIN_NOMOVE |
-                             GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_NO_DETACH,
+                           GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_NO_DETACH,
 
 } gui_win_flags_t;
 

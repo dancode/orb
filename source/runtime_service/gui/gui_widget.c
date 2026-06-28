@@ -46,7 +46,10 @@ text_emit( u32 col, const char* str )
        widgets, which rely on the window border instead of a per-widget fit. */
     f32 x = ( tw <= r.w ) ? tr.x : r.x;
     draw_push_text( x, tr.y, col, str );
-    widget_track_width( x + ( ( tw <= r.w ) ? tw : r.w ) );
+    /* Always track the natural text width so content_w reflects the full extent: an autosize
+       window needs this to grow wide enough to fit the text, and a scrollable window needs it
+       to show a horizontal bar when the text is longer than the view. */
+    widget_track_width( x + tw );
 }
 
 void gui_text( const char* str ) { text_emit( COL_TEXT, str ); }

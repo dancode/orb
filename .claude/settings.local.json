@@ -150,7 +150,15 @@
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_vulkan_imgui'; \"EXIT=$LASTEXITCODE\")",
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_vulkan'; \"EXIT=$LASTEXITCODE\")",
       "Bash(bin/build_tool.exe -config Debug -monolithic -target imgui)",
-      "PowerShell(cd F:\\\\orb; $f = \"source\\\\runtime_service\\\\gui\\\\gui_widget_slider.c\"; \\(Get-Item $f\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1)"
+      "PowerShell(cd F:\\\\orb; $f = \"source\\\\runtime_service\\\\gui\\\\gui_widget_slider.c\"; \\(Get-Item $f\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1)",
+      "Bash(bin/build_tool.exe -config Debug -target sb_gui)",
+      "Bash(bin/build_tool.exe *)",
+      "PowerShell(\\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target gui 2>&1 | Select-String -Pattern \"error|warning|compiling|success|FAILED|failed\" | Select-Object -First 30)",
+      "PowerShell(\\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target gui 2>&1)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target gui 2>&1 | Where-Object { $_ -match \"error|warning C|success|FAILED|linked|skipped gui\" } | Select-Object -First 30)",
+      "PowerShell($result = bin\\\\build_tool.exe -config Debug -target gui 2>&1; $result | Select-String \"error|FAILED|orb linked|orb compiling\"; Write-Host \"Exit: $LASTEXITCODE\")",
+      "PowerShell($result = bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1; $result | Select-String \"error|FAILED|orb linked|orb compiling\"; Write-Host \"Exit: $LASTEXITCODE\")",
+      "PowerShell(cd F:\\\\orb; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_popup.c\"\\).LastWriteTime = Get-Date; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_internal.h\"\\).LastWriteTime = Get-Date; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_widget_window.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1 | Select-Object -Last 15)"
     ]
   }
 }
