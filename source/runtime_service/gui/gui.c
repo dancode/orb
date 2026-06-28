@@ -260,6 +260,14 @@ gui_theme_reset( void )
             }
         }
     }
+    /* layout_compute() (called by gui_style_apply) reads the active font metrics through the
+       backend and crashes if no font has been loaded yet.  s_font_size is set to a non-zero
+       value only after the first layout_compute, so use it as the "font ready" sentinel.
+       When no font is set, seeding s_style_base is enough: the first font_load /
+       font_set_builtin call triggers gui_style_apply() which scales s_style_base at that point. */
+    if ( s_font_size == 0 ) 
+        return;
+
     gui_style_apply();  /* rescale s_style from s_style_base */
     style_new_frame();  /* reseed s_col[]/s_var[] from s_style, clear all push stacks */
 }
