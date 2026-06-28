@@ -39,6 +39,21 @@ widget_track_width( f32 right_x )
         lf()->content_max_x = right_x;
 }
 
+/* Track the intrinsic desired right edge for auto-sizing.  Fixed-px tracks use the declared
+   cell width (the author's intent); fill / fraction / natural tracks use the widget's own
+   natural_w (or 0 when the widget has no intrinsic preference), so a fill column does not
+   inflate the desired content width the way it inflates the actual rendered width. */
+static void
+widget_track_desired_width( f32 natural_w, u32 col )
+{
+    layout_frame_t* f = lf();
+    f32 dx = ( f->lay_cols[ col ] > 1.0f ) ? f->cellw[ col ]   /* fixed: declared size is desired */
+           : ( natural_w > 0.0f )          ? natural_w          /* fill/frac/natural: widget pref  */
+           :                                 0.0f;               /* fill widget, no preference      */
+    f32 edge = f->cellx[ col ] + dx;
+    if ( edge > f->desired_max_x ) f->desired_max_x = edge;
+}
+
 /*----------------------------------------------------------------------------------------------
     Layout engine -- carve a region's content area into cells from a repeating row template.
 
@@ -330,6 +345,9 @@ pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
     }
 
     widget_track_width( r.x + r.w );
+    /* Desired: horizontal bars use natural main width (not fill-resolved); vertical uses actual. */
+    { f32 de = horiz ? ( r.x + ( nat_main > 0.0f ? nat_main : 0.0f ) ) : ( r.x + r.w );
+      if ( de > f->desired_max_x ) f->desired_max_x = de; }
     f->prev_item = r;
     return r;
 }
@@ -384,6 +402,8 @@ widget_next_rect_w( f32 natural_w, f32 h )
         f->col       = 0;                                   /* next normal widget starts a row */
 
         widget_track_width( x + w );
+        { f32 de = x + ( natural_w > 0.0f ? natural_w : 0.0f );
+          if ( de > f->desired_max_x ) f->desired_max_x = de; }
         f->prev_item = r;
         return r;
     }
@@ -391,7 +411,9 @@ widget_next_rect_w( f32 natural_w, f32 h )
     gui_rect_t r;
     if ( f->lay_nrows > 0 )
     {
-        r = grid_next_rect( f );                            /* grid: fixed matrix, both axes set */
+        u32 gc = f->col;                                    /* capture before grid_next_rect advances */
+        r = grid_next_rect( f );
+        widget_track_desired_width( natural_w, gc );
     }
     else
     {
@@ -411,6 +433,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
                ? natural_w : f->cellw[ c ];
         r = ( gui_rect_t ){ f->cellx[ c ], f->row_y, w, f->row_h_cur };
         widget_track_width( f->cellx[ c ] + w );
+        widget_track_desired_width( natural_w, c );
 
         /* Advance; wrap to a fresh row when the template's columns are exhausted. */
         if ( ++f->col >= f->lay_ncols )

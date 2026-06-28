@@ -160,7 +160,8 @@ region_scrollbar( gui_id_t id, gui_rect_t track, bool vertical,
 
 static void
 layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win_flags_t flags,
-                    f32* scroll_x, f32* scroll_y, f32* content_w, f32* content_h, bool own_clip )
+                    f32* scroll_x, f32* scroll_y, f32* content_w, f32* content_h,
+                    f32* desired_w, f32* desired_h, bool own_clip )
 {
     /* Cap the write slot at the top of the stack so an over-deep nesting aliases the deepest
        frame rather than writing past the array; s_layout_sp still counts truthfully so each
@@ -176,6 +177,8 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f->scroll_y   = scroll_y;
     f->pcontent_w = content_w;
     f->pcontent_h = content_h;
+    f->pdesired_w = desired_w;
+    f->pdesired_h = desired_h;
     f->parent_clip = s_build.clip_rect;
 
     /* Seed the id scope with this region's id, so leaf widgets combine their label against it
@@ -229,6 +232,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f->cursor_x      = f->content_x;
     f->cursor_y      = outer.y + region_pad.t - *scroll_y;
     f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
+    f->desired_max_x = f->content_x;   /* seed desired extent at the origin */
 
     /* Bottom of the content area (mirror of content_w on the vertical axis): the end of a grid's
        band, so a grid fills from the pen down to here.  Unscrolled -- grids do not scroll. */
@@ -289,6 +293,10 @@ layout_pop_region( void )
     f32 content_w = ( f->content_max_x + *f->scroll_x ) - f->origin_x;
     *f->pcontent_h = content_h;
     *f->pcontent_w = content_w;
+    f32 desired_w = ( f->desired_max_x + *f->scroll_x ) - f->origin_x;
+    if ( desired_w < 0.0f ) desired_w = 0.0f;
+    *f->pdesired_w = desired_w;
+    *f->pdesired_h = content_h;   /* height: same as actual for now; grid fill-rows are deferred */
 
     /* Pop the region's own clip if it pushed one (a child); the window body pushed none and
        leaves the whole-window clip in place for the bars + chrome.  Restore the enclosing

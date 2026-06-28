@@ -52,7 +52,7 @@
 #define GUI_DOCK_TABS_MAX  8      // windows co-docked (tabbed) in one leaf node
 #define GUI_DOCK_NAME_CAP  28     // bytes of a tab's display name, copied at dock time
 
-#define GUI_STATE_CAP   20        // payload bytes per slot (max state struct: gui_region_t)
+#define GUI_STATE_CAP       28      // payload bytes per slot (max state struct: gui_region_t)
 
 /* GPU buffer region sizing uses a fixed viewport count (allocated once at init before any config).
    This is NOT the per-context runtime limit -- that is g_ctx->max_viewports.
@@ -176,6 +176,8 @@ typedef struct gui_window_t
     f32        scroll_x;        /* horizontal scroll offset; 0 = left             */
     f32        content_h;       /* total content height measured last frame       */
     f32        content_w;       /* total content width measured last frame        */
+    f32        desired_w;       /* intrinsic desired content width (fill-inflated cells excluded) */
+    f32        desired_h;       /* intrinsic desired content height               */
 
     bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
     bool       closed;          /* CLOSEABLE: hidden by the X until re-opened      */
@@ -269,6 +271,7 @@ typedef struct
     f32 cursor_x,  cursor_y;    // layout pen, top-left of the next widget (scroll-biased)
     f32 content_x, content_w;   // widget-row left edge + available width
     f32 content_max_x;          // rightmost edge reached this frame -- drives hscroll
+    f32 desired_max_x;          // intrinsic desired right edge -- fill cells contribute natural_w, fixed cells use cellw
 
     /* Active row template (gui_layout / row sugar).  Persists and repeats: each widget fills
        the next cell, wrapping to a fresh row of the same shape when the columns run out.  A
@@ -353,6 +356,8 @@ typedef struct
     f32*                scroll_y;
     f32*                pcontent_w;         // write-back: measured content extent for next frame
     f32*                pcontent_h;
+    f32*                pdesired_w;         // write-back: intrinsic desired extent (fill-inflated cells excluded)
+    f32*                pdesired_h;
 
     gui_rect_t        parent_clip;        // s_build.clip_rect to restore at pop
     u32                 id_restore;         // id-scope depth to restore at pop (see id stack below)
@@ -378,6 +383,7 @@ typedef struct
 {
     f32 scroll_x, scroll_y;   /* persisted scroll offset (fractional: scrollbar drag is t * max_scroll) */
     f32 content_w, content_h; /* content extent measured last frame (f32* passed to layout_push_region)  */
+    f32 desired_w, desired_h; /* intrinsic desired content extent (fill-inflated cells excluded)        */
     i16 user_w, user_h;       /* user-resized size in pixels; 0 = none, use the passed w/h              */
 
 } gui_region_t;

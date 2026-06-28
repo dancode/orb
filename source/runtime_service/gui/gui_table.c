@@ -55,6 +55,8 @@ static f32  s_tab_scroll_x;
 static f32  s_tab_scroll_y;
 static f32  s_tab_content_w;
 static f32  s_tab_content_h;
+static f32  s_tab_desired_w;
+static f32  s_tab_desired_h;
 
 /*==============================================================================================
     Internal helpers
@@ -237,7 +239,7 @@ table_open_body( gui_table_t* t )
        (so rows scroll under where the header will be) and only narrows the hit-test clip to the body
        box.  Exactly the window-body-with-chrome pattern. */
     layout_push_region( t->id, body, ( gui_pad_t ){ 0, 0, 0, 0 }, rflags,
-                        sx, sy, cw, ch, /* own_clip */ false );
+                        sx, sy, cw, ch, &s_tab_desired_w, &s_tab_desired_h, /* own_clip */ false );
 
     /* STACK mode so widget_next_rect_w uses cellx[0] / cellw[0], overridden per column. */
     layout_set_default( lf() );

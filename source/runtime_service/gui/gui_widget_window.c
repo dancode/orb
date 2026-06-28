@@ -404,7 +404,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     /* Open the body over the node's content rect -- the same region machinery a free window uses. */
     layout_push_region( id, node->content, REGION_PAD_DEFAULT, flags,
                         &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
-                        /* own_clip */ false );
+                        &win->desired_w, &win->desired_h, /* own_clip */ false );
     return true;
 }
 
@@ -665,8 +665,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
        any content has been measured -- then the caller's initial w/h stands for one frame. */
     f32 fit_mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
-    if ( autosize && !collapsed && win->content_h > 0.0f )
-        window_fit_size( title, title_h, fit_mb_h, can_collapse, win->content_w, win->content_h,
+    if ( autosize && !collapsed && win->desired_h > 0.0f )
+        window_fit_size( title, title_h, fit_mb_h, can_collapse, win->desired_w, win->desired_h,
                          &win->w, &win->h );
 
     /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
@@ -812,7 +812,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         gui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
         layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags,
                             &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
-                            /* own_clip */ false );
+                            &win->desired_w, &win->desired_h, /* own_clip */ false );
     }
     else
     {
@@ -1112,7 +1112,7 @@ gui_window_end( void )
                 bool collapsible = ( s_build.win_title_h > 0.0f ) && !( s_build.win_flags & GUI_WIN_NOCOLLAPSE );
                 f32  grip_mb_h   = ( s_build.win_flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
                 window_fit_size( s_build.win_title, s_build.win_title_h, grip_mb_h, collapsible,
-                                 win->content_w, win->content_h, &win->w, &win->h );
+                                 win->desired_w, win->desired_h, &win->w, &win->h );
             }
             else if ( s_io.mouse_pressed[ 0 ] )
             {

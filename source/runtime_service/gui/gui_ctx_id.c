@@ -101,7 +101,7 @@ gui_state_get( gui_id_t id, u32 size )
     if ( id == GUI_ID_NONE ) id = 1u;             /* never key on the empty sentinel */
     (void)size;
 
-    u32                 bucket = id & s_retained.state_mask;
+    u32               bucket = id & s_retained.state_mask;
     gui_state_slot_t* reuse  = NULL;               /* first tombstone (cold slot) seen on the chain */
     gui_state_slot_t* dst    = NULL;               /* where a fresh entry lands when id is absent */
 

@@ -126,7 +126,8 @@ show_demo_window(bool* p_open)
 
     if (show_another_window)
     {
-        if (gui()->window_begin("Another Window", 0))
+        gui_win_flags_t another_window_flags = GUI_WIN_CAN_AUTOSIZE;  // Add a menu bar to the window
+        if (gui()->window_begin("Another Window", another_window_flags ))
         {
             gui()->stack();
             gui()->text("Hello from another window!");
