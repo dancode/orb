@@ -327,6 +327,8 @@ void gui_pop_clip( void );
 /* debug drawing */
 void gui_debug_set_layers( u32 layers );
 u32  gui_debug_get_layers( void );
+void gui_debug_enable( bool enable );
+bool gui_debug_is_enabled( void );
 
 /* input */
 bool gui_want_capture_mouse( void );

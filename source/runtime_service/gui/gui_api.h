@@ -916,6 +916,9 @@ typedef struct gui_api_s
     void ( *debug_set_layers )( u32 layers );
     u32  ( *debug_get_layers )( void );
 
+    void ( *debug_enable     )( bool enable );
+    bool ( *debug_is_enabled )( void );
+
     /* Debug render mode -- how the main UI draw list is rasterized (gui_render_mode_t): NORMAL,
        WIREFRAME (triangle edges), or BATCH (per-draw-call color tint).  A pipeline + push-constant
        switch, so it is live in every build (not gated to Debug like the overlay layers above). */

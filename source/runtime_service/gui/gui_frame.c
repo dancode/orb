@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_frame.c -- Frame lifecycle, viewport, font, and clip helpers.
 
@@ -180,7 +180,12 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
     gui_push_style_color( GUI_COL_WINDOW_BG, GUI_COLOR( 0, 0, 0, 0 ) );
     gui_push_style_color( GUI_COL_BORDER,    GUI_COLOR( 0, 0, 0, 0 ) );
 
-    gui_window_set_next_pos( 8.0f, 8.0f, GUI_COND_ALWAYS );
+    f32 top_y = 8.0f;
+    gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
+    if ( mb && mb->last_frame == g_ctx->retained.frame )
+        top_y += mb->h;
+
+    gui_window_set_next_pos( 8.0f, top_y, GUI_COND_ALWAYS );
     gui_window_begin( "perf_overlay", GUI_WIN_OVERLAY );
     {
         gui_stack();

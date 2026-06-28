@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     sandbox/vulkan/sb_vulkan.c -- Vulkan RHI bring-up test.
 
@@ -262,19 +262,7 @@ main( int argc, char** argv )
         /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
            F1 window frames   F2 widget interaction rects   F3 resize bands   F4 clip rects. */
 
-        bool b_dbg_overlay = true;
-        if ( b_dbg_overlay )
-        {
-            const struct { app_key_t key; u32 bit; } dbg_keys[] = {
-                { APP_KEY_F1, GUI_DBG_WINDOW   },
-                { APP_KEY_F2, GUI_DBG_INTERACT },
-                { APP_KEY_F3, GUI_DBG_RESIZE   },
-                { APP_KEY_F4, GUI_DBG_CLIP     },
-            };
-            for ( u32 i = 0; i < 4; ++i )
-                if ( app()->key_pressed( dbg_keys[ i ].key ) )
-                    gui()->debug_set_layers( gui()->debug_get_layers() ^ dbg_keys[ i ].bit );
-        }
+        gui()->debug_enable( true );
 
         /* ------------------------------------------------------------------------------ */
         /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4).  The library

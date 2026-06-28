@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_input.c -- App input -> gui IO snapshot.
 
@@ -58,11 +58,21 @@ static bool s_pending_paste_set;   /* a paste arrived this frame (distinguishes 
 /* The OS window the cursor is currently in, learned from the win_id on mouse move/button/wheel
    events (the polled position alone carries no window identity).  Win32 holds mouse capture on the
    origin window while a button is down, so during a drag these events keep arriving from that
-   window -- the cursor's surface stays bound to where the drag began with no extra latching.  Only
-   updated when a mouse event arrives; otherwise the last value stands (the cursor has not moved
-   to another window). */
-static i32  s_pending_mouse_win;       /* win_id of the most recent mouse event this frame */
-static bool s_pending_mouse_win_set;   /* a mouse event arrived this frame -> resolve the viewport */
+   same window even if the cursor leaves it.  Cleared to invalid on up so it re-learns. */
+static i32  s_pending_mouse_win = APP_WIN_INVALID;
+static bool s_pending_mouse_win_set;
+
+static bool s_debug_enabled;
+
+void gui_debug_enable( bool enable )
+{
+    s_debug_enabled = enable;
+}
+
+bool gui_debug_is_enabled( void )
+{
+    return s_debug_enabled;
+}
 
 /* Double-click detection.  gui has no clock of its own, so the second press of a pair is
    recognised from the dt fed to frame_begin: a press counts as a double-click when it lands
@@ -165,6 +175,22 @@ gui_event( const app_event_t* ev )
         case APP_EV_CLIPBOARD:
             add_paste_text( ev->data.clipboard.text );
             return true;
+
+        case APP_EV_KEY_DOWN:
+        {
+            if ( s_debug_enabled )
+            {
+                switch ( ev->data.key.key )
+                {
+                    case APP_KEY_F1: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_WINDOW );   return true;
+                    case APP_KEY_F2: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_INTERACT ); return true;
+                    case APP_KEY_F3: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_RESIZE );   return true;
+                    case APP_KEY_F4: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_CLIP );     return true;
+                    default: break;
+                }
+            }
+            return false;
+        }
 
         /* Position + buttons are still resolved by input_update from the polled snapshot (client
            coords of the window the cursor is in); these events carry the win_id that identifies

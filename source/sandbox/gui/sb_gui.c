@@ -82,7 +82,7 @@ show_demo_window(bool* p_open)
     // Most functions would return false if the window is collapsed or entirely clipped.
     gui_win_flags_t window_flags = 0;
     
-    window_flags |= GUI_WIN_ALWAYS_AUTOSIZE;  // Add a menu bar to the window
+    window_flags |= GUI_WIN_CAN_AUTOSIZE;  // Add a menu bar to the window
     // We demonstrate using the full window_begin() API
     if (!gui()->window_begin("Dear ImGui Demo", window_flags))
     {
@@ -228,6 +228,11 @@ main( int argc, char** argv )
     /* Start render loop. */
 
     printf( "[sb_gui] running -- ESC to quit\n" );
+    printf( "[sb_gui] gui demos: F1-F4 debug overlay\n" );
+    printf( "[sb_gui] P cycles the perf overlay: off -> FPS -> +timings -> +render counts\n" );
+    printf( "[sb_gui] F6 cycles the render view: normal -> wireframe -> batch colors\n" );
+
+    int perf_mode = 0;
 
     f64 last_time = sys_tick_seconds();
     
@@ -248,6 +253,28 @@ main( int argc, char** argv )
                 goto shutdown;
         }
 
+        /* ------------------------------------------------------------------------------ */
+        /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
+           F1 window frames   F2 widget interaction rects   F3 resize bands   F4 clip rects. */
+
+        gui()->debug_enable( true );
+
+        /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4). */
+        if ( app()->key_pressed( APP_KEY_P ) )
+            perf_mode = ( perf_mode + 1 ) % 5;
+
+        /* F6 cycles the debug render view: normal -> wireframe -> batch. */
+        if ( app()->key_pressed( APP_KEY_F6 ) )
+        {
+            gui_render_mode_t m = ( gui()->debug_get_render_mode() + 1 ) % GUI_RENDER_MODE_COUNT;
+            gui()->debug_set_render_mode( m );
+            static const char* names[] = { "normal", "wireframe", "batch" };
+            printf( "[sb_gui] render mode: %s\n", names[ m ] );
+        }
+
+        /* ------------------------------------------------------------------------------ */
+        /* The GUI emit and render frame loop */
+           
         gui()->frame_begin( dt );
 
         if ( gui()->frame_dirty() )
@@ -258,6 +285,8 @@ main( int argc, char** argv )
 
             if ( show_demo)
                 show_demo_window(&show_demo);
+
+            gui()->perf_overlay( sys_tick_seconds, perf_mode );
 
             gui()->ctx_end();
         }
