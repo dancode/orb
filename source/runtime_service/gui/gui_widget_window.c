@@ -264,14 +264,9 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
     window_fit_size computes the window geometry that hugs a given content extent.
 
     Both ALWAYS_AUTOSIZE (every frame) and the CAN_AUTOSIZE grip (double-click) pass
-    win->content_w / content_h -- the *produced* extent, the rightmost pixel reached by rendered
-    widgets plus the scroll bias.  This is stable: a fill widget reports its full cell width so
-    the window tracks its current configuration rather than collapsing to widget label widths.
-
-    win->desired_w / desired_h (the *prescribed* extent -- what widgets intrinsically prefer,
-    fill inflation excluded) is tracked every frame and available for explicit programmatic use,
-    but is not wired to the grip because snapping fill-column windows to label widths is rarely
-    what users intend.
+    win->content_w / content_h -- the rightmost pixel reached by rendered widgets plus the scroll
+    bias.  This is stable: a fill widget reports its full cell width so the window tracks its
+    current configuration rather than collapsing to widget label widths.
 
     Height works the same way: pen travel independent of window height, no feedback.
     Never narrower than the title bar or the resize minimum so the chrome stays legible.
@@ -404,7 +399,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     /* Open the body over the node's content rect -- the same region machinery a free window uses. */
     layout_push_region( id, node->content, REGION_PAD_DEFAULT, flags,
                         &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
-                        &win->desired_w, &win->desired_h, /* own_clip */ false );
+                        /* own_clip */ false );
     return true;
 }
 
@@ -812,7 +807,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         gui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
         layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags,
                             &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
-                            &win->desired_w, &win->desired_h, /* own_clip */ false );
+                            /* own_clip */ false );
     }
     else
     {

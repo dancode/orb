@@ -192,7 +192,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
 
     layout_push_region( id, box, REGION_PAD_DEFAULT, flags,
                         &rg->scroll_x, &rg->scroll_y, &rg->content_w, &rg->content_h,
-                        &rg->desired_w, &rg->desired_h, /* own_clip */ true );
+                        /* own_clip */ true );
 
     /* Stamp the child's resize bookkeeping on its just-pushed frame, and suppress body-widget hover
        under a hot/armed edge for the child's duration (the edges stay armed mid-drag even if the
@@ -249,7 +249,7 @@ gui_child_end( void )
 
 /* Sink for a sub-layout's unused scroll / content-measure fields -- it never scrolls and its extent
    feeds nothing back, so these only ever hold zero / discard.  Shared by every push_layout frame. */
-static f32 s_sublayout_sink[ 6 ];
+static f32 s_sublayout_sink[ 4 ];
 
 void
 gui_push_layout( void )
@@ -277,8 +277,6 @@ gui_push_layout( void )
     f->scroll_y   = &s_sublayout_sink[ 1 ];
     f->pcontent_w = &s_sublayout_sink[ 2 ];
     f->pcontent_h = &s_sublayout_sink[ 3 ];
-    f->pdesired_w = &s_sublayout_sink[ 4 ];
-    f->pdesired_h = &s_sublayout_sink[ 5 ];
 
     f->sb_w = f->sb_h = 0.0f;
     f->show_v = f->show_h = false;
@@ -293,7 +291,6 @@ gui_push_layout( void )
     f->cursor_x      = cell.x;
     f->cursor_y      = cell.y;
     f->content_max_x = cell.x;
-    f->desired_max_x = cell.x;
     f->content_y_max = cell.y + cell.h;
 
     layout_clear( f );                       /* sub-layout opens undeclared -- declare a mode inside */
