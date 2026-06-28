@@ -117,15 +117,21 @@ style_var( gui_style_var_t slot )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Push / pop / next -- the operations the public API wraps.  Over-deep pushes are dropped (the
-    value still applies for the read, just not restorable past the cap) but counted truthfully so
-    push/pop stay paired, mirroring the id / item-flag stacks.  pop takes a count, like ImGui.
+    Push / pop / next -- the operations the public API wraps.
+
+    Over-deep pushes: the value is still written to the working set (so the UI renders correctly
+    in all builds), and sp is still counted so push/pop stay paired.  The save record is only
+    written when sp is within bounds -- an over-depth push cannot save and therefore cannot
+    restore, which is the documented cap behaviour.  An ORB_ASSERT fires in debug builds so
+    callers discover the imbalance immediately at the push site rather than on a silent bad
+    restore.  pop takes a count, like ImGui.
 ----------------------------------------------------------------------------------------------*/
 
 static void
 style_push_color( gui_col_t slot, u32 abgr )
 {
     if ( slot >= GUI_COL_COUNT ) return;
+    ORB_ASSERT( s_col_sp < GUI_STYLE_STACK_DEPTH && "style_push_color: stack overflow -- mismatched push/pop" );
     if ( s_col_sp < GUI_STYLE_STACK_DEPTH )
         s_col_stack[ s_col_sp ] = ( col_save_t ){ (u8)slot, s_col[ slot ] };
     ++s_col_sp;
@@ -158,6 +164,7 @@ static void
 style_push_var( gui_style_var_t slot, f32 value )
 {
     if ( slot >= GUI_VAR_COUNT ) return;
+    ORB_ASSERT( s_var_sp < GUI_STYLE_STACK_DEPTH && "style_push_var: stack overflow -- mismatched push/pop" );
     if ( s_var_sp < GUI_STYLE_STACK_DEPTH )
         s_var_stack[ s_var_sp ] = ( var_save_t ){ (u8)slot, s_var[ slot ] };
     ++s_var_sp;
