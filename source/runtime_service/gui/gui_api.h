@@ -582,6 +582,27 @@ typedef struct gui_api_s
     gui_style_t* (*style_get)( void );
     void         (*style_apply)( void );
 
+    /* Theme -- named style presets that form the root of the push/pop stack.
+
+       theme_list()  -- returns the built-in theme array and writes the count to *count_out.
+       theme_set()   -- copies the named theme into the base style and immediately resets the
+                        push stacks; returns false if the name is not found (no-op).
+       theme_get()   -- returns the active theme name, or NULL after a raw style_get() edit.
+       theme_reset() -- if a named theme is active, restores the base from it; then clears the
+                        color + var push stacks (the "large style change" escape hatch -- call
+                        this instead of issuing many paired push/pop calls just to revert).
+
+           u32 n;
+           const gui_theme_t* list = gui()->theme_list( &n );
+           gui()->theme_set( list[0].name );       // switch to first built-in
+           // ... many style pushes ...
+           gui()->theme_reset();                   // clear everything, back to base */
+
+    const gui_theme_t* (*theme_list )( u32* count_out );
+    bool               (*theme_set  )( const char* name );
+    const char*        (*theme_get  )( void );
+    void               (*theme_reset)( void );
+
     /* Style stacks -- the push-model theme override (gui_col_t colors, gui_style_var_t metrics).
        push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
        overrides for just the next widget, no pop.  Colors are abgr (GUI_COLOR); vars are f32 px.

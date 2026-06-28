@@ -638,8 +638,41 @@ typedef struct gui_style_t
 
 } gui_style_t;
 
+/* gui_style_get() -- returns a pointer to the mutable base style (s_style_base).  Edits take
+   effect on the next gui_style_apply() / gui_theme_reset() call.  Mutating the struct directly
+   without calling theme_reset marks the theme as anonymous (theme_get returns NULL). */
 gui_style_t* gui_style_get( void );
+/* gui_style_apply() -- recomputes the scaled active metrics from the current base style.
+   Called automatically on font change; call manually after editing via gui_style_get(). */
 void         gui_style_apply( void );
+
+/*==============================================================================================
+    Themes
+
+    A theme is a named gui_style_t snapshot: a human-readable name paired with a complete set
+    of colors and layout metrics.  The active theme is the root layer every push_style_color /
+    push_style_var overrides relative to.  Switching or resetting a theme clears the push stacks
+    immediately -- use this instead of managing deep push/pop sequences for large style changes.
+
+        u32  n;
+        const gui_theme_t* list = gui_theme_list( &n );  // enumerate built-ins
+        for ( u32 i = 0; i < n; ++i ) puts( list[i].name );
+
+        gui_theme_set( "light" );   // switch theme + clear style stacks
+        gui_theme_reset();          // revert any style_get edits, clear stacks
+==============================================================================================*/
+
+typedef struct gui_theme_t
+{
+    const char* name;    /* human-readable key used by theme_set / theme_get */
+    gui_style_t style;   /* complete color + metric snapshot                 */
+
+} gui_theme_t;
+
+const gui_theme_t* gui_theme_list ( u32* count_out );    /* enumerate built-in themes           */
+bool               gui_theme_set  ( const char* name );  /* switch to named theme + reset stacks */
+const char*        gui_theme_get  ( void );              /* active theme name, NULL if anonymous */
+void               gui_theme_reset( void );              /* restore base + clear push stacks     */
 
 /*==============================================================================================
     Style vars

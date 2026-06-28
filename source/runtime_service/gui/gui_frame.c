@@ -17,6 +17,10 @@
 bool
 gui_init( void )
 {
+    /* Seed the style base from the default theme before any font init runs; font_set_builtin /
+       font_load call gui_style_apply which scales s_style_base -- it must be non-zero first. */
+    gui_theme_set( "dark" );
+
     ctx_pool_init();   /* wire default context's static backing arrays; sets g_ctx */
 
     if ( !gui_render_init() )       /* shared pipeline / sampler / atlas */

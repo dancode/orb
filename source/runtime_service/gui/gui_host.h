@@ -202,6 +202,12 @@ void gui_set_check_style( u8 style );
 void gui_set_bullet_style( u8 style );
 void gui_set_arrow_style( u8 style );
 
+/* themes */
+const gui_theme_t* gui_theme_list ( u32* count_out );
+bool               gui_theme_set  ( const char* name );
+const char*        gui_theme_get  ( void );
+void               gui_theme_reset( void );
+
 /* widgets */
 void gui_text( const char* str );
 void gui_textf( const char* fmt, ... );
