@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_debug.c -- Bolt-on debug overlay.
 
@@ -129,6 +129,14 @@ dbg_capture_widget( gui_id_t id, gui_rect_t r, bool hover, bool active )
     (void)id;
     if ( !( s_dbg.layers & GUI_DBG_INTERACT ) ) return;
     u32 c = active ? DBG_COL_ACTIVE : ( hover ? DBG_COL_HOVER : DBG_COL_WIDGET );
+    dbg_push_outline( gui_dbg_build_viewport(), r, 1.0f, c );
+}
+
+void
+dbg_capture_layout( gui_rect_t r )
+{
+    if ( !( s_dbg.layers & GUI_DBG_LAYOUT ) ) return;
+    u32 c = GUI_COLOR( 0xFF, 0x00, 0xFF, 0x80 ); // Magenta outline for layout bounds
     dbg_push_outline( gui_dbg_build_viewport(), r, 1.0f, c );
 }
 

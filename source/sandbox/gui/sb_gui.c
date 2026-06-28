@@ -255,7 +255,7 @@ main( int argc, char** argv )
 
         /* ------------------------------------------------------------------------------ */
         /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
-           F1 window frames   F2 widget interaction rects   F3 resize bands   F4 clip rects. */
+           F1 window frames   F2 widget interaction rects   F3 resize bands  F4 clip rects. */
 
         gui()->debug_enable( true );
 

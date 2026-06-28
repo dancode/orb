@@ -724,8 +724,9 @@ typedef enum
     GUI_DBG_INTERACT = 1 << 1,    /* per-widget interaction rects (hover/active tinted)   */
     GUI_DBG_RESIZE   = 1 << 2,    /* window edge-resize grab bands; hot when armed        */
     GUI_DBG_CLIP     = 1 << 3,    /* clip (scissor) rectangle stack, colored by depth     */
+    GUI_DBG_LAYOUT   = 1 << 4,    /* layout allocated space per widget                    */
 
-    GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP,
+    GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP | GUI_DBG_LAYOUT,
 
 } gui_dbg_layer_t;
 

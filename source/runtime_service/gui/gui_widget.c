@@ -364,9 +364,11 @@ gui_checkbox( const char* label, bool* v )
     /* Field split mode aligns with the other labeled widgets: the label takes its track and the
        box sits at the start of the control track.  Default mode keeps the box on the left with the
        label trailing it.  The box only needs CHECKBOX_SZ of the control track. */
-    f32          label_x, label_w;
-    gui_rect_t control;
-    f32          bx;
+
+    f32         label_x, label_w;
+    gui_rect_t  control;
+    f32         bx;
+
     if ( field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control ) )
     {
         bx = control.x;

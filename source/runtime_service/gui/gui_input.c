@@ -186,6 +186,7 @@ gui_event( const app_event_t* ev )
                     case APP_KEY_F2: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_INTERACT ); return true;
                     case APP_KEY_F3: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_RESIZE );   return true;
                     case APP_KEY_F4: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_CLIP );     return true;
+                    case APP_KEY_F5: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_LAYOUT );   return true;
                     default: break;
                 }
             }

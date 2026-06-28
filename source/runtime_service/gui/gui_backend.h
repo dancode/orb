@@ -1,4 +1,4 @@
-﻿#ifndef GUI_BACKEND_H
+#ifndef GUI_BACKEND_H
 #define GUI_BACKEND_H
 /*==============================================================================================
 
@@ -192,11 +192,13 @@ bool gui_render_any_changed( void );
     void dbg_capture_clip  ( gui_rect_t r, u32 depth );
     void dbg_capture_window( gui_rect_t r, bool is_hover );
     void dbg_capture_resize( gui_rect_t band, u8 hot_edges );
+    void dbg_capture_layout( gui_rect_t r );
 
     #define DBG_WIDGET( id, r, hov, act ) dbg_capture_widget( ( id ), ( r ), ( hov ), ( act ) )
     #define DBG_CLIP( r, depth )          dbg_capture_clip( ( r ), ( depth ) )
     #define DBG_WINDOW( r, is_hover )     dbg_capture_window( ( r ), ( is_hover ) )
     #define DBG_RESIZE( band, hot )       dbg_capture_resize( ( band ), ( hot ) )
+    #define DBG_LAYOUT( r )               dbg_capture_layout( ( r ) )
 
     /* Ambient build viewport (s_build.cur_viewport, gui_ctx.c) -- the capture functions live in/usage
        the backend unit, so they read it through this accessor rather than the UI-unit static. */
@@ -207,6 +209,7 @@ bool gui_render_any_changed( void );
     #define DBG_CLIP( r, depth )          ( (void)0 )
     #define DBG_WINDOW( r, is_hover )     ( (void)0 )
     #define DBG_RESIZE( band, hot )       ( (void)0 )
+    #define DBG_LAYOUT( r )               ( (void)0 )
 #endif
 
 // clang-format on

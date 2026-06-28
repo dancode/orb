@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_layout_core.c -- Layout mechanism: track resolver + cell emitters.
 
@@ -176,21 +176,21 @@ layout_clear( layout_frame_t* f )
 static void
 layout_set_default( layout_frame_t* f )
 {
-    f->mode            = GUI_MODE_STACK;
-    f->lay_ncols       = 1;
-    f->lay_nrows       = 0;               /* flow mode */
-    f->lay_row_h       = 0.0f;
-    f->lay_gap_x       = WIDGET_GAP;
-    f->lay_gap_y       = WIDGET_GAP;
-    f->lay_field_side    = 0;             /* trailing label until field_split / field_label_* */
-    f->lay_field_label   = 0.0f;
-    f->lay_field_control = 0.0f;
-    f->lay_align         = 0;             /* LEFT | TOP until align() / layout.align sets it */
-    f->lay_cols[ 0 ] = 1.0f;              /* single flex track, kept so indent can re-resolve */
-    f->cellx[ 0 ]   = f->content_x;       /* one flex column == the whole content width */
-    f->cellw[ 0 ]   = f->content_w;
-    f->col          = 0;
-    f->row          = 0;
+    f->mode                 = GUI_MODE_STACK;
+    f->lay_ncols            = 1;
+    f->lay_nrows            = 0;                /* flow mode */
+    f->lay_row_h            = 0.0f;
+    f->lay_gap_x            = WIDGET_GAP;
+    f->lay_gap_y            = WIDGET_GAP;
+    f->lay_field_side       = 0;                /* trailing label until field_split / field_label_* */
+    f->lay_field_label      = 0.0f;
+    f->lay_field_control    = 0.0f;
+    f->lay_align            = 0;                /* LEFT | TOP until align() / layout.align sets it */
+    f->lay_cols[ 0 ]        = 1.0f;             /* single flex track, kept so indent can re-resolve */
+    f->cellx[ 0 ]           = f->content_x;     /* one flex column == the whole content width */
+    f->cellw[ 0 ]           = f->content_w;
+    f->col                  = 0;
+    f->row                  = 0;
 }
 
 /* Replace the active flow template on the current frame.  Finishes any open row first, then
@@ -364,7 +364,11 @@ widget_next_rect_w( f32 natural_w, f32 h )
     /* Pack mode (bar / strip): the print run places items along its axis, ignoring same_line and the
        column walk -- pack_nextline is its line break. */
     if ( f->mode == GUI_MODE_PACK )
-        return pack_next_rect( f, natural_w, h );
+    {
+        gui_rect_t r = pack_next_rect( f, natural_w, h );
+        DBG_LAYOUT( r );
+        return r;
+    }
 
     /* same_line: place on the previous item's line at the running x, sized to natural_w (or the
        remaining content width).  Bypasses the column walk; the column cursor restarts below the
@@ -385,6 +389,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
 
         widget_track_width( x + w );
         f->prev_item = r;
+        DBG_LAYOUT( r );
         return r;
     }
 
@@ -421,6 +426,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
     }
 
     f->prev_item = r;
+    DBG_LAYOUT( r );
     return r;
 }
 
