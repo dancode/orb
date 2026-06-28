@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_render.c -- GPU resources + draw submission (SUBMIT phase).
 
@@ -414,26 +414,53 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
        we upload.  For a single surface this covers the whole buffer. */
     u32 vtx_lo = s_tess.vert_count, vtx_hi = 0;
     u32 idx_lo = s_tess.idx_count,  idx_hi = 0;
+    
+    gui_id_t overlay_id = 0x80806af9u; // id_hash( "perf_overlay" )
+    u32 overlay_bytes = 0;
+
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* sl = s_dispatch[ d ];
         if ( sl->vp != vp_index || sl->vert_count == 0 ) continue;
+        
+        if ( sl->win == overlay_id )
+        {
+            overlay_bytes += sl->vert_count * sizeof( gui_draw_vert_t );
+            overlay_bytes += sl->idx_count * sizeof( u16 );
+        }
+
         if ( sl->vert_base                     < vtx_lo ) vtx_lo = sl->vert_base;
         if ( sl->vert_base + sl->vert_count    > vtx_hi ) vtx_hi = sl->vert_base + sl->vert_count;
         if ( sl->idx_base                      < idx_lo ) idx_lo = sl->idx_base;
         if ( sl->idx_base  + sl->idx_count     > idx_hi ) idx_hi = sl->idx_base  + sl->idx_count;
     }
 
+    u32 up_batches = 0;
+    u32 up_bytes = 0;
+
     if ( vtx_hi > vtx_lo )
+    {
+        u32 bytes = ( vtx_hi - vtx_lo ) * sizeof( gui_draw_vert_t );
         rhi()->buffer_write( vp->vb,
                              &s_tess.verts[ vtx_lo ],
-                             ( vtx_hi - vtx_lo ) * sizeof( gui_draw_vert_t ),
+                             bytes,
                              vb_off + vtx_lo * (u32)sizeof( gui_draw_vert_t ) );
+        up_batches++;
+        up_bytes += bytes;
+    }
     if ( idx_hi > idx_lo )
+    {
+        u32 bytes = ( idx_hi - idx_lo ) * sizeof( u16 );
         rhi()->buffer_write( vp->ib,
                              &s_tess.indices[ idx_lo ],
-                             ( idx_hi - idx_lo ) * sizeof( u16 ),
+                             bytes,
                              ib_off + idx_lo * (u32)sizeof( u16 ) );
+        up_batches++;
+        up_bytes += bytes;
+    }
+
+    if ( up_batches > 0 )
+        cache_count_upload( up_batches, up_bytes > overlay_bytes ? up_bytes - overlay_bytes : 0 );
 
     /* Open a LOAD pass on the swapchain color target (no depth).  LOAD preserves the scene content
        rendered before this call; CLEAR would wipe it. */
@@ -537,7 +564,9 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
                 .vertex_offset  = (i32)slot->vert_base,   // slot-local indices + vert_base = absolute
                 .first_instance = 0,
             } );
-            ++draw_calls;
+            
+            if ( slot->win != overlay_id )
+                ++draw_calls;
 
             first_index += dc->elem_count;
         }

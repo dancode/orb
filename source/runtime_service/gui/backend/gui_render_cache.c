@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/gui_render_cache.c -- Retained frame-geometry cache (BUILD phase).
 
@@ -86,6 +86,14 @@ cache_count_draw_calls( u32 draw_calls )
     s_stats.accum.draw_calls += draw_calls;
     if ( draw_calls > s_stats.draw_call_hwm )
         s_stats.draw_call_hwm = draw_calls;
+}
+
+// Fold one surface's upload batch/byte count into this frame's accumulator (called by flush).
+static void
+cache_count_upload( u32 batches, u32 bytes )
+{
+    s_stats.accum.upload_batches += batches;
+    s_stats.accum.upload_bytes   += bytes;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -552,10 +560,24 @@ cache_build_frame( void )
     if ( s_tess.overflow )
         s_tess.overflow_ever = true;
 
+    // Exempt the perf_overlay from the reported geometry totals.
+    gui_id_t overlay_id = 0x80806af9u; // id_hash( "perf_overlay" )
+    u32 overlay_cmd = 0, overlay_vert = 0, overlay_tri = 0;
+    for ( u32 i = 0; i < s_slot_count; ++i )
+    {
+        if ( s_slots[ i ].win == overlay_id )
+        {
+            overlay_cmd  = s_slots[ i ].cmd_count;
+            overlay_vert = s_slots[ i ].vert_count;
+            overlay_tri  = s_slots[ i ].idx_count / 3u;
+            break;
+        }
+    }
+
     // Geometry stats.
-    s_stats.accum.cmd_count  = s_draw.cmd_count;
-    s_stats.accum.vert_count = s_tess.vert_count;
-    s_stats.accum.tri_count  = s_tess.idx_count / 3u;
+    s_stats.accum.cmd_count  = s_draw.cmd_count - overlay_cmd;
+    s_stats.accum.vert_count = s_tess.vert_count - overlay_vert;
+    s_stats.accum.tri_count  = ( s_tess.idx_count / 3u ) - overlay_tri;
 
     static u32 prev_verts = ~0u, prev_idx = ~0u;
     if ( s_dbg_geometry && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )

@@ -220,6 +220,11 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
                 gui_textf( "wins ret  %u/%u", rs.win_retained,  rs.win_total   );
                 gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
                 gui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
+
+                /* Upload stats: GPU memory bandwidth. */
+                gui_spacing( 2.0f );
+                gui_textf( "up batch  %u", rs.upload_batches );
+                gui_textf( "up bytes  %u", rs.upload_bytes   );
             }
         }
     }

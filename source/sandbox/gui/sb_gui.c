@@ -264,12 +264,20 @@ main( int argc, char** argv )
             perf_mode = ( perf_mode + 1 ) % 5;
 
         /* F6 cycles the debug render view: normal -> wireframe -> batch. */
-        if ( app()->key_pressed( APP_KEY_F6 ) )
+        if ( app()->key_pressed( APP_KEY_F9 ))
         {
             gui_render_mode_t m = ( gui()->debug_get_render_mode() + 1 ) % GUI_RENDER_MODE_COUNT;
             gui()->debug_set_render_mode( m );
             static const char* names[] = { "normal", "wireframe", "batch" };
             printf( "[sb_gui] render mode: %s\n", names[ m ] );
+        }
+
+        /* C toggles Level 2 retained skip: skips tessellation on unchanged frames (hash upfront). */
+        if ( app()->key_pressed( APP_KEY_C ) )
+        {
+            bool on = !gui()->retained_skip();
+            gui()->set_retained_skip( on );
+            printf( "[sb_vulkan] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
         }
 
         /* ------------------------------------------------------------------------------ */

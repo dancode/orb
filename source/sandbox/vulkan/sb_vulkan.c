@@ -273,7 +273,7 @@ main( int argc, char** argv )
 
         /* F6 cycles the debug render view: normal -> wireframe (triangle edges) -> batch (per-draw
            color tint, so you can count batches and see where they split) -> normal. */
-        if ( app()->key_pressed( APP_KEY_F6 ) )
+        if ( app()->key_pressed( APP_KEY_F9 ) )
         {
             gui_render_mode_t m = ( gui()->debug_get_render_mode() + 1 ) % GUI_RENDER_MODE_COUNT;
             gui()->debug_set_render_mode( m );

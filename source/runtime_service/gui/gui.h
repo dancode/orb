@@ -941,6 +941,9 @@ typedef struct
     u32 vert_retained;  /* vertices that came from prev-frame copy, not re-tessellated */
     u32 tri_retained;   /* triangles retained from prev-frame copy                     */
 
+    u32 upload_batches; /* number of buffer write calls per frame                      */
+    u32 upload_bytes;   /* total bytes uploaded to GPU vertex and index buffers        */
+
 } gui_render_stats_t;
 
 /*==============================================================================================
