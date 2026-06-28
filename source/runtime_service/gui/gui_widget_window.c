@@ -261,20 +261,21 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
 /*----------------------------------------------------------------------------------------------
     Auto-resize
 
-    window_fit_size computes the window geometry that hugs its measured content.  The content
-    extent (content_w / content_h) is what the body region measured last frame -- the width
-    reached by the widgets and the total stacked height of the pen travel -- so this is purely a
-    function of that measurement plus the fixed chrome.
+    window_fit_size computes the window geometry that hugs a given content extent.
 
-    Height hugs tightly: content_h is the pen travel, independent of the window's own height, so
-    sizing to it never feeds back.  Width hugs the *natural* content -- text and bullet runs report
-    their glyph width, so a text window shrinks to its longest line -- but a flex widget (button,
-    slider, input) fills its cell and reports the full column width, so a window of those keeps the
-    width it already has.  That is stable (no oscillation), just not shrink-to-button.
+    Two callers, two measurements:
 
-    Used by ALWAYS_AUTOSIZE every frame (from last frame's content) and by the CAN_AUTOSIZE grip on
-    a double-click (from this frame's content).  Never narrower than the title bar or the resize
-    minimum so the chrome stays legible.
+      ALWAYS_AUTOSIZE (every frame): passes win->content_w / content_h -- the *produced* extent,
+      the rightmost pixel reached by rendered widgets plus the scroll bias.  This is stable: a fill
+      widget reports its full cell width and keeps the window at its current size.
+
+      CAN_AUTOSIZE grip (double-click): passes win->desired_w / desired_h -- the *prescribed*
+      extent, the intrinsic size widgets prefer.  A button in a fill column contributes its natural
+      text width, not the inflated cell.  One-shot: the user chooses when to snap, then owns the
+      size from there.
+
+    Height works the same way for both: pen travel independent of window height, no feedback.
+    Never narrower than the title bar or the resize minimum so the chrome stays legible.
 ----------------------------------------------------------------------------------------------*/
 
 static void
