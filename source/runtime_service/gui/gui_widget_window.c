@@ -665,8 +665,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
        any content has been measured -- then the caller's initial w/h stands for one frame. */
     f32 fit_mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
-    if ( autosize && !collapsed && win->desired_h > 0.0f )
-        window_fit_size( title, title_h, fit_mb_h, can_collapse, win->desired_w, win->desired_h,
+    if ( autosize && !collapsed && win->content_h > 0.0f )
+        window_fit_size( title, title_h, fit_mb_h, can_collapse, win->content_w, win->content_h,
                          &win->w, &win->h );
 
     /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is

@@ -39,17 +39,21 @@ widget_track_width( f32 right_x )
         lf()->content_max_x = right_x;
 }
 
-/* Track the intrinsic desired right edge for auto-sizing.  Fixed-px tracks use the declared
-   cell width (the author's intent); fill / fraction / natural tracks use the widget's own
-   natural_w (or 0 when the widget has no intrinsic preference), so a fill column does not
-   inflate the desired content width the way it inflates the actual rendered width. */
+/* Track the intrinsic desired right edge for auto-sizing.
+   Rule: use natural_w only when the widget has a natural size preference AND the track is
+   fill/fraction (not fixed).  In every other case use actual_w -- the widget's rendered width:
+   - Fixed tracks: actual_w == cellw (declared size is the desired)
+   - Fill/frac track + no preference: actual_w keeps the window stable at its current size
+   - STACK fill column + button: actual_w == natural_w (STACK already shrinks to natural)
+   This ensures fill widgets never collapse an auto-sized window while still letting a
+   widget in a fill column pull the auto-size toward its own preferred width. */
 static void
-widget_track_desired_width( f32 natural_w, u32 col )
+widget_track_desired_width( f32 natural_w, f32 actual_w, u32 col )
 {
-    layout_frame_t* f = lf();
-    f32 dx = ( f->lay_cols[ col ] > 1.0f ) ? f->cellw[ col ]   /* fixed: declared size is desired */
-           : ( natural_w > 0.0f )          ? natural_w          /* fill/frac/natural: widget pref  */
-           :                                 0.0f;               /* fill widget, no preference      */
+    layout_frame_t* f    = lf();
+    f32             track = f->lay_cols[ col ];
+    bool fill_or_frac = ( track > 0.0f && track <= 1.0f );
+    f32 dx   = ( fill_or_frac && natural_w > 0.0f ) ? natural_w : actual_w;
     f32 edge = f->cellx[ col ] + dx;
     if ( edge > f->desired_max_x ) f->desired_max_x = edge;
 }
@@ -345,9 +349,7 @@ pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
     }
 
     widget_track_width( r.x + r.w );
-    /* Desired: horizontal bars use natural main width (not fill-resolved); vertical uses actual. */
-    { f32 de = horiz ? ( r.x + ( nat_main > 0.0f ? nat_main : 0.0f ) ) : ( r.x + r.w );
-      if ( de > f->desired_max_x ) f->desired_max_x = de; }
+    if ( r.x + r.w > f->desired_max_x ) f->desired_max_x = r.x + r.w;   /* pack: desired == actual */
     f->prev_item = r;
     return r;
 }
@@ -402,8 +404,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
         f->col       = 0;                                   /* next normal widget starts a row */
 
         widget_track_width( x + w );
-        { f32 de = x + ( natural_w > 0.0f ? natural_w : 0.0f );
-          if ( de > f->desired_max_x ) f->desired_max_x = de; }
+        if ( x + w > f->desired_max_x ) f->desired_max_x = x + w;   /* no track: desired == actual */
         f->prev_item = r;
         return r;
     }
@@ -413,7 +414,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
     {
         u32 gc = f->col;                                    /* capture before grid_next_rect advances */
         r = grid_next_rect( f );
-        widget_track_desired_width( natural_w, gc );
+        widget_track_desired_width( natural_w, r.w, gc );
     }
     else
     {
@@ -433,7 +434,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
                ? natural_w : f->cellw[ c ];
         r = ( gui_rect_t ){ f->cellx[ c ], f->row_y, w, f->row_h_cur };
         widget_track_width( f->cellx[ c ] + w );
-        widget_track_desired_width( natural_w, c );
+        widget_track_desired_width( natural_w, w, c );
 
         /* Advance; wrap to a fresh row when the template's columns are exhausted. */
         if ( ++f->col >= f->lay_ncols )
