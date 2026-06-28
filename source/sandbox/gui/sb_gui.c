@@ -225,6 +225,23 @@ main( int argc, char** argv )
     }
 
     /* ------------------------------------------------------------------------------ */
+    /* GUI Style */
+
+    gui_style_t* style = gui()->style_get();
+
+    // Modify any colors
+    style->colors[GUI_COL_WINDOW_BG] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
+    style->colors[GUI_COL_TEXT]      = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
+
+    // Modify any layout metrics (authored for a baseline em=12)
+    style->win_rounding    = 0;  // Square windows
+    style->widget_rounding = 0;  // Slight bevel on buttons
+    style->widget_gap      = 10;  // More breathing room
+
+    // Re-scale and apply the changes across the UI
+    gui()->style_apply();
+
+    /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
     printf( "[sb_gui] running -- ESC to quit\n" );

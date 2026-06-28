@@ -639,6 +639,7 @@ typedef struct gui_style_t
 } gui_style_t;
 
 gui_style_t* gui_style_get( void );
+void         gui_style_apply( void );
 
 /*==============================================================================================
     Style vars

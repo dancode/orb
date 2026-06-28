@@ -192,6 +192,7 @@ style_next_var( gui_style_var_t slot, f32 value )
 /* Promote the pending next-item overrides into the active per-item layer and clear the pending.
    Called once per widget from item_flags_resolve, so the override that next_style_* queued just
    before this widget applies for this widget's whole draw, then is gone for the following one. */
+
 static void
 style_item_commit( void )
 {
@@ -208,6 +209,7 @@ style_item_commit( void )
    does not pass through the item seam, so without this it would inherit a lingering next-* override
    from the last body widget.  The push/pop stack is intentionally left intact -- a push that
    brackets a window_begin / child_begin still applies to the chrome inside it, like ImGui. */
+
 static void
 style_chrome_reset( void )
 {
@@ -218,6 +220,7 @@ style_chrome_reset( void )
 /* Reset the per-frame style state: re-seed the working set from the base (so an unbalanced push
    cannot leak across frames), empty the stacks, and clear both next-item layers.  Called from
    ctx_new_frame. */
+
 static void
 style_new_frame( void )
 {

@@ -848,8 +848,8 @@ static u32 s_font_stack[ GUI_FONT_STACK_MAX ];
 static u32 s_font_stack_depth = 0;
 
 /* Rebuild layout metrics from whatever font is now active. */
-static void
-font_relayout( void )
+void
+gui_style_apply( void )
 {
     layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
 }
@@ -860,7 +860,7 @@ gui_font_load( const char* path )
     u32 id = font_load( path );     // loads into a new id and activates it
     if ( id == 0 )
         return 0;
-    font_relayout();
+    gui_style_apply();
     return id;
 }
 
@@ -870,7 +870,7 @@ gui_font_load_into( u32 id, const char* path )
     if ( !font_load_into( id, path ) )
         return false;
     if ( font_active_id() == id )   // swapping the active font -> layout follows
-        font_relayout();
+        gui_style_apply();
     return true;
 }
 
@@ -878,7 +878,7 @@ void
 gui_font_use( u32 id )
 {
     font_use( id );
-    font_relayout();
+    gui_style_apply();
 }
 
 void
@@ -901,7 +901,7 @@ void
 gui_font_set_builtin( gui_font_t font )
 {
     font_set_bitmap( font );
-    font_relayout();
+    gui_style_apply();
     font_print_active();
 }
 
@@ -910,7 +910,7 @@ gui_font_set_bmp_scale( u32 scale )
 {
     font_set_bmp_scale( scale );
     if ( !font_is_tt() )
-        font_relayout();
+        gui_style_apply();
 }
 
 /*==============================================================================================
