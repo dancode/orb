@@ -620,9 +620,9 @@ void gui_draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col )    { draw
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
 
 /* global indicator-shape setters (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t) */
-void gui_set_check_style ( u32 style ) { s_style.check_style  = style; }
-void gui_set_bullet_style( u32 style ) { s_style.bullet_style = style; }
-void gui_set_arrow_style ( u32 style ) { s_style.arrow_style  = style; }
+void gui_set_check_style ( u8 style ) { s_style.check_style  = style; }
+void gui_set_bullet_style( u8 style ) { s_style.bullet_style = style; }
+void gui_set_arrow_style ( u8 style ) { s_style.arrow_style  = style; }
 
 // clang-format on
 /*============================================================================================*/

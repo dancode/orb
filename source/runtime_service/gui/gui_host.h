@@ -198,9 +198,9 @@ void gui_next_style_color( gui_col_t slot, u32 abgr );
 void gui_push_style_var( gui_style_var_t var, f32 value );
 void gui_pop_style_var( u32 count );
 void gui_next_style_var( gui_style_var_t var, f32 value );
-void gui_set_check_style( u32 style );
-void gui_set_bullet_style( u32 style );
-void gui_set_arrow_style( u32 style );
+void gui_set_check_style( u8 style );
+void gui_set_bullet_style( u8 style );
+void gui_set_arrow_style( u8 style );
 
 /* widgets */
 void gui_text( const char* str );

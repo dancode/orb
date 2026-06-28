@@ -234,9 +234,9 @@ main( int argc, char** argv )
     style->colors[GUI_COL_TEXT]      = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
 
     // Modify any layout metrics (authored for a baseline em=12)
-    style->win_rounding    = 0;  // Square windows
-    style->widget_rounding = 0;  // Slight bevel on buttons
-    style->widget_gap      = 10;  // More breathing room
+    style->win_rounding    = 0;     // Square windows
+    style->widget_rounding = 0;     // No bevel on buttons
+    style->widget_gap      = 12;    // More breathing room
 
     // Re-scale and apply the changes across the UI
     gui()->style_apply();
@@ -274,7 +274,7 @@ main( int argc, char** argv )
         /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
            F1 window frames   F2 widget interaction rects   F3 resize bands  F4 clip rects. */
 
-        // gui()->debug_enable( true );
+        gui()->debug_enable( true );
 
         /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4). */
         if ( app()->key_pressed( APP_KEY_P ) )

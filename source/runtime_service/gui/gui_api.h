@@ -605,9 +605,9 @@ typedef struct gui_api_s
        draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
        state, not draw calls: scope a change locally instead with push_style_var on
        GUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE. */
-    void ( *set_check_style  )( u32 style );
-    void ( *set_bullet_style )( u32 style );
-    void ( *set_arrow_style  )( u32 style );
+    void ( *set_check_style  )( u8 style );
+    void ( *set_bullet_style )( u8 style );
+    void ( *set_arrow_style  )( u8 style );
 
     /* window_set_drag() -- select how windows may be dragged (global default TITLEBAR).
        Call between frames; affects every window. */

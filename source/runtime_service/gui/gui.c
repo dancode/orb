@@ -147,20 +147,20 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     s_style = s_style_base;
 
     /* Scale pixel metrics proportionally */
-    s_style.line_size       = (u32)( (f32)s_style_base.line_size       * scale );
-    s_style.widget_gap      = (u32)( (f32)s_style_base.widget_gap      * scale );
-    s_style.widget_pad      = (u32)( (f32)s_style_base.widget_pad      * scale );
-    s_style.win_title_h     = (u32)( (f32)s_style_base.win_title_h     * scale );
-    s_style.win_border      = (u32)( (f32)s_style_base.win_border      * scale );
-    s_style.checkbox_sz     = (u32)( (f32)s_style_base.checkbox_sz     * scale );
-    s_style.slider_knob_w   = (u32)( (f32)s_style_base.slider_knob_w   * scale );
-    s_style.min_cell_w      = (u32)( (f32)s_style_base.min_cell_w      * scale );
-    s_style.checkmark_pad   = (u32)( (f32)s_style_base.checkmark_pad   * scale );
-    s_style.cursor_w        = (u32)( (f32)s_style_base.cursor_w        * scale );
-    s_style.cursor_inset    = (u32)( (f32)s_style_base.cursor_inset    * scale );
-    s_style.win_rounding    = (u32)( (f32)s_style_base.win_rounding    * scale );
-    s_style.widget_rounding = (u32)( (f32)s_style_base.widget_rounding * scale );
-    s_style.grab_rounding   = (u32)( (f32)s_style_base.grab_rounding   * scale );
+    s_style.line_size       = (u8)( (f32)s_style_base.line_size       * scale );
+    s_style.widget_gap      = (u8)( (f32)s_style_base.widget_gap      * scale );
+    s_style.widget_pad      = (u8)( (f32)s_style_base.widget_pad      * scale );
+    s_style.win_title_h     = (u8)( (f32)s_style_base.win_title_h     * scale );
+    s_style.win_border      = (u8)( (f32)s_style_base.win_border      * scale );
+    s_style.checkbox_sz     = (u8)( (f32)s_style_base.checkbox_sz     * scale );
+    s_style.slider_knob_w   = (u8)( (f32)s_style_base.slider_knob_w   * scale );
+    s_style.min_cell_w      = (u8)( (f32)s_style_base.min_cell_w      * scale );
+    s_style.checkmark_pad   = (u8)( (f32)s_style_base.checkmark_pad   * scale );
+    s_style.cursor_w        = (u8)( (f32)s_style_base.cursor_w        * scale );
+    s_style.cursor_inset    = (u8)( (f32)s_style_base.cursor_inset    * scale );
+    s_style.win_rounding    = (u8)( (f32)s_style_base.win_rounding    * scale );
+    s_style.widget_rounding = (u8)( (f32)s_style_base.widget_rounding * scale );
+    s_style.grab_rounding   = (u8)( (f32)s_style_base.grab_rounding   * scale );
 
     /* Prevent vanishing outlines or cursors when scaling down. */
     if ( s_style.win_border == 0 && s_style_base.win_border > 0 ) s_style.win_border = 1u;
@@ -169,8 +169,8 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 
     /* Floor the row height to the font's glyph box and line advance so a tall-boxed font
        (e.g. one with deep descenders) never clips and a single line of text always fits. */
-    if ( s_style.line_size < char_h ) s_style.line_size = char_h;
-    if ( s_style.line_size < line_h ) s_style.line_size = line_h;
+    if ( s_style.line_size < char_h ) s_style.line_size = (u8)( char_h );
+    if ( s_style.line_size < line_h ) s_style.line_size = (u8)( line_h );
 }
 
 /* The shared stateless helpers (saturate, clampf, rect_intersect) live in gui_internal.h as
