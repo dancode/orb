@@ -81,7 +81,7 @@ fb_scan( void )
 }
 
 static void
-show_font_browser( void )
+show_font_browser( bool* p_open )
 {
     /* Lazy init on first open. */
     if ( !s_fb.scanned )
@@ -92,8 +92,15 @@ show_font_browser( void )
         fb_scan();
     }
 
+    /* Re-open: clear closed state so window_begin finds the window open.
+       window_set_open is a no-op when the record does not yet exist. */
+    gui()->window_set_open( "Font Browser", true );
+
+    // gui()->window_set_next_pos( 320.0f, 60.0f, GUI_COND_ONCE );
     if ( !gui()->window_begin( "Font Browser", GUI_WIN_CLOSEABLE ) )
     {
+        /* X button was clicked -- sync back to the caller's bool. */
+        if ( p_open ) *p_open = false;
         gui()->window_end();
         return;
     }
@@ -103,7 +110,7 @@ show_font_browser( void )
     gui()->separator_text( "Source" );
 
     /* Row: combo (fill) | size slider (80 px) | bake button (130 px) */
-    static const f32 src_row[] = { 0.0f, 80.0f, 130.0f, GUI_END };
+    static const f32 src_row[] = { 1.0f, 80.0f, 130.0f, GUI_END };
     gui()->row_cols( 0.0f, src_row );
 
     const char* combo_label = ( s_fb.count > 0 ) ? s_fb.names[ s_fb.sel ] : "(no fonts)";
@@ -207,16 +214,16 @@ show_font_browser( void )
 // - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
-static bool show_demo = true;
+static bool show_demo             = true;
+static bool show_font_browser_win = true;
 static void show_example_main_menu_bar()
 {
     if ( gui()->main_menu_bar_begin() )
     {
         if ( gui()->menu_begin( "Examples" ) )
         {
-            gui()->menu_item( "Demo Window", NULL, &show_demo );
-            if ( gui()->menu_item( "Font Browser", NULL, NULL ) )
-                gui()->window_set_open( "Font Browser", true );
+            gui()->menu_item( "Demo Window",    NULL, &show_demo );
+            gui()->menu_item( "Font Browser",   NULL, &show_font_browser_win );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -499,7 +506,8 @@ main( int argc, char** argv )
             if ( show_demo )
                 show_demo_window( &show_demo );
 
-            show_font_browser();
+            if ( show_font_browser_win )
+                show_font_browser( &show_font_browser_win );
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
 

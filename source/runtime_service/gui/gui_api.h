@@ -406,12 +406,12 @@ typedef struct gui_api_s
        A region opens UNDECLARED: the first header below names the mode (stack / columns / grid /
        form / ...), and a widget emitted before any header is a usage error (debug assert; release
        falls back to a stack).  The template then persists + repeats for every widget until set
-       again.  Sizes use one overloaded f32: >1 px, (0,1] fraction of the available space, 0 flex
-       (equal share of the rest), <0 ends the list (GUI_END).  Widgets fill whatever cell they
-       are handed, agnostic to the shape.
+       again.  Sizes use one overloaded f32: >1 px, (0,1) fraction of the available space, 1 fill
+       (equal share of the rest), 0 natural (zero-width; reserved), <0 ends the list (GUI_END).
+       Widgets fill whatever cell they are handed, agnostic to the shape.
 
            gui()->row_cols_n( 0, 2 );  gui()->button("A");  gui()->button("B");  // two columns
-           gui()->row_cols( 24, (f32[]){ 200, 0, GUI_END } );                     // 200px + fill
+           gui()->row_cols( 24, (f32[]){ 200, 1, GUI_END } );                     // 200px + fill
 
        stack()      -- single full-width flex column, scrolling: the canonical vertical-list header
                          (what a region used to be by default; now declared explicitly).

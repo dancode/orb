@@ -474,6 +474,14 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        state the user then interacts with.  `appearing` is the first begin (last_frame 0) or the
        first begin after a frame of absence -- it renews the one-shot APPEARING permission. */
     bool appearing = ( win->last_frame == 0u ) || ( win->last_frame != s_retained.frame - 1u );
+
+    /* Raise to front on every appearance: first creation and re-opens both get a fresh z
+       above all currently-live windows, so no two windows ever share a z on their first
+       visible frame.  Re-opened windows surface on top rather than re-using a stale z
+       that may sit below windows that were raised while they were closed. */
+    if ( appearing )
+        win->z = ++s_z_counter;
+
     window_apply_next( win, appearing );
     win->last_frame = s_retained.frame;
 

@@ -81,7 +81,9 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
         if ( s_windows[ i ].id == id )
             return &s_windows[ i ];
 
-    /* First time seen: seed from the caller's initial geometry, place on top. */
+    /* First time seen: seed from the caller's initial geometry.  z is left 0 here;
+       window_begin_ex stamps a fresh z on every appearance (first frame and re-opens),
+       so new and re-opened windows always land on top with no two starting at the same z. */
     gui_window_t* win = ( s_window_count < g_ctx->max_windows )
                         ? &s_windows[ s_window_count++ ]
                         : &s_window_scratch;   /* table full: transient, not persisted */
@@ -90,7 +92,7 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->y         = y;
     win->w         = w;
     win->h         = h;
-    win->z         = ++s_z_counter;
+    win->z         = 0;
     win->viewport  = s_build.cur_viewport;   /* inherit ambient; window_set_next_viewport overrides */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
     win->closed    = false;   /* a freshly seen window starts open                */
