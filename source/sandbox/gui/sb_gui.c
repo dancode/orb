@@ -225,11 +225,11 @@ main( int argc, char** argv )
         if ( dev_font_get( "JetBrainsMonoNL-Regular.ttf", 16, font_path, sizeof( font_path ) ) )
             gui()->font_load( font_path );
         else
-            gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
+            gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
     }
     else
     {
-        gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
+        gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
     }
 
     vp0 = gui()->viewport_open( win );

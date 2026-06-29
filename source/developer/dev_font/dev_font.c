@@ -259,7 +259,7 @@ bake_font( const char* ttf_path, int size_px, const char* out_path )
         return false;
     }
 
-    float scale = stbtt_ScaleForPixelHeight( &font_info, (float)size_px );
+    float scale = stbtt_ScaleForMappingEmToPixels( &font_info, (float)size_px );
 
     int stbtt_ascent_u, stbtt_descent_u, stbtt_line_gap_u;
     stbtt_GetFontVMetrics( &font_info, &stbtt_ascent_u, &stbtt_descent_u, &stbtt_line_gap_u );

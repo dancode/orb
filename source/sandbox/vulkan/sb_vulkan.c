@@ -148,9 +148,9 @@ main( int argc, char** argv )
         return 1;
     }
     
-    gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
- // gui()->font_load( "fonts/jetbrains_regular_24.orb_font" );
- // gui()->font_load( "fonts/jetbrains_bold_24.orb_font" );
+    gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
+ // gui()->font_load( "assets/font/jetbrains_regular_24.orb_font" );
+ // gui()->font_load( "assets/font/jetbrains_bold_24.orb_font" );
     gui()->print_mem_stats();
     
     /* Open the primary viewport for the main window.  This creates its GPU geometry buffers and
