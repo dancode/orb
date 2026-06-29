@@ -64,9 +64,9 @@ if "%EMBED_MANIFEST%"=="1" (
 
 echo [bootstrap] Compiling build_tool.exe...
 if "%EMBED_MANIFEST%"=="1" (
-    cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 /DBUILD_TOOL_EMBED_MANIFEST source/tools/build_tool/build_tool.c %RES_FILE% /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe /link /MANIFEST:EMBED /MANIFESTINPUT:source\tools\build_tool\build_tool.manifest
+    cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 /guard:cf /DBUILD_TOOL_EMBED_MANIFEST source/tools/build_tool/build_tool.c %RES_FILE% /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe /link /guard:cf /MANIFEST:EMBED /MANIFESTINPUT:source\tools\build_tool\build_tool.manifest
 ) else (
-    cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 source/tools/build_tool/build_tool.c /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe
+    cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 /guard:cf source/tools/build_tool/build_tool.c /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe /link /guard:cf
 )
 
 if %errorlevel% neq 0 (

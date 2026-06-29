@@ -131,6 +131,17 @@ init_builtin_targets( void )
         t->is_build_tool = true;
         t->is_tool       = true;
         t->is_external   = is_external;
+        // /guard:cf on both compiler and linker writes a CFG bitmap into the PE header,
+        // which EDRs read as a positive trust signal (marks the binary as memory-safe).
+        t->extra_compile_flags[ 0 ].compiler = COMPILE_MSVC;
+        snprintf( t->extra_compile_flags[ 0 ].flag,
+                  sizeof( t->extra_compile_flags[ 0 ].flag ), "/guard:cf" );
+        t->extra_compile_flag_count = 1;
+
+        t->extra_link_flags[ 0 ].compiler = COMPILE_MSVC;
+        snprintf( t->extra_link_flags[ 0 ].flag,
+                  sizeof( t->extra_link_flags[ 0 ].flag ), "/guard:cf" );
+        t->extra_link_flag_count = 1;
     }
 
     // reflect_tool: the reflection code generator.
