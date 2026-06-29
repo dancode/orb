@@ -97,6 +97,7 @@ show_font_browser( bool* p_open )
     gui()->window_set_open( "Font Browser", true );
 
     // gui()->window_set_next_pos( 320.0f, 60.0f, GUI_COND_ONCE );
+    // gui()->window_set_next_size( 128.0f, 128.0f, GUI_COND_ONCE );
     if ( !gui()->window_begin( "Font Browser", GUI_WIN_CLOSEABLE ) )
     {
         /* X button was clicked -- sync back to the caller's bool. */
@@ -104,6 +105,14 @@ show_font_browser( bool* p_open )
         gui()->window_end();
         return;
     }
+
+    bool skip_body =  true;
+    if ( skip_body )
+    {
+        gui()->window_end();
+        return;
+    }
+
     gui()->stack();
 
     /* --- Source ---------------------------------------------------------------- */
@@ -272,6 +281,14 @@ show_demo_window(bool* p_open)
         gui()->window_end();
         return;
     }
+
+    bool skip_body =  true;
+    if ( skip_body )
+    {
+        gui()->window_end();
+        return;
+    }
+
     gui()->stack();
     gui()->text("This is some useful text."); gui()->same_line(0);
     gui()->help_marker("This is a help marker for the text above.\nIt can be very useful to explain things.");
@@ -412,6 +429,8 @@ main( int argc, char** argv )
     {
         gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
     }
+
+    gui()->set_retained_skip( true );
 
     vp0 = gui()->viewport_open( win );
     if ( vp0 == GUI_VP_INVALID ) {

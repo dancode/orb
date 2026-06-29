@@ -226,7 +226,7 @@ static void
 cache_diff_windows( void )
 {
     const gui_cmd_seg_t* segs = s_draw.segs;
-    u32                    nseg = s_draw.seg_count;
+    u32                  nseg = s_draw.seg_count;
 
     /* Roll each segment's pre-baked command hashes into its window's accumulated hash, also tracking
        max-z (dispatch order) and last-vp (surface routing) so the slot loop needs no second scan.
@@ -482,6 +482,7 @@ cache_build_frame( void )
             slot->idx_base         = s_tess.idx_count;
             slot->cmd_base         = s_tess.cmd_count;
             s_tess.slot_vert_base  = s_tess.vert_count;
+            s_tess.force_new_cmd   = true;
 
             cache_tess_window( wh->win );
 

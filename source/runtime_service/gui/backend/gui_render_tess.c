@@ -49,6 +49,12 @@ static struct
        time vertex_offset = slot.vert_base shifts them to the correct absolute VB position. */
     u32 slot_vert_base;
 
+    /* Set before each cache_tess_window call so tess_ensure_gpu_cmd always opens a fresh
+       command for the first primitive of a new slot, even when the previous slot's last
+       command shares the same clip/tex/vp (same-position windows would otherwise merge
+       across the slot boundary and corrupt elem_count + first_index tracking). */
+    bool force_new_cmd;
+
     u32  vert_hwm, idx_hwm;
     bool overflow, overflow_ever;
 
@@ -138,6 +144,7 @@ tess_reset( void )
     s_tess.idx_count       = 0;
     s_tess.cmd_count       = 0;
     s_tess.slot_vert_base  = 0;
+    s_tess.force_new_cmd   = false;
     s_tess.overflow        = false;
 }
 
@@ -148,7 +155,7 @@ tess_reset( void )
 static void
 tess_ensure_gpu_cmd( u32 tex_idx )
 {
-    if ( s_tess.cmd_count > 0 )
+    if ( s_tess.cmd_count > 0 && !s_tess.force_new_cmd )
     {
         const gui_gpu_cmd_t* cur = &s_tess.cmds[ s_tess.cmd_count - 1 ];
         if ( s_tess.cmd_vp[ s_tess.cmd_count - 1 ] == s_tess.cur_vp
@@ -159,6 +166,7 @@ tess_ensure_gpu_cmd( u32 tex_idx )
           && cur->clip_rect.h   == s_tess.cur_clip.h )
             return;
     }
+    s_tess.force_new_cmd = false;
     if ( s_tess.cmd_count >= GUI_MAX_CMDS )
         return;
     s_tess.cmd_vp   [ s_tess.cmd_count ] = s_tess.cur_vp;
