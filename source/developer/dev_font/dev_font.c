@@ -27,6 +27,7 @@
 #include "orb.h"
 
 PUSH_WARNINGS
+#define STBRP_STATIC                        /* keep all stbrp_* symbols TU-local; gui.lib also exports them */
 #define STB_RECT_PACK_IMPLEMENTATION
 #include "developer/dev_font/stb_rect_pack.h"
 #define STB_TRUETYPE_IMPLEMENTATION

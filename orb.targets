@@ -411,6 +411,7 @@ target sb_vulkan						# vulkan development and testing
     unit        sb_vulkan_gui.c
     dep         sys ref mod core job app
 	dep 		run rhi draw gui
+	dep         dev_font
 	mono_dep 	render
   # flag        reflect
 
@@ -431,6 +432,7 @@ target sb_gui
     unit        sb_gui.c
     dep         sys ref mod core job app
 	dep 		run rhi draw gui
+	dep         dev_font
 	mono_dep 	render
 
 # ==============================================================================
@@ -538,10 +540,10 @@ solution orb_runtime
 	# 			--- PROJECT --- 
 	add 		sample_game
 
-	# 			--- DEVELOPER --- 
-    add         dev_build dev_hot
-	
-	# 			--- HOSTS -- 
+	# 			--- DEVELOPER ---
+    add         dev_build dev_hot dev_font
+
+	# 			--- HOSTS --
     add         host_common
 
 	#			--- EXECUTABLE ---
@@ -629,6 +631,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		gui 					# gui lbrary
 	
 	add 		render 					# render dll
+	add 		dev_font				# dev-only font baker
 
 	add 		sb_vulkan				# exe
 	add 		sb_gui					# gui demo
@@ -684,7 +687,7 @@ solution orb_all
 	
     add         example example_reflect example_gen
     add         game nav game_example
-    add         dev_build dev_hot
+    add         dev_build dev_hot dev_font
 	
     add         host_common
 	

@@ -17,6 +17,7 @@
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_service/gui/gui_host.h"
+#include "developer/dev_font/dev_font.h"
 
 // clang-format off
 
@@ -215,8 +216,21 @@ main( int argc, char** argv )
          goto shutdown;
     }
     gui_inited = true;
-    
-    gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
+
+    bool use_stb_font = true;
+    if ( use_stb_font )
+    {
+        dev_font_init( NULL );
+        char font_path[ 512 ];
+        if ( dev_font_get( "JetBrainsMonoNL-Regular.ttf", 16, font_path, sizeof( font_path ) ) )
+            gui()->font_load( font_path );
+        else
+            gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
+    }
+    else
+    {
+        gui()->font_load( "fonts/jetbrains_regular_16.orb_font" );
+    }
 
     vp0 = gui()->viewport_open( win );
     if ( vp0 == GUI_VP_INVALID ) {
@@ -350,6 +364,7 @@ shutdown:
     if ( draw_inited ) draw()->shutdown();
     if ( rhi_inited ) rhi()->shutdown();
     if ( win != APP_WIN_INVALID ) app()->window_close( win );
+    dev_font_shutdown();
     mod_system_exit();
     return ret_code;
 }
