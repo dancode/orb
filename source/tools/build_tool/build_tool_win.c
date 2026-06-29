@@ -315,6 +315,82 @@ platform_unmap_file( platform_mapped_file_t* m )
     m->_map  = NULL;
 }
 
+#if defined( BUILD_SAFE_MODE )
+
+/*==============================================================================================
+    --- Safe-Mode File Deletion Helpers ---
+
+    Used by build_clean() in safe mode to avoid spawning cmd.exe for del / rd.
+    All three functions are silent on error -- file-not-found during clean is expected.
+==============================================================================================*/
+
+/* Delete a single file by path. */
+static void
+platform_delete_file_quiet( const char* path )
+{
+    DeleteFileA( path );
+}
+
+/* Delete all non-directory entries in dir whose name matches glob (e.g. "*.pdb"). */
+static void
+platform_delete_glob_quiet( const char* dir, const char* glob )
+{
+    char pattern[ PATH_MAX ];
+    snprintf( pattern, sizeof( pattern ), "%s\\%s", dir, glob );
+
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA( pattern, &fd );
+    if ( h == INVALID_HANDLE_VALUE ) return;
+
+    do
+    {
+        if ( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ) continue;
+        char path[ PATH_MAX ];
+        snprintf( path, sizeof( path ), "%s\\%s", dir, fd.cFileName );
+        DeleteFileA( path );
+    }
+    while ( FindNextFileA( h, &fd ) );
+
+    FindClose( h );
+}
+
+/* Recursively remove a directory tree (files first, then the directory itself). */
+static void
+platform_rmdir_quiet( const char* path )
+{
+    char pattern[ PATH_MAX ];
+    snprintf( pattern, sizeof( pattern ), "%s\\*", path );
+
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA( pattern, &fd );
+    if ( h != INVALID_HANDLE_VALUE )
+    {
+        do
+        {
+            /* Skip . and .. */
+            if ( fd.cFileName[ 0 ] == '.' &&
+                 ( fd.cFileName[ 1 ] == '\0' ||
+                   ( fd.cFileName[ 1 ] == '.' && fd.cFileName[ 2 ] == '\0' ) ) )
+                continue;
+
+            char child[ PATH_MAX ];
+            snprintf( child, sizeof( child ), "%s\\%s", path, fd.cFileName );
+
+            if ( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY )
+                platform_rmdir_quiet( child );
+            else
+                DeleteFileA( child );
+        }
+        while ( FindNextFileA( h, &fd ) );
+
+        FindClose( h );
+    }
+
+    RemoveDirectoryA( path );
+}
+
+#endif
+
 // clang-format on
 /*============================================================================================*/
 #endif

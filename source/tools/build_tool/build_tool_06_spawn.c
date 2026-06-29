@@ -40,6 +40,7 @@ build_run_cmd( const char* cmd )
     return rc;
 }
 
+#if !defined( BUILD_SAFE_MODE )
 /* Like build_run_cmd() but routes through cmd.exe /c so shell built-ins (del, rd)
    and output redirections (>nul 2>nul) work. Errors are suppressed -- used by
    build_clean() where "file not found" is expected and the caller prints a summary. */
@@ -51,6 +52,7 @@ build_run_cmd_quiet( const char* cmd )
     snprintf( shell_cmd, sizeof( shell_cmd ), "cmd.exe /c %s", cmd );
     return platform_spawn( shell_cmd, sched_log_path() );
 }
+#endif
 
 /*==============================================================================================
     --- Include Line Classification ---

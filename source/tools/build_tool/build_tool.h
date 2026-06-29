@@ -67,6 +67,42 @@
 
 // clang-format off
 
+/*  Uncomment to build in safe mode for machines with EDR / aggressive threat protection.
+    Disables all cmd.exe and _popen call paths:
+      - vcvarsall auto-import: disabled. Run from a Developer Command Prompt instead.
+      - vswhere discovery via _popen: skipped. VS found via hardcoded paths only.
+      - build_clean(): uses Win32 API (DeleteFileA / RemoveDirectoryA), no del / rd.
+    All original code is preserved under #else and restored by removing this define. */
+
+/*
+    What was changed : Change update for BUILD_SAFE_MODE -- don't remove for now.
+
+    build_tool.h
+    - Added #define BUILD_SAFE_MODE with a doc comment — uncomment to activate
+    - Guarded the build_run_cmd_quiet declaration with #if !defined( BUILD_SAFE_MODE )
+    
+    build_tool_win.c
+    - Added three Win32 helpers inside #if defined( BUILD_SAFE_MODE ):
+      - platform_delete_file_quiet(path) — DeleteFileA, silent
+      - platform_delete_glob_quiet(dir, glob) — FindFirstFileA loop + DeleteFileA
+      - platform_rmdir_quiet(path) — recursive RemoveDirectoryA
+    
+    build_tool_04_env.c (the main EDR trigger)
+    - locate_vcvarsall(): vswhere _popen loop wrapped in #if !defined( BUILD_SAFE_MODE ) — hardcoded path fallback always runs
+    - build_setup_vc_env(): after fast paths 1+2, safe mode prints a clear message and returns; original vcvars import under #else
+    
+    build_tool_06_spawn.c
+    - build_run_cmd_quiet() definition wrapped in #if !defined( BUILD_SAFE_MODE )
+    
+    build_tool_11_clean.c
+    - Safe-mode build_clean() uses platform_delete_file_quiet / platform_delete_glob_quiet / platform_rmdir_quiet directly — no child processes
+    - Original del_q() + build_clean() preserved under #else
+*/
+
+/* #define BUILD_SAFE_MODE */
+
+#define BUILD_SAFE_MODE
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -685,6 +721,7 @@ void  build_unlock_target( void* lock );
 
 int build_run_cmd( const char* cmd );
 
+#if !defined( BUILD_SAFE_MODE )
 /*  Like build_run_cmd but routes through the shell (cmd.exe /c on Win32) so
     shell builtins (del, rd) and output redirections (>nul 2>nul) work. Used for
     housekeeping invocations such as build_clean() where "file not found" is
@@ -692,6 +729,7 @@ int build_run_cmd( const char* cmd );
     line per call. */
 
 int build_run_cmd_quiet( const char* cmd );
+#endif
 
 /*  Pipes the child's stdout+stderr back line-by-line through us. When
     includes_path is non-NULL, /showIncludes lines are parsed out and written

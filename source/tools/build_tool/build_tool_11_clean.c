@@ -16,8 +16,104 @@
         full clean. They are rebuilt on demand by dep resolution, not by VS, so
         deleting them would leave no path to recreate them.
 
+    BUILD_SAFE_MODE: uses Win32 API (DeleteFileA / RemoveDirectoryA) directly so
+    no cmd.exe child process is spawned. Original del/rd path preserved under #else.
+
 ==============================================================================================*/
 // clang-format off
+
+#if defined( BUILD_SAFE_MODE )
+
+/*==============================================================================================
+    Safe-mode clean: Win32 API only, no cmd.exe or shell built-ins.
+==============================================================================================*/
+
+void
+build_clean( target_info_t* target )
+{
+    char path[ PATH_MAX ];
+
+    if ( target )
+    {
+        const char* ext = ( target->type == TARGET_STATIC_LIB )  ? "lib"
+                        : ( target->type == TARGET_DYNAMIC_LIB ) ? "dll"
+                        :                                          "exe";
+
+        snprintf( path, sizeof( path ), "bin\\%s.%s", target->name, ext );
+        platform_delete_file_quiet( path );
+
+        if ( target->type == TARGET_DYNAMIC_LIB )
+        {
+            // Cover both monolithic (.lib primary) and dynamic (.dll primary)
+            // outputs plus the import .exp.
+            snprintf( path, sizeof( path ), "bin\\%s.lib", target->name );
+            platform_delete_file_quiet( path );
+            snprintf( path, sizeof( path ), "bin\\%s.dll", target->name );
+            platform_delete_file_quiet( path );
+            snprintf( path, sizeof( path ), "bin\\%s.exp", target->name );
+            platform_delete_file_quiet( path );
+        }
+
+        char pdb_glob[ 128 ];
+        snprintf( pdb_glob, sizeof( pdb_glob ), "%s_*.pdb", target->name );
+        platform_delete_glob_quiet( "bin", pdb_glob );
+
+        char obj_dir[ PATH_MAX ];
+        snprintf( obj_dir, sizeof( obj_dir ), "%s\\%s\\%s", g_build_dir, g_int_dir, target->name );
+        platform_rmdir_quiet( obj_dir );
+
+        if ( target->has_reflect )
+        {
+            const char* rname = target->reflect_name ? target->reflect_name : target->name;
+            snprintf( path, sizeof( path ), "%s\\%s\\%s.generated.c", g_build_dir, g_gen_dir, rname );
+            platform_delete_file_quiet( path );
+            snprintf( path, sizeof( path ), "%s\\%s\\%s.generated.h", g_build_dir, g_gen_dir, rname );
+            platform_delete_file_quiet( path );
+        }
+
+        printf( ORB_BANNER "[orb clean] %s -- bin\\%s.%s, %s\\%s\\%s%s\n",
+                target->name, target->name, ext,
+                g_build_dir, g_int_dir, target->name,
+                target->has_reflect ? " (+reflect)" : "" );
+    }
+    else
+    {
+        // Remove the entire obj and generated subtrees; the next build's
+        // ensure_dir() calls recreate them.
+        char obj_root[ PATH_MAX ], gen_root[ PATH_MAX ];
+        snprintf( obj_root, sizeof( obj_root ), "%s\\%s", g_build_dir, g_int_dir );
+        snprintf( gen_root, sizeof( gen_root ), "%s\\%s", g_build_dir, g_gen_dir );
+        platform_rmdir_quiet( obj_root );
+        platform_rmdir_quiet( gen_root );
+
+        platform_delete_glob_quiet( "bin", "*.pdb" );
+        platform_delete_glob_quiet( "bin", "*.lib" );
+        platform_delete_glob_quiet( "bin", "*.dll" );
+        platform_delete_glob_quiet( "bin", "*.exp" );
+
+        // Delete executables only for non-tool targets. is_tool executables
+        // (reflect_tool, build_tool) are rebuilt by dep resolution and have no
+        // VS project to rebuild them after a clean, so leave them in place.
+        for ( int i = 0; i < g_target_count; ++i )
+        {
+            if ( g_targets[ i ].is_external ) continue;
+            if ( g_targets[ i ].type == TARGET_EXECUTABLE && !g_targets[ i ].is_tool )
+            {
+                snprintf( path, sizeof( path ), "bin\\%s.exe", g_targets[ i ].name );
+                platform_delete_file_quiet( path );
+            }
+        }
+
+        printf( ORB_BANNER "[orb clean] all -- bin\\*, %s\\{%s,%s}\\*\n",
+                g_build_dir, g_int_dir, g_gen_dir );
+    }
+}
+
+#else
+
+/*==============================================================================================
+    Standard clean: cmd.exe / del / rd path (original implementation).
+==============================================================================================*/
 
 /* Silently delete a file or directory using a format string. Suppresses
    both stdout and stderr so "file not found" errors don't pollute the log. */
@@ -98,6 +194,8 @@ build_clean( target_info_t* target )
                 g_build_dir, g_int_dir, g_gen_dir );
     }
 }
+
+#endif
 
 // clang-format on
 /*============================================================================================*/

@@ -39,7 +39,9 @@ static bool s_vcvars_cache_enabled = true;
 static bool
 locate_vcvarsall( char* out, size_t out_size )
 {
+#if !defined( BUILD_SAFE_MODE )
     // Three candidate paths cover default installs and non-standard Program Files locations.
+    // vswhere spawns cmd.exe via _popen -- skipped in safe mode.
     const char* vswhere_paths[] = {
         "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
         "\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
@@ -73,6 +75,7 @@ locate_vcvarsall( char* out, size_t out_size )
             if ( platform_file_exists( out ) ) return true;
         }
     }
+#endif
 
     // vswhere missing or unhelpful -- fall back to probing well-known install locations.
     const char* common[] = {
@@ -241,6 +244,12 @@ build_setup_vc_env( void )
             return;
     }
 
+#if defined( BUILD_SAFE_MODE )
+    /* vcvarsall auto-import uses _popen(cmd.exe) -- disabled in safe mode. */
+    printf( ORB_INDENT "[orb warn] BUILD_SAFE_MODE: vcvarsall auto-import disabled.\n" );
+    printf( ORB_INDENT "           Run from a Developer Command Prompt to reach cl.exe.\n" );
+    return;
+#else
     if ( g_out_flags & ORB_OUT_VCVARS )
         printf( ORB_INDENT "[orb vcvars] VSCMD_ARG_TGT_ARCH != x64, locating Visual Studio...\n" );
 
@@ -254,7 +263,7 @@ build_setup_vc_env( void )
     // Fast path 3: valid cache -- skip the vcvarsall subprocess entirely.
     if ( s_vcvars_cache_enabled )
     {
-        // If VS updates and touches vcvarsall.bat, the cache is stale and 
+        // If VS updates and touches vcvarsall.bat, the cache is stale and
         // the next run does a full re-import and rewrites it
         platform_mtime_t cache_mtime  = platform_get_mtime( VCVARS_CACHE_PATH );
         platform_mtime_t vcvars_mtime = platform_get_mtime( vcvars_path );
@@ -282,6 +291,7 @@ build_setup_vc_env( void )
         if ( write_cache )
             printf( ORB_INDENT "[orb vcvars] cache written: %s\n", write_cache );
     }
+#endif
 
 #endif
 }
