@@ -59,5 +59,9 @@ bool        dev_font_get( const char* ttf_path, int size_px,
 
 const char* dev_font_last_error( void );
 
+/* Absolute path of the font_source/ directory (where dev_font_get searches for bare filenames).
+   Returns false if dev_font_init() has not been called. */
+bool        dev_font_source_dir( char* out_path, int out_path_size );
+
 /*============================================================================================*/
 #endif  /* DEV_FONT_H */

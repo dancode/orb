@@ -510,5 +510,13 @@ dev_font_get( const char* ttf_path, int size_px, char* out_path, int out_path_si
     return true;
 }
 
+bool
+dev_font_source_dir( char* out_path, int out_path_size )
+{
+    if ( !g_rt.initialized ) return false;
+    snprintf( out_path, (size_t)out_path_size, "%s", g_rt.font_source_dir );
+    return true;
+}
+
 // clang-format on
 /*============================================================================================*/

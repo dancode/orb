@@ -29,6 +29,178 @@ struct
 
 } demo_data;
 
+/*============================================================================================*/
+/* Font browser state                                                                          */
+/*============================================================================================*/
+
+#define FB_FONT_MAX 32
+#define FB_NAME_MAX 128
+
+typedef struct
+{
+    char names[ FB_FONT_MAX ][ FB_NAME_MAX ];
+    int  count;
+    int  sel;
+    bool scanned;
+    i32  size_px;
+    u32  preview_id;
+    bool preview_ready;
+    char preview_ttf [ FB_NAME_MAX ];
+    i32  preview_size;
+    char custom_text [ 256 ];
+    char status      [ 256 ];
+    bool status_ok;
+
+} font_browser_t;
+
+static font_browser_t s_fb;
+
+static bool
+fb_scan_cb( const char* filename, const char* full_path, void* userdata )
+{
+    UNUSED( full_path );
+    UNUSED( userdata );
+    if ( s_fb.count < FB_FONT_MAX )
+        snprintf( s_fb.names[ s_fb.count++ ], FB_NAME_MAX, "%s", filename );
+    return true;
+}
+
+static void
+fb_scan( void )
+{
+    s_fb.count = 0;
+    char src[ 512 ];
+    if ( dev_font_source_dir( src, sizeof( src ) ) )
+    {
+        sys_file_glob( src, "*.ttf", fb_scan_cb, NULL );
+        sys_file_glob( src, "*.otf", fb_scan_cb, NULL );
+    }
+    s_fb.scanned = true;
+    snprintf( s_fb.status, sizeof( s_fb.status ), "Found %d font(s) in font_source/", s_fb.count );
+    s_fb.status_ok = true;
+}
+
+static void
+show_font_browser( void )
+{
+    /* Lazy init on first open. */
+    if ( !s_fb.scanned )
+    {
+        s_fb.size_px = 16;
+        snprintf( s_fb.custom_text, sizeof( s_fb.custom_text ),
+                  "The quick brown fox jumps over the lazy dog." );
+        fb_scan();
+    }
+
+    if ( !gui()->window_begin( "Font Browser", GUI_WIN_CLOSEABLE ) )
+    {
+        gui()->window_end();
+        return;
+    }
+    gui()->stack();
+
+    /* --- Source ---------------------------------------------------------------- */
+    gui()->separator_text( "Source" );
+
+    /* Row: combo (fill) | size slider (80 px) | bake button (130 px) */
+    static const f32 src_row[] = { 0.0f, 80.0f, 130.0f, GUI_END };
+    gui()->row_cols( 0.0f, src_row );
+
+    const char* combo_label = ( s_fb.count > 0 ) ? s_fb.names[ s_fb.sel ] : "(no fonts)";
+    if ( gui()->combo_begin( "##ttf", combo_label, GUI_COMBO_NONE ) )
+    {
+        for ( int i = 0; i < s_fb.count; i++ )
+        {
+            bool sel = ( i == s_fb.sel );
+            if ( gui()->selectable( s_fb.names[ i ], &sel ) )
+                s_fb.sel = i;
+        }
+        gui()->combo_end();
+    }
+
+    gui()->slider_int( "##size", &s_fb.size_px, 6, 64 );
+
+    gui()->disabled_begin( s_fb.count == 0 );
+    bool bake = gui()->button( "Bake & Preview" );
+    gui()->disabled_end();
+
+    /* Refresh + status below the source row. */
+    gui()->stack();
+    if ( gui()->small_button( "Refresh List" ) )
+        fb_scan();
+
+    if ( s_fb.status[ 0 ] )
+    {
+        if ( s_fb.status_ok )
+            gui()->text_disabled( s_fb.status );
+        else
+            gui()->text_colored( GUI_COLOR( 0xFF, 0x60, 0x60, 0xFF ), s_fb.status );
+    }
+
+    /* --- Bake ------------------------------------------------------------------ */
+    if ( bake && s_fb.count > 0 )
+    {
+        char path[ 512 ];
+        if ( dev_font_get( s_fb.names[ s_fb.sel ], s_fb.size_px, path, sizeof( path ) ) )
+        {
+            if ( !s_fb.preview_ready )
+            {
+                u32 id = gui()->font_load( path );
+                if ( id )
+                {
+                    s_fb.preview_id    = id;
+                    s_fb.preview_ready = true;
+                }
+            }
+            else
+            {
+                gui()->font_load_into( s_fb.preview_id, path );
+            }
+            snprintf( s_fb.preview_ttf, sizeof( s_fb.preview_ttf ), "%s",
+                      s_fb.names[ s_fb.sel ] );
+            s_fb.preview_size = s_fb.size_px;
+            snprintf( s_fb.status, sizeof( s_fb.status ), "Loaded: %s at %d px",
+                      s_fb.preview_ttf, s_fb.preview_size );
+            s_fb.status_ok = true;
+        }
+        else
+        {
+            snprintf( s_fb.status, sizeof( s_fb.status ), "Error: %s", dev_font_last_error() );
+            s_fb.status_ok = false;
+        }
+    }
+
+    /* --- Preview --------------------------------------------------------------- */
+    if ( s_fb.preview_ready )
+    {
+        gui()->separator_text( "Preview" );
+
+        gui()->input_text_with_hint( "##custom", "Custom preview text...",
+                                     s_fb.custom_text, sizeof( s_fb.custom_text ) );
+        gui()->spacing( 0.0f );
+
+        gui()->push_font( s_fb.preview_id );
+        gui()->stack();
+        if ( s_fb.custom_text[ 0 ] )
+            gui()->text( s_fb.custom_text );
+        gui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
+        gui()->text( "abcdefghijklmnopqrstuvwxyz" );
+        gui()->text( "0123456789  !@#$%^&*()-+=[]{};" );
+        gui()->pop_font();
+
+        /* --- Apply ------------------------------------------------------------- */
+        gui()->separator_text( "Apply" );
+        gui()->textf( "Preview: %s  %d px", s_fb.preview_ttf, s_fb.preview_size );
+        if ( gui()->button( "Use Font" ) )
+            gui()->font_use( s_fb.preview_id );
+    }
+
+    gui()->window_end();
+}
+
+/*============================================================================================*/
+/* Demo setup                                                                                  */
+/*============================================================================================*/
 
 // Demonstrate creating a "main" fullscreen menu bar and populating it.
 // Note the difference between BeginMainMenuBar() and BeginMenuBar():
@@ -43,6 +215,8 @@ static void show_example_main_menu_bar()
         if ( gui()->menu_begin( "Examples" ) )
         {
             gui()->menu_item( "Demo Window", NULL, &show_demo );
+            if ( gui()->menu_item( "Font Browser", NULL, NULL ) )
+                gui()->window_set_open( "Font Browser", true );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -322,8 +496,10 @@ main( int argc, char** argv )
 
             show_example_main_menu_bar();
 
-            if ( show_demo)
-                 show_demo_window(&show_demo);
+            if ( show_demo )
+                show_demo_window( &show_demo );
+
+            show_font_browser();
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
 
