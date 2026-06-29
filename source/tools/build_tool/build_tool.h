@@ -257,7 +257,7 @@ typedef unsigned int out_flags_t;
 #define ORB_OUT_NORMAL          ( ORB_OUT_QUIET | ORB_OUT_SUMMARY_COMPILE | \
                                   ORB_OUT_REFLECT | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
 
-#define ORB_OUT_TESTING         ( ORB_OUT_ANY_COMPILE ) // ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS | ORB_OUT_MSVC_OUTPUT )
+#define ORB_OUT_TESTING         ( ORB_OUT_SUMMARY_COMPILE | ORB_OUT_VCVARS ) // ORB_OUT_MSVC_OUTPUT
 
 #define ORB_OUT_VERBOSE         ( 0xFFFFFFFFu )
 #define ORB_OUT_DEFAULT         ( ORB_OUT_TESTING )
@@ -629,7 +629,8 @@ bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
     are rotated per-link so an attached debugger never collides with the
     linker over a held-open symbol file. */
 
-bool build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir );
+bool build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir,
+                        const char* extra_input );
 
 /*  Locates the Visual Studio installation (via vswhere or hard-coded probes)
     and imports vcvarsall.bat's environment into THIS process via platform_putenv().

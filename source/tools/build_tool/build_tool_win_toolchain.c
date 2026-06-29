@@ -244,6 +244,17 @@ platform_lk_pre_link( const char* target_name, config_t config )
 }
 
 /*==============================================================================================
+    --- Toolchain: Resource Compiler and Manifest Embed ---
+
+    platform_compile_rc() and platform_embed_manifest() are defined in
+    build_tool_09_exec.c (after 06_spawn.c in the unity include chain) because
+    they call build_run_cmd(), which is not yet in scope at this include point.
+
+    See build_tool_09_exec.c for the implementations.
+
+==============================================================================================*/
+
+/*==============================================================================================
     --- Linker: Fill Static Lib Command ---
 
     lib.exe archives .obj files into a flat .lib. No PDB, no dep resolution needed;
@@ -299,6 +310,17 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
     const char* cfg_str = ( ctx->config == CONFIG_DEBUG ) ? "debug" : "release";
     snprintf( lk->pdb, sizeof( lk->pdb ),
               "/DEBUG /PDB:bin/%s_%s_%lld.pdb", target->name, cfg_str, ( long long )time( NULL ) );
+
+#if defined( BUILD_TOOL_EMBED_MANIFEST )
+    // For the build_tool exe only: embed the app manifest via the linker so no
+    // post-link mt.exe call is required (mt.exe fails on UNC-style long paths).
+    if ( !is_dll && target->is_build_tool )
+    {
+        size_t used = strlen( lk->flags );
+        snprintf( lk->flags + used, sizeof( lk->flags ) - used,
+                  " /MANIFEST:EMBED /MANIFESTINPUT:source\\tools\\build_tool\\build_tool.manifest" );
+    }
+#endif
 }
 
 // clang-format on

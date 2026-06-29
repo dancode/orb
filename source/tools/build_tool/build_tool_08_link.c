@@ -91,7 +91,8 @@ lk_assemble( const link_cmd_t* lk, cmd_buf_t* cmd, const char* rsp_path )
 ==============================================================================================*/
 
 bool
-build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir )
+build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_dir,
+                   const char* extra_input )
 {
     link_cmd_t lk = { 0 };
 
@@ -151,6 +152,14 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
             }
         }
         platform_lk_append_sys_libs( lk.libs, sizeof( lk.libs ) );
+
+        // Optional extra input (e.g. a compiled .res version-info resource).
+        // Appended after system libs so the linker sees it regardless of order.
+        if ( extra_input && extra_input[ 0 ] )
+        {
+            size_t used = strlen( lk.libs );
+            snprintf( lk.libs + used, sizeof( lk.libs ) - used, " %s", extra_input );
+        }
     }
 
     // Print sections, assemble, optionally echo raw command, then run.

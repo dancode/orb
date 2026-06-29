@@ -31,6 +31,50 @@
 ==============================================================================================*/
 // clang-format off
 
+/*==============================================================================================
+    --- RC Compile and Manifest Embed Helpers (Windows only) ---
+
+    Used in step 7 of build_target() when is_build_tool is true.  Defined here
+    (after 06_spawn.c in the unity include chain) so build_run_cmd() is in scope.
+
+    platform_compile_rc()     -- rc.exe: .rc -> .res (version-info resource)
+    platform_embed_manifest() -- mt.exe: embed XML manifest into PE RT_MANIFEST
+
+    Both are non-fatal: a warning is printed on failure and the binary is still
+    usable, just without the metadata that reduces AV heuristic false-positives.
+
+==============================================================================================*/
+
+#if defined( _WIN32 )
+static bool
+platform_compile_rc( const char* rc_src, const char* res_out )
+{
+    if ( !platform_file_exists( rc_src ) )
+        return true;
+
+    char cmd[ PATH_MAX * 2 ];
+    snprintf( cmd, sizeof( cmd ), "rc.exe /nologo /fo %s %s", res_out, rc_src );
+    int ret = build_run_cmd( cmd );
+    if ( ret != 0 )
+        printf( ORB_INDENT "[orb warn] rc.exe failed (exit %d) -- version resource not embedded\n", ret );
+    return ret == 0;
+}
+
+static void
+platform_embed_manifest( const char* exe_path, const char* manifest_src )
+{
+    if ( !platform_file_exists( manifest_src ) )
+        return;
+
+    char cmd[ PATH_MAX * 2 ];
+    snprintf( cmd, sizeof( cmd ),
+              "mt.exe -nologo -manifest %s -outputresource:%s;1", manifest_src, exe_path );
+    int ret = build_run_cmd( cmd );
+    if ( ret != 0 )
+        printf( ORB_INDENT "[orb warn] mt.exe failed (exit %d) -- manifest not embedded\n", ret );
+}
+#endif
+
 bool
 build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, uint64_t* out_elapsed_ms )
 {
@@ -292,17 +336,42 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     // --- 7. Compile & Link ---
 
+#if defined( _WIN32 ) && defined( BUILD_TOOL_EMBED_MANIFEST )
+    // For the build_tool target only: compile the version-info resource (.rc -> .res)
+    // and pass it to the linker so the binary carries publisher metadata that AV
+    // scanners and Windows Explorer use to identify the executable.  Both steps are
+    // non-fatal warnings; the binary is still valid if rc.exe or mt.exe are absent.
+    // Guard: define BUILD_TOOL_EMBED_MANIFEST at compile time to enable.
+    char res_path[ PATH_MAX ] = { 0 };
+    if ( target->is_build_tool )
+    {
+        const char* rc_src  = "source" PATH_SEP "tools" PATH_SEP "build_tool"
+                              PATH_SEP "build_tool.rc";
+        snprintf( res_path, sizeof( res_path ), "%s" PATH_SEP "build_tool.res", obj_dir );
+        if ( g_out_flags & ORB_OUT_SUMMARY_COMPILE )
+            printf( ORB_INDENT "[orb rc] %s\n", rc_src );
+        platform_compile_rc( rc_src, res_path );
+    }
+#endif
+
     if ( !build_target_compile( ctx, target, obj_dir, gen_dir ) )
     {
         result = false;
         goto cleanup;
     }
 
-    if ( !build_target_link( ctx, target, obj_dir ) )
+    if ( !build_target_link( ctx, target, obj_dir,
+#if defined( _WIN32 ) && defined( BUILD_TOOL_EMBED_MANIFEST )
+                             ( target->is_build_tool && res_path[ 0 ] ) ? res_path : NULL
+#else
+                             NULL
+#endif
+    ) )
     {
         result = false;
         goto cleanup;
     }
+
 
     if ( out_elapsed_ms )
         *out_elapsed_ms = platform_time_ms() - t_build_start;

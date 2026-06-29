@@ -1,0 +1,40 @@
+// build_tool.rc -- Version information resource for build_tool.exe.
+//
+// Provides file metadata that Windows Explorer and AV heuristic scanners
+// use to identify the binary.  Without this block an unsigned executable
+// has no publisher identity, which increases the likelihood of a false-
+// positive malware flag.
+//
+// Compile:  rc.exe build_tool.rc   -> build_tool.res
+// Link:     pass build_tool.res to cl.exe / link.exe on the same command line.
+
+#include <windows.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     1, 0, 0, 0
+PRODUCTVERSION  1, 0, 0, 0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0x0L
+FILEOS          VOS__WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "ORB Engine\0"
+            VALUE "FileDescription",  "ORB Build Orchestrator\0"
+            VALUE "FileVersion",      "1.0.0.0\0"
+            VALUE "InternalName",     "build_tool\0"
+            VALUE "LegalCopyright",   "Copyright 2026 ORB Engine\0"
+            VALUE "OriginalFilename", "build_tool.exe\0"
+            VALUE "ProductName",      "ORB Engine\0"
+            VALUE "ProductVersion",   "1.0.0.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
