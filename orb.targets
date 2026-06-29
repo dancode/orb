@@ -237,6 +237,14 @@ target dev_hot
     dep         sys
     dep         dev_build
 
+target dev_font
+
+    type        static
+    root        source/developer/dev_font
+    folder      07_DEVELOPER
+    unit        dev_font.c
+    dep         sys
+
 # ==============================================================================
 # 08_Host : Shared Host Executable Libraries
 # ==============================================================================

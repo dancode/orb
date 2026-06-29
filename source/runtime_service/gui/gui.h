@@ -641,9 +641,12 @@ typedef struct gui_style_t
 /* gui_style_get() -- returns a pointer to the mutable base style (s_style_base).  Edits take
    effect on the next gui_style_apply() / gui_theme_reset() call.  Mutating the struct directly
    without calling theme_reset marks the theme as anonymous (theme_get returns NULL). */
+
 gui_style_t* gui_style_get( void );
+
 /* gui_style_apply() -- recomputes the scaled active metrics from the current base style.
    Called automatically on font change; call manually after editing via gui_style_get(). */
+
 void         gui_style_apply( void );
 
 /*==============================================================================================
