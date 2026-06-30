@@ -76,6 +76,7 @@ static struct
        index (cur_clip_idx) is available O(1) at emit time -- no per-emit search. */
 
     gui_rect_t      clip_table      [ GUI_MAX_CLIP_RECTS ];     /* flat pool of all clip rects this frame   */
+    u32             clip_hash_cache [ GUI_MAX_CLIP_RECTS ];     /* fnv1a of clip_table[i], baked when added */
     u32             clip_table_n;                               /* entries used this frame                  */
     u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];         /* parallel to clip_stack: index per level  */
     u8              cur_clip_idx;                               /* top-of-stack index, stamped on each emit */
@@ -103,6 +104,33 @@ static struct
 } s_draw;
 
 /*----------------------------------------------------------------------------------------------
+    FNV-1a hash helpers -- defined here (before draw_reset) so clip pre-hashing can use them.
+    draw_hash_cmd below also uses them; fnv1a_u32 is visible in gui_render_cache.c (included
+    after this file by gui_backend.c).
+----------------------------------------------------------------------------------------------*/
+
+static inline u32
+fnv1a( u32 h, const void* p, u32 n )
+{
+    const u8* b = (const u8*)p;
+    for ( u32 i = 0; i < n; ++i ) h = ( h ^ b[ i ] ) * 16777619u;
+    return h;
+}
+
+/* fnv1a_u32 -- fold one u32 into h: 4 explicit byte mixes, no loop or function-call overhead.
+   Used wherever a u32 value is the unit being folded (segment metadata, pre-baked clip hashes,
+   per-command hash accumulation) so the inner loops in cache_diff_windows stay branch-free. */
+static inline u32
+fnv1a_u32( u32 h, u32 v )
+{
+    h = ( h ^ (u8)( v       ) ) * 16777619u;
+    h = ( h ^ (u8)( v >>  8 ) ) * 16777619u;
+    h = ( h ^ (u8)( v >> 16 ) ) * 16777619u;
+    h = ( h ^ (u8)( v >> 24 ) ) * 16777619u;
+    return h;
+}
+
+/*----------------------------------------------------------------------------------------------
     draw_reset -- call at the top of the frame (frame_begin)
 ----------------------------------------------------------------------------------------------*/
 
@@ -123,8 +151,9 @@ draw_reset( i32 display_w, i32 display_h )
 
     /* Seed the clip table: slot 0 = full display.  clip_idx_stack[0] and cur_clip_idx both start
        at 0 so every emitter finds the root clip without any push being required first. */
-    s_draw.clip_table[ 0 ]     = ( gui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
-    s_draw.clip_table_n        = 1;
+    s_draw.clip_table[ 0 ]      = ( gui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
+    s_draw.clip_hash_cache[ 0 ] = fnv1a( 2166136261u, &s_draw.clip_table[ 0 ], sizeof( gui_rect_t ) );
+    s_draw.clip_table_n         = 1;
     s_draw.clip_idx_stack[ 0 ] = 0;
     s_draw.cur_clip_idx        = 0;
 
@@ -187,7 +216,11 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
        bounds.  255 is reserved as the invalid sentinel; it is never written by a push. */
     u8 ci = ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u ) ? (u8)s_draw.clip_table_n : (u8)( GUI_MAX_CLIP_RECTS - 2u );
     if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
-        s_draw.clip_table[ s_draw.clip_table_n++ ] = c;
+    {
+        s_draw.clip_table      [ s_draw.clip_table_n ] = c;
+        s_draw.clip_hash_cache [ s_draw.clip_table_n ] = fnv1a( 2166136261u, &c, sizeof( gui_rect_t ) );
+        ++s_draw.clip_table_n;
+    }
 
     if ( s_draw.clip_depth < GUI_CLIP_DEPTH )
     {
@@ -226,7 +259,11 @@ draw_set_root_clip( f32 w, f32 h )
        subsequent pushes intersect against (and inherit from) the new root. */
     u8 ci = ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u ) ? (u8)s_draw.clip_table_n : (u8)( GUI_MAX_CLIP_RECTS - 2u );
     if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
-        s_draw.clip_table[ s_draw.clip_table_n++ ] = r;
+    {
+        s_draw.clip_table      [ s_draw.clip_table_n ] = r;
+        s_draw.clip_hash_cache [ s_draw.clip_table_n ] = fnv1a( 2166136261u, &r, sizeof( gui_rect_t ) );
+        ++s_draw.clip_table_n;
+    }
     s_draw.clip_idx_stack[ 0 ] = ci;
     s_draw.cur_clip_idx        = ci;
 }
@@ -466,24 +503,18 @@ draw_clamp_rounding( f32 w, f32 h )
     falsely dirty an unrelated window.  Their content bytes are folded directly instead.
 ----------------------------------------------------------------------------------------------*/
 
-static inline u32
-fnv1a( u32 h, const void* p, u32 n )
-{
-    const u8* b = (const u8*)p;
-    for ( u32 i = 0; i < n; ++i ) h = ( h ^ b[ i ] ) * 16777619u;
-    return h;
-}
-
 static u32
 draw_hash_cmd( const gui_cmd_t* c )
 {
     /* Hash type and vp directly; fold in the CLIP VALUE (not the index) so that the same clip
        value produces the same hash regardless of which table slot it lands in this frame.
-       z is per-segment and folded at segment level in cache_diff_windows -- not per-command. */
-    u32 h = 2166136261u;
-    h = fnv1a( h, &c->type, 1 );
-    h = fnv1a( h, &c->vp,   1 );
-    h = fnv1a( h, &s_draw.clip_table[ c->clip_idx ], sizeof( gui_rect_t ) );
+       z is per-segment and folded at segment level in cache_diff_windows -- not per-command.
+       type+vp are packed into one u32 so the preamble costs one fnv1a_u32 call instead of two
+       fnv1a byte calls.  clip_hash_cache[i] is pre-baked at push time (4 bytes instead of 16). */
+    u32 h  = 2166136261u;
+    u32 tv = (u32)c->type | ( (u32)c->vp << 8 );
+    h = fnv1a_u32( h, tv );
+    h = fnv1a_u32( h, s_draw.clip_hash_cache[ c->clip_idx ] );
     switch ( c->type )
     {
         case GUI_CMD_RECT_FILLED:   h = fnv1a( h, &c->rect,         sizeof c->rect );         break;

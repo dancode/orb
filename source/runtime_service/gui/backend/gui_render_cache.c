@@ -157,10 +157,15 @@ typedef struct
     u32             vert_base,  vert_count,  vert_alloc;  // VB position, actual count, padded reservation
     u32             idx_base,   idx_count,   idx_alloc;   // IB position, actual count, padded reservation
     u32             cmd_base,   cmd_count;                // range into s_tess.cmds[] owned by this window
-    win_slot_cmd_t  cached[ WIN_SLOT_CMD_MAX ];           // GPU cmds; filled at tess, replayed on reuse
     bool            valid;                                // geometry tessellated at least once
 
 } win_geo_slot_t;
+
+/* Stable GPU command cache -- lives outside the ping-pong slot arrays so reuse frames need not copy
+   it back.  Indexed by slot position wi; valid only in set_stable mode (same windows, same order).
+   Written once when a window tessellates; read every retained frame until the window changes. */
+static win_slot_cmd_t s_win_cached      [ RENDER_MAX_WIN ][ WIN_SLOT_CMD_MAX ];
+static u32            s_win_cached_count[ RENDER_MAX_WIN ];
 
 static u32             s_slot_count, s_slot_prev_count;
 static win_geo_slot_t  s_slots_a  [ RENDER_MAX_WIN ];     // ping-pong backing store A
@@ -230,13 +235,17 @@ cache_diff_windows( void )
 
     /* Roll each segment's pre-baked command hashes into its window's accumulated hash, also tracking
        max-z (dispatch order) and last-vp (surface routing) so the slot loop needs no second scan.
-       Segments of one window arrive in increasing lo (emit order), so the folds are stable. */
+       Segments of one window arrive in increasing lo (emit order), so the folds are stable.
+       cmd_count is accumulated here (one pass over segs) so cache_build_frame needs no second scan. */
     s_cache.cur_n = 0;
+    u32 total_cmd = 0;
     for ( u32 si = 0; si < nseg; ++si )
     {
         if ( segs[ si ].lo == segs[ si ].hi ) continue;   // empty span
 
         gui_id_t win = segs[ si ].win;
+        if ( !( s_exempt_perf_overlay && win == g_gui_perf_overlay_id ) )
+            total_cmd += segs[ si ].hi - segs[ si ].lo;
         u32        bi  = 0;
         for ( ; bi < s_cache.cur_n; ++bi )
             if ( s_cache.cur[ bi ].win == win ) break;
@@ -258,12 +267,12 @@ cache_diff_windows( void )
         // as a change and the window re-tessellates instead of replaying a sample of a freed atlas.
         u32 atlas = font_slot_atlas_idx( segs[ si ].font );
         u32 h = s_cache.cur[ bi ].hash;
-        h = fnv1a( h, &segs[ si ].z,    sizeof segs[ si ].z );
-        h = fnv1a( h, &segs[ si ].vp,   sizeof segs[ si ].vp );
-        h = fnv1a( h, &segs[ si ].font, sizeof segs[ si ].font );
-        h = fnv1a( h, &atlas,           sizeof atlas );
+        h = fnv1a_u32( h, segs[ si ].z    );
+        h = fnv1a_u32( h, segs[ si ].vp   );
+        h = fnv1a_u32( h, segs[ si ].font );
+        h = fnv1a_u32( h, atlas            );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-            h = fnv1a( h, &s_draw.cmd_hashes[ i ], sizeof s_draw.cmd_hashes[ i ] );
+            h = fnv1a_u32( h, s_draw.cmd_hashes[ i ] );
         s_cache.cur[ bi ].hash = h;
 
         if ( segs[ si ].z > s_cache.cur[ bi ].z )
@@ -271,26 +280,43 @@ cache_diff_windows( void )
         s_cache.cur[ bi ].vp = segs[ si ].vp;
     }
 
-    // Diff against last frame: a window is unchanged iff it existed with the same hash.
+    /* Sort cur[] by win id (insertion sort; RENDER_MAX_WIN = 32 so this is O(n) when the set is
+       stable -- the common case -- and at most O(n^2) = 1024 ops when it is not).  prev[] is kept
+       in the same order via the memcpy at the end of each frame, so the diff below stays O(n). */
+    for ( u32 a = 1; a < s_cache.cur_n; ++a )
+    {
+        render_win_hash_t key = s_cache.cur[ a ];
+        u32 b = a;
+        while ( b > 0 && s_cache.cur[ b - 1 ].win > key.win )
+        {
+            s_cache.cur[ b ] = s_cache.cur[ b - 1 ];
+            --b;
+        }
+        s_cache.cur[ b ] = key;
+    }
+
+    /* Diff against last frame: single-pass two-pointer scan -- O(cur_n + prev_n) -- because both
+       arrays are sorted by win.  A window is unchanged iff it existed in prev with the same hash. */
     s_cache.unchanged   = 0;
     s_cache.any_changed = ( s_cache.cur_n != s_cache.prev_n );
+    u32 pj = 0;
     for ( u32 i = 0; i < s_cache.cur_n; ++i )
     {
-        bool match = false;
-        for ( u32 j = 0; j < s_cache.prev_n; ++j )
-            if ( s_cache.prev[ j ].win == s_cache.cur[ i ].win )
-            {
-                match = ( s_cache.prev[ j ].hash == s_cache.cur[ i ].hash );
-                break;
-            }
+        while ( pj < s_cache.prev_n && s_cache.prev[ pj ].win < s_cache.cur[ i ].win )
+            ++pj;
+        bool match = ( pj < s_cache.prev_n
+                       && s_cache.prev[ pj ].win  == s_cache.cur[ i ].win
+                       && s_cache.prev[ pj ].hash == s_cache.cur[ i ].hash );
         s_cache.cur[ i ].changed = !match;
         if ( match ) ++s_cache.unchanged;
         else         s_cache.any_changed = true;
     }
 
-    // Promote this frame's table to prev for next frame's diff.
+    // Promote this frame's sorted table to prev for next frame's diff.
     memcpy( s_cache.prev, s_cache.cur, s_cache.cur_n * sizeof( render_win_hash_t ) );
     s_cache.prev_n = s_cache.cur_n;
+
+    s_stats.accum.cmd_count = total_cmd;
 
     if ( s_dbg_cache && s_cache.any_changed )
         printf( "[gui] cache: frame changed -- %u/%u windows unchanged\n",
@@ -432,6 +458,7 @@ cache_build_frame( void )
             set_stable = false;
 
     u32 vert_retained = 0, tri_retained = 0, win_retained = 0;
+    u32 total_vert = 0, total_tri = 0, overlay_win = 0;
 
     for ( u32 wi = 0; wi < s_cache.cur_n; ++wi )
     {
@@ -463,19 +490,19 @@ cache_build_frame( void )
             s_tess.vert_count = prev->vert_base + prev->vert_alloc;
             s_tess.idx_count  = prev->idx_base  + prev->idx_alloc;
 
-            // Replay cached GPU draw commands; vert_base is unchanged so lvbase needs no fixup.
+            /* Replay GPU draw commands from the stable cache (s_win_cached[wi]).  No copy back
+               needed -- the stable array persists until the window next tessellates. */
             slot->cmd_base  = s_tess.cmd_count;
-            slot->cmd_count = prev->cmd_count;
-            u32 nc = prev->cmd_count;
+            slot->cmd_count = s_win_cached_count[ wi ];
+            u32 nc = slot->cmd_count;
             for ( u32 k = 0; k < nc; ++k )
             {
                 u32 ci = slot->cmd_base + k;
-                s_tess.cmds    [ ci ]  = prev->cached[ k ].cmd;
-                s_tess.cmd_vp  [ ci ]  = prev->cached[ k ].vp;
-                s_tess.cmd_vbase[ ci ] = slot->vert_base + prev->cached[ k ].lvbase;
+                s_tess.cmds    [ ci ]  = s_win_cached[ wi ][ k ].cmd;
+                s_tess.cmd_vp  [ ci ]  = s_win_cached[ wi ][ k ].vp;
+                s_tess.cmd_vbase[ ci ] = slot->vert_base + s_win_cached[ wi ][ k ].lvbase;
             }
             s_tess.cmd_count += nc;
-            memcpy( slot->cached, prev->cached, nc * sizeof( win_slot_cmd_t ) );
 
             if ( !( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id ) )
             {
@@ -531,18 +558,27 @@ cache_build_frame( void )
             s_tess.vert_count = slot->vert_base + slot->vert_alloc;
             s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;
 
-            // Cache GPU draw commands for potential reuse next frame.
+            /* Cache GPU draw commands into the stable array for reuse next frame. */
             u32 nc = slot->cmd_count;
             if ( nc > WIN_SLOT_CMD_MAX ) nc = WIN_SLOT_CMD_MAX;
+            s_win_cached_count[ wi ] = nc;
             for ( u32 k = 0; k < nc; ++k )
             {
                 u32 ci = slot->cmd_base + k;
-                slot->cached[ k ].cmd    = s_tess.cmds    [ ci ];
-                slot->cached[ k ].vp     = s_tess.cmd_vp  [ ci ];
-                slot->cached[ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
+                s_win_cached[ wi ][ k ].cmd    = s_tess.cmds    [ ci ];
+                s_win_cached[ wi ][ k ].vp     = s_tess.cmd_vp  [ ci ];
+                s_win_cached[ wi ][ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
             }
             slot->cmd_count = nc;
             slot->valid     = true;
+        }
+
+        if ( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id )
+            overlay_win = 1;
+        else
+        {
+            total_vert += slot->vert_count;
+            total_tri  += slot->idx_count / 3u;
         }
 
         s_dispatch[ s_dispatch_count++ ] = slot;
@@ -561,29 +597,7 @@ cache_build_frame( void )
         s_dispatch[ b ] = key;
     }
 
-    // Aggregate exact geometry and frontend commands, skipping the perf_overlay if exempted.
-    u32 total_vert = 0, total_tri = 0, total_cmd = 0, overlay_win = 0;
-    
-    for ( u32 i = 0; i < s_slot_count; ++i )
-    {
-        if ( s_exempt_perf_overlay && s_slots[ i ].win == g_gui_perf_overlay_id )
-        {
-            overlay_win = 1;
-            continue;
-        }
-        total_vert += s_slots[ i ].vert_count;
-        total_tri  += s_slots[ i ].idx_count / 3u;
-    }
-
-    for ( u32 i = 0; i < s_draw.seg_count; ++i )
-    {
-        if ( s_exempt_perf_overlay && s_draw.segs[ i ].win == g_gui_perf_overlay_id )
-            continue;
-        total_cmd += s_draw.segs[ i ].hi - s_draw.segs[ i ].lo;
-    }
-
-    // Geometry stats.
-    s_stats.accum.cmd_count  = total_cmd;
+    // Geometry stats (cmd_count written by cache_diff_windows; vert/tri folded into build loop above).
     s_stats.accum.vert_count = total_vert;
     s_stats.accum.tri_count  = total_tri;
     

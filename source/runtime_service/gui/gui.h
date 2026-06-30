@@ -512,6 +512,13 @@ typedef enum
 
     GUI_WIN_CLOSEABLE         = 1 << 19,   /* show a close (X) button; hidden until re-opened */
 
+    /* Input passthrough -- the window is purely visual; the cursor passes through it as if it
+       were not there.  hover_win is never set to this window, so no widget inside can receive
+       mouse input and the window never steals clicks from content behind it.  Combine with
+       GUI_WIN_OVERLAY for a completely inert HUD (the perf overlay uses this). */
+
+    GUI_WIN_NO_INPUT          = 1 << 20,   /* click-through: never becomes hover_win */
+
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
        ( GUI_WIN_OVERLAY | GUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical
@@ -527,7 +534,7 @@ typedef enum
                            GUI_WIN_NOSCROLL   | GUI_WIN_NOCOLLAPSE,
 
     GUI_WIN_OVERLAY      = GUI_WIN_NODECORATION    | GUI_WIN_NOMOVE |
-                           GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_NO_DETACH,
+                           GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_NO_DETACH | GUI_WIN_NO_INPUT,
 
 } gui_win_flags_t;
 

@@ -375,7 +375,8 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 
     /* The active tab nominates hover over the whole node (strip + body) so its tab-strip widgets and
        body widgets all resolve under one hover_win. */
-    window_nominate_hover( id, node->rect, 0u, node->viewport );
+    if ( !( flags & GUI_WIN_NO_INPUT ) )
+        window_nominate_hover( id, node->rect, 0u, node->viewport );
 
     /* Clip against the node's surface, then the node rect; the body region reuses this clip. */
     {
@@ -726,15 +727,18 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        winner becomes hover_win next frame; that single fact gates all widget hit-testing. */
     f32 ox = resizeable ? WIN_RESIZE_OUTER : 0.0f;
     f32 oy = ( resizeable && !collapsed ) ? WIN_RESIZE_OUTER : 0.0f;
-    if ( frame_only )
-        /* Frame-only shell: only the titlebar (caption band + its buttons) is interactive; the body
-           is click-through so windows inside the viewport keep their own hover and selection. */
-        window_nominate_hover( id, ( gui_rect_t ){ win->x, win->y, win->w, title_h },
-                               win->z, win->viewport );
-    else
-        window_nominate_hover( id, ( gui_rect_t ){ win->x - ox, win->y - oy,
-                                                     win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z,
-                               win->viewport );
+    if ( !( flags & GUI_WIN_NO_INPUT ) )
+    {
+        if ( frame_only )
+            /* Frame-only shell: only the titlebar (caption band + its buttons) is interactive; the body
+               is click-through so windows inside the viewport keep their own hover and selection. */
+            window_nominate_hover( id, ( gui_rect_t ){ win->x, win->y, win->w, title_h },
+                                   win->z, win->viewport );
+        else
+            window_nominate_hover( id, ( gui_rect_t ){ win->x - ox, win->y - oy,
+                                                         win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z,
+                                   win->viewport );
+    }
 
     /* All of this window's geometry is stamped with its z so flush can paint
        windows back-to-front regardless of window_begin call order, and with its
