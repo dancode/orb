@@ -28,6 +28,57 @@ static font_metrics_t*  s_font      = NULL;                         // active fo
 /* On-fraction (dash / period) of each baked dash row; a dashed line picks the nearest at tess time. */
 static const f32 s_dash_duty[ GUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
 
+/*----------------------------------------------------------------------------------------------
+    Deferred reload queue.
+
+    A live font swap (font_load_into on a slot that already holds a font) builds a fresh GPU atlas
+    and tears the old one down.  Done mid-build that GPU churn -- create / upload / register, plus
+    the deferred destroy of the outgoing atlas -- interleaves with a frame the host is still
+    assembling and, across the multi-context floater pass, with frames still in flight, which can
+    fault the device (VK_ERROR_DEVICE_LOST).  Instead such a (re)load is queued here and committed
+    once per frame from font_flush_pending(), which the UI unit calls at frame_begin -- a clean
+    point between frames, before any context renders.  The slot keeps showing its current font
+    until the swap lands, so there is no half-loaded slot to draw.
+----------------------------------------------------------------------------------------------*/
+
+#define GUI_FONT_PATH_MAX 512
+
+typedef struct
+{
+    bool used;                          // a deferred (re)load is queued
+    u32  id;                            // target slot id
+    char path[ GUI_FONT_PATH_MAX ];     // .orb_font to load at the next flush
+
+} font_reload_req_t;
+
+/* One pending request per slot at most -- repeated bakes into the same slot coalesce to the last
+   path -- so REGISTRY_MAX entries can never overflow. */
+static font_reload_req_t s_reload_q[ GUI_FONT_REGISTRY_MAX ];
+
+/* Queue (or re-target) a deferred reload of slot `id`.  A slot already queued keeps its place and
+   takes the newest path, collapsing a burst of re-bakes into one swap. */
+static void
+font_reload_enqueue( u32 id, const char* path )
+{
+    i32 slot = -1;
+    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
+    {
+        if ( s_reload_q[ i ].used && s_reload_q[ i ].id == id )
+        {
+            snprintf( s_reload_q[ i ].path, sizeof( s_reload_q[ i ].path ), "%s", path );
+            return;
+        }
+        if ( slot < 0 && !s_reload_q[ i ].used )
+            slot = (i32)i;
+    }
+    if ( slot < 0 )
+        return;   /* every slot already queued -- cannot happen (one entry per slot id) */
+
+    s_reload_q[ slot ].used = true;
+    s_reload_q[ slot ].id   = id;
+    snprintf( s_reload_q[ slot ].path, sizeof( s_reload_q[ slot ].path ), "%s", path );
+}
+
 /*==============================================================================================
     Shared atlas finalize -- the white texel + dash rows every font carries.
 ==============================================================================================*/
@@ -152,19 +203,60 @@ font_load( const char* path )
     return id;
 }
 
-/* Load a font into an existing id (id 0 swaps the default).  Returns false on bad id or load
-   failure -- on failure the slot keeps whatever font it had. */
+/* Load a font into an existing id (id 0 swaps the default).  Returns false on bad id; a deferred
+   request always reports success (it is committed later by font_flush_pending).
+
+   A slot that already holds a font stays valid and on screen until the swap, so the GPU atlas
+   rebuild is deferred to the next frame_begin latch -- the create/upload/register and the deferred
+   destroy of the old atlas then land between frames, never mid-build (see s_reload_q).  A fresh
+   slot has no font to show, so it loads synchronously; on failure the slot keeps what it had. */
 
 bool
 font_load_into( u32 id, const char* path )
 {
     if ( id >= GUI_FONT_REGISTRY_MAX )
         return false;
+
+    if ( s_fonts[ id ].used )
+    {
+        font_reload_enqueue( id, path );
+        return true;
+    }
+
     if ( !ttf_load_file( &s_fonts[ id ], path ) )
         return false;
     if ( s_active_id == id )
         font_activate( id );            // metrics rebuilt in place; refresh active pointers
     return true;
+}
+
+/* Commit every queued deferred reload.  Called once per frame by the UI unit at frame_begin -- a
+   safe point between frames -- so the GPU atlas swap never interleaves with an in-flight frame.
+   Returns true when a committed load changed the active font, signalling the caller to rebuild
+   layout from the new metrics. */
+
+bool
+font_flush_pending( void )
+{
+    bool active_reloaded = false;
+
+    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
+    {
+        if ( !s_reload_q[ i ].used )
+            continue;
+
+        u32  id = s_reload_q[ i ].id;
+        bool ok = ttf_load_file( &s_fonts[ id ], s_reload_q[ i ].path );
+        s_reload_q[ i ] = ( font_reload_req_t ){ 0 };
+
+        if ( ok && s_active_id == id )
+        {
+            font_activate( id );        // metrics rebuilt in place; refresh active pointers
+            active_reloaded = true;
+        }
+    }
+
+    return active_reloaded;
 }
 
 /* Make an already-loaded id the active font.  Ignored if the id is empty or out of range. */
@@ -178,10 +270,26 @@ font_use( u32 id )
 
 /* Id of the active font slot -- callers save/restore this to push and pop fonts. */
 
-u32 
-font_active_id( void ) 
-{ 
-    return s_active_id; 
+u32
+font_active_id( void )
+{
+    return s_active_id;
+}
+
+/* Bindless atlas index currently backing font id `id` (0 for an empty / out-of-range slot).
+
+   The retained render cache folds this into its per-window hash.  A font id is a stable handle,
+   but font_load_into() can swap a *different* atlas under that same id -- the id is unchanged yet
+   the bindless index baked into already-tessellated geometry now names a retired atlas.  Hashing
+   the live atlas index (not just the id) makes that swap register as a change, forcing the window
+   to re-tessellate against the new atlas instead of replaying vertices that sample a freed one. */
+
+u32
+font_slot_atlas_idx( u32 id )
+{
+    if ( id >= GUI_FONT_REGISTRY_MAX )
+        return 0;
+    return s_fonts[ id ].metrics.atlas_idx;
 }
 
 /* Set the default (slot 0) to a built-in bmp font and activate it. */
@@ -216,6 +324,9 @@ static void
 font_shutdown( void )
 {
     icon_atlas_shutdown();
+
+    /* Drop any deferred reloads that never reached a frame_begin flush. */
+    memset( s_reload_q, 0, sizeof( s_reload_q ) );
 
     /* Release every slot's owned atlas, then the resident built-in bmp atlases. */
     for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )

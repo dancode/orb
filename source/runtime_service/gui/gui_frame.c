@@ -266,6 +266,19 @@ static bool s_frame_dirty = true;   /* start true: forces a full first-frame bui
    ctx_begin(GUI_CTX_DEFAULT) before emitting any window, close it with ctx_end, and seal the
    build with frame_end.  See the FRAME CONTRACT note in gui_api.h. */
 
+/* Commit any font (re)loads deferred from last frame's build at this between-frames latch.  The
+   GPU atlas swap (create/upload/register + deferred destroy of the old atlas) is done here, before
+   any context renders, so it never interleaves with an in-flight frame.  Returns true when the
+   active font changed -- its metrics drive layout, so the caller forces a rebuild this frame. */
+static bool
+gui_font_flush_deferred( void )
+{
+    if ( !font_flush_pending() )
+        return false;
+    gui_style_apply();          /* active font's metrics changed -> rescale the layout base */
+    return true;
+}
+
 void
 gui_frame_begin( f32 dt )
 {
@@ -306,6 +319,12 @@ gui_frame_begin( f32 dt )
     s_frame_dirty = io_dirty()
                  || s_retained.wants_redraw
                  || gui_render_any_changed();
+
+    /* Commit deferred font (re)loads at this safe between-frames point -- always, since the host
+       can request a load between frames independent of the widget emit.  A committed swap changes
+       glyph geometry, so it forces a full rebuild this frame. */
+    if ( gui_font_flush_deferred() )
+        s_frame_dirty = true;
 
     /* Push any icons registered since last frame to the GPU -- always, since host code can
        register icons between frames independent of the widget emit. */
@@ -872,11 +891,10 @@ gui_font_load( const char* path )
 bool
 gui_font_load_into( u32 id, const char* path )
 {
-    if ( !font_load_into( id, path ) )
-        return false;
-    if ( font_active_id() == id )   // swapping the active font -> layout follows
-        gui_style_apply();
-    return true;
+    /* font_load_into defers a swap of an already-loaded slot to the next frame_begin (see the
+       reload queue in gui_font.c); layout follows there, via gui_font_flush_deferred, once the
+       new metrics are live.  Nothing to rescale here -- the slot still shows its current font. */
+    return font_load_into( id, path );
 }
 
 void

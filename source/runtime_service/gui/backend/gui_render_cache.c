@@ -252,10 +252,16 @@ cache_diff_windows( void )
 
         // Fold sort key + viewport + font into the hash so a raise, surface move, or font swap
         // invalidates the window (the font is the segment's atlas context, see draw_set_font).
+        // The font id alone is not enough: font_load_into() can swap a different atlas under the
+        // same id, leaving the id stable while the bindless index baked into this window's cached
+        // geometry now names a retired atlas.  Fold the live atlas index too so that swap registers
+        // as a change and the window re-tessellates instead of replaying a sample of a freed atlas.
+        u32 atlas = font_slot_atlas_idx( segs[ si ].font );
         u32 h = s_cache.cur[ bi ].hash;
         h = fnv1a( h, &segs[ si ].z,    sizeof segs[ si ].z );
         h = fnv1a( h, &segs[ si ].vp,   sizeof segs[ si ].vp );
         h = fnv1a( h, &segs[ si ].font, sizeof segs[ si ].font );
+        h = fnv1a( h, &atlas,           sizeof atlas );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
             h = fnv1a( h, &s_draw.cmd_hashes[ i ], sizeof s_draw.cmd_hashes[ i ] );
         s_cache.cur[ bi ].hash = h;
