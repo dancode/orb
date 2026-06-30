@@ -1097,6 +1097,32 @@ typedef struct gui_api_s
                                       gui_table_sort_cmp_fn cmp_fn, void* user );
     void ( *table_set_bg_color     )( gui_table_bg_target_t target, u32 abgr );
 
+    /*  split_begin / split_next / split_end -- two panels side by side sharing a Y-level.
+
+        split_begin( id, right_w ) opens a split: the left panel fills, the right panel is
+        right_w pixels wide.  split_next() closes the left panel and opens the right.
+        split_end() closes the right panel.  Each panel is an independent flow region -- declare
+        a layout mode (stack/cols/...) inside each as usual.  Heights are cached per-id across
+        frames (one-frame lag on first appearance, then stable).
+
+            gui()->split_begin( "##src", 130.0f );
+                gui()->stack();
+                gui()->combo_begin( ... ); ... gui()->combo_end();
+                gui()->slider_int( ... );
+            gui()->split_next();
+                gui()->stack();
+                gui()->button_fill( "Bake & Preview" );
+            gui()->split_end();
+
+        button_fill -- a button that fills the remaining height of its containing region.
+        Identical to button() but height = content_avail().y.  Designed for the right panel
+        of a split so it matches the adjacent left panel's content height naturally. */
+
+    void ( *split_begin  )( const char* id, f32 right_w );
+    void ( *split_next   )( void );
+    void ( *split_end    )( void );
+    bool ( *button_fill  )( const char* label );
+
 } gui_api_t;
 
 /*============================================================================================*/

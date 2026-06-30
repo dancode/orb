@@ -239,6 +239,43 @@ gui_button( const char* label )
 }
 
 /*----------------------------------------------------------------------------------------------
+    button_fill -- a button that fills the remaining height of its containing region.
+
+    Identical to button() in every respect except the height comes from content_avail().y
+    instead of the fixed WIDGET_H.  Intended for use inside a split panel where you want the
+    button to match the height of the adjacent panel's content.
+----------------------------------------------------------------------------------------------*/
+
+bool
+gui_button_fill( const char* label )
+{
+    gui_id_t id = widget_id( label );
+
+    f32 avh = gui_content_avail().y;
+    if ( avh < WIDGET_H ) avh = WIDGET_H;
+
+    gui_rect_t r = widget_next_rect( avh );   /* fill the cell; height from content_avail */
+
+    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, gui_anim_bg( id, st ) );
+
+    f32 lw    = label_width( label );
+    f32 avail = r.w - 2.0f * WIDGET_PAD;
+    if ( lw <= avail )
+    {
+        gui_rect_t lr = rect_align( r, lw, font_char_h(), GUI_ALIGN_CENTER );
+        draw_label( lr.x, lr.y, COL_TEXT, label );
+    }
+    else
+    {
+        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label, avail );
+    }
+
+    return st.clicked;
+}
+
+/*----------------------------------------------------------------------------------------------
     small_button -- a compact button with no vertical frame padding (the ImGui SmallButton): a
     text-height row instead of the full WIDGET_H, for inline controls packed onto a text line.
 ----------------------------------------------------------------------------------------------*/

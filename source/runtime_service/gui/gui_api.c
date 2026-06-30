@@ -286,6 +286,10 @@ const gui_api_t g_gui_api_struct =
     .table_get_sort_specs               = gui_table_get_sort_specs,
     .table_sort_order                   = gui_table_sort_order,
     .table_set_bg_color                 = gui_table_set_bg_color,
+    .split_begin                        = gui_split_begin,
+    .split_next                         = gui_split_next,
+    .split_end                          = gui_split_end,
+    .button_fill                        = gui_button_fill,
 };
 
 /*==============================================================================================

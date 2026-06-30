@@ -108,7 +108,7 @@ show_font_browser( bool* p_open )
         return;
     }
 
-    bool skip_body =  true;
+    bool skip_body =  false;
     if ( skip_body )
     {
         gui()->window_end();
@@ -120,27 +120,31 @@ show_font_browser( bool* p_open )
     /* --- Source ---------------------------------------------------------------- */
     gui()->separator_text( "Source" );
 
-    /* Row: combo (fill) | size slider (80 px) | bake button (130 px) */
-    static const f32 src_row[] = { 1.0f, 80.0f, 130.0f, GUI_END };
-    gui()->row_cols( 0.0f, src_row );
+    /* Left panel: combo + slider stacked.  Right panel: tall "Bake & Preview" button. */
+    gui()->split_begin( "##src", 130.0f );
 
-    const char* combo_label = ( s_fb.count > 0 ) ? s_fb.names[ s_fb.sel ] : "(no fonts)";
-    if ( gui()->combo_begin( "##ttf", combo_label, GUI_COMBO_NONE ) )
-    {
-        for ( int i = 0; i < s_fb.count; i++ )
+        gui()->stack();
+        const char* combo_label = ( s_fb.count > 0 ) ? s_fb.names[ s_fb.sel ] : "(no fonts)";
+        if ( gui()->combo_begin( "##ttf", combo_label, GUI_COMBO_NONE ) )
         {
-            bool sel = ( i == s_fb.sel );
-            if ( gui()->selectable( s_fb.names[ i ], &sel ) )
-                s_fb.sel = i;
+            for ( int i = 0; i < s_fb.count; i++ )
+            {
+                bool sel = ( i == s_fb.sel );
+                if ( gui()->selectable( s_fb.names[ i ], &sel ) )
+                    s_fb.sel = i;
+            }
+            gui()->combo_end();
         }
-        gui()->combo_end();
-    }
+        gui()->slider_int( "##size", &s_fb.size_px, 6, 64 );
 
-    gui()->slider_int( "##size", &s_fb.size_px, 6, 64 );
+    gui()->split_next();
 
-    gui()->disabled_begin( s_fb.count == 0 );
-    bool bake = gui()->button( "Bake & Preview" );
-    gui()->disabled_end();
+        gui()->stack();
+        gui()->disabled_begin( s_fb.count == 0 );
+        bool bake = gui()->button_fill( "Bake & Preview" );
+        gui()->disabled_end();
+
+    gui()->split_end();
 
     /* Refresh + status below the source row. */
     gui()->stack();
@@ -452,7 +456,7 @@ main( int argc, char** argv )
     // Modify any layout metrics (authored for a baseline em=12)
     style->win_rounding    = 0;     // Square windows
     style->widget_rounding = 0;     // No bevel on buttons
-    style->widget_gap      = 12;    // More breathing room
+    // style->widget_gap      = 12;    // More breathing room
 
     // Re-scale and apply the changes across the UI
     gui()->style_apply();

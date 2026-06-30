@@ -358,6 +358,11 @@ typedef struct
 
 } gui_region_t;
 
+/* Persistent heights for one split panel pair, stored in the keyed state pool.
+   left_h / right_h are the content heights measured last frame so the current
+   frame can pre-allocate the correct rects before any widgets emit. */
+typedef struct { f32 left_h; f32 right_h; } gui_split_entry_t;
+
 /*==============================================================================================
     Popup stack (gui_ctx.c; driver in gui_popup.c)
 

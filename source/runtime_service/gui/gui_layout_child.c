@@ -305,5 +305,158 @@ gui_pop_layout( void )
     if ( s_layout_sp ) --s_layout_sp;        /* parent already advanced at push -- nothing more */
 }
 
+/*----------------------------------------------------------------------------------------------
+    split_begin / split_next / split_end -- two panels side by side, sharing a Y-level.
+
+    A split is a block-level widget from the parent flow's perspective: split_begin reserves a
+    rect of height max(left_h, right_h) (from the previous frame's cache) and advances the
+    parent cursor past it.  Inside, each panel runs its own independent flow via the transient
+    sub-layout mechanism (split_push_panel, same pattern as push_layout).
+
+    State: gui_split_entry_t in the keyed pool records the actual content height of each side
+    last frame.  First frame seeds to WIDGET_H; settles correctly on frame 2.
+
+    Nesting: up to GUI_SPLIT_DEPTH splits may be open simultaneously (independent of the
+    layout stack depth since push/pop happen within begin/next/end, not across them).
+----------------------------------------------------------------------------------------------*/
+
+#define GUI_SPLIT_DEPTH 4
+
+typedef struct
+{
+    gui_id_t   id;
+    gui_rect_t left_rect;
+    gui_rect_t right_rect;
+    f32        measured_left_h;   /* actual height emitted in left panel (recorded at split_next) */
+    f32        measured_right_h;  /* actual height emitted in right panel (recorded at split_end)  */
+} gui_split_frame_t;
+
+static gui_split_frame_t s_split_stack[ GUI_SPLIT_DEPTH ];
+static u32               s_split_sp;
+
+/* Push a transient sub-layout frame whose content area is rect -- same mechanism as
+   gui_push_layout but with an explicit pre-computed rect rather than the next template cell. */
+static void
+split_push_panel( gui_rect_t rect )
+{
+    u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
+    ++s_layout_sp;
+    layout_frame_t* f = &s_layout_stack[ slot ];
+
+    f->region_id   = GUI_ID_NONE;
+    f->outer       = rect;
+    f->flags       = GUI_WIN_NOSCROLL;
+    f->parent_clip = s_build.clip_rect;
+    f->pushed_clip = false;
+    f->id_restore  = s_id_sp;
+
+    /* Re-use the push_layout sink -- split panels never scroll or report content size up. */
+    f->scroll_x   = &s_sublayout_sink[ 0 ];
+    f->scroll_y   = &s_sublayout_sink[ 1 ];
+    f->pcontent_w = &s_sublayout_sink[ 2 ];
+    f->pcontent_h = &s_sublayout_sink[ 3 ];
+
+    f->sb_w = f->sb_h = 0.0f;
+    f->show_v = f->show_h = false;
+    f->view_w = rect.w;
+    f->view_h = rect.h;
+
+    f->origin_x      = rect.x;
+    f->origin_y      = rect.y;
+    f->content_x     = rect.x;
+    f->content_w     = rect.w;
+    f->cursor_x      = rect.x;
+    f->cursor_y      = rect.y;
+    f->content_max_x = rect.x;
+    f->content_y_max = rect.y + rect.h;
+
+    layout_clear( f );   /* panel opens undeclared -- caller declares stack/cols/... inside */
+}
+
+/* Pop the current panel and return the content height it actually emitted.
+   We measure to the bottom of prev_item rather than cursor_y because
+   widget_next_rect_w appends WIDGET_GAP to cursor_y after every item.
+   Using cursor_y would include a trailing gap in the stored height; then
+   button_fill (which fills to content_avail = resolved_h) would claim that
+   inflated size next frame, adding another gap, growing without bound. */
+static f32
+split_pop_panel( void )
+{
+    layout_frame_t* f = lf();
+    layout_row_break( f );   /* close any partially-filled multi-column row */
+    f32 h = ( f->prev_item.h > 0.0f )
+          ? ( f->prev_item.y + f->prev_item.h ) - f->origin_y
+          : 0.0f;
+    if ( h < 0.0f ) h = 0.0f;
+    s_id_sp           = f->id_restore;
+    s_build.clip_rect = f->parent_clip;
+    if ( s_layout_sp ) --s_layout_sp;
+    return h;
+}
+
+void
+gui_split_begin( const char* id_str, f32 right_w )
+{
+    layout_frame_t* parent = lf();
+    layout_row_break( parent );            /* close any open row before the split */
+
+    gui_id_t           id = id_combine( id_seed(), id_hash( id_str ) );
+    gui_split_entry_t* se = GUI_STATE( gui_split_entry_t, id );
+
+    /* Resolved height: max of both sides last frame.  Seed to one row on first appearance. */
+    f32 resolved_h = se->left_h > se->right_h ? se->left_h : se->right_h;
+    if ( resolved_h < WIDGET_H ) resolved_h = WIDGET_H;
+
+    f32 gap    = WIDGET_GAP;
+    f32 left_w = parent->content_w - right_w - gap;
+    if ( left_w < 0.0f ) left_w = 0.0f;
+
+    f32 x = parent->content_x;
+    f32 y = parent->cursor_y;
+
+    gui_rect_t left_rect  = { x,                y, left_w,  resolved_h };
+    gui_rect_t right_rect = { x + left_w + gap, y, right_w, resolved_h };
+
+    /* Advance the parent past the split now so it can continue below after split_end. */
+    parent->cursor_y += resolved_h + gap;
+
+    /* Push the split frame and open the left panel. */
+    if ( s_split_sp < GUI_SPLIT_DEPTH )
+    {
+        gui_split_frame_t* sf = &s_split_stack[ s_split_sp++ ];
+        sf->id               = id;
+        sf->left_rect        = left_rect;
+        sf->right_rect       = right_rect;
+        sf->measured_left_h  = 0.0f;
+        sf->measured_right_h = 0.0f;
+    }
+
+    split_push_panel( left_rect );
+}
+
+void
+gui_split_next( void )
+{
+    if ( s_split_sp == 0 ) return;
+    gui_split_frame_t* sf = &s_split_stack[ s_split_sp - 1 ];
+
+    sf->measured_left_h = split_pop_panel();
+    split_push_panel( sf->right_rect );
+}
+
+void
+gui_split_end( void )
+{
+    if ( s_split_sp == 0 ) return;
+    gui_split_frame_t* sf = &s_split_stack[ --s_split_sp ];
+
+    sf->measured_right_h = split_pop_panel();
+
+    /* Persist both heights into the keyed pool for the next frame's pre-allocation. */
+    gui_split_entry_t* se = GUI_STATE( gui_split_entry_t, sf->id );
+    se->left_h  = sf->measured_left_h;
+    se->right_h = sf->measured_right_h;
+}
+
 // clang-format on
 /*============================================================================================*/
