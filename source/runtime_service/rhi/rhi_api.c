@@ -30,6 +30,7 @@ const rhi_api_t g_rhi_api_struct =
     /* Frame */
     .frame_begin                = vk_frame_begin,
     .frame_end                  = vk_frame_end,
+    .device_wait_idle           = vk_device_wait_idle,
     .cmd_frame_index            = vk_cmd_frame_index,
 
     /* Buffer */

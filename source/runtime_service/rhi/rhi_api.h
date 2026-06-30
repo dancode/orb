@@ -88,6 +88,14 @@ typedef struct rhi_api_s
        call it when frame_begin() returned RHI_CMD_INVALID. */
     void (*frame_end)( i32 ctx_id );
 
+    /* Blocks the CPU until the GPU has finished ALL submitted work on every queue (a full
+       vkDeviceWaitIdle).  Heavy -- it serializes CPU and GPU -- so never call it per frame.
+       Its purpose is to make a resource swap safe: after it returns, no in-flight frame can
+       still reference a texture/buffer you are about to destroy or overwrite.  Used by the
+       infrequent, human-triggered font atlas reload to drain readers of the old atlas before
+       it is torn down. */
+    void (*device_wait_idle)( void );
+
     /* Returns the frame-in-flight slot index [0, RHI_MAX_FRAMES_IN_FLIGHT) that the
        given command list records into.  Use it to select the per-frame region of an
        N-buffered dynamic resource before writing and binding it.  Returns 0 for an

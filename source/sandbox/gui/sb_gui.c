@@ -7,6 +7,7 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <string.h>
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
@@ -160,8 +161,21 @@ show_font_browser( bool* p_open )
     /* --- Bake ------------------------------------------------------------------ */
     if ( bake && s_fb.count > 0 )
     {
+        /* Re-baking the same font at the same size re-uploads an identical atlas and forces a
+           GPU drain in the reload path (see ttf_load_file) for nothing.  If the requested
+           font+size is already the live preview, skip it. */
+        bool same = s_fb.preview_ready
+                 && s_fb.size_px == s_fb.preview_size
+                 && strcmp( s_fb.names[ s_fb.sel ], s_fb.preview_ttf ) == 0;
+
         char path[ 512 ];
-        if ( dev_font_get( s_fb.names[ s_fb.sel ], s_fb.size_px, path, sizeof( path ) ) )
+        if ( same )
+        {
+            snprintf( s_fb.status, sizeof( s_fb.status ), "Already loaded: %s at %d px",
+                      s_fb.preview_ttf, s_fb.preview_size );
+            s_fb.status_ok = true;
+        }
+        else if ( dev_font_get( s_fb.names[ s_fb.sel ], s_fb.size_px, path, sizeof( path ) ) )
         {
             if ( !s_fb.preview_ready )
             {
@@ -731,9 +745,17 @@ main( int argc, char** argv )
             if ( show_font_browser_win )
                 show_font_browser( &show_font_browser_win );
 
+            static bool s_split_prev = false;
+            if ( show_split_win && !s_split_prev )
+                gui()->window_set_open( "Split Panels", true );
+            s_split_prev = show_split_win;
             if ( show_split_win )
                 show_split_demo( &show_split_win );
 
+            static bool s_hud_prev = false;
+            if ( show_hud_win && !s_hud_prev )
+                gui()->window_set_open( "HUD Overlay", true );
+            s_hud_prev = show_hud_win;
             if ( show_hud_win )
                 show_hud_demo( &show_hud_win );
 

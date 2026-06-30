@@ -84,6 +84,16 @@ ttf_load_file( font_slot_t* slot, const char* path )
     /* Append the white texel + dash rows and resolve white/dash/UV-scale metrics. */
     font_finalize_atlas( pixels, hdr.atlas_w, hdr.atlas_h, tex_h, &metrics );
 
+    /* Reload swap-safety: when this slot already holds an atlas, in-flight frames may still be
+       sampling it (and hold the bindless set bound).  Re-baking a font live -- e.g. the font
+       browser dragging the size slider -- otherwise creates/destroys an atlas and rewrites its
+       bindless slot every frame, and the deferred reclaim races the GPU under that churn,
+       eventually faulting the device (VK_ERROR_DEVICE_LOST).  Drain the GPU first so the old
+       atlas has no live readers before we build and register its replacement and tear it down.
+       Reloads are rare and human-triggered, so the full stall is imperceptible. */
+    if ( slot->used )
+        rhi()->device_wait_idle();
+
     /* Create the render texture and upload the atlas pixels. */
 
     rhi_texture_t atlas = rhi()->texture_create( &( rhi_texture_desc_t ){
