@@ -262,6 +262,60 @@ typedef enum
 
 } gui_align_t;
 
+/*----------------------------------------------------------------------------------------------
+    Placement adapters -- position a self-sized box inside an existing rect, the free-placement
+    companion to split / carve (which divide a rect into adjacent panels).  These never touch the
+    layout pen: they take a parent rect and return a child rect, so they compose with content_rect,
+    push_layout_rect and each other, and an overlay is just several placements over one area in
+    draw order.  Pure rect math, so inline here with the cut_* / inset helpers above.
+
+        gui_rect_t hud = gui()->content_rect();
+        draw_minimap( gui_anchor_box( hud, 160, 160, GUI_ALIGN_RIGHT | GUI_ALIGN_TOP,    pad8 ) );
+        draw_health ( gui_anchor_box( hud, 220,  18, GUI_ALIGN_LEFT  | GUI_ALIGN_BOTTOM, pad8 ) );
+----------------------------------------------------------------------------------------------*/
+
+/* Seat a self-sized nat_w x nat_h box inside `area` per the gui_align_t flags -- the same rule a
+   widget uses to place its label/symbol, now callable on any rect.  0 (LEFT | TOP) hugs the corner. */
+static inline gui_rect_t
+gui_rect_align( gui_rect_t area, f32 nat_w, f32 nat_h, gui_align_t align )
+{
+    f32 x = ( align & GUI_ALIGN_HCENTER ) ? area.x + ( area.w - nat_w ) * 0.5f
+          : ( align & GUI_ALIGN_RIGHT   ) ? area.x +   area.w - nat_w
+                                          : area.x;
+    f32 y = ( align & GUI_ALIGN_VCENTER ) ? area.y + ( area.h - nat_h ) * 0.5f
+          : ( align & GUI_ALIGN_BOTTOM  ) ? area.y +   area.h - nat_h
+                                          : area.y;
+    return ( gui_rect_t ){ x, y, nat_w, nat_h };
+}
+
+/* Pin a fixed w x h box to a corner / edge of `area`, inset from that edge by margin `m`.  The HUD
+   idiom (health bottom-left, minimap top-right, crosshair centered): align over a padded rect. */
+static inline gui_rect_t
+gui_anchor_box( gui_rect_t area, f32 w, f32 h, gui_align_t align, gui_pad_t m )
+{
+    return gui_rect_align( gui_rect_inset( area, m ), w, h, align );
+}
+
+/*----------------------------------------------------------------------------------------------
+    Anchor frame -- the general placement (UE4 Slate model): a normalized sub-rect of the parent
+    (0..1 per axis) plus pixel offsets, resolved per axis by gui()->anchor.  On an axis where
+    min == max the child is point-anchored: the anchor is a single line at that fraction, the child
+    takes `size` and is hung off it by `pivot` (0 = near edge sits on the line, 0.5 = centered, 1 =
+    far edge), shifted by the offset.  On an axis where min < max the child is stretch-anchored: its
+    edges track those two parent fractions and the offsets become per-edge insets (size is ignored).
+    This unifies "pin a badge 40% across" and "stretch a bar over the top with 8px margins".
+----------------------------------------------------------------------------------------------*/
+
+typedef struct
+{
+    gui_vec2_t  min;     // normalized 0..1: anchor's near edge as a fraction of the parent
+    gui_vec2_t  max;     // normalized 0..1: anchor's far edge ( == min for a point anchor )
+    gui_vec2_t  pivot;   // point-anchor only: which point of the child sits on the line ( 0.5 = center )
+    gui_vec2_t  size;    // point-anchor only: child w / h in px
+    gui_pad_t   off;     // point: l / t shift the pivot; stretch: l / t / r / b inset the tracked edges
+
+} gui_anchor_t;
+
 typedef struct
 {
     f32             cols[ GUI_LAYOUT_COLS ];    // column tracks, GUI_END-terminated (see unit rule)

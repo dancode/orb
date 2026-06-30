@@ -121,6 +121,7 @@ const gui_api_t g_gui_api_struct =
     .content_rect                       = gui_content_rect,
     .split                              = gui_split,
     .carve                              = gui_carve,
+    .anchor                             = gui_anchor,
     .push_id                            = gui_push_id,
     .push_id_int                        = gui_push_id_int,
     .pop_id                             = gui_pop_id,

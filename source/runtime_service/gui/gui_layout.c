@@ -495,6 +495,44 @@ gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max )
     return n;
 }
 
+/* Resolve one axis of a gui_anchor_t against the parent span [org, org+ext].  lo / hi are the
+   normalized anchor fractions; when they are equal the child is point-anchored (size px hung off the
+   line by `pivot`, shifted by `off_lo`); when they differ it stretch-anchors between the two
+   fractions with off_lo / off_hi as edge insets.  Writes the child origin and size on this axis. */
+static void
+anchor_axis( f32 org, f32 ext, f32 lo, f32 hi, f32 pivot, f32 size, f32 off_lo, f32 off_hi,
+             f32* out_pos, f32* out_size )
+{
+    f32 a = org + ext * lo;                      /* the near anchor line in screen space */
+    if ( lo == hi )                              /* point-anchored: fixed size hung off one line */
+    {
+        *out_size = size;
+        *out_pos  = a - pivot * size + off_lo;
+    }
+    else                                         /* stretch-anchored: edges track two fractions */
+    {
+        f32 b     = org + ext * hi;
+        *out_pos  = a + off_lo;
+        *out_size = ( b - off_hi ) - ( a + off_lo );
+    }
+}
+
+/* anchor -- place a child rect inside `parent` from a normalized anchor frame (the UE4 Slate model).
+   The general free-placement primitive behind gui_rect_align / gui_anchor_box: an axis with min ==
+   max point-pins a fixed-size child, an axis with min < max stretches it between two parent
+   fractions.  Pure rect math, nothing emitted -- pair with push_layout_rect to fill the result, or
+   draw into it directly.  See gui_anchor_t (gui.h) for the field meanings. */
+gui_rect_t
+gui_anchor( gui_rect_t parent, gui_anchor_t a )
+{
+    gui_rect_t r;
+    anchor_axis( parent.x, parent.w, a.min.x, a.max.x, a.pivot.x, a.size.x, a.off.l, a.off.r,
+                 &r.x, &r.w );
+    anchor_axis( parent.y, parent.h, a.min.y, a.max.y, a.pivot.y, a.size.y, a.off.t, a.off.b,
+                 &r.y, &r.h );
+    return r;
+}
+
 /* Reserve a w x h block in the layout and return its screen rect, advancing the pen like any widget
    (the Dummy analogue) -- blank space, or a slot to fill with custom draw_* geometry / make clickable
    with invisible_button.  `w` is the main-axis size: honored in a pack run or on a same_line, while

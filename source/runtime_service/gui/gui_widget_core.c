@@ -117,12 +117,12 @@ static f32 align_y( f32 y, f32 h, f32 len, u32 a ) { return align_span( y, h, le
 /* Place a natural nat_w x nat_h box inside `cell` per the alignment flags (gui_align_t).  The
    single seam for positioning sub-cell content -- a button's label, a checkbox box, an aligned
    text run, a separator line -- so every widget edges / centers content the same way and a
-   region's align setting flows through one place.  Returns the placed rect (w/h are nat_*). */
+   region's align setting flows through one place.  Returns the placed rect (w/h are nat_*).
+   Thin alias for the public gui_rect_align (gui.h) so widgets and callers share one rule. */
 static gui_rect_t
 rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
 {
-    return ( gui_rect_t ){ align_x( cell.x, cell.w, nat_w, align ),
-                             align_y( cell.y, cell.h, nat_h, align ), nat_w, nat_h };
+    return gui_rect_align( cell, nat_w, nat_h, ( gui_align_t )align );
 }
 
 /* The symbol render primitives -- the glyph marks (arrow / collapse arrow / check / bullet / close /

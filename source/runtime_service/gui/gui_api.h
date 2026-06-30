@@ -560,6 +560,15 @@ typedef struct gui_api_s
        container, no per-leaf storage -- store a form as data and carve it each frame. */
     u32        ( *carve )( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max );
 
+    /* anchor -- place a child rect inside `parent` from a normalized anchor frame (UE4 Slate model),
+       the general free-placement primitive for overlays / HUDs.  Per axis: min == max point-pins a
+       fixed `size` child to that parent fraction (hung off the line by `pivot`, shifted by `off`);
+       min < max stretches the child between the two fractions with `off` as per-edge insets.  Pure
+       rect math -- fill the result with push_layout_rect or draw into it.  The corner / edge cases
+       are the inline gui_rect_align / gui_anchor_box (gui.h); reach for anchor when you need a
+       fraction-relative position or a stretch-with-margins band.  See gui_anchor_t for the fields. */
+    gui_rect_t ( *anchor )( gui_rect_t parent, gui_anchor_t a );
+
     /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
        seeded by the enclosing window / child region automatically, so identical labels in
        different regions never collide; push_id adds a temporary scope level for repeated widgets

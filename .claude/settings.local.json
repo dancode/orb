@@ -164,7 +164,9 @@
       "PowerShell(Test-Path *)",
       "PowerShell(Out-File *)",
       "PowerShell($p = Start-Process -FilePath F:\\\\orb\\\\bin\\\\sb_gui.exe -WorkingDirectory F:\\\\orb -PassThru; Start-Sleep -Seconds 4; if \\($p.HasExited\\) { \"EXITED EARLY code=$\\($p.ExitCode\\)\" } else { \"ALIVE after 4s \\(init OK\\); stopping\"; $p | Stop-Process -Force })",
-      "PowerShell(Remove-Item *)"
+      "PowerShell(Remove-Item *)",
+      "PowerShell($out = & cmd.exe /c \"C:\\\\Users\\\\dangold\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--orb\\\\778ad2db-a98a-4297-8654-737c7f995c23\\\\scratchpad\\\\build_sb_gui.bat\" 2>&1; $code = $LASTEXITCODE; \"EXIT=$code\"; $out | Select-Object -Last 12; \"---exe---\"; Get-Item F:\\\\orb\\\\bin\\\\sb_gui.exe | Select-Object Name,Length,LastWriteTime)",
+      "PowerShell($p = Start-Process -FilePath \"F:\\\\orb\\\\bin\\\\sb_gui.exe\" -WorkingDirectory \"F:\\\\orb\" -PassThru; Start-Sleep -Seconds 4; if \\( $p.HasExited \\) { \"EXITED EARLY code=$\\($p.ExitCode\\)\" } else { \"ALIVE after 4s \\(pid $\\($p.Id\\)\\) - stopping\"; Stop-Process -Id $p.Id -Force })"
     ]
   }
 }
