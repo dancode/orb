@@ -254,6 +254,7 @@ show_split_demo( bool* p_open )
                 1.0f,               /*       leaf 2 : fill body                   */
                 28.0f,              /*       leaf 3 : 28px footer                 */
             GUI_END,                /*   close rows                               */
+            128.0f,                  /*   leaf 4 : 128px right sidebar             */
         GUI_END,                    /* close columns                              */
     };
 
