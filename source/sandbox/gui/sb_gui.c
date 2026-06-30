@@ -239,49 +239,62 @@ show_split_demo( bool* p_open )
     }
 
     gui()->stack();
-    gui()->text_wrapped( "gui()->split carves a rect into panels (overloaded unit: px / fill / "
-                         "fraction), each filled with push_layout_rect.  Nest by splitting a "
-                         "returned rect again -- here a 120px sidebar + content, content split "
-                         "into header / body / footer." );
+    gui()->text_wrapped( "One gui()->carve form describes the whole nested layout: a column split "
+                         "(80px sidebar + fill content), the content track itself cut into rows "
+                         "(header / body / footer).  Leaf rects come back in reading order." );
+
+    /* The entire layout as one flat form -- structure lives in where the CUT/END sentinels sit.
+       Leaves stream back in reading order: 0 sidebar, 1 header, 2 body, 3 footer. */
+    static const f32 FORM[] =
+    {
+        GUI_CUT_X,                  /* root: cut the band into columns           */
+            80.0f,                  /*   leaf 0 : 80px sidebar                    */
+            1.0f, GUI_CUT_Y,        /*   fill content column, cut into rows:      */
+                28.0f,              /*       leaf 1 : 28px header                 */
+                1.0f,               /*       leaf 2 : fill body                   */
+                28.0f,              /*       leaf 3 : 28px footer                 */
+            GUI_END,                /*   close rows                               */
+        GUI_END,                    /* close columns                              */
+    };
 
     /* A fixed-height band carved from the region's available area. */
     gui_rect_t band = gui()->content_rect();
     band.h = 180.0f;
 
-    /* Horizontal split: 120px sidebar | filling content. */
-    gui_rect_t col[ GUI_LAYOUT_COLS ];
-    gui()->split( band, GUI_AXIS_X, ( const f32[] ){ 120.0f, 1.0f, GUI_END }, -1.0f, col );
-
-    /* Sidebar -- a stack of nav buttons. */
-    gui()->push_layout_rect( col[ 0 ] );
-        gui()->stack();
-        gui()->button( "Nav A" );
-        gui()->button( "Nav B" );
-        gui()->button( "Nav C" );
-    gui()->pop_layout();
-
-    /* Content column split vertically: 28px header | filling body | 28px footer. */
-    gui_rect_t row[ GUI_LAYOUT_COLS ];
-    gui()->split( col[ 1 ], GUI_AXIS_Y, ( const f32[] ){ 28.0f, 1.0f, 28.0f, GUI_END }, -1.0f, row );
-
-    gui()->push_layout_rect( row[ 0 ] );
-        gui()->stack();
-        gui()->text( "Header" );
-    gui()->pop_layout();
-
-    gui()->push_layout_rect( row[ 1 ] );
-        gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NONE );
+    gui_rect_t cell[ GUI_LAYOUT_COLS ];
+    u32        n = gui()->carve( FORM, band, -1.0f, cell, GUI_LAYOUT_COLS );
+    if ( n >= 4 )
+    {
+        /* Sidebar -- a stack of nav buttons. */
+        gui()->push_layout_rect( cell[ 0 ] );
             gui()->stack();
-            gui()->text( "Body content fills the middle." );
-            gui()->text( "Split is single-pass and recursive." );
-            gui()->text( "Each panel is a plain gui_rect_t." );
-        gui()->child_end();
-    gui()->pop_layout();
+            gui()->button( "Nav A" );
+            gui()->button( "Nav B" );
+            gui()->button( "Nav C" );
+        gui()->pop_layout();
 
-    gui()->push_layout_rect( row[ 2 ] );
-        gui()->stack();
-        gui()->text_disabled( "Footer" );
-    gui()->pop_layout();
+        /* Header. */
+        gui()->push_layout_rect( cell[ 1 ] );
+            gui()->stack();
+            gui()->text( "Header" );
+        gui()->pop_layout();
+
+        /* Body. */
+        gui()->push_layout_rect( cell[ 2 ] );
+            gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NONE );
+                gui()->stack();
+                gui()->text( "Body content fills the middle." );
+                gui()->text( "The layout is one flat f32 form." );
+                gui()->text( "Each leaf is a plain gui_rect_t." );
+            gui()->child_end();
+        gui()->pop_layout();
+
+        /* Footer. */
+        gui()->push_layout_rect( cell[ 3 ] );
+            gui()->stack();
+            gui()->text_disabled( "Footer" );
+        gui()->pop_layout();
+    }
 
     /* The panels used absolute rects, so the window pen has not moved -- reserve the band. */
     gui()->dummy( 0.0f, band.h );

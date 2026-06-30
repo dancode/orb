@@ -188,9 +188,9 @@ typedef struct gui_window_t
 
 typedef struct
 {
-    gui_id_t   id;            // the highlighted item (keyboard cursor); persists across frames
-    gui_id_t   win;           // window/popup nav is scoped to (the hover_win analogue)
-    gui_rect_t ref_rect;      // id's rect last frame -- the directional scoring origin
+    gui_id_t    id;            // the highlighted item (keyboard cursor); persists across frames
+    gui_id_t    win;           // window/popup nav is scoped to (the hover_win analogue)
+    gui_rect_t  ref_rect;      // id's rect last frame -- the directional scoring origin
 
     /* Two visual states, the Dear ImGui NavDisableHighlight split.  active means a nav cursor
        position exists -> the outline ring is drawn at id (and follows clicks), persisting even in
@@ -199,22 +199,22 @@ typedef struct
        suppressed (so the two never double-fill), and the keyboard is captured.  A nav key sets both;
        a mouse move or click drops highlight (back to ring-only), leaving active. */
 
-    bool         active;        // a nav cursor exists -> draw the ring (cleared rarely)
-    bool         highlight;     // keyboard is the active instrument -> fill + hover-suppress
+    bool        active;        // a nav cursor exists -> draw the ring (cleared rarely)
+    bool        highlight;     // keyboard is the active instrument -> fill + hover-suppress
 
-    i32          move_dir;      // directional request this frame (gui_dir_t, or -1 for none)
-    i32          tab;           // Tab linear move: +1 forward, -1 back, 0 none
-    bool         activate;      // Enter/Space -> fire id like a click this frame
+    i32         move_dir;      // directional request this frame (gui_dir_t, or -1 for none)
+    i32         tab;           // Tab linear move: +1 forward, -1 back, 0 none
+    bool        activate;      // Enter/Space -> fire id like a click this frame
 
-    bool         id_seen;       // id was emitted in win this frame (else it went stale)
-    gui_id_t   move_best;     // best-scored directional candidate this frame
-    f32          move_score;    // its score (lower is better; reset to a large value each frame)
-    gui_rect_t move_rect;     // its rect -> next frame's ref_rect
-    gui_rect_t self_rect;     // id's own rect captured this frame (keeps ref_rect fresh)
-    gui_id_t   tab_first;     // first eligible item this frame (Tab wrap + first-focus)
-    gui_id_t   tab_prev;      // item emitted just before id (Shift+Tab target)
-    gui_id_t   tab_next;      // item emitted just after id (Tab target)
-    bool         tab_take;      // the item just registered was id -> grab the next as tab_next
+    bool        id_seen;       // id was emitted in win this frame (else it went stale)
+    gui_id_t    move_best;     // best-scored directional candidate this frame
+    f32         move_score;    // its score (lower is better; reset to a large value each frame)
+    gui_rect_t  move_rect;     // its rect -> next frame's ref_rect
+    gui_rect_t  self_rect;     // id's own rect captured this frame (keeps ref_rect fresh)
+    gui_id_t    tab_first;     // first eligible item this frame (Tab wrap + first-focus)
+    gui_id_t    tab_prev;      // item emitted just before id (Shift+Tab target)
+    gui_id_t    tab_next;      // item emitted just after id (Tab target)
+    bool        tab_take;      // the item just registered was id -> grab the next as tab_next
 
     /* Menu-bar navigation -- a small state machine layered on the nav cursor + popup stack, entered
        by Alt (toggle) or an Alt+letter mnemonic.  While active, nav lives either on the bar entries
@@ -223,12 +223,12 @@ typedef struct
        Left/Esc ascend -- always landing back on menu_owner so closing a menu returns to the bar
        entry that opened it (not the first entry).  See gui_nav.c + menu_begin. */
 
-    gui_id_t   bar_win;       // menu-bar window nav is driving; 0 = not in menu-bar mode
-    bool         in_menus;      // menu mode: false = on the bar entries, true = inside the popups
-    gui_id_t   menu_owner;    // bar entry whose menu is open -- the ascend / close return target
-    gui_id_t   prev_win;      // nav target to restore when Alt toggles out of the menu bar
-    gui_id_t   prev_id;       // nav cursor to restore on Alt toggle-out (the last focus location)
-    u8           mnemonic;      // pending Alt+letter mnemonic (uppercase ASCII); 0 = none
+    gui_id_t    bar_win;       // menu-bar window nav is driving; 0 = not in menu-bar mode
+    bool        in_menus;      // menu mode: false = on the bar entries, true = inside the popups
+    gui_id_t    menu_owner;    // bar entry whose menu is open -- the ascend / close return target
+    gui_id_t    prev_win;      // nav target to restore when Alt toggles out of the menu bar
+    gui_id_t    prev_id;       // nav cursor to restore on Alt toggle-out (the last focus location)
+    u8          mnemonic;      // pending Alt+letter mnemonic (uppercase ASCII); 0 = none
 
 } nav_state_t;
 
@@ -242,104 +242,106 @@ typedef struct
 
 typedef struct
 {
-    f32 cursor_x,  cursor_y;    // layout pen, top-left of the next widget (scroll-biased)
-    f32 content_x, content_w;   // widget-row left edge + available width
-    f32 content_max_x;          // rightmost edge reached this frame -- drives hscroll
+    f32             cursor_x,  cursor_y;            // layout pen, top-left of the next widget (scroll-biased)
+    f32             content_x, content_w;           // widget-row left edge + available width
+    f32             content_max_x;                  // rightmost edge reached this frame -- drives hscroll
 
     /* Active row template (gui_layout / row sugar).  Persists and repeats: each widget fills
        the next cell, wrapping to a fresh row of the same shape when the columns run out.  A
        region opens with the default -- one flex column, auto height -- so a plain vertical
        stack needs no layout call.  See gui_layout_t in gui.h for the unit rule. */
 
-    gui_layout_mode_t mode;                    // declared next-item methodology; NONE until a header
+    gui_layout_mode_t mode;                         // declared next-item methodology; NONE until a header
 
-    u32         lay_ncols;                       // column count
-    f32         lay_row_h;                       // flow row height: 0 = auto, >0 = pixels
-    f32         lay_gap_x, lay_gap_y;            // inter-cell spacing (resolved to a number)
-    u32         lay_nrows;                       // row count; 0 => flow mode, else grid
-    f32         lay_cols[ GUI_LAYOUT_COLS ];   // source column units, kept so indent can re-resolve
+    u32             lay_ncols;                      // column count
+    u32             lay_nrows;                      // row count; 0 => flow mode, else grid
+    f32             lay_row_h;                      // flow row height: 0 = auto, >0 = pixels
+    f32             lay_gap_x, lay_gap_y;           // inter-cell spacing (resolved to a number)
+    f32             lay_cols[ GUI_LAYOUT_COLS ];    // source column units, kept so indent can re-resolve
+
+    /* Content alignment (align / layout.align): where a widget's natural-sized content sits in
+       its cell.  Persists like the row template; 0 = LEFT | TOP (the original top-left). */
+
+    u8              lay_align;              // gui_align_t flags
 
     /* Field split (field_split / field_label_left): a labeled value widget splits its cell into a
        label track + a control track, resolved with the column unit rule.  side 0 = off (the
        label trails the control); 1 = label-left; 2 = label-right. */
 
-    u8          lay_field_side;                  // gui_label_side_t: 0 off, 1 left, 2 right
-    f32         lay_field_label;                 // label track size   (overloaded unit)
-    f32         lay_field_control;               // control track size (overloaded unit)
+    u8              lay_field_side;         // gui_label_side_t: 0 off, 1 left, 2 right
+    f32             lay_field_label;        // label track size   (overloaded unit)
+    f32             lay_field_control;      // control track size (overloaded unit)
 
-    /* Content alignment (align / layout.align): where a widget's natural-sized content sits in
-       its cell.  Persists like the row template; 0 = LEFT | TOP (the original top-left). */
 
-    u8          lay_align;                       // gui_align_t flags
 
     /* Resolved cell geometry, computed once when a template is installed (the source track lists
        are not kept -- they are only needed to produce these).  Flow uses cellx/cellw for every
        row; grid uses cellx/cellw x rowy/rowh as the fixed matrix.  cols indexes [0,lay_ncols),
        rows [0,lay_nrows). */
 
-    f32 cellx[ GUI_LAYOUT_COLS ];         // resolved cell left edges
-    f32 cellw[ GUI_LAYOUT_COLS ];         // resolved cell widths
-    f32 rowy [ GUI_LAYOUT_COLS ];         // resolved cell tops    (grid only)
-    f32 rowh [ GUI_LAYOUT_COLS ];         // resolved cell heights (grid only)
+    f32             cellx[ GUI_LAYOUT_COLS ];       // resolved cell left edges
+    f32             cellw[ GUI_LAYOUT_COLS ];       // resolved cell widths
+    f32             rowy [ GUI_LAYOUT_COLS ];       // resolved cell tops    (grid only)
+    f32             rowh [ GUI_LAYOUT_COLS ];       // resolved cell heights (grid only)
 
     /* Iteration cursor.  Flow: (col) walks one row; a wrap advances cursor_y past row_h_cur and
        row_y/row_h_cur describe the live row.  Grid: (col,row) walk the pre-resolved matrix. */
 
-    u32 col;                                // next column to emit (0 = at a row start)
-    u32 row;                                // current grid row (with col, walks row-major)
-    f32 row_y;                              // top of the current flow row
-    f32 row_h_cur;                          // resolved height of the current flow row
-    f32 content_y_max;                      // bottom of the content area -- grid band end
+    u32             col;                // next column to emit (0 = at a row start)
+    u32             row;                // current grid row (with col, walks row-major)
+    f32             row_y;              // top of the current flow row
+    f32             row_h_cur;          // resolved height of the current flow row
+    f32             content_y_max;      // bottom of the content area -- grid band end
 
     /* same_line: pin the next widget to the previous item's line instead of breaking to a new row.
        prev_item is the last cell handed out; same_line() arms cont_line and sets cont_x to the
        continuation x (just past prev_item).  See widget_next_rect_w. */
 
-    gui_rect_t prev_item;                 // last cell emitted this region (same_line anchor)
-    bool         cont_line;                 // next widget continues on prev_item's line
-    f32          cont_x;                    // x at which the continued widget is placed
+    gui_rect_t      prev_item;          // last cell emitted this region (same_line anchor)
+    bool            cont_line;          // next widget continues on prev_item's line
+    f32             cont_x;             // x at which the continued widget is placed
 
     /* Pack mode (bar / strip): a print run placing items along pack_dir at natural size -- or a
        pack_size override resolved against the space remaining on the current line -- with
        pack_nextline breaking to a fresh line.  pack_main is the running pen along the axis,
        pack_cross the current line's origin on the other axis, pack_line its max cross extent. */
 
-    u8  pack_dir;                           // gui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
-    f32 pack_main;                          // running main-axis pen (absolute)
-    f32 pack_cross;                         // current line's cross-axis origin (absolute)
-    f32 pack_line;                          // current line's max cross extent
-    f32 pack_origin_main;                   // main-axis start, for the nextline reset
-    f32 pack_size_next;                     // pending main-axis size unit; < 0 = unset (natural)
+    u8              pack_dir;           // gui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
+    f32             pack_main;          // running main-axis pen (absolute)
+    f32             pack_cross;         // current line's cross-axis origin (absolute)
+    f32             pack_line;          // current line's max cross extent
+    f32             pack_origin_main;   // main-axis start, for the nextline reset
+    f32             pack_size_next;     // pending main-axis size unit; < 0 = unset (natural)
 
     /* Resolve context, set at push and read at pop. */
 
-    gui_id_t          region_id;          // base id for the region's scrollbar widget ids
-    gui_win_flags_t   flags;              // scroll policy bits (GUI_WIN_*SCROLL), reused
-    gui_rect_t        outer;              // the region box in screen space
-    f32                 origin_x;           // unscrolled content origin -- measures content extent
-    f32                 origin_y;
-    f32                 view_w, view_h;     // gutter-adjusted visible extents (must match the bars)
-    f32                 sb_w, sb_h;         // reserved gutter sizes (0 = no bar this frame)
-    bool                show_v, show_h;     // a bar is shown this axis
-    bool                pushed_clip;        // a draw clip was pushed (balance at pop)
+    gui_id_t        region_id;          // base id for the region's scrollbar widget ids
+    gui_win_flags_t flags;              // scroll policy bits (GUI_WIN_*SCROLL), reused
+    gui_rect_t      outer;              // the region box in screen space
+    f32             origin_x;           // unscrolled content origin -- measures content extent
+    f32             origin_y;
+    f32             view_w, view_h;     // gutter-adjusted visible extents (must match the bars)
+    f32             sb_w, sb_h;         // reserved gutter sizes (0 = no bar this frame)
+    bool            show_v, show_h;     // a bar is shown this axis
+    bool            pushed_clip;        // a draw clip was pushed (balance at pop)
 
     /* Persistent scroll state, owned by the caller (window record or region pool entry). */
 
-    f32*                scroll_x;
-    f32*                scroll_y;
-    f32*                pcontent_w;         // write-back: measured content extent for next frame
-    f32*                pcontent_h;
+    f32*            scroll_x;
+    f32*            scroll_y;
+    f32*            pcontent_w;         // write-back: measured content extent for next frame
+    f32*            pcontent_h;
 
-    gui_rect_t        parent_clip;        // s_build.clip_rect to restore at pop
-    u32                 id_restore;         // id-scope depth to restore at pop (see id stack below)
+    gui_rect_t      parent_clip;        // s_build.clip_rect to restore at pop
+    u32             id_restore;         // id-scope depth to restore at pop (see id stack below)
 
     /* Child edge-resize (child_begin CHILD_RESIZE_*): the armed/hot edges of this child's border
        and the s_build.win_resize_hot to restore at child_end.  child_begin sets both (0 for a
        non-resizeable child); child_end bolds child_resize_edge and restores the saved hot, so a
        hot edge suppresses body widgets only while inside this child, never its siblings. */
 
-    u8                  child_resize_edge;       // hot/armed resize edges for this child (0 = none)
-    u8                  child_resize_saved_hot;  // s_build.win_resize_hot to restore at child_end
+    u8              child_resize_edge;       // hot/armed resize edges for this child (0 = none)
+    u8              child_resize_saved_hot;  // s_build.win_resize_hot to restore at child_end
 
 } layout_frame_t;
 

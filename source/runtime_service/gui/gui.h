@@ -231,6 +231,13 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
 #define GUI_LAYOUT_COLS 8                     // max tracks on one axis (columns or rows)
 #define GUI_END (-1.0f)                       // track-list terminator (any negative value)
 
+/* carve markup sentinels -- nest a gui()->carve form (a single GUI_END-terminated f32 list, the same
+   overloaded unit as cols).  A size FOLLOWED by a CUT is a container of that size, subdivided on the
+   named axis until a matching GUI_END; a size followed by anything else is a leaf.  A form opens with
+   a leading CUT that fills the whole area.  See gui()->carve. */
+#define GUI_CUT_X (-2.0f)                     // open a nested column split (panels side by side)
+#define GUI_CUT_Y (-3.0f)                     // open a nested row split (panels stacked)
+
 /*----------------------------------------------------------------------------------------------
     Content alignment -- where a widget's natural-sized content sits inside the cell it is handed.
 
@@ -257,11 +264,11 @@ typedef enum
 
 typedef struct
 {
-    f32             cols[ GUI_LAYOUT_COLS ];  // column tracks, GUI_END-terminated (see unit rule)
-    f32             rows[ GUI_LAYOUT_COLS ];  // row tracks; empty/NULL => flow mode, else grid mode
+    f32             cols[ GUI_LAYOUT_COLS ];    // column tracks, GUI_END-terminated (see unit rule)
+    f32             rows[ GUI_LAYOUT_COLS ];    // row tracks; empty/NULL => flow mode, else grid mode
     f32             row_h;                      // flow only -- row height: 0 = auto, >0 = pixels
     f32             gap_x, gap_y;               // inter-cell spacing; 0 = theme default
-    gui_align_t   align;                      // content alignment within each cell (0 = LEFT | TOP)
+    gui_align_t     align;                      // content alignment within each cell (0 = LEFT | TOP)
 
 } gui_layout_t;
 

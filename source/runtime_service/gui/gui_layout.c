@@ -406,6 +406,95 @@ gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect
     return n;
 }
 
+/*----------------------------------------------------------------------------------------------
+    carve -- a whole nested partition from one flat f32 form.
+
+    The recursive completion of split(): split() resolves one track list; carve resolves a list
+    where any track may itself be a track list on the other axis.  The form is a single
+    GUI_END-terminated f32 array in the same overloaded unit as cols (>1 px, ==1 fill, (0,1)
+    fraction), with two control sentinels (GUI_CUT_X / GUI_CUT_Y) that turn a flat list into a
+    tree: a size followed by a CUT is a container of that size subdivided on the named axis; a
+    size followed by anything else is a leaf.  The form opens with a leading CUT that fills the
+    whole area.  Resolution is a stack walk -- one layout_resolve_tracks per container (the same
+    engine cols uses), leaf rects streamed to out[] in reading order -- with no per-leaf storage.
+----------------------------------------------------------------------------------------------*/
+
+/* p points at a GUI_CUT_* sentinel; return the pointer just past the GUI_END that closes the list
+   it opens (depth-counted, so nested cuts are skipped whole).  Used to step over a container's
+   sub-tree when gathering its parent's sibling tracks. */
+static const f32*
+carve_skip( const f32* p )
+{
+    int depth = 0;
+    for ( ;; )
+    {
+        f32 t = *p++;
+        if      ( t == GUI_CUT_X || t == GUI_CUT_Y ) ++depth;       /* open a nested list */
+        else if ( t == GUI_END && --depth == 0 )     return p;      /* closed our own list */
+        /* size tokens are ignored while skipping */
+    }
+}
+
+/* Resolve one list into rects.  `p` points at the first item token (just past the opening CUT);
+   `axis` is the list's cut axis; `area` is the box divided.  Leaf rects stream into out[] (capped
+   at `max`) in reading order; containers recurse with the flipped axis.  Returns the pointer just
+   past this list's closing GUI_END. */
+static const f32*
+carve_list( const f32* p, gui_axis_t axis, gui_rect_t area, f32 gap,
+            gui_rect_t* out, u32* n, u32 max )
+{
+    /* Phase 1: gather this level's item extents; mark which items recurse (a CUT follows). */
+    f32        sizes[ GUI_LAYOUT_COLS ];
+    const f32* sub  [ GUI_LAYOUT_COLS ];   /* sub[i] -> the CUT token, or NULL for a leaf */
+    u32        c = 0;
+    const f32* q = p;
+
+    while ( *q != GUI_END && c < GUI_LAYOUT_COLS )
+    {
+        sizes[ c ] = *q++;                                     /* the item's extent in this axis */
+        if ( *q == GUI_CUT_X || *q == GUI_CUT_Y ) { sub[ c ] = q; q = carve_skip( q ); }
+        else                                        sub[ c ] = NULL;
+        ++c;
+    }
+    /* If the column cap stopped the gather early, walk on to this list's own GUI_END. */
+    while ( *q != GUI_END ) q = ( *q == GUI_CUT_X || *q == GUI_CUT_Y ) ? carve_skip( q ) : q + 1;
+
+    /* Phase 2: one resolve -- the same track engine cols() drives. */
+    bool h = ( axis == GUI_AXIS_X );
+    f32  pos[ GUI_LAYOUT_COLS ], size[ GUI_LAYOUT_COLS ];
+    layout_resolve_tracks( sizes, c, h ? area.x : area.y, h ? area.w : area.h, gap, pos, size );
+
+    /* Phase 3: emit leaves in reading order; recurse containers with the flipped axis. */
+    for ( u32 i = 0; i < c; ++i )
+    {
+        gui_rect_t r = h ? ( gui_rect_t ){ pos[ i ], area.y, size[ i ], area.h }
+                         : ( gui_rect_t ){ area.x, pos[ i ], area.w, size[ i ] };
+        if ( sub[ i ] )
+            carve_list( sub[ i ] + 1, ( *sub[ i ] == GUI_CUT_X ) ? GUI_AXIS_X : GUI_AXIS_Y,
+                        r, gap, out, n, max );
+        else if ( *n < max )
+            out[ ( *n )++ ] = r;
+    }
+    return q + 1;   /* past our GUI_END */
+}
+
+u32
+gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max )
+{
+    if ( !form || !out || max == 0 ) return 0;
+
+    /* The form opens with a root CUT naming the axis; it fills the whole area. */
+    gui_axis_t axis;
+    if      ( *form == GUI_CUT_X ) axis = GUI_AXIS_X;
+    else if ( *form == GUI_CUT_Y ) axis = GUI_AXIS_Y;
+    else                            return 0;   /* malformed: a form must open with a CUT */
+
+    f32 g = ( gap > 0.0f ) ? gap : WIDGET_GAP;
+    u32 n = 0;
+    carve_list( form + 1, axis, area, g, out, &n, max );
+    return n;
+}
+
 /* Reserve a w x h block in the layout and return its screen rect, advancing the pen like any widget
    (the Dummy analogue) -- blank space, or a slot to fill with custom draw_* geometry / make clickable
    with invisible_button.  `w` is the main-axis size: honored in a pack run or on a same_line, while

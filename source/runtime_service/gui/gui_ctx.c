@@ -33,11 +33,11 @@
 
 static struct
 {
-    gui_id_t  hover_id;       // widget under the cursor this frame (rebuilt each frame)
-    gui_id_t  active_id;      // widget with the mouse button held (drag / hold)
-    gui_id_t  active_id_prev; // active_id as of the end of the previous frame (snapshot at new_frame)
-    u8          active_button;  // which button holds active_id (0=left); reset to 0 on release
-    gui_id_t  focused_id;     // widget that owns keyboard input
+    gui_id_t  hover_id;         // widget under the cursor this frame (rebuilt each frame)
+    gui_id_t  active_id;        // widget with the mouse button held (drag / hold)
+    gui_id_t  active_id_prev;   // active_id as of the end of the previous frame (snapshot at new_frame)
+    u8        active_button;    // which button holds active_id (0=left); reset to 0 on release
+    gui_id_t  focused_id;       // widget that owns keyboard input
 
     /* Auto-repeat timing for the held button (GUI_ITEM_BUTTON_REPEAT).  Only one widget is active
        at a time, so a single timer suffices: repeat_t accumulates held time since the last fire, and

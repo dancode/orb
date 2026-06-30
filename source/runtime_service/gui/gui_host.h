@@ -174,6 +174,7 @@ gui_vec2_t gui_content_avail( void );
 gui_vec2_t gui_cursor_screen_pos( void );
 gui_rect_t gui_content_rect( void );
 u32        gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
+u32        gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max );
 gui_rect_t gui_dummy( f32 w, f32 h );
 
 /* layout - interactive helpers */

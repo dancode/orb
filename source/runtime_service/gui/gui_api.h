@@ -552,6 +552,14 @@ typedef struct gui_api_s
     gui_rect_t ( *content_rect )( void );
     u32        ( *split )( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
 
+    /* carve -- a whole nested partition from one flat f32 `form`: the recursive form of split.  The
+       form is a GUI_END-terminated list in the same overloaded unit as cols, with GUI_CUT_X /
+       GUI_CUT_Y sentinels marking which tracks subdivide (a size followed by a CUT is a container of
+       that size on the named axis; otherwise a leaf).  Opens with a leading CUT filling `area`.  Leaf
+       rects land in out[] in reading order; returns the leaf count ( <= max ).  One resolve per
+       container, no per-leaf storage -- store a form as data and carve it each frame. */
+    u32        ( *carve )( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max );
+
     /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
        seeded by the enclosing window / child region automatically, so identical labels in
        different regions never collide; push_id adds a temporary scope level for repeated widgets
