@@ -158,7 +158,9 @@
       "PowerShell(bin\\\\build_tool.exe -config Debug -target gui 2>&1 | Where-Object { $_ -match \"error|warning C|success|FAILED|linked|skipped gui\" } | Select-Object -First 30)",
       "PowerShell($result = bin\\\\build_tool.exe -config Debug -target gui 2>&1; $result | Select-String \"error|FAILED|orb linked|orb compiling\"; Write-Host \"Exit: $LASTEXITCODE\")",
       "PowerShell($result = bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1; $result | Select-String \"error|FAILED|orb linked|orb compiling\"; Write-Host \"Exit: $LASTEXITCODE\")",
-      "PowerShell(cd F:\\\\orb; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_popup.c\"\\).LastWriteTime = Get-Date; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_internal.h\"\\).LastWriteTime = Get-Date; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_widget_window.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1 | Select-Object -Last 15)"
+      "PowerShell(cd F:\\\\orb; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_popup.c\"\\).LastWriteTime = Get-Date; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_internal.h\"\\).LastWriteTime = Get-Date; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_widget_window.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1 | Select-Object -Last 15)",
+      "Bash(cat obj/dev_font/dev_font_build.log)",
+      "Bash(ls obj/dev_font/)"
     ]
   }
 }
