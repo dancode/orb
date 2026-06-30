@@ -4,39 +4,31 @@
 
     The render pipeline has three phases.  This file is the middle one:
 
-        EMIT   (gui_draw.c)        widgets push semantic shapes -> s_draw command list,
-                                     cut into per-(win,z,vp) segments, one hash baked per command.
-        BUILD  (this file)           once per frame: diff each window's commands against last
-                                     frame, reuse the geometry of unchanged windows in place and
-                                     tessellate only the changed ones, then z-sort the result into
-                                     a dispatch table.  Output lands in s_tess (geometry) + the
-                                     slot/dispatch tables here.
-        SUBMIT (gui_render.c)      once per surface: upload the slots this surface owns and emit
-                                     one indexed draw call per cached GPU command.
+        EMIT   (gui_draw.c)      widgets push semantic shapes -> s_draw command list,
+                                   cut into per-(win,z,vp) segments, one hash baked per command.
+        BUILD  (this file)       once per frame: diff each window's commands against last frame,
+                                   reuse unchanged geometry in place, tessellate changed windows,
+                                   then z-sort the result into a dispatch table.
+        SUBMIT (gui_render.c)    once per surface: upload changed geometry and emit one indexed
+                                   draw call per cached GPU command.
 
-    The BUILD runs lazily on the first surface flush of the frame (cache_build_frame, guarded by
-    s_frame_built) because the semantic list is shared across every surface -- the geometry it
-    produces is identical no matter which surface triggers it.  gui_render_frame_reset clears the
-    guard at frame_begin.
-
-    Included by gui_backend.c after gui_render_tess.c (s_tess, tess_reset, tess_dispatch) and
-    gui_draw.c (s_draw, fnv1a) -- both are read here -- and before gui_render.c, whose flush
-    consumes the dispatch table this file builds.
+    BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
+    because the semantic command list is shared across every surface -- the geometry it produces
+    is surface-independent.  gui_render_frame_reset clears the guard at frame_begin.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   // gui_id_t, gui_rect_t, GUI_MAX_* capacities
+#include "runtime_service/gui/gui_internal.h"
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
     Once-per-frame guard.
 
-    cache_build_frame does the shared BUILD work on the first surface flush and stamps s_frame_built;
-    later surfaces that frame see it set and reuse the slot + dispatch tables untouched.
+    The first surface flush triggers cache_build_frame and stamps s_frame_built; later surfaces
+    reuse the slot and dispatch tables untouched.
 ----------------------------------------------------------------------------------------------*/
 
-static bool s_frame_built;   // slot table + tessellation already computed this frame
+static bool s_frame_built;
 
-// gui_render_frame_reset -- clear the guard (frame_begin, right after draw_reset, before emit).
 void
 gui_render_frame_reset( void )
 {
@@ -46,16 +38,16 @@ gui_render_frame_reset( void )
 /*----------------------------------------------------------------------------------------------
     Per-frame render stats.
 
-    accum is built up during the BUILD (geometry/retained counts) and the SUBMIT (draw_calls, summed
-    across surfaces).  published is last frame's completed totals, promoted from accum at frame_begin
-    so the perf overlay reads a stable snapshot one frame behind the geometry it describes.
+    accum is built during BUILD (geometry/retained counts) and SUBMIT (draw_calls, summed across
+    surfaces).  published is promoted from accum at frame_begin so the perf overlay always reads
+    a stable snapshot one frame behind the geometry it describes.
 ----------------------------------------------------------------------------------------------*/
 
 static struct
 {
-    gui_render_stats_t accum;          // built across this frame's BUILD + flush(es)
-    gui_render_stats_t published;      // last frame's completed totals (what the overlay reads)
-    u32                  draw_call_hwm;  // peak indexed draws in any single frame (lifetime)
+    gui_render_stats_t accum;        // built across this frame's BUILD + flush(es)
+    gui_render_stats_t published;    // last frame's completed totals (what the overlay reads)
+    u32                draw_call_hwm; // peak indexed draws in any single frame (lifetime)
 
 } s_stats;
 
@@ -79,7 +71,7 @@ cache_draw_call_hwm( void )
     return s_stats.draw_call_hwm;
 }
 
-// Fold one surface's draw-call count into this frame's accumulator + the lifetime peak (called by flush).
+// Fold one surface's draw-call count into the frame accumulator + lifetime peak (called by flush).
 static void
 cache_count_draw_calls( u32 draw_calls )
 {
@@ -88,7 +80,7 @@ cache_count_draw_calls( u32 draw_calls )
         s_stats.draw_call_hwm = draw_calls;
 }
 
-// Fold one surface's upload batch/byte count into this frame's accumulator (called by flush).
+// Fold one surface's upload batch/byte count into the frame accumulator (called by flush).
 static void
 cache_count_upload( u32 batches, u32 bytes )
 {
@@ -99,144 +91,142 @@ cache_count_upload( u32 batches, u32 bytes )
 /*----------------------------------------------------------------------------------------------
     Retained-skip toggle.
 
-    When on (default) a window whose per-command hash matches last frame keeps its geometry in place
-    instead of re-tessellating.  Turn off to benchmark or to confirm the from-scratch path is
-    correct.  Toggled via gui()->set_retained_skip (key C in sb_vulkan).
+    When enabled (default) a window whose per-command hash matches last frame keeps its geometry
+    in place instead of re-tessellating.  Disable to benchmark or verify the from-scratch path.
+    Toggled via gui()->set_retained_skip (key C in sb_vulkan).
 ----------------------------------------------------------------------------------------------*/
 
 static bool s_retained_skip = true;
 
 void gui_render_set_retained_skip( bool on ) { s_retained_skip = on; }
-bool gui_render_retained_skip   ( void )     { return s_retained_skip; }
+bool gui_render_retained_skip    ( void )    { return s_retained_skip; }
 
 /*----------------------------------------------------------------------------------------------
-    Build-phase debug toggles (flip in the debugger / at startup).
+    Build-phase debug toggles.
 
-    Each prints a per-frame line, only when its number changes, so a steady UI does not spam.  The
-    same retained/geometry numbers are also live through gui()->render_stats() in the perf overlay.
+    Each prints a per-frame line only when its value changes, so a steady UI does not spam.
+    The same numbers are live through gui()->render_stats() in the perf overlay.
 ----------------------------------------------------------------------------------------------*/
 
-static bool s_dbg_cache    = false;  // per-window cache diff: how many windows unchanged vs total
-static bool s_dbg_geometry = false;  // emitted vertex / index counts this frame (render density)
+static bool s_dbg_cache    = false;  // per-window cache diff: unchanged count vs total
+static bool s_dbg_geometry = false;  // emitted vertex / index counts (render density)
 static bool s_dbg_retained = false;  // windows + verts/tris reused from last frame vs total
-static bool s_exempt_perf_overlay = true;  // exclude the perf overlay's metrics from the totals
+static bool s_exempt_perf_overlay = true;  // exclude the perf overlay window from stats totals
 
 /*==============================================================================================
-    Window geometry slots -- the retained store.
+    Window geometry slots -- the retained geometry store.
 
-    Each window owns one slot caching its tessellated geometry (a vertex span, an index span, and the
-    GPU draw commands that replay them).  An unchanged window copies its commands forward from last
-    frame instead of re-tessellating; a changed window re-tessellates into its slot.  Slots are
-    z-sorted into the dispatch table that SUBMIT walks.
+    Each window owns one slot that caches its tessellated geometry: a vertex span, an index
+    span, and the GPU draw commands that replay them.  An unchanged window replays its commands
+    from the stable cache instead of re-tessellating; a changed window tessellates into its slot.
+    Slots are z-sorted into the dispatch table that SUBMIT walks.
 
-    The slot tables ping-pong between two backing stores so this frame can read last frame's slots
-    (s_slots_prev) while writing this frame's (s_slots) -- cache_build_frame swaps the pointers.
+    Slot tables ping-pong between two backing stores (s_slots_a / s_slots_b) so this frame can
+    read last frame's geometry positions (s_slots_prev) while building this frame's (s_slots).
+
+    No separate prev-geometry buffer: s_tess.verts/indices persist between frames, so each
+    window's geometry remains at its prev->vert_base until overwritten.  The reuse path advances
+    the write head by vert_alloc (not vert_count) to keep the SLOT_VERT_PAD gap intact, which
+    absorbs minor in-place growth without touching adjacent slots.
 ==============================================================================================*/
 
-#define RENDER_MAX_WIN    32    // distinct windows tracked per frame (slots + cache diff)
-#define WIN_SLOT_CMD_MAX  16    // max GPU draw cmds cached per slot; most windows have 2-4
-#define SLOT_VERT_PAD     64u   // per-slot vertex slack: absorbs minor geometry growth in-place
-#define SLOT_IDX_PAD      128u  // per-slot index slack (roughly 2x vertex count for quads)
+#define RENDER_MAX_WIN    32    // distinct windows tracked per frame
+#define WIN_SLOT_CMD_MAX  16    // max GPU draw commands cached per slot; most windows have 2-4
+#define SLOT_VERT_PAD     64u   // per-slot vertex headroom: absorbs minor growth in-place
+#define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
 
-/* One cached GPU draw command, packed AOS so replaying a slot touches one contiguous region.
-   z is per-slot (derived from the window's max segment z, stored in win_geo_slot_t), not per
-   GPU command; it was removed from this struct along with cmd_z[] in the s_tess batch header. */
+/* One cached GPU draw command.  Packed AOS so replaying a slot's commands touches one region.
+   z is per-slot (the window's max segment z), not per-command; lvbase is slot-local so the
+   reuse path needs no fixup when the slot's absolute vert_base is unchanged. */
 typedef struct
 {
-    gui_gpu_cmd_t   cmd;     /* clip rect, texture slot, element count */
-    u32             vp;      /* viewport this command targets          */
-    u32             lvbase;  /* slot-local (0-relative) vertex base    */
+    gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count
+    u32           vp;      // viewport this command targets
+    u32           lvbase;  // vertex base relative to slot->vert_base (0-relative)
 
 } win_slot_cmd_t;
 
-// One window's cached geometry: where it sits in the shared VB/IB and the commands that replay it.
+/* One window's cached geometry position and the command range that replays it. */
 typedef struct
 {
-    gui_id_t        win;
-    u32             z, vp;
-    u32             vert_base,  vert_count,  vert_alloc;  // VB position, actual count, padded reservation
-    u32             idx_base,   idx_count,   idx_alloc;   // IB position, actual count, padded reservation
-    u32             cmd_base,   cmd_count;                // range into s_tess.cmds[] owned by this window
-    bool            valid;                                // geometry tessellated at least once
+    gui_id_t win;
+    u32      z, vp;
+    u32      vert_base, vert_count, vert_alloc;  // VB: absolute position, actual count, padded reservation
+    u32      idx_base,  idx_count,  idx_alloc;   // IB: absolute position, actual count, padded reservation
+    u32      cmd_base,  cmd_count;               // range into s_tess.cmds[] for this window
+    bool     valid;                              // true once geometry has been tessellated at least once
 
 } win_geo_slot_t;
 
-/* Stable GPU command cache -- lives outside the ping-pong slot arrays so reuse frames need not copy
-   it back.  Indexed by slot position wi; valid only in set_stable mode (same windows, same order).
-   Written once when a window tessellates; read every retained frame until the window changes. */
+/* Stable GPU command cache -- outside the ping-pong arrays so the reuse path never copies it.
+   Indexed by slot position wi, valid in set_stable mode (same window set and order as prev frame).
+   Written when a window tessellates; read every retained frame until the window changes again. */
 static win_slot_cmd_t s_win_cached      [ RENDER_MAX_WIN ][ WIN_SLOT_CMD_MAX ];
 static u32            s_win_cached_count[ RENDER_MAX_WIN ];
 
 static u32             s_slot_count, s_slot_prev_count;
-static win_geo_slot_t  s_slots_a  [ RENDER_MAX_WIN ];     // ping-pong backing store A
-static win_geo_slot_t  s_slots_b  [ RENDER_MAX_WIN ];     // ping-pong backing store B
-static win_geo_slot_t* s_slots      = s_slots_a;          // current frame's slots
-static win_geo_slot_t* s_slots_prev = s_slots_b;          // previous frame's slots
-static win_geo_slot_t* s_dispatch [ RENDER_MAX_WIN ];     // z-sorted pointers into s_slots
+static win_geo_slot_t  s_slots_a  [ RENDER_MAX_WIN ];
+static win_geo_slot_t  s_slots_b  [ RENDER_MAX_WIN ];
+static win_geo_slot_t* s_slots      = s_slots_a;   // current frame (write)
+static win_geo_slot_t* s_slots_prev = s_slots_b;   // previous frame (read)
+static win_geo_slot_t* s_dispatch [ RENDER_MAX_WIN ];
 static u32             s_dispatch_count;
-
-/* No separate prev-geometry buffers: s_tess.verts/indices are static arrays that persist between
-   frames, so each window's geometry remains at its prev->vert_base position until overwritten.  The
-   reuse path exploits this by advancing the write head by vert_alloc (not vert_count), leaving a
-   SLOT_VERT_PAD gap that absorbs minor in-place growth without touching adjacent slots. */
 
 /*==============================================================================================
     Change detection (BUILD step 1) -- diff each window's commands against last frame.
 
-    Each frame folds every window's per-command hashes (baked at emit, draw_hash_cmd) into one
-    per-window hash and compares against last frame's table (double-buffered cur/prev).  A window
-    whose hash matches is unchanged and may reuse its geometry; any_changed is the coarse signal
-    that some window appeared, vanished, or changed.
+    Each frame accumulates every window's per-command hashes (baked at emit by draw_hash_cmd)
+    into one per-window hash, sorts by window id, then compares against last frame's sorted table
+    in one linear scan.  A window whose hash matches is unchanged and may reuse its geometry.
+    any_changed is the coarse signal that at least one window appeared, vanished, or changed.
 
-    The per-command hash is deliberately deep for the two command types that point into side pools
-    (TEXT -> text_pool, POLYLINE -> points): a same-length, same-offset edit ("3" -> "4") leaves the
-    command struct byte-identical, so the pooled bytes are folded in too (see draw_hash_cmd).
+    Hashing goes deep for TEXT and POLYLINE commands (which point into side pools): a
+    same-length edit leaves the command struct byte-identical, so pool bytes are folded in too.
 ==============================================================================================*/
 
-// Per-window diff record.  cur[] is rebuilt every frame; prev[] is last frame's snapshot.  z/vp are
-// accumulated here (max-z, last-vp across the window's segments) so the slot build needs no rescan.
+/* Per-window diff record.  cur[] is rebuilt each frame; prev[] is last frame's snapshot.
+   z/vp are accumulated (max-z, last-vp across segments) so the slot builder needs no rescan. */
 typedef struct
 {
     gui_id_t win;
-    u32        hash;
-    u32        z;        // max segment z this frame (slot dispatch order)
-    u32        vp;       // viewport of the last segment this frame
-    bool       changed;  // hash mismatched or window is new
+    u32      hash;
+    u32      z;        // max segment z this frame (governs slot dispatch order)
+    u32      vp;       // viewport of the last segment this frame
+    bool     changed;  // hash mismatched or window is new this frame
 
 } render_win_hash_t;
 
 static struct
 {
-    render_win_hash_t cur  [ RENDER_MAX_WIN ];  // this frame's per-window records
-    render_win_hash_t prev [ RENDER_MAX_WIN ];  // last frame's hashes, for the diff
+    render_win_hash_t cur [ RENDER_MAX_WIN ];  // this frame's per-window records
+    render_win_hash_t prev[ RENDER_MAX_WIN ];  // last frame's hashes, for the diff
 
-    u32  cur_n, prev_n;                         // valid entries in cur[] / prev[]
-    u32  unchanged;                             // windows whose hash matched last frame
-    bool any_changed;                           // a window appeared / vanished / changed
+    u32  cur_n, prev_n;   // valid entries in cur[] / prev[]
+    u32  unchanged;       // windows whose hash matched last frame
+    bool any_changed;     // at least one window appeared, vanished, or changed
 
-} s_cache = { .any_changed = true };            // start true: guarantees the first frame builds
+} s_cache = { .any_changed = true };   // start true so the first frame always builds
 
-/* True when the PREVIOUS frame produced any render change.  Read by frame_begin before this frame's
-   cache_build_frame runs; s_cache.any_changed still holds last frame's result then.  When false for a
-   frame with no input and no animation, the host may skip the widget emit. */
+/* True when the PREVIOUS frame produced any render change.  Read by frame_begin before this
+   frame's cache_build_frame runs; s_cache.any_changed still holds last frame's result then.
+   When false on a frame with no input and no animation, the host may skip the widget emit. */
 bool
 gui_render_any_changed( void )
 {
     return s_cache.any_changed;
 }
 
-// cache_diff_windows -- fold per-command hashes into per-window hashes and diff against last frame.
-// Runs BEFORE tessellation so a fully unchanged frame can skip tess entirely (the retained-skip path).
+/* cache_diff_windows -- accumulate per-window hashes from the command list, sort, and diff.
+   Runs before tessellation so a fully-unchanged frame can skip tess entirely. */
 static void
 cache_diff_windows( void )
 {
     const gui_cmd_seg_t* segs = s_draw.segs;
     u32                  nseg = s_draw.seg_count;
 
-    /* Roll each segment's pre-baked command hashes into its window's accumulated hash, also tracking
-       max-z (dispatch order) and last-vp (surface routing) so the slot loop needs no second scan.
-       Segments of one window arrive in increasing lo (emit order), so the folds are stable.
-       cmd_count is accumulated here (one pass over segs) so cache_build_frame needs no second scan. */
+    /* Pass 1: fold each segment's command hashes into its window's accumulated hash.
+       Also track max-z and last-vp per window so the slot builder needs no second scan.
+       cmd_count is summed here to avoid a separate pass over segs later. */
     s_cache.cur_n = 0;
     u32 total_cmd = 0;
     for ( u32 si = 0; si < nseg; ++si )
@@ -244,29 +234,27 @@ cache_diff_windows( void )
         if ( segs[ si ].lo == segs[ si ].hi ) continue;   // empty span
 
         gui_id_t win = segs[ si ].win;
+
         if ( !( s_exempt_perf_overlay && win == g_gui_perf_overlay_id ) )
             total_cmd += segs[ si ].hi - segs[ si ].lo;
-        u32        bi  = 0;
+
+        /* Find or create the per-window record. */
+        u32 bi = 0;
         for ( ; bi < s_cache.cur_n; ++bi )
             if ( s_cache.cur[ bi ].win == win ) break;
         if ( bi == s_cache.cur_n )
         {
-            if ( s_cache.cur_n >= RENDER_MAX_WIN ) continue;   // overflow: treated as changed
-            s_cache.cur[ bi ].win  = win;
-            s_cache.cur[ bi ].hash = 2166136261u;
-            s_cache.cur[ bi ].z    = 0;
-            s_cache.cur[ bi ].vp   = 0;
+            if ( s_cache.cur_n >= RENDER_MAX_WIN ) continue;   // overflow: this window treated as changed
+            s_cache.cur[ bi ] = ( render_win_hash_t ){ win, 2166136261u, 0, 0, false };
             ++s_cache.cur_n;
         }
 
-        // Fold sort key + viewport + font into the hash so a raise, surface move, or font swap
-        // invalidates the window (the font is the segment's atlas context, see draw_set_font).
-        // The font id alone is not enough: font_load_into() can swap a different atlas under the
-        // same id, leaving the id stable while the bindless index baked into this window's cached
-        // geometry now names a retired atlas.  Fold the live atlas index too so that swap registers
-        // as a change and the window re-tessellates instead of replaying a sample of a freed atlas.
+        /* Fold z, vp, font, and atlas index into the hash.  The font id alone is not enough:
+           font_load_into() can swap a different atlas under the same id, leaving the id stable
+           while cached geometry references a retired atlas slot.  Folding the live atlas index
+           catches this and forces re-tessellation. */
         u32 atlas = font_slot_atlas_idx( segs[ si ].font );
-        u32 h = s_cache.cur[ bi ].hash;
+        u32 h     = s_cache.cur[ bi ].hash;
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );
         h = fnv1a_u32( h, segs[ si ].font );
@@ -275,14 +263,13 @@ cache_diff_windows( void )
             h = fnv1a_u32( h, s_draw.cmd_hashes[ i ] );
         s_cache.cur[ bi ].hash = h;
 
-        if ( segs[ si ].z > s_cache.cur[ bi ].z )
-            s_cache.cur[ bi ].z  = segs[ si ].z;
+        if ( segs[ si ].z > s_cache.cur[ bi ].z ) s_cache.cur[ bi ].z = segs[ si ].z;
         s_cache.cur[ bi ].vp = segs[ si ].vp;
     }
 
-    /* Sort cur[] by win id (insertion sort; RENDER_MAX_WIN = 32 so this is O(n) when the set is
-       stable -- the common case -- and at most O(n^2) = 1024 ops when it is not).  prev[] is kept
-       in the same order via the memcpy at the end of each frame, so the diff below stays O(n). */
+    /* Sort cur[] by win id.  Insertion sort over RENDER_MAX_WIN = 32 elements: O(n) when the
+       window set is stable (the common case, already sorted from last frame), O(n^2) at worst.
+       prev[] is kept in the same order via the memcpy below, so the diff is a single linear scan. */
     for ( u32 a = 1; a < s_cache.cur_n; ++a )
     {
         render_win_hash_t key = s_cache.cur[ a ];
@@ -295,8 +282,8 @@ cache_diff_windows( void )
         s_cache.cur[ b ] = key;
     }
 
-    /* Diff against last frame: single-pass two-pointer scan -- O(cur_n + prev_n) -- because both
-       arrays are sorted by win.  A window is unchanged iff it existed in prev with the same hash. */
+    /* Pass 2: diff against last frame.  Both arrays are sorted by win, so one linear scan
+       suffices -- O(cur_n + prev_n) instead of the O(n^2) nested scan. */
     s_cache.unchanged   = 0;
     s_cache.any_changed = ( s_cache.cur_n != s_cache.prev_n );
     u32 pj = 0;
@@ -312,29 +299,26 @@ cache_diff_windows( void )
         else         s_cache.any_changed = true;
     }
 
-    // Promote this frame's sorted table to prev for next frame's diff.
+    /* Promote this frame's sorted table to prev for next frame's diff. */
     memcpy( s_cache.prev, s_cache.cur, s_cache.cur_n * sizeof( render_win_hash_t ) );
     s_cache.prev_n = s_cache.cur_n;
 
     s_stats.accum.cmd_count = total_cmd;
 
     if ( s_dbg_cache && s_cache.any_changed )
-        printf( "[gui] cache: frame changed -- %u/%u windows unchanged\n",
-                s_cache.unchanged, s_cache.cur_n );
+        printf( "[gui] cache: %u/%u windows unchanged\n", s_cache.unchanged, s_cache.cur_n );
 }
 
 /*==============================================================================================
-    Per-window tessellation (BUILD step 2 helper) -- tessellate one window into its slot.
+    Per-window tessellation (BUILD step 2 helper).
 
-    Gathers a window's segments from s_draw.segs and builds a clip-sorted permutation into a local
-    order buffer, then hands it to tess_dispatch.  Grouping by clip (first-seen order) makes
-    equal-clip shapes tessellate back-to-back so they merge into one GPU batch.  z is NOT sorted
-    here -- the window occupies one slot whose dispatch z is its raise z, keeping all of a window's
-    geometry (chrome + body) contiguous regardless of internal z values; cache_build_frame z-sorts
-    the slot table afterwards.
+    Gathers a window's segments from s_draw.segs and builds a clip-sorted permutation, then
+    hands it to tess_dispatch.  Grouping by clip makes equal-clip shapes tessellate back-to-back
+    so they can merge into one GPU draw call.
+
+    z is NOT sorted here -- a window occupies one slot whose dispatch z is its max segment z,
+    keeping all of a window's geometry contiguous; cache_build_frame z-sorts the slots after.
 ==============================================================================================*/
-
-// rect_empty (a zero-area clip) is defined in gui_draw.c, included before this unit.
 
 #define RENDER_MAX_CLIP_GROUPS  64   // distinct clip indices groupable within one window
 
@@ -342,13 +326,13 @@ static void
 cache_tess_window( gui_id_t win )
 {
     const gui_cmd_seg_t* segs = s_draw.segs;
-    u32                    nseg = s_draw.seg_count;
+    u32                  nseg = s_draw.seg_count;
 
-    /* Distinct clip INDICES for this window's commands, in first-seen order.  Comparing u8 indices
-       is a single equality test vs. the old four-float clip_eq; the actual rect lives in
-       s_draw.clip_table and is resolved at tessellation time (tess_dispatch). */
-    u8   clips[ RENDER_MAX_CLIP_GROUPS ];
-    u32  nc       = 0;
+    /* Collect the distinct clip indices this window uses, in first-seen order.  Comparing u8
+       indices is a single test vs four floats; the actual rect lives in s_draw.clip_table and
+       is resolved at tessellation time inside tess_dispatch. */
+    u8   clip_ids[ RENDER_MAX_CLIP_GROUPS ];
+    u32  n_clips  = 0;
     bool overflow = false;
 
     for ( u32 si = 0; si < nseg && !overflow; ++si )
@@ -359,29 +343,27 @@ cache_tess_window( gui_id_t win )
             u8 ci = s_draw.cmds[ i ].clip_idx;
             if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
             bool seen = false;
-            for ( u32 g = 0; g < nc; ++g )
-                if ( clips[ g ] == ci ) { seen = true; break; }
+            for ( u32 g = 0; g < n_clips; ++g )
+                if ( clip_ids[ g ] == ci ) { seen = true; break; }
             if ( !seen )
             {
-                if ( nc >= RENDER_MAX_CLIP_GROUPS ) { overflow = true; break; }
-                clips[ nc++ ] = ci;
+                if ( n_clips >= RENDER_MAX_CLIP_GROUPS ) { overflow = true; break; }
+                clip_ids[ n_clips++ ] = ci;
             }
         }
     }
 
-    /* Clip-sorted permutation, plus a parallel font id per ordered entry.  The permutation regroups
-       commands by clip ACROSS segments, so a command's font cannot be inferred from its position at
-       dispatch -- but here the build still knows the owning segment (si), so we record segs[si].font
-       alongside each index.  The font thus travels with its commands through the reorder while
-       staying a per-segment property (no per-command field).  tess_dispatch re-activates it per run.
-       Static since cache_build_frame is guarded (single call per frame, single-threaded). */
+    /* Build the clip-sorted command permutation.  win_font[] carries the segment's font alongside
+       each reordered index because the clip sort crosses segment boundaries -- the font is a
+       per-segment property, not per-command, so it must travel with its commands.
+       Static: cache_build_frame is single-threaded and guarded against re-entry. */
     static u32 win_order[ GUI_MAX_CMDS ];
     static u32 win_font [ GUI_MAX_CMDS ];
     u32 n = 0;
 
     if ( overflow )
     {
-        /* Too many distinct clips: fall back to natural emit order (correct, just less merged). */
+        /* Too many distinct clips: emit in natural order (correct, just less merged). */
         for ( u32 si = 0; si < nseg; ++si )
         {
             if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
@@ -392,12 +374,12 @@ cache_tess_window( gui_id_t win )
     }
     else
     {
-        for ( u32 g = 0; g < nc; ++g )
+        for ( u32 g = 0; g < n_clips; ++g )
             for ( u32 si = 0; si < nseg; ++si )
             {
                 if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
                 for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-                    if ( s_draw.cmds[ i ].clip_idx == clips[ g ] )
+                    if ( s_draw.cmds[ i ].clip_idx == clip_ids[ g ] )
                         { win_font[ n ] = segs[ si ].font; win_order[ n++ ] = i; }
             }
     }
@@ -408,9 +390,19 @@ cache_tess_window( gui_id_t win )
 /*==============================================================================================
     cache_build_frame (BUILD step 2) -- diff, reuse or re-tessellate per window, z-sort.
 
-    Runs once per frame (guarded by s_frame_built): the first surface flush triggers it; every other
-    surface that frame reuses s_tess + s_dispatch.  Produces the geometry (s_tess.verts/indices), the
-    per-window slot table, and the back-to-front dispatch order -- all surface-independent.
+    Runs once per frame (guarded by s_frame_built).  Produces the geometry (s_tess.verts/indices),
+    the per-window slot table, and the back-to-front dispatch order -- all surface-independent.
+
+    In-place geometry reuse (set_stable mode):
+      When the window set is identical to last frame (same windows, same sorted order, all slots
+      valid), unchanged geometry sits in s_tess at its prev->vert_base.  The write head advances
+      by vert_alloc (not vert_count), preserving the SLOT_VERT_PAD gap so the next window's
+      prev->vert_base aligns with s_tess.vert_count -- no memmove ever needed.  Changed windows
+      tessellate at that same write head, overwriting only their own prior region.
+
+      If a changed window grows beyond its prev->vert_alloc, the alloc is expanded and all
+      downstream prev slots are invalidated so they re-tessellate at their shifted positions.
+      With SLOT_VERT_PAD=64 this triggers only when a window gains more than ~16 rects at once.
 ==============================================================================================*/
 
 static void
@@ -420,14 +412,14 @@ cache_build_frame( void )
         return;
     s_frame_built = true;
 
-    // Close the still-open final segment so the diff and per-window tess see its full [lo,hi).
+    /* Close the still-open final segment so diff and tess see its full [lo, hi) range. */
     if ( s_draw.seg_count > 0 )
         s_draw.segs[ s_draw.seg_count - 1 ].hi = s_draw.cmd_count;
 
-    // Step 1: diff each window's commands against last frame (fills s_cache + any_changed).
+    /* Step 1: hash-diff all windows, fill s_cache, accumulate cmd_count stats. */
     cache_diff_windows();
 
-    // Rotate slot tables: last frame's s_slots becomes s_slots_prev; build fresh into s_slots.
+    /* Rotate slot tables: last frame's slots become prev; build fresh into current. */
     win_geo_slot_t* tmp = s_slots_prev;
     s_slots_prev      = s_slots;
     s_slots           = tmp;
@@ -437,61 +429,46 @@ cache_build_frame( void )
 
     tess_reset();
 
-    /* In-place geometry reuse: when the window set is identical to last frame (same windows, same
-       emit order, all slots valid), unchanged geometry is already sitting in s_tess at its
-       prev->vert_base position.  The write head advances by vert_alloc (not vert_count) so the
-       padding gap is preserved; this keeps the next window's prev->vert_base equal to
-       s_tess.vert_count at the start of its iteration, holding every window in place without any
-       memmove.  Changed windows tessellate at that same write head (effectively in place over their
-       own old data) and stay within their alloc.
-
-       When the set is NOT stable (window added/removed/reordered), every window tessellates
-       sequentially and gets a fresh alloc; structural changes are rare so the cost is fine.
-
-       Overflow: if a changed window emits more verts than its prev->vert_alloc it has written into
-       the next slot's territory.  We grow its alloc and invalidate all downstream prev entries so
-       they re-tessellate fresh this frame instead of reading corrupted data.  With SLOT_VERT_PAD=64
-       this only triggers when a window gains more than ~16 rects at once. */
+    /* set_stable: the window set is the same as last frame (count, order, all valid).
+       When true, each cur[wi] aligns with slots_prev[wi] by the sorted-by-win invariant,
+       and unchanged geometry is in-place at prev->vert_base. */
     bool set_stable = ( s_slot_prev_count == s_cache.cur_n );
     for ( u32 wi = 0; set_stable && wi < s_cache.cur_n; ++wi )
         if ( s_slots_prev[ wi ].win != s_cache.cur[ wi ].win || !s_slots_prev[ wi ].valid )
             set_stable = false;
 
     u32 vert_retained = 0, tri_retained = 0, win_retained = 0;
-    u32 total_vert = 0, total_tri = 0, overlay_win = 0;
+    u32 total_vert    = 0, total_tri    = 0, overlay_win  = 0;
 
+    /* Step 2: for each window, reuse geometry or re-tessellate, then register in dispatch. */
     for ( u32 wi = 0; wi < s_cache.cur_n; ++wi )
     {
         const render_win_hash_t* wh   = &s_cache.cur[ wi ];
         win_geo_slot_t*          slot = &s_slots[ s_slot_count++ ];
+        win_geo_slot_t*          prev = set_stable ? &s_slots_prev[ wi ] : NULL;
 
         slot->win   = wh->win;
-        slot->z     = wh->z;    // pre-computed during diff: max segment z
-        slot->vp    = wh->vp;   // pre-computed during diff: last segment vp
+        slot->z     = wh->z;    // max segment z, pre-computed in cache_diff_windows
+        slot->vp    = wh->vp;   // last segment vp, pre-computed in cache_diff_windows
         slot->valid = false;
 
-        // In stable mode prev[wi] is guaranteed to match (verified above).
-        win_geo_slot_t* prev = ( set_stable && wi < s_slot_prev_count ) ? &s_slots_prev[ wi ] : NULL;
-
-        bool reuse_geo = set_stable && s_retained_skip && !wh->changed && prev && prev->valid;
+        bool reuse_geo = set_stable && s_retained_skip && !wh->changed && prev->valid;
 
         if ( reuse_geo )
         {
-            /* Unchanged window: geometry is in place at prev->vert_base.  Advance the write head past
-               the padded alloc so the next window finds its own prev->vert_base at exactly
-               s_tess.vert_count -- no memmove required. */
+            /* Geometry is in place at prev->vert_base.  Advance the write head by the padded
+               alloc so the next window's prev->vert_base aligns with s_tess.vert_count. */
             slot->vert_base  = prev->vert_base;
             slot->vert_count = prev->vert_count;
             slot->vert_alloc = prev->vert_alloc;
             slot->idx_base   = prev->idx_base;
             slot->idx_count  = prev->idx_count;
             slot->idx_alloc  = prev->idx_alloc;
-
             s_tess.vert_count = prev->vert_base + prev->vert_alloc;
             s_tess.idx_count  = prev->idx_base  + prev->idx_alloc;
 
-            /* Replay GPU draw commands from the stable cache (s_win_cached[wi]).  No copy back
-               needed -- the stable array persists until the window next tessellates. */
+            /* Replay GPU commands from the stable cache.  lvbase is slot-local, so
+               adding slot->vert_base gives the absolute vertex offset for this frame. */
             slot->cmd_base  = s_tess.cmd_count;
             slot->cmd_count = s_win_cached_count[ wi ];
             u32 nc = slot->cmd_count;
@@ -514,15 +491,14 @@ cache_build_frame( void )
         }
         else
         {
-            /* Changed, new, or unstable window: tessellate at the current write head.  In stable mode
-               the head is kept equal to prev->vert_base by the uniform "advance by alloc" rule (here
-               and in the reuse branch), so this tessellates in place over the window's own previous
-               geometry without disturbing its neighbours. */
-            slot->vert_base        = s_tess.vert_count;
-            slot->idx_base         = s_tess.idx_count;
-            slot->cmd_base         = s_tess.cmd_count;
-            s_tess.slot_vert_base  = s_tess.vert_count;
-            s_tess.force_new_cmd   = true;
+            /* Changed, new, or unstable window: tessellate at the current write head.
+               In stable mode the write head equals prev->vert_base, so this overwrites
+               only the window's own prior region without disturbing its neighbours. */
+            slot->vert_base       = s_tess.vert_count;
+            slot->idx_base        = s_tess.idx_count;
+            slot->cmd_base        = s_tess.cmd_count;
+            s_tess.slot_vert_base = s_tess.vert_count;
+            s_tess.force_new_cmd  = true;
 
             cache_tess_window( wh->win );
 
@@ -530,11 +506,9 @@ cache_build_frame( void )
             slot->idx_count  = s_tess.idx_count  - slot->idx_base;
             slot->cmd_count  = s_tess.cmd_count  - slot->cmd_base;
 
-            /* Pick this slot's padded reservation.  If the new geometry fits inside the window's
-               previous reservation, keep it -- downstream slots stay put and keep reusing in place.
-               Otherwise grow the reservation (which shifts every later slot down) and invalidate the
-               downstream prev slots so they re-tessellate at their new homes rather than read stale
-               in-place geometry this grown window just overwrote. */
+            /* Keep the slot's padded reservation if the new geometry fits, so downstream
+               slots stay put and can reuse in place next frame.  Otherwise expand and
+               invalidate all downstream prev slots so they re-tessellate at their new homes. */
             bool fits = ( set_stable && prev && prev->valid
                           && slot->vert_count <= prev->vert_alloc
                           && slot->idx_count  <= prev->idx_alloc );
@@ -552,13 +526,13 @@ cache_build_frame( void )
                         s_slots_prev[ ni ].valid = false;
             }
 
-            /* Reserve the full padded span so the next slot's write head lands exactly on its own
-               prev->vert_base.  This single rule -- shared with the reuse branch -- is what keeps
-               s_tess.vert_count == prev[wi].vert_base for every window, in every frame. */
+            /* Advance the write head by the full padded reservation.  Both the reuse and
+               tessellation paths use this rule, which is what keeps s_tess.vert_count ==
+               prev[wi].vert_base for every window, every frame, in stable mode. */
             s_tess.vert_count = slot->vert_base + slot->vert_alloc;
             s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;
 
-            /* Cache GPU draw commands into the stable array for reuse next frame. */
+            /* Write GPU commands into the stable cache for reuse next retained frame. */
             u32 nc = slot->cmd_count;
             if ( nc > WIN_SLOT_CMD_MAX ) nc = WIN_SLOT_CMD_MAX;
             s_win_cached_count[ wi ] = nc;
@@ -573,6 +547,7 @@ cache_build_frame( void )
             slot->valid     = true;
         }
 
+        /* Accumulate per-slot geometry stats; exclude overlay window from totals. */
         if ( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id )
             overlay_win = 1;
         else
@@ -584,7 +559,8 @@ cache_build_frame( void )
         s_dispatch[ s_dispatch_count++ ] = slot;
     }
 
-    // Insertion sort dispatch pointers by slot->z ascending so slots draw back-to-front.
+    /* Step 3: insertion-sort dispatch pointers by z ascending (back-to-front draw order).
+       Stable on equal z since insertion sort preserves relative order for equal keys. */
     for ( u32 a = 1; a < s_dispatch_count; ++a )
     {
         win_geo_slot_t* key = s_dispatch[ a ];
@@ -597,17 +573,15 @@ cache_build_frame( void )
         s_dispatch[ b ] = key;
     }
 
-    // Geometry stats (cmd_count written by cache_diff_windows; vert/tri folded into build loop above).
-    s_stats.accum.vert_count = total_vert;
-    s_stats.accum.tri_count  = total_tri;
-    
-    // Retained stats -- published via gui_render_stats().
+    /* Publish geometry and retained stats. */
+    s_stats.accum.vert_count    = total_vert;
+    s_stats.accum.tri_count     = total_tri;
     s_stats.accum.win_total     = s_cache.cur_n - overlay_win;
     s_stats.accum.win_retained  = win_retained;
     s_stats.accum.vert_retained = vert_retained;
     s_stats.accum.tri_retained  = tri_retained;
 
-    // Track peak tessellated geometry.  Warn once on the first overflow.
+    /* Track geometry high-water marks and warn once on overflow. */
     if ( s_tess.vert_count > s_tess.vert_hwm ) s_tess.vert_hwm = s_tess.vert_count;
     if ( s_tess.idx_count  > s_tess.idx_hwm  ) s_tess.idx_hwm  = s_tess.idx_count;
 
@@ -621,7 +595,7 @@ cache_build_frame( void )
     static u32 prev_verts = ~0u, prev_idx = ~0u;
     if ( s_dbg_geometry && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
     {
-        printf( "[gui] geometry this frame: verts %u/%u (peak %u), idx %u/%u (peak %u)\n",
+        printf( "[gui] geometry: verts %u/%u (peak %u)  idx %u/%u (peak %u)\n",
                 s_tess.vert_count, GUI_MAX_VERTS, s_tess.vert_hwm,
                 s_tess.idx_count,  GUI_MAX_IDX,   s_tess.idx_hwm );
         prev_verts = s_tess.vert_count;

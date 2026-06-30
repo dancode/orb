@@ -28,23 +28,22 @@ typedef struct
 } gui_gpu_cmd_t;
 
 /*==============================================================================================
-    GUI: Drawing State
+    Draw list -- the per-frame command buffer and segment table.
 
-    One contiguous span of the command list sharing a single (win, z, vp) tag.  
-    
-    - The emit path appends commands into cmds[]; 
-    - whenever draw_set_window / draw_set_sort_key / draw_set_viewport change the tag, 
-      the open span is closed at the current cmd_count and a fresh one is opened.        
-    - cache_tess_window walks these spans per window (tens of them) instead of re-scanning 
-      the 1024-entry command buffer per z and clip, and the retained-cache diff hashes each 
-      window's spans by the stable win id. 
-      
-    - [lo, hi) is the half-open command range; the final open span's hi is closed at build time. 
-    - win is the owning window's stable id (id_hash(title)), 0 for background / non-window draws.
-
+    Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, font) changes,
+    the current open span is closed and a new one is opened, so the buffer is partitioned into
+    contiguous per-(win,z,vp,font) segments.  cache_tess_window walks these segments per window
+    rather than re-scanning the full command buffer.  [lo, hi) is a half-open range; the final
+    segment's hi is closed at build time.  win=0 is the background (non-window) draw layer.
 ==============================================================================================*/
 
-typedef struct { gui_id_t win; u32 z, vp, font, lo, hi; } gui_cmd_seg_t;
+typedef struct
+{
+    gui_id_t win;
+    u32      z, vp, font;
+    u32      lo, hi;   /* half-open command range into s_draw.cmds[] */
+
+} gui_cmd_seg_t;
 
 static struct
 {
@@ -78,10 +77,10 @@ static struct
     gui_rect_t      clip_table      [ GUI_MAX_CLIP_RECTS ];     /* flat pool of all clip rects this frame   */
     u32             clip_hash_cache [ GUI_MAX_CLIP_RECTS ];     /* fnv1a of clip_table[i], baked when added */
     u32             clip_table_n;                               /* entries used this frame                  */
-    u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];         /* parallel to clip_stack: index per level  */
-    u8              cur_clip_idx;                               /* top-of-stack index, stamped on each emit */
+    u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];  /* parallel to clip_stack: index per level  */
+    u8              cur_clip_idx;                        /* top-of-stack index, stamped on each emit */
 
-    gui_rect_t      clip_stack      [ GUI_CLIP_DEPTH ];         //
+    gui_rect_t      clip_stack[ GUI_CLIP_DEPTH ];        /* intersected rects, mirrors clip_table   */
     u32             clip_depth;
 
     /* Global opacity multiplier applied to every pushed shape.  1.0 normally; lowered for the
@@ -149,27 +148,41 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.seg_count       = 1;
     s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0, 0, 0, s_draw.cur_font, 0, 0 };
 
-    /* Seed the clip table: slot 0 = full display.  clip_idx_stack[0] and cur_clip_idx both start
-       at 0 so every emitter finds the root clip without any push being required first. */
+    /* Seed the clip table: slot 0 = full display rect.  clip_idx_stack[0] and cur_clip_idx both
+       start at 0 so every emitter finds the root clip without a push being required first. */
     s_draw.clip_table[ 0 ]      = ( gui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
     s_draw.clip_hash_cache[ 0 ] = fnv1a( 2166136261u, &s_draw.clip_table[ 0 ], sizeof( gui_rect_t ) );
+    s_draw.clip_stack[ 0 ]      = s_draw.clip_table[ 0 ];
     s_draw.clip_table_n         = 1;
-    s_draw.clip_idx_stack[ 0 ] = 0;
-    s_draw.cur_clip_idx        = 0;
+    s_draw.clip_idx_stack[ 0 ]  = 0;
+    s_draw.cur_clip_idx         = 0;
+    s_draw.clip_depth           = 1;
 
-    s_draw.clip_depth      = 1;
-    s_draw.alpha           = 1.0f;
-    s_draw.rounding        = 0.0f;   /* square until a seam sets the resolved radius */
-    s_draw.text_clip_x0    = -GUI_TEXT_NO_CLIP;   /* unclipped until a seam sets a window */
-    s_draw.text_clip_x1    = GUI_TEXT_NO_CLIP;
-
-    /* Slot 0 of clip_stack mirrors clip_table[0]; never popped off the stack. */
-    s_draw.clip_stack[ 0 ] = s_draw.clip_table[ 0 ];
+    s_draw.alpha        = 1.0f;
+    s_draw.rounding     = 0.0f;            /* square until a seam sets the resolved radius */
+    s_draw.text_clip_x0 = -GUI_TEXT_NO_CLIP;  /* unclipped until a seam sets a window */
+    s_draw.text_clip_x1 =  GUI_TEXT_NO_CLIP;
 }
 
 /*----------------------------------------------------------------------------------------------
     Clip stack
 ----------------------------------------------------------------------------------------------*/
+
+/* Append r to the clip table and return its index.  On overflow (table full) the index saturates
+   to the second-to-last slot -- commands share a slightly wrong clip rather than writing OOB.
+   Slot GUI_MAX_CLIP_RECTS-1 is reserved as an invalid sentinel and is never written. */
+static u8
+clip_append( gui_rect_t r )
+{
+    if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
+    {
+        u8 ci = (u8)s_draw.clip_table_n++;
+        s_draw.clip_table      [ ci ] = r;
+        s_draw.clip_hash_cache [ ci ] = fnv1a( 2166136261u, &r, sizeof( gui_rect_t ) );
+        return ci;
+    }
+    return (u8)( GUI_MAX_CLIP_RECTS - 2u );
+}
 
 static gui_rect_t
 draw_current_clip( void )
@@ -204,23 +217,11 @@ draw_cull_box( f32 x, f32 y, f32 w, f32 h )
 void
 draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
 {
-    /* Intersect with the enclosing clip so a nested region (a child box near a window edge)
-       can never scissor outside its parent.  The push always happens -- a fully clipped-out
-       region pushes a zero-size rect, which simply draws nothing -- so every push still has a
-       matching pop and the stack stays balanced. */
-    gui_rect_t c = rect_intersect( ( gui_rect_t ){ x, y, w, h }, draw_current_clip() );
-
-    /* Append a new clip table entry for this intersected rect and record its index on the parallel
-       stack.  On overflow (> 255 entries) the index saturates to 254 (the last valid slot): affected
-       commands share a slightly wrong clip rect in that degenerate case rather than writing out of
-       bounds.  255 is reserved as the invalid sentinel; it is never written by a push. */
-    u8 ci = ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u ) ? (u8)s_draw.clip_table_n : (u8)( GUI_MAX_CLIP_RECTS - 2u );
-    if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
-    {
-        s_draw.clip_table      [ s_draw.clip_table_n ] = c;
-        s_draw.clip_hash_cache [ s_draw.clip_table_n ] = fnv1a( 2166136261u, &c, sizeof( gui_rect_t ) );
-        ++s_draw.clip_table_n;
-    }
+    /* Intersect with the enclosing clip so a nested region can never scissor outside its parent.
+       The push always happens -- a clipped-out region pushes a zero rect and draws nothing --
+       so every push has a matching pop and the stack stays balanced. */
+    gui_rect_t c  = rect_intersect( ( gui_rect_t ){ x, y, w, h }, draw_current_clip() );
+    u8         ci = clip_append( c );
 
     if ( s_draw.clip_depth < GUI_CLIP_DEPTH )
     {
@@ -230,7 +231,6 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
     }
     s_draw.cur_clip_idx = ci;
 
-    /* Debug overlay: record this clip rect, colored by its new stack depth. */
     DBG_CLIP( c, s_draw.clip_depth );
 }
 
@@ -244,26 +244,17 @@ draw_pop_clip_rect( void )
     }
 }
 
-/* Set the base clip (clip_stack[0]) -- the rect every window clip intersects against -- to a given
-   surface size.  draw_reset seeds it to the main display; window_begin overwrites it with its own
-   viewport's drawable size so a window on a second surface is bounded by that surface, not the main
-   window (window_end restores the main display).  Only touches slot 0, so it is safe whenever the
-   stack is at base depth (between windows); a window's own clip pushes on top of it. */
+/* Set the base clip (clip_stack[0]) -- the rect every window clip intersects against -- to the
+   given surface size.  draw_reset seeds it to the main display; window_begin overwrites it with
+   its viewport's drawable size (window_end restores the main display).  A fresh clip table entry
+   is always appended: commands already emitted reference the old root index, so overwriting it
+   would corrupt them.  clip_idx_stack[0] is updated so subsequent pushes inherit the new root. */
 void
 draw_set_root_clip( f32 w, f32 h )
 {
-    gui_rect_t r = ( gui_rect_t ){ 0.0f, 0.0f, w, h };
-    s_draw.clip_stack[ 0 ] = r;
-    /* Append a fresh clip table entry: commands emitted before this call already reference the
-       old root index; overwriting that slot would corrupt them.  clip_idx_stack[0] is updated so
-       subsequent pushes intersect against (and inherit from) the new root. */
-    u8 ci = ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u ) ? (u8)s_draw.clip_table_n : (u8)( GUI_MAX_CLIP_RECTS - 2u );
-    if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
-    {
-        s_draw.clip_table      [ s_draw.clip_table_n ] = r;
-        s_draw.clip_hash_cache [ s_draw.clip_table_n ] = fnv1a( 2166136261u, &r, sizeof( gui_rect_t ) );
-        ++s_draw.clip_table_n;
-    }
+    gui_rect_t r              = ( gui_rect_t ){ 0.0f, 0.0f, w, h };
+    s_draw.clip_stack[ 0 ]    = r;
+    u8 ci                     = clip_append( r );
     s_draw.clip_idx_stack[ 0 ] = ci;
     s_draw.cur_clip_idx        = ci;
 }
@@ -506,11 +497,10 @@ draw_clamp_rounding( f32 w, f32 h )
 static u32
 draw_hash_cmd( const gui_cmd_t* c )
 {
-    /* Hash type and vp directly; fold in the CLIP VALUE (not the index) so that the same clip
-       value produces the same hash regardless of which table slot it lands in this frame.
-       z is per-segment and folded at segment level in cache_diff_windows -- not per-command.
-       type+vp are packed into one u32 so the preamble costs one fnv1a_u32 call instead of two
-       fnv1a byte calls.  clip_hash_cache[i] is pre-baked at push time (4 bytes instead of 16). */
+    /* Fold type+vp (packed into one u32) then the pre-baked clip hash.  The clip value -- not
+       the index -- is what matters so the same rect produces the same hash regardless of which
+       table slot it occupies this frame.  clip_hash_cache[i] is baked at push time (4 bytes
+       folded here vs 16 for the raw rect).  z is per-segment, folded in cache_diff_windows. */
     u32 h  = 2166136261u;
     u32 tv = (u32)c->type | ( (u32)c->vp << 8 );
     h = fnv1a_u32( h, tv );
