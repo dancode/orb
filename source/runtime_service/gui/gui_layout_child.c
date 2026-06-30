@@ -251,12 +251,13 @@ gui_child_end( void )
    feeds nothing back, so these only ever hold zero / discard.  Shared by every push_layout frame. */
 static f32 s_sublayout_sink[ 4 ];
 
-void
-gui_push_layout( void )
+/* Open a transient sub-layout frame whose content area is `cell` (screen rect).  The shared body of
+   gui_push_layout (cell = the next template cell), gui_push_layout_rect (cell = an explicit rect),
+   and the split-panel pusher: no scroll, no clip, no persistent state, no frame.  It does NOT advance
+   the parent -- a caller that needs the parent to step (push_layout) reserves the cell first. */
+static void
+sublayout_open( gui_rect_t cell )
 {
-    /* Take the next cell on the parent template -- this advances the parent like any widget emit. */
-    gui_rect_t cell = widget_next_rect( WIDGET_H );
-
     /* Cap the write slot at the top of the stack (mirroring layout_push_region) so an over-deep
        nesting aliases the deepest frame rather than writing past the array; sp still counts true. */
     u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
@@ -297,6 +298,24 @@ gui_push_layout( void )
 }
 
 void
+gui_push_layout( void )
+{
+    /* Take the next cell on the parent template -- this advances the parent like any widget emit. */
+    gui_rect_t cell = widget_next_rect( WIDGET_H );
+    sublayout_open( cell );
+}
+
+/* push_layout_rect -- open a sub-layout over an explicit screen rect rather than the next template
+   cell.  The parent flow is left untouched (no cell is consumed), so the rect is absolute placement:
+   the seam an external layout pass (two-pass / "layout island") uses to hand a resolved box back to
+   the immediate widgets, which then fill it exactly as they fill any region.  Pair with pop_layout. */
+void
+gui_push_layout_rect( gui_rect_t rect )
+{
+    sublayout_open( rect );
+}
+
+void
 gui_pop_layout( void )
 {
     layout_frame_t* f = lf();
@@ -334,43 +353,12 @@ typedef struct
 static gui_split_frame_t s_split_stack[ GUI_SPLIT_DEPTH ];
 static u32               s_split_sp;
 
-/* Push a transient sub-layout frame whose content area is rect -- same mechanism as
-   gui_push_layout but with an explicit pre-computed rect rather than the next template cell. */
+/* Push a transient sub-layout frame whose content area is rect -- the explicit-rect sub-layout
+   (sublayout_open), shared with push_layout / push_layout_rect.  split panels never scroll. */
 static void
 split_push_panel( gui_rect_t rect )
 {
-    u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
-    ++s_layout_sp;
-    layout_frame_t* f = &s_layout_stack[ slot ];
-
-    f->region_id   = GUI_ID_NONE;
-    f->outer       = rect;
-    f->flags       = GUI_WIN_NOSCROLL;
-    f->parent_clip = s_build.clip_rect;
-    f->pushed_clip = false;
-    f->id_restore  = s_id_sp;
-
-    /* Re-use the push_layout sink -- split panels never scroll or report content size up. */
-    f->scroll_x   = &s_sublayout_sink[ 0 ];
-    f->scroll_y   = &s_sublayout_sink[ 1 ];
-    f->pcontent_w = &s_sublayout_sink[ 2 ];
-    f->pcontent_h = &s_sublayout_sink[ 3 ];
-
-    f->sb_w = f->sb_h = 0.0f;
-    f->show_v = f->show_h = false;
-    f->view_w = rect.w;
-    f->view_h = rect.h;
-
-    f->origin_x      = rect.x;
-    f->origin_y      = rect.y;
-    f->content_x     = rect.x;
-    f->content_w     = rect.w;
-    f->cursor_x      = rect.x;
-    f->cursor_y      = rect.y;
-    f->content_max_x = rect.x;
-    f->content_y_max = rect.y + rect.h;
-
-    layout_clear( f );   /* panel opens undeclared -- caller declares stack/cols/... inside */
+    sublayout_open( rect );
 }
 
 /* Pop the current panel and return the content height it actually emitted.

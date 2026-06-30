@@ -399,6 +399,13 @@ typedef struct gui_api_s
            gui()->text("col 1");  gui()->text("col 2"); */
 
     void ( *push_layout )( void );
+
+    /* push_layout_rect -- open a sub-layout over an explicit screen rect rather than the next
+       template cell; the parent flow is left untouched (no cell consumed).  The seam an external
+       layout pass (a two-pass "layout island") uses to hand a resolved box back to the immediate
+       widgets, which fill it like any region.  Pair with pop_layout. */
+    void ( *push_layout_rect )( gui_rect_t rect );
+
     void ( *pop_layout  )( void );
     void ( *child_end   )( void );
 
@@ -535,6 +542,15 @@ typedef struct gui_api_s
        `w` is the main-axis size (honored in pack / same_line; column flow sizes to the track). */
     gui_vec2_t ( *cursor_screen_pos )( void );
     gui_rect_t ( *dummy )( f32 w, f32 h );
+
+    /* content_rect -- the current region's available area as a screen rect (cursor_screen_pos joined
+       with content_avail).  split -- carve a rect into panels along an axis using the overloaded
+       column unit ( >1 px, ==1 fill, (0,1) fraction ), writing each panel rect into out[] and
+       returning the count ( <= GUI_LAYOUT_COLS ).  Pure rect math: fill each panel with
+       push_layout_rect, and nest by splitting a returned rect again.  Single-pass and known-size --
+       it never measures content, so size panels with px / fraction / fill, not content-driven sizes. */
+    gui_rect_t ( *content_rect )( void );
+    u32        ( *split )( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
 
     /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
        seeded by the enclosing window / child region automatically, so identical labels in

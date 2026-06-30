@@ -219,6 +219,77 @@ show_font_browser( bool* p_open )
 }
 
 /*============================================================================================*/
+/* Split-panel helper demo                                                                     */
+/*                                                                                              */
+/* Recursive rect splits over gui()->split + push_layout_rect: a fixed sidebar beside a filling */
+/* content column, and that column carved top-to-bottom into header / body / footer.  Known     */
+/* sizes, single pass, plain gui_rect_t locals -- no layout tree, no cached heights.            */
+/*============================================================================================*/
+
+static void
+show_split_demo( bool* p_open )
+{
+    static const char* WIN = "Split Panels";
+    if ( !gui()->window_begin( WIN, GUI_WIN_CLOSEABLE ) )
+    {
+        if ( p_open && !gui()->window_is_open( WIN ) )
+            *p_open = false;
+        gui()->window_end();
+        return;
+    }
+
+    gui()->stack();
+    gui()->text_wrapped( "gui()->split carves a rect into panels (overloaded unit: px / fill / "
+                         "fraction), each filled with push_layout_rect.  Nest by splitting a "
+                         "returned rect again -- here a 120px sidebar + content, content split "
+                         "into header / body / footer." );
+
+    /* A fixed-height band carved from the region's available area. */
+    gui_rect_t band = gui()->content_rect();
+    band.h = 180.0f;
+
+    /* Horizontal split: 120px sidebar | filling content. */
+    gui_rect_t col[ GUI_LAYOUT_COLS ];
+    gui()->split( band, GUI_AXIS_X, ( const f32[] ){ 120.0f, 1.0f, GUI_END }, -1.0f, col );
+
+    /* Sidebar -- a stack of nav buttons. */
+    gui()->push_layout_rect( col[ 0 ] );
+        gui()->stack();
+        gui()->button( "Nav A" );
+        gui()->button( "Nav B" );
+        gui()->button( "Nav C" );
+    gui()->pop_layout();
+
+    /* Content column split vertically: 28px header | filling body | 28px footer. */
+    gui_rect_t row[ GUI_LAYOUT_COLS ];
+    gui()->split( col[ 1 ], GUI_AXIS_Y, ( const f32[] ){ 28.0f, 1.0f, 28.0f, GUI_END }, -1.0f, row );
+
+    gui()->push_layout_rect( row[ 0 ] );
+        gui()->stack();
+        gui()->text( "Header" );
+    gui()->pop_layout();
+
+    gui()->push_layout_rect( row[ 1 ] );
+        gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NONE );
+            gui()->stack();
+            gui()->text( "Body content fills the middle." );
+            gui()->text( "Split is single-pass and recursive." );
+            gui()->text( "Each panel is a plain gui_rect_t." );
+        gui()->child_end();
+    gui()->pop_layout();
+
+    gui()->push_layout_rect( row[ 2 ] );
+        gui()->stack();
+        gui()->text_disabled( "Footer" );
+    gui()->pop_layout();
+
+    /* The panels used absolute rects, so the window pen has not moved -- reserve the band. */
+    gui()->dummy( 0.0f, band.h );
+
+    gui()->window_end();
+}
+
+/*============================================================================================*/
 /* Demo setup                                                                                  */
 /*============================================================================================*/
 
@@ -229,6 +300,7 @@ show_font_browser( bool* p_open )
 
 static bool show_demo             = false;
 static bool show_font_browser_win = true;
+static bool show_split_win        = true;
 static void show_example_main_menu_bar()
 {
     if ( gui()->main_menu_bar_begin() )
@@ -237,6 +309,7 @@ static void show_example_main_menu_bar()
         {
             gui()->menu_item( "Demo Window",    NULL, &show_demo );
             gui()->menu_item( "Font Browser",   NULL, &show_font_browser_win );
+            gui()->menu_item( "Split Panels",   NULL, &show_split_win );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -537,6 +610,9 @@ main( int argc, char** argv )
             s_font_browser_prev = show_font_browser_win;
             if ( show_font_browser_win )
                 show_font_browser( &show_font_browser_win );
+
+            if ( show_split_win )
+                show_split_demo( &show_split_win );
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
 

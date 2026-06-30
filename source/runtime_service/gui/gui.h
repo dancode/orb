@@ -298,6 +298,19 @@ typedef enum
 } gui_pack_dir_t;
 
 /*==============================================================================================
+    Split axis -- the axis gui()->split carves a rect along.  X lays the panels left-to-right
+    (a column split: a sidebar + content); Y lays them top-to-bottom (a row split: header /
+    body / footer).  The panel sizes use the same overloaded unit as the column tracks.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_AXIS_X = 0,    /* carve into vertical panels side by side (columns)  */
+    GUI_AXIS_Y = 1,    /* carve into horizontal panels stacked (rows)        */
+
+} gui_axis_t;
+
+/*==============================================================================================
     Field label side -- where a labeled value widget (input_text / slider_float / checkbox) puts
     its label when a field split is active (gui()->field_split / field_label_left).  The label and
     control are two tracks resolved across the widget's cell with the same overloaded unit as

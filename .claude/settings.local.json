@@ -160,7 +160,11 @@
       "PowerShell($result = bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1; $result | Select-String \"error|FAILED|orb linked|orb compiling\"; Write-Host \"Exit: $LASTEXITCODE\")",
       "PowerShell(cd F:\\\\orb; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_popup.c\"\\).LastWriteTime = Get-Date; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_internal.h\"\\).LastWriteTime = Get-Date; \\(Get-Item \"source\\\\runtime_service\\\\gui\\\\gui_widget_window.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1 | Select-Object -Last 15)",
       "Bash(cat obj/dev_font/dev_font_build.log)",
-      "Bash(ls obj/dev_font/)"
+      "Bash(ls obj/dev_font/)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Out-File *)",
+      "PowerShell($p = Start-Process -FilePath F:\\\\orb\\\\bin\\\\sb_gui.exe -WorkingDirectory F:\\\\orb -PassThru; Start-Sleep -Seconds 4; if \\($p.HasExited\\) { \"EXITED EARLY code=$\\($p.ExitCode\\)\" } else { \"ALIVE after 4s \\(init OK\\); stopping\"; $p | Stop-Process -Force })",
+      "PowerShell(Remove-Item *)"
     ]
   }
 }

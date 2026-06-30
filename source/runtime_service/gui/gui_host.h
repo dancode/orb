@@ -109,6 +109,7 @@ bool gui_menu_item( const char* label, const char* shortcut, bool* selected );
 bool gui_child_begin( const char* id, f32 w, f32 h, gui_win_flags_t flags );
 void gui_child_end( void );
 void gui_push_layout( void );
+void gui_push_layout_rect( gui_rect_t rect );
 void gui_pop_layout( void );
 
 /* layout */
@@ -171,6 +172,8 @@ f32 gui_calc_row( f32 content_h );
 f32 gui_calc_col( f32 content_w );
 gui_vec2_t gui_content_avail( void );
 gui_vec2_t gui_cursor_screen_pos( void );
+gui_rect_t gui_content_rect( void );
+u32        gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
 gui_rect_t gui_dummy( f32 w, f32 h );
 
 /* layout - interactive helpers */

@@ -364,6 +364,48 @@ gui_cursor_screen_pos( void )
     return ( gui_vec2_t ){ f->cursor_x, f->cursor_y };
 }
 
+/* The current region's available area as a screen rect: the layout pen (top-left) joined with the
+   room ahead (content_avail).  The rect to hand gui()->split, or to carve with the rect_cut_*
+   helpers, when laying a band out by hand.  Like content_avail, read it where the next item lands. */
+gui_rect_t
+gui_content_rect( void )
+{
+    gui_vec2_t p = gui_cursor_screen_pos();
+    gui_vec2_t a = gui_content_avail();
+    return ( gui_rect_t ){ p.x, p.y, a.x, a.y };
+}
+
+/* split -- carve `area` into panels along `axis` using the overloaded column unit ( >1 px, ==1 fill,
+   (0,1) fraction; the exact rule cols() uses ), writing each panel's screen rect into out[].  Returns
+   the panel count ( <= GUI_LAYOUT_COLS, so size out[] to that ).  Pure rect math -- no state, no
+   cached sizes, nothing emitted: pair each rect with push_layout_rect to fill it, and RECURSE by
+   splitting a returned rect again ( e.g. a vertical header/body/footer inside the content column ).
+   `sizes` is GUI_END-terminated; gap <= 0 uses the theme widget gap.  The cross axis spans the whole
+   `area` extent, so the panels tile one band -- nest splits for a grid.  This is the single-pass,
+   known-size companion to the layout templates: it never measures content, so a panel is exactly the
+   size asked for (use a fixed/fraction/fill size, not a content-driven one). */
+u32
+gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out )
+{
+    f32 g = ( gap > 0.0f ) ? gap : WIDGET_GAP;
+
+    f32 tracks[ GUI_LAYOUT_COLS ];
+    u32 n = layout_copy_tracks( sizes, tracks );   /* GUI_END-terminated -> count; NULL -> one fill */
+
+    bool horiz  = ( axis == GUI_AXIS_X );
+    f32  origin = horiz ? area.x : area.y;
+    f32  extent = horiz ? area.w : area.h;
+
+    /* The same resolver the column / field tracks use, so the unit rule is identical everywhere. */
+    f32 pos[ GUI_LAYOUT_COLS ], size[ GUI_LAYOUT_COLS ];
+    layout_resolve_tracks( tracks, n, origin, extent, g, pos, size );
+
+    for ( u32 i = 0; i < n; ++i )
+        out[ i ] = horiz ? ( gui_rect_t ){ pos[ i ], area.y, size[ i ], area.h }
+                         : ( gui_rect_t ){ area.x, pos[ i ], area.w, size[ i ] };
+    return n;
+}
+
 /* Reserve a w x h block in the layout and return its screen rect, advancing the pen like any widget
    (the Dummy analogue) -- blank space, or a slot to fill with custom draw_* geometry / make clickable
    with invisible_button.  `w` is the main-axis size: honored in a pack run or on a same_line, while
