@@ -100,8 +100,10 @@ show_font_browser( bool* p_open )
     // gui()->window_set_next_size( 128.0f, 128.0f, GUI_COND_ONCE );
     if ( !gui()->window_begin( "Font Browser", GUI_WIN_CLOSEABLE ) )
     {
-        /* X button was clicked -- sync back to the caller's bool. */
-        if ( p_open ) *p_open = false;
+        /* window_begin returns false for both collapsed and X-closed windows.
+           Only clear p_open when the window was actually closed (X clicked). */
+        if ( p_open && !gui()->window_is_open( "Font Browser" ) )
+            *p_open = false;
         gui()->window_end();
         return;
     }

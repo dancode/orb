@@ -928,7 +928,10 @@ gui_window_end( void )
             gui_id_t     arrow_id = id_combine( s_build.win_id, GUI_COLLAPSE_SALT );
             widget_state_t arrow_st = widget_behavior( arrow_id, arrow_r, WIDGET_KIND_BUTTON );
             if ( arrow_st.clicked )
+            {
                 win->collapsed = !win->collapsed;
+                s_retained.wants_redraw = true;  /* toggle takes effect next frame; force one more build */
+            }
             draw_collapse_arrow( arrow_r, s_build.win_collapsed, arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
             text_x = s_build.win_x + title_h;   /* title follows the arrow square */
 
@@ -940,7 +943,10 @@ gui_window_end( void )
             if ( s_io.mouse_double[ 0 ] && !s_build.win_resize_hot
                  && s_build.win_id == s_interaction.hover_win && s_interaction.hover_id == GUI_ID_NONE
                  && rect_hit( bar_r ) )
+            {
                 win->collapsed = !win->collapsed;
+                s_retained.wants_redraw = true;
+            }
         }
 
         /* Right-edge title-bar buttons march leftward from the bar's right edge: the close (X)
@@ -970,7 +976,10 @@ gui_window_end( void )
             draw_close_x( cl_r, cl_st.hover ? COL_TEXT : COL_TEXT_DIM );
 
             if ( cl_st.clicked && win )
+            {
                 win->closed = true;
+                s_retained.wants_redraw = true;  /* close takes effect next frame; force one more build */
+            }
 
             right_limit = cl_r.x - WIDGET_PAD;
         }
