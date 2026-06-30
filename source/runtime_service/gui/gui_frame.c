@@ -865,6 +865,7 @@ gui_font_load( const char* path )
     if ( id == 0 )
         return 0;
     gui_style_apply();
+    draw_set_font( font_active_id() );   // load also activates -> retag the atlas batch context
     return id;
 }
 
@@ -883,6 +884,10 @@ gui_font_use( u32 id )
 {
     font_use( id );
     gui_style_apply();
+    /* The active font is also the per-segment atlas batch context: cut a new draw segment so the
+       tessellator re-activates this font for the span and its glyphs / fills / dashes sample the
+       right atlas.  font_use ignores a bad id, so tag with whatever is actually active now. */
+    draw_set_font( font_active_id() );
 }
 
 void

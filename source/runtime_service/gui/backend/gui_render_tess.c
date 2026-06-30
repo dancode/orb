@@ -656,17 +656,32 @@ tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     return true;
 }
 
-/* Tessellate one frame's semantic command list into s_tess geometry. */
+/* Tessellate one frame's semantic command list into s_tess geometry.
+
+   `order` is a permutation of [0,count): the indices grouped by clip within each z-run (built by
+   cache_tess_window) so equal-clip commands tessellate contiguously and collapse into one GPU batch.
+   `fonts` is the parallel font id of each ordered entry (its segment's font).  Before tessellating a
+   command we activate its font so the tess-time lookups -- font_glyph (UVs), font_atlas_idx (atlas),
+   the white texel and dash rows -- resolve from the right atlas; tess_ensure_gpu_cmd then splits the
+   GPU batch on the resulting atlas change.  The active font is saved and restored so the BUILD phase
+   leaves the global font state (used by the next frame's layout) untouched. */
 static void
-tess_dispatch( const gui_cmd_t* cmds, const u32* order, u32 count )
+tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 count )
 {
-    /* `order` is a permutation of [0,count): the indices grouped by clip within each z-run
-       (built by cache_tess_window) so equal-clip commands tessellate contiguously and collapse
-       into one GPU batch.  Walking it instead of [0,count) is the whole cost of the merge -- the
-       geometry is built exactly once, just in this order; nothing is copied or re-tessellated. */
+    u32 saved_font = font_active_id();
+    u32 cur_font   = saved_font;
+
     for ( u32 oi = 0; oi < count; ++oi )
     {
         const gui_cmd_t* c = &cmds[ order[ oi ] ];
+
+        /* Switch the atlas batch context to this command's segment font when it changes. */
+        if ( fonts[ oi ] != cur_font )
+        {
+            cur_font = fonts[ oi ];
+            font_use( cur_font );
+        }
+
         s_tess.cur_clip = s_draw.clip_table[ c->clip_idx ];
         s_tess.cur_vp   = c->vp;
 
@@ -741,6 +756,10 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, u32 count )
                 break;
         }
     }
+
+    /* Leave the global font state as we found it -- the next frame's emit/layout depends on it. */
+    if ( cur_font != saved_font )
+        font_use( saved_font );
 }
 
 // clang-format on

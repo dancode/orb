@@ -250,10 +250,12 @@ cache_diff_windows( void )
             ++s_cache.cur_n;
         }
 
-        // Fold sort key + viewport into the hash so a raise or surface move invalidates the window.
+        // Fold sort key + viewport + font into the hash so a raise, surface move, or font swap
+        // invalidates the window (the font is the segment's atlas context, see draw_set_font).
         u32 h = s_cache.cur[ bi ].hash;
-        h = fnv1a( h, &segs[ si ].z,  sizeof segs[ si ].z );
-        h = fnv1a( h, &segs[ si ].vp, sizeof segs[ si ].vp );
+        h = fnv1a( h, &segs[ si ].z,    sizeof segs[ si ].z );
+        h = fnv1a( h, &segs[ si ].vp,   sizeof segs[ si ].vp );
+        h = fnv1a( h, &segs[ si ].font, sizeof segs[ si ].font );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
             h = fnv1a( h, &s_draw.cmd_hashes[ i ], sizeof s_draw.cmd_hashes[ i ] );
         s_cache.cur[ bi ].hash = h;
@@ -335,9 +337,14 @@ cache_tess_window( gui_id_t win )
         }
     }
 
-    /* Clip-sorted permutation.  Static since cache_build_frame is guarded (single call per frame,
-       single-threaded) -- avoids a 4 KB stack frame on every window. */
+    /* Clip-sorted permutation, plus a parallel font id per ordered entry.  The permutation regroups
+       commands by clip ACROSS segments, so a command's font cannot be inferred from its position at
+       dispatch -- but here the build still knows the owning segment (si), so we record segs[si].font
+       alongside each index.  The font thus travels with its commands through the reorder while
+       staying a per-segment property (no per-command field).  tess_dispatch re-activates it per run.
+       Static since cache_build_frame is guarded (single call per frame, single-threaded). */
     static u32 win_order[ GUI_MAX_CMDS ];
+    static u32 win_font [ GUI_MAX_CMDS ];
     u32 n = 0;
 
     if ( overflow )
@@ -348,7 +355,7 @@ cache_tess_window( gui_id_t win )
             if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
             for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
                 if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
-                    win_order[ n++ ] = i;
+                    { win_font[ n ] = segs[ si ].font; win_order[ n++ ] = i; }
         }
     }
     else
@@ -359,11 +366,11 @@ cache_tess_window( gui_id_t win )
                 if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
                 for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
                     if ( s_draw.cmds[ i ].clip_idx == clips[ g ] )
-                        win_order[ n++ ] = i;
+                        { win_font[ n ] = segs[ si ].font; win_order[ n++ ] = i; }
             }
     }
 
-    tess_dispatch( s_draw.cmds, win_order, n );
+    tess_dispatch( s_draw.cmds, win_order, win_font, n );
 }
 
 /*==============================================================================================

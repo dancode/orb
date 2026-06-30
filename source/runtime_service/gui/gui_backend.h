@@ -95,6 +95,7 @@ u32  draw_sort_key      ( void );     // current sort key (saved/restored by the
 void draw_set_viewport  ( u32 vp );   // viewport index stamped on new commands (surface routing)
 u32  draw_viewport      ( void );     // current viewport index
 void draw_set_window    ( gui_id_t win ); // stable window id stamped on new commands (cache key)
+void draw_set_font      ( u32 font );  // active font id -> per-segment atlas batch context (push/pop/use_font)
 gui_id_t draw_window  ( void );     // current window id (saved/restored by the popup layer)
 
 void draw_push_clip_rect ( f32 x, f32 y, f32 w, f32 h ); // push clip, intersected with the parent

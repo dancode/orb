@@ -213,6 +213,14 @@ show_font_browser( bool* p_open )
                                      s_fb.custom_text, sizeof( s_fb.custom_text ) );
         gui()->spacing( 0.0f );
 
+        /* NOTE -- this preview is NOT isolated to these lines.  The renderer has no per-run font:
+           text commands store only position/colour/clip (see GUI_CMD_TEXT in gui_draw.c), and the
+           glyph atlas + UVs are resolved at DEFERRED tessellation time from one global active font
+           (tess_text_n / font_atlas_idx in gui_render_tess.c).  So whichever font is active when the
+           frame tessellates draws the ENTIRE frame -- push_font/pop_font here cannot scope a second
+           font onto just the preview.  A true side-by-side preview would need the preview glyphs
+           rendered through a separate texture/path decoupled from the global font state; that is not
+           possible with the current single-global-font model. */
         gui()->push_font( s_fb.preview_id );
         gui()->stack();
         if ( s_fb.custom_text[ 0 ] )

@@ -44,7 +44,7 @@ typedef struct
 
 ==============================================================================================*/
 
-typedef struct { gui_id_t win; u32 z, vp, lo, hi; } gui_cmd_seg_t;
+typedef struct { gui_id_t win; u32 z, vp, font, lo, hi; } gui_cmd_seg_t;
 
 static struct
 {
@@ -67,6 +67,9 @@ static struct
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
     u32             cur_z;          /* sort key tracked per-segment (draw_seg_retag; NOT baked per command) */
     u32             cur_vp;         /* viewport index stamped onto new commands (set by begin/window_end)  */
+    u32             cur_font;       /* active font id tracked per-segment (draw_set_font); the segment is the
+                                       font/atlas batch context -- text glyphs, fills (white texel) and dashed
+                                       lines all resolve from it at tessellation time.  NOT baked per command. */
 
     /* Clip table: append-only per-frame pool of distinct scissor rects.  clip_push_clip_rect
        appends each intersected rect and records its index in clip_idx_stack so the active
@@ -112,10 +115,11 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.cur_win         = 0;   /* background; windows tag it via draw_set_window */
     s_draw.cur_z           = 0;   /* background; windows raise it via draw_set_sort_key */
     s_draw.cur_vp          = 0;   /* main viewport; windows route via draw_set_viewport */
+    s_draw.cur_font        = font_active_id();   /* background segment inherits whatever font is active now */
 
-    /* Open the first command segment: background (win 0, z 0, main viewport), starting at command 0. */
+    /* Open the first command segment: background (win 0, z 0, main viewport, active font), at command 0. */
     s_draw.seg_count       = 1;
-    s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0, 0, 0, 0, 0 };
+    s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0, 0, 0, s_draw.cur_font, 0, 0 };
 
     /* Seed the clip table: slot 0 = full display.  clip_idx_stack[0] and cur_clip_idx both start
        at 0 so every emitter finds the root clip without any push being required first. */
@@ -233,27 +237,41 @@ draw_set_root_clip( f32 w, f32 h )
    empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
    the pathological >1024-segment case, which cache_tess_window already falls back to natural order). */
 static void
-draw_seg_retag( gui_id_t win, u32 z, u32 vp )
+draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font )
 {
-    if ( win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp )
+    if ( win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp && font == s_draw.cur_font )
         return;   /* no real change -- keep the open segment as is */
+
+    /* No open segment yet -- called outside a frame (e.g. font_use during startup setup, before the
+       first draw_reset).  Just track the tag; draw_reset re-seeds segs[0] from it next frame. */
+    if ( s_draw.seg_count == 0 )
+    {
+        s_draw.cur_win  = win;
+        s_draw.cur_z    = z;
+        s_draw.cur_vp   = vp;
+        s_draw.cur_font = font;
+        return;
+    }
 
     gui_cmd_seg_t* cur = &s_draw.segs[ s_draw.seg_count - 1 ];
     if ( cur->lo == s_draw.cmd_count )
     {
-        cur->win = win;   /* segment empty so far: retag in place rather than splitting */
-        cur->z   = z;
-        cur->vp  = vp;
+        cur->win  = win;   /* segment empty so far: retag in place rather than splitting */
+        cur->z    = z;
+        cur->vp   = vp;
+        cur->font = font;
     }
     else if ( s_draw.seg_count < GUI_MAX_SEGS )
     {
         cur->hi                           = s_draw.cmd_count;   /* close the span here */
-        s_draw.segs[ s_draw.seg_count++ ] = ( gui_cmd_seg_t ){ win, z, vp, s_draw.cmd_count, s_draw.cmd_count };
+        s_draw.segs[ s_draw.seg_count++ ] =
+            ( gui_cmd_seg_t ){ win, z, vp, font, s_draw.cmd_count, s_draw.cmd_count };
     }
 
-    s_draw.cur_win = win;
-    s_draw.cur_z   = z;
-    s_draw.cur_vp  = vp;
+    s_draw.cur_win  = win;
+    s_draw.cur_z    = z;
+    s_draw.cur_vp   = vp;
+    s_draw.cur_font = font;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -265,7 +283,21 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp )
 void
 draw_set_window( gui_id_t win )
 {
-    draw_seg_retag( win, s_draw.cur_z, s_draw.cur_vp );
+    draw_seg_retag( win, s_draw.cur_z, s_draw.cur_vp, s_draw.cur_font );
+}
+
+/*----------------------------------------------------------------------------------------------
+    draw_set_font -- make `font` the atlas batch context for subsequent commands.  Cuts a new
+    command segment at the boundary (a font change is a texture switch, hence a draw-batch seam),
+    so the tessellator can re-activate the font for that span and every glyph / fill / dashed line
+    in it samples the right atlas.  Driven by gui_font_use (push/pop/use_font) alongside the layout
+    metric rebuild, so a second font on screen is a per-segment context, not per-command data.
+----------------------------------------------------------------------------------------------*/
+
+void
+draw_set_font( u32 font )
+{
+    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, font );
 }
 
 gui_id_t
@@ -282,7 +314,7 @@ draw_window( void )
 void
 draw_set_sort_key( u32 z )
 {
-    draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp );
+    draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp, s_draw.cur_font );
 }
 
 /* Current sort key -- saved by the popup layer so an overlay window can restore the parent's
@@ -305,7 +337,7 @@ draw_sort_key( void )
 void
 draw_set_viewport( u32 vp )
 {
-    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp );
+    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_font );
 }
 
 /* Current viewport -- saved/restored by the popup layer alongside the sort key, so an overlay
