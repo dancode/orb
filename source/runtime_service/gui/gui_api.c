@@ -289,6 +289,7 @@ const gui_api_t g_gui_api_struct =
     .split_begin                        = gui_split_begin,
     .split_next                         = gui_split_next,
     .split_end                          = gui_split_end,
+    .button_width                       = gui_button_width,
     .button_fill                        = gui_button_fill,
 };
 

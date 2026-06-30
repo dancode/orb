@@ -92,13 +92,10 @@ show_font_browser( bool* p_open )
         fb_scan();
     }
 
-    /* Re-open: clear closed state so window_begin finds the window open.
-       window_set_open is a no-op when the record does not yet exist. */
-    gui()->window_set_open( "Font Browser", true );
 
     // gui()->window_set_next_pos( 320.0f, 60.0f, GUI_COND_ONCE );
     // gui()->window_set_next_size( 128.0f, 128.0f, GUI_COND_ONCE );
-    if ( !gui()->window_begin( "Font Browser", GUI_WIN_CLOSEABLE ) )
+    if ( !gui()->window_begin( "Font Browser", GUI_WIN_CLOSEABLE | GUI_WIN_CAN_AUTOSIZE ))
     {
         /* window_begin returns false for both collapsed and X-closed windows.
            Only clear p_open when the window was actually closed (X clicked). */
@@ -121,7 +118,8 @@ show_font_browser( bool* p_open )
     gui()->separator_text( "Source" );
 
     /* Left panel: combo + slider stacked.  Right panel: tall "Bake & Preview" button. */
-    gui()->split_begin( "##src", 130.0f );
+    static const char* bake_label = "Bake & Preview";
+    gui()->split_begin( "##src", gui()->button_width( bake_label ) );
 
         gui()->stack();
         const char* combo_label = ( s_fb.count > 0 ) ? s_fb.names[ s_fb.sel ] : "(no fonts)";
@@ -141,7 +139,7 @@ show_font_browser( bool* p_open )
 
         gui()->stack();
         gui()->disabled_begin( s_fb.count == 0 );
-        bool bake = gui()->button_fill( "Bake & Preview" );
+        bool bake = gui()->button_fill( bake_label );
         gui()->disabled_end();
 
     gui()->split_end();
@@ -229,7 +227,7 @@ show_font_browser( bool* p_open )
 // - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
-static bool show_demo             = true;
+static bool show_demo             = false;
 static bool show_font_browser_win = true;
 static void show_example_main_menu_bar()
 {
@@ -531,6 +529,12 @@ main( int argc, char** argv )
             if ( show_demo )
                 show_demo_window( &show_demo );
 
+            /* Force-open on transition (first show or menu re-open); not every frame or the X
+               button close gets overridden before window_begin sees it. */
+            static bool s_font_browser_prev = false;
+            if ( show_font_browser_win && !s_font_browser_prev )
+                gui()->window_set_open( "Font Browser", true );
+            s_font_browser_prev = show_font_browser_win;
             if ( show_font_browser_win )
                 show_font_browser( &show_font_browser_win );
 

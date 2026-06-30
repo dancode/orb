@@ -246,6 +246,12 @@ gui_button( const char* label )
     button to match the height of the adjacent panel's content.
 ----------------------------------------------------------------------------------------------*/
 
+f32
+gui_button_width( const char* label )
+{
+    return label_width( label ) + 2.0f * WIDGET_PAD;
+}
+
 bool
 gui_button_fill( const char* label )
 {

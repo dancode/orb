@@ -1105,23 +1105,28 @@ typedef struct gui_api_s
         a layout mode (stack/cols/...) inside each as usual.  Heights are cached per-id across
         frames (one-frame lag on first appearance, then stable).
 
-            gui()->split_begin( "##src", 130.0f );
+        Use button_width() to size the right panel to fit a specific button label exactly:
+
+            const char* title = "Bake & Preview";
+            gui()->split_begin( "##src", gui()->button_width( title ) );
                 gui()->stack();
                 gui()->combo_begin( ... ); ... gui()->combo_end();
                 gui()->slider_int( ... );
             gui()->split_next();
                 gui()->stack();
-                gui()->button_fill( "Bake & Preview" );
+                gui()->button_fill( title );
             gui()->split_end();
 
-        button_fill -- a button that fills the remaining height of its containing region.
+        button_width( label ) -- natural pixel width of a button with that label.
+        button_fill  -- a button that fills the remaining height of its containing region.
         Identical to button() but height = content_avail().y.  Designed for the right panel
         of a split so it matches the adjacent left panel's content height naturally. */
 
-    void ( *split_begin  )( const char* id, f32 right_w );
-    void ( *split_next   )( void );
-    void ( *split_end    )( void );
-    bool ( *button_fill  )( const char* label );
+    void ( *split_begin   )( const char* id, f32 right_w );
+    void ( *split_next    )( void );
+    void ( *split_end     )( void );
+    f32  ( *button_width  )( const char* label );
+    bool ( *button_fill   )( const char* label );
 
 } gui_api_t;
 
