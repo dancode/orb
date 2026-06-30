@@ -496,8 +496,9 @@ widget_split_label( gui_rect_t row, const char* label, f32 min_control_w, u32 la
 
     /* Default: control on the left, the label trailing at its natural width on the right.  When the
        control floors at min_control_w the label space narrows; fit it so it ellipsizes there
-       instead of bleeding under the row's right edge. */
-    label_w       = label_width( label );
+       instead of bleeding under the row's right edge.  No visible label ("##key") => full row. */
+    label_w = label_width( label );
+    if ( label_w == 0.0f ) return row;
     f32 control_w = row.w - label_w - WIDGET_PAD;
     if ( control_w < min_control_w ) control_w = min_control_w;
 
