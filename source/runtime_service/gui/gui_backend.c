@@ -42,16 +42,29 @@
     Unity build
 ==============================================================================================*/
 
+// Tier 0 -- foundation
 #include "runtime_service/gui/backend/gui_submit_shader.h"
+
+// Tier 1 — Resource registries( independent, own their GPU objects )
 #include "runtime_service/gui/backend/gui_load_font.h"
 #include "runtime_service/gui/backend/gui_load_font_ttf.c"
 #include "runtime_service/gui/backend/gui_load_font.c"
 #include "runtime_service/gui/backend/gui_load_icon.c"
+
+// Tier 2 — EMIT : the semantic draw list
 #include "runtime_service/gui/backend/gui_emit_draw.c"
 #include "runtime_service/gui/backend/gui_emit_path.c"
+
+// Tier 3 — BUILD, part A : tessellation primitives
 #include "runtime_service/gui/backend/gui_build_tess.c"
+
+// Tier 4 — BUILD, part B : retained cache & orchestration
 #include "runtime_service/gui/backend/gui_build_cache.c"
+
+// Tier 5 — SUBMIT 
 #include "runtime_service/gui/backend/gui_submit_render.c"
+
+// Tier 6 — Debug overlay
 #include "runtime_service/gui/backend/gui_debug_overlay.c"
 
 /*============================================================================================*/

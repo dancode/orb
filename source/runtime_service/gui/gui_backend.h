@@ -35,26 +35,24 @@
     Fonts (gui_load_font.c / gui_load_font_ttf.c)
 ==============================================================================================*/
 
-u32  font_load          ( const char* path );       // load a .orb_font into a new id, activate it (0=fail)
-bool font_load_into     ( u32 id, const char* path );// load a .orb_font into an existing id (id 0 = default)
-void font_use           ( u32 id );                 // make an already-loaded id the active font
-u32  font_active_id     ( void );                   // id of the active font slot (save/restore for push/pop)
-u32  font_slot_atlas_idx( u32 id );                 // live bindless atlas index backing a font id (0 if empty)
-bool font_flush_pending ( void );                   // commit deferred (re)loads; true if the active font changed
+u32  font_load              ( const char* path );       // load a .orb_font into a new id, activate it (0=fail)
+bool font_load_into         ( u32 id, const char* path );// load a .orb_font into an existing id (id 0 = default)
+void font_use               ( u32 id );                 // make an already-loaded id the active font
+u32  font_active_id         ( void );                   // id of the active font slot (save/restore for push/pop)
+u32  font_slot_atlas_idx    ( u32 id );                 // live bindless atlas index backing a font id (0 if empty)
+bool font_flush_pending     ( void );                   // commit deferred (re)loads; true if the active font changed
 
-f32  font_char_h        ( void );                   // glyph-box height of the active font (ascent+descent)
-f32  font_line_h        ( void );                   // line advance of the active font
-f32  font_em            ( void );                   // nominal type size (em) -- the layout proportion base
-f32  font_char_advance  ( u8 ch );                  // horizontal advance of one glyph
-void font_print_active  ( void );                   // log the active font's name and metrics
-f32  font_text_w        ( const char* str );        // pixel width of a NUL-terminated run
-f32  font_text_w_n      ( const char* str, u32 n ); // pixel width of the first n bytes
+f32  font_char_h            ( void );                   // glyph-box height of the active font (ascent+descent)
+f32  font_line_h            ( void );                   // line advance of the active font
+f32  font_em                ( void );                   // nominal type size (em) -- the layout proportion base
+f32  font_char_advance      ( u8 ch );                  // horizontal advance of one glyph
+void font_print_active      ( void );                   // log the active font's name and metrics
+f32  font_text_w            ( const char* str );        // pixel width of a NUL-terminated run
+f32  font_text_w_n          ( const char* str, u32 n ); // pixel width of the first n bytes
 
 /* Glyph atlas lookup: UVs, pen offsets, glyph box, and advance for one character. */
-void font_glyph         ( u8 ch,
-                          f32* u0, f32* v0, f32* u1, f32* v1,
-                          f32* ox, f32* oy, f32* gw, f32* gh,
-                          f32* advance );
+void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
+                                     f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
 /*==============================================================================================
     Runtime icon atlas (gui_load_icon.c)
@@ -118,20 +116,21 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
     GPU resources + flush -- the SUBMIT phase (gui_submit_render.c)
 ==============================================================================================*/
 
-bool gui_render_init    ( void );
-void gui_render_shutdown( void );
-void gui_render_flush   ( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+bool                gui_render_init         ( void );
+void                gui_render_shutdown     ( void );
+void                gui_render_flush        ( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
-gui_mem_stats_t gui_render_memory      ( void );
-void              gui_render_print_memory( void );
+gui_mem_stats_t     gui_render_memory       ( void );
+void                gui_render_print_memory ( void );
 
 /* Debug render mode (normal / wireframe / batch-tint) -- backs gui()->debug_set/get_render_mode.
    The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */
-void                gui_render_set_mode( gui_render_mode_t mode );
-gui_render_mode_t gui_render_get_mode( void );
 
-bool viewport_create ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
-void viewport_destroy( gui_viewport_t* vp );                                   // free its vb/ib
+void                gui_render_set_mode     ( gui_render_mode_t mode );
+gui_render_mode_t   gui_render_get_mode     ( void );
+
+bool                viewport_create          ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
+void                viewport_destroy         ( gui_viewport_t* vp );                                   // free its vb/ib
 
 /*==============================================================================================
     Retained frame-geometry cache -- the BUILD phase (gui_build_cache.c)
@@ -141,26 +140,30 @@ void viewport_destroy( gui_viewport_t* vp );                                   /
    The frame's semantic list is tessellated + z-sorted exactly once (lazily, on the first
    surface flush); every other live surface that frame reuses the result.  Called by
    gui_frame_begin right after draw_reset, before the build emits any new commands. */
-void gui_render_frame_reset( void );
+
+void                gui_render_frame_reset( void );
 
 /* Per-frame render stats: gui_render_stats returns the last published frame's totals;
    gui_render_stats_publish promotes the in-progress accumulator to the published value and
    resets it -- called once per frame by gui_frame_begin (the UI unit), before draw_reset. */
-gui_render_stats_t gui_render_stats        ( void );
-void                 gui_render_stats_publish( void );
 
-extern gui_id_t g_gui_perf_overlay_id;
+gui_render_stats_t  gui_render_stats        ( void );
+void                gui_render_stats_publish( void );
+
+extern gui_id_t     g_gui_perf_overlay_id;
 
 /* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match
    the previous frame) skips tessellation and reuses s_tess.  Toggle for benchmarking or debugging. */
-void gui_render_set_retained_skip( bool on );
-bool gui_render_retained_skip( void );
+
+void                gui_render_set_retained_skip( bool on );
+bool                gui_render_retained_skip( void );
 
 /* True when the PREVIOUS frame's render produced any change (a window appeared, vanished, or
    changed content).  Read from the UI unit during frame_begin (before this frame's cache_build_frame
    runs) so s_cache.any_changed still holds last frame's result.  Used with io_dirty and wants_redraw
    to decide whether to skip the widget emit phase entirely (Level 3 retained skip). */
-bool gui_render_any_changed( void );
+
+bool                gui_render_any_changed( void );
 
 /*==============================================================================================
     Debug overlay (gui_debug_overlay.c) -- Debug builds only.
