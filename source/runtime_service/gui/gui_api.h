@@ -400,11 +400,11 @@ typedef struct gui_api_s
 
     void ( *push_layout )( void );
 
-    /* push_layout_rect -- open a sub-layout over an explicit screen rect rather than the next
+    /* push_layout_overlay -- open a sub-layout over an explicit screen rect rather than the next
        template cell; the parent flow is left untouched (no cell consumed).  The seam an external
        layout pass (a two-pass "layout island") uses to hand a resolved box back to the immediate
        widgets, which fill it like any region.  Pair with pop_layout. */
-    void ( *push_layout_rect )( gui_rect_t rect );
+    void ( *push_layout_overlay )( gui_rect_t rect );
 
     void ( *pop_layout  )( void );
     void ( *child_end   )( void );
@@ -547,7 +547,7 @@ typedef struct gui_api_s
        with content_avail).  split -- carve a rect into panels along an axis using the overloaded
        column unit ( >1 px, ==1 fill, (0,1) fraction ), writing each panel rect into out[] and
        returning the count ( <= GUI_LAYOUT_COLS ).  Pure rect math: fill each panel with
-       push_layout_rect, and nest by splitting a returned rect again.  Single-pass and known-size --
+       push_layout_overlay, and nest by splitting a returned rect again.  Single-pass and known-size --
        it never measures content, so size panels with px / fraction / fill, not content-driven sizes. */
     gui_rect_t ( *content_rect )( void );
     u32        ( *split )( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
@@ -564,7 +564,7 @@ typedef struct gui_api_s
        the general free-placement primitive for overlays / HUDs.  Per axis: min == max point-pins a
        fixed `size` child to that parent fraction (hung off the line by `pivot`, shifted by `off`);
        min < max stretches the child between the two fractions with `off` as per-edge insets.  Pure
-       rect math -- fill the result with push_layout_rect or draw into it.  The corner / edge cases
+       rect math -- fill the result with push_layout_overlay or draw into it.  The corner / edge cases
        are the inline gui_rect_align / gui_anchor_box (gui.h); reach for anchor when you need a
        fraction-relative position or a stretch-with-margins band.  See gui_anchor_t for the fields. */
     gui_rect_t ( *anchor )( gui_rect_t parent, gui_anchor_t a );

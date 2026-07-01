@@ -252,7 +252,7 @@ gui_child_end( void )
 static f32 s_sublayout_sink[ 4 ];
 
 /* Open a transient sub-layout frame whose content area is `cell` (screen rect).  The shared body of
-   gui_push_layout (cell = the next template cell), gui_push_layout_rect (cell = an explicit rect),
+   gui_push_layout (cell = the next template cell), gui_push_layout_overlay (cell = an explicit rect),
    and the split-panel pusher: no scroll, no clip, no persistent state, no frame.  It does NOT advance
    the parent -- a caller that needs the parent to step (push_layout) reserves the cell first. */
 static void
@@ -305,12 +305,12 @@ gui_push_layout( void )
     sublayout_open( cell );
 }
 
-/* push_layout_rect -- open a sub-layout over an explicit screen rect rather than the next template
+/* push_layout_overlay -- open a sub-layout over an explicit screen rect rather than the next template
    cell.  The parent flow is left untouched (no cell is consumed), so the rect is absolute placement:
    the seam an external layout pass (two-pass / "layout island") uses to hand a resolved box back to
    the immediate widgets, which then fill it exactly as they fill any region.  Pair with pop_layout. */
 void
-gui_push_layout_rect( gui_rect_t rect )
+gui_push_layout_overlay( gui_rect_t rect )
 {
     sublayout_open( rect );
 }
@@ -354,7 +354,7 @@ static gui_split_frame_t s_split_stack[ GUI_SPLIT_DEPTH ];
 static u32               s_split_sp;
 
 /* Push a transient sub-layout frame whose content area is rect -- the explicit-rect sub-layout
-   (sublayout_open), shared with push_layout / push_layout_rect.  split panels never scroll. */
+   (sublayout_open), shared with push_layout / push_layout_overlay.  split panels never scroll. */
 static void
 split_push_panel( gui_rect_t rect )
 {
@@ -405,8 +405,10 @@ gui_split_begin( const char* id_str, f32 right_w )
     gui_rect_t left_rect  = { x,                y, left_w,  resolved_h };
     gui_rect_t right_rect = { x + left_w + gap, y, right_w, resolved_h };
 
-    /* Advance the parent past the split now so it can continue below after split_end. */
-    parent->cursor_y += resolved_h + gap;
+    /* Advance the parent past the split now so it can continue below after split_end.
+       Also update prev_item to the full split rect so same_line() after split_end anchors correctly. */
+    parent->cursor_y  += resolved_h + gap;
+    parent->prev_item  = ( gui_rect_t ){ x, y, parent->content_w, resolved_h };
 
     /* Push the split frame and open the left panel. */
     if ( s_split_sp < GUI_SPLIT_DEPTH )

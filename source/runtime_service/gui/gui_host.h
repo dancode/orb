@@ -109,7 +109,7 @@ bool gui_menu_item( const char* label, const char* shortcut, bool* selected );
 bool gui_child_begin( const char* id, f32 w, f32 h, gui_win_flags_t flags );
 void gui_child_end( void );
 void gui_push_layout( void );
-void gui_push_layout_rect( gui_rect_t rect );
+void gui_push_layout_overlay( gui_rect_t rect );
 void gui_pop_layout( void );
 
 /* layout */

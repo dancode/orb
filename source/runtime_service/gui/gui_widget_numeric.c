@@ -141,13 +141,23 @@ input_scalar( const char* label, double cur, double* out,
         gui_rect_t minus_r = { bx,            ctrl.y, WIDGET_H, ctrl.h };
         gui_rect_t plus_r  = { bx + WIDGET_H, ctrl.y, WIDGET_H, ctrl.h };
 
+        /* Save last_item state so is_item_* after input_int/float reports the text box, not the
+           final step button.  Step buttons call widget_behavior directly and would overwrite it. */
+        gui_id_t       saved_id     = s_build.last_item_id;
+        gui_rect_t     saved_rect   = s_build.last_item_rect;
+        widget_state_t saved_status = s_build.last_item_status;
+
         /* Step buttons call widget_behavior directly (no cell emit), bypassing item_flags_resolve.
            Set BUTTON_REPEAT on cur_item_flags for the pair, then restore so callers are unaffected. */
-        gui_item_flags_t saved = s_build.cur_item_flags;
-        s_build.cur_item_flags   = saved | GUI_ITEM_BUTTON_REPEAT;
+        gui_item_flags_t saved_flags = s_build.cur_item_flags;
+        s_build.cur_item_flags = saved_flags | GUI_ITEM_BUTTON_REPEAT;
         if ( num_step_button( id_combine( id, 1u ), minus_r, true  ) ) { *out = base - inc; changed = true; }
         if ( num_step_button( id_combine( id, 2u ), plus_r,  false ) ) { *out = base + inc; changed = true; }
-        s_build.cur_item_flags   = saved;
+        s_build.cur_item_flags = saved_flags;
+
+        s_build.last_item_id     = saved_id;
+        s_build.last_item_rect   = saved_rect;
+        s_build.last_item_status = saved_status;
     }
 
     return changed;

@@ -243,7 +243,7 @@ show_font_browser( bool* p_open )
 /*============================================================================================*/
 /* Split-panel helper demo                                                                     */
 /*                                                                                              */
-/* Recursive rect splits over gui()->split + push_layout_rect: a fixed sidebar beside a filling */
+/* Recursive rect splits over gui()->split + push_layout_overlay: a fixed sidebar beside a filling */
 /* content column, and that column carved top-to-bottom into header / body / footer.  Known     */
 /* sizes, single pass, plain gui_rect_t locals -- no layout tree, no cached heights.            */
 /*============================================================================================*/
@@ -289,7 +289,7 @@ show_split_demo( bool* p_open )
     if ( n >= 4 )
     {
         /* Sidebar -- a stack of nav buttons. */
-        gui()->push_layout_rect( cell[ 0 ] );
+        gui()->push_layout_overlay( cell[ 0 ] );
             gui()->stack();
             gui()->button( "Nav A" );
             gui()->button( "Nav B" );
@@ -297,13 +297,13 @@ show_split_demo( bool* p_open )
         gui()->pop_layout();
 
         /* Header. */
-        gui()->push_layout_rect( cell[ 1 ] );
+        gui()->push_layout_overlay( cell[ 1 ] );
             gui()->stack();
             gui()->text( "Header" );
         gui()->pop_layout();
 
         /* Body. */
-        gui()->push_layout_rect( cell[ 2 ] );
+        gui()->push_layout_overlay( cell[ 2 ] );
             gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NO_CLIP ); 
                 gui()->stack();
                 gui()->text( "Body content fills the middle." );
@@ -313,7 +313,7 @@ show_split_demo( bool* p_open )
         gui()->pop_layout();
 
         /* Footer. */
-        gui()->push_layout_rect( cell[ 3 ] );
+        gui()->push_layout_overlay( cell[ 3 ] );
             gui()->stack();
             gui()->text_disabled( "Footer" );
         gui()->pop_layout();
@@ -333,7 +333,7 @@ show_split_demo( bool* p_open )
 /* order: a stretched top bar (gui()->anchor mixing per-axis stretch + point), corner-anchored   */
 /* minimap / health / ammo (gui_anchor_box), a fraction-pinned banner (gui()->anchor pivot), and */
 /* a centered crosshair (gui_rect_align).  Real widgets drop into an anchored rect via            */
-/* push_layout_rect.                                                                              */
+/* push_layout_overlay.                                                                              */
 /*============================================================================================*/
 
 static void
@@ -390,7 +390,7 @@ show_hud_demo( bool* p_open )
     /* Health bar -- anchored bottom-left; a real progress_bar widget fills the anchored rect. */
     {
         gui_rect_t hb = gui_anchor_box( hud, 200.0f, 20.0f, GUI_ALIGN_LEFT | GUI_ALIGN_BOTTOM, pad );
-        gui()->push_layout_rect( hb );
+        gui()->push_layout_overlay( hb );
             gui()->stack();
             gui()->push_style_color( GUI_COL_WIDGET_FG, good );
             gui()->progress_bar( 0.72f, "HP 72/100" );

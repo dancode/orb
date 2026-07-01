@@ -378,7 +378,7 @@ gui_content_rect( void )
 /* split -- carve `area` into panels along `axis` using the overloaded column unit ( >1 px, ==1 fill,
    (0,1) fraction; the exact rule cols() uses ), writing each panel's screen rect into out[].  Returns
    the panel count ( <= GUI_LAYOUT_COLS, so size out[] to that ).  Pure rect math -- no state, no
-   cached sizes, nothing emitted: pair each rect with push_layout_rect to fill it, and RECURSE by
+   cached sizes, nothing emitted: pair each rect with push_layout_overlay to fill it, and RECURSE by
    splitting a returned rect again ( e.g. a vertical header/body/footer inside the content column ).
    `sizes` is GUI_END-terminated; gap <= 0 uses the theme widget gap.  The cross axis spans the whole
    `area` extent, so the panels tile one band -- nest splits for a grid.  This is the single-pass,
@@ -520,7 +520,7 @@ anchor_axis( f32 org, f32 ext, f32 lo, f32 hi, f32 pivot, f32 size, f32 off_lo, 
 /* anchor -- place a child rect inside `parent` from a normalized anchor frame (the UE4 Slate model).
    The general free-placement primitive behind gui_rect_align / gui_anchor_box: an axis with min ==
    max point-pins a fixed-size child, an axis with min < max stretches it between two parent
-   fractions.  Pure rect math, nothing emitted -- pair with push_layout_rect to fill the result, or
+   fractions.  Pure rect math, nothing emitted -- pair with push_layout_overlay to fill the result, or
    draw into it directly.  See gui_anchor_t (gui.h) for the field meanings. */
 gui_rect_t
 gui_anchor( gui_rect_t parent, gui_anchor_t a )

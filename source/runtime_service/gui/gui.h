@@ -266,7 +266,7 @@ typedef enum
     Placement adapters -- position a self-sized box inside an existing rect, the free-placement
     companion to split / carve (which divide a rect into adjacent panels).  These never touch the
     layout pen: they take a parent rect and return a child rect, so they compose with content_rect,
-    push_layout_rect and each other, and an overlay is just several placements over one area in
+    push_layout_overlay and each other, and an overlay is just several placements over one area in
     draw order.  Pure rect math, so inline here with the cut_* / inset helpers above.
 
         gui_rect_t hud = gui()->content_rect();
