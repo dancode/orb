@@ -40,12 +40,18 @@ text_emit( u32 col, const char* str )
        original top-left).  A row tall enough for the glyph centers vertically when asked. */
     gui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->lay_align );
 
-    /* Draw the run plainly -- no ellipsis.  When it fits the cell (the common case, e.g. a stack's
-       full-width row) this is an exact draw; when a narrow cell squeezes it the run overflows and is
-       bounded by the window's clip rect rather than ellipsized -- matching the input / display
-       widgets, which rely on the window border instead of a per-widget fit. */
+    /* When the run fits its cell, draw at the aligned position.  When it overflows, ellipsize to the
+       cell width so the widget self-fits regardless of whether a clip rect is active (GUI_WIN_NO_CLIP
+       children have no scissor, so the scissor is never the clipping mechanism here). */
     f32 x = ( tw <= r.w ) ? tr.x : r.x;
-    draw_push_text( x, tr.y, col, str );
+    if ( tw <= r.w )
+        draw_push_text( tr.x, tr.y, col, str );
+    else
+    {
+        draw_set_text_clip_x( r.x, r.x + r.w );
+        draw_push_text( r.x, tr.y, col, str );
+        draw_clear_text_clip();
+    }
     /* Always track the natural text width so content_w reflects the full extent: an autosize
        window needs this to grow wide enough to fit the text, and a scrollable window needs it
        to show a horizontal bar when the text is longer than the view. */

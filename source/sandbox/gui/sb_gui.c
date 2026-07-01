@@ -304,7 +304,7 @@ show_split_demo( bool* p_open )
 
         /* Body. */
         gui()->push_layout_rect( cell[ 2 ] );
-            gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NO_CLIP ); // GUI_WIN_NO_CLIP // GUI_WIN_NONE
+            gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NO_CLIP ); 
                 gui()->stack();
                 gui()->text( "Body content fills the middle." );
                 gui()->text( "The layout is one flat f32 form." );
