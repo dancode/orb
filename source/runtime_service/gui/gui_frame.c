@@ -320,6 +320,12 @@ gui_frame_begin( f32 dt )
                  || s_retained.wants_redraw
                  || gui_render_any_changed();
 
+    /* Debug overlay capture runs every emit, so any active layer forces a full build. */
+    #ifdef GUI_DEBUG_OVERLAY
+    if ( gui_debug_get_layers() )
+        s_frame_dirty = true;
+    #endif
+
     /* Commit deferred font (re)loads at this safe between-frames point -- always, since the host
        can request a load between frames independent of the widget emit.  A committed swap changes
        glyph geometry, so it forces a full rebuild this frame. */
