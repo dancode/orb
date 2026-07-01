@@ -596,7 +596,13 @@ typedef enum
     /* slider_float: suppress the value text drawn centered on the
        track.  The value is shown by default; set this (push or
        next_item_flag) to hide it for a bare / compact slider. */
-    GUI_ITEM_NO_VALUE_TEXT = 1 << 2,  
+    GUI_ITEM_NO_VALUE_TEXT = 1 << 2,
+
+    /* selectable: do NOT close the enclosing popup when clicked.
+       By default a selectable inside any popup calls popup_close_current()
+       on click (Dear ImGui CloseCurrentPopup default).  Set this to opt out --
+       e.g. a multi-select list inside a popup where the popup should stay open. */
+    GUI_ITEM_NO_CLOSE_POPUP = 1 << 3,
 
     /* Room to grow without disturbing call sites or the vtable -- e.g. a future
     GUI_ITEM_READ_ONLY (editable widgets show but reject input), GUI_ITEM_NO_NAV, etc. */

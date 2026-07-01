@@ -711,6 +711,10 @@ static void               dock_window_chrome( gui_dock_node_t* node );
 static void dock_drag_detect( gui_id_t win_id, gui_window_t* win );
 static void dock_drag_commit( gui_id_t win_id, const char* title );
 
+/* gui_popup.c is included after gui_widget.c; selectable calls this to auto-close the enclosing
+   popup on click (the Dear ImGui CloseCurrentPopup default behavior). */
+void gui_popup_close_current( void );
+
 /*==============================================================================================
     Shared stateless helpers
 

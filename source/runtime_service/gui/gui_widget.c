@@ -641,10 +641,20 @@ gui_selectable( const char* label, bool* selected )
     if ( st.clicked && selected )
         *selected = !( *selected );
 
-    /* Inside a combo dropdown a clicked row dismisses the combo: flag it for combo_end to close
-       (the popup machinery is not in scope here).  Inert for an ordinary list selectable. */
-    if ( st.clicked && s_build.combo_open )
-        s_build.combo_item_clicked = true;
+    if ( st.clicked )
+    {
+        /* Inside a combo dropdown a clicked row dismisses the combo: flag it for combo_end to close
+           (the popup machinery is not in scope here).  Inert for an ordinary list selectable. */
+        if ( s_build.combo_open )
+            s_build.combo_item_clicked = true;
+
+        /* Close the enclosing popup on click (Dear ImGui default behavior).
+           Suppressed by GUI_ITEM_NO_CLOSE_POPUP for callers that need the popup to stay open
+           (e.g. a multi-select list inside a persistent popup). */
+        if ( s_popup_begin_count > 0
+             && !( s_build.cur_item_flags & GUI_ITEM_NO_CLOSE_POPUP ) )
+            gui_popup_close_current();
+    }
 
     return st.clicked;
 }
