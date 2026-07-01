@@ -123,12 +123,17 @@ app_window_resize( win_id_t id, i32 w, i32 h )
     if ( IsIconic( win->hwnd ) || IsZoomed( win->hwnd ) )
         ShowWindow( win->hwnd, SW_RESTORE );
 
-    /* Convert the requested CLIENT size to the full window rect for the current chrome. */
-    DWORD style    = (DWORD)GetWindowLongW( win->hwnd, GWL_STYLE );
-    DWORD ex_style = (DWORD)GetWindowLongW( win->hwnd, GWL_EXSTYLE );
-
+    /* Convert the requested CLIENT size to the full window rect for the current chrome.
+       Custom-frame (borderless) windows claim the entire window rect as client via
+       WM_NCCALCSIZE, so client == window -- skip AdjustWindowRectEx or it inflates
+       by the nominal caption + frame sizes that are actually stripped to zero. */
     RECT rect = { 0, 0, w, h };
-    AdjustWindowRectEx( &rect, style, FALSE, ex_style );
+    if ( !win->native.enabled )
+    {
+        DWORD style    = (DWORD)GetWindowLongW( win->hwnd, GWL_STYLE );
+        DWORD ex_style = (DWORD)GetWindowLongW( win->hwnd, GWL_EXSTYLE );
+        AdjustWindowRectEx( &rect, style, FALSE, ex_style );
+    }
 
     /* Keep position and z-order; the WM_SIZE this generates updates win->w/h and posts the event. */
     SetWindowPos( win->hwnd, NULL, 0, 0,

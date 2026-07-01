@@ -663,7 +663,34 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     /* Apply an in-progress edge resize (active_id is the resize-salted window id).  Runs after
        the drag apply -- the two are mutually exclusive, only one can own active_id at a time. */
     if ( s_interaction.active_id == id_combine( id, GUI_RESIZE_SALT ) )
-        window_apply_resize( win, title_h );
+    {
+        if ( native && win->viewport != 0 )
+        {
+            /* Native floater: s_io.mouse_x/y is only valid while the cursor is over THIS window.
+               During the drag the cursor can leave the floater, causing mouse_position() to return
+               coords in whatever window it crosses into -- which makes window_apply_resize compute
+               the wrong size (usually too small).  Derive local coords from the stable screen
+               cursor and the floater's fixed screen origin (bottom-right resize pins the top-left)
+               so the formula stays correct regardless of which window the cursor is over. */
+            win_id_t os = window_native_id( win );
+            i32 scx = 0, scy = 0, sox = 0, soy = 0;
+            app()->mouse_position_screen( &scx, &scy );
+            app()->window_get_pos( os, &sox, &soy );
+            f32 local_x = (f32)scx - (f32)sox;
+            f32 local_y = (f32)scy - (f32)soy;
+            f32 new_w   = local_x - s_resize_off_x;
+            f32 new_h   = local_y - s_resize_off_y;
+            if ( new_w < window_min_w() )        new_w = window_min_w();
+            if ( new_h < window_min_h( title_h ) ) new_h = window_min_h( title_h );
+            win->w = new_w;
+            win->h = new_h;
+            app()->window_resize( os, (i32)new_w, (i32)new_h );
+        }
+        else
+        {
+            window_apply_resize( win, title_h );
+        }
+    }
 
     /* ALWAYS_AUTOSIZE: hug the content measured last frame (held in win->content_*).  Skipped while
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
@@ -695,15 +722,6 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     }
     s_build.win_resize_hot = resize_hot;   /* read by widget_behavior + window_end's highlight */
 
-    /* Hardware cursor: show the directional resize shape while an edge is hot, or while a resize
-       drag of this window is in flight (read from s_resize_edges so the shape holds even if the
-       cursor drifts off the grab band mid-drag). */
-    {
-        u8 ce = ( s_interaction.active_id == resize_id ) ? s_resize_edges : resize_hot;
-        if ( ce )
-            set_mouse_cursor( resize_cursor_for_edges( ce ) );
-    }
-
     /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
        same way the edge band reserves the borders.  The grip square overlaps the scroll gutter,
        but the scrollbar runs first (in layout_pop_region), so without this it would claim the
@@ -719,6 +737,20 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         grip_hot = rect_hit( gr );
     }
     s_build.win_grip_hot = grip_hot;   /* read by widget_behavior to defer the corner to the grip */
+
+    /* Grip triangle and the R+B corner always highlight together: if the grip is hot, promote
+       the R+B edge bits so the border highlight follows; the reverse (R+B edges -> triangle)
+       runs in window_end where hot_edges is resolved. */
+    if ( grip_hot )
+        s_build.win_resize_hot |= GUI_RESIZE_R | GUI_RESIZE_B;
+
+    /* Hardware cursor: show the directional resize shape while an edge is hot (including when
+       the grip triangle promoted R+B), or while a resize drag is in flight. */
+    {
+        u8 ce = ( s_interaction.active_id == resize_id ) ? s_resize_edges : s_build.win_resize_hot;
+        if ( ce )
+            set_mouse_cursor( resize_cursor_for_edges( ce ) );
+    }
 
     /* Nominate this window as the one under the cursor (front-most by z wins).  A resizeable
        window expands its nominee rect by the outer grab band (horizontally only when collapsed,
@@ -1098,14 +1130,14 @@ gui_window_end( void )
 
     /* Resize affordance: bold the outline on any hot edge.  While a resize is in flight, the
        grabbed edges stay lit even if the cursor drifts off them; otherwise use win_resize_hot,
-       the hover set computed in window_begin (already NORESIZE- and hover_win-gated). */
-    {
-        u8 hot_edges = ( s_interaction.active_id == id_combine( s_build.win_id, GUI_RESIZE_SALT ) )
-                     ? s_resize_edges
-                     : s_build.win_resize_hot;
-        if ( hot_edges )
-            window_draw_resize_highlight( win_r, hot_edges );
-    }
+       the hover set computed in window_begin (already NORESIZE- and hover_win-gated).
+       hot_edges is declared here (not in a block) so the grip section below can read it for
+       the R+B -> triangle reverse direction. */
+    u8 hot_edges = ( s_interaction.active_id == id_combine( s_build.win_id, GUI_RESIZE_SALT ) )
+                 ? s_resize_edges
+                 : s_build.win_resize_hot;
+    if ( hot_edges )
+        window_draw_resize_highlight( win_r, hot_edges );
 
     /* CAN_AUTOSIZE: a size-grip triangle hugging the bottom-right corner -- both a resize handle
        and an auto-fit button.  Drag it to resize the window (it grabs the same right+bottom edge
@@ -1119,7 +1151,10 @@ gui_window_end( void )
         gui_rect_t gr        = { s_build.win_x + s_build.win_w - g, s_build.win_y + s_build.win_h - g, g, g };
         gui_id_t   resize_id = id_combine( s_build.win_id, GUI_RESIZE_SALT );
         bool         resizing  = ( s_interaction.active_id == resize_id );
+        /* Hot when the cursor is over the grip square, or when the R+B corner edges are already
+           highlighted (cursor landed on the edge band just inside the border at the corner). */
         bool         hot       = ( s_build.win_id == s_interaction.hover_win ) && rect_hit( gr );
+        hot = hot || ( hot_edges & ( GUI_RESIZE_R | GUI_RESIZE_B ) ) == ( GUI_RESIZE_R | GUI_RESIZE_B );
 
         if ( hot && s_interaction.active_id == GUI_ID_NONE )
         {
@@ -1129,6 +1164,9 @@ gui_window_end( void )
                 f32  grip_mb_h   = ( s_build.win_flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
                 window_fit_size( s_build.win_title, s_build.win_title_h, grip_mb_h, collapsible,
                                  win->content_w, win->content_h, &win->w, &win->h );
+                /* Native floater: forward the fit size to the OS window. */
+                if ( native && win->viewport != 0 )
+                    app()->window_resize( window_native_id( win ), (i32)win->w, (i32)win->h );
             }
             else if ( s_io.mouse_pressed[ 0 ] )
             {
