@@ -276,7 +276,7 @@ show_split_demo( bool* p_open )
                 1.0f,               /*       leaf 2 : fill body                   */
                 28.0f,              /*       leaf 3 : 28px footer                 */
             GUI_END,                /*   close rows                               */
-            128.0f,                  /*   leaf 4 : 128px right sidebar             */
+            // 128.0f,                  /*   leaf 4 : 128px right sidebar             */
         GUI_END,                    /* close columns                              */
     };
 
@@ -304,7 +304,7 @@ show_split_demo( bool* p_open )
 
         /* Body. */
         gui()->push_layout_rect( cell[ 2 ] );
-            gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NONE );
+            gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NO_CLIP ); // GUI_WIN_NO_CLIP // GUI_WIN_NONE
                 gui()->stack();
                 gui()->text( "Body content fills the middle." );
                 gui()->text( "The layout is one flat f32 form." );
@@ -438,7 +438,7 @@ show_hud_demo( bool* p_open )
 // - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
-static bool show_demo             = false;
+static bool show_demo             = true;
 static bool show_font_browser_win = true;
 static bool show_split_win        = true;
 static bool show_hud_win          = true;
@@ -501,7 +501,7 @@ show_demo_window(bool* p_open)
         return;
     }
 
-    bool skip_body =  true;
+    bool skip_body =  false;
     if ( skip_body )
     {
         gui()->window_end();

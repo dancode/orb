@@ -519,6 +519,11 @@ typedef enum
 
     GUI_WIN_NO_INPUT          = 1 << 20,   /* click-through: never becomes hover_win */
 
+    /* child_begin only: skip pushing a draw clip rect for this child region.  Use when the
+       caller knows content fits and wants to avoid the extra draw batch the scissor causes. */
+
+    GUI_WIN_NO_CLIP           = 1 << 21,   /* child: do not push a clip rect */
+
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
        ( GUI_WIN_OVERLAY | GUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical

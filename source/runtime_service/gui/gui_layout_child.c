@@ -192,7 +192,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
 
     layout_push_region( id, box, REGION_PAD_DEFAULT, flags,
                         &rg->scroll_x, &rg->scroll_y, &rg->content_w, &rg->content_h,
-                        /* own_clip */ true );
+                        /* own_clip */ !( flags & GUI_WIN_NO_CLIP ) );
 
     /* Stamp the child's resize bookkeeping on its just-pushed frame, and suppress body-widget hover
        under a hot/armed edge for the child's duration (the edges stay armed mid-drag even if the
