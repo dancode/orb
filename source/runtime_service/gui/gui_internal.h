@@ -400,14 +400,14 @@ typedef struct
 
 typedef struct
 {
-    gui_id_t   id;                // popup window id (salted; matches s_build.win_id / hover_win)
-    bool         modal;             // blocks input behind it + dims the background
-    f32          anchor_x;          // open point -- where a non-modal popup is placed
-    f32          anchor_y;
-    u32          open_frame;        // frame popup_open ran -- "appearing" detection
-    u32          begun_frame;       // last frame popup_begin ran -- drives stale-close
-    gui_rect_t rect;              // on-screen rect last frame -- drives click-outside
-    gui_overlay_save_t saved;     // parent context to restore at popup_end
+    gui_id_t            id;                 // popup window id (salted; matches s_build.win_id / hover_win)
+    bool                modal;              // blocks input behind it + dims the background
+    f32                 anchor_x;           // open point -- where a non-modal popup is placed
+    f32                 anchor_y;           // 
+    u32                 open_frame;         // frame popup_open ran -- "appearing" detection
+    u32                 begun_frame;        // last frame popup_begin ran -- drives stale-close
+    gui_rect_t          rect;               // on-screen rect last frame -- drives click-outside
+    gui_overlay_save_t  saved;              // parent context to restore at popup_end
 
 } gui_popup_t;
 
@@ -422,8 +422,8 @@ typedef struct
 
 typedef struct
 {
-    gui_id_t  id;                         // 0 = empty slot
-    u32         seen_frame;                 // frame last touched -- drives stale reclamation
+    gui_id_t    id;                       // 0 = empty slot
+    u32         seen_frame;               // frame last touched -- drives stale reclamation
     u8          data[ GUI_STATE_CAP ];    // payload; naturally 4-byte aligned (follows two u32 fields)
 
 } gui_state_slot_t;
@@ -435,14 +435,15 @@ typedef struct
        ambient hover / active / focus ids -- compared globally across contexts -- from confusing a
        widget in one viewport with an identically-named widget in another.  0 is the default
        context's namespace and leaves id_hash byte-identical to the unsalted hash. */
+
     u32 id_salt;
 
-    u32  frame;           /* monotonic frame index, bumped each ctx_begin this context is built */
-    bool wants_redraw;    /* set by gui_anim_f32 while mid-transition; cleared at ctx_begin */
+    u32  frame;           // monotonic frame index, bumped each ctx_begin this context is built
+    bool wants_redraw;    // set by gui_anim_f32 while mid-transition; cleared at ctx_begin
 
-    gui_state_slot_t* state;       /* open-addressed keyed per-widget state; points into context alloc */
+    gui_state_slot_t*   state;       // open-addressed keyed per-widget state; points into context alloc
     u32                 state_count; // capacity, power of two
-    u32                 state_mask;  /* state_count - 1, for bucket masking */
+    u32                 state_mask;  // state_count - 1, for bucket masking
 
 } gui_retained_t;
 
@@ -454,7 +455,7 @@ typedef struct
     [0] is the main swapchain; the rest are floaters.  Held by value in gui_context_t.viewports.
 ==============================================================================================*/
 
-struct gui_dock_node_t;   /* the dock tree node -- defined in full after gui_viewport_t below */
+struct gui_dock_node_t;         // the dock tree node -- defined in full after gui_viewport_t below
 
 typedef struct
 {
@@ -635,10 +636,10 @@ typedef struct
 /* Per-frame active table context.  One table open at a time (no nesting yet). */
 typedef struct
 {
-    gui_id_t              id;
-    gui_table_flags_t     flags;
+    gui_id_t                id;
+    gui_table_flags_t       flags;
     i32                     ncols;
-    gui_table_col_t       cols[ GUI_TABLE_COLS_MAX ];
+    gui_table_col_t         cols[ GUI_TABLE_COLS_MAX ];
     i32                     col_setup_n;   /* number of table_setup_column calls so far */
 
     /* Resolved column geometry (screen space), set once in table_begin. */
@@ -646,14 +647,14 @@ typedef struct
     f32                     col_w[ GUI_TABLE_COLS_MAX ];
 
     /* Iteration state. */
-    i32                     cur_col;       /* -1 before first table_next_column this row */
-    i32                     cur_row;       /* -1 before first table_next_row             */
-    f32                     row_top;       /* screen-space top of the current row        */
-    f32                     row_h;         /* current row height in pixels               */
+    i32                     cur_col;       // -1 before first table_next_column this row
+    i32                     cur_row;       // -1 before first table_next_row            
+    f32                     row_top;       // screen-space top of the current row       
+    f32                     row_h;         // current row height in pixels              
 
-    gui_rect_t            outer_rect;    /* full table box in screen space             */
-    gui_rect_t            body_rect;     /* content area inside the opened region      */
-    f32                     header_h;      /* header strip height; 0 if no header        */
+    gui_rect_t              outer_rect;    // full table box in screen space             
+    gui_rect_t              body_rect;     // content area inside the opened region      
+    f32                     header_h;      // header strip height; 0 if no header        
 
     /* Set true once the body region has been pushed (either by table_headers_row or
        the first table_next_row).  Guards layout_pop_region in table_end. */
@@ -662,9 +663,10 @@ typedef struct
     /* The header is drawn last (as chrome, like a window title bar) so it overpaints rows that
        scrolled under it.  table_headers_row only does the sort interaction up front and records
        what the deferred draw needs: whether a header exists and which column is hot / active. */
-    bool                    want_header;   /* table_headers_row was called this frame      */
-    i8                      hdr_hot;       /* column under the cursor (-1 none)            */
-    i8                      hdr_act;       /* column being pressed     (-1 none)           */
+
+    bool                    want_header;   // table_headers_row was called this frame      
+    i8                      hdr_hot;       // column under the cursor (-1 none)            
+    i8                      hdr_act;       // column being pressed    (-1 none)          
 
     /* Column-resize feedback: index of the interior boundary (between col i and i+1) that is hot
        or being dragged, drawn as a highlight line in table_end.  -1 = none.  See GUI_TABLE_RESIZABLE. */
@@ -675,9 +677,9 @@ typedef struct
     bool                    sort_dirty;
 
     /* s_build.clip_rect on entry, restored when the one table clip is popped in table_end. */
-    gui_rect_t            saved_clip;
+    gui_rect_t              saved_clip;
 
-    gui_table_persist_t*  persist;
+    gui_table_persist_t*    persist;
 
 } gui_table_t;
 

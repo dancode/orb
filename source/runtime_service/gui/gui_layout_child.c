@@ -416,6 +416,7 @@ gui_split_begin( const char* id_str, f32 right_w )
     parent->prev_item  = ( gui_rect_t ){ x, y, parent->content_w, resolved_h };
 
     /* Push the split frame and open the left panel. */
+    ORB_ASSERT( s_split_sp < GUI_SPLIT_DEPTH );
     if ( s_split_sp < GUI_SPLIT_DEPTH )
     {
         gui_split_frame_t* sf = &s_split_stack[ s_split_sp++ ];
@@ -424,9 +425,8 @@ gui_split_begin( const char* id_str, f32 right_w )
         sf->right_rect       = right_rect;
         sf->measured_left_h  = 0.0f;
         sf->measured_right_h = 0.0f;
+        split_push_panel( left_rect );
     }
-
-    split_push_panel( left_rect );
 }
 
 void

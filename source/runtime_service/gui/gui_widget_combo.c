@@ -209,11 +209,13 @@ gui_listbox_begin( const char* label, f32 w, f32 h )
         if ( w < WIDGET_H * 4.0f ) w = WIDGET_H * 4.0f;
     }
 
+    ORB_ASSERT( s_listbox_sp < LISTBOX_DEPTH );
+    if ( s_listbox_sp >= LISTBOX_DEPTH ) return false;
+
     /* The framed scrolling box is a plain child; the label is the only thing layered on top. */
     gui_child_begin( label, w, h, GUI_WIN_NONE );
 
-    u32 slot = s_listbox_sp < LISTBOX_DEPTH ? s_listbox_sp : LISTBOX_DEPTH - 1;
-    ++s_listbox_sp;
+    u32 slot = s_listbox_sp++;
     s_listbox_stack[ slot ].label = label;
     s_listbox_stack[ slot ].box   = lf()->outer;   /* the child's box, for the trailing label */
 
