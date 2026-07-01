@@ -54,7 +54,7 @@ typedef struct
     u32  state_slots;    /* keyed state pool, must be power of two (default 512) */
     u32  popup_depth;    /* max popup nesting (default 8) */
     u32  max_viewports;  /* render surfaces (default 4) */
-    u32  max_dock_nodes; /* dock-tree node pool; 0 = no docking (default 48) */
+    u32  max_dock_nodes; // dock-tree node pool; 0 = no docking (default 48)
 
 } gui_ctx_config_t;
 
@@ -692,7 +692,7 @@ typedef enum
 
 typedef struct gui_style_t
 {
-    u32 colors[ GUI_COL_COUNT ]; /* Theme default palette (GUI_COLOR packs R,G,B,A bytes) */
+    u32 colors[ GUI_COL_COUNT ]; // Theme default palette (GUI_COLOR packs R,G,B,A bytes)
 
     /* Layout metrics */
     u8 line_size;          // widget row height                                 

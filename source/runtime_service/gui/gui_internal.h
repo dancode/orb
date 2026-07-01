@@ -83,7 +83,7 @@ typedef struct
     f32   dt;
     f64   time;           /* seconds since the first frame -- dt accumulated; backs get_time() */
     i32   display_w, display_h;
-    u32   mouse_viewport; /* surface the cursor is in (resolved from mouse-event win_id); persists */
+    u32   mouse_viewport; // surface the cursor is in (resolved from mouse-event win_id); persists
 
 } gui_io_t;
 
@@ -165,7 +165,7 @@ typedef struct gui_window_t
     bool       reopen_floater;     /* re-spawn as a floater on the next begin             */
     bool       reopen_maximized;   /* floater was maximized -- re-maximize after re-spawn */
     i32        home_x, home_y;     /* saved restore (normal) client-corner screen pos     */
-    f32        restore_w, restore_h; /* saved restore (normal) size                       */
+    f32        restore_w, restore_h; // saved restore (normal) size
 
     gui_win_flags_t flags;    /* behavior flags supplied to window_begin        */
 
@@ -354,9 +354,9 @@ typedef struct
 
 typedef struct
 {
-    f32 scroll_x, scroll_y;   /* persisted scroll offset (fractional: scrollbar drag is t * max_scroll) */
-    f32 content_w, content_h; /* content extent measured last frame (f32* passed to layout_push_region)  */
-    i16 user_w, user_h;       /* user-resized size in pixels; 0 = none, use the passed w/h              */
+    f32 scroll_x, scroll_y;   // persisted scroll offset (fractional: scrollbar drag is t * max_scroll)
+    f32 content_w, content_h; // content extent measured last frame (f32* passed to layout_push_region)
+    i16 user_w, user_h;       // user-resized size in pixels; 0 = none, use the passed w/h
 
 } gui_region_t;
 
@@ -441,7 +441,7 @@ typedef struct
     bool wants_redraw;    /* set by gui_anim_f32 while mid-transition; cleared at ctx_begin */
 
     gui_state_slot_t* state;       /* open-addressed keyed per-widget state; points into context alloc */
-    u32                 state_count; /* capacity, power of two */
+    u32                 state_count; // capacity, power of two
     u32                 state_mask;  /* state_count - 1, for bucket masking */
 
 } gui_retained_t;
