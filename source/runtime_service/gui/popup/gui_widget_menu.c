@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_widget_menu.c -- Menus: menu bars, menu entries, menu items.
+    runtime_service/gui/popup/gui_widget_menu.c -- Menus: menu bars, menu entries, menu items.
 
     Menus are a thin coordination layer over the popup stack (gui_popup.c), built the same way
     the combo box was: a widget that drives a popup plus a little local state, no new machinery.

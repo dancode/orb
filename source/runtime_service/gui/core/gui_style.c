@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_style.c -- Style stacks: colors + layout metrics.
+    runtime_service/gui/core/gui_style.c -- Style stacks: colors + layout metrics.
 
     The push-model theme override the widgets draw through, the ImGui PushStyleColor / PushStyleVar
     analogue.  Three layers resolve into the value a widget sees:

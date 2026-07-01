@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_dock.c -- Docking: the dock-node tree behind viewport.dock_root.
+    runtime_service/gui/dock/gui_dock.c -- Docking: the dock-node tree behind viewport.dock_root.
 
     Makes the dock_root seam (gui_internal.h / gui_render.c) live.  A viewport's dock_root is a
     tree of gui_dock_node_t: LEAF nodes tab one or more windows into a region, INTERNAL nodes split

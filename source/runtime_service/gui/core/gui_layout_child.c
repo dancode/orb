@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_layout_child.c -- Child box and sub-layout lifecycle.
+    runtime_service/gui/core/gui_layout_child.c -- Child box and sub-layout lifecycle.
 
     child_begin / child_end open a nested scrollable region inside the current layout: they
     carve a box from the parent pen, draw its frame, and hand off to layout_push/pop_region.

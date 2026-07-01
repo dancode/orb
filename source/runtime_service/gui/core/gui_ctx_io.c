@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_ctx_io.c -- Public IO accessor API.
+    runtime_service/gui/core/gui_ctx_io.c -- Public IO accessor API.
 
     The frame-coherent input snapshot the widgets see, exposed for UI / tool code that wants
     to read keys, the mouse, or the clock without re-querying app() -- which bypasses gui's

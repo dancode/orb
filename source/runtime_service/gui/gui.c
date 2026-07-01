@@ -8,34 +8,54 @@
       - the render backend (gui_backend.c): fonts, draw list, tessellation, GPU flush, debug
         overlay.  Owns s_draw / s_tess / s_font / s_render.  Called through gui_backend.h.
 
-    Include order matters: each file can reference statics from files included above it.
+    Include order matters: each file can reference statics from files included above it.  Files
+    are grouped into subdirectories by DEPENDENCY TIER, not by theme -- each tier only needs the
+    tiers above it, so this is also where a future `#ifdef GUI_ENABLE_<tier>` would wrap an
+    #include line to compile a feature out entirely.
 
-    gui_input.c             -- app->IO snapshot: input_update, s_io
-    gui_style.c             -- style stacks: colors + metrics, style_col/style_var, push/pop/next
-    gui_ctx.c               -- context state: s_interaction, s_build, layout_frame_t, gui_context_t, ctx_new_frame
-    gui_ctx_id.c            -- id system + state pool: id_hash, id_combine, id_seed/push/pop, gui_state_get
-    gui_ctx_io.c            -- public IO accessors: want_capture_*, is_key_*, is_mouse_*, get_mouse_pos
-    gui_window.c            -- persistent per-window state: gui_window_t, window_get, drag mode
-    gui_widget_core.c       -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
-    gui_symbol.c            -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
-    gui_resize.c            -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
-    gui_layout_core.c       -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
-    gui_layout_region.c     -- scrollable region engine: gui_region_t, region_scrollbar, push/pop_region
-    gui_layout_child.c      -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
-    gui_layout.c            -- public layout API verbs: gui_layout, gui_stack, gui_cols, gui_grid
-    gui_text_edit.c         -- single-line text editing engine: input_field_edit (behind input_text)
-    gui_anim.c              -- widget animation utilities: gui_anim_f32, gui_anim_bg
-    gui_widget.c            -- core leaf widgets: text, button, checkbox, input_text, selectable
-    gui_widget_slider.c     -- slider + drag widgets: slider_float/int, drag_int, slider_render
-    gui_widget_numeric.c    -- numeric text inputs: input_int/float/double, input_float2/3/4
-    gui_widget_window.c     -- the window as a widget: begin/window_end + chrome (resize); body is a region
-    gui_dock.c              -- docking: dock-node tree, splitters, tab strips, dockspace + build API
-    gui_popup.c             -- popups / context menus / tooltips: overlay windows on a reserved z-band
-    gui_widget_combo.c      -- combo box + list box: a popup dropdown / a scrolling child of selectables
-    gui_stacks.c            -- push-model public API: push/pop id, item flags, style color / var
-    gui_table.c             -- table layout: multi-column rows with cell clipping
-    gui_frame.c             -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, viewport, font, clip
-    gui_api.c               -- vtable, mod_desc, MOD_DEFINE_EXPORTS
+    core/        -- Tier 0, foundation: everything below needs this, it needs nothing else in gui.
+    widgets/     -- Tier 1, leaf widgets: built on core/ only.
+    window/      -- Tier 2, window subsystem: persisted window record + window-as-widget chrome.
+                    First real optional boundary -- a canvas/HUD-only embedding can skip it.
+    popup/       -- Tier 3, window-dependent overlay stack: popups/tooltips/combo/menus/nav all
+                    share the open-popup stack (s_popups_open), so nav and menus live here too.
+    dock/        -- Tier 3, window-dependent, independent of popup/: dock-node tree + splitters.
+    table/       -- Tier 4, independent optional feature: needs only core/, no window dependency.
+
+    core/gui_input.c         -- app->IO snapshot: input_update, s_io
+    core/gui_style.c         -- style stacks: colors + metrics, style_col/style_var, push/pop/next
+    core/gui_ctx.c           -- context state: s_interaction, s_build, layout_frame_t, gui_context_t, ctx_new_frame
+    core/gui_ctx_id.c        -- id system + state pool: id_hash, id_combine, id_seed/push/pop, gui_state_get
+    core/gui_ctx_io.c        -- public IO accessors: want_capture_*, is_key_*, is_mouse_*, get_mouse_pos
+    core/gui_widget_core.c   -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
+    core/gui_stacks.c        -- push-model public API: push/pop id, item flags, style color / var
+    core/gui_symbol.c        -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
+    core/gui_resize.c        -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
+    core/gui_layout_core.c   -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
+    core/gui_layout_region.c -- scrollable region engine: gui_region_t, region_scrollbar, push/pop_region
+    core/gui_layout_child.c  -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
+    core/gui_layout.c        -- public layout API verbs: gui_layout, gui_stack, gui_cols, gui_grid
+    core/gui_anim.c          -- widget animation utilities: gui_anim_f32, gui_anim_bg
+
+    widgets/gui_text_edit.c      -- single-line text editing engine: input_field_edit (behind input_text)
+    widgets/gui_widget.c         -- core leaf widgets: text, button, checkbox, input_text, selectable
+    widgets/gui_widget_slider.c  -- slider + drag widgets: slider_float/int, drag_int, slider_render
+    widgets/gui_widget_numeric.c -- numeric text inputs: input_int/float/double, input_float2/3/4
+
+    table/gui_table.c            -- table layout: multi-column rows with cell clipping (needs core/ only)
+
+    window/gui_window.c          -- persistent per-window state: gui_window_t, window_get, drag mode
+    window/gui_widget_window.c   -- the window as a widget: begin/window_end + chrome (resize); body is a region
+
+    dock/gui_dock.c              -- docking: dock-node tree, splitters, tab strips, dockspace + build API
+
+    popup/gui_popup.c            -- popups / context menus / tooltips: overlay windows on a reserved z-band
+    popup/gui_nav.c              -- keyboard nav cursor + menu-bar mode (reads/drives the popup stack)
+    popup/gui_widget_combo.c     -- combo box + list box: a popup dropdown / a scrolling child of selectables
+    popup/gui_widget_menu.c      -- menu bar + menu items: built directly on the popup internals
+
+    gui_frame.c              -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, viewport, font, clip
+    gui_api.c                -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/
 
@@ -339,32 +359,45 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
    debug .c) is the SECOND unit -- compiled separately via gui_backend.c.  This unit calls into
    it through the draw_* / font_* / gui_render_* declarations in gui_backend.h. */
 
-#include "runtime_service/gui/gui_input.c"
-#include "runtime_service/gui/gui_style.c"
-#include "runtime_service/gui/gui_ctx.c"
-#include "runtime_service/gui/gui_ctx_id.c"
-#include "runtime_service/gui/gui_ctx_io.c"
-#include "runtime_service/gui/gui_window.c"
-#include "runtime_service/gui/gui_widget_core.c"
-#include "runtime_service/gui/gui_symbol.c"
-#include "runtime_service/gui/gui_resize.c"
-#include "runtime_service/gui/gui_layout_core.c"
-#include "runtime_service/gui/gui_layout_region.c"
-#include "runtime_service/gui/gui_layout_child.c"
-#include "runtime_service/gui/gui_layout.c"
-#include "runtime_service/gui/gui_text_edit.c"
-#include "runtime_service/gui/gui_anim.c"
-#include "runtime_service/gui/gui_widget.c"
-#include "runtime_service/gui/gui_widget_slider.c"
-#include "runtime_service/gui/gui_widget_numeric.c"
-#include "runtime_service/gui/gui_widget_window.c"
-#include "runtime_service/gui/gui_dock.c"
-#include "runtime_service/gui/gui_popup.c"
-#include "runtime_service/gui/gui_nav.c"
-#include "runtime_service/gui/gui_widget_combo.c"
-#include "runtime_service/gui/gui_widget_menu.c"
-#include "runtime_service/gui/gui_stacks.c"
-#include "runtime_service/gui/gui_table.c"
+// Tier 0 -- foundation
+#include "runtime_service/gui/core/gui_input.c"
+#include "runtime_service/gui/core/gui_style.c"
+#include "runtime_service/gui/core/gui_ctx.c"
+#include "runtime_service/gui/core/gui_ctx_id.c"
+#include "runtime_service/gui/core/gui_ctx_io.c"
+#include "runtime_service/gui/core/gui_widget_core.c"
+#include "runtime_service/gui/core/gui_stacks.c"
+#include "runtime_service/gui/core/gui_symbol.c"
+#include "runtime_service/gui/core/gui_resize.c"
+#include "runtime_service/gui/core/gui_layout_core.c"
+#include "runtime_service/gui/core/gui_layout_region.c"
+#include "runtime_service/gui/core/gui_layout_child.c"
+#include "runtime_service/gui/core/gui_layout.c"
+#include "runtime_service/gui/core/gui_anim.c"
+
+// Tier 1 -- leaf widgets (needs core/ only)
+#include "runtime_service/gui/widgets/gui_text_edit.c"
+#include "runtime_service/gui/widgets/gui_widget.c"
+#include "runtime_service/gui/widgets/gui_widget_slider.c"
+#include "runtime_service/gui/widgets/gui_widget_numeric.c"
+
+// Tier 4 -- independent optional feature (needs core/ only, no window dependency)
+#include "runtime_service/gui/table/gui_table.c"
+
+// Tier 2 -- window subsystem (first real optional boundary)
+#include "runtime_service/gui/window/gui_window.c"
+#include "runtime_service/gui/window/gui_widget_window.c"
+
+// Tier 3 -- window-dependent, independent of popup/
+#include "runtime_service/gui/dock/gui_dock.c"
+
+// Tier 3 -- window-dependent overlay stack (popup/nav/combo/menu share s_popups_open)
+#include "runtime_service/gui/popup/gui_popup.c"
+#include "runtime_service/gui/popup/gui_nav.c"
+#include "runtime_service/gui/popup/gui_widget_combo.c"
+#include "runtime_service/gui/popup/gui_widget_menu.c"
+
+// Orchestration -- sits above every tier, drives whichever are compiled in
 #include "runtime_service/gui/gui_frame.c"
 
 #ifndef GUI_API_C_PRELUDE

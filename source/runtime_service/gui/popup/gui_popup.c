@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_popup.c -- Popups, context menus, and tooltips.
+    runtime_service/gui/popup/gui_popup.c -- Popups, context menus, and tooltips.
 
     A popup is a transient window rendered on top of everything that auto-closes on an outside
     click (regular) or blocks input + dims the background (modal).  The popup layer is thin: the

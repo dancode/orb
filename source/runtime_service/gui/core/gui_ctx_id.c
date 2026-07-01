@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_ctx_id.c -- ID hashing, combining, and scope stack.
+    runtime_service/gui/core/gui_ctx_id.c -- ID hashing, combining, and scope stack.
 
     Three utilities the rest of the widget tree is built on:
 

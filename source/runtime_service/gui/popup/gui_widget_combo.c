@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_widget_combo.c -- Combo box + list box.
+    runtime_service/gui/popup/gui_widget_combo.c -- Combo box + list box.
 
     Two selection widgets built entirely out of the existing toolkit rather than new machinery:
 

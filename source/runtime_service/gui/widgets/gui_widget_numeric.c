@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_widget_numeric.c -- Numeric text-input widgets.
+    runtime_service/gui/widgets/gui_widget_numeric.c -- Numeric text-input widgets.
 
     A family of widgets that present a text field seeded with the formatted current value on
     focus gain.  The user edits freely; on Enter or focus loss the text is parsed back via

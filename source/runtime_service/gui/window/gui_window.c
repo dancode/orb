@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_window.c -- Persistent per-window state.
+    runtime_service/gui/window/gui_window.c -- Persistent per-window state.
 
     Windows are keyed by id_hash(title).  On first appearance the registry seeds the record
     from any queued window_set_next_pos / _size (ONCE condition), falling back to a default
@@ -54,19 +54,10 @@ static gui_id_t s_titlebar_drag_gui;  /* gui window id -- guards threshold check
 static f32        s_titlebar_drag_px;
 static f32        s_titlebar_drag_py;
 
-/* In-flight edge resize.  The window being resized holds active_id == (id ^ RESIZE_SALT);
-   s_resize_edges names which edges follow the cursor (GUI_RESIZE_* bits, set in
-   gui_widget.c).  s_resize_off keeps the grabbed edge under the cursor without a jump;
-   s_resize_fix pins the opposite edge so a left/top drag grows from the far side. */
-
-static u8                   s_resize_edges;
-static f32                  s_resize_off_x, s_resize_off_y;
-static f32                  s_resize_fix_x, s_resize_fix_y;
-
-/* The salt, edge bits, grab-band constants, and the record-agnostic hit-test / highlight helpers
-   live in gui_widget_core.c -- they need the style macros (WIN_BORDER, COL_RESIZE_HOT) defined
-   there, and that file is still ahead of gui_layout.c, so child_begin can reuse them.  The
-   s_resize_* state above stays here; the window-record apply / grab / fit stay in
+/* In-flight edge resize.  The window being resized holds active_id == (id ^ RESIZE_SALT).
+   The s_resize_* in-flight state (edges, offsets, far-edge pins) is owned by the shared
+   resize mechanism in core/gui_resize.c -- a resizeable child_begin (gui_layout_child.c)
+   reads it too, so it cannot live here; only the window-record apply / grab / fit stay in
    gui_widget_window.c. */
 
 /*----------------------------------------------------------------------------------------------

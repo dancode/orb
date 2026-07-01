@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_widget_core.c -- Shared widget primitives + theme.
+    runtime_service/gui/core/gui_widget_core.c -- Shared widget primitives + theme.
 
     The foundation the rest of the widget layer is built on: the layout-derived size
     macros, the color palette, the label grammar + content placement (rect_align / arrows),
@@ -14,8 +14,9 @@
         active  : the primary button is held with this widget as the target
         focused : this widget owns keyboard input (input_text)
 
-    Included by gui.c after gui_window.c so s_interaction, s_build, s_io, s_style, rect_hit,
-    and the draw helpers are all in scope.
+    Included by gui.c after gui_ctx_io.c so s_interaction, s_build, s_io, s_style, rect_hit,
+    and the draw helpers are all in scope.  Despite the name, this file has no dependency on
+    gui_window.c -- window bookkeeping is a later, optional tier (window/gui_window.c).
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   /* widget_kind_t, widget_state_t */

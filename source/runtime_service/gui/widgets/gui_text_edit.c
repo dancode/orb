@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_text_edit.c -- Single-line text editing engine.
+    runtime_service/gui/widgets/gui_text_edit.c -- Single-line text editing engine.
 
     The full editing behavior behind input_text: cursor movement, selection (keyboard + mouse
     drag, double-click word select), clipboard copy / cut / paste, insertion + deletion,

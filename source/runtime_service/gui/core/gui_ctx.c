@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_ctx.c -- Immediate-mode context state and per-frame drivers.
+    runtime_service/gui/core/gui_ctx.c -- Immediate-mode context state and per-frame drivers.
 
     Declares all persistent ambient and frame-scratch state (s_interaction, s_build, nav_state_t,
     layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_input.c -- App input -> gui IO snapshot.
+    runtime_service/gui/core/gui_input.c -- App input -> gui IO snapshot.
 
     input_update() is called once per frame before any widget calls.  It:
         1. Samples mouse position and button state via the app() query API.

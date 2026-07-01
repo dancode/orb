@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_widget_slider.c -- Slider and drag widgets.
+    runtime_service/gui/widgets/gui_widget_slider.c -- Slider and drag widgets.
 
     All widgets in this file share the drag-value interaction pattern: widget_behavior claims
     active_id on mouse press (WIDGET_KIND_DRAG), keeping the drag bound to the widget while

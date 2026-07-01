@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_widget.c -- Core leaf widgets.
+    runtime_service/gui/widgets/gui_widget.c -- Core leaf widgets.
 
     The everyday controls a caller emits between window_begin / window_end: text, button,
     checkbox, radio_button, input_text, label_text, selectable, collapsing_header, tree_node,

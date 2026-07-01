@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_widget_window.c -- The window as a widget (chrome + interaction).
+    runtime_service/gui/window/gui_widget_window.c -- The window as a widget (chrome + interaction).
 
     Everything that presents a window this frame: the title bar, collapse arrow, border,
     edge-resize affordance, the scrollbars, and window_begin / window_end themselves.  The

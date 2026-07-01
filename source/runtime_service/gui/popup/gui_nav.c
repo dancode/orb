@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_nav.c -- Keyboard navigation driver.
+    runtime_service/gui/popup/gui_nav.c -- Keyboard navigation driver.
 
     The per-frame brain behind the nav cursor (s_nav.id, the persistent keyboard analogue of
     hover_id).  Three jobs, run once per frame from gui_ctx_begin after the popup state settles:

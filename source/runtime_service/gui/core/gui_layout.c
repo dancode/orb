@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_layout.c -- Public layout API verbs.
+    runtime_service/gui/core/gui_layout.c -- Public layout API verbs.
 
     Defines the per-region template-shaping calls (gui_layout, gui_stack, gui_row,
     gui_cols, gui_grid, gui_pack, gui_bar, gui_strip, gui_field_split,

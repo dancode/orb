@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_layout_core.c -- Layout mechanism: track resolver + cell emitters.
+    runtime_service/gui/core/gui_layout_core.c -- Layout mechanism: track resolver + cell emitters.
 
     The engine the public layout API (gui_layout.c) drives.  It carves a region's content area
     into cells from a repeating row / column template (or a fixed grid, or a pack run) and hands

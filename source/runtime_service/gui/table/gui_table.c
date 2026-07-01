@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_table.c -- Table layout: multi-column rows over the columns engine.
+    runtime_service/gui/table/gui_table.c -- Table layout: multi-column rows over the columns engine.
 
     A table is a region whose content is laid out in a column grid -- columns resolved once per
     table_begin, rows accumulated per table_next_row.  table_next_column just points the layout pen

@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_resize.c -- Shared edge-resize geometry.
+    runtime_service/gui/core/gui_resize.c -- Shared edge-resize geometry.
 
     The record-agnostic mechanism behind every draggable edge in the UI: the grab-band hit test,
     the hot-edge highlight, the press-time anchor record, and the raw cursor-to-edge apply.  Each
@@ -10,8 +10,10 @@
     edges; the caller layers its own size policy on the result (a window pins + clamps to its min,
     a child clamps to its constraints and persists the size).
 
-    The in-flight s_resize_* state (edges, offsets, far-edge pins) lives in gui_window.c; the
-    style macros (WIN_BORDER, COL_RESIZE_HOT) come from gui_widget_core.c.
+    The in-flight s_resize_* state (edges, offsets, far-edge pins) lives here, alongside the
+    mechanism that owns it -- both a window (window/gui_widget_window.c) and a resizeable
+    child_begin (core/gui_layout_child.c) read/write it, so it cannot live in either consumer.
+    The style macros (WIN_BORDER, COL_RESIZE_HOT) come from gui_widget_core.c.
 
     Included by gui.c after gui_widget_core.c (for the macros) and before gui_layout.c /
     gui_widget_window.c (the consumers).  Lifted out of gui_widget_core.c so the resize
@@ -40,6 +42,13 @@
 /* Edge-resize grab: while a resize is in flight the owner holds active_id == (id ^
    GUI_RESIZE_SALT), distinct from a window drag (the bare id), scrollbar, and collapse arrow. */
 #define GUI_RESIZE_SALT     0x5152E001u
+
+/* In-flight edge resize.  s_resize_edges names which edges follow the cursor (GUI_RESIZE_* bits).
+   s_resize_off keeps the grabbed edge under the cursor without a jump; s_resize_fix pins the
+   opposite edge so a left/top drag grows from the far side. */
+static u8   s_resize_edges;
+static f32  s_resize_off_x, s_resize_off_y;
+static f32  s_resize_fix_x, s_resize_fix_y;
 
 /* Edge bits for s_resize_edges -- combined on a corner grab (e.g. R|B). */
 #define GUI_RESIZE_L  ( 1u << 0 )

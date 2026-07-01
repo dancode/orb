@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/gui_anim.c -- Widget animation utilities.
+    runtime_service/gui/core/gui_anim.c -- Widget animation utilities.
 
     A growing collection of reusable stateful effects.  Each effect is a single function
     that a widget calls with its id and resolved interaction state; all peek-guard logic,
