@@ -1025,8 +1025,9 @@ typedef struct gui_api_s
     bool         ( *is_item_clicked     )( void );
     bool         ( *is_item_focused     )( void );
     bool         ( *is_item_activated   )( void );
-    bool         ( *is_item_deactivated )( void );
-    bool         ( *is_item_visible     )( void );
+    bool         ( *is_item_deactivated            )( void );
+    bool         ( *is_item_deactivated_after_edit )( void );
+    bool         ( *is_item_visible                )( void );
     gui_rect_t ( *get_item_rect       )( void );
 
     bool ( *is_key_down              )( app_key_t key );

@@ -66,11 +66,13 @@
     Helpers
 ----------------------------------------------------------------------------------------------*/
 
-/* Popup window id from the caller's string (salted; equals s_build.win_id / hover_win for it). */
+/* Popup window id from the caller's string: scoped through the push_id stack (like any widget id)
+   then salted so a popup never shares a window record with a normal window of the same title.
+   popup_open and popup_begin must be called from the same push_id scope to match. */
 static gui_id_t
 popup_id( const char* str )
 {
-    return id_combine( id_hash( str ), GUI_POPUP_SALT );
+    return id_combine( id_combine( id_seed(), id_hash( str ) ), GUI_POPUP_SALT );
 }
 
 /* Nudge a placed window fully on-screen along one axis: keep [pos, pos+size) within [0, extent). */
@@ -483,7 +485,7 @@ void
 gui_help_marker( const char* text )
 {
     const char* mark = "(?)";
-    gui_id_t  id   = id_combine( id_seed(), id_hash( text ) );
+    gui_id_t  id   = id_combine( id_seed(), id_hash( label_id_str( text ) ) );
 
     /* Carve a natural-width cell for the mark and place it per the region alignment, like text(). */
     f32          mw = font_text_w( mark );

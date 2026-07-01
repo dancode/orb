@@ -414,6 +414,22 @@ gui_frame_end( void )
     /* A leftover context scope means a ctx_begin without its ctx_end -- catch it at the seam rather
        than letting the stale binding bleed into render or the next frame. */
     ORB_ASSERT( s_ctx_save_sp == 0 );
+
+    /* Focus departure: if focused_id changed during this frame (a click moved focus, or Enter /
+       Escape cleared it), latch the departing widget and its edit flag for one frame so
+       is_item_deactivated_after_edit can read them on the NEXT frame's emission of that widget.
+       If focus did not change, clear the ended slot so it does not linger past the valid frame. */
+    if ( s_interaction.focused_id != s_interaction.focused_id_at_frame_start )
+    {
+        s_interaction.focus_ended_id     = s_interaction.focused_id_at_frame_start;
+        s_interaction.focus_ended_edited = s_interaction.focused_id_edited;
+        s_interaction.focused_id_edited  = false;
+    }
+    else
+    {
+        s_interaction.focus_ended_id     = GUI_ID_NONE;
+        s_interaction.focus_ended_edited = false;
+    }
 }
 
 /* Flush one viewport's geometry partition to GPU.  The host opens a frame on that viewport's rhi

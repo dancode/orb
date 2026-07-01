@@ -260,6 +260,7 @@ const gui_api_t g_gui_api_struct =
     .is_item_focused                    = gui_is_item_focused,
     .is_item_activated                  = gui_is_item_activated,
     .is_item_deactivated                = gui_is_item_deactivated,
+    .is_item_deactivated_after_edit     = gui_is_item_deactivated_after_edit,
     .is_item_visible                    = gui_is_item_visible,
     .get_item_rect                      = gui_get_item_rect,
     .is_key_down                        = gui_is_key_down,

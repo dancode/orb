@@ -66,6 +66,17 @@ static struct
        hover_win).  Reset to APP_CURSOR_ARROW each frame by interaction_frame_reset. */
     app_cursor_t mouse_cursor;
 
+    /* Focus-departure tracking for is_item_deactivated_after_edit.
+       focused_id_at_frame_start snapshots focused_id at interaction_frame_reset.  At frame_end, if
+       focused_id changed this frame, the departing widget's id and edit history are latched into
+       focus_ended_* for one frame so the next frame's is_item_deactivated_after_edit can read them.
+       focused_id_edited accumulates while a widget holds focus (set by mark_item_edited in
+       input_field_edit); cleared and snapshotted into focus_ended_edited on departure. */
+    gui_id_t focused_id_at_frame_start;
+    bool     focused_id_edited;
+    gui_id_t focus_ended_id;
+    bool     focus_ended_edited;
+
 } s_interaction;
 
 /* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
@@ -657,6 +668,9 @@ interaction_frame_reset( void )
        is_item_activated / is_item_deactivated edge readers compare against (gui_ctx_io.c). */
     s_interaction.active_id_prev = s_interaction.active_id;
 
+    /* Snapshot focused_id so frame_end can detect whether focus moved this frame. */
+    s_interaction.focused_id_at_frame_start = s_interaction.focused_id;
+
     /* Widget hover is rebuilt from hit tests during emission; clear it now. */
     s_interaction.hover_id = GUI_ID_NONE;
 
@@ -684,6 +698,12 @@ interaction_frame_reset( void )
     /* Fresh cursor request for the new frame -- defaults to the arrow until a widget asks otherwise. */
     s_interaction.mouse_cursor = APP_CURSOR_ARROW;
 }
+
+/* Mark the currently focused item as edited this frame.  Called by input_field_edit whenever the
+   buffer changes.  Accumulates in focused_id_edited (never cleared while focus stays); frame_end
+   snapshots it into focus_ended_edited when focus departs so is_item_deactivated_after_edit can
+   read it for one frame after the focus moves. */
+static void mark_item_edited( void ) { s_interaction.focused_id_edited = true; }
 
 /* Per-context frame reset: rebuilds the frame-scratch and per-context retained state.
    Called by ctx_begin for every context -- does NOT touch the global s_interaction fields

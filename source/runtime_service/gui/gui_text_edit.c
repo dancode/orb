@@ -721,6 +721,10 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
         on_change( buf, final_len, bufsz, cb_user );
     }
 
+    /* Accumulate the edit flag for is_item_deactivated_after_edit (gui_ctx_io.c). */
+    if ( res.changed )
+        mark_item_edited();
+
     return res;
 }
 

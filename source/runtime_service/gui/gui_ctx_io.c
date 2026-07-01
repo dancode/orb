@@ -84,6 +84,17 @@ gui_is_item_deactivated( void )
     return id != GUI_ID_NONE && s_interaction.active_id != id && s_interaction.active_id_prev == id;
 }
 
+/* True the frame after the last item lost keyboard focus, only when the buffer was modified
+   during that focus session.  Use this after input_text to detect blur-with-edit uniformly with
+   input_int / input_float (which commit and return true on blur directly).
+   Fires on both Enter and click-away as long as any edit occurred while the field was focused. */
+bool
+gui_is_item_deactivated_after_edit( void )
+{
+    gui_id_t id = s_build.last_item_id;
+    return id != GUI_ID_NONE && id == s_interaction.focus_ended_id && s_interaction.focus_ended_edited;
+}
+
 /* True when the last item's rect has any visible (unclipped) area in the active region clip. */
 bool
 gui_is_item_visible( void )

@@ -352,6 +352,7 @@ bool         gui_is_item_clicked( void );
 bool         gui_is_item_focused( void );
 bool         gui_is_item_activated( void );
 bool         gui_is_item_deactivated( void );
+bool         gui_is_item_deactivated_after_edit( void );
 bool         gui_is_item_visible( void );
 gui_rect_t gui_get_item_rect( void );
 

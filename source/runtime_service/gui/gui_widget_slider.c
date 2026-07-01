@@ -89,7 +89,7 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
 
     /* Track takes the left portion; the label sits at the right.  The min track width keeps the
        knob travel usable when the label is long. */
-    gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
+    gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
     widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
 
     /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
@@ -129,7 +129,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     gui_id_t   id = widget_id( label );
     gui_rect_t r  = widget_next_rect( WIDGET_H );
 
-    gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
+    gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
     widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
 
     bool changed = false;
@@ -216,7 +216,7 @@ gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, cons
 
     gui_id_t   id    = widget_id( label );
     gui_rect_t r     = widget_next_rect( WIDGET_H );
-    gui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
+    gui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
 
     return drag_int_box( id, box_r, v, v_speed, v_min, v_max, format );
 }
@@ -280,7 +280,7 @@ gui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, co
 
     gui_id_t   id    = widget_id( label );
     gui_rect_t r     = widget_next_rect( WIDGET_H );
-    gui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT );
+    gui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
 
     return drag_float_box( id, box_r, v, v_speed, v_min, v_max, fmt );
 }
@@ -294,7 +294,7 @@ drag_float_n( const char* label, f32* v, u32 n, f32 v_speed, f32 v_min, f32 v_ma
 
     gui_id_t   id   = widget_id( label );
     gui_rect_t r    = widget_next_rect( WIDGET_H );
-    gui_rect_t ctrl = widget_split_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT );
+    gui_rect_t ctrl = widget_split_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT_DIM );
 
     bool changed = false;
     for ( u32 i = 0; i < n; ++i )
@@ -393,7 +393,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
     f32 preview_w = (f32)WIDGET_H;
     f32 gap       = (f32)s_style.widget_gap;
     f32 ctrl_min  = preview_w + gap + 44.0f * (f32)comps + gap * (f32)( comps - 1u );
-    gui_rect_t ctrl = widget_split_label( r, label, ctrl_min, COL_TEXT );
+    gui_rect_t ctrl = widget_split_label( r, label, ctrl_min, COL_TEXT_DIM );
 
     /* Clickable color square -- placed first for fast visual identification. */
     gui_rect_t preview_r = { ctrl.x, ctrl.y, preview_w, ctrl.h };
