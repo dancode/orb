@@ -39,25 +39,28 @@
 
 /* Per-context default pool sizes -- used to wire the static default context (slot 0).
    Secondary contexts may use different sizes passed via gui_ctx_config_t. */
-#define GUI_DEFAULT_MAX_WINDOWS    32   /* default persisted window pool */
-#define GUI_DEFAULT_POPUP_DEPTH     8   /* default max nested popups */
-#define GUI_DEFAULT_STATE_SLOTS   512   /* default keyed state pool capacity (power of two) */
-#define GUI_DEFAULT_MAX_VIEWPORTS   4   /* default render surfaces */
-#define GUI_DEFAULT_DOCK_NODES     48   /* default dock-tree nodes */
+
+#define GUI_DEFAULT_MAX_WINDOWS     32      // default persisted window pool
+#define GUI_DEFAULT_POPUP_DEPTH     8       // default max nested popups
+#define GUI_DEFAULT_STATE_SLOTS     512     // default keyed state pool capacity (power of two)
+#define GUI_DEFAULT_MAX_VIEWPORTS   4       // default render surfaces
+#define GUI_DEFAULT_DOCK_NODES      48      // default dock-tree nodes
 
 /* Non-per-context capacities -- these size non-context structs and stay as fixed constants. */
-#define GUI_LAYOUT_DEPTH  8       // max nested scroll regions (windows or children)
-#define GUI_KEY_COUNT     128     // gui_io_t key arrays; must cover the full app_key_t range
 
-#define GUI_DOCK_TABS_MAX  8      // windows co-docked (tabbed) in one leaf node
-#define GUI_DOCK_NAME_CAP  28     // bytes of a tab's display name, copied at dock time
+#define GUI_LAYOUT_DEPTH            8       // max nested scroll regions (windows or children)
+#define GUI_KEY_COUNT               128     // gui_io_t key arrays; must cover the full app_key_t range
 
-#define GUI_STATE_CAP       20      // payload bytes per slot (max state struct: gui_region_t)
+#define GUI_DOCK_TABS_MAX           8       // windows co-docked (tabbed) in one leaf node
+#define GUI_DOCK_NAME_CAP           28      // bytes of a tab's display name, copied at dock time
+
+#define GUI_STATE_CAP               20      // payload bytes per slot (max state struct: gui_region_t)
 
 /* GPU buffer region sizing uses a fixed viewport count (allocated once at init before any config).
    This is NOT the per-context runtime limit -- that is g_ctx->max_viewports.
    Must match APP_WIN_MAX / RHI_CTX_MAX. */
-#define GUI_MAX_VIEWPORTS 4       // GPU buffer region count; matches APP_WIN_MAX / RHI_CTX_MAX
+
+#define GUI_MAX_VIEWPORTS 4                 // GPU buffer region count; matches APP_WIN_MAX / RHI_CTX_MAX
 
 /*==============================================================================================
     Input snapshot (gui_input.c)
