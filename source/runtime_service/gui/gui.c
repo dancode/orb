@@ -42,28 +42,34 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>    /* va_list / va_start -- printf-style textf() widget       */
-#include <math.h>      /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
+#include <stdarg.h> /* va_list / va_start -- printf-style textf() widget       */
+#include <math.h>   /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 
 #include "orb.h"
 
 // Shared internal types + the render-backend interface (pulls gui_internal.h + rhi_api.h + app_api.h)
 #include "runtime_service/gui/gui_backend.h"
 
-// API function headers
+// API function headers + access pointers -- wired at module init/reload time
 #include "runtime_service/rhi/rhi_api.h"
 #include "engine/app/app_api.h"
-
-// API access pointers -- wired at module init/reload time
 MOD_USE_RHI;
 MOD_USE_APP;
 
 // clang-format off
+/*==============================================================================================
+    Debug Overlay
 
-/* The debug-overlay build switch (GUI_DEBUG_OVERLAY) and the DBG_* capture macros live in
-   gui_backend.h: both units (this one and gui_backend.c, which defines the capture targets)
-   must agree on them.  The widget / chrome files below invoke DBG_WIDGET / DBG_WINDOW / DBG_RESIZE;
-   in Debug they call across to the overlay's capture functions in the backend unit. */
+    The debug-overlay build switch (GUI_DEBUG_OVERLAY) and the DBG_* capture macros live in
+    gui_backend.h: both units (this one and gui_backend.c, which defines the capture targets)
+    must agree on them.  The widget / chrome files below invoke DBG_WIDGET / DBG_WINDOW / DBG_RESIZE;
+    in Debug they call across to the overlay's capture functions in the backend unit.
+
+    #define GUI_DEBUG_OVERLAY 1    -- currently auto enabled in Debug builds 
+    
+    see: gui_backend.h for the capture macros
+
+==============================================================================================*/
 
 /*==============================================================================================
     Layout
