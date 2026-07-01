@@ -275,8 +275,6 @@ void gui_separator_text( const char* label );
 void gui_help_marker( const char* text );
 
 /* font */
-void gui_font_set_builtin   ( gui_font_t font );
-void gui_font_set_bmp_scale ( u32 scale );
 bool gui_font_load_into     ( u32 id, const char* path );
 void gui_font_use           ( u32 id );
 void gui_push_font          ( u32 id );

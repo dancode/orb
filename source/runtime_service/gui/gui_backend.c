@@ -15,10 +15,9 @@
     Include order matters: each file can reference statics from files included above it.
 
     gui_shader.h            -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
-    gui_font.h              -- shared font types: font_metrics_t, bit_font_def_t, font_slot_t
-    gui_font_bmp.c          -- bmp fonts: bit-font -> R8 grid atlas (bmp_font_t, bmp_select, bmp_glyph)
-    gui_font_ttf.c          -- ttf fonts: proportional .orb_font loader (ttf_load_file, ttf_glyph)
-    gui_font.c              -- neutral registry + dispatch: font_slot_t, font_load/use, font_glyph
+    gui_font.h              -- shared font types: font_metrics_t, font_slot_t
+    gui_font_ttf.c          -- proportional .orb_font loader (ttf_load_file, ttf_glyph)
+    gui_font.c              -- registry + dispatch: font_slot_t, font_load/use, font_glyph
     gui_draw.c              -- CPU draw list: draw_reset, draw_push_*, s_draw
     gui_draw_path.c         -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
     gui_render_tess.c       -- CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
@@ -44,7 +43,6 @@
 
 #include "runtime_service/gui/backend/gui_shader.h"
 #include "runtime_service/gui/backend/gui_font.h"
-#include "runtime_service/gui/backend/gui_font_bmp.c"
 #include "runtime_service/gui/backend/gui_font_ttf.c"
 #include "runtime_service/gui/backend/gui_font.c"
 #include "runtime_service/gui/backend/gui_icon.c"

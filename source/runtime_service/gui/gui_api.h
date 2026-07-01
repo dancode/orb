@@ -851,18 +851,14 @@ typedef struct gui_api_s
     /* Font -- select / load fonts; call between frames (outside frame_begin / render), except
        push_font / pop_font which may bracket a section or widget mid-frame.
 
-       Fonts live in an id-addressed registry.  Slot 0 is the default / fallback (a built-in
-       bitmap to start).  font_load() loads a .orb_font into a fresh id; font_load_into() loads one
+       Fonts live in an id-addressed registry.  Slot 0 is the default; it is empty until the first
+       font_load / font_load_into( 0, path ) call -- call one right after gui()->init(), before any
+       frame renders.  font_load() loads a .orb_font into a fresh id; font_load_into() loads one
        into an existing id (id 0 swaps the default).  font_use() makes a loaded id active; another
        context can select its own font this way.  push_font() / pop_font() bracket a temporary
        font and restore the previous one.  Each font_load/font_load_into uses its own bindless
-       texture.  Widget layout dimensions follow the active font's metrics.
+       texture.  Widget layout dimensions follow the active font's metrics. */
 
-       font_set_builtin()   -- set the default (id 0) to a built-in bitmap font and use it.
-       font_set_bmp_scale() -- integer pixel-scale multiplier for built-in bitmaps (1 = native, 2 = 2x). */
-
-    void ( *font_set_builtin   )( gui_font_t font );
-    void ( *font_set_bmp_scale )( u32 scale );
     bool ( *font_load_into     )( u32 id, const char* path );
     void ( *font_use           )( u32 id );
     void ( *push_font          )( u32 id );

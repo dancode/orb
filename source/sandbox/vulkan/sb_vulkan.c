@@ -249,16 +249,6 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
-        /* Bitmap font scale cycle (1x/2x/3x) stays handy on the numpad dot. */
-
-        if ( app()->key_pressed( APP_KEY_NP_DOT ) )
-        {
-            static int bmp_scale = 1;
-            bmp_scale = bmp_scale == 1 ? 2 : ( bmp_scale == 2 ? 3 : 1 );
-            gui()->font_set_bmp_scale( bmp_scale );
-        }
-
-        /* ------------------------------------------------------------------------------ */
         /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
            F1 window frames   F2 widget interaction rects   F3 resize bands   F4 clip rects. */
 

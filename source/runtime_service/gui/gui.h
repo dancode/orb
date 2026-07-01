@@ -1111,27 +1111,6 @@ typedef struct
 } gui_render_stats_t;
 
 /*==============================================================================================
-    Font selection
-
-    gui_font_t selects which built-in bitmap atlas to use.
-    The TrueType path is activated separately via gui()->font_load(path).
-
-    The number of the pixel height (not font size in .ttf)
-==============================================================================================*/
-
-typedef enum
-{
-    GUI_FONT_BITMAP_8 = 0,        // 8x8   pixel glyphs -- compact, pixel-perfect at native size
-    GUI_FONT_BITMAP_16,           // 16x16 pixel glyphs -- 2x larger version of 8x8
-    GUI_FONT_BITMAP_16_JETBOLD,   // 10x16 pixel glyphs
-    GUI_FONT_BITMAP_20_JETBOLD,   // 12x20 pixel glyphs
-    GUI_FONT_BITMAP_24_JETBOLD,   // 14x33 pixel glyphs
-    GUI_FONT_BITMAP_24_CONSOLA,   // 13x25 pixel glyphs    
-    GUI_FONT_BITMAP_MAX,          // number of built-in bitmap fonts
-
-} gui_font_t;
-
-/*==============================================================================================
     Table support
 
     begin_table / end_table open a multi-column layout with independent cell clipping.

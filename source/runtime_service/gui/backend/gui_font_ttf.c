@@ -3,8 +3,8 @@
     runtime_service/gui/backend/gui_font_ttf.c -- ttf fonts: proportional .orb_font atlases.
 
     A "ttf font" is a proportional font baked into an .orb_font file by font_tool: an R8 atlas of
-    packed glyph bitmaps plus per-glyph records (UV rect, bearing, advance).  Unlike a bmp font it
-    is variable-width, so glyph dispatch reads a lookup[] table rather than a fixed grid.
+    packed glyph bitmaps plus per-glyph records (UV rect, bearing, advance).  Glyph dispatch reads
+    a lookup[] table since advances are variable-width, not a fixed grid.
 
     ttf_load_file() reads the file, expands the atlas tail via font_finalize_atlas() (the same white
     texel + dash rows every font carries), creates an owned GPU atlas, and fills a registry slot.
@@ -74,11 +74,9 @@ ttf_load_file( font_slot_t* slot, const char* path )
     /* Build the metrics scale-free fields here; the scale-dependent fields below are exact (a ttf
        has no integer upscale). */
     font_metrics_t metrics = ( font_metrics_t ){
-        .char_h       = (f32)( hdr.ascent - hdr.descent ),
-        .line_h       = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
-        .char_w       = 0.0f,
-        .size         = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
-        .proportional = true,
+        .char_h = (f32)( hdr.ascent - hdr.descent ),
+        .line_h = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
+        .size   = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
     };
 
     /* Append the white texel + dash rows and resolve white/dash/UV-scale metrics. */
@@ -129,17 +127,15 @@ ttf_load_file( font_slot_t* slot, const char* path )
 
     font_slot_free_gpu( slot );
 
-    slot->src        = FONT_SRC_TTF;
-    slot->ttf.ascent  = hdr.ascent;
-    slot->ttf.descent = hdr.descent;
-    memcpy( slot->ttf.lookup, lookup, sizeof( lookup ) );
+    slot->ascent  = hdr.ascent;
+    slot->descent = hdr.descent;
+    memcpy( slot->lookup, lookup, sizeof( lookup ) );
 
-    slot->atlas      = atlas;
-    slot->atlas_idx  = atlas_idx;
-    slot->atlas_w    = hdr.atlas_w;
-    slot->atlas_h    = tex_h;            /* padded: glyph UV math divides by the uploaded height */
-    slot->owns_atlas = true;
-    slot->used       = true;
+    slot->atlas     = atlas;
+    slot->atlas_idx = atlas_idx;
+    slot->atlas_w   = hdr.atlas_w;
+    slot->atlas_h   = tex_h;            /* padded: glyph UV math divides by the uploaded height */
+    slot->used      = true;
 
     metrics.atlas_idx = atlas_idx;
     slot->metrics     = metrics;
@@ -158,7 +154,7 @@ f32
 ttf_char_advance( const font_slot_t* slot, u8 ch )
 {
     if ( ch < 32 || ch > 126 ) ch = (u8)'?';
-    return (f32)slot->ttf.lookup[ ch - 32 ].advance;
+    return (f32)slot->lookup[ ch - 32 ].advance;
 }
 
 void
@@ -167,7 +163,7 @@ ttf_glyph( const font_slot_t* slot, u8 ch,
            f32* ox, f32* oy, f32* gw, f32* gh, f32* advance )
 {
     if ( ch < 32 || ch > 126 ) ch = (u8)'?';
-    const orb_font_glyph_t* g = &slot->ttf.lookup[ ch - 32 ];
+    const orb_font_glyph_t* g = &slot->lookup[ ch - 32 ];
     const font_metrics_t*   m = &slot->metrics;
 
     f32 iw = m->inv_atlas_w;            /* precomputed at load -- no per-glyph divide */
@@ -178,7 +174,7 @@ ttf_glyph( const font_slot_t* slot, u8 ch,
     *v1 = *v0 + (f32)g->h * ih;
 
     *ox      = (f32)g->bearing_x;
-    *oy      = (f32)( slot->ttf.ascent - (i32)g->bearing_y );
+    *oy      = (f32)( slot->ascent - (i32)g->bearing_y );
     *gw      = (f32)g->w;
     *gh      = (f32)g->h;
     *advance = (f32)g->advance;

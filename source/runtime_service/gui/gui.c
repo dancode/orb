@@ -98,12 +98,12 @@ MOD_USE_APP;
     not its glyph-box height (char_h = ascent + descent), which runs ~1.3x the em and would
     inflate every padding.  The em is the design unit a typographer reasons in, so spacing,
     padding, and control heights all scale off it and stay proportional across fonts.
-    Defaults match the bitmap 8x12 font (em=12).
+    Defaults match a 12px em.
 ==============================================================================================*/
 
 /* gui_metrics_t (the layout metric record) is defined in gui_internal.h. */
 
-/* Font type size (em) used by layout_compute; updated by font_set_builtin() / font_load(). */
+/* Font type size (em) used by layout_compute; updated by font_load(). */
 static u32 s_font_size = 0;
 
 /* Built-in theme registry.  Each entry is a complete gui_style_t authored for em=12;
@@ -289,8 +289,8 @@ gui_theme_reset( void )
     /* layout_compute() (called by gui_style_apply) reads the active font metrics through the
        backend and crashes if no font has been loaded yet.  s_font_size is set to a non-zero
        value only after the first layout_compute, so use it as the "font ready" sentinel.
-       When no font is set, seeding s_style_base is enough: the first font_load /
-       font_set_builtin call triggers gui_style_apply() which scales s_style_base at that point. */
+       When no font is set, seeding s_style_base is enough: the first font_load call triggers
+       gui_style_apply() which scales s_style_base at that point. */
     if ( s_font_size == 0 ) 
         return;
 

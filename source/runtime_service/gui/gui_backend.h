@@ -32,7 +32,7 @@
 
 // clang-format off
 /*==============================================================================================
-    Fonts (gui_font.c / gui_font_builtin.c)
+    Fonts (gui_font.c / gui_font_ttf.c)
 ==============================================================================================*/
 
 u32  font_load          ( const char* path );       // load a .orb_font into a new id, activate it (0=fail)
@@ -42,15 +42,11 @@ u32  font_active_id     ( void );                   // id of the active font slo
 u32  font_slot_atlas_idx( u32 id );                 // live bindless atlas index backing a font id (0 if empty)
 bool font_flush_pending ( void );                   // commit deferred (re)loads; true if the active font changed
 
-void font_set_bitmap    ( gui_font_t font );      // set the default slot to a built-in bitmap, use it
-void font_set_bmp_scale ( u32 scale );              // integer upscale for the built-in bitmaps
-
 f32  font_char_h        ( void );                   // glyph-box height of the active font (ascent+descent)
 f32  font_line_h        ( void );                   // line advance of the active font
 f32  font_em            ( void );                   // nominal type size (em) -- the layout proportion base
 f32  font_char_advance  ( u8 ch );                  // horizontal advance of one glyph
-bool font_is_tt         ( void );                   // true if a TrueType font is active (vs. a bitmap)
-void font_print_active  ( void );                   // log the active font's type, name, and metrics
+void font_print_active  ( void );                   // log the active font's name and metrics
 f32  font_text_w        ( const char* str );        // pixel width of a NUL-terminated run
 f32  font_text_w_n      ( const char* str, u32 n ); // pixel width of the first n bytes
 

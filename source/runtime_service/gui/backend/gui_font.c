@@ -1,21 +1,20 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/backend/gui_font.c -- Neutral font registry and glyph dispatch.
 
-    Source-agnostic core of the font unit.  It owns the id-addressed registry (s_fonts[]), the
-    active-font pointers (s_active / s_font), and the shared atlas finalize.  Per-source detail
-    lives in gui_font_bmp.c (bmp grid atlases) and gui_font_ttf.c (proportional .orb_font);
-    this unit only dispatches to them by the slot's src tag.
+    Owns the id-addressed registry (s_fonts[]), the active-font pointers (s_active / s_font), and
+    the shared atlas finalize.  Every slot is a loaded proportional .orb_font (gui_font_ttf.c);
+    this unit only adds the registry, activation, and the deferred-reload queue around it.
 
-    Slot 0 is the default / fallback.  It starts as a built-in bmp font and is rebuilt by
-    font_set_bitmap() / font_set_bmp_scale().  It can also be swapped to a loaded ttf font via
-    font_load_into( 0, path ).
+    Slot 0 is the default.  It starts empty (used == false) until the host's first font_load /
+    font_load_into( 0, path ) call -- every caller of gui_init() loads a font immediately after,
+    before any frame renders, so no frame ever needs a fallback font.
 
         font_load()      -- load a font into a fresh id, activate it, return the id (0 = fail).
         font_load_into() -- load a font into an existing id (e.g. swap the default, id 0).
         font_use()       -- make an already-loaded id the active font.
 
-    Included by gui_backend.c after gui_font_bmp.c and gui_font_ttf.c.
+    Included by gui_backend.c after gui_font_ttf.c.
 
 ==============================================================================================*/
 // clang-format off
@@ -116,10 +115,7 @@ font_atlas_tex_h( u32 glyph_h )
 
 /* Finalize a staged R8 atlas: append the white texel row and the dash pattern rows on top of the
    `glyph_h`-row glyph region, then resolve the metrics fields that describe them (white UV,
-   per-glyph UV scale, dash row V coords).  `tex_h` must equal font_atlas_tex_h( glyph_h ).
-
-   Every font builder (bmp and ttf) routes through here, so every atlas -- whatever its source --
-   is a self-sufficient backing texture for solid fills, dashed strokes, and text. */
+   per-glyph UV scale, dash row V coords).  `tex_h` must equal font_atlas_tex_h( glyph_h ). */
 
 void
 font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m )
@@ -145,22 +141,17 @@ font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metri
     Slot lifecycle
 ==============================================================================================*/
 
-/* Release a slot's GPU atlas, but only when the slot owns it.  bmp slots reference an atlas owned
-   by gui_font_bmp.c and must not destroy it. */
+/* Release a slot's owned GPU atlas. */
 
 void
 font_slot_free_gpu( font_slot_t* slot )
 {
-    if ( slot->owns_atlas )
-    {
-        if ( slot->atlas_idx != 0 )
-            rhi()->unregister_texture( slot->atlas_idx );
-        if ( rhi_handle_valid( slot->atlas ) )
-            rhi()->texture_destroy( slot->atlas );
-    }
-    slot->atlas      = ( rhi_texture_t ){ 0 };
-    slot->atlas_idx  = 0;
-    slot->owns_atlas = false;
+    if ( slot->atlas_idx != 0 )
+        rhi()->unregister_texture( slot->atlas_idx );
+    if ( rhi_handle_valid( slot->atlas ) )
+        rhi()->texture_destroy( slot->atlas );
+    slot->atlas     = ( rhi_texture_t ){ 0 };
+    slot->atlas_idx = 0;
 }
 
 /* Point the active-font pointers at slot `id`. */
@@ -292,30 +283,6 @@ font_slot_atlas_idx( u32 id )
     return s_fonts[ id ].metrics.atlas_idx;
 }
 
-/* Set the default (slot 0) to a built-in bmp font and activate it. */
-
-void 
-font_set_bitmap( gui_font_t font )
-{
-    bmp_select( font );                 // resolve metrics into the resident bmp
-    bmp_fill_slot( &s_fonts[ 0 ] );     // copy it into the default slot (referencing, not owning)
-    font_activate( 0 );
-}
-
-/* Integer upscale for the built-in bmps.  Refreshes the default slot if it is still bmp-backed. */
-
-void
-font_set_bmp_scale( u32 scale )
-{
-    bmp_scale_set( scale );             // recompute the resident bmp metrics at the new scale
-    if ( s_fonts[ 0 ].src == FONT_SRC_BMP )
-    {
-        bmp_fill_slot( &s_fonts[ 0 ] );
-        if ( s_active_id == 0 )
-            font_activate( 0 );
-    }
-}
-
 /*==============================================================================================
     font_init / font_shutdown
 ==============================================================================================*/
@@ -328,26 +295,20 @@ font_shutdown( void )
     /* Drop any deferred reloads that never reached a frame_begin flush. */
     memset( s_reload_q, 0, sizeof( s_reload_q ) );
 
-    /* Release every slot's owned atlas, then the resident built-in bmp atlases. */
+    /* Release every slot's owned atlas. */
     for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
         font_slot_free_gpu( &s_fonts[ i ] );
     memset( s_fonts, 0, sizeof( s_fonts ) );
     s_active    = NULL;
     s_active_id = 0;
-
-    bmp_shutdown();
-    s_font = NULL;
+    s_font      = NULL;
 }
 
 static bool
 font_init( void )
 {
-    /* bmp_shutdown is safe on uninitialized fonts, so any failure here can delegate to
-       font_shutdown for a single cleanup path. */
-    if ( !bmp_init() ) { font_shutdown(); return false; }
-
-    /* Seed slot 0 (the default / fallback) with the starting built-in bmp and activate it. */
-    font_set_bitmap( GUI_FONT_BITMAP_16_JETBOLD );
+    /* Slot 0 starts empty; the host loads its first font immediately after gui_init(), before any
+       frame renders (see the file header note). */
 
     /* Runtime icon atlas shares the font lifecycle: created after rhi is up, torn down with fonts. */
     if ( !icon_atlas_init() ) { font_shutdown(); return false; }
@@ -359,25 +320,17 @@ font_init( void )
     Dispatch helpers -- all read from s_font / s_active, set by font_activate().
 ==============================================================================================*/
 
-static f32  font_char_w      ( void ) { return s_font->char_w;    }
-f32         font_char_h      ( void ) { return s_font->char_h;    }
-f32         font_line_h      ( void ) { return s_font->line_h;    }
-f32         font_em          ( void ) { return s_font->size;      }   // nominal type size (em) -- layout base
+f32  font_char_h      ( void ) { return s_font->char_h;    }
+f32  font_line_h      ( void ) { return s_font->line_h;    }
+f32  font_em          ( void ) { return s_font->size;      }   // nominal type size (em) -- layout base
 static u32  font_atlas_idx   ( void ) { return s_font->atlas_idx; }
 
-/* Whether the active font is a ttf font (vs. a built-in bmp).  The UI unit's font API
-   (gui_font_set_bmp_scale) keys off this -- a bmp-scale change only re-derives layout when the active
-   font is bmp-backed. */
-bool font_is_tt( void ) { return s_active->src == FONT_SRC_TTF; }
-
-/* Log the active font (id, type, name, metrics). */
+/* Log the active font (id, name, metrics). */
 void
 font_print_active( void )
 {
-    const char* name = ( s_active->src == FONT_SRC_BMP ) ? s_active->bmp.def->debug_name : "<loaded>";
-    printf( "[gui] set font [%u] '%s : %s' (char_h=%.1f line_h=%.1f)\n",
-            s_active_id, ( s_active->src == FONT_SRC_TTF ) ? "TrueType" : "Bitmap",
-            name, s_font->char_h, s_font->line_h );
+    printf( "[gui] set font [%u] '<loaded>' (char_h=%.1f line_h=%.1f)\n",
+            s_active_id, s_font->char_h, s_font->line_h );
 }
 
 /* Horizontal advance of one character in the active font.  Used by the text edit engine to
@@ -385,9 +338,7 @@ font_print_active( void )
 f32
 font_char_advance( u8 ch )
 {
-    if ( s_active->src == FONT_SRC_TTF )
-        return ttf_char_advance( s_active, ch );
-    return s_font->char_w;
+    return ttf_char_advance( s_active, ch );
 }
 
 /* UV of the active atlas's white texel (appended bottom row) for solid-color draws. */
@@ -409,14 +360,14 @@ font_dash_v( f32 duty )
     return s_font->dash_v[ best ];
 }
 
-/* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel): the resident
-   built-in bmp atlases plus each loaded font's owned atlas in the registry. */
+/* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel): each loaded
+   font's owned atlas in the registry. */
 static u32
 font_atlas_bytes( void )
 {
-    u32 bytes = bmp_atlas_bytes();
+    u32 bytes = 0;
     for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
-        if ( s_fonts[ i ].owns_atlas )
+        if ( s_fonts[ i ].used )
             bytes += s_fonts[ i ].atlas_w * s_fonts[ i ].atlas_h;
     return bytes;
 }
@@ -428,19 +379,11 @@ f32
 font_text_w_n( const char* str, u32 n )
 {
     f32 w = 0.0f;
-    if ( s_active->src == FONT_SRC_TTF )
+    for ( u32 i = 0; i < n && str[ i ]; ++i )
     {
-        for ( u32 i = 0; i < n && str[ i ]; ++i )
-        {
-            u8 ch = (u8)str[ i ];
-            if ( ch >= 32 && ch <= 126 )
-                w += (f32)s_active->ttf.lookup[ ch - 32 ].advance;
-        }
-    }
-    else
-    {
-        for ( u32 i = 0; i < n && str[ i ]; ++i )
-            w += s_font->char_w;
+        u8 ch = (u8)str[ i ];
+        if ( ch >= 32 && ch <= 126 )
+            w += (f32)s_active->lookup[ ch - 32 ].advance;
     }
     return w;
 }
@@ -452,7 +395,7 @@ font_text_w( const char* str )
 }
 
 /*----------------------------------------------------------------------------------------------
-    font_glyph -- per-character draw parameters; dispatches to the active slot's source.
+    font_glyph -- per-character draw parameters.
 
     Outputs:
         u0..v1   atlas UV rect for the glyph bitmap
@@ -467,10 +410,7 @@ font_glyph( u8 ch,
             f32* ox, f32* oy, f32* gw, f32* gh,
             f32* advance )
 {
-    if ( s_active->src == FONT_SRC_TTF )
-        ttf_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
-    else
-        bmp_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
+    ttf_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
 }
 
 // clang-format on

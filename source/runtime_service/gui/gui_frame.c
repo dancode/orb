@@ -3,7 +3,7 @@
     runtime_service/gui/gui_frame.c -- Frame lifecycle, viewport, font, and clip helpers.
 
     Implements the public functions that bracket a frame: init/shutdown, frame_begin/frame_end,
-    ctx_begin/ctx_end, render, viewport open/resize/close, font loading/selection, bitmap scale,
+    ctx_begin/ctx_end, render, viewport open/resize/close, font loading/selection,
     and clip rect push/pop.
     Included by gui.c before gui_api.c so the vtable can reference these by name.
 
@@ -17,8 +17,8 @@
 bool
 gui_init( void )
 {
-    /* Seed the style base from the default theme before any font init runs; font_set_builtin /
-       font_load call gui_style_apply which scales s_style_base -- it must be non-zero first. */
+    /* Seed the style base from the default theme before any font init runs; font_load calls
+       gui_style_apply which scales s_style_base -- it must be non-zero first. */
     gui_theme_set( "dark" );
 
     ctx_pool_init();   /* wire default context's static backing arrays; sets g_ctx */
@@ -944,22 +944,6 @@ gui_pop_font( void )
     if ( s_font_stack_depth == 0 )
         return;
     gui_font_use( s_font_stack[ --s_font_stack_depth ] );
-}
-
-void
-gui_font_set_builtin( gui_font_t font )
-{
-    font_set_bitmap( font );
-    gui_style_apply();
-    font_print_active();
-}
-
-void
-gui_font_set_bmp_scale( u32 scale )
-{
-    font_set_bmp_scale( scale );
-    if ( !font_is_tt() )
-        gui_style_apply();
 }
 
 /*==============================================================================================
