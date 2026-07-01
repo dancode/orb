@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_debug.c -- Bolt-on debug overlay.
+    runtime_service/gui/backend/gui_debug_overlay.c -- Bolt-on debug overlay.
 
     A second, independent draw list that is emitted from inside the regular gui code (via the
     DBG_* capture macros in gui.c) and flushed LAST, on top of the finished UI.  It visualizes
@@ -21,7 +21,7 @@
 
     Active layers are chosen at runtime with gui()->debug_set_layers( gui_dbg_layer_t mask ).
 
-    Included by gui_backend.c last, after gui_render.c so s_render, render_ortho, gui_push_t,
+    Included by gui_backend.c last, after gui_submit_render.c so s_render, render_ortho, gui_push_t,
     and the font_* atlas helpers are in scope.  The ambient build viewport it tags rects with lives
     in the UI unit (s_build), reached across the unit seam via gui_dbg_build_viewport().
 

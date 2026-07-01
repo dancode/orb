@@ -914,7 +914,7 @@ bool
 gui_font_load_into( u32 id, const char* path )
 {
     /* font_load_into defers a swap of an already-loaded slot to the next frame_begin (see the
-       reload queue in gui_font.c); layout follows there, via gui_font_flush_deferred, once the
+       reload queue in gui_load_font.c); layout follows there, via gui_font_flush_deferred, once the
        new metrics are live.  Nothing to rescale here -- the slot still shows its current font. */
     return font_load_into( id, path );
 }

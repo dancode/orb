@@ -339,7 +339,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 }
 
 /* The shared stateless helpers (saturate, clampf, rect_intersect) live in gui_internal.h as
-   static inline -- both units use them (gui_draw.c needs rect_intersect for clip nesting). */
+   static inline -- both units use them (gui_emit_draw.c needs rect_intersect for clip nesting). */
 
 /*==============================================================================================
     Internal record types shared into gui_context_t
@@ -355,9 +355,10 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     Unity build
 ==============================================================================================*/
 
-/* The render backend (gui_shader.h, gui_font_builtin/font/draw/draw_path/render_tess/render/
-   debug .c) is the SECOND unit -- compiled separately via gui_backend.c.  This unit calls into
-   it through the draw_* / font_* / gui_render_* declarations in gui_backend.h. */
+/* The render backend (gui_submit_shader.h, gui_load_font/gui_load_icon/gui_emit_draw/gui_emit_path/
+   gui_build_tess/gui_build_cache/gui_submit_render/gui_debug_overlay .c) is the SECOND unit --
+   compiled separately via gui_backend.c.  This unit calls into it through the draw_* / font_* /
+   gui_render_* declarations in gui_backend.h. */
 
 // Tier 0 -- foundation
 #include "runtime_service/gui/core/gui_input.c"

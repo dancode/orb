@@ -10,7 +10,7 @@
 
     These compose the *backend* primitives (draw_push_triangle / _circle_filled / _rect_filled /
     _rect_outline / _text, gui_draw_line / gui_draw_polyline) into named marks -- they draw
-    through the normal vertex pipeline, NOT the runtime icon atlas (gui_icon.c).  Two routes do
+    through the normal vertex pipeline, NOT the runtime icon atlas (gui_load_icon.c).  Two routes do
     the heavy lifting: a triangle fan (fill_convex) fills any convex outline, and a closed / open
     polyline strokes it; arcs are sampled from cos / sin once per call.
 
@@ -603,7 +603,7 @@ void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, 
                                                                                { draw_bezier_cubic( x0, y0, c0x, c0y, c1x, c1y, x1, y1, thickness, col ); }
 
 /* patterned lines + fills.  (draw_dashed_line has no wrapper here -- the public draw_dashed_line is
-   the backend primitive in gui_draw_path.c; the vtable binds straight to it.  The file-local
+   the backend primitive in gui_emit_path.c; the vtable binds straight to it.  The file-local
    draw_dashed_line static below forwards to that same primitive for the separator rule.) */
 void gui_draw_checker ( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )  { draw_checker( box, cell, col_a, col_b ); }
 void gui_draw_hatch   ( gui_rect_t box, f32 spacing, f32 thickness, u32 col ) { draw_hatch( box, spacing, thickness, col ); }

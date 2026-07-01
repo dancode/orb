@@ -7,11 +7,11 @@
     gui is built as TWO unity translation units that link into one static lib:
 
         gui.c          -- the UI / core unit: context, layout, widgets, chrome, popups, nav,
-                            input, frame lifecycle, the module vtable.  Owns s_build / s_io /
-                            s_interaction / g_ctx and the stacks.
+                          input, frame lifecycle, the module vtable.  Owns s_build / s_io /
+                          s_interaction / g_ctx and the stacks.
         gui_backend.c  -- the render backend unit: fonts, the CPU draw list, path stroking,
-                            CPU tessellation, the GPU flush, and the debug overlay.  Owns
-                            s_draw / s_tess / s_font / s_render.
+                          CPU tessellation, the GPU flush, and the debug overlay.  Owns
+                          s_draw / s_tess / s_font / s_render.
     
     The UI unit produces a semantic draw list by calling the draw_* / font_* primitives below;
     the backend unit tessellates and uploads it.  This header is the entire surface between them
@@ -32,7 +32,7 @@
 
 // clang-format off
 /*==============================================================================================
-    Fonts (gui_font.c / gui_font_ttf.c)
+    Fonts (gui_load_font.c / gui_load_font_ttf.c)
 ==============================================================================================*/
 
 u32  font_load          ( const char* path );       // load a .orb_font into a new id, activate it (0=fail)
@@ -57,7 +57,7 @@ void font_glyph         ( u8 ch,
                           f32* advance );
 
 /*==============================================================================================
-    Runtime icon atlas (gui_icon.c)
+    Runtime icon atlas (gui_load_icon.c)
 
     A second R8 coverage texture, built at runtime: callers register raw monochrome bitmaps and
     the atlas packs them with stb_rect_pack, handing back an gui_icon_id_t.  Icons draw through
@@ -69,8 +69,8 @@ bool            icon_atlas_init        ( void );   // create the R8 atlas textur
 void            icon_atlas_shutdown    ( void );   // destroy the atlas, free CPU staging
 void            icon_atlas_flush_upload ( void );  // re-upload the CPU atlas to the GPU if dirty
 
-gui_icon_id_t icon_register          ( const char* name, u32 w, u32 h, const u8* coverage );
-gui_icon_id_t icon_find              ( const char* name );
+gui_icon_id_t   icon_register          ( const char* name, u32 w, u32 h, const u8* coverage );
+gui_icon_id_t   icon_find              ( const char* name );
 bool            icon_get               ( gui_icon_id_t id,
                                          f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
 
@@ -78,7 +78,7 @@ bool            icon_get               ( gui_icon_id_t id,
 void            draw_push_icon         ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
 
 /*==============================================================================================
-    CPU draw list (gui_draw.c)
+    CPU draw list (gui_emit_draw.c)
 ==============================================================================================*/
 
 void draw_reset( i32 display_w, i32 display_h );   // clear the list at the top of frame_begin
@@ -115,7 +115,7 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
                                   f32 clip_x0, f32 clip_x1 );
 
 /*==============================================================================================
-    GPU resources + flush -- the SUBMIT phase (gui_render.c)
+    GPU resources + flush -- the SUBMIT phase (gui_submit_render.c)
 ==============================================================================================*/
 
 bool gui_render_init    ( void );
@@ -134,7 +134,7 @@ bool viewport_create ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id ); /
 void viewport_destroy( gui_viewport_t* vp );                                   // free its vb/ib
 
 /*==============================================================================================
-    Retained frame-geometry cache -- the BUILD phase (gui_render_cache.c)
+    Retained frame-geometry cache -- the BUILD phase (gui_build_cache.c)
 ==============================================================================================*/
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
@@ -163,7 +163,7 @@ bool gui_render_retained_skip( void );
 bool gui_render_any_changed( void );
 
 /*==============================================================================================
-    Debug overlay (gui_debug.c) -- Debug builds only.
+    Debug overlay (gui_debug_overlay.c) -- Debug builds only.
 
     A second draw list, captured from the UI via the DBG_* macros and flushed last, on top.  The
     build switch is computed here so BOTH units agree before the macros / capture decls are used:

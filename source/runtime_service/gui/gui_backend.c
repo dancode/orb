@@ -14,16 +14,17 @@
 
     Include order matters: each file can reference statics from files included above it.
 
-    gui_shader.h            -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
-    gui_font.h              -- shared font types: font_metrics_t, font_slot_t
-    gui_font_ttf.c          -- proportional .orb_font loader (ttf_load_file, ttf_glyph)
-    gui_font.c              -- registry + dispatch: font_slot_t, font_load/use, font_glyph
-    gui_draw.c              -- CPU draw list: draw_reset, draw_push_*, s_draw
-    gui_draw_path.c         -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
-    gui_render_tess.c       -- CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
-    gui_render_cache.c      -- retained frame-geometry cache (BUILD): cache_build_frame, s_cache, s_dispatch
-    gui_render.c            -- GPU resources + flush (SUBMIT): viewport_create/destroy, init/shutdown/flush
-    gui_debug.c             -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
+    gui_submit_shader.h     -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
+    gui_load_font.h         -- shared font types: font_metrics_t, font_slot_t
+    gui_load_font_ttf.c     -- proportional .orb_font loader (ttf_load_file, ttf_glyph)
+    gui_load_font.c         -- registry + dispatch: font_slot_t, font_load/use, font_glyph
+    gui_load_icon.c         -- runtime icon atlas: icon_register/find/get, draw_push_icon
+    gui_emit_draw.c         -- CPU draw list: draw_reset, draw_push_*, s_draw
+    gui_emit_path.c         -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
+    gui_build_tess.c        -- CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
+    gui_build_cache.c       -- retained frame-geometry cache (BUILD): cache_build_frame, s_cache, s_dispatch
+    gui_submit_render.c     -- GPU resources + flush (SUBMIT): viewport_create/destroy, init/shutdown/flush
+    gui_debug_overlay.c     -- bolt-on debug overlay: separate draw list flushed on top (Debug only)
 
 ==============================================================================================*/
 
@@ -41,17 +42,17 @@
     Unity build
 ==============================================================================================*/
 
-#include "runtime_service/gui/backend/gui_shader.h"
-#include "runtime_service/gui/backend/gui_font.h"
-#include "runtime_service/gui/backend/gui_font_ttf.c"
-#include "runtime_service/gui/backend/gui_font.c"
-#include "runtime_service/gui/backend/gui_icon.c"
-#include "runtime_service/gui/backend/gui_draw.c"
-#include "runtime_service/gui/backend/gui_draw_path.c"
-#include "runtime_service/gui/backend/gui_render_tess.c"
-#include "runtime_service/gui/backend/gui_render_cache.c"
-#include "runtime_service/gui/backend/gui_render.c"
-#include "runtime_service/gui/backend/gui_debug.c"
+#include "runtime_service/gui/backend/gui_submit_shader.h"
+#include "runtime_service/gui/backend/gui_load_font.h"
+#include "runtime_service/gui/backend/gui_load_font_ttf.c"
+#include "runtime_service/gui/backend/gui_load_font.c"
+#include "runtime_service/gui/backend/gui_load_icon.c"
+#include "runtime_service/gui/backend/gui_emit_draw.c"
+#include "runtime_service/gui/backend/gui_emit_path.c"
+#include "runtime_service/gui/backend/gui_build_tess.c"
+#include "runtime_service/gui/backend/gui_build_cache.c"
+#include "runtime_service/gui/backend/gui_submit_render.c"
+#include "runtime_service/gui/backend/gui_debug_overlay.c"
 
 /*============================================================================================*/
 // clang-format on

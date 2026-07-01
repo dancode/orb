@@ -1,12 +1,12 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_font.h -- Font types shared across the font unit.
+    runtime_service/gui/backend/gui_load_font.h -- Font types shared across the font unit.
 
     The font unit is split into two translation units, both included by gui_backend.c:
 
-        gui_font.c      -- neutral: the id-addressed registry, slot lifecycle, glyph dispatch,
-                             and the shared atlas finalize (white texel + dash rows + UV metrics).
-        gui_font_ttf.c  -- a proportional .orb_font loaded at runtime.
+        gui_load_font.c      -- neutral: the id-addressed registry, slot lifecycle, glyph dispatch,
+                                  and the shared atlas finalize (white texel + dash rows + UV metrics).
+        gui_load_font_ttf.c  -- a proportional .orb_font loaded at runtime.
 
     Every atlas is finalized the same way (font_finalize_atlas): a white texel row and
     GUI_DASH_PATTERN_COUNT stipple rows are appended so the active font alone backs solid fills,
@@ -32,7 +32,7 @@
 
 #define GUI_DASH_PATTERN_COUNT 4
 
-/* Capacity of the loaded-font registry (gui_font.c).  Slot 0 is the default; loaded fonts occupy
+/* Capacity of the loaded-font registry (gui_load_font.c).  Slot 0 is the default; loaded fonts occupy
    ids 1..GUI_FONT_REGISTRY_MAX-1. */
 #define GUI_FONT_REGISTRY_MAX 16
 
@@ -81,13 +81,13 @@ typedef struct
 /*----------------------------------------------------------------------------------------------
     Cross-file helpers (the unity build resolves these regardless of include order).
 
-    Neutral (gui_font.c):
+    Neutral (gui_load_font.c):
         font_slot_free_gpu   -- release a slot's owned GPU atlas.
         font_atlas_tex_h     -- uploaded height for a glyph region of `glyph_h` rows (adds the tail).
         font_finalize_atlas  -- append the white + dash rows to a staged R8 atlas and fill the
                                 metrics UV/scale fields that describe them.  Every builder calls this.
 
-    ttf (gui_font_ttf.c):
+    ttf (gui_load_font_ttf.c):
         ttf_load_file        -- load a .orb_font into a slot (creates an owned atlas).
         ttf_glyph            -- glyph draw parameters for a slot.
         ttf_char_advance     -- horizontal advance of one glyph in a slot.

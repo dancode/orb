@@ -2,7 +2,7 @@
 
     runtime_service/gui/dock/gui_dock.c -- Docking: the dock-node tree behind viewport.dock_root.
 
-    Makes the dock_root seam (gui_internal.h / gui_render.c) live.  A viewport's dock_root is a
+    Makes the dock_root seam (gui_internal.h / gui_submit_render.c) live.  A viewport's dock_root is a
     tree of gui_dock_node_t: LEAF nodes tab one or more windows into a region, INTERNAL nodes split
     their rect between two children at a draggable ratio.  This file owns the node pool, the per-frame
     layout (rect assignment from the surface extent down), the splitter interaction, the tab-strip

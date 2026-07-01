@@ -154,7 +154,7 @@ static struct
 } s_build;
 
 #ifdef GUI_DEBUG_OVERLAY
-/* The debug overlay (gui_debug.c) lives in the render backend unit and tags each captured rect
+/* The debug overlay (gui_debug_overlay.c) lives in the render backend unit and tags each captured rect
    with the ambient build viewport.  s_build is private to this unit, so the overlay reads it
    across the unit seam through this accessor (declared in gui_backend.h, Debug builds only). */
 u32 gui_dbg_build_viewport( void ) { return s_build.cur_viewport; }
@@ -536,7 +536,7 @@ rect_hit( gui_rect_t r )
 }
 
 /* rect_intersect (rect overlap) is a shared geometry helper defined in gui.c, ahead of the
-   unity includes, so gui_draw.c can use it for clip intersection too. */
+   unity includes, so gui_emit_draw.c can use it for clip intersection too. */
 
 /*----------------------------------------------------------------------------------------------
     nav_score_dir -- directional-move cost from the current nav item (cur) to a candidate (cand)

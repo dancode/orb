@@ -1,8 +1,8 @@
-﻿#ifndef GUI_SHADER_H
-#define GUI_SHADER_H
+﻿#ifndef GUI_SUBMIT_SHADER_H
+#define GUI_SUBMIT_SHADER_H
 /*==============================================================================================
 
-    runtime_service/gui/gui_shader.h -- Embedded SPIR-V for the gui pipeline.
+    runtime_service/gui/backend/gui_submit_shader.h -- Embedded SPIR-V for the gui pipeline.
 
     Compiled from shaders/gui.vert and shaders/gui.frag using:
         glslc --target-env=vulkan1.3 gui.vert -o gui.vert.spv
@@ -297,4 +297,4 @@ static const u32 s_gui_frag_spirv[] =
 
 /* clang-format on */
 /*============================================================================================*/
-#endif    // GUI_SHADER_H
+#endif    // GUI_SUBMIT_SHADER_H

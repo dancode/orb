@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/backend/gui_font_ttf.c -- ttf fonts: proportional .orb_font atlases.
+    runtime_service/gui/backend/gui_load_font_ttf.c -- ttf fonts: proportional .orb_font atlases.
 
     A "ttf font" is a proportional font baked into an .orb_font file by font_tool: an R8 atlas of
     packed glyph bitmaps plus per-glyph records (UV rect, bearing, advance).  Glyph dispatch reads
@@ -10,7 +10,7 @@
     texel + dash rows every font carries), creates an owned GPU atlas, and fills a registry slot.
     The slot owns its atlas and releases it on reload / free (font_slot_free_gpu).
 
-    Included by gui_backend.c after gui_font.h, before gui_font.c.
+    Included by gui_backend.c after gui_load_font.h, before gui_load_font.c.
 
 ==============================================================================================*/
 // clang-format off

@@ -1,9 +1,9 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_font.c -- Neutral font registry and glyph dispatch.
+    runtime_service/gui/backend/gui_load_font.c -- Neutral font registry and glyph dispatch.
 
     Owns the id-addressed registry (s_fonts[]), the active-font pointers (s_active / s_font), and
-    the shared atlas finalize.  Every slot is a loaded proportional .orb_font (gui_font_ttf.c);
+    the shared atlas finalize.  Every slot is a loaded proportional .orb_font (gui_load_font_ttf.c);
     this unit only adds the registry, activation, and the deferred-reload queue around it.
 
     Slot 0 is the default.  It starts empty (used == false) until the host's first font_load /
@@ -14,7 +14,7 @@
         font_load_into() -- load a font into an existing id (e.g. swap the default, id 0).
         font_use()       -- make an already-loaded id the active font.
 
-    Included by gui_backend.c after gui_font_ttf.c.
+    Included by gui_backend.c after gui_load_font_ttf.c.
 
 ==============================================================================================*/
 // clang-format off
