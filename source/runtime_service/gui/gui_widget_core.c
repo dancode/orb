@@ -274,6 +274,7 @@ draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
 
 /* Auto-repeat cadence for a held button (GUI_ITEM_BUTTON_REPEAT): the pause before the first
    repeat, then the interval between repeats.  Seconds; matches the familiar key-repeat feel. */
+
 #define REPEAT_DELAY 0.30f
 #define REPEAT_RATE  0.05f
 
@@ -281,14 +282,15 @@ draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
    time).  Fires immediately on the press frame, then again once repeat_t crosses the initial delay
    and thereafter each rate interval.  Returns true on a fire frame; the caller routes it to
    st.clicked.  Subtracting the threshold (vs zeroing) keeps the cadence steady across uneven dt. */
+
 static bool
 widget_repeat_tick( bool pressed )
 {
     if ( pressed )
     {
         s_interaction.repeat_t  = 0.0f;
-        s_interaction.repeat_on = false;   /* the next fire waits the longer initial delay */
-        return true;               /* press itself is the first fire */
+        s_interaction.repeat_on = false;    /* the next fire waits the longer initial delay */
+        return true;                        /* press itself is the first fire */
     }
 
     s_interaction.repeat_t += s_io.dt;
@@ -324,10 +326,11 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
 
     /* Tab walks emission order (reading order here): first item, the predecessor of the current
        item, and the item right after it. */
+
     if ( s_nav.tab_first == GUI_ID_NONE ) s_nav.tab_first = id;
     if ( s_nav.tab_take ) { s_nav.tab_next = id; s_nav.tab_take = false; }
-    if ( is_cur )                    s_nav.tab_take = true;       /* next item becomes tab_next */
-    else if ( !s_nav.id_seen )   s_nav.tab_prev = id;        /* last one before the current */
+    if ( is_cur )                    s_nav.tab_take = true;                 /* next item becomes tab_next */
+    else if ( !s_nav.id_seen )   s_nav.tab_prev = id;                       /* last one before the current */
 
     /* Directional move: score against last frame's nav_ref_rect (the deferred resolve). */
     if ( s_nav.move_dir >= 0 && !is_cur )
@@ -346,6 +349,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
        -- give it the fill (st->nav, read by widget_bg_color / frame_bg_color) and apply a pending
        activation.  The ring is drawn before the widget's own background (widget_behavior runs
        first), inset outward by NAV_RING so the fill leaves the border visible. */
+
     if ( is_cur && s_nav.active )
     {
         draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
@@ -363,6 +367,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
 
                 /* Consume the activating keys + any text so the item just focused does not also see
                    this frame's Enter (instant blur) or type the activating Space. */
+
                 s_nav.activate = false;
                 s_io.keys_pressed[ APP_KEY_ENTER ] = false;
                 s_io.keys_pressed[ APP_KEY_SPACE ] = false;
@@ -384,8 +389,9 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
     /* Latch the most recent item id for context menus / tooltips (popup_context_item_begin,
        set_item_tooltip).  Done before the disabled early-out so a disabled widget still counts
        as the last item -- the anchor is "what was just emitted", regardless of its state. */
+
     s_build.last_item_id   = id;
-    s_build.last_item_rect = r;   /* item-query getters read this for "the widget just emitted" */
+    s_build.last_item_rect = r;             /* item-query getters read this for "the widget just emitted" */
 
     /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
        state here is the one place that suppresses interaction for every widget, the behavioral half
@@ -393,12 +399,13 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
        flags were latched by widget_next_rect_w just before this call. */
     if ( s_build.cur_item_flags & GUI_ITEM_DISABLED )
     {
-        s_build.last_item_status = st;   /* a disabled item is still the last item, reported inert */
+        s_build.last_item_status = st;      /* a disabled item is still the last item, reported inert */
         return st;
     }
 
     /* Deaf context: not listening this frame -- render but return inert state.
        last_item_id/rect are latched above so item-query calls still work. */
+
     if ( !g_ctx->listening )
     {
         s_build.last_item_status = st;
@@ -423,6 +430,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
        the fill is mutually exclusive, so a mouse-hovered item never fills alongside the nav item
        (the nav ring still shows its location).  A mouse move or click drops nav_highlight
        (gui_nav.c), re-enabling hover that same frame. */
+
     if ( eligible && !s_nav.highlight && rect_hit( s_build.clip_rect ) && rect_hit( r ) )
          s_interaction.hover_id = id;
 
@@ -436,6 +444,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
 
         /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so
            resuming the keyboard later continues from what was clicked (only once a ring exists). */
+
         if ( s_nav.active )
             s_nav.id = id;
     }
@@ -448,12 +457,14 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
     /* Keyboard nav: an item in the nav window registers as a candidate and, if it is the nav
        cursor, takes a synthesized click from an Enter/Space activation -- the keyboard mirror of
        the mouse hit-test above, through the same one seam every widget already passes through. */
+
     if ( s_build.win_id == s_nav.win )
         nav_item_register( id, r, &st, kind );
 
     /* Auto-repeat (GUI_ITEM_BUTTON_REPEAT): while held with the cursor still over it, fire on the
        press then repeatedly on the timed cadence -- replacing the release-click for this widget.
        Gated on the cursor being over it so sliding off pauses the repeat, like a real spin button. */
+
     if ( ( s_build.cur_item_flags & GUI_ITEM_BUTTON_REPEAT ) && st.active && s_interaction.hover_id == id )
         st.clicked = widget_repeat_tick( st.pressed );
 
@@ -462,6 +473,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
        *visible* rect (the widget clipped to the active region clip): a row scrolled fully
        outside its child box has an empty intersection and is not hit-testable, so it is dropped
        from the overlay too, rather than drawing an interaction rect outside the clip box. */
+
 #ifdef GUI_DEBUG_OVERLAY
     {
         if ( eligible ) {
@@ -490,6 +502,7 @@ widget_bg_color( widget_state_t st )
    field keeps its own resting colour.  Mouse hover and keyboard-nav highlight both light it -- one
    at a time, since they are mutually exclusive -- so it is clear what is under the cursor, matching
    how Dear ImGui's FrameBgHovered lifts every framed control, not just buttons. */
+
 static u32
 frame_bg_color( widget_state_t st, u32 idle )
 {

@@ -38,11 +38,13 @@ text_emit( u32 col, const char* str )
 
     /* Place the run inside its cell per the region's content alignment (default LEFT | TOP, the
        original top-left).  A row tall enough for the glyph centers vertically when asked. */
+
     gui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->lay_align );
 
     /* When the run fits its cell, draw at the aligned position.  When it overflows, ellipsize to the
        cell width so the widget self-fits regardless of whether a clip rect is active (GUI_WIN_NO_CLIP
        children have no scissor, so the scissor is never the clipping mechanism here). */
+
     f32 x = ( tw <= r.w ) ? tr.x : r.x;
     if ( tw <= r.w )
         draw_push_text( tr.x, tr.y, col, str );
@@ -55,6 +57,7 @@ text_emit( u32 col, const char* str )
     /* Always track the natural text width so content_w reflects the full extent: an autosize
        window needs this to grow wide enough to fit the text, and a scrollable window needs it
        to show a horizontal bar when the text is longer than the view. */
+
     widget_track_width( x + tw );
 }
 
