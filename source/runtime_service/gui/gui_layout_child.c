@@ -76,6 +76,9 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
 
     /* Resize is a flow-child affordance: a grid cell sizes its own child, so the flags are inert
        there.  resize_id is the active_id this child holds while its border is being dragged. */
+    ORB_ASSERT_MSG( !( ( flags & ( GUI_WIN_CHILD_RESIZE_X | GUI_WIN_CHILD_RESIZE_Y ) )
+                       && parent->lay_nrows > 0 ),
+                    "CHILD_RESIZE_X/_Y has no effect inside a grid-cell parent" );
     bool       resize_x  = ( flags & GUI_WIN_CHILD_RESIZE_X ) && parent->lay_nrows == 0;
     bool       resize_y  = ( flags & GUI_WIN_CHILD_RESIZE_Y ) && parent->lay_nrows == 0;
     gui_id_t resize_id = id_combine( id, GUI_RESIZE_SALT );
@@ -86,6 +89,8 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     f32 con_min_w = 0.0f, con_min_h = 0.0f, con_max_w = 0.0f, con_max_h = 0.0f;
     if ( s_next_child_con.has )
     {
+        ORB_ASSERT_MSG( parent->lay_nrows == 0,
+                        "window_set_next_size_constraints has no effect inside a grid-cell parent" );
         con_min_w = s_next_child_con.min_w;  con_min_h = s_next_child_con.min_h;
         con_max_w = s_next_child_con.max_w;  con_max_h = s_next_child_con.max_h;
         s_next_child_con.has = false;
