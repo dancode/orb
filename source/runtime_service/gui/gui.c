@@ -47,7 +47,10 @@
     window/gui_window.c          -- persistent per-window state: gui_window_t, window_get, drag mode
     window/gui_widget_window.c   -- the window as a widget: begin/window_end + chrome (resize); body is a region
 
-    dock/gui_dock.c              -- docking: dock-node tree, splitters, tab strips, dockspace + build API
+    dock/gui_dock_core.c         -- docking: node pool, per-frame layout, splitter interaction + chrome
+    dock/gui_dock_drag.c         -- docking: mouse drag-to-dock / undock-by-tab-drag + tab-strip chrome
+    dock/gui_dock.c              -- docking: public build API (dockspace_over_viewport, dock_split, ...)
+    dock/gui_dock_serialize.c    -- docking: layout save/load (text blob)
 
     popup/gui_popup.c            -- popups / context menus / tooltips: overlay windows on a reserved z-band
     popup/gui_nav.c              -- keyboard nav cursor + menu-bar mode (reads/drives the popup stack)
@@ -387,7 +390,10 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 #include "runtime_service/gui/window/gui_widget_window.c"
 
 // Tier 3 -- window-dependent, independent of popup/
+#include "runtime_service/gui/dock/gui_dock_core.c"
+#include "runtime_service/gui/dock/gui_dock_drag.c"
 #include "runtime_service/gui/dock/gui_dock.c"
+#include "runtime_service/gui/dock/gui_dock_serialize.c"
 
 // Tier 3 -- window-dependent overlay stack (popup/nav/combo/menu share s_popups_open)
 #include "runtime_service/gui/popup/gui_popup.c"
