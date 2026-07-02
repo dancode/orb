@@ -25,6 +25,7 @@ mod_desc_t* gui_get_mod_desc( void );
     Direct-call functions (host and sandbox use only)
 ==============================================================================================*/
 
+void gui_init_config( gui_backend_caps_t caps );
 bool gui_init( gui_builtin_font_t font );
 void gui_shutdown( void );
 

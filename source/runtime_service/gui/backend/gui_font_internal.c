@@ -373,8 +373,6 @@ font_internal_load_into( u32 id, const char* path )
 static void
 font_shutdown( void )
 {
-    icon_atlas_shutdown();
-
     /* Drop any deferred reloads that never reached a frame_begin flush. */
     memset( s_reload_q, 0, sizeof( s_reload_q ) );
 
@@ -391,11 +389,8 @@ static bool
 font_init( void )
 {
     /* Slot 0 starts empty; the host loads its first font immediately after gui_init(), before any
-       frame renders (see the file header note). */
-
-    /* Runtime icon atlas shares the font lifecycle: created after rhi is up, torn down with fonts. */
-    if ( !icon_atlas_init() ) { font_shutdown(); return false; }
-
+       frame renders (see the file header note).  The icon atlas is a separate, optional layer --
+       gui_backend_init stands it up (gated on s_caps.icons), not this font-only function. */
     return true;
 }
 

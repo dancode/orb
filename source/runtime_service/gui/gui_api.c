@@ -15,6 +15,7 @@
 
 const gui_api_t g_gui_api_struct = 
 {
+    .init_config                        = gui_init_config,
     .init                               = gui_init,
     .shutdown                           = gui_shutdown,
     .mem_stats                          = gui_mem_stats,

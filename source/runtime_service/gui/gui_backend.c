@@ -43,6 +43,15 @@
 #include "runtime_service/gui/gui_backend.h"
 
 /*==============================================================================================
+    Capability flags -- latched by gui_backend_init, read directly (same TU) by any tier file
+    below that owns an optional layer: gui_icon.c (icons), gui_02_build_cache.c (retained_cache,
+    stats_trace), gui_03_submit_render.c (render_debug, stats_trace).  Declared before every tier
+    include so all of them see it, same visibility model as s_render / s_draw / s_tess.
+==============================================================================================*/
+
+static gui_backend_caps_t s_caps;
+
+/*==============================================================================================
     Unity build
 ==============================================================================================*/
 
@@ -84,14 +93,29 @@
 ==============================================================================================*/
 
 bool
-gui_backend_init( void )
+gui_backend_init( gui_backend_caps_t caps )
 {
-    return gui_render_init();   /* shared pipeline / sampler / atlas (gui_03_submit_render.c) */
+    s_caps = caps;
+
+    if ( !gui_render_init() )   /* shared pipeline / sampler / atlas (gui_03_submit_render.c) */
+        return false;
+
+    /* Icon atlas is an optional layer over the core font/render pipeline -- stood up here (not
+       inside font_init) so a caller that never touches icons never pays for it. */
+    if ( s_caps.icons && !icon_atlas_init() )
+    {
+        gui_render_shutdown();
+        return false;
+    }
+
+    return true;
 }
 
 void
 gui_backend_exit( void )
 {
+    if ( s_caps.icons )
+        icon_atlas_shutdown();
     gui_render_shutdown();
 }
 

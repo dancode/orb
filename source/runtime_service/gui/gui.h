@@ -75,6 +75,30 @@ typedef enum
 
 } gui_builtin_font_t;
 
+/* Backend capability flags -- latched via gui_init_config() before init().  The render pipeline
+   itself (fonts, EMIT draw list, tessellate, SUBMIT flush) is always on and has no flag; everything
+   here is complexity layered on top that a caller can independently switch off.  A caller that
+   never calls gui_init_config() gets GUI_CAPS_DEFAULT, which preserves the pipeline's full
+   behavior -- these flags exist to let a minimal/embedded use of gui shed layers it doesn't need,
+   not to change what a default caller sees. */
+
+typedef struct
+{
+    bool icons;           // runtime icon atlas (icon_register/find, draw_push_icon) -- owns its own
+                           // 512x512 R8 texture + stb_rect_pack packer, stood up at init when on
+    bool retained_cache;  // BUILD-phase diff + geometry reuse; off always re-tessellates every
+                           // window every frame (also the backing for set_retained_skip)
+    bool render_debug;    // wireframe/batch-tint debug render mode; off skips compiling the
+                           // second (wireframe) pipeline at init
+    bool stats_trace;     // per-frame printf lines for cache diff / geometry / retained / draw-call
+                           // counts
+
+} gui_backend_caps_t;
+
+#define GUI_CAPS_DEFAULT \
+    ( ( gui_backend_caps_t ){ .icons = true, .retained_cache = true, .render_debug = true, \
+                               .stats_trace = false } )
+
 /* Opaque context handle -- integer index into the internal context pool.
    GUI_CTX_DEFAULT (0) is always valid after init().
    GUI_CTX_INVALID (-1) signals a failed ctx_create or an unset handle. */

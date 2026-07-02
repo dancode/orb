@@ -75,10 +75,6 @@ static struct
 
 } s_render;
 
-/* Flush-side debug toggle: flip to true to print the per-frame draw-call count whenever it changes.
-   (The peak is tracked unconditionally in the cache stats and reported at shutdown.) */
-static bool s_dbg_draw_calls = false;
-
 /*----------------------------------------------------------------------------------------------
     render_ortho -- column-major pixel-space orthographic matrix.
 
@@ -231,9 +227,16 @@ gui_render_init( void )
     };
     s_render.pipeline = rhi()->pipeline_create( &pdesc );
 
-    pdesc.polygon_mode = RHI_POLYGON_LINE;
-    pdesc.debug_name   = "gui_wire";
-    s_render.pipeline_wire = rhi()->pipeline_create( &pdesc );
+    /* Wireframe pipeline is the render_debug layer's only extra GPU resource -- skip compiling it
+       when the caller has switched that layer off (gui_render_flush already falls back to the fill
+       pipeline whenever pipeline_wire is invalid, so an off s_caps.render_debug needs no other
+       change here). */
+    if ( s_caps.render_debug )
+    {
+        pdesc.polygon_mode = RHI_POLYGON_LINE;
+        pdesc.debug_name   = "gui_wire";
+        s_render.pipeline_wire = rhi()->pipeline_create( &pdesc );
+    }
 
     rhi()->shader_destroy( frag );
     rhi()->shader_destroy( vert );
@@ -344,6 +347,10 @@ void
 gui_render_set_mode( gui_render_mode_t mode )
 {
     if ( mode < 0 || mode >= GUI_RENDER_MODE_COUNT )
+        mode = GUI_RENDER_NORMAL;
+    /* WIREFRAME needs pipeline_wire, which only exists when s_caps.render_debug was on at init;
+       BATCH is a push-constant tint on the normal fill pipeline, so it needs no such guard. */
+    if ( mode == GUI_RENDER_WIREFRAME && !s_caps.render_debug )
         mode = GUI_RENDER_NORMAL;
     s_render.debug_mode = mode;
 }
@@ -582,7 +589,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
     cache_count_draw_calls( draw_calls );
 
     static u32 prev_draw_calls = ~0u;   // sentinel: forces a print on the first frame
-    if ( s_dbg_draw_calls && draw_calls != prev_draw_calls )
+    if ( s_caps.stats_trace && draw_calls != prev_draw_calls )
     {
         printf( "[gui] draw calls this frame: %u (peak %u)\n", draw_calls, cache_draw_call_hwm() );
         prev_draw_calls = draw_calls;

@@ -91,26 +91,23 @@ cache_count_upload( u32 batches, u32 bytes )
 /*----------------------------------------------------------------------------------------------
     Retained-skip toggle.
 
-    When enabled (default) a window whose per-command hash matches last frame keeps its geometry
-    in place instead of re-tessellating.  Disable to benchmark or verify the from-scratch path.
-    Toggled via gui()->set_retained_skip (key C in sb_vulkan).
+    When enabled (default: s_caps.retained_cache) a window whose per-command hash matches last
+    frame keeps its geometry in place instead of re-tessellating.  Disable to benchmark or verify
+    the from-scratch path.  Toggled via gui()->set_retained_skip (key C in sb_vulkan), which flips
+    the same s_caps field latched at gui_backend_init -- there is only the one flag.
 ----------------------------------------------------------------------------------------------*/
 
-static bool s_retained_skip = true;
-
-void gui_render_set_retained_skip( bool on ) { s_retained_skip = on; }
-bool gui_render_retained_skip    ( void )    { return s_retained_skip; }
+void gui_render_set_retained_skip( bool on ) { s_caps.retained_cache = on; }
+bool gui_render_retained_skip    ( void )    { return s_caps.retained_cache; }
 
 /*----------------------------------------------------------------------------------------------
     Build-phase debug toggles.
 
-    Each prints a per-frame line only when its value changes, so a steady UI does not spam.
-    The same numbers are live through gui()->render_stats() in the perf overlay.
+    s_caps.stats_trace (set at gui_backend_init, default off) gates all three prints below; each
+    prints a per-frame line only when its value changes, so a steady UI does not spam.  The same
+    numbers are live through gui()->render_stats() in the perf overlay regardless of the flag.
 ----------------------------------------------------------------------------------------------*/
 
-static bool s_dbg_cache    = false;  // per-window cache diff: unchanged count vs total
-static bool s_dbg_geometry = false;  // emitted vertex / index counts (render density)
-static bool s_dbg_retained = false;  // windows + verts/tris reused from last frame vs total
 static bool s_exempt_perf_overlay = true;  // exclude the perf overlay window from stats totals
 
 /*==============================================================================================
@@ -305,7 +302,7 @@ cache_diff_windows( void )
 
     s_stats.accum.cmd_count = total_cmd;
 
-    if ( s_dbg_cache && s_cache.any_changed )
+    if ( s_caps.stats_trace && s_cache.any_changed )
         printf( "[gui] cache: %u/%u windows unchanged\n", s_cache.unchanged, s_cache.cur_n );
 }
 
@@ -452,7 +449,7 @@ cache_build_frame( void )
         slot->vp    = wh->vp;   // last segment vp, pre-computed in cache_diff_windows
         slot->valid = false;
 
-        bool reuse_geo = set_stable && s_retained_skip && !wh->changed && prev->valid;
+        bool reuse_geo = set_stable && s_caps.retained_cache && !wh->changed && prev->valid;
 
         if ( reuse_geo )
         {
@@ -593,7 +590,7 @@ cache_build_frame( void )
         s_tess.overflow_ever = true;
 
     static u32 prev_verts = ~0u, prev_idx = ~0u;
-    if ( s_dbg_geometry && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
+    if ( s_caps.stats_trace && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
     {
         printf( "[gui] geometry: verts %u/%u (peak %u)  idx %u/%u (peak %u)\n",
                 s_tess.vert_count, GUI_MAX_VERTS, s_tess.vert_hwm,
@@ -603,7 +600,7 @@ cache_build_frame( void )
     }
 
     static u32 prev_win_ret = ~0u, prev_vert_ret = ~0u;
-    if ( s_dbg_retained &&
+    if ( s_caps.stats_trace &&
          ( s_stats.accum.win_retained  != prev_win_ret ||
            s_stats.accum.vert_retained != prev_vert_ret ) )
     {

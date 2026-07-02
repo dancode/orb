@@ -14,6 +14,22 @@
     Init / Shutdown
 ==============================================================================================*/
 
+/* Backend capability flags latched by gui_init_config(), read by gui_init when it stands up the
+   backend.  Defaults to GUI_CAPS_DEFAULT (set below, GUI_CAPS_DEFAULT is a compound literal and
+   not a valid static initializer) so a caller that never calls gui_init_config() sees today's
+   full-feature behavior unchanged. */
+static gui_backend_caps_t s_init_caps = { .icons = true, .retained_cache = true,
+                                           .render_debug = true, .stats_trace = false };
+
+/* OPTIONAL: override which backend capability layers this run compiles in.  Call before init();
+   a call after init() has no effect (the backend has already latched its own copy).  Skip this
+   entirely to accept GUI_CAPS_DEFAULT. */
+void
+gui_init_config( gui_backend_caps_t caps )
+{
+    s_init_caps = caps;
+}
+
 bool
 gui_init( gui_builtin_font_t font )
 {
@@ -23,7 +39,7 @@ gui_init( gui_builtin_font_t font )
 
     ctx_pool_init();   /* wire default context's static backing arrays; sets g_ctx */
 
-    if ( !gui_backend_init() )      /* shared pipeline / sampler / atlas */
+    if ( !gui_backend_init( s_init_caps ) )      /* shared pipeline / sampler / atlas + optional layers */
         return false;
 
     /* Optional built-in font (gui.h); non-fatal on failure -- init still succeeds, just without
@@ -337,9 +353,10 @@ gui_frame_begin( f32 dt )
     if ( gui_font_flush_deferred() )
         s_frame_dirty = true;
 
-    /* Push any icons registered since last frame to the GPU -- always, since host code can
-       register icons between frames independent of the widget emit. */
-    icon_atlas_flush_upload();
+    /* Push any icons registered since last frame to the GPU -- every frame the icons layer is on,
+       since host code can register icons between frames independent of the widget emit. */
+    if ( s_init_caps.icons )
+        icon_atlas_flush_upload();
 
     if ( s_frame_dirty )
     {
