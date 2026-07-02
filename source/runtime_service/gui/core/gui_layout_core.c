@@ -6,8 +6,10 @@
     into cells from a repeating row / column template (or a fixed grid, or a pack run) and hands
     the next cell to each widget, hiding the layout shape from the widgets entirely.  Two halves:
 
-        - track resolver + template installers (layout_set / _grid / _reflow / _clear and the
-          overloaded-unit track math) -- the "what shape is this region" mechanism;
+        - track resolver + template installers (the overloaded-unit math in unit_resolve /
+          layout_resolve_tracks, the layout_template_reset / layout_modifiers_reset seams,
+          layout_seed_content, and layout_set / _grid / _reflow / _clear) -- the "what shape
+          is this region" mechanism;
         - cell emitters (widget_next_rect_w, grid_next_rect, pack_next_rect, field_split_resolve,
           widget_split_label) -- the per-item "hand out the next rect" mechanism.
 
@@ -107,6 +109,22 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
     }
 }
 
+/* Resolve one overloaded size unit against a single span -- the scalar form of the rule
+   layout_resolve_tracks applies to a whole list (see gui_layout_t): > 1 fixed px, == 1 fill the
+   available extent, (0,1) a fraction of it, == 0 the natural measure.  < 0 (unset) is natural
+   with a fill fallback for an item that has no natural measure -- the pack-mode default.  The
+   single-value sites (pack_size, future one-shot size overrides) resolve through here, so the
+   unit rule lives in exactly two functions: this scalar and the track-list resolver. */
+static f32
+unit_resolve( f32 u, f32 natural, f32 avail )
+{
+    if ( u <  0.0f ) return ( natural > 0.0f ) ? natural : avail;   /* unset: natural, else fill */
+    if ( u == 0.0f ) return natural;                                /* explicit natural          */
+    if ( u == 1.0f ) return avail;                                  /* fill the available extent */
+    if ( u <  1.0f ) return u * avail;                              /* fraction of it            */
+    return u;                                                       /* fixed px                  */
+}
+
 /* Finish a partially-filled row: advance the pen past it and return to column 0.  No-op at a
    row start.  Called before the template changes or a child region opens, so the next thing
    lands on a fresh line rather than overlapping the open row.  In pack mode, finalizes the
@@ -142,30 +160,50 @@ layout_copy_tracks( const f32* src, f32* out )
     return n;
 }
 
-/* Open a region UNDECLARED: zero the template state and leave the mode NONE so the first layout
-   header (stack / columns / grid / ...) installs real geometry.  A widget emitted before any
-   header trips the guard in widget_next_rect_w.  Called when a region or sub-layout opens (the
-   old silent single-column default is gone) and by gui_pad after re-insetting -- the modifiers
-   (gaps reset to the theme, field split + align cleared) start from a known state every region. */
+/* Reset the per-template iteration state -- everything a new template must not inherit from the
+   shape it replaces: the column/row walk, the flow-mode row rows counter, the same_line anchor,
+   and the pack pen.  Every installer (layout_set / _grid / _default, gui_pack) runs this after
+   breaking the open row, so "what a fresh template starts from" has exactly one answer.  Gaps,
+   field split, and align are modifiers: they persist across installs and only the full clears
+   (layout_clear / layout_set_default) reset them via layout_modifiers_reset below. */
 static void
-layout_clear( layout_frame_t* f )
+layout_template_reset( layout_frame_t* f )
 {
-    f->mode              = GUI_MODE_NONE;
-    f->lay_ncols         = 0;             /* no template -- first header resolves one */
-    f->lay_nrows         = 0;
-    f->lay_row_h         = 0.0f;
+    f->lay_nrows      = 0;                      /* flow until a grid installs rows */
+    f->col            = 0;
+    f->row            = 0;
+    f->prev_item      = ( gui_rect_t ){ 0 };    /* no same_line anchor in a fresh template */
+    f->cont_line      = false;
+    f->pack_dir       = 0;                      /* pack pen is re-seeded by pack() */
+    f->pack_line      = 0.0f;
+    f->pack_size_next = -1.0f;                  /* unset -> next packed item is natural */
+}
+
+/* Reset the orthogonal modifiers: gaps back to the theme, field split off, align to LEFT | TOP. */
+static void
+layout_modifiers_reset( layout_frame_t* f )
+{
     f->lay_gap_x         = WIDGET_GAP;
     f->lay_gap_y         = WIDGET_GAP;
     f->lay_field_side    = 0;             /* trailing label until field_split / field_label_* */
     f->lay_field_label   = 0.0f;
     f->lay_field_control = 0.0f;
     f->lay_align         = 0;             /* LEFT | TOP until align() / layout.align sets it */
-    f->col               = 0;
-    f->row               = 0;
-    f->prev_item         = ( gui_rect_t ){ 0 };   /* no same_line anchor in a fresh region */
-    f->cont_line         = false;
-    f->pack_dir          = 0;             /* pack pen is seeded by pack(); only the pending size */
-    f->pack_size_next    = -1.0f;         /* matters before then -- unset means natural          */
+}
+
+/* Open a region UNDECLARED: zero the template state and leave the mode NONE so the first layout
+   header (stack / columns / grid / ...) installs real geometry.  A widget emitted before any
+   header trips the guard in widget_next_rect_w.  Called when a region or sub-layout opens (the
+   old silent single-column default is gone) and by gui_pad after re-insetting -- the modifiers
+   and iteration state start from a known state every region. */
+static void
+layout_clear( layout_frame_t* f )
+{
+    f->mode      = GUI_MODE_NONE;
+    f->lay_ncols = 0;             /* no template -- first header resolves one */
+    f->lay_row_h = 0.0f;
+    layout_modifiers_reset( f );
+    layout_template_reset( f );
 }
 
 /* Install the region's default template: one flex column, auto height -- the classic stack, mode
@@ -176,21 +214,35 @@ layout_clear( layout_frame_t* f )
 static void
 layout_set_default( layout_frame_t* f )
 {
-    f->mode                 = GUI_MODE_STACK;
-    f->lay_ncols            = 1;
-    f->lay_nrows            = 0;                /* flow mode */
-    f->lay_row_h            = 0.0f;
-    f->lay_gap_x            = WIDGET_GAP;
-    f->lay_gap_y            = WIDGET_GAP;
-    f->lay_field_side       = 0;                /* trailing label until field_split / field_label_* */
-    f->lay_field_label      = 0.0f;
-    f->lay_field_control    = 0.0f;
-    f->lay_align            = 0;                /* LEFT | TOP until align() / layout.align sets it */
-    f->lay_cols[ 0 ]        = 1.0f;             /* single flex track, kept so indent can re-resolve */
-    f->cellx[ 0 ]           = f->content_x;     /* one flex column == the whole content width */
-    f->cellw[ 0 ]           = f->content_w;
-    f->col                  = 0;
-    f->row                  = 0;
+    f->mode          = GUI_MODE_STACK;
+    f->lay_ncols     = 1;
+    f->lay_row_h     = 0.0f;
+    f->lay_cols[ 0 ] = 1.0f;             /* single flex track, kept so indent can re-resolve */
+    f->cellx[ 0 ]    = f->content_x;     /* one flex column == the whole content width */
+    f->cellw[ 0 ]    = f->content_w;
+    layout_modifiers_reset( f );
+    layout_template_reset( f );
+}
+
+/* Seed the frame's content column + pen from its outer box and a pad inset, leaving the template
+   UNDECLARED.  The one derivation of the content geometry: layout_push_region (region open),
+   sublayout_open (transient cell frame), and gui_pad (re-inset) all route through here.  Requires
+   outer, scroll, and the gutter reservation (sb_w / sb_h) already set on the frame.  The live pen
+   is biased by -scroll so widgets slide under the clip, while origin_* stays unscrolled so the
+   content extent measures cleanly at pop; content_y_max is the grid band end / view bottom. */
+static void
+layout_seed_content( layout_frame_t* f, gui_pad_t pad )
+{
+    f->origin_x      = f->outer.x + pad.l;
+    f->origin_y      = f->outer.y + pad.t;
+    f->content_x     = f->origin_x - f->scroll->scroll_x;
+    f->content_w     = f->outer.w - pad.l - pad.r - f->sb_w;
+    f->cursor_x      = f->content_x;
+    f->cursor_y      = f->origin_y - f->scroll->scroll_y;
+    f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
+    f->content_y_max = f->outer.y + f->outer.h - pad.b - f->sb_h;
+
+    layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
 }
 
 /* Replace the active flow template on the current frame.  Finishes any open row first, then
@@ -201,20 +253,18 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );
+    layout_template_reset( f );
 
-    f->mode         = GUI_MODE_COLUMNS;   /* a flow template; stack()/row() override to STACK */
-    f->lay_row_h    = row_h;
-    f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
-    f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
-    f->lay_nrows    = 0;            /* flow mode */
+    f->mode      = GUI_MODE_COLUMNS;   /* a flow template; stack()/row() override to STACK */
+    f->lay_row_h = row_h;
+    f->lay_gap_x = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
+    f->lay_gap_y = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
 
     f32 tracks[ GUI_LAYOUT_COLS ];
     f->lay_ncols = layout_copy_tracks( cols, tracks );
     for ( u32 i = 0; i < f->lay_ncols; ++i ) f->lay_cols[ i ] = tracks[ i ];   /* kept for indent reflow */
     layout_resolve_tracks( tracks, f->lay_ncols, f->content_x, f->content_w, f->lay_gap_x,
                            f->cellx, f->cellw );
-    f->col = 0;
-    f->row = 0;
 }
 
 /* Re-resolve a flow template's cells from the current content column -- used after indent /
@@ -239,10 +289,11 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );          /* finish any flow row above the grid band */
+    layout_template_reset( f );
 
-    f->mode         = GUI_MODE_GRID;
-    f->lay_gap_x    = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
-    f->lay_gap_y    = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
+    f->mode      = GUI_MODE_GRID;
+    f->lay_gap_x = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
+    f->lay_gap_y = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
 
     /* Resolve columns across the content column and rows across the band from the pen to the
        content bottom.  An empty band (content already overflowed) clamps to zero. */
@@ -257,9 +308,6 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
     if ( grid_h < 0.0f ) grid_h = 0.0f;
     layout_resolve_tracks( tracks, f->lay_nrows, grid_top, grid_h, f->lay_gap_y,
                            f->rowy, f->rowh );
-
-    f->col = 0;
-    f->row = 0;
 }
 
 /* Cell a grid hands to a widget: a fixed (col,row) slot of the pre-resolved matrix, then advance
@@ -304,14 +352,8 @@ pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
     f32 main_avail = ( horiz ? ( f->content_x + f->content_w ) : f->content_y_max ) - f->pack_main;
     if ( main_avail < 0.0f ) main_avail = 0.0f;
 
-    f32 u = f->pack_size_next;
-    f32 main_ext;
-    if      ( u <  0.0f ) main_ext = ( nat_main > 0.0f ) ? nat_main : main_avail; /* unset: natural, or fill if none */
-    else if ( u == 0.0f ) main_ext = nat_main;                                    /* explicit natural               */
-    else if ( u == 1.0f ) main_ext = main_avail;                                  /* fill the rest of the line      */
-    else if ( u <  1.0f ) main_ext = u * main_avail;                              /* fraction of the remainder      */
-    else                  main_ext = u;                                           /* fixed px                       */
-    f->pack_size_next = -1.0f;                                                    /* consume -> next item is natural */
+    f32 main_ext      = unit_resolve( f->pack_size_next, nat_main, main_avail );
+    f->pack_size_next = -1.0f;   /* consume -> next item is natural */
 
     gui_rect_t r;
     if ( horiz )

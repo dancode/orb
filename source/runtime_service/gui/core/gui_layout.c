@@ -233,17 +233,11 @@ gui_pack( gui_pack_dir_t dir )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );            /* finish any flow row above the run */
+    layout_template_reset( f );       /* fresh iteration state; the pen is seeded below */
 
-    f->mode           = GUI_MODE_PACK;
-    f->pack_dir       = (u8)dir;
-    f->pack_size_next = -1.0f;        /* next item is natural until pack_size() */
-    f->lay_ncols      = 1;            /* non-zero: pack bypasses the column walk */
-    f->lay_nrows      = 0;
-    f->col            = 0;
-    f->row            = 0;
-    f->pack_line      = 0.0f;
-    f->prev_item      = ( gui_rect_t ){ 0 };
-    f->cont_line      = false;
+    f->mode      = GUI_MODE_PACK;
+    f->pack_dir  = (u8)dir;
+    f->lay_ncols = 1;                 /* non-zero: pack bypasses the column walk */
 
     if ( dir == GUI_PACK_HORIZONTAL )
     {
@@ -297,17 +291,9 @@ gui_pack_nextline( void )
 void
 gui_pad( gui_pad_t p )
 {
-    layout_frame_t* f = lf();
-    f->content_x     = f->outer.x + p.l - f->scroll->scroll_x;
-    f->content_w     = f->outer.w - p.l - p.r - f->sb_w;
-    f->origin_x      = f->outer.x + p.l;
-    f->origin_y      = f->outer.y + p.t;
-    f->cursor_x      = f->content_x;
-    f->cursor_y      = f->outer.y + p.t - f->scroll->scroll_y;
-    f->content_max_x = f->content_x;
-    f->content_y_max = f->outer.y + f->outer.h - p.b - f->sb_h;   /* grid band end, new bottom pad */
-
-    layout_clear( f );   /* re-inset clears the template -- declare a mode header again after pad() */
+    /* The same derivation a region open uses (layout_seed_content), against the new inset.  The
+       re-inset clears the template -- declare a mode header (stack / columns / ...) after pad(). */
+    layout_seed_content( lf(), p );
 }
 
 /*----------------------------------------------------------------------------------------------

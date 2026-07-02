@@ -285,17 +285,10 @@ sublayout_open( gui_rect_t cell )
     f->view_w = cell.w;
     f->view_h = cell.h;
 
-    /* Content area = the cell.  content_y_max is the cell bottom, so a grid sub-layout fills it. */
-    f->origin_x      = cell.x;
-    f->origin_y      = cell.y;
-    f->content_x     = cell.x;
-    f->content_w     = cell.w;
-    f->cursor_x      = cell.x;
-    f->cursor_y      = cell.y;
-    f->content_max_x = cell.x;
-    f->content_y_max = cell.y + cell.h;
-
-    layout_clear( f );                       /* sub-layout opens undeclared -- declare a mode inside */
+    /* Content area = the whole cell (no pad, no scroll bias through the zeroed sink); opens
+       undeclared -- declare a mode inside.  content_y_max lands on the cell bottom, so a grid
+       sub-layout fills it. */
+    layout_seed_content( f, ( gui_pad_t ){ 0 } );
 }
 
 void

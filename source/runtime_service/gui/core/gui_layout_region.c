@@ -214,26 +214,12 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     scroll_clamp( &scroll->scroll_y, last_h, view_h );
     scroll_clamp( &scroll->scroll_x, last_w, view_w );
 
-    /* Content column + pen.  region_pad is the inset between the region box and where the layout
-       starts (l/r narrow the column, t offsets the first row); origin_* is the unscrolled
-       top-left used to measure extent at pop; the live pen is biased by -scroll so widgets slide
-       under the clip.  (region_pad.b reserves bottom space only in a fixed grid, none yet.) */
-    f->origin_x      = outer.x + region_pad.l;
-    f->origin_y      = outer.y + region_pad.t;
-    f->content_x     = outer.x + region_pad.l - scroll->scroll_x;
-    f->content_w     = outer.w - region_pad.l - region_pad.r - f->sb_w;
-    f->cursor_x      = f->content_x;
-    f->cursor_y      = outer.y + region_pad.t - scroll->scroll_y;
-    f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
-
-    /* Bottom of the content area (mirror of content_w on the vertical axis): the end of a grid's
-       band, so a grid fills from the pen down to here.  Unscrolled -- grids do not scroll. */
-    f->content_y_max = outer.y + outer.h - region_pad.b - f->sb_h;
-
-    /* Open UNDECLARED: no template, mode NONE (this also clears the same_line anchor).  The first
-       layout header in the region body (stack / columns / grid / ...) installs the geometry; a
-       widget emitted before then trips the guard in widget_next_rect_w. */
-    layout_clear( f );
+    /* Content column + pen (the shared derivation in gui_layout_core.c).  region_pad is the inset
+       between the region box and where the layout starts (l/r narrow the column, t offsets the
+       first row).  Opens UNDECLARED: the first layout header in the region body (stack / columns /
+       grid / ...) installs the geometry; a widget emitted before then trips the guard in
+       widget_next_rect_w. */
+    layout_seed_content( f, region_pad );
 
     /* Own clip (children only): scissor contents to the gutter-adjusted view; draw_push_clip_rect
        intersects it with the enclosing clip so a child near an edge cannot draw past its parent.
