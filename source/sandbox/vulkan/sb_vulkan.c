@@ -138,7 +138,7 @@ main( int argc, char** argv )
 
     /* Initialize gui GPU resources and load the built-in font atlas. */
     // gui_forward_caps_t caps = { .keyboard_nav = false, .tables = false, .docking = false  };
-    gui()->init_config_front( caps );     
+    // gui()->init_config_front( caps );     
     if ( !gui()->init( GUI_FONT_JETBRAINS_16 ) )
     {
         fprintf( stderr, "[sb_vulkan] gui->init failed\n" );

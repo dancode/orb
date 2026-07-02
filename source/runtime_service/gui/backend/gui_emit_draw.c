@@ -47,11 +47,11 @@ typedef struct
 
 static struct
 {
-    gui_cmd_t       cmds        [ GUI_MAX_CMDS   ];     // semantic command list; one entry per shape
-    u32             cmd_hashes  [ GUI_MAX_CMDS   ];     // per-command hash baked at emit (for cache diff)
+    gui_cmd_t       cmds        [ GUI_MAX_CMDS ];       // semantic command list; one entry per shape
+    u32             cmd_hashes  [ GUI_MAX_CMDS ];       // per-command hash baked at emit (for cache diff)
     gui_vec2_t      points      [ GUI_MAX_PATH_PTS ];   // point pool for CMD_POLYLINE data; indexed by pt_offset
 
-    gui_cmd_seg_t   segs[ GUI_MAX_SEGS ];               // per-(z,vp) command spans, in emit order 
+    gui_cmd_seg_t   segs        [ GUI_MAX_SEGS ];       // per-(z,vp) command spans, in emit order 
     u32             seg_count;                          // spans open this frame (>= 1; segs[0] is z=0,vp=0) 
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
@@ -77,10 +77,10 @@ static struct
     gui_rect_t      clip_table      [ GUI_MAX_CLIP_RECTS ];     /* flat pool of all clip rects this frame   */
     u32             clip_hash_cache [ GUI_MAX_CLIP_RECTS ];     /* fnv1a of clip_table[i], baked when added */
     u32             clip_table_n;                               /* entries used this frame                  */
-    u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];  /* parallel to clip_stack: index per level  */
-    u8              cur_clip_idx;                        /* top-of-stack index, stamped on each emit */
+    u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];         /* parallel to clip_stack: index per level  */
+    u8              cur_clip_idx;                               /* top-of-stack index, stamped on each emit */
 
-    gui_rect_t      clip_stack[ GUI_CLIP_DEPTH ];        /* intersected rects, mirrors clip_table   */
+    gui_rect_t      clip_stack[ GUI_CLIP_DEPTH ];               /* intersected rects, mirrors clip_table   */
     u32             clip_depth;
 
     /* Global opacity multiplier applied to every pushed shape.  1.0 normally; lowered for the

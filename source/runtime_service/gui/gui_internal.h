@@ -92,10 +92,11 @@ typedef struct
 } gui_io_t;
 
 /*==============================================================================================
-    Layout metrics (gui.c)
+    Layout metrics (core/gui_theme.c)
 
     Integer pixel dimensions derived from the active font's type size (em) by layout_compute.
-    The instance (s_style) lives in gui.c; other files read it for control / padding sizes.
+    The instance (s_style) lives in core/gui_theme.c; other files read it for control / padding
+    sizes.
 ==============================================================================================*/
 
 

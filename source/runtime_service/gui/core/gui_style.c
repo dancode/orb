@@ -20,9 +20,9 @@
     are redefined to call style_col / style_var, so every existing draw site honors an override
     without changing a single widget.
 
-    Included by gui.c before gui_ctx.c (ctx_new_frame drives style_new_frame) so the accessors
-    are in scope for the macros and the resolve seam.  s_style (gui.c) and GUI_COLOR (gui.h)
-    are already visible.
+    Included by gui.c after gui_theme.c and before gui_ctx.c (ctx_new_frame drives
+    style_new_frame) so the accessors are in scope for the macros and the resolve seam.
+    s_style (core/gui_theme.c) and GUI_COLOR (gui.h) are already visible.
 
 ==============================================================================================*/
 // clang-format off

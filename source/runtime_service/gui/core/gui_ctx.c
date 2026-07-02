@@ -57,7 +57,7 @@ static struct
 
     gui_id_t  hover_win;      // the window the cursor is over (resolved last frame)
     gui_id_t  next_hover_win; // front-most window nominee gathered this frame
-    u32         next_hover_win_z;
+    u32       next_hover_win_z;
 
     /* Hardware-cursor request.  Widgets nominate a shape during the build (set_mouse_cursor); the
        last writer wins -- safe because exactly one widget hovers per frame, and the resize bands
@@ -94,19 +94,19 @@ static struct
        (gui_ctx_io.c) report on "the widget just emitted" with no per-widget bookkeeping -- the same
        anchor last_item_id already provides for context menus / tooltips, widened to the full result. */
     gui_rect_t   last_item_rect;     // screen rect of the most recent widget
-    widget_state_t last_item_status;   // its resolved hover / active / clicked / focused / nav flags
+    widget_state_t last_item_status; // its resolved hover / active / clicked / focused / nav flags
 
     u32         cur_viewport;       // ambient viewport for new-window inheritance (updated per window emitted)
 
-    gui_id_t  win_id;             // id of the window currently between begin/window_end
+    gui_id_t  win_id;               // id of the window currently between begin/window_end
     const char* win_title;          // title string, cached for window_end's deferred chrome
     bool        win_collapsed;      // current window is collapsed (title bar only this frame)
     bool        win_hidden;         // current window is CLOSEABLE + closed: begin emitted nothing, end early-outs
-    gui_win_flags_t win_flags;    // current window's behavior flags (window_begin arg)
+    gui_win_flags_t win_flags;      // current window's behavior flags (window_begin arg)
     f32         win_title_h;        // current window's title bar height (0 if NOTITLEBAR)
     u8          win_resize_hot;     // resize edges hot this frame -- suppresses widget hover
     bool        win_grip_hot;       // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
-    struct gui_window_t* cur_win; // persisted window record; scroll write-back target
+    struct gui_window_t* cur_win;   // persisted window record; scroll write-back target
 
     /* Docking (gui_dock.c): the node hosting the current window, or NULL when it is free-floating.
        When set, the window's geometry is owned by the node and its title bar is replaced by the
