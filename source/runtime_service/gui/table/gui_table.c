@@ -29,9 +29,11 @@
       interaction up front but defers the header DRAW to table_end so it lands on top as chrome.
 
     State model:
-      - s_tab (gui_table_t)             : per-frame active table; one open at a time.
-      - s_tpool (gui_table_persist_t[]) : persistent per-table state (col widths, sort),
-                                            keyed by table id and LRU-reclaimed.
+      - s_tab (gui_table_t)  : per-frame active table; one open at a time; module-static frame
+                                scratch, like s_build (contexts build sequentially on one thread).
+      - s_tpool              : persistent per-table state (col widths, sort), keyed by table id and
+                                LRU-reclaimed; an alias for g_ctx->table_pool (gui_internal.h) so two
+                                bound contexts never share a same-titled table's column/sort state.
 
     Include order (unity build): included by gui.c after gui_layout_child.c so layout_push_region,
     layout_pop_region, layout_set_default, layout_row_break, layout_resolve_tracks, widget_behavior,
@@ -45,7 +47,8 @@
     Module-static state
 ==============================================================================================*/
 
-static gui_table_persist_t  s_tpool[ GUI_TABLE_POOL_CAP ];
+#define s_tpool ( g_ctx->table_pool )   /* per-context; see gui_context_t.table_pool */
+
 static gui_table_t          s_tab;
 static bool                   s_tab_active;
 

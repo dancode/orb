@@ -197,6 +197,10 @@ typedef struct
     gui_id_t    win;           // window/popup nav is scoped to (the hover_win analogue)
     gui_rect_t  ref_rect;      // id's rect last frame -- the directional scoring origin
 
+    /* Explicit nav target window (gui_window_set_nav / Ctrl+Tab).  0 means "follow the
+       front-most normal window", so nav has a sensible default with no caller setup. */
+    gui_id_t    explicit_win;
+
     /* Two visual states, the Dear ImGui NavDisableHighlight split.  active means a nav cursor
        position exists -> the outline ring is drawn at id (and follows clicks), persisting even in
        mouse mode so it keeps its location.  highlight means the keyboard is the *active* instrument
@@ -560,6 +564,42 @@ typedef struct gui_dock_node_t
 } gui_dock_node_t;
 
 /*==============================================================================================
+    Table persistence types (gui_table.c)
+
+    Moved above gui_context_t so the persist pool can be embedded in it by value, keyed by table
+    id and LRU-reclaimed the same way as the keyed widget state pool -- per-context, so two bound
+    contexts with identically-titled tables never share column widths / sort state.
+==============================================================================================*/
+
+/* Per-column setup data filled by table_setup_column before the first row. */
+typedef struct
+{
+    char                    label[ 32 ];   /* display name for headers_row (future)       */
+    gui_table_col_flags_t   flags;         /* FIXED / STRETCH / NO_RESIZE / etc.          */
+    f32                     init_w;        /* 0 = stretch (==1 fill); >1 = fixed pixels   */
+
+} gui_table_col_t;
+
+#define GUI_TABLE_POOL_CAP 32   /* max concurrent distinct tables tracked across frames */
+
+/* Per-table persistent state: column widths, sort choice, and scroll position survive frames. */
+typedef struct
+{
+    gui_id_t id;
+    u32        seen_frame;
+    f32        col_w[ GUI_TABLE_COLS_MAX ];   /* 0 = use column's init_w / default */
+    i8         sort_col;                        /* -1 = unsorted                     */
+    i8         sort_dir;                        /* 0 = ascending, 1 = descending     */
+
+    /* Scroll state + measured content extent for a scrolling body (GUI_TABLE_SCROLL_*).
+       The layout region reads scroll_* as the pen bias and writes content_* back at pop; both
+       must persist across frames for the two-pass gutter / clamp logic to settle. */
+    f32        scroll_x, scroll_y;
+    f32        content_w, content_h;
+
+} gui_table_persist_t;
+
+/*==============================================================================================
     gui_context_t -- the bound per-context retained state ("bind and use").
 
     A context is the emission session the code binds once and emits ALL its windows into; it owns
@@ -595,48 +635,22 @@ typedef struct gui_context_t
     u32                 dock_node_count;    // high-water slot count in the pool
     u32                 dock_id_seq;        // monotonic node-id dispenser (0 = none)
     u32                 max_dock_nodes;     // capacity; 0 = docking disabled
-                                            
+
+    gui_table_persist_t table_pool[ GUI_TABLE_POOL_CAP ];  // per-table col widths / sort, keyed by id
+
     bool                listening;          // true: context receives hover/click/nav input this frame
     void*               _alloc;             // heap block; NULL for the static default context (slot 0)
 
 } gui_context_t;
 
 /*==============================================================================================
-    Table state types (gui_table.c)
+    Table per-frame state type (gui_table.c)
 
-    Phase 1 only: per-frame context + a small persistent pool for column widths / sort state.
-    The pool is module-static (not per-context) and LRU-reclaimed by seen_frame, the same
-    contract as the keyed widget state pool.  The table context is a single active slot for now;
-    nested tables are a future addition.
+    Phase 1 only: the persist pool (gui_table_persist_t, above) is embedded per-context in
+    gui_context_t.table_pool.  This is the per-frame active-table context: a single active slot
+    for now, module-static like s_build (frame scratch, not per-context) -- nested tables are a
+    future addition.
 ==============================================================================================*/
-
-/* Per-column setup data filled by table_setup_column before the first row. */
-typedef struct
-{
-    char                    label[ 32 ];   /* display name for headers_row (future)       */
-    gui_table_col_flags_t   flags;         /* FIXED / STRETCH / NO_RESIZE / etc.          */
-    f32                     init_w;        /* 0 = stretch (==1 fill); >1 = fixed pixels   */
-
-} gui_table_col_t;
-
-#define GUI_TABLE_POOL_CAP 32   /* max concurrent distinct tables tracked across frames */
-
-/* Per-table persistent state: column widths, sort choice, and scroll position survive frames. */
-typedef struct
-{
-    gui_id_t id;
-    u32        seen_frame;
-    f32        col_w[ GUI_TABLE_COLS_MAX ];   /* 0 = use column's init_w / default */
-    i8         sort_col;                        /* -1 = unsorted                     */
-    i8         sort_dir;                        /* 0 = ascending, 1 = descending     */
-
-    /* Scroll state + measured content extent for a scrolling body (GUI_TABLE_SCROLL_*).
-       The layout region reads scroll_* as the pen bias and writes content_* back at pop; both
-       must persist across frames for the two-pass gutter / clamp logic to settle. */
-    f32        scroll_x, scroll_y;
-    f32        content_w, content_h;
-
-} gui_table_persist_t;
 
 /* Per-frame active table context.  One table open at a time (no nesting yet). */
 typedef struct

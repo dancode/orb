@@ -30,9 +30,10 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* The explicit nav target window (window_set_nav / Ctrl+Tab / Alt).  0 means "follow the
-   front-most normal window", so nav has a sensible default with no caller setup. */
-static gui_id_t s_nav_window;
+/* The explicit nav target window (window_set_nav / Ctrl+Tab / Alt) lives in s_nav.explicit_win
+   (gui_internal.h) -- per-context, so two bound contexts never stomp each other's nav target.
+   0 means "follow the front-most normal window", so nav has a sensible default with no caller
+   setup. */
 
 /* A letter was used as an Alt+mnemonic during the current Alt hold, so the Alt release must not also
    toggle the menu bar -- distinguishes a bare Alt tap (toggle) from Alt+F (open the File menu). */
@@ -77,10 +78,10 @@ nav_choose_window( void )
     for ( u32 i = 0; i < s_window_count; ++i )
     {
         if ( s_windows[ i ].z >= GUI_POPUP_Z_BASE ) continue;
-        if ( s_windows[ i ].id == s_nav_window )      have_explicit = true;
+        if ( s_windows[ i ].id == s_nav.explicit_win ) have_explicit = true;
         if ( s_windows[ i ].z >= frontz ) { frontz = s_windows[ i ].z; front = s_windows[ i ].id; }
     }
-    s_nav.win = have_explicit ? s_nav_window : front;
+    s_nav.win = have_explicit ? s_nav.explicit_win : front;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -100,7 +101,7 @@ nav_cycle_window( i32 dir )
     for ( u32 i = 0; i < s_window_count; ++i )
     {
         if ( s_windows[ i ].z >= GUI_POPUP_Z_BASE ) continue;
-        if ( s_windows[ i ].id == s_nav_window ) { curz = s_windows[ i ].z; found = true; }
+        if ( s_windows[ i ].id == s_nav.explicit_win ) { curz = s_windows[ i ].z; found = true; }
     }
     if ( !found )
         for ( u32 i = 0; i < s_window_count; ++i )
@@ -138,7 +139,7 @@ nav_cycle_window( i32 dir )
         if ( s_windows[ i ].id == pick && s_windows[ i ].z != s_z_counter )
             s_windows[ i ].z = ++s_z_counter;
 
-    s_nav_window     = pick;
+    s_nav.explicit_win = pick;
     s_nav.id     = GUI_ID_NONE;
     s_nav.active = true;
 }
@@ -199,7 +200,7 @@ nav_main_bar_win( void )
 static void
 nav_menu_enter( gui_id_t bar )
 {
-    s_nav.prev_win   = s_nav_window;
+    s_nav.prev_win   = s_nav.explicit_win;
     s_nav.prev_id    = s_nav.id;    /* remember the focus to toggle back to */
     s_nav.bar_win    = bar;
     s_nav.in_menus   = false;
@@ -217,7 +218,7 @@ nav_menu_exit( void )
     s_nav.bar_win    = GUI_ID_NONE;
     s_nav.in_menus   = false;
     s_nav.menu_owner = GUI_ID_NONE;
-    s_nav_window         = s_nav.prev_win;
+    s_nav.explicit_win   = s_nav.prev_win;
     s_nav.id         = s_nav.prev_id;   /* back to the last focus location */
 }
 
@@ -456,7 +457,7 @@ nav_new_frame( void )
 void
 gui_window_set_nav( const char* title )
 {
-    s_nav_window        = title ? id_hash( title ) : GUI_ID_NONE;
+    s_nav.explicit_win  = title ? id_hash( title ) : GUI_ID_NONE;
     s_nav.id        = GUI_ID_NONE;   /* first item of the new window takes focus */
     s_nav.active    = true;
     s_nav.highlight = true;
