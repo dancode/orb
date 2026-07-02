@@ -50,10 +50,10 @@ typedef u32  gui_dock_id_t;
 
 typedef struct
 {
-    u32  max_windows;    /* persisted window pool (default 32) */
-    u32  state_slots;    /* keyed state pool, must be power of two (default 512) */
-    u32  popup_depth;    /* max popup nesting (default 8) */
-    u32  max_viewports;  /* render surfaces (default 4) */
+    u32  max_windows;    // persisted window pool (default 32)
+    u32  state_slots;    // keyed state pool, must be power of two (default 512)
+    u32  popup_depth;    // max popup nesting (default 8)
+    u32  max_viewports;  // render surfaces (default 4)
     u32  max_dock_nodes; // dock-tree node pool; 0 = no docking (default 48)
 
 } gui_ctx_config_t;

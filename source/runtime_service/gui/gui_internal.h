@@ -175,17 +175,19 @@ typedef struct gui_window_t
 
     bool       reopen_floater;          // re-spawn as a floater on the next begin            
     bool       reopen_maximized;        // floater was maximized -- re-maximize after re-spawn
+
     i32        home_x, home_y;          // saved restore (normal) client-corner screen pos    
     f32        restore_w, restore_h;    // saved restore (normal) size
 
-    gui_win_flags_t flags;    // behavior flags supplied to window_begin
+    gui_win_flags_t flags;              // behavior flags supplied to window_begin
 
     /* Next-window channel bookkeeping (see window_set_next_pos / _size).  last_frame drives the
        "appearing" test; the allow masks track which conditions a queued value may still fire. */
 
-    u32        last_frame;      // frame index last begun; 0 = never begun
-    u8         set_pos_allow;   // conds still permitted to set position (gui_cond_t bits)
-    u8         set_size_allow;  // conds still permitted to set size
+    u32        last_frame;              // frame index last begun; 0 = never begun
+
+    u8         set_pos_allow;           // conds still permitted to set position (gui_cond_t bits)
+    u8         set_size_allow;          // conds still permitted to set size (gui_cond_t bits)
 
 } gui_window_t;
 
