@@ -283,7 +283,7 @@ gui_main_menu_bar_end( void )
     regardless of the strip region's parent-pen advance.
 ----------------------------------------------------------------------------------------------*/
 
-static f32          s_menubar_sink[ 4 ];     /* scroll / content-measure sink: the strip never scrolls */
+static gui_scroll_link_t s_menubar_sink;     /* scroll / content-measure sink: the strip never scrolls */
 static f32          s_menubar_saved_cursor;  /* body pen to restore after the strip region pops        */
 static gui_rect_t s_menubar_saved_clip;    /* body hit-test clip to restore after the strip region pops */
 
@@ -311,12 +311,10 @@ gui_menu_bar_begin( void )
     s_menubar_saved_clip = s_build.clip_rect;
     s_build.clip_rect = ( gui_rect_t ){ s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_h };
 
-    s_menubar_sink[ 0 ] = s_menubar_sink[ 1 ] = s_menubar_sink[ 2 ] = s_menubar_sink[ 3 ] = 0.0f;
+    s_menubar_sink = ( gui_scroll_link_t ){ 0 };
     layout_push_region( id_combine( s_build.win_id, GUI_MENUBAR_SALT ), bar,
                         ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIN_BORDER, 0.0f },
-                        GUI_WIN_NOSCROLL,
-                        &s_menubar_sink[ 0 ], &s_menubar_sink[ 1 ],
-                        &s_menubar_sink[ 2 ], &s_menubar_sink[ 3 ],
+                        GUI_WIN_NOSCROLL, &s_menubar_sink,
                         /* own_clip */ false );
     gui_bar();            /* the menu labels pack horizontally */
     return true;

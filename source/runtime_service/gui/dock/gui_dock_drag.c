@@ -82,8 +82,8 @@ dock_leaf_at( gui_dock_node_t* n, f32 mx, f32 my )
         return NULL;
     if ( n->split == DOCK_SPLIT_NONE )
         return n;
-    gui_dock_node_t* c = dock_leaf_at( n->child[ 0 ], mx, my );
-    return c ? c : dock_leaf_at( n->child[ 1 ], mx, my );
+    gui_dock_node_t* c = dock_leaf_at( dock_at( n->child[ 0 ] ), mx, my );
+    return c ? c : dock_leaf_at( dock_at( n->child[ 1 ] ), mx, my );
 }
 
 /* Map a side zone to the split direction the new window docks toward. */
@@ -164,7 +164,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     u32 vp = win->viewport;
     if ( vp != s_io.mouse_viewport || vp >= g_ctx->max_viewports )
         return;
-    gui_dock_node_t* root = g_ctx->viewports[ vp ].dock_root;
+    gui_dock_node_t* root = dock_at( g_ctx->viewports[ vp ].dock_root );
     if ( !root )
         return;
     gui_dock_node_t* leaf = dock_leaf_at( root, s_io.mouse_x, s_io.mouse_y );

@@ -52,12 +52,9 @@
 static gui_table_t          s_tab;
 static bool                   s_tab_active;
 
-/* Dummy scroll / content-size targets for the NOSCROLL body region.  layout_push_region
-   writes these back each frame; they stay zero and are never read for anything meaningful. */
-static f32  s_tab_scroll_x;
-static f32  s_tab_scroll_y;
-static f32  s_tab_content_w;
-static f32  s_tab_content_h;
+/* Dummy scroll link for the NOSCROLL body region.  layout_push_region writes it back each
+   frame; it stays zero and is never read for anything meaningful. */
+static gui_scroll_link_t s_tab_scroll_dummy;
 
 /*==============================================================================================
     Internal helpers
@@ -227,20 +224,19 @@ table_open_body( gui_table_t* t )
        when content overflows); SCROLL_X adds the horizontal bar. */
     bool scroll = ( t->flags & ( GUI_TABLE_SCROLL_Y | GUI_TABLE_SCROLL_X ) ) && t->persist;
 
-    gui_win_flags_t rflags = GUI_WIN_NOSCROLL;
-    f32 *sx = &s_tab_scroll_x, *sy = &s_tab_scroll_y, *cw = &s_tab_content_w, *ch = &s_tab_content_h;
+    gui_win_flags_t    rflags = GUI_WIN_NOSCROLL;
+    gui_scroll_link_t* link   = &s_tab_scroll_dummy;
     if ( scroll )
     {
         rflags = ( t->flags & GUI_TABLE_SCROLL_X ) ? GUI_WIN_HSCROLL : GUI_WIN_NONE;
-        sx = &t->persist->scroll_x;  sy = &t->persist->scroll_y;
-        cw = &t->persist->content_w; ch = &t->persist->content_h;
+        link   = &t->persist->scroll;
     }
 
     /* own_clip=false: the region does NOT push its own clip -- it reuses the table clip for drawing
        (so rows scroll under where the header will be) and only narrows the hit-test clip to the body
        box.  Exactly the window-body-with-chrome pattern. */
     layout_push_region( t->id, body, ( gui_pad_t ){ 0, 0, 0, 0 }, rflags,
-                        sx, sy, cw, ch, /* own_clip */ false );
+                        link, /* own_clip */ false );
 
     /* STACK mode so widget_next_rect_w uses cellx[0] / cellw[0], overridden per column. */
     layout_set_default( lf() );

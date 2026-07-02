@@ -265,7 +265,7 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
     if ( capped )
     {
         f32 chrome = WIDGET_GAP + WIN_BORDER;   /* body top gap + bottom border (no title bar) */
-        f32 want_h = ( win->content_h > 0.0f ) ? win->content_h + chrome : cap_h;
+        f32 want_h = ( win->scroll.content_h > 0.0f ) ? win->scroll.content_h + chrome : cap_h;
         if ( want_h > cap_h ) want_h = cap_h;
         gui_window_set_next_size( fixed_w, want_h, GUI_COND_ALWAYS );
         win->w = fixed_w;       /* placement clamp below reads win->w/h; reflect the queued size */
@@ -276,7 +276,7 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
        this frame (still measured, just invisible) and place it for real next frame.  A non-
        auto-size popup (capped or fixed) has a known size and goes straight to its anchor. */
     bool autosize   = ( flags & GUI_WIN_ALWAYS_AUTOSIZE ) != 0;
-    bool premeasure = autosize && win->content_h <= 0.0f;
+    bool premeasure = autosize && win->scroll.content_h <= 0.0f;
 
     f32 px, py;
     if ( premeasure )
@@ -410,7 +410,7 @@ gui_tooltip_begin( void )
     win->z = GUI_POPUP_Z_BASE + g_ctx->popup_depth;   /* above every popup */
     win->viewport = s_build.cur_viewport;               /* track the parent's current surface (see popup_begin) */
 
-    bool premeasure = win->content_h <= 0.0f;
+    bool premeasure = win->scroll.content_h <= 0.0f;
     f32  px, py;
     if ( premeasure )
     {

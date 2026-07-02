@@ -42,6 +42,21 @@
     free slot has id == 0; alloc reuses the first freed hole or appends, and never returns id 0.
 ----------------------------------------------------------------------------------------------*/
 
+/* dock_ref/dock_at convert between a live pointer and its pool index (gui_dock_ref_t).  The pool
+   never moves or compacts a live slot, so an index survives exactly as long as the pointer it
+   replaces would -- see gui_dock_ref_t in gui_internal.h for why this trades 8 bytes for 2. */
+static gui_dock_ref_t
+dock_ref( gui_dock_node_t* n )
+{
+    return n ? (gui_dock_ref_t)( n - s_dock_nodes ) : GUI_DOCK_REF_NONE;
+}
+
+static gui_dock_node_t*
+dock_at( gui_dock_ref_t ref )
+{
+    return ( ref == GUI_DOCK_REF_NONE ) ? NULL : &s_dock_nodes[ ref ];
+}
+
 static gui_dock_node_t*
 dock_node_alloc( u32 viewport )
 {
@@ -59,6 +74,10 @@ dock_node_alloc( u32 viewport )
     n->id       = ++s_dock_id_seq;   /* monotonic; never 0 */
     n->viewport = viewport;
     n->ratio    = 0.5f;
+    /* GUI_DOCK_REF_NONE is 0xFFFF, not 0 -- index 0 is a real pool slot -- so the memset above does
+       NOT leave these "unlinked"; they must be set explicitly. */
+    n->parent   = GUI_DOCK_REF_NONE;
+    n->child[ 0 ] = n->child[ 1 ] = GUI_DOCK_REF_NONE;
     return n;
 }
 
@@ -121,18 +140,19 @@ dock_leaf_remove_tab( gui_dock_node_t* n, u32 idx )
 static void
 dock_collapse( gui_dock_node_t* leaf )
 {
-    gui_dock_node_t* parent = leaf->parent;
+    gui_dock_node_t* parent = dock_at( leaf->parent );
     if ( !parent )
         return;   /* root leaf emptied -- keep the bare dockspace */
 
-    gui_dock_node_t* sib = ( parent->child[ 0 ] == leaf ) ? parent->child[ 1 ] : parent->child[ 0 ];
-    gui_dock_node_t* gp  = parent->parent;
+    gui_dock_ref_t   leaf_ref = dock_ref( leaf );
+    gui_dock_node_t* sib      = dock_at( parent->child[ 0 ] == leaf_ref ? parent->child[ 1 ] : parent->child[ 0 ] );
+    gui_dock_node_t* gp       = dock_at( parent->parent );
 
-    sib->parent = gp;
+    sib->parent = dock_ref( gp );
     if ( !gp )
-        g_ctx->viewports[ parent->viewport ].dock_root = sib;
+        g_ctx->viewports[ parent->viewport ].dock_root = dock_ref( sib );
     else
-        gp->child[ gp->child[ 0 ] == parent ? 0 : 1 ] = sib;
+        gp->child[ gp->child[ 0 ] == dock_ref( parent ) ? 0 : 1 ] = dock_ref( sib );
 
     dock_node_free( leaf );
     dock_node_free( parent );
@@ -167,15 +187,15 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
     {
         f32 avail = r.w - thick; if ( avail < 0.0f ) avail = 0.0f;
         f32 w0    = floorf( avail * n->ratio );
-        dock_node_layout( n->child[ 0 ], ( gui_rect_t ){ r.x,             r.y, w0,               r.h } );
-        dock_node_layout( n->child[ 1 ], ( gui_rect_t ){ r.x + w0 + thick, r.y, r.w - w0 - thick, r.h } );
+        dock_node_layout( dock_at( n->child[ 0 ] ), ( gui_rect_t ){ r.x,             r.y, w0,               r.h } );
+        dock_node_layout( dock_at( n->child[ 1 ] ), ( gui_rect_t ){ r.x + w0 + thick, r.y, r.w - w0 - thick, r.h } );
     }
     else /* DOCK_SPLIT_Y */
     {
         f32 avail = r.h - thick; if ( avail < 0.0f ) avail = 0.0f;
         f32 h0    = floorf( avail * n->ratio );
-        dock_node_layout( n->child[ 0 ], ( gui_rect_t ){ r.x, r.y,             r.w, h0               } );
-        dock_node_layout( n->child[ 1 ], ( gui_rect_t ){ r.x, r.y + h0 + thick, r.w, r.h - h0 - thick } );
+        dock_node_layout( dock_at( n->child[ 0 ] ), ( gui_rect_t ){ r.x, r.y,             r.w, h0               } );
+        dock_node_layout( dock_at( n->child[ 1 ] ), ( gui_rect_t ){ r.x, r.y + h0 + thick, r.w, r.h - h0 - thick } );
     }
 }
 
@@ -195,9 +215,9 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
     f32          thick = DOCK_SPLITTER;
     gui_rect_t sr;
     if ( n->split == DOCK_SPLIT_X )
-        sr = ( gui_rect_t ){ n->child[ 1 ]->rect.x - thick, r.y, thick, r.h };
+        sr = ( gui_rect_t ){ dock_at( n->child[ 1 ] )->rect.x - thick, r.y, thick, r.h };
     else
-        sr = ( gui_rect_t ){ r.x, n->child[ 1 ]->rect.y - thick, r.w, thick };
+        sr = ( gui_rect_t ){ r.x, dock_at( n->child[ 1 ] )->rect.y - thick, r.w, thick };
 
     gui_id_t sid    = id_combine( n->id, DOCK_SPLIT_SALT );
     bool       active = ( s_interaction.active_id == sid );
@@ -241,8 +261,8 @@ dock_tree_splitters( gui_dock_node_t* n, u32 vp )
 {
     if ( !n || n->split == DOCK_SPLIT_NONE )
         return;
-    dock_tree_splitters( n->child[ 0 ], vp );
-    dock_tree_splitters( n->child[ 1 ], vp );
+    dock_tree_splitters( dock_at( n->child[ 0 ] ), vp );
+    dock_tree_splitters( dock_at( n->child[ 1 ] ), vp );
     dock_splitter( n, vp );
 }
 
@@ -264,8 +284,8 @@ dock_tree_placeholders( gui_dock_node_t* n )
         }
         return;
     }
-    dock_tree_placeholders( n->child[ 0 ] );
-    dock_tree_placeholders( n->child[ 1 ] );
+    dock_tree_placeholders( dock_at( n->child[ 0 ] ) );
+    dock_tree_placeholders( dock_at( n->child[ 1 ] ) );
 }
 
 // clang-format on

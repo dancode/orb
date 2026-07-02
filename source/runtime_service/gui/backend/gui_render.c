@@ -110,7 +110,7 @@ viewport_create( gui_viewport_t* vp, rhi_texture_t target, i32 win_id )
     vp->disp_w          = 0;                // drawable size set by the host before build; 0 = fall back to main
     vp->disp_h          = 0;
     vp->caption_inset   = 0.0f;             // no native shell band until one publishes it during the build
-    vp->dock_root       = NULL;             // free-float until docking assigns a tree
+    vp->dock_root       = GUI_DOCK_REF_NONE; // free-float until docking assigns a tree
 
     // Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame.
     vp->vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){

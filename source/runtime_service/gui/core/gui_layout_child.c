@@ -127,7 +127,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
            vertical axis.  Before any content is measured (first frame) it opens one widget-row
            tall and settles next frame.  An auto-sized child has nothing to scroll. */
         else if ( h <= 0.0f )
-            h = ( rg->content_h > 0.0f ) ? rg->content_h + WIDGET_GAP + WIN_BORDER : WIDGET_H;
+            h = ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIDGET_GAP + WIN_BORDER : WIDGET_H;
 
         /* Bound the resolved size by any next-child constraints: an auto-sized box hugs content up
            to max_h then the default vertical scrollbar takes over, and never shrinks below min_h. */
@@ -195,8 +195,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
        same deferral window_end uses for the window frame. */
     draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, COL_CHILD_BG );
 
-    layout_push_region( id, box, REGION_PAD_DEFAULT, flags,
-                        &rg->scroll_x, &rg->scroll_y, &rg->content_w, &rg->content_h,
+    layout_push_region( id, box, REGION_PAD_DEFAULT, flags, &rg->scroll,
                         /* own_clip */ !( flags & GUI_WIN_NO_CLIP ) );
 
     /* Stamp the child's resize bookkeeping on its just-pushed frame, and suppress body-widget hover
@@ -253,8 +252,8 @@ gui_child_end( void )
 ----------------------------------------------------------------------------------------------*/
 
 /* Sink for a sub-layout's unused scroll / content-measure fields -- it never scrolls and its extent
-   feeds nothing back, so these only ever hold zero / discard.  Shared by every push_layout frame. */
-static f32 s_sublayout_sink[ 4 ];
+   feeds nothing back, so this only ever holds zero / discard.  Shared by every push_layout frame. */
+static gui_scroll_link_t s_sublayout_sink;
 
 /* Open a transient sub-layout frame whose content area is `cell` (screen rect).  The shared body of
    gui_push_layout (cell = the next template cell), gui_push_layout_overlay (cell = an explicit rect),
@@ -278,11 +277,8 @@ sublayout_open( gui_rect_t cell )
     f->pushed_clip = false;
     f->id_restore  = s_id_sp;
 
-    s_sublayout_sink[ 0 ] = s_sublayout_sink[ 1 ] = 0.0f;
-    f->scroll_x   = &s_sublayout_sink[ 0 ];
-    f->scroll_y   = &s_sublayout_sink[ 1 ];
-    f->pcontent_w = &s_sublayout_sink[ 2 ];
-    f->pcontent_h = &s_sublayout_sink[ 3 ];
+    s_sublayout_sink.scroll_x = s_sublayout_sink.scroll_y = 0.0f;
+    f->scroll = &s_sublayout_sink;
 
     f->sb_w = f->sb_h = 0.0f;
     f->show_v = f->show_h = false;

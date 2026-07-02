@@ -160,7 +160,7 @@ region_scrollbar( gui_id_t id, gui_rect_t track, bool vertical,
 
 static void
 layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win_flags_t flags,
-                    f32* scroll_x, f32* scroll_y, f32* content_w, f32* content_h, bool own_clip )
+                    gui_scroll_link_t* scroll, bool own_clip )
 {
     /* Cap the write slot at the top of the stack so an over-deep nesting aliases the deepest
        frame rather than writing past the array; s_layout_sp still counts truthfully so each
@@ -172,10 +172,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f->region_id  = id;
     f->outer      = outer;
     f->flags      = flags;
-    f->scroll_x   = scroll_x;
-    f->scroll_y   = scroll_y;
-    f->pcontent_w = content_w;
-    f->pcontent_h = content_h;
+    f->scroll      = scroll;
     f->parent_clip = s_build.clip_rect;
 
     /* Seed the id scope with this region's id, so leaf widgets combine their label against it
@@ -199,7 +196,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f32 view_w = outer.w - 2.0f * WIN_BORDER;
 
     /* Two-pass gutter reservation from last frame's content. */
-    f32 last_h = *content_h, last_w = *content_w;
+    f32 last_h = scroll->content_h, last_w = scroll->content_w;
     bool show_v = v_static || ( v_dyn && last_h > view_h );
     bool show_h = h_static || ( h_dyn && last_w > view_w );
     if ( show_v ) view_w -= knob;
@@ -215,8 +212,8 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f->view_h = view_h;
 
     /* Clamp scroll against the gutter-adjusted views (last frame's content). */
-    scroll_clamp( scroll_y, last_h, view_h );
-    scroll_clamp( scroll_x, last_w, view_w );
+    scroll_clamp( &scroll->scroll_y, last_h, view_h );
+    scroll_clamp( &scroll->scroll_x, last_w, view_w );
 
     /* Content column + pen.  region_pad is the inset between the region box and where the layout
        starts (l/r narrow the column, t offsets the first row); origin_* is the unscrolled
@@ -224,10 +221,10 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
        under the clip.  (region_pad.b reserves bottom space only in a fixed grid, none yet.) */
     f->origin_x      = outer.x + region_pad.l;
     f->origin_y      = outer.y + region_pad.t;
-    f->content_x     = outer.x + region_pad.l - *scroll_x;
+    f->content_x     = outer.x + region_pad.l - scroll->scroll_x;
     f->content_w     = outer.w - region_pad.l - region_pad.r - f->sb_w;
     f->cursor_x      = f->content_x;
-    f->cursor_y      = outer.y + region_pad.t - *scroll_y;
+    f->cursor_y      = outer.y + region_pad.t - scroll->scroll_y;
     f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
 
     /* Bottom of the content area (mirror of content_w on the vertical axis): the end of a grid's
@@ -285,10 +282,10 @@ layout_pop_region( void )
 
     /* Content extent = how far the pen travelled from the unscrolled origin (add the scroll
        back to cancel the bias).  Stored for next frame's gutter decision + knob proportions. */
-    f32 content_h = ( f->cursor_y      + *f->scroll_y ) - f->origin_y;
-    f32 content_w = ( f->content_max_x + *f->scroll_x ) - f->origin_x;
-    *f->pcontent_h = content_h;
-    *f->pcontent_w = content_w;
+    f32 content_h = ( f->cursor_y      + f->scroll->scroll_y ) - f->origin_y;
+    f32 content_w = ( f->content_max_x + f->scroll->scroll_x ) - f->origin_x;
+    f->scroll->content_h = content_h;
+    f->scroll->content_w = content_w;
 
     /* Pop the region's own clip if it pushed one (a child); the window body pushed none and
        leaves the whole-window clip in place for the bars + chrome.  Restore the enclosing
@@ -303,14 +300,14 @@ layout_pop_region( void )
         gui_rect_t track = { f->outer.x + f->outer.w - WIN_BORDER - f->sb_w,
                                f->outer.y, f->sb_w, f->view_h };
         region_scrollbar( id_combine( f->region_id, GUI_SCROLLBAR_SALT ), track, true,
-                          content_h, f->view_h, s_io.mouse_y, f->scroll_y );
+                          content_h, f->view_h, s_io.mouse_y, &f->scroll->scroll_y );
     }
     if ( f->show_h )
     {
         gui_rect_t track = { f->outer.x + WIN_BORDER,
                                f->outer.y + f->outer.h - WIN_BORDER - f->sb_h, f->view_w, f->sb_h };
         region_scrollbar( id_combine( f->region_id, GUI_HSCROLLBAR_SALT ), track, false,
-                          content_w, f->view_w, s_io.mouse_x, f->scroll_x );
+                          content_w, f->view_w, s_io.mouse_x, &f->scroll->scroll_x );
     }
 
     /* Wheel: the hovered region consumes it (vertical by default, horizontal with Shift).
@@ -325,12 +322,12 @@ layout_pop_region( void )
     {
         const f32 step  = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
         bool      shift = io_shift();
-        if ( shift ) *f->scroll_x -= s_io.mouse_wheel * step;
-        else         *f->scroll_y -= s_io.mouse_wheel * step;
+        if ( shift ) f->scroll->scroll_x -= s_io.mouse_wheel * step;
+        else         f->scroll->scroll_y -= s_io.mouse_wheel * step;
 
         /* Re-clamp against this frame's measured content. */
-        scroll_clamp( f->scroll_y, content_h, f->view_h );
-        scroll_clamp( f->scroll_x, content_w, f->view_w );
+        scroll_clamp( &f->scroll->scroll_y, content_h, f->view_h );
+        scroll_clamp( &f->scroll->scroll_x, content_w, f->view_w );
 
         s_build.wheel_used = true;
     }

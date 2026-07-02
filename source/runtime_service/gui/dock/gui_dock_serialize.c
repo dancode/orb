@@ -61,8 +61,8 @@ dock_serialize_node( dock_writer_t* w, gui_dock_node_t* n )
         int k = snprintf( line, sizeof line, "S %d %.4f\n",
                           ( n->split == DOCK_SPLIT_Y ) ? 1 : 0, n->ratio );
         dw_emit( w, line, (u32)k );
-        dock_serialize_node( w, n->child[ 0 ] );
-        dock_serialize_node( w, n->child[ 1 ] );
+        dock_serialize_node( w, dock_at( n->child[ 0 ] ) );
+        dock_serialize_node( w, dock_at( n->child[ 1 ] ) );
     }
 }
 
@@ -78,7 +78,7 @@ gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz )
         return 0u;
     }
     dw_emit( &w, "ORBDOCK 1\n", 10u );
-    dock_serialize_node( &w, g_ctx->viewports[ vp ].dock_root );
+    dock_serialize_node( &w, dock_at( g_ctx->viewports[ vp ].dock_root ) );
     if ( bufsz )
         buf[ ( w.len < bufsz ) ? w.len : bufsz - 1u ] = '\0';
     return w.len;
@@ -91,7 +91,7 @@ dock_free_viewport_tree( u32 vp )
     for ( u32 i = 0; i < s_dock_node_count; ++i )
         if ( s_dock_nodes[ i ].id != 0 && s_dock_nodes[ i ].viewport == vp )
             dock_node_free( &s_dock_nodes[ i ] );
-    g_ctx->viewports[ vp ].dock_root = NULL;
+    g_ctx->viewports[ vp ].dock_root = GUI_DOCK_REF_NONE;
 }
 
 /* Line cursor over the blob: copy the next line (sans newline) into out, advance past it; false at
@@ -133,10 +133,12 @@ dock_parse_node( dock_reader_t* r, u32 vp )
             return NULL;
         n->split = axis ? DOCK_SPLIT_Y : DOCK_SPLIT_X;
         n->ratio = ratio;
-        n->child[ 0 ] = dock_parse_node( r, vp );
-        n->child[ 1 ] = dock_parse_node( r, vp );
-        if ( n->child[ 0 ] ) n->child[ 0 ]->parent = n;
-        if ( n->child[ 1 ] ) n->child[ 1 ]->parent = n;
+        gui_dock_node_t* c0 = dock_parse_node( r, vp );
+        gui_dock_node_t* c1 = dock_parse_node( r, vp );
+        n->child[ 0 ] = dock_ref( c0 );
+        n->child[ 1 ] = dock_ref( c1 );
+        if ( c0 ) c0->parent = dock_ref( n );
+        if ( c1 ) c1->parent = dock_ref( n );
         return n;
     }
 
@@ -189,7 +191,7 @@ gui_dock_load( gui_vp_t vp, const char* text )
         return false;
 
     dock_free_viewport_tree( (u32)vp );
-    g_ctx->viewports[ vp ].dock_root = dock_parse_node( &r, (u32)vp );
+    g_ctx->viewports[ vp ].dock_root = dock_ref( dock_parse_node( &r, (u32)vp ) );
     return true;
 }
 

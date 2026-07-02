@@ -84,8 +84,8 @@ typedef struct
     bool  keys_released      [ GUI_KEY_COUNT ];
     char  text[ 32 ];
     char  paste[ 256 ];   /* clipboard text delivered this frame (APP_EV_CLIPBOARD), else empty */
-    f32   dt;
     f64   time;           /* seconds since the first frame -- dt accumulated; backs get_time() */
+    f32   dt;    
     i32   display_w, display_h;
     u32   mouse_viewport; // surface the cursor is in (resolved from mouse-event win_id); persists
 
@@ -132,6 +132,22 @@ typedef struct
 } widget_state_t;
 
 /*==============================================================================================
+    Scroll link (core/gui_layout_region.c)
+
+    Persistent scroll offset + last-measured content extent for one scrollable region.
+    layout_push_region biases the pen by -scroll and writes content_w/content_h back at pop; the
+    owner (gui_window_t, gui_region_t, gui_table_persist_t) holds one by value so layout_frame_t
+    can reach it through a single pointer instead of four.
+==============================================================================================*/
+
+typedef struct
+{
+    f32 scroll_x, scroll_y;    // persisted scroll offset; 0 = top-left
+    f32 content_w, content_h;  // content extent measured last frame
+
+} gui_scroll_link_t;
+
+/*==============================================================================================
     Persisted window record (behavior in gui_window.c)
 
     One persisted window.  Geometry is owned here after the first appearance; the window pool that
@@ -153,10 +169,7 @@ typedef struct gui_window_t
     u32        z;               /* paint order: higher = more recently raised = in front */
     u32        viewport;        /* target surface index (0 = main swapchain); set via window_set_next_viewport */
 
-    f32        scroll_y;        /* vertical scroll offset; 0 = top                */
-    f32        scroll_x;        /* horizontal scroll offset; 0 = left             */
-    f32        content_h;       /* total content height measured last frame       */
-    f32        content_w;       /* total content width measured last frame        */
+    gui_scroll_link_t scroll;   /* persisted scroll offset + last-measured content extent */
 
     bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
     bool       closed;          /* CLOSEABLE: hidden by the X until re-opened      */
@@ -334,12 +347,10 @@ typedef struct
     bool            show_v, show_h;     // a bar is shown this axis
     bool            pushed_clip;        // a draw clip was pushed (balance at pop)
 
-    /* Persistent scroll state, owned by the caller (window record or region pool entry). */
+    /* Persistent scroll state, owned by the caller (window record or region pool entry); scroll
+       biases the pen at push, content_w/content_h are written back at pop for next frame. */
 
-    f32*            scroll_x;
-    f32*            scroll_y;
-    f32*            pcontent_w;         // write-back: measured content extent for next frame
-    f32*            pcontent_h;
+    gui_scroll_link_t* scroll;
 
     gui_rect_t      parent_clip;        // s_build.clip_rect to restore at pop
     u32             id_restore;         // id-scope depth to restore at pop (see id stack below)
@@ -363,8 +374,9 @@ typedef struct
 
 typedef struct
 {
-    f32 scroll_x, scroll_y;   // persisted scroll offset (fractional: scrollbar drag is t * max_scroll)
-    f32 content_w, content_h; // content extent measured last frame (f32* passed to layout_push_region)
+    gui_scroll_link_t scroll; // persisted scroll offset (fractional: scrollbar drag is t * max_scroll)
+                              // + content extent measured last frame (gui_scroll_link_t* passed to
+                              // layout_push_region)
     i16 user_w, user_h;       // user-resized size in pixels; 0 = none, use the passed w/h
 
 } gui_region_t;
@@ -466,6 +478,13 @@ typedef struct
 
 struct gui_dock_node_t;         // the dock tree node -- defined in full after gui_viewport_t below
 
+/* Pool index of a dock node (into gui_context_t.dock_nodes), not to be confused with gui_dock_id_t
+   (the stable id_hash-style handle exposed to callers).  The pool is fixed-size and never compacts,
+   so an index stays valid across frames exactly like the pointer it replaces -- but at 2 bytes
+   instead of 8.  dock_ref()/dock_at() (gui_dock_core.c) convert to/from a live pointer. */
+typedef u16 gui_dock_ref_t;
+#define GUI_DOCK_REF_NONE ( (gui_dock_ref_t)0xFFFFu )
+
 typedef struct
 {
     rhi_buffer_t  vb;           // CPU_TO_GPU vertex buffer, one region per frame-in-flight
@@ -512,10 +531,10 @@ typedef struct
        viewport_update always has a valid top bound regardless of build ordering. */
     f32 caption_inset;
 
-    /* Docking seam.  NULL = free-float placement (today's behavior, including the main viewport's
-       overlapping windows); non-NULL = a dock tree tiling/tabbing the windows on this surface.
-       Inert until docking lands -- a documented placement hook, no machinery yet. */
-    struct gui_dock_node_t* dock_root;
+    /* Docking seam.  GUI_DOCK_REF_NONE = free-float placement (today's behavior, including the main
+       viewport's overlapping windows); otherwise a dock tree tiling/tabbing the windows on this
+       surface.  Inert until docking lands -- a documented placement hook, no machinery yet. */
+    gui_dock_ref_t dock_root;
 
 } gui_viewport_t;
 
@@ -526,7 +545,8 @@ typedef struct
     either a LEAF (split == DOCK_SPLIT_NONE), which tabs one or more windows into a single region, or
     an INTERNAL split (DOCK_SPLIT_X / _Y), which divides its rect between two children at `ratio` with
     a draggable splitter between them.  Nodes live in a fixed per-context pool (gui_context_t.
-    dock_nodes) so child / parent pointers stay valid across frames; a freed slot has id == 0.
+    dock_nodes) so child / parent pool indices (gui_dock_ref_t) stay valid across frames; a freed
+    slot has id == 0.
 
     rect / content are resolved every frame by dock_node_layout from the viewport extent down: rect is
     the node's whole box, content is the leaf's body below its tab strip (where the active window draws).
@@ -547,8 +567,8 @@ typedef struct gui_dock_node_t
     u8          split;                       /* gui_dock_split_t: NONE = leaf, else internal     */
     f32         ratio;                       /* child[0]'s fraction of the split axis (0.5 default) */
 
-    struct gui_dock_node_t* parent;       /* owning split, or NULL for the tree root           */
-    struct gui_dock_node_t* child[ 2 ];   /* internal only (NULL on a leaf)                    */
+    gui_dock_ref_t parent;       /* owning split, or GUI_DOCK_REF_NONE for the tree root  */
+    gui_dock_ref_t child[ 2 ];   /* internal only (GUI_DOCK_REF_NONE on a leaf)           */
 
     /* Leaf payload: the windows tabbed into this node.  Names are copied at dock time so the tab
        bar is self-sufficient (no dependence on a window emitting this frame or its title lifetime). */
@@ -592,10 +612,9 @@ typedef struct
     i8         sort_dir;                        /* 0 = ascending, 1 = descending     */
 
     /* Scroll state + measured content extent for a scrolling body (GUI_TABLE_SCROLL_*).
-       The layout region reads scroll_* as the pen bias and writes content_* back at pop; both
+       The layout region reads scroll as the pen bias and writes content_w/h back at pop; both
        must persist across frames for the two-pass gutter / clamp logic to settle. */
-    f32        scroll_x, scroll_y;
-    f32        content_w, content_h;
+    gui_scroll_link_t scroll;
 
 } gui_table_persist_t;
 

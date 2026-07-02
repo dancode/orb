@@ -264,8 +264,8 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
     window_fit_size computes the window geometry that hugs a given content extent.
 
     Both ALWAYS_AUTOSIZE (every frame) and the CAN_AUTOSIZE grip (double-click) pass
-    win->content_w / content_h -- the rightmost pixel reached by rendered widgets plus the scroll
-    bias.  This is stable: a fill widget reports its full cell width so the window tracks its
+    win->scroll.content_w / content_h -- the rightmost pixel reached by rendered widgets plus the
+    scroll bias.  This is stable: a fill widget reports its full cell width so the window tracks its
     current configuration rather than collapsing to widget label widths.
 
     Height works the same way: pen travel independent of window height, no feedback.
@@ -398,8 +398,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     s_build.menubar_rect = ( gui_rect_t ){ win->x, win->y + title_h, win->w, 0.0f };
 
     /* Open the body over the node's content rect -- the same region machinery a free window uses. */
-    layout_push_region( id, node->content, REGION_PAD_DEFAULT, flags,
-                        &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
+    layout_push_region( id, node->content, REGION_PAD_DEFAULT, flags, &win->scroll,
                         /* own_clip */ false );
     return true;
 }
@@ -767,8 +766,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
        any content has been measured -- then the caller's initial w/h stands for one frame. */
     f32 fit_mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
-    if ( autosize && !collapsed && win->content_h > 0.0f )
-        window_fit_size( title, title_h, fit_mb_h, can_collapse, win->content_w, win->content_h,
+    if ( autosize && !collapsed && win->scroll.content_h > 0.0f )
+        window_fit_size( title, title_h, fit_mb_h, can_collapse, win->scroll.content_w, win->scroll.content_h,
                          &win->w, &win->h );
 
     /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
@@ -882,8 +881,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
            reuses the window's single clip.  Bias-from-scroll, gutter reservation, and clamping
            all live there now. */
         gui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
-        layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags,
-                            &win->scroll_x, &win->scroll_y, &win->content_w, &win->content_h,
+        layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags, &win->scroll,
                             /* own_clip */ false );
     }
     else
@@ -1196,7 +1194,7 @@ gui_window_end( void )
                 bool collapsible = ( s_build.win_title_h > 0.0f ) && !( s_build.win_flags & GUI_WIN_NOCOLLAPSE );
                 f32  grip_mb_h   = ( s_build.win_flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
                 window_fit_size( s_build.win_title, s_build.win_title_h, grip_mb_h, collapsible,
-                                 win->content_w, win->content_h, &win->w, &win->h );
+                                 win->scroll.content_w, win->scroll.content_h, &win->w, &win->h );
                 /* Native floater: forward the fit size to the OS window. */
                 if ( native && win->viewport != 0 )
                     app()->window_resize( window_native_id( win ), (i32)win->w, (i32)win->h );

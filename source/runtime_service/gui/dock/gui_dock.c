@@ -37,13 +37,14 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     if ( vp < 0 || vp >= (gui_vp_t)g_ctx->max_viewports )
         return GUI_DOCK_NONE;
 
-    gui_viewport_t* v = &g_ctx->viewports[ vp ];
-    if ( !v->dock_root )
+    gui_viewport_t*  v    = &g_ctx->viewports[ vp ];
+    gui_dock_node_t* root = dock_at( v->dock_root );
+    if ( !root )
     {
-        gui_dock_node_t* root = dock_node_alloc( (u32)vp );
+        root = dock_node_alloc( (u32)vp );
         if ( !root )
             return GUI_DOCK_NONE;
-        v->dock_root = root;
+        v->dock_root = dock_ref( root );
     }
 
     f32 dw  = vp_w( v );
@@ -51,21 +52,21 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     f32 top = v->caption_inset;
     gui_rect_t area = { 0.0f, top, dw, dh - top };
     if ( area.h < 0.0f ) area.h = 0.0f;
-    dock_node_layout( v->dock_root, area );
+    dock_node_layout( root, area );
 
     /* Chrome on this surface, below the free-floating windows (z 0), clipped to the surface. */
     draw_set_viewport ( (u32)vp );
     draw_set_sort_key ( 0 );
     draw_set_root_clip( dw, dh );
-    dock_tree_placeholders( v->dock_root );
-    dock_tree_splitters   ( v->dock_root, (u32)vp );
+    dock_tree_placeholders( root );
+    dock_tree_splitters   ( root, (u32)vp );
 
     /* Restore the ambient build state for the windows emitted next. */
     draw_set_sort_key ( 0 );
     draw_set_viewport ( 0 );
     draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
 
-    return v->dock_root->id;
+    return root->id;
 }
 
 /* Split a LEAF node in two: the original node becomes an internal split, its windows move to the
@@ -111,11 +112,11 @@ gui_dock_split( gui_dock_id_t node_id, gui_dir_t dir, f32 ratio, gui_dock_id_t* 
     /* Convert n into an internal split.  child[0] is the left / top side; ratio is its fraction, so
        when the NEW side is child[1] (RIGHT / DOWN) the remaining child[0] gets the complement. */
     n->split    = horizontal ? DOCK_SPLIT_X : DOCK_SPLIT_Y;
-    n->child[ 0 ] = new_first ? new_node : remain;
-    n->child[ 1 ] = new_first ? remain   : new_node;
+    n->child[ 0 ] = dock_ref( new_first ? new_node : remain );
+    n->child[ 1 ] = dock_ref( new_first ? remain   : new_node );
     n->ratio      = new_first ? r : ( 1.0f - r );
-    new_node->parent = n;
-    remain->parent   = n;
+    new_node->parent = dock_ref( n );
+    remain->parent   = dock_ref( n );
 
     /* n no longer holds windows directly. */
     n->tab_count  = 0;
@@ -141,7 +142,7 @@ gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
         return GUI_DOCK_NONE;
 
     gui_viewport_t*  v    = &g_ctx->viewports[ (u32)vp ];
-    gui_dock_node_t* root = v->dock_root;
+    gui_dock_node_t* root = dock_at( v->dock_root );
     if ( !root )
         return GUI_DOCK_NONE;
 
@@ -163,14 +164,14 @@ gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
     f32  r          = clampf( ratio, 0.05f, 0.95f );
 
     inner->split    = horizontal ? DOCK_SPLIT_X : DOCK_SPLIT_Y;
-    inner->child[ 0 ] = new_first ? leaf : root;
-    inner->child[ 1 ] = new_first ? root : leaf;
+    inner->child[ 0 ] = dock_ref( new_first ? leaf : root );
+    inner->child[ 1 ] = dock_ref( new_first ? root : leaf );
     inner->ratio      = new_first ? r : ( 1.0f - r );
-    inner->parent     = NULL;
-    leaf->parent      = inner;
-    root->parent      = inner;
+    inner->parent     = GUI_DOCK_REF_NONE;
+    leaf->parent      = dock_ref( inner );
+    root->parent      = dock_ref( inner );
 
-    v->dock_root = inner;   /* the wrapper is the new tree root */
+    v->dock_root = dock_ref( inner );   /* the wrapper is the new tree root */
     return leaf->id;
 }
 

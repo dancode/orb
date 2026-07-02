@@ -298,12 +298,12 @@ void
 gui_pad( gui_pad_t p )
 {
     layout_frame_t* f = lf();
-    f->content_x     = f->outer.x + p.l - *f->scroll_x;
+    f->content_x     = f->outer.x + p.l - f->scroll->scroll_x;
     f->content_w     = f->outer.w - p.l - p.r - f->sb_w;
     f->origin_x      = f->outer.x + p.l;
     f->origin_y      = f->outer.y + p.t;
     f->cursor_x      = f->content_x;
-    f->cursor_y      = f->outer.y + p.t - *f->scroll_y;
+    f->cursor_y      = f->outer.y + p.t - f->scroll->scroll_y;
     f->content_max_x = f->content_x;
     f->content_y_max = f->outer.y + f->outer.h - p.b - f->sb_h;   /* grid band end, new bottom pad */
 
