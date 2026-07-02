@@ -102,7 +102,11 @@ typedef struct
 } font_slot_t;
 
 /*----------------------------------------------------------------------------------------------
-    Cross-file helpers (the unity build resolves these regardless of include order).
+    Cross-file helpers (the unity build resolves these regardless of include order).  Everything
+    declared here is FILE-LOCAL to the font unit (gui_load_font.c / gui_load_font_orb.c) -- none
+    of it crosses to gui.c.  The font unit's actual public surface (font_load, font_glyph, etc.)
+    lives in gui_backend.h; see the PUBLIC / BACKEND-INTERNAL / FILE-LOCAL banners inside
+    gui_load_font.c for how the rest is split.
 
     Neutral (gui_load_font.c):
         font_slot_free_gpu   -- release a slot's owned GPU atlas.

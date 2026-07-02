@@ -32,7 +32,7 @@
     Tier 4 -- so there is no Tier 3 section here.
 
     1. Tier 1 -- Fonts
-    2. Tier 1 -- Runtime icon atlas
+    2. Tier 1 -- tierRuntime icon atlas
     3. Tier 2 -- EMIT (draw list)
     4. Tier 4 -- BUILD (retained cache)
     5. Tier 5 -- SUBMIT (GPU flush)

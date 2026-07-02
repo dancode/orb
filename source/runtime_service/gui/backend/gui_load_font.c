@@ -16,6 +16,14 @@
 
     Included by gui_backend.c after gui_load_font_orb.c.
 
+    Visibility tiers below (this is a unity build -- "static" only means "does not cross the
+    gui.c / gui_backend.c seam", not "used once"):
+
+        PUBLIC            -- declared in gui_backend.h; called from gui.c (the UI unit).
+        BACKEND-INTERNAL  -- static; called from other backend/ files (gui_build_tess.c,
+                             gui_debug_overlay.c, gui_submit_render.c) later in the unity build.
+        FILE-LOCAL        -- static; used only inside this file / gui_load_font_orb.c.
+
 ==============================================================================================*/
 // clang-format off
 
@@ -79,7 +87,9 @@ font_reload_enqueue( u32 id, const char* path )
 }
 
 /*==============================================================================================
-    Shared atlas finalize -- the white texel + dash rows every font carries.
+    Atlas finalize -- the white texel + dash rows every font carries.  The two paint helpers
+    directly below are FILE-LOCAL; font_atlas_tex_h / font_finalize_atlas further down are shared
+    with gui_load_font_orb.c (declared in gui_load_font.h).
 ==============================================================================================*/
 
 /* Paint the dash pattern rows into `pixels` (R8, width `w`) starting at pixel row `row0`. */
@@ -138,7 +148,8 @@ font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metri
 }
 
 /*==============================================================================================
-    Slot lifecycle
+    Slot lifecycle -- FILE-LOCAL, except font_slot_free_gpu (shared with gui_load_font_orb.c;
+    declared in gui_load_font.h).
 ==============================================================================================*/
 
 /* Release a slot's owned GPU atlas. */
@@ -169,7 +180,7 @@ font_alloc_slot( void )
 }
 
 /*==============================================================================================
-    Registry API -- load / select fonts by id.
+    PUBLIC -- Registry API: load / select fonts by id (gui_backend.h).
 ==============================================================================================*/
 
 /* Load a font into a new id and activate it.  Returns the id, or 0 on failure (registry full, or
@@ -279,7 +290,7 @@ font_slot_atlas_idx( u32 id )
 }
 
 /*==============================================================================================
-    font_init / font_shutdown
+    BACKEND-INTERNAL -- module lifecycle, called from gui_submit_render.c (gui_render_init/shutdown).
 ==============================================================================================*/
 
 static void
@@ -312,13 +323,13 @@ font_init( void )
 }
 
 /*==============================================================================================
-    Dispatch helpers -- all read from s_font / s_active, set by font_activate().
+    PUBLIC -- Dispatch helpers (gui_backend.h): all read from s_font / s_active, set by
+    font_activate().
 ==============================================================================================*/
 
 f32  font_char_h      ( void ) { return s_font->type.char_h; }
 f32  font_line_h      ( void ) { return s_font->type.line_h; }
 f32  font_em          ( void ) { return s_font->type.size;   }   // nominal type size (em) -- layout base
-static u32  font_atlas_idx   ( void ) { return s_font->atlas.atlas_idx; }
 
 /* Log the active font (id, name, metrics). */
 void
@@ -334,37 +345,6 @@ f32
 font_char_advance( u8 ch )
 {
     return font_slot_char_advance( s_active, ch );
-}
-
-/* UV of the active atlas's white texel (appended bottom row) for solid-color draws. */
-static void font_white_uv( f32* u, f32* v ) { *u = s_font->atlas.white_u; *v = s_font->atlas.white_v; }
-
-/* Center V of the dash pattern row whose baked on-fraction is closest to `duty`.  Tessellated
-   dashed lines sample this row, tiling it along the line via REPEAT addressing on U. */
-static f32
-font_dash_v( f32 duty )
-{
-    u32 best  = 0;
-    f32 bestd = 1e30f;
-    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-    {
-        f32 d = s_dash_duty[ p ] - duty;
-        if ( d < 0.0f ) d = -d;
-        if ( d < bestd ) { bestd = d; best = p; }
-    }
-    return s_font->atlas.dash_v[ best ];
-}
-
-/* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel): each loaded
-   font's owned atlas in the registry. */
-static u32
-font_atlas_bytes( void )
-{
-    u32 bytes = 0;
-    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
-        if ( s_fonts[ i ].used )
-            bytes += s_fonts[ i ].atlas.atlas_w * s_fonts[ i ].atlas.atlas_h;
-    return bytes;
 }
 
 /* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
@@ -406,6 +386,44 @@ font_glyph( u8 ch,
             f32* advance )
 {
     font_slot_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
+}
+
+/*==============================================================================================
+    BACKEND-INTERNAL -- consumed by gui_build_tess.c (atlas index / white texel / dash rows) and
+    gui_debug_overlay.c (atlas index / white texel), and gui_submit_render.c (memory stats).
+==============================================================================================*/
+
+static u32 font_atlas_idx( void ) { return s_font->atlas.atlas_idx; }
+
+/* UV of the active atlas's white texel (appended bottom row) for solid-color draws. */
+static void font_white_uv( f32* u, f32* v ) { *u = s_font->atlas.white_u; *v = s_font->atlas.white_v; }
+
+/* Center V of the dash pattern row whose baked on-fraction is closest to `duty`.  Tessellated
+   dashed lines sample this row, tiling it along the line via REPEAT addressing on U. */
+static f32
+font_dash_v( f32 duty )
+{
+    u32 best  = 0;
+    f32 bestd = 1e30f;
+    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
+    {
+        f32 d = s_dash_duty[ p ] - duty;
+        if ( d < 0.0f ) d = -d;
+        if ( d < bestd ) { bestd = d; best = p; }
+    }
+    return s_font->atlas.dash_v[ best ];
+}
+
+/* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel): each loaded
+   font's owned atlas in the registry. */
+static u32
+font_atlas_bytes( void )
+{
+    u32 bytes = 0;
+    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
+        if ( s_fonts[ i ].used )
+            bytes += s_fonts[ i ].atlas.atlas_w * s_fonts[ i ].atlas.atlas_h;
+    return bytes;
 }
 
 // clang-format on

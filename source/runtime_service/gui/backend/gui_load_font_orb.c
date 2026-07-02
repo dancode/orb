@@ -15,6 +15,10 @@
 
     Included by gui_backend.c after gui_load_font.h, before gui_load_font.c.
 
+    Nothing in this file is called outside the font unit: font_slot_load / font_slot_glyph /
+    font_slot_char_advance are FILE-LOCAL (shared with gui_load_font.c only, declared in
+    gui_load_font.h). There is no PUBLIC or BACKEND-INTERNAL surface here.
+
 ==============================================================================================*/
 // clang-format off
 
