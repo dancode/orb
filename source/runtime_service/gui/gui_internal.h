@@ -92,16 +92,6 @@ typedef struct
 } gui_io_t;
 
 /*==============================================================================================
-    Layout metrics (core/gui_theme.c)
-
-    Integer pixel dimensions derived from the active font's type size (em) by layout_compute.
-    The instance (s_style) lives in core/gui_theme.c; other files read it for control / padding
-    sizes.
-==============================================================================================*/
-
-
-
-/*==============================================================================================
     Widget interaction (gui_widget_core.c)
 
     The interaction class picked at the call site and the resolved per-frame result every widget
@@ -110,24 +100,26 @@ typedef struct
 
 /* Interaction class for a widget, selected at the call site.  Only the press-time
    behavior differs between widgets; everything else (hover/active/click) is uniform. */
+
 typedef enum
 {
-    WIDGET_KIND_BUTTON    = 0,   /* press captures active; reports clicked   */
-    WIDGET_KIND_DRAG      = 1,   /* press captures active; held for dragging */
-    WIDGET_KIND_FOCUSABLE = 2,   /* press also claims keyboard focus         */
+    WIDGET_KIND_BUTTON    = 0,   // press captures active; reports clicked
+    WIDGET_KIND_DRAG      = 1,   // press captures active; held for dragging
+    WIDGET_KIND_FOCUSABLE = 2,   // press also claims keyboard focus
 
 } widget_kind_t;
 
 /* Result of one frame of interaction for a widget.  Every widget drives its
    visuals and value changes from these flags instead of touching s_interaction directly. */
+
 typedef struct
 {
-    bool hover;    /* cursor is over the widget this frame                 */
-    bool active;   /* primary button held with this widget as the target   */
-    bool pressed;  /* primary button went down on the widget this frame    */
-    bool clicked;  /* press + release completed with the cursor still over */
-    bool focused;  /* widget owns keyboard input (focusable widgets)       */
-    bool nav;      /* widget is the keyboard-nav cursor, highlighted       */
+    bool hover;     // cursor is over the widget this frame
+    bool active;    // primary button held with this widget as the target
+    bool pressed;   // primary button went down on the widget this frame
+    bool clicked;   // press + release completed with the cursor still over
+    bool focused;   // widget owns keyboard input (focusable widgets)
+    bool nav;       // widget is the keyboard-nav cursor, highlighted
 
 } widget_state_t;
 
@@ -163,36 +155,37 @@ typedef struct
 
 typedef struct gui_window_t
 {
-    gui_id_t id;              /* id_hash(title); 0 = free slot                  */
-    f32        x, y;            /* persisted top-left (updated by dragging)       */
-    f32        w, h;            /* persisted dimensions                           */
-    u32        z;               /* paint order: higher = more recently raised = in front */
-    u32        viewport;        /* target surface index (0 = main swapchain); set via window_set_next_viewport */
+    gui_id_t    id;             // id_hash(title); 0 = free slot
+    f32         x, y;           // persisted top-left (updated by dragging)
+    f32         w, h;           // persisted dimensions
+    u32         z;              // paint order: higher = more recently raised = in front
+    u32         viewport;       // target surface index (0 = main swapchain); set via window_set_next_viewport
 
-    gui_scroll_link_t scroll;   /* persisted scroll offset + last-measured content extent */
+    gui_scroll_link_t scroll;   // persisted scroll offset + last-measured content extent
 
-    bool       collapsed;       /* title-bar-only when set; toggled by the arrow  */
-    bool       closed;          /* CLOSEABLE: hidden by the X until re-opened      */
+    bool       collapsed;       // title-bar-only when set; toggled by the arrow
+    bool       closed;          // CLOSEABLE: hidden by the X until re-opened
 
     /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
        reverting this record to viewport 0.  reopen_floater remembers it was a floater so the next
        begin re-spawns it.  The geometry is the floater's RESTORE (normal) state, sampled every
        frame it is not maximized -- so a floater closed while maximized re-opens maximized yet still
        restores to its previous normal size.  home_x/home_y are the restore client-corner screen
-       position; restore_w/restore_h the restore size; reopen_maximized re-maximizes on re-spawn. */
-    bool       reopen_floater;     /* re-spawn as a floater on the next begin             */
-    bool       reopen_maximized;   /* floater was maximized -- re-maximize after re-spawn */
-    i32        home_x, home_y;     /* saved restore (normal) client-corner screen pos     */
-    f32        restore_w, restore_h; // saved restore (normal) size
+       position; restore_w/restore_h the restore size; reopen_maximized re-maximizes on re-spawn.*/
 
-    gui_win_flags_t flags;    /* behavior flags supplied to window_begin        */
+    bool       reopen_floater;          // re-spawn as a floater on the next begin            
+    bool       reopen_maximized;        // floater was maximized -- re-maximize after re-spawn
+    i32        home_x, home_y;          // saved restore (normal) client-corner screen pos    
+    f32        restore_w, restore_h;    // saved restore (normal) size
+
+    gui_win_flags_t flags;    // behavior flags supplied to window_begin
 
     /* Next-window channel bookkeeping (see window_set_next_pos / _size).  last_frame drives the
        "appearing" test; the allow masks track which conditions a queued value may still fire. */
 
-    u32        last_frame;      /* frame index last begun; 0 = never begun        */
-    u8         set_pos_allow;   /* conds still permitted to set position (gui_cond_t bits) */
-    u8         set_size_allow;  /* conds still permitted to set size              */
+    u32        last_frame;      // frame index last begun; 0 = never begun
+    u8         set_pos_allow;   // conds still permitted to set position (gui_cond_t bits)
+    u8         set_size_allow;  // conds still permitted to set size
 
 } gui_window_t;
 
@@ -374,10 +367,13 @@ typedef struct
 
 typedef struct
 {
-    gui_scroll_link_t scroll; // persisted scroll offset (fractional: scrollbar drag is t * max_scroll)
-                              // + content extent measured last frame (gui_scroll_link_t* passed to
-                              // layout_push_region)
-    i16 user_w, user_h;       // user-resized size in pixels; 0 = none, use the passed w/h
+    // persisted scroll offset (fractional: scrollbar drag is t * max_scroll)
+    // + content extent measured last frame (gui_scroll_link_t* passed to
+    // layout_push_region)
+    gui_scroll_link_t scroll; 
+
+    // user-resized size in pixels; 0 = none, use the passed w/h
+    i16 user_w, user_h;       
 
 } gui_region_t;
 
