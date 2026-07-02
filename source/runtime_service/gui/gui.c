@@ -286,14 +286,11 @@ gui_theme_reset( void )
             }
         }
     }
-    /* layout_compute() (called by gui_style_apply) reads the active font's metrics through the
-       backend and dereferences a NULL font if none has been activated yet -- font_valid() is the
-       explicit "is it safe to call in" gate for that.  When no font is set, seeding s_style_base
-       is enough: whichever call activates the first font (gui_init's built-in preset, or the
-       caller's own font_load) triggers gui_style_apply() and scales s_style_base at that point. */
-    if ( !font_valid() )
-        return;
-
+    /* gui_style_apply() no-ops safely if no font has activated yet (font_valid() gate lives there
+       now) -- s_style just stays at its pre-font zero value, which style_new_frame seeds the push
+       stacks from harmlessly (nothing renders pre-font; gui_ctx_begin asserts font_valid()).
+       Whichever call activates the first font (gui_init's built-in preset, or the caller's own
+       font_load) triggers gui_style_apply() again and scales s_style_base for real at that point. */
     gui_style_apply();  /* rescale s_style from s_style_base */
     style_new_frame();  /* reseed s_col[]/s_var[] from s_style, clear all push stacks */
 }
@@ -339,7 +336,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 }
 
 /* The shared stateless helpers (saturate, clampf, rect_intersect) live in gui_internal.h as
-   static inline -- both units use them (gui_01_emit_draw.c needs rect_intersect for clip nesting). */
+   static inline -- both units use them (gui_emit_draw.c needs rect_intersect for clip nesting). */
 
 /*==============================================================================================
     Internal record types shared into gui_context_t
@@ -355,7 +352,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     Unity build
 ==============================================================================================*/
 
-/* The render backend (gui_submit_shader.h, gui_load_font/gui_load_icon/gui_emit_draw/gui_emit_path/
+/* The render backend (gui_shader.h, gui_load_font/gui_load_icon/gui_emit_draw/gui_emit_path/
    gui_build_tess/gui_build_cache/gui_submit_render/gui_debug_overlay .c) is the SECOND unit --
    compiled separately via gui_backend.c.  This unit calls into it through the draw_* / font_* /
    gui_render_* declarations in gui_backend.h. */

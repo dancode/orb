@@ -26,18 +26,17 @@
 
     Included once at the top of each unity entry (gui.c and gui_backend.c).
 
-    Sections below are grouped by pipeline tier, matching the include order in gui_backend.c:
-    Tier 1 (resource registries) through Tier 6 (debug overlay).  Tier 3 (tessellation
-    primitives, gui_02_build_tess.c) has no public surface -- it is driven entirely from within
-    Tier 4 -- so there is no Tier 3 section here.
+    Sections below are grouped by pipeline stage, matching the include order in gui_backend.c and
+    named for the function prefix each stage exports.  Tessellation primitives (gui_build_tess.c)
+    have no public surface -- driven entirely from within BUILD -- so there is no section for them.
 
     0. Backend lifecycle (gui_backend_init/exit)
-    1. Tier 1 -- Fonts
-    2. Tier 1 -- Runtime icon atlas
-    3. Tier 2 -- EMIT (draw list)
-    4. Tier 4 -- BUILD (retained cache)
-    5. Tier 5 -- SUBMIT (GPU flush)
-    6. Tier 6 -- Debug overlay
+    1. Fonts (resource registry)
+    2. Runtime icon atlas (resource registry)
+    3. EMIT -- CPU draw list
+    4. BUILD -- retained cache
+    5. RENDER -- GPU flush
+    6. DEBUG OVERLAY
 
 ==============================================================================================*/
 
@@ -49,14 +48,14 @@
     whole render backend.  `caps` (gui_backend_caps_t, gui.h) latches which optional layers are
     active for this run -- gui_init_config()'s value, or GUI_CAPS_DEFAULT if never called; see
     s_caps at the top of gui_backend.c for how the rest of the unit reads it.  Internally wraps
-    gui_render_init/shutdown (gui_03_submit_render.c), which are no longer exposed past this header.
+    gui_render_init/shutdown (gui_render.c), which are no longer exposed past this header.
 ==============================================================================================*/
 
 bool gui_backend_init( gui_backend_caps_t caps );
 void gui_backend_exit( void );
 
 /*==============================================================================================
-    Tier 1 -- Fonts (gui_font.c; implementation in gui_font_internal.c)
+    Fonts (gui_font.c; implementation in gui_font_internal.c)
 ==============================================================================================*/
 
 u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)
@@ -81,7 +80,7 @@ void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
                                      f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
 /*==============================================================================================
-    Tier 1 -- Runtime icon atlas (gui_icon.c)
+    Runtime icon atlas (gui_icon.c)
 
     A second R8 coverage texture, built at runtime: callers register raw monochrome bitmaps and
     the atlas packs them with stb_rect_pack, handing back an gui_icon_id_t.  Icons draw through
@@ -102,7 +101,7 @@ bool            icon_get                ( gui_icon_id_t id,
 void            draw_push_icon          ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
 
 /*==============================================================================================
-    Tier 2 -- EMIT: CPU draw list (gui_01_emit_draw.c)
+    EMIT: CPU draw list (gui_emit_draw.c)
 ==============================================================================================*/
 
 void draw_reset( i32 display_w, i32 display_h );    // clear the list at the top of frame_begin
@@ -139,7 +138,7 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
                                   f32 clip_x0, f32 clip_x1 );
 
 /*==============================================================================================
-    Tier 4 -- BUILD: retained frame-geometry cache (gui_02_build_cache.c)
+    BUILD: retained frame-geometry cache (gui_build_cache.c)
 ==============================================================================================*/
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
@@ -147,32 +146,32 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
    surface flush); every other live surface that frame reuses the result.  Called by
    gui_frame_begin right after draw_reset, before the build emits any new commands. */
 
-void                gui_render_frame_reset( void );
+void                gui_build_frame_reset( void );
 
-/* Per-frame render stats: gui_render_stats returns the last published frame's totals;
-   gui_render_stats_publish promotes the in-progress accumulator to the published value and
+/* Per-frame render stats: gui_build_stats returns the last published frame's totals;
+   gui_build_stats_publish promotes the in-progress accumulator to the published value and
    resets it -- called once per frame by gui_frame_begin (the UI unit), before draw_reset. */
 
-gui_render_stats_t  gui_render_stats        ( void );
-void                gui_render_stats_publish( void );
+gui_render_stats_t  gui_build_stats        ( void );
+void                gui_build_stats_publish( void );
 
 extern gui_id_t     g_gui_perf_overlay_id;
 
 /* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match
    the previous frame) skips tessellation and reuses s_tess.  Toggle for benchmarking or debugging. */
 
-void                gui_render_set_retained_skip( bool on );
-bool                gui_render_retained_skip( void );
+void                gui_build_set_retained_skip( bool on );
+bool                gui_build_retained_skip( void );
 
 /* True when the PREVIOUS frame's render produced any change (a window appeared, vanished, or
    changed content).  Read from the UI unit during frame_begin (before this frame's cache_build_frame
    runs) so s_cache.any_changed still holds last frame's result.  Used with io_dirty and wants_redraw
    to decide whether to skip the widget emit phase entirely (Level 3 retained skip). */
 
-bool                gui_render_any_changed( void );
+bool                gui_build_any_changed( void );
 
 /*==============================================================================================
-    Tier 5 -- SUBMIT: GPU resources + flush (gui_03_submit_render.c)
+    RENDER: GPU resources + flush (gui_render.c)
 
     gui_render_init/shutdown are NOT declared here -- they're an implementation detail of
     gui_backend_init/exit (above) now, called directly within the gui_backend.c unity TU.
@@ -193,7 +192,7 @@ bool                viewport_create         ( gui_viewport_t* vp, rhi_texture_t 
 void                viewport_destroy        ( gui_viewport_t* vp );                                   // free its vb/ib
 
 /*==============================================================================================
-    Tier 6 -- Debug overlay (gui_04_debug_overlay.c) -- Debug builds only.
+    DEBUG OVERLAY (gui_debug_overlay.c) -- Debug builds only.
 
     A second draw list, captured from the UI via the DBG_* macros and flushed last, on top.  The
     build switch is computed here so BOTH units agree before the macros / capture decls are used:

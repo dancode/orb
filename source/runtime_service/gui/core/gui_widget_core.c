@@ -38,7 +38,7 @@
 #define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
 #define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL_W    )
 
-/* Corner-radius categories, fed to draw_set_rounding (gui_01_emit_draw.c) so a draw site can pick the
+/* Corner-radius categories, fed to draw_set_rounding (gui_emit_draw.c) so a draw site can pick the
    right rounding before emitting.  The item seam defaults to ROUND_WIDGET and the chrome seam to
    ROUND_WIN; grabs and squared-off marks override locally.  See gui_style_var_t. */
 #define ROUND_WIN     style_var( GUI_VAR_WIN_ROUNDING    )

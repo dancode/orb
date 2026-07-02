@@ -1,20 +1,20 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_02_build_cache.c -- Retained frame-geometry cache (BUILD phase).
+    runtime_service/gui/backend/gui_build_cache.c -- Retained frame-geometry cache (BUILD phase).
 
     The render pipeline has three phases.  This file is the middle one:
 
-        EMIT   (gui_01_emit_draw.c)    widgets push semantic shapes -> s_draw command list,
-                                      cut into per-(win,z,vp) segments, one hash baked per command.
-        BUILD  (this file)          once per frame: diff each window's commands against last frame,
-                                      reuse unchanged geometry in place, tessellate changed windows,
-                                      then z-sort the result into a dispatch table.
-        SUBMIT (gui_03_submit_render.c) once per surface: upload changed geometry and emit one indexed
-                                      draw call per cached GPU command.
+        EMIT   (gui_emit_draw.c)  widgets push semantic shapes -> s_draw command list,
+                                   cut into per-(win,z,vp) segments, one hash baked per command.
+        BUILD  (this file)        once per frame: diff each window's commands against last frame,
+                                   reuse unchanged geometry in place, tessellate changed windows,
+                                   then z-sort the result into a dispatch table.
+        RENDER (gui_render.c)     once per surface: upload changed geometry and emit one indexed
+                                   draw call per cached GPU command.
 
     BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
     because the semantic command list is shared across every surface -- the geometry it produces
-    is surface-independent.  gui_render_frame_reset clears the guard at frame_begin.
+    is surface-independent.  gui_build_frame_reset clears the guard at frame_begin.
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"
@@ -30,7 +30,7 @@
 static bool s_frame_built;
 
 void
-gui_render_frame_reset( void )
+gui_build_frame_reset( void )
 {
     s_frame_built = false;
 }
@@ -52,19 +52,19 @@ static struct
 } s_stats;
 
 gui_render_stats_t
-gui_render_stats( void )
+gui_build_stats( void )
 {
     return s_stats.published;
 }
 
 void
-gui_render_stats_publish( void )
+gui_build_stats_publish( void )
 {
     s_stats.published = s_stats.accum;
     s_stats.accum     = ( gui_render_stats_t ){ 0 };
 }
 
-// Peak draw-call count, read by the shutdown report in gui_03_submit_render.c.
+// Peak draw-call count, read by the shutdown report in gui_render.c.
 static u32
 cache_draw_call_hwm( void )
 {
@@ -97,8 +97,8 @@ cache_count_upload( u32 batches, u32 bytes )
     the same s_caps field latched at gui_backend_init -- there is only the one flag.
 ----------------------------------------------------------------------------------------------*/
 
-void gui_render_set_retained_skip( bool on ) { s_caps.retained_cache = on; }
-bool gui_render_retained_skip    ( void )    { return s_caps.retained_cache; }
+void gui_build_set_retained_skip( bool on ) { s_caps.retained_cache = on; }
+bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
 
 /*----------------------------------------------------------------------------------------------
     Build-phase debug toggles.
@@ -208,7 +208,7 @@ static struct
    frame's cache_build_frame runs; s_cache.any_changed still holds last frame's result then.
    When false on a frame with no input and no animation, the host may skip the widget emit. */
 bool
-gui_render_any_changed( void )
+gui_build_any_changed( void )
 {
     return s_cache.any_changed;
 }

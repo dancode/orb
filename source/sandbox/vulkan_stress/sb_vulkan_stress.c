@@ -64,7 +64,7 @@
 /* F4 sampled mode reuses gui's pre-compiled bindless SPIR-V (self-contained u32 arrays:
    s_gui_vert_spirv / s_gui_frag_spirv).  This is bytecode only -- no gui library linkage --
    so the stress test stays independent of gui while still driving a real textured draw. */
-#include "runtime_service/gui/backend/gui_submit_shader.h"
+#include "runtime_service/gui/backend/gui_shader.h"
 
 // clang-format off
 

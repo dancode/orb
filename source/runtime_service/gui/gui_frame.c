@@ -49,15 +49,14 @@ gui_init( gui_builtin_font_t font )
     /* Optional built-in font (gui.h); non-fatal on failure -- init still succeeds, just without
        text, mirroring the debug-overlay init a few lines below.  font_load_builtin activates the
        font in the backend but -- unlike the public gui_font_load/gui_font_use wrappers -- does not
-       rescale layout itself, so this gates on font_valid() and calls gui_style_apply() explicitly:
-       without it every metric stays at the zero-font values gui_theme_set seeded above and nothing
-       lays out with visible size.  A caller that passes GUI_FONT_NONE gets no font here and no
-       apply -- font_valid() stays false until its own font_load() call activates one. */
+       rescale layout itself, so gui_style_apply() is called explicitly here; its own font_valid()
+       guard makes this correct either way -- a real font rescales s_style, GUI_FONT_NONE (or a
+       failed load) leaves it at the zero-font values gui_theme_set seeded above until the caller's
+       own font_load() activates one. */
 
     if ( font != GUI_FONT_NONE && !font_load_builtin( font ) )
         printf( "[gui] WARNING: built-in font load failed; continuing without text\n" );
-    if ( font_valid() )
-        gui_style_apply();
+    gui_style_apply();
 
     /* No viewports created here -- the host calls viewport_open() after init() for each OS window.
        Viewports own their own geometry buffers and are opened explicitly before any frames. */
@@ -247,7 +246,7 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
 
         if ( mode >= 3 )
         {
-            gui_render_stats_t rs = gui_render_stats();
+            gui_render_stats_t rs = gui_build_stats();
             gui_spacing( 2.0f );
             gui_textf( "verts   %6u", rs.vert_count );
             gui_textf( "tris    %6u", rs.tri_count  );
@@ -335,7 +334,7 @@ gui_frame_begin( f32 dt )
 
     /* Promote last frame's render-stat accumulator to the published value BEFORE draw_reset, so a
        build that reads render_stats() this frame sees the previous frame's completed totals. */
-    gui_render_stats_publish();
+    gui_build_stats_publish();
 
     /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
     input_update( disp_w, disp_h, dt );
@@ -351,7 +350,7 @@ gui_frame_begin( f32 dt )
        tessellation from the previous frame are preserved and replayed verbatim. */
     s_frame_dirty = io_dirty()
                  || s_retained.wants_redraw
-                 || gui_render_any_changed();
+                 || gui_build_any_changed();
 
     /* Debug overlay capture runs every emit, so any active layer forces a full build. */
     #ifdef GUI_DEBUG_OVERLAY
@@ -375,14 +374,14 @@ gui_frame_begin( f32 dt )
         /* Full rebuild: clear the draw list and tessellation so the emit phase writes fresh
            commands, and reset global interaction state for this frame's hit tests. */
         draw_reset( disp_w, disp_h );
-        gui_render_frame_reset();   /* s_frame_built = false; rebuilt on first render() */
+        gui_build_frame_reset();   /* s_frame_built = false; rebuilt on first render() */
 
         /* Reset global interaction state exactly once per app frame.  hover_win promotion and
            active_id release happen here -- NOT in ctx_new_frame -- so subsequent ctx_begin
            calls for additional contexts do not clobber hover nominations from earlier ones. */
         interaction_frame_reset();
     }
-    /* Clean frame: draw_reset / gui_render_frame_reset / interaction_frame_reset are all
+    /* Clean frame: draw_reset / gui_build_frame_reset / interaction_frame_reset are all
        skipped.  s_draw.cmds is preserved from the previous frame; s_frame_built remains true
        so cache_build_frame returns immediately and reuses the existing s_tess + s_dispatch.
        Interaction state (hover_win, active_id, focused_id) persists unchanged -- the cursor
@@ -932,10 +931,15 @@ gui_viewport_render_floaters( void )
 static u32 s_font_stack[ GUI_FONT_STACK_MAX ];
 static u32 s_font_stack_depth = 0;
 
-/* Rebuild layout metrics from whatever font is now active. */
+/* Rebuild layout metrics from whatever font is now active.  A safe no-op before any font has
+   activated (font_valid() false) -- s_style just stays at its last computed value (zero-init
+   pre-first-font).  Every caller (theme reset, init, font load/use, deferred-reload flush) can
+   call this unconditionally and trust it to do the right thing either way. */
 void
 gui_style_apply( void )
 {
+    if ( !font_valid() )
+        return;
     layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
 }
 

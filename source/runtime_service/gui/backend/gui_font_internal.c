@@ -24,7 +24,7 @@
 
     Also holds the BACKEND-INTERNAL accessors (font_atlas_idx / font_white_uv / font_dash_v /
     font_atlas_bytes / font_init / font_shutdown) consumed by other backend/ files later in the
-    unity build (gui_02_build_tess.c, gui_04_debug_overlay.c, gui_03_submit_render.c) -- those
+    unity build (gui_build_tess.c, gui_debug_overlay.c, gui_render.c) -- those
     aren't public either, they just have a wider audience than "this file only".
 
     Included by gui_backend.c after gui_font.h, before gui_font.c.
@@ -366,7 +366,7 @@ font_internal_load_into( u32 id, const char* path )
 }
 
 /*==============================================================================================
-    BACKEND-INTERNAL -- module lifecycle, called from gui_03_submit_render.c
+    BACKEND-INTERNAL -- module lifecycle, called from gui_render.c
     (gui_render_init/shutdown).
 ==============================================================================================*/
 
@@ -401,8 +401,8 @@ font_init( void )
 }
 
 /*==============================================================================================
-    BACKEND-INTERNAL -- consumed by gui_02_build_tess.c (atlas index / white texel / dash rows)
-    and gui_04_debug_overlay.c (atlas index / white texel), and gui_03_submit_render.c (memory
+    BACKEND-INTERNAL -- consumed by gui_build_tess.c (atlas index / white texel / dash rows)
+    and gui_debug_overlay.c (atlas index / white texel), and gui_render.c (memory
     stats).
 ==============================================================================================*/
 

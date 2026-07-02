@@ -11,7 +11,7 @@
     so gui does not drain the ring itself.  The result is stored in s_io and read
     by the widget code.
 
-    Included by gui.c after gui_01_emit_draw.c.
+    Included by gui.c after gui_emit_draw.c.
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   /* gui_io_t, GUI_KEY_COUNT */
