@@ -430,6 +430,33 @@ show_hud_demo( bool* p_open )
 }
 
 /*============================================================================================*/
+/* Root region demo                                                                            */
+/*                                                                                              */
+/* gui_region_begin/end: a fixed rect with a few widgets and no window chrome (no title, no      */
+/* drag, no close button).  The "Move" button below proves the position is just a caller-owned  */
+/* value -- unlike a window, a region cannot be dragged, so relocating it is entirely the app's  */
+/* job each frame.                                                                              */
+/*============================================================================================*/
+
+static void
+show_region_demo( void )
+{
+    static const struct { f32 x, y; } spots[] =
+    {
+        {  40.0f, 340.0f }, { 500.0f, 340.0f }, { 500.0f, 520.0f }, {  40.0f, 520.0f },
+    };
+    static int slot = 0;
+
+    gui()->region_begin( "Region Demo", spots[ slot ].x, spots[ slot ].y, 0.0f, 0.0f, GUI_WIN_NOSCROLL );
+        gui()->stack();
+        gui()->text( "A region: fixed rect, no window chrome." );
+        gui()->textf( "pos %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );
+        if ( gui()->button( "Move" ) )
+            slot = ( slot + 1 ) % ( sizeof( spots ) / sizeof( spots[ 0 ] ) );
+    gui()->region_end();
+}
+
+/*============================================================================================*/
 /* Demo setup                                                                                  */
 /*============================================================================================*/
 
@@ -438,10 +465,10 @@ show_hud_demo( bool* p_open )
 // - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
-static bool show_demo             = true;
-static bool show_font_browser_win = true;
-static bool show_split_win        = true;
-static bool show_hud_win          = true;
+static bool show_demo             = false;
+static bool show_font_browser_win = false;
+static bool show_split_win        = false;
+static bool show_hud_win          = false;
 static void show_example_main_menu_bar()
 {
     if ( gui()->main_menu_bar_begin() )
@@ -652,6 +679,10 @@ main( int argc, char** argv )
     // {
     //     gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
     // }
+    /* gui()->init already loaded the built-in preset font above; dev_font_init is still needed
+       here for the Font Browser demo (show_font_browser), which scans/bakes fonts from disk
+       independent of whatever font the GUI itself started with. */
+    dev_font_init( NULL );
 
     gui()->set_retained_skip( true );
 
@@ -773,6 +804,8 @@ main( int argc, char** argv )
             s_hud_prev = show_hud_win;
             if ( show_hud_win )
                 show_hud_demo( &show_hud_win );
+
+            show_region_demo();
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
 
