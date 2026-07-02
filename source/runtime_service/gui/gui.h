@@ -115,14 +115,13 @@ typedef struct
 
 typedef struct
 {
-    bool tables;         // table_begin / table_next_row / ... (table/gui_table.c); off makes
-                          // table_begin a no-op (returns false, like a nested-table rejection)
-    bool docking;        // dockspace_over_viewport / dock_split / dock_window / ... (dock/); off
-                          // makes dockspace_over_viewport a no-op (returns GUI_DOCK_NONE), so
-                          // every window it would have hosted free-floats instead
-    bool keyboard_nav;   // the nav cursor + menu-bar mnemonics (popup/gui_nav.c); off leaves
-                          // mouse/touch interaction fully intact, just no keyboard focus ring
-
+    bool tables;            // table_begin / table_next_row / ... (table/gui_table.c); off makes
+                            // table_begin a no-op (returns false, like a nested-table rejection)
+    bool docking;           // dockspace_over_viewport / dock_split / dock_window / ... (dock/); off
+                            // makes dockspace_over_viewport a no-op (returns GUI_DOCK_NONE), so
+                            // every window it would have hosted free-floats instead
+    bool keyboard_nav;      // the nav cursor + menu-bar mnemonics (popup/gui_nav.c); off leaves
+                            // mouse/touch interaction fully intact, just no keyboard focus ring
 } gui_forward_caps_t;
 
 #define GUI_FORWARD_CAPS_DEFAULT \
@@ -579,7 +578,9 @@ typedef enum
     /* Input passthrough -- the window is purely visual; the cursor passes through it as if it
        were not there.  hover_win is never set to this window, so no widget inside can receive
        mouse input and the window never steals clicks from content behind it.  Combine with
-       GUI_WIN_OVERLAY for a completely inert HUD (the perf overlay uses this). */
+       GUI_WIN_OVERLAY for a completely inert window-based HUD.  A fixed-rect HUD with no window
+       identity at all -- the perf overlay's case -- wants region_begin instead (gui_region.c),
+       which is NO_INPUT unconditionally. */
 
     GUI_WIN_NO_INPUT          = 1 << 20,   /* click-through: never becomes hover_win */
 
@@ -595,9 +596,10 @@ typedef enum
 
        NODECORATION -- strip all chrome: no title bar, no border resize, no scrollbars, no collapse.
                        A bare content panel you still position / move yourself.
-       OVERLAY      -- a passive, non-interactive HUD: undecorated, fixed in place, hugging its
-                       content every frame, and non-detachable.  The "accepts no action" window --
-                       what the built-in perf overlay uses.  Pin it with window_set_next_pos. */
+       OVERLAY      -- a passive, non-interactive window-based HUD: undecorated, fixed in place,
+                       hugging its content every frame, and non-detachable.  Pin it with
+                       window_set_next_pos.  For a HUD with no window identity at all (no pool
+                       record, no dock/native/z-order path), use region_begin instead. */
 
     GUI_WIN_NODECORATION = GUI_WIN_NOTITLEBAR | GUI_WIN_NORESIZE |
                            GUI_WIN_NOSCROLL   | GUI_WIN_NOCOLLAPSE,

@@ -149,6 +149,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/core/gui_layout_core.c"
 #include "runtime_service/gui/core/gui_layout_region.c"
 #include "runtime_service/gui/core/gui_layout_child.c"
+#include "runtime_service/gui/core/gui_region.c"
 #include "runtime_service/gui/core/gui_layout.c"
 #include "runtime_service/gui/core/gui_anim.c"
 

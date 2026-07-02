@@ -5,7 +5,7 @@
     Implements the shared scrollable-region mechanism used by both window bodies and
     child_begin boxes:
 
-        gui_region_t      persistent scroll + content-size state, keyed by id
+        gui_region_t        persistent scroll + content-size state, keyed by id
         scroll_clamp        pin a scroll offset into [0, content - view]
         region_scrollbar    one axis-generic scrollbar track + knob widget
         layout_push_region  open a region: reserve gutters, clamp scroll, seed a layout frame
@@ -19,13 +19,12 @@
     gui_layout_child.c and gui_layout.c which call layout_push/pop_region.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   /* gui_region_t, layout_frame_t, gui_window_t */
-// clang-format off
 
-/*----------------------------------------------------------------------------------------------
+// clang-format off
+/*==============================================================================================
     Scrollbar ids -- distinct salts so a region's vertical and horizontal bars never share an
     id, nor collide with a label-hashed widget in the same window.  Applied to a region id.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_SCROLLBAR_SALT  0x5C011B01u
 #define GUI_HSCROLLBAR_SALT 0x5C011B02u

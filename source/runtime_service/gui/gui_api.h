@@ -425,6 +425,19 @@ typedef struct gui_api_s
     void ( *pop_layout  )( void );
     void ( *child_end   )( void );
 
+    /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
+       window chrome (no title, no drag/resize, no dock, no z-order competition, no pool record).
+       It is the third caller of the same scroll-region engine window_begin and child_begin sit
+       on, stripped to just a rect + persisted scroll/content state, for a HUD-style element that
+       needs a fixed, caller-positioned box rather than a movable window -- the perf overlay is
+       the reference case.  w/h <= 0 autosizes that axis to last frame's measured content, like
+       child_begin's AutoResizeY.  Unlike window_begin / child_begin, it takes no parent region --
+       call it directly at the top of a frame.  Paints on the main viewport, above ordinary
+       windows and below popups; NO_INPUT only for now (see gui_region.c).  Always returns true;
+       always pair with region_end. */
+    bool ( *region_begin )( const char* id, f32 x, f32 y, f32 w, f32 h, gui_win_flags_t flags );
+    void ( *region_end   )( void );
+
     /* Layout -- declare the active region's next-item methodology (its "mode"), then shape it.
        A region opens UNDECLARED: the first header below names the mode (stack / columns / grid /
        form / ...), and a widget emitted before any header is a usage error (debug assert; release

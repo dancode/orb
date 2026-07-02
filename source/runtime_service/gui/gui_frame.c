@@ -235,19 +235,15 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
 
     f32 fps = s_perf.fps;
 
-    /* Hide the window: transparent body + outline, fixed top-left, hugging its content. */
-    gui_push_style_color( GUI_COL_WINDOW_BG, GUI_COLOR( 0, 0, 0, 0 ) );
-    gui_push_style_color( GUI_COL_BORDER,    GUI_COLOR( 0, 0, 0, 0 ) );
-
     f32 top_y = 8.0f;
     gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
     if ( mb && mb->last_frame == g_ctx->retained.frame )
         top_y += mb->h;
 
-    gui_window_set_next_pos( 8.0f, top_y, GUI_COND_ALWAYS );
-    
+    /* A root region: no chrome to hide (no window body/border to paint transparent), fixed
+       top-left, hugging its content (w/h <= 0 autosize both axes). */
     g_gui_perf_overlay_id = id_hash( "perf_overlay" );
-    gui_window_begin( "perf_overlay", GUI_WIN_OVERLAY );
+    gui_region_begin( "perf_overlay", 8.0f, top_y, 0.0f, 0.0f, GUI_WIN_NOSCROLL );
     {
         gui_stack();
         /* FPS, graded by health: >=60 green, >=30 amber, else red. */
@@ -289,9 +285,7 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
             }
         }
     }
-    gui_window_end();
-
-    gui_pop_style_color( 2 );
+    gui_region_end();
 }
 
 /*==============================================================================================
