@@ -21,7 +21,8 @@
 #include "runtime_service/gui/backend/gui_atlas.h" /* gui_atlas_t -- the owned GPU atlas */
 
 // clang-format off
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+    
     Atlas tail: white texel + dash patterns
 
     A fixed set of full-width 1-row stipple patterns is appended to every atlas after the white
@@ -30,18 +31,22 @@
     quad whose U spans 0..len/period; with REPEAT addressing on U the row tiles along the line --
     O(1) geometry instead of one quad per dash.  Glyph U coords never leave [0,1], so REPEAT does
     not affect text sampling.
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 #define GUI_DASH_PATTERN_COUNT 4
 
-/* Capacity of the loaded-font registry (gui_font_internal.c).  Slot 0 is the default; loaded fonts occupy
-   ids 1..GUI_FONT_REGISTRY_MAX-1. */
+/* Capacity of the loaded-font registry (gui_font_internal.c).  
+   Slot 0 is the default; loaded fonts occupy ids 1..GUI_FONT_REGISTRY_MAX-1. */
+
 #define GUI_FONT_REGISTRY_MAX 16
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+
     font_typography_t -- pure type metrics: what layout code reads (font_char_h / font_line_h /
     font_em).  Nothing here names a GPU resource.
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 typedef struct
 {
@@ -51,12 +56,14 @@ typedef struct
 
 } font_typography_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+
     font_atlas_sample_t -- resolved atlas-sampling parameters: what the tessellator reads
     (font_atlas_idx / font_white_uv / font_dash_v) to place a glyph, fill, or dashed-line quad.
     Kept separate from font_typography_t so "what size is this font" and "how do I sample its
     atlas" are not the same struct -- one is typography, the other is GPU-atlas bookkeeping.
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 typedef struct
 {
@@ -72,9 +79,9 @@ typedef struct
 
 } font_atlas_sample_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     font_metrics_t -- everything the active-font accessors (s_font) read, resolved once at load.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct
 {
@@ -83,9 +90,9 @@ typedef struct
 
 } font_metrics_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     font_slot_t -- one registry entry: a loaded proportional .orb_font.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct
 {
@@ -101,5 +108,5 @@ typedef struct
 
 } font_slot_t;
 
-// clang-format on
 /*============================================================================================*/
+// clang-format on

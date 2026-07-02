@@ -2,14 +2,13 @@
 
     runtime_service/gui/backend/gui_font.c -- The font unit's public API (gui_backend.h).
 
-    Every function here is what gui.c (the UI unit) is allowed to call.  Each one is either a
-    trivial read of the active-font state (s_font / s_active, set by font_activate() in
-    gui_font_internal.c) or a one-line forward to a font_internal_* function.  All the real logic
-    -- the registry, the reload queue, the .orb_font loader -- lives in gui_font_internal.c,
-    included right before this file so its statics and font_internal_* functions are already in
-    scope here.
-
-    Included by gui_backend.c after gui_font_internal.c.
+    Every function here is what gui.c (the UI unit) is allowed to call.  gui_font_internal.c,
+    included right before this file, holds the registry state and the loader; this file calls
+    straight into its statics (s_fonts, s_active, s_font, ...) and building-block functions
+    (font_slot_load, font_activate, font_alloc_slot, ...) since it's the same translation unit.
+    Only logic shared by more than one public function (font_internal_load_into, needed by both
+    font_load_into and font_load_builtin) got pulled out as a named internal function -- anything
+    used by exactly one function here is written directly in that function's body.
 
 ==============================================================================================*/
 // clang-format off
@@ -23,7 +22,15 @@
 u32
 font_load( const char* path )
 {
-    return font_internal_load( path );
+    u32  id = font_alloc_slot();
+    if ( id == 0 )
+         return 0;
+
+    if ( !font_slot_load( &s_fonts[ id ], path ) )
+        return 0;
+
+    font_activate( id );
+    return id;
 }
 
 /* Load a font into an existing id (id 0 swaps the default; a slot already in use defers the swap
@@ -34,27 +41,59 @@ font_load_into( u32 id, const char* path )
     return font_internal_load_into( id, path );
 }
 
-/* Load a built-in font preset (gui_builtin_font_t, gui.h) into slot 0.  True no-op for
-   GUI_FONT_NONE; called from gui_init() when the host passes a preset. */
+/* Path of every gui_builtin_font_t preset (gui.h), indexed by the enum; NULL for GUI_FONT_NONE. */
+static const char* s_builtin_font_path[] = {
+    [ GUI_FONT_NONE ]         = NULL,
+    [ GUI_FONT_JETBRAINS_16 ] = "assets/font/jetbrains_regular_16.orb_font",
+};
+
+/* Load a built-in font preset into slot 0 and activate it.  A no-op success for GUI_FONT_NONE
+   (the caller loads its own font); called from gui_init() when the host passes a preset. */
 bool
 font_load_builtin( gui_builtin_font_t font )
 {
-    return font_internal_load_builtin( font );
+    if ( font == GUI_FONT_NONE )
+        return true;
+    if ( (u32)font >= ARRAY_COUNT( s_builtin_font_path ) || !s_builtin_font_path[ font ] )
+        return false;
+    return font_internal_load_into( 0, s_builtin_font_path[ font ] );  // slot 0 = the default font
 }
 
-/* Commit every queued deferred reload.  Called once per frame by the UI unit at frame_begin.
-   Returns true when a committed load changed the active font. */
+/* Commit every queued deferred reload.  Called once per frame by the UI unit at frame_begin -- a
+   safe point between frames -- so the GPU atlas swap never interleaves with an in-flight frame.
+   Returns true when a committed load changed the active font, signalling the caller to rebuild
+   layout from the new metrics. */
 bool
 font_flush_pending( void )
 {
-    return font_internal_flush_pending();
+    bool active_reloaded = false;
+
+    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
+    {
+        if ( !s_reload_q[ i ].used )
+            continue;
+
+        u32  id = s_reload_q[ i ].id;
+        bool ok = font_slot_load( &s_fonts[ id ], s_reload_q[ i ].path );
+        s_reload_q[ i ] = ( font_reload_req_t ){ 0 };
+
+        if ( ok && s_active_id == id )
+        {
+            font_activate( id );        // metrics rebuilt in place; refresh active pointers
+            active_reloaded = true;
+        }
+    }
+
+    return active_reloaded;
 }
 
 /* Make an already-loaded id the active font.  Ignored if the id is empty or out of range. */
 void
 font_use( u32 id )
 {
-    font_internal_use( id );
+    if ( id >= GUI_FONT_REGISTRY_MAX || !s_fonts[ id ].used )
+        return;
+    font_activate( id );
 }
 
 /* Id of the active font slot -- callers save/restore this to push and pop fonts. */
@@ -103,11 +142,20 @@ font_char_advance( u8 ch )
     return font_slot_char_advance( s_active, ch );
 }
 
-/* Pixel width of the first n characters of str (see font_internal_text_w_n). */
+/* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
+   span this way -- the bytes before a "##" marker -- so reserved label space matches what draws.
+   Non-printable bytes contribute nothing (they are never emitted as glyphs). */
 f32
 font_text_w_n( const char* str, u32 n )
 {
-    return font_internal_text_w_n( str, n );
+    f32 w = 0.0f;
+    for ( u32 i = 0; i < n && str[ i ]; ++i )
+    {
+        u8 ch = (u8)str[ i ];
+        if ( ch >= 32 && ch <= 126 )
+            w += (f32)s_active->lookup[ ch - 32 ].advance;
+    }
+    return w;
 }
 
 /* Pixel width of a NUL-terminated run. */
