@@ -24,8 +24,8 @@
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   // gui_viewport_t, gui_context_t, GUI_MAX_VIEWPORTS
-// clang-format off
 
+// clang-format off
 /*==============================================================================================
     Push constant layout (80 bytes; must match gui_shader.h GLSL source)
 ==============================================================================================*/

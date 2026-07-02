@@ -19,7 +19,8 @@
 
     Include chain: gui_internal.h -> gui_host.h -> gui_api.h -> gui.h
     Also pulls rhi_api.h (gui_viewport_t holds GPU buffers/targets) and app_api.h (gui_io_t
-    indexes app keys; the OS-event forwarders take an app_event_t).
+    indexes app keys; the OS-event forwarders take an app_event_t; the render backend also
+    calls app()->window_close directly when tearing down an owned floater's OS window).
 
 ==============================================================================================*/
 

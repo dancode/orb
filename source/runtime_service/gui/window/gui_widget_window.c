@@ -404,6 +404,216 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     return true;
 }
 
+/*----------------------------------------------------------------------------------------------
+    window_begin_ex helpers
+
+    window_begin_ex is one long linear sequence of independent per-frame resolves (native sync,
+    drag, tear-off, resize).  Each stage only touches its own inputs and s_build / g_ctx -- pulled
+    out here so each is readable and named on its own, the same way window_clamp / window_apply_resize
+    / window_fit_size already are above.
+----------------------------------------------------------------------------------------------*/
+
+/* Sync a native window's geometry to its OS-owned surface and publish the frame layout (caption
+   band + resize border) to app() -- the OS drives move/resize/Aero-snap through WM_NCHITTEST, gui
+   just pins geometry and tells it where the grab bands are.  Also tracks RESTORE geometry for a
+   CLOSEABLE floater so closing it captures the right state: win->w/h are the maximized size while
+   maximized, so sample the home position and restore size only on restored frames; record the
+   maximized state either way so re-open can re-maximize while still holding the previous normal
+   size to restore back to. */
+static void
+window_sync_native( gui_window_t* win, gui_win_flags_t flags )
+{
+    const gui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
+    win->x = 0.0f;
+    win->y = 0.0f;
+    if ( vp->disp_w > 0 ) win->w = ( f32 )vp->disp_w;
+    if ( vp->disp_h > 0 ) win->h = ( f32 )vp->disp_h;
+
+    i32 border = ( flags & GUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
+    app()->window_set_native_frame( window_native_id( win ), true, border );
+
+    i32 caption = ( flags & GUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
+    g_ctx->viewports[ win->viewport ].caption_inset = ( f32 )caption;
+
+    if ( win->viewport != 0 && ( flags & GUI_WIN_CLOSEABLE ) )
+    {
+        win_id_t os = window_native_id( win );
+        win->reopen_maximized = app()->window_state( os ).maximized != 0;
+        if ( !win->reopen_maximized )
+        {
+            app()->window_get_pos( os, &win->home_x, &win->home_y );
+            win->restore_w = win->w;
+            win->restore_h = win->h;
+        }
+    }
+}
+
+/* Apply an in-progress title-bar drag: this window holds active_id while the button is down.
+   On the main surface the panel slides within it (win->x/y).  On a floater the panel fills the
+   surface, so the drag instead moves the whole OS window in SCREEN space to follow the cursor --
+   the floater client origin tracks (screen cursor - grab offset), so the grabbed title point stays
+   pinned under the cursor as it crosses the desktop.  Screen cursor reads stay valid because the
+   origin window keeps OS mouse capture for the whole gesture (see the tear-off in
+   gui_viewport_update). */
+static void
+window_apply_drag( gui_window_t* win, gui_id_t id )
+{
+    if ( s_interaction.active_id != id )
+        return;
+
+    if ( win->viewport == 0 )
+    {
+        win->x = s_io.mouse_x - s_drag_off_x;
+        win->y = s_io.mouse_y - s_drag_off_y;
+        window_clamp( win );
+    }
+    else
+    {
+        i32 cx = 0, cy = 0;
+        app()->mouse_position_screen( &cx, &cy );
+        app()->window_set_pos( g_ctx->viewports[ win->viewport ].win_id,
+                               cx - (i32)s_drag_off_x, cy - (i32)s_drag_off_y );
+        win->x = 0.0f;
+        win->y = 0.0f;
+    }
+}
+
+/* Seamless tear-off / merge-back gesture (Dear-ImGui style: no release required), plus drag-to-dock
+   detection.  While a title-bar drag is live (button still down, this window owns active_id),
+   crossing a surface boundary reassigns which surface hosts the window -- and the drag continues
+   uninterrupted in the new home.  The request is enqueued for gui_viewport_update, the safe point
+   to create/destroy a surface; one request at a time, and NOMOVE windows never tear off.
+
+   Attached (viewport 0): the OS mouse is captured by the main window, so s_io.mouse_x/y stay in its
+   client space and read out-of-bounds exactly when the cursor leaves it -- tear off into a floater
+   the moment that happens.
+
+   Floating: the floater follows the cursor, so the cursor never leaves IT; instead test the SCREEN
+   cursor against the main window's client rect and merge back when it re-enters.  Capture remains
+   on the main window throughout, so the screen-cursor read is valid here too.
+
+   Drag-to-dock is mutually exclusive with tear-off: that fires only when the cursor leaves the
+   surface, this only when it is inside over a dockspace leaf. */
+static void
+window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title, gui_win_flags_t flags )
+{
+    /* Drop the merge-back latch once this window's drag ends, so the next grab re-arms from scratch
+       (a floater grabbed again while over its parent must not inherit an armed latch). */
+    if ( s_vp_drag_id == id && s_interaction.active_id != id )
+        s_vp_drag_id = GUI_ID_NONE;
+
+    if ( s_interaction.active_id == id && s_io.mouse_down[ 0 ]
+         && !( flags & GUI_WIN_NOMOVE ) && !( flags & GUI_WIN_NO_DETACH ) && !s_vp_request.active )
+    {
+        /* Re-arm the merge-back latch on a fresh drag of this window (the previous gesture targeted
+           a different window or none).  Until the cursor leaves the main surface, merge-back stays
+           disarmed, so a floater grabbed while sitting over its parent is not yanked straight back. */
+        if ( s_vp_drag_id != id )
+        {
+            s_vp_drag_id     = id;
+            s_vp_merge_armed = false;
+        }
+
+        bool crossed = false;
+        if ( win->viewport == 0 )
+        {
+            const gui_viewport_t* hv = &g_ctx->viewports[ 0 ];
+            f32 dw = vp_w( hv ); if ( dw < 1.0f ) dw = 1.0f;
+            f32 dh = vp_h( hv ); if ( dh < 1.0f ) dh = 1.0f;
+            crossed = s_io.mouse_x < 0.0f || s_io.mouse_y < 0.0f
+                   || s_io.mouse_x >= dw || s_io.mouse_y >= dh;
+        }
+        else
+        {
+            /* Merge back when the screen cursor re-enters the main window's client rect, inset by a
+               title-bar margin.  The inset is hysteresis: tear-off fires at the exact main edge, so
+               without a dead-band a cursor hovering on the boundary would spawn and destroy a floater
+               every frame.  Re-entering only past the inset breaks that oscillation. */
+            i32 cx = 0, cy = 0, mx = 0, my = 0;
+            app()->mouse_position_screen( &cx, &cy );
+            app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
+            const gui_viewport_t* mv = &g_ctx->viewports[ 0 ];
+            i32 mw = (i32)vp_w( mv );
+            i32 mh = (i32)vp_h( mv );
+            i32 inset = (i32)WIN_TITLE_H;
+            bool inside = cx >= mx + inset && cy >= my + inset
+                       && cx < mx + mw - inset && cy < my + mh - inset;
+
+            /* Edge-trigger: arm once the cursor is clear of the main window, then merge only on the
+               re-entry.  This distinguishes a real leave->enter crossing from a floater that simply
+               started inside (overlapping its parent), which must first be dragged out. */
+            if ( !inside )
+                s_vp_merge_armed = true;
+            crossed = inside && s_vp_merge_armed;
+        }
+
+        if ( crossed )
+        {
+            s_vp_request.active  = true;
+            s_vp_request.by_drag = true;   /* place the floater under the cursor, keep it tracking */
+            s_vp_request.win_id  = id;
+            s_vp_request.from_vp = win->viewport;
+            s_vp_request.title   = title;
+        }
+    }
+
+    /* Drag-to-dock: while this free window is title-dragged over a dockspace on its own surface,
+       preview a drop target (per-node 5-way overlay). */
+    if ( s_interaction.active_id == id && s_io.mouse_down[ 0 ]
+         && !( flags & GUI_WIN_NOMOVE ) && !s_vp_request.active )
+        dock_drag_detect( id, win );
+}
+
+/* Resolve this frame's edge-resize / autosize-grip hover-and-grab, before any widget can claim the
+   press.  Sets s_build.win_resize_hot / win_grip_hot (read by widget_behavior + window_end's
+   highlight) and drives the hardware cursor (the directional resize shape while an edge is hot,
+   including when the grip triangle promoted R+B, or while a resize drag is in flight).  Returns the
+   PRE-grip-promotion resize_hot mask -- the debug overlay's outer-band capture wants only the true
+   edge hit, not the grip's R+B promotion. */
+static u8
+window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags,
+                           gui_rect_t disp_r, bool collapsed, bool resizeable, gui_id_t resize_id )
+{
+    u8 resize_hot = 0;
+    if ( resizeable && s_interaction.hover_win == id
+         && ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == resize_id ) )
+    {
+        resize_hot = window_resize_hit( disp_r, collapsed );
+        if ( resize_hot && s_interaction.active_id == GUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
+            resize_grab( id, ( gui_rect_t ){ win->x, win->y, win->w, win->h }, resize_hot );
+    }
+    s_build.win_resize_hot = resize_hot;   /* read by widget_behavior + window_end's highlight */
+
+    /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
+       same way the edge band reserves the borders.  The grip square overlaps the scroll gutter, but
+       the scrollbar runs first (in layout_pop_region), so without this it would claim the press and
+       the grip -- drawn and grabbed later in window_end -- would sit dead behind it.  Suppressing
+       widget hover over the grip rect leaves active_id free for window_end to grab. */
+    bool grip_hot = false;
+    if ( ( flags & GUI_WIN_CAN_AUTOSIZE ) && !collapsed && s_interaction.hover_win == id
+         && ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == resize_id ) )
+    {
+        f32          g  = WIDGET_H;   /* grip leg length -- matches window_end's grip rect */
+        gui_rect_t gr = { win->x + win->w - g, win->y + disp_r.h - g, g, g };
+        grip_hot = rect_hit( gr );
+    }
+    s_build.win_grip_hot = grip_hot;   /* read by widget_behavior to defer the corner to the grip */
+
+    /* Grip triangle and the R+B corner always highlight together: if the grip is hot, promote the
+       R+B edge bits so the border highlight follows; the reverse (R+B edges -> triangle) runs in
+       window_end where hot_edges is resolved. */
+    if ( grip_hot )
+        s_build.win_resize_hot |= GUI_RESIZE_R | GUI_RESIZE_B;
+
+    {
+        u8 ce = ( s_interaction.active_id == resize_id ) ? s_resize_edges : s_build.win_resize_hot;
+        if ( ce )
+            set_mouse_cursor( resize_cursor_for_edges( ce ) );
+    }
+
+    return resize_hot;
+}
+
 /* window_begin_ex -- the shared body of window_begin, with the window id supplied explicitly and
    the title used only for display + chrome (NULL = no title text).  gui_window_begin hashes the
    title for its id; the popup layer (gui_popup.c) passes a salted popup id and its own title (or
@@ -506,41 +716,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     bool frame_only = ( flags & GUI_WIN_NATIVE ) != 0;
 
     if ( native )
-    {
-        const gui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
-        win->x = 0.0f;
-        win->y = 0.0f;
-        if ( vp->disp_w > 0 ) win->w = ( f32 )vp->disp_w;
-        if ( vp->disp_h > 0 ) win->h = ( f32 )vp->disp_h;
-
-        /* Publish the edge-resize grab thickness (the only metric the WndProc still needs; gui now
-           owns the full caption band via HTCLIENT and dispatches move / title / system-menu itself).
-           NORESIZE disables edge dragging (border = 0). */
-        i32 border = ( flags & GUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
-        app()->window_set_native_frame( window_native_id( win ), true, border );
-
-        /* Publish the caption-inset so panels on this surface clamp their title bars below the
-           drawn chrome band.  frame_only shells emit before the panels they frame, so the inset is
-           live by the time window_begin runs for each panel this frame. */
-        i32 caption = ( flags & GUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
-        g_ctx->viewports[ win->viewport ].caption_inset = ( f32 )caption;
-
-        /* Track RESTORE geometry for a CLOSEABLE floater so closing it captures the right state.
-           win->w/h above are the maximized size while maximized, so sample the home position and
-           restore size only on restored frames; record the maximized state either way so re-open
-           can re-maximize while still holding the previous normal size to restore back to. */
-        if ( win->viewport != 0 && ( flags & GUI_WIN_CLOSEABLE ) )
-        {
-            win_id_t os = window_native_id( win );
-            win->reopen_maximized = app()->window_state( os ).maximized != 0;
-            if ( !win->reopen_maximized )
-            {
-                app()->window_get_pos( os, &win->home_x, &win->home_y );
-                win->restore_w = win->w;
-                win->restore_h = win->h;
-            }
-        }
-    }
+        window_sync_native( win, flags );
 
     bool can_collapse = has_titlebar && !( flags & GUI_WIN_NOCOLLAPSE ) && !native;
     if ( !can_collapse ) win->collapsed = false;
@@ -552,113 +728,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     bool autosize = ( flags & GUI_WIN_ALWAYS_AUTOSIZE ) != 0;
     gui_win_flags_t body_flags = autosize ? ( flags | GUI_WIN_NOSCROLL ) : flags;
 
-    /* Apply an in-progress drag: this window holds active_id while the button is down.
-
-       On the main surface the panel slides within it (win->x/y).  On a floater the panel fills the
-       surface, so the drag instead moves the whole OS window in SCREEN space to follow the cursor --
-       the floater client origin tracks (screen cursor - grab offset), so the grabbed title point
-       stays pinned under the cursor as it crosses the desktop.  Screen cursor reads stay valid
-       because the origin window keeps OS mouse capture for the whole gesture (see the tear-off in
-       gui_viewport_update). */
-    if ( s_interaction.active_id == id )
-    {
-        if ( win->viewport == 0 )
-        {
-            win->x = s_io.mouse_x - s_drag_off_x;
-            win->y = s_io.mouse_y - s_drag_off_y;
-            window_clamp( win );
-        }
-        else
-        {
-            i32 cx = 0, cy = 0;
-            app()->mouse_position_screen( &cx, &cy );
-            app()->window_set_pos( g_ctx->viewports[ win->viewport ].win_id,
-                                   cx - (i32)s_drag_off_x, cy - (i32)s_drag_off_y );
-            win->x = 0.0f;
-            win->y = 0.0f;
-        }
-    }
-
-    /* Seamless tear-off / merge-back gesture (Dear-ImGui style: no release required).  While a
-       title-bar drag is live (button still down, this window owns active_id), crossing a surface
-       boundary reassigns which surface hosts the window -- and the drag continues uninterrupted in
-       the new home.  The request is enqueued for gui_viewport_update, the safe point to
-       create/destroy a surface; one request at a time, and NOMOVE windows never tear off.
-
-       Attached (viewport 0): the OS mouse is captured by the main window, so s_io.mouse_x/y stay in
-       its client space and read out-of-bounds exactly when the cursor leaves it -- tear off into a
-       floater the moment that happens.
-
-       Floating: the floater follows the cursor, so the cursor never leaves IT; instead test the
-       SCREEN cursor against the main window's client rect and merge back when it re-enters.  Capture
-       remains on the main window throughout, so the screen-cursor read is valid here too. */
-
-    /* Drop the merge-back latch once this window's drag ends, so the next grab re-arms from scratch
-       (a floater grabbed again while over its parent must not inherit an armed latch). */
-    if ( s_vp_drag_id == id && s_interaction.active_id != id )
-        s_vp_drag_id = GUI_ID_NONE;
-
-    if ( s_interaction.active_id == id && s_io.mouse_down[ 0 ]
-         && !( flags & GUI_WIN_NOMOVE ) && !( flags & GUI_WIN_NO_DETACH ) && !s_vp_request.active )
-    {
-        /* Re-arm the merge-back latch on a fresh drag of this window (the previous gesture targeted
-           a different window or none).  Until the cursor leaves the main surface, merge-back stays
-           disarmed, so a floater grabbed while sitting over its parent is not yanked straight back. */
-        if ( s_vp_drag_id != id )
-        {
-            s_vp_drag_id     = id;
-            s_vp_merge_armed = false;
-        }
-
-        bool crossed = false;
-        if ( win->viewport == 0 )
-        {
-            const gui_viewport_t* hv = &g_ctx->viewports[ 0 ];
-            f32 dw = vp_w( hv ); if ( dw < 1.0f ) dw = 1.0f;
-            f32 dh = vp_h( hv ); if ( dh < 1.0f ) dh = 1.0f;
-            crossed = s_io.mouse_x < 0.0f || s_io.mouse_y < 0.0f
-                   || s_io.mouse_x >= dw || s_io.mouse_y >= dh;
-        }
-        else
-        {
-            /* Merge back when the screen cursor re-enters the main window's client rect, inset by a
-               title-bar margin.  The inset is hysteresis: tear-off fires at the exact main edge, so
-               without a dead-band a cursor hovering on the boundary would spawn and destroy a floater
-               every frame.  Re-entering only past the inset breaks that oscillation. */
-            i32 cx = 0, cy = 0, mx = 0, my = 0;
-            app()->mouse_position_screen( &cx, &cy );
-            app()->window_get_pos( g_ctx->viewports[ 0 ].win_id, &mx, &my );
-            const gui_viewport_t* mv = &g_ctx->viewports[ 0 ];
-            i32 mw = (i32)vp_w( mv );
-            i32 mh = (i32)vp_h( mv );
-            i32 inset = (i32)WIN_TITLE_H;
-            bool inside = cx >= mx + inset && cy >= my + inset
-                       && cx < mx + mw - inset && cy < my + mh - inset;
-
-            /* Edge-trigger: arm once the cursor is clear of the main window, then merge only on the
-               re-entry.  This distinguishes a real leave->enter crossing from a floater that simply
-               started inside (overlapping its parent), which must first be dragged out. */
-            if ( !inside )
-                s_vp_merge_armed = true;
-            crossed = inside && s_vp_merge_armed;
-        }
-
-        if ( crossed )
-        {
-            s_vp_request.active  = true;
-            s_vp_request.by_drag = true;   /* place the floater under the cursor, keep it tracking */
-            s_vp_request.win_id  = id;
-            s_vp_request.from_vp = win->viewport;
-            s_vp_request.title   = title;
-        }
-    }
-
-    /* Drag-to-dock: while this free window is title-dragged over a dockspace on its own surface,
-       preview a drop target (per-node 5-way overlay).  Mutually exclusive with the tear-off above --
-       that fires only when the cursor leaves the surface, this only when it is inside over a leaf. */
-    if ( s_interaction.active_id == id && s_io.mouse_down[ 0 ]
-         && !( flags & GUI_WIN_NOMOVE ) && !s_vp_request.active )
-        dock_drag_detect( id, win );
+    window_apply_drag( win, id );                             /* in-progress title-bar drag */
+    window_apply_tearoff_gesture( win, id, title, flags );    /* tear-off / merge-back / drag-to-dock */
 
     /* Apply an in-progress edge resize (active_id is the resize-salted window id).  Runs after
        the drag apply -- the two are mutually exclusive, only one can own active_id at a time. */
@@ -711,46 +782,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        Gated on hover_win (last frame's front-most), so only the top window's edges go hot. */
     gui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
     gui_id_t   resize_id = id_combine( id, GUI_RESIZE_SALT );
-    u8           resize_hot = 0;
     bool         resizeable = !( flags & GUI_WIN_NORESIZE ) && !autosize && !native;
-    if ( resizeable && s_interaction.hover_win == id
-         && ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == resize_id ) )
-    {
-        resize_hot = window_resize_hit( disp_r, collapsed );
-        if ( resize_hot && s_interaction.active_id == GUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
-            resize_grab( id, ( gui_rect_t ){ win->x, win->y, win->w, win->h }, resize_hot );
-    }
-    s_build.win_resize_hot = resize_hot;   /* read by widget_behavior + window_end's highlight */
-
-    /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
-       same way the edge band reserves the borders.  The grip square overlaps the scroll gutter,
-       but the scrollbar runs first (in layout_pop_region), so without this it would claim the
-       press and the grip -- drawn and grabbed later in window_end -- would sit dead behind it.
-       Suppressing widget hover over the grip rect leaves active_id free for window_end to grab.
-       Gated on hover_win and a free/own active_id, mirroring the edge resize above. */
-    bool grip_hot = false;
-    if ( ( flags & GUI_WIN_CAN_AUTOSIZE ) && !collapsed && s_interaction.hover_win == id
-         && ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == resize_id ) )
-    {
-        f32          g  = WIDGET_H;   /* grip leg length -- matches window_end's grip rect */
-        gui_rect_t gr = { win->x + win->w - g, win->y + disp_h - g, g, g };
-        grip_hot = rect_hit( gr );
-    }
-    s_build.win_grip_hot = grip_hot;   /* read by widget_behavior to defer the corner to the grip */
-
-    /* Grip triangle and the R+B corner always highlight together: if the grip is hot, promote
-       the R+B edge bits so the border highlight follows; the reverse (R+B edges -> triangle)
-       runs in window_end where hot_edges is resolved. */
-    if ( grip_hot )
-        s_build.win_resize_hot |= GUI_RESIZE_R | GUI_RESIZE_B;
-
-    /* Hardware cursor: show the directional resize shape while an edge is hot (including when
-       the grip triangle promoted R+B), or while a resize drag is in flight. */
-    {
-        u8 ce = ( s_interaction.active_id == resize_id ) ? s_resize_edges : s_build.win_resize_hot;
-        if ( ce )
-            set_mouse_cursor( resize_cursor_for_edges( ce ) );
-    }
+    u8 resize_hot = window_resolve_resize_hot( id, win, flags, disp_r, collapsed, resizeable, resize_id );
 
     /* Nominate this window as the one under the cursor (front-most by z wins).  A resizeable
        window expands its nominee rect by the outer grab band (horizontally only when collapsed,

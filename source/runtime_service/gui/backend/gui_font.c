@@ -53,8 +53,7 @@ static const char* s_builtin_font_path[] =
     [ GUI_FONT_JETBRAINS_16 ] = "assets/font/jetbrains_regular_16.orb_font",
 };
 
-/* Load a built-in font preset into slot 0 and activate it.  
-   A no-op success for GUI_FONT_NONE.
+/* Load a built-in font preset into slot 0 and activate it. A no-op success for GUI_FONT_NONE.
    (the caller loads its own font); called from gui_init() when the host passes a preset. */
 
 bool
@@ -79,6 +78,7 @@ font_load_builtin( gui_builtin_font_t font )
    safe point between frames -- so the GPU atlas swap never interleaves with an in-flight frame.
    Returns true when a committed load changed the active font, signalling the caller to rebuild
    layout from the new metrics. */
+
 bool
 font_flush_pending( void )
 {

@@ -51,8 +51,8 @@ static struct
     u32             cmd_hashes  [ GUI_MAX_CMDS   ];     // per-command hash baked at emit (for cache diff)
     gui_vec2_t      points      [ GUI_MAX_PATH_PTS ];   // point pool for CMD_POLYLINE data; indexed by pt_offset
 
-    gui_cmd_seg_t   segs[ GUI_MAX_SEGS ];       /* per-(z,vp) command spans, in emit order */
-    u32             seg_count;                /* spans open this frame (>= 1; segs[0] is z=0,vp=0) */
+    gui_cmd_seg_t   segs[ GUI_MAX_SEGS ];               // per-(z,vp) command spans, in emit order 
+    u32             seg_count;                          // spans open this frame (>= 1; segs[0] is z=0,vp=0) 
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
        (textf, snprintf labels) remain valid until gui_render_flush consumes them. */

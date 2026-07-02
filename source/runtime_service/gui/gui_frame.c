@@ -18,12 +18,14 @@
    backend.  Defaults to GUI_CAPS_DEFAULT (set below, GUI_CAPS_DEFAULT is a compound literal and
    not a valid static initializer) so a caller that never calls gui_init_config() sees today's
    full-feature behavior unchanged. */
+
 static gui_backend_caps_t s_init_caps = { .icons = true, .retained_cache = true,
                                            .render_debug = true, .stats_trace = false };
 
 /* OPTIONAL: override which backend capability layers this run compiles in.  Call before init();
    a call after init() has no effect (the backend has already latched its own copy).  Skip this
    entirely to accept GUI_CAPS_DEFAULT. */
+
 void
 gui_init_config( gui_backend_caps_t caps )
 {
@@ -35,11 +37,12 @@ gui_init( gui_builtin_font_t font )
 {
     /* Seed the style base from the default theme before any font init runs; font_load calls
        gui_style_apply which scales s_style_base -- it must be non-zero first. */
+
     gui_theme_set( "dark" );
 
     /* wire default context's static backing arrays; sets g_ctx */
 
-    ctx_pool_init();   
+    ctx_pool_init();
 
     /* init: shared pipeline / sampler / atlas + optional layers */
 
@@ -54,8 +57,10 @@ gui_init( gui_builtin_font_t font )
        failed load) leaves it at the zero-font values gui_theme_set seeded above until the caller's
        own font_load() activates one. */
 
-    if ( font != GUI_FONT_NONE && !font_load_builtin( font ) )
-        printf( "[gui] WARNING: built-in font load failed; continuing without text\n" );
+    if ( font != GUI_FONT_NONE && font_load_builtin( font ) == false ) {
+         printf( "[gui] WARNING: built-in font load failed; continuing without text\n" );
+    }
+
     gui_style_apply();
 
     /* No viewports created here -- the host calls viewport_open() after init() for each OS window.
@@ -63,9 +68,11 @@ gui_init( gui_builtin_font_t font )
 
 #ifdef GUI_DEBUG_OVERLAY
     /* Debug overlay GPU buffers.  Non-fatal: a failure just leaves the overlay dark. */
-    if ( !gui_debug_init() )
-        printf( "[gui] WARNING: debug overlay buffers failed; overlay disabled\n" );
+    if ( gui_debug_init() == false ) {
+         printf( "[gui] WARNING: debug overlay buffers failed; overlay disabled\n" );
+    }
 #endif
+
     return true;
 }
 
@@ -138,6 +145,7 @@ static struct
     f32             fps;                /* smoothed readouts shown by the overlay             */
     f32             s_emit_ms;
     f32             s_rend_ms;
+
 } s_perf;
 
 /* Publish last frame's raw emit/render times into the smoothed readouts and open a fresh emit clock.
