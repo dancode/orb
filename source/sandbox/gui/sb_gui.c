@@ -162,7 +162,7 @@ show_font_browser( bool* p_open )
     if ( bake && s_fb.count > 0 )
     {
         /* Re-baking the same font at the same size re-uploads an identical atlas and forces a
-           GPU drain in the reload path (see ttf_load_file) for nothing.  If the requested
+           GPU drain in the reload path (see font_slot_load) for nothing.  If the requested
            font+size is already the live preview, skip it. */
         bool same = s_fb.preview_ready
                  && s_fb.size_px == s_fb.preview_size

@@ -69,7 +69,7 @@ layers, and are the ones most likely to bite a real feature down the line.
    `interaction_frame_reset()` must run exactly once per app frame, never per-context;
    `s_retained.frame` must tick only for contexts actually rebuilt this frame;
    `gui_render_frame_reset()` must precede every surface's `gui_render_flush()`; a live font
-   reload must go through the deferred queue, not `ttf_load_file` directly; `table_setup_column`
+   reload must go through the deferred queue, not `font_slot_load` directly; `table_setup_column`
    must precede the first `table_next_row`. Every one of these, violated, produces a silently
    wrong frame -- stale hover state, reclaimed widget state, a frozen render, wrong column count
    -- with no crash and no log.
@@ -208,7 +208,7 @@ this one was simply missed.
 window; overflow is silently truncated with **no warning printed**, unlike the vertex/index
 overflow path in the same file which does warn once. A font-reload double mechanism exists: the
 deferred queue exists specifically to avoid a GPU stall mid-frame, but `font_flush_pending` still
-calls `ttf_load_file`, which itself unconditionally stalls the GPU (`device_wait_idle`) when
+calls `font_slot_load`, which itself unconditionally stalls the GPU (`device_wait_idle`) when
 swapping a live slot -- so the "safe" deferred path still stalls, just at a different point in the
 frame, and nothing documents that the deferral doesn't buy stall-freedom, only frame-boundary
 safety.

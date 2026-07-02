@@ -1,14 +1,17 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
-    runtime_service/gui/backend/gui_load_font_ttf.c -- ttf fonts: proportional .orb_font atlases.
+    runtime_service/gui/backend/gui_load_font_orb.c -- the .orb_font loader.
 
-    A "ttf font" is a proportional font baked into an .orb_font file by font_tool: an R8 atlas of
-    packed glyph bitmaps plus per-glyph records (UV rect, bearing, advance).  Glyph dispatch reads
-    a lookup[] table since advances are variable-width, not a fixed grid.
+    .orb_font is a proportional font baked offline by font_tool: an R8 atlas of packed glyph
+    bitmaps plus per-glyph records (UV rect, bearing, advance).  Glyph dispatch reads a lookup[]
+    table since advances are variable-width, not a fixed grid.  It is currently the only font
+    source format gui loads (the bitmap-font path was removed), so this file has no sibling
+    format to distinguish itself from -- the name just says what it reads.
 
-    ttf_load_file() reads the file, expands the atlas tail via font_finalize_atlas() (the same white
-    texel + dash rows every font carries), creates an owned GPU atlas, and fills a registry slot.
-    The slot owns its atlas and releases it on reload / free (font_slot_free_gpu).
+    font_slot_load() reads the file, expands the atlas tail via font_finalize_atlas() (the same
+    white texel + dash rows every font carries), creates the slot's owned GPU atlas via
+    gui_atlas_create (gui_load_atlas.h), and fills the registry slot.  The slot owns its atlas and
+    releases it on reload / free (font_slot_free_gpu).
 
     Included by gui_backend.c after gui_load_font.h, before gui_load_font.c.
 
@@ -16,7 +19,7 @@
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
-    ttf_load_file -- load a .orb_font from disk into `slot`.  Does not activate the slot.
+    font_slot_load -- load a .orb_font from disk into `slot`.  Does not activate the slot.
 
     On success the slot owns a freshly created GPU atlas and metrics describe a proportional font;
     any atlas the slot previously owned is released only after the new one is fully built, so a
@@ -24,7 +27,7 @@
 ----------------------------------------------------------------------------------------------*/
 
 bool
-ttf_load_file( font_slot_t* slot, const char* path )
+font_slot_load( font_slot_t* slot, const char* path )
 {
     FILE* f = fopen( path, "rb" );
     if ( !f )
@@ -71,12 +74,14 @@ ttf_load_file( font_slot_t* slot, const char* path )
     }
     fclose( f );
 
-    /* Build the metrics scale-free fields here; the scale-dependent fields below are exact (a ttf
-       has no integer upscale). */
+    /* Build the metrics scale-free fields here; the scale-dependent fields below are exact (a
+       loaded .orb_font has no integer upscale). */
     font_metrics_t metrics = ( font_metrics_t ){
-        .char_h = (f32)( hdr.ascent - hdr.descent ),
-        .line_h = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
-        .size   = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
+        .type = {
+            .char_h = (f32)( hdr.ascent - hdr.descent ),
+            .line_h = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
+            .size   = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
+        },
     };
 
     /* Append the white texel + dash rows and resolve white/dash/UV-scale metrics. */
@@ -94,33 +99,13 @@ ttf_load_file( font_slot_t* slot, const char* path )
 
     /* Create the render texture and upload the atlas pixels. */
 
-    rhi_texture_t atlas = rhi()->texture_create( &( rhi_texture_desc_t ){
-        .width        = hdr.atlas_w,
-        .height       = tex_h,
-        .depth        = 1,
-        .mip_levels   = 1,
-        .array_layers = 1,
-        .format       = RHI_FORMAT_R8_UNORM,
-        .usage        = RHI_TEXTURE_USAGE_SAMPLED | RHI_TEXTURE_USAGE_TRANSFER_DST,
-        .memory       = RHI_MEMORY_GPU_ONLY,
-        .debug_name   = "gui_ttf_font",
-    } );
-    if ( !rhi_handle_valid( atlas ) ) { free( pixels ); return false; }
-
-    if ( !rhi()->upload_texture( atlas, pixels, pixel_count, 0, 0 ) )
+    gui_atlas_t atlas;
+    if ( !gui_atlas_create( &atlas, hdr.atlas_w, tex_h, pixels, "gui_font_atlas" ) )
     {
         free( pixels );
-        rhi()->texture_destroy( atlas );
         return false;
     }
     free( pixels );
-
-    u32 atlas_idx = rhi()->register_texture( atlas );
-    if ( atlas_idx == 0 )
-    {
-        rhi()->texture_destroy( atlas );
-        return false;
-    }
 
     /* All GPU work succeeded -- commit into the slot.  Release any atlas it held only now, so a
        failed load above leaves the previous font intact. */
@@ -131,40 +116,37 @@ ttf_load_file( font_slot_t* slot, const char* path )
     slot->descent = hdr.descent;
     memcpy( slot->lookup, lookup, sizeof( lookup ) );
 
-    slot->atlas     = atlas;
-    slot->atlas_idx = atlas_idx;
-    slot->atlas_w   = hdr.atlas_w;
-    slot->atlas_h   = tex_h;            /* padded: glyph UV math divides by the uploaded height */
-    slot->used      = true;
+    slot->atlas = atlas;               /* padded: glyph UV math divides by the uploaded height */
+    slot->used  = true;
 
-    metrics.atlas_idx = atlas_idx;
-    slot->metrics     = metrics;
+    metrics.atlas.atlas_idx = atlas.atlas_idx;
+    slot->metrics           = metrics;
 
-    printf( "[gui] loaded ttf font '%s' (char_h=%.1f line_h=%.1f)\n",
-            path, slot->metrics.char_h, slot->metrics.line_h );
+    printf( "[gui] loaded font '%s' (char_h=%.1f line_h=%.1f)\n",
+            path, slot->metrics.type.char_h, slot->metrics.type.line_h );
 
     return true;
 }
 
 /*----------------------------------------------------------------------------------------------
-    ttf_char_advance / ttf_glyph -- per-glyph metrics and draw parameters for a ttf slot.
+    font_slot_char_advance / font_slot_glyph -- per-glyph metrics and draw parameters for a slot.
 ----------------------------------------------------------------------------------------------*/
 
 f32
-ttf_char_advance( const font_slot_t* slot, u8 ch )
+font_slot_char_advance( const font_slot_t* slot, u8 ch )
 {
     if ( ch < 32 || ch > 126 ) ch = (u8)'?';
     return (f32)slot->lookup[ ch - 32 ].advance;
 }
 
 void
-ttf_glyph( const font_slot_t* slot, u8 ch,
-           f32* u0, f32* v0, f32* u1, f32* v1,
-           f32* ox, f32* oy, f32* gw, f32* gh, f32* advance )
+font_slot_glyph( const font_slot_t* slot, u8 ch,
+                 f32* u0, f32* v0, f32* u1, f32* v1,
+                 f32* ox, f32* oy, f32* gw, f32* gh, f32* advance )
 {
     if ( ch < 32 || ch > 126 ) ch = (u8)'?';
     const orb_font_glyph_t* g = &slot->lookup[ ch - 32 ];
-    const font_metrics_t*   m = &slot->metrics;
+    const font_atlas_sample_t* m = &slot->metrics.atlas;
 
     f32 iw = m->inv_atlas_w;            /* precomputed at load -- no per-glyph divide */
     f32 ih = m->inv_atlas_h;

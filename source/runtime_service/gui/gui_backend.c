@@ -15,8 +15,9 @@
     Include order matters: each file can reference statics from files included above it.
 
     gui_submit_shader.h     -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
+    gui_load_atlas.h/.c     -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
     gui_load_font.h         -- shared font types: font_metrics_t, font_slot_t
-    gui_load_font_ttf.c     -- proportional .orb_font loader (ttf_load_file, ttf_glyph)
+    gui_load_font_orb.c     -- .orb_font loader (font_slot_load, font_slot_glyph)
     gui_load_font.c         -- registry + dispatch: font_slot_t, font_load/use, font_glyph
     gui_load_icon.c         -- runtime icon atlas: icon_register/find/get, draw_push_icon
     gui_emit_draw.c         -- CPU draw list: draw_reset, draw_push_*, s_draw
@@ -42,29 +43,34 @@
     Unity build
 ==============================================================================================*/
 
-// Tier 0 -- foundation
+// Tier 0 -- Foundation: types and embedded shader bytecode only, no logic.
 #include "runtime_service/gui/backend/gui_submit_shader.h"
 
-// Tier 1 — Resource registries( independent, own their GPU objects )
+// Tier 1 -- Resource registries: fonts + icons, on a shared GPU-atlas helper (gui_load_atlas).
+// Independent of each other; each owns its own atlas instance, CPU staging, and deferred-upload
+// lifecycle -- gui_load_atlas.h/.c only factors out the create/upload/destroy sequence they share.
+#include "runtime_service/gui/backend/gui_load_atlas.h"
+#include "runtime_service/gui/backend/gui_load_atlas.c"
 #include "runtime_service/gui/backend/gui_load_font.h"
-#include "runtime_service/gui/backend/gui_load_font_ttf.c"
+#include "runtime_service/gui/backend/gui_load_font_orb.c"
 #include "runtime_service/gui/backend/gui_load_font.c"
 #include "runtime_service/gui/backend/gui_load_icon.c"
 
-// Tier 2 — EMIT : the semantic draw list
+// Tier 2 -- EMIT: the semantic draw list (s_draw) and the line/path stroker built on it.
 #include "runtime_service/gui/backend/gui_emit_draw.c"
 #include "runtime_service/gui/backend/gui_emit_path.c"
 
-// Tier 3 — BUILD, part A : tessellation primitives
+// Tier 3 -- BUILD, part A: tessellation primitives (gui_cmd_t -> s_tess geometry).  
+// No public surface -- driven entirely from Tier 4 (cache_tess_window / cache_build_frame).
 #include "runtime_service/gui/backend/gui_build_tess.c"
 
-// Tier 4 — BUILD, part B : retained cache & orchestration
+// Tier 4 -- BUILD, part B: retained cache & orchestration (diff, reuse-or-tessellate, z-sort).
 #include "runtime_service/gui/backend/gui_build_cache.c"
 
-// Tier 5 — SUBMIT 
+// Tier 5 -- SUBMIT: GPU resource lifecycle + the per-surface flush.
 #include "runtime_service/gui/backend/gui_submit_render.c"
 
-// Tier 6 — Debug overlay
+// Tier 6 -- Debug overlay: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.
 #include "runtime_service/gui/backend/gui_debug_overlay.c"
 
 /*============================================================================================*/

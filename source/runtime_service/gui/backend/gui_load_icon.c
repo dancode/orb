@@ -17,6 +17,11 @@
     icon_atlas_flush_upload (called from frame_begin) re-uploads once per frame when needed.  This
     mirrors the deferred cursor flush and keeps registration safe to call mid-frame.
 
+    The GPU texture + bindless index are owned through gui_atlas_t (gui_load_atlas.h) -- the same
+    small helper the font registry uses, since both are "CPU-authored R8 atlas, one owned GPU
+    texture, one bindless slot" underneath.  Everything else here (incremental rect-packing, the
+    name table, the dirty flag) is icon-specific and stays local to this file.
+
     Included by gui_backend.c after gui_load_font.c.
 
 ==============================================================================================*/
@@ -51,8 +56,7 @@ typedef struct
 
 typedef struct
 {
-    rhi_texture_t atlas;                    // GPU texture handle
-    u32           atlas_idx;                // bindless index (0 = not registered)
+    gui_atlas_t   atlas;                    // owned GPU texture + bindless index
     u8*           pixels;                   // resident CPU staging (ICON_ATLAS_W * ICON_ATLAS_H, R8)
 
     icon_entry_t  entries[ ICON_MAX ];      // id - 1 indexes here
@@ -84,33 +88,9 @@ icon_atlas_init( void )
 
     stbrp_init_target( &s_icons.pack, ICON_ATLAS_W, ICON_ATLAS_H, s_icons.nodes, ICON_ATLAS_W );
 
-    s_icons.atlas = rhi()->texture_create( &( rhi_texture_desc_t ){
-        .width        = ICON_ATLAS_W,
-        .height       = ICON_ATLAS_H,
-        .depth        = 1,
-        .mip_levels   = 1,
-        .array_layers = 1,
-        .format       = RHI_FORMAT_R8_UNORM,
-        .usage        = RHI_TEXTURE_USAGE_SAMPLED | RHI_TEXTURE_USAGE_TRANSFER_DST,
-        .memory       = RHI_MEMORY_GPU_ONLY,
-        .debug_name   = "gui_icon_atlas",
-    } );
-    if ( !rhi_handle_valid( s_icons.atlas ) ) { free( s_icons.pixels ); s_icons.pixels = NULL; return false; }
-
     /* Upload the cleared atlas once so the texture has defined contents before any icon lands. */
-    if ( !rhi()->upload_texture( s_icons.atlas, s_icons.pixels, ICON_ATLAS_W * ICON_ATLAS_H, 0, 0 ) )
+    if ( !gui_atlas_create( &s_icons.atlas, ICON_ATLAS_W, ICON_ATLAS_H, s_icons.pixels, "gui_icon_atlas" ) )
     {
-        rhi()->texture_destroy( s_icons.atlas );
-        s_icons.atlas = ( rhi_texture_t ){ 0 };
-        free( s_icons.pixels ); s_icons.pixels = NULL;
-        return false;
-    }
-
-    s_icons.atlas_idx = rhi()->register_texture( s_icons.atlas );
-    if ( s_icons.atlas_idx == 0 )
-    {
-        rhi()->texture_destroy( s_icons.atlas );
-        s_icons.atlas = ( rhi_texture_t ){ 0 };
         free( s_icons.pixels ); s_icons.pixels = NULL;
         return false;
     }
@@ -122,16 +102,7 @@ icon_atlas_init( void )
 void
 icon_atlas_shutdown( void )
 {
-    if ( s_icons.atlas_idx != 0 )
-    {
-        rhi()->unregister_texture( s_icons.atlas_idx );
-        s_icons.atlas_idx = 0;
-    }
-    if ( rhi_handle_valid( s_icons.atlas ) )
-    {
-        rhi()->texture_destroy( s_icons.atlas );
-        s_icons.atlas = ( rhi_texture_t ){ 0 };
-    }
+    gui_atlas_destroy( &s_icons.atlas );
     free( s_icons.pixels );
     s_icons.pixels = NULL;
     s_icons.ready  = false;
@@ -148,7 +119,7 @@ icon_atlas_flush_upload( void )
     if ( !s_icons.ready || !s_icons.dirty )
         return;
 
-    rhi()->upload_texture( s_icons.atlas, s_icons.pixels, ICON_ATLAS_W * ICON_ATLAS_H, 0, 0 );
+    gui_atlas_upload( &s_icons.atlas, s_icons.pixels );
     s_icons.dirty = false;
 }
 
@@ -254,7 +225,7 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
     const icon_entry_t* e = icon_entry( id );
     if ( !e )
         return;
-    draw_push_rect_filled( x, y, w, h, e->u0, e->v0, e->u1, e->v1, s_icons.atlas_idx, abgr );
+    draw_push_rect_filled( x, y, w, h, e->u0, e->v0, e->u1, e->v1, s_icons.atlas.atlas_idx, abgr );
 }
 
 // clang-format on

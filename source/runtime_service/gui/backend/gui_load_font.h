@@ -5,8 +5,10 @@
     The font unit is split into two translation units, both included by gui_backend.c:
 
         gui_load_font.c      -- neutral: the id-addressed registry, slot lifecycle, glyph dispatch,
-                                  and the shared atlas finalize (white texel + dash rows + UV metrics).
-        gui_load_font_ttf.c  -- a proportional .orb_font loaded at runtime.
+                                and the shared atlas finalize (white texel + dash rows + UV metrics).
+        gui_load_font_orb.c  -- the .orb_font loader: parses the baked file and builds a slot's atlas.
+
+    The .orb_font is currently the only font source format gui loads, so we assume it.
 
     Every atlas is finalized the same way (font_finalize_atlas): a white texel row and
     GUI_DASH_PATTERN_COUNT stipple rows are appended so the active font alone backs solid fills,
@@ -15,10 +17,10 @@
 ==============================================================================================*/
 #pragma once
 
-#include "tools/font_tool/orb_font.h"   /* orb_font_glyph_t and the .orb_font on-disk format */
+#include "tools/font_tool/orb_font.h" /* orb_font_glyph_t and the .orb_font on-disk format */
+#include "runtime_service/gui/backend/gui_load_atlas.h" /* gui_atlas_t -- the owned GPU atlas */
 
 // clang-format off
-
 /*----------------------------------------------------------------------------------------------
     Atlas tail: white texel + dash patterns
 
@@ -37,23 +39,47 @@
 #define GUI_FONT_REGISTRY_MAX 16
 
 /*----------------------------------------------------------------------------------------------
-    font_metrics_t -- pre-resolved metrics; callers read via s_font.
+    font_typography_t -- pure type metrics: what layout code reads (font_char_h / font_line_h /
+    font_em).  Nothing here names a GPU resource.
 ----------------------------------------------------------------------------------------------*/
 
 typedef struct
 {
-    f32  line_h;        // total line advance
-    f32  char_h;        // pixel height of the glyph box (ascent + descent)
-    f32  size;          // nominal type size (em) in pixels -- the base for layout proportions
-    u32  atlas_idx;     // bindless texture index
+    f32  line_h;   // total line advance
+    f32  char_h;   // pixel height of the glyph box (ascent + descent)
+    f32  size;     // nominal type size (em) in pixels -- the base for layout proportions
+
+} font_typography_t;
+
+/*----------------------------------------------------------------------------------------------
+    font_atlas_sample_t -- resolved atlas-sampling parameters: what the tessellator reads
+    (font_atlas_idx / font_white_uv / font_dash_v) to place a glyph, fill, or dashed-line quad.
+    Kept separate from font_typography_t so "what size is this font" and "how do I sample its
+    atlas" are not the same struct -- one is typography, the other is GPU-atlas bookkeeping.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct
+{
+    u32  atlas_idx;     // bindless texture index -- mirrors slot->atlas.atlas_idx (see font_slot_t)
 
     f32  white_u;       // UV of a guaranteed-opaque texel in this atlas (solid-fill draws)
     f32  white_v;       // sampling it gives r=1.0 so the vertex color drives the draw
 
-    f32  inv_atlas_w;   // 1 / atlas pixel width             -- precomputed so glyph dispatch avoids a divide
+    f32  inv_atlas_w;   // 1 / atlas pixel width              -- precomputed so glyph dispatch avoids a divide
     f32  inv_atlas_h;   // 1 / uploaded atlas height (tex_h)  -- per-glyph UV scale, constant per font
 
     f32  dash_v[ GUI_DASH_PATTERN_COUNT ]; // center V of each appended dash pattern row
+
+} font_atlas_sample_t;
+
+/*----------------------------------------------------------------------------------------------
+    font_metrics_t -- everything the active-font accessors (s_font) read, resolved once at load.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct
+{
+    font_typography_t   type;               // s_font->type.char_h, etc.
+    font_atlas_sample_t atlas;              // s_font->atlas.atlas_idx, etc.
 
 } font_metrics_t;
 
@@ -63,18 +89,15 @@ typedef struct
 
 typedef struct
 {
-    font_metrics_t    metrics;          // first: resolved metrics; s_font points here when active
+    font_metrics_t      metrics;            // first: resolved metrics; s_font points here when active
 
-    bool              used;             // slot occupied
+    bool                used;               // slot occupied
 
-    rhi_texture_t     atlas;            // owned GPU atlas
-    u32               atlas_idx;        // bindless index (mirrors metrics.atlas_idx)
-    u32               atlas_w;          // atlas width in pixels  (memory accounting)
-    u32               atlas_h;          // uploaded atlas height  (memory accounting)
+    gui_atlas_t         atlas;              // owned GPU atlas (metrics.atlas.atlas_idx mirrors atlas.atlas_idx)
 
-    i32                ascent;          // pixels above baseline (positive)
-    i32                descent;         // pixels below baseline (negative)
-    orb_font_glyph_t   lookup[ 95 ];    // codepoints 32..126; advance == 0 marks a missing glyph
+    i32                 ascent;             // pixels above baseline (positive)
+    i32                 descent;            // pixels below baseline (negative)
+    orb_font_glyph_t    lookup[ 95 ];       // codepoints 32..126; advance == 0 marks a missing glyph
 
 } font_slot_t;
 
@@ -87,21 +110,21 @@ typedef struct
         font_finalize_atlas  -- append the white + dash rows to a staged R8 atlas and fill the
                                 metrics UV/scale fields that describe them.  Every builder calls this.
 
-    ttf (gui_load_font_ttf.c):
-        ttf_load_file        -- load a .orb_font into a slot (creates an owned atlas).
-        ttf_glyph            -- glyph draw parameters for a slot.
-        ttf_char_advance     -- horizontal advance of one glyph in a slot.
+    Loader (gui_load_font_orb.c):
+        font_slot_load          -- load a .orb_font into a slot (creates an owned atlas).
+        font_slot_glyph         -- glyph draw parameters for a slot.
+        font_slot_char_advance  -- horizontal advance of one glyph in a slot.
 ----------------------------------------------------------------------------------------------*/
 
-void font_slot_free_gpu  ( font_slot_t* slot );
-u32  font_atlas_tex_h    ( u32 glyph_h );
-void font_finalize_atlas ( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m );
+void font_slot_free_gpu     ( font_slot_t* slot );
+u32  font_atlas_tex_h       ( u32 glyph_h );
+void font_finalize_atlas    ( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m );
 
-bool ttf_load_file       ( font_slot_t* slot, const char* path );
-void ttf_glyph           ( const font_slot_t* slot, u8 ch,
-                           f32* u0, f32* v0, f32* u1, f32* v1,
-                           f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
-f32  ttf_char_advance    ( const font_slot_t* slot, u8 ch );
+bool font_slot_load         ( font_slot_t* slot, const char* path );
+void font_slot_glyph        ( const font_slot_t* slot, u8 ch,
+                              f32* u0, f32* v0, f32* u1, f32* v1,
+                              f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
+f32  font_slot_char_advance ( const font_slot_t* slot, u8 ch );
 
 // clang-format on
 /*============================================================================================*/

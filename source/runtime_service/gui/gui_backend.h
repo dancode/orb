@@ -12,7 +12,7 @@
         gui_backend.c  -- the render backend unit: fonts, the CPU draw list, path stroking,
                           CPU tessellation, the GPU flush, and the debug overlay.  Owns
                           s_draw / s_tess / s_font / s_render.
-    
+
     The UI unit produces a semantic draw list by calling the draw_* / font_* primitives below;
     the backend unit tessellates and uploads it.  This header is the entire surface between them
     -- the functions the backend exports to the UI, plus the debug-overlay instrumentation both
@@ -26,36 +26,48 @@
 
     Included once at the top of each unity entry (gui.c and gui_backend.c).
 
+    Sections below are grouped by pipeline tier, matching the include order in gui_backend.c:
+    Tier 1 (resource registries) through Tier 6 (debug overlay).  Tier 3 (tessellation
+    primitives, gui_build_tess.c) has no public surface -- it is driven entirely from within
+    Tier 4 -- so there is no Tier 3 section here.
+
+    1. Tier 1 -- Fonts
+    2. Tier 1 -- Runtime icon atlas
+    3. Tier 2 -- EMIT (draw list)
+    4. Tier 4 -- BUILD (retained cache)
+    5. Tier 5 -- SUBMIT (GPU flush)
+    6. Tier 6 -- Debug overlay
+
 ==============================================================================================*/
 
 #include "runtime_service/gui/gui_internal.h"
 
 // clang-format off
 /*==============================================================================================
-    Fonts (gui_load_font.c / gui_load_font_ttf.c)
+    Tier 1 -- Fonts (gui_load_font.c / gui_load_font_orb.c)
 ==============================================================================================*/
 
-u32  font_load              ( const char* path );       // load a .orb_font into a new id, activate it (0=fail)
-bool font_load_into         ( u32 id, const char* path );// load a .orb_font into an existing id (id 0 = default)
-void font_use               ( u32 id );                 // make an already-loaded id the active font
-u32  font_active_id         ( void );                   // id of the active font slot (save/restore for push/pop)
-u32  font_slot_atlas_idx    ( u32 id );                 // live bindless atlas index backing a font id (0 if empty)
-bool font_flush_pending     ( void );                   // commit deferred (re)loads; true if the active font changed
+u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)
+bool font_load_into         ( u32 id, const char* path );   // load a .orb_font into an existing id (id 0 = default)
+void font_use               ( u32 id );                     // make an already-loaded id the active font
+u32  font_active_id         ( void );                       // id of the active font slot (save/restore for push/pop)
+u32  font_slot_atlas_idx    ( u32 id );                     // live bindless atlas index backing a font id (0 if empty)
+bool font_flush_pending     ( void );                       // commit deferred (re)loads; true if the active font changed
 
-f32  font_char_h            ( void );                   // glyph-box height of the active font (ascent+descent)
-f32  font_line_h            ( void );                   // line advance of the active font
-f32  font_em                ( void );                   // nominal type size (em) -- the layout proportion base
-f32  font_char_advance      ( u8 ch );                  // horizontal advance of one glyph
-void font_print_active      ( void );                   // log the active font's name and metrics
-f32  font_text_w            ( const char* str );        // pixel width of a NUL-terminated run
-f32  font_text_w_n          ( const char* str, u32 n ); // pixel width of the first n bytes
+f32  font_char_h            ( void );                       // glyph-box height of the active font (ascent+descent)
+f32  font_line_h            ( void );                       // line advance of the active font
+f32  font_em                ( void );                       // nominal type size (em) -- the layout proportion base
+f32  font_char_advance      ( u8 ch );                      // horizontal advance of one glyph
+void font_print_active      ( void );                       // log the active font's name and metrics
+f32  font_text_w            ( const char* str );            // pixel width of a NUL-terminated run
+f32  font_text_w_n          ( const char* str, u32 n );     // pixel width of the first n characters
 
 /* Glyph atlas lookup: UVs, pen offsets, glyph box, and advance for one character. */
 void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
                                      f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
 /*==============================================================================================
-    Runtime icon atlas (gui_load_icon.c)
+    Tier 1 -- Runtime icon atlas (gui_load_icon.c)
 
     A second R8 coverage texture, built at runtime: callers register raw monochrome bitmaps and
     the atlas packs them with stb_rect_pack, handing back an gui_icon_id_t.  Icons draw through
@@ -63,41 +75,41 @@ void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
     text and tint by vertex color.  GPU re-upload is deferred to frame_begin (icon_atlas_flush_upload).
 ==============================================================================================*/
 
-bool            icon_atlas_init        ( void );   // create the R8 atlas texture + bindless index
-void            icon_atlas_shutdown    ( void );   // destroy the atlas, free CPU staging
-void            icon_atlas_flush_upload ( void );  // re-upload the CPU atlas to the GPU if dirty
+bool            icon_atlas_init         ( void );   // create the R8 atlas texture + bindless index
+void            icon_atlas_shutdown     ( void );   // destroy the atlas, free CPU staging
+void            icon_atlas_flush_upload ( void );   // re-upload the CPU atlas to the GPU if dirty
 
-gui_icon_id_t   icon_register          ( const char* name, u32 w, u32 h, const u8* coverage );
-gui_icon_id_t   icon_find              ( const char* name );
-bool            icon_get               ( gui_icon_id_t id,
-                                         f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
+gui_icon_id_t   icon_register           ( const char* name, u32 w, u32 h, const u8* coverage );
+gui_icon_id_t   icon_find               ( const char* name );
+bool            icon_get                ( gui_icon_id_t id,
+                                          f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
 
 /* Push one icon quad (atlas tex_idx + cached UVs) into the draw list; no-op for an invalid id. */
-void            draw_push_icon         ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
+void            draw_push_icon          ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
 
 /*==============================================================================================
-    CPU draw list (gui_emit_draw.c)
+    Tier 2 -- EMIT: CPU draw list (gui_emit_draw.c)
 ==============================================================================================*/
 
-void draw_reset( i32 display_w, i32 display_h );   // clear the list at the top of frame_begin
+void draw_reset( i32 display_w, i32 display_h );    // clear the list at the top of frame_begin
 
-void draw_set_alpha     ( f32 a );    // global opacity multiplier folded into every pushed shape
-void draw_set_rounding  ( f32 r );    // corner radius folded into every pushed filled/outline rect
-f32  draw_rounding      ( void );     // current ambient radius (save/restore around a sub-element)
-void draw_set_text_clip_x ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
-void draw_clear_text_clip ( void );           // restore the no-clip sentinel (unbounded text)
-void draw_set_sort_key  ( u32 z );    // paint order stamped on new commands (window z)
-u32  draw_sort_key      ( void );     // current sort key (saved/restored by the popup layer)
-void draw_set_viewport  ( u32 vp );   // viewport index stamped on new commands (surface routing)
-u32  draw_viewport      ( void );     // current viewport index
-void draw_set_window    ( gui_id_t win ); // stable window id stamped on new commands (cache key)
-void draw_set_font      ( u32 font );  // active font id -> per-segment atlas batch context (push/pop/use_font)
-gui_id_t draw_window  ( void );     // current window id (saved/restored by the popup layer)
+void draw_set_alpha             ( f32 a );          // global opacity multiplier folded into every pushed shape
+void draw_set_rounding          ( f32 r );          // corner radius folded into every pushed filled/outline rect
+f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
+void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
+void draw_clear_text_clip       ( void );           // restore the no-clip sentinel (unbounded text)
+void draw_set_sort_key          ( u32 z );          // paint order stamped on new commands (window z)
+u32  draw_sort_key              ( void );           // current sort key (saved/restored by the popup layer)
+void draw_set_viewport          ( u32 vp );         // viewport index stamped on new commands (surface routing)
+u32  draw_viewport              ( void );           // current viewport index
+void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
+void draw_set_font              ( u32 font );       // active font id -> per-segment atlas batch context (push/pop/use_font)
+gui_id_t draw_window            ( void );           // current window id (saved/restored by the popup layer)
 
-void draw_push_clip_rect ( f32 x, f32 y, f32 w, f32 h ); // push clip, intersected with the parent
-void draw_pop_clip_rect  ( void );                       // pop the top clip
-void draw_push_clip_root ( void );                       // push the full-display clip (popup escape)
-void draw_set_root_clip  ( f32 w, f32 h );               // set clip_stack[0] to a surface size
+void draw_push_clip_rect        ( f32 x, f32 y, f32 w, f32 h ); // push clip, intersected with the parent
+void draw_pop_clip_rect         ( void );                       // pop the top clip
+void draw_push_clip_root        ( void );                       // push the full-display clip (popup escape)
+void draw_set_root_clip         ( f32 w, f32 h );               // set clip_stack[0] to a surface size
 
 void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h,
                                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
@@ -113,27 +125,7 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
                                   f32 clip_x0, f32 clip_x1 );
 
 /*==============================================================================================
-    GPU resources + flush -- the SUBMIT phase (gui_submit_render.c)
-==============================================================================================*/
-
-bool                gui_render_init         ( void );
-void                gui_render_shutdown     ( void );
-void                gui_render_flush        ( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
-
-gui_mem_stats_t     gui_render_memory       ( void );
-void                gui_render_print_memory ( void );
-
-/* Debug render mode (normal / wireframe / batch-tint) -- backs gui()->debug_set/get_render_mode.
-   The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */
-
-void                gui_render_set_mode     ( gui_render_mode_t mode );
-gui_render_mode_t   gui_render_get_mode     ( void );
-
-bool                viewport_create          ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
-void                viewport_destroy         ( gui_viewport_t* vp );                                   // free its vb/ib
-
-/*==============================================================================================
-    Retained frame-geometry cache -- the BUILD phase (gui_build_cache.c)
+    Tier 4 -- BUILD: retained frame-geometry cache (gui_build_cache.c)
 ==============================================================================================*/
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
@@ -166,7 +158,27 @@ bool                gui_render_retained_skip( void );
 bool                gui_render_any_changed( void );
 
 /*==============================================================================================
-    Debug overlay (gui_debug_overlay.c) -- Debug builds only.
+    Tier 5 -- SUBMIT: GPU resources + flush (gui_submit_render.c)
+==============================================================================================*/
+
+bool                gui_render_init         ( void );
+void                gui_render_shutdown     ( void );
+void                gui_render_flush        ( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+
+gui_mem_stats_t     gui_render_memory       ( void );
+void                gui_render_print_memory ( void );
+
+/* Debug render mode (normal / wireframe / batch-tint) -- backs gui()->debug_set/get_render_mode.
+   The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */
+
+void                gui_render_set_mode     ( gui_render_mode_t mode );
+gui_render_mode_t   gui_render_get_mode     ( void );
+
+bool                viewport_create         ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
+void                viewport_destroy        ( gui_viewport_t* vp );                                   // free its vb/ib
+
+/*==============================================================================================
+    Tier 6 -- Debug overlay (gui_debug_overlay.c) -- Debug builds only.
 
     A second draw list, captured from the UI via the DBG_* macros and flushed last, on top.  The
     build switch is computed here so BOTH units agree before the macros / capture decls are used:

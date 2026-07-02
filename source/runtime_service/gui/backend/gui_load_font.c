@@ -3,8 +3,8 @@
     runtime_service/gui/backend/gui_load_font.c -- Neutral font registry and glyph dispatch.
 
     Owns the id-addressed registry (s_fonts[]), the active-font pointers (s_active / s_font), and
-    the shared atlas finalize.  Every slot is a loaded proportional .orb_font (gui_load_font_ttf.c);
-    this unit only adds the registry, activation, and the deferred-reload queue around it.
+    the shared atlas finalize.  Every slot is a loaded .orb_font (gui_load_font_orb.c); this unit
+    only adds the registry, activation, and the deferred-reload queue around it.
 
     Slot 0 is the default.  It starts empty (used == false) until the host's first font_load /
     font_load_into( 0, path ) call -- every caller of gui_init() loads a font immediately after,
@@ -14,18 +14,18 @@
         font_load_into() -- load a font into an existing id (e.g. swap the default, id 0).
         font_use()       -- make an already-loaded id the active font.
 
-    Included by gui_backend.c after gui_load_font_ttf.c.
+    Included by gui_backend.c after gui_load_font_orb.c.
 
 ==============================================================================================*/
 // clang-format off
 
-static font_slot_t      s_fonts     [ GUI_FONT_REGISTRY_MAX ];    // font registry; slot 0 is the default
-static font_slot_t*     s_active    = NULL;                         // active slot (s_font == &s_active->metrics)
-static u32              s_active_id = 0;                            // id of the active slot
-static font_metrics_t*  s_font      = NULL;                         // active font's metrics (read by every accessor)
+static font_slot_t      s_fonts     [ GUI_FONT_REGISTRY_MAX ];  // font registry; slot 0 is the default
+static font_slot_t*     s_active    = NULL;                     // active slot (s_font == &s_active->metrics)
+static u32              s_active_id = 0;                        // active slot id (0 = default, 1..MAX-1 = user-loaded)
+static font_metrics_t*  s_font      = NULL;                     // active font's metrics (read by every accessor)
 
 /* On-fraction (dash / period) of each baked dash row; a dashed line picks the nearest at tess time. */
-static const f32 s_dash_duty[ GUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
+static const f32        s_dash_duty[ GUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
 
 /*----------------------------------------------------------------------------------------------
     Deferred reload queue.
@@ -125,16 +125,16 @@ font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metri
     font_paint_dash_rows( pixels, atlas_w, glyph_h + 1u );
 
     /* White texel: center of the first appended row (pixel row glyph_h). */
-    m->white_u     = 0.5f / (f32)atlas_w;
-    m->white_v     = ( (f32)glyph_h + 0.5f ) / (f32)tex_h;
+    m->atlas.white_u = 0.5f / (f32)atlas_w;
+    m->atlas.white_v = ( (f32)glyph_h + 0.5f ) / (f32)tex_h;
 
     /* Per-glyph UV scale, constant per font -- folds the divide out of the glyph path.  V divides
        by tex_h (the padded height), so the appended rows stay outside every glyph's UV range. */
-    m->inv_atlas_w = 1.0f / (f32)atlas_w;
-    m->inv_atlas_h = 1.0f / (f32)tex_h;
+    m->atlas.inv_atlas_w = 1.0f / (f32)atlas_w;
+    m->atlas.inv_atlas_h = 1.0f / (f32)tex_h;
 
     /* Dash pattern rows follow the white row at pixel row glyph_h + 1. */
-    font_dash_row_v( m->dash_v, glyph_h + 1u, tex_h );
+    font_dash_row_v( m->atlas.dash_v, glyph_h + 1u, tex_h );
 }
 
 /*==============================================================================================
@@ -146,12 +146,7 @@ font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metri
 void
 font_slot_free_gpu( font_slot_t* slot )
 {
-    if ( slot->atlas_idx != 0 )
-        rhi()->unregister_texture( slot->atlas_idx );
-    if ( rhi_handle_valid( slot->atlas ) )
-        rhi()->texture_destroy( slot->atlas );
-    slot->atlas     = ( rhi_texture_t ){ 0 };
-    slot->atlas_idx = 0;
+    gui_atlas_destroy( &slot->atlas );
 }
 
 /* Point the active-font pointers at slot `id`. */
@@ -187,7 +182,7 @@ font_load( const char* path )
     if ( id == 0 )
          return 0;
 
-    if ( !ttf_load_file( &s_fonts[ id ], path ) )
+    if ( !font_slot_load( &s_fonts[ id ], path ) )
         return 0;
 
     font_activate( id );
@@ -214,7 +209,7 @@ font_load_into( u32 id, const char* path )
         return true;
     }
 
-    if ( !ttf_load_file( &s_fonts[ id ], path ) )
+    if ( !font_slot_load( &s_fonts[ id ], path ) )
         return false;
     if ( s_active_id == id )
         font_activate( id );            // metrics rebuilt in place; refresh active pointers
@@ -237,7 +232,7 @@ font_flush_pending( void )
             continue;
 
         u32  id = s_reload_q[ i ].id;
-        bool ok = ttf_load_file( &s_fonts[ id ], s_reload_q[ i ].path );
+        bool ok = font_slot_load( &s_fonts[ id ], s_reload_q[ i ].path );
         s_reload_q[ i ] = ( font_reload_req_t ){ 0 };
 
         if ( ok && s_active_id == id )
@@ -280,7 +275,7 @@ font_slot_atlas_idx( u32 id )
 {
     if ( id >= GUI_FONT_REGISTRY_MAX )
         return 0;
-    return s_fonts[ id ].metrics.atlas_idx;
+    return s_fonts[ id ].metrics.atlas.atlas_idx;
 }
 
 /*==============================================================================================
@@ -320,17 +315,17 @@ font_init( void )
     Dispatch helpers -- all read from s_font / s_active, set by font_activate().
 ==============================================================================================*/
 
-f32  font_char_h      ( void ) { return s_font->char_h;    }
-f32  font_line_h      ( void ) { return s_font->line_h;    }
-f32  font_em          ( void ) { return s_font->size;      }   // nominal type size (em) -- layout base
-static u32  font_atlas_idx   ( void ) { return s_font->atlas_idx; }
+f32  font_char_h      ( void ) { return s_font->type.char_h; }
+f32  font_line_h      ( void ) { return s_font->type.line_h; }
+f32  font_em          ( void ) { return s_font->type.size;   }   // nominal type size (em) -- layout base
+static u32  font_atlas_idx   ( void ) { return s_font->atlas.atlas_idx; }
 
 /* Log the active font (id, name, metrics). */
 void
 font_print_active( void )
 {
     printf( "[gui] set font [%u] '<loaded>' (char_h=%.1f line_h=%.1f)\n",
-            s_active_id, s_font->char_h, s_font->line_h );
+            s_active_id, s_font->type.char_h, s_font->type.line_h );
 }
 
 /* Horizontal advance of one character in the active font.  Used by the text edit engine to
@@ -338,11 +333,11 @@ font_print_active( void )
 f32
 font_char_advance( u8 ch )
 {
-    return ttf_char_advance( s_active, ch );
+    return font_slot_char_advance( s_active, ch );
 }
 
 /* UV of the active atlas's white texel (appended bottom row) for solid-color draws. */
-static void font_white_uv( f32* u, f32* v ) { *u = s_font->white_u; *v = s_font->white_v; }
+static void font_white_uv( f32* u, f32* v ) { *u = s_font->atlas.white_u; *v = s_font->atlas.white_v; }
 
 /* Center V of the dash pattern row whose baked on-fraction is closest to `duty`.  Tessellated
    dashed lines sample this row, tiling it along the line via REPEAT addressing on U. */
@@ -357,7 +352,7 @@ font_dash_v( f32 duty )
         if ( d < 0.0f ) d = -d;
         if ( d < bestd ) { bestd = d; best = p; }
     }
-    return s_font->dash_v[ best ];
+    return s_font->atlas.dash_v[ best ];
 }
 
 /* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel): each loaded
@@ -368,7 +363,7 @@ font_atlas_bytes( void )
     u32 bytes = 0;
     for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
         if ( s_fonts[ i ].used )
-            bytes += s_fonts[ i ].atlas_w * s_fonts[ i ].atlas_h;
+            bytes += s_fonts[ i ].atlas.atlas_w * s_fonts[ i ].atlas.atlas_h;
     return bytes;
 }
 
@@ -410,7 +405,7 @@ font_glyph( u8 ch,
             f32* ox, f32* oy, f32* gw, f32* gh,
             f32* advance )
 {
-    ttf_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
+    font_slot_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
 }
 
 // clang-format on
