@@ -62,8 +62,9 @@ void gui_backend_exit( void );
 u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)
 bool font_load_into         ( u32 id, const char* path );   // load a .orb_font into an existing id (id 0 = default)
 bool font_load_builtin      ( gui_builtin_font_t font );    // load a built-in preset (gui.h) into slot 0; true no-op for GUI_FONT_NONE
-void font_use               ( u32 id );                     // make an already-loaded id the active font
+void font_use                ( u32 id );                    // make an already-loaded id the active font
 u32  font_active_id         ( void );                       // id of the active font slot (save/restore for push/pop)
+bool font_valid              ( void );                      // true once a font is activated -- gate metric/glyph reads on this
 u32  font_slot_atlas_idx    ( u32 id );                     // live bindless atlas index backing a font id (0 if empty)
 bool font_flush_pending     ( void );                       // commit deferred (re)loads; true if the active font changed
 

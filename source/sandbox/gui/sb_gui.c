@@ -628,6 +628,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup GUI */
 
+    // GUI_FONT_NONE
     if ( !gui()->init( GUI_FONT_NONE ) ) {
          fprintf( stderr, "[sb_gui] gui->init failed\n" );
          goto shutdown;

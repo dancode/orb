@@ -37,15 +37,27 @@ gui_init( gui_builtin_font_t font )
        gui_style_apply which scales s_style_base -- it must be non-zero first. */
     gui_theme_set( "dark" );
 
-    ctx_pool_init();   /* wire default context's static backing arrays; sets g_ctx */
+    /* wire default context's static backing arrays; sets g_ctx */
 
-    if ( !gui_backend_init( s_init_caps ) )      /* shared pipeline / sampler / atlas + optional layers */
+    ctx_pool_init();   
+
+    /* init: shared pipeline / sampler / atlas + optional layers */
+
+    if ( !gui_backend_init( s_init_caps ) )      
         return false;
 
     /* Optional built-in font (gui.h); non-fatal on failure -- init still succeeds, just without
-       text, mirroring the debug-overlay init a few lines below. */
+       text, mirroring the debug-overlay init a few lines below.  font_load_builtin activates the
+       font in the backend but -- unlike the public gui_font_load/gui_font_use wrappers -- does not
+       rescale layout itself, so this gates on font_valid() and calls gui_style_apply() explicitly:
+       without it every metric stays at the zero-font values gui_theme_set seeded above and nothing
+       lays out with visible size.  A caller that passes GUI_FONT_NONE gets no font here and no
+       apply -- font_valid() stays false until its own font_load() call activates one. */
+
     if ( font != GUI_FONT_NONE && !font_load_builtin( font ) )
         printf( "[gui] WARNING: built-in font load failed; continuing without text\n" );
+    if ( font_valid() )
+        gui_style_apply();
 
     /* No viewports created here -- the host calls viewport_open() after init() for each OS window.
        Viewports own their own geometry buffers and are opened explicitly before any frames. */
@@ -389,6 +401,12 @@ gui_frame_begin( f32 dt )
 void
 gui_ctx_begin( gui_ctx_t ctx_handle )
 {
+    /* Every widget this context emits lays out off the active font's metrics (s_style, scaled by
+       gui_style_apply/layout_compute) -- with none activated s_style is still zero-initialized and
+       everything collapses to zero size (see gui_init's font_valid() gate).  Catch the missing
+       font here, at the frame boundary, instead of as an invisible UI downstream. */
+    ORB_ASSERT( font_valid() );
+
     if ( ctx_handle < 0 || ctx_handle >= (i32)s_ctx_pool_count || !s_ctx_pool[ ctx_handle ] )
         ctx_handle = GUI_CTX_DEFAULT;
 

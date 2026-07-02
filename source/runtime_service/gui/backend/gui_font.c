@@ -14,11 +14,14 @@
 // clang-format off
 
 /*==============================================================================================
+
     Registry API -- load / select fonts by id.
+
 ==============================================================================================*/
 
 /* Load a font into a new id and activate it.  Returns the id, or 0 on failure (registry full, or
    the file failed to load). */
+
 u32
 font_load( const char* path )
 {
@@ -35,6 +38,7 @@ font_load( const char* path )
 
 /* Load a font into an existing id (id 0 swaps the default; a slot already in use defers the swap
    to the next frame_begin flush).  Returns false on bad id. */
+
 bool
 font_load_into( u32 id, const char* path )
 {
@@ -42,21 +46,33 @@ font_load_into( u32 id, const char* path )
 }
 
 /* Path of every gui_builtin_font_t preset (gui.h), indexed by the enum; NULL for GUI_FONT_NONE. */
-static const char* s_builtin_font_path[] = {
+
+static const char* s_builtin_font_path[] = 
+{
     [ GUI_FONT_NONE ]         = NULL,
     [ GUI_FONT_JETBRAINS_16 ] = "assets/font/jetbrains_regular_16.orb_font",
 };
 
-/* Load a built-in font preset into slot 0 and activate it.  A no-op success for GUI_FONT_NONE
+/* Load a built-in font preset into slot 0 and activate it.  
+   A no-op success for GUI_FONT_NONE.
    (the caller loads its own font); called from gui_init() when the host passes a preset. */
+
 bool
 font_load_builtin( gui_builtin_font_t font )
 {
     if ( font == GUI_FONT_NONE )
         return true;
-    if ( (u32)font >= ARRAY_COUNT( s_builtin_font_path ) || !s_builtin_font_path[ font ] )
-        return false;
-    return font_internal_load_into( 0, s_builtin_font_path[ font ] );  // slot 0 = the default font
+
+    bool valid_slot = font < ARRAY_COUNT( s_builtin_font_path );
+    bool valud_font = s_builtin_font_path[ font ] != NULL;
+
+    if ( valid_slot && valud_font )
+    {
+        // slot 0 = the default font
+        return font_internal_load_into( 0, s_builtin_font_path[ font ] );          
+    }
+
+    return false;    
 }
 
 /* Commit every queued deferred reload.  Called once per frame by the UI unit at frame_begin -- a
@@ -101,6 +117,16 @@ u32
 font_active_id( void )
 {
     return s_active_id;
+}
+
+/* True once a font has been activated (s_font set by font_activate) and every metrics/glyph
+   accessor below is safe to call.  False from init() until either a built-in preset or the
+   caller's own font_load() succeeds -- s_font stays NULL until then, so layout code that needs
+   type metrics (gui_style_apply -> layout_compute) must gate on this rather than call in blind. */
+bool
+font_valid( void )
+{
+    return s_font != NULL;
 }
 
 /* Bindless atlas index currently backing font id `id` (0 for an empty / out-of-range slot).

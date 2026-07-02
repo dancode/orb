@@ -388,9 +388,15 @@ font_shutdown( void )
 static bool
 font_init( void )
 {
-    /* Slot 0 starts empty; the host loads its first font immediately after gui_init(), before any
-       frame renders (see the file header note).  The icon atlas is a separate, optional layer --
-       gui_backend_init stands it up (gated on s_caps.icons), not this font-only function. */
+    /* Deliberately a no-op, not a placeholder: font_init exists as the paired bookend to
+       font_shutdown (called from gui_render_init/shutdown) but has nothing to allocate.  Creating
+       a font atlas needs actual glyph pixels from an .orb_font, which only font_load /
+       font_load_into supply -- gui_render_init's job is standing up the GPU bindings those loads
+       will later fill (pipeline, font sampler), not conjuring an atlas with nothing in it.  Slot 0
+       starts empty; font_valid() reports that until the host's own font_load_builtin / font_load
+       call activates one -- see gui_init's font_valid() gate in gui_frame.c for the consumer side
+       of that contract.  The icon atlas is a separate, optional layer -- gui_backend_init stands it
+       up (gated on s_caps.icons), not this font-only function. */
     return true;
 }
 
