@@ -28,11 +28,12 @@
 
     Sections below are grouped by pipeline tier, matching the include order in gui_backend.c:
     Tier 1 (resource registries) through Tier 6 (debug overlay).  Tier 3 (tessellation
-    primitives, gui_build_tess.c) has no public surface -- it is driven entirely from within
+    primitives, gui_02_build_tess.c) has no public surface -- it is driven entirely from within
     Tier 4 -- so there is no Tier 3 section here.
 
+    0. Backend lifecycle (gui_backend_init/exit)
     1. Tier 1 -- Fonts
-    2. Tier 1 -- tierRuntime icon atlas
+    2. Tier 1 -- Runtime icon atlas
     3. Tier 2 -- EMIT (draw list)
     4. Tier 4 -- BUILD (retained cache)
     5. Tier 5 -- SUBMIT (GPU flush)
@@ -44,11 +45,21 @@
 
 // clang-format off
 /*==============================================================================================
-    Tier 1 -- Fonts (gui_load_font.c / gui_load_font_orb.c)
+    Backend lifecycle (gui_backend.c) -- the seam the UI unit calls to stand up / tear down the
+    whole render backend.  Internally wraps gui_render_init/shutdown (gui_03_submit_render.c),
+    which are no longer exposed past this header.
+==============================================================================================*/
+
+bool gui_backend_init( void );
+void gui_backend_exit( void );
+
+/*==============================================================================================
+    Tier 1 -- Fonts (gui_font.c)
 ==============================================================================================*/
 
 u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)
 bool font_load_into         ( u32 id, const char* path );   // load a .orb_font into an existing id (id 0 = default)
+bool font_load_builtin      ( gui_builtin_font_t font );    // load a built-in preset (gui.h) into slot 0; true no-op for GUI_FONT_NONE
 void font_use               ( u32 id );                     // make an already-loaded id the active font
 u32  font_active_id         ( void );                       // id of the active font slot (save/restore for push/pop)
 u32  font_slot_atlas_idx    ( u32 id );                     // live bindless atlas index backing a font id (0 if empty)
@@ -67,7 +78,7 @@ void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
                                      f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
 /*==============================================================================================
-    Tier 1 -- Runtime icon atlas (gui_load_icon.c)
+    Tier 1 -- Runtime icon atlas (gui_icon.c)
 
     A second R8 coverage texture, built at runtime: callers register raw monochrome bitmaps and
     the atlas packs them with stb_rect_pack, handing back an gui_icon_id_t.  Icons draw through
@@ -88,7 +99,7 @@ bool            icon_get                ( gui_icon_id_t id,
 void            draw_push_icon          ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
 
 /*==============================================================================================
-    Tier 2 -- EMIT: CPU draw list (gui_emit_draw.c)
+    Tier 2 -- EMIT: CPU draw list (gui_01_emit_draw.c)
 ==============================================================================================*/
 
 void draw_reset( i32 display_w, i32 display_h );    // clear the list at the top of frame_begin
@@ -125,7 +136,7 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
                                   f32 clip_x0, f32 clip_x1 );
 
 /*==============================================================================================
-    Tier 4 -- BUILD: retained frame-geometry cache (gui_build_cache.c)
+    Tier 4 -- BUILD: retained frame-geometry cache (gui_02_build_cache.c)
 ==============================================================================================*/
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
@@ -158,11 +169,12 @@ bool                gui_render_retained_skip( void );
 bool                gui_render_any_changed( void );
 
 /*==============================================================================================
-    Tier 5 -- SUBMIT: GPU resources + flush (gui_submit_render.c)
+    Tier 5 -- SUBMIT: GPU resources + flush (gui_03_submit_render.c)
+
+    gui_render_init/shutdown are NOT declared here -- they're an implementation detail of
+    gui_backend_init/exit (above) now, called directly within the gui_backend.c unity TU.
 ==============================================================================================*/
 
-bool                gui_render_init         ( void );
-void                gui_render_shutdown     ( void );
 void                gui_render_flush        ( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
 gui_mem_stats_t     gui_render_memory       ( void );
@@ -178,7 +190,7 @@ bool                viewport_create         ( gui_viewport_t* vp, rhi_texture_t 
 void                viewport_destroy        ( gui_viewport_t* vp );                                   // free its vb/ib
 
 /*==============================================================================================
-    Tier 6 -- Debug overlay (gui_debug_overlay.c) -- Debug builds only.
+    Tier 6 -- Debug overlay (gui_04_debug_overlay.c) -- Debug builds only.
 
     A second draw list, captured from the UI via the DBG_* macros and flushed last, on top.  The
     build switch is computed here so BOTH units agree before the macros / capture decls are used:

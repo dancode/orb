@@ -1,12 +1,12 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_load_font.h -- Font types shared across the font unit.
+    runtime_service/gui/backend/gui_font.h -- Font types shared with gui_backend.h.
 
-    The font unit is split into two translation units, both included by gui_backend.c:
-
-        gui_load_font.c      -- neutral: the id-addressed registry, slot lifecycle, glyph dispatch,
-                                and the shared atlas finalize (white texel + dash rows + UV metrics).
-        gui_load_font_orb.c  -- the .orb_font loader: parses the baked file and builds a slot's atlas.
+    Everything declared here is a type, not a function: gui_font.c is the font unit's only
+    translation unit (registry, glyph dispatch, and the .orb_font loader all live there now), so
+    there is nothing left to share across files. The font unit's actual public surface (font_load,
+    font_glyph, etc.) lives in gui_backend.h; see the PUBLIC / BACKEND-INTERNAL / FILE-LOCAL
+    banners inside gui_font.c for how the rest is split.
 
     The .orb_font is currently the only font source format gui loads, so we assume it.
 
@@ -18,7 +18,7 @@
 #pragma once
 
 #include "tools/font_tool/orb_font.h" /* orb_font_glyph_t and the .orb_font on-disk format */
-#include "runtime_service/gui/backend/gui_load_atlas.h" /* gui_atlas_t -- the owned GPU atlas */
+#include "runtime_service/gui/backend/gui_atlas.h" /* gui_atlas_t -- the owned GPU atlas */
 
 // clang-format off
 /*----------------------------------------------------------------------------------------------
@@ -34,7 +34,7 @@
 
 #define GUI_DASH_PATTERN_COUNT 4
 
-/* Capacity of the loaded-font registry (gui_load_font.c).  Slot 0 is the default; loaded fonts occupy
+/* Capacity of the loaded-font registry (gui_font.c).  Slot 0 is the default; loaded fonts occupy
    ids 1..GUI_FONT_REGISTRY_MAX-1. */
 #define GUI_FONT_REGISTRY_MAX 16
 
@@ -100,35 +100,6 @@ typedef struct
     orb_font_glyph_t    lookup[ 95 ];       // codepoints 32..126; advance == 0 marks a missing glyph
 
 } font_slot_t;
-
-/*----------------------------------------------------------------------------------------------
-    Cross-file helpers (the unity build resolves these regardless of include order).  Everything
-    declared here is FILE-LOCAL to the font unit (gui_load_font.c / gui_load_font_orb.c) -- none
-    of it crosses to gui.c.  The font unit's actual public surface (font_load, font_glyph, etc.)
-    lives in gui_backend.h; see the PUBLIC / BACKEND-INTERNAL / FILE-LOCAL banners inside
-    gui_load_font.c for how the rest is split.
-
-    Neutral (gui_load_font.c):
-        font_slot_free_gpu   -- release a slot's owned GPU atlas.
-        font_atlas_tex_h     -- uploaded height for a glyph region of `glyph_h` rows (adds the tail).
-        font_finalize_atlas  -- append the white + dash rows to a staged R8 atlas and fill the
-                                metrics UV/scale fields that describe them.  Every builder calls this.
-
-    Loader (gui_load_font_orb.c):
-        font_slot_load          -- load a .orb_font into a slot (creates an owned atlas).
-        font_slot_glyph         -- glyph draw parameters for a slot.
-        font_slot_char_advance  -- horizontal advance of one glyph in a slot.
-----------------------------------------------------------------------------------------------*/
-
-void font_slot_free_gpu     ( font_slot_t* slot );
-u32  font_atlas_tex_h       ( u32 glyph_h );
-void font_finalize_atlas    ( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m );
-
-bool font_slot_load         ( font_slot_t* slot, const char* path );
-void font_slot_glyph        ( const font_slot_t* slot, u8 ch,
-                              f32* u0, f32* v0, f32* u1, f32* v1,
-                              f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
-f32  font_slot_char_advance ( const font_slot_t* slot, u8 ch );
 
 // clang-format on
 /*============================================================================================*/

@@ -25,7 +25,7 @@ mod_desc_t* gui_get_mod_desc( void );
     Direct-call functions (host and sandbox use only)
 ==============================================================================================*/
 
-bool gui_init( void );
+bool gui_init( gui_builtin_font_t font );
 void gui_shutdown( void );
 
 gui_mem_stats_t gui_mem_stats( void );

@@ -339,7 +339,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 }
 
 /* The shared stateless helpers (saturate, clampf, rect_intersect) live in gui_internal.h as
-   static inline -- both units use them (gui_emit_draw.c needs rect_intersect for clip nesting). */
+   static inline -- both units use them (gui_01_emit_draw.c needs rect_intersect for clip nesting). */
 
 /*==============================================================================================
     Internal record types shared into gui_context_t

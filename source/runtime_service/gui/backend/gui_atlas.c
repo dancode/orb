@@ -1,11 +1,11 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_load_atlas.c -- Shared GPU-atlas asset (implementation).
+    runtime_service/gui/backend/gui_atlas.c -- Shared GPU-atlas asset (implementation).
 
-    See gui_load_atlas.h for the rationale.  Three functions, each mirroring the create/upload/
+    See gui_atlas.h for the rationale.  Three functions, each mirroring the create/upload/
     destroy sequence that used to be duplicated between the font registry and the icon atlas.
 
-    Included by gui_backend.c before gui_load_font.h / gui_load_font.c / gui_load_icon.c.
+    Included by gui_backend.c before gui_font.h / gui_font.c / gui_icon.c.
 
 ==============================================================================================*/
 // clang-format off

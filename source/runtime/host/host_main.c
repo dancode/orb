@@ -321,7 +321,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
             if ( gui() )
             {
-                if ( !gui()->init() )
+                if ( !gui()->init( GUI_FONT_NONE ) )
                 {
                     fprintf( stderr, "[host] gui init failed\n" );
                     host_shutdown();

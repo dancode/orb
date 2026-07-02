@@ -64,6 +64,17 @@ typedef struct
 #define GUI_CTX_CONFIG_GAME_UI \
     ( ( gui_ctx_config_t ){ 8, 64, 4, 1, 0 } )
 
+/* Built-in font presets for init() -- pre-baked .orb_font assets (FreeType-rasterized offline by
+   font_tool, not an stb runtime bake) shipped under assets/font/.  GUI_FONT_NONE loads nothing;
+   the caller is then responsible for its own font_load() before the first frame renders. */
+
+typedef enum
+{
+    GUI_FONT_NONE = 0,       // load nothing; caller loads its own font(s) via font_load()
+    GUI_FONT_JETBRAINS_16,   // assets/font/jetbrains_regular_16.orb_font
+
+} gui_builtin_font_t;
+
 /* Opaque context handle -- integer index into the internal context pool.
    GUI_CTX_DEFAULT (0) is always valid after init().
    GUI_CTX_INVALID (-1) signals a failed ctx_create or an unset handle. */
@@ -933,7 +944,7 @@ typedef enum
     Line / path stroking
 
     Thickness, pixel-snapping, and where a stroke sits relative to the ideal path it is drawn from.
-    Implementation in gui_emit_path.c.
+    Implementation in gui_01_emit_path.c.
 
     Pixel model: integer coordinates fall on the lines *between* pixels, so a crisp axis-aligned
     stroke is one whose two edges both land on integers.  draw_line strokes a single segment: a
@@ -981,10 +992,10 @@ typedef struct
     Semantic draw commands
 
     The UI build pass emits one gui_cmd_t per visible shape into a list.  The render backend
-    (gui_submit_render.c) tessellates each command into vertices and indices at flush time.  This
+    (gui_03_submit_render.c) tessellates each command into vertices and indices at flush time.  This
     separates the UI logic from any graphics API knowledge.
 
-    GPU draw commands (gui_gpu_cmd_t) are a backend-private type defined in gui_emit_draw.c;
+    GPU draw commands (gui_gpu_cmd_t) are a backend-private type defined in gui_01_emit_draw.c;
     they carry index ranges and bind state for one GPU draw call.
 ==============================================================================================*/
 

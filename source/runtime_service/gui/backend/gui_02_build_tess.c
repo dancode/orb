@@ -1,18 +1,18 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/backend/gui_build_tess.c -- CPU-side tessellation engine.
+    runtime_service/gui/backend/gui_02_build_tess.c -- CPU-side tessellation engine.
 
     Translates the frame's semantic gui_cmd_t list (s_draw) into packed vertex/index
     geometry in s_tess.  This is the CPU half of the command-list split: everything here
     reads semantic commands and writes gui_draw_vert_t / u16 index data; nothing here
     touches the GPU API.
 
-    s_tess is read only by the two files included immediately after: gui_build_cache.c (the
-    BUILD phase fills it via tess_dispatch) and gui_submit_render.c (gui_render_flush uploads it and
+    s_tess is read only by the two files included immediately after: gui_02_build_cache.c (the
+    BUILD phase fills it via tess_dispatch) and gui_03_submit_render.c (gui_render_flush uploads it and
     emits draw calls).  No file above the backend unit touches it.
 
-    Included by gui_backend.c after gui_emit_path.c (provides v2, seg_normal,
-    stroke_center_offset, STROKE_* constants) and before gui_build_cache.c (which drives
+    Included by gui_backend.c after gui_01_emit_path.c (provides v2, seg_normal,
+    stroke_center_offset, STROKE_* constants) and before gui_02_build_cache.c (which drives
     tess_reset / tess_dispatch from cache_build_frame / cache_tess_window).
 
 ==============================================================================================*/
@@ -132,7 +132,7 @@ round_rect_perimeter( f32 x, f32 y, f32 w, f32 h, f32 r, u32 segs, gui_vec2_t* o
 }
 
 /*----------------------------------------------------------------------------------------------
-    Tessellation helpers -- mirrors of the draw_push_* functions in gui_emit_draw.c, but writing
+    Tessellation helpers -- mirrors of the draw_push_* functions in gui_01_emit_draw.c, but writing
     into s_tess instead of s_draw.  These are the backend half of the command-list split.
     Called from tess_dispatch; not called from anywhere else.
 ----------------------------------------------------------------------------------------------*/
@@ -513,9 +513,9 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
 /*----------------------------------------------------------------------------------------------
     tess_stroke_poly_aa -- antialiased polyline tessellation for the render backend.
 
-    Mirrors the old stroke_poly_aa (removed from gui_emit_path.c in step 4) but writes into
+    Mirrors the old stroke_poly_aa (removed from gui_01_emit_path.c in step 4) but writes into
     s_tess via tess_prim_begin/commit.  abgr is pre-baked (alpha folded in at emit time).
-    v2 / seg_normal / stroke_center_offset are defined in gui_emit_path.c (included before
+    v2 / seg_normal / stroke_center_offset are defined in gui_01_emit_path.c (included before
     this file in the unity build) so they are visible here without forward declarations.
 ----------------------------------------------------------------------------------------------*/
 

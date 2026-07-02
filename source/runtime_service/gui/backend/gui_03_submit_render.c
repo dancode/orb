@@ -1,11 +1,11 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_submit_render.c -- GPU resources + draw submission (SUBMIT phase).
+    runtime_service/gui/backend/gui_03_submit_render.c -- GPU resources + draw submission (SUBMIT phase).
 
-    The last of the three render phases (see gui_build_cache.c for the full map):
+    The last of the three render phases (see gui_02_build_cache.c for the full map):
 
-        EMIT   gui_emit_draw.c    widgets -> s_draw semantic command list
-        BUILD  gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
+        EMIT   gui_01_emit_draw.c    widgets -> s_draw semantic command list
+        BUILD  gui_02_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
         SUBMIT this file          upload each surface's slots + emit indexed draw calls
 
     Two responsibilities live here:
@@ -18,9 +18,9 @@
         upload this surface's slice of the shared geometry and emit one indexed draw call per cached
         GPU command, back-to-front in dispatch order.
 
-    Included by gui_backend.c after gui_build_cache.c (cache_build_frame, s_dispatch, the slot
-    types, the stats accessors) -- which in turn follows gui_build_tess.c (s_tess) and
-    gui_emit_draw.c (s_draw).  gui_debug_overlay.c follows this file and reuses s_render + render_ortho.
+    Included by gui_backend.c after gui_02_build_cache.c (cache_build_frame, s_dispatch, the slot
+    types, the stats accessors) -- which in turn follows gui_02_build_tess.c (s_tess) and
+    gui_01_emit_draw.c (s_draw).  gui_04_debug_overlay.c follows this file and reuses s_render + render_ortho.
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   // gui_viewport_t, gui_context_t, GUI_MAX_VIEWPORTS
@@ -261,7 +261,7 @@ gui_render_init( void )
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
 
-    /* Font atlas texture -- handled by gui_load_font.c.  Each atlas carries an opaque white texel
+    /* Font atlas texture -- handled by gui_font.c.  Each atlas carries an opaque white texel
        (appended row) that solid-color draws sample, so no separate white texture is needed --
        solids and text share the atlas and merge into one draw. */
     if ( !font_init() )

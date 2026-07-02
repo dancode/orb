@@ -15,7 +15,7 @@
 ==============================================================================================*/
 
 bool
-gui_init( void )
+gui_init( gui_builtin_font_t font )
 {
     /* Seed the style base from the default theme before any font init runs; font_load calls
        gui_style_apply which scales s_style_base -- it must be non-zero first. */
@@ -23,8 +23,13 @@ gui_init( void )
 
     ctx_pool_init();   /* wire default context's static backing arrays; sets g_ctx */
 
-    if ( !gui_render_init() )       /* shared pipeline / sampler / atlas */
+    if ( !gui_backend_init() )      /* shared pipeline / sampler / atlas */
         return false;
+
+    /* Optional built-in font (gui.h); non-fatal on failure -- init still succeeds, just without
+       text, mirroring the debug-overlay init a few lines below. */
+    if ( font != GUI_FONT_NONE && !font_load_builtin( font ) )
+        printf( "[gui] WARNING: built-in font load failed; continuing without text\n" );
 
     /* No viewports created here -- the host calls viewport_open() after init() for each OS window.
        Viewports own their own geometry buffers and are opened explicitly before any frames. */
@@ -56,7 +61,7 @@ gui_shutdown( void )
         for ( u32 v = 0; v < ctx->max_viewports; ++v )
             viewport_destroy( &ctx->viewports[ v ] );
     }
-    gui_render_shutdown();    /* shared pipeline / sampler / atlas */
+    gui_backend_exit();       /* shared pipeline / sampler / atlas */
 
     /* Free all context blocks. */
     for ( u32 i = 0; i < s_ctx_pool_count; ++i )
@@ -914,7 +919,7 @@ bool
 gui_font_load_into( u32 id, const char* path )
 {
     /* font_load_into defers a swap of an already-loaded slot to the next frame_begin (see the
-       reload queue in gui_load_font.c); layout follows there, via gui_font_flush_deferred, once the
+       reload queue in gui_font.c); layout follows there, via gui_font_flush_deferred, once the
        new metrics are live.  Nothing to rescale here -- the slot still shows its current font. */
     return font_load_into( id, path );
 }

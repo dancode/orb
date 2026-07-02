@@ -1,9 +1,9 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_load_atlas.h -- Shared GPU-atlas asset (type + lifecycle).
+    runtime_service/gui/backend/gui_atlas.h -- Shared GPU-atlas asset (type + lifecycle).
 
-    Both font slots (gui_load_font.c) and the runtime icon atlas (gui_load_icon.c) are the same
-    shape underneath: a CPU-authored R8 coverage bitmap uploaded once to an owned GPU texture and
+    Both font slots (gui_font.c) and the runtime icon atlas (gui_icon.c) are the same shape
+    underneath: a CPU-authored R8 coverage bitmap uploaded once to an owned GPU texture and
     registered for bindless sampling.  RHI itself tracks neither the pairing nor the lifetime --
     texture_create / register_texture hand back a raw handle + index and leave ownership entirely
     to the caller (see rhi_api.h).  gui_atlas_t is that caller-side pairing, extracted once so the
@@ -11,11 +11,11 @@
 
     This is deliberately NOT a general asset system: it has no name table, no refcounting, no
     hot-reload.  It is the one thing font and icon both needed today.  A real asset pipeline (see
-    the "asset pipeline later" notes in gui_api.h and gui_load_icon.c) is a different, larger
+    the "asset pipeline later" notes in gui_api.h and gui_icon.c) is a different, larger
     problem -- indexing/streaming/dependency tracking across many asset kinds -- and should not be
     backed into this atlas-sized helper.
 
-    Included by gui_backend.c before gui_load_font.h and gui_load_icon.c.
+    Included by gui_backend.c before gui_font.h and gui_icon.c.
 
 ==============================================================================================*/
 #pragma once

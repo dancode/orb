@@ -136,8 +136,8 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup GUI */
 
-    /* Initialize gui GPU resources and load TrueType font atlas. */
-    if ( !gui()->init() )
+    /* Initialize gui GPU resources and load the built-in font atlas. */
+    if ( !gui()->init( GUI_FONT_JETBRAINS_16 ) )
     {
         fprintf( stderr, "[sb_vulkan] gui->init failed\n" );
         draw()->shutdown();
@@ -147,8 +147,7 @@ main( int argc, char** argv )
         mod_system_exit();
         return 1;
     }
-    
-    gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
+
  // gui()->font_load( "assets/font/jetbrains_regular_24.orb_font" );
  // gui()->font_load( "assets/font/jetbrains_bold_24.orb_font" );
     gui()->print_mem_stats();

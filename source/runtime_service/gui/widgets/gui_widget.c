@@ -924,7 +924,7 @@ gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* s )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Icons -- thin public surface over the runtime icon atlas (gui_load_icon.c, backend unit).
+    Icons -- thin public surface over the runtime icon atlas (gui_icon.c, backend unit).
 
     register_icon / find_icon / icon_size pass straight through; image is a layout widget that
     reserves a box and fills it; draw_icon_in is the custom-draw placement primitive (the icon

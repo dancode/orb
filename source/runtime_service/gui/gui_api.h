@@ -32,11 +32,15 @@ typedef struct gui_api_s
 {
     /* GPU resource lifecycle.
         init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
+                       `font` optionally loads one of the built-in presets (gui_builtin_font_t,
+                       gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
+                       yourself. A failed built-in load is non-fatal (a warning; init still
+                       succeeds without text).
         shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
         font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
                        call after init(). Returns the new id (>= 1), or 0 on failure. */
 
-    bool                ( *init      )( void );
+    bool                ( *init      )( gui_builtin_font_t font );
     void                ( *shutdown  )( void );
     u32                 ( *font_load )( const char* path );
 

@@ -7,7 +7,7 @@
     gui is built as a unity translation unit (gui.c #includes every gui_*.c).  Historically
     each constituent file defined its record types inline and later-included files relied on the
     include ORDER to see them -- a window record defined in gui.c, a layout frame in gui_ctx.c,
-    a viewport in gui_submit_render.c, all folded by value into gui_context_t further down.  This
+    a viewport in gui_03_submit_render.c, all folded by value into gui_context_t further down.  This
     header lifts that cross-file TYPE layer into one place so the dependency is explicit and
     order-independent: every constituent file includes this once, up front, and sees the full set.
 
@@ -451,7 +451,7 @@ typedef struct
 } gui_retained_t;
 
 /*==============================================================================================
-    Render viewport (behavior in gui_submit_render.c)
+    Render viewport (behavior in gui_03_submit_render.c)
 
     One render surface a context drives: GPU buffers + a color target, the OS window hosting it, and
     the routing/ownership bookkeeping for host-provided vs gui-owned (torn-off floater) surfaces.
@@ -724,7 +724,7 @@ void gui_popup_close_current( void );
     Shared stateless helpers
 
     Small pure scalar/geometry helpers used across both translation units (the UI unit and the
-    render backend unit -- gui_emit_draw.c needs rect_intersect for clip nesting).  static inline so
+    render backend unit -- gui_01_emit_draw.c needs rect_intersect for clip nesting).  static inline so
     each TU gets its own copy with no linkage; they touch nothing but their arguments.
 ==============================================================================================*/
 

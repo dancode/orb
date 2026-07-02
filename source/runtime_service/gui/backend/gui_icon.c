@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/backend/gui_load_icon.c -- Runtime icon atlas.
+    runtime_service/gui/backend/gui_icon.c -- Runtime icon atlas.
 
     A second R8 coverage texture, built at runtime from raw monochrome bitmaps.  Where the font
     atlases are fixed and baked offline, this one is dynamic: callers register icon pixels at any
@@ -17,12 +17,12 @@
     icon_atlas_flush_upload (called from frame_begin) re-uploads once per frame when needed.  This
     mirrors the deferred cursor flush and keeps registration safe to call mid-frame.
 
-    The GPU texture + bindless index are owned through gui_atlas_t (gui_load_atlas.h) -- the same
+    The GPU texture + bindless index are owned through gui_atlas_t (gui_atlas.h) -- the same
     small helper the font registry uses, since both are "CPU-authored R8 atlas, one owned GPU
     texture, one bindless slot" underneath.  Everything else here (incremental rect-packing, the
     name table, the dirty flag) is icon-specific and stays local to this file.
 
-    Included by gui_backend.c after gui_load_font.c.
+    Included by gui_backend.c after gui_font.c.
 
 ==============================================================================================*/
 // clang-format off

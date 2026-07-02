@@ -1,12 +1,12 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_emit_draw.c -- Draw list accumulation.
+    runtime_service/gui/backend/gui_01_emit_draw.c -- Draw list accumulation.
 
     All geometry goes through draw_push_rect_filled or draw_push_triangle.
     draw_ensure_cmd opens a new draw command when the texture or clip rect changes.
     draw_push_text emits glyph quads from the font atlas.
 
-    Included by gui_backend.c after gui_load_font.c so font_glyph / s_atlas_idx are in scope.
+    Included by gui_backend.c after gui_font.c so font_glyph / s_atlas_idx are in scope.
 
 ==============================================================================================*/
 // clang-format off
@@ -16,7 +16,7 @@
 
     One bounded range of indices sharing a texture slot and scissor rect -- the unit the GPU
     sees.  Not exposed in gui.h.  The public gui_cmd_t carries semantic shapes; the render
-    backend (gui_submit_render.c) tessellates those into these at flush time.
+    backend (gui_03_submit_render.c) tessellates those into these at flush time.
 ==============================================================================================*/
 
 typedef struct
@@ -104,7 +104,7 @@ static struct
 
 /*----------------------------------------------------------------------------------------------
     FNV-1a hash helpers -- defined here (before draw_reset) so clip pre-hashing can use them.
-    draw_hash_cmd below also uses them; fnv1a_u32 is visible in gui_build_cache.c (included
+    draw_hash_cmd below also uses them; fnv1a_u32 is visible in gui_02_build_cache.c (included
     after this file by gui_backend.c).
 ----------------------------------------------------------------------------------------------*/
 
@@ -486,7 +486,7 @@ draw_clamp_rounding( f32 w, f32 h )
 
     draw_hash_cmd hashes a fully-filled gui_cmd_t at emit time while the data is still
     L1-hot.  The hash is stored in s_draw.cmd_hashes and folded per window by
-    cache_diff_windows (gui_build_cache.c) to detect frame-to-frame changes without
+    cache_diff_windows (gui_02_build_cache.c) to detect frame-to-frame changes without
     re-scanning the command buffer after tessellation.
 
     TEXT and POLYLINE skip the pool-offset fields (text.off / polyline.pt_offset) because

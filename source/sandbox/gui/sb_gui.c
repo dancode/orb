@@ -214,9 +214,9 @@ show_font_browser( bool* p_open )
         gui()->spacing( 0.0f );
 
         /* NOTE -- this preview is NOT isolated to these lines.  The renderer has no per-run font:
-           text commands store only position/colour/clip (see GUI_CMD_TEXT in gui_emit_draw.c), and the
+           text commands store only position/colour/clip (see GUI_CMD_TEXT in gui_01_emit_draw.c), and the
            glyph atlas + UVs are resolved at DEFERRED tessellation time from one global active font
-           (tess_text_n / font_atlas_idx in gui_build_tess.c).  So whichever font is active when the
+           (tess_text_n / font_atlas_idx in gui_02_build_tess.c).  So whichever font is active when the
            frame tessellates draws the ENTIRE frame -- push_font/pop_font here cannot scope a second
            font onto just the preview.  A true side-by-side preview would need the preview glyphs
            rendered through a separate texture/path decoupled from the global font state; that is not
@@ -628,26 +628,26 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup GUI */
 
-    if ( !gui()->init() ) {
+    if ( !gui()->init( GUI_FONT_NONE ) ) {
          fprintf( stderr, "[sb_gui] gui->init failed\n" );
          goto shutdown;
     }
     gui_inited = true;
 
-    bool use_stb_font = true;
-    if ( use_stb_font )
-    {
-        dev_font_init( NULL );
-        char font_path[ 512 ];
-        if ( dev_font_get( "JetBrainsMonoNL-Regular.ttf", 16, font_path, sizeof( font_path ) ) )
-            gui()->font_load( font_path );
-        else
-            gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
-    }
-    else
-    {
-        gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
-    }
+    // bool use_stb_font = true;
+    // if ( use_stb_font )
+    // {
+    //     dev_font_init( NULL );
+    //     char font_path[ 512 ];
+    //     if ( dev_font_get( "JetBrainsMonoNL-Regular.ttf", 16, font_path, sizeof( font_path ) ) )
+    //         gui()->font_load( font_path );
+    //     else
+    //         gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
+    // }
+    // else
+    // {
+    //     gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
+    // }
 
     gui()->set_retained_skip( true );
 

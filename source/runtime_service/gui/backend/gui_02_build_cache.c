@@ -1,15 +1,15 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_build_cache.c -- Retained frame-geometry cache (BUILD phase).
+    runtime_service/gui/backend/gui_02_build_cache.c -- Retained frame-geometry cache (BUILD phase).
 
     The render pipeline has three phases.  This file is the middle one:
 
-        EMIT   (gui_emit_draw.c)    widgets push semantic shapes -> s_draw command list,
+        EMIT   (gui_01_emit_draw.c)    widgets push semantic shapes -> s_draw command list,
                                       cut into per-(win,z,vp) segments, one hash baked per command.
         BUILD  (this file)          once per frame: diff each window's commands against last frame,
                                       reuse unchanged geometry in place, tessellate changed windows,
                                       then z-sort the result into a dispatch table.
-        SUBMIT (gui_submit_render.c) once per surface: upload changed geometry and emit one indexed
+        SUBMIT (gui_03_submit_render.c) once per surface: upload changed geometry and emit one indexed
                                       draw call per cached GPU command.
 
     BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
@@ -64,7 +64,7 @@ gui_render_stats_publish( void )
     s_stats.accum     = ( gui_render_stats_t ){ 0 };
 }
 
-// Peak draw-call count, read by the shutdown report in gui_submit_render.c.
+// Peak draw-call count, read by the shutdown report in gui_03_submit_render.c.
 static u32
 cache_draw_call_hwm( void )
 {

@@ -1,28 +1,33 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_load_font.c -- Neutral font registry and glyph dispatch.
+    runtime_service/gui/backend/gui_font.c -- Font registry, glyph dispatch, and the .orb_font
+    loader.
 
-    Owns the id-addressed registry (s_fonts[]), the active-font pointers (s_active / s_font), and
-    the shared atlas finalize.  Every slot is a loaded .orb_font (gui_load_font_orb.c); this unit
-    only adds the registry, activation, and the deferred-reload queue around it.
+    Owns the id-addressed registry (s_fonts[]), the active-font pointers (s_active / s_font), the
+    shared atlas finalize, and the .orb_font file loader.  .orb_font is a proportional font baked
+    offline by font_tool (FreeType-rasterized, not an stb runtime bake): an R8 atlas of packed
+    glyph bitmaps plus per-glyph records (UV rect, bearing, advance).  It is currently the only
+    font source format gui loads.
 
     Slot 0 is the default.  It starts empty (used == false) until the host's first font_load /
-    font_load_into( 0, path ) call -- every caller of gui_init() loads a font immediately after,
-    before any frame renders, so no frame ever needs a fallback font.
+    font_load_into( 0, path ) / font_load_builtin() call -- every caller of gui_init() loads a
+    font immediately after, before any frame renders, so no frame ever needs a fallback font.
 
-        font_load()      -- load a font into a fresh id, activate it, return the id (0 = fail).
-        font_load_into() -- load a font into an existing id (e.g. swap the default, id 0).
-        font_use()       -- make an already-loaded id the active font.
+        font_load()         -- load a font into a fresh id, activate it, return the id (0 = fail).
+        font_load_into()    -- load a font into an existing id (e.g. swap the default, id 0).
+        font_load_builtin() -- load one of the engine's built-in presets into slot 0.
+        font_use()          -- make an already-loaded id the active font.
 
-    Included by gui_backend.c after gui_load_font_orb.c.
+    Included by gui_backend.c after gui_font.h.
 
     Visibility tiers below (this is a unity build -- "static" only means "does not cross the
     gui.c / gui_backend.c seam", not "used once"):
 
         PUBLIC            -- declared in gui_backend.h; called from gui.c (the UI unit).
-        BACKEND-INTERNAL  -- static; called from other backend/ files (gui_build_tess.c,
-                             gui_debug_overlay.c, gui_submit_render.c) later in the unity build.
-        FILE-LOCAL        -- static; used only inside this file / gui_load_font_orb.c.
+        BACKEND-INTERNAL  -- static; called from other backend/ files (gui_02_build_tess.c,
+                             gui_04_debug_overlay.c, gui_03_submit_render.c) later in the unity
+                             build.
+        FILE-LOCAL        -- static; used only inside this file.
 
 ==============================================================================================*/
 // clang-format off
@@ -34,6 +39,220 @@ static font_metrics_t*  s_font      = NULL;                     // active font's
 
 /* On-fraction (dash / period) of each baked dash row; a dashed line picks the nearest at tess time. */
 static const f32        s_dash_duty[ GUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
+
+/*==============================================================================================
+    FILE-LOCAL -- atlas finalize: the white texel + dash rows every font carries.
+==============================================================================================*/
+
+/* Paint the dash pattern rows into `pixels` (R8, width `w`) starting at pixel row `row0`. */
+static void
+font_paint_dash_rows( u8* pixels, u32 w, u32 row0 )
+{
+    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
+    {
+        u8* row = &pixels[ ( row0 + p ) * w ];
+        u32 on  = (u32)( s_dash_duty[ p ] * (f32)w + 0.5f );
+        if ( on < 1 ) on = 1;
+        if ( on > w ) on = w;
+        memset( row, 0x00, w  );   /* gap    */
+        memset( row, 0xFF, on );   /* on-run */
+    }
+}
+
+/* Fill dash_v[]: pattern row p sits at pixel row row0 + p in a `tex_h`-tall upload. */
+static void
+font_dash_row_v( f32* dash_v, u32 row0, u32 tex_h )
+{
+    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
+        dash_v[ p ] = ( (f32)( row0 + p ) + 0.5f ) / (f32)tex_h;
+}
+
+/* Uploaded atlas height for a glyph region of `glyph_h` rows: one white texel row plus the dash
+   pattern rows are appended on top.  The loader sizes its staging buffer to this. */
+static u32
+font_atlas_tex_h( u32 glyph_h )
+{
+    return glyph_h + 1u + GUI_DASH_PATTERN_COUNT;
+}
+
+/* Finalize a staged R8 atlas: append the white texel row and the dash pattern rows on top of the
+   `glyph_h`-row glyph region, then resolve the metrics fields that describe them (white UV,
+   per-glyph UV scale, dash row V coords).  `tex_h` must equal font_atlas_tex_h( glyph_h ). */
+
+static void
+font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m )
+{
+    /* White texel strip: fill the first appended row opaque, then the dash pattern rows. */
+    memset( &pixels[ glyph_h * atlas_w ], 0xFF, atlas_w );
+    font_paint_dash_rows( pixels, atlas_w, glyph_h + 1u );
+
+    /* White texel: center of the first appended row (pixel row glyph_h). */
+    m->atlas.white_u = 0.5f / (f32)atlas_w;
+    m->atlas.white_v = ( (f32)glyph_h + 0.5f ) / (f32)tex_h;
+
+    /* Per-glyph UV scale, constant per font -- folds the divide out of the glyph path.  V divides
+       by tex_h (the padded height), so the appended rows stay outside every glyph's UV range. */
+    m->atlas.inv_atlas_w = 1.0f / (f32)atlas_w;
+    m->atlas.inv_atlas_h = 1.0f / (f32)tex_h;
+
+    /* Dash pattern rows follow the white row at pixel row glyph_h + 1. */
+    font_dash_row_v( m->atlas.dash_v, glyph_h + 1u, tex_h );
+}
+
+/*==============================================================================================
+    FILE-LOCAL -- the .orb_font loader.
+==============================================================================================*/
+
+/* Release a slot's owned GPU atlas. */
+static void
+font_slot_free_gpu( font_slot_t* slot )
+{
+    gui_atlas_destroy( &slot->atlas );
+}
+
+/*----------------------------------------------------------------------------------------------
+    font_slot_load -- load a .orb_font from disk into `slot`.  Does not activate the slot.
+
+    On success the slot owns a freshly created GPU atlas and metrics describe a proportional font;
+    any atlas the slot previously owned is released only after the new one is fully built, so a
+    failed load leaves the slot's previous font intact.
+----------------------------------------------------------------------------------------------*/
+
+static bool
+font_slot_load( font_slot_t* slot, const char* path )
+{
+    FILE* f = fopen( path, "rb" );
+    if ( !f )
+        return false;
+
+    /* Validate orb font format header. */
+
+    orb_font_header_t hdr;
+    if ( fread( &hdr, sizeof( hdr ), 1, f ) != 1
+         || hdr.magic   != ORB_FONT_MAGIC
+         || hdr.version != ORB_FONT_VERSION
+         || hdr.glyph_count == 0 || hdr.glyph_count > 256
+         || hdr.atlas_w == 0     || hdr.atlas_h == 0 )
+    {
+        fclose( f );
+        return false;
+    }
+
+    /* Build the lookup table from glyph records. */
+
+    orb_font_glyph_t lookup[ 95 ];
+    memset( lookup, 0, sizeof( lookup ) );
+    for ( u32 i = 0; i < hdr.glyph_count; ++i )
+    {
+        orb_font_glyph_t g;
+        if ( fread( &g, sizeof( g ), 1, f ) != 1 ) { fclose( f ); return false; }
+        if ( g.codepoint >= 32 && g.codepoint <= 126 )
+            lookup[ g.codepoint - 32 ] = g;
+    }
+
+    /* Read the glyph pixels into a staging buffer sized for the appended white + dash rows. */
+
+    u32 tex_h       = font_atlas_tex_h( hdr.atlas_h );
+    u32 glyph_bytes = hdr.atlas_w * hdr.atlas_h;
+    u32 pixel_count = hdr.atlas_w * tex_h;
+    u8* pixels      = (u8*)malloc( pixel_count );
+    if ( !pixels ) { fclose( f ); return false; }
+
+    if ( fread( pixels, 1, glyph_bytes, f ) != glyph_bytes )
+    {
+        free( pixels );
+        fclose( f );
+        return false;
+    }
+    fclose( f );
+
+    /* Build the metrics scale-free fields here; the scale-dependent fields below are exact (a
+       loaded .orb_font has no integer upscale). */
+    font_metrics_t metrics = ( font_metrics_t ){
+        .type = {
+            .char_h = (f32)( hdr.ascent - hdr.descent ),
+            .line_h = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
+            .size   = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
+        },
+    };
+
+    /* Append the white texel + dash rows and resolve white/dash/UV-scale metrics. */
+    font_finalize_atlas( pixels, hdr.atlas_w, hdr.atlas_h, tex_h, &metrics );
+
+    /* Reload swap-safety: when this slot already holds an atlas, in-flight frames may still be
+       sampling it (and hold the bindless set bound).  Re-baking a font live -- e.g. the font
+       browser dragging the size slider -- otherwise creates/destroys an atlas and rewrites its
+       bindless slot every frame, and the deferred reclaim races the GPU under that churn,
+       eventually faulting the device (VK_ERROR_DEVICE_LOST).  Drain the GPU first so the old
+       atlas has no live readers before we build and register its replacement and tear it down.
+       Reloads are rare and human-triggered, so the full stall is imperceptible. */
+    if ( slot->used )
+        rhi()->device_wait_idle();
+
+    /* Create the render texture and upload the atlas pixels. */
+
+    gui_atlas_t atlas;
+    if ( !gui_atlas_create( &atlas, hdr.atlas_w, tex_h, pixels, "gui_font_atlas" ) )
+    {
+        free( pixels );
+        return false;
+    }
+    free( pixels );
+
+    /* All GPU work succeeded -- commit into the slot.  Release any atlas it held only now, so a
+       failed load above leaves the previous font intact. */
+
+    font_slot_free_gpu( slot );
+
+    slot->ascent  = hdr.ascent;
+    slot->descent = hdr.descent;
+    memcpy( slot->lookup, lookup, sizeof( lookup ) );
+
+    slot->atlas = atlas;               /* padded: glyph UV math divides by the uploaded height */
+    slot->used  = true;
+
+    metrics.atlas.atlas_idx = atlas.atlas_idx;
+    slot->metrics           = metrics;
+
+    printf( "[gui] loaded font '%s' (char_h=%.1f line_h=%.1f)\n",
+            path, slot->metrics.type.char_h, slot->metrics.type.line_h );
+
+    return true;
+}
+
+/*----------------------------------------------------------------------------------------------
+    font_slot_char_advance / font_slot_glyph -- per-glyph metrics and draw parameters for a slot.
+----------------------------------------------------------------------------------------------*/
+
+static f32
+font_slot_char_advance( const font_slot_t* slot, u8 ch )
+{
+    if ( ch < 32 || ch > 126 ) ch = (u8)'?';
+    return (f32)slot->lookup[ ch - 32 ].advance;
+}
+
+static void
+font_slot_glyph( const font_slot_t* slot, u8 ch,
+                 f32* u0, f32* v0, f32* u1, f32* v1,
+                 f32* ox, f32* oy, f32* gw, f32* gh, f32* advance )
+{
+    if ( ch < 32 || ch > 126 ) ch = (u8)'?';
+    const orb_font_glyph_t* g = &slot->lookup[ ch - 32 ];
+    const font_atlas_sample_t* m = &slot->metrics.atlas;
+
+    f32 iw = m->inv_atlas_w;            /* precomputed at load -- no per-glyph divide */
+    f32 ih = m->inv_atlas_h;
+    *u0 = (f32)g->atlas_x * iw;
+    *v0 = (f32)g->atlas_y * ih;
+    *u1 = *u0 + (f32)g->w * iw;
+    *v1 = *v0 + (f32)g->h * ih;
+
+    *ox      = (f32)g->bearing_x;
+    *oy      = (f32)( slot->ascent - (i32)g->bearing_y );
+    *gw      = (f32)g->w;
+    *gh      = (f32)g->h;
+    *advance = (f32)g->advance;
+}
 
 /*----------------------------------------------------------------------------------------------
     Deferred reload queue.
@@ -87,78 +306,8 @@ font_reload_enqueue( u32 id, const char* path )
 }
 
 /*==============================================================================================
-    Atlas finalize -- the white texel + dash rows every font carries.  The two paint helpers
-    directly below are FILE-LOCAL; font_atlas_tex_h / font_finalize_atlas further down are shared
-    with gui_load_font_orb.c (declared in gui_load_font.h).
+    FILE-LOCAL -- slot activation.
 ==============================================================================================*/
-
-/* Paint the dash pattern rows into `pixels` (R8, width `w`) starting at pixel row `row0`. */
-static void
-font_paint_dash_rows( u8* pixels, u32 w, u32 row0 )
-{
-    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-    {
-        u8* row = &pixels[ ( row0 + p ) * w ];
-        u32 on  = (u32)( s_dash_duty[ p ] * (f32)w + 0.5f );
-        if ( on < 1 ) on = 1;
-        if ( on > w ) on = w;
-        memset( row, 0x00, w  );   /* gap    */
-        memset( row, 0xFF, on );   /* on-run */
-    }
-}
-
-/* Fill dash_v[]: pattern row p sits at pixel row row0 + p in a `tex_h`-tall upload. */
-static void
-font_dash_row_v( f32* dash_v, u32 row0, u32 tex_h )
-{
-    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-        dash_v[ p ] = ( (f32)( row0 + p ) + 0.5f ) / (f32)tex_h;
-}
-
-/* Uploaded atlas height for a glyph region of `glyph_h` rows: one white texel row plus the dash
-   pattern rows are appended on top.  Builders size their staging buffer to this. */
-u32
-font_atlas_tex_h( u32 glyph_h )
-{
-    return glyph_h + 1u + GUI_DASH_PATTERN_COUNT;
-}
-
-/* Finalize a staged R8 atlas: append the white texel row and the dash pattern rows on top of the
-   `glyph_h`-row glyph region, then resolve the metrics fields that describe them (white UV,
-   per-glyph UV scale, dash row V coords).  `tex_h` must equal font_atlas_tex_h( glyph_h ). */
-
-void
-font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m )
-{
-    /* White texel strip: fill the first appended row opaque, then the dash pattern rows. */
-    memset( &pixels[ glyph_h * atlas_w ], 0xFF, atlas_w );
-    font_paint_dash_rows( pixels, atlas_w, glyph_h + 1u );
-
-    /* White texel: center of the first appended row (pixel row glyph_h). */
-    m->atlas.white_u = 0.5f / (f32)atlas_w;
-    m->atlas.white_v = ( (f32)glyph_h + 0.5f ) / (f32)tex_h;
-
-    /* Per-glyph UV scale, constant per font -- folds the divide out of the glyph path.  V divides
-       by tex_h (the padded height), so the appended rows stay outside every glyph's UV range. */
-    m->atlas.inv_atlas_w = 1.0f / (f32)atlas_w;
-    m->atlas.inv_atlas_h = 1.0f / (f32)tex_h;
-
-    /* Dash pattern rows follow the white row at pixel row glyph_h + 1. */
-    font_dash_row_v( m->atlas.dash_v, glyph_h + 1u, tex_h );
-}
-
-/*==============================================================================================
-    Slot lifecycle -- FILE-LOCAL, except font_slot_free_gpu (shared with gui_load_font_orb.c;
-    declared in gui_load_font.h).
-==============================================================================================*/
-
-/* Release a slot's owned GPU atlas. */
-
-void
-font_slot_free_gpu( font_slot_t* slot )
-{
-    gui_atlas_destroy( &slot->atlas );
-}
 
 /* Point the active-font pointers at slot `id`. */
 static void
@@ -289,8 +438,27 @@ font_slot_atlas_idx( u32 id )
     return s_fonts[ id ].metrics.atlas.atlas_idx;
 }
 
+/* Path of every gui_builtin_font_t preset (gui.h), indexed by the enum; NULL for GUI_FONT_NONE. */
+static const char* s_builtin_font_path[] = {
+    [ GUI_FONT_NONE ]         = NULL,
+    [ GUI_FONT_JETBRAINS_16 ] = "assets/font/jetbrains_regular_16.orb_font",
+};
+
+/* Load a built-in font preset into slot 0 and activate it.  A no-op success for GUI_FONT_NONE
+   (the caller loads its own font); called from gui_init() when the host passes a preset. */
+bool
+font_load_builtin( gui_builtin_font_t font )
+{
+    if ( font == GUI_FONT_NONE )
+        return true;
+    if ( (u32)font >= ARRAY_COUNT( s_builtin_font_path ) || !s_builtin_font_path[ font ] )
+        return false;
+    return font_load_into( 0, s_builtin_font_path[ font ] );  // slot 0 = the default font
+}
+
 /*==============================================================================================
-    BACKEND-INTERNAL -- module lifecycle, called from gui_submit_render.c (gui_render_init/shutdown).
+    BACKEND-INTERNAL -- module lifecycle, called from gui_03_submit_render.c
+    (gui_render_init/shutdown).
 ==============================================================================================*/
 
 static void
@@ -389,8 +557,9 @@ font_glyph( u8 ch,
 }
 
 /*==============================================================================================
-    BACKEND-INTERNAL -- consumed by gui_build_tess.c (atlas index / white texel / dash rows) and
-    gui_debug_overlay.c (atlas index / white texel), and gui_submit_render.c (memory stats).
+    BACKEND-INTERNAL -- consumed by gui_02_build_tess.c (atlas index / white texel / dash rows)
+    and gui_04_debug_overlay.c (atlas index / white texel), and gui_03_submit_render.c (memory
+    stats).
 ==============================================================================================*/
 
 static u32 font_atlas_idx( void ) { return s_font->atlas.atlas_idx; }
