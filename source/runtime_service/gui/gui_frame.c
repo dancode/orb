@@ -14,10 +14,10 @@
     Init / Shutdown
 ==============================================================================================*/
 
-/* Backend capability flags latched by gui_init_config(), read by gui_init when it stands up the
-   backend.  Defaults to GUI_CAPS_DEFAULT (set below, GUI_CAPS_DEFAULT is a compound literal and
-   not a valid static initializer) so a caller that never calls gui_init_config() sees today's
-   full-feature behavior unchanged. */
+/* Backend capability flags latched by gui_init_config_back(), read by gui_init when it stands up
+   the backend.  Defaults to GUI_CAPS_DEFAULT (set below, GUI_CAPS_DEFAULT is a compound literal
+   and not a valid static initializer) so a caller that never calls gui_init_config_back() sees
+   today's full-feature behavior unchanged. */
 
 static gui_backend_caps_t s_init_caps = { .icons = true, .retained_cache = true,
                                            .render_debug = true, .stats_trace = false };
@@ -27,9 +27,22 @@ static gui_backend_caps_t s_init_caps = { .icons = true, .retained_cache = true,
    entirely to accept GUI_CAPS_DEFAULT. */
 
 void
-gui_init_config( gui_backend_caps_t caps )
+gui_init_config_back( gui_backend_caps_t caps )
 {
     s_init_caps = caps;
+}
+
+/* OPTIONAL: override which UI-unit feature boundaries this run compiles in (gui_forward_caps_t,
+   gui.h) -- tables, keyboard_nav.  s_fwd_caps lives at the top of gui.c (not here) so every tier
+   file below it in the unity build can read it directly; this just overwrites that copy.  Call
+   before init() (or before the first frame, at latest -- unlike the backend caps, nothing here is
+   latched into a one-time GPU setup, so a call any time before the first affected code path runs
+   is safe).  Skip this entirely to accept GUI_FORWARD_CAPS_DEFAULT. */
+
+void
+gui_init_config_front( gui_forward_caps_t caps )
+{
+    s_fwd_caps = caps;
 }
 
 bool

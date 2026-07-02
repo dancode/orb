@@ -39,6 +39,7 @@
 
     widgets/gui_text_edit.c      -- single-line text editing engine: input_field_edit (behind input_text)
     widgets/gui_widget.c         -- core leaf widgets: text, button, checkbox, input_text, selectable
+    widgets/gui_widget_draw.c    -- custom-draw escape hatches: canvas, draw_rect/text, text measure, icons
     widgets/gui_widget_slider.c  -- slider + drag widgets: slider_float/int, drag_int, slider_render
     widgets/gui_widget_numeric.c -- numeric text inputs: input_int/float/double, input_float2/3/4
 
@@ -93,6 +94,18 @@ MOD_USE_APP;
     see: gui_backend.h for the capture macros
 
 ==============================================================================================*/
+
+/*==============================================================================================
+    Capability flags -- latched by gui_init_config_front (gui_frame.c), read directly (same TU)
+    by any file below that owns an optional feature boundary: gui_table.c (tables),
+    gui_dock*.c (docking), gui_nav.c (keyboard_nav).  Declared here, before every tier include, so
+    all of them see it -- the gui_backend.c s_caps placement, mirrored for this unit.  A compound
+    literal is not a valid static initializer (see gui_frame.c's s_init_caps comment), so this
+    repeats GUI_FORWARD_CAPS_DEFAULT's fields by hand; gui_init_config_front overwrites it before
+    init().
+==============================================================================================*/
+
+static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav = true };
 
 /*==============================================================================================
     Layout
@@ -379,6 +392,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
 // Tier 1 -- leaf widgets (needs core/ only)
 #include "runtime_service/gui/widgets/gui_text_edit.c"
 #include "runtime_service/gui/widgets/gui_widget.c"
+#include "runtime_service/gui/widgets/gui_widget_draw.c"
 #include "runtime_service/gui/widgets/gui_widget_slider.c"
 #include "runtime_service/gui/widgets/gui_widget_numeric.c"
 

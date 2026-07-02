@@ -303,6 +303,8 @@ static void table_draw_header( gui_table_t* t );
 bool
 gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height )
 {
+    if ( !s_fwd_caps.tables ) return false;   /* feature boundary: gui_forward_caps_t.tables */
+
     /* Nested tables are not yet supported. */
     if ( s_tab_active ) return false;
     if ( ncols < 1 ) ncols = 1;

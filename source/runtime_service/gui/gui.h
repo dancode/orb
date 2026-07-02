@@ -75,12 +75,12 @@ typedef enum
 
 } gui_builtin_font_t;
 
-/* Backend capability flags -- latched via gui_init_config() before init().  The render pipeline
-   itself (fonts, EMIT draw list, tessellate, SUBMIT flush) is always on and has no flag; everything
-   here is complexity layered on top that a caller can independently switch off.  A caller that
-   never calls gui_init_config() gets GUI_CAPS_DEFAULT, which preserves the pipeline's full
-   behavior -- these flags exist to let a minimal/embedded use of gui shed layers it doesn't need,
-   not to change what a default caller sees. */
+/* Backend capability flags -- latched via gui_init_config_back() before init().  The render
+   pipeline itself (fonts, EMIT draw list, tessellate, SUBMIT flush) is always on and has no flag;
+   everything here is complexity layered on top that a caller can independently switch off.  A
+   caller that never calls gui_init_config_back() gets GUI_CAPS_DEFAULT, which preserves the
+   pipeline's full behavior -- these flags exist to let a minimal/embedded use of gui shed layers
+   it doesn't need, not to change what a default caller sees. */
 
 typedef struct
 {
@@ -98,6 +98,35 @@ typedef struct
 #define GUI_CAPS_DEFAULT \
     ( ( gui_backend_caps_t ){ .icons = true, .retained_cache = true, .render_debug = true, \
                                .stats_trace = false } )
+
+/* Forward (UI-unit) capability flags -- latched via gui_init_config_front() before init(), the
+   gui_backend_caps_t sibling for the UI/core unit (gui.c) instead of the render backend.  These
+   do not exclude any code from the build (checked at callsite, same TU either way) -- the point
+   is feature-boundary clarity: a table() call, a dockspace, or a nav key-press is legibly gated
+   behind its own flag instead of being tangled into the always-on core.  A caller that never
+   calls gui_init_config_front() gets GUI_FORWARD_CAPS_DEFAULT, every flag on, today's behavior.
+
+   gui_ctx_config_t.max_dock_nodes stays a separate, per-context knob -- it sizes the dock-node
+   pool (a memory allocation maximum), not whether the docking feature is turned on.  `docking`
+   here is the on/off switch; max_dock_nodes still controls how big the tree can grow when it is.
+
+   Popups / context menus are not flagged either -- selectable's close-on-click and combo/menu
+   both assume the popup stack is live, so popups are core, not optional. */
+
+typedef struct
+{
+    bool tables;         // table_begin / table_next_row / ... (table/gui_table.c); off makes
+                          // table_begin a no-op (returns false, like a nested-table rejection)
+    bool docking;        // dockspace_over_viewport / dock_split / dock_window / ... (dock/); off
+                          // makes dockspace_over_viewport a no-op (returns GUI_DOCK_NONE), so
+                          // every window it would have hosted free-floats instead
+    bool keyboard_nav;   // the nav cursor + menu-bar mnemonics (popup/gui_nav.c); off leaves
+                          // mouse/touch interaction fully intact, just no keyboard focus ring
+
+} gui_forward_caps_t;
+
+#define GUI_FORWARD_CAPS_DEFAULT \
+    ( ( gui_forward_caps_t ){ .tables = true, .docking = true, .keyboard_nav = true } )
 
 /* Opaque context handle -- integer index into the internal context pool.
    GUI_CTX_DEFAULT (0) is always valid after init().

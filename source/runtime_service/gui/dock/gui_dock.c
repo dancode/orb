@@ -32,7 +32,8 @@ gui_dock_id_t
 gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
 {
     UNUSED( flags );
-    if ( !s_dock_nodes ) return GUI_DOCK_NONE;   /* docking disabled */
+    if ( !s_fwd_caps.docking ) return GUI_DOCK_NONE;   /* feature boundary: gui_forward_caps_t.docking */
+    if ( !s_dock_nodes ) return GUI_DOCK_NONE;   /* pool disabled for this context (max_dock_nodes == 0) */
     if ( vp < 0 || vp >= (gui_vp_t)g_ctx->max_viewports )
         return GUI_DOCK_NONE;
 

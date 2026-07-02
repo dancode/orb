@@ -46,7 +46,7 @@
 /*==============================================================================================
     Backend lifecycle (gui_backend.c) -- the seam the UI unit calls to stand up / tear down the
     whole render backend.  `caps` (gui_backend_caps_t, gui.h) latches which optional layers are
-    active for this run -- gui_init_config()'s value, or GUI_CAPS_DEFAULT if never called; see
+    active for this run -- gui_init_config_back()'s value, or GUI_CAPS_DEFAULT if never called; see
     s_caps at the top of gui_backend.c for how the rest of the unit reads it.  Internally wraps
     gui_render_init/shutdown (gui_render.c), which are no longer exposed past this header.
 ==============================================================================================*/

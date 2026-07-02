@@ -293,6 +293,10 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
 static void
 nav_new_frame( void )
 {
+    if ( !s_fwd_caps.keyboard_nav ) return;   /* feature boundary: gui_forward_caps_t.keyboard_nav;
+                                                  s_nav.win stays GUI_ID_NONE, so nav_item_register
+                                                  never matches a window and mouse input is untouched */
+
     nav_commit_prev();
 
     /* Last frame's first emitted item -- captured before the reset for the "Up at the top of a
