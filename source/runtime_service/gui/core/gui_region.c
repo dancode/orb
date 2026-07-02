@@ -119,6 +119,16 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
     if ( !( flags & GUI_WIN_NO_INPUT ) )
         gui_hover_nominate( id, box, z, 0 );
 
+    /* layout_push_region intersects its own clip against s_build.clip_rect as "the parent clip" --
+       correct for child_begin, genuinely nested inside a window's body clip.  A root region has no
+       real parent: s_build.clip_rect here is just whatever the last unrelated window left behind
+       (e.g. a menu bar's thin strip), and intersecting against it silently empties this region's
+       hit-test clip, so no widget inside it can ever pass rect_hit(s_build.clip_rect) -- hover is
+       gone regardless of z / hover_win.  Reset to the full display rect first, exactly like a
+       window's own plain (non-intersecting) clip assignment in window_begin_ex, so a region is a
+       true root-level context. */
+    s_build.clip_rect = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
+
     /* Chrome-equivalent reset: this open is not an item, so a disabled latch left by a prior
        widget does not leak into the region's first widget. */
     item_flags_chrome_reset();

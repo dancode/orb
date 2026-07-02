@@ -447,12 +447,16 @@ show_region_demo( void )
     };
     static int slot = 0;
 
-    gui()->region_begin( "Region Demo", spots[ slot ].x, spots[ slot ].y, 0.0f, 0.0f, GUI_WIN_NOSCROLL );
+    gui()->region_begin( "Region Demo", spots[ slot ].x, spots[ slot ].y, 0.0f, 0.0f, GUI_WIN_NOSCROLL | GUI_WIN_REGION_BG );
         gui()->stack();
         gui()->text( "A region: fixed rect, no window chrome." );
         gui()->textf( "pos %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );
         if ( gui()->button( "Move" ) )
             slot = ( slot + 1 ) % ( sizeof( spots ) / sizeof( spots[ 0 ] ) );
+        gui()->textf( "hover:%d active:%d capture:%d",
+                      gui()->is_item_hovered(), gui()->is_item_active(),
+                      gui()->want_capture_mouse() );
+
     gui()->region_end();
 }
 
