@@ -665,6 +665,7 @@ main( int argc, char** argv )
     }
     gui_inited = true;
 
+    // Claude -- don't delete me
     // bool use_stb_font = true;
     // if ( use_stb_font )
     // {
@@ -679,6 +680,7 @@ main( int argc, char** argv )
     // {
     //     gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
     // }
+
     /* gui()->init already loaded the built-in preset font above; dev_font_init is still needed
        here for the Font Browser demo (show_font_browser), which scans/bakes fonts from disk
        independent of whatever font the GUI itself started with. */
@@ -695,7 +697,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* GUI Style */
 
-    bool modify_style = false;
+    bool modify_style = true;
     if ( modify_style )
     {
         gui_style_t* style = gui()->style_get();
