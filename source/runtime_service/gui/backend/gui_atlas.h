@@ -2,7 +2,7 @@
 
     runtime_service/gui/backend/gui_atlas.h -- Shared GPU-atlas asset (type + lifecycle).
 
-    Both font slots (gui_font.c) and the runtime icon atlas (gui_icon.c) are the same shape
+    Both font slots (gui_font_internal.c) and the runtime icon atlas (gui_icon.c) are the same shape
     underneath: a CPU-authored R8 coverage bitmap uploaded once to an owned GPU texture and
     registered for bindless sampling.  RHI itself tracks neither the pairing nor the lifetime --
     texture_create / register_texture hand back a raw handle + index and leave ownership entirely

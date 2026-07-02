@@ -19,7 +19,9 @@
 
     gui_submit_shader.h     -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
     gui_atlas.h/.c          -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
-    gui_font.h/.c           -- font registry + .orb_font loader: font_load/use, font_glyph
+    gui_font.h              -- font types shared between the two font files below
+    gui_font_internal.c     -- font registry state + .orb_font loader (all static)
+    gui_font.c              -- font unit's public API: font_load/use, font_glyph (gui_backend.h)
     gui_icon.c              -- runtime icon atlas: icon_register/find/get, draw_push_icon
     gui_01_emit_draw.c      -- CPU draw list: draw_reset, draw_push_*, s_draw
     gui_01_emit_path.c      -- line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
@@ -53,6 +55,7 @@
 #include "runtime_service/gui/backend/gui_atlas.h"
 #include "runtime_service/gui/backend/gui_atlas.c"
 #include "runtime_service/gui/backend/gui_font.h"
+#include "runtime_service/gui/backend/gui_font_internal.c"
 #include "runtime_service/gui/backend/gui_font.c"
 #include "runtime_service/gui/backend/gui_icon.c"
 

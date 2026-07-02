@@ -54,7 +54,7 @@ bool gui_backend_init( void );
 void gui_backend_exit( void );
 
 /*==============================================================================================
-    Tier 1 -- Fonts (gui_font.c)
+    Tier 1 -- Fonts (gui_font.c; implementation in gui_font_internal.c)
 ==============================================================================================*/
 
 u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)

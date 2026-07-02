@@ -261,7 +261,7 @@ gui_render_init( void )
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
 
-    /* Font atlas texture -- handled by gui_font.c.  Each atlas carries an opaque white texel
+    /* Font atlas texture -- handled by gui_font_internal.c.  Each atlas carries an opaque white texel
        (appended row) that solid-color draws sample, so no separate white texture is needed --
        solids and text share the atlas and merge into one draw. */
     if ( !font_init() )

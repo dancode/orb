@@ -2,11 +2,11 @@
 
     runtime_service/gui/backend/gui_font.h -- Font types shared with gui_backend.h.
 
-    Everything declared here is a type, not a function: gui_font.c is the font unit's only
-    translation unit (registry, glyph dispatch, and the .orb_font loader all live there now), so
-    there is nothing left to share across files. The font unit's actual public surface (font_load,
-    font_glyph, etc.) lives in gui_backend.h; see the PUBLIC / BACKEND-INTERNAL / FILE-LOCAL
-    banners inside gui_font.c for how the rest is split.
+    Everything declared here is a type, not a function -- these are shared between
+    gui_font_internal.c (registry, glyph dispatch, the .orb_font loader -- everything static) and
+    gui_font.c (the public API, gui_backend.h) since both need font_slot_t / font_metrics_t.  The
+    font unit's actual public surface lives in gui_backend.h and gui_font.c; see the header
+    comment in gui_font_internal.c for how the split works.
 
     The .orb_font is currently the only font source format gui loads, so we assume it.
 
@@ -34,7 +34,7 @@
 
 #define GUI_DASH_PATTERN_COUNT 4
 
-/* Capacity of the loaded-font registry (gui_font.c).  Slot 0 is the default; loaded fonts occupy
+/* Capacity of the loaded-font registry (gui_font_internal.c).  Slot 0 is the default; loaded fonts occupy
    ids 1..GUI_FONT_REGISTRY_MAX-1. */
 #define GUI_FONT_REGISTRY_MAX 16
 
