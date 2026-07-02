@@ -281,31 +281,15 @@ window_raise_on_press( void )
     window_nominate_hover -- window_begin calls this with its rect + z + host viewport.  Keeps the
     front-most (highest z) window the cursor is over; promoted to hover_win next frame.
 
-    The cursor lives in exactly one OS window/surface at a time (s_io.mouse_viewport, resolved from
-    the win_id on mouse events).  A window on any other surface cannot be under the cursor regardless
-    of where its rect sits in its own surface's coordinate space, so it is rejected before the rect
-    test -- this is the "physical window is a parent hover" rule: the surface must match first, then
-    the window rect within it.  Without this, the polled cursor position (client coords of whatever
-    window the mouse is in) would hit-test against identically-placed windows on every surface.
+    Thin alias for gui_hover_nominate (gui_region.c), which holds the actual body -- relocated
+    there so a root region (compiled before this file, no window/ dependency) can enter the same
+    hover_win contest a window does.
 ----------------------------------------------------------------------------------------------*/
 
 static void
 window_nominate_hover( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
 {
-    /* Deaf context: not listening for input this frame, skip hover nomination. */
-    if ( !g_ctx->listening )
-        return;
-
-    /* Surface gate first: the cursor must be in the OS window hosting this window's viewport. */
-    if ( viewport != s_io.mouse_viewport )
-        return;
-
-    /* Cheap z test gates the rect_hit; window z is unique so > / >= are equivalent. */
-    if ( z >= s_interaction.next_hover_win_z && rect_hit( r ) )
-    {
-        s_interaction.next_hover_win   = id;
-        s_interaction.next_hover_win_z = z;
-    }
+    gui_hover_nominate( id, r, z, viewport );
 }
 
 /*----------------------------------------------------------------------------------------------

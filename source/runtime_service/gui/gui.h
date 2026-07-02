@@ -578,9 +578,9 @@ typedef enum
     /* Input passthrough -- the window is purely visual; the cursor passes through it as if it
        were not there.  hover_win is never set to this window, so no widget inside can receive
        mouse input and the window never steals clicks from content behind it.  Combine with
-       GUI_WIN_OVERLAY for a completely inert window-based HUD.  A fixed-rect HUD with no window
-       identity at all -- the perf overlay's case -- wants region_begin instead (gui_region.c),
-       which is NO_INPUT unconditionally. */
+       GUI_WIN_OVERLAY for a completely inert window-based HUD.  region_begin (gui_region.c)
+       honors this flag too -- a region is interactive by default, opt out with NO_INPUT for a
+       fixed-rect HUD with no window identity at all (the perf overlay's case). */
 
     GUI_WIN_NO_INPUT          = 1 << 20,   /* click-through: never becomes hover_win */
 
@@ -588,6 +588,24 @@ typedef enum
        caller knows content fits and wants to avoid the extra draw batch the scissor causes. */
 
     GUI_WIN_NO_CLIP           = 1 << 21,   /* child: do not push a clip rect */
+
+    /* region_begin only: z-tier override.  A region normally paints/nominates hover at a fixed
+       band above every ordinary window and below every popup (GUI_REGION_Z) -- these two bits
+       replace that band with the opposite extremes, still competing in the same z contest as
+       windows and popups (whichever z wins, wins draw order and hover this frame):
+
+       REGION_BG -- lowest tier (ties the docked/base window floor).  A background element that
+                    only receives hover when nothing else (no raised window) covers it -- e.g. a
+                    desk-level widget that must not steal clicks from anything on top of it.
+       REGION_FG -- highest tier (above every popup depth).  Always wins draw order and hover,
+                    even over an open menu/combo/modal -- e.g. a always-on-top HUD button that
+                    must remain clickable no matter what else is open.
+
+       Mutually exclusive; REGION_BG is checked first if both are set.  Neither bit means the
+       default mid-band behavior. */
+
+    GUI_WIN_REGION_BG         = 1 << 22,   /* region: background z tier -- loses to any raised window */
+    GUI_WIN_REGION_FG         = 1 << 23,   /* region: foreground z tier -- wins over every popup */
 
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual

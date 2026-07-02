@@ -241,9 +241,11 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
         top_y += mb->h;
 
     /* A root region: no chrome to hide (no window body/border to paint transparent), fixed
-       top-left, hugging its content (w/h <= 0 autosize both axes). */
+       top-left, hugging its content (w/h <= 0 autosize both axes).  NO_INPUT: pure text readout,
+       a region is interactive by default and this one has no business entering the hover_win
+       contest or eating the mouse wheel. */
     g_gui_perf_overlay_id = id_hash( "perf_overlay" );
-    gui_region_begin( "perf_overlay", 8.0f, top_y, 0.0f, 0.0f, GUI_WIN_NOSCROLL );
+    gui_region_begin( "perf_overlay", 8.0f, top_y, 0.0f, 0.0f, GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
     {
         gui_stack();
         /* FPS, graded by health: >=60 green, >=30 amber, else red. */

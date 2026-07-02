@@ -18,10 +18,16 @@
     (draw_set_window/sort_key/viewport) so the retained-cache dispatch keys correctly -- but no
     slot in the window pool, no drag/resize/dock/native path, no title, no background fill.
 
-    Root-level only for now: paints on viewport 0 (the main surface) at a fixed z band above
-    ordinary windows and below the popup band, and is NO_INPUT only -- window_nominate_hover
-    lives in the window tier (compiled after this file) and a root region has no z-order policy
-    to arbitrate against windows yet.  Extend when an interactive root region is needed.
+    Root-level only for now: paints on viewport 0 (the main surface).  z tier defaults to a fixed
+    band above ordinary windows and below the popup band (GUI_WIN_REGION_BG / _FG override it --
+    see below), and it competes for hover_win in the same z contest windows and popups use, so it
+    is interactive by default (opt out with GUI_WIN_NO_INPUT, same flag a window honors).
+
+    gui_hover_nominate (below) is window_nominate_hover's body, relocated here so it has no
+    window/ dependency: it touches only s_interaction / g_ctx / s_io / rect_hit, all in scope by
+    this point in the unity build, and both a region and a window need to enter the same global
+    contest.  The window tier (compiled after this file) calls it under its original name via a
+    thin call at each of its three sites -- see gui_window.c.
 
     Included by gui.c after gui_layout_child.c (provides layout_push/pop_region, GUI_STATE,
     REGION_PAD_DEFAULT) -- no window/ dependency, like gui_table.c.
@@ -29,10 +35,45 @@
 ==============================================================================================*/
 // clang-format off
 
-/* Paint band for root regions: above every ordinary window (whose z comes from z_counter, a
-   small monotonic count nowhere near this) and below the popup band (GUI_POPUP_Z_BASE), so a
-   HUD element always draws over normal windows but under a popup / tooltip. */
-#define GUI_REGION_Z   0x40000000u
+/* z tiers for root regions.  GUI_REGION_Z is the default mid-band: above every ordinary window
+   (whose z comes from z_counter, a small monotonic count nowhere near this) and below the popup
+   band (GUI_POPUP_Z_BASE), so a HUD element always draws over normal windows but under a popup /
+   tooltip.  GUI_REGION_BG_Z ties the floor windows start/dock at (0), so a raised window (z >= 1)
+   always wins the contest over it.  GUI_REGION_FG_Z sits above every realistic popup depth, so it
+   wins over an open menu/combo/modal too. */
+#define GUI_REGION_Z     0x40000000u
+#define GUI_REGION_BG_Z  0x00000000u
+#define GUI_REGION_FG_Z  0xF0000000u
+
+/*----------------------------------------------------------------------------------------------
+    gui_hover_nominate -- keep the front-most (highest z) candidate the cursor is over; promoted
+    to hover_win next frame.  Shared by window_begin (gui_window.c) and gui_region_begin, so a
+    region and a window compete for hover_win in one contest keyed purely on z.
+
+    The cursor lives in exactly one OS window/surface at a time (s_io.mouse_viewport, resolved
+    from the win_id on mouse events).  A candidate on any other surface cannot be under the
+    cursor regardless of where its rect sits in its own surface's coordinate space, so it is
+    rejected before the rect test -- the "physical window is a parent hover" rule.
+----------------------------------------------------------------------------------------------*/
+
+static void
+gui_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
+{
+    /* Deaf context: not listening for input this frame, skip hover nomination. */
+    if ( !g_ctx->listening )
+        return;
+
+    /* Surface gate first: the cursor must be in the OS window hosting this candidate's viewport. */
+    if ( viewport != s_io.mouse_viewport )
+        return;
+
+    /* Cheap z test gates the rect_hit; ties keep whichever nominates last this frame. */
+    if ( z >= s_interaction.next_hover_win_z && rect_hit( r ) )
+    {
+        s_interaction.next_hover_win   = id;
+        s_interaction.next_hover_win_z = z;
+    }
+}
 
 /* Persistent scroll + content-measure state, keyed by id -- exactly gui_region_t's scroll link,
    but standalone since a root region has no user_w/user_h (no resize grip). */
@@ -55,11 +96,28 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
 
     gui_rect_t box = { x, y, w, h };
 
-    /* Stamp the draw state a window would: a stable id for the retained-cache key, a fixed HUD
-       z band, and the main surface -- a root region does not yet route to other viewports. */
+    /* z tier: GUI_WIN_REGION_BG / _FG override the default mid-band; mutually exclusive, BG
+       wins if both are set. */
+    u32 z = GUI_REGION_Z;
+    if ( flags & GUI_WIN_REGION_BG )      z = GUI_REGION_BG_Z;
+    else if ( flags & GUI_WIN_REGION_FG ) z = GUI_REGION_FG_Z;
+
+    /* Stamp the draw state a window would: a stable id for the retained-cache key, this region's
+       z tier, and the main surface -- a root region does not yet route to other viewports. */
     draw_set_window( id );
-    draw_set_sort_key( GUI_REGION_Z );
+    draw_set_sort_key( z );
     draw_set_viewport( 0 );
+
+    /* s_build.win_id is the id every widget_behavior call in this region compares against
+       hover_win to decide hot/active (gui_widget_core.c) -- draw_set_window alone only stamps the
+       retained-cache tag, not this.  A window sets it in window_begin_ex; a region is its own
+       root-level context so it must set it too, exactly the same way. */
+    s_build.win_id = id;
+
+    /* Interactive by default -- enter the same hover_win contest a window does, at this region's
+       z tier, so its widgets can go hot/active.  Opt out with GUI_WIN_NO_INPUT for a pure HUD. */
+    if ( !( flags & GUI_WIN_NO_INPUT ) )
+        gui_hover_nominate( id, box, z, 0 );
 
     /* Chrome-equivalent reset: this open is not an item, so a disabled latch left by a prior
        widget does not leak into the region's first widget. */
