@@ -628,6 +628,10 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup GUI */
 
+    gui_forward_caps_t caps = { .keyboard_nav = false, .tables = false, .docking = false  };
+    gui()->init_config_front( caps );        
+                
+    
     // GUI_FONT_NONE
     if ( !gui()->init( GUI_FONT_JETBRAINS_16 ) ) {
          fprintf( stderr, "[sb_gui] gui->init failed\n" );
