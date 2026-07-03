@@ -266,17 +266,17 @@ layout_pop_region( void )
     item_flags_chrome_reset();
 
     /* Close any open line first so the measure sees the full content extent (a partially filled
-       last row counts), then read the pen: cursor_y is the exact content end -- gap-before means
-       no trailing gap to correct for. */
+       last row counts), then read the highwater: content_max_y is the exact content end -- gap-before
+       means no trailing gap to correct for. */
     layout_row_break( f );
 
-    /* Content extent = how far the pen travelled from the unscrolled origin (add the scroll back
+    /* Content extent = how far the highwater climbed from the unscrolled origin (add the scroll back
        to cancel the bias), plus the region pads on that axis: the canvas the scroll range covers
        includes the breathing above the first item and below the last, so scrolling to the end
        leaves the same air under the content as a short region shows above it.  An empty region
        still measures 0 -- consumers use content <= 0 as the "never measured" premeasure sentinel.
-       Stored for next frame's gutter decision + knob proportions. */
-    f32 items_h = ( f->cursor_y      + f->scroll->scroll_y ) - f->origin_y;
+       Both axes read the highwater pair symmetrically.  Stored for next frame's gutter + knob. */
+    f32 items_h = ( f->content_max_y + f->scroll->scroll_y ) - f->origin_y;
     f32 items_w = ( f->content_max_x + f->scroll->scroll_x ) - f->origin_x;
     f32 content_h = ( items_h > 0.0f ) ? items_h + f->pad.t + f->pad.b : 0.0f;
     f32 content_w = ( items_w > 0.0f ) ? items_w + f->pad.l + f->pad.r : 0.0f;
@@ -339,14 +339,12 @@ layout_pop_region( void )
     if ( s_layout_sp > 0 )
     {
         layout_frame_t* p = lf();
-        p->cursor_y    = outer.y + outer.h;
+        content_reach( p, outer.x + outer.w, outer.y + outer.h );   /* pen + highwater past the box */
         p->gap_pending = true;
         p->prev_item   = outer;
         p->line_cross  = outer.y;
         p->line_ext    = outer.h;
         p->line_open   = false;
-        if ( outer.x + outer.w > p->content_max_x )
-            p->content_max_x = outer.x + outer.w;
     }
 }
 

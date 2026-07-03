@@ -469,7 +469,7 @@ show_region_demo( void )
 // - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
-static bool show_demo             = false;
+static bool show_demo             = true;
 static bool show_font_browser_win = false;
 static bool show_split_win        = false;
 static bool show_hud_win          = false;

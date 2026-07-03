@@ -173,7 +173,8 @@
       "PowerShell($p = Start-Process -FilePath \"F:\\\\orb\\\\bin\\\\sb_gui.exe\" -WorkingDirectory \"F:\\\\orb\" -PassThru; Start-Sleep -Seconds 10; if \\($p.HasExited\\) { Write-Output \\(\"EXITED code \" + $p.ExitCode\\) } else { Write-Output \"RUNNING OK after 10s\"; Stop-Process -Id $p.Id -Force -Confirm:$false })",
       "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_gui\" 2>&1 | Select-Object -Last 40)",
       "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 45)",
-      "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 4)"
+      "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 4)",
+      "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 30)"
     ]
   }
 }

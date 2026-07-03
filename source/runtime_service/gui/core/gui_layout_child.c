@@ -356,14 +356,14 @@ split_push_panel( gui_rect_t rect )
 }
 
 /* Pop the current panel and return the content height it actually emitted: commit the open line
-   and read the pen -- under gap-before, cursor_y is the exact content end, so the stored height
-   feeds back stably (a button_fill that fills to it reclaims the same size next frame). */
+   and read the highwater -- under gap-before, content_max_y is the exact content end, so the stored
+   height feeds back stably (a button_fill that fills to it reclaims the same size next frame). */
 static f32
 split_pop_panel( void )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );   /* close any partially-filled multi-column row */
-    f32 h = f->cursor_y - f->origin_y;
+    f32 h = f->content_max_y - f->origin_y;
     if ( h < 0.0f ) h = 0.0f;
     s_id_sp           = f->id_restore;
     s_build.clip_rect = f->parent_clip;
@@ -397,7 +397,9 @@ gui_split_begin( const char* id_str, f32 right_w )
     /* Advance the parent past the split now so it can continue below after split_end: the pen
        lands at the band's exact bottom (the gap below is owed, not appended), and prev_item /
        the line record are stamped so same_line() after split_end anchors to the band. */
-    parent->cursor_y    = y + resolved_h;
+    parent->cursor_y    = y + resolved_h;   /* pen past the band */
+    if ( y + resolved_h > parent->content_max_y )
+        parent->content_max_y = y + resolved_h;   /* highwater climbs to the band bottom (x unchanged) */
     parent->gap_pending = true;
     parent->prev_item   = ( gui_rect_t ){ x, y, parent->content_w, resolved_h };
     parent->line_cross  = y;

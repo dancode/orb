@@ -259,14 +259,18 @@ typedef struct
 
 typedef struct
 {
-    f32             cursor_y;                       // main-axis pen = content-end watermark (scroll-biased)
-    f32             content_x, content_w;           // widget-row left edge + available width
-    f32             content_max_x;                  // cross-axis watermark: rightmost edge reached -- drives hscroll
+    f32             cursor_x, cursor_y;             // pen: top-left where the next line / block opens (scroll-biased)
+    f32             content_x, content_w;           // current line's left edge + available width
+    f32             content_max_x, content_max_y;   // highwater: far corner the content reached (scroll-biased)
 
-    /* cursor_y and content_max_x are the two faces of one 2D content-extent watermark: every item
-       grows them from its far corner via extent_track (gui_layout_core.c).  cursor_y additionally
-       serves as the main-axis pen -- the next line opens below the max reached -- because flow runs
-       strictly downward; there is no x pen because every line restarts at content_x. */
+    /* Two symmetric pairs, one job each.  The PEN (cursor_x, cursor_y) is where the next item goes;
+       the HIGHWATER (content_max_x, content_max_y) is the monotonic bounding-box max the region
+       measures at pop to size its scrollbars / autosize.  Forward flow advances both together
+       (content_reach); a pen REPOSITION -- layout_pen_place for a table row or a menu-bar restore --
+       moves the pen alone, so the highwater never rewinds.  On x the pen sits at the line's left
+       (== content_x) while the highwater tracks the content's right edge; on y the two coincide as
+       flow runs strictly downward, until a reposition parts them.  extent_track grows the highwater;
+       widget_track_width is its x-only face for a leaf widget that overflows its cell. */
 
     /* Active row template (gui_layout / row sugar).  Persists and repeats: each widget fills
        the next cell, wrapping to a fresh row of the same shape when the columns run out.  A

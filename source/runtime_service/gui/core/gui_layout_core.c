@@ -29,29 +29,38 @@
 
 static f32 widget_right( void ) { return lf()->content_x + lf()->content_w; }
 
-/* Grow the region's 2D content-extent watermark to include an item's far corner (x, y) in screen
-   coords.  content_max_x measures the rightmost edge (drives the horizontal bar) and cursor_y the
-   lowest edge (the content end that drives the vertical bar and the gap-before pen); both are just
-   the running max reached this frame.  layout_pop_region cancels the scroll bias and compares each
-   against its view to decide a bar.  A running max over every item's corner reconstructs a line's
-   full extent, so one call per placement replaces the per-axis, per-mode updates the emitters used
-   to do inline -- the single seam through which measured content grows, on either axis. */
+/* Grow the region's highwater (content_max_x, content_max_y) to include a content corner (x, y) in
+   screen coords: the monotonic bounding-box max layout_pop_region cancels the scroll bias out of and
+   compares against each view to decide a scrollbar.  The highwater only ever climbs, so a running
+   max over every item's far corner reconstructs a line's full extent -- one call per placement, on
+   either axis, in place of the per-axis, per-mode inline updates the emitters used to do.  Does not
+   touch the pen; content_reach moves both, widget_track_width grows the x highwater alone. */
 static void
 extent_track( layout_frame_t* f, f32 x, f32 y )
 {
     if ( x > f->content_max_x ) f->content_max_x = x;
-    if ( y > f->cursor_y )      f->cursor_y      = y;
+    if ( y > f->content_max_y ) f->content_max_y = y;
 }
 
-/* The horizontal-only face of extent_track, for a leaf widget reporting that it drew out to right_x
-   -- wider than the cell it was handed (text to its glyphs, a label past the row edge).  The widget
-   knows only its horizontal overflow; the vertical extent is the emitter's business.  Grows the x
-   watermark alone (y passes cursor_y unchanged), so the horizontal bar sees content the cell did
-   not bound.  Every leaf-widget overflow site calls this; the emitters call extent_track directly. */
+/* The x-only face of extent_track, for a leaf widget reporting it drew out to right_x -- wider than
+   the cell it was handed (text to its glyphs, a label past the row edge).  The widget knows only its
+   horizontal overflow; its vertical extent is the emitter's business.  Grows the x highwater alone,
+   so the horizontal bar sees content the cell did not bound.  Every leaf-widget overflow site here. */
 static void
 widget_track_width( f32 right_x )
 {
-    extent_track( lf(), right_x, lf()->cursor_y );
+    if ( right_x > lf()->content_max_x ) lf()->content_max_x = right_x;
+}
+
+/* A forward flow step: content now reaches corner (x, y), so drop the pen to it and lift the
+   highwater with it.  The shared advance behind every placement and block emit (a cell, a packed
+   item, a popped child box).  The pen and highwater move together here -- only a pen reposition
+   (layout_pen_place) parts them.  cursor_y only ever climbs through this seam, so max == the drop. */
+static void
+content_reach( layout_frame_t* f, f32 x, f32 y )
+{
+    if ( y > f->cursor_y ) f->cursor_y = y;   /* pen drops to the content end */
+    extent_track( f, x, y );                  /* highwater climbs with it     */
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -170,13 +179,17 @@ layout_next_y( layout_frame_t* f )
     return f->cursor_y;
 }
 
-/* Place the layout pen at an explicit y -- an imperative host (a table cell) taking authority
-   over the flow.  The pen is authoritative: no line is open and no gap is owed, so the next
-   line opens exactly here. */
+/* Reposition the pen to an explicit y -- an imperative host taking authority over the flow (a table
+   stepping row to row, a menu bar restoring the pen it borrowed).  The pen is authoritative: no line
+   is open and no gap is owed, so the next line opens exactly here.  This moves the PEN alone: the
+   highwater is lifted up-only, so a forward jump (a table row extending the body) is still measured,
+   while a backward restore (a menu bar handing the pen back) does not rewind the content the region
+   already reached. */
 static void
 layout_pen_place( layout_frame_t* f, f32 y )
 {
     f->cursor_y    = y;
+    if ( y > f->content_max_y ) f->content_max_y = y;   /* highwater climbs, never rewinds */
     f->col         = 0;
     f->line_open   = false;
     f->gap_pending = false;
@@ -193,7 +206,7 @@ layout_row_break( layout_frame_t* f )
     {
         if ( f->col > 0 || f->row > 0 )   /* any cell emitted -> the band is consumed */
         {
-            f->cursor_y    = f->content_y_max;
+            content_reach( f, f->content_x, f->content_y_max );   /* pen + highwater to the band bottom */
             f->gap_pending = true;
         }
         f->col = 0;
@@ -297,8 +310,10 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     f->origin_y      = f->outer.y + pad.t;
     f->content_x     = f->origin_x - f->scroll->scroll_x;
     f->content_w     = f->outer.w - pad.l - pad.r - f->sb_w;
+    f->cursor_x      = f->content_x;                    /* pen at the line's left edge */
     f->cursor_y      = f->origin_y - f->scroll->scroll_y;
-    f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
+    f->content_max_x = f->content_x;   /* seed the highwater at the origin corner -> an empty */
+    f->content_max_y = f->cursor_y;    /* body measures 0 on both axes (premeasure sentinel)  */
     f->content_y_max = f->outer.y + f->outer.h - pad.b - f->sb_h;
 
     layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
@@ -411,14 +426,14 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
 
     /* Assemble the rect by mapping (main, cross) onto (x, y): a bar runs main along x, a strip along
        y.  The pen advance, the line's cross-extent max, and the watermark grow are axis-agnostic
-       once the rect is placed -- extent_track pushes cursor_y / content_max_x from its far corner. */
+       once the rect is placed -- content_reach drops the pen and grows the highwater from its corner. */
     gui_rect_t r = horiz ? ( gui_rect_t ){ f->line_main, f->line_cross, main_ext, cross_ext }
                          : ( gui_rect_t ){ f->line_cross, f->line_main, cross_ext, main_ext };
 
     f->line_main += main_ext + ( horiz ? f->lay_gap_x : f->lay_gap_y );
     if ( cross_ext > f->line_ext ) f->line_ext = cross_ext;
 
-    extent_track( f, r.x + r.w, r.y + r.h );
+    content_reach( f, r.x + r.w, r.y + r.h );
     f->prev_item = r;
     return r;
 }
@@ -447,7 +462,7 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
     gui_rect_t r = { f->cellx[ c ], f->line_cross, w, f->line_ext };
 
     f->line_main = r.x + r.w + f->lay_gap_x;    /* pen past the cell -- the same_line handoff */
-    extent_track( f, r.x + r.w, r.y + r.h );    /* grow the watermark from the cell's far corner */
+    content_reach( f, r.x + r.w, r.y + r.h );   /* pen + highwater to the cell's far corner */
 
     if ( ++f->col >= f->lay_ncols )
         line_commit( f );                        /* row full -> fold it; col back to 0 */

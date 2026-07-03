@@ -280,7 +280,7 @@ gui_pack_nextline( void )
     f32  gap       = horiz ? f->lay_gap_y : f->lay_gap_x;
     f32  new_cross = f->line_cross + f->line_ext + gap;   /* past the line just laid */
 
-    line_commit( f );              /* fold it into cursor_y / the width watermark */
+    line_commit( f );              /* close the line -- its extent is already in the highwater */
 
     f->line_cross = new_cross;
     f->line_main  = f->line_origin;
@@ -364,7 +364,7 @@ gui_cursor_screen_pos( void )
     if ( f->line_open && f->col > 0 )
         return ( gui_vec2_t ){ f->cellx[ f->col ], f->line_cross }; /* next cell on the open row */
 
-    return ( gui_vec2_t ){ f->content_x, layout_next_y( f ) };      /* a fresh line at the pen   */
+    return ( gui_vec2_t ){ f->cursor_x, layout_next_y( f ) };       /* a fresh line at the pen   */
 }
 
 /* The current region's available area as a screen rect: the layout pen (top-left) joined with the
@@ -568,6 +568,7 @@ gui_indent( f32 w )
     f->content_x += w;
     f->content_w -= w;
     if ( f->content_w < 0.0f ) f->content_w = 0.0f;
+    f->cursor_x   = f->content_x;        /* pen follows the line's left edge */
     layout_reflow( f );
 }
 
@@ -581,6 +582,7 @@ gui_unindent( f32 w )
     layout_row_break( f );
     f->content_x -= w;
     f->content_w += w;
+    f->cursor_x   = f->content_x;        /* pen follows the line's left edge */
     layout_reflow( f );
 }
 
