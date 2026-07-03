@@ -191,12 +191,14 @@ table_resize_interact( gui_table_t* t )
     s_build.clip_rect = body_hit;
 }
 
-/* Advance the layout cursor past the current row. */
+/* Advance the layout cursor past the current row.  The table is an imperative host: it owns the
+   row pen (next row_top = this row's bottom plus the inter-row gap, where the divider draws), so
+   it places the pen explicitly rather than flowing -- no line stays open, no gap is owed. */
 static void
 table_end_row( gui_table_t* t )
 {
     if ( t->cur_row >= 0 )
-        lf()->cursor_y = t->row_top + t->row_h + (f32)WIDGET_GAP;
+        layout_pen_place( lf(), t->row_top + t->row_h + (f32)WIDGET_GAP );
 }
 
 /* Open the body region below the (optional) header strip and resolve columns inside it.
@@ -325,7 +327,7 @@ gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 hei
     t->cur_col    = -1;
     t->cur_row    = -1;
     t->resize_hot = -1;
-    t->outer_rect = ( gui_rect_t ){ parent->content_x, parent->cursor_y, w, h };
+    t->outer_rect = ( gui_rect_t ){ parent->content_x, layout_next_y( parent ), w, h };
     t->persist    = table_persist_get( id );
 
     /* The body region is opened lazily by table_open_body (called from table_headers_row or
@@ -613,8 +615,7 @@ gui_table_next_column( void )
     f32 iw  = cw - 2.0f * pad;
     if ( iw < 0.0f ) iw = 0.0f;
 
-    f->cursor_y   = t->row_top;   /* reset to the row's top for each column */
-    f->col        = 0;            /* ensure row_y is latched by the first widget in the cell */
+    layout_pen_place( f, t->row_top );   /* pen to the row's top for each column, no gap owed */
     f->content_x  = ix;
     f->content_w  = iw;
     f->cellx[ 0 ] = ix;

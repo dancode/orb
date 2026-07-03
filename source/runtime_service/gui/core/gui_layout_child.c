@@ -127,14 +127,14 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
            vertical axis.  Before any content is measured (first frame) it opens one widget-row
            tall and settles next frame.  An auto-sized child has nothing to scroll. */
         else if ( h <= 0.0f )
-            h = ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIDGET_GAP + WIN_BORDER : WIDGET_H;
+            h = ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIN_BORDER : WIDGET_H;
 
         /* Bound the resolved size by any next-child constraints: an auto-sized box hugs content up
            to max_h then the default vertical scrollbar takes over, and never shrinks below min_h. */
         w = child_con_clamp( w, con_min_w, con_max_w );
         h = child_con_clamp( h, con_min_h, con_max_h );
 
-        box = ( gui_rect_t ){ parent->content_x, parent->cursor_y, w, h };
+        box = ( gui_rect_t ){ parent->content_x, layout_next_y( parent ), w, h };
     }
 
     /* Edge-resize interaction, resolved here -- before the body widgets -- so a press on the grip
@@ -355,20 +355,15 @@ split_push_panel( gui_rect_t rect )
     sublayout_open( rect );
 }
 
-/* Pop the current panel and return the content height it actually emitted.
-   We measure to the bottom of prev_item rather than cursor_y because
-   widget_next_rect_w appends WIDGET_GAP to cursor_y after every item.
-   Using cursor_y would include a trailing gap in the stored height; then
-   button_fill (which fills to content_avail = resolved_h) would claim that
-   inflated size next frame, adding another gap, growing without bound. */
+/* Pop the current panel and return the content height it actually emitted: commit the open line
+   and read the pen -- under gap-before, cursor_y is the exact content end, so the stored height
+   feeds back stably (a button_fill that fills to it reclaims the same size next frame). */
 static f32
 split_pop_panel( void )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );   /* close any partially-filled multi-column row */
-    f32 h = ( f->prev_item.h > 0.0f )
-          ? ( f->prev_item.y + f->prev_item.h ) - f->origin_y
-          : 0.0f;
+    f32 h = f->cursor_y - f->origin_y;
     if ( h < 0.0f ) h = 0.0f;
     s_id_sp           = f->id_restore;
     s_build.clip_rect = f->parent_clip;
@@ -394,15 +389,20 @@ gui_split_begin( const char* id_str, f32 right_w )
     if ( left_w < 0.0f ) left_w = 0.0f;
 
     f32 x = parent->content_x;
-    f32 y = parent->cursor_y;
+    f32 y = layout_next_y( parent );   /* gap-before: the split band opens below prior content */
 
     gui_rect_t left_rect  = { x,                y, left_w,  resolved_h };
     gui_rect_t right_rect = { x + left_w + gap, y, right_w, resolved_h };
 
-    /* Advance the parent past the split now so it can continue below after split_end.
-       Also update prev_item to the full split rect so same_line() after split_end anchors correctly. */
-    parent->cursor_y  += resolved_h + gap;
-    parent->prev_item  = ( gui_rect_t ){ x, y, parent->content_w, resolved_h };
+    /* Advance the parent past the split now so it can continue below after split_end: the pen
+       lands at the band's exact bottom (the gap below is owed, not appended), and prev_item /
+       the line record are stamped so same_line() after split_end anchors to the band. */
+    parent->cursor_y    = y + resolved_h;
+    parent->gap_pending = true;
+    parent->prev_item   = ( gui_rect_t ){ x, y, parent->content_w, resolved_h };
+    parent->line_cross  = y;
+    parent->line_ext    = resolved_h;
+    parent->line_open   = false;
 
     /* Push the split frame and open the left panel. */
     ORB_ASSERT( s_split_sp < GUI_SPLIT_DEPTH );

@@ -125,26 +125,75 @@ unit_resolve( f32 u, f32 natural, f32 avail )
     return u;                                                       /* fixed px                  */
 }
 
-/* Finish a partially-filled row: advance the pen past it and return to column 0.  No-op at a
-   row start.  Called before the template changes or a child region opens, so the next thing
-   lands on a fresh line rather than overlapping the open row.  In pack mode, finalizes the
-   open pack line instead (adding a gap), so a bar() -> stack() transition places the next
-   flow item below the bar rather than flush against it. */
+/* Close the open line: fold its cross extent into cursor_y -- the exact content end, no trailing
+   gap; the next line owes one via gap_pending instead -- and return the column walk to a row
+   start.  The one commit behind flow rows, pack lines, and same_line continuations.  A strip's
+   line is a column, so its extent feeds the width watermark and cursor_y was already carried per
+   item.  An empty line (nothing emitted) folds nothing and owes nothing.  No-op when closed. */
+static void
+line_commit( layout_frame_t* f )
+{
+    f->col = 0;
+    if ( !f->line_open ) return;
+    f->line_open = false;
+    if ( f->line_ext <= 0.0f ) return;   /* nothing emitted -- fold nothing, owe nothing */
+
+    if ( f->mode == GUI_MODE_PACK && f->pack_dir == GUI_PACK_VERTICAL )
+        widget_track_width( f->line_cross + f->line_ext );   /* column extent -> width watermark */
+    else if ( f->line_cross + f->line_ext > f->cursor_y )
+        f->cursor_y = f->line_cross + f->line_ext;
+
+    f->gap_pending = true;
+}
+
+/* Where the next line -- or block placed at the pen: a child box, a split band, a grid band --
+   opens on the cross axis: the content end plus the gap owed by the content above it.  An open
+   line owes one too (cursor_y already carries its live extent); a fresh, still-empty pack line
+   is its own next position (the gap was applied when it opened). */
+static f32
+layout_next_y( layout_frame_t* f )
+{
+    if ( f->line_open && f->line_ext <= 0.0f )   /* open but empty: a just-opened pack line */
+    {
+        bool vert = ( f->mode == GUI_MODE_PACK && f->pack_dir == GUI_PACK_VERTICAL );
+        return vert ? f->line_main : f->line_cross;
+    }
+    if ( f->line_open || f->gap_pending )
+        return f->cursor_y + f->lay_gap_y;
+    return f->cursor_y;
+}
+
+/* Place the layout pen at an explicit y -- an imperative host (a table cell) taking authority
+   over the flow.  The pen is authoritative: no line is open and no gap is owed, so the next
+   line opens exactly here. */
+static void
+layout_pen_place( layout_frame_t* f, f32 y )
+{
+    f->cursor_y    = y;
+    f->col         = 0;
+    f->line_open   = false;
+    f->gap_pending = false;
+}
+
+/* Finish the active template's open geometry before it is replaced or a block is placed at the
+   pen: commit the open line -- or, leaving a grid, surrender the band.  A grid owns everything
+   from its top to the region's content bottom, so once any cell is emitted the pen lands at the
+   band bottom (content_y_max); an untouched grid gives the band back.  Safe in any mode. */
 static void
 layout_row_break( layout_frame_t* f )
 {
-    if ( f->mode == GUI_MODE_PACK )
+    if ( f->mode == GUI_MODE_GRID )
     {
-        /* Close the horizontal pack line: advance cursor_y past the tallest item + gap so the
-           next flow row starts cleanly below the bar.  Vertical pack already tracks cursor_y
-           at the running pen end; a zero pack_line (nothing emitted) needs no advance. */
-        if ( f->pack_dir == GUI_PACK_HORIZONTAL && f->pack_line > 0.0f )
-            f->cursor_y = f->pack_cross + f->pack_line + f->lay_gap_y;
+        if ( f->col > 0 || f->row > 0 )   /* any cell emitted -> the band is consumed */
+        {
+            f->cursor_y    = f->content_y_max;
+            f->gap_pending = true;
+        }
+        f->col = 0;
+        f->row = 0;
         return;
     }
-    if ( f->col == 0 ) return;
-    f->cursor_y = f->row_y + f->row_h_cur + f->lay_gap_y;
-    f->col      = 0;
+    line_commit( f );
 }
 
 /* Count an GUI_END-terminated track list into out[] (capped), substituting a single flex track
@@ -173,10 +222,12 @@ layout_template_reset( layout_frame_t* f )
     f->col            = 0;
     f->row            = 0;
     f->prev_item      = ( gui_rect_t ){ 0 };    /* no same_line anchor in a fresh template */
-    f->cont_line      = false;
-    f->pack_dir       = 0;                      /* pack pen is re-seeded by pack() */
-    f->pack_line      = 0.0f;
+    f->cont_pending   = false;
+    f->line_open      = false;                  /* line_cross/ext/main re-seed when a line opens */
+    f->line_ext       = 0.0f;
+    f->pack_dir       = 0;                      /* pack line is re-seeded by pack() */
     f->pack_size_next = -1.0f;                  /* unset -> next packed item is natural */
+    /* gap_pending is NOT reset: content committed above still owes its gap to the next line. */
 }
 
 /* Reset the orthogonal modifiers: gaps back to the theme, field split off, align to LEFT | TOP. */
@@ -199,9 +250,10 @@ layout_modifiers_reset( layout_frame_t* f )
 static void
 layout_clear( layout_frame_t* f )
 {
-    f->mode      = GUI_MODE_NONE;
-    f->lay_ncols = 0;             /* no template -- first header resolves one */
-    f->lay_row_h = 0.0f;
+    f->mode        = GUI_MODE_NONE;
+    f->lay_ncols   = 0;             /* no template -- first header resolves one */
+    f->lay_row_h   = 0.0f;
+    f->gap_pending = false;         /* fresh region: the first line opens flush at the pen */
     layout_modifiers_reset( f );
     layout_template_reset( f );
 }
@@ -233,6 +285,7 @@ layout_set_default( layout_frame_t* f )
 static void
 layout_seed_content( layout_frame_t* f, gui_pad_t pad )
 {
+    f->pad           = pad;   /* kept: the pads join the measured canvas at pop */
     f->origin_x      = f->outer.x + pad.l;
     f->origin_y      = f->outer.y + pad.t;
     f->content_x     = f->origin_x - f->scroll->scroll_x;
@@ -303,7 +356,7 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
                            f->cellx, f->cellw );
 
     f->lay_nrows = layout_copy_tracks( rows, tracks );
-    f32 grid_top = f->cursor_y;
+    f32 grid_top = layout_next_y( f );   /* gap-before: the band opens below prior content */
     f32 grid_h   = f->content_y_max - grid_top;
     if ( grid_h < 0.0f ) grid_h = 0.0f;
     layout_resolve_tracks( tracks, f->lay_nrows, grid_top, grid_h, f->lay_gap_y,
@@ -325,31 +378,26 @@ grid_next_rect( layout_frame_t* f )
     return r;
 }
 
-/* Hand the next cell to a widget.  `h` is the widget's natural height; in an auto-height flow row
-   (row_h == 0) the *first* widget's h sets the height for the whole row, and the rest of the
-   columns conform.  A fixed row_h overrides it.  The row resolves once at column 0, then each
-   call returns one cell and advances, wrapping to a fresh row when the columns run out.  In grid
-   mode the matrix is already resolved, so it just walks (see above).  The widget just fills the
-   rect; it never sees columns or gaps. */
-
-/* Place one item in pack mode (bar / strip): the print run.  The widget's natural size feeds the
-   main axis (width for a horizontal bar, height for a vertical strip); the cross axis takes its
-   natural extent on that axis, or fills the column when it has none.  A pending pack_size overrides
-   the main extent, resolved against the space left on the current line (0 = natural, 1 = fill the
-   rest, (0,1) a fraction of the remainder, >1 px); it is consumed (back to natural) after one item.
-   pack_main advances along the axis; cursor_y is kept at the content bottom so the region measures
-   its height correctly without a trailing pack_nextline. */
+/* Place one item at the running pen on the open line -- the shared print-run placement behind
+   pack mode (bar / strip) and a same_line continuation in flow.  The widget's natural size feeds
+   the main axis (width along a bar or a continued row, height down a strip); the cross axis takes
+   its natural extent, or fills the column when it has none.  A pending pack_size overrides the
+   main extent, resolved by unit_resolve against the space left on the line, and is consumed
+   (back to natural) after one item.  line_ext grows by running max, and cursor_y is carried live
+   at the content end so queries and the commit both see the true extent. */
 static gui_rect_t
-pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
+line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
 {
-    bool horiz = ( f->pack_dir == GUI_PACK_HORIZONTAL );
+    bool horiz = ( f->mode != GUI_MODE_PACK ) || ( f->pack_dir == GUI_PACK_HORIZONTAL );
+
+    f->line_open = true;   /* self-heal: a pen placement always continues the current line */
 
     /* Natural extents per axis from the widget's preferred size.  A fill widget (no natural width,
        natural_w <= 0) has no main extent of its own: it defaults to filling the rest of the line. */
     f32 nat_main  = horiz ? ( natural_w > 0.0f ? natural_w : 0.0f ) : h;
     f32 cross_ext = horiz ? h : ( natural_w > 0.0f ? natural_w : f->content_w );
 
-    f32 main_avail = ( horiz ? ( f->content_x + f->content_w ) : f->content_y_max ) - f->pack_main;
+    f32 main_avail = ( horiz ? ( f->content_x + f->content_w ) : f->content_y_max ) - f->line_main;
     if ( main_avail < 0.0f ) main_avail = 0.0f;
 
     f32 main_ext      = unit_resolve( f->pack_size_next, nat_main, main_avail );
@@ -358,17 +406,19 @@ pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
     gui_rect_t r;
     if ( horiz )
     {
-        r            = ( gui_rect_t ){ f->pack_main, f->pack_cross, main_ext, cross_ext };
-        f->pack_main += main_ext + f->lay_gap_x;
-        if ( cross_ext > f->pack_line ) f->pack_line = cross_ext;
-        f->cursor_y   = f->pack_cross + f->pack_line;   /* content bottom = current line's bottom */
+        r             = ( gui_rect_t ){ f->line_main, f->line_cross, main_ext, cross_ext };
+        f->line_main += main_ext + f->lay_gap_x;
+        if ( cross_ext > f->line_ext ) f->line_ext = cross_ext;
+        if ( f->line_cross + f->line_ext > f->cursor_y )
+            f->cursor_y = f->line_cross + f->line_ext;    /* live content end */
     }
     else
     {
-        r            = ( gui_rect_t ){ f->pack_cross, f->pack_main, cross_ext, main_ext };
-        f->pack_main += main_ext + f->lay_gap_y;
-        if ( cross_ext > f->pack_line ) f->pack_line = cross_ext;
-        f->cursor_y   = f->pack_main;                   /* content bottom = the running y pen */
+        r             = ( gui_rect_t ){ f->line_cross, f->line_main, cross_ext, main_ext };
+        f->line_main += main_ext + f->lay_gap_y;
+        if ( cross_ext > f->line_ext ) f->line_ext = cross_ext;
+        if ( r.y + r.h > f->cursor_y )
+            f->cursor_y = r.y + r.h;    /* live content end -- max across strip columns */
     }
 
     widget_track_width( r.x + r.w );
@@ -376,13 +426,47 @@ pack_next_rect( layout_frame_t* f, f32 natural_w, f32 h )
     return r;
 }
 
+/* Place one item in the next template cell -- the flow placement.  At a row start (col 0) the
+   line opens at the pen (gap-before): an auto-height row (row_h == 0) takes the *first* item's h
+   as the whole row's height and every cell conforms -- a running max would retroactively misalign
+   cells already handed out -- while a fixed row_h overrides it.  Stack mode lets an item with a
+   natural width shrink to it (button, checkbox, text); columns always fill their track.  Wrapping
+   past the last column commits the line.  line_main is kept at the pen past each cell, so a
+   same_line continuation starts exactly where this cell ended. */
+static gui_rect_t
+line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
+{
+    if ( f->col == 0 )
+    {
+        line_commit( f );                       /* close a reopened same_line row, if any */
+        f->line_cross = layout_next_y( f );     /* the gap owed above is applied here */
+        f->line_ext   = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : h;
+        f->line_open  = true;
+    }
+
+    u32 c = f->col;
+    f32 w = ( f->mode == GUI_MODE_STACK && natural_w > 0.0f && natural_w < f->cellw[ c ] )
+           ? natural_w : f->cellw[ c ];
+    gui_rect_t r = { f->cellx[ c ], f->line_cross, w, f->line_ext };
+
+    widget_track_width( f->cellx[ c ] + w );
+    f->line_main = r.x + r.w + f->lay_gap_x;    /* pen past the cell -- the same_line handoff */
+    if ( f->line_cross + f->line_ext > f->cursor_y )
+        f->cursor_y = f->line_cross + f->line_ext;   /* live content end */
+
+    if ( ++f->col >= f->lay_ncols )
+        line_commit( f );                        /* row full -> fold it; col back to 0 */
+
+    f->prev_item = r;
+    return r;
+}
+
 /* Width-aware form.  `natural_w` is the widget's preferred width.  In stack mode a widget that
    carries one (natural_w > 0) shrinks to it instead of filling the cell -- matching Dear ImGui's
    behavior where buttons size to their label while field widgets (slider, input) fill the row.
-   In columns / grid mode the track cell always wins.  On a same_line the widget sits at the
-   running x sized to natural_w (or fills to the content edge when natural_w <= 0).
-   Every emit records f->prev_item so same_line() can anchor the next widget to this one's line. */
-
+   In columns / grid mode the track cell always wins.  Every emit records f->prev_item so
+   same_line() can anchor the next widget to this one's line.  This is the per-mode dispatch over
+   the line machinery above; the widget just fills the rect it is handed. */
 static gui_rect_t
 widget_next_rect_w( f32 natural_w, f32 h )
 {
@@ -403,71 +487,29 @@ widget_next_rect_w( f32 natural_w, f32 h )
         layout_set_default( f );                    /* release fallback: behave as a plain stack */
     }
 
-    /* Pack mode (bar / strip): the print run places items along its axis, ignoring same_line and the
-       column walk -- pack_nextline is its line break. */
+    gui_rect_t r;
     if ( f->mode == GUI_MODE_PACK )
     {
-        gui_rect_t r = pack_next_rect( f, natural_w, h );
-        DBG_LAYOUT( r );
-        return r;
+        r = line_place_pen( f, natural_w, h );     /* print run along pack_dir */
     }
-
-    /* same_line: place on the previous item's line at the running x, sized to natural_w (or the
-       remaining content width).  Bypasses the column walk; the column cursor restarts below the
-       line, and cursor_y is pushed past the tallest item so following rows clear it. */
-    if ( f->cont_line )
+    else if ( f->lay_nrows > 0 )
     {
-        f->cont_line = false;
-        f32 right    = f->content_x + f->content_w;
-        f32 x        = f->cont_x;
-        f32 w        = ( natural_w > 0.0f ) ? natural_w : ( right - x );
-        if ( w < 0.0f ) w = 0.0f;
-        gui_rect_t r = { x, f->prev_item.y, w, h };
-
-        f32 line_h   = ( h > f->prev_item.h ) ? h : f->prev_item.h;
-        f32 bottom   = f->prev_item.y + line_h + f->lay_gap_y;
-        if ( bottom > f->cursor_y ) f->cursor_y = bottom;
-        f->col       = 0;                                   /* next normal widget starts a row */
-
-        widget_track_width( x + w );
+        r = grid_next_rect( f );                   /* fixed matrix walk */
         f->prev_item = r;
-        DBG_LAYOUT( r );
-        return r;
     }
-
-    gui_rect_t r;
-    if ( f->lay_nrows > 0 )
+    else if ( f->cont_pending )
     {
-        r = grid_next_rect( f );
+        /* same_line continuation: one pen placement on the reopened line; the next plain widget
+           starts a fresh row below it (cell placement at col 0 commits the line first). */
+        f->cont_pending = false;
+        r = line_place_pen( f, natural_w, h );
+        f->col = 0;
     }
     else
     {
-        /* Cells (cellx/cellw) were resolved at install and are constant for every row; only the row
-           top and height are per-row, set here on the first cell.  Auto height takes the first
-           widget's h; a fixed row_h overrides it. */
-        if ( f->col == 0 )
-        {
-            f->row_y     = f->cursor_y;
-            f->row_h_cur = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : h;
-        }
-
-        u32 c = f->col;
-        /* Stack mode: a widget with a natural width preference shrinks to it (button, checkbox,
-           text) rather than filling the full cell.  Columns / grid always fill their track. */
-        f32 w = ( f->mode == GUI_MODE_STACK && natural_w > 0.0f && natural_w < f->cellw[ c ] )
-               ? natural_w : f->cellw[ c ];
-        r = ( gui_rect_t ){ f->cellx[ c ], f->row_y, w, f->row_h_cur };
-        widget_track_width( f->cellx[ c ] + w );
-
-        /* Advance; wrap to a fresh row when the template's columns are exhausted. */
-        if ( ++f->col >= f->lay_ncols )
-        {
-            f->cursor_y = f->row_y + f->row_h_cur + f->lay_gap_y;
-            f->col      = 0;
-        }
+        r = line_place_cell( f, natural_w, h );    /* the next template cell */
     }
 
-    f->prev_item = r;
     DBG_LAYOUT( r );
     return r;
 }

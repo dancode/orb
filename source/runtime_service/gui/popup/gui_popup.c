@@ -264,7 +264,7 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
     bool capped = ( fixed_w > 0.0f );
     if ( capped )
     {
-        f32 chrome = WIDGET_GAP + WIN_BORDER;   /* body top gap + bottom border (no title bar) */
+        f32 chrome = WIN_BORDER;   /* bottom border; the canvas already carries the body pads */
         f32 want_h = ( win->scroll.content_h > 0.0f ) ? win->scroll.content_h + chrome : cap_h;
         if ( want_h > cap_h ) want_h = cap_h;
         gui_window_set_next_size( fixed_w, want_h, GUI_COND_ALWAYS );

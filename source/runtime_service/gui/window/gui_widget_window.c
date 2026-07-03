@@ -276,11 +276,11 @@ static void
 window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
                  f32 content_w, f32 content_h, f32* out_w, f32* out_h )
 {
-    /* Width: content + the symmetric left/right region padding.  Height: title bar + optional
-       menu-bar strip + the content stack + one gap of bottom breathing + the bottom border
-       (the top pad lives inside the body region, the trailing gap inside content_h). */
-    f32 want_w = content_w + 2.0f * WIDGET_PAD;
-    f32 want_h = title_h + mb_h + content_h + WIDGET_GAP + WIN_BORDER;
+    /* The measured content is the full canvas -- items plus the region pads on both ends of each
+       axis -- so the body just wraps it: width is the canvas, height adds the chrome above it and
+       the bottom border (the only body inset the canvas does not carry). */
+    f32 want_w = content_w;
+    f32 want_h = title_h + mb_h + content_h + WIN_BORDER;
 
     /* Stay wide enough for the title bar: the collapse-arrow lead (or the left pad) + the title
        text + a trailing pad.  Keeps the title from being clipped when the body is narrow. */

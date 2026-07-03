@@ -46,8 +46,9 @@
 #define ROUND_GRAB    style_var( GUI_VAR_GRAB_ROUNDING   )
 
 /* Default region padding (the inset every window body / child opens with): pad columns by
-   WIDGET_PAD left and right, offset the first row by WIDGET_GAP, no bottom reserve. */
-#define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, 0.0f } )
+   WIDGET_PAD left and right, WIDGET_GAP of breathing above the first row and below the last --
+   the bottom pad scrolls with the content and joins the measured canvas at pop. */
+#define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )
 
 /*----------------------------------------------------------------------------------------------
     Color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32)

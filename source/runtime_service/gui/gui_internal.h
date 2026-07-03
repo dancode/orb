@@ -301,33 +301,39 @@ typedef struct
     f32             rowy [ GUI_LAYOUT_COLS ];       // resolved cell tops    (grid only)
     f32             rowh [ GUI_LAYOUT_COLS ];       // resolved cell heights (grid only)
 
-    /* Iteration cursor.  Flow: (col) walks one row; a wrap advances cursor_y past row_h_cur and
-       row_y/row_h_cur describe the live row.  Grid: (col,row) walk the pre-resolved matrix. */
+    /* Iteration cursor.  Flow: (col) walks one row of the template; grid: (col,row) walk the
+       pre-resolved matrix.  cursor_y is carried live at the exact content end (committed lines
+       plus the open line) -- a gap is owed *before* the next line (gap_pending), never appended
+       after content, so measurement at pop needs no trailing-gap correction. */
 
     u32             col;                // next column to emit (0 = at a row start)
     u32             row;                // current grid row (with col, walks row-major)
-    f32             row_y;              // top of the current flow row
-    f32             row_h_cur;          // resolved height of the current flow row
     f32             content_y_max;      // bottom of the content area -- grid band end
+    bool            gap_pending;        // content committed above -- the next line owes a gap
 
-    /* same_line: pin the next widget to the previous item's line instead of breaking to a new row.
-       prev_item is the last cell handed out; same_line() arms cont_line and sets cont_x to the
-       continuation x (just past prev_item).  See widget_next_rect_w. */
+    /* The open line -- the one record behind flow rows, pack lines, and same_line continuations.
+       A flow row fixes line_ext when it opens (row_h, or the first item's height) and places
+       items at the template cells; pack and continuations place at the running line_main pen and
+       grow line_ext by max.  line_commit folds the line into cursor_y.  In a strip (vertical
+       pack) the axes flip: line_cross / line_ext are x / width, line_main is the y pen. */
+
+    f32             line_cross;         // cross-axis origin of the current / last line
+    f32             line_ext;           // its cross extent (fixed for a flow row, max for pack)
+    f32             line_main;          // running main-axis pen (past the last item + gap)
+    f32             line_origin;        // main-axis line start (the pack_nextline reset)
+    bool            line_open;          // items may still join this line; commit closes it
+
+    /* same_line: prev_item is the last cell handed out; same_line() reopens its line, moves the
+       pen just past it, and arms cont_pending so the next emit is a one-shot pen placement. */
 
     gui_rect_t      prev_item;          // last cell emitted this region (same_line anchor)
-    bool            cont_line;          // next widget continues on prev_item's line
-    f32             cont_x;             // x at which the continued widget is placed
+    bool            cont_pending;       // next emit continues on the reopened line (one-shot)
 
     /* Pack mode (bar / strip): a print run placing items along pack_dir at natural size -- or a
        pack_size override resolved against the space remaining on the current line -- with
-       pack_nextline breaking to a fresh line.  pack_main is the running pen along the axis,
-       pack_cross the current line's origin on the other axis, pack_line its max cross extent. */
+       pack_nextline breaking to a fresh line.  Built on the open-line record above. */
 
     u8              pack_dir;           // gui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
-    f32             pack_main;          // running main-axis pen (absolute)
-    f32             pack_cross;         // current line's cross-axis origin (absolute)
-    f32             pack_line;          // current line's max cross extent
-    f32             pack_origin_main;   // main-axis start, for the nextline reset
     f32             pack_size_next;     // pending main-axis size unit; < 0 = unset (natural)
 
     /* Resolve context, set at push and read at pop. */
@@ -335,6 +341,7 @@ typedef struct
     gui_id_t        region_id;          // base id for the region's scrollbar widget ids
     gui_win_flags_t flags;              // scroll policy bits (GUI_WIN_*SCROLL), reused
     gui_rect_t      outer;              // the region box in screen space
+    gui_pad_t       pad;                // seed inset -- folded into the measured canvas at pop
     f32             origin_x;           // unscrolled content origin -- measures content extent
     f32             origin_y;
     f32             view_w, view_h;     // gutter-adjusted visible extents (must match the bars)

@@ -265,10 +265,21 @@ layout_pop_region( void )
        left so the bars interact and paint normally. */
     item_flags_chrome_reset();
 
-    /* Content extent = how far the pen travelled from the unscrolled origin (add the scroll
-       back to cancel the bias).  Stored for next frame's gutter decision + knob proportions. */
-    f32 content_h = ( f->cursor_y      + f->scroll->scroll_y ) - f->origin_y;
-    f32 content_w = ( f->content_max_x + f->scroll->scroll_x ) - f->origin_x;
+    /* Close any open line first so the measure sees the full content extent (a partially filled
+       last row counts), then read the pen: cursor_y is the exact content end -- gap-before means
+       no trailing gap to correct for. */
+    layout_row_break( f );
+
+    /* Content extent = how far the pen travelled from the unscrolled origin (add the scroll back
+       to cancel the bias), plus the region pads on that axis: the canvas the scroll range covers
+       includes the breathing above the first item and below the last, so scrolling to the end
+       leaves the same air under the content as a short region shows above it.  An empty region
+       still measures 0 -- consumers use content <= 0 as the "never measured" premeasure sentinel.
+       Stored for next frame's gutter decision + knob proportions. */
+    f32 items_h = ( f->cursor_y      + f->scroll->scroll_y ) - f->origin_y;
+    f32 items_w = ( f->content_max_x + f->scroll->scroll_x ) - f->origin_x;
+    f32 content_h = ( items_h > 0.0f ) ? items_h + f->pad.t + f->pad.b : 0.0f;
+    f32 content_w = ( items_w > 0.0f ) ? items_w + f->pad.l + f->pad.r : 0.0f;
     f->scroll->content_h = content_h;
     f->scroll->content_w = content_w;
 
@@ -318,14 +329,22 @@ layout_pop_region( void )
     }
 
     /* Pop the frame and advance the parent pen past the region box, so the parent's next
-       widget lands directly below it.  The root region (a window body) has no parent frame. */
+       widget lands directly below it.  The box is the parent's last "line": the pen lands at its
+       exact bottom (the gap before whatever follows is owed via gap_pending, not appended), and
+       prev_item / the line record are stamped so same_line after child_end anchors to the box.
+       The root region (a window body) has no parent frame. */
     s_id_sp = f->id_restore;   /* unwind this region's id scope (and any leaked push_id) */
     gui_rect_t outer = f->outer;
     --s_layout_sp;
     if ( s_layout_sp > 0 )
     {
         layout_frame_t* p = lf();
-        p->cursor_y = outer.y + outer.h + WIDGET_GAP;
+        p->cursor_y    = outer.y + outer.h;
+        p->gap_pending = true;
+        p->prev_item   = outer;
+        p->line_cross  = outer.y;
+        p->line_ext    = outer.h;
+        p->line_open   = false;
         if ( outer.x + outer.w > p->content_max_x )
             p->content_max_x = outer.x + outer.w;
     }

@@ -91,8 +91,8 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
 
     /* Autosize on either axis, exactly like child_begin's h <= 0 (AutoResizeY): hug last
        frame's measured content once one exists, else open one widget-row tall. */
-    if ( w <= 0.0f ) w = ( scroll->content_w > 0.0f ) ? scroll->content_w + WIDGET_GAP : WIDGET_H * 4.0f;
-    if ( h <= 0.0f ) h = ( scroll->content_h > 0.0f ) ? scroll->content_h + WIDGET_GAP : WIDGET_H;
+    if ( w <= 0.0f ) w = ( scroll->content_w > 0.0f ) ? scroll->content_w + 2.0f * WIN_BORDER : WIDGET_H * 4.0f;
+    if ( h <= 0.0f ) h = ( scroll->content_h > 0.0f ) ? scroll->content_h + WIN_BORDER : WIDGET_H;
 
     gui_rect_t box = { x, y, w, h };
 

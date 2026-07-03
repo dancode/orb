@@ -328,7 +328,12 @@ gui_menu_bar_end( void )
 
     layout_pop_region();
     s_build.clip_rect = s_menubar_saved_clip;   /* restore the body hit-test clip (pop left it at the window rect) */
-    lf()->cursor_y = s_menubar_saved_cursor;     /* undo the strip pop's body-pen advance */
+
+    /* Undo the strip pop's body-pen advance: the strip lives outside the body flow, so the body
+       resumes exactly where it stood -- pen authoritative (no gap owed), and the strip box must
+       not linger as a same_line anchor. */
+    layout_pen_place( lf(), s_menubar_saved_cursor );
+    lf()->prev_item = ( gui_rect_t ){ 0 };
 }
 
 // clang-format on

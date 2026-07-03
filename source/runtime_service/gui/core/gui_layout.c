@@ -129,9 +129,10 @@ gui_same_line( f32 spacing )
     layout_frame_t* f = lf();
     if ( f->prev_item.w <= 0.0f && f->prev_item.h <= 0.0f ) return;   /* nothing to continue from */
 
-    f32 gap   = ( spacing >= 0.0f ) ? spacing : WIDGET_GAP;
-    f->cont_x = f->prev_item.x + f->prev_item.w + gap;
-    f->cont_line = true;
+    f32 gap         = ( spacing >= 0.0f ) ? spacing : WIDGET_GAP;
+    f->line_main    = f->prev_item.x + f->prev_item.w + gap;
+    f->line_open    = true;   /* reopen the last line -- line_cross / line_ext are still current */
+    f->cont_pending = true;   /* one-shot: the next emit is a pen placement on that line */
 }
 
 /* stack_same_line -- the mode-prefixed name for same_line; identical behavior.  The stack_ spelling
@@ -233,23 +234,27 @@ gui_pack( gui_pack_dir_t dir )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );            /* finish any flow row above the run */
-    layout_template_reset( f );       /* fresh iteration state; the pen is seeded below */
+    layout_template_reset( f );       /* fresh iteration state; the line opens below */
 
     f->mode      = GUI_MODE_PACK;
     f->pack_dir  = (u8)dir;
     f->lay_ncols = 1;                 /* non-zero: pack bypasses the column walk */
 
+    /* Open the first line at the pen: the main pen runs along dir from the line origin, the
+       cross axis sits at the gap-before position below prior content / the content edge. */
     if ( dir == GUI_PACK_HORIZONTAL )
     {
-        f->pack_main  = f->content_x;     /* x pen runs along the line     */
-        f->pack_cross = f->cursor_y;      /* y top of the current line     */
+        f->line_origin = f->content_x;        /* x start of every line       */
+        f->line_cross  = layout_next_y( f );  /* y top of the first line     */
     }
     else
     {
-        f->pack_main  = f->cursor_y;      /* y pen runs down the column    */
-        f->pack_cross = f->content_x;     /* x left of the current column  */
+        f->line_origin = layout_next_y( f );  /* y top of every column       */
+        f->line_cross  = f->content_x;        /* x left of the first column  */
     }
-    f->pack_origin_main = f->pack_main;
+    f->line_main = f->line_origin;
+    f->line_ext  = 0.0f;
+    f->line_open = true;
 }
 
 /* bar -- horizontal pack: items left to right (the toolbar). */
@@ -262,27 +267,26 @@ void gui_strip( void ) { gui_pack( GUI_PACK_VERTICAL ); }
    space remaining on the current line); cleared back to natural after that one item. */
 void gui_pack_size( f32 unit ) { lf()->pack_size_next = unit; }
 
-/* pack_nextline -- break to a fresh line: reset the main pen to the line start and step the cross
-   axis past the line just laid.  No-op outside pack mode. */
+/* pack_nextline -- break to a fresh line: commit the line just laid (folding it into the content
+   measure) and open the next one past it, with the main pen back at the line start.  An empty
+   line still advances by one gap (a deliberate blank line).  No-op outside pack mode. */
 void
 gui_pack_nextline( void )
 {
     layout_frame_t* f = lf();
     if ( f->mode != GUI_MODE_PACK ) return;
 
-    if ( f->pack_dir == GUI_PACK_HORIZONTAL )
-    {
-        f->pack_cross += f->pack_line + f->lay_gap_y;   /* drop below the line */
-        f->pack_main   = f->content_x;                  /* back to the left    */
-        f->cursor_y    = f->pack_cross;
-    }
-    else
-    {
-        f->pack_cross += f->pack_line + f->lay_gap_x;   /* move past the column */
-        f->pack_main   = f->pack_origin_main;           /* back to the top      */
-    }
-    f->pack_line = 0.0f;
-    f->prev_item = ( gui_rect_t ){ 0 };
+    bool horiz     = ( f->pack_dir == GUI_PACK_HORIZONTAL );
+    f32  gap       = horiz ? f->lay_gap_y : f->lay_gap_x;
+    f32  new_cross = f->line_cross + f->line_ext + gap;   /* past the line just laid */
+
+    line_commit( f );              /* fold it into cursor_y / the width watermark */
+
+    f->line_cross = new_cross;
+    f->line_main  = f->line_origin;
+    f->line_ext   = 0.0f;
+    f->line_open  = true;
+    f->prev_item  = ( gui_rect_t ){ 0 };
 }
 
 /* Region padding: re-inset the current region's content area and clear the template back to
@@ -333,8 +337,9 @@ gui_vec2_t
 gui_content_avail( void )
 {
     layout_frame_t* f = lf();
-    f32 w = ( f->content_x + f->content_w ) - f->cursor_x;
-    f32 h = f->content_y_max - f->cursor_y;
+    gui_vec2_t      p = gui_cursor_screen_pos();
+    f32 w = ( f->content_x + f->content_w ) - p.x;
+    f32 h = f->content_y_max - p.y;
     if ( w < 0.0f ) w = 0.0f;
     if ( h < 0.0f ) h = 0.0f;
     return ( gui_vec2_t ){ w, h };
@@ -342,12 +347,24 @@ gui_content_avail( void )
 
 /* Screen position where the next item would be emitted -- the GetCursorScreenPos analogue.  Anchor
    custom draw_* geometry to the layout pen without reserving a cell first; pair with content_avail()
-   for the space ahead.  (Read it where the next widget would land -- it advances as items emit.) */
+   for the space ahead.  Mode-aware: a pack run (or an armed same_line) reports the running line
+   pen, a mid-row flow reports the next open cell, and a fresh row reports the gap-before line
+   origin.  (Read it where the next widget would land -- it advances as items emit.) */
 gui_vec2_t
 gui_cursor_screen_pos( void )
 {
     layout_frame_t* f = lf();
-    return ( gui_vec2_t ){ f->cursor_x, f->cursor_y };
+
+    if ( f->line_open && ( f->mode == GUI_MODE_PACK || f->cont_pending ) )
+    {
+        if ( f->mode == GUI_MODE_PACK && f->pack_dir == GUI_PACK_VERTICAL )
+            return ( gui_vec2_t ){ f->line_cross, f->line_main };   /* strip: pen runs down     */
+        return ( gui_vec2_t ){ f->line_main, f->line_cross };       /* bar / continuation: right */
+    }
+    if ( f->line_open && f->col > 0 )
+        return ( gui_vec2_t ){ f->cellx[ f->col ], f->line_cross }; /* next cell on the open row */
+
+    return ( gui_vec2_t ){ f->cursor_x, layout_next_y( f ) };       /* a fresh line at the pen   */
 }
 
 /* The current region's available area as a screen rect: the layout pen (top-left) joined with the
@@ -544,6 +561,7 @@ void
 gui_indent( f32 w )
 {
     layout_frame_t* f = lf();
+    if ( f->mode == GUI_MODE_GRID ) return;   /* flow / pack only -- a grid carries a fixed matrix */
     if ( w <= 0.0f ) w = WIDGET_H;       /* default step: one row height (aligns under the arrow) */
 
     layout_row_break( f );               /* close the current row before shifting the column */
@@ -558,6 +576,7 @@ void
 gui_unindent( f32 w )
 {
     layout_frame_t* f = lf();
+    if ( f->mode == GUI_MODE_GRID ) return;   /* flow / pack only, mirroring indent */
     if ( w <= 0.0f ) w = WIDGET_H;
 
     layout_row_break( f );
