@@ -916,9 +916,11 @@ typedef struct gui_api_s
        replayed standalone on frames where the rest of the UI build is skipped (see
        update_volatile / frame_dirty below).  `fn` calls ordinary emit functions (text, rect_filled,
        etc) and should bracket them with volatile_begin()/volatile_end() from inside its own body.
-       `id` must be stable across frames (e.g. widget_id(label)).  Interactive widgets are safe to
-       call from `fn` but are inert during replay -- see gui.h (gui_volatile_fn) for the contract. */
-    void ( *volatile_cb    )( gui_id_t id, gui_volatile_fn fn );
+       `label` is hashed the same way widget_id() hashes a label -- combined with the current id
+       scope, so it need only be stable and unique within its own call site, same as any other
+       widget label.  Interactive widgets are safe to call from `fn` but are inert during replay --
+       see gui.h (gui_volatile_fn) for the contract. */
+    void ( *volatile_cb    )( const char* label, gui_volatile_fn fn );
     void ( *volatile_begin )( void );   // called from inside fn: stamp the callback's start position
     void ( *volatile_end   )( void );   // called from inside fn: reserved, no-op today
 

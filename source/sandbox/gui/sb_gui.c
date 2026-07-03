@@ -604,7 +604,7 @@ show_demo_window(bool* p_open)
        to route around; see demo_volatile_pulse_cb above for the widget that keeps animating anyway). */
     gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
 
-    gui()->volatile_cb( 0xC0FFEE01u, demo_volatile_pulse_cb );
+    gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
     gui()->same_line( 0 );
     gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );
 
