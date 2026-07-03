@@ -55,12 +55,12 @@ widget_track_width( f32 right_x )
 /* A forward flow step: content now reaches corner (x, y), so drop the pen to it and lift the
    highwater with it.  The shared advance behind every placement and block emit (a cell, a packed
    item, a popped child box).  The pen and highwater move together here -- only a pen reposition
-   (layout_pen_jump) parts them.  cursor_y only ever climbs through this seam, so max == the drop. */
+   (layout_pen_jump) parts them.  content_y only ever climbs through this seam, so max == the drop. */
 static void
 content_reach( layout_frame_t* f, f32 x, f32 y )
 {
-    if ( y > f->cursor_y ) f->cursor_y = y;   /* pen drops to the content end */
-    extent_track( f, x, y );                  /* highwater climbs with it     */
+    if ( y > f->content_y ) f->content_y = y;   /* pen drops to the content end */
+    extent_track( f, x, y );                    /* highwater climbs with it     */
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -160,7 +160,7 @@ size_animate( f32 target, gui_id_t anim_id, f32 speed )
 }
 
 /* Close the open line and return the column walk to a row start: the next line owes a gap before it
-   (gap_pending) rather than one appended after, so cursor_y stays the exact content end.  The one
+   (gap_pending) rather than one appended after, so content_y stays the exact content end.  The one
    commit behind flow rows, pack lines, and same_line continuations.  The line's extent is already in
    the watermark -- every item grew it from its far corner via extent_track as it was placed -- so
    there is nothing to fold here.  An empty line (nothing emitted) owes nothing.  No-op when closed. */
@@ -185,7 +185,7 @@ line_just_opened( const layout_frame_t* f )
 
 /* Where the next line -- or block placed at the pen: a child box, a split band, a grid band --
    opens on the cross axis: the content end plus the gap owed by the content above it.  An open
-   line owes one too (cursor_y already carries its live extent); a fresh, still-empty pack line
+   line owes one too (content_y already carries its live extent); a fresh, still-empty pack line
    is its own next position (see line_just_opened). */
 static f32
 layout_next_y( layout_frame_t* f )
@@ -196,8 +196,8 @@ layout_next_y( layout_frame_t* f )
         return vert ? f->line_main : f->line_cross;
     }
     if ( f->line_open || f->gap_pending )
-        return f->cursor_y + f->lay_gap_y;
-    return f->cursor_y;
+        return f->content_y + f->lay_gap_y;
+    return f->content_y;
 }
 
 /* Reposition the pen to an explicit y -- an imperative host taking authority over the flow (a table
@@ -209,7 +209,7 @@ layout_next_y( layout_frame_t* f )
 static void
 layout_pen_jump( layout_frame_t* f, f32 y )
 {
-    f->cursor_y    = y;
+    f->content_y   = y;
     if ( y > f->content_max_y ) f->content_max_y = y;   /* highwater climbs, never rewinds */
     f->col         = 0;
     f->line_open   = false;
@@ -331,9 +331,9 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     f->origin_y      = f->outer.y + pad.t;
     f->content_x     = f->origin_x - f->scroll->scroll_x;
     f->content_w     = f->outer.w - pad.l - pad.r - f->sb_w;
-    f->cursor_y      = f->origin_y - f->scroll->scroll_y;
+    f->content_y     = f->origin_y - f->scroll->scroll_y;
     f->content_max_x = f->content_x;   /* seed the highwater at the origin corner -> an empty */
-    f->content_max_y = f->cursor_y;    /* body measures 0 on both axes (premeasure sentinel)  */
+    f->content_max_y = f->content_y;   /* body measures 0 on both axes (premeasure sentinel)  */
     f->content_y_max = f->outer.y + f->outer.h - pad.b - f->sb_h;
 
     layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
@@ -424,7 +424,7 @@ grid_next_rect( layout_frame_t* f )
    the main axis (width along a bar or a continued row, height down a strip); the cross axis takes
    its natural extent, or fills the column when it has none.  A pending pack_size overrides the
    main extent, resolved by unit_resolve against the space left on the line, and is consumed
-   (back to natural) after one item.  line_ext grows by running max, and cursor_y is carried live
+   (back to natural) after one item.  line_ext grows by running max, and content_y is carried live
    at the content end so queries and the commit both see the true extent. */
 static gui_rect_t
 line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )

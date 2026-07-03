@@ -400,7 +400,7 @@ gui_split_begin( const char* id_str, f32 right_w )
     /* Advance the parent past the split now so it can continue below after split_end: the pen
        lands at the band's exact bottom (the gap below is owed, not appended), and prev_item /
        the line record are stamped so same_line() after split_end anchors to the band. */
-    parent->cursor_y    = y + resolved_h;   /* pen past the band */
+    parent->content_y   = y + resolved_h;   /* pen past the band */
     if ( y + resolved_h > parent->content_max_y )
         parent->content_max_y = y + resolved_h;   /* highwater climbs to the band bottom (x unchanged) */
     parent->gap_pending = true;

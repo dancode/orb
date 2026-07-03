@@ -299,7 +299,7 @@ gui_menu_bar_begin( void )
     draw_push_rect_filled( bar.x, bar.y, bar.w, bar.h, 0,0,1,1, 0, COL_TITLE_BG );
 
     /* Save the body pen: the strip is drawn outside the body flow, so the body resumes from here. */
-    s_menubar_saved_cursor = lf()->cursor_y;
+    s_menubar_saved_cursor = lf()->content_y;
 
     /* The strip sits ABOVE the body region that is currently on the stack, so the live clip_rect
        (the body's, which starts below the strip) excludes it entirely.  layout_push_region with

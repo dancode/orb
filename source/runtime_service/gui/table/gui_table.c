@@ -565,7 +565,7 @@ gui_table_next_row( f32 min_h )
     t->cur_row++;
     t->cur_col  = -1;
     t->row_h    = h;
-    t->row_top  = lf()->cursor_y;
+    t->row_top  = lf()->content_y;
 
     /* Table fills are always square -- a rounded fill under the rectangular table scissor would
        leave a gap at each rounded corner that content behind shows through.  Save the ambient

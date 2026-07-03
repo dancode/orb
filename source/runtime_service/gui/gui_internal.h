@@ -259,16 +259,17 @@ typedef struct
 
 typedef struct
 {
-    f32             cursor_y;                       // pen: y where the next line / block opens (scroll-biased)
-    f32             content_x, content_w;           // current line's left edge + available width
+    f32             content_x, content_y;           // pen: current line's left edge / y it opens at (scroll-biased)
+    f32             content_w;                       // available width from content_x
     f32             content_max_x, content_max_y;   // highwater: far corner the content reached (scroll-biased)
 
-    /* The PEN (cursor_y; x has no pen of its own -- a line always starts at content_x) is where
-       the next item goes; the HIGHWATER (content_max_x, content_max_y) is the monotonic bounding-
-       box max the region measures at pop to size its scrollbars / autosize.  Forward flow advances
-       both together (content_reach); a pen REPOSITION -- layout_pen_jump for a table row or a
-       menu-bar restore -- moves cursor_y alone, so the highwater never rewinds.  extent_track grows
-       the highwater; widget_track_width is its x-only face for a leaf widget that overflows its cell. */
+    /* The PEN (content_x, content_y; x has no independent motion -- a line always starts at
+       content_x) is where the next item goes; the HIGHWATER (content_max_x, content_max_y) is the
+       monotonic bounding-box max the region measures at pop to size its scrollbars / autosize.
+       Forward flow advances both together (content_reach); a pen REPOSITION -- layout_pen_jump for
+       a table row or a menu-bar restore -- moves content_y alone, so the highwater never rewinds.
+       extent_track grows the highwater; widget_track_width is its x-only face for a leaf widget
+       that overflows its cell. */
 
     /* Active row template (gui_layout / row sugar).  Persists and repeats: each widget fills
        the next cell, wrapping to a fresh row of the same shape when the columns run out.  A
@@ -309,7 +310,7 @@ typedef struct
     f32             rowh [ GUI_LAYOUT_COLS ];       // resolved cell heights (grid only)
 
     /* Iteration cursor.  Flow: (col) walks one row of the template; grid: (col,row) walk the
-       pre-resolved matrix.  cursor_y is carried live at the exact content end (committed lines
+       pre-resolved matrix.  content_y is carried live at the exact content end (committed lines
        plus the open line) -- a gap is owed *before* the next line (gap_pending), never appended
        after content, so measurement at pop needs no trailing-gap correction. */
 
@@ -321,7 +322,7 @@ typedef struct
     /* The open line -- the one record behind flow rows, pack lines, and same_line continuations.
        A flow row fixes line_ext when it opens (row_h, or the first item's height) and places
        items at the template cells; pack and continuations place at the running line_main pen and
-       grow line_ext by max.  line_commit folds the line into cursor_y.  In a strip (vertical
+       grow line_ext by max.  line_commit folds the line into content_y.  In a strip (vertical
        pack) the axes flip: line_cross / line_ext are x / width, line_main is the y pen. */
 
     f32             line_cross;         // cross-axis origin of the current / last line
