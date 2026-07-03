@@ -266,7 +266,7 @@ typedef struct
     /* Two symmetric pairs, one job each.  The PEN (cursor_x, cursor_y) is where the next item goes;
        the HIGHWATER (content_max_x, content_max_y) is the monotonic bounding-box max the region
        measures at pop to size its scrollbars / autosize.  Forward flow advances both together
-       (content_reach); a pen REPOSITION -- layout_pen_place for a table row or a menu-bar restore --
+       (content_reach); a pen REPOSITION -- layout_pen_jump for a table row or a menu-bar restore --
        moves the pen alone, so the highwater never rewinds.  On x the pen sits at the line's left
        (== content_x) while the highwater tracks the content's right edge; on y the two coincide as
        flow runs strictly downward, until a reposition parts them.  extent_track grows the highwater;

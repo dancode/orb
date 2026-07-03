@@ -198,7 +198,7 @@ static void
 table_end_row( gui_table_t* t )
 {
     if ( t->cur_row >= 0 )
-        layout_pen_place( lf(), t->row_top + t->row_h + (f32)WIDGET_GAP );
+        layout_pen_jump( lf(), t->row_top + t->row_h + (f32)WIDGET_GAP );
 }
 
 /* Open the body region below the (optional) header strip and resolve columns inside it.
@@ -615,7 +615,7 @@ gui_table_next_column( void )
     f32 iw  = cw - 2.0f * pad;
     if ( iw < 0.0f ) iw = 0.0f;
 
-    layout_pen_place( f, t->row_top );   /* pen to the row's top for each column, no gap owed */
+    layout_pen_jump( f, t->row_top );   /* pen to the row's top for each column, no gap owed */
     f->content_x  = ix;
     f->content_w  = iw;
     f->cellx[ 0 ] = ix;

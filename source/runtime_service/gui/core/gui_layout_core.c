@@ -55,7 +55,7 @@ widget_track_width( f32 right_x )
 /* A forward flow step: content now reaches corner (x, y), so drop the pen to it and lift the
    highwater with it.  The shared advance behind every placement and block emit (a cell, a packed
    item, a popped child box).  The pen and highwater move together here -- only a pen reposition
-   (layout_pen_place) parts them.  cursor_y only ever climbs through this seam, so max == the drop. */
+   (layout_pen_jump) parts them.  cursor_y only ever climbs through this seam, so max == the drop. */
 static void
 content_reach( layout_frame_t* f, f32 x, f32 y )
 {
@@ -198,7 +198,7 @@ layout_next_y( layout_frame_t* f )
    while a backward restore (a menu bar handing the pen back) does not rewind the content the region
    already reached. */
 static void
-layout_pen_place( layout_frame_t* f, f32 y )
+layout_pen_jump( layout_frame_t* f, f32 y )
 {
     f->cursor_y    = y;
     if ( y > f->content_max_y ) f->content_max_y = y;   /* highwater climbs, never rewinds */

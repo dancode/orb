@@ -332,7 +332,7 @@ gui_menu_bar_end( void )
     /* Undo the strip pop's body-pen advance: the strip lives outside the body flow, so the body
        resumes exactly where it stood -- pen authoritative (no gap owed), and the strip box must
        not linger as a same_line anchor. */
-    layout_pen_place( lf(), s_menubar_saved_cursor );
+    layout_pen_jump( lf(), s_menubar_saved_cursor );
     lf()->prev_item = ( gui_rect_t ){ 0 };
 }
 
