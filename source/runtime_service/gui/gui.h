@@ -7,6 +7,17 @@
     // TODO: explain the GUI module, its purpose, and how it fits into the larger system.
     // TODO: explain how it works, its architecture, and its main components.
 
+
+    Noteable Optimizations: Fixup wrigin of these features.
+
+    1. CPU emit cache: (s_frame_dirty, gui_frame.c) — a single global bool.
+       * If there is no input ore events, nothign changes, we can skip the entire
+         emit phase and reuse the previous frame's draw list.
+
+    2. GPU tessellation cache (gui_build_cache.c) — granular per window.
+       * A hash mismatch casues re-tessellateion of one window's slot;
+       * Sibling windows still reuse their geometry
+       
 ==============================================================================================*/
 
 #include "orb.h"
@@ -1063,6 +1074,18 @@ typedef struct
     u32 abgr; // packed color   */
 
 } gui_draw_vert_t;
+
+/*==============================================================================================
+    Volatile widget callback
+
+    A "volatile" shape is a fixed-topology primitive (same vertex/index count, same texture and
+    clip, every call) whose vertex attributes are patched in place on frames the UI build is
+    otherwise skipped -- see gui_volatile_rect / gui_update_volatile.  The callback may rewrite
+    x/y/u/v/abgr for each of the `count` vertices handed to it; it must never change `count`,
+    reorder vertices, or hold the pointer past the call.
+==============================================================================================*/
+
+typedef void ( *gui_volatile_fn )( gui_draw_vert_t* verts, u32 count, void* userdata );
 
 /*==============================================================================================
     Semantic draw commands

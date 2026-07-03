@@ -46,6 +46,22 @@ gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
 }
 
 /*----------------------------------------------------------------------------------------------
+    gui_volatile_rect -- a filled rect that can be repainted, in place, on frames where the rest
+    of the UI build is skipped (see gui_update_volatile).  Call every frame like any other draw
+    call -- normal emit re-tags and re-registers it exactly like today's cost, so its cached
+    geometry position stays fresh whenever the window it lives in actually re-tessellates.  `id`
+    must be stable across frames (widget_id(label) or any other id that does not change call to
+    call); `fn` is invoked with the shape's own vertex span whenever a clean frame needs to
+    repaint it -- it may only rewrite position/uv/color, never the vertex count. */
+void
+gui_volatile_rect( gui_id_t id, f32 x, f32 y, f32 w, f32 h, u32 tex_idx, u32 abgr,
+                   gui_volatile_fn fn, void* userdata )
+{
+    draw_push_rect_filled_volatile( id, x, y, w, h, 0,0,1,1, tex_idx, abgr );
+    gui_volatile_register( id, fn, userdata );
+}
+
+/*----------------------------------------------------------------------------------------------
     invisible_button -- standard button interaction (hover, press-capture, click) on an explicit rect
     you already hold: a cell cut from a canvas(), a dummy() slot, any custom-drawn region.  Returns
     true on the click frame.  It owns no layout reservation (the rect is the caller's), so it composes

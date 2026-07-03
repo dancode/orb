@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
@@ -518,6 +519,23 @@ static void show_example_main_menu_bar()
 }
 
 /*============================================================================================*/
+/* Volatile widget demo -- a purely cosmetic square that keeps pulsing on frames where the rest
+   of the UI build is skipped (gui()->frame_dirty() false, mouse idle, nothing else animating).
+   Proves the feature end to end: register once via gui()->volatile_rect, then let
+   gui()->update_volatile() (called from the frame_dirty()==false branch below) repaint it
+   directly every frame with no widget emit, no layout, no re-tessellation of anything else. */
+
+static void
+demo_volatile_pulse( gui_draw_vert_t* verts, u32 count, void* userdata )
+{
+    (void)userdata;
+    f32 t = (f32)sys_tick_seconds();
+    f32 s = 0.5f + 0.5f * sinf( t * 3.0f );
+    u8  g = (u8)( 80.0f + 175.0f * s );
+    u32 abgr = 0xFF000000u | ( (u32)g << 16 ) | ( (u32)g << 8 );   /* ABGR: pulsing cyan (B,G), alpha full */
+    for ( u32 i = 0; i < count; ++i )
+        verts[ i ].abgr = abgr;
+}
 
 static void
 show_demo_window(bool* p_open)
@@ -575,10 +593,21 @@ show_demo_window(bool* p_open)
     gui()->same_line( -1 );
     gui()->textf("counter = %d", counter);
 
-    gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 
-        1000.0f / sys_tick_seconds() /* placeholder for framerate */, 
-        60.0f /* placeholder for fps */);
+    /* Static placeholder text (not wired to a real per-frame delta) -- if this were made to
+       recompute from an ever-growing clock every frame, its changing content would keep this
+       window's command hash different frame to frame forever, which would keep frame_dirty()
+       true forever and defeat the idle-skip entirely (the exact problem volatile widgets exist
+       to route around; see demo_volatile_pulse above for the widget that keeps animating anyway). */
+    gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
 
+    {
+        gui_rect_t r = gui()->canvas( 24.0f );
+        r.w = 24.0f;
+        gui()->volatile_rect( 0xC0FFEE01u, r.x, r.y, r.w, r.h, 0, 0xFFFFFFFFu,
+                              demo_volatile_pulse, NULL );
+        gui()->same_line( 0 );
+        gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );
+    }
 
     for ( int i = 0; i < 40; i++ )
     {
@@ -837,6 +866,12 @@ main( int argc, char** argv )
             gui()->state_overlay( state_mode );
 
             gui()->ctx_end();
+        }
+        else
+        {
+            /* No widget emit this frame -- just repaint any registered volatile_rect shapes
+               directly against their cached geometry (see demo_volatile_pulse above). */
+            gui()->update_volatile();
         }
 
         gui()->frame_end();

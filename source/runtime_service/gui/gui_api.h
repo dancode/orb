@@ -912,6 +912,14 @@ typedef struct gui_api_s
     void ( *draw_rect )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
     void ( *draw_text )( f32 x, f32 y, u32 abgr, const char* str );
 
+    /* volatile_rect -- a filled rect that can be repainted, in place, on frames where the rest of
+       the UI build is skipped (see update_volatile / frame_dirty below).  Call every frame like
+       any other draw call: normal emit keeps its cached geometry position fresh.  `id` must be
+       stable across frames (e.g. widget_id(label)); `fn` may only rewrite the shape's own
+       vertex position/uv/color -- never its vertex count. */
+    void ( *volatile_rect )( gui_id_t id, f32 x, f32 y, f32 w, f32 h, u32 tex_idx, u32 abgr,
+                            gui_volatile_fn fn, void* userdata );
+
     /* text_size -- laid-out pixel size of s (widest line x line span; '\n' breaks).  CalcTextSize. */
     gui_vec2_t ( *text_size )( const char* s );
 
@@ -1099,6 +1107,12 @@ typedef struct gui_api_s
        call render() directly.  gui preserves the previous frame's draw list, tessellated geometry,
        and GPU draw commands for verbatim replay. */
     bool ( *frame_dirty )( void );
+
+    /* update_volatile -- call in place of ctx_begin/emit/ctx_end on a frame where frame_dirty()
+       is false, to repaint every registered volatile_rect (see above) without running any other
+       widget code, layout, hashing, or tessellation.  A no-op safety net for any row whose window
+       vanished or reordered since its last real emit -- see volatile_rect's contract. */
+    void ( *update_volatile )( void );
 
     /* Tables -- a multi-column layout with independent cell clipping and optional scrolling,
        sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll

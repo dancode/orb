@@ -656,24 +656,34 @@ tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     return true;
 }
 
+/* Forward decl: gui_build_cache.c (included right after this file in the gui_backend.c unity
+   build) implements the volatile-widget registry.  tess_dispatch calls this once a tagged
+   command's vertices/indices are written, handing over the absolute span so gui_update_volatile
+   can patch it later on frames where the UI build is skipped entirely. */
+static void volatile_capture( gui_id_t id, gui_id_t win, u32 vert_base, u32 vert_count,
+                              u32 idx_base, u32 idx_count );
+
 /* Tessellate one frame's semantic command list into s_tess geometry.
 
    `order` is a permutation of [0,count): the indices grouped by clip within each z-run (built by
    cache_tess_window) so equal-clip commands tessellate contiguously and collapse into one GPU batch.
-   `fonts` is the parallel font id of each ordered entry (its segment's font).  Before tessellating a
-   command we activate its font so the tess-time lookups -- font_glyph (UVs), font_atlas_idx (atlas),
-   the white texel and dash rows -- resolve from the right atlas; tess_ensure_gpu_cmd then splits the
-   GPU batch on the resulting atlas change.  The active font is saved and restored so the BUILD phase
-   leaves the global font state (used by the next frame's layout) untouched. */
+   `fonts` is the parallel font id of each ordered entry (its segment's font).  `win` is the window
+   being tessellated -- passed through only so a volatile-tagged command can register which window
+   owns it (see cmd_volatile_id / gui_volatile_rect).  Before tessellating a command we activate its
+   font so the tess-time lookups -- font_glyph (UVs), font_atlas_idx (atlas), the white texel and
+   dash rows -- resolve from the right atlas; tess_ensure_gpu_cmd then splits the GPU batch on the
+   resulting atlas change.  The active font is saved and restored so the BUILD phase leaves the
+   global font state (used by the next frame's layout) untouched. */
 static void
-tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 count )
+tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 count, gui_id_t win )
 {
     u32 saved_font = font_active_id();
     u32 cur_font   = saved_font;
 
     for ( u32 oi = 0; oi < count; ++oi )
     {
-        const gui_cmd_t* c = &cmds[ order[ oi ] ];
+        u32              ci = order[ oi ];
+        const gui_cmd_t* c  = &cmds[ ci ];
 
         /* Switch the atlas batch context to this command's segment font when it changes. */
         if ( fonts[ oi ] != cur_font )
@@ -692,9 +702,16 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 co
                     tess_round_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                             c->rect.rounding, c->rect.abgr );
                 else
+                {
+                    gui_id_t vid = s_draw.cmd_volatile_id[ ci ];
+                    u32 vb0 = s_tess.vert_count, ib0 = s_tess.idx_count;
                     tess_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                       c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                       c->rect.tex_idx, c->rect.abgr );
+                    if ( vid != GUI_ID_NONE && s_tess.vert_count > vb0 )
+                        volatile_capture( vid, win, vb0, s_tess.vert_count - vb0,
+                                          ib0, s_tess.idx_count - ib0 );
+                }
                 break;
 
             case GUI_CMD_RECT_OUTLINE:

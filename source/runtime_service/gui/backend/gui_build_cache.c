@@ -170,6 +170,107 @@ static win_geo_slot_t* s_dispatch [ RENDER_MAX_WIN ];
 static u32             s_dispatch_count;
 
 /*==============================================================================================
+    Volatile widgets -- fixed-topology geometry patched in place on frames where the UI build is
+    skipped entirely (gui_frame_dirty() false).  A widget calls gui_volatile_rect every real
+    emit, which both tags its command (draw_push_rect_filled_volatile) and re-registers its
+    callback here (gui_volatile_register); once BUILD tessellates the tagged command,
+    tess_dispatch calls volatile_capture with the resulting absolute vertex/index span.
+    gui_update_volatile (called by the host instead of ctx_begin/emit/ctx_end on a clean frame)
+    replays each active row's callback directly against s_tess.verts -- no layout, no hashing,
+    no hit-testing, and (per cache_build_frame above) no chance of s_tess itself moving under it.
+
+    s_volatile_reflow_gen is the one staleness guard actually needed: a row is only trusted if it
+    was (re)captured at or after the last non-stable rebuild.  Any earlier row belongs to a
+    window that vanished or reordered without re-emitting its volatile widget, so it is retired
+    instead of being patched at a vertex offset that may now belong to something else.
+==============================================================================================*/
+
+#define GUI_MAX_VOLATILE 16
+
+typedef struct
+{
+    gui_id_t         id, win;
+    u32              vert_base, vert_count;
+    u32              idx_base,  idx_count;
+    u32              cap_gen;         // s_volatile_reflow_gen as of the last real capture
+    gui_volatile_fn  fn;
+    void*            userdata;
+    bool             active;          // false once retired by staleness or never captured yet
+
+} gui_volatile_slot_t;
+
+static gui_volatile_slot_t s_volatile[ GUI_MAX_VOLATILE ];
+static u32                 s_volatile_count;
+static u32                 s_volatile_reflow_gen;
+
+static gui_volatile_slot_t*
+volatile_find_or_add( gui_id_t id )
+{
+    for ( u32 i = 0; i < s_volatile_count; ++i )
+        if ( s_volatile[ i ].id == id )
+            return &s_volatile[ i ];
+    if ( s_volatile_count >= GUI_MAX_VOLATILE )
+        return NULL;
+    gui_volatile_slot_t* row = &s_volatile[ s_volatile_count++ ];
+    *row = ( gui_volatile_slot_t ){ .id = id };
+    return row;
+}
+
+/* Called every real emit (gui_volatile_rect, widgets/gui_widget_draw.c) -- (re)binds the
+   callback + userdata for `id`.  Geometry fields are filled separately by volatile_capture once
+   BUILD actually tessellates the tagged command this frame; until the first capture the row
+   stays inactive. */
+void
+gui_volatile_register( gui_id_t id, gui_volatile_fn fn, void* userdata )
+{
+    gui_volatile_slot_t* row = volatile_find_or_add( id );
+    if ( !row ) return;
+    row->fn       = fn;
+    row->userdata = userdata;
+}
+
+/* Called from tess_dispatch (gui_build_tess.c) right after a volatile-tagged command's vertices
+   and indices are written.  `win` lets a future caller cross-check ownership; not otherwise used
+   yet.  Stamps cap_gen so gui_update_volatile can tell this row apart from one left over from
+   before the last disruptive rebuild. */
+static void
+volatile_capture( gui_id_t id, gui_id_t win, u32 vert_base, u32 vert_count,
+                  u32 idx_base, u32 idx_count )
+{
+    gui_volatile_slot_t* row = volatile_find_or_add( id );
+    if ( !row ) return;
+    row->win        = win;
+    row->vert_base  = vert_base;
+    row->vert_count = vert_count;
+    row->idx_base   = idx_base;
+    row->idx_count  = idx_count;
+    row->cap_gen    = s_volatile_reflow_gen;
+    row->active     = true;
+}
+
+/* Host entry point for a clean frame (gui_frame_dirty() == false): patch every still-valid
+   volatile row's vertex span directly, bypassing ctx_begin/emit/hashing/tessellation entirely.
+   A row whose last capture predates the most recent non-stable rebuild is retired instead of
+   patched -- it was not re-emitted during the rebuild that could have moved its geometry, so its
+   vert_base is no longer trustworthy. */
+void
+gui_update_volatile( void )
+{
+    for ( u32 i = 0; i < s_volatile_count; ++i )
+    {
+        gui_volatile_slot_t* row = &s_volatile[ i ];
+        if ( !row->active )
+            continue;
+        if ( row->cap_gen < s_volatile_reflow_gen )
+        {
+            row->active = false;
+            continue;
+        }
+        row->fn( &s_tess.verts[ row->vert_base ], row->vert_count, row->userdata );
+    }
+}
+
+/*==============================================================================================
     Change detection (BUILD step 1) -- diff each window's commands against last frame.
 
     Each frame accumulates every window's per-command hashes (baked at emit by draw_hash_cmd)
@@ -381,7 +482,7 @@ cache_tess_window( gui_id_t win )
             }
     }
 
-    tess_dispatch( s_draw.cmds, win_order, win_font, n );
+    tess_dispatch( s_draw.cmds, win_order, win_font, n, win );
 }
 
 /*==============================================================================================
@@ -433,6 +534,14 @@ cache_build_frame( void )
     for ( u32 wi = 0; set_stable && wi < s_cache.cur_n; ++wi )
         if ( s_slots_prev[ wi ].win != s_cache.cur[ wi ].win || !s_slots_prev[ wi ].valid )
             set_stable = false;
+
+    /* A non-stable rebuild means some window's slot may land at a different vert_base than last
+       frame for reasons that have nothing to do with any one widget's own re-emit (a sibling
+       window appeared/vanished/reordered).  Bump the volatile generation so any registry row
+       NOT freshly re-captured during this same rebuild (see volatile_capture below) is known
+       stale rather than silently patched at a now-foreign vertex offset. */
+    if ( !set_stable )
+        ++s_volatile_reflow_gen;
 
     u32 vert_retained = 0, tri_retained = 0, win_retained = 0;
     u32 total_vert    = 0, total_tri    = 0, overlay_win  = 0;
