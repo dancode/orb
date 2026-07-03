@@ -3,9 +3,9 @@
 /*==============================================================================================
 
     runtime_service/gui/gui.h -- gui module types.
-
-    Include in DLL modules that use gui through the vtable (gui()->...).
-    Include gui_host.h instead for direct-call access (host, sandbox).
+    
+    // TODO: explain the GUI module, its purpose, and how it fits into the larger system.
+    // TODO: explain how it works, its architecture, and its main components.
 
 ==============================================================================================*/
 
@@ -31,10 +31,10 @@ typedef u32 gui_icon_id_t;
 
 /* Opaque viewport handle -- a render surface backed by an OS window.  Returned by
    viewport_open; passed to render, viewport_resize, viewport_close, and
-   window_set_next_viewport.  GUI_VP_INVALID (-1) signals failure or no assignment. */
+   window_set_next_viewport.  GUI_VP_INVALID (UINT32_MAX) signals failure or no assignment. */
 
-typedef i32  gui_vp_t;
-#define GUI_VP_INVALID  (-1)
+typedef u32  gui_vp_t;
+#define GUI_VP_INVALID  (~0u)
 
 /* Opaque dock-node handle -- one region of a viewport's dock tree.  Returned by dockspace_over_viewport
    (the tree root) and dock_split (the new sibling), and passed to dock_split / dock_window to name a

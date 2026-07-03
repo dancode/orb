@@ -269,7 +269,7 @@ dock_drag_commit( gui_id_t win_id, const char* title )
         if ( s_dock_drag.outer )
         {
             /* Edge drop: split the whole tree so the new pane spans a full viewport edge. */
-            gui_dock_id_t side = gui_dock_split_root( (gui_vp_t)s_dock_drag.viewport,
+            gui_dock_id_t side = gui_dock_split_root( s_dock_drag.viewport,
                                                           dock_zone_dir( (dock_zone_t)s_dock_drag.zone ),
                                                           0.5f );
             if ( side != GUI_DOCK_NONE )

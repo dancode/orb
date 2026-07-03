@@ -260,7 +260,7 @@ dbg_expand_quad( f32 wu, f32 wv, f32 x, f32 y, f32 w, f32 h, u32 abgr,
 void
 gui_debug_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
-    if ( vp < 0 || vp >= (gui_vp_t)GUI_MAX_VIEWPORTS ) return;
+    if ( vp >= GUI_MAX_VIEWPORTS ) return;
     if ( s_dbg.cmd_count == 0 || !rhi_cmd_valid( cmd ) ) return;
 
     u8  v  = (u8)vp;
@@ -310,8 +310,8 @@ gui_debug_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     }
 
     u32 frame  = rhi()->cmd_frame_index( cmd );
-    u32 vb_off = ( frame * GUI_MAX_VIEWPORTS + (u32)vp ) * (u32)GUI_DBG_VB_REGION_BYTES;
-    u32 ib_off = ( frame * GUI_MAX_VIEWPORTS + (u32)vp ) * (u32)GUI_DBG_IB_REGION_BYTES;
+    u32 vb_off = ( frame * GUI_MAX_VIEWPORTS + vp ) * (u32)GUI_DBG_VB_REGION_BYTES;
+    u32 ib_off = ( frame * GUI_MAX_VIEWPORTS + vp ) * (u32)GUI_DBG_IB_REGION_BYTES;
 
     rhi()->buffer_write( s_dbg.vb, s_dbg.scratch_verts, vc * sizeof( gui_draw_vert_t ), vb_off );
     rhi()->buffer_write( s_dbg.ib, s_dbg.scratch_idx,   ic * sizeof( u16 ),               ib_off );

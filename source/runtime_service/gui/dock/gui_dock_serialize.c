@@ -72,7 +72,7 @@ u32
 gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz )
 {
     dock_writer_t w = { buf, bufsz, 0u };
-    if ( vp < 0 || vp >= (gui_vp_t)g_ctx->max_viewports )
+    if ( vp >= g_ctx->max_viewports )
     {
         if ( bufsz ) buf[ 0 ] = '\0';
         return 0u;
@@ -182,7 +182,7 @@ dock_parse_node( dock_reader_t* r, u32 vp )
 bool
 gui_dock_load( gui_vp_t vp, const char* text )
 {
-    if ( vp < 0 || vp >= (gui_vp_t)g_ctx->max_viewports || !text )
+    if ( vp >= g_ctx->max_viewports || !text )
         return false;
 
     dock_reader_t r = { text };
@@ -190,8 +190,8 @@ gui_dock_load( gui_vp_t vp, const char* text )
     if ( !dr_line( &r, header, sizeof header ) || strncmp( header, "ORBDOCK", 7 ) != 0 )
         return false;
 
-    dock_free_viewport_tree( (u32)vp );
-    g_ctx->viewports[ vp ].dock_root = dock_ref( dock_parse_node( &r, (u32)vp ) );
+    dock_free_viewport_tree( vp );
+    g_ctx->viewports[ vp ].dock_root = dock_ref( dock_parse_node( &r, vp ) );
     return true;
 }
 

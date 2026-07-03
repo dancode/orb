@@ -34,14 +34,14 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     UNUSED( flags );
     if ( !s_fwd_caps.docking ) return GUI_DOCK_NONE;   /* feature boundary: gui_forward_caps_t.docking */
     if ( !s_dock_nodes ) return GUI_DOCK_NONE;   /* pool disabled for this context (max_dock_nodes == 0) */
-    if ( vp < 0 || vp >= (gui_vp_t)g_ctx->max_viewports )
+    if ( vp >= g_ctx->max_viewports )
         return GUI_DOCK_NONE;
 
     gui_viewport_t*  v    = &g_ctx->viewports[ vp ];
     gui_dock_node_t* root = dock_at( v->dock_root );
     if ( !root )
     {
-        root = dock_node_alloc( (u32)vp );
+        root = dock_node_alloc( vp );
         if ( !root )
             return GUI_DOCK_NONE;
         v->dock_root = dock_ref( root );
@@ -55,11 +55,11 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     dock_node_layout( root, area );
 
     /* Chrome on this surface, below the free-floating windows (z 0), clipped to the surface. */
-    draw_set_viewport ( (u32)vp );
+    draw_set_viewport ( vp );
     draw_set_sort_key ( 0 );
     draw_set_root_clip( dw, dh );
     dock_tree_placeholders( root );
-    dock_tree_splitters   ( root, (u32)vp );
+    dock_tree_splitters   ( root, vp );
 
     /* Restore the ambient build state for the windows emitted next. */
     draw_set_sort_key ( 0 );
@@ -138,10 +138,10 @@ gui_dock_id_t
 gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
 {
     if ( !s_dock_nodes ) return GUI_DOCK_NONE;
-    if ( vp < 0 || vp >= (gui_vp_t)g_ctx->max_viewports )
+    if ( vp >= g_ctx->max_viewports )
         return GUI_DOCK_NONE;
 
-    gui_viewport_t*  v    = &g_ctx->viewports[ (u32)vp ];
+    gui_viewport_t*  v    = &g_ctx->viewports[ vp ];
     gui_dock_node_t* root = dock_at( v->dock_root );
     if ( !root )
         return GUI_DOCK_NONE;
@@ -150,8 +150,8 @@ gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
     if ( root->split == DOCK_SPLIT_NONE && root->tab_count == 0 )
         return gui_dock_split( root->id, dir, ratio, NULL );
 
-    gui_dock_node_t* leaf  = dock_node_alloc( (u32)vp );   /* the new edge pane          */
-    gui_dock_node_t* inner = dock_node_alloc( (u32)vp );   /* the wrapper split          */
+    gui_dock_node_t* leaf  = dock_node_alloc( vp );   /* the new edge pane          */
+    gui_dock_node_t* inner = dock_node_alloc( vp );   /* the wrapper split          */
     if ( !leaf || !inner )
     {
         if ( leaf )  dock_node_free( leaf );

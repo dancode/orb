@@ -184,12 +184,12 @@ gui_window_set_next_size( f32 w, f32 h, gui_cond_t cond )
 
 /* Queue the surface the NEXT window_begin paints into.  Sticky: it lands on the window record and
    persists across frames until reassigned.  Omit to use the ambient viewport (most recently emitted).
-   Invalid or negative vp is treated as the primary (0). */
+   GUI_VP_INVALID is treated as the primary (0). */
 void
 gui_window_set_next_viewport( gui_vp_t vp )
 {
     s_next_win.has_viewport = true;
-    s_next_win.viewport     = ( vp >= 0 ) ? (u32)vp : 0u;
+    s_next_win.viewport     = ( vp != GUI_VP_INVALID ) ? vp : 0u;
 }
 
 /* Resolve one queued axis against the window's remaining permissions.  Returns whether to apply

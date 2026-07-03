@@ -20,8 +20,7 @@
 #include "engine/mod/mod_import.h"
 
 /* forward declare so the API can take a cmd argument without including rhi_api.h */
-struct rhi_cmd_s;
-typedef struct rhi_cmd_s* rhi_cmd_t;
+struct rhi_cmd_s; typedef struct rhi_cmd_s* rhi_cmd_t;
 
 // clang-format off
 /*==============================================================================================
@@ -114,7 +113,7 @@ typedef struct gui_api_s
 
        viewport_open()   -- open a surface for OS window win_id.  The initial drawable size is
                             queried from app() internally -- no redundant w/h parameters.
-                            Returns a handle (gui_vp_t >= 0) or GUI_VP_INVALID if the pool is full.
+                            Returns a valid handle or GUI_VP_INVALID if the pool is full.
                             The first call creates the primary (index 0); call before any frames.
                             win_id routes mouse events from that OS window to this surface.
        viewport_close()  -- close a viewport and release its GPU geometry buffers.  Works for both

@@ -495,14 +495,14 @@ gui_frame_end( void )
 void
 gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 {
-    if ( vp < 0 || vp >= (i32)g_ctx->max_viewports )
+    if ( vp >= g_ctx->max_viewports )
         return;
     gui_viewport_t* v = &g_ctx->viewports[ vp ];
 
     /* Latch the emit time (first render of the frame) and bracket the flush -- "conclude cost at
        render": emit ends here, render time accumulates across every render() call this frame. */
     f64 t0 = perf_render_begin();
-    gui_render_flush( v, (u32)vp, cmd, v->disp_w, v->disp_h );
+    gui_render_flush( v, vp, cmd, v->disp_w, v->disp_h );
 #ifdef GUI_DEBUG_OVERLAY
     gui_debug_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
 #endif
@@ -557,7 +557,7 @@ gui_viewport_open( i32 win_id )
 void
 gui_viewport_resize( gui_vp_t vp, i32 w, i32 h )
 {
-    if ( vp < 0 || vp >= (i32)g_ctx->max_viewports )
+    if ( vp >= g_ctx->max_viewports )
         return;
 
     g_ctx->viewports[ vp ].disp_w = w;
@@ -570,12 +570,12 @@ gui_viewport_resize( gui_vp_t vp, i32 w, i32 h )
 void
 gui_viewport_close( gui_vp_t vp )
 {
-    if ( vp < 0 || vp >= (i32)g_ctx->max_viewports )
+    if ( vp >= g_ctx->max_viewports )
         return;
     viewport_destroy( &g_ctx->viewports[ vp ] );
     /* Migrate any windows on this surface back to the primary. */
     for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].viewport == (u32)vp )
+        if ( s_windows[ i ].viewport == vp )
             s_windows[ i ].viewport = 0;
     /* Trim the high-water viewport count when the closed slot was at the top. */
     while ( g_ctx->viewport_count > 0
@@ -767,7 +767,7 @@ gui_viewport_update( void )
             {
                 /* window_open positions the FRAME; set_pos lands the CLIENT corner on (sx,sy). */
                 app()->window_set_pos( g_ctx->viewports[ vp ].win_id, sx, sy );
-                win->viewport = (u32)vp;
+                win->viewport = vp;
                 win->x        = 0.0f;
                 win->y        = 0.0f;
 
@@ -929,7 +929,7 @@ gui_viewport_render_floaters( void )
         }, 1, NULL );
         rhi()->cmd_end_rendering( cmd );
 
-        gui_render( (gui_vp_t)viewport_id, cmd );
+        gui_render( viewport_id, cmd );
         rhi()->frame_end( vp->rhi_ctx );
     }
 }

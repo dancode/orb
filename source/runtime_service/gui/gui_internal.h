@@ -24,12 +24,11 @@
 
 ==============================================================================================*/
 
-#include "runtime_service/gui/gui_host.h"   /* public gui types: gui_rect_t, gui_id_t, flags, enums */
-#include "runtime_service/rhi/rhi_api.h"          /* rhi_buffer_t / rhi_texture_t for gui_viewport_t           */
-#include "engine/app/app_api.h"                   /* app_key_t / app_event_t for gui_io_t + event forwarders   */
+#include "runtime_service/gui/gui_host.h"   // public gui types: gui_rect_t, gui_id_t, flags, enums
+#include "runtime_service/rhi/rhi_api.h"    // rhi_buffer_t / rhi_texture_t for gui_viewport_t
+#include "engine/app/app_api.h"             // app_key_t / app_event_t for gui_io_t + event forwarders
 
 // clang-format off
-
 /*==============================================================================================
     Shared capacities
 
@@ -260,7 +259,7 @@ typedef struct
 typedef struct
 {
     f32             content_x, content_y;           // pen: current line's left edge / y it opens at (scroll-biased)
-    f32             content_w;                       // available width from content_x
+    f32             content_w;                      // available width from content_x
     f32             content_max_x, content_max_y;   // highwater: far corner the content reached (scroll-biased)
 
     /* The PEN (content_x, content_y; x has no independent motion -- a line always starts at
