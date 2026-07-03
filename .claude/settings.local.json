@@ -193,7 +193,17 @@
       "PowerShell(cmd.exe /c \"F:\\\\orb\\\\_build_gui.bat\"; Get-Content \"F:\\\\orb\\\\_build_gui.log\" -Tail 150)",
       "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\_build_gui.bat\" 2>&1 | Out-String -Width 200)",
       "Bash(./bin/build_tool.exe -help)",
-      "PowerShell($p = Start-Process -FilePath \"cmd.exe\" -ArgumentList '/c \"F:\\\\orb\\\\_build_gui.bat\" > F:\\\\orb\\\\_build_gui_out2.txt 2>&1' -PassThru -Wait -WindowStyle Hidden; $p.ExitCode)"
+      "PowerShell($p = Start-Process -FilePath \"cmd.exe\" -ArgumentList '/c \"F:\\\\orb\\\\_build_gui.bat\" > F:\\\\orb\\\\_build_gui_out2.txt 2>&1' -PassThru -Wait -WindowStyle Hidden; $p.ExitCode)",
+      "Read(//c/Program Files/Microsoft Visual Studio/2022/**)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft Visual Studio/**)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_engine_app' 2>&1 | Select-Object -Last 60)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_engine_app' 2>&1 | Select-Object -Last 80)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_engine_app' 2>&1 | Select-Object -Last 100)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && cd /d F:\\\\orb && bin\\\\build_tool.exe -clean && bin\\\\build_tool.exe -gen && bin\\\\build_tool.exe -config Debug -target sb_engine_app' 2>&1 | Select-Object -Last 120)",
+      "Bash(sort -k6,7)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 80)",
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 60)",
+      "Bash(python3 *)"
     ]
   }
 }

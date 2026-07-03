@@ -235,8 +235,8 @@ typedef struct app_mouse_btn_event_s /* 8 bytes */
 
 typedef struct app_mouse_wheel_event_s /* 8 bytes */
 {
-    i32 delta; /* signed; positive = toward user            */
-    i16 x, y;  /* client-area cursor position               */
+    f32 delta; /* signed notches (fractional); positive = toward user */
+    i16 x, y;  /* client-area cursor position                         */
 
 } app_mouse_wheel_event_t;
 

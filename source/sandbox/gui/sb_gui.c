@@ -576,6 +576,12 @@ show_demo_window(bool* p_open)
         1000.0f / sys_tick_seconds() /* placeholder for framerate */, 
         60.0f /* placeholder for fps */);
 
+
+    for ( int i = 0; i < 40; i++ )
+    {
+        gui()->textf( "Line %d", i );
+    }
+
     gui()->window_end();
 
     if (show_another_window)

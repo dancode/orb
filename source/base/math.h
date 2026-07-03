@@ -162,50 +162,50 @@ f32_nearly_equal( f32 a, f32 b, f32 eps )
     Vectors
 ==============================================================================================*/
 
-typedef union vec2_s
-{
-    struct { f32 x, y; };
-    struct { f32 w, h; };
-    f32 e[ 2 ];
-} vec2_t;
-
-typedef union vec3_s
-{
-    struct { f32 x, y, z; };
-    struct { f32 r, g, b; };
-    struct { vec2_t xy; f32 _z; };
-    struct { f32 _x; vec2_t yz;  };
-    f32 e[ 3 ];
-} vec3_t;
-
-typedef union vec4_s
-{
-    struct { f32 x, y, z, w; };
-    struct { f32 r, g, b, a; };
-    struct { vec2_t xy; vec2_t zw; };
-    struct { vec3_t xyz; f32 _w; };
-    f32 e[ 4 ];
-} vec4_t;
+// typedef union vec2_s
+// {
+//     struct { f32 x, y; };
+//     struct { f32 w, h; };
+//     f32 e[ 2 ];
+// } vec2_t;
+// 
+// typedef union vec3_s
+// {
+//     struct { f32 x, y, z; };
+//     struct { f32 r, g, b; };
+//     struct { vec2_t xy; f32 _z; };
+//     struct { f32 _x; vec2_t yz;  };
+//     f32 e[ 3 ];
+// } vec3_t;
+// 
+// typedef union vec4_s
+// {
+//     struct { f32 x, y, z, w; };
+//     struct { f32 r, g, b, a; };
+//     struct { vec2_t xy; vec2_t zw; };
+//     struct { vec3_t xyz; f32 _w; };
+//     f32 e[ 4 ];
+// } vec4_t;
 
 /*==============================================================================================
     Points
 ==============================================================================================*/
 
-typedef union vec2i_s
-{
-    struct { i32 x, y; };
-    struct { i32 w, h; };
-    i32 e[ 2 ];
-} vec2i_t;
-
-typedef union vec3i_s
-{
-    struct { i32 x, y, z; };
-    struct { i32 r, g, b; };
-    struct { vec2i_t xy; i32 _z; };
-    struct { i32 _x; vec2i_t yz;  };
-    i32 e[ 3 ];
-} vec3i_t;
+// typedef union vec2i_s
+// {
+//     struct { i32 x, y; };
+//     struct { i32 w, h; };
+//     i32 e[ 2 ];
+// } vec2i_t;
+// 
+// typedef union vec3i_s
+// {
+//     struct { i32 x, y, z; };
+//     struct { i32 r, g, b; };
+//     struct { vec2i_t xy; i32 _z; };
+//     struct { i32 _x; vec2i_t yz;  };
+//     i32 e[ 3 ];
+// } vec3i_t;
 
 /*==============================================================================================
     Vectors

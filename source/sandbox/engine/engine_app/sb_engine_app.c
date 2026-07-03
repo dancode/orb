@@ -167,7 +167,7 @@ print_event( const app_event_t* ev )
             break;
 
         case APP_EV_MOUSE_WHEEL:
-            printf( " delta=%+d xy=(%d,%d)", ev->data.mouse_wheel.delta,
+            printf( " delta=%+.2f xy=(%d,%d)", (double)ev->data.mouse_wheel.delta,
                     ev->data.mouse_wheel.x, ev->data.mouse_wheel.y );
             break;
 

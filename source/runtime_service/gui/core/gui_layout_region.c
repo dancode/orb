@@ -325,6 +325,15 @@ layout_pop_region( void )
         scroll_clamp( &f->scroll->scroll_y, content_h, f->view_h );
         scroll_clamp( &f->scroll->scroll_x, content_w, f->view_w );
 
+        /* The new offset only reaches the screen next frame -- this frame's items were already
+           positioned from the pre-update value (layout_push_region seeds the pen from *scroll
+           at push, before this pop runs).  Without forcing one more build, a frame with no other
+           stimulus goes clean (retained cache sees identical output vs. last frame) and the
+           update stalls until some unrelated input arrives -- every other notch appears to do
+           nothing, since it is showing the previous notch's result.  Same fix as the collapse /
+           close toggles above: force the guaranteed follow-up frame that flushes it. */
+        s_retained.wants_redraw = true;
+
         s_build.wheel_used = true;
     }
 

@@ -379,7 +379,12 @@ input_handle_mouse_move( i16 x, i16 y, win_id_t win_id )
 static void
 input_handle_mouse_wheel( WPARAM wp, i16 x, i16 y, win_id_t win_id )
 {
-    i32         delta         = GET_WHEEL_DELTA_WPARAM( wp ) / WHEEL_DELTA;
+    /* WHEEL_DELTA (120) is a classic notch mouse's per-click unit, not a hardware constant --
+       high-resolution wheels, free-spin mice, and precision-touchpad scroll gestures report
+       raw units of any granularity (seen: 60, 40, 8...).  Divide as float rather than quantizing
+       to whole notches: a half-size raw unit then scrolls half as far this message instead of
+       being dropped or needing a second message to accumulate a full notch. */
+    f32 delta = (f32)GET_WHEEL_DELTA_WPARAM( wp ) / (f32)WHEEL_DELTA;
 
     app_event_t ev            = win_make_event( APP_EV_MOUSE_WHEEL, win_id );
     ev.data.mouse_wheel.delta = delta;
