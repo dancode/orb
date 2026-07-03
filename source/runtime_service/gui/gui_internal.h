@@ -259,9 +259,14 @@ typedef struct
 
 typedef struct
 {
-    f32             cursor_x,  cursor_y;            // layout pen, top-left of the next widget (scroll-biased)
+    f32             cursor_y;                       // main-axis pen = content-end watermark (scroll-biased)
     f32             content_x, content_w;           // widget-row left edge + available width
-    f32             content_max_x;                  // rightmost edge reached this frame -- drives hscroll
+    f32             content_max_x;                  // cross-axis watermark: rightmost edge reached -- drives hscroll
+
+    /* cursor_y and content_max_x are the two faces of one 2D content-extent watermark: every item
+       grows them from its far corner via extent_track (gui_layout_core.c).  cursor_y additionally
+       serves as the main-axis pen -- the next line opens below the max reached -- because flow runs
+       strictly downward; there is no x pen because every line restarts at content_x. */
 
     /* Active row template (gui_layout / row sugar).  Persists and repeats: each widget fills
        the next cell, wrapping to a fresh row of the same shape when the columns run out.  A

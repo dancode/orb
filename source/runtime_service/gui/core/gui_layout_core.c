@@ -29,16 +29,29 @@
 
 static f32 widget_right( void ) { return lf()->content_x + lf()->content_w; }
 
-/* Grow the active region's measured horizontal extent to include a widget that draws out to
-   right_x (in screen coords).  layout_pop_region cancels the scroll bias and compares the
-   total against the view to decide the horizontal scrollbar, mirroring how cursor_y travel
-   measures content height.  Most widgets fill content_w, but text draws its natural width
-   and can reach past the view -- that overflow is what the horizontal bar scrolls. */
+/* Grow the region's 2D content-extent watermark to include an item's far corner (x, y) in screen
+   coords.  content_max_x measures the rightmost edge (drives the horizontal bar) and cursor_y the
+   lowest edge (the content end that drives the vertical bar and the gap-before pen); both are just
+   the running max reached this frame.  layout_pop_region cancels the scroll bias and compares each
+   against its view to decide a bar.  A running max over every item's corner reconstructs a line's
+   full extent, so one call per placement replaces the per-axis, per-mode updates the emitters used
+   to do inline -- the single seam through which measured content grows, on either axis. */
+static void
+extent_track( layout_frame_t* f, f32 x, f32 y )
+{
+    if ( x > f->content_max_x ) f->content_max_x = x;
+    if ( y > f->cursor_y )      f->cursor_y      = y;
+}
+
+/* The horizontal-only face of extent_track, for a leaf widget reporting that it drew out to right_x
+   -- wider than the cell it was handed (text to its glyphs, a label past the row edge).  The widget
+   knows only its horizontal overflow; the vertical extent is the emitter's business.  Grows the x
+   watermark alone (y passes cursor_y unchanged), so the horizontal bar sees content the cell did
+   not bound.  Every leaf-widget overflow site calls this; the emitters call extent_track directly. */
 static void
 widget_track_width( f32 right_x )
 {
-    if ( right_x > lf()->content_max_x )
-        lf()->content_max_x = right_x;
+    extent_track( lf(), right_x, lf()->cursor_y );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -125,24 +138,18 @@ unit_resolve( f32 u, f32 natural, f32 avail )
     return u;                                                       /* fixed px                  */
 }
 
-/* Close the open line: fold its cross extent into cursor_y -- the exact content end, no trailing
-   gap; the next line owes one via gap_pending instead -- and return the column walk to a row
-   start.  The one commit behind flow rows, pack lines, and same_line continuations.  A strip's
-   line is a column, so its extent feeds the width watermark and cursor_y was already carried per
-   item.  An empty line (nothing emitted) folds nothing and owes nothing.  No-op when closed. */
+/* Close the open line and return the column walk to a row start: the next line owes a gap before it
+   (gap_pending) rather than one appended after, so cursor_y stays the exact content end.  The one
+   commit behind flow rows, pack lines, and same_line continuations.  The line's extent is already in
+   the watermark -- every item grew it from its far corner via extent_track as it was placed -- so
+   there is nothing to fold here.  An empty line (nothing emitted) owes nothing.  No-op when closed. */
 static void
 line_commit( layout_frame_t* f )
 {
     f->col = 0;
     if ( !f->line_open ) return;
     f->line_open = false;
-    if ( f->line_ext <= 0.0f ) return;   /* nothing emitted -- fold nothing, owe nothing */
-
-    if ( f->mode == GUI_MODE_PACK && f->pack_dir == GUI_PACK_VERTICAL )
-        widget_track_width( f->line_cross + f->line_ext );   /* column extent -> width watermark */
-    else if ( f->line_cross + f->line_ext > f->cursor_y )
-        f->cursor_y = f->line_cross + f->line_ext;
-
+    if ( f->line_ext <= 0.0f ) return;   /* nothing emitted -- owe nothing */
     f->gap_pending = true;
 }
 
@@ -290,7 +297,6 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     f->origin_y      = f->outer.y + pad.t;
     f->content_x     = f->origin_x - f->scroll->scroll_x;
     f->content_w     = f->outer.w - pad.l - pad.r - f->sb_w;
-    f->cursor_x      = f->content_x;
     f->cursor_y      = f->origin_y - f->scroll->scroll_y;
     f->content_max_x = f->content_x;   /* seed extent at the origin -> an empty body measures 0 */
     f->content_y_max = f->outer.y + f->outer.h - pad.b - f->sb_h;
@@ -403,25 +409,16 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
     f32 main_ext      = unit_resolve( f->pack_size_next, nat_main, main_avail );
     f->pack_size_next = -1.0f;   /* consume -> next item is natural */
 
-    gui_rect_t r;
-    if ( horiz )
-    {
-        r             = ( gui_rect_t ){ f->line_main, f->line_cross, main_ext, cross_ext };
-        f->line_main += main_ext + f->lay_gap_x;
-        if ( cross_ext > f->line_ext ) f->line_ext = cross_ext;
-        if ( f->line_cross + f->line_ext > f->cursor_y )
-            f->cursor_y = f->line_cross + f->line_ext;    /* live content end */
-    }
-    else
-    {
-        r             = ( gui_rect_t ){ f->line_cross, f->line_main, cross_ext, main_ext };
-        f->line_main += main_ext + f->lay_gap_y;
-        if ( cross_ext > f->line_ext ) f->line_ext = cross_ext;
-        if ( r.y + r.h > f->cursor_y )
-            f->cursor_y = r.y + r.h;    /* live content end -- max across strip columns */
-    }
+    /* Assemble the rect by mapping (main, cross) onto (x, y): a bar runs main along x, a strip along
+       y.  The pen advance, the line's cross-extent max, and the watermark grow are axis-agnostic
+       once the rect is placed -- extent_track pushes cursor_y / content_max_x from its far corner. */
+    gui_rect_t r = horiz ? ( gui_rect_t ){ f->line_main, f->line_cross, main_ext, cross_ext }
+                         : ( gui_rect_t ){ f->line_cross, f->line_main, cross_ext, main_ext };
 
-    widget_track_width( r.x + r.w );
+    f->line_main += main_ext + ( horiz ? f->lay_gap_x : f->lay_gap_y );
+    if ( cross_ext > f->line_ext ) f->line_ext = cross_ext;
+
+    extent_track( f, r.x + r.w, r.y + r.h );
     f->prev_item = r;
     return r;
 }
@@ -449,10 +446,8 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
            ? natural_w : f->cellw[ c ];
     gui_rect_t r = { f->cellx[ c ], f->line_cross, w, f->line_ext };
 
-    widget_track_width( f->cellx[ c ] + w );
     f->line_main = r.x + r.w + f->lay_gap_x;    /* pen past the cell -- the same_line handoff */
-    if ( f->line_cross + f->line_ext > f->cursor_y )
-        f->cursor_y = f->line_cross + f->line_ext;   /* live content end */
+    extent_track( f, r.x + r.w, r.y + r.h );    /* grow the watermark from the cell's far corner */
 
     if ( ++f->col >= f->lay_ncols )
         line_commit( f );                        /* row full -> fold it; col back to 0 */
