@@ -297,18 +297,22 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
    overloaded unit as cols).  A size FOLLOWED by a CUT is a container of that size, subdivided on the
    named axis until a matching GUI_END; a size followed by anything else is a leaf.  A form opens with
    a leading CUT that fills the whole area.  See gui()->carve. */
+
 #define GUI_CUT_X (-2.0f)                     // open a nested column split (panels side by side)
 #define GUI_CUT_Y (-3.0f)                     // open a nested row split (panels stacked)
 
-/*----------------------------------------------------------------------------------------------
-    Content alignment -- where a widget's natural-sized content sits inside the cell it is handed.
+/*==============================================================================================
+    GUI: Content Alignment
+
+    Where a widget's natural-sized content sits inside the cell it is handed.
 
     Two independent axes, ORed together; 0 (LEFT | TOP) is the default and matches the original
     behavior.  A region carries one alignment (gui()->align, or the `align` field of a layout
     descriptor), persisting like the row template until changed.  It governs *content* placement
     (a text label, an image) -- a widget whose frame fills the cell (button, input) still fills it,
     and only its label/glyphs follow the alignment.  rect_align() is the single placement seam.
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 typedef enum
 {
