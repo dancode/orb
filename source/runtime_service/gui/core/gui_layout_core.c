@@ -468,10 +468,17 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
         f->line_open  = true;
     }
 
-    u32 c = f->col;
-    f32 w = ( f->mode == GUI_MODE_STACK && natural_w > 0.0f && natural_w < f->cellw[ c ] )
-           ? natural_w : f->cellw[ c ];
-    gui_rect_t r = { f->cellx[ c ], f->line_cross, w, f->line_ext };
+    u32  c      = f->col;
+    bool shrink = ( f->mode == GUI_MODE_STACK && natural_w > 0.0f && natural_w < f->cellw[ c ] );
+    f32  w      = shrink ? natural_w : f->cellw[ c ];
+
+    /* A shrink-to-natural stack widget seats its frame by the region's horizontal align (HUD-style:
+       align( RIGHT ) parks a button at the column's right edge, HCENTER centers it), rather than
+       always left-pinning.  This is the one alignment seam for the frame; a widget's own rect_align
+       then only positions sub-cell content, and is a horizontal no-op here (natural in natural). */
+    f32 x = shrink ? align_x( f->cellx[ c ], f->cellw[ c ], w, f->lay_align ) : f->cellx[ c ];
+
+    gui_rect_t r = { x, f->line_cross, w, f->line_ext };
 
     f->line_main = r.x + r.w + f->lay_gap_x;    /* pen past the cell -- the same_line handoff */
     content_reach( f, r.x + r.w, r.y + r.h );   /* pen + highwater to the cell's far corner */
