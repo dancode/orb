@@ -83,6 +83,11 @@ typedef struct gui_api_s
 
     void                ( *perf_overlay )( gui_clock_fn clock, int mode );
 
+    /* Built-in state overlay: hover/active/focused widget + hover window + nav cursor, resolved
+       to readable names where the id registry has one (Debug builds; Release shows hex).  Same
+       mode-tiers-in, no-clock-needed shape as perf_overlay.  0 = off. */
+    void                ( *state_overlay )( int mode );
+
     /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
        API does not hide it; even a single-context host names its one context:
 

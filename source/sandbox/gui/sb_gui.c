@@ -478,6 +478,8 @@ static bool show_demo             = true;
 static bool show_font_browser_win = false;
 static bool show_split_win        = false;
 static bool show_hud_win          = false;
+static bool show_region_win       = false;
+
 static void show_example_main_menu_bar()
 {
     if ( gui()->main_menu_bar_begin() )
@@ -488,6 +490,7 @@ static void show_example_main_menu_bar()
             gui()->menu_item( "Font Browser",   NULL, &show_font_browser_win );
             gui()->menu_item( "Split Panels",   NULL, &show_split_win );
             gui()->menu_item( "HUD Overlay",    NULL, &show_hud_win );
+            gui()->menu_item( "Region Demo",    NULL, &show_region_win );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -670,7 +673,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup GUI */
 
-    gui_forward_caps_t caps = { .keyboard_nav = false, .tables = false, .docking = false  };
+    gui_forward_caps_t caps = { .keyboard_nav = true, .tables = false, .docking = false  };
     gui()->init_config_front( caps );                        
     
     // GUI_FONT_NONE
@@ -735,9 +738,11 @@ main( int argc, char** argv )
     printf( "[sb_gui] running -- ESC to quit\n" );
     printf( "[sb_gui] gui demos: F1-F4 debug overlay\n" );
     printf( "[sb_gui] P cycles the perf overlay: off -> FPS -> +timings -> +render counts\n" );
+    printf( "[sb_gui] O cycles the state overlay: off -> hover/active/window -> +nav -> +popups\n" );
     printf( "[sb_gui] F6 cycles the render view: normal -> wireframe -> batch colors\n" );
 
-    int perf_mode = 0;
+    int perf_mode  = 0;
+    int state_mode = 0;
 
     f64 last_time = sys_tick_seconds();
     
@@ -767,6 +772,9 @@ main( int argc, char** argv )
         /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4). */
         if ( app()->key_pressed( APP_KEY_P ) )
             perf_mode = ( perf_mode + 1 ) % 5;
+
+        if ( app()->key_pressed( APP_KEY_O ) )
+            state_mode = ( state_mode + 1 ) % 4;
 
         /* F6 cycles the debug render view: normal -> wireframe -> batch. */
         if ( app()->key_pressed( APP_KEY_F9 ))
@@ -822,9 +830,11 @@ main( int argc, char** argv )
             if ( show_hud_win )
                 show_hud_demo( &show_hud_win );
 
-            show_region_demo();
+            if ( show_region_win )
+                show_region_demo();
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
+            gui()->state_overlay( state_mode );
 
             gui()->ctx_end();
         }

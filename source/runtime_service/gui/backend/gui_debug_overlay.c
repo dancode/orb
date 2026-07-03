@@ -98,6 +98,67 @@ static struct
 
 } s_dbg;
 
+/*==============================================================================================
+    Debug Name Registry -- id -> source string, so the state overlay can show a readable label
+    instead of a hash.  Populated every frame at the DBG_NAME( id, str ) call sites (widget_id,
+    window_begin_ex, region/child/table id mint points); read back by gui_debug_name(), which the
+    UI unit calls from gui_state_overlay().  Open-addressed like gui_state_get (gui_ctx_id.c):
+    linear probe, home-bucket overwrite when full -- a rare degradation, not an overflow, and fine
+    for a debug tool.  No staleness tracking; a name simply goes stale (but harmless) once its id
+    stops being emitted.
+==============================================================================================*/
+
+#define GUI_DBG_NAME_CAP   24                           /* bytes per entry, incl NUL              */
+#define GUI_DBG_NAME_SLOTS 256                          /* power of two                           */
+#define GUI_DBG_NAME_MASK  ( GUI_DBG_NAME_SLOTS - 1 )
+
+static struct
+{
+    gui_id_t id;                                        /* 0 = empty slot */
+    char     name[ GUI_DBG_NAME_CAP ];                  /* source string that minted the id */
+
+} s_dbg_names[ GUI_DBG_NAME_SLOTS ];
+
+void
+dbg_name_register( gui_id_t id, const char* str )
+{
+    if ( id == GUI_ID_NONE || !str ) return;
+
+    u32 bucket = id & GUI_DBG_NAME_MASK;
+    for ( u32 i = 0; i < GUI_DBG_NAME_SLOTS; ++i )
+    {
+        u32 slot = ( bucket + i ) & GUI_DBG_NAME_MASK;
+        if ( s_dbg_names[ slot ].id == id || s_dbg_names[ slot ].id == GUI_ID_NONE )
+        {
+            s_dbg_names[ slot ].id = id;
+            size_t n = strlen( str );
+            if ( n >= GUI_DBG_NAME_CAP ) n = GUI_DBG_NAME_CAP - 1;
+            memcpy( s_dbg_names[ slot ].name, str, n );
+            s_dbg_names[ slot ].name[ n ] = '\0';
+            return;
+        }
+    }
+    /* Table full of distinct live ids (256 named things in one frame) -- overwrite the home
+       bucket rather than growing; a rare degradation, not a crash. */
+    s_dbg_names[ bucket ].id = id;
+    strncpy( s_dbg_names[ bucket ].name, str, GUI_DBG_NAME_CAP - 1 );
+    s_dbg_names[ bucket ].name[ GUI_DBG_NAME_CAP - 1 ] = '\0';
+}
+
+const char*
+gui_debug_name( gui_id_t id )
+{
+    if ( id == GUI_ID_NONE ) return NULL;
+    u32 bucket = id & GUI_DBG_NAME_MASK;
+    for ( u32 i = 0; i < GUI_DBG_NAME_SLOTS; ++i )
+    {
+        u32 slot = ( bucket + i ) & GUI_DBG_NAME_MASK;
+        if ( s_dbg_names[ slot ].id == id      ) return s_dbg_names[ slot ].name;
+        if ( s_dbg_names[ slot ].id == GUI_ID_NONE ) return NULL;   /* empty ends the chain */
+    }
+    return NULL;
+}
+
 /*----------------------------------------------------------------------------------------------
     Command push helpers
 ----------------------------------------------------------------------------------------------*/
@@ -363,6 +424,10 @@ u32  gui_debug_get_layers( void )       { return s_dbg.layers; }
 
 void gui_debug_set_layers( u32 layers ) { (void)layers; }
 u32  gui_debug_get_layers( void )       { return 0u; }
+
+/* Registry is compiled out with the rest of the overlay -- the state panel still links and
+   falls back to hex ids. */
+const char* gui_debug_name( gui_id_t id ) { (void)id; return NULL; }
 
 #endif /* GUI_DEBUG_OVERLAY */
 

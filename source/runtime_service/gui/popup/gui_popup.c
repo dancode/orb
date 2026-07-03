@@ -486,6 +486,7 @@ gui_help_marker( const char* text )
 {
     const char* mark = "(?)";
     gui_id_t  id   = id_combine( id_seed(), id_hash( label_id_str( text ) ) );
+    DBG_NAME( id, text );
 
     /* Carve a natural-width cell for the mark and place it per the region alignment, like text(). */
     f32          mw = font_text_w( mark );

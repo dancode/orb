@@ -224,11 +224,17 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
     void dbg_capture_resize( gui_rect_t band, u8 hot_edges );
     void dbg_capture_layout( gui_rect_t r );
 
+    /* Name registry -- records the source string behind an id as it is minted (widget label,
+       window/popup title, region/child/table id string), so gui_state_overlay() can show a
+       readable name instead of a hash.  See gui_debug_name() in gui_host.h for the reader. */
+    void dbg_name_register( gui_id_t id, const char* str );
+
     #define DBG_WIDGET( id, r, hov, act ) dbg_capture_widget( ( id ), ( r ), ( hov ), ( act ) )
     #define DBG_CLIP( r, depth )          dbg_capture_clip( ( r ), ( depth ) )
     #define DBG_WINDOW( r, is_hover )     dbg_capture_window( ( r ), ( is_hover ) )
     #define DBG_RESIZE( band, hot )       dbg_capture_resize( ( band ), ( hot ) )
     #define DBG_LAYOUT( r )               dbg_capture_layout( ( r ) )
+    #define DBG_NAME( id, str )           dbg_name_register( ( id ), ( str ) )
 
     /* Ambient build viewport (s_build.cur_viewport, gui_ctx.c) -- the capture functions live in/usage
        the backend unit, so they read it through this accessor rather than the UI-unit static. */
@@ -240,6 +246,7 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
     #define DBG_WINDOW( r, is_hover )     ( (void)0 )
     #define DBG_RESIZE( band, hot )       ( (void)0 )
     #define DBG_LAYOUT( r )               ( (void)0 )
+    #define DBG_NAME( id, str )           ( (void)0 )
 #endif
 
 // clang-format on

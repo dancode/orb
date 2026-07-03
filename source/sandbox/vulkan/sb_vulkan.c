@@ -191,6 +191,7 @@ main( int argc, char** argv )
     printf( "[sb_vulkan] running -- ESC to quit\n" );
     printf( "[sb_vulkan] gui demos: 1-9 select, +/- step, F1-F4 debug overlay, NP. font scale\n" );
     printf( "[sb_vulkan] P cycles the perf overlay: off -> FPS -> +timings -> +render counts\n" );
+    printf( "[sb_vulkan] O cycles the state overlay: off -> hover/active/window -> +nav -> +popups\n" );
     printf( "[sb_vulkan] F6 cycles the render view: normal -> wireframe -> batch colors\n" );
 
     /* Active gui demo index (see sb_vulkan_gui.c); switched live with the keys below. */
@@ -200,6 +201,10 @@ main( int argc, char** argv )
        smoothing, and draw -- is a built-in gui utility now; the host only supplies a clock and
        the mode (see gui()->perf_overlay below). */
     int perf_mode = 0;
+
+    /* State overlay detail tier, cycled by O (0 off .. 3 popups).  Shows hover/active/window ids
+       resolved to readable names via the debug name registry (Debug builds only). */
+    int state_mode = 0;
 
     /* Level 1 idle skip (toggle: I).  When on, the loop blocks on OS input instead of spinning, so a
        static UI burns no frames; wants_redraw() keeps frames flowing while a widget animation plays. */
@@ -261,6 +266,9 @@ main( int argc, char** argv )
 
         if ( app()->key_pressed( APP_KEY_P ) )
             perf_mode = ( perf_mode + 1 ) % 5;
+
+        if ( app()->key_pressed( APP_KEY_O ) )
+            state_mode = ( state_mode + 1 ) % 4;
 
         /* F6 cycles the debug render view: normal -> wireframe (triangle edges) -> batch (per-draw
            color tint, so you can count batches and see where they split) -> normal. */
@@ -373,6 +381,7 @@ main( int argc, char** argv )
                so its own text is counted in the emit + render cost it reports.  Emit opens at frame_begin
                and closes at frame_end; render is summed across render() below. */
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
+            gui()->state_overlay( state_mode );
 
             any_redraw |= gui()->wants_redraw();   /* default context's animation state, still bound */
             gui()->ctx_end();

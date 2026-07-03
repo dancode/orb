@@ -257,7 +257,7 @@ static inline f32 gui_radians( f32 degrees ) { return degrees * ( GUI_PI / 180.0
 static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_PI ); }
 
 /*==============================================================================================
-    Layout template
+    GUI: Layout Template
 
     A region (a window body or a child_begin box) lays widgets out by carving its content area
     into cells.  gui_layout() installs a template that *persists and repeats*: every widget
@@ -287,6 +287,7 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
     
     Gaps sit *between* cells and are subtracted before distribution, so a widget never sees or
     reasons about spacing -- it just fills the rect it is handed.
+
 ==============================================================================================*/
 
 #define GUI_LAYOUT_COLS 8                     // max tracks on one axis (columns or rows)

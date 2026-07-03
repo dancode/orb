@@ -23,6 +23,7 @@ const gui_api_t g_gui_api_struct =
     .print_mem_stats                    = gui_print_mem_stats,
     .render_stats                       = gui_build_stats,
     .perf_overlay                       = gui_perf_overlay,
+    .state_overlay                      = gui_state_overlay,
     .font_load                          = gui_font_load,
     .render                             = gui_render,
     .viewport_open                      = gui_viewport_open,

@@ -291,6 +291,79 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
 }
 
 /*==============================================================================================
+    State overlay
+
+    A built-in text readout of the live interaction state -- hover/active/focused widget, hover
+    window, keyboard nav cursor -- resolved to the source label/title string via the id name
+    registry (gui_debug_name, gui_debug_overlay.c) instead of a raw hash.  Debug builds populate
+    that registry at every id mint point (DBG_NAME in widget_id / window_begin_ex / region /
+    child / table); Release builds leave it empty and every id shows as hex, same shape as
+    perf_overlay's always-available-but-more-useful-in-Debug pattern.
+==============================================================================================*/
+
+/* id -> "name" or "0x########" -- round-robins through a few static scratch buffers so multiple
+   ids can be formatted into the same gui_textf() call without clobbering each other. */
+static const char*
+dbg_id_str( gui_id_t id )
+{
+    static char   bufs[ 4 ][ 24 ];
+    static u32    next = 0;
+
+    if ( id == GUI_ID_NONE ) return "-";
+
+    const char* name = gui_debug_name( id );
+    if ( name ) return name;
+
+    char* b = bufs[ next ];
+    next    = ( next + 1u ) & 3u;
+    snprintf( b, sizeof( bufs[ 0 ] ), "0x%08X", id );
+    return b;
+}
+
+void
+gui_state_overlay( int mode )
+{
+    if ( mode <= 0 )
+        return;
+
+    f32 top_y = 8.0f;
+    gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
+    if ( mb && mb->last_frame == g_ctx->retained.frame )
+        top_y += mb->h;
+
+    /* Fixed offset to the right of perf_overlay's top-left HUD so both can be shown at once
+       without overlap -- perf_overlay hugs its content and stays narrow, so a flat offset is
+       simpler than coordinating widths through a shared channel. */
+    gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
+    {
+        gui_stack();
+
+        gui_textf( "Hover   %s", dbg_id_str( s_interaction.hover_id ) );
+        gui_textf( "Active  %s (btn %u)", dbg_id_str( s_interaction.active_id ), s_interaction.active_button );
+        gui_textf( "Window  %s", dbg_id_str( s_interaction.hover_win ) );
+
+        if ( mode >= 2 )
+        {
+            gui_spacing( 2.0f );
+            gui_textf( "Focused %s", dbg_id_str( s_interaction.focused_id ) );
+            gui_textf( "Nav id  %s", dbg_id_str( s_nav.id ) );
+            gui_textf( "Nav win %s", dbg_id_str( s_nav.win ) );
+            gui_textf( "Mouse   %6.1f, %6.1f", s_io.mouse_x, s_io.mouse_y );
+        }
+
+        if ( mode >= 3 )
+        {
+            gui_spacing( 2.0f );
+            gui_textf( "Popups  %u", s_popup_open_count );
+            if ( s_popup_open_count )
+                gui_textf( "Top pop %s", dbg_id_str( s_popups_open[ s_popup_open_count - 1u ].id ) );
+            gui_textf( "Ctx salt 0x%08X", g_ctx->retained.id_salt );
+        }
+    }
+    gui_region_end();
+}
+
+/*==============================================================================================
     Frame API
 ==============================================================================================*/
 

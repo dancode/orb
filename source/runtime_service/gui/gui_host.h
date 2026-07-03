@@ -36,6 +36,11 @@ void gui_print_mem_stats( void );
 /* built-in perf overlay (FPS / emit + render cost / render counts); host supplies the clock */
 void gui_perf_overlay( gui_clock_fn clock, int mode );
 
+/* built-in state overlay (hover/active/focused/nav ids, resolved to readable names where
+   possible); always available, but names only resolve in builds with GUI_DEBUG_OVERLAY on --
+   see gui_debug_name() below. */
+void gui_state_overlay( int mode );
+
 /* font */
 u32  gui_font_load( const char* path );
 
@@ -345,6 +350,12 @@ void gui_debug_set_layers( u32 layers );
 u32  gui_debug_get_layers( void );
 void gui_debug_enable( bool enable );
 bool gui_debug_is_enabled( void );
+
+/* Reverse lookup for the id name registry (gui_debug_overlay.c): the source string an id was
+   minted from (widget label, window/popup title, region/child/table id string), or NULL if
+   unregistered.  Only Debug builds (GUI_DEBUG_OVERLAY) populate the registry, but the accessor
+   itself is always callable -- Release just always gets NULL -- so callers need no #ifdef. */
+const char* gui_debug_name( gui_id_t id );
 
 /* input */
 bool gui_want_capture_mouse( void );

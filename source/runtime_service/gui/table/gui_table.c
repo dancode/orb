@@ -315,6 +315,7 @@ gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 hei
     layout_row_break( parent );   /* finish any partial row in the parent template */
 
     gui_id_t id = id_combine( id_seed(), id_hash( id_str ) );
+    DBG_NAME( id, id_str );
 
     f32 w = parent->content_w;
     f32 h = ( height > 0.0f ) ? height : ( (f32)WIDGET_H + (f32)WIDGET_GAP ) * 8.0f;

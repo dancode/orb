@@ -88,6 +88,7 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
 {
     gui_id_t            id     = id_hash( id_str );
     gui_scroll_link_t*  scroll = region_root_scroll_get( id );
+    DBG_NAME( id, id_str );
 
     /* Autosize on either axis, exactly like child_begin's h <= 0 (AutoResizeY): hug last
        frame's measured content once one exists, else open one widget-row tall.  No border term

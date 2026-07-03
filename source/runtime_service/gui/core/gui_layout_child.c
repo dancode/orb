@@ -68,6 +68,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     /* Combine against the active id scope (the parent region, plus any push_id) so the same child
        label nests safely under different parents and never collides with a window id. */
     gui_id_t id = id_combine( id_seed(), id_hash( id_str ) );
+    DBG_NAME( id, id_str );
 
     /* Persistent state (scroll offset, last-measured content extent, user-resized size), keyed by
        id.  Fetched up front: an auto-sized (h <= 0) child reads content_h, a resizeable one reads
@@ -379,6 +380,7 @@ gui_split_begin( const char* id_str, f32 right_w )
     layout_row_break( parent );            /* close any open row before the split */
 
     gui_id_t           id = id_combine( id_seed(), id_hash( id_str ) );
+    DBG_NAME( id, id_str );
     gui_split_entry_t* se = GUI_STATE( gui_split_entry_t, id );
 
     /* Resolved height: max of both sides last frame.  Seed to one row on first appearance, then

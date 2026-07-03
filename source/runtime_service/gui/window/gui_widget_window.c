@@ -622,6 +622,8 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
 static bool
 window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui_win_flags_t flags )
 {
+    if ( title ) DBG_NAME( id, title );
+
     /* x/y/w/h are the initial geometry; the registry owns position after that. */
     gui_window_t* win = window_get( id, x, y, w, h );
     win->flags            = flags;

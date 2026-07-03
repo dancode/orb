@@ -172,7 +172,13 @@ label_id_str( const char* s )
 }
 
 /* The id for a labeled widget: the active scope seed combined with the label's id key. */
-static gui_id_t widget_id( const char* label ) { return id_combine( id_seed(), id_hash( label_id_str( label ) ) ); }
+static gui_id_t
+widget_id( const char* label )
+{
+    gui_id_t id = id_combine( id_seed(), id_hash( label_id_str( label ) ) );
+    DBG_NAME( id, label );
+    return id;
+}
 
 /* Width / draw of a label's visible span (markers stripped). */
 static f32  label_width( const char* s )                         { return font_text_w_n( s, label_vis_len( s ) ); }
