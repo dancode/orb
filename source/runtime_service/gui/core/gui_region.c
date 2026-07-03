@@ -90,9 +90,15 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
     gui_scroll_link_t*  scroll = region_root_scroll_get( id );
 
     /* Autosize on either axis, exactly like child_begin's h <= 0 (AutoResizeY): hug last
-       frame's measured content once one exists, else open one widget-row tall. */
-    if ( w <= 0.0f ) w = ( scroll->content_w > 0.0f ) ? scroll->content_w + 2.0f * WIN_BORDER : WIDGET_H * 4.0f;
-    if ( h <= 0.0f ) h = ( scroll->content_h > 0.0f ) ? scroll->content_h + WIN_BORDER : WIDGET_H;
+       frame's measured content once one exists, else open one widget-row tall.  No border term
+       added -- scroll->content_w/h already folds in the region's own pad on both edges (pad.l+r,
+       pad.t+b), which exceeds WIN_BORDER on every theme, so content never reaches the border-inset
+       clip layout_push_region computes below.  Adding one on top double-counts that clearance: a
+       widget that fills its column with zero slack (next_item_fit(1.0f) or any always-fill widget)
+       reproduces outer.w/h exactly at pop, and any nonzero constant added to an exact reproduction
+       has nothing left to absorb into -- it drifts outward forever, one border-width per frame. */
+    if ( w <= 0.0f ) w = ( scroll->content_w > 0.0f ) ? scroll->content_w : WIDGET_H * 4.0f;
+    if ( h <= 0.0f ) h = ( scroll->content_h > 0.0f ) ? scroll->content_h : WIDGET_H;
 
     gui_rect_t box = { x, y, w, h };
 
