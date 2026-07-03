@@ -159,6 +159,7 @@ void gui_pack_size( f32 unit );
 void gui_pack_nextline( void );
 
 void gui_align( gui_align_t a );
+void gui_next_item_fit( f32 unit );
 void gui_same_line( f32 spacing );
 void gui_stack_same_line( f32 spacing );
 void gui_skip( void );

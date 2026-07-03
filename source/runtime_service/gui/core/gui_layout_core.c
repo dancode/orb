@@ -268,6 +268,7 @@ layout_template_reset( layout_frame_t* f )
     f->line_ext       = 0.0f;
     f->pack_dir       = 0;                      /* pack line is re-seeded by pack() */
     f->pack_size_next = -1.0f;                  /* unset -> next packed item is natural */
+    f->fit_next       = -1.0f;                  /* unset -> next cell item uses its own natural_w */
     /* gap_pending is NOT reset: content committed above still owes its gap to the next line. */
 }
 
@@ -404,16 +405,40 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
                            f->rowy, f->rowh );
 }
 
+/* Resolve one cell's horizontal box -- the fit-then-align sequence every cell placement (flow or
+   grid) shares: decide how big before align_x decides where.  A one-shot fit_next (overloaded
+   unit -- see gui_layout_t) always wins when set, taken as authored intent even past the cell
+   edge, exactly like a fixed track px is never floored (layout_resolve_tracks).  Unset (-1, the
+   common case) falls back to the widget's own natural_w signal: a natural width smaller than the
+   cell shrinks to it (a button hugs its label), anything else fills the cell verbatim -- the
+   per-widget-type default every emit already carries, now consulted for every mode, not just
+   STACK.  A shrunk box is seated in the leftover space by lay_align; a filled one starts flush at
+   the cell's left edge (align has nothing to do once the box owns the whole cell). */
+static gui_rect_t
+cell_fit_resolve( layout_frame_t* f, f32 cell_x, f32 cell_w, f32 natural_w, f32 y, f32 h )
+{
+    f32 fit     = f->fit_next;
+    f->fit_next = -1.0f;   /* one-shot: consumed whichever branch below reads it */
+
+    f32 w = ( fit >= 0.0f )
+          ? unit_resolve( fit, ( natural_w > 0.0f ) ? natural_w : cell_w, cell_w )
+          : ( ( natural_w > 0.0f && natural_w < cell_w ) ? natural_w : cell_w );
+
+    f32 x = ( w < cell_w ) ? align_x( cell_x, cell_w, w, f->lay_align ) : cell_x;
+    return ( gui_rect_t ){ x, y, w, h };
+}
+
 /* Cell a grid hands to a widget: a fixed (col,row) slot of the pre-resolved matrix, then advance
    row-major.  Past the last cell the cursor clamps to it, so overflow widgets stack harmlessly in
-   the final slot rather than reading out of bounds. */
+   the final slot rather than reading out of bounds.  Row height is the matrix's, not the item's --
+   grid has no vertical natural-size concept, only horizontal fit within the column. */
 static gui_rect_t
-grid_next_rect( layout_frame_t* f )
+grid_next_rect( layout_frame_t* f, f32 natural_w )
 {
     if ( f->row >= f->lay_nrows ) f->row = f->lay_nrows - 1;   /* clamp overflow to the last row */
 
-    u32          c = f->col, rr = f->row;
-    gui_rect_t r = { f->cellx[ c ], f->rowy[ rr ], f->cellw[ c ], f->rowh[ rr ] };
+    u32        c  = f->col, rr = f->row;
+    gui_rect_t r  = cell_fit_resolve( f, f->cellx[ c ], f->cellw[ c ], natural_w, f->rowy[ rr ], f->rowh[ rr ] );
 
     if ( ++f->col >= f->lay_ncols ) { f->col = 0; ++f->row; }   /* next slot, row-major */
     return r;
@@ -461,8 +486,10 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
 /* Place one item in the next template cell -- the flow placement.  At a row start (col 0) the
    line opens at the pen (gap-before): an auto-height row (row_h == 0) takes the *first* item's h
    as the whole row's height and every cell conforms -- a running max would retroactively misalign
-   cells already handed out -- while a fixed row_h overrides it.  Stack mode lets an item with a
-   natural width shrink to it (button, checkbox, text); columns always fill their track.  Wrapping
+   cells already handed out -- while a fixed row_h overrides it.  Fit-then-align (cell_fit_resolve)
+   decides the cell box the same way in STACK and COLUMNS alike: a widget with a natural width
+   (button, checkbox, text) shrinks and seats by lay_align, one with none (slider, input) fills the
+   track -- the mode only ever chose the track's *width*, never whether an item fills it.  Wrapping
    past the last column commits the line.  line_main is kept at the pen past each cell, so a
    same_line continuation starts exactly where this cell ended. */
 static gui_rect_t
@@ -476,17 +503,8 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
         f->line_open  = true;
     }
 
-    u32  c      = f->col;
-    bool shrink = ( f->mode == GUI_MODE_STACK && natural_w > 0.0f && natural_w < f->cellw[ c ] );
-    f32  w      = shrink ? natural_w : f->cellw[ c ];
-
-    /* A shrink-to-natural stack widget seats its frame by the region's horizontal align (HUD-style:
-       align( RIGHT ) parks a button at the column's right edge, HCENTER centers it), rather than
-       always left-pinning.  This is the one alignment seam for the frame; a widget's own rect_align
-       then only positions sub-cell content, and is a horizontal no-op here (natural in natural). */
-    f32 x = shrink ? align_x( f->cellx[ c ], f->cellw[ c ], w, f->lay_align ) : f->cellx[ c ];
-
-    gui_rect_t r = { x, f->line_cross, w, f->line_ext };
+    u32        c = f->col;
+    gui_rect_t r = cell_fit_resolve( f, f->cellx[ c ], f->cellw[ c ], natural_w, f->line_cross, f->line_ext );
 
     f->line_main = r.x + r.w + f->lay_gap_x;    /* pen past the cell -- the same_line handoff */
     content_reach( f, r.x + r.w, r.y + r.h );   /* pen + highwater to the cell's far corner */
@@ -531,7 +549,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
     }
     else if ( f->lay_nrows > 0 )
     {
-        r = grid_next_rect( f );                   /* fixed matrix walk */
+        r = grid_next_rect( f, natural_w );         /* fixed matrix walk */
         f->prev_item = r;
     }
     else if ( f->cont_pending )

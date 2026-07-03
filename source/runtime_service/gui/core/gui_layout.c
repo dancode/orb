@@ -189,6 +189,16 @@ gui_align( gui_align_t a )
     lf()->lay_align = (u8)a;
 }
 
+/* next_item_fit -- override how big the very next cell item is (STACK / COLUMNS / GRID; pack has
+   its own pack_size), instead of the widget's own implicit natural_w signal.  Overloaded unit, same
+   rule as a column track: >1 px, (0,1) fraction of the cell, 1 fill it, 0 explicit natural (the
+   widget's natural_w verbatim, even past the cell edge -- authored intent is never clamped).
+   One-shot: consumed by the next item regardless of which branch resolves it.
+
+       gui()->next_item_fit( 1.0f ); gui()->button( "Save" );   // stretch a button across its column
+       gui()->next_item_fit( 0.0f ); gui()->slider_float(...);  // shrink a field to its own width */
+void gui_next_item_fit( f32 unit ) { lf()->fit_next = unit; }
+
 /* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
    (both GUI_END-terminated, overloaded units).  Uses cols, rows, gaps, and align; row_h is
    flow-only and ignored.  Widgets then fill cells row-major; nothing scrolls. */

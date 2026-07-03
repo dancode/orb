@@ -288,6 +288,14 @@ typedef struct
 
     u8              lay_align;              // gui_align_t flags
 
+    /* Fit override (next_item_fit): a one-shot overloaded unit that decides how big the very next
+       cell item is *before* lay_align decides where it sits -- the explicit escape hatch for the
+       implicit per-widget fit signal every emit carries in its own natural_w.  < 0 = unset (the
+       common case): the widget's own natural_w wins, matching its type's default (a button hugs
+       its label, a slider fills).  See cell_fit_resolve in gui_layout_core.c. */
+
+    f32             fit_next;               // pending cell-item fit unit; < 0 = unset (implicit)
+
     /* Field split (field_split / field_label_left): a labeled value widget splits its cell into a
        label track + a control track, resolved with the column unit rule.  side 0 = off (the
        label trails the control); 1 = label-left; 2 = label-right. */

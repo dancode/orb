@@ -519,6 +519,13 @@ typedef struct gui_api_s
 
            gui()->row2( 0.5f, 0.5f );  gui()->align( GUI_ALIGN_RIGHT );   // right-aligned columns
 
+       next_item_fit() -- one-shot override of the next cell item's size (STACK / COLUMNS / GRID),
+                      instead of its implicit natural_w signal.  Same overloaded unit as a column
+                      track (>1 px, (0,1) fraction, 1 fill, 0 explicit natural); the fit-then-align
+                      pair -- align seats whatever box this (or the widget's own natural_w) picks.
+
+           gui()->next_item_fit( 1.0f ); gui()->button( "Save" );  // stretch across its column
+
        same_line() -- keep the next widget on the line just emitted instead of breaking to a new
                       row; it takes its natural width.  `spacing` is the gap in pixels (0 = flush,
                       < 0 = the theme default).  Mirrors ImGui::SameLine.
@@ -531,6 +538,7 @@ typedef struct gui_api_s
        separator() -- a thin horizontal rule centered in its cell. */
 
     void ( *align      )( gui_align_t a );
+    void ( *next_item_fit )( f32 unit );
     void ( *same_line  )( f32 spacing );
     void ( *stack_same_line )( f32 spacing );
     void ( *skip       )( void );

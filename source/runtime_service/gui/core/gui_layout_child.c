@@ -103,7 +103,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     gui_rect_t box;
     if ( parent->lay_nrows > 0 )
     {
-        box = grid_next_rect( parent );   /* the next matrix cell; advances the matrix cursor */
+        box = grid_next_rect( parent, -1.0f );   /* the next matrix cell, filled; advances the matrix cursor */
     }
     else
     {

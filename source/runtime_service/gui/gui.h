@@ -33,16 +33,27 @@ typedef u32 gui_icon_id_t;
    viewport_open; passed to render, viewport_resize, viewport_close, and
    window_set_next_viewport.  GUI_VP_INVALID (UINT32_MAX) signals failure or no assignment. */
 
-typedef u32  gui_vp_t;
-#define GUI_VP_INVALID  (~0u)
+typedef u32 gui_vp_t;
+#define GUI_VP_INVALID (~0u)
 
 /* Opaque dock-node handle -- one region of a viewport's dock tree.  Returned by dockspace_over_viewport
    (the tree root) and dock_split (the new sibling), and passed to dock_split / dock_window to name a
    target region.  0 (GUI_DOCK_NONE) signals "no node" -- a failed call or an unassigned slot. */
 
-typedef u32  gui_dock_id_t;
+typedef u32 gui_dock_id_t;
 #define GUI_DOCK_NONE  0u
 
+/* Opaque context handle -- integer index into the internal context pool.
+   GUI_CTX_DEFAULT (0) is always valid after init().
+   GUI_CTX_INVALID (-1) signals a failed ctx_create or an unset handle. */
+
+typedef i32 gui_ctx_t;
+#define GUI_CTX_DEFAULT  0
+#define GUI_CTX_INVALID  (-1)
+
+/*==============================================================================================
+    GUI: Context Configuration
+==============================================================================================*/
 /* Context configuration -- sizes the per-context resource pools at creation time.
    Pass to ctx_create(); NULL or zero fields default to the EDITOR preset (32 windows,
    512 state slots, 8 popup depth, 4 viewports, 48 dock nodes).
@@ -58,12 +69,15 @@ typedef struct
 
 } gui_ctx_config_t;
 
-/* Pre-built configs. */
+/* Pre-built configs -- scale context memory usage for how heavy the UI contents are */
 #define GUI_CTX_CONFIG_EDITOR  \
     ( ( gui_ctx_config_t ){ 32, 512, 8, 4, 48 } )
 #define GUI_CTX_CONFIG_GAME_UI \
     ( ( gui_ctx_config_t ){ 8, 64, 4, 1, 0 } )
 
+/*==============================================================================================
+    GUI: Font Configuration
+==============================================================================================*/
 /* Built-in font presets for init() -- pre-baked .orb_font assets (FreeType-rasterized offline by
    font_tool, not an stb runtime bake) shipped under assets/font/.  GUI_FONT_NONE loads nothing;
    the caller is then responsible for its own font_load() before the first frame renders. */
@@ -75,6 +89,9 @@ typedef enum
 
 } gui_builtin_font_t;
 
+/*==============================================================================================
+    GUI: Capability Flags
+==============================================================================================*/
 /* Backend capability flags -- latched via gui_init_config_back() before init().  The render
    pipeline itself (fonts, EMIT draw list, tessellate, SUBMIT flush) is always on and has no flag;
    everything here is complexity layered on top that a caller can independently switch off.  A
@@ -84,56 +101,33 @@ typedef enum
 
 typedef struct
 {
-    bool icons;           // runtime icon atlas (icon_register/find, draw_push_icon) -- owns its own
-                           // 512x512 R8 texture + stb_rect_pack packer, stood up at init when on
-    bool retained_cache;  // BUILD-phase diff + geometry reuse; off always re-tessellates every
-                           // window every frame (also the backing for set_retained_skip)
-    bool render_debug;    // wireframe/batch-tint debug render mode; off skips compiling the
-                           // second (wireframe) pipeline at init
-    bool stats_trace;     // per-frame printf lines for cache diff / geometry / retained / draw-call
-                           // counts
+    bool icons;             // Runtime icon atlas (icon_register/find, draw_push_icon) -- owns its own
+                            // 512x512 R8 texture + stb_rect_pack packer, stood up at init when on
+    bool retained_cache;    // BUILD-phase diff + geometry reuse; off always re-tessellates every
+                            // Window for every frame (also the backing for set_retained_skip)
+    bool render_debug;      // Wireframe/batch-tint debug render mode; off skips compiling the 
+                            // second (wireframe) pipeline at init
+    bool stats_trace;       // Per-frame printf lines for cache diff / geometry / retained / draw-calls
 
 } gui_backend_caps_t;
 
 #define GUI_CAPS_DEFAULT \
-    ( ( gui_backend_caps_t ){ .icons = true, .retained_cache = true, .render_debug = true, \
-                               .stats_trace = false } )
+    ( ( gui_backend_caps_t ){ .icons = true, .retained_cache = true, \
+                              .render_debug = true, .stats_trace = false } )
 
-/* Forward (UI-unit) capability flags -- latched via gui_init_config_front() before init(), the
-   gui_backend_caps_t sibling for the UI/core unit (gui.c) instead of the render backend.  These
-   do not exclude any code from the build (checked at callsite, same TU either way) -- the point
-   is feature-boundary clarity: a table() call, a dockspace, or a nav key-press is legibly gated
-   behind its own flag instead of being tangled into the always-on core.  A caller that never
-   calls gui_init_config_front() gets GUI_FORWARD_CAPS_DEFAULT, every flag on, today's behavior.
-
-   gui_ctx_config_t.max_dock_nodes stays a separate, per-context knob -- it sizes the dock-node
-   pool (a memory allocation maximum), not whether the docking feature is turned on.  `docking`
-   here is the on/off switch; max_dock_nodes still controls how big the tree can grow when it is.
-
-   Popups / context menus are not flagged either -- selectable's close-on-click and combo/menu
-   both assume the popup stack is live, so popups are core, not optional. */
+/* Forward (UI-unit) capability flags -- latched via gui_init_config_front() before init().
+   These do not exclude any code from the build -- the point is feature-boundary clarity. */
 
 typedef struct
 {
-    bool tables;            // table_begin / table_next_row / ... (table/gui_table.c); off makes
-                            // table_begin a no-op (returns false, like a nested-table rejection)
-    bool docking;           // dockspace_over_viewport / dock_split / dock_window / ... (dock/); off
-                            // makes dockspace_over_viewport a no-op (returns GUI_DOCK_NONE), so
-                            // every window it would have hosted free-floats instead
-    bool keyboard_nav;      // the nav cursor + menu-bar mnemonics (popup/gui_nav.c); off leaves
-                            // mouse/touch interaction fully intact, just no keyboard focus ring
+    bool tables;            // default on: optionally turn off tables.
+    bool docking;           // default on: optionally turn off docking.
+    bool keyboard_nav;      // default on: optionally turn off keyboard navigation.
+
 } gui_forward_caps_t;
 
 #define GUI_FORWARD_CAPS_DEFAULT \
     ( ( gui_forward_caps_t ){ .tables = true, .docking = true, .keyboard_nav = true } )
-
-/* Opaque context handle -- integer index into the internal context pool.
-   GUI_CTX_DEFAULT (0) is always valid after init().
-   GUI_CTX_INVALID (-1) signals a failed ctx_create or an unset handle. */
-
-typedef i32 gui_ctx_t;
-#define GUI_CTX_DEFAULT  0
-#define GUI_CTX_INVALID  (-1)
 
 /*==============================================================================================
     GUI: Geometry
@@ -141,6 +135,12 @@ typedef i32 gui_ctx_t;
 
 typedef struct { f32 x, y; }        gui_vec2_t;
 typedef struct { f32 x, y, w, h; }  gui_rect_t;
+
+/* Edge insets, in pixels. Region padding -- the gap between a region's box and where its layout
+   starts (see gui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
+   (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */
+
+typedef struct { f32 l, r, t, b; }  gui_pad_t;
 
 /* Callback fired by input_text_ex after any frame that modifies the buffer.
    buf is the live caller-owned buffer (may be read or written); len is the current byte
@@ -153,22 +153,18 @@ typedef void ( *gui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
    per-frame emit (build) and render (flush) cost the overlay reports.  See perf_overlay(). */
 typedef f64 ( *gui_clock_fn )( void );
 
-/* Edge insets, in pixels.  Region padding -- the gap between a region's box and where its layout
-   starts (see gui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
-   (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */
+/*==============================================================================================
+    GUI: Rect Algebra
 
-typedef struct { f32 l, r, t, b; }  gui_pad_t;
-
-/*----------------------------------------------------------------------------------------------
     Rect algebra -- pure helpers for custom-draw placement (canvas() regions).  Stateless, so they
     live inline with the geometry types they operate on.  The cut_* family is the "rectcut" idiom:
     each slices a strip off one edge of *r, shrinks *r to the remainder, and returns the slice --
     chain them to carve a canvas into label columns / content panes the way the row / column tracks
     carve a region, instead of hand-computing absolute offsets.
 
-        gui_rect_t bar    = gui_rect_cut_top( &r, 24.0f );   // 24px strip off the top; r shrinks
-        gui_rect_t labels = gui_rect_cut_left( &r, 80.0f );  // 80px label column; r is the rest
-----------------------------------------------------------------------------------------------*/
+    gui_rect_t bar    = gui_rect_cut_top( &r, 24.0f );   // 24px strip off the top; r shrinks
+    gui_rect_t labels = gui_rect_cut_left( &r, 80.0f );  // 80px label column; r is the rest 
+==============================================================================================*/
 
 /* Shrink r inward by per-edge insets. */
 static inline gui_rect_t
@@ -181,7 +177,7 @@ gui_rect_inset( gui_rect_t r, gui_pad_t p )
 static inline gui_rect_t
 gui_rect_pad( gui_rect_t r, f32 a )
 {
-    return ( gui_rect_t ){ r.x + a, r.y + a, r.w - 2.0f * a, r.h - 2.0f * a };
+    return ( gui_rect_t ){ r.x + a, r.y + a, r.w - (2.0f * a), r.h - (2.0f * a) };
 }
 
 /* Center point of r. */
@@ -239,16 +235,18 @@ gui_rect_cut_bottom( gui_rect_t* r, f32 a )
     return ( gui_rect_t ){ r->x, r->y + r->h, r->w, a };
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+    GUI: Angle Algebra
+
     Angles -- the arc / pie / spinner / progress sweep parameters (draw_arc, draw_pie, ...) are
     radians in screen space (y down, so a positive angle turns clockwise; 0 points right / +x).
     Author in friendly degrees and convert at the call site:
 
-        gui()->draw_arc( cx, cy, r, gui_radians( 0 ), gui_radians( 270 ), 3.0f, col );
-        gui()->draw_pie( cx, cy, r, gui_radians( -90 ), gui_radians( 90 ), col );
+    gui()->draw_arc( cx, cy, r, gui_radians( 0 ), gui_radians( 270 ), 3.0f, col );
+    gui()->draw_pie( cx, cy, r, gui_radians( -90 ), gui_radians( 90 ), col );
 
     Stateless pure math, so these are inline here (no vtable entry) like the rect helpers above.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_PI 3.14159265358979f
 
@@ -286,7 +284,7 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
                       column / grid track is resolved up front with no content, so a 0 there
                       collapses to a zero-width track -- use fill / fraction / px in columns + grid.
         <  0.0        GUI_END, the track-list terminator
-
+    
     Gaps sit *between* cells and are subtracted before distribution, so a widget never sees or
     reasons about spacing -- it just fills the rect it is handed.
 ==============================================================================================*/

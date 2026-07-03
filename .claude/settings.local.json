@@ -187,7 +187,13 @@
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1' | Select-Object -Last 4)",
       "PowerShell($s = \"C:\\\\Users\\\\dangold\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--orb\\\\7b2232e7-a40f-4784-a484-dd8bcd40db9f\\\\scratchpad\"; powershell -ExecutionPolicy Bypass -File \"$s\\\\shot.ps1\" -OutPng \"$s\\\\step7_align_probe.png\"; powershell -ExecutionPolicy Bypass -File \"$s\\\\pixdiff.ps1\" -A \"$s\\\\step7_demo.png\" -B \"$s\\\\step7_align_probe.png\")",
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1' | Select-Object -Last 2; $s = \"C:\\\\Users\\\\dangold\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--orb\\\\7b2232e7-a40f-4784-a484-dd8bcd40db9f\\\\scratchpad\"; powershell -ExecutionPolicy Bypass -File \"$s\\\\shot.ps1\" -OutPng \"$s\\\\step7_split_left.png\"; powershell -ExecutionPolicy Bypass -File \"$s\\\\pixdiff.ps1\" -A \"$s\\\\step7_split_left.png\" -B \"$s\\\\step7_split_right.png\")",
-      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1' | Select-Object -Last 3)"
+      "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1' | Select-Object -Last 3)",
+      "Bash(./bin/build_tool.exe -config Debug -target gui)",
+      "Bash(/c/Program Files \\(x86\\)/Microsoft Visual Studio/Installer/vswhere.exe *)",
+      "PowerShell(cmd.exe /c \"F:\\\\orb\\\\_build_gui.bat\"; Get-Content \"F:\\\\orb\\\\_build_gui.log\" -Tail 150)",
+      "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\_build_gui.bat\" 2>&1 | Out-String -Width 200)",
+      "Bash(./bin/build_tool.exe -help)",
+      "PowerShell($p = Start-Process -FilePath \"cmd.exe\" -ArgumentList '/c \"F:\\\\orb\\\\_build_gui.bat\" > F:\\\\orb\\\\_build_gui_out2.txt 2>&1' -PassThru -Wait -WindowStyle Hidden; $p.ExitCode)"
     ]
   }
 }

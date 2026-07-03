@@ -106,6 +106,7 @@ const gui_api_t g_gui_api_struct =
     .pack_size                          = gui_pack_size,
     .pack_nextline                      = gui_pack_nextline,
     .align                              = gui_align,
+    .next_item_fit                      = gui_next_item_fit,
     .same_line                          = gui_same_line,
     .stack_same_line                    = gui_stack_same_line,
     .skip                               = gui_skip,
