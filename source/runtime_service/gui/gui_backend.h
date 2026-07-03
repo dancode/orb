@@ -174,8 +174,16 @@ bool                gui_build_any_changed( void );
     Volatile widgets -- an inline-emit callback replayed in place on frames the UI build is
     skipped, so a purely cosmetic animation never forces the whole UI to re-run every frame.
 
+    The feature's actual logic is entirely in two files, one per unit -- read those for the full
+    picture; this header is only the boundary between them:
+
+        widgets/gui_volatile.c          -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
+                                           the replay scope (layout + id), gui_replay_scope_enter/_exit.
+        backend/gui_build_volatile.c    -- BUILD unit: the registry, capture at real emit, and
+                                           gui_update_volatile (wired to gui()->update_volatile).
+
     Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
-    (gui_widget_draw.c) wraps one real-emit invocation of a callback with these three calls --
+    (widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
     gui_volatile_cb_open records where its commands start, gui_volatile_stamp (called from inside
     the callback body, by gui_volatile_begin) records the window/z/vp/font/clip context and the
     layout cursor position, and gui_volatile_cb_close records where they end and folds a topology
@@ -195,7 +203,7 @@ void     gui_volatile_stamp   ( f32 x, f32 y, f32 w );          // fill win/z/vp
 void     gui_volatile_cb_close( gui_volatile_fn fn );           // cmd_hi + topo hash + fn for the open row; tags the command range
 void     gui_update_volatile  ( void );
 
-/* Implemented in the UI unit (widgets/gui_widget_draw.c); called only from gui_update_volatile. */
+/* Implemented in the UI unit (widgets/gui_volatile.c); called only from gui_update_volatile. */
 void     gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w );
 void     gui_replay_scope_exit ( bool force_redraw );
 

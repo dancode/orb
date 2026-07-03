@@ -656,10 +656,11 @@ tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     return true;
 }
 
-/* Forward decl: gui_build_cache.c (included right after this file in the gui_backend.c unity
-   build) implements the volatile-widget registry.  tess_dispatch calls this once a tagged
-   command RANGE's vertices/indices are fully written, handing over the absolute span so
-   gui_update_volatile can patch it later on frames where the UI build is skipped entirely. */
+/* Forward decl: backend/gui_build_volatile.c (included right after this file in the
+   gui_backend.c unity build) implements the volatile-widget registry.  tess_dispatch calls this
+   once a tagged command RANGE's vertices/indices are fully written, handing over the absolute
+   span so gui_update_volatile can patch it later on frames where the UI build is skipped
+   entirely. */
 static void volatile_capture( gui_id_t id, gui_id_t win, u32 vert_base, u32 vert_count,
                               u32 idx_base, u32 idx_count );
 

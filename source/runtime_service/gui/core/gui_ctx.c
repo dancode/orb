@@ -79,11 +79,14 @@ static struct
 
 } s_interaction;
 
-/* True while gui_update_volatile (backend/gui_build_cache.c) is replaying a volatile callback on
-   an idle frame.  widget_behavior (gui_widget_core.c) checks this to short-circuit before any
-   hit-test or write to s_interaction/s_build -- a replay must render with whatever ambient
-   hover/active/focus state the last real frame already established, but can never acquire either
-   state or discover a fresh click; interaction is only ever resolved on real frames. */
+/* True while a volatile widget callback is being replayed standalone on an idle frame -- set/
+   cleared only by gui_replay_scope_enter/_exit (widgets/gui_volatile.c; full feature description
+   there and in backend/gui_build_volatile.c).  Declared here, alongside s_interaction, because
+   widget_behavior (gui_widget_core.c) reads it inline as ambient frame-phase state, the same tier
+   as hover_id/active_id above -- it short-circuits before any hit-test or write to
+   s_interaction/s_build, since a replay must render with whatever ambient hover/active/focus
+   state the last real frame already established, but can never acquire either state or discover
+   a fresh click; interaction is only ever resolved on real frames. */
 static bool s_replay_mode;
 
 /* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the

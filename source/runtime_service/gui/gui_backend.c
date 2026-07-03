@@ -78,6 +78,11 @@ static gui_backend_caps_t s_caps;
 // No public surface -- driven entirely from part B (cache_tess_window / cache_build_frame).
 #include "runtime_service/gui/backend/gui_build_tess.c"
 
+// BUILD, part A.5: volatile widgets (inline-emit callback replay) -- see that file's header.
+// After gui_build_tess.c (needs s_tess + tess_dispatch); before gui_build_cache.c (cache_build_frame
+// bumps s_volatile_reflow_gen, owned here).
+#include "runtime_service/gui/backend/gui_build_volatile.c"
+
 // BUILD, part B: retained cache & orchestration (diff, reuse-or-tessellate, z-sort).
 #include "runtime_service/gui/backend/gui_build_cache.c"
 

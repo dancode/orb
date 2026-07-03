@@ -157,6 +157,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/widgets/gui_text_edit.c"
 #include "runtime_service/gui/widgets/gui_widget.c"
 #include "runtime_service/gui/widgets/gui_widget_draw.c"
+#include "runtime_service/gui/widgets/gui_volatile.c"
 #include "runtime_service/gui/widgets/gui_widget_slider.c"
 #include "runtime_service/gui/widgets/gui_widget_numeric.c"
 

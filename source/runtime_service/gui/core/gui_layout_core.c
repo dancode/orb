@@ -340,37 +340,10 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
 }
 
-/* Push a minimal layout frame at an explicit (x, y, w) -- the volatile-widget replay scope
-   (gui_build_cache.c: gui_update_volatile).  Unlike layout_push_region this reserves no
-   scrollbar gutter, pushes no clip, and calls no id_push -- the caller (gui_update_volatile)
-   handles id scoping itself.  layout_set_default installs a plain single-column stack and
-   resets the modifier/template state, so a widget can be placed immediately without tripping
-   the emit-before-header guard in widget_next_rect_w.  content_y_max is set far below y since
-   a replay frame never opens a grid. */
-static void
-layout_push_scoped( f32 x, f32 y, f32 w )
-{
-    u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
-    ++s_layout_sp;
-    layout_frame_t* f = &s_layout_stack[ slot ];
-
-    f->content_x     = x;
-    f->content_y     = y;
-    f->content_w     = w;
-    f->content_max_x = x;
-    f->content_max_y = y;
-    f->content_y_max = y + 1.0e6f;
-
-    layout_set_default( f );
-}
-
-/* Pop a scope opened by layout_push_scoped -- no measurement, no scrollbar draw, just unwind
-   the stack pointer (the replay path never scrolls or reports content size). */
-static void
-layout_pop_scoped( void )
-{
-    if ( s_layout_sp > 0 ) --s_layout_sp;
-}
+/* layout_push_scoped / layout_pop_scoped -- a minimal layout-frame push/pop at an explicit
+   (x, y, w), used only by the volatile-widget replay scope, now live in widgets/gui_volatile.c
+   (gui_replay_scope_enter/_exit) alongside the rest of that feature. Both call
+   layout_set_default (below), which is why they must be textually included after this file. */
 
 /* Replace the active flow template on the current frame.  Finishes any open row first, then
    resolves the columns into cell geometry once (they are constant for every row of the template).
