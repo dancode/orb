@@ -1217,13 +1217,18 @@ typedef struct
     u32 tri_count;      // tessellated triangles (total, including retained)            
     u32 draw_calls;     // GPU indexed draw calls (batches), summed over surfaces       
 
-    u32 win_total;      // windows tracked this frame                                  
-    u32 win_retained;   // windows whose geometry was reused (no re-tessellation)      
-    u32 vert_retained;  // vertices that came from prev-frame copy, not re-tessellated 
-    u32 tri_retained;   // triangles retained from prev-frame copy                     
+    u32 win_total;      // windows tracked this frame
+    u32 win_retained;   // windows whose geometry was reused (no re-tessellation)
+    u32 vert_retained;  // vertices that came from prev-frame copy, not re-tessellated
+    u32 tri_retained;   // triangles retained from prev-frame copy
 
-    u32 upload_batches; // number of buffer write calls per frame                      
+    u32 upload_batches; // number of buffer write calls per frame
     u32 upload_bytes;   // total bytes uploaded to GPU vertex and index buffers
+
+    u32 volatile_patched; // volatile_cb rows whose geometry was patched in place this frame
+                           // (idle replay or a live real-frame reuse-patch) -- a separate signal
+                           // from win_retained: a window with an animating volatile widget still
+                           // counts as fully retained; this is what actually moved.
 
 } gui_render_stats_t;
 

@@ -274,11 +274,15 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
 
             if ( mode >= 4 )
             {
-                /* Retained-mode stats: how much geometry was reused vs re-tessellated. */
+                /* Retained-mode stats: how much geometry was reused vs re-tessellated.
+                   volatile patched is a separate signal, not folded into wins ret above -- a
+                   window holding an animating volatile widget (gui()->volatile_cb) still counts
+                   as fully retained; this is what actually moved inside it this frame. */
                 gui_spacing( 2.0f );
                 gui_textf( "wins ret  %u/%u", rs.win_retained,  rs.win_total   );
                 gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
                 gui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
+                gui_textf( "vol patch %u",    rs.volatile_patched              );
 
                 /* Upload stats: GPU memory bandwidth. */
                 gui_spacing( 2.0f );

@@ -31,10 +31,28 @@
     It is bumped from cache_build_frame (gui_build_cache.c) whenever a rebuild is not set_stable --
     that one line is the only piece of this feature still living outside these two files.
 
+    A window with a volatile widget can also come up on a REAL frame -- for any unrelated reason,
+    since ctx_begin/emit re-emits every visible window, not just the one that made the frame
+    dirty.  Left alone, that window's per-command hash (cache_diff_windows) would fold in the
+    volatile widget's own ever-drifting color and almost never match its previous hash, forcing a
+    full retessellation of the ENTIRE window every single time -- reporting it as "not retained"
+    even though nothing else in it changed.  gui_volatile_cb_close guards against this: it compares
+    this frame's freshly emitted range against the row's last capture (topology only, same check
+    as replay) and sets stable_this_frame when they match.  cache_diff_windows then excludes a
+    stable row's commands from its window's hash entirely, and if that leaves the window otherwise
+    unchanged (reuse_geo), cache_build_frame calls volatile_patch_reused_window to patch just that
+    row's geometry into the reused slot using this frame's live commands -- volatile_tess_and_patch
+    is the tessellate-into-scratch-then-memcpy primitive shared with the idle-replay path in
+    gui_update_volatile.  Either way a patch happens, cache_count_volatile_patch (gui_build_cache.c)
+    tallies it into gui_render_stats_t.volatile_patched -- a signal reported separately from
+    win_retained/win_total precisely so a window with an animating volatile widget still correctly
+    counts as retained; the animation is not what "retained" is supposed to measure.
+
     Included by gui_backend.c after gui_build_tess.c (needs the s_tess struct + tess_dispatch) and
-    before gui_build_cache.c (cache_build_frame bumps s_volatile_reflow_gen, and gui_render_flush
-    uploads s_tess unconditionally every frame -- both existing pieces this feature rides for
-    free, described in gui_build_cache.c's own header comment).
+    before gui_build_cache.c (cache_build_frame bumps s_volatile_reflow_gen, calls
+    volatile_patch_reused_window and cache_count_volatile_patch, and gui_render_flush uploads
+    s_tess unconditionally every frame -- all pieces this feature rides for free, described in
+    gui_build_cache.c's own header comment).
 
 ==============================================================================================*/
 // clang-format off
@@ -64,12 +82,20 @@ typedef struct
     u16              cap_gen;          // s_volatile_reflow_gen as of the last real capture
     u8               clip_idx;
     bool             active;           // false once retired by staleness/mismatch, or never captured
+    bool             stable_this_frame; // set fresh by gui_volatile_cb_close every real emit -- see there
 
 } gui_volatile_slot_t;
 
 static gui_volatile_slot_t s_volatile[ GUI_MAX_VOLATILE ];
 static u32                 s_volatile_count;
 static u32                 s_volatile_reflow_gen;
+
+/* Defined later in gui_build_cache.c (same TU, included right after this file) where s_stats
+   lives -- forward-declared here the same way gui_build_tess.c forward-declares volatile_capture,
+   since this file is included first. Counts rows patched in place this frame (idle replay or a
+   live real-frame reuse-patch), exposed separately via gui()->render_stats().volatile_patched so
+   a window with an animating volatile widget can still correctly report as retained. */
+static void cache_count_volatile_patch( u32 n );
 
 /* The row currently mid-callback during real emit (between gui_volatile_cb_open and _close).
    Only one gui_volatile_cb invocation is ever in flight at a time -- nesting is not supported. */
@@ -150,12 +176,42 @@ gui_volatile_cb_close( gui_volatile_fn fn )
         u32 lo = s_open_cmd_lo, hi = s_draw.cmd_count;
         for ( u32 i = lo; i < hi; ++i )
             s_draw.cmd_volatile_id[ i ] = s_open_id;
+
+        u32 new_hash = volatile_topo_fold( lo, hi );
+
+        /* "Stable" means this row was captured before (row->active, as left by the END of the
+           previous frame's BUILD), that capture is not stale (survived the last disruptive
+           rebuild), and this frame's freshly emitted range has the exact same topology as that
+           capture -- i.e. only per-vertex bytes (color, etc) could differ, never the shape.
+           cache_diff_windows (gui_build_cache.c) uses this to exclude the row's commands from its
+           OWNING WINDOW's retained-cache hash, and cache_build_frame uses it to patch just this
+           row's geometry into an otherwise-reused slot -- so the volatile widget's own
+           ever-changing color no longer forces the WHOLE window to retessellate every real frame
+           it happens to run in. */
+        row->stable_this_frame = row->active
+                               && row->cap_gen >= s_volatile_reflow_gen
+                               && ( hi - lo ) == (u32)( row->cmd_hi - row->cmd_lo )
+                               && new_hash    == row->topo_hash;
+
         row->cmd_lo    = (u16)lo;
         row->cmd_hi    = (u16)hi;
-        row->topo_hash = volatile_topo_fold( lo, hi );
+        row->topo_hash = new_hash;
         row->fn        = fn;
     }
     s_open_id = GUI_ID_NONE;
+}
+
+/* Called from cache_diff_windows (gui_build_cache.c) for every command tagged with a volatile
+   id -- true if that row's topology matched its previous capture THIS frame (see
+   gui_volatile_cb_close), meaning it is a candidate to be excluded from its window's
+   retained-cache hash and patched separately instead. */
+static bool
+volatile_row_stable( gui_id_t id )
+{
+    for ( u32 i = 0; i < s_volatile_count; ++i )
+        if ( s_volatile[ i ].id == id )
+            return s_volatile[ i ].stable_this_frame;
+    return false;
 }
 
 /* Called from tess_dispatch (gui_build_tess.c) once a volatile-tagged command RANGE's vertices
@@ -177,6 +233,93 @@ volatile_capture( gui_id_t id, gui_id_t win, u32 vert_base, u32 vert_count,
     row->local_vert_base = (u16)( vert_base - s_tess.slot_vert_base );
     row->cap_gen         = (u16)s_volatile_reflow_gen;
     row->active          = true;
+}
+
+/* Tessellate the LIVE commands already sitting at s_draw.cmds[lo, hi) into scratch space at the
+   current tail of s_tess, and if the resulting vert/idx counts match what `row` last captured,
+   memcpy the result down into row->vert_base/idx_base -- patching in place.  s_tess is always
+   rolled back to its checkpoint afterward, match or not, so this never disturbs anything else
+   about the frame's real geometry.  Shared by two callers with different sources for [lo, hi):
+   gui_update_volatile (idle replay -- commands come from re-invoking the callback standalone) and
+   volatile_patch_reused_window (a live real frame -- commands are this frame's actual emit, no
+   replay needed since gui_volatile_cb_close already confirmed the topology matches). */
+static bool
+volatile_tess_and_patch( gui_volatile_slot_t* row, u32 lo, u32 hi, gui_id_t win )
+{
+    static u32 scratch_order[ GUI_MAX_CMDS ];
+    static u32 scratch_font [ GUI_MAX_CMDS ];
+    u32 n = hi - lo;
+    for ( u32 k = 0; k < n; ++k )
+    {
+        scratch_order[ k ] = lo + k;
+        scratch_font [ k ] = row->font;
+    }
+
+    u32  vert_ck      = s_tess.vert_count;
+    u32  idx_ck       = s_tess.idx_count;
+    u32  tcmd_ck      = s_tess.cmd_count;
+    u32  slot_vb_ck   = s_tess.slot_vert_base;
+    bool force_new_ck = s_tess.force_new_cmd;
+
+    /* slot_vert_base is set so the indices this produces come out relative to the ORIGINAL window
+       slot, matching what is already at row->vert_base -- see local_vert_base above. */
+    s_tess.slot_vert_base = s_tess.vert_count - row->local_vert_base;
+    s_tess.force_new_cmd  = true;
+
+    tess_dispatch( s_draw.cmds, scratch_order, scratch_font, n, win );
+
+    u32 new_vert_count = s_tess.vert_count - vert_ck;
+    u32 new_idx_count  = s_tess.idx_count  - idx_ck;
+
+    bool ok = ( new_vert_count == (u32)row->vert_count && new_idx_count == (u32)row->idx_count );
+    if ( ok )
+    {
+        memcpy( &s_tess.verts  [ row->vert_base ], &s_tess.verts  [ vert_ck ],
+                new_vert_count * sizeof( gui_draw_vert_t ) );
+        memcpy( &s_tess.indices[ row->idx_base  ], &s_tess.indices[ idx_ck  ],
+                new_idx_count  * sizeof( u16 ) );
+    }
+
+    /* Roll s_tess back -- as far as this frame's real geometry/dispatch table is concerned, the
+       scratch tessellation never happened. */
+    s_tess.vert_count     = vert_ck;
+    s_tess.idx_count      = idx_ck;
+    s_tess.cmd_count      = tcmd_ck;
+    s_tess.slot_vert_base = slot_vb_ck;
+    s_tess.force_new_cmd  = force_new_ck;
+    return ok;
+}
+
+/* Called from cache_build_frame (gui_build_cache.c) right after a window's slot is set up via
+   reuse_geo (the window's non-volatile content matched, so it is being fully reused this real
+   frame) -- patch every stable row belonging to `win` using this frame's freshly emitted, live
+   commands.  No topology re-check needed here: gui_volatile_cb_close already confirmed the match
+   when it set stable_this_frame.  Returns the count patched, for the volatile_patched stat. */
+static u32
+volatile_patch_reused_window( gui_id_t win )
+{
+    u32 patched = 0;
+    for ( u32 i = 0; i < s_volatile_count; ++i )
+    {
+        gui_volatile_slot_t* row = &s_volatile[ i ];
+        if ( row->win != win || !row->active || !row->stable_this_frame )
+            continue;
+
+        /* gui_volatile_cb_close (real emit, earlier this same frame) already tagged
+           [cmd_lo, cmd_hi) with this row's id.  volatile_tess_and_patch's scratch tessellation
+           below reuses tess_dispatch -- whose per-id span tracking would otherwise see that same
+           tag, think a NEW capture is in progress, and call volatile_capture again with the
+           SCRATCH location, clobbering row->vert_base/idx_base with a bogus (unrendered) address.
+           Clear the tag first, exactly as gui_update_volatile does for its own replayed range. */
+        for ( u32 k = row->cmd_lo; k < row->cmd_hi; ++k )
+            s_draw.cmd_volatile_id[ k ] = GUI_ID_NONE;
+
+        if ( volatile_tess_and_patch( row, row->cmd_lo, row->cmd_hi, win ) )
+            ++patched;
+        else
+            row->active = false;   /* safety-net mismatch; the next real emit recaptures it fresh */
+    }
+    return patched;
 }
 
 /* Host entry point for a clean frame (gui_frame_dirty() == false): replay every still-valid
@@ -243,57 +386,15 @@ gui_update_volatile( void )
         if ( ok )
         {
             /* cmd_volatile_id is not zeroed per-frame -- clear any leftover tag on the freshly
-               appended range so the scratch tessellation below (which reuses tess_dispatch,
-               volatile-capture logic and all) does not misread a stale id left over from
-               whatever real commands last occupied these slots. */
+               appended range so volatile_tess_and_patch's scratch tessellation (which reuses
+               tess_dispatch, volatile-capture logic and all) does not misread a stale id left
+               over from whatever real commands last occupied these slots. */
             for ( u32 k = cmd_ck; k < cmd_hi; ++k )
                 s_draw.cmd_volatile_id[ k ] = GUI_ID_NONE;
 
-            static u32 scratch_order[ GUI_MAX_CMDS ];
-            static u32 scratch_font [ GUI_MAX_CMDS ];
-            u32 n = cmd_hi - cmd_ck;
-            for ( u32 k = 0; k < n; ++k )
-            {
-                scratch_order[ k ] = cmd_ck + k;
-                scratch_font [ k ] = row->font;
-            }
-
-            u32  vert_ck      = s_tess.vert_count;
-            u32  idx_ck       = s_tess.idx_count;
-            u32  tcmd_ck      = s_tess.cmd_count;
-            u32  slot_vb_ck   = s_tess.slot_vert_base;
-            bool force_new_ck = s_tess.force_new_cmd;
-
-            /* Tessellate into the current (real-frame-unused) tail of s_tess.  slot_vert_base is
-               set so the indices this produces come out relative to the ORIGINAL window slot,
-               matching what is already at row->vert_base -- see local_vert_base above. */
-            s_tess.slot_vert_base = s_tess.vert_count - row->local_vert_base;
-            s_tess.force_new_cmd  = true;
-
-            tess_dispatch( s_draw.cmds, scratch_order, scratch_font, n, row->win );
-
-            u32 new_vert_count = s_tess.vert_count - vert_ck;
-            u32 new_idx_count  = s_tess.idx_count  - idx_ck;
-
-            if ( new_vert_count == (u32)row->vert_count && new_idx_count == (u32)row->idx_count )
-            {
-                memcpy( &s_tess.verts  [ row->vert_base ], &s_tess.verts  [ vert_ck ],
-                        new_vert_count * sizeof( gui_draw_vert_t ) );
-                memcpy( &s_tess.indices[ row->idx_base  ], &s_tess.indices[ idx_ck  ],
-                        new_idx_count  * sizeof( u16 ) );
-            }
-            else
-            {
-                ok = false;
-            }
-
-            /* Roll s_tess back -- as far as this frame's real geometry/dispatch table is
-               concerned, the scratch tessellation never happened. */
-            s_tess.vert_count     = vert_ck;
-            s_tess.idx_count      = idx_ck;
-            s_tess.cmd_count      = tcmd_ck;
-            s_tess.slot_vert_base = slot_vb_ck;
-            s_tess.force_new_cmd  = force_new_ck;
+            ok = volatile_tess_and_patch( row, cmd_ck, cmd_hi, row->win );
+            if ( ok )
+                cache_count_volatile_patch( 1 );
         }
 
         gui_replay_scope_exit( !ok );

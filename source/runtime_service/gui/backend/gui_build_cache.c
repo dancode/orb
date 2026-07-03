@@ -38,14 +38,27 @@ gui_build_frame_reset( void )
 /*----------------------------------------------------------------------------------------------
     Per-frame render stats.
 
-    accum is built during BUILD (geometry/retained counts) and SUBMIT (draw_calls, summed across
-    surfaces).  published is promoted from accum at frame_begin so the perf overlay always reads
-    a stable snapshot one frame behind the geometry it describes.
+    accum is built by two phases that do NOT run on the same schedule: BUILD (cache_diff_windows /
+    cache_build_frame -- cmd_count, vert_count, tri_count, win_total, win_retained, vert_retained,
+    tri_retained) runs at most once per REAL frame, guarded by s_frame_built, and is skipped
+    entirely on an idle frame (frame_dirty()==false); SUBMIT (cache_count_draw_calls /
+    cache_count_upload -- draw_calls, upload_batches, upload_bytes) runs every single frame, real
+    or idle, once per surface flush, because the GPU replays cached geometry every frame regardless.
+
+    gui_build_stats_publish runs at every frame_begin, real or idle.  It must NOT blanket-zero
+    accum: the BUILD fields are plain assignments ("="), not accumulations, so on an idle frame
+    they still hold the last real frame's correct totals and should be left alone -- publishing
+    them again is exactly right (nothing changed).  Only the SUBMIT fields need a per-frame reset,
+    since they are "+=" summed across this frame's surface flushes and would otherwise double-count
+    forever.  Zeroing the whole struct here (the previous bug) made win_total/win_retained/etc
+    collapse to 0 after any idle frame, which read on screen as the retained-window count randomly
+    flickering between correct and zero every time the idle-skip kicked in -- nothing was actually
+    wrong with retention, only with how the overlay reported it.
 ----------------------------------------------------------------------------------------------*/
 
 static struct
 {
-    gui_render_stats_t accum;        // built across this frame's BUILD + flush(es)
+    gui_render_stats_t accum;        // BUILD fields persist across idle frames; SUBMIT fields reset every frame
     gui_render_stats_t published;    // last frame's completed totals (what the overlay reads)
     u32                draw_call_hwm; // peak indexed draws in any single frame (lifetime)
 
@@ -61,7 +74,19 @@ void
 gui_build_stats_publish( void )
 {
     s_stats.published = s_stats.accum;
-    s_stats.accum     = ( gui_render_stats_t ){ 0 };
+    s_stats.accum.draw_calls       = 0;
+    s_stats.accum.upload_batches   = 0;
+    s_stats.accum.upload_bytes     = 0;
+    s_stats.accum.volatile_patched = 0;   // per-frame event count, same reset rule as draw_calls
+}
+
+/* Defined here (forward-declared in gui_build_volatile.c, included just above this file) because
+   it needs s_stats.  Counts a volatile row patched in place this frame, whether via idle replay
+   (gui_update_volatile) or a live real-frame reuse-patch (volatile_patch_reused_window). */
+static void
+cache_count_volatile_patch( u32 n )
+{
+    s_stats.accum.volatile_patched += n;
 }
 
 // Peak draw-call count, read by the shutdown report in gui_render.c.
@@ -108,7 +133,12 @@ bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
     numbers are live through gui()->render_stats() in the perf overlay regardless of the flag.
 ----------------------------------------------------------------------------------------------*/
 
-static bool s_exempt_perf_overlay = true;  // exclude the perf overlay window from stats totals
+/* Excludes the perf overlay window from: (1) the vert/tri/win totals its own display reports
+   (gui_render_stats_t), and (2) contributing its own ever-changing hash to any_changed / the
+   frame_dirty signal that drives idle-skip (cache_diff_windows) -- see the comment at that use
+   site.  Without (2), simply having the overlay visible would keep the whole app rebuilding every
+   frame regardless of anything else being idle. */
+static bool s_exempt_perf_overlay = true;
 
 /*==============================================================================================
     Window geometry slots -- the retained geometry store.
@@ -263,7 +293,19 @@ cache_diff_windows( void )
         h = fnv1a_u32( h, segs[ si ].font );
         h = fnv1a_u32( h, atlas            );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
+        {
+            /* A command whose volatile row matched its own previous topology this frame (see
+               gui_volatile_cb_close) is excluded from its window's hash entirely -- it is about to
+               be patched in place (gui_update_volatile on an idle frame, or
+               volatile_patch_reused_window on a real one) regardless of how its color has drifted,
+               so letting its ever-changing per-vertex bytes flow into the window's hash would force
+               the WHOLE window to retessellate every real frame purely because of one animating
+               widget inside it, even though nothing else in the window changed. */
+            gui_id_t vid = s_draw.cmd_volatile_id[ i ];
+            if ( vid != GUI_ID_NONE && volatile_row_stable( vid ) )
+                continue;
             h = fnv1a_u32( h, s_draw.cmd_hashes[ i ] );
+        }
         s_cache.cur[ bi ].hash = h;
 
         if ( segs[ si ].z > s_cache.cur[ bi ].z ) s_cache.cur[ bi ].z = segs[ si ].z;
@@ -299,7 +341,16 @@ cache_diff_windows( void )
                        && s_cache.prev[ pj ].hash == s_cache.cur[ i ].hash );
         s_cache.cur[ i ].changed = !match;
         if ( match ) ++s_cache.unchanged;
-        else         s_cache.any_changed = true;
+        else if ( !( s_exempt_perf_overlay && s_cache.cur[ i ].win == g_gui_perf_overlay_id ) )
+            s_cache.any_changed = true;
+
+        /* The perf overlay's own text (live FPS/ms/vert counters) changes practically every real
+           frame it is visible -- if that alone kept any_changed true, gui_build_any_changed()
+           would report "something changed" forever and frame_dirty would never go false again,
+           silently defeating idle-skip for the WHOLE app for as long as the overlay is on screen.
+           s_cache.cur[i].changed above still flags true so cache_build_frame retessellates the
+           overlay's own slot (its digits really did change); only the GLOBAL any_changed signal
+           ignores it. */
     }
 
     /* Promote this frame's sorted table to prev for next frame's diff. */
@@ -491,6 +542,13 @@ cache_build_frame( void )
                 s_tess.cmd_vbase[ ci ] = slot->vert_base + s_win_cached[ wi ][ k ].lvbase;
             }
             s_tess.cmd_count += nc;
+
+            /* This window's own content matched (wh->changed is false), but that comparison
+               already excluded any volatile row's commands (cache_diff_windows).  Patch those
+               rows' geometry into the just-reused slot now, using the live commands this frame's
+               real emit already produced -- no replay needed, gui_volatile_cb_close confirmed the
+               topology matches when it set stable_this_frame. */
+            cache_count_volatile_patch( volatile_patch_reused_window( wh->win ) );
 
             if ( !( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id ) )
             {
