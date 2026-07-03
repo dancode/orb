@@ -174,14 +174,23 @@ line_commit( layout_frame_t* f )
     f->gap_pending = true;
 }
 
+/* True for a line that gui_pack just opened and nothing has been placed on yet (line_ext, the
+   cross extent, only grows once an item lands).  Its own position -- not the cursor plus a gap --
+   is the next placement point, since the gap was already applied when the line opened. */
+static bool
+line_just_opened( const layout_frame_t* f )
+{
+    return f->line_open && f->line_ext <= 0.0f;
+}
+
 /* Where the next line -- or block placed at the pen: a child box, a split band, a grid band --
    opens on the cross axis: the content end plus the gap owed by the content above it.  An open
    line owes one too (cursor_y already carries its live extent); a fresh, still-empty pack line
-   is its own next position (the gap was applied when it opened). */
+   is its own next position (see line_just_opened). */
 static f32
 layout_next_y( layout_frame_t* f )
 {
-    if ( f->line_open && f->line_ext <= 0.0f )   /* open but empty: a just-opened pack line */
+    if ( line_just_opened( f ) )
     {
         bool vert = ( f->mode == GUI_MODE_PACK && f->pack_dir == GUI_PACK_VERTICAL );
         return vert ? f->line_main : f->line_cross;
