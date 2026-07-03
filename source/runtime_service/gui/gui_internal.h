@@ -391,7 +391,7 @@ typedef struct
     gui_scroll_link_t scroll;
 
     // user-resized size in pixels; 0 = none, use the passed / auto size.  f32 (not i16) so a
-    // programmatic resize can ease sub-pixel through the size_resolve animation seam.
+    // programmatic resize can ease sub-pixel through the size_animate animation seam.
     f32 user_w, user_h;
 
 } gui_region_t;
@@ -770,9 +770,9 @@ static void dock_drag_commit( gui_id_t win_id, const char* title );
    popup on click (the Dear ImGui CloseCurrentPopup default behavior). */
 void gui_popup_close_current( void );
 
-/* The size-resolve seam (gui_layout_core.c) eases a remembered extent toward its target through the
+/* The size-animate seam (gui_layout_core.c) eases a remembered extent toward its target through the
    animation pool, whose primitive (gui_anim_f32) lives in gui_anim.c -- included AFTER the layout
-   files.  Forward-declared so size_resolve can reach it across the unity TU. */
+   files.  Forward-declared so size_animate can reach it across the unity TU. */
 static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 
 /*==============================================================================================

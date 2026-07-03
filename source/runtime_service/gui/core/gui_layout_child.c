@@ -115,19 +115,19 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
         if ( resize_x )
         {
             if ( rg->user_w <= 0.0f ) rg->user_w = w;
-            w = size_resolve( rg->user_w, GUI_ID_NONE, 0.0f );
+            w = size_animate( rg->user_w, GUI_ID_NONE, 0.0f );
         }
         if ( resize_y )
         {
             if ( rg->user_h <= 0.0f ) rg->user_h = ( h > 0.0f ) ? h : WIDGET_H * 8.0f;
-            h = size_resolve( rg->user_h, GUI_ID_NONE, 0.0f );
+            h = size_animate( rg->user_h, GUI_ID_NONE, 0.0f );
         }
         /* h <= 0 (and not RESIZE_Y) auto-sizes the height to the content measured last frame (the
            AutoResizeY case): the box hugs its widgets, like an ALWAYS_AUTOSIZE window on the
            vertical axis.  Before any content is measured (first frame) it opens one widget-row
            tall and settles next frame.  An auto-sized child has nothing to scroll. */
         else if ( h <= 0.0f )
-            h = size_resolve( ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIN_BORDER : WIDGET_H,
+            h = size_animate( ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIN_BORDER : WIDGET_H,
                               GUI_ID_NONE, 0.0f );
 
         /* Bound the resolved size by any next-child constraints: an auto-sized box hugs content up
@@ -382,10 +382,10 @@ gui_split_begin( const char* id_str, f32 right_w )
     gui_split_entry_t* se = GUI_STATE( gui_split_entry_t, id );
 
     /* Resolved height: max of both sides last frame.  Seed to one row on first appearance, then
-       route the target through the size-resolve seam (inert today, the animation hook for later). */
+       route the target through the size-animate seam (inert today, the animation hook for later). */
     f32 target_h = se->left_h > se->right_h ? se->left_h : se->right_h;
     if ( target_h < WIDGET_H ) target_h = WIDGET_H;
-    f32 resolved_h = size_resolve( target_h, GUI_ID_NONE, 0.0f );
+    f32 resolved_h = size_animate( target_h, GUI_ID_NONE, 0.0f );
 
     f32 gap    = WIDGET_GAP;
     f32 left_w = parent->content_w - right_w - gap;
