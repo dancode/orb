@@ -147,6 +147,18 @@ unit_resolve( f32 u, f32 natural, f32 avail )
     return u;                                                       /* fixed px                  */
 }
 
+/* The size-resolve seam: turn a remembered extent's `target` into the extent to use this frame,
+   optionally easing toward it through the animation pool.  Every panel / child / split resolves its
+   size here after picking its own target (a user-resized override, or the content it measured), so
+   animated resize is a matter of handing this an anim_id.  GUI_ID_NONE (today's every caller) is the
+   exact-size fast path -- no pool touch, the target verbatim -- so the hook ships inert until a panel
+   opts in with id_combine( panel_id, tag ).  Speed is the gui_anim_f32 Hz-like rate (10 ~ 250ms). */
+static f32
+size_resolve( f32 target, gui_id_t anim_id, f32 speed )
+{
+    return ( anim_id != GUI_ID_NONE ) ? gui_anim_f32( anim_id, target, speed ) : target;
+}
+
 /* Close the open line and return the column walk to a row start: the next line owes a gap before it
    (gap_pending) rather than one appended after, so cursor_y stays the exact content end.  The one
    commit behind flow rows, pack lines, and same_line continuations.  The line's extent is already in

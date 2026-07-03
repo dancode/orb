@@ -114,20 +114,21 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
            incoming w/h (a sensible 8-row default when h <= 0 -- RESIZE_Y supersedes auto-size). */
         if ( resize_x )
         {
-            if ( rg->user_w <= 0 ) rg->user_w = (i16)w;
-            w = (f32)rg->user_w;
+            if ( rg->user_w <= 0.0f ) rg->user_w = w;
+            w = size_resolve( rg->user_w, GUI_ID_NONE, 0.0f );
         }
         if ( resize_y )
         {
-            if ( rg->user_h <= 0 ) rg->user_h = (i16)( ( h > 0.0f ) ? h : WIDGET_H * 8.0f );
-            h = (f32)rg->user_h;
+            if ( rg->user_h <= 0.0f ) rg->user_h = ( h > 0.0f ) ? h : WIDGET_H * 8.0f;
+            h = size_resolve( rg->user_h, GUI_ID_NONE, 0.0f );
         }
         /* h <= 0 (and not RESIZE_Y) auto-sizes the height to the content measured last frame (the
            AutoResizeY case): the box hugs its widgets, like an ALWAYS_AUTOSIZE window on the
            vertical axis.  Before any content is measured (first frame) it opens one widget-row
            tall and settles next frame.  An auto-sized child has nothing to scroll. */
         else if ( h <= 0.0f )
-            h = ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIN_BORDER : WIDGET_H;
+            h = size_resolve( ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIN_BORDER : WIDGET_H,
+                              GUI_ID_NONE, 0.0f );
 
         /* Bound the resolved size by any next-child constraints: an auto-sized box hugs content up
            to max_h then the default vertical scrollbar takes over, and never shrinks below min_h. */
@@ -156,15 +157,15 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
 
             if ( s_resize_edges & GUI_RESIZE_R )
             {
-                rg->user_w = (i16)child_con_clamp( rr.w, con_min_w, con_max_w );
-                if ( rg->user_w < CHILD_MIN_W ) rg->user_w = (i16)CHILD_MIN_W;
-                box.w = (f32)rg->user_w;
+                rg->user_w = child_con_clamp( rr.w, con_min_w, con_max_w );
+                if ( rg->user_w < CHILD_MIN_W ) rg->user_w = CHILD_MIN_W;
+                box.w = rg->user_w;
             }
             if ( s_resize_edges & GUI_RESIZE_B )
             {
-                rg->user_h = (i16)child_con_clamp( rr.h, con_min_h, con_max_h );
-                if ( rg->user_h < CHILD_MIN_H ) rg->user_h = (i16)CHILD_MIN_H;
-                box.h = (f32)rg->user_h;
+                rg->user_h = child_con_clamp( rr.h, con_min_h, con_max_h );
+                if ( rg->user_h < CHILD_MIN_H ) rg->user_h = CHILD_MIN_H;
+                box.h = rg->user_h;
             }
         }
 
@@ -380,9 +381,11 @@ gui_split_begin( const char* id_str, f32 right_w )
     gui_id_t           id = id_combine( id_seed(), id_hash( id_str ) );
     gui_split_entry_t* se = GUI_STATE( gui_split_entry_t, id );
 
-    /* Resolved height: max of both sides last frame.  Seed to one row on first appearance. */
-    f32 resolved_h = se->left_h > se->right_h ? se->left_h : se->right_h;
-    if ( resolved_h < WIDGET_H ) resolved_h = WIDGET_H;
+    /* Resolved height: max of both sides last frame.  Seed to one row on first appearance, then
+       route the target through the size-resolve seam (inert today, the animation hook for later). */
+    f32 target_h = se->left_h > se->right_h ? se->left_h : se->right_h;
+    if ( target_h < WIDGET_H ) target_h = WIDGET_H;
+    f32 resolved_h = size_resolve( target_h, GUI_ID_NONE, 0.0f );
 
     f32 gap    = WIDGET_GAP;
     f32 left_w = parent->content_w - right_w - gap;

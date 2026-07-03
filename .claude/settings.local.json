@@ -174,7 +174,10 @@
       "PowerShell(& cmd.exe /c \"F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_gui\" 2>&1 | Select-Object -Last 40)",
       "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 45)",
       "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 4)",
-      "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 30)"
+      "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 30)",
+      "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 20)",
+      "Bash(git checkout *)",
+      "PowerShell(& cmd.exe /c 'call \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Insiders\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\" x64 >nul 2>&1 && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 3)"
     ]
   }
 }

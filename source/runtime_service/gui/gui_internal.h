@@ -55,7 +55,7 @@
 #define GUI_DOCK_TABS_MAX           8       // windows co-docked (tabbed) in one leaf node
 #define GUI_DOCK_NAME_CAP           28      // bytes of a tab's display name, copied at dock time
 
-#define GUI_STATE_CAP               20      // payload bytes per slot (max state struct: gui_region_t)
+#define GUI_STATE_CAP               24      // payload bytes per slot (max state struct: gui_region_t)
 
 /* GPU buffer region sizing uses a fixed viewport count (allocated once at init before any config).
    This is NOT the per-context runtime limit -- that is g_ctx->max_viewports.
@@ -388,10 +388,11 @@ typedef struct
     // persisted scroll offset (fractional: scrollbar drag is t * max_scroll)
     // + content extent measured last frame (gui_scroll_link_t* passed to
     // layout_push_region)
-    gui_scroll_link_t scroll; 
+    gui_scroll_link_t scroll;
 
-    // user-resized size in pixels; 0 = none, use the passed w/h
-    i16 user_w, user_h;       
+    // user-resized size in pixels; 0 = none, use the passed / auto size.  f32 (not i16) so a
+    // programmatic resize can ease sub-pixel through the size_resolve animation seam.
+    f32 user_w, user_h;
 
 } gui_region_t;
 
@@ -768,6 +769,11 @@ static void dock_drag_commit( gui_id_t win_id, const char* title );
 /* gui_popup.c is included after gui_widget.c; selectable calls this to auto-close the enclosing
    popup on click (the Dear ImGui CloseCurrentPopup default behavior). */
 void gui_popup_close_current( void );
+
+/* The size-resolve seam (gui_layout_core.c) eases a remembered extent toward its target through the
+   animation pool, whose primitive (gui_anim_f32) lives in gui_anim.c -- included AFTER the layout
+   files.  Forward-declared so size_resolve can reach it across the unity TU. */
+static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 
 /*==============================================================================================
     Shared stateless helpers
