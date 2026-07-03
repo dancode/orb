@@ -912,13 +912,15 @@ typedef struct gui_api_s
     void ( *draw_rect )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
     void ( *draw_text )( f32 x, f32 y, u32 abgr, const char* str );
 
-    /* volatile_rect -- a filled rect that can be repainted, in place, on frames where the rest of
-       the UI build is skipped (see update_volatile / frame_dirty below).  Call every frame like
-       any other draw call: normal emit keeps its cached geometry position fresh.  `id` must be
-       stable across frames (e.g. widget_id(label)); `fn` may only rewrite the shape's own
-       vertex position/uv/color -- never its vertex count. */
-    void ( *volatile_rect )( gui_id_t id, f32 x, f32 y, f32 w, f32 h, u32 tex_idx, u32 abgr,
-                            gui_volatile_fn fn, void* userdata );
+    /* volatile_cb -- runs `fn` inline, as ordinary code, wrapped so its command range can be
+       replayed standalone on frames where the rest of the UI build is skipped (see
+       update_volatile / frame_dirty below).  `fn` calls ordinary emit functions (text, rect_filled,
+       etc) and should bracket them with volatile_begin()/volatile_end() from inside its own body.
+       `id` must be stable across frames (e.g. widget_id(label)).  Interactive widgets are safe to
+       call from `fn` but are inert during replay -- see gui.h (gui_volatile_fn) for the contract. */
+    void ( *volatile_cb    )( gui_id_t id, gui_volatile_fn fn );
+    void ( *volatile_begin )( void );   // called from inside fn: stamp the callback's start position
+    void ( *volatile_end   )( void );   // called from inside fn: reserved, no-op today
 
     /* text_size -- laid-out pixel size of s (widest line x line span; '\n' breaks).  CalcTextSize. */
     gui_vec2_t ( *text_size )( const char* s );
@@ -1109,9 +1111,10 @@ typedef struct gui_api_s
     bool ( *frame_dirty )( void );
 
     /* update_volatile -- call in place of ctx_begin/emit/ctx_end on a frame where frame_dirty()
-       is false, to repaint every registered volatile_rect (see above) without running any other
-       widget code, layout, hashing, or tessellation.  A no-op safety net for any row whose window
-       vanished or reordered since its last real emit -- see volatile_rect's contract. */
+       is false, to replay every registered volatile_cb callback (see above) standalone and patch
+       its geometry in place if the replay reproduces the same topology real emit recorded.  A
+       row that mismatches or whose window vanished/reordered since its last real emit is retired
+       and one more real frame is requested -- see volatile_cb's contract. */
     void ( *update_volatile )( void );
 
     /* Tables -- a multi-column layout with independent cell clipping and optional scrolling,

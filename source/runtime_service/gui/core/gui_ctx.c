@@ -79,6 +79,13 @@ static struct
 
 } s_interaction;
 
+/* True while gui_update_volatile (backend/gui_build_cache.c) is replaying a volatile callback on
+   an idle frame.  widget_behavior (gui_widget_core.c) checks this to short-circuit before any
+   hit-test or write to s_interaction/s_build -- a replay must render with whatever ambient
+   hover/active/focus state the last real frame already established, but can never acquire either
+   state or discover a fresh click; interaction is only ever resolved on real frames. */
+static bool s_replay_mode;
+
 /* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
    widget tree is walked.  Nothing here survives begin_frame: it is set and repopulated by the
    window_begin / child_begin / widget calls, never read across a frame boundary.  Because contexts

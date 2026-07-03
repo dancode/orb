@@ -46,19 +46,59 @@ gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
 }
 
 /*----------------------------------------------------------------------------------------------
-    gui_volatile_rect -- a filled rect that can be repainted, in place, on frames where the rest
-    of the UI build is skipped (see gui_update_volatile).  Call every frame like any other draw
-    call -- normal emit re-tags and re-registers it exactly like today's cost, so its cached
-    geometry position stays fresh whenever the window it lives in actually re-tessellates.  `id`
-    must be stable across frames (widget_id(label) or any other id that does not change call to
-    call); `fn` is invoked with the shape's own vertex span whenever a clean frame needs to
-    repaint it -- it may only rewrite position/uv/color, never the vertex count. */
+    Volatile widget callback -- see gui.h (gui_volatile_fn) for the full contract.
+
+    gui_volatile_cb wraps one real-emit invocation of `fn` so the backend can bracket the exact
+    command range it produces (gui_volatile_cb_open/_close, gui_backend.h); the callback itself
+    calls gui_volatile_begin/end from inside its own body, per the caller's own code -- begin
+    stamps the layout cursor position the callback started at (needed to reconstruct a matching
+    scope on replay), end is reserved for now.  `id` must be stable across frames -- widget_id(),
+    or any other hash the caller keeps constant call to call. */
 void
-gui_volatile_rect( gui_id_t id, f32 x, f32 y, f32 w, f32 h, u32 tex_idx, u32 abgr,
-                   gui_volatile_fn fn, void* userdata )
+gui_volatile_cb( gui_id_t id, gui_volatile_fn fn )
 {
-    draw_push_rect_filled_volatile( id, x, y, w, h, 0,0,1,1, tex_idx, abgr );
-    gui_volatile_register( id, fn, userdata );
+    gui_volatile_cb_open( id );
+    fn( false );
+    gui_volatile_cb_close( fn );
+}
+
+void
+gui_volatile_begin( void )
+{
+    layout_frame_t* f = lf();
+    gui_volatile_stamp( f->content_x, f->content_y, f->content_w );
+}
+
+void
+gui_volatile_end( void )
+{
+    /* Reserved for future per-command-type stamping; no-op in v1. */
+}
+
+/*----------------------------------------------------------------------------------------------
+    gui_replay_scope_enter / _exit -- the reverse half of the volatile-widget seam (see
+    gui_backend.h).  gui_update_volatile (backend/gui_build_cache.c) calls these around each
+    row's standalone replay invocation so the callback's ordinary gui()->text()/rect_filled()/...
+    calls have a valid (if minimal) layout frame and id scope to emit into, without running
+    ctx_begin/ctx_new_frame or touching anything else about the real frame's UI state.
+----------------------------------------------------------------------------------------------*/
+
+void
+gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w )
+{
+    id_push( id );
+    layout_push_scoped( x, y, w );
+    s_replay_mode = true;
+}
+
+void
+gui_replay_scope_exit( bool force_redraw )
+{
+    layout_pop_scoped();
+    id_pop();
+    s_replay_mode = false;
+    if ( force_redraw )
+        s_retained.wants_redraw = true;
 }
 
 /*----------------------------------------------------------------------------------------------

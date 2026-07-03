@@ -574,44 +574,6 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_push_rect_filled_volatile -- identical to draw_push_rect_filled, but tags the command
-    with a volatile widget id.  tess_dispatch reads this tag after tessellating the command and
-    hands the resulting vertex span to gui_update_volatile (gui_build_cache.c) for later in-place
-    patching on frames where the UI build is skipped.  No rounding: a volatile shape must keep a
-    fixed vertex count across every re-tessellation, and a rounded rect's vertex count depends on
-    the resolved radius (gui_build_tess.c round_rect_segs) -- so it forces square (rounding 0). */
-void
-draw_push_rect_filled_volatile( gui_id_t vid, f32 x, f32 y, f32 w, f32 h,
-                                f32 u0, f32 v0, f32 u1, f32 v1,
-                                u32 tex_idx, u32 abgr )
-{
-    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
-        return;
-    u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
-        return;
-    if ( draw_cull_box( x, y, w, h ) )
-        return;
-    gui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type          = GUI_CMD_RECT_FILLED;
-    c->clip_idx      = s_draw.cur_clip_idx;
-    c->vp            = (u8)s_draw.cur_vp;
-    c->rect.x        = x;
-    c->rect.y        = y;
-    c->rect.w        = w;
-    c->rect.h        = h;
-    c->rect.u0       = u0;
-    c->rect.v0       = v0;
-    c->rect.u1       = u1;
-    c->rect.v1       = v1;
-    c->rect.tex_idx  = tex_idx;
-    c->rect.abgr     = col;
-    c->rect.rounding = 0.0f;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ]      = draw_hash_cmd( c );
-    s_draw.cmd_volatile_id[ s_draw.cmd_count - 1 ] = vid;
-}
-
-/*----------------------------------------------------------------------------------------------
     draw_push_rect_gradient -- emit a two-color gradient rectangle as one semantic command.
 
     col_a / col_b sit on opposite edges (horizontal = left->right, else top->bottom); the GPU

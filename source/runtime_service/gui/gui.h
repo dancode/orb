@@ -1078,14 +1078,21 @@ typedef struct
 /*==============================================================================================
     Volatile widget callback
 
-    A "volatile" shape is a fixed-topology primitive (same vertex/index count, same texture and
-    clip, every call) whose vertex attributes are patched in place on frames the UI build is
-    otherwise skipped -- see gui_volatile_rect / gui_update_volatile.  The callback may rewrite
-    x/y/u/v/abgr for each of the `count` vertices handed to it; it must never change `count`,
-    reorder vertices, or hold the pointer past the call.
+    A "volatile" callback contains ordinary UI emit calls (text, colored rects, etc).  It runs
+    inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
+    any other code, no special behavior.  On an idle frame (frame_dirty()==false), the same
+    callback is invoked again standalone with is_replay=true; the framework reconstructs just
+    enough context (window/clip/cursor position) for it to reproduce identical commands, and
+    patches the result directly into already-tessellated geometry if the topology matches what
+    was captured during the real emit -- see gui_volatile_cb / gui_volatile_begin / gui_update_volatile.
+
+    Interactive widgets (button, etc) are safe to call from a volatile callback but are inert
+    during replay: hover/active/focus reflect whatever the last real frame established, but a
+    replay can never newly acquire either state or fire a fresh click -- interaction is only ever
+    resolved on real frames, which is guaranteed since input changes always force one.
 ==============================================================================================*/
 
-typedef void ( *gui_volatile_fn )( gui_draw_vert_t* verts, u32 count, void* userdata );
+typedef void ( *gui_volatile_fn )( bool is_replay );
 
 /*==============================================================================================
     Semantic draw commands

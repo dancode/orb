@@ -658,8 +658,8 @@ tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
 
 /* Forward decl: gui_build_cache.c (included right after this file in the gui_backend.c unity
    build) implements the volatile-widget registry.  tess_dispatch calls this once a tagged
-   command's vertices/indices are written, handing over the absolute span so gui_update_volatile
-   can patch it later on frames where the UI build is skipped entirely. */
+   command RANGE's vertices/indices are fully written, handing over the absolute span so
+   gui_update_volatile can patch it later on frames where the UI build is skipped entirely. */
 static void volatile_capture( gui_id_t id, gui_id_t win, u32 vert_base, u32 vert_count,
                               u32 idx_base, u32 idx_count );
 
@@ -680,10 +680,28 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 co
     u32 saved_font = font_active_id();
     u32 cur_font   = saved_font;
 
+    /* Volatile-widget span tracking: cmd_volatile_id tags a contiguous RANGE of commands (not
+       just one), so accumulate [vb_open, vert_count) / [ib_open, idx_count) while the tag stays
+       the same and flush the span to volatile_capture whenever it changes (or at the end).  Works
+       for any command type, not just filled rects -- a callback's text/rect/etc all fall under
+       whichever id gui_volatile_cb tagged the range with at emit time. */
+    gui_id_t open_vid = GUI_ID_NONE;
+    u32      vb_open = 0, ib_open = 0;
+
     for ( u32 oi = 0; oi < count; ++oi )
     {
         u32              ci = order[ oi ];
         const gui_cmd_t* c  = &cmds[ ci ];
+
+        gui_id_t vid = s_draw.cmd_volatile_id[ ci ];
+        if ( vid != open_vid )
+        {
+            if ( open_vid != GUI_ID_NONE )
+                volatile_capture( open_vid, win, vb_open, s_tess.vert_count - vb_open,
+                                  ib_open, s_tess.idx_count - ib_open );
+            open_vid = vid;
+            if ( vid != GUI_ID_NONE ) { vb_open = s_tess.vert_count; ib_open = s_tess.idx_count; }
+        }
 
         /* Switch the atlas batch context to this command's segment font when it changes. */
         if ( fonts[ oi ] != cur_font )
@@ -702,16 +720,9 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 co
                     tess_round_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                             c->rect.rounding, c->rect.abgr );
                 else
-                {
-                    gui_id_t vid = s_draw.cmd_volatile_id[ ci ];
-                    u32 vb0 = s_tess.vert_count, ib0 = s_tess.idx_count;
                     tess_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                       c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                       c->rect.tex_idx, c->rect.abgr );
-                    if ( vid != GUI_ID_NONE && s_tess.vert_count > vb0 )
-                        volatile_capture( vid, win, vb0, s_tess.vert_count - vb0,
-                                          ib0, s_tess.idx_count - ib0 );
-                }
                 break;
 
             case GUI_CMD_RECT_OUTLINE:
@@ -773,6 +784,10 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 co
                 break;
         }
     }
+
+    if ( open_vid != GUI_ID_NONE )
+        volatile_capture( open_vid, win, vb_open, s_tess.vert_count - vb_open,
+                          ib_open, s_tess.idx_count - ib_open );
 
     /* Leave the global font state as we found it -- the next frame's emit/layout depends on it. */
     if ( cur_font != saved_font )

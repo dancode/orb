@@ -127,11 +127,6 @@ void draw_set_root_clip         ( f32 w, f32 h );               // set clip_stac
 void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h,
                                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
 
-/* Sibling of draw_push_rect_filled tagged with a volatile widget id -- see gui_volatile_rect
-   (gui_widget_draw.c) and the BUILD-phase capture/update pair below. */
-void draw_push_rect_filled_volatile( gui_id_t vid, f32 x, f32 y, f32 w, f32 h,
-                                     f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
-
 void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal );
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
@@ -176,17 +171,33 @@ bool                gui_build_retained_skip( void );
 bool                gui_build_any_changed( void );
 
 /*----------------------------------------------------------------------------------------------
-    Volatile widgets -- fixed-topology shapes patched in place on frames the UI build is skipped.
+    Volatile widgets -- an inline-emit callback replayed in place on frames the UI build is
+    skipped, so a purely cosmetic animation never forces the whole UI to re-run every frame.
 
-    gui_volatile_register is called every real emit (widget layer, gui_widget_draw.c) to
-    (re)associate a callback + userdata with a stable widget id; draw_push_rect_filled_volatile
-    tags the semantic command so tess_dispatch can capture the resulting vertex span into the
-    same row once tessellated.  gui_update_volatile (wired to gui()->update_volatile) is called
-    by the host on frames where frame_dirty() is false, in place of ctx_begin/emit/ctx_end.
+    Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
+    (gui_widget_draw.c) wraps one real-emit invocation of a callback with these three calls --
+    gui_volatile_cb_open records where its commands start, gui_volatile_stamp (called from inside
+    the callback body, by gui_volatile_begin) records the window/z/vp/font/clip context and the
+    layout cursor position, and gui_volatile_cb_close records where they end and folds a topology
+    hash.  tess_dispatch (gui_build_tess.c) captures the resulting vertex/index span once the
+    window is tessellated.  gui_update_volatile (wired to gui()->update_volatile) is called by the
+    host on frames where frame_dirty() is false: it re-invokes each row's callback standalone and,
+    if the replay reproduces the exact same command topology, patches the geometry in place.
+
+    Reverse direction (backend -> core): gui_update_volatile needs a valid layout/id scope for the
+    callback to emit into, which only the UI unit owns (lf(), the id stack).  gui_replay_scope_enter
+    / _exit are the two functions that cross back -- the same kind of unit-seam exception as
+    gui_dbg_build_viewport above, just two of them instead of one.
 ----------------------------------------------------------------------------------------------*/
 
-void                gui_volatile_register( gui_id_t id, gui_volatile_fn fn, void* userdata );
-void                gui_update_volatile  ( void );
+void     gui_volatile_cb_open ( gui_id_t id );                 // (re)open row `id`; cmd_lo = current cmd_count
+void     gui_volatile_stamp   ( f32 x, f32 y, f32 w );          // fill win/z/vp/font/clip + cursor stamp for the open row
+void     gui_volatile_cb_close( gui_volatile_fn fn );           // cmd_hi + topo hash + fn for the open row; tags the command range
+void     gui_update_volatile  ( void );
+
+/* Implemented in the UI unit (widgets/gui_widget_draw.c); called only from gui_update_volatile. */
+void     gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w );
+void     gui_replay_scope_exit ( bool force_redraw );
 
 /*==============================================================================================
     RENDER: GPU resources + flush (gui_render.c)

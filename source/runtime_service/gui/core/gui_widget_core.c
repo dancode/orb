@@ -420,6 +420,18 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
         return st;
     }
 
+    /* Volatile-callback replay (gui_update_volatile, backend/gui_build_cache.c): report the
+       ambient hover/active/focused state as-is, but never touch it and never hit-test -- s_build
+       (win_id, cur_item_flags, win_resize_hot, ...) is only meaningful between a real
+       window_begin/window_end, and a replay runs outside that entirely. */
+    if ( s_replay_mode )
+    {
+        st.hover   = ( s_interaction.hover_id   == id );
+        st.active  = ( s_interaction.active_id  == id );
+        st.focused = ( s_interaction.focused_id == id );
+        return st;
+    }
+
     /* Hot only when this widget belongs to the window the cursor is over (hover_win,
        resolved last frame).  Widgets in any other window short-circuit before rect_hit,
        so occluded windows do no hit-testing at all -- occlusion is decided once, at the
