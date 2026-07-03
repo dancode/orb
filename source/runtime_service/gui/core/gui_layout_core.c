@@ -331,7 +331,6 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     f->origin_y      = f->outer.y + pad.t;
     f->content_x     = f->origin_x - f->scroll->scroll_x;
     f->content_w     = f->outer.w - pad.l - pad.r - f->sb_w;
-    f->cursor_x      = f->content_x;                    /* pen at the line's left edge */
     f->cursor_y      = f->origin_y - f->scroll->scroll_y;
     f->content_max_x = f->content_x;   /* seed the highwater at the origin corner -> an empty */
     f->content_max_y = f->cursor_y;    /* body measures 0 on both axes (premeasure sentinel)  */
