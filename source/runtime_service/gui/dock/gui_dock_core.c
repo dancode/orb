@@ -158,6 +158,18 @@ dock_collapse( gui_dock_node_t* leaf )
     dock_node_free( parent );
 }
 
+/* Remove window `wid`'s tab from `n` (if present) and collapse `n` should that empty it -- the
+   shared undock step every removal path (gui_dock_window's re-dock, gui_dock_undock,
+   dock_undock_by_id) performs identically before doing anything path-specific of its own. */
+static void
+dock_node_remove_window( gui_dock_node_t* n, gui_id_t wid )
+{
+    for ( u32 i = 0; i < n->tab_count; ++i )
+        if ( n->tabs[ i ] == wid ) { dock_leaf_remove_tab( n, i ); break; }
+    if ( n->tab_count == 0 )
+        dock_collapse( n );
+}
+
 /*----------------------------------------------------------------------------------------------
     Layout -- assign every node a rect, top-down from the surface area.
 

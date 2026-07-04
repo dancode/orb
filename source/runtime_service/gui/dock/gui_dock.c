@@ -69,6 +69,28 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     return root->id;
 }
 
+/* Wire `internal` as a DOCK_SPLIT_X/Y node dividing `new_node` and `other` along `dir`, `ratio` the
+   fraction of the axis `new_node` receives.  child[0] is always the left/top side, so when the new
+   side is child[1] (RIGHT / DOWN) `other` gets the complementary ratio.  Links both children's
+   parent to `internal`; leaves internal->parent untouched (a converted leaf keeps its own parent, a
+   fresh wrapper node sets it explicitly) -- the one difference between dock_split's and
+   dock_split_root's otherwise identical wiring. */
+static void
+dock_node_wire_split( gui_dock_node_t* internal, gui_dir_t dir, f32 ratio,
+                      gui_dock_node_t* new_node, gui_dock_node_t* other )
+{
+    bool horizontal = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_RIGHT );
+    bool new_first  = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_UP );   /* new on child[0] side */
+    f32  r          = clampf( ratio, 0.05f, 0.95f );
+
+    internal->split    = horizontal ? DOCK_SPLIT_X : DOCK_SPLIT_Y;
+    internal->child[ 0 ] = dock_ref( new_first ? new_node : other );
+    internal->child[ 1 ] = dock_ref( new_first ? other    : new_node );
+    internal->ratio      = new_first ? r : ( 1.0f - r );
+    new_node->parent = dock_ref( internal );
+    other->parent    = dock_ref( internal );
+}
+
 /* Split a LEAF node in two: the original node becomes an internal split, its windows move to the
    "remaining" child, and a new empty leaf is created on the `dir` side.  Returns the new leaf's id
    (dock windows into it); writes the remaining child's id to *out_remain (may be NULL), so a caller
@@ -93,7 +115,6 @@ gui_dock_split( gui_dock_id_t node_id, gui_dir_t dir, f32 ratio, gui_dock_id_t* 
         return GUI_DOCK_NONE;
     }
 
-    bool horizontal = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_RIGHT );
     bool new_first  = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_UP );   /* new on child[0] side */
     gui_dock_node_t* new_node = new_first ? a : b;
     gui_dock_node_t* remain   = new_first ? b : a;
@@ -107,16 +128,8 @@ gui_dock_split( gui_dock_id_t node_id, gui_dir_t dir, f32 ratio, gui_dock_id_t* 
         memcpy( remain->names[ i ], n->names[ i ], GUI_DOCK_NAME_CAP );
     }
 
-    f32 r = clampf( ratio, 0.05f, 0.95f );
-
-    /* Convert n into an internal split.  child[0] is the left / top side; ratio is its fraction, so
-       when the NEW side is child[1] (RIGHT / DOWN) the remaining child[0] gets the complement. */
-    n->split    = horizontal ? DOCK_SPLIT_X : DOCK_SPLIT_Y;
-    n->child[ 0 ] = dock_ref( new_first ? new_node : remain );
-    n->child[ 1 ] = dock_ref( new_first ? remain   : new_node );
-    n->ratio      = new_first ? r : ( 1.0f - r );
-    new_node->parent = dock_ref( n );
-    remain->parent   = dock_ref( n );
+    /* Convert n into an internal split; n keeps whatever parent it already had. */
+    dock_node_wire_split( n, dir, ratio, new_node, remain );
 
     /* n no longer holds windows directly. */
     n->tab_count  = 0;
@@ -159,17 +172,8 @@ gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
         return GUI_DOCK_NONE;
     }
 
-    bool horizontal = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_RIGHT );
-    bool new_first  = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_UP );   /* new on child[0] side */
-    f32  r          = clampf( ratio, 0.05f, 0.95f );
-
-    inner->split    = horizontal ? DOCK_SPLIT_X : DOCK_SPLIT_Y;
-    inner->child[ 0 ] = dock_ref( new_first ? leaf : root );
-    inner->child[ 1 ] = dock_ref( new_first ? root : leaf );
-    inner->ratio      = new_first ? r : ( 1.0f - r );
-    inner->parent     = GUI_DOCK_REF_NONE;
-    leaf->parent      = dock_ref( inner );
-    root->parent      = dock_ref( inner );
+    dock_node_wire_split( inner, dir, ratio, leaf, root );
+    inner->parent = GUI_DOCK_REF_NONE;   /* inner is a fresh wrapper -- it has no parent of its own */
 
     v->dock_root = dock_ref( inner );   /* the wrapper is the new tree root */
     return leaf->id;
@@ -194,12 +198,7 @@ gui_dock_window( const char* title, gui_dock_id_t node_id )
     if ( prev == n )
         return;   /* already here */
     if ( prev )
-    {
-        for ( u32 i = 0; i < prev->tab_count; ++i )
-            if ( prev->tabs[ i ] == wid ) { dock_leaf_remove_tab( prev, i ); break; }
-        if ( prev->tab_count == 0 )
-            dock_collapse( prev );
-    }
+        dock_node_remove_window( prev, wid );
 
     u32 idx = n->tab_count++;
     n->tabs[ idx ] = wid;
@@ -221,10 +220,7 @@ gui_dock_undock( const char* title )
     gui_dock_node_t* n = dock_find_window_node( wid );
     if ( !n )
         return;
-    for ( u32 i = 0; i < n->tab_count; ++i )
-        if ( n->tabs[ i ] == wid ) { dock_leaf_remove_tab( n, i ); break; }
-    if ( n->tab_count == 0 )
-        dock_collapse( n );
+    dock_node_remove_window( n, wid );
 }
 
 bool

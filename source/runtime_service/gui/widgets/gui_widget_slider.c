@@ -319,22 +319,26 @@ bool gui_drag_float4( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_m
 
 // clang-format on
 
+/* HSV -> RGB, h/s/v and r/g/b all in [0,1] (h wraps).  The standard six-sector conversion:
+   which sector h falls in selects which of r/g/b holds the max/min/ramp role. */
 static void
-color_hsv_to_rgb(f32 h, f32 s, f32 v, f32* r, f32* g, f32* b)
+color_hsv_to_rgb( f32 h, f32 s, f32 v, f32* r, f32* g, f32* b )
 {
-    if (s == 0.0f) {
+    if ( s == 0.0f )
+    {
         *r = *g = *b = v;
         return;
     }
-    h = fmodf(h, 1.0f);
-    if (h < 0.0f) h += 1.0f;
+    h = fmodf( h, 1.0f );
+    if ( h < 0.0f ) h += 1.0f;
     h *= 6.0f;
-    int i = (int)floorf(h);
+    int i = (int)floorf( h );
     f32 f = h - (f32)i;
-    f32 p = v * (1.0f - s);
-    f32 q = v * (1.0f - s * f);
-    f32 t = v * (1.0f - s * (1.0f - f));
-    switch (i) {
+    f32 p = v * ( 1.0f - s );
+    f32 q = v * ( 1.0f - s * f );
+    f32 t = v * ( 1.0f - s * ( 1.0f - f ) );
+    switch ( i )
+    {
         case 0: *r = v; *g = t; *b = p; break;
         case 1: *r = q; *g = v; *b = p; break;
         case 2: *r = p; *g = v; *b = t; break;
@@ -345,21 +349,26 @@ color_hsv_to_rgb(f32 h, f32 s, f32 v, f32* r, f32* g, f32* b)
     }
 }
 
+/* RGB -> HSV, the inverse of color_hsv_to_rgb.  K tracks which channel permutation was applied
+   (identity / rg-swap / rgb-rotate) so h can be recovered from the sorted channels; the 1e-20f
+   terms guard the two divisions against a zero chroma / zero r (grayscale input). */
 static void
-color_rgb_to_hsv(f32 r, f32 g, f32 b, f32* h, f32* s, f32* v)
+color_rgb_to_hsv( f32 r, f32 g, f32 b, f32* h, f32* s, f32* v )
 {
     f32 K = 0.0f;
-    if (g < b) {
+    if ( g < b )
+    {
         f32 tmp = g; g = b; b = tmp;
         K = -1.0f;
     }
-    if (r < g) {
+    if ( r < g )
+    {
         f32 tmp = r; r = g; g = tmp;
         K = -2.0f / 6.0f - K;
     }
-    f32 chroma = r - (g < b ? g : b);
-    *h = fabsf(K + (g - b) / (6.0f * chroma + 1e-20f));
-    *s = chroma / (r + 1e-20f);
+    f32 chroma = r - ( g < b ? g : b );
+    *h = fabsf( K + ( g - b ) / ( 6.0f * chroma + 1e-20f ) );
+    *s = chroma / ( r + 1e-20f );
     *v = r;
 }
 

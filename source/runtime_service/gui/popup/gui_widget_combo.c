@@ -153,9 +153,30 @@ gui_combo_end( void )
     gui_popup_end();
 }
 
+/* One selectable row per item, each id-scoped by its index (push_id_int keeps them distinct when
+   labels repeat) -- the shared body of gui_combo and gui_listbox's one-liner-over-an-array forms.
+   Updates *current_item and returns true on the frame the selection changes. */
+static bool
+selectable_item_list( i32* current_item, const char* const items[], i32 count )
+{
+    bool changed = false;
+    for ( i32 i = 0; i < count; ++i )
+    {
+        gui_push_id_int( i );
+        bool sel = ( *current_item == i );
+        if ( gui_selectable( items[ i ], &sel ) )
+        {
+            *current_item = i;
+            changed       = true;
+        }
+        gui_pop_id();
+    }
+    return changed;
+}
+
 /* One-liner over an array of strings: the common "pick one of N" case.  *current_item is the
    selected index (out of range shows an empty preview and selects nothing); returns true on the
-   frame the selection changes.  push_id_int keeps the row ids distinct when labels repeat. */
+   frame the selection changes. */
 bool
 gui_combo( const char* label, i32* current_item, const char* const items[], i32 count )
 {
@@ -164,17 +185,7 @@ gui_combo( const char* label, i32* current_item, const char* const items[], i32 
 
     if ( gui_combo_begin( label, preview, GUI_COMBO_NONE ) )
     {
-        for ( i32 i = 0; i < count; ++i )
-        {
-            gui_push_id_int( i );
-            bool sel = ( *current_item == i );
-            if ( gui_selectable( items[ i ], &sel ) )
-            {
-                *current_item = i;
-                changed       = true;
-            }
-            gui_pop_id();
-        }
+        changed = selectable_item_list( current_item, items, count );
         gui_combo_end();
     }
     return changed;
@@ -252,17 +263,7 @@ gui_listbox( const char* label, i32* current_item, const char* const items[], i3
     bool changed = false;
     if ( gui_listbox_begin( label, 0.0f, combo_rows_h( height_in_items ) ) )
     {
-        for ( i32 i = 0; i < count; ++i )
-        {
-            gui_push_id_int( i );
-            bool sel = ( *current_item == i );
-            if ( gui_selectable( items[ i ], &sel ) )
-            {
-                *current_item = i;
-                changed       = true;
-            }
-            gui_pop_id();
-        }
+        changed = selectable_item_list( current_item, items, count );
         gui_listbox_end();
     }
     return changed;

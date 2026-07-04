@@ -298,17 +298,14 @@ dock_drag_commit( gui_id_t win_id, const char* title )
     s_dock_drag.active = false;
 }
 
-/* Remove a window from its node by id (the undock-by-drag path); collapse a node it empties. */
+/* Remove a window from its node by id -- the undock-by-drag path's form of dock_node_remove_window
+   (gui_dock_core.c), which gui_dock_undock also uses from the title-string API. */
 static void
 dock_undock_by_id( gui_id_t win )
 {
     gui_dock_node_t* n = dock_find_window_node( win );
-    if ( !n )
-        return;
-    for ( u32 i = 0; i < n->tab_count; ++i )
-        if ( n->tabs[ i ] == win ) { dock_leaf_remove_tab( n, i ); break; }
-    if ( n->tab_count == 0 )
-        dock_collapse( n );
+    if ( n )
+        dock_node_remove_window( n, win );
 }
 
 /*----------------------------------------------------------------------------------------------
