@@ -1031,6 +1031,11 @@ typedef struct gui_api_s
     void                ( *debug_set_render_mode )( gui_render_mode_t mode );
     gui_render_mode_t ( *debug_get_render_mode )( void );
 
+    /* Dump the retained cache's slot table (each window's vertex/index/command bounds) to stdout.
+       Debug builds also assert every frame that no two slots share buffer space, so a geometry-
+       corruption bug traps at its source instead of showing as flicker/warping downstream. */
+    void                ( *debug_dump_geometry )( void );
+
     /* Retained-skip: when on (default), an unchanged frame skips tessellation.  Toggle to benchmark
        or confirm that the hash-upfront path produces identical output to the reference. */
     void ( *set_retained_skip )( bool on );

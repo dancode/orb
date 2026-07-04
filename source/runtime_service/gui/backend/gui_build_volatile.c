@@ -110,11 +110,14 @@ static u32                 s_volatile_count;
      cache_slot_lookup          -- resolve a window's CURRENT slot position + tessellation
                                    generation by id; false if the window has no live slot.
      cache_invalidate_window    -- corrupt the window's stored hash + raise any_changed so the
-                                   next frame re-tessellates it (a failed patch's recovery path). */
+                                   next frame re-tessellates it (a failed patch's recovery path).
+     cache_slots_extent         -- far edge of every slot's reservation; the debug guard below
+                                   asserts scratch is written past it. */
 static void cache_count_volatile_patch( u32 n );
 static bool cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base,
                                u32* tess_gen );
 static void cache_invalidate_window( gui_id_t win );
+static void cache_slots_extent( u32* out_vert_end, u32* out_idx_end );
 
 /* The row currently mid-callback during real emit (between gui_volatile_cb_open and _close).
    Only one gui_volatile_cb invocation is ever in flight at a time -- nesting is not supported. */
@@ -321,6 +324,20 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     u32  slot_vb_ck = s_tess.slot_vert_base;
     bool force_ck   = s_tess.force_new_cmd;
     bool ovf_ck     = s_tess.overflow;
+
+    /* Debug guard: the scratch tessellation below writes at vert_ck / idx_ck and its byte content
+       survives the count rollback.  If that is not past every live slot's reservation, it scribbles
+       through another window's geometry (the tooltip-vs-pulse collision).  Callers must arrange the
+       true tail: update_volatile runs on idle frames where vert_count already is it;
+       volatile_patch_reused_window is deferred until after the whole slot loop for the same reason. */
+#if !RELEASE
+    {
+        u32 vend, iend;
+        cache_slots_extent( &vend, &iend );
+        ORB_ASSERT_MSG( vert_ck >= vend && idx_ck >= iend,
+                        "gui volatile: patch scratch would overlap live slot geometry" );
+    }
+#endif
 
     /* slot_vert_base is faked so the scratch indices come out relative to the ORIGINAL window
        slot -- index value = (scratch position - fake base) = local_vert_base + offset -- and can

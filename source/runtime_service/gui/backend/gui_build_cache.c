@@ -236,6 +236,42 @@ cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u
     return false;
 }
 
+/* Far edge of all LIVE geometry -- the floor past which s_tess is free scratch space.  Forward-
+   declared in gui_build_volatile.c: a volatile patch tessellates into scratch at s_tess.vert_count
+   and must assert it is at/beyond this, or the scratch scribbles through a live slot's geometry
+   (the tooltip-vs-pulse collision, fixed 2026-07-04).
+
+   Spans BOTH slot tables: mid-build-loop, s_slots holds only the windows placed so far, while a
+   reused window not yet reprocessed still has its geometry sitting at LAST frame's position
+   (s_slots_prev) -- exactly where the buggy inline patch scribbled over the tooltip.  Taking the
+   max over both makes the guard see that still-live geometry the current table hasn't caught up to
+   yet.  On idle frames both tables are last frame's, so the max is simply the true tail. */
+static void
+cache_slots_extent( u32* out_vert_end, u32* out_idx_end )
+{
+    u32 ve = 0, ie = 0;
+    for ( u32 i = 0; i < s_slot_count; ++i )
+    {
+        if ( !s_slots[ i ].valid )
+            continue;
+        u32 v = s_slots[ i ].vert_base + s_slots[ i ].vert_alloc;
+        u32 x = s_slots[ i ].idx_base  + s_slots[ i ].idx_alloc;
+        if ( v > ve ) ve = v;
+        if ( x > ie ) ie = x;
+    }
+    for ( u32 i = 0; i < s_slot_prev_count; ++i )
+    {
+        if ( !s_slots_prev[ i ].valid )
+            continue;
+        u32 v = s_slots_prev[ i ].vert_base + s_slots_prev[ i ].vert_alloc;
+        u32 x = s_slots_prev[ i ].idx_base  + s_slots_prev[ i ].idx_alloc;
+        if ( v > ve ) ve = v;
+        if ( x > ie ) ie = x;
+    }
+    *out_vert_end = ve;
+    *out_idx_end  = ie;
+}
+
 /* cache_invalidate_window lives below, after s_cache is declared. */
 
 /*==============================================================================================
@@ -557,6 +593,88 @@ cache_tess_window( gui_id_t win )
 }
 
 /*==============================================================================================
+    Debug diagnostics -- dump the cached-geometry slot table, and a per-frame layout guard.
+
+    cache_dump_slots prints every slot's window, z/vp, and its vertex / index / command bounds.
+    Exposed to hosts via gui()->debug_dump_geometry() for on-demand inspection, and printed
+    automatically by cache_validate_geometry right before it trips an assert.
+
+    cache_validate_geometry enforces the ONE invariant the retained cache lives or dies by: every
+    valid slot owns a DISJOINT reserved vertex and index range.  Slots are packed end-to-end in the
+    shared s_tess buffers, so any overlap means a write into one slot (a tessellation, a reuse
+    replay, or a volatile patch) silently corrupts another's live geometry -- the exact failure that
+    made the hover tooltip flicker/warp when a neighbouring volatile widget patched over it.  These
+    bugs are near-invisible after the fact (the command metadata still looks correct; only the
+    vertex bytes are wrong), so the guard runs every frame in debug builds and traps at the source.
+    Compiled to nothing in release (ORB_ASSERT is a no-op there; the whole call is gated too).
+==============================================================================================*/
+
+static void
+cache_dump_slots( const char* tag )
+{
+    printf( "[gui] cached geometry [%s]: %u slots  tess v=%u/%u i=%u/%u c=%u/%u\n",
+            tag ? tag : "dump", s_slot_count, s_tess.vert_count, GUI_MAX_VERTS,
+            s_tess.idx_count, GUI_MAX_IDX, s_tess.cmd_count, GUI_MAX_CMDS );
+    for ( u32 i = 0; i < s_slot_count; ++i )
+    {
+        const win_geo_slot_t* s = &s_slots[ i ];
+        printf( "  [%2u] win=%-11u z=%-4u vp=%u  vert[%u..%u)/%u  idx[%u..%u)/%u  cmd[%u..%u)  gen=%u%s\n",
+                i, s->win, s->z, s->vp,
+                s->vert_base, s->vert_base + s->vert_count, s->vert_alloc,
+                s->idx_base,  s->idx_base  + s->idx_count,  s->idx_alloc,
+                s->cmd_base,  s->cmd_base  + s->cmd_count,  s->tess_gen,
+                s->valid ? "" : "  (INVALID)" );
+    }
+}
+
+#if !RELEASE
+static void
+cache_validate_geometry( void )
+{
+    for ( u32 a = 0; a < s_slot_count; ++a )
+    {
+        const win_geo_slot_t* sa = &s_slots[ a ];
+        if ( !sa->valid )
+            continue;
+
+        /* Live geometry must fit inside the reservation it was measured into. */
+        if ( sa->vert_count > sa->vert_alloc || sa->idx_count > sa->idx_alloc )
+            cache_dump_slots( "OVERFLOW" );
+        ORB_ASSERT_MSG( sa->vert_count <= sa->vert_alloc,
+                        "gui cache: slot live vertex count exceeds its reservation" );
+        ORB_ASSERT_MSG( sa->idx_count <= sa->idx_alloc,
+                        "gui cache: slot live index count exceeds its reservation" );
+
+        u32 av0 = sa->vert_base, av1 = sa->vert_base + sa->vert_alloc;
+        u32 ai0 = sa->idx_base,  ai1 = sa->idx_base  + sa->idx_alloc;
+
+        /* No two slots may share buffer space (adjacency at a shared boundary is fine). */
+        for ( u32 b = a + 1; b < s_slot_count; ++b )
+        {
+            const win_geo_slot_t* sb = &s_slots[ b ];
+            if ( !sb->valid )
+                continue;
+            u32  bv0 = sb->vert_base, bv1 = sb->vert_base + sb->vert_alloc;
+            u32  bi0 = sb->idx_base,  bi1 = sb->idx_base  + sb->idx_alloc;
+            bool vhit = ( av0 < bv1 && bv0 < av1 );
+            bool ihit = ( ai0 < bi1 && bi0 < ai1 );
+            if ( vhit || ihit )
+                cache_dump_slots( "OVERLAP" );
+            ORB_ASSERT_MSG( !vhit, "gui cache: two window slots share vertex-buffer space" );
+            ORB_ASSERT_MSG( !ihit, "gui cache: two window slots share index-buffer space" );
+        }
+    }
+}
+#endif
+
+/* Host entry point (gui()->debug_dump_geometry): print the current slot table on demand. */
+void
+gui_build_dump_geometry( void )
+{
+    cache_dump_slots( "manual" );
+}
+
+/*==============================================================================================
     cache_build_frame (BUILD step 2) -- diff, reuse or re-tessellate per window, z-sort.
 
     Runs once per frame (guarded by s_frame_built).  Produces the geometry (s_tess.verts/indices),
@@ -614,6 +732,18 @@ cache_build_frame( void )
     u32 vert_retained = 0, tri_retained = 0, win_retained = 0;
     u32 total_vert    = 0, total_tri    = 0, overlay_win  = 0;
 
+    /* Windows reused this frame that carry volatile rows: their reserved regions are patched AFTER
+       the whole slot loop completes.  Patching cannot run inline in the reuse branch because
+       volatile_patch tessellates into scratch at s_tess.vert_count -- which, mid-loop, is only the
+       write head up to the CURRENT window, with later windows' still-valid geometry sitting above
+       it.  Patching a reused window whose slot is followed by a not-yet-repositioned reused window
+       (e.g. a tooltip that outsorts it by id) would scribble scratch straight through that
+       neighbour's live vertices, and if the neighbour is itself reused (never re-tessellated) the
+       corruption reaches the screen.  Deferring until the loop ends puts s_tess.vert_count at the
+       true tail, past every slot, so the scratch is always clear of live geometry. */
+    gui_id_t reused_volatile_wins[ RENDER_MAX_WIN ];
+    u32      reused_volatile_n = 0;
+
     /* Step 2: for each window, reuse geometry or re-tessellate, then register in dispatch. */
     for ( u32 wi = 0; wi < s_cache.cur_n; ++wi )
     {
@@ -658,13 +788,14 @@ cache_build_frame( void )
             s_tess.cmd_count += nc;
 
             /* This window's own content matched, but that comparison excludes volatile commands
-               entirely (cache_diff_windows).  Patch those rows' reserved regions in the just-
-               reused slot now, from the live commands this frame's real emit already produced --
-               the slot fields above (incl. tess_gen) are set, so volatile_patch resolves this
-               slot and passes its generation check.  Must run AFTER the cached-command replay so
-               the patch's elem_count/vbase/ibase rewrites are not clobbered by it. */
+               entirely (cache_diff_windows).  Its volatile rows are patched from this frame's live
+               emit AFTER the loop (see reused_volatile_wins) -- once every slot is placed and
+               s_tess.vert_count is the true tail, so the patch's scratch tessellation cannot land
+               on a later slot's live geometry.  The slot fields (incl. tess_gen) set here are what
+               volatile_patch resolves and generation-checks against then. */
             slot->valid = true;
-            cache_count_volatile_patch( volatile_patch_reused_window( wh->win ) );
+            if ( reused_volatile_n < RENDER_MAX_WIN )
+                reused_volatile_wins[ reused_volatile_n++ ] = wh->win;
 
             if ( !( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id ) )
             {
@@ -748,6 +879,12 @@ cache_build_frame( void )
         s_dispatch[ s_dispatch_count++ ] = slot;
     }
 
+    /* Deferred volatile patches for reused windows: every slot is now placed and s_tess.vert_count
+       is the true tail, so volatile_patch's scratch tessellation lands past all live geometry
+       instead of over a later slot's vertices (see reused_volatile_wins above). */
+    for ( u32 i = 0; i < reused_volatile_n; ++i )
+        cache_count_volatile_patch( volatile_patch_reused_window( reused_volatile_wins[ i ] ) );
+
     /* Step 3: insertion-sort dispatch pointers by z ascending (back-to-front draw order).
        Stable on equal z since insertion sort preserves relative order for equal keys. */
     for ( u32 a = 1; a < s_dispatch_count; ++a )
@@ -761,6 +898,11 @@ cache_build_frame( void )
         }
         s_dispatch[ b ] = key;
     }
+
+    /* Debug guard: assert the slot layout is disjoint before any of it reaches the GPU. */
+#if !RELEASE
+    cache_validate_geometry();
+#endif
 
     /* Publish geometry and retained stats. */
     s_stats.accum.vert_count    = total_vert;

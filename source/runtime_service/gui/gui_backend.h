@@ -170,6 +170,11 @@ bool                gui_build_retained_skip( void );
 
 bool                gui_build_any_changed( void );
 
+/* Debug: print the cached-geometry slot table (window, z/vp, vertex/index/command bounds) to
+   stdout.  On-demand companion to the per-frame disjoint-layout assert that runs in debug builds. */
+
+void                gui_build_dump_geometry( void );
+
 /*----------------------------------------------------------------------------------------------
     Volatile widgets -- an inline-emit callback replayed in place on frames the UI build is
     skipped, so a purely cosmetic animation never forces the whole UI to re-run every frame.

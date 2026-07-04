@@ -13,7 +13,7 @@
         hover   : the cursor is over the widget this frame
         active  : the primary button is held with this widget as the target
         focused : this widget owns keyboard input (input_text)
-
+    
     Included by gui.c after gui_ctx_io.c so s_interaction, s_build, s_io, s_style, rect_hit,
     and the draw helpers are all in scope.  Despite the name, this file has no dependency on
     gui_window.c -- window bookkeeping is a later, optional tier (window/gui_window.c).

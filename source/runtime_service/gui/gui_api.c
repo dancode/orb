@@ -256,6 +256,7 @@ const gui_api_t g_gui_api_struct =
     .debug_is_enabled                   = gui_debug_is_enabled,
     .debug_set_render_mode              = gui_render_set_mode,
     .debug_get_render_mode              = gui_render_get_mode,
+    .debug_dump_geometry                = gui_build_dump_geometry,
     .set_retained_skip                  = gui_build_set_retained_skip,
     .retained_skip                      = gui_build_retained_skip,
     .want_capture_mouse                 = gui_want_capture_mouse,
