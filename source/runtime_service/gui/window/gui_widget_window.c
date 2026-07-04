@@ -78,6 +78,17 @@ window_clamp( gui_window_t* win )
     if ( win->y < top )             win->y = top;
 }
 
+/* Space left between win's current position and the far edge of its viewport -- the ceiling
+   window_fit_size clamps against so an autosized window never grows past the screen its
+   position is held fixed. */
+static void
+window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
+{
+    const gui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
+    *out_max_w = vp_w( vp ) - win->x;
+    *out_max_h = vp_h( vp ) - win->y;
+}
+
 /*----------------------------------------------------------------------------------------------
     Edge resize
 
@@ -270,11 +281,16 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
 
     Height works the same way: pen travel independent of window height, no feedback.
     Never narrower than the title bar or the resize minimum so the chrome stays legible.
+
+    max_w / max_h cap the fit against the viewport (position held fixed, so this is just the space
+    remaining from win->x/y to the far edge): a long list should scroll inside the window rather
+    than growing it past the screen.  The min clamp runs last so a viewport smaller than the
+    minimum size never shrinks the chrome below legibility.
 ----------------------------------------------------------------------------------------------*/
 
 static void
 window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
-                 f32 content_w, f32 content_h, f32* out_w, f32* out_h )
+                 f32 content_w, f32 content_h, f32 max_w, f32 max_h, f32* out_w, f32* out_h )
 {
     /* The measured content is the full canvas -- items plus the region pads on both ends of each
        axis -- so the body just wraps it: width is the canvas, height adds the chrome above it and
@@ -290,6 +306,9 @@ window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
         f32 title_w = lead + font_text_w( title ) + WIDGET_PAD;
         if ( want_w < title_w ) want_w = title_w;
     }
+
+    if ( want_w > max_w ) want_w = max_w;
+    if ( want_h > max_h ) want_h = max_h;
 
     f32 min_w = window_min_w();
     if ( want_w < min_w ) want_w = min_w;
@@ -604,8 +623,12 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
     if ( grip_hot )
         s_build.win_resize_hot |= GUI_RESIZE_R | GUI_RESIZE_B;
 
+    /* Cursor uses the PRE-grip-promotion mask: the grip square alone (no true edge hit) keeps the
+       regular arrow, since the diagonal resize cursor's off-center hotspot makes it hard to see
+       exactly where a double-click will land on the small triangle.  A true edge-band hit --
+       including the corner where the band overlaps the grip -- still shows the resize cursor. */
     {
-        u8 ce = ( s_interaction.active_id == resize_id ) ? s_resize_edges : s_build.win_resize_hot;
+        u8 ce = ( s_interaction.active_id == resize_id ) ? s_resize_edges : resize_hot;
         if ( ce )
             set_mouse_cursor( resize_cursor_for_edges( ce ) );
     }
@@ -769,8 +792,12 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        any content has been measured -- then the caller's initial w/h stands for one frame. */
     f32 fit_mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
     if ( autosize && !collapsed && win->scroll.content_h > 0.0f )
+    {
+        f32 max_w, max_h;
+        window_fit_bounds( win, &max_w, &max_h );
         window_fit_size( title, title_h, fit_mb_h, can_collapse, win->scroll.content_w, win->scroll.content_h,
-                         &win->w, &win->h );
+                         max_w, max_h, &win->w, &win->h );
+    }
 
     /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
        preserved so reopening restores the previous size.  disp_h is the height actually
@@ -1195,8 +1222,10 @@ gui_window_end( void )
             {
                 bool collapsible = ( s_build.win_title_h > 0.0f ) && !( s_build.win_flags & GUI_WIN_NOCOLLAPSE );
                 f32  grip_mb_h   = ( s_build.win_flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
+                f32  max_w, max_h;
+                window_fit_bounds( win, &max_w, &max_h );
                 window_fit_size( s_build.win_title, s_build.win_title_h, grip_mb_h, collapsible,
-                                 win->scroll.content_w, win->scroll.content_h, &win->w, &win->h );
+                                 win->scroll.content_w, win->scroll.content_h, max_w, max_h, &win->w, &win->h );
                 /* Native floater: forward the fit size to the OS window. */
                 if ( native && win->viewport != 0 )
                     app()->window_resize( window_native_id( win ), (i32)win->w, (i32)win->h );
