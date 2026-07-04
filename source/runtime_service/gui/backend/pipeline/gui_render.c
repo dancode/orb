@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_render.c -- GPU resources + draw submission (RENDER phase).
+    runtime_service/gui/backend/pipeline/gui_render.c -- GPU resources + draw submission (RENDER phase).
 
     The last of the three render phases (see gui_build_cache.c for the full map):
 

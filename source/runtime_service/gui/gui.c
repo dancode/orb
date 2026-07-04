@@ -130,10 +130,10 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
     Unity build
 ==============================================================================================*/
 
-/* The render backend (gui_shader.h, gui_load_font/gui_load_icon/gui_emit_draw/gui_emit_path/
-   gui_build_tess/gui_build_cache/gui_submit_render/gui_debug_overlay .c) is the SECOND unit --
-   compiled separately via gui_backend.c.  This unit calls into it through the draw_* / font_* /
-   gui_render_* declarations in gui_backend.h. */
+/* The render backend (backend/resource/gui_atlas, gui_font, gui_icon; backend/pipeline/gui_shader,
+   gui_emit_draw, gui_emit_path, gui_build_tess, gui_build_volatile, gui_build_cache, gui_render;
+   backend/gui_debug_overlay) is the SECOND unit -- compiled separately via gui_backend.c.  This
+   unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_backend.h. */
 
 // Tier 0 -- foundation
 #include "runtime_service/gui/core/gui_theme.c"

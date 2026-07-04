@@ -421,7 +421,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
     }
 
     /* Volatile-callback replay -- full feature in widgets/gui_volatile.c and
-       backend/gui_build_volatile.c; s_replay_mode itself is declared in gui_ctx.c.  Report the
+       backend/pipeline/gui_build_volatile.c; s_replay_mode itself is declared in gui_ctx.c.  Report the
        ambient hover/active/focused state as-is, but never touch it and never hit-test -- s_build
        (win_id, cur_item_flags, win_resize_hot, ...) is only meaningful between a real
        window_begin/window_end, and a replay runs outside that entirely. */

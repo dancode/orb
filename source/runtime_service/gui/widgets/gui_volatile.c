@@ -6,7 +6,7 @@
     inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
     any other code, no special behavior.  On an idle frame (frame_dirty()==false), the host calls
     gui()->update_volatile() instead of ctx_begin/emit/ctx_end; the backend (BUILD unit,
-    backend/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
+    backend/pipeline/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
     output, and patches it into the padded region reserved for the block inside its window's
     cached geometry (any output that fits is accepted; only outgrowing the reservation costs a
     real frame) -- see gui.h (gui_volatile_fn) for the full contract and gui_backend.h for the
@@ -131,7 +131,7 @@ layout_pop_scoped( void )
 
 /*----------------------------------------------------------------------------------------------
     gui_replay_scope_enter / _exit -- the reverse half of the volatile-widget seam (see
-    gui_backend.h).  gui_update_volatile (backend/gui_build_volatile.c) calls these around each
+    gui_backend.h).  gui_update_volatile (backend/pipeline/gui_build_volatile.c) calls these around each
     row's standalone replay invocation so the callback's ordinary gui()->text()/rect_filled()/...
     calls have a valid (if minimal) layout frame and id scope to emit into, without running
     ctx_begin/ctx_new_frame or touching anything else about the real frame's UI state.

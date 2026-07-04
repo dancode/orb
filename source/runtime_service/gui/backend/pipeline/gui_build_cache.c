@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_build_cache.c -- Retained frame-geometry cache (BUILD phase).
+    runtime_service/gui/backend/pipeline/gui_build_cache.c -- Retained frame-geometry cache (BUILD phase).
 
     The render pipeline has three phases.  This file is the middle one:
 
@@ -203,8 +203,8 @@ static win_geo_slot_t* s_dispatch [ RENDER_MAX_WIN ];
 static u32             s_dispatch_count;
 
 /* Volatile widgets (gui_volatile_cb_open/_stamp/_close, gui_update_volatile, the registry and
-   volatile_patch) live in their own file -- backend/gui_build_volatile.c, included right before
-   this one; see that file's header for the full feature description.  The pieces that stay HERE
+   volatile_patch) live in their own file -- backend/pipeline/gui_build_volatile.c, included right
+   before this one; see that file's header for the full feature description.  The pieces that stay HERE
    are the three helpers it forward-declares (cache_count_volatile_patch above,
    cache_slot_lookup / cache_invalidate_window below) because they touch s_slots / s_cache /
    s_stats, plus the per-window tessellation generation (s_tess_gen_next) that anchors the

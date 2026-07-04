@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_font.h -- Font types shared with gui_backend.h.
+    runtime_service/gui/backend/resource/gui_font.h -- Font types shared with gui_backend.h.
 
     Everything declared here is a type, not a function -- these are shared between
     gui_font_internal.c (registry, glyph dispatch, the .orb_font loader -- everything static) and
@@ -18,7 +18,7 @@
 #pragma once
 
 #include "tools/font_tool/orb_font.h" /* orb_font_glyph_t and the .orb_font on-disk format */
-#include "runtime_service/gui/backend/gui_atlas.h" /* gui_atlas_t -- the owned GPU atlas */
+#include "runtime_service/gui/backend/resource/gui_atlas.h" /* gui_atlas_t -- the owned GPU atlas */
 
 // clang-format off
 /*==============================================================================================

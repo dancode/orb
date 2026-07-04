@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/backend/gui_emit_path.c -- Line and path stroking.
+    runtime_service/gui/backend/pipeline/gui_emit_path.c -- Line and path stroking.
 
     Pushes stroke SEMANTIC commands (CMD_LINE / CMD_POLYLINE / CMD_DASHED_LINE) into s_draw;
     the actual antialiased geometry is produced at flush time by tess_stroke_poly_aa /

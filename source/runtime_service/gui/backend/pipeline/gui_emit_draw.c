@@ -1,13 +1,18 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_emit_draw.c -- Draw list accumulation.
+    runtime_service/gui/backend/pipeline/gui_emit_draw.c -- Draw list accumulation.
 
     All geometry goes through the draw_push_* entry points, which append semantic gui_cmd_t
     records (no vertices yet).  GPU batching happens later, at tessellation time, in
     tess_ensure_gpu_cmd (gui_build_tess.c).  draw_push_text copies its string into the frame
     text pool and emits one glyph-run command.
 
-    Included by gui_backend.c after gui_font.c so font_glyph / s_atlas_idx are in scope.
+    draw_push_icon also lives here, not in resource/gui_icon.c: it queues a semantic command
+    exactly like every other draw_push_*, reading the icon resource's icon_get / icon_atlas_idx
+    accessors rather than the resource reaching up into EMIT itself.
+
+    Included by gui_backend.c after resource/gui_font.c / resource/gui_icon.c so font_glyph /
+    icon_get / icon_atlas_idx are in scope.
 
 ==============================================================================================*/
 // clang-format off
@@ -577,6 +582,23 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     /* Round solid-color fills only; a textured quad (glyph / image) keeps square UVs. */
     c->rect.rounding = ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
+/*----------------------------------------------------------------------------------------------
+    draw_push_icon -- push one registered icon quad into the draw list.
+
+    An icon is just a textured quad sourced from the icon atlas instead of the font atlas, so
+    this reuses draw_push_rect_filled wholesale; icon_get / icon_atlas_idx (resource/gui_icon.c)
+    supply the cached UVs and the bindless slot.  No-op for an invalid id.
+----------------------------------------------------------------------------------------------*/
+
+void
+draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
+{
+    f32 u0, v0, u1, v1;
+    if ( !icon_get( id, &u0, &v0, &u1, &v1, NULL, NULL ) )
+        return;
+    draw_push_rect_filled( x, y, w, h, u0, v0, u1, v1, icon_atlas_idx(), abgr );
 }
 
 /*----------------------------------------------------------------------------------------------

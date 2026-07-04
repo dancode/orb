@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_atlas.h -- Shared GPU-atlas asset (type + lifecycle).
+    runtime_service/gui/backend/resource/gui_atlas.h -- Shared GPU-atlas asset (type + lifecycle).
 
     Both font slots (gui_font_internal.c) and the runtime icon atlas (gui_icon.c) are the same shape
     underneath: a CPU-authored R8 coverage bitmap uploaded once to an owned GPU texture and
@@ -15,7 +15,7 @@
     problem -- indexing/streaming/dependency tracking across many asset kinds -- and should not be
     backed into this atlas-sized helper.
 
-    Included by gui_backend.c before gui_font.h and gui_icon.c.
+    Included by gui_backend.c before resource/gui_font.h and resource/gui_icon.c.
 
 ==============================================================================================*/
 #pragma once

@@ -1,7 +1,7 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_font_internal.c -- Font registry state and the .orb_font
-    loader.
+    runtime_service/gui/backend/resource/gui_font_internal.c -- Font registry state and the
+    .orb_font loader.
 
     Nothing here is declared in gui_backend.h -- none of it crosses to gui.c.  gui_font.c (included
     right after this file) is the ENTIRE public surface and is allowed to call straight into the
@@ -24,7 +24,7 @@
 
     Also holds the BACKEND-INTERNAL accessors (font_atlas_idx / font_white_uv / font_dash_v /
     font_atlas_bytes / font_init / font_shutdown) consumed by other backend/ files later in the
-    unity build (gui_build_tess.c, gui_debug_overlay.c, gui_render.c) -- those
+    unity build (pipeline/gui_build_tess.c, gui_debug_overlay.c, pipeline/gui_render.c) -- those
     aren't public either, they just have a wider audience than "this file only".
 
     Included by gui_backend.c after gui_font.h, before gui_font.c.

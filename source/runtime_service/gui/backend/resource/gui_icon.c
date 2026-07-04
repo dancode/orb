@@ -1,13 +1,13 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/backend/gui_icon.c -- Runtime icon atlas.
+    runtime_service/gui/backend/resource/gui_icon.c -- Runtime icon atlas.
 
     A second R8 coverage texture, built at runtime from raw monochrome bitmaps.  Where the font
     atlases are fixed and baked offline, this one is dynamic: callers register icon pixels at any
     time (icon_register), the atlas packs them into free space with stb_rect_pack, and hands back
-    an gui_icon_id_t.  Drawing reuses the existing textured-quad primitive (draw_push_rect_filled)
-    with the atlas's own bindless tex_idx, so icons batch in the same flush as text and tint by the
-    vertex color -- monochrome coverage in, any color out.
+    an gui_icon_id_t.  This file is resource management only -- the actual draw entry point,
+    draw_push_icon, lives in pipeline/gui_emit_draw.c and reads icon_get (UVs) + icon_atlas_idx
+    (bindless slot) below rather than this file reaching up into EMIT itself.
 
     Pixel SOURCING is intentionally out of scope: callers supply raw R8 coverage bytes (row-major,
     w*h, 0..255).  Whoever has the bytes -- procedural code today, the asset/image pipeline later --
@@ -22,7 +22,7 @@
     texture, one bindless slot" underneath.  Everything else here (incremental rect-packing, the
     name table, the dirty flag) is icon-specific and stays local to this file.
 
-    Included by gui_backend.c after gui_font.c.
+    Included by gui_backend.c after resource/gui_font.c.
 
 ==============================================================================================*/
 // clang-format off
@@ -218,17 +218,13 @@ icon_get( gui_icon_id_t id, f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h )
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_push_icon -- emit one icon quad through the existing textured-rect path.
+    BACKEND-INTERNAL -- consumed by pipeline/gui_emit_draw.c (draw_push_icon), the same shape as
+    font_atlas_idx (resource/gui_font_internal.c): the bindless tex_idx a pipeline draw call
+    binds, without the pipeline reaching into the resource's own entry table.
 ----------------------------------------------------------------------------------------------*/
 
-void
-draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
-{
-    const icon_entry_t* e = icon_entry( id );
-    if ( !e )
-        return;
-    draw_push_rect_filled( x, y, w, h, e->u0, e->v0, e->u1, e->v1, s_icons.atlas.atlas_idx, abgr );
-}
+static u32
+icon_atlas_idx( void ) { return s_icons.atlas.atlas_idx; }
 
 // clang-format on
 /*============================================================================================*/

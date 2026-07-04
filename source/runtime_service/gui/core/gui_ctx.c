@@ -81,7 +81,7 @@ static struct
 
 /* True while a volatile widget callback is being replayed standalone on an idle frame -- set/
    cleared only by gui_replay_scope_enter/_exit (widgets/gui_volatile.c; full feature description
-   there and in backend/gui_build_volatile.c).  Declared here, alongside s_interaction, because
+   there and in backend/pipeline/gui_build_volatile.c).  Declared here, alongside s_interaction, because
    widget_behavior (gui_widget_core.c) reads it inline as ambient frame-phase state, the same tier
    as hover_id/active_id above -- it short-circuits before any hit-test or write to
    s_interaction/s_build, since a replay must render with whatever ambient hover/active/focus

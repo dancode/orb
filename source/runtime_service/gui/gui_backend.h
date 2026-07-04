@@ -55,7 +55,7 @@ bool gui_backend_init( gui_backend_caps_t caps );
 void gui_backend_exit( void );
 
 /*==============================================================================================
-    Fonts (gui_font.c; implementation in gui_font_internal.c)
+    Fonts (resource/gui_font.c; implementation in resource/gui_font_internal.c)
 ==============================================================================================*/
 
 u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)
@@ -80,12 +80,13 @@ void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
                                      f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
 /*==============================================================================================
-    Runtime icon atlas (gui_icon.c)
+    Runtime icon atlas (resource/gui_icon.c)
 
     A second R8 coverage texture, built at runtime: callers register raw monochrome bitmaps and
-    the atlas packs them with stb_rect_pack, handing back an gui_icon_id_t.  Icons draw through
-    the existing textured-quad path (own bindless tex_idx), so they batch in the same flush as
-    text and tint by vertex color.  GPU re-upload is deferred to frame_begin (icon_atlas_flush_upload).
+    the atlas packs them with stb_rect_pack, handing back an gui_icon_id_t.  draw_push_icon
+    (pipeline/gui_emit_draw.c, EMIT section below) draws through the existing textured-quad path
+    using icon_get's cached UVs, so icons batch in the same flush as text and tint by vertex
+    color.  GPU re-upload is deferred to frame_begin (icon_atlas_flush_upload).
 ==============================================================================================*/
 
 bool            icon_atlas_init         ( void );   // create the R8 atlas texture + bindless index
@@ -97,11 +98,8 @@ gui_icon_id_t   icon_find               ( const char* name );
 bool            icon_get                ( gui_icon_id_t id,
                                           f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
 
-/* Push one icon quad (atlas tex_idx + cached UVs) into the draw list; no-op for an invalid id. */
-void            draw_push_icon          ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
-
 /*==============================================================================================
-    EMIT: CPU draw list (gui_emit_draw.c)
+    EMIT: CPU draw list (pipeline/gui_emit_draw.c)
 ==============================================================================================*/
 
 void draw_reset( i32 display_w, i32 display_h );    // clear the list at the top of frame_begin
@@ -127,6 +125,11 @@ void draw_set_root_clip         ( f32 w, f32 h );               // set clip_stac
 void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h,
                                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
 
+/* Push one registered icon quad (atlas tex_idx + cached UVs from resource/gui_icon.c) into the
+   draw list; no-op for an invalid id.  Reuses draw_push_rect_filled -- an icon is just a textured
+   quad sourced from the icon atlas instead of the font atlas. */
+void draw_push_icon             ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
+
 void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal );
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
@@ -138,7 +141,7 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
                                   f32 clip_x0, f32 clip_x1 );
 
 /*==============================================================================================
-    BUILD: retained frame-geometry cache (gui_build_cache.c)
+    BUILD: retained frame-geometry cache (pipeline/gui_build_cache.c)
 ==============================================================================================*/
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
@@ -182,10 +185,10 @@ void                gui_build_dump_geometry( void );
     The feature's actual logic is entirely in two files, one per unit -- read those for the full
     picture; this header is only the boundary between them:
 
-        widgets/gui_volatile.c          -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
-                                           the replay scope (layout + id), gui_replay_scope_enter/_exit.
-        backend/gui_build_volatile.c    -- BUILD unit: the registry, capture at real emit, and
-                                           gui_update_volatile (wired to gui()->update_volatile).
+        widgets/gui_volatile.c            -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
+                                             the replay scope (layout + id), gui_replay_scope_enter/_exit.
+        backend/pipeline/gui_build_volatile.c -- BUILD unit: the registry, capture at real emit, and
+                                             gui_update_volatile (wired to gui()->update_volatile).
 
     Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
     (widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
@@ -216,7 +219,7 @@ void     gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w );
 void     gui_replay_scope_exit ( bool force_redraw );
 
 /*==============================================================================================
-    RENDER: GPU resources + flush (gui_render.c)
+    RENDER: GPU resources + flush (pipeline/gui_render.c)
 
     gui_render_init/shutdown are NOT declared here -- they're an implementation detail of
     gui_backend_init/exit (above) now, called directly within the gui_backend.c unity TU.

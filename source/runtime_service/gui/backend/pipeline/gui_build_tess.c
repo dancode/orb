@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/backend/gui_build_tess.c -- CPU-side tessellation engine.
+    runtime_service/gui/backend/pipeline/gui_build_tess.c -- CPU-side tessellation engine.
 
     Translates the frame's semantic gui_cmd_t list (s_draw) into packed vertex/index
     geometry in s_tess.  This is the CPU half of the command-list split: everything here
@@ -59,7 +59,7 @@ static struct
        blocks record their position slot-RELATIVE (never absolute) so a later patch can resolve
        the current absolute position from the live slot table, and stamp slot_tess_gen so a patch
        only ever writes into geometry produced by the exact tessellation pass that captured it
-       (see backend/gui_build_volatile.c). */
+       (see backend/pipeline/gui_build_volatile.c). */
     u32 slot_idx_base;
     u32 slot_cmd_base;
     u32 slot_tess_gen;
@@ -677,8 +677,8 @@ tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     return true;
 }
 
-/* Volatile-widget seam (backend/gui_build_volatile.c, included right after this file in the
-   gui_backend.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
+/* Volatile-widget seam (backend/pipeline/gui_build_volatile.c, included right after this file in
+   the gui_backend.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
    RANGE's vertices/indices/GPU commands are fully written; it records the block's slot-relative
    position, reserves padded headroom past the live geometry (advancing this file's write heads),
    and stamps the slot tessellation generation.  s_volatile_patching is defined HERE (first in the

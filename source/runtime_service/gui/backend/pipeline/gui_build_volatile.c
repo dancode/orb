@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_build_volatile.c -- Volatile widgets, BUILD-unit half.
+    runtime_service/gui/backend/pipeline/gui_build_volatile.c -- Volatile widgets, BUILD-unit half.
 
     An inline-emit callback replayed in place on frames the UI build is skipped entirely
     (gui_frame_dirty() false) -- see gui.h (gui_volatile_fn) for the full contract and
