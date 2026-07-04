@@ -118,9 +118,18 @@ volatile_find_or_add( gui_id_t id )
 /* Coarse per-command topology fingerprint over [lo, hi) -- type, clip, viewport, plus the one
    field per command type that would change vertex/index COUNT if it changed (a rect's texture
    slot affects its UV path only, not count, so it is not folded; a text run's length directly
-   changes glyph-quad count, so it is).  Not exhaustive -- see the open risk in the plan doc --
-   but cheap, and a false pass only ever costs one stale-looking frame, never corrupt geometry
-   (the vertex/index COUNT check in gui_update_volatile is what actually gates the memcpy). */
+   changes glyph-quad count, so it is).  rect/rect_outline rounding is folded too: tess_dispatch
+   (gui_build_tess.c) branches on `rounding > 0.0f` between the 4-vert tess_rect_filled and the
+   arc-fan tess_round_rect_filled (whose vertex count ALSO depends on the exact radius, via
+   round_rect_segs) -- rounding is ambient state (draw_set_rounding), set by whatever widget/chrome
+   context last touched it, so it can differ between two captures of the SAME call site for
+   reasons entirely outside this widget's own code.  Missing this let a rounding change slip past
+   as "stable" while the real vertex count silently changed underneath it -- the actual cause of
+   the cache-toggle freeze: a stale row->vert_count from a differently-rounded capture never again
+   matched reality, so every patch attempt mismatched and retired the row, forever.
+   Not exhaustive -- see the open risk in the plan doc -- but cheap, and a false pass only ever
+   costs one stale-looking frame, never corrupt geometry (the vertex/index COUNT check in
+   gui_update_volatile / volatile_tess_and_patch is what actually gates the memcpy). */
 static u32
 volatile_topo_fold( u32 lo, u32 hi )
 {
@@ -133,6 +142,16 @@ volatile_topo_fold( u32 lo, u32 hi )
         h = fnv1a_u32( h, c->vp );
         if ( c->type == GUI_CMD_TEXT )
             h = fnv1a_u32( h, c->text.len );
+        else if ( c->type == GUI_CMD_RECT_FILLED )
+        {
+            u32 bits; memcpy( &bits, &c->rect.rounding, sizeof( bits ) );
+            h = fnv1a_u32( h, bits );
+        }
+        else if ( c->type == GUI_CMD_RECT_OUTLINE )
+        {
+            u32 bits; memcpy( &bits, &c->rect_outline.rounding, sizeof( bits ) );
+            h = fnv1a_u32( h, bits );
+        }
     }
     return h;
 }

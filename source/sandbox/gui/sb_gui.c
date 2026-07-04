@@ -555,6 +555,7 @@ show_demo_window(bool* p_open)
     
     window_flags |= GUI_WIN_CAN_AUTOSIZE;  // Add a menu bar to the window
     // We demonstrate using the full window_begin() API
+    gui()->window_set_next_size( 640.0f, 640.0f, GUI_COND_ONCE );
     if (!gui()->window_begin("Dear ImGui Demo", window_flags))
     {
         // Early out if the window is collapsed, as a optimization.
@@ -826,7 +827,7 @@ main( int argc, char** argv )
            
         gui()->frame_begin( dt );
 
-        if ( gui()->frame_dirty() )
+        if ( gui()->frame_dirty() )        
         {
             gui()->ctx_begin( GUI_CTX_DEFAULT );
 
