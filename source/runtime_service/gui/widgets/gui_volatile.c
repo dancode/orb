@@ -63,6 +63,26 @@ gui_volatile_cb( const char* label, gui_volatile_fn fn )
 void
 gui_volatile_begin( void )
 {
+    /* s_build.item_flags (the begin_disabled/end_disabled stack) and the style push/pop stacks
+       (s_col_sp/s_var_sp, gui_style.c) are NOT part of the seam gui_replay_scope_enter reconstructs
+       on an idle-frame replay -- only the id scope and a minimal layout frame are.  ctx_new_frame
+       resets both to empty at the start of every REAL frame (style_new_frame, gui_ctx.c's
+       frame_begin), so by the time an idle frame's gui_update_volatile re-invokes this callback
+       standalone, they read back as "nothing pushed" regardless of what ancestor
+       begin_disabled()/push_style_color()/push_style_var() scope this volatile_cb call was
+       actually nested in at real emit.  draw_set_alpha/draw_set_rounding (item_flags_resolve) and
+       style_col/style_var would then silently resolve to the wrong value on replay -- not caught by
+       volatile_topo_fold, since neither changes vertex/index count.  A callback is only safe to
+       replay if it does not depend on inherited disabled/style-push state from its call site;
+       assert here so a violation is caught at the call site immediately instead of shipping a
+       widget that quietly un-dims or re-colors itself on idle frames. */
+    ORB_ASSERT( s_build.item_flags == GUI_ITEM_NONE
+             && "gui_volatile_cb: callback runs under an ambient begin_disabled() scope -- "
+                "not reproduced on idle-frame replay" );
+    ORB_ASSERT( s_col_sp == 0 && s_var_sp == 0
+             && "gui_volatile_cb: callback runs under an ambient push_style_color/var() scope -- "
+                "not reproduced on idle-frame replay" );
+
     layout_frame_t* f = lf();
     gui_volatile_stamp( f->content_x, f->content_y, f->content_w );
 }

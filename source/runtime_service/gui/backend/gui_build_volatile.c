@@ -10,7 +10,8 @@
     caller's callback with gui_volatile_cb_open/_close (this file), which record the command
     range it produced and fold a cheap topology hash over it; gui_volatile_stamp (this file,
     called from inside the callback by gui_volatile_begin) records the window/z/vp/font/clip
-    context and the layout cursor position at the moment the callback started.  Once BUILD
+    context, the ambient alpha/rounding/text-clip scalars a raw draw_ call reads directly, and the
+    layout cursor position at the moment the callback started.  Once BUILD
     tessellates the window, tess_dispatch (gui_build_tess.c) calls volatile_capture with the
     resulting absolute vertex/index span and the vertex base RELATIVE to the window's slot
     (local_vert_base) -- the piece needed to reproduce correctly-relative indices when the span
@@ -83,6 +84,16 @@ typedef struct
     u8               clip_idx;
     bool             active;           // false once retired by staleness/mismatch, or never captured
     bool             stable_this_frame; // set fresh by gui_volatile_cb_close every real emit -- see there
+
+    /* Ambient s_draw scalars in effect at the moment gui_volatile_begin stamped this row --
+       alpha, rounding, and the text-clip window are read directly off s_draw by the raw draw_
+       calls a callback makes (draw_rect/draw_text/...), the same way cur_win/cur_z/cur_vp/cur_font
+       are, but unlike those they do not change vertex/index COUNT, so a mismatch here would never
+       be caught by topo_hash -- it would just silently bake the wrong opacity/rounding/clip into
+       patched geometry.  Stamped here and reinstalled by gui_update_volatile for the duration of
+       the standalone replay call so the callback sees the same ambient values it drew with at real
+       emit, whatever the idle frame's leftover s_draw state happens to be. */
+    f32              alpha, rounding, text_clip_x0, text_clip_x1;
 
 } gui_volatile_slot_t;
 
@@ -180,6 +191,10 @@ gui_volatile_stamp( f32 x, f32 y, f32 w )
     row->font     = (u16)s_draw.cur_font;
     row->clip_idx = s_draw.cur_clip_idx;
     row->x = x; row->y = y; row->w = w;
+    row->alpha        = s_draw.alpha;
+    row->rounding     = s_draw.rounding;
+    row->text_clip_x0 = s_draw.text_clip_x0;
+    row->text_clip_x1 = s_draw.text_clip_x1;
 }
 
 /* Called by gui_volatile_cb right after the callback returns during real emit -- closes the
@@ -376,6 +391,10 @@ gui_update_volatile( void )
         u32        clip_depth_ck = s_draw.clip_depth;
         gui_rect_t clip_top_ck   = s_draw.clip_stack[ 0 ];
         u8         clip_idx0_ck  = s_draw.clip_idx_stack[ 0 ];
+        f32        alpha_ck      = s_draw.alpha;
+        f32        rounding_ck   = s_draw.rounding;
+        f32        tclip_x0_ck   = s_draw.text_clip_x0;
+        f32        tclip_x1_ck   = s_draw.text_clip_x1;
 
         s_draw.cur_win      = row->win;
         s_draw.cur_z        = row->z;
@@ -383,6 +402,15 @@ gui_update_volatile( void )
         s_draw.cur_font     = row->font;
         s_draw.cur_clip_idx = row->clip_idx;
         font_use( row->font );
+
+        /* Same reasoning as the clip-stack force below: alpha/rounding/text-clip are ambient
+           scalars a raw draw_ call reads directly, not part of the minimal scope
+           gui_replay_scope_enter reconstructs, so without this the callback would draw with
+           whatever an unrelated idle frame's leftover s_draw state happens to be. */
+        s_draw.alpha        = row->alpha;
+        s_draw.rounding     = row->rounding;
+        s_draw.text_clip_x0 = row->text_clip_x0;
+        s_draw.text_clip_x1 = row->text_clip_x1;
 
         /* draw_cull_box (gui_emit_draw.c) tests against clip_stack[clip_depth-1], NOT
            cur_clip_idx -- cur_clip_idx alone is not enough to reproduce the real-emit clip. Force
@@ -434,6 +462,10 @@ gui_update_volatile( void )
         s_draw.clip_depth           = clip_depth_ck;
         s_draw.clip_stack    [ 0 ]  = clip_top_ck;
         s_draw.clip_idx_stack[ 0 ]  = clip_idx0_ck;
+        s_draw.alpha                = alpha_ck;
+        s_draw.rounding             = rounding_ck;
+        s_draw.text_clip_x0         = tclip_x0_ck;
+        s_draw.text_clip_x1         = tclip_x1_ck;
         font_use( font_ck );
 
         if ( !ok )
