@@ -2,9 +2,10 @@
 
     runtime_service/gui/backend/gui_emit_draw.c -- Draw list accumulation.
 
-    All geometry goes through draw_push_rect_filled or draw_push_triangle.
-    draw_ensure_cmd opens a new draw command when the texture or clip rect changes.
-    draw_push_text emits glyph quads from the font atlas.
+    All geometry goes through the draw_push_* entry points, which append semantic gui_cmd_t
+    records (no vertices yet).  GPU batching happens later, at tessellation time, in
+    tess_ensure_gpu_cmd (gui_build_tess.c).  draw_push_text copies its string into the frame
+    text pool and emits one glyph-run command.
 
     Included by gui_backend.c after gui_font.c so font_glyph / s_atlas_idx are in scope.
 
@@ -591,6 +592,12 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
 {
     if ( s_draw.cmd_count >= GUI_MAX_CMDS )
         return;
+    /* Both ends fully transparent: nothing blends in anywhere along the ramp -- drop it (same
+       rule as draw_push_rect_filled).  One opaque end keeps the quad, of course. */
+    u32 ca = draw_apply_alpha( col_a );
+    u32 cb = draw_apply_alpha( col_b );
+    if ( ( ( ca | cb ) >> 24 ) == 0u )
+        return;
     if ( draw_cull_box( x, y, w, h ) )
         return;
     gui_cmd_t* c          = &s_draw.cmds[ s_draw.cmd_count++ ];
@@ -601,8 +608,8 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     c->gradient.y           = y;
     c->gradient.w           = w;
     c->gradient.h           = h;
-    c->gradient.col_a       = draw_apply_alpha( col_a );
-    c->gradient.col_b       = draw_apply_alpha( col_b );
+    c->gradient.col_a       = ca;
+    c->gradient.col_b       = cb;
     c->gradient.horizontal  = horizontal;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
@@ -647,6 +654,10 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
     (void)tex_idx;   /* triangles are always solid-color */
     if ( s_draw.cmd_count >= GUI_MAX_CMDS )
         return;
+    /* Fully transparent -- invisible under alpha blending (same rule as draw_push_rect_filled). */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
     /* Cull against the bounding box of the three vertices. */
     f32 minx = ax < bx ? ( ax < cx ? ax : cx ) : ( bx < cx ? bx : cx );
     f32 maxx = ax > bx ? ( ax > cx ? ax : cx ) : ( bx > cx ? bx : cx );
@@ -661,7 +672,7 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
     c->tri.ax      = ax; c->tri.ay = ay;
     c->tri.bx      = bx; c->tri.by = by;
     c->tri.cx      = cx; c->tri.cy = cy;
-    c->tri.abgr    = draw_apply_alpha( abgr );
+    c->tri.abgr    = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
@@ -675,6 +686,10 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
     if ( segments < 3 ) segments = 3;
     if ( s_draw.cmd_count >= GUI_MAX_CMDS )
         return;
+    /* Fully transparent -- invisible under alpha blending (same rule as draw_push_rect_filled). */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
     if ( draw_cull_box( cx - r, cy - r, 2.0f * r, 2.0f * r ) )
         return;
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
@@ -685,14 +700,15 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
     c->circle.cy   = cy;
     c->circle.r    = r;
     c->circle.segs = segments;
-    c->circle.abgr = draw_apply_alpha( abgr );
+    c->circle.abgr = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /*----------------------------------------------------------------------------------------------
     draw_push_text -- emit a glyph-run semantic command.
 
-    str must remain valid until gui_render_flush (same-frame caller-owned lifetime).
+    str is copied into the frame text pool, so stack-local buffers (textf, snprintf labels) are
+    fine; nothing about the caller's string needs to outlive the call.
     n == 0xFFFFFFFF means "entire NUL-terminated string"; a smaller n limits the glyph count
     (used to skip "##label" suffixes).
 ----------------------------------------------------------------------------------------------*/

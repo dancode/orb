@@ -63,9 +63,9 @@ font_load_builtin( gui_builtin_font_t font )
         return true;
 
     bool valid_slot = font < ARRAY_COUNT( s_builtin_font_path );
-    bool valud_font = s_builtin_font_path[ font ] != NULL;
+    bool valid_font = valid_slot && s_builtin_font_path[ font ] != NULL;
 
-    if ( valid_slot && valud_font )
+    if ( valid_font )
     {
         // slot 0 = the default font
         return font_internal_load_into( 0, s_builtin_font_path[ font ] );          
@@ -91,6 +91,9 @@ font_flush_pending( void )
 
         u32  id = s_reload_q[ i ].id;
         bool ok = font_slot_load( &s_fonts[ id ], s_reload_q[ i ].path );
+        if ( !ok )   /* slot keeps its previous font; say so instead of failing silently */
+            printf( "[gui] WARNING: deferred font reload failed for slot %u ('%s')\n",
+                    id, s_reload_q[ i ].path );
         s_reload_q[ i ] = ( font_reload_req_t ){ 0 };
 
         if ( ok && s_active_id == id )
@@ -170,17 +173,14 @@ font_char_advance( u8 ch )
 
 /* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
    span this way -- the bytes before a "##" marker -- so reserved label space matches what draws.
-   Non-printable bytes contribute nothing (they are never emitted as glyphs). */
+   Out-of-range bytes advance as '?' via font_slot_char_advance, matching what the draw path
+   (font_glyph) renders for them -- measure and draw must agree or such text overflows its slot. */
 f32
 font_text_w_n( const char* str, u32 n )
 {
     f32 w = 0.0f;
     for ( u32 i = 0; i < n && str[ i ]; ++i )
-    {
-        u8 ch = (u8)str[ i ];
-        if ( ch >= 32 && ch <= 126 )
-            w += (f32)s_active->lookup[ ch - 32 ].advance;
-    }
+        w += font_slot_char_advance( s_active, (u8)str[ i ] );
     return w;
 }
 

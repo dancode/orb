@@ -328,7 +328,20 @@ cache_diff_windows( void )
             if ( s_cache.cur[ bi ].win == win ) break;
         if ( bi == s_cache.cur_n )
         {
-            if ( s_cache.cur_n >= RENDER_MAX_WIN ) continue;   // overflow: this window treated as changed
+            /* Overflow: a window past RENDER_MAX_WIN gets no record, no slot, and never
+               tessellates -- it is DROPPED from rendering this frame, not just uncached.
+               Warn once so a too-small cap is not silently invisible windows. */
+            if ( s_cache.cur_n >= RENDER_MAX_WIN )
+            {
+                static bool warned = false;
+                if ( !warned )
+                {
+                    printf( "[gui] WARNING: more than %u windows this frame -- extra windows "
+                            "are not rendered. Raise RENDER_MAX_WIN.\n", RENDER_MAX_WIN );
+                    warned = true;
+                }
+                continue;
+            }
             s_cache.cur[ bi ] = ( render_win_hash_t ){ win, 2166136261u, 0, 0, false, false };
             ++s_cache.cur_n;
         }
@@ -763,8 +776,9 @@ cache_build_frame( void )
 
     if ( s_tess.overflow && !s_tess.overflow_ever )
         printf( "[gui] WARNING: draw list overflow -- geometry dropped this frame "
-                "(verts capped at %u, idx capped at %u). Raise GUI_MAX_VERTS / GUI_MAX_IDX.\n",
-                GUI_MAX_VERTS, GUI_MAX_IDX );
+                "(caps: %u verts, %u idx, %u gpu cmds). "
+                "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.\n",
+                GUI_MAX_VERTS, GUI_MAX_IDX, GUI_MAX_CMDS );
     if ( s_tess.overflow )
         s_tess.overflow_ever = true;
 

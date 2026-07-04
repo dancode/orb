@@ -166,11 +166,12 @@ tess_reset( void )
     s_tess.overflow        = false;
 }
 
-/* Open a new GPU command when texture, clip, or viewport changes -- same batching logic as
-   draw_ensure_cmd but writing into s_tess.  z is per-segment (not per-command) so it is not
-   a batch boundary here; the segment system already guarantees all commands in one window's
-   tessellation pass share the same z. */
-static void
+/* Ensure the current open GPU command matches (texture, clip, viewport), opening a new one at any
+   mismatch.  z is per-segment (not per-command) so it is not a batch boundary here; the segment
+   system already guarantees all commands in one window's tessellation pass share the same z.
+   Returns false when the command table is full and no matching command is open -- the caller must
+   drop its primitive, or its geometry would append to a command with the wrong clip/texture. */
+static bool
 tess_ensure_gpu_cmd( u32 tex_idx )
 {
     if ( s_tess.cmd_count > 0 && !s_tess.force_new_cmd )
@@ -182,11 +183,14 @@ tess_ensure_gpu_cmd( u32 tex_idx )
           && cur->clip_rect.y   == s_tess.cur_clip.y
           && cur->clip_rect.w   == s_tess.cur_clip.w
           && cur->clip_rect.h   == s_tess.cur_clip.h )
-            return;
+            return true;
+    }
+    if ( s_tess.cmd_count >= GUI_MAX_CMDS )
+    {
+        s_tess.overflow = true;
+        return false;
     }
     s_tess.force_new_cmd = false;
-    if ( s_tess.cmd_count >= GUI_MAX_CMDS )
-        return;
     s_tess.cmd_vp   [ s_tess.cmd_count ] = s_tess.cur_vp;
     /* Vertex span of this command starts at the current vert_count; the next command's vbase (or
        the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices.
@@ -198,6 +202,7 @@ tess_ensure_gpu_cmd( u32 tex_idx )
         .tex_idx    = tex_idx,
         .clip_rect  = s_tess.cur_clip,
     };
+    return true;
 }
 
 /* Raw vertex/index reservation for stroke tessellation -- mirror of draw_prim_begin/commit. */
@@ -210,9 +215,7 @@ tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
         s_tess.overflow = true;
         return false;
     }
-    u32 tex = font_atlas_idx();
-    tess_ensure_gpu_cmd( tex );
-    if ( s_tess.cmd_count == 0 )
+    if ( !tess_ensure_gpu_cmd( font_atlas_idx() ) )
         return false;
     font_white_uv( wu, wv );
     *out_base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -249,8 +252,7 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
     }
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
-    tess_ensure_gpu_cmd( tex_idx );
-    if ( s_tess.cmd_count == 0 )
+    if ( !tess_ensure_gpu_cmd( tex_idx ) )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -285,8 +287,7 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
 
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
-    tess_ensure_gpu_cmd( font_atlas_idx() );
-    if ( s_tess.cmd_count == 0 )
+    if ( !tess_ensure_gpu_cmd( font_atlas_idx() ) )
         return;
 
     /* Corner colors walk col_a -> col_b along the chosen axis (TL, TR, BR, BL winding). */
@@ -310,10 +311,13 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
     s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 6;
 }
 
-/* Tessellate a hollow rectangle as four edge quads. */
+/* Tessellate a hollow rectangle as four edge quads.  t is clamped to half the shorter side so a
+   thick border on a small rect degenerates to a filled rect instead of inverted side quads. */
 static void
 tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 {
+    f32 tmax = ( w < h ? w : h ) * 0.5f;
+    if ( t > tmax ) t = tmax;
     tess_rect_filled( x,         y,         w, t,     0,0,1,1, 0, abgr );
     tess_rect_filled( x,         y + h - t, w, t,     0,0,1,1, 0, abgr );
     tess_rect_filled( x,         y + t,     t, h-2*t, 0,0,1,1, 0, abgr );
@@ -380,9 +384,7 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     }
     f32 wu, wv;
     font_white_uv( &wu, &wv );
-    u32 tex = font_atlas_idx();
-    tess_ensure_gpu_cmd( tex );
-    if ( s_tess.cmd_count == 0 )
+    if ( !tess_ensure_gpu_cmd( font_atlas_idx() ) )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -511,8 +513,7 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     f32 umax = len / period;                     /* number of tiled periods -> U span */
     f32 vv   = font_dash_v( duty );
 
-    tess_ensure_gpu_cmd( font_atlas_idx() );
-    if ( s_tess.cmd_count == 0 )
+    if ( !tess_ensure_gpu_cmd( font_atlas_idx() ) )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );

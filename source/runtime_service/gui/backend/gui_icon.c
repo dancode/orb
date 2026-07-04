@@ -194,8 +194,10 @@ icon_find( const char* name )
 {
     if ( !name )
         return GUI_ICON_NONE;
+    /* Compare within the stored capacity: names register truncated to 31 chars, so a longer
+       query must match by the same rule or a registered icon becomes unfindable by its own name. */
     for ( u32 i = 0; i < s_icons.count; ++i )
-        if ( strcmp( s_icons.entries[ i ].name, name ) == 0 )
+        if ( strncmp( s_icons.entries[ i ].name, name, sizeof( s_icons.entries[ i ].name ) - 1 ) == 0 )
             return (gui_icon_id_t)( i + 1 );
     return GUI_ICON_NONE;
 }

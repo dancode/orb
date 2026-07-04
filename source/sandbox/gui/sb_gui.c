@@ -619,7 +619,7 @@ show_demo_window(bool* p_open)
     gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
     // gui()->same_line( 0 );
     gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );
-
+    
     for ( int i = 0; i < 40; i++ )
     {
         gui()->textf( "Line %d", i );

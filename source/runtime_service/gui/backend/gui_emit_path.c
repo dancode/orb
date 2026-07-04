@@ -2,8 +2,9 @@
 
     runtime_service/gui/backend/gui_emit_path.c -- Line and path stroking.
 
-    Builds antialiased / pixel-snapped stroke geometry on top of the raw draw-list reservation
-    (draw_prim_begin in gui_emit_draw.c).  Two layers:
+    Pushes stroke SEMANTIC commands (CMD_LINE / CMD_POLYLINE / CMD_DASHED_LINE) into s_draw;
+    the actual antialiased geometry is produced at flush time by tess_stroke_poly_aa /
+    tess_axis_line / tess_dashed_line (gui_build_tess.c).  Two layers:
 
         draw_line / draw_polyline    -- immediate: stroke a single segment or a point array now.
         path_line_to / path_stroke   -- retained: accumulate points, then stroke the whole run.
@@ -19,8 +20,8 @@
     solid path samples the white texel (alpha 1), so a vertex authored with alpha 0 contributes
     nothing -- the feather is pure geometry, no shader or vertex-format change.
 
-    Included by gui_backend.c immediately after gui_emit_draw.c (uses s_draw, draw_prim_begin/commit,
-    draw_push_rect_filled, draw_apply_alpha).
+    Included by gui_backend.c immediately after gui_emit_draw.c (uses s_draw, draw_cull_box,
+    draw_push_rect_filled, draw_apply_alpha, draw_hash_cmd).
 
 ==============================================================================================*/
 // clang-format off
